@@ -38,6 +38,12 @@ def test_manifest_traversal_filename_fails(contracts_root):
     assert not is_valid("manifest", inst)
 
 
+def test_manifest_rejects_non_v1_basemap_maxzoom(contracts_root):
+    inst = json.loads((contracts_root / "fixtures/manifest/valid/uk.json").read_text())
+    inst["basemap"]["maxzoom"] = 15
+    assert not is_valid("manifest", inst)
+
+
 def test_sha256_hex_matches_hashlib():
     data = b"making tracks"
     assert sha256_hex(data) == hashlib.sha256(data).hexdigest()

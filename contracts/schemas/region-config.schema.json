@@ -43,7 +43,7 @@
       "required": ["source_pmtiles", "maxzoom", "pack_granularity", "size_budget_bytes", "measured_archive_bytes"],
       "properties": {
         "source_pmtiles": {"type": "string", "maxLength": 2048, "pattern": "^https://[^\\u0000-\\u001f\\u007f-\\u009f\\s]+$"},
-        "maxzoom": {"type": "integer", "minimum": 0, "maximum": 15},
+        "maxzoom": {"type": "integer", "const": 14},
         "pack_granularity": {"type": "string", "enum": ["country", "subregion"]},
         "subregions": {
           "type": "array",

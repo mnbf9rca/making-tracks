@@ -24,6 +24,7 @@ SOURCE_PMTILES_URL_MAX = 2048
 SUBREGIONS_MAX = 256
 
 TILE_ZOOM = 10
+BASEMAP_MAXZOOM = 14
 MAX_PLACES_PER_TILE = 4000
 MAX_TILE_UNCOMPRESSED_BYTES = 8 * 1024 * 1024
 MAX_TILE_COMPRESSED_BYTES = 1 * 1024 * 1024
@@ -56,6 +57,7 @@ CAPS_SCHEMA_MAP = {
     ("manifest", ("properties", "tiles"), "maxItems"): "TILES_MAX",
     ("manifest", ("properties", "tiles", "items", "properties", "bytes"), "maximum"): "MAX_TILE_COMPRESSED_BYTES",
     ("manifest", ("properties", "basemap", "properties", "filename"), "maxLength"): "BASEMAP_FILENAME_MAX",
+    ("manifest", ("properties", "basemap", "properties", "maxzoom"), "const"): "BASEMAP_MAXZOOM",
     ("manifest", ("properties", "basemap", "properties", "bytes"), "maximum"): "PACK_BUDGET_CEILING_BYTES",
     ("manifest", ("properties", "provenance"), "minItems"): "PROVENANCE_MIN",
     ("manifest", ("properties", "provenance"), "maxItems"): "PROVENANCE_MAX",
@@ -67,6 +69,7 @@ CAPS_SCHEMA_MAP = {
     ("region-config", ("properties", "sources"), "maxProperties"): "SOURCE_TOGGLES_MAX",
     ("region-config", ("properties", "sources", "additionalProperties", "oneOf", 1, "properties", "id"), "maxLength"): "REGION_ID_MAX",
     ("region-config", ("properties", "basemap", "properties", "source_pmtiles"), "maxLength"): "SOURCE_PMTILES_URL_MAX",
+    ("region-config", ("properties", "basemap", "properties", "maxzoom"), "const"): "BASEMAP_MAXZOOM",
     ("region-config", ("properties", "basemap", "properties", "subregions"), "maxItems"): "SUBREGIONS_MAX",
     ("region-config", ("properties", "basemap", "properties", "subregions", "items", "properties", "id"), "maxLength"): "REGION_ID_MAX",
     ("region-config", ("properties", "basemap", "properties", "size_budget_bytes"), "maximum"): "PACK_BUDGET_CEILING_BYTES",

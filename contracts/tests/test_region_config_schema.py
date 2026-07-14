@@ -29,3 +29,9 @@ def test_sources_are_additive_not_hard_enumerated(contracts_root):
         "new_register": {"id": "new_register", "enabled": False},
     }
     validate_instance("region-config", cfg)
+
+
+def test_region_config_rejects_non_v1_basemap_maxzoom(contracts_root):
+    cfg = json.loads((contracts_root / "regions/uk.json").read_text())
+    cfg["basemap"]["maxzoom"] = 15
+    assert not is_valid("region-config", cfg)

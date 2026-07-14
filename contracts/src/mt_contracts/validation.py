@@ -65,6 +65,8 @@ def _reject_noncanonical_refs(name: str, instance: dict) -> None:
             assert_canonical_ref(ref)
         if "mint_anchor" in instance:
             assert_canonical_ref(instance["mint_anchor"])
+            if instance["mint_anchor"] not in instance.get("refs", []):
+                raise ValueError("registry mint_anchor must be present in refs")
 
 
 def validate_instance(name: str, instance: dict) -> None:

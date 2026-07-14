@@ -69,8 +69,14 @@ def test_gzip_is_deterministic():
     assert encoded == tilecodec.gzip_tile(obj)
     assert encoded[4:8] == b"\0\0\0\0"
     assert hashlib.sha256(encoded).hexdigest() == (
-        "1e5cd14dc3bc72acd080923b034970c90037f22ab40c3a2636d2ab41ea979640"
+        "07fa61d1de7c43bdafd747d29f7a46028295b4fe5573599ed6c00d86549d0d42"
     )
+
+
+def test_gzip_is_canonical_across_dict_insertion_order():
+    a = {"schema_version": 1, "z": 10, "x": 1, "y": 2, "places": []}
+    b = {"places": [], "y": 2, "x": 1, "z": 10, "schema_version": 1}
+    assert tilecodec.gzip_tile(a) == tilecodec.gzip_tile(b)
 
 
 def test_gzip_tile_rejects_compressed_bytes_over_cap():

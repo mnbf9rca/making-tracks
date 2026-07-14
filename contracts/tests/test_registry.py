@@ -117,3 +117,7 @@ def test_registry_record_schema_rejects_bad_status_and_noncanonical_refs():
     assert not is_valid("registry-record", {**base, "status": "deleted"})
     assert not is_valid("registry-record", {**base, "refs": ["wd:q1"]})
     assert not is_valid("registry-record", {**base, "mint_anchor": "osm:Way/1"})
+    assert not is_valid(
+        "registry-record",
+        {**base, "refs": ["wd:Q1"], "mint_anchor": "osm:node/1"},
+    )
