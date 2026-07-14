@@ -14,7 +14,7 @@ A map app that surfaces interesting things around you — history, architecture,
 
 Two views over the same data:
 
-- **Discovery** — seen places are faded, not hidden. Low opacity, still tappable. An **on-map toggle** ("focus on places I haven't been") hides seen entirely for those who want the clean version — a first-class map control, not a buried setting, and it works identically when viewing a list on the map.
+- **Discovery** — seen places are faded, not hidden. Low opacity, still tappable. An on-map **"Fresh snow"** toggle hides seen places entirely for those who want the clean version — active: only untrodden ground; inactive: everything, tracks and all. A first-class map control that teaches the metaphor in two words (if a two-pole control wins in design, the poles are **"Fresh snow" / "My tracks"**), working identically when viewing a list on the map.
 - **Tracks** — the chronological, place-anchored record of where you've been. First-class screen: it is the shareable artefact and the retention mechanism.
 
 **Naming risk (drives App Store packaging):** "tracks" reads as GPX/route recording. The subtitle and first screenshot must immediately establish this is *discovery*, not route logging.
@@ -50,7 +50,7 @@ One mechanism: **lists**. The app ships with a system list "Want to go"; the qui
 
 - Marking seen never mutates list membership. Every list renders visit-progress the same way ("3 of 12 visited"), which is exactly how shared lists will render in v2.
 - Pin states: **unseen** · **saved** (on ≥1 list) · **visited** (≥1 visit event) · **visited & loved** (visit with `loved` verdict — faded like visited but with a distinct heart-badged marker). Saved and visited coexist freely — bookmark is intent, visit is history; they are orthogonal, not a state machine.
-- The "focus on places I haven't been" toggle lives on the map screen itself (discovery and list-map views alike).
+- The "Fresh snow" toggle lives on the map screen itself (discovery and list-map views alike).
 
 ### 3.3 Verdict: "worth going again"
 
@@ -200,7 +200,7 @@ Each package is sized for one Opus agent to design in detail and one Codex agent
 | B5 | Lists | 'Want to go' system list, create/manage, progress rendering | B4 |
 | B6 | Tracks | Chronological visit log, loved filter, place-anchored rendering via snapshots | B4 |
 | B7 | Offline region packs | Region download UI, whole-file pmtiles + place tiles, checksums, resumable | B3 |
-| B8 | Discovery polish | Tier/zoom gating, clustering, category filter chips, on-map "focus on unseen" toggle, foreground nearby prompt | B4 |
+| B8 | Discovery polish | Tier/zoom gating, clustering, category filter chips, on-map "Fresh snow" toggle, foreground nearby prompt | B4 |
 
 ### Track C — Services (post-v1)
 
