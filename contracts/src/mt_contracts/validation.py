@@ -8,7 +8,7 @@ import math
 import pathlib
 from importlib import resources
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
 
 from .place_id import assert_canonical_ref
@@ -98,6 +98,6 @@ def validate_instance(name: str, instance: dict) -> None:
 def is_valid(name: str, instance: dict) -> bool:
     try:
         validate_instance(name, instance)
-    except Exception:
+    except (ValidationError, ValueError):
         return False
     return True

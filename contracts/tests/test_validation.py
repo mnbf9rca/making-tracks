@@ -86,3 +86,17 @@ assert load_schema("region-config")["title"] == "RegionConfig"
         stderr=subprocess.PIPE,
         text=True,
     )
+
+
+def test_is_valid_only_swallows_expected_validation_errors(monkeypatch):
+    def bug(_name, _instance):
+        raise RuntimeError("programming error")
+
+    monkeypatch.setattr(validation, "validate_instance", bug)
+
+    try:
+        validation.is_valid("place", {})
+    except RuntimeError as exc:
+        assert str(exc) == "programming error"
+    else:
+        raise AssertionError("is_valid swallowed an unexpected programming error")

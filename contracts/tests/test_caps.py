@@ -60,7 +60,27 @@ def test_overflow_also_bounds_bytes():
     ]
     kept, dropped = caps.select_tile_places(big, max_per_tile=999, byte_budget=5000)
     assert dropped
-    assert len(json.dumps(kept).encode("utf-8")) <= 5000
+    assert len(json.dumps(kept, separators=(",", ":")).encode("utf-8")) <= 5000
+
+
+def test_overflow_does_not_serialize_growing_candidate_lists(monkeypatch):
+    observed_list_lengths = []
+    real_dumps = caps.json.dumps
+
+    def spy(obj, *args, **kwargs):
+        if isinstance(obj, list):
+            observed_list_lengths.append(len(obj))
+        return real_dumps(obj, *args, **kwargs)
+
+    monkeypatch.setattr(caps.json, "dumps", spy)
+    places = [
+        {"place_id": "mt1_" + f"{i:026d}"[:26], "tier": 1, "score": 0.5}
+        for i in range(8)
+    ]
+
+    caps.select_tile_places(places, max_per_tile=8)
+
+    assert observed_list_lengths == []
 
 
 def test_gzip_is_deterministic():

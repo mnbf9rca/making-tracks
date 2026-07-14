@@ -85,9 +85,14 @@ def select_tile_places(
     """Return (kept, dropped) using the A7 deterministic overflow rule."""
     ordered = sorted(places, key=lambda p: (p["tier"], -p["score"], p["place_id"]))
     kept = []
+    running_bytes = 2  # len(b"[]")
     for place in ordered[:max_per_tile]:
-        candidate = kept + [place]
-        if len(json.dumps(candidate, separators=(",", ":")).encode("utf-8")) > byte_budget:
+        place_bytes = len(
+            json.dumps(place, separators=(",", ":")).encode("utf-8")
+        )
+        candidate_bytes = running_bytes + place_bytes + (1 if kept else 0)
+        if candidate_bytes > byte_budget:
             break
         kept.append(place)
+        running_bytes = candidate_bytes
     return kept, ordered[len(kept):]
