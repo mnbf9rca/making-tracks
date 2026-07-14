@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.making-tracks.app/registry-record/1",
+  "title": "RegistryRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "place_id", "refs", "mint_anchor", "status"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "place_id": {"type": "string", "pattern": "^mt1_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}$"},
+    "refs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^(wd|osm|hehle|plaque):[^\\u0000-\\u001f\\u007f]+$"}
+    },
+    "mint_anchor": {"type": "string", "pattern": "^(wd|osm|hehle|plaque):"},
+    "status": {"type": "string", "enum": ["live", "tombstoned"]},
+    "superseded_by": {"type": ["string", "null"], "pattern": "^mt1_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}$"},
+    "first_shipped_version": {"type": "string"},
+    "last_seen_version": {"type": "string"}
+  }
+}
