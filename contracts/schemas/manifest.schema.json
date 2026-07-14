@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.making-tracks.app/manifest/1",
+  "title": "RegionManifest",
+  "description": "Per-region, per-publish manifest. Written last, atomically (§5.2). Self-contained: the app can verify every tile and the basemap it references.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "min_reader_version", "region", "publish_version", "tile_z", "tiles", "counts", "basemap", "provenance"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "min_reader_version": {"type": "integer", "minimum": 1},
+    "region": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "publish_version": {"type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z$"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "tile_z": {"type": "integer", "const": 10},
+    "tiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["x", "y", "sha256", "bytes"],
+        "properties": {
+          "x": {"type": "integer", "minimum": 0, "maximum": 1023},
+          "y": {"type": "integer", "minimum": 0, "maximum": 1023},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "bytes": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "by_tier"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "by_tier": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"type": "integer", "minimum": 0}}
+      }
+    },
+    "basemap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filename", "maxzoom", "sha256", "bytes", "bbox"],
+      "properties": {
+        "filename": {"type": "string", "pattern": "\\.pmtiles$"},
+        "maxzoom": {"type": "integer", "minimum": 0, "maximum": 15},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "bbox": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"type": "number"}}
+      }
+    },
+    "provenance": {
+      "type": "array",
+      "description": "Prompt-version set that produced this tiering (§5.2 + task_id fix).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["task_id", "model", "prompt_version"],
+        "properties": {
+          "task_id": {"type": "string", "enum": ["curiosity", "blurb", "category", "reconcile"]},
+          "model": {"type": "string", "minLength": 1, "maxLength": 128},
+          "prompt_version": {"type": "string", "minLength": 1, "maxLength": 64}
+        }
+      }
+    }
+  }
+}
