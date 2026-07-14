@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.making-tracks.app/tile/1",
+  "title": "PlaceTile",
+  "description": "A z10 geographic cell of places. Served gzipped at {publish_version}/tiles/10/{x}/{y}.json.gz.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "z", "x", "y", "places"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "z": {"type": "integer", "const": 10},
+    "x": {"type": "integer", "minimum": 0, "maximum": 1023},
+    "y": {"type": "integer", "minimum": 0, "maximum": 1023},
+    "places": {
+      "type": "array",
+      "maxItems": 4000,
+      "items": {"$ref": "https://contracts.making-tracks.app/place/1"}
+    }
+  }
+}
