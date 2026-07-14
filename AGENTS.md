@@ -31,7 +31,7 @@ Work packages (spec §8) are designed one at a time (design agent) and built one
 
 Branch discipline: feature branches (`wp-<id>-plan` / `wp-<id>-impl`) are cut from `develop` and PR back to `develop` — a PR is the only path onto `develop`; never push to it directly. `main` is human-gated — only Rob promotes `develop` to `main`. No agent self-merges its own PR; the design lead (fable) reviews, and merges happen only with human-sanctioned authority (overnight, PRs queue for Rob's morning review).
 
-Worktree discipline: **one git worktree per agent, always.** Never work in the repo root checkout and never switch its branch — multiple agents share this machine, and an uncommitted edit in a shared checkout gets stranded (or destroyed) when another agent switches branches. Start every assignment with `git worktree add ../making-tracks-<your-handle> <branch>` and do all work there.
+Worktree discipline: **one git worktree per agent, always.** Never work in the repo root checkout and never switch its branch — multiple agents share this machine, and an uncommitted edit in a shared checkout gets stranded (or destroyed) when another agent switches branches. Start every assignment by setting up your isolated workspace — use the `superpowers:using-git-worktrees` skill if your harness has it (the project-standard mechanism), otherwise `git worktree add ../making-tracks-<your-handle> <branch>` — and do all work there.
 
 ## Review gates (mandatory before declaring anything complete)
 
