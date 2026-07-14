@@ -15,10 +15,11 @@ def gzip_tile(obj, max_compressed_bytes: int = MAX_TILE_COMPRESSED_BYTES) -> byt
     ).encode("utf-8")
     if len(raw) > MAX_TILE_UNCOMPRESSED_BYTES:
         raise ValueError("gzip tile exceeded MAX_TILE_UNCOMPRESSED_BYTES")
-    encoded = gzip.compress(raw, mtime=0)
+    encoded = bytearray(gzip.compress(raw, mtime=0))
+    encoded[9] = 255  # Normalize gzip OS byte across Python/zlib platforms.
     if len(encoded) > max_compressed_bytes:
         raise ValueError("gzip tile exceeded max_compressed_bytes")
-    return encoded
+    return bytes(encoded)
 
 
 def safe_gunzip(

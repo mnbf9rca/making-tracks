@@ -88,6 +88,7 @@ def test_gzip_is_deterministic():
     encoded = tilecodec.gzip_tile(obj)
     assert encoded == tilecodec.gzip_tile(obj)
     assert encoded[4:8] == b"\0\0\0\0"
+    assert encoded[9] == 255
     assert hashlib.sha256(encoded).hexdigest() == (
         "07fa61d1de7c43bdafd747d29f7a46028295b4fe5573599ed6c00d86549d0d42"
     )
