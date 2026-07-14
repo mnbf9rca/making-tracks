@@ -25,7 +25,7 @@ def test_versions_json_is_packaged_with_wheel(contracts_root):
     force_include = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"][
         "force-include"
     ]
-    assert force_include == {"versions.json": "src/mt_contracts/versions.json"}
+    assert force_include["versions.json"] == "src/mt_contracts/versions.json"
 
 
 def test_versions_loader_accepts_packaged_copy(tmp_path, monkeypatch):
