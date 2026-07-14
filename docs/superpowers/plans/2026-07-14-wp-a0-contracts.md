@@ -16,7 +16,9 @@ Every task's requirements implicitly include these. Values are copied verbatim f
 - **`place_id` is forever (Principle 7).** Once shipped, never reassigned or reformatted. The frozen golden-vector test (Task 2) is the tripwire; if it breaks, the change is wrong.
 - **Everything that crosses a boundary is versioned (Principle 11 / §5.6).** Manifest, tile, place, region-config, and the ID registry each carry a `schema_version`; readers declare a max understood version and degrade — never silently misread newer/older data.
 - **Determinism (Principle 12).** No wall-clock or randomness in any *output* value. Timestamps that appear in artifacts (`manifest.generated_at`) are metadata only and never feed an id, a hash, or an ordering. `place_id` derivation is a pure function of a frozen mint key.
-- **All source data is untrusted (Principle 10 / §5.5).** Schemas enforce: string length caps, control-character rejection, coordinate bounds, `https://`-only URLs, bounded array sizes. The app treats even our own tiles as untrusted (defence in depth) — decode caps included.
+- **All source data is untrusted (Principle 10 / §5.5).** Schemas enforce, on **every** source- or LLM-derived string (incl. nullable ones like `blurb`/`wikipedia_title`): length caps; the shared **`SAFE_TEXT`** guard (rejects C0, DEL, C1, line/paragraph separators U+2028/2029, bidi overrides+isolates U+202A–202E/2066–2069, zero-width U+200B/FEFF — but **not** LRM/RLM U+200E/200F, so legitimate RTL names such as Jawi survive); coordinate bounds; `https://`-only URLs with no control/whitespace in the body; bounded array sizes; and the shared **canonical-ref** grammar (`^[a-z][a-z0-9_]*:[A-Za-z0-9][A-Za-z0-9._/-]*$`) on every ref field. Numeric fields additionally reject non-finite floats (`NaN`/`Infinity`) at the Python validation layer, which JSON Schema `minimum`/`maximum` cannot catch. The app treats even our own tiles as untrusted (defence in depth): tiles are decompressed by a **bomb-safe streaming decoder** bounded by `MAX_TILE_UNCOMPRESSED_BYTES` (never `gzip.decompress`, which expands fully before any check).
+- **Deterministic tile bytes (Principle 12).** Producers gzip tiles with `mtime=0` so identical content yields identical bytes and a stable per-tile `sha256` across builds; a wall-clock gzip header would flip checksums and break cache invalidation. Enforced by a determinism test.
+- **Path convention.** In this plan `/contracts/…` denotes the repo-relative top-level `contracts/` directory. All shell commands run from the repo root and use `cd contracts` (never the absolute `/contracts`).
 - **Caps are named, versioned constants (fable ratification, addition 4).** Every size cap lives in `mt_contracts.caps` as a named constant, single-sourced; the JSON Schemas' literal numbers are asserted equal to the constants by test (no drift). Changing a cap requires a `schema_version` bump — never a silent edit. No cap truncates silently: where a cap can be exceeded (places-per-tile), a deterministic overflow rule drops the excess and the drop is logged.
 - **Region modularity (Principle 17).** No schema may hard-enum the region set; region ids match `^[a-z][a-z0-9_]*$`. Adding a region is additive.
 - **Test-first.** Every schema lands with a failing fixture test before the schema exists; the ID-stability invariants have regression tests (§7).
@@ -56,20 +58,22 @@ Language-neutral contract artifacts and the reference implementation live togeth
     __init__.py
     versions.py                       # version constants + §5.6 compatibility policy (Task 1)
     caps.py                           # named, versioned size caps + tile-overflow rule (Task 4)
+    tilecodec.py                      # deterministic gzip (mtime=0) + bomb-safe gunzip (Task 4)
     place_id.py                       # mint / validate / anchor-selection / canonicalization (Task 2)
     registry.py                       # RegistryRecord + resolve_by_refs + supersede-chain (Task 2)
-    validation.py                     # schema loader + validate_* helpers (Task 3)
+    validation.py                     # schema loader + validate_* helpers (finite-float guard) (Task 3)
     checksums.py                      # sha256_hex reference helper (Task 5)
   tests/
     test_versions.py                  # Task 1
     test_place_id.py                  # Task 2
     test_registry.py                  # Task 2
     test_place_schema.py              # Task 3
+    test_caps.py                      # Task 4
     test_tile_schema.py               # Task 4
     test_manifest_schema.py           # Task 5
     test_region_config_schema.py      # Task 6
     test_basemap_budget.py            # Task 6
-    conftest.py                       # CONTRACTS_ROOT fixture path helper
+    conftest.py                       # contracts_root fixture path helper
 ```
 
 Each `*.schema.json` has one responsibility (one artifact shape). Fixtures live beside the schema they exercise. The reference `.py` modules are small and single-purpose so a reviewer can reject one artifact without touching its neighbours.
@@ -103,7 +107,7 @@ import pytest
 
 @pytest.fixture(scope="session")
 def contracts_root() -> pathlib.Path:
-    # /contracts (two parents up from /contracts/tests/conftest.py)
+    # the contracts/ dir: parents[0]=tests/, parents[1]=contracts/
     return pathlib.Path(__file__).resolve().parents[1]
 ```
 
@@ -137,7 +141,7 @@ def test_check_version_older_below_window_is_too_old():
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd /contracts && python -m pytest tests/test_versions.py -q`
+Run: `cd contracts && python -m pytest tests/test_versions.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'mt_contracts'`.
 
 - [ ] **Step 3: Create the package scaffold**
@@ -223,7 +227,7 @@ def check_version(reader_max: int, data_version: int, min_supported: int) -> Com
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `cd /contracts && pip install -e '.[dev]' && python -m pytest tests/test_versions.py -q`
+Run: `cd contracts && pip install -e '.[dev]' && python -m pytest tests/test_versions.py -q`
 Expected: PASS (6 passed).
 
 - [ ] **Step 6: Commit**
@@ -252,7 +256,7 @@ This is the highest-stakes artifact in the project. The design resolves the spec
 **Interfaces:**
 - Consumes: `mt_contracts.versions.SCHEMA_VERSIONS`.
 - Produces:
-  - `place_id.PLACE_ID_RE: re.Pattern` and `place_id.PLACE_ID_PREFIX: str` (== `"mt1_"`).
+  - `place_id.PLACE_ID_RE: re.Pattern` (accepts every `KNOWN_ID_SCHEMES` prefix), `place_id.PLACE_ID_PREFIX: str` (current mint scheme, == `"mt1_"`), `place_id.KNOWN_ID_SCHEMES: frozenset[int]` (monotonic; validation covers all of these forever).
   - `place_id.canonical_ref(source: str, ident: str) -> str` → `"{source}:{ident}"`.
   - `place_id.select_mint_anchor(refs: Iterable[str]) -> str` — deterministic anchor pick.
   - `place_id.mint_place_id(mint_key: str) -> str` — pure, deterministic; raises `ValueError` on a non-canonical `mint_key`.
@@ -286,7 +290,22 @@ def test_rejects_malformed_ids():
     assert not is_valid_place_id("mt1_short")
     assert not is_valid_place_id("Q42")
     assert not is_valid_place_id("mt1_" + "I" * 26)   # I is not in the Crockford alphabet
-    assert not is_valid_place_id("mt2_" + "0" * 26)    # wrong scheme prefix
+    assert not is_valid_place_id("mt2_" + "0" * 26)    # scheme 2 not yet a KNOWN scheme
+
+def test_shipped_ids_validate_after_a_future_mint_scheme_bump(monkeypatch):
+    # Principle 7 applies to VALIDATION, not just minting: once an mt1_ id ships
+    # it must validate forever, even after the mint scheme advances. PLACE_ID_RE
+    # is built from KNOWN_ID_SCHEMES (which only grows), so simulating the mint
+    # scheme moving to 2 must not invalidate an existing mt1_ id.
+    from mt_contracts import place_id as pid
+    shipped = pid.mint_place_id("wd:Q42")            # an mt1_ id
+    monkeypatch.setattr(pid, "_ID_SCHEME_VERSION", 2)
+    monkeypatch.setattr(pid, "PLACE_ID_PREFIX", "mt2_")
+    assert pid.is_valid_place_id(shipped)            # still valid — validation covers KNOWN schemes
+
+def test_current_mint_scheme_is_a_known_scheme():
+    from mt_contracts.place_id import KNOWN_ID_SCHEMES, _ID_SCHEME_VERSION
+    assert _ID_SCHEME_VERSION in KNOWN_ID_SCHEMES
 
 def test_canonical_ref():
     assert canonical_ref("wd", "Q42") == "wd:Q42"
@@ -334,7 +353,7 @@ def test_frozen_vectors_never_change(contracts_root):
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd /contracts && python -m pytest tests/test_place_id.py -q`
+Run: `cd contracts && python -m pytest tests/test_place_id.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'mt_contracts.place_id'`.
 
 - [ ] **Step 3: Implement `place_id.py`**
@@ -360,13 +379,22 @@ from collections.abc import Iterable
 
 from .versions import SCHEMA_VERSIONS
 
-_ID_SCHEME_VERSION = SCHEMA_VERSIONS["id_scheme"]
-PLACE_ID_PREFIX = f"mt{_ID_SCHEME_VERSION}_"
+_ID_SCHEME_VERSION = SCHEMA_VERSIONS["id_scheme"]  # CURRENT scheme — used ONLY for minting
+# Every scheme ever shipped. Grows monotonically, NEVER shrinks: once mt1_ ids
+# ship they must validate forever even after the mint scheme advances to 2
+# (Principle 7 applies to validation, not just minting). A scheme bump adds the
+# new number here AND to id_scheme in versions.json — it never removes one.
+KNOWN_ID_SCHEMES = frozenset({1})
+assert _ID_SCHEME_VERSION in KNOWN_ID_SCHEMES, "current mint scheme must be a known scheme"
+PLACE_ID_PREFIX = f"mt{_ID_SCHEME_VERSION}_"  # minting emits the current scheme only
 
 # Crockford base32 alphabet: no I, L, O, U (ambiguity-free, case-insensitive).
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 _BODY_LEN = 26  # 26 * 5 = 130 bits carrying the lower 128 bits of the digest
-PLACE_ID_RE = re.compile(rf"^mt{_ID_SCHEME_VERSION}_[{_CROCKFORD}]{{{_BODY_LEN}}}$")
+# Validation accepts EVERY known scheme prefix, not just the current one, so an
+# id-scheme bump can never invalidate an already-shipped id.
+_SCHEMES_ALT = "|".join(str(v) for v in sorted(KNOWN_ID_SCHEMES))
+PLACE_ID_RE = re.compile(rf"^mt(?:{_SCHEMES_ALT})_[{_CROCKFORD}]{{{_BODY_LEN}}}$")
 
 # Anchor selection: fixed source priority, then a total order within source so
 # the same cluster always mints the same id regardless of ingest order. This
@@ -443,7 +471,7 @@ def is_valid_place_id(value: str) -> bool:
 
 Run once and hand-commit the output (the vectors become immutable contract):
 ```bash
-cd /contracts && python - <<'PY'
+cd contracts && python - <<'PY'
 import json, pathlib
 from mt_contracts.place_id import mint_place_id
 keys = ["wd:Q42", "osm:node/9", "osm:way/456", "hehle:1234567", "plaque:openplaques/9876"]
@@ -457,7 +485,7 @@ Expected: prints 5 rows, each a valid `mt1_…` id; writes `fixtures/place_id/fr
 
 - [ ] **Step 5: Run the `place_id` tests to verify they pass**
 
-Run: `cd /contracts && python -m pytest tests/test_place_id.py -q`
+Run: `cd contracts && python -m pytest tests/test_place_id.py -q`
 Expected: PASS (all place_id tests green, including canonicalization rejection and per-source conformance vectors).
 
 - [ ] **Step 6: Write the failing registry tests (union-of-refs lookup + QID-merge survival + supersede)**
@@ -621,7 +649,7 @@ def assert_no_supersede_cycles(records: Iterable[RegistryRecord]) -> None:
 
 - [ ] **Step 8: Run the registry tests to verify they pass**
 
-Run: `cd /contracts && python -m pytest tests/test_place_id.py tests/test_registry.py -q`
+Run: `cd contracts && python -m pytest tests/test_place_id.py tests/test_registry.py -q`
 Expected: PASS (all place_id + registry tests green, including transitive supersede resolution and cycle rejection).
 
 - [ ] **Step 9: Commit**
@@ -681,7 +709,7 @@ def test_invalid_place_fixtures_all_fail(contracts_root, field):
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd /contracts && python -m pytest tests/test_place_schema.py -q`
+Run: `cd contracts && python -m pytest tests/test_place_schema.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'mt_contracts.validation'`.
 
 - [ ] **Step 3: Implement `validation.py`**
@@ -790,7 +818,7 @@ Add `referencing>=0.34` to `pyproject.toml` `dependencies` (it ships with `jsons
 
 Generate the oversize-blurb fixture deterministically:
 ```bash
-cd /contracts && python - <<'PY'
+cd contracts && python - <<'PY'
 import json, pathlib
 base = json.loads(pathlib.Path("fixtures/place/valid/full.json").read_text())
 base["blurb"] = "x" * 601
@@ -800,7 +828,7 @@ PY
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `cd /contracts && python -m pytest tests/test_place_schema.py -q`
+Run: `cd contracts && python -m pytest tests/test_place_schema.py -q`
 Expected: PASS (2 tests, 7 parametrised invalid cases → 9 passed).
 
 - [ ] **Step 7: Commit**
@@ -875,7 +903,7 @@ def test_overflow_stable_tie_break_by_place_id():
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd /contracts && python -m pytest tests/test_caps.py -q`
+Run: `cd contracts && python -m pytest tests/test_caps.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'mt_contracts.caps'`.
 
 - [ ] **Step 3: Implement `caps.py`**
@@ -917,7 +945,7 @@ def select_tile_places(places, max_per_tile: int = MAX_PLACES_PER_TILE):
 
 - [ ] **Step 4: Run the caps tests to verify they pass**
 
-Run: `cd /contracts && python -m pytest tests/test_caps.py -q`
+Run: `cd contracts && python -m pytest tests/test_caps.py -q`
 Expected: PASS (4 passed).
 
 #### Part B — tile envelope schema
@@ -957,7 +985,7 @@ def test_gzip_roundtrip_and_decode_cap(contracts_root):
 
 - [ ] **Step 6: Run to verify it fails**
 
-Run: `cd /contracts && python -m pytest tests/test_tile_schema.py -q`
+Run: `cd contracts && python -m pytest tests/test_tile_schema.py -q`
 Expected: FAIL — fixtures / schema do not exist yet.
 
 - [ ] **Step 7: Write `tile.schema.json`**
@@ -1000,7 +1028,7 @@ Expected: FAIL — fixtures / schema do not exist yet.
 
 - [ ] **Step 9: Run the tests to verify they pass**
 
-Run: `cd /contracts && python -m pytest tests/test_caps.py tests/test_tile_schema.py -q`
+Run: `cd contracts && python -m pytest tests/test_caps.py tests/test_tile_schema.py -q`
 Expected: PASS (9 passed).
 
 - [ ] **Step 10: Commit**
@@ -1056,7 +1084,7 @@ def test_sha256_hex_matches_hashlib():
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd /contracts && python -m pytest tests/test_manifest_schema.py -q`
+Run: `cd contracts && python -m pytest tests/test_manifest_schema.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'mt_contracts.checksums'`.
 
 - [ ] **Step 3: Implement `checksums.py`**
@@ -1161,7 +1189,7 @@ def sha256_hex(data: bytes) -> str:
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `cd /contracts && python -m pytest tests/test_manifest_schema.py -q`
+Run: `cd contracts && python -m pytest tests/test_manifest_schema.py -q`
 Expected: PASS (4 passed).
 
 - [ ] **Step 7: Commit**
@@ -1237,7 +1265,7 @@ def test_every_region_config_stays_under_ceiling(contracts_root):
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `cd /contracts && python -m pytest tests/test_region_config_schema.py tests/test_basemap_budget.py -q`
+Run: `cd contracts && python -m pytest tests/test_region_config_schema.py tests/test_basemap_budget.py -q`
 Expected: FAIL — schema/config/budget files absent.
 
 - [ ] **Step 3: Write `region-config.schema.json`**
@@ -1346,7 +1374,7 @@ Expected: FAIL — schema/config/budget files absent.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `cd /contracts && python -m pytest tests/test_region_config_schema.py tests/test_basemap_budget.py -q`
+Run: `cd contracts && python -m pytest tests/test_region_config_schema.py tests/test_basemap_budget.py -q`
 Expected: PASS (5 passed).
 
 - [ ] **Step 6: Commit**
@@ -1372,7 +1400,7 @@ git commit -m "Pin region-config schema, measured basemap budget, and real UK/Ma
 
 - [ ] **Step 1: Run the whole suite**
 
-Run: `cd /contracts && python -m pytest -q`
+Run: `cd contracts && python -m pytest -q`
 Expected: PASS (all tests from Tasks 1–6 green — versions, place_id + canonicalization + conformance vectors, registry + supersede chain, caps + overflow, place/tile/manifest/region-config schemas, basemap budget).
 
 - [ ] **Step 2: Write `CONTRACTS.md`**
