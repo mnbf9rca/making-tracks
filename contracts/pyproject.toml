@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mt-contracts"
+version = "0.1.0"
+description = "Making Tracks cross-track contracts (schemas, place_id, versioning)."
+requires-python = ">=3.11"
+dependencies = ["jsonschema>=4.21"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mt_contracts"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
