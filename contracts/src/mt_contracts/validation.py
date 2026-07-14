@@ -6,31 +6,51 @@ import functools
 import json
 import math
 import pathlib
+from importlib import resources
 
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
 from .place_id import assert_canonical_ref
 
-_PACKAGE_SCHEMA_DIR = pathlib.Path(__file__).with_name("schemas")
 _ROOT_SCHEMA_DIR = pathlib.Path(__file__).resolve().parents[2] / "schemas"
 
 
-def _schema_dir() -> pathlib.Path:
-    if _PACKAGE_SCHEMA_DIR.exists():
-        return _PACKAGE_SCHEMA_DIR
-    return _ROOT_SCHEMA_DIR
+def _package_schema_dir():
+    candidate = resources.files("mt_contracts").joinpath("schemas")
+    if candidate.is_dir():
+        return candidate
+    return None
+
+
+def _schema_resource(name: str):
+    filename = f"{name}.schema.json"
+    packaged = _package_schema_dir()
+    if packaged is not None:
+        return packaged.joinpath(filename)
+    return _ROOT_SCHEMA_DIR / filename
+
+
+def _schema_resources():
+    packaged = _package_schema_dir()
+    if packaged is not None:
+        return [
+            item
+            for item in packaged.iterdir()
+            if item.is_file() and item.name.endswith(".schema.json")
+        ]
+    return sorted(_ROOT_SCHEMA_DIR.glob("*.schema.json"))
 
 
 @functools.lru_cache
 def load_schema(name: str) -> dict:
-    return json.loads((_schema_dir() / f"{name}.schema.json").read_text())
+    return json.loads(_schema_resource(name).read_text())
 
 
 @functools.lru_cache
 def _registry() -> Registry:
     registry = Registry()
-    for path in _schema_dir().glob("*.schema.json"):
+    for path in _schema_resources():
         schema = json.loads(path.read_text())
         registry = registry.with_resource(schema["$id"], Resource.from_contents(schema))
     return registry

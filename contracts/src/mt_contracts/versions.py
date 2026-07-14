@@ -5,14 +5,15 @@ from __future__ import annotations
 import enum
 import json
 import pathlib
+from importlib import resources
 
-_PACKAGE_VERSIONS_PATH = pathlib.Path(__file__).with_name("versions.json")
 _ROOT_VERSIONS_PATH = pathlib.Path(__file__).resolve().parents[2] / "versions.json"
 
 
 def _load_schema_versions() -> dict[str, int]:
-    if _PACKAGE_VERSIONS_PATH.exists():
-        return json.loads(_PACKAGE_VERSIONS_PATH.read_text())
+    packaged = resources.files("mt_contracts").joinpath("versions.json")
+    if packaged.is_file():
+        return json.loads(packaged.read_text())
     return json.loads(_ROOT_VERSIONS_PATH.read_text())
 
 

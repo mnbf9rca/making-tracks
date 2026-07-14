@@ -8,6 +8,8 @@ All boundary artifacts carry schema versions from `versions.json`. Shipped shape
 
 `place_id` is immutable once shipped. The `mt1_` scheme, the canonical mint-key grammar, validation of all known ID schemes, and `fixtures/place_id/frozen_vectors.json` are Principle 7 tripwires. Caps are named in `src/mt_contracts/caps.py`, and schema literals are tested against those constants.
 
+The Python package exposes the shared A1/A2 surface at `mt_contracts`: `is_canonical_ref`, `strip_unsafe_text`, `available_regions`, and `load_region_config`. Wheel builds ship `schemas/`, `regions/`, `versions.json`, and `basemap-budget.json` as package data and load them through `importlib.resources`; editable checkouts keep the repo-root fallback.
+
 ## `place_id`
 
 Grammar: `mt1_<26 Crockford base32 chars>`, where the body is derived from the lower 128 bits of `sha256(mint_key)`. Current minting emits `PLACE_ID_PREFIX == "mt1_"`; validation uses `KNOWN_ID_SCHEMES`, so shipped IDs keep validating after a future mint scheme is added.
@@ -29,7 +31,7 @@ Ambiguous multi-place ref matches raise `AmbiguousRefsError` with candidate `.pl
 
 Place records contain `place_id`, `name`, `lat`, `lon`, `category`, `tier`, `score`, optional `alt_names`, `blurb`, `image_url`, `wikipedia_title`, and `source_refs`.
 
-The schema applies named caps from `caps.py`. `SAFE_TEXT` guards every source- or LLM-derived string, including nullable `blurb` and `wikipedia_title`: C0 controls, DEL, C1, U+2028/U+2029, bidi overrides and isolates, U+200B/U+200C/U+200D, U+2060, and U+FEFF are rejected. LRM/RLM are deliberately allowed so legitimate RTL names survive. `image_url` is `https://` plus control/whitespace-free; host allowlisting is app configuration. Non-finite floats (`NaN`, `Infinity`) are rejected in the Python validation layer. `source_refs` use the open canonical-ref grammar, with source-specific canonical checks for known prefixes such as `wd`, `osm`, `hehle`, and `plaque`.
+The schema applies named caps from `caps.py`. `SAFE_TEXT` guards every source- or LLM-derived string, including nullable `blurb` and `wikipedia_title`: C0 controls, DEL, C1, U+2028/U+2029, bidi overrides and isolates, U+200B/U+200C/U+200D, U+2060, and U+FEFF are rejected. LRM/RLM are deliberately allowed so legitimate RTL names survive. `strip_unsafe_text` removes exactly that denylist and preserves LRM/RLM. `image_url` is `https://` plus control/whitespace-free; host allowlisting is app configuration. Non-finite floats (`NaN`, `Infinity`) are rejected in the Python validation layer. `source_refs` use the open canonical-ref grammar, with source-specific canonical checks for known prefixes such as `wd`, `osm`, `hehle`, and `plaque`.
 
 ## Place Tile
 
@@ -45,7 +47,7 @@ A region manifest contains schema version, reader floor, publish version, tile i
 
 ## Region Config
 
-Region IDs and source keys are lowercase additive identifiers, not enums. Sources are optional per region; no source or region is load-bearing. Region config includes bbox, languages, source toggles, and the basemap block. `source_pmtiles` is HTTPS-only and control/whitespace-free.
+Region IDs and source keys are lowercase additive identifiers, not enums. Sources are optional per region; no source or region is load-bearing. Region config includes `region_id`, `display_name`, `bbox`, `languages`, `sources`, and `basemap`. `source_pmtiles` is HTTPS-only and control/whitespace-free. A1 reads configs through `available_regions()` and `load_region_config(region_id)`.
 
 ## Basemap Pack Budget
 
@@ -74,7 +76,7 @@ On fresh install with only too-new data, the app shows an update-required state.
 
 | Consumer WP | Consumes from A0 |
 |---|---|
-| A1 | `regions/*.json`, `region-config.schema.json` |
+| A1 | `regions/*.json`, `region-config.schema.json`, `available_regions`, `load_region_config`, `strip_unsafe_text`, `is_canonical_ref` |
 | A2 | `place_id.py`, `registry.py`, `registry-record.schema.json` |
 | A7 | `tile.schema.json`, `manifest.schema.json`, `checksums.sha256_hex`, `tilecodec.gzip_tile`, `caps.select_tile_places`, `registry.tile_winner_violations`, region `basemap` block |
 | B1 | `place.schema.json` |

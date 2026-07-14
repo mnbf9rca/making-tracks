@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 import tomllib
 import zipfile
 
@@ -29,7 +32,7 @@ def test_schema_loader_accepts_packaged_schema_dir(tmp_path, monkeypatch):
             }
         )
     )
-    monkeypatch.setattr(validation, "_PACKAGE_SCHEMA_DIR", packaged_schemas)
+    monkeypatch.setattr(validation, "_package_schema_dir", lambda: packaged_schemas)
     monkeypatch.setattr(validation, "_ROOT_SCHEMA_DIR", tmp_path / "missing")
     validation.load_schema.cache_clear()
     validation._registry.cache_clear()
@@ -53,3 +56,33 @@ def test_built_wheel_contains_machine_readable_contract_assets(
     assert "mt_contracts/regions/uk.json" in names
     assert "mt_contracts/regions/malaysia.json" in names
     assert "mt_contracts/basemap-budget.json" in names
+
+
+def test_built_wheel_import_loads_package_data_without_repo_paths(
+    contracts_root, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(contracts_root)
+    wheel = tmp_path / build_wheel(str(tmp_path))
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(wheel)
+    script = """
+import mt_contracts
+from mt_contracts.validation import load_schema
+from mt_contracts.versions import SCHEMA_VERSIONS
+
+assert mt_contracts.available_regions() == ["malaysia", "uk"]
+cfg = mt_contracts.load_region_config("malaysia")
+assert cfg["region_id"] == "malaysia"
+assert set(cfg) == {"schema_version", "region_id", "display_name", "bbox", "languages", "sources", "basemap"}
+assert SCHEMA_VERSIONS["region_config"] == 1
+assert load_schema("region-config")["title"] == "RegionConfig"
+"""
+    subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        cwd=tmp_path,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )

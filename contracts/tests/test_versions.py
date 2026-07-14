@@ -1,13 +1,13 @@
 import json
 import tomllib
 
+import mt_contracts
 from mt_contracts.versions import (
     MIN_SUPPORTED_VERSIONS,
     SCHEMA_VERSIONS,
     Compat,
     check_version,
 )
-from mt_contracts import versions
 
 
 REQUIRED_KEYS = {
@@ -31,14 +31,6 @@ def test_versions_json_is_packaged_with_wheel(contracts_root):
         "force-include"
     ]
     assert force_include["versions.json"] == "src/mt_contracts/versions.json"
-
-
-def test_versions_loader_accepts_packaged_copy(tmp_path, monkeypatch):
-    packaged = tmp_path / "versions.json"
-    packaged.write_text(json.dumps(SCHEMA_VERSIONS))
-    monkeypatch.setattr(versions, "_PACKAGE_VERSIONS_PATH", packaged)
-    monkeypatch.setattr(versions, "_ROOT_VERSIONS_PATH", tmp_path / "missing.json")
-    assert versions._load_schema_versions() == SCHEMA_VERSIONS
 
 
 def test_all_version_keys_present():
@@ -68,3 +60,10 @@ def test_check_version_older_within_window_is_ok():
 
 def test_check_version_older_below_window_is_too_old():
     assert check_version(reader_max=3, data_version=1, min_supported=2) is Compat.TOO_OLD
+
+
+def test_a1_public_exports_are_available():
+    assert callable(mt_contracts.available_regions)
+    assert callable(mt_contracts.load_region_config)
+    assert callable(mt_contracts.is_canonical_ref)
+    assert callable(mt_contracts.strip_unsafe_text)
