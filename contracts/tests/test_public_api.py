@@ -1,7 +1,7 @@
 import pytest
 
 import mt_contracts
-from mt_contracts.text import SAFE_TEXT_PATTERN
+from mt_contracts.text import SAFE_TEXT_PATTERN, SAFE_TEXT_RE
 from mt_contracts.validation import load_schema
 
 
@@ -18,9 +18,26 @@ def test_strip_unsafe_text_matches_schema_denylist_and_preserves_lrm_rlm():
     assert mt_contracts.strip_unsafe_text(value) == "A\u200eB\u200f"
 
 
-def test_safe_text_pattern_is_shared_with_place_schema():
-    schema = load_schema("place")
-    assert schema["properties"]["name"]["pattern"] == SAFE_TEXT_PATTERN
+def test_safe_text_pattern_is_shared_with_all_schema_literals():
+    place = load_schema("place")
+    region_config = load_schema("region-config")
+    schema_patterns = [
+        place["properties"]["name"]["pattern"],
+        place["properties"]["alt_names"]["items"]["pattern"],
+        place["properties"]["category"]["pattern"],
+        place["properties"]["blurb"]["pattern"],
+        place["properties"]["wikipedia_title"]["pattern"],
+        region_config["properties"]["display_name"]["pattern"],
+    ]
+    assert schema_patterns == [SAFE_TEXT_PATTERN] * len(schema_patterns)
+
+
+def test_strip_unsafe_text_matches_safe_text_regex_for_control_ranges():
+    for codepoint in [*range(0x2100), 0xFEFF]:
+        ch = chr(codepoint)
+        kept = mt_contracts.strip_unsafe_text(ch)
+        assert (kept == ch) == bool(SAFE_TEXT_RE.fullmatch(ch)), hex(codepoint)
+    assert mt_contracts.strip_unsafe_text("\u200e\u200f") == "\u200e\u200f"
 
 
 def test_region_config_accessors_load_valid_configs():
