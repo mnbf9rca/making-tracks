@@ -4,7 +4,7 @@
 **Status:** approved design, pre-implementation
 **App name:** Making Tracks · **Domain:** making-tracks.app (tiles served from tiles.making-tracks.app)
 **Platform:** iOS (SwiftUI), solo developer
-**Repo layout:** monorepo — `/pipeline` (Python), `/ios` (Swift), `/docs`
+**Repo layout:** monorepo — `/pipeline` (Python), `/ios` (Swift), `/docs` (principles, specs, plans), `AGENTS.md` at root (agent ground rules; see `docs/PRINCIPLES.md`)
 
 ---
 
@@ -14,7 +14,7 @@ A map app that surfaces interesting things around you — history, architecture,
 
 Two views over the same data:
 
-- **Discovery** — seen places are faded, not hidden. Low opacity, still tappable. A hide-seen toggle exists for those who want the clean version.
+- **Discovery** — seen places are faded, not hidden. Low opacity, still tappable. An **on-map toggle** ("focus on places I haven't been") hides seen entirely for those who want the clean version — a first-class map control, not a buried setting, and it works identically when viewing a list on the map.
 - **Tracks** — the chronological, place-anchored record of where you've been. First-class screen: it is the shareable artefact and the retention mechanism.
 
 **Naming risk (drives App Store packaging):** "tracks" reads as GPX/route recording. The subtitle and first screenshot must immediately establish this is *discovery*, not route logging.
@@ -42,14 +42,15 @@ Storage is a **visit-event log**, not a boolean: `visits(id, place_id, visited_a
 - Un-marking seen = deleting an event (reversible, nothing destroyed).
 - Per-list freshness ("visited since joining this list") is a future *query*, not stored state — visit timestamps vs list-join timestamps.
 
-**The gift problem is presentation, not state.** A received list never renders seen places as pre-faded/consumed; it renders progress: "you've been to 3 of these · 7 to go", seen items checked, not ghosted. One stored fact, context-appropriate rendering. Discovery map fades; lists show progress.
+**The gift problem is presentation, not state.** One stored fact, context-appropriate rendering. A list's *item view* leads with progress — "you've been to 3 of these · 7 to go", visited items checked. A list's *map view* fades visited pins exactly like discovery does: fading is what makes it easy to work your way through the remainder of a list. The anti-goal is only the framing — a received list opens on recognition and progress, never on "30% consumed".
 
 ### 3.2 Bookmarks are a list
 
 One mechanism: **lists**. The app ships with a system list "Want to go"; the quick-save tap adds to it. Custom lists ("Date nights", "KL trip") are the same mechanism — this is the Google/Apple Maps saved-places pattern users already know.
 
 - Marking seen never mutates list membership. Every list renders visit-progress the same way ("3 of 12 visited"), which is exactly how shared lists will render in v2.
-- Pin states: **unseen** · **saved** (on ≥1 list) · **visited** (≥1 visit event). Saved and visited coexist freely — bookmark is intent, visit is history; they are orthogonal, not a state machine.
+- Pin states: **unseen** · **saved** (on ≥1 list) · **visited** (≥1 visit event) · **visited & loved** (visit with `loved` verdict — faded like visited but with a distinct heart-badged marker). Saved and visited coexist freely — bookmark is intent, visit is history; they are orthogonal, not a state machine.
+- The "focus on places I haven't been" toggle lives on the map screen itself (discovery and list-map views alike).
 
 ### 3.3 Verdict: "worth going again"
 
@@ -63,7 +64,7 @@ No confirmation, fully reversible. "One tap" means one tap *in the place card/ca
 
 Nobody can know the ranking at design time; "interesting" is a taste function that must be measured, not asserted. The design deliverable is **machinery to iterate cheaply** plus a defensible first guess.
 
-**Recall (candidate set).** Union of: Wikipedia-geotagged articles (English both regions; Malay for Malaysia); Wikidata items with coordinates whose class (P31) passes a curated allowlist; OSM features with candidate tags (`historic=*`, `tourism=attraction|artwork|viewpoint`, `memorial=*`, …); regional heritage registers (Historic England for UK; for Malaysia, a source feasibility check is part of WP-A1 — the national heritage register is included only if machine-readable, and nothing depends on it); Open Plaques. The decisive unglamorous work is the Wikidata class allowlist/blocklist — excluding parishes, companies, events, admin boundaries.
+**Recall (candidate set).** Union of: Wikipedia-geotagged articles (**English-only for now**; language is a per-region config option in the extractor so Malay and others can be enabled later without structural change); Wikidata items with coordinates whose class (P31) passes a curated allowlist; OSM features with candidate tags (`historic=*`, `tourism=attraction|artwork|viewpoint`, `memorial=*`, …); regional heritage registers (Historic England for UK; for Malaysia, a source feasibility check is part of WP-A1 — the national heritage register is included only if machine-readable, and nothing depends on it); Open Plaques. The decisive unglamorous work is the Wikidata class allowlist/blocklist — excluding parishes, companies, events, admin boundaries.
 
 **Precision (the score).** A composite computed per place in the pipeline:
 
@@ -72,6 +73,8 @@ Nobody can know the ranking at design time; "interesting" is a taste function th
 - Formula and weights live in **pipeline config**; retuning = re-running the pipeline, never an app release. The LLM score is one weighted signal, never the sole gate.
 
 **The tuning loop (the real answer).** A golden-set eval harness: 3–4 areas the developer knows intimately (London patch, KL area), ranked candidates dumped for hand-labelling (*yes / meh / no*), any weight config scored against the labels (precision@k). "What counts as interesting" becomes an empirical loop runnable in an afternoon. Built immediately after the pipeline skeleton.
+
+**User feedback closes the loop (v1.5, WP-C2).** The place card gains "report a problem" — *not there any more / closed / wrong location / not interesting / inappropriate* + optional text. Submitted with no identifiers (same privacy rules as §9 stats). Feedback lands in R2 and the pipeline consumes it as a correction/suppression input — the first quality signal that comes from the street rather than a database.
 
 **Presentation (density).** Scores bucket into tiers **T1 (landmark) → T4 (oddity)**; zoom gates tiers (city zoom shows T1–T2, street zoom shows all). Central London density is handled by tiering plus light clustering as a safety net, not a dedicated subsystem.
 
@@ -126,7 +129,7 @@ Plain CLI, region-parameterised (`uk`, `malaysia`), SQLite as working store betw
 
 ### 5.3 iOS app
 
-- **Stack:** SwiftUI, iOS 17+, GRDB (SQLite) — chosen over SwiftData for R-tree spatial indexing and predictable migrations under a schema user history depends on.
+- **Stack:** SwiftUI, **iOS 18+** minimum (revisit at ship time — by launch iOS 18 will be ~3 majors old; nothing in this stack needs iOS 26 APIs, and MapLibre supports far older). **Swift 6 language mode with strict concurrency from day one** — a toolchain setting independent of deployment target, and vastly cheaper than retrofitting. GRDB (SQLite) — chosen over SwiftData for R-tree spatial indexing and predictable migrations under a schema user history depends on.
 - **Screens:** Map (Discovery) · Place card · Lists · Tracks · Region/settings.
 - **Tile client:** manifest fetch → viewport tile fetch → local cache with versioned invalidation. Offline region pack = basemap `.pmtiles` + all region place tiles, checksum-verified, resumable.
 - **Backup:** user DB in iCloud device backup by default (no CloudKit sync in v1).
@@ -143,6 +146,22 @@ place_snapshots (place_id, name, lat, lon, category, tier, snapshot_json, fetche
 `place_snapshots` is written the first time a user visits or saves a place. It guarantees Tracks and lists render forever, independent of upstream data churn or tile eviction. **User history must never depend on someone else's database.**
 
 Place data itself is read-only, delivered via tiles: `place_id`, names, lat/lon, category, tier, score, blurb, image URL, source refs (QID, OSM id, heritage entry), Wikipedia title.
+
+### 5.5 Untrusted data posture
+
+Source data is open-world and must be assumed polluted — vandalized Wikipedia text, malformed OSM geometry, hostile strings anywhere.
+
+- **Pipeline:** defensive parsing at every extractor (schema-validate, coordinate bounds-check, string length caps, control-character stripping); URLs validated (https-only, expected hosts for images); nothing from a source is ever interpolated into a shell command, SQL string, or LLM prompt without escaping/delimiting; LLM outputs are themselves untrusted (schema-validate before use).
+- **App:** tile content is untrusted input even though we published it (defence in depth — the bucket could be compromised, or the pipeline fooled). Strict typed decoding with length/size caps; malformed tiles are skipped, never crash the map; place text rendered as plain text only (no HTML/attributed rendering of source content); image URLs fetched only over https from the expected host.
+
+### 5.6 Versioning contract
+
+Everything that crosses a boundary is explicitly versioned, and every reader knows what it understands:
+
+- **Manifest and tile format** carry a `schema_version`. The app declares its maximum understood version: *newer* data → app keeps serving its cached older version and surfaces "update the app to get new data"; *older* data (mid-transition) → tolerated within a documented window. Never silently misread.
+- **User DB** migrations are monotonic and numbered (GRDB migrations); the app refuses to open a DB from a newer app version rather than corrupt it (relevant to backup restore across app versions).
+- **Pipeline artefacts** — ID registry, LLM cache entries (already keyed by `prompt_version`), scoring config — all carry versions so a run knows exactly what it's reading.
+- Publishes are versioned paths (§5.2); rollback = repointing the manifest.
 
 ## 6. Error handling
 
@@ -181,13 +200,14 @@ Each package is sized for one Opus agent to design in detail and one Codex agent
 | B5 | Lists | 'Want to go' system list, create/manage, progress rendering | B4 |
 | B6 | Tracks | Chronological visit log, loved filter, place-anchored rendering via snapshots | B4 |
 | B7 | Offline region packs | Region download UI, whole-file pmtiles + place tiles, checksums, resumable | B3 |
-| B8 | Discovery polish | Tier/zoom gating, clustering, category filter chips, hide-seen toggle, foreground nearby prompt | B4 |
+| B8 | Discovery polish | Tier/zoom gating, clustering, category filter chips, on-map "focus on unseen" toggle, foreground nearby prompt | B4 |
 
 ### Track C — Services (post-v1)
 
 | WP | Name | Contents | Depends on |
 |---|---|---|---|
 | C1 | Anonymised stats (v1.5) | Collector Worker (per-place counters, no IP/metadata logging), app opt-in screen + event scheduler (random-delay independent submission per §9) | B4 shipped |
+| C2 | Place feedback (v1.5) | "Report a problem" on place card (not there / closed / wrong location / not interesting / inappropriate + text), identifier-free collector Worker, pipeline correction/suppression input | B4 shipped |
 
 **Suggested order:** A1 → A2 → A3/A4 (parallel) → A5 → A7, with A6 after A5 proves signal value cheaply. B1/B2 can start immediately (B2 against public Protomaps demo tiles); B3 once A7's contract is designed. First end-to-end milestone: A1–A4 + A7 producing real UK tiles, B1–B4 rendering them — the core loop on real data.
 
