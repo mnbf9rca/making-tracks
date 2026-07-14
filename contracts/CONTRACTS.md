@@ -29,11 +29,11 @@ Ambiguous multi-place ref matches raise `AmbiguousRefsError` with candidate `.pl
 
 Place records contain `place_id`, `name`, `lat`, `lon`, `category`, `tier`, `score`, optional `alt_names`, `blurb`, `image_url`, `wikipedia_title`, and `source_refs`.
 
-The schema applies named caps from `caps.py`. `SAFE_TEXT` guards every source- or LLM-derived string, including nullable `blurb` and `wikipedia_title`: C0 controls, DEL, C1, U+2028/U+2029, bidi overrides and isolates, U+200B, and U+FEFF are rejected. LRM/RLM are deliberately allowed so legitimate RTL names survive. `image_url` is `https://` plus control/whitespace-free; host allowlisting is app configuration. Non-finite floats (`NaN`, `Infinity`) are rejected in the Python validation layer. `source_refs` use the open canonical-ref grammar.
+The schema applies named caps from `caps.py`. `SAFE_TEXT` guards every source- or LLM-derived string, including nullable `blurb` and `wikipedia_title`: C0 controls, DEL, C1, U+2028/U+2029, bidi overrides and isolates, U+200B/U+200C/U+200D, U+2060, and U+FEFF are rejected. LRM/RLM are deliberately allowed so legitimate RTL names survive. `image_url` is `https://` plus control/whitespace-free; host allowlisting is app configuration. Non-finite floats (`NaN`, `Infinity`) are rejected in the Python validation layer. `source_refs` use the open canonical-ref grammar, with source-specific canonical checks for known prefixes such as `wd`, `osm`, `hehle`, and `plaque`.
 
 ## Place Tile
 
-Tiles are z10 XYZ JSON envelopes served at `{publish_version}/tiles/10/{x}/{y}.json.gz`. Gzip uses `mtime=0`, so identical tile content produces stable bytes and stable SHA-256. Readers use `tilecodec.safe_gunzip`, bounded by `MAX_TILE_UNCOMPRESSED_BYTES`; do not use `gzip.decompress` for untrusted tile bytes.
+Tiles are z10 XYZ JSON envelopes served at `{publish_version}/tiles/10/{x}/{y}.json.gz`. Gzip uses `mtime=0`, so identical tile content produces stable bytes and stable SHA-256. `tilecodec.gzip_tile` enforces `MAX_TILE_COMPRESSED_BYTES`; readers use `tilecodec.safe_gunzip`, bounded by both `MAX_TILE_COMPRESSED_BYTES` and `MAX_TILE_UNCOMPRESSED_BYTES`. Do not use `gzip.decompress` for untrusted tile bytes.
 
 `MAX_PLACES_PER_TILE = 4000`. `caps.select_tile_places` deterministically sorts by tier ascending, score descending, then `place_id` ascending, and enforces both count and serialized-byte caps. A7 must log every dropped place.
 
@@ -45,7 +45,7 @@ A region manifest contains schema version, reader floor, publish version, tile i
 
 ## Region Config
 
-Region IDs are lowercase additive identifiers, not an enum. Sources are optional per region; no source or region is load-bearing. Region config includes bbox, languages, source toggles, and the basemap block. `source_pmtiles` is HTTPS-only and control/whitespace-free.
+Region IDs and source keys are lowercase additive identifiers, not enums. Sources are optional per region; no source or region is load-bearing. Region config includes bbox, languages, source toggles, and the basemap block. `source_pmtiles` is HTTPS-only and control/whitespace-free.
 
 ## Basemap Pack Budget
 
@@ -62,7 +62,7 @@ These rows are exact real extract sizes and are mirrored in `basemap-budget.json
 
 ## Versioning And Compatibility
 
-`versions.check_version(reader_max, data_version, min_supported)` returns:
+`versions.MIN_SUPPORTED_VERSIONS` records the §5.6 back-compat floor per artifact, today all `1`. `versions.check_version(reader_max, data_version, min_supported)` returns:
 
 - `OK`: data is within the reader's supported window.
 - `TOO_NEW`: keep cached older data and prompt for app update.

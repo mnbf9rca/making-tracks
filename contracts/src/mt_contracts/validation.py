@@ -10,6 +10,8 @@ import pathlib
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
+from .place_id import assert_canonical_ref
+
 _PACKAGE_SCHEMA_DIR = pathlib.Path(__file__).with_name("schemas")
 _ROOT_SCHEMA_DIR = pathlib.Path(__file__).resolve().parents[2] / "schemas"
 
@@ -50,9 +52,21 @@ def _reject_non_finite(node) -> None:
             _reject_non_finite(value)
 
 
+def _reject_noncanonical_refs(name: str, instance: dict) -> None:
+    if name == "place":
+        for ref in instance.get("source_refs", []):
+            assert_canonical_ref(ref)
+    elif name == "registry-record":
+        for ref in instance.get("refs", []):
+            assert_canonical_ref(ref)
+        if "mint_anchor" in instance:
+            assert_canonical_ref(instance["mint_anchor"])
+
+
 def validate_instance(name: str, instance: dict) -> None:
     _reject_non_finite(instance)
     validator_for(name).validate(instance)
+    _reject_noncanonical_refs(name, instance)
 
 
 def is_valid(name: str, instance: dict) -> bool:

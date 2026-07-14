@@ -6,15 +6,24 @@ import gzip
 import json
 import zlib
 
-from .caps import MAX_TILE_UNCOMPRESSED_BYTES
+from .caps import MAX_TILE_COMPRESSED_BYTES, MAX_TILE_UNCOMPRESSED_BYTES
 
 
-def gzip_tile(obj) -> bytes:
+def gzip_tile(obj, max_compressed_bytes: int = MAX_TILE_COMPRESSED_BYTES) -> bytes:
     raw = json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    return gzip.compress(raw, mtime=0)
+    encoded = gzip.compress(raw, mtime=0)
+    if len(encoded) > max_compressed_bytes:
+        raise ValueError("gzip tile exceeded max_compressed_bytes")
+    return encoded
 
 
-def safe_gunzip(data: bytes, max_bytes: int = MAX_TILE_UNCOMPRESSED_BYTES) -> bytes:
+def safe_gunzip(
+    data: bytes,
+    max_bytes: int = MAX_TILE_UNCOMPRESSED_BYTES,
+    max_compressed_bytes: int = MAX_TILE_COMPRESSED_BYTES,
+) -> bytes:
+    if len(data) > max_compressed_bytes:
+        raise ValueError("gzip input exceeded max_compressed_bytes")
     decoder = zlib.decompressobj(wbits=16 + zlib.MAX_WBITS)
     out = bytearray()
 

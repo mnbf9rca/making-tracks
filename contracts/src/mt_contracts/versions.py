@@ -17,6 +17,7 @@ def _load_schema_versions() -> dict[str, int]:
 
 
 SCHEMA_VERSIONS: dict[str, int] = _load_schema_versions()
+MIN_SUPPORTED_VERSIONS: dict[str, int] = {key: 1 for key in SCHEMA_VERSIONS}
 
 
 class Compat(enum.Enum):

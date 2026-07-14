@@ -1,4 +1,5 @@
 import gzip
+import hashlib
 import json
 
 import pytest
@@ -15,8 +16,12 @@ def test_schema_literals_match_caps_via_map():
             node = node[key]
         assert node[keyword] == getattr(caps, const_name), (schema, path, keyword)
     mapped = set(caps.CAPS_SCHEMA_MAP.values())
+    code_only_caps = {"CAPS_VERSION", "MAX_TILE_UNCOMPRESSED_BYTES"}
     for name in dir(caps):
-        if name.endswith("_MAX"):
+        if not name.isupper() or name in code_only_caps:
+            continue
+        value = getattr(caps, name)
+        if isinstance(value, int):
             assert name in mapped, f"{name} has no parity assertion"
 
 
@@ -60,7 +65,17 @@ def test_overflow_also_bounds_bytes():
 
 def test_gzip_is_deterministic():
     obj = {"schema_version": 1, "z": 10, "x": 1, "y": 2, "places": []}
-    assert tilecodec.gzip_tile(obj) == tilecodec.gzip_tile(obj)
+    encoded = tilecodec.gzip_tile(obj)
+    assert encoded == tilecodec.gzip_tile(obj)
+    assert encoded[4:8] == b"\0\0\0\0"
+    assert hashlib.sha256(encoded).hexdigest() == (
+        "1e5cd14dc3bc72acd080923b034970c90037f22ab40c3a2636d2ab41ea979640"
+    )
+
+
+def test_gzip_tile_rejects_compressed_bytes_over_cap():
+    with pytest.raises(ValueError):
+        tilecodec.gzip_tile({"blob": "x" * 1000}, max_compressed_bytes=10)
 
 
 def test_safe_gunzip_roundtrip():
@@ -72,3 +87,9 @@ def test_safe_gunzip_aborts_on_bomb():
     bomb = gzip.compress(b"\0" * (2 * 1024 * 1024))
     with pytest.raises(ValueError):
         tilecodec.safe_gunzip(bomb, max_bytes=1024)
+
+
+def test_safe_gunzip_rejects_compressed_bytes_over_cap():
+    encoded = gzip.compress(b"small", mtime=0)
+    with pytest.raises(ValueError):
+        tilecodec.safe_gunzip(encoded, max_compressed_bytes=len(encoded) - 1)

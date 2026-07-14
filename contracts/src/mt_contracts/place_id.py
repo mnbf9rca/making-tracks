@@ -33,13 +33,30 @@ _SOURCE_IDENT_GRAMMAR = {
     "hehle": r"[0-9]+",
     "plaque": r"openplaques/[0-9]+",
 }
+_GENERIC_REF_GRAMMAR = r"[a-z][a-z0-9_]*:[A-Za-z0-9][A-Za-z0-9._/-]*"
+_GENERIC_REF_RE = re.compile(f"^{_GENERIC_REF_GRAMMAR}$")
 MINT_KEY_RE = re.compile(
     "^(?:" + "|".join(f"{src}:{grammar}" for src, grammar in _SOURCE_IDENT_GRAMMAR.items()) + ")$"
 )
 
 
 def canonical_ref(source: str, ident: str) -> str:
-    return f"{source}:{ident}"
+    ref = f"{source}:{ident}"
+    assert_canonical_ref(ref)
+    return ref
+
+
+def is_canonical_ref(ref: str) -> bool:
+    if not _GENERIC_REF_RE.fullmatch(ref):
+        return False
+    source, _, ident = ref.partition(":")
+    grammar = _SOURCE_IDENT_GRAMMAR.get(source)
+    return grammar is None or bool(re.fullmatch(grammar, ident))
+
+
+def assert_canonical_ref(ref: str) -> None:
+    if not is_canonical_ref(ref):
+        raise ValueError(f"non-canonical ref: {ref!r}")
 
 
 def assert_canonical_mint_key(mint_key: str) -> None:

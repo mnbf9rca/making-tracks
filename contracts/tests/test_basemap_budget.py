@@ -21,3 +21,9 @@ def test_every_region_config_stays_under_ceiling(contracts_root):
         )
         assert cfg["basemap"]["measured_archive_bytes"] == row["archive_bytes"]
         assert row["exact"] is True
+
+
+def test_v1_region_configs_pin_maxzoom_14(contracts_root):
+    for region in ("uk", "malaysia"):
+        cfg = json.loads((contracts_root / f"regions/{region}.json").read_text())
+        assert cfg["basemap"]["maxzoom"] == 14

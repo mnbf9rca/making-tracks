@@ -1,6 +1,7 @@
 import pytest
 
 from mt_contracts.registry import AmbiguousRefsError, RegistryRecord, resolve_by_refs
+from mt_contracts.validation import is_valid, validate_instance
 
 
 def _rec(pid, refs, status="live", superseded_by=None):
@@ -89,3 +90,30 @@ def test_tile_winner_violations_flags_superseded_ids():
     records = [_rec(loser, ["wd:Q8"], superseded_by=winner), _rec(winner, ["wd:Q9"])]
     assert tile_winner_violations([winner], records) == []
     assert tile_winner_violations([loser], records) == [loser]
+
+
+def test_registry_record_schema_accepts_valid_serialized_shape():
+    inst = {
+        "schema_version": 1,
+        "place_id": "mt1_" + "5" * 26,
+        "refs": ["wd:Q1", "foo:bar"],
+        "mint_anchor": "wd:Q1",
+        "status": "live",
+        "superseded_by": None,
+        "first_shipped_version": "20260714T000000Z",
+        "last_seen_version": "20260714T000000Z",
+    }
+    validate_instance("registry-record", inst)
+
+
+def test_registry_record_schema_rejects_bad_status_and_noncanonical_refs():
+    base = {
+        "schema_version": 1,
+        "place_id": "mt1_" + "5" * 26,
+        "refs": ["wd:Q1"],
+        "mint_anchor": "wd:Q1",
+        "status": "live",
+    }
+    assert not is_valid("registry-record", {**base, "status": "deleted"})
+    assert not is_valid("registry-record", {**base, "refs": ["wd:q1"]})
+    assert not is_valid("registry-record", {**base, "mint_anchor": "osm:Way/1"})

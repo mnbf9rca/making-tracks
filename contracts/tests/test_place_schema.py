@@ -53,3 +53,37 @@ def test_non_finite_floats_are_rejected():
         "source_refs": ["wd:Q1"],
     }
     assert not is_valid("place", bad)
+
+
+def test_known_source_refs_must_be_canonical():
+    good = {
+        "place_id": "mt1_" + "0" * 26,
+        "name": "X",
+        "lat": 1,
+        "lon": 1,
+        "category": "c",
+        "tier": 1,
+        "score": 0.5,
+        "source_refs": ["wd:Q1", "foo:bar"],
+    }
+    validate_instance("place", good)
+
+    for ref in ["wd:q1", "osm:Way/1", "hehle:abc"]:
+        bad = {**good, "source_refs": [ref]}
+        assert not is_valid("place", bad)
+
+
+def test_zero_width_joiners_are_rejected_but_rtl_marks_survive():
+    base = {
+        "place_id": "mt1_" + "0" * 26,
+        "name": "A\u200eB",
+        "lat": 1,
+        "lon": 1,
+        "category": "c",
+        "tier": 1,
+        "score": 0.5,
+        "source_refs": ["wd:Q1"],
+    }
+    validate_instance("place", base)
+    for ch in ["\u200c", "\u200d", "\u2060"]:
+        assert not is_valid("place", {**base, "name": f"A{ch}B"})

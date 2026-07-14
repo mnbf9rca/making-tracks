@@ -9,8 +9,7 @@
     "wikipedia": true,
     "osm": true,
     "historic_england": true,
-    "open_plaques": true,
-    "national_register": null
+    "open_plaques": true
   },
   "basemap": {
     "source_pmtiles": "https://build.protomaps.com/20260714.pmtiles",

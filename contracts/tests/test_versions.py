@@ -1,7 +1,12 @@
 import json
 import tomllib
 
-from mt_contracts.versions import SCHEMA_VERSIONS, Compat, check_version
+from mt_contracts.versions import (
+    MIN_SUPPORTED_VERSIONS,
+    SCHEMA_VERSIONS,
+    Compat,
+    check_version,
+)
 from mt_contracts import versions
 
 
@@ -39,6 +44,14 @@ def test_versions_loader_accepts_packaged_copy(tmp_path, monkeypatch):
 def test_all_version_keys_present():
     assert REQUIRED_KEYS <= set(SCHEMA_VERSIONS)
     assert all(isinstance(v, int) and v >= 1 for v in SCHEMA_VERSIONS.values())
+
+
+def test_min_supported_floor_is_documented_for_every_artifact():
+    assert set(MIN_SUPPORTED_VERSIONS) == set(SCHEMA_VERSIONS)
+    assert all(
+        1 <= MIN_SUPPORTED_VERSIONS[key] <= SCHEMA_VERSIONS[key]
+        for key in SCHEMA_VERSIONS
+    )
 
 
 def test_check_version_equal_is_ok():
