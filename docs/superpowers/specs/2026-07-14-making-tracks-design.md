@@ -145,7 +145,7 @@ Plain CLI, region-parameterised (`uk`, `malaysia`), SQLite as working store betw
 ```sql
 visits          (id, place_id, visited_at, verdict NULL, created_at)
 lists           (id, name, is_system, created_at)      -- ships with 'Want to go'
-list_items      (list_id, place_id, added_at, PRIMARY KEY (list_id, place_id))
+list_items      (list_id REFERENCES lists ON DELETE CASCADE, place_id, added_at, PRIMARY KEY (list_id, place_id))
 place_snapshots (place_id, name, lat, lon, category, tier, snapshot_json, fetched_at)
 
 CREATE INDEX idx_visits_place ON visits(place_id);
