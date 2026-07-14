@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "region_id": "uk",
+  "display_name": "United Kingdom",
+  "bbox": [-8.65, 49.84, 1.77, 60.86],
+  "languages": ["en"],
+  "sources": {
+    "wikidata": true,
+    "wikipedia": true,
+    "osm": true,
+    "historic_england": true,
+    "open_plaques": true,
+    "national_register": null
+  },
+  "basemap": {
+    "source_pmtiles": "https://build.protomaps.com/20260714.pmtiles",
+    "maxzoom": 14,
+    "pack_granularity": "country",
+    "size_budget_bytes": 2000000000,
+    "measured_archive_bytes": 1500000000
+  }
+}
