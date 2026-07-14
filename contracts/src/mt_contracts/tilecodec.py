@@ -11,6 +11,8 @@ from .caps import MAX_TILE_COMPRESSED_BYTES, MAX_TILE_UNCOMPRESSED_BYTES
 
 def gzip_tile(obj, max_compressed_bytes: int = MAX_TILE_COMPRESSED_BYTES) -> bytes:
     raw = json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    if len(raw) > MAX_TILE_UNCOMPRESSED_BYTES:
+        raise ValueError("gzip tile exceeded MAX_TILE_UNCOMPRESSED_BYTES")
     encoded = gzip.compress(raw, mtime=0)
     if len(encoded) > max_compressed_bytes:
         raise ValueError("gzip tile exceeded max_compressed_bytes")

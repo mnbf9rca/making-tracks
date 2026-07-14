@@ -20,6 +20,12 @@ def test_tile_with_bad_place_fails(contracts_root):
     assert not is_valid("tile", inst)
 
 
+def test_tile_rejects_nested_noncanonical_known_source_ref(contracts_root):
+    inst = json.loads((contracts_root / "fixtures/tile/valid/one_place.json").read_text())
+    inst["places"][0]["source_refs"] = ["wd:q1"]
+    assert not is_valid("tile", inst)
+
+
 def test_tile_wrong_zoom_fails(contracts_root):
     inst = json.loads((contracts_root / "fixtures/tile/invalid/wrong_zoom.json").read_text())
     assert not is_valid("tile", inst)
@@ -30,4 +36,3 @@ def test_tile_xy_out_of_range_fails(contracts_root):
         (contracts_root / "fixtures/tile/invalid/xy_out_of_range.json").read_text()
     )
     assert not is_valid("tile", inst)
-

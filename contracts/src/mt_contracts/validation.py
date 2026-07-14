@@ -56,6 +56,10 @@ def _reject_noncanonical_refs(name: str, instance: dict) -> None:
     if name == "place":
         for ref in instance.get("source_refs", []):
             assert_canonical_ref(ref)
+    elif name == "tile":
+        for place in instance.get("places", []):
+            for ref in place.get("source_refs", []):
+                assert_canonical_ref(ref)
     elif name == "registry-record":
         for ref in instance.get("refs", []):
             assert_canonical_ref(ref)

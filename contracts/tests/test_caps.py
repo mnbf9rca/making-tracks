@@ -78,6 +78,12 @@ def test_gzip_tile_rejects_compressed_bytes_over_cap():
         tilecodec.gzip_tile({"blob": "x" * 1000}, max_compressed_bytes=10)
 
 
+def test_gzip_tile_rejects_uncompressed_envelope_over_cap(monkeypatch):
+    monkeypatch.setattr(tilecodec, "MAX_TILE_UNCOMPRESSED_BYTES", 10)
+    with pytest.raises(ValueError):
+        tilecodec.gzip_tile({"schema_version": 1, "z": 10, "x": 1, "y": 2, "places": []})
+
+
 def test_safe_gunzip_roundtrip():
     obj = {"a": 1}
     assert json.loads(tilecodec.safe_gunzip(tilecodec.gzip_tile(obj))) == obj
