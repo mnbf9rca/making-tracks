@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "making-tracks-pipeline"
+version = "0.1.0"
+description = "Making Tracks data pipeline (extract -> reconcile -> score -> categorize -> publish)."
+requires-python = ">=3.11"
+dependencies = ["mt-contracts"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+mt-pipeline = "mt_pipeline.cli:main"
+
+[tool.uv.sources]
+mt-contracts = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mt_pipeline"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
