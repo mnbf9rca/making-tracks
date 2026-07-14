@@ -6,9 +6,17 @@ import enum
 import json
 import pathlib
 
-_VERSIONS_PATH = pathlib.Path(__file__).resolve().parents[2] / "versions.json"
+_PACKAGE_VERSIONS_PATH = pathlib.Path(__file__).with_name("versions.json")
+_ROOT_VERSIONS_PATH = pathlib.Path(__file__).resolve().parents[2] / "versions.json"
 
-SCHEMA_VERSIONS: dict[str, int] = json.loads(_VERSIONS_PATH.read_text())
+
+def _load_schema_versions() -> dict[str, int]:
+    if _PACKAGE_VERSIONS_PATH.exists():
+        return json.loads(_PACKAGE_VERSIONS_PATH.read_text())
+    return json.loads(_ROOT_VERSIONS_PATH.read_text())
+
+
+SCHEMA_VERSIONS: dict[str, int] = _load_schema_versions()
 
 
 class Compat(enum.Enum):

@@ -1,6 +1,8 @@
 import json
+import tomllib
 
 from mt_contracts.versions import SCHEMA_VERSIONS, Compat, check_version
+from mt_contracts import versions
 
 
 REQUIRED_KEYS = {
@@ -16,6 +18,22 @@ REQUIRED_KEYS = {
 def test_versions_json_matches_module(contracts_root):
     on_disk = json.loads((contracts_root / "versions.json").read_text())
     assert on_disk == SCHEMA_VERSIONS
+
+
+def test_versions_json_is_packaged_with_wheel(contracts_root):
+    pyproject = tomllib.loads((contracts_root / "pyproject.toml").read_text())
+    force_include = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"][
+        "force-include"
+    ]
+    assert force_include == {"versions.json": "src/mt_contracts/versions.json"}
+
+
+def test_versions_loader_accepts_packaged_copy(tmp_path, monkeypatch):
+    packaged = tmp_path / "versions.json"
+    packaged.write_text(json.dumps(SCHEMA_VERSIONS))
+    monkeypatch.setattr(versions, "_PACKAGE_VERSIONS_PATH", packaged)
+    monkeypatch.setattr(versions, "_ROOT_VERSIONS_PATH", tmp_path / "missing.json")
+    assert versions._load_schema_versions() == SCHEMA_VERSIONS
 
 
 def test_all_version_keys_present():
