@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://contracts.making-tracks.app/tile/1",
   "title": "PlaceTile",
-  "description": "A z10 geographic cell of places. Served gzipped at {publish_version}/tiles/10/{x}/{y}.json.gz.",
+  "description": "A z10 geographic cell of places. Served gzip-compressed (mtime=0) at {publish_version}/tiles/10/{x}/{y}.json.gz. Carries winner place_ids only.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "z", "x", "y", "places"],

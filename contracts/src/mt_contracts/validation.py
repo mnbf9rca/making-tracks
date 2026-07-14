@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import json
+import math
 import pathlib
 
 from jsonschema import Draft202012Validator
@@ -38,9 +39,25 @@ def validator_for(name: str) -> Draft202012Validator:
     return Draft202012Validator(load_schema(name), registry=_registry())
 
 
+def _reject_non_finite(node) -> None:
+    if isinstance(node, float) and not math.isfinite(node):
+        raise ValueError("non-finite float (NaN/Infinity) is not permitted")
+    if isinstance(node, dict):
+        for value in node.values():
+            _reject_non_finite(value)
+    elif isinstance(node, list):
+        for value in node:
+            _reject_non_finite(value)
+
+
 def validate_instance(name: str, instance: dict) -> None:
+    _reject_non_finite(instance)
     validator_for(name).validate(instance)
 
 
 def is_valid(name: str, instance: dict) -> bool:
-    return validator_for(name).is_valid(instance)
+    try:
+        validate_instance(name, instance)
+    except Exception:
+        return False
+    return True

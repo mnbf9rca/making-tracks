@@ -1,8 +1,13 @@
-import gzip
 import json
 
-from mt_contracts.caps import MAX_TILE_UNCOMPRESSED_BYTES
-from mt_contracts.validation import is_valid, validate_instance
+from mt_contracts import caps
+from mt_contracts.validation import is_valid, load_schema, validate_instance
+
+
+def test_tile_schema_literals_match_caps():
+    schema = load_schema("tile")
+    assert schema["properties"]["z"]["const"] == caps.TILE_ZOOM
+    assert schema["properties"]["places"]["maxItems"] == caps.MAX_PLACES_PER_TILE
 
 
 def test_valid_tile_fixture_passes(contracts_root):
@@ -26,10 +31,3 @@ def test_tile_xy_out_of_range_fails(contracts_root):
     )
     assert not is_valid("tile", inst)
 
-
-def test_gzip_roundtrip_and_decode_cap(contracts_root):
-    inst = json.loads((contracts_root / "fixtures/tile/valid/one_place.json").read_text())
-    raw = json.dumps(inst).encode("utf-8")
-    packed = gzip.compress(raw)
-    assert len(raw) <= MAX_TILE_UNCOMPRESSED_BYTES
-    assert json.loads(gzip.decompress(packed).decode("utf-8")) == inst

@@ -1,4 +1,6 @@
-from mt_contracts.registry import RegistryRecord, resolve_by_refs
+import pytest
+
+from mt_contracts.registry import AmbiguousRefsError, RegistryRecord, resolve_by_refs
 
 
 def _rec(pid, refs, status="live", superseded_by=None):
@@ -13,20 +15,31 @@ def _rec(pid, refs, status="live", superseded_by=None):
     )
 
 
-def test_resolve_by_any_shared_ref():
-    records = [_rec("mt1_" + "0" * 26, ["wd:Q100", "osm:node/5"])]
-    assert resolve_by_refs(records, {"osm:node/5"}) == "mt1_" + "0" * 26
+def test_resolve_rides_a_non_anchor_ref():
+    pid = "mt1_" + "0" * 26
+    records = [_rec(pid, ["wd:Q100", "osm:node/5"])]
+    assert records[0].mint_anchor == "osm:node/5"
+    assert resolve_by_refs(records, {"wd:Q100"}) == pid
 
 
 def test_qid_merge_keeps_place_id_stable():
     pid = "mt1_" + "1" * 26
     records = [_rec(pid, ["wd:Q100", "osm:way/9"])]
-    assert resolve_by_refs(records, {"wd:Q100", "wd:Q200", "osm:way/9"}) == pid
+    assert records[0].mint_anchor == "osm:way/9"
+    assert resolve_by_refs(records, {"wd:Q100", "wd:Q200"}) == pid
 
 
 def test_unknown_refs_resolve_to_none():
     records = [_rec("mt1_" + "0" * 26, ["wd:Q100"])]
     assert resolve_by_refs(records, {"wd:Q999"}) is None
+
+
+def test_ambiguous_refs_raise_and_carry_candidates():
+    p1 = _rec("mt1_" + "a" * 26, ["wd:Q1"])
+    p2 = _rec("mt1_" + "b" * 26, ["wd:Q2"])
+    with pytest.raises(AmbiguousRefsError) as exc:
+        resolve_by_refs([p1, p2], {"wd:Q1", "wd:Q2"})
+    assert exc.value.place_ids == {"mt1_" + "a" * 26, "mt1_" + "b" * 26}
 
 
 def test_tombstoned_record_still_resolves_and_is_never_reassigned():
@@ -57,7 +70,6 @@ def test_resolve_superseded_is_transitive():
 
 
 def test_supersede_cycle_is_rejected_at_write():
-    import pytest
     from mt_contracts.registry import assert_no_supersede_cycles
 
     a, b = ("mt1_" + ch * 26 for ch in "89")
@@ -67,3 +79,13 @@ def test_supersede_cycle_is_rejected_at_write():
     ]
     with pytest.raises(ValueError):
         assert_no_supersede_cycles(records)
+
+
+def test_tile_winner_violations_flags_superseded_ids():
+    from mt_contracts.registry import tile_winner_violations
+
+    winner = "mt1_" + "3" * 26
+    loser = "mt1_" + "4" * 26
+    records = [_rec(loser, ["wd:Q8"], superseded_by=winner), _rec(winner, ["wd:Q9"])]
+    assert tile_winner_violations([winner], records) == []
+    assert tile_winner_violations([loser], records) == [loser]

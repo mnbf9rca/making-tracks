@@ -13,12 +13,12 @@
       "minItems": 1,
       "maxItems": 256,
       "uniqueItems": true,
-      "items": {"type": "string", "pattern": "^(wd|osm|hehle|plaque):[^\\u0000-\\u001f\\u007f]+$"}
+      "items": {"type": "string", "maxLength": 128, "pattern": "^[a-z][a-z0-9_]*:[A-Za-z0-9][A-Za-z0-9._/-]*$"}
     },
-    "mint_anchor": {"type": "string", "pattern": "^(wd|osm|hehle|plaque):"},
+    "mint_anchor": {"type": "string", "maxLength": 128, "pattern": "^[a-z][a-z0-9_]*:[A-Za-z0-9][A-Za-z0-9._/-]*$"},
     "status": {"type": "string", "enum": ["live", "tombstoned"]},
     "superseded_by": {"type": ["string", "null"], "pattern": "^mt1_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}$"},
-    "first_shipped_version": {"type": "string"},
-    "last_seen_version": {"type": "string"}
+    "first_shipped_version": {"type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z$"},
+    "last_seen_version": {"type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z$"}
   }
 }

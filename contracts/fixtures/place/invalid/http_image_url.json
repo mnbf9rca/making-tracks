@@ -1,14 +1,1 @@
-{
-  "place_id": "mt1_00000000000000000000000001",
-  "name": "A Ghost Sign",
-  "alt_names": ["Faded Advert"],
-  "lat": 51.51,
-  "lon": -0.09,
-  "category": "oddity",
-  "tier": 4,
-  "score": 0.31,
-  "blurb": "A hand-painted advert surviving on brick.",
-  "image_url": "http://insecure/x.jpg",
-  "wikipedia_title": "Ghost sign",
-  "source_refs": ["wd:Q123", "osm:node/5", "hehle:1000"]
-}
+{"place_id": "mt1_00000000000000000000000001", "name": "A Ghost Sign", "alt_names": ["Faded Advert"], "lat": 51.51, "lon": -0.09, "category": "oddity", "tier": 4, "score": 0.31, "blurb": "A hand-painted advert surviving on brick.", "image_url": "http://insecure/x.jpg", "wikipedia_title": "Ghost sign", "source_refs": ["wd:Q123", "osm:node/5", "hehle:1000"]}

@@ -17,9 +17,23 @@ def test_manifest_missing_provenance_fails(contracts_root):
     assert not is_valid("manifest", inst)
 
 
+def test_manifest_empty_provenance_fails(contracts_root):
+    inst = json.loads(
+        (contracts_root / "fixtures/manifest/invalid/empty_provenance.json").read_text()
+    )
+    assert not is_valid("manifest", inst)
+
+
 def test_manifest_bad_checksum_length_fails(contracts_root):
     inst = json.loads(
         (contracts_root / "fixtures/manifest/invalid/bad_checksum.json").read_text()
+    )
+    assert not is_valid("manifest", inst)
+
+
+def test_manifest_traversal_filename_fails(contracts_root):
+    inst = json.loads(
+        (contracts_root / "fixtures/manifest/invalid/traversal_filename.json").read_text()
     )
     assert not is_valid("manifest", inst)
 

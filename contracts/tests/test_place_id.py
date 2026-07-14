@@ -1,4 +1,5 @@
 import json
+import pytest
 
 from mt_contracts.place_id import (
     PLACE_ID_PREFIX,
@@ -31,13 +32,15 @@ def test_rejects_malformed_ids():
     assert not is_valid_place_id("mt2_" + "0" * 26)
 
 
-def test_shipped_ids_validate_after_a_future_mint_scheme_bump(monkeypatch):
-    from mt_contracts import place_id as pid
+def test_validation_regex_is_derived_from_known_schemes_not_current():
+    from mt_contracts.place_id import _build_place_id_re
 
-    shipped = pid.mint_place_id("wd:Q42")
-    monkeypatch.setattr(pid, "_ID_SCHEME_VERSION", 2)
-    monkeypatch.setattr(pid, "PLACE_ID_PREFIX", "mt2_")
-    assert pid.is_valid_place_id(shipped)
+    both = _build_place_id_re(frozenset({1, 2}))
+    assert both.fullmatch("mt1_" + "0" * 26)
+    assert both.fullmatch("mt2_" + "0" * 26)
+    only1 = _build_place_id_re(frozenset({1}))
+    assert only1.fullmatch("mt1_" + "0" * 26)
+    assert not only1.fullmatch("mt2_" + "0" * 26)
 
 
 def test_current_mint_scheme_is_a_known_scheme():
@@ -46,14 +49,16 @@ def test_current_mint_scheme_is_a_known_scheme():
     assert _ID_SCHEME_VERSION in KNOWN_ID_SCHEMES
 
 
+def test_independent_frozen_vector_cross_check():
+    assert mint_place_id("wd:Q42") == "mt1_1Q831BXYQ8GP7ZXKVQZH87G0R5"
+
+
 def test_canonical_ref():
     assert canonical_ref("wd", "Q42") == "wd:Q42"
 
 
 def test_mint_rejects_noncanonical_key():
-    import pytest
-
-    for bad in ["WD:Q42", "wd: Q42", "wd:Q42 ", "osm:Way/456", "wd:Qé", "foo:1"]:
+    for bad in ["WD:Q42", "wd: Q42", "wd:Q42 ", "osm:Way/456", "wd:Qé", "foo:1", "wd:Q42\n"]:
         with pytest.raises(ValueError):
             mint_place_id(bad)
 

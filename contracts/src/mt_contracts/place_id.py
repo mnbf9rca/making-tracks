@@ -15,17 +15,26 @@ PLACE_ID_PREFIX = f"mt{_ID_SCHEME_VERSION}_"
 
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 _BODY_LEN = 26
-_SCHEMES_ALT = "|".join(str(v) for v in sorted(KNOWN_ID_SCHEMES))
-PLACE_ID_RE = re.compile(rf"^mt(?:{_SCHEMES_ALT})_[{_CROCKFORD}]{{{_BODY_LEN}}}$")
+
+
+def _build_place_id_re(schemes: frozenset[int]) -> re.Pattern[str]:
+    alt = "|".join(str(v) for v in sorted(schemes))
+    return re.compile(rf"^mt(?:{alt})_[{_CROCKFORD}]{{{_BODY_LEN}}}$")
+
+
+PLACE_ID_RE = _build_place_id_re(KNOWN_ID_SCHEMES)
 
 _SOURCE_PRIORITY = {"wd": 0, "osm": 1, "hehle": 2, "plaque": 3}
 _OSM_TYPE_RANK = {"node": 0, "way": 1, "relation": 2}
 
+_SOURCE_IDENT_GRAMMAR = {
+    "wd": r"Q[0-9]+",
+    "osm": r"(?:node|way|relation)/[0-9]+",
+    "hehle": r"[0-9]+",
+    "plaque": r"openplaques/[0-9]+",
+}
 MINT_KEY_RE = re.compile(
-    r"^(wd:Q[0-9]+"
-    r"|osm:(?:node|way|relation)/[0-9]+"
-    r"|hehle:[0-9]+"
-    r"|plaque:openplaques/[0-9]+)$"
+    "^(?:" + "|".join(f"{src}:{grammar}" for src, grammar in _SOURCE_IDENT_GRAMMAR.items()) + ")$"
 )
 
 
