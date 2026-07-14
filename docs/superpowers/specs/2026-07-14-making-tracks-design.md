@@ -23,7 +23,9 @@ Two views over the same data:
 
 **v1 (the solo loop):** map discovery, save-to-list, mark seen, Tracks history, local lists, category filters, offline region packs. Regions: **UK and Malaysia**.
 
-**v2 (deliberately deferred, schema-ready):** list sharing via links (Cloudflare Worker + KV), CloudKit sync, background nearby notifications, more regions.
+**v2 (deliberately deferred, schema-ready):** list sharing (see §9 for the privacy/permission requirements captured now), CloudKit sync, background nearby notifications, more regions.
+
+**v1.5 (after first TestFlight):** opt-in anonymised aggregate stats (§9).
 
 Geographic modularity is a day-one constraint: region-specific sources (e.g. Historic England) are optional per-region enrichments, never load-bearing columns. Malaysia deliberately stress-tests ranking where enrichment is thin.
 
@@ -181,8 +183,31 @@ Each package is sized for one Opus agent to design in detail and one Codex agent
 | B7 | Offline region packs | Region download UI, whole-file pmtiles + place tiles, checksums, resumable | B3 |
 | B8 | Discovery polish | Tier/zoom gating, clustering, category filter chips, hide-seen toggle, foreground nearby prompt | B4 |
 
+### Track C — Services (post-v1)
+
+| WP | Name | Contents | Depends on |
+|---|---|---|---|
+| C1 | Anonymised stats (v1.5) | Collector Worker (per-place counters, no IP/metadata logging), app opt-in screen + event scheduler (random-delay independent submission per §9) | B4 shipped |
+
 **Suggested order:** A1 → A2 → A3/A4 (parallel) → A5 → A7, with A6 after A5 proves signal value cheaply. B1/B2 can start immediately (B2 against public Protomaps demo tiles); B3 once A7's contract is designed. First end-to-end milestone: A1–A4 + A7 producing real UK tiles, B1–B4 rendering them — the core loop on real data.
 
-## 9. Out of scope for v1 (explicit)
+## 9. Privacy
+
+**Principles (non-negotiable):** the developer must be *unable* to track users, not merely unwilling. No third-party analytics SDKs, no advertising identifiers, no accounts in v1. All user data (visits, lists, snapshots) stays on-device; tile fetches are anonymous static-file GETs.
+
+**Opt-in anonymised stats (v1.5).** Default off. When enabled, the app submits aggregate-only events — (place_id, event_type ∈ {visited, bookmarked, loved}, date) — under these rules, which target *unlinkability*, the actual threat (a linkable event sequence is a movement trace even without a user ID):
+
+- No user, device, or session identifiers of any kind.
+- Timestamps coarsened to date only.
+- Each event submitted independently, delayed by a random interval (hours-scale) — never at the moment of the visit, never batched with other events.
+- Collector is a Cloudflare Worker that increments per-place counters and never logs IPs or request metadata.
+- The opt-in screen states in plain language exactly what leaves the device.
+- If scale ever warrants stronger guarantees, client-side randomized response can be layered on without changing the collection surface.
+
+Aggregate counts may later feed ranking ("quietly loved by users") — an opt-in community signal, better than fame metrics.
+
+**Sharing privacy & permissions (v2 requirements, captured now).** Per-list visibility is an explicit choice: **private** (only explicitly invited recipients can see it; requires an identity mechanism — deferred design) or **public link**. Permission tiers per share: **viewer** (read-only), **contributor** (add items, cannot remove), **editor** (full edit). Contributor/editor tiers imply server-mediated list state in v2; v1 schema needs no change (`list_items.added_by` arrives with sharing).
+
+## 10. Out of scope for v1 (explicit)
 
 Sharing/links, accounts, CloudKit sync, background location, Android/web, user-submitted places, reviews beyond the loved verdict, route planning (also: the app must never *look* like a route recorder — see naming risk).
