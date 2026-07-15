@@ -7,9 +7,11 @@ from mt_contracts.validation import load_schema
 
 def test_is_canonical_ref_export_validates_known_sources():
     assert mt_contracts.is_canonical_ref("wd:Q42")
+    assert mt_contracts.is_canonical_ref("wp:12345")
     assert mt_contracts.is_canonical_ref("foo:bar")
     assert not mt_contracts.is_canonical_ref("wd:q42")
     assert not mt_contracts.is_canonical_ref("osm:Way/1")
+    assert not mt_contracts.is_canonical_ref("wp:abc")
 
 
 def test_strip_unsafe_text_matches_schema_denylist_and_preserves_lrm_rlm():

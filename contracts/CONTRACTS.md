@@ -20,10 +20,11 @@ Canonical mint keys are exact, ASCII, lowercase-prefix, whitespace-free strings:
 - `osm:{node|way|relation}/456`
 - `hehle:1234567`
 - `plaque:openplaques/9876`
+- `wp:12345`
 
-`hehle` means Historic England List Entry. New sources are append-only: add a new source grammar, priority entry, and conformance vectors without altering existing grammars or minted IDs.
+`hehle` means Historic England List Entry. `wp` means a Wikipedia page id. New sources are append-only: add a new source grammar, priority entry, and conformance vectors without altering existing grammars or minted IDs.
 
-IDs are minted once for new clusters, then owned by the registry. Anchor priority is QID, OSM node, OSM way, OSM relation, Historic England, Open Plaques; this is mint-time determinism only and has no meaning after mint. Registry lookup is by union of every ref ever attached to a place, so QID merges and OSM tag churn keep the same ID.
+IDs are minted once for new clusters, then owned by the registry. Anchor priority is QID, OSM node, OSM way, OSM relation, Historic England, Open Plaques, Wikipedia page id; this is mint-time determinism only and has no meaning after mint. Registry lookup is by union of every ref ever attached to a place, so QID merges and OSM tag churn keep the same ID.
 
 Ambiguous multi-place ref matches raise `AmbiguousRefsError` with candidate `.place_ids`; the contract never silently merges. `superseded_by` is soft de-dup: loser IDs remain valid forever, resolve transitively to the terminal winner, and cycles are rejected. Published tiles must carry only winner IDs; `registry.tile_winner_violations` is the A7 guard.
 
@@ -31,7 +32,7 @@ Ambiguous multi-place ref matches raise `AmbiguousRefsError` with candidate `.pl
 
 Place records contain `place_id`, `name`, `lat`, `lon`, `category`, `tier`, `score`, optional `alt_names`, `blurb`, `image_url`, `wikipedia_title`, and `source_refs`.
 
-The schema applies named caps from `caps.py`. `SAFE_TEXT` guards every source- or LLM-derived string, including nullable `blurb` and `wikipedia_title`: C0 controls, DEL, C1, U+2028/U+2029, bidi overrides and isolates, U+200B/U+200C/U+200D, U+2060, and U+FEFF are rejected. LRM/RLM are deliberately allowed so legitimate RTL names survive. `strip_unsafe_text` removes exactly that denylist and preserves LRM/RLM. `image_url` is `https://` plus control/whitespace-free; host allowlisting is app configuration. Non-finite floats (`NaN`, `Infinity`) are rejected in the Python validation layer. `source_refs` use the open canonical-ref grammar, with source-specific canonical checks for known prefixes such as `wd`, `osm`, `hehle`, and `plaque`.
+The schema applies named caps from `caps.py`. `SAFE_TEXT` guards every source- or LLM-derived string, including nullable `blurb` and `wikipedia_title`: C0 controls, DEL, C1, U+2028/U+2029, bidi overrides and isolates, U+200B/U+200C/U+200D, U+2060, and U+FEFF are rejected. LRM/RLM are deliberately allowed so legitimate RTL names survive. `strip_unsafe_text` removes exactly that denylist and preserves LRM/RLM. `image_url` is `https://` plus control/whitespace-free; host allowlisting is app configuration. Non-finite floats (`NaN`, `Infinity`) are rejected in the Python validation layer. `source_refs` use the open canonical-ref grammar, with source-specific canonical checks for known prefixes such as `wd`, `osm`, `hehle`, `plaque`, and `wp`.
 
 ## Place Tile
 
@@ -77,6 +78,7 @@ On fresh install with only too-new data, the app shows an update-required state.
 | Consumer WP | Consumes from A0 |
 |---|---|
 | A1 | `regions/*.json`, `region-config.schema.json`, `available_regions`, `load_region_config`, `strip_unsafe_text`, `is_canonical_ref` |
+| A1b | `place_id.py` canonical `wd` and `wp` source-ref grammar for Wikidata and Wikipedia extractors |
 | A2 | `place_id.py`, `registry.py`, `registry-record.schema.json` |
 | A7 | `tile.schema.json`, `manifest.schema.json`, `checksums.sha256_hex`, `tilecodec.gzip_tile`, `caps.select_tile_places`, `registry.tile_winner_violations`, region `basemap` block |
 | B1 | `place.schema.json` |

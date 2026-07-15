@@ -24,7 +24,7 @@ def _build_place_id_re(schemes: frozenset[int]) -> re.Pattern[str]:
 
 PLACE_ID_RE = _build_place_id_re(KNOWN_ID_SCHEMES)
 
-_SOURCE_PRIORITY = {"wd": 0, "osm": 1, "hehle": 2, "plaque": 3}
+_SOURCE_PRIORITY = {"wd": 0, "osm": 1, "hehle": 2, "plaque": 3, "wp": 4}
 _OSM_TYPE_RANK = {"node": 0, "way": 1, "relation": 2}
 
 _SOURCE_IDENT_GRAMMAR = {
@@ -32,6 +32,7 @@ _SOURCE_IDENT_GRAMMAR = {
     "osm": r"(?:node|way|relation)/[0-9]+",
     "hehle": r"[0-9]+",
     "plaque": r"openplaques/[0-9]+",
+    "wp": r"[0-9]+",
 }
 _GENERIC_REF_GRAMMAR = r"[a-z][a-z0-9_]*:[A-Za-z0-9][A-Za-z0-9._/-]*"
 _GENERIC_REF_RE = re.compile(f"^{_GENERIC_REF_GRAMMAR}$")

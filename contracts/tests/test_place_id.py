@@ -58,20 +58,60 @@ def test_canonical_ref():
 
 
 def test_mint_rejects_noncanonical_key():
-    for bad in ["WD:Q42", "wd: Q42", "wd:Q42 ", "osm:Way/456", "wd:Qé", "foo:1", "wd:Q42\n"]:
+    for bad in [
+        "WD:Q42",
+        "wd: Q42",
+        "wd:Q42 ",
+        "osm:Way/456",
+        "wd:Qé",
+        "foo:1",
+        "wd:Q42\n",
+        "wp:",
+        "wp:abc",
+        "wp:-1",
+        "wp:123/4",
+    ]:
         with pytest.raises(ValueError):
             mint_place_id(bad)
+
+
+def test_wikipedia_page_id_is_a_canonical_mint_key():
+    assert canonical_ref("wp", "12345") == "wp:12345"
+    assert mint_place_id("wp:12345") == "mt1_5FAJ9QTWS33BNY38TA4QZJX3FY"
 
 
 def test_conformance_vectors_cover_every_source_type(contracts_root):
     vectors = json.loads((contracts_root / "fixtures/place_id/frozen_vectors.json").read_text())
     prefixes = {row["mint_key"].split(":", 1)[0] for row in vectors}
-    assert {"wd", "osm", "hehle", "plaque"} <= prefixes
+    assert {"wd", "osm", "hehle", "plaque", "wp"} <= prefixes
+
+
+def test_frozen_vectors_are_append_only(contracts_root):
+    vectors = json.loads((contracts_root / "fixtures/place_id/frozen_vectors.json").read_text())
+    assert vectors[:5] == [
+        {"mint_key": "wd:Q42", "place_id": "mt1_1Q831BXYQ8GP7ZXKVQZH87G0R5"},
+        {"mint_key": "osm:node/9", "place_id": "mt1_3M2432K5GF3ZMWBQGTXV4VSYY3"},
+        {"mint_key": "osm:way/456", "place_id": "mt1_65HZT2JBN7RQDWJT7A5B23TD16"},
+        {"mint_key": "hehle:1234567", "place_id": "mt1_0V2SX8GR1EJSRW7FGBW06E64C4"},
+        {
+            "mint_key": "plaque:openplaques/9876",
+            "place_id": "mt1_71TWYPX9FM12XK5WG3RPHPEJ3J",
+        },
+    ]
+    assert vectors[5:] == [
+        {"mint_key": "wp:12345", "place_id": "mt1_5FAJ9QTWS33BNY38TA4QZJX3FY"}
+    ]
 
 
 def test_anchor_priority_prefers_wikidata():
     refs = ["osm:way/10", "wd:Q7", "plaque:openplaques/3"]
     assert select_mint_anchor(refs) == "wd:Q7"
+
+
+def test_anchor_priority_places_wikipedia_page_ids_last():
+    refs = ["wp:12345", "plaque:openplaques/3", "hehle:5", "osm:relation/9"]
+    assert select_mint_anchor(refs) == "osm:relation/9"
+    assert select_mint_anchor(["wp:12345", "plaque:openplaques/3"]) == "plaque:openplaques/3"
 
 
 def test_anchor_priority_osm_type_and_numeric_order():

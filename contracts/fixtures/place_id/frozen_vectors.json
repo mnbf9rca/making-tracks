@@ -18,5 +18,9 @@
   {
     "mint_key": "plaque:openplaques/9876",
     "place_id": "mt1_71TWYPX9FM12XK5WG3RPHPEJ3J"
+  },
+  {
+    "mint_key": "wp:12345",
+    "place_id": "mt1_5FAJ9QTWS33BNY38TA4QZJX3FY"
   }
 ]
