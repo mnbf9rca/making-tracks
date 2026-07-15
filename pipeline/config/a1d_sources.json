@@ -1,7 +1,7 @@
 {
   "_header": "BOOTSTRAP: register source endpoints + attribution. Ops updates URLs without a code change. HE=OGL v3.0 (attribution REQUIRED); Open Plaques=PDDL 1.0.",
   "historic_england": {
-    "url": "https://opendata-historicengland.hub.arcgis.com/api/download/v1/items/767f279327a24845bf47dfe5eae9862b/geojson?layers=0",
+    "url": "https://opendata-historicengland.hub.arcgis.com/api/download/v1/items/767f279327a24845bf47dfe5eae9862b/geojson?layers=0&outSR=4326",
     "allowed_hosts": ["opendata-historicengland.hub.arcgis.com", "services-eu1.arcgis.com", "stg-arcgisazurecdataprodeu1.az.arcgis.com"],
     "max_bytes": 536870912,
     "snapshot_date": null,

@@ -70,6 +70,7 @@ def test_a1d_sources_config_carries_ogl_attribution():
 
     assert "Open Government Licence" in cfg["historic_england"]["attribution"]
     assert cfg["historic_england"]["license"] == "OGL-3.0"
+    assert "outSR=4326" in cfg["historic_england"]["url"]
     assert cfg["historic_england"]["max_bytes"] > 167_768_010
     assert cfg["open_plaques"]["license"] == "PDDL-1.0"
 
@@ -128,7 +129,28 @@ def test_multipoint_uses_mean_coordinate(tmp_path):
     assert abs(lon + 3.0) < 1e-9
 
 
-def test_epsg_27700_snapshot_coordinates_convert_to_wgs84(tmp_path):
+def test_live_he_wgs84_multipoint_shape_is_accepted(tmp_path):
+    feature = (
+        '{"type":"Feature","properties":{"ListEntry":"1021466",'
+        '"Name":"20 and 20A Whitbourne Springs","Grade":"II"},'
+        '"geometry":{"type":"MultiPoint",'
+        '"coordinates":[[-2.23911708088334,51.19883105846]]}}'
+    )
+    path = tmp_path / "live.geojson"
+    path.write_text(
+        '{"type":"FeatureCollection",'
+        '"crs":{"type":"name","properties":{"name":"EPSG:4326"}},'
+        '"features":[' + feature + "]}"
+    )
+    conn = _db(tmp_path / "live")
+
+    assert he.HistoricEnglandExtractor().extract("uk", path, conn, run_id="r1") == 1
+    lat, lon = conn.execute("SELECT lat, lon FROM source_records").fetchone()
+    assert abs(lat - 51.19883105846) < 1e-12
+    assert abs(lon + 2.23911708088334) < 1e-12
+
+
+def test_epsg_27700_snapshot_is_rejected(tmp_path):
     feature = (
         '{"type":"Feature","properties":{"ListEntry":"1000016","Name":"BNG"},'
         '"geometry":{"type":"MultiPoint",'
@@ -140,12 +162,10 @@ def test_epsg_27700_snapshot_coordinates_convert_to_wgs84(tmp_path):
         '"crs":{"type":"name","properties":{"name":"EPSG:27700"}},'
         '"features":[' + feature + "]}"
     )
-    conn = _db(tmp_path / "bng")
-
-    assert he.HistoricEnglandExtractor().extract("uk", path, conn, run_id="r1") == 1
-    lat, lon = conn.execute("SELECT lat, lon FROM source_records").fetchone()
-    assert abs(lat - 51.19883105846) < 1e-5
-    assert abs(lon + 2.23911708088334) < 1e-5
+    with pytest.raises(he._snapshot.SnapshotParseError, match="EPSG:27700"):
+        he.HistoricEnglandExtractor().extract(
+            "uk", path, _db(tmp_path / "bng"), run_id="r1"
+        )
 
 
 def test_hostile_huge_grade_does_not_crash_record_kept(tmp_path):
