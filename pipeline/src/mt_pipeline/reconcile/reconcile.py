@@ -91,8 +91,19 @@ def _trim_refs(record: RegistryRecord, review: list[dict]) -> None:
     )
 
 
+def _representative_member(cluster: Cluster) -> Member:
+    mintable_by_ref = {
+        member.source_ref: member
+        for member in cluster.members
+        if _is_mint_key(member.source_ref)
+    }
+    if mintable_by_ref:
+        return mintable_by_ref[select_mint_anchor(mintable_by_ref)]
+    return sorted(cluster.members, key=lambda member: member.source_ref)[0]
+
+
 def _place_for_cluster(place_id: str, cluster: Cluster, status: str) -> dict:
-    representative = sorted(cluster.members, key=lambda member: member.source_ref)[0]
+    representative = _representative_member(cluster)
     return {
         "lat": representative.lat,
         "lon": representative.lon,

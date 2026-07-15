@@ -33,6 +33,24 @@ def test_new_cluster_mints_stable_id():
     assert result.records[0].place_id == mint_place_id("wd:Q42")
 
 
+def test_cluster_representative_uses_source_priority_before_ref_sort():
+    result = R.reconcile(
+        [
+            _m("osm:node/5", {"osm:node/5", "wd:Q42"}, name="OSM", lat=1.0, lon=2.0),
+            _m("wd:Q42", {"wd:Q42"}, name="Wikidata", lat=3.0, lon=4.0),
+        ],
+        [],
+        {},
+        version=V1,
+        succeeded_sources=SUCCEEDED,
+        cfg=FUZZY,
+    )
+
+    assert result.places[0]["name"] == "Wikidata"
+    assert result.places[0]["lat"] == 3.0
+    assert result.places[0]["lon"] == 4.0
+
+
 def test_rerun_same_input_same_id():
     first = R.reconcile(
         [_m("wd:Q42", {"wd:Q42"})],
