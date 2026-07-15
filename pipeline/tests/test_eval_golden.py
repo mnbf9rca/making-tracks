@@ -13,7 +13,17 @@ Z = "mt1_" + "Z" * 26
 assert all(map(is_valid_place_id, (A, B, C, Z)))
 
 
-def row(pid, name, score, label=None, active=True, dv="v1", **sig):
+def row(
+    pid,
+    name,
+    score,
+    label=None,
+    active=True,
+    dv="v1",
+    labeled_by=None,
+    evidence="",
+    **sig,
+):
     return G.GoldenRow(
         pid,
         "london",
@@ -27,6 +37,8 @@ def row(pid, name, score, label=None, active=True, dv="v1", **sig):
         label,
         data_version=dv,
         active=active,
+        labeled_by=labeled_by,
+        evidence=evidence,
     )
 
 
@@ -70,11 +82,14 @@ def test_tsv_layout_and_is_deterministic():
     tsv = G.render_tsv(ROWS)
     assert G.render_tsv(ROWS) == tsv
     lines = tsv.splitlines()
-    assert lines[0].startswith("# Label the 'label' column")
+    assert lines[0].startswith("# Edit only: label, labeled_by, evidence.")
     assert lines[1] == "# data_version: v1"
+    assert "Edit only: label, labeled_by, evidence." in lines[0]
+    assert "Do NOT edit: place_id, area, active" in lines[0]
     assert lines[2].startswith("place_id\t")
     assert "\tarea\tactive\t" in lines[2]
     assert "\tdata_version\t" in lines[2]
+    assert "\tlabeled_by\tevidence\tlabel" in lines[2]
     assert "\tlabel" in lines[2]
     assert "\tNone" not in tsv
 
@@ -86,8 +101,8 @@ def test_render_tsv_escapes_spreadsheet_formula_text():
 
 def test_active_retired_metadata_survives_tsv_round_trip():
     rows = [
-        row(A, "Current", 0.9, "yes", dv="v2", active=True),
-        row(B, "Retired", 0.1, "no", dv="v1", active=False),
+        row(A, "Current", 0.9, "yes", dv="v2", active=True, labeled_by="rob"),
+        row(B, "Retired", 0.1, "no", dv="v1", active=False, labeled_by="llm-research", evidence="source note"),
     ]
     tsv = G.render_tsv(rows)
     assert tsv.splitlines()[1] == "# data_version: v2"
@@ -98,6 +113,8 @@ def test_active_retired_metadata_survives_tsv_round_trip():
     assert parsed.data_version == "v2"
     assert by_id[A].area == "london" and by_id[A].active and by_id[A].data_version == "v2"
     assert by_id[B].area == "london" and not by_id[B].active and by_id[B].data_version == "v1"
+    assert by_id[B].labeled_by == "llm-research"
+    assert by_id[B].evidence == "source note"
 
 
 def test_jsonl_is_deterministic_and_carries_active_data_version_and_signals():
@@ -105,6 +122,8 @@ def test_jsonl_is_deterministic_and_carries_active_data_version_and_signals():
     assert G.render_jsonl(list(reversed(ROWS))) == jsonl
     assert '"data_version":"v1"' in jsonl
     assert '"active":true' in jsonl
+    assert '"labeled_by":null' in jsonl
+    assert '"evidence":""' in jsonl
     assert '"signals":{"article":0.0,"llm_curiosity":null}' in jsonl
 
 
@@ -135,6 +154,37 @@ def test_label_survives_edit_and_is_normalised():
     assert {r.place_id: r.label for r in res.rows}[A] == "yes"
 
 
+def test_labeled_by_and_evidence_survive_edit_and_are_validated():
+    tsv = G.render_tsv(ROWS)
+    header = tsv.splitlines()[2].split("\t")
+    labeled_by_idx = header.index("labeled_by")
+    evidence_idx = header.index("evidence")
+    out = []
+    for line in tsv.splitlines():
+        fields = line.split("\t")
+        if fields and fields[0] == A:
+            fields[labeled_by_idx] = "llm-research"
+            fields[evidence_idx] = "Cited source summary"
+            fields[-1] = "meh"
+        out.append("\t".join(fields))
+
+    res = G.parse_labeled_tsv("\n".join(out) + "\n")
+
+    parsed = {r.place_id: r for r in res.rows}[A]
+    assert parsed.label == "meh"
+    assert parsed.labeled_by == "llm-research"
+    assert parsed.evidence == "Cited source summary"
+
+
+def test_invalid_labeled_by_is_counted_skip():
+    tsv = G.render_tsv([row(A, "x", 1.0, "yes", labeled_by="rob")])
+    bad = tsv.replace("\trob\t", "\trobot\t")
+    res = G.parse_labeled_tsv(bad)
+    assert res.parsed == 0
+    assert len(res.skipped) == 1
+    assert "labeled_by" in res.skipped[0][1]
+
+
 def test_malformed_row_is_counted_not_silently_dropped():
     bad = G.render_tsv(ROWS) + "mt1_BADID\tx\n"
     res = G.parse_labeled_tsv(bad)
@@ -156,17 +206,20 @@ def test_valid_short_and_extra_rows_are_padded_and_truncated():
 
 def test_duplicate_conflicting_non_blank_label_is_counted_warning_and_last_wins():
     edited = _set_label(G.render_tsv(ROWS), A, "yes")
-    duplicate = edited + f"{A}\tlondon\ttrue\tX\t0\t0\tc\t1\t0\tv1\t0\t\tno\n"
+    duplicate = edited + f"{A}\tlondon\ttrue\tX\t0\t0\tc\t1\t0\tv1\t0\t\trob\tmanual note\tno\n"
     res = G.parse_labeled_tsv(duplicate)
-    assert {r.place_id: r.label for r in res.rows}[A] == "no"
+    parsed = {r.place_id: r for r in res.rows}[A]
+    assert parsed.label == "no"
+    assert parsed.labeled_by == "rob"
+    assert parsed.evidence == "manual note"
     assert len(res.skipped) == 1
     assert "conflicting" in res.skipped[0][1]
 
 
 def test_labels_survive_and_resurrect_across_two_refreshes():
     labeled = [
-        row(A, "St Paul's", 0.9, "yes", dv="v1"),
-        row(B, "A Bench", 0.1, "no", dv="v1"),
+        row(A, "St Paul's", 0.9, "yes", dv="v1", labeled_by="rob"),
+        row(B, "A Bench", 0.1, "no", dv="v1", labeled_by="llm-research", evidence="batch note"),
     ]
     m1, retired1 = G.merge_labels(
         [
@@ -176,8 +229,11 @@ def test_labels_survive_and_resurrect_across_two_refreshes():
         labeled,
     )
     assert {r.place_id: r.label for r in m1} == {A: "yes", C: None}
+    assert {r.place_id: r.labeled_by for r in m1} == {A: "rob", C: None}
     assert [r.place_id for r in retired1] == [B]
     assert retired1[0].label == "no"
+    assert retired1[0].labeled_by == "llm-research"
+    assert retired1[0].evidence == "batch note"
     assert not retired1[0].active
 
     m2, _ = G.merge_labels(
@@ -187,13 +243,16 @@ def test_labels_survive_and_resurrect_across_two_refreshes():
         ],
         m1 + retired1,
     )
-    assert {r.place_id: r.label for r in m2}[B] == "no"
+    resurrected = {r.place_id: r for r in m2}[B]
+    assert resurrected.label == "no"
+    assert resurrected.labeled_by == "llm-research"
+    assert resurrected.evidence == "batch note"
 
 
 def test_labels_survive_and_resurrect_through_tsv_persistence():
     labeled = [
-        row(A, "St Paul's", 0.9, "yes", dv="v1"),
-        row(B, "A Bench", 0.1, "no", dv="v1"),
+        row(A, "St Paul's", 0.9, "yes", dv="v1", labeled_by="rob-confirmed", evidence="confirmed"),
+        row(B, "A Bench", 0.1, "no", dv="v1", labeled_by="llm-research", evidence="batch note"),
     ]
     m1, retired1 = G.merge_labels(
         [row(A, "St Paul's", 0.92, dv="v2"), row(C, "New Find", 0.6, dv="v2")],
@@ -204,7 +263,10 @@ def test_labels_survive_and_resurrect_through_tsv_persistence():
         [row(A, "St Paul's", 0.9, dv="v3"), row(B, "A Bench", 0.1, dv="v3")],
         persisted,
     )
-    assert {r.place_id: r.label for r in m2}[B] == "no"
+    resurrected = {r.place_id: r for r in m2}[B]
+    assert resurrected.label == "no"
+    assert resurrected.labeled_by == "llm-research"
+    assert resurrected.evidence == "batch note"
 
 
 def test_same_data_version_with_changed_candidate_set_is_rejected():
@@ -261,6 +323,8 @@ def test_dump_area_reads_planned_a2_a3_a4_tables(conn):
             {"article": 0.8, "llm_curiosity": None},
             None,
             "run-1",
+            labeled_by=None,
+            evidence="",
         )
     ]
 

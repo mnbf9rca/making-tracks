@@ -12,9 +12,13 @@ from mt_contracts.place_id import is_valid_place_id
 from mt_contracts.text import strip_unsafe_text
 
 LABELS = frozenset({"yes", "meh", "no"})
+LABELED_BY = frozenset({"rob", "llm-research", "rob-confirmed"})
 INSTRUCTION_LINE = (
-    "# Label the 'label' column only: yes = worth a detour; meh = fine but "
-    "skippable; no = not interesting; (blank = skip). Do NOT edit other columns."
+    "# Edit only: label, labeled_by, evidence. label: yes = worth a detour; "
+    "meh = fine but skippable; no = not interesting; blank = skip. "
+    "labeled_by: rob, llm-research, rob-confirmed, or blank. "
+    "evidence: optional one-line note. Do NOT edit: place_id, area, active, "
+    "name, lat, lon, category, tier, score, data_version, or signal columns."
 )
 BASE_COLUMNS = (
     "place_id",
@@ -47,6 +51,8 @@ class GoldenRow:
     label: str | None
     data_version: str
     active: bool = True
+    labeled_by: str | None = None
+    evidence: str = ""
 
 
 @dataclass(frozen=True)
@@ -107,7 +113,7 @@ def render_tsv(rows: Sequence[GoldenRow]) -> str:
     data_versions = active_versions or {row.data_version for row in rows}
     data_version = next(iter(data_versions)) if len(data_versions) == 1 else ""
     signal_columns = _signal_columns(rows)
-    header = [*BASE_COLUMNS, *signal_columns, "label"]
+    header = [*BASE_COLUMNS, *signal_columns, "labeled_by", "evidence", "label"]
     lines = [INSTRUCTION_LINE, f"# data_version: {data_version}", "\t".join(header)]
     for row in sorted(rows, key=lambda r: (-r.score, r.place_id)):
         fields = [
@@ -125,6 +131,8 @@ def render_tsv(rows: Sequence[GoldenRow]) -> str:
         for column in signal_columns:
             value = row.signals.get(column)
             fields.append("" if value is None else _format_float(value))
+        fields.append(row.labeled_by or "")
+        fields.append(_clean_text(row.evidence))
         fields.append(row.label or "")
         lines.append("\t".join(fields))
     return "\n".join(lines) + "\n"
@@ -144,6 +152,8 @@ def render_jsonl(rows: Sequence[GoldenRow]) -> str:
             "score": row.score,
             "signals": {key: row.signals[key] for key in sorted(row.signals)},
             "label": row.label,
+            "labeled_by": row.labeled_by,
+            "evidence": _clean_text(row.evidence),
             "data_version": row.data_version,
             "active": row.active,
         }
@@ -192,6 +202,12 @@ def parse_labeled_tsv(text: str) -> ParseResult:
             skipped.append((place_id, f"invalid label {raw_label!r}"))
             continue
         label_value = label or None
+        raw_labeled_by = cells.get("labeled_by", "")
+        labeled_by = raw_labeled_by.strip().lower()
+        if labeled_by not in LABELED_BY and labeled_by != "":
+            skipped.append((place_id, f"invalid labeled_by {raw_labeled_by!r}"))
+            continue
+        labeled_by_value = labeled_by or None
 
         try:
             score = float(cells.get("score", "0") or 0)
@@ -199,7 +215,9 @@ def parse_labeled_tsv(text: str) -> ParseResult:
             lon = float(cells.get("lon", "0") or 0)
             tier = int(cells.get("tier", "0") or 0)
             signal_names = [
-                name for name in header if name not in (*BASE_COLUMNS, "label")
+                name
+                for name in header
+                if name not in (*BASE_COLUMNS, "labeled_by", "evidence", "label")
             ]
             signals = {
                 name: _parse_optional_float(cells.get(name, "")) for name in signal_names
@@ -237,6 +255,8 @@ def parse_labeled_tsv(text: str) -> ParseResult:
             label=label_value,
             data_version=cells.get("data_version", "") or data_version or "",
             active=active,
+            labeled_by=labeled_by_value,
+            evidence=cells.get("evidence", ""),
         )
         parsed += 1 if existing is None else 0
 
@@ -268,8 +288,16 @@ def merge_labels(
 
     merged = []
     for row in new_rows:
-        label = existing_by_id.get(row.place_id).label if row.place_id in existing_by_id else None
-        merged.append(replace(row, label=label, active=True))
+        existing = existing_by_id.get(row.place_id)
+        merged.append(
+            replace(
+                row,
+                label=existing.label if existing else None,
+                labeled_by=existing.labeled_by if existing else None,
+                evidence=existing.evidence if existing else "",
+                active=True,
+            )
+        )
 
     retired = []
     for place_id in sorted(old_ids - new_ids):
