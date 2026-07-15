@@ -39,6 +39,11 @@ def test_publish_blocked_names_categorize_after_extract_reconcile(conn):
 
 
 def test_full_order_runs(conn):
+    source_record.persist(
+        conn,
+        source_record.parse("uk", "wd", "wd:Q1", "Example Place", 51.5, -0.1, {}),
+        run_id="r1",
+    )
     store.replace_places(
         conn,
         region="uk",
@@ -50,7 +55,7 @@ def test_full_order_runs(conn):
                 "lon": -0.1,
                 "refs": ["wd:Q1"],
                 "member_refs": ["wd:Q1"],
-                "status": "active",
+                "status": "live",
             }
         ],
     )

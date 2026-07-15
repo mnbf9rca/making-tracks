@@ -329,12 +329,18 @@ def test_dump_area_reads_planned_a2_a3_a4_tables(conn):
         (B, "uk", "history", "cat1"),
     )
     conn.execute(
-        "INSERT INTO place_scores VALUES (?, ?, ?, ?)",
-        (A, 2, 0.8, json.dumps({"article": 0.8, "llm_curiosity": None})),
+        """
+        INSERT INTO place_scores (place_id, region, tier, score, signals_json, run_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (A, "uk", 2, 0.8, json.dumps({"article": 0.8, "llm_curiosity": None}), "score1"),
     )
     conn.execute(
-        "INSERT INTO place_scores VALUES (?, ?, ?, ?)",
-        (B, 3, 0.9, json.dumps({"article": 0.9, "llm_curiosity": None})),
+        """
+        INSERT INTO place_scores (place_id, region, tier, score, signals_json, run_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (B, "uk", 3, 0.9, json.dumps({"article": 0.9, "llm_curiosity": None}), "score1"),
     )
 
     rows = G.dump_area(conn, "london", [-0.2, 51.5, -0.1, 51.6], data_version="run-1")
@@ -395,7 +401,13 @@ def test_dump_area_rejects_malformed_signals_json(conn):
         """,
         (A, "uk", "history", "cat1"),
     )
-    conn.execute("INSERT INTO place_scores VALUES (?, ?, ?, ?)", (A, 2, 0.8, '["bad"]'))
+    conn.execute(
+        """
+        INSERT INTO place_scores (place_id, region, tier, score, signals_json, run_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (A, "uk", 2, 0.8, '["bad"]', "score1"),
+    )
 
     with pytest.raises(ValueError, match="signals_json"):
         G.dump_area(conn, "london", [-0.2, 51.5, -0.1, 51.6], data_version="run-1")
