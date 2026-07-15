@@ -4,17 +4,17 @@
 
 **Goal:** The map screen — a `@MainActor`-contained `MLNMapView` wrapper over a PMTiles paper-style basemap, rendering place pins as the mandated GeoJSON `MLNShapeSource` + style-layer substrate (§5.1) with the full 6-cell pin matrix as a **data-driven fade opacity expression + badge symbol layers**, tap via feature hit-testing.
 
-**Architecture:** The valuable seam is a **pure, host-testable** SwiftPM library `MakingTracksMapStyle` that owns the pin-matrix truth (`pinAppearance`) **and generates the MapLibre style/expressions from it** — so the style expression can never diverge from the matrix, and §7's mandated full-pin-matrix check runs host-side (a tiny expression evaluator asserts `expression == pinAppearance` per cell) with **no simulator**. A thin `[XCODE/SIM]` layer (the `MLNMapView` `@MainActor` wrapper) merely *applies* the generated JSON. All MapLibre-touching code is simulator-gated; nothing about it is claimed host-verified.
+**Architecture:** The valuable seam is a **pure, host-testable** SwiftPM library `MakingTracksMapStyle` that owns the pin-matrix truth (`pinAppearance`) **and generates the MapLibre style/expressions from it** — so the *generated expression* is proven to reproduce the matrix host-side (a tiny evaluator asserts `expression == pinAppearance` per cell, **no simulator**). **Honest scope:** this proves *generation*, not *rendering* — the JSON→MLN *application* (via `NSExpression`/`NSPredicate`) is `[XCODE/SIM]` and gets its own read-back check (Task 5 Step 2). So §7's *full-pin-matrix* enumeration is host-proven at the generation layer and simulator-verified at the render layer; neither half is oversold. All MapLibre-touching code is simulator-gated; nothing about it is claimed host-verified.
 
 **Tech Stack:** Swift 6 (language mode, strict concurrency `complete`), SwiftUI, MapLibre Native iOS (`ios-v6.27.0`, PMTiles native since `v6.10.0`), XcodeGen, GRDB (via `MakingTracksData`). iOS 18. Dev basemap: public Protomaps demo tiles.
 
 ## Global Constraints
 
 - **§5.1 pin substrate is MANDATED, not a choice.** Pins are runtime features via **GeoJSON `MLNShapeSource` + symbol/circle style layers** — never `MLNAnnotation`/`MLNAnnotationView` (rejected for density collapse). Fade is a **data-driven opacity expression**; loved/bookmark badges are **additional symbol layers**; tap is **feature hit-testing (`visibleFeatures(at:)`)**; clustering (`MLNShapeSourceOptionClustered`, B8) shares this substrate. Basemap = PMTiles via native `pmtiles://` URLs. Basemap style = **muted/paper-like style JSON; the pins are the only saturated colour** (the snow metaphor lives in the basemap look). Wrap `MLNMapView` ourselves (the official SwiftUI wrapper is pre-1.0).
-- **§3.2 pin matrix — two orthogonal axes, fade keys on VISIT.** `saved ∈ {no,yes} × visit ∈ {none,visited,loved}`. **Precedence, pinned exactly (fable-confirmed):** the **visit axis drives fade** (`visit != .none` ⇒ faded); the **saved axis contributes an independent bookmark badge that persists through fading**; **loved additionally keeps a heart badge**. B2 renders pins from `PinState(saved, visit)` — **`Derivations.seen()` is NOT the pin-matrix axis** (it serves progress counts and the B8 "Fresh snow" toggle). "B1 owns the state; B2 renders it." The six cells: (no,none)=full,no-badge · (yes,none)=full,bookmark · (no,visited)=faded,no-badge · (yes,visited)=faded,bookmark [the guaranteed core-loop end state] · (no,loved)=faded,heart · (yes,loved)=faded,bookmark+heart.
+- **§3.2 pin matrix — two orthogonal axes, fade keys on VISIT.** `saved ∈ {no,yes} × visit ∈ {none,visited,loved}`. **Precedence, pinned exactly (fable-confirmed):** the **visit axis drives fade** (`visit != .none` ⇒ faded); the **saved axis contributes an independent bookmark badge that persists through fading**; **loved additionally keeps a heart badge**. B2 renders pins from `PinState(saved, visit)` — **`AppDatabase.seen(among:)` is NOT the pin-matrix axis** (it serves progress counts and the B8 "Fresh snow" toggle). "B1 owns the state; B2 renders it." The six cells: (no,none)=full,no-badge · (yes,none)=full,bookmark · (no,visited)=faded,no-badge · (yes,visited)=faded,bookmark [the guaranteed core-loop end state] · (no,loved)=faded,heart · (yes,loved)=faded,bookmark+heart.
 - **§5.3 concurrency containment.** Swift 6 strict concurrency `complete`. The MapLibre wrapper is a **`@MainActor`-isolated boundary using `@preconcurrency import`** (MLN types are un-Sendable ObjC). **All map mutations happen on the main actor.** The wrapper exchanges only **plain `Sendable` value types** (`MapPlace`, `PinState`, generated JSON strings) — **never MLN objects across the boundary**. The concurrency cost stays inside the wrapper; it must not leak across B2/B3/B4. `MakingTracksData.AppDatabase` is already `Sendable` (a `final class` over a `Sendable` `DatabaseQueue`) — read/write user state off any task, mutate the map on the main actor.
 - **§5.5 untrusted tiles — B2's slice.** **B3 (the tile client) owns the PRIMARY §5.5 decode-time validation** and hands B2 already-validated `Sendable` value types — B2 does **not** re-decode. B2's obligations: **never crash the map on malformed data** (skip, never crash); render place text as **plain text only** (no HTML/attributed rendering of source content); fetch image URLs **https-only from the expected host** (place-card imagery is B4 — B2 renders no source imagery on the map itself).
-- **Host-testable seam vs `[XCODE/SIM]` (fable's mandated design move).** Everything pure — the pin-matrix truth, the paper-style JSON generation, the pin-layer + expression generation, the feature-property encoding, and the evaluator that proves `expression == matrix` — lives in **`MakingTracksMapStyle`** and is verified by **`swift test` on the host (macOS), no simulator**. Everything MapLibre-touching (the `MLNMapView` wrapper, PMTiles registration, tap hit-testing, the app shell) is **`[XCODE/SIM]`** — described precisely but **not host-verifiable**; the plan makes **no host-verification claim** for it.
+- **Host-testable seam vs `[XCODE/SIM]` (fable's mandated design move).** Everything pure — the pin-matrix truth, the paper-style JSON generation, the pin-layer + expression generation, the feature-property encoding, the `foundationObject` JSON→Foundation bridge, and the evaluator that proves the *generated* `expression == matrix` — lives in **`MakingTracksMapStyle`** and is verified by **`swift test` on the host (macOS), no simulator**. Everything MapLibre-touching (the `MLNMapView` wrapper, the JSON→MLN `NSExpression`/`NSPredicate` application, PMTiles registration, tap hit-testing, the app shell) is **`[XCODE/SIM]`** — described with named APIs but **not host-verifiable**; the plan makes **no host-verification claim** for it, and Task 5's `[XCODE/SIM]` read-back gives the JSON→MLN application its own (simulator) teeth.
 - **`MapPlace` is a shared value type, provisional-until-B3.** B3 will *produce* `MapPlace` (the tile client), so it lives in **`MakingTracksData`** (the `Sendable` value-type home) — **not** in the rendering module, so B3 imports data, not rendering. Keep it **minimal** (`id, lat, lon, tier` — nothing speculative). **Provisional: B3's designer may EXTEND it, never break it.**
 - **B2's shell SUPERSEDES B1 Task 7 (fable-ratified).** B1's Task 7 (app shell) never landed (only `MakingTracksData` is on develop). B2 introduces the XcodeGen project + `@main` shell — **one shell, one owner.** **Issue #12 closes when B2's shell lands**, referencing this WP.
 - **Buildable before B3/A7 (§8 order note).** B2 builds against **public Protomaps demo tiles** for the basemap and an **injected set of dev `MapPlace`s** for the pin substrate, so the full pin matrix is exercisable before the real tile client (B3) and real tiles (A7) exist.
@@ -108,8 +108,10 @@ Expected: FAIL — no such module `MakingTracksMapStyle`.
 
 In `ios/Package.swift`, add to `products` a `.library(name: "MakingTracksMapStyle", targets: ["MakingTracksMapStyle"])`, and to `targets`:
 ```swift
-.target(name: "MakingTracksMapStyle", dependencies: ["MakingTracksData"]),
-.testTarget(name: "MakingTracksMapStyleTests", dependencies: ["MakingTracksMapStyle", "MakingTracksData"]),
+.target(name: "MakingTracksMapStyle", dependencies: ["MakingTracksData"],
+        swiftSettings: [.swiftLanguageMode(.v6)]),                          // parity with existing targets
+.testTarget(name: "MakingTracksMapStyleTests", dependencies: ["MakingTracksMapStyle", "MakingTracksData"],
+            swiftSettings: [.swiftLanguageMode(.v6)]),
 ```
 
 `ios/Sources/MakingTracksData/MapPlace.swift`:
@@ -161,6 +163,21 @@ public indirect enum JSONValue: Equatable, Codable {
     public func jsonString() throws -> String {
         let enc = JSONEncoder(); enc.outputFormatting = [.sortedKeys]
         return String(decoding: try enc.encode(self), as: UTF8.self)
+    }
+
+    /// A Foundation JSON object (String / NSNumber / [Any] / [String: Any] / NSNull) — the shape
+    /// `NSExpression(mglJSONObject:)` / `NSPredicate(mglJSONObject:)` require in the [XCODE/SIM] wrapper.
+    /// `.bool` MUST become a BOOLEAN NSNumber (not 0/1) so a `["==",["get","saved"],true]` predicate
+    /// compares correctly — this is host-testable even though NSExpression is not.
+    public var foundationObject: Any {
+        switch self {
+        case .string(let s): return s
+        case .double(let d): return NSNumber(value: d)
+        case .bool(let b): return NSNumber(value: b)
+        case .array(let a): return a.map(\.foundationObject)
+        case .object(let o): return o.mapValues(\.foundationObject)
+        case .null: return NSNull()
+        }
     }
 }
 ```
@@ -241,12 +258,15 @@ final class PaperStyleTests: XCTestCase {
         XCTAssertNoThrow(try style.jsonString())
     }
 
-    func testPaletteIsMutedNotSaturated() {
-        // The paper palette must be low-saturation (the pins are the ONLY saturated colour).
-        // Pin colour lives in PinLayers, not here — this asserts the basemap stays muted.
+    func testEveryPaletteColourIsMutedAndPinIsSaturated() {
+        // §5.1: "muted/paper-like … the pins are the ONLY saturated colour." Assert HSV saturation:
+        // every basemap colour < MUTED_MAX; the pin colour >= MUTED_MAX. (Verified on host: the
+        // default palette is 0.04–0.10; #E4572E pin is 0.80. Teeth: a neon basemap colour reds.)
         let p = PaperPalette.default
-        XCTAssertNotEqual(p.background, PinLayers.pinColor)   // basemap never uses the saturated pin colour
-        XCTAssertNotEqual(p.water, PinLayers.pinColor)
+        for hex in [p.background, p.land, p.water, p.roads, p.boundaries] {
+            XCTAssertLessThan(saturation(hex: hex), MUTED_MAX, "basemap colour \(hex) is not muted")
+        }
+        XCTAssertGreaterThanOrEqual(saturation(hex: PinLayers.pinColor), MUTED_MAX, "pin colour must be saturated")
     }
 }
 ```
@@ -260,16 +280,27 @@ Expected: FAIL — `paperBasemapStyle` / `PaperPalette` not defined.
 
 `ios/Sources/MakingTracksMapStyle/PaperStyle.swift`:
 ```swift
+public let MUTED_MAX = 0.25    // HSV-saturation ceiling for a "muted/paper" colour (§5.1)
+
+/// HSV saturation of a #RRGGBB hex (0…1). Pure — lets the palette-muted mandate be host-tested.
+public func saturation(hex: String) -> Double {
+    var s = hex; if s.hasPrefix("#") { s.removeFirst() }
+    guard s.count == 6, let v = UInt32(s, radix: 16) else { return 0 }
+    let r = Double((v >> 16) & 0xFF) / 255, g = Double((v >> 8) & 0xFF) / 255, b = Double(v & 0xFF) / 255
+    let mx = max(r, g, b), mn = min(r, g, b)
+    return mx == 0 ? 0 : (mx - mn) / mx
+}
+
 public struct PaperPalette: Sendable {
-    public var background, land, water, roads, boundaries, labels: String
-    public init(background: String, land: String, water: String, roads: String, boundaries: String, labels: String) {
+    public var background, land, water, roads, boundaries: String   // labels dropped: no label layer in v1 (deferred)
+    public init(background: String, land: String, water: String, roads: String, boundaries: String) {
         self.background = background; self.land = land; self.water = water
-        self.roads = roads; self.boundaries = boundaries; self.labels = labels
+        self.roads = roads; self.boundaries = boundaries
     }
     /// Muted, paper-like. Low-saturation greys/creams so the saturated pins carry all the colour.
     public static let `default` = PaperPalette(
         background: "#F4F1EA", land: "#ECE8DD", water: "#DCE3E5",
-        roads: "#E3DED2", boundaries: "#CDC7B8", labels: "#6B6455")
+        roads: "#E3DED2", boundaries: "#CDC7B8")
 }
 
 private func layer(_ id: String, _ type: String, source: String? = nil, sourceLayer: String? = nil,
@@ -369,11 +400,22 @@ final class PinLayersTests: XCTestCase {
         XCTAssertNotNil(layerOfType("circle"), "circle pin layer")
         let symbols = layers.filter { if case let .object(l) = $0 { return l["type"] == .string("symbol") } else { return false } }
         XCTAssertEqual(symbols.count, 2, "bookmark + heart badge symbol layers")
+        // co-present badges (the saved+loved cell) must NOT stack — distinct icon-offset anchors.
+        XCTAssertNotEqual(PinLayers.bookmarkOffset, PinLayers.heartOffset, "badges would collide at one anchor")
         // the pin colour is saturated and used ONLY by the pin circle
         if case let .object(circle)? = layers.first(where: { if case let .object(l) = $0 { return l["type"] == .string("circle") } else { return false } }),
            case let .object(paint)? = circle["paint"] {
             XCTAssertEqual(paint["circle-color"], .string(PinLayers.pinColor))
         } else { XCTFail("pin circle paint") }
+    }
+
+    func testFoundationObjectBridgeKeepsBoolAsBooleanNSNumber() {
+        // The [XCODE/SIM] wrapper passes .foundationObject to NSPredicate(mglJSONObject:). A `true`
+        // must become a BOOLEAN NSNumber (not 1), or a ["==",["get","saved"],true] filter mis-compares.
+        let n = JSONValue.bool(true).foundationObject as? NSNumber
+        XCTAssertNotNil(n)
+        XCTAssertEqual(CFGetTypeID(n!), CFBooleanGetTypeID(), "bool must bridge to a boolean NSNumber, not 0/1")
+        XCTAssertTrue(PinLayers.fadeOpacityExpression().foundationObject is [Any])   // expression bridges to NSArray
     }
 
     func testFeatureIsGeoJSONPointWithLonLatOrder() {
@@ -491,12 +533,18 @@ public enum PinLayers {
                                        "circle-radius": .double(6)])]),
             .object(["id": .string("pins-bookmark"), "type": .string("symbol"), "source": .string(sourceID),
                      "filter": bookmarkFilter(),
-                     "layout": .object(["icon-image": .string("badge-bookmark"), "icon-allow-overlap": .bool(true)])]),
+                     "layout": .object(["icon-image": .string("badge-bookmark"), "icon-allow-overlap": .bool(true),
+                                        "icon-offset": bookmarkOffset])]),   // distinct corner so co-present
             .object(["id": .string("pins-heart"), "type": .string("symbol"), "source": .string(sourceID),
                      "filter": heartFilter(),
-                     "layout": .object(["icon-image": .string("badge-heart"), "icon-allow-overlap": .bool(true)])]),
+                     "layout": .object(["icon-image": .string("badge-heart"), "icon-allow-overlap": .bool(true),
+                                        "icon-offset": heartOffset])]),      // badges (saved+loved) don't collide
         ]
     }
+    // Distinct anchors so the (saved, loved) cell renders BOTH badges legibly (§3.2): bookmark top-right,
+    // heart top-left. (A cartographic decision — the spec mandates both badges co-present, not their layout.)
+    public static let bookmarkOffset: JSONValue = .array([.double(8), .double(-8)])
+    public static let heartOffset: JSONValue = .array([.double(-8), .double(-8)])
 }
 ```
 
@@ -520,11 +568,13 @@ git commit -m "Add pin substrate: shape-source+style layers, fade/badge expressi
 > **`[XCODE/SIM]`** — this task builds the app target and cannot be verified on the host (no simulator/Xcode here). Steps give exact code + the simulator build/run commands; the plan makes **no host-verification claim** for them.
 
 **Files:**
-- Create: `ios/App/project.yml`, `ios/App/Sources/MakingTracksApp.swift`, `ios/App/Sources/AppDatabase+Live.swift`
+- Create: `ios/App/project.yml`, `ios/App/Sources/MakingTracksApp.swift`
+- Create: `ios/Sources/MakingTracksData/AppDatabase+Live.swift` (in the **package**, not the app — see below)
 
 **Interfaces:**
 - Consumes: `MakingTracksData`, `MakingTracksMapStyle`, MapLibre Native.
 - Produces: a launchable iOS 18 app whose root is `MapScreen` (Task 6); `AppDatabase.live()`. **Supersedes B1 Task 7 — closes issue #12** (reference this WP in the closing note).
+- **`live()` lives in `MakingTracksData`, not the app target.** It uses GRDB (`DatabaseQueue`), and the app target does **not** depend on GRDB — putting `live()` in the app would fail with `No such module 'GRDB'`. `MakingTracksData` already depends on GRDB, so `live()` belongs there (and stays host-buildable). The app just calls `AppDatabase.live()`.
 
 - [ ] **Step 1: XcodeGen project**
 
@@ -541,7 +591,7 @@ packages:
   MakingTracksData: { path: .. }                 # the ios/ SwiftPM package (MakingTracksData + MakingTracksMapStyle)
   MapLibre:
     url: https://github.com/maplibre/maplibre-gl-native-distribution
-    minVersion: "6.27.0"
+    from: "6.27.0"                                  # XcodeGen: `from` (up-to-next-major), not lone `minVersion`
 targets:
   MakingTracks:
     type: application
@@ -577,11 +627,10 @@ struct MakingTracksApp: App {
 }
 ```
 
-`ios/App/Sources/AppDatabase+Live.swift` (the Application Support store B1's Task 7 would have provided):
+`ios/Sources/MakingTracksData/AppDatabase+Live.swift` (in the **package** — it uses GRDB, which the app target does not depend on; this is the Application Support store B1's Task 7 would have provided):
 ```swift
 import Foundation
 import GRDB
-import MakingTracksData
 
 public extension AppDatabase {
     static func live() throws -> AppDatabase {
@@ -606,8 +655,8 @@ Expected: builds (after Tasks 5–6 provide `MapScreen`). **Not host-runnable �
 - [ ] **Step 4: Commit**
 
 ```bash
-git add ios/App/project.yml ios/App/Sources/MakingTracksApp.swift ios/App/Sources/AppDatabase+Live.swift
-git commit -m "Add XcodeGen app shell + MapLibre dep + AppDatabase.live (supersedes B1 Task 7; closes issue #12)"
+git add ios/App/project.yml ios/App/Sources/MakingTracksApp.swift ios/Sources/MakingTracksData/AppDatabase+Live.swift
+git commit -m "Add XcodeGen app shell + MapLibre dep + AppDatabase.live in MakingTracksData (supersedes B1 Task 7; closes issue #12)"
 ```
 
 ---
@@ -643,9 +692,9 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
 
     func makeUIView(context: Context) -> MLNMapView {
         // Write the generated paper style to a temp file and point MapLibre at it (styleURL).
-        let style = paperBasemapStyle(pmtilesURL: pmtilesURL)
-        let styleURL = context.coordinator.writeStyle(try! style.jsonString())
-        let map = MLNMapView(frame: .zero, styleURL: styleURL)
+        let json = (try? paperBasemapStyle(pmtilesURL: pmtilesURL).jsonString()) ?? "{\"version\":8,\"sources\":{},\"layers\":[]}"
+        let map = context.coordinator.writeStyle(json).map { MLNMapView(frame: .zero, styleURL: $0) }
+            ?? MLNMapView(frame: .zero)     // style-write failure → empty map, never a crash
         map.delegate = context.coordinator
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         map.addGestureRecognizer(tap)
@@ -662,29 +711,59 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         weak var map: MLNMapView?
         init(onTapPlace: @escaping (String) -> Void) { self.onTapPlace = onTapPlace }
 
-        func writeStyle(_ json: String) -> URL {
+        func writeStyle(_ json: String) -> URL? {
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("mt-style.json")
-            try? json.data(using: .utf8)?.write(to: url); return url
+            do { try Data(json.utf8).write(to: url); return url }
+            catch { return nil }                                   // real error path (un-observable on host)
         }
 
-        // When the style loads, add the pins shape-source + the three generated style layers.
-        func mapView(_ mapView: MLNMapView, didFinish style: MLNStyle) {
+        // Correct delegate selector is `mapView:didFinishLoadingStyle:` → `didFinishLoading style:`.
+        // (The earlier `didFinish style:` matched NO protocol requirement, so it compiled but was
+        // NEVER called — the entire pin substrate would silently never render. Verified against docs.)
+        func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
             self.map = mapView
-            let source = MLNShapeSource(identifier: PinLayers.sourceID, shape: nil,
-                                        options: nil)              // B8 adds MLNShapeSourceOptionClustered
+            // Badge icons MUST be registered or a symbol layer's icon-image renders NOTHING (silently).
+            if let bookmark = UIImage(named: "badge-bookmark") { style.setImage(bookmark, forName: "badge-bookmark") }
+            if let heart = UIImage(named: "badge-heart") { style.setImage(heart, forName: "badge-heart") }
+
+            let source = MLNShapeSource(identifier: PinLayers.sourceID, shape: nil, options: nil)  // B8: …Clustered
             style.addSource(source)
-            for layerJSON in PinLayers.pinLayers() {
-                // Build MLNStyleLayer from the generated JSON: circle layer with the fade NSExpression
-                // via NSExpression(mglJSONObject:), symbol badge layers with the generated filters.
-                addLayer(layerJSON, to: style, source: source)
+
+            // Circle pin layer — opacity from the HOST-PROVEN fade expression via NSExpression(mglJSONObject:);
+            // constants MUST be wrapped in NSExpression(forConstantValue:) (all MLN layer props are NSExpression).
+            let circle = MLNCircleStyleLayer(identifier: "pins-circle", source: source)
+            circle.circleOpacity = NSExpression(mglJSONObject: PinLayers.fadeOpacityExpression().foundationObject)
+            circle.circleColor = NSExpression(forConstantValue: UIColor(hex: PinLayers.pinColor))
+            circle.circleRadius = NSExpression(forConstantValue: 6)
+            style.addLayer(circle)
+
+            // Badge SYMBOL layers — filter is an NSPredicate (NOT NSExpression): MLNVectorStyleLayer.predicate
+            // is NSPredicate?, built via NSPredicate(mglJSONObject:). [XCODE/SIM] caveat: verify the modern
+            // ["==",["get","saved"],true] form is accepted; if the predicate needs the legacy bare-property
+            // form, emit it from PinLayers and add a host test for that form too.
+            addBadge(id: "pins-bookmark", icon: "badge-bookmark", filter: PinLayers.bookmarkFilter(),
+                     offset: PinLayers.bookmarkOffset, source: source, style: style)
+            addBadge(id: "pins-heart", icon: "badge-heart", filter: PinLayers.heartFilter(),
+                     offset: PinLayers.heartOffset, source: source, style: style)
+        }
+
+        private func addBadge(id: String, icon: String, filter: JSONValue, offset: JSONValue,
+                              source: MLNShapeSource, style: MLNStyle) {
+            let layer = MLNSymbolStyleLayer(identifier: id, source: source)
+            layer.iconImageName = NSExpression(forConstantValue: icon)
+            layer.iconAllowsOverlap = NSExpression(forConstantValue: true)
+            if case let .array(o) = offset, case let .double(x) = o[0], case let .double(y) = o[1] {
+                layer.iconOffset = NSExpression(forConstantValue: NSValue(cgVector: CGVector(dx: x, dy: y)))
             }
+            layer.predicate = NSPredicate(mglJSONObject: filter.foundationObject)
+            style.addLayer(layer)
         }
 
         func update(map: MLNMapView, features: [(MapPlace, PinState)]) {
             let fc = FeatureEncoding.featureCollection(features.map { FeatureEncoding.feature($0.0, $0.1) })
             guard let src = map.style?.source(withIdentifier: PinLayers.sourceID) as? MLNShapeSource,
-                  let data = try? fc.jsonString().data(using: .utf8),
-                  let shape = try? MLNShape(data: data, encoding: String.Encoding.utf8.rawValue)
+                  let shape = try? MLNShape(data: Data(try fc.jsonString().utf8),
+                                            encoding: String.Encoding.utf8.rawValue)
             else { return }                                        // malformed → skip, never crash (§5.5)
             src.shape = shape
         }
@@ -692,27 +771,32 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         @objc func handleTap(_ gr: UITapGestureRecognizer) {
             guard let map = self.map else { return }
             let point = gr.location(in: map)
-            // MANDATED hit-testing: visibleFeatures(at:) against the pin layers (§5.1).
-            let hits = map.visibleFeatures(at: point, styleLayerIdentifiers: ["pins-circle"])
+            // MANDATED hit-testing (§5.1): query ALL pin layers (badges too) so a tap on an offset
+            // badge still resolves its place_id.
+            let hits = map.visibleFeatures(at: point,
+                                           styleLayerIdentifiers: ["pins-circle", "pins-bookmark", "pins-heart"])
             if let id = hits.first?.attribute(forKey: "place_id") as? String { onTapPlace(id) }
-        }
-
-        private func addLayer(_ json: JSONValue, to style: MLNStyle, source: MLNShapeSource) {
-            // Constructs the concrete MLNCircleStyleLayer / MLNSymbolStyleLayer from the generated
-            // JSON, applying paint/filter via NSExpression(mglJSONObject:) so the SAME generated
-            // expression (already host-proven == the matrix) drives the live style. [XCODE/SIM detail]
         }
     }
 }
+
+private extension UIColor {
+    convenience init(hex: String) {                // #RRGGBB → UIColor (the saturated pin colour)
+        var s = hex; if s.hasPrefix("#") { s.removeFirst() }
+        let v = UInt64(s, radix: 16) ?? 0
+        self.init(red: CGFloat((v >> 16) & 0xFF) / 255, green: CGFloat((v >> 8) & 0xFF) / 255,
+                  blue: CGFloat(v & 0xFF) / 255, alpha: 1)
+    }
+}
 ```
-*(`addLayer` fills in the concrete `MLNCircleStyleLayer`/`MLNSymbolStyleLayer` construction from the generated JSON — the generated expression is applied verbatim via `NSExpression(mglJSONObject:)`, so the live rendering uses the identical, host-proven matrix logic. The exact MLN layer-property mapping is a simulator-verified detail.)*
+*(Applying the generated JSON to live MLN layers is the **single riskiest MLN surface** and no host test reaches it: opacity via `NSExpression(mglJSONObject:)` (the `mgl` prefix is retained despite the `MLN` class rename — verified); constants via `NSExpression(forConstantValue:)`; **filters via `NSPredicate(mglJSONObject:)`, NOT `NSExpression`** (`MLNVectorStyleLayer.predicate` is `NSPredicate?`); badge icons via `style.setImage(_:forName:)`. The `.foundationObject` bridge (Task 1) turns the host-proven `JSONValue` into the `NSArray`/`NSNumber` these initializers expect. All of this is `[XCODE/SIM]`-verified only — see Step 2's read-back check.)*
 
-- [ ] **Step 2: Build (simulator) + commit**
+- [ ] **Step 2: Build + read-back check (simulator) + commit**
 
-Build via the Task 4 `xcodebuild` command. **Not host-runnable.**
+Build via the Task 4 `xcodebuild` command. **Not host-runnable.** Then — because the host proof covers only *generation*, not the JSON→MLN *application* — add a `[XCODE/SIM]` read-back test that closes the loop: after the style loads, for each of the 6 matrix cells, set the shape source to a single synthetic feature with that cell's `featureProperties`, then assert `MLNCircleStyleLayer.circleOpacity` evaluated for the feature equals `pinAppearance(cell).opacity`, and evaluate each badge layer's `predicate` against the feature and assert it matches `showBookmarkBadge`/`showHeartBadge`. This gives the JSON→MLN bridge teeth (in the simulator) that the host tests cannot.
 ```bash
 git add ios/App/Sources/Map/MLNMapViewRepresentable.swift
-git commit -m "Add MLNMapView @MainActor wrapper: paper basemap, mandated shape-source+style-layer pins, visibleFeatures(at:) tap"
+git commit -m "Add MLNMapView @MainActor wrapper: didFinishLoading, circle+badge layers via NSExpression/NSPredicate, badge icon registration, visibleFeatures(at:) tap"
 ```
 
 ---
@@ -745,11 +829,17 @@ struct MapScreen: View {
         .task { await refresh(places: DevPlaces.all) }  // dev features until B3 supplies real ones
     }
 
-    // Viewport → visible place_ids → viewportState (Sendable, off-main) → features (main actor).
-    // Real viewport ids arrive from B3; here we resolve the injected dev set.
+    // Viewport → visible place_ids → viewportState → features. THE HOT QUERY (§5.4, hundreds of ids at
+    // street zoom) is a SYNCHRONOUS GRDB read, so it must run OFF the main actor (§5.3: "read user state
+    // off any task, mutate the map on the main actor"). `.task` inherits the View's @MainActor, so we hop
+    // off via Task.detached, then assign `features` back on the main actor. B3/B4 inherit THIS pattern —
+    // it must be correct here. (`database` is Sendable, so capturing it in a detached task is safe.)
     private func refresh(places: [MapPlace]) async {
         let ids = places.map(\.id)
-        let states = (try? database.viewportState(ids)) ?? [:]   // AppDatabase is Sendable — safe off-main
+        let db = database
+        let states = await Task.detached { (try? db.viewportState(ids)) ?? [:] }.value
+        // viewportState returns an entry for every id on success; the fallback covers a READ FAILURE
+        // (states == [:]), keeping this crash-free (§5.5) rather than force-unwrapping.
         features = places.map { ($0, states[$0.id] ?? PinState(saved: false, visit: .none)) }
     }
 }
@@ -794,14 +884,19 @@ git commit -m "Add MapScreen: viewportState-driven feature feed + dev harness (P
 
 **Ratifications (fable, thread `wp/b2`)** — the host-tested `MakingTracksMapStyle` seam (matrix + generated expressions + per-cell evaluator = §7 without a simulator); fade axis = `visit != .none`; B2 shell supersedes B1 Task 7 (issue #12); `MapPlace` minimal in `MakingTracksData`, provisional-until-B3; `[XCODE/SIM]` honesty.
 
-**Feasibility pre-verified (author, Swift 6.3.3 on host).** The pure core was prototyped and run: `JSONValue` + `pinAppearance` + the generated `match` fade expression + badge filters + the evaluator, over the **full 6-cell matrix** — every cell's evaluated expression equals `pinAppearance` (opacity + both badges). This is exactly what Task 3's `swift test` re-runs; the MapLibre/`UIViewRepresentable` tasks are `[XCODE/SIM]` and are **not** claimed host-verified.
+**Feasibility pre-verified (author, Swift 6.3.3 on host).** The pure core was prototyped and run: `JSONValue` (incl. Codable round-trip with bool≠double and the `foundationObject` bool→boolean-NSNumber bridge), `pinAppearance` + the generated `match` fade expression + badge filters + the evaluator over the **full 6-cell matrix** (every cell's evaluated expression equals `pinAppearance`), and the HSV `saturation` palette check (default palette 0.04–0.21 muted, pin 0.80). This is what Tasks 1–3's `swift test` re-runs; the MapLibre/`UIViewRepresentable` tasks are `[XCODE/SIM]` and **not** claimed host-verified.
 
 **Cross-package flags surfaced:**
 - **B1 Task 7 absorbed** — B2's XcodeGen shell is the one app shell; **issue #12 closes when it lands** (referencing this WP).
 - **`MapPlace` provisional** — in `MakingTracksData`, minimal (`id/lat/lon/tier`); **B3's designer may extend, never break** it. B3 produces it from decoded tiles; B2 consumes it. Flag on B3's design.
-- **B4 consumes B2's tap** — `onTapPlace(place_id)` is the hit-testing seam B4 turns into the place card (feature hit-testing via `visibleFeatures(at:)`).
+- **B4 consumes B2's tap** — `onTapPlace(place_id)` is the hit-testing seam B4 turns into the place card.
 - **B8 shares the substrate** — clustering (`MLNShapeSourceOptionClustered` on the `pins` source), tier/zoom gating (`tier` rides on the feature), and the "Fresh snow" toggle build on the same `MLNShapeSource` + layers.
-- **Protomaps demo basemap URL** is a dev placeholder — set to a current demo `.pmtiles` build at implementation; real region packs come from A7/B3.
-- **Badge icons** (`badge-bookmark`, `badge-heart`) must be registered on the style (an `MLNStyle` image registration in the wrapper) — a `[XCODE/SIM]` asset detail.
+- **Off-main hot-query pattern** — `MapScreen.refresh` runs `viewportState` via `Task.detached` (the synchronous GRDB read must not block the main actor, §5.3/§5.4); **B3/B4 inherit this pattern**.
+- **Protomaps demo basemap URL / badge icon assets** — dev placeholders; set to a current demo `.pmtiles` and provide `badge-bookmark`/`badge-heart` `UIImage`s at implementation (registered via `style.setImage`).
 
-**Adversarial review (per AGENTS.md gate) — TO RUN before PR, with the strengthened checklist:** (1) fixes verified on the **executed path**; (2) tests have **teeth** — *neuter the fix, confirm the test reds* (esp. change a `fadeOpacityExpression` opacity or a badge filter → the per-cell `expression == pinAppearance` test must red for the affected cell); (3) **the feasibility critic builds + `swift test`s `MakingTracksMapStyle` on the host** (Swift 6.3.3 is present, as B1 proved) — verifying the full-matrix evaluator, the `[lon,lat]` order, the substrate shape (circle + two symbol layers, not annotations), and that the paper palette never uses the saturated pin colour; (4) the critic must **confirm the plan makes no host-verification claim for any `[XCODE/SIM]` task** and that the `@MainActor`/`@preconcurrency`/Sendable-only-across-the-boundary containment (§5.3) is respected in the wrapper.
+**Adversarial review (per AGENTS.md gate) — COMPLETED. 3 independent critics (spec/§5.1-boundary fidelity; MapLibre-iOS-API correctness for the un-host-testable wrapper; coherence+test-quality that BUILT `MakingTracksMapStyle` on Swift 6.3.3). The build critic confirmed Tasks 1–3 compile clean under strict-concurrency `complete`, all tests pass, and the star matrix test reds under both neuters. All findings fixed and, for the pure parts, re-verified on the host.**
+- **Fixed — CRITICAL:** the style-loaded delegate was `didFinish style:` (matched no protocol requirement → compiled but **never called** → a pin-less map that "looks done") → corrected to `didFinishLoading style:`. This is exactly the class of bug no host test catches, caught by the API critic verifying against real MapLibre docs.
+- **Fixed — HIGH:** (a) badge filters were applied as `NSExpression` — but a layer filter is `MLNVectorStyleLayer.predicate` (`NSPredicate`, via `NSPredicate(mglJSONObject:)`) → corrected, with a `[XCODE/SIM]` note to confirm the modern `["==",["get",...]]` form vs legacy. (b) `AppDatabase+Live` used GRDB but the app target doesn't depend on it → moved `live()` into `MakingTracksData`. (c) **Overclaim** ("expression can never diverge from the matrix") — the evaluator is a same-module re-implementation, so it proves *generation*, not *rendering* → softened everywhere, and Task 5 gained a `[XCODE/SIM]` per-cell read-back so the JSON→MLN bridge has its own teeth; `addLayer` is fleshed out with named APIs (`NSExpression(mglJSONObject:)`/`forConstantValue:`, `NSPredicate(mglJSONObject:)`, `style.setImage`), not a stub.
+- **Fixed — MEDIUM:** badge icons were never registered (`icon-image` → nothing renders) → explicit `style.setImage` step; the (saved,loved) cell stacked both badges at one anchor → distinct `icon-offset` (host-tested different); `viewportState` ran synchronously on the main actor → `Task.detached`; XcodeGen `minVersion:` alone → `from: "6.27.0"`; tap hit-tested only the circle → all three pin layers.
+- **Fixed — LOW:** the palette-muted test was vacuous (a neon basemap passed) → HSV `saturation` assertion over all colours (host-verified); `Derivations.seen()` → `AppDatabase.seen(among:)`; new targets given `.swiftLanguageMode(.v6)`; `writeStyle` got a real error path; dead `PaperPalette.labels` dropped.
+- **Affirmed by the critics (not changed):** `NSExpression(mglJSONObject:)` for `circle-opacity`, the `pmtiles://` vector source, `MLNShape(data:encoding:)`, the `@preconcurrency`+`@MainActor` Sendable-only containment, the mandated `MLNShapeSource`+circle/symbol substrate (not `MLNAnnotation`), the 6-cell matrix precedence, the seen-vs-visit reading, and the host/`[XCODE/SIM]` seam cut — all verified correct.
