@@ -56,6 +56,11 @@ def test_malaysia_non_llm_floor_discriminates_known_places_from_noise():
             "hehle": {"grade": "II*"},
             "tags": {"historic": "shophouse", "building": "terrace"},
         },
+        {
+            "wp": {"extract": "x" * 63},
+            "wd": {"sitelinks": 0},
+            "tags": {"historic": "wayang_stage"},
+        },
     ]
     noise_raw = [
         {
@@ -66,12 +71,20 @@ def test_malaysia_non_llm_floor_discriminates_known_places_from_noise():
             "wd": {"classes": ["Q-noisy"]},
             "tags": {"name": "Unique Unremarkable Node"},
         },
+        {
+            "wp": {"extract": "x" * 45},
+            "wd": {"sitelinks": 0},
+            "hehle": {"grade": "II"},
+            "tags": {"amenity": "bench", "name": "One-Off Bench With Article"},
+        },
     ]
     corpus_tags = [
         place.get("tags", {})
         for place in [
             *known_raw,
             *noise_raw,
+            {"tags": {"amenity": "bench"}},
+            {"tags": {"amenity": "bench"}},
             {"tags": {"amenity": "bench"}},
             {"tags": {"amenity": "bench"}},
         ]
