@@ -11,13 +11,13 @@
 ## Global Constraints
 
 - **Composite = weighted sum RENORMALIZED over PRESENT weights (the Malaysia-floor mechanism).** `score = Σ(wᵢ·sᵢ for present i) / Σ(wᵢ for present i)`, clamped to [0,1]. Signals split into: **always-computed** (article, sitelinks, heritage-grade, plaque, image, tag-rarity, class-penalty — a value of 0 means "no evidence", which correctly lowers the score and is NOT the same as absent) and **optional** (`pageviews`, `llm_curiosity` — *absent when the source is unavailable*: an empty/disabled pageview cache, or an A6 slot A6 hasn't written). An **absent** signal drops out of **both** numerator and denominator, so its weight mass renormalizes over the present signals — a place isn't punished for our missing acquisition. Turning `pageviews` + `llm_curiosity` off therefore renormalizes over the 6 remaining signals: the §4 Malaysia floor (heritage + tag-rarity + article + image still rank) holds by construction.
-- **Fame is not the product (Principle 2 / §4).** A config-weighted **boost term** deliberately lifts the overlooked-but-verified: `boost = w_boost · (1 − pageview_norm) · evidence_norm`, where `evidence_norm` = the mean of the independent-evidence signals (heritage, plaque, article). When pageviews are absent (Malaysia), `pageview_norm` is treated as **0** (unknown fame → treated as low-fame → the boost rewards evidence) — aligning the boost with the floor. Big-Ben-style high-pageview places get no boost; a plaque/heritage place with low fame does.
+- **Fame is not the product (Principle 2 / §4).** A config-weighted **boost term** deliberately lifts the overlooked-but-verified: `boost = w_boost · (1 − pageview_norm) · evidence_norm`, where `evidence_norm` = the mean over the **present** of {heritage, plaque, article} (0.0 if none present — never `mean([])`, the Malaysia-common case). When pageviews are absent (Malaysia), `pageview_norm` is treated as **0** — and a genuine `0.0` (measured zero fame) and absent are **deliberately equivalent** here (both = "not famous" → both earn the boost). Note (acknowledged, for A5's tuning): heritage/plaque/article are weighted in `base` **and** re-counted in `evidence` — a deliberate double-count that couples `boost_weight` with those signal weights; A5 tunes them together. Big-Ben-style high-pageview places get no boost; a low-fame plaque/heritage place does.
 - **`score ∈ [0,1]`, `tier ∈ {1,2,3,4}` (place.schema.json).** `score` is a `number` in `[0,1]`; `tier` an `integer` `1–4` on the wire (`T1 landmark → T4 oddity` are presentation labels). Tiering is `score → tier` via **config thresholds** (deterministic, version-pinned — NOT data-dependent quantiles that shift with the corpus). A5's eval tunes the weights + thresholds; A4 ships defaults.
 - **The LLM curiosity signal is A6's, optional, never the sole gate (§4, §8, Principle 13).** A4 runs and is evaluated **before A6 exists** (A4 deps A2 only). The composite treats `llm_curiosity` as an **optional slot** — absent by default (renormalized away), filled later by A6 writing into `place_scores.signals_json`. A4 computes **no** LLM value and leaves exactly the named slot + the config weight; "the LLM is never the sole gate" is guaranteed because the composite is valid and tested with the slot absent.
 - **OSM tag-value rarity is A4's own corpus computation (no A3 dependency).** A4 deps A2 only; A1c deliberately carries the **full bounded tag set** in each OSM record's `props` for this. A4 builds a **corpus-wide tag-value frequency** over the region's `source_records`, and a place's rarity signal is higher for rarer tag-values (`rarity = f(1/frequency)`, normalized). Deterministic (a single sorted pass). This is **not** wired to A3's audit.
-- **Median pageviews: computed by A4 from A1b's cache, which A4 tolerates EMPTY (§4 floor).** A1b acquires a resumable `(title, window)` pageview cache (disabled by default; live network is codex's `wp-acquire-impl`). A4 **computes the median** from the cache; when the cache is empty/absent for a place, `pageviews` is **absent** (renormalized away), never 0-penalized. So Malaysia (no reliable pageviews) is the normal path, not a special case.
+- **Median pageviews: computed by A4 from A1b's cache, which A4 tolerates EMPTY (§4 floor).** A1b acquires a resumable `(title, window)` pageview cache (disabled by default; live network is codex's `wp-acquire-impl`). A4 **computes the median** from the cache; when the cache is empty/absent/present-but-empty for a place, `pageviews` is **absent** (`None`, renormalized away), never `median([])` and never 0-penalized. **Reader contract (F5 — cross-package, flag to codex/A1b):** `pageviews.py` today has only `acquire`/`window_for` and no reader, and the cached JSON shape is undefined. A4 needs a **pinned cache-entry schema shared with `wp-acquire-impl`** — `{"title", "window": [start,end], "daily": [int, …]}` — plus a new `pageviews.read(cache_dir, title, window) -> list[int] | None` that clamps + **schema-validates on read (§5.5 — even our own stored JSON is untrusted)**; and the stage must thread the region's `snapshot_date` into `window_for` to key the cache. Until that lands, `pageviews` is uniformly absent (the floor path).
 - **Deterministic + re-runnable, versioned config (Principle 11/12, §5.6).** Same `places`+`source_records`+`scoring.json` → identical scores/tiers. Sorted iteration; no wall-clock/randomness in any output value. `scoring.json` carries a `version` (§5.6 "scoring config carries versions"); the composite is a pure function of `(signals, config)`.
-- **A4-owned output table; store-version coordination (fable carry-note).** A4 writes a **new `place_scores` table** — it does **not** add a `score`/`tier` column to A2's `places` (that would fork A2's schema). **Store-version convention (durable note):** `acquire` (v3, codex), A2's `places`, A3's `place_categories`, and A4's `place_scores` each add schema to `store.py` (`WORKING_STORE_VERSION` today = 2). Whoever lands **each** bumps `WORKING_STORE_VERSION` sequentially and updates the migration; **A4's impl reconciles to whatever version is current at landing** and adds `place_scores` as an additive migration (never a fork of another WP's table).
+- **A4-owned output table; store-version coordination (fable carry-note).** A4 writes a **new `place_scores` table** — it does **not** add a `score`/`tier` column to A2's `places` (that would fork A2's schema). **Store-version convention (durable note):** `acquire` (v3, codex), A2's `places`, A3's `place_categories`, and A4's `place_scores` each add schema to `store.py` (`WORKING_STORE_VERSION` today = 2). Whoever lands **each** bumps `WORKING_STORE_VERSION` sequentially and updates the migration; **A4's impl reconciles to whatever version is current at landing** and adds `place_scores` as an additive migration (never a fork of another WP's table). **Migration-ladder gap (F6 — flag):** `store.py` today has **no migration mechanism** — `init_schema` is `CREATE IF NOT EXISTS` + a strict-equality version gate that *hard-raises* on any mismatch. So the first WP to land a new table (**A2**, whose `places` A4 reads) must **introduce the migration ladder** (upgrade an old DB rather than reject it); A4 **extends** that ladder — it must not just `CREATE IF NOT EXISTS place_scores` and leave the strict gate to reject mismatched DBs. This is folded into the BLOCKED-ON-A2 note.
 - **BLOCKED-ON declarations (up front — the A2/A3 lesson).** A2 is merged as **plan only**: there is **no `reconcile` package or `places` table in code yet** (`store.py` has only `meta`/`source_records`/`stage_runs`; the `score` stage is a wired no-op stub). So: the **pure signal functions + rarity + composite + tiering (Tasks 1–5, 7) are fixture-testable NOW**; the **`score` stage (reads `places`) + the real malaysia run (Tasks 6, 8) are BLOCKED-ON A2 impl landing**; the **pageview signal on real data is BLOCKED-ON `wp-acquire-impl`** (and A4 tolerates the empty cache until then). Nothing claims to run against `places`/real data before those land.
 - **§5.5 untrusted signals.** Signal inputs are source-derived; each is clamped to [0,1] (a hostile sitelink count or tag can't push the composite out of range), coordinates/text were A1-scrubbed, and nothing is interpolated. A vandalized signal shifts one place's score/tier (bounded, per-place, recoverable) — it can't produce an out-of-range score or crash the stage.
 
@@ -57,14 +57,15 @@ pipeline/tests/
 
 **Files:** Create `pipeline/src/mt_pipeline/score/signals.py`; Test `pipeline/tests/test_score_signals.py`
 
-**Interfaces:** each is a pure function of a place's aggregated member signals (a `PlaceSignals` dict). Every output is clamped to `[0,1]`. Returns `None` for an **optional** signal that is absent (`pageviews` with no cache; `llm_curiosity` unset) — `None` means "renormalize away", distinct from `0.0` ("computed, no evidence").
-- `signals.article(sig) -> float` — `0` if no `wp` member; else a saturating function of `extract` length (`min(1, len/ARTICLE_FULL_LEN)`).
-- `signals.sitelinks(sig) -> float` — `min(1, log1p(n)/log1p(SITELINK_SAT))` (log-scaled, saturating).
-- `signals.heritage(sig) -> float` — grade → weight (`I→1.0, II*→0.7, II→0.5`, other/none→0) from config.
+**Interfaces:** each is a pure function of a place's **deterministically aggregated** member signals (a `PlaceSignals` dict). Every output is clamped to `[0,1]`. Returns `None` for an **optional** signal that is absent (`pageviews` with no cache; `llm_curiosity` unset) — `None` means "renormalize away", distinct from `0.0` ("computed, no evidence").
+- **Member aggregation pinned (F3 — a place has N members; iteration order must not leak, Principle 12):** the `PlaceSignals` builder (Task 6) collapses a place's members deterministically — **union** of tag-values (for rarity), **max** for numeric signals (sitelinks / article-length / pageviews-median), **grade precedence `I > II* > II`** for heritage (the strongest grade wins), and sorted-first for any remaining tie. State this in the builder + a two-members-same-source determinism test.
+- `signals.article(sig) -> float` — `0` if no `wp` member; else `min(1, len(extract)/ARTICLE_FULL_LEN)`. **Note (F4): `extract` is capped at `MAX_EXTRACT_LEN = 300` upstream (wikipedia.py), so this is EXISTENCE-DOMINATED — set `ARTICLE_FULL_LEN = 300` and treat a short extract as a stub. True article byte-length is a would-be A1b prop (cross-package — flag, do not pretend the 300-char lead supports it).**
+- `signals.sitelinks(sig) -> float` — `min(1, log1p(max(0, n))/log1p(SITELINK_SAT))`. **`max(0, n)` FIRST (F/coh — `log1p(n)` raises `ValueError: math domain error` for `n ≤ −1`; a hostile negative sitelink count must clamp to 0, not crash, §5.5).**
+- `signals.heritage(sig) -> float` — grade → weight (`I→1.0, II*→0.7, II→0.5`, other/none→0) from `scoring.json` `heritage_grades`.
 - `signals.plaque(sig) -> float` — `1.0` if a `plaque` member else `0.0`.
 - `signals.image(sig) -> float` — `1.0` if `wd` `image` present else `0.0`.
-- `signals.class_penalty(sig) -> float` — a **subtractive** signal in `[0,1]` (1 = no penalty) from the P31 class penalty config (low-interest classes penalized).
-- `signals.pageviews(sig) -> float | None` — median of the place's cached pageviews; **`None` if the cache has no data** for it.
+- `signals.class_penalty(sig) -> float` — a **multiplier** in `[0,1]` (1 = no penalty) from the P31 class penalty config; applied multiplicatively in the composite (Task 3), NOT summed.
+- `signals.pageviews(sig) -> float | None` — median of the place's cached pageviews; **`None` if the cache has no data OR is present-but-empty** (never `median([])`, which raises).
 - `signals.llm_curiosity(sig) -> float | None` — the value A6 wrote into `signals_json`, else **`None`**.
 
 - [ ] **Step 1: Failing tests** (`test_score_signals.py`):
@@ -81,9 +82,17 @@ def test_optional_signals_return_None_when_absent():
     assert S.llm_curiosity({}) is None                             # A6 hasn't written it
     assert S.image({"wd": {}}) == 0.0                              # always-computed: 0, not None
 
-def test_all_signals_clamped_0_1():
+def test_heritage_grade_table_exact():                            # was a vacuous range check
+    assert S.heritage({"hehle": {"grade": "I"}}) == 1.0
+    assert S.heritage({"hehle": {"grade": "II*"}}) == 0.7
+    assert S.heritage({"hehle": {"grade": "II"}}) == 0.5
+    assert S.heritage({"hehle": {"grade": "???"}}) == 0.0
+    assert S.heritage({}) == 0.0                                   # no hehle member
+
+def test_hostile_inputs_clamp_not_crash():
     assert S.sitelinks({"wd": {"sitelinks": 10**9}}) == 1.0        # hostile huge -> clamped
-    assert 0.0 <= S.heritage({"hehle": {"grade": "I"}}) <= 1.0
+    assert S.sitelinks({"wd": {"sitelinks": -5}}) == 0.0          # negative -> max(0,n) FIRST, no math-domain crash
+    assert S.pageviews({"pageviews": []}) is None                 # present-but-empty -> None, not median([]) crash
 ```
 
 - [ ] **Steps 2–4:** implement per the interface (constants from `scoring.json` in Task 5; hard-code here + read config in the stage). **Teeth:** the None-vs-0 distinction test reds if an optional signal returns 0 when absent (which would wrongly penalize); the clamp test reds on an unclamped signal.
@@ -96,20 +105,30 @@ def test_all_signals_clamped_0_1():
 **Files:** Create `pipeline/src/mt_pipeline/score/rarity.py`; Test `pipeline/tests/test_score_rarity.py`
 
 **Interfaces:**
-- `rarity.tag_value_frequency(conn, region) -> dict[str,int]` — a single pass over the region's `osm` `source_records`, counting `"key=value"` occurrences across the **full bounded tag sets** (A1c carries them). Deterministic.
-- `rarity.rarity_score(place_tags, freq) -> float` — a place with tag-values `{k=v,…}` scores by the **rarest** of its tag-values: `max over its tags of (1 − freq[t]/max_freq)` — a value seen once in the corpus → ~1.0, a ubiquitous value → ~0.0. `0.0` if the place has no OSM tags. Deterministic (iterate sorted).
+- **`RARITY_KEYS` — a curated, versioned allowlist of CATEGORICAL tag keys** in `scoring.json` (`historic`, `tourism`, `memorial`, `amenity`, `building`, `man_made`, `leisure`, `natural`, …). **Only these keys' `key=value` pairs count for rarity (F2 — the fix for the degenerate signal).** Free-text / identifier keys — `name`, `*_name`, `ref`, `wikidata`, `wikipedia`, `website`, `url`, `image`, `addr:*`, `source`, `operator`, `brand`, `note`, `description` — are **excluded** (they are near-unique across the corpus, so counting them made `freq≈1 → rarity≈1.0` for *every* named feature, collapsing the signal to a constant and breaking one of the four Malaysia-floor discriminators).
+- `rarity.tag_value_frequency(conn, region) -> dict[str,int]` — a single pass over the region's `osm` `source_records`, counting `"key=value"` occurrences **only for keys in `RARITY_KEYS`**. Deterministic.
+- `rarity.rarity_score(place_tags, freq) -> float` — over the place's `RARITY_KEYS`-filtered tag-values, `max of (1 − freq[t]/max_freq)` (rarest categorical value → ~1.0; ubiquitous → ~0.0). `0.0` if the place has no counted tags. Deterministic (iterate sorted).
 
 - [ ] **Step 1: Failing test** (`test_score_rarity.py`):
 ```python
 from mt_pipeline.score import rarity as R
 
-def test_rare_tag_scores_higher_than_common():
-    freq = {"amenity=bench": 1000, "historic=folly": 1}          # folly is rare
-    assert R.rarity_score({"historic=folly"}, freq) > R.rarity_score({"amenity=bench"}, freq)
-    assert R.rarity_score(set(), freq) == 0.0
+RARITY_KEYS = {"historic", "tourism", "memorial", "amenity", "building", "man_made", "leisure", "natural"}
+
+def test_rare_categorical_tag_scores_higher_than_common():
+    freq = R.tag_value_frequency_from_tagsets(   # (helper for the test; the real one reads the DB)
+        [{"historic": "castle"}, {"historic": "castle"}, {"historic": "folly"}], RARITY_KEYS)
+    assert R.rarity_score({"historic=folly"}, freq) > R.rarity_score({"historic=castle"}, freq)
+
+def test_identifier_and_name_tags_are_NOT_counted():
+    # F2 teeth: a place whose only "rare" tag is a near-unique name/wikidata must NOT score high rarity.
+    freq = R.tag_value_frequency_from_tagsets(
+        [{"name": "Unique Place A", "historic": "castle"}, {"name": "Unique Place B", "historic": "castle"}], RARITY_KEYS)
+    assert "name=Unique Place A" not in freq                     # name excluded
+    assert R.rarity_score({"name=Something Never Seen"}, freq) == 0.0   # a name-only place -> 0, not ~1.0
 ```
 
-- [ ] **Steps 2–4:** implement `tag_value_frequency` (Counter over `osm` props tags, sorted) + `rarity_score`. **Teeth:** rarer > common; empty → 0.
+- [ ] **Steps 2–4:** implement `tag_value_frequency` (Counter over `osm` props, **filtered to `RARITY_KEYS`**, sorted) + `rarity_score`. **Teeth:** the name/identifier test reds if the full tag set (incl. `name`/`wikidata`) is counted — the degenerate-saturation bug.
 - [ ] **Step 5: Commit** — `"Add OSM tag-value rarity (corpus frequency; rarer scores higher)"`
 
 ---
@@ -119,7 +138,10 @@ def test_rare_tag_scores_higher_than_common():
 **Files:** Create `pipeline/src/mt_pipeline/score/composite.py`; Test `pipeline/tests/test_score_composite.py`
 
 **Interfaces:**
-- `composite.score(signal_values: dict[str,float|None], cfg) -> float` — `signal_values` maps each signal name → its value (or `None` if absent). Compute `num = Σ cfg.weights[k]·v` and `den = Σ cfg.weights[k]` over **only the `k` whose `v is not None`**; `base = num/den` (0 if `den==0`). Add the fame-boost: `evidence = mean(present of heritage, plaque, article); pv = signal_values.get("pageviews") or 0.0; base += cfg.boost_weight·(1−pv)·evidence`. Return `min(1.0, max(0.0, base))`.
+- `composite.score(signal_values: dict[str,float|None], cfg) -> float` — `signal_values` maps each signal name → its value (or `None` if absent).
+  - **Base:** `num = Σ cfg.weights[k]·v` and `den = Σ cfg.weights[k]` over **only the additive signals** whose `v is not None` — i.e. `{article, sitelinks, heritage, plaque, image, tag_rarity, pageviews, llm_curiosity}` (**NOT `class_penalty`**); `base = num/den` (0 if `den==0`).
+  - **Fame-boost:** `evidence = mean(over the PRESENT of {heritage, plaque, article})` (0.0 if none present — never `mean([])`); `pv = signal_values.get("pageviews") or 0.0` (a genuine `0.0` and absent both mean "not famous" → both get the boost — a deliberate equivalence); `base += cfg.boost_weight·(1−pv)·evidence`.
+  - **Class penalty is MULTIPLICATIVE, applied OUTSIDE the renormalized sum (F1 — it cannot penalize as a positive weighted term):** `score = clamp01((base) · class_penalty)` where `class_penalty ∈ [0,1]` (1 = no penalty; a low-interest class like a parish → e.g. 0.3, which strictly lowers the score by a real margin). Return `min(1.0, max(0.0, …))`.
 
 - [ ] **Step 1: Failing tests** (`test_score_composite.py`):
 ```python
@@ -140,6 +162,15 @@ def test_llm_and_pageviews_off_still_scores_from_the_floor_signals():
          "pageviews": None, "llm_curiosity": None}     # both optional off
     s = C.score(v, CFG)
     assert 0 < s <= 1                                   # a real score from the 4 present signals
+
+def test_class_penalty_multiplies_and_strictly_lowers():
+    # F1 teeth: class_penalty is a MULTIPLIER outside the sum, not a positive term. Two places with
+    # identical additive signals but penalty 1.0 vs 0.3 -> the 0.3 place ranks strictly below by a real
+    # margin. Neuter (fold class_penalty into the additive sum) -> the margin collapses -> this reds.
+    cfg = type("Cfg", (), {"weights": {"heritage": 1}, "boost_weight": 0.0})()
+    clean = {"heritage": 1.0, "class_penalty": 1.0}
+    penalized = {"heritage": 1.0, "class_penalty": 0.3}
+    assert C.score(penalized, cfg) == 0.3 * C.score(clean, cfg) < C.score(clean, cfg)
 
 def _cfg(bw): return type("Cfg", (), {"weights": {"pageviews": 1, "heritage": 1}, "boost_weight": bw})()
 
@@ -173,8 +204,9 @@ def test_fame_boost_CHANGES_THE_ORDER_of_the_pair():
 
 **Files:** Create `pipeline/config/scoring.json`; Test `pipeline/tests/test_score_composite.py` (append config-load test)
 
-- `scoring.json` (versioned, §5.6): `{"version":"1", "weights": {"article":…, "sitelinks":…, "heritage":…, "plaque":…, "image":…, "tag_rarity":…, "class_penalty":…, "pageviews":…, "llm_curiosity":…}, "boost_weight":…, "tiers": {"t1_min":…, "t2_min":…, "t3_min":…}, "heritage_grades": {"I":1.0,"II*":0.7,"II":0.5}, "class_penalties": {"<QID>":0.3}}`. The `llm_curiosity` weight is present (A6's slot) though A4 never computes its value. Defaults are **provisional — A5's eval tunes them** (Principle 13: weights earn their place by beating the harness).
-- [ ] **Steps 1–5:** a test asserting `scoring.json` is valid, carries `version`, has a weight for every signal (incl. `llm_curiosity`), and `t1_min > t2_min > t3_min`; commit.
+- `scoring.json` (versioned, §5.6): `{"version":"1", "weights": {"article":…, "sitelinks":…, "heritage":…, "plaque":…, "image":…, "tag_rarity":…, "pageviews":…, "llm_curiosity":…}, "boost_weight":…, "tiers": {"t1_min":…, "t2_min":…, "t3_min":…}, "heritage_grades": {"I":1.0,"II*":0.7,"II":0.5}, "class_penalties": {"<QID>":0.3}, "rarity_keys": ["historic","tourism","memorial","amenity","building","man_made","leisure","natural"]}`. Note: **`class_penalty` is NOT in `weights`** — it is a multiplier (`class_penalties` map + a default 1.0), applied outside the sum (F1). The `llm_curiosity` weight is present (A6's slot) though A4 never computes its value. `rarity_keys` is the F2 categorical-tag allowlist. Defaults are **provisional — A5's eval tunes them** (Principle 13).
+- **`SIGNAL_NAMES` single source of truth (F8):** a module constant `SIGNAL_NAMES = ("article","sitelinks","heritage","plaque","image","tag_rarity","pageviews","llm_curiosity")` (the additive signals) `+ "class_penalty"` (the multiplier), referenced by `signals.py`, the composite, the `scoring.json` weight-key test, and the `signals_json` key test — so a rename can't silently drop a signal from the composite/evidence.
+- [ ] **Steps 1–5:** a test asserting `scoring.json` is valid, carries `version`, has a weight for every additive signal in `SIGNAL_NAMES` (incl. `llm_curiosity`, excl. `class_penalty`), `t1_min > t2_min > t3_min`, and `rarity_keys` present; commit.
 
 ---
 
@@ -195,7 +227,7 @@ def test_fame_boost_CHANGES_THE_ORDER_of_the_pair():
 
 **Interfaces:** consumes Tasks 1–5. **Fixture-testable NOW** (pure composite over a hand-built KL golden set — does not need the stage/real data).
 
-- [ ] **Steps 1–3:** a curated KL fixture of `PlaceSignals` — a few **known-interesting** places (a graded temple with a Wikipedia article + a rare OSM tag; a heritage-listed shophouse row) and a few **noise** places (a bare `amenity=bench`, an unremarkable node). Score them all with **`pageviews` and `llm_curiosity` BOTH off** (the §4 floor condition). Assert the known-interesting places all outrank all the noise places (the non-degenerate-ranking floor). **Teeth:** if the composite treated absent optional signals as `0` (breaking renormalization), the floor collapses — the interesting places (which rely on heritage/tag-rarity/article/image) would be dragged down and the ranking degrades; this test reds. (WP-A5 does the full precision@k against real hand-labels; this pins the *mechanism* on a fixture now.)
+- [ ] **Steps 1–3:** a curated KL fixture of `PlaceSignals` — a few **known-interesting** places (a graded temple with a Wikipedia article + a **rare** categorical OSM tag; a heritage-listed shophouse row) and a few **noise** places (a common `amenity=bench`, an unremarkable node). Score them all with **`pageviews` and `llm_curiosity` BOTH off** (the §4 floor condition). Assert the known-interesting places all outrank all the noise places. **What this test actually guards (corrected — the gate showed the earlier "renormalize-neuter reds this" claim is FALSE):** because the always-computed signals are never absent, turning pageviews+LLM off is a *uniform per-place rescale* — it cannot change the ranking, so a broken renormalization would NOT red this test. What DOES red it is a **floor SIGNAL that fails to discriminate** — e.g. the F2 degenerate tag-rarity (every place scores ~1.0), or a broken heritage/article/image signal — which is exactly the real Malaysia-floor risk (§4: those four signals must rank without pageviews). **The renormalization *mechanism* is guarded by Task 3's `test_absent_signal_renormalizes_not_penalizes`** (single present signal: real `1.0` vs neuter `0.1667`). (WP-A5 does the full precision@k against real hand-labels; this pins floor-signal discrimination on a fixture now.)
 - [ ] **Step 4: Commit** — `"Add Malaysia non-LLM floor acceptance test (pageviews+LLM off, floor signals rank KL golden fixture)"`
 
 ---
@@ -223,4 +255,8 @@ def test_fame_boost_CHANGES_THE_ORDER_of_the_pair():
 - **A6 fills the `llm_curiosity` slot** — writes into `place_scores.signals_json`; the composite already weights + renormalizes it. A6 earns its weight only by beating A5's harness.
 - **B8 zoom-gates tiers** (city z → T1–T2, street → all) — reads the `tier` A4 emits.
 
-**Adversarial review (per AGENTS.md gate) — TO RUN before PR:** (1) fixes on the **executed path**; (2) **teeth** — the renormalize-over-present test reds if an absent optional signal is treated as `0` (the floor-breaking bug); the Malaysia-floor test reds if the composite can't rank with pageviews+LLM off; the clamp/tier-boundary tests red on out-of-range or off-by-one; the fame-boost test reds if the boost ignores fame; (3) **the coherence critic runs the pure composite/signals/rarity/tiering on fixtures** and confirms determinism (shuffle-identical), `score ∈ [0,1]`, `tier ∈ 1–4`, and that **absent signals renormalize** (not zero-penalize); (4) confirm A4 computes **no LLM value** (only the slot), does **not** depend on A3, and that the stage/real-run tasks are honestly **BLOCKED-ON A2 impl** (Tasks 1–5/7 fixture-executable, the executed-path claim not over-reaching — the A3 lesson).
+**Adversarial review (per AGENTS.md gate) — COMPLETED. 2 critics, one building + running the pure signals/rarity/composite/tiers on fixtures (Python 3.11), one spec-fidelity against the merged extractor code. All shipped tests passed and the renormalize + fame-boost teeth bit, but the critics found signal-level defects that would ship a green suite over a ranking that degrades on real data — all fixed.**
+- **Fixed — HIGH:** (1) **`class_penalty` was additive** — a positive term blends toward the mean, it can't penalize (§4's "decisive" class exclusion defeated), and no test touched it → made it a **multiplier outside the sum** (`score = base·class_penalty`) + an order teeth test. (2) **tag-value rarity was degenerate** — counting the full tag set, `name`/`wikidata`/`ref` are near-unique → `rarity≈1.0` for *every* named feature, collapsing a Malaysia-floor signal → a **curated `rarity_keys` categorical allowlist** (excludes free-text/identifier keys) + a name-only-→-0 teeth test. (3) **the Malaysia-floor test's teeth claim was FALSE** (my own "neuter-must-change-the-output" lesson): the always-computed signals are never absent, so the pageviews+LLM-off neuter is a *uniform per-place rescale* → ranking invariant → the test can't detect a broken renormalization → **corrected the claim** (the floor test guards floor-*signal* discrimination — it reds on the F2 degenerate rarity; the renormalize *mechanism* is Task 3's guard). (4) **negative sitelinks crashed** (`log1p(n)`, `n≤−1` → `ValueError`) → `max(0,n)` first.
+- **Fixed — MED:** member aggregation was unspecified (N members → iteration-order non-determinism) → pinned per-signal (union tags, max numeric, grade `I>II*>II`) + a test; the `evidence` mean crashed on `None` in one wording → "mean over PRESENT of {…}" in both; the heritage grade table was untested (vacuous range check) → exact `I→1.0/II*→0.7/II→0.5` asserts; article-length is existence-dominated (`extract` capped at 300) → reframed, `ARTICLE_FULL_LEN=300`, real length flagged as an A1b prop; the pageview **reader contract** (cache schema + `read()` + §5.5 validation + present-empty→None + window threading) is unpinned → specified + flagged cross-package; the **migration ladder** doesn't exist (strict-equality gate) → A2 introduces it, A4 extends (folded into BLOCKED-ON-A2).
+- **Fixed — LOW:** fame-boost double-count + present-0≡absent acknowledged; `SIGNAL_NAMES` single source of truth.
+- **Affirmed (verified vs real code):** all 8 §4 signals present + correctly sourced; LLM-optional faithful (A4 computes none; renormalized-away slot; deps A2 only, no A3 import); renormalize teeth (Task 3) + fame-boost order-flip both genuine; config-threshold tiers (not quantiles) the right determinism call; `score∈[0,1]`/`tier∈1–4`; determinism (200 shuffles → 1 score); BLOCKED-ON honesty accurate. **Before PR:** re-run the pure tests + neuters (class_penalty→additive reds; full-tag-set rarity reds the name-only test; boost→0 reverses the pair) on fixtures.
