@@ -4,6 +4,7 @@ __pycache__/
 uv.lock
 
 # Local acquisition snapshots, downloaded PBFs, SQLite stores, and real-run logs.
+.mt-data
 .mt-data/
 pipeline/.mt-data/
 run-audit/raw/
