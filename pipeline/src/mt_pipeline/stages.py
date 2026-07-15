@@ -138,20 +138,13 @@ def _run_reconcile(conn, region: str, *, run_id: str, version: str) -> None:
     store.replace_places(conn, region=region, places=result.places)
 
 
-def _run_score(conn, region: str) -> None:
-    row = conn.execute(
-        """
-        SELECT 1
-        FROM places
-        WHERE region = ?
-        LIMIT 1
-        """,
-        (region,),
-    ).fetchone()
-    if row is None:
-        raise StageOrderError(
-            "cannot run score: reconcile completed but no places are available"
-        )
+def _run_score(conn, region: str, *, run_id: str) -> None:
+    from .score import score_stage
+
+    try:
+        score_stage.run(conn, region, run_id=run_id)
+    except score_stage.ScoreStageError as exc:
+        raise StageOrderError(str(exc)) from exc
 
 
 def run_stage(conn, region: str, stage: str, *, run_id: str, version: str | None = None) -> None:
@@ -165,7 +158,7 @@ def run_stage(conn, region: str, stage: str, *, run_id: str, version: str | None
             raise StageVersionError("--version is required for reconcile")
         _run_reconcile(conn, region, run_id=run_id, version=version)
     elif stage == "score":
-        _run_score(conn, region)
+        _run_score(conn, region, run_id=run_id)
     elif stage == "categorize":
         from . import categorize
 

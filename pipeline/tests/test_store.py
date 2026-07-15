@@ -17,6 +17,7 @@ def test_schema_is_idempotent_and_versioned(conn):
         store.EXTRACT_RUN_METADATA_TABLE,
         store.PLACES_TABLE,
         store.PLACE_CATEGORIES_TABLE,
+        store.PLACE_SCORES_TABLE,
         store.META_TABLE,
     } <= tables
     ver = conn.execute(f"SELECT schema_version FROM {store.META_TABLE}").fetchone()[0]
@@ -48,6 +49,7 @@ def test_schema_migrates_v2_store(conn):
         store.EXTRACT_RUN_METADATA_TABLE,
         store.PLACES_TABLE,
         store.PLACE_CATEGORIES_TABLE,
+        store.PLACE_SCORES_TABLE,
     } <= tables
 
 
@@ -63,7 +65,11 @@ def test_schema_migrates_v3_store(conn):
         r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
     assert version == store.WORKING_STORE_VERSION
-    assert {store.PLACES_TABLE, store.PLACE_CATEGORIES_TABLE} <= tables
+    assert {
+        store.PLACES_TABLE,
+        store.PLACE_CATEGORIES_TABLE,
+        store.PLACE_SCORES_TABLE,
+    } <= tables
 
 
 def test_schema_migrates_v4_store(conn):
@@ -79,6 +85,23 @@ def test_schema_migrates_v4_store(conn):
     }
     assert version == store.WORKING_STORE_VERSION
     assert store.PLACE_CATEGORIES_TABLE in tables
+    assert store.PLACE_SCORES_TABLE in tables
+
+
+def test_schema_migrates_v5_store(conn):
+    store.init_schema(conn)
+    conn.execute(f"DROP TABLE {store.PLACE_SCORES_TABLE}")
+    conn.execute(f"UPDATE {store.META_TABLE} SET schema_version = ?", (5,))
+    conn.commit()
+
+    store._migrate(conn, 5)
+
+    version = conn.execute(f"SELECT schema_version FROM {store.META_TABLE}").fetchone()[0]
+    tables = {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    assert version == store.WORKING_STORE_VERSION
+    assert store.PLACE_SCORES_TABLE in tables
 
 
 def test_replace_places_replaces_only_target_region_and_sorts_refs(conn):

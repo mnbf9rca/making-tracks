@@ -6,13 +6,27 @@ import json
 import pathlib
 import sqlite3
 
-WORKING_STORE_VERSION = 5
+WORKING_STORE_VERSION = 6
 SOURCE_RECORDS_TABLE = "source_records"
 STAGE_RUNS_TABLE = "stage_runs"
 EXTRACT_RUN_METADATA_TABLE = "extract_run_metadata"
 PLACES_TABLE = "places"
 PLACE_CATEGORIES_TABLE = "place_categories"
+PLACE_SCORES_TABLE = "place_scores"
 META_TABLE = "meta"
+
+_PLACE_SCORES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS place_scores (
+    place_id     TEXT PRIMARY KEY,
+    region       TEXT NOT NULL,
+    score        REAL NOT NULL,
+    tier         INTEGER NOT NULL,
+    signals_json TEXT NOT NULL,
+    run_id       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_place_scores_region
+    ON place_scores(region);
+"""
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -67,7 +81,7 @@ CREATE TABLE IF NOT EXISTS place_categories (
 );
 CREATE INDEX IF NOT EXISTS idx_place_categories_region
     ON place_categories(region);
-"""
+""" + _PLACE_SCORES_SCHEMA
 
 
 class StoreVersionError(sqlite3.DatabaseError):
@@ -113,6 +127,9 @@ def _migrate(conn: sqlite3.Connection, current_version: int) -> None:
             current_version = 4
         elif current_version == 4:
             current_version = 5
+        elif current_version == 5:
+            conn.executescript(_PLACE_SCORES_SCHEMA)
+            current_version = 6
         else:
             raise StoreVersionError(
                 f"working-store schema version {current_version} "

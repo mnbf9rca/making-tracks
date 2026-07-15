@@ -6,6 +6,8 @@ from collections import Counter
 from collections.abc import Iterable, Mapping
 import json
 
+from .. import source_record
+
 RARITY_KEYS = frozenset(
     {
         "amenity",
@@ -32,9 +34,13 @@ def tag_value_frequency(conn, region: str, *, rarity_keys=RARITY_KEYS) -> dict[s
     ).fetchall()
     tagsets = []
     for (props_json,) in rows:
+        if len(props_json.encode("utf-8")) > source_record.PROPS_JSON_MAX:
+            props = {}
+            tagsets.append(_extract_tags(props))
+            continue
         try:
             props = json.loads(props_json)
-        except json.JSONDecodeError:
+        except (ValueError, RecursionError):
             props = {}
         tagsets.append(_extract_tags(props))
     return tag_value_frequency_from_tagsets(tagsets, rarity_keys)
