@@ -23,6 +23,7 @@ You are working on **Making Tracks** (making-tracks.app), an iOS map app for dis
 - **Determinism:** pipeline re-runs must not shuffle IDs or flip outputs. No wall-clock or randomness in outputs except via cached, versioned LLM calls.
 - **Privacy is structural:** no identifiers, no analytics SDKs, no accounts, user data on-device. Any network write of user-derived data must satisfy the unlinkability rules in the spec's §9.
 - **Ranking changes are judged by the eval harness**, not by argument.
+- **No silent long-running work.** Any process expected to run beyond ~30 seconds emits greppable progress: per-phase START/DONE lines with counts and durations, plus heartbeats (every ~10k records or 30s) with count/rate/elapsed. Detached runs always report their log path at launch. A human tailing the log must be able to answer "is it working and how far along?" at any moment.
 - **Test-first** where a behaviour can be expressed as a test; the ID-stability and reconciliation invariants must have regression tests.
 
 ## Secrets
