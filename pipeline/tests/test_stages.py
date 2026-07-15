@@ -34,10 +34,15 @@ def test_publish_blocked_names_categorize_after_extract_reconcile(conn):
     assert "categorize" in str(exc.value)
 
 
-def test_full_order_runs(conn):
-    for stage in stages.STAGE_ORDER:
-        stages.run_stage(conn, "uk", stage, run_id="r1")
-    assert store.stage_completed(conn, "uk", "publish")
+def test_score_stage_is_explicitly_blocked_until_a2_places_land(conn):
+    stages.run_stage(conn, "uk", "extract", run_id="r1")
+    stages.run_stage(conn, "uk", "reconcile", run_id="r1")
+
+    with pytest.raises(stages.StageOrderError) as exc:
+        stages.run_stage(conn, "uk", "score", run_id="r1")
+
+    assert "blocked until A2" in str(exc.value)
+    assert not store.stage_completed(conn, "uk", "score")
 
 
 def test_order_is_per_region(conn):
