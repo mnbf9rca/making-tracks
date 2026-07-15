@@ -22,6 +22,4 @@ public final class AppDatabase: Sendable {
     private func open() throws {
         try migrate()
     }
-
-    func migrate() throws {}
 }
