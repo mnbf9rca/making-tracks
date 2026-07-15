@@ -8,8 +8,6 @@ from dataclasses import dataclass
 
 import mt_contracts
 
-from . import store
-
 NAME_MAX = 300
 RAW_TEXT_MAX = 20_000
 SOURCE_REF_MAX = 128
@@ -138,8 +136,8 @@ def parse(
 
 def persist(conn, record: SourceRecord, *, run_id: str) -> None:
     conn.execute(
-        f"""
-        INSERT INTO {store.SOURCE_RECORDS_TABLE}
+        """
+        INSERT INTO source_records
             (region, source, source_ref, name, lat, lon, props_json, run_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,

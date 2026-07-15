@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 
 from mt_pipeline import store
@@ -20,6 +22,16 @@ def test_schema_rejects_stale_version(conn):
 
     with pytest.raises(store.StoreVersionError, match="999"):
         store.init_schema(conn)
+
+
+def test_meta_table_enforces_single_schema_row(conn):
+    store.init_schema(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            f"INSERT INTO {store.META_TABLE} (id, schema_version) VALUES (?, ?)",
+            (2, store.WORKING_STORE_VERSION),
+        )
 
 
 def test_stage_completion_ledger(conn):

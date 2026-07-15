@@ -107,6 +107,18 @@ def test_props_rejects_nonstring_keys_and_nonfinite_and_bad_types():
         _ok(props={"x": b"bytes"})
 
 
+def test_props_allows_supported_scalar_types():
+    props = {
+        "none": None,
+        "bool": True,
+        "int": 123,
+        "float": 1.5,
+        "nested": [None, False, 0, 2.5, {"ok": True}],
+    }
+
+    assert _ok(props=props).props == props
+
+
 def test_props_string_values_are_cleaned(monkeypatch):
     import mt_contracts
 

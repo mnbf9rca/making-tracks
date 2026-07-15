@@ -10,11 +10,12 @@ SOURCE_RECORDS_TABLE = "source_records"
 STAGE_RUNS_TABLE = "stage_runs"
 META_TABLE = "meta"
 
-_SCHEMA = f"""
-CREATE TABLE IF NOT EXISTS {META_TABLE} (
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS meta (
+    id             INTEGER PRIMARY KEY CHECK (id = 1),
     schema_version INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS {SOURCE_RECORDS_TABLE} (
+CREATE TABLE IF NOT EXISTS source_records (
     id         INTEGER PRIMARY KEY,
     region     TEXT NOT NULL,
     source     TEXT NOT NULL,
@@ -26,8 +27,8 @@ CREATE TABLE IF NOT EXISTS {SOURCE_RECORDS_TABLE} (
     run_id     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_source_records_region
-    ON {SOURCE_RECORDS_TABLE}(region);
-CREATE TABLE IF NOT EXISTS {STAGE_RUNS_TABLE} (
+    ON source_records(region);
+CREATE TABLE IF NOT EXISTS stage_runs (
     region       TEXT NOT NULL,
     stage        TEXT NOT NULL,
     run_id       TEXT NOT NULL,
@@ -49,17 +50,22 @@ def connect(db_path: str | pathlib.Path) -> sqlite3.Connection:
 
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA)
-    rows = conn.execute(f"SELECT schema_version FROM {META_TABLE}").fetchall()
+    try:
+        rows = conn.execute("SELECT id, schema_version FROM meta").fetchall()
+    except sqlite3.OperationalError as exc:
+        raise StoreVersionError("working-store meta table has stale shape") from exc
     if not rows:
         conn.execute(
-            f"INSERT INTO {META_TABLE} (schema_version) VALUES (?)",
-            (WORKING_STORE_VERSION,),
+            "INSERT INTO meta (id, schema_version) VALUES (?, ?)",
+            (1, WORKING_STORE_VERSION),
         )
     elif len(rows) != 1:
         raise StoreVersionError(f"expected one working-store schema row, found {len(rows)}")
-    elif rows[0][0] != WORKING_STORE_VERSION:
+    elif rows[0][0] != 1:
+        raise StoreVersionError(f"unexpected working-store schema row id {rows[0][0]}")
+    elif rows[0][1] != WORKING_STORE_VERSION:
         raise StoreVersionError(
-            f"working-store schema version {rows[0][0]} "
+            f"working-store schema version {rows[0][1]} "
             f"does not match expected {WORKING_STORE_VERSION}"
         )
     conn.commit()
@@ -73,8 +79,8 @@ def mark_stage_complete(
     completed_at: str,
 ) -> None:
     conn.execute(
-        f"""
-        INSERT INTO {STAGE_RUNS_TABLE} (region, stage, run_id, completed_at)
+        """
+        INSERT INTO stage_runs (region, stage, run_id, completed_at)
         VALUES (?, ?, ?, ?)
         ON CONFLICT(region, stage) DO UPDATE SET
             run_id = excluded.run_id,
@@ -87,7 +93,7 @@ def mark_stage_complete(
 
 def stage_completed(conn: sqlite3.Connection, region: str, stage: str) -> bool:
     row = conn.execute(
-        f"SELECT 1 FROM {STAGE_RUNS_TABLE} WHERE region = ? AND stage = ?",
+        "SELECT 1 FROM stage_runs WHERE region = ? AND stage = ?",
         (region, stage),
     ).fetchone()
     return row is not None
