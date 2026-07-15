@@ -7,7 +7,7 @@ name = "making-tracks-pipeline"
 version = "0.1.0"
 description = "Making Tracks data pipeline (extract -> reconcile -> score -> categorize -> publish)."
 requires-python = ">=3.11"
-dependencies = ["mt-contracts", "osmium>=4.0"]
+dependencies = ["ijson>=3.2", "mt-contracts", "osmium>=4.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

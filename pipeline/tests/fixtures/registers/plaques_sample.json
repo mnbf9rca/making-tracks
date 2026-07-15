@@ -1,0 +1,31 @@
+[
+  {
+    "id": 9876,
+    "title": "Ada Lovelace plaque",
+    "inscription": "Ada Lovelace lived here",
+    "lead_subject_name": "Ada Lovelace",
+    "latitude": 51.52,
+    "longitude": -0.14
+  },
+  {
+    "id": 9999,
+    "title": "Ungeolocated",
+    "inscription": "somewhere",
+    "latitude": null,
+    "longitude": null
+  },
+  {
+    "id": "bad-id",
+    "title": "Bad",
+    "latitude": 51.5,
+    "longitude": -0.1
+  },
+  {
+    "id": 9877,
+    "title": null,
+    "inscription": "In memory",
+    "lead_subject_name": "Grace Hopper",
+    "latitude": 51.53,
+    "longitude": -0.15
+  }
+]
