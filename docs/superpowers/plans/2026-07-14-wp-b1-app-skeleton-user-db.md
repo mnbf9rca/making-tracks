@@ -386,7 +386,7 @@ extension AppDatabase {
 - [ ] **Step 5: Run to verify it passes**
 
 Run: `cd ios && swift test --filter MigrationsTests`
-Expected: PASS (3 tests).
+Expected: PASS (5 tests).
 
 - [ ] **Step 6: Commit**
 
@@ -640,7 +640,7 @@ public struct PlaceRef: Sendable, Equatable {
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `cd ios && swift test --filter ModelsTests`
-Expected: PASS (2 tests).
+Expected: PASS (3 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -878,7 +878,7 @@ extension AppDatabase {
 - [ ] **Step 6: Run to verify they pass**
 
 Run: `cd ios && swift test --filter PinStateTests --filter DerivationsTests`
-Expected: PASS (pin matrix all six cells + 5 derivation tests).
+Expected: PASS (8 tests — 2 pin-matrix incl. loved-precedence + 6 derivations).
 
 - [ ] **Step 7: Commit**
 
@@ -898,7 +898,7 @@ git commit -m "Add pin-state matrix + derivations (seen, list progress, batched 
 
 **Interfaces:**
 - Produces:
-  - `AppDatabase.recordVisit(_ place: PlaceRef, verdict: Verdict? = nil) throws -> Int64` — snapshots on first interaction, then appends a visit event; returns the visit id (so it can be un-done). Reversible: `deleteVisit(id:)`.
+  - `AppDatabase.recordVisit(_ place: PlaceRef, verdict: Verdict? = nil) throws -> Int64` — snapshots on first interaction, then appends a visit event; returns the visit id (so it can be undone). Reversible: `deleteVisit(id:)`.
   - `AppDatabase.addToList(_ place: PlaceRef, listID: Int64) throws` — snapshots on first interaction, then `INSERT OR IGNORE` into `list_items` (idempotent; saving never mutates visits).
   - `AppDatabase.deleteVisit(id: Int64) throws`.
   - `AppDatabase.snapshotIfNeeded(_ place: PlaceRef, _ db: Database) throws` (internal helper): `INSERT`s a `place_snapshots` row only when absent (first interaction), storing the **verbatim** `place.rawJSON`, and stamping `snapshot_schema_version = place.schemaVersion` and `fetched_at = place.fetchedAt` (both data-derived).
@@ -1048,7 +1048,7 @@ extension AppDatabase {
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `cd ios && swift test --filter InteractionsTests`
-Expected: PASS (5 tests).
+Expected: PASS (7 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -1098,7 +1098,7 @@ final class ConcurrencyTests: XCTestCase {
 - [ ] **Step 2: Run the whole host suite**
 
 Run: `cd ios && swift test`
-Expected: PASS (all `MakingTracksDataTests` green — migrations, models, pin matrix, derivations, interactions, concurrency). **This entire suite runs with no simulator.**
+Expected: PASS (25 tests — all `MakingTracksDataTests` green: migrations, models, pin matrix, derivations, interactions, concurrency). **This entire suite runs with no simulator.**
 
 - [ ] **Step 3: Commit**
 
