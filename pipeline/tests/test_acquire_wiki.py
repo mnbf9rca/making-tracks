@@ -207,6 +207,31 @@ def test_wikidata_timeouts_are_retryable(tmp_path):
     assert len(attempts) == 2
 
 
+def test_wikidata_truncated_json_fetch_errors_are_retryable(tmp_path):
+    attempts = []
+
+    def fetch_json(*_args, **_kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise acquire.fetch.FetchError("invalid JSON: Unterminated string")
+        return {"results": {"bindings": []}}
+
+    acquire.acquire_wikidata(
+        tmp_path,
+        bbox=(100.0, 1.0, 101.0, 2.0),
+        class_qids=["Q33506"],
+        config={
+            "endpoint": "https://query.wikidata.org/sparql",
+            "allowed_hosts": ["query.wikidata.org"],
+        },
+        fetch_json=fetch_json,
+        sleep=lambda _seconds: None,
+        retrieved_at="2026-07-15T00:00:00Z",
+    )
+
+    assert len(attempts) == 2
+
+
 def test_acquire_all_applies_region_wikidata_tile_override(tmp_path, monkeypatch):
     config_path = tmp_path / "acquire_sources.json"
     config_path.write_text(

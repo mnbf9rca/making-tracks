@@ -132,7 +132,8 @@ def _is_retryable(exc: Exception) -> bool:
         return exc.status in RETRY_STATUSES or exc.status is None
     if isinstance(exc, fetch.FetchError):
         message = str(exc)
-        return "timed out" in message.lower() or any(
+        lower = message.lower()
+        return lower.startswith("invalid json:") or "timed out" in lower or any(
             f"http {status}" in message for status in RETRY_STATUSES
         )
     return False
