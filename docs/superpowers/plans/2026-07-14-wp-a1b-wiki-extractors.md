@@ -128,7 +128,9 @@ def test_redirect_to_unexpected_host_is_blocked_THROUGH_get_json(monkeypatch):
     # handler and assert it is blocked (not merely _validate_target on the first URL).
     hosts = {"query.wikidata.org"}
     monkeypatch.setattr(fetch, "_opener", lambda h: _mock_opener(h, "https://evil.example/x"))
-    with pytest.raises(fetch.FetchError):
+    # match= gives the test TEETH: it passes ONLY for the allowlist-block, not for a
+    # generic loop/HTTPError a neutered handler would produce (else it's a false green).
+    with pytest.raises(fetch.FetchError, match="blocked redirect"):
         fetch.get_json("https://query.wikidata.org/x", expected_hosts=hosts)
 
 def test_redirect_to_allowlisted_host_is_permitted():
@@ -497,7 +499,8 @@ def _load_snapshot(snapshot_path) -> dict:
         data = json.loads(p.read_text())
     except (ValueError, RecursionError) as e:      # deep-JSON bomb / malformed
         raise SnapshotTooLargeError(f"unparseable snapshot: {e}") from e
-    if (data.get("_meta") or {}).get("complete") is not True:
+    meta = data.get("_meta")                       # a non-dict _meta must fail CLEANLY, not AttributeError
+    if not isinstance(meta, dict) or meta.get("complete") is not True:
         raise SnapshotIncompleteError(f"{p} is not marked _meta.complete=true")
     return data
 
@@ -988,6 +991,6 @@ git commit -m "Wire production wiki-extractor registry into the A1 extract stage
 - *Coherence/test-quality:* determinism now tested with ≥2 records whose snapshot order differs from sorted; parse-delegation proven via a bad-coordinate row that must be dropped (exercising the skip path); hostile oversized fields asserted bounded; de-dup, don't-fabricate-join-key, malformed-record-skipped, oversized-snapshot, and SSRF all pinned; the determinism guard recurses over `extractors/`.
 - *Feasibility:* `window_for` crashed on a Feb-29 config snapshot date → clamped to Feb-28; duplicate-QID rows de-duped; the double label-slice removed.
 
-**Delta review (fable, independent, on PR #34) — CHANGES REQUIRED, fixed:** the gate had *reported* the SSRF fix as landed when it was defined-but-unwired — the lesson applied. (1) **SSRF (HIGH):** `_AllowlistRedirect` was defined but `get_json` fetched via `urlopen` (follows redirects to any host). Now `get_json` fetches through `_opener(expected_hosts)` = `build_opener(_AllowlistRedirect(...))` — **one** path with both the redirect-allowlist and the streaming cap/deadline/Content-Encoding checks; the test drives a **real 302 through `get_json`** and asserts `FetchError`. (2) **Partial-snapshot (MEDIUM):** the "never run against a partial snapshot" condition had no enforcement point. Now `_load_snapshot` refuses any snapshot without `_meta.complete == true` (`SnapshotIncompleteError`, tested); the network acquisition is honestly scoped as a named deferred follow-up whose completeness marker the gate enforces. Folds: the determinism guard no longer blanket-skips `pageviews.py` (it passes on specifics); `MAX_EXTRACT_LEN`/`MAX_*_LEN` aligned to A1's effective 300-char props/name cap (no longer misleading).
+**Delta review (fable, independent, on PR #34) — CHANGES REQUIRED, fixed:** the gate had *reported* the SSRF fix as landed when it was defined-but-unwired — the lesson applied. (1) **SSRF (HIGH):** `_AllowlistRedirect` was defined but `get_json` fetched via `urlopen` (follows redirects to any host). Now `get_json` fetches through `_opener(expected_hosts)` = `build_opener(_AllowlistRedirect(...))` — **one** path with both the redirect-allowlist and the streaming cap/deadline/Content-Encoding checks; the test drives a **real 302 through `get_json`** and asserts `FetchError`. (2) **Partial-snapshot (MEDIUM):** the "never run against a partial snapshot" condition had no enforcement point. Now `_load_snapshot` refuses any snapshot without `_meta.complete == true` (`SnapshotIncompleteError`, tested); the network acquisition is honestly scoped as a named deferred follow-up whose completeness marker the gate enforces. Folds: the determinism guard no longer blanket-skips `pageviews.py` (it passes on specifics); `MAX_EXTRACT_LEN`/`MAX_*_LEN` aligned to A1's effective 300-char props/name cap (no longer misleading). The **re-run fetch security critic** then verified the SSRF fix is genuinely wired on the executed path (blocks single-hop, multi-hop, and https→http-downgrade redirects; a neutered handler gets pwned) and caught that the first redirect test was a **false green** (the mock's evil→evil loop made a neutered handler still raise `FetchError` via urllib's loop detection) — fixed with `pytest.raises(..., match="blocked redirect")` so the test fails unless the allowlist is what blocked; also hardened the `_meta` gate against a non-dict `_meta`.
 
 **Cross-package needs surfaced** — codex: append `wp` (last) to A0's mint grammar + frozen vector (A2 minting only); A3: replace the bootstrap allowlist; A2: read `props["wikidata"]` as the wp→wd join key; A1: consider `UNIQUE(source, source_ref)` on `source_records`.
