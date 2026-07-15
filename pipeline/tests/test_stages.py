@@ -4,6 +4,8 @@ import pytest
 
 from mt_pipeline import source_record, stages, store
 
+from helpers import A2_PLACES_DDL
+
 
 def test_stage_order_is_the_spec_order():
     assert stages.STAGE_ORDER == ("extract", "reconcile", "score", "categorize", "publish")
@@ -69,6 +71,33 @@ def test_score_stage_is_blocked_when_reconcile_has_no_places(conn):
 
     assert "no places" in str(exc.value)
     assert not store.stage_completed(conn, "uk", "score")
+
+
+def test_categorize_stage_dispatches_after_score_predecessor(conn):
+    conn.execute(A2_PLACES_DDL)
+    conn.execute(
+        """
+        INSERT INTO source_records
+            (region, source, source_ref, name, lat, lon, props_json, run_id)
+        VALUES ('uk', 'wd', 'wd:Q1', 'Museum', 1, 1, '{"p31":"Q33506"}', 'r')
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO places
+            (place_id, region, name, lat, lon, refs_json, member_refs_json, status)
+        VALUES ('p', 'uk', 'P', 1, 1, '[]', '["wd:Q1"]', 'live')
+        """
+    )
+    for stage in ("extract", "reconcile", "score"):
+        store.mark_stage_complete(conn, "uk", stage, "r1", "2026-07-15T00:00:00Z")
+
+    stages.run_stage(conn, "uk", "categorize", run_id="cat1")
+
+    assert store.stage_completed(conn, "uk", "categorize")
+    assert conn.execute(
+        "SELECT category FROM place_categories WHERE place_id = 'p'"
+    ).fetchone()[0] == "culture"
 
 
 def test_order_is_per_region(conn):

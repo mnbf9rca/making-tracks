@@ -166,6 +166,10 @@ def run_stage(conn, region: str, stage: str, *, run_id: str, version: str | None
         _run_reconcile(conn, region, run_id=run_id, version=version)
     elif stage == "score":
         _run_score(conn, region)
+    elif stage == "categorize":
+        from . import categorize
+
+        categorize.run(conn, region, run_id=run_id)
     store.mark_stage_complete(
         conn,
         region,

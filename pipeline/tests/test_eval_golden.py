@@ -314,8 +314,20 @@ def test_dump_area_reads_planned_a2_a3_a4_tables(conn):
             },
         ],
     )
-    conn.execute("INSERT INTO place_categories VALUES (?, ?)", (A, "history"))
-    conn.execute("INSERT INTO place_categories VALUES (?, ?)", (B, "history"))
+    conn.execute(
+        """
+        INSERT INTO place_categories (place_id, region, category, run_id)
+        VALUES (?, ?, ?, ?)
+        """,
+        (A, "uk", "history", "cat1"),
+    )
+    conn.execute(
+        """
+        INSERT INTO place_categories (place_id, region, category, run_id)
+        VALUES (?, ?, ?, ?)
+        """,
+        (B, "uk", "history", "cat1"),
+    )
     conn.execute(
         "INSERT INTO place_scores VALUES (?, ?, ?, ?)",
         (A, 2, 0.8, json.dumps({"article": 0.8, "llm_curiosity": None})),
@@ -376,7 +388,13 @@ def test_dump_area_rejects_malformed_signals_json(conn):
             }
         ],
     )
-    conn.execute("INSERT INTO place_categories VALUES (?, ?)", (A, "history"))
+    conn.execute(
+        """
+        INSERT INTO place_categories (place_id, region, category, run_id)
+        VALUES (?, ?, ?, ?)
+        """,
+        (A, "uk", "history", "cat1"),
+    )
     conn.execute("INSERT INTO place_scores VALUES (?, ?, ?, ?)", (A, 2, 0.8, '["bad"]'))
 
     with pytest.raises(ValueError, match="signals_json"):

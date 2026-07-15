@@ -87,6 +87,83 @@ def test_cli_run_id_is_parameterized(tmp_path):
     assert row[0] == hostile
 
 
+def test_cli_audit_outputs_report_without_marking_stage(tmp_path, capsys):
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    conn.execute(
+        """
+        INSERT INTO source_records
+            (region, source, source_ref, name, lat, lon, props_json, run_id)
+        VALUES ('uk', 'wd', 'wd:Q1', 'A', 1, 1, '{"p31":"Q16970"}', 'r')
+        """
+    )
+    conn.commit()
+
+    rc = cli.main(["--region", "uk", "audit", "--db", str(db), "--audit-format", "json"])
+
+    assert rc == 0
+    assert '"region": "uk"' in capsys.readouterr().out
+    assert store.stage_completed(conn, "uk", "audit") is False
+
+
+def test_cli_accepts_audit_subcommand_shape(tmp_path, capsys):
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    conn.execute(
+        """
+        INSERT INTO source_records
+            (region, source, source_ref, name, lat, lon, props_json, run_id)
+        VALUES ('uk', 'wd', 'wd:Q1', 'A', 1, 1, '{"p31":"Q16970"}', 'r')
+        """
+    )
+    conn.commit()
+
+    rc = cli.main(["audit", "uk", "--db", str(db), "--audit-format", "json"])
+
+    assert rc == 0
+    assert '"region": "uk"' in capsys.readouterr().out
+
+
+def test_cli_accepts_audit_subcommand_shape_from_console_argv(monkeypatch, tmp_path, capsys):
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    conn.execute(
+        """
+        INSERT INTO source_records
+            (region, source, source_ref, name, lat, lon, props_json, run_id)
+        VALUES ('uk', 'wd', 'wd:Q1', 'A', 1, 1, '{"p31":"Q16970"}', 'r')
+        """
+    )
+    conn.commit()
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["mt", "audit", "uk", "--db", str(db), "--audit-format", "json"],
+    )
+
+    rc = cli.main()
+
+    assert rc == 0
+    assert '"region": "uk"' in capsys.readouterr().out
+
+
+def test_cli_categorize_allows_empty_a2_places_table(tmp_path, capsys):
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    for stage in ("extract", "reconcile", "score"):
+        store.mark_stage_complete(conn, "uk", stage, "r1", "2026-07-15T00:00:00Z")
+
+    rc = cli.main(["--region", "uk", "categorize", "--db", str(db), "--run-id", "cat1"])
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "categorize complete for uk" in out
+
+
 def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path):
     captured = {}
 

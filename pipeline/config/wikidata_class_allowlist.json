@@ -1,4 +1,4 @@
 {
-  "_header": "BOOTSTRAP: superseded by WP-A3. Obvious P31 classes only; do not curate here.",
-  "allow": ["Q33506", "Q16970", "Q570116", "Q839954", "Q4989906"]
+  "_header": "PROVISIONAL: WP-A3 audit-derived allowlist format. Task 6 replaces this starter with classes derived from the real uk+malaysia audit; exclusion is absence from allow, not a blocklist field.",
+  "allow": ["Q16970", "Q33506", "Q4989906", "Q570116", "Q839954"]
 }

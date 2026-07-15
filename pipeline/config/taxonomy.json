@@ -1,0 +1,31 @@
+{
+  "_header": "PROVISIONAL & SKELETAL - replaced by WP-A3 Task 6 from the real uk+malaysia audit. Categories named FROM evidence, not invented (Principle 13 / spec section 4). Every category below is reachable by at least one map entry; the real 5-7 category set is derived from the audit, not this starter.",
+  "categories": [
+    "architecture",
+    "culture",
+    "history",
+    "memorials",
+    "religious"
+  ],
+  "uncovered": "uncategorized",
+  "precedence": [
+    "wd_p31",
+    "osm_tag",
+    "hehle",
+    "plaque"
+  ],
+  "class_map": {
+    "Q16970": "religious",
+    "Q23413": "history",
+    "Q33506": "culture"
+  },
+  "tag_map": {
+    "historic=castle": "history",
+    "memorial=*": "memorials",
+    "tourism=artwork": "culture"
+  },
+  "source_map": {
+    "hehle": "architecture",
+    "plaque": "memorials"
+  }
+}

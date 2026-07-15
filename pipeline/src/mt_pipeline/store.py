@@ -6,11 +6,12 @@ import json
 import pathlib
 import sqlite3
 
-WORKING_STORE_VERSION = 4
+WORKING_STORE_VERSION = 5
 SOURCE_RECORDS_TABLE = "source_records"
 STAGE_RUNS_TABLE = "stage_runs"
 EXTRACT_RUN_METADATA_TABLE = "extract_run_metadata"
 PLACES_TABLE = "places"
+PLACE_CATEGORIES_TABLE = "place_categories"
 META_TABLE = "meta"
 
 _SCHEMA = """
@@ -58,6 +59,14 @@ CREATE TABLE IF NOT EXISTS places (
 );
 CREATE INDEX IF NOT EXISTS idx_places_region
     ON places(region);
+CREATE TABLE IF NOT EXISTS place_categories (
+    place_id TEXT PRIMARY KEY,
+    region   TEXT NOT NULL,
+    category TEXT NOT NULL,
+    run_id   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_place_categories_region
+    ON place_categories(region);
 """
 
 
@@ -102,6 +111,8 @@ def _migrate(conn: sqlite3.Connection, current_version: int) -> None:
             current_version = 3
         elif current_version == 3:
             current_version = 4
+        elif current_version == 4:
+            current_version = 5
         else:
             raise StoreVersionError(
                 f"working-store schema version {current_version} "

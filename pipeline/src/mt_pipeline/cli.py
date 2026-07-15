@@ -9,12 +9,13 @@ import pathlib
 import re
 import sqlite3
 import sys
+from collections.abc import Sequence
 
-from . import acquire, config, extract_stage, stages, store
+from . import acquire, audit, categorize, config, extract_stage, stages, store
 from .eval import golden, report as eval_report
 
 _DEFAULT_RUN_ID = "manual"
-_COMMANDS = ("acquire", "acquire-redirects", *stages.STAGE_ORDER)
+_COMMANDS = ("acquire", "acquire-redirects", "audit", *stages.STAGE_ORDER)
 _PIPELINE_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _DEFAULT_GOLDEN_AREAS = _PIPELINE_ROOT / "config" / "golden_areas.json"
 _DEFAULT_EVAL_OUT_DIR = _PIPELINE_ROOT.parent / "docs" / "superpowers" / "eval"
@@ -52,10 +53,26 @@ def _build_parser() -> argparse.ArgumentParser:
         help="for extract, replace only one enabled source from cached snapshot",
     )
     parser.add_argument(
+        "--audit-format",
+        choices=("markdown", "json"),
+        default="markdown",
+        help="output format for the audit command",
+    )
+    parser.add_argument(
         "--version",
         help="publish version for reconcile, formatted YYYYMMDDThhmmssZ",
     )
     return parser
+
+def _normalize_argv(argv: Sequence[str] | None) -> list[str]:
+    """Normalize argv, including the `mt audit <region>` shortcut."""
+    if argv is None:
+        args = sys.argv[1:]
+    else:
+        args = list(argv)
+    if len(args) >= 2 and args[0] == "audit" and not args[1].startswith("-"):
+        return ["--region", args[1], "audit", *args[2:]]
+    return args
 
 
 def _build_eval_parser() -> argparse.ArgumentParser:
@@ -247,7 +264,7 @@ def _run_eval(argv) -> int:
 
 
 def main(argv=None) -> int:
-    argv = sys.argv[1:] if argv is None else list(argv)
+    argv = _normalize_argv(argv)
     if argv and argv[0] == "eval":
         return _run_eval(argv[1:])
 
@@ -301,6 +318,20 @@ def main(argv=None) -> int:
         print(f"wikidata_redirects: {path}")
         return 0
 
+    if args.stage == "audit":
+        try:
+            report = audit.audit_region(conn, region.region_id)
+        except sqlite3.Error as exc:
+            print(f"database error running {args.stage!r}: {exc}", file=sys.stderr)
+            return 3
+        rendered = (
+            audit.render_json(report)
+            if args.audit_format == "json"
+            else audit.render_markdown(report)
+        )
+        print(rendered, end="" if rendered.endswith("\n") else "\n")
+        return 0
+
     try:
         if args.stage == "extract" and args.snapshot_dir:
             snap_dir = pathlib.Path(args.snapshot_dir)
@@ -350,6 +381,9 @@ def main(argv=None) -> int:
             version=args.version,
         )
     except stages.StageOrderError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except categorize.PlacesTableMissingError as exc:
         print(str(exc), file=sys.stderr)
         return 1
     except (
