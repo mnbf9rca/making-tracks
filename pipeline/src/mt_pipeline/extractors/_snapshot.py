@@ -47,6 +47,17 @@ def _sha256_file(path) -> str:
     return digest.hexdigest()
 
 
+def _validate_downloaded_snapshot(source_key: str, path: pathlib.Path) -> None:
+    if source_key != "historic_england":
+        return
+    try:
+        data = json.loads(path.read_text())
+    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
+        raise SnapshotParseError(f"{path} is not valid GeoJSON JSON: {exc}") from exc
+    if not isinstance(data, dict) or data.get("type") != "FeatureCollection":
+        raise SnapshotParseError(f"{path} is not a GeoJSON FeatureCollection")
+
+
 def download_snapshot(
     source_key,
     dest_dir,
@@ -66,6 +77,12 @@ def download_snapshot(
         expected_hosts=set(entry["allowed_hosts"]),
         max_bytes=entry.get("max_bytes", fetch.MAX_RESPONSE_BYTES),
     )
+    try:
+        _validate_downloaded_snapshot(source_key, dest)
+    except Exception:
+        dest.unlink(missing_ok=True)
+        pathlib.Path(str(dest) + ".meta.json").unlink(missing_ok=True)
+        raise
     sidecar = {
         "source_url": entry["url"],
         "snapshot_date": entry.get("snapshot_date"),

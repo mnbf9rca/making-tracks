@@ -36,6 +36,10 @@ def _build_parser() -> argparse.ArgumentParser:
         default="flex_mem",
         help="pyosmium location index type for OSM extraction",
     )
+    parser.add_argument(
+        "--only-source",
+        help="for extract, replace only one enabled source from cached snapshot",
+    )
     return parser
 
 
@@ -45,9 +49,17 @@ def _snapshot_dir(args) -> pathlib.Path:
     return pathlib.Path(args.data_dir) / args.region
 
 
-def _initial_extract_statuses(sources: dict) -> dict:
+def _initial_extract_statuses(sources: dict, *, only_source: str | None = None) -> dict:
     return {
-        source: {"status": "not_run" if enabled is True else "disabled"}
+        source: {
+            "status": (
+                "disabled"
+                if enabled is not True
+                else "preserved"
+                if only_source is not None and source != only_source
+                else "not_run"
+            )
+        }
         for source, enabled in sorted(sources.items())
     }
 
@@ -122,7 +134,9 @@ def main(argv=None) -> int:
                 acquire.DEFAULT_ALLOWLIST,
                 languages=set(region.languages),
             )
-            statuses = _initial_extract_statuses(region.sources)
+            statuses = _initial_extract_statuses(
+                region.sources, only_source=args.only_source
+            )
 
             def record_status(source, status):
                 statuses[source] = status
@@ -136,6 +150,7 @@ def main(argv=None) -> int:
                     registry=registry,
                     extractor_options={"osm": {"index_type": args.osm_index_type}},
                     status_recorder=record_status,
+                    only_source=args.only_source,
                 )
             except (
                 extract_stage.MissingSnapshotError,

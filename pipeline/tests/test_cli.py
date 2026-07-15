@@ -71,17 +71,17 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
         registry,
         extractor_options,
         status_recorder,
+        only_source,
     ):
         captured["region"] = region.region_id
         captured["snapshots"] = snapshots
         captured["run_id"] = run_id
         captured["registry"] = registry
         captured["extractor_options"] = extractor_options
+        captured["only_source"] = only_source
         status_recorder("wikidata", {"status": "success", "count": 1})
-        status_recorder("wikipedia", {"status": "success", "count": 2})
-        status_recorder("osm", {"status": "success", "count": 3})
         conn.execute("SELECT 1")
-        return {"osm": 2}
+        return {"wikidata": 1}
 
     monkeypatch.setattr(cli.extract_stage, "build_registry", fake_build_registry)
     monkeypatch.setattr(cli.extract_stage, "run_extract", fake_run_extract)
@@ -103,6 +103,8 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
             str(snapshot_dir),
             "--osm-index-type",
             "sparse_file_array,/tmp/osm.idx",
+            "--only-source",
+            "wikidata",
             "--run-id",
             "real",
         ]
@@ -114,6 +116,7 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
     assert captured["snapshots"]["wikipedia"] == snapshot_dir / "wikipedia.snapshot.json"
     assert captured["snapshots"]["osm"] == snapshot_dir / "osm.osm.pbf"
     assert captured["run_id"] == "real"
+    assert captured["only_source"] == "wikidata"
     assert captured["extractor_options"] == {
         "osm": {"index_type": "sparse_file_array,/tmp/osm.idx"}
     }
@@ -127,8 +130,8 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
             "historic_england": {"status": "disabled"},
             "national_register": {"status": "disabled"},
             "open_plaques": {"status": "disabled"},
-            "osm": {"status": "success", "count": 3},
+            "osm": {"status": "preserved"},
             "wikidata": {"status": "success", "count": 1},
-            "wikipedia": {"status": "success", "count": 2},
+            "wikipedia": {"status": "preserved"},
         },
     }

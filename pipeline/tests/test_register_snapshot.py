@@ -177,8 +177,9 @@ def test_download_snapshot_writes_sidecar_via_injected_fetch(tmp_path):
 
     def fake_fetch(url, dest, *, expected_hosts, **kwargs):
         assert kwargs["max_bytes"] == 99
-        pathlib.Path(dest).write_bytes(b"GEOJSON")
-        return 7
+        body = b'{"type":"FeatureCollection","features":[]}'
+        pathlib.Path(dest).write_bytes(body)
+        return len(body)
 
     path = _snapshot.download_snapshot(
         "historic_england",
@@ -189,6 +190,42 @@ def test_download_snapshot_writes_sidecar_via_injected_fetch(tmp_path):
     )
     meta = json.loads(pathlib.Path(str(path) + ".meta.json").read_text())
 
-    assert meta["sha256"] == hashlib.sha256(b"GEOJSON").hexdigest()
-    assert meta["size"] == 7
+    assert meta["sha256"] == hashlib.sha256(
+        b'{"type":"FeatureCollection","features":[]}'
+    ).hexdigest()
+    assert meta["size"] == 42
     _snapshot.verify_sha256_sidecar(path)
+
+
+def test_historic_england_download_rejects_arcgis_export_status(tmp_path):
+    cfg = {
+        "historic_england": {
+            "url": "https://historicengland.org.uk/nhle.geojson",
+            "allowed_hosts": ["historicengland.org.uk"],
+        }
+    }
+
+    def fake_fetch(url, dest, *, expected_hosts, **kwargs):
+        pathlib.Path(dest).write_text(
+            json.dumps(
+                {
+                    "message": "Up to date download file is being generated.",
+                    "status": "ExportingData",
+                    "progressInPercent": 0,
+                    "recordCount": 0,
+                }
+            )
+        )
+        return pathlib.Path(dest).stat().st_size
+
+    with pytest.raises(_snapshot.SnapshotParseError, match="GeoJSON FeatureCollection"):
+        _snapshot.download_snapshot(
+            "historic_england",
+            tmp_path,
+            config=cfg,
+            fetch_fn=fake_fetch,
+            enabled=True,
+        )
+
+    assert not (tmp_path / "historic_england.snapshot").exists()
+    assert not (tmp_path / "historic_england.snapshot.meta.json").exists()

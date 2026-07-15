@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from mt_pipeline import extract_stage, store
+from mt_pipeline import extract_stage, source_record, store
 
 FIXW = pathlib.Path(__file__).parent / "fixtures/wikidata/snapshot.json"
 
@@ -18,6 +18,22 @@ def _conn(tmp_path):
     conn = store.connect(tmp_path / "w.db")
     store.init_schema(conn)
     return conn
+
+
+def _insert_record(conn, *, source, source_ref, name):
+    source_record.persist(
+        conn,
+        source_record.parse(
+            "uk",
+            source,
+            source_ref,
+            name,
+            1.0,
+            2.0,
+            {"name": name},
+        ),
+        run_id="old",
+    )
 
 
 def test_runs_only_enabled_extractors_from_regionconfig(tmp_path):
@@ -128,4 +144,86 @@ def test_run_extract_records_disk_floor_failure(monkeypatch, tmp_path):
 
     assert statuses == {
         "wikidata": {"status": "failure", "error": "DiskSpaceError: low disk"}
+    }
+
+
+def test_run_extract_only_source_replaces_that_source_after_staged_success(tmp_path):
+    conn = _conn(tmp_path)
+    _insert_record(conn, source="wd", source_ref="wd:Q1", name="Old WD")
+    _insert_record(conn, source="osm", source_ref="osm:node/1", name="Keep OSM")
+
+    class FakeExtractor:
+        def extract(self, region, snapshot_path, conn, *, run_id):
+            source_record.persist(
+                conn,
+                source_record.parse(
+                    region,
+                    "wd",
+                    "wd:Q2",
+                    "New WD",
+                    3.0,
+                    4.0,
+                    {"snapshot": str(snapshot_path)},
+                ),
+                run_id=run_id,
+            )
+            return 1
+
+    class FakeRegistry:
+        def registered_sources(self):
+            return {"wd", "osm"}
+
+        def enabled_for(self, _sources):
+            return [("wd", FakeExtractor())]
+
+    counts = extract_stage.run_extract(
+        conn,
+        FakeRegionConfig(region_id="uk", sources={"wd": True, "osm": True}),
+        {"wd": tmp_path / "wd.json"},
+        run_id="new",
+        registry=FakeRegistry(),
+        only_source="wd",
+    )
+
+    assert counts == {"wd": 1}
+    assert conn.execute(
+        "SELECT source, source_ref, name, run_id FROM source_records ORDER BY source_ref"
+    ).fetchall() == [
+        ("osm", "osm:node/1", "Keep OSM", "old"),
+        ("wd", "wd:Q2", "New WD", "new"),
+    ]
+
+
+def test_run_extract_only_source_preserves_existing_rows_when_staging_fails(tmp_path):
+    conn = _conn(tmp_path)
+    _insert_record(conn, source="wd", source_ref="wd:Q1", name="Old WD")
+    statuses = {}
+
+    class FailingExtractor:
+        def extract(self, *_args, **_kwargs):
+            raise RuntimeError("bad snapshot")
+
+    class FakeRegistry:
+        def registered_sources(self):
+            return {"wd"}
+
+        def enabled_for(self, _sources):
+            return [("wd", FailingExtractor())]
+
+    with pytest.raises(RuntimeError, match="bad snapshot"):
+        extract_stage.run_extract(
+            conn,
+            FakeRegionConfig(region_id="uk", sources={"wd": True}),
+            {"wd": tmp_path / "wd.json"},
+            run_id="new",
+            registry=FakeRegistry(),
+            only_source="wd",
+            status_recorder=lambda source, status: statuses.update({source: status}),
+        )
+
+    assert conn.execute(
+        "SELECT source_ref, name, run_id FROM source_records"
+    ).fetchall() == [("wd:Q1", "Old WD", "old")]
+    assert statuses == {
+        "wd": {"status": "failure", "error": "RuntimeError: bad snapshot"}
     }
