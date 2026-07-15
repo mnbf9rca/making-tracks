@@ -25,6 +25,10 @@ You are working on **Making Tracks** (making-tracks.app), an iOS map app for dis
 - **Ranking changes are judged by the eval harness**, not by argument.
 - **Test-first** where a behaviour can be expressed as a test; the ID-stability and reconciliation invariants must have regression tests.
 
+## Secrets
+
+All secrets via 1Password: `op run --env-file=.env.tpl -- <command>` (masking stays ON; never `--no-masking`, never render secrets to disk). See `docs/SECRETS.md`. STANDING RULE: any compromised secret (logged, printed unmasked, read into context, committed) gets IMMEDIATELY appended to `TO-ROTATE.log` — reference/name + timestamp + vector, never the value. Logging an exposure is mandatory and blame-free.
+
 ## Workflow
 
 Work packages (spec §8) are designed one at a time (design agent) and built one at a time (build agent) on feature branches. Keep to your package's scope; if you discover a cross-package contract problem, surface it in your report rather than unilaterally changing the contract. Commit messages: imperative, plain, no attribution boilerplate.
