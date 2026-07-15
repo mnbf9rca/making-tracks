@@ -58,6 +58,36 @@ def test_provenance_verifies_sha256_and_is_loud_on_mismatch(tmp_path):
         osm.verify_provenance(pbf)
 
 
+def test_provenance_sidecar_must_be_self_describing(tmp_path):
+    pbf = tmp_path / "uk.pbf"
+    pbf.write_bytes(b"PBFDATA")
+    sha = hashlib.sha256(b"PBFDATA").hexdigest()
+    (tmp_path / "uk.pbf.meta.json").write_text(json.dumps({"sha256": sha}))
+
+    with pytest.raises(osm.ProvenanceError):
+        osm.verify_provenance(pbf)
+
+
+def test_extractor_path_verifies_provenance_before_parsing(tmp_path):
+    path = tmp_path / "sample.osm"
+    path.write_text(FIX.read_text())
+    (tmp_path / "sample.osm.meta.json").write_text(
+        json.dumps(
+            {
+                "source_url": "https://download.geofabrik.de/test.osm.pbf",
+                "geofabrik_date": "2026-07-14",
+                "sha256": "deadbeef",
+                "size": path.stat().st_size,
+            }
+        )
+    )
+    conn = _db(tmp_path / "w")
+
+    with pytest.raises(osm.ProvenanceError):
+        osm.OsmExtractor(CFG).extract("uk", path, conn, run_id="r1")
+    assert conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0] == 0
+
+
 def test_extracts_nodes_and_way_centroids_skips_noncandidate_and_relations(tmp_path):
     conn = _db(tmp_path / "w")
 
@@ -124,6 +154,17 @@ def test_binary_pbf_parity_with_xml(tmp_path):
     ).fetchall()
 
     assert xml_rows == pbf_rows
+
+
+def test_index_type_is_threaded_to_pyosmium(tmp_path):
+    with pytest.raises(osm.OsmParseError):
+        osm.OsmExtractor(CFG).extract(
+            "uk",
+            FIX,
+            _db(tmp_path / "idx"),
+            run_id="r1",
+            index_type="not_a_real_osmium_index",
+        )
 
 
 def _osm(nodes_xml):
@@ -229,6 +270,23 @@ def test_offglobe_coordinate_is_skipped_in_handler(tmp_path):
     conn = _db(tmp_path / "d")
 
     assert osm.OsmExtractor(CFG).extract("uk", path, conn, run_id="r1") == 0
+
+
+def test_parse_rejected_candidate_is_skipped_and_warned(tmp_path, caplog):
+    path = tmp_path / "nameless.osm"
+    path.write_text(
+        _osm(
+            '<node id="1" lat="1" lon="1" version="1">'
+            '<tag k="historic" v="castle"/></node>'
+        )
+    )
+    conn = _db(tmp_path / "nameless")
+
+    assert osm.OsmExtractor(CFG).extract("uk", path, conn, run_id="r1") == 0
+    assert any(
+        "rejected 1 candidate record" in record.message.lower()
+        for record in caplog.records
+    )
 
 
 def test_source_record_rejects_offglobe_coordinate_directly():

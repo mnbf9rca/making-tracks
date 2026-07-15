@@ -18,6 +18,10 @@ class UnregisteredEnabledSourceError(RuntimeError):
     pass
 
 
+class MissingSnapshotError(RuntimeError):
+    pass
+
+
 def build_registry(allowlist_path, languages: set[str], *, osm_tag_config_path=None) -> Registry:
     registry = Registry()
     registry.register("wikidata", wikidata.make_extractor(allowlist_path))
@@ -47,7 +51,7 @@ def run_extract(conn, region_config, snapshots: dict, *, run_id: str, registry) 
     for source, extractor in registry.enabled_for(region_config.sources):
         snapshot_path = snapshots.get(source)
         if snapshot_path is None:
-            continue
+            raise MissingSnapshotError(f"enabled source {source!r} has no snapshot")
         counts[source] = extractor.extract(
             region_config.region_id, snapshot_path, conn, run_id=run_id
         )

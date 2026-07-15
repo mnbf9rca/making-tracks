@@ -75,8 +75,22 @@ def verify_provenance(pbf_path) -> None:
         raise ProvenanceError(
             f"unparseable provenance sidecar for {pbf_path}: {exc}"
         ) from exc
-    if not isinstance(meta, dict) or not isinstance(meta.get("sha256"), str):
-        raise ProvenanceError(f"provenance sidecar for {pbf_path} lacks sha256")
+    if (
+        not isinstance(meta, dict)
+        or not isinstance(meta.get("source_url"), str)
+        or not isinstance(meta.get("geofabrik_date"), str)
+        or not isinstance(meta.get("sha256"), str)
+        or not isinstance(meta.get("size"), int)
+    ):
+        raise ProvenanceError(
+            f"provenance sidecar for {pbf_path} must include source_url, "
+            "geofabrik_date, sha256, and size"
+        )
+    actual_size = pathlib.Path(pbf_path).stat().st_size
+    if meta["size"] != actual_size:
+        raise ProvenanceError(
+            f"size mismatch for {pbf_path}: {actual_size} != {meta['size']}"
+        )
 
     actual = _sha256_file(pbf_path)
     if actual != meta["sha256"]:
@@ -199,6 +213,7 @@ class OsmExtractor:
             )
 
         count = 0
+        parse_rejected = 0
         for source_ref in sorted(handler.records):
             item = handler.records[source_ref]
             try:
@@ -211,10 +226,18 @@ class OsmExtractor:
                     lon=item["lon"],
                     props=item["props"],
                 )
-            except source_record.SourceRecordError:
+            except source_record.SourceRecordError as exc:
+                parse_rejected += 1
+                _log.debug("source record rejected %s: %s", source_ref, exc)
                 continue
             source_record.persist(conn, record, run_id=run_id)
             count += 1
+        if parse_rejected:
+            _log.warning(
+                "osm extract %s: rejected %d candidate record(s) at source-record boundary",
+                snapshot_path,
+                parse_rejected,
+            )
         return count
 
 
