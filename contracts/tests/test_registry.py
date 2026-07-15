@@ -1,6 +1,11 @@
 import pytest
 
-from mt_contracts.registry import AmbiguousRefsError, RegistryRecord, resolve_by_refs
+from mt_contracts.registry import (
+    AmbiguousRefsError,
+    RegistryRecord,
+    mark_shipped,
+    resolve_by_refs,
+)
 from mt_contracts.validation import is_valid, validate_instance
 
 
@@ -90,6 +95,36 @@ def test_tile_winner_violations_flags_superseded_ids():
     records = [_rec(loser, ["wd:Q8"], superseded_by=winner), _rec(winner, ["wd:Q9"])]
     assert tile_winner_violations([winner], records) == []
     assert tile_winner_violations([loser], records) == [loser]
+
+
+def test_mark_shipped_advances_last_seen_without_rewriting_mint_time_first_shipped():
+    record = _rec("mt1_" + "5" * 26, ["wd:Q1"])
+    record.first_shipped_version = "20260714T000000Z"
+    record.last_seen_version = "20260714T000000Z"
+
+    out = mark_shipped([record], {record.place_id}, "20260715T000000Z")
+
+    assert out[0].first_shipped_version == "20260714T000000Z"
+    assert out[0].last_seen_version == "20260715T000000Z"
+    assert record.last_seen_version == "20260714T000000Z"
+
+
+def test_mark_shipped_backfills_legacy_empty_first_shipped():
+    record = _rec("mt1_" + "5" * 26, ["wd:Q1"])
+    record.first_shipped_version = ""
+    record.last_seen_version = ""
+
+    out = mark_shipped([record], {record.place_id}, "20260715T000000Z")
+
+    assert out[0].first_shipped_version == "20260715T000000Z"
+    assert out[0].last_seen_version == "20260715T000000Z"
+
+
+def test_mark_shipped_rejects_unknown_place_ids():
+    record = _rec("mt1_" + "5" * 26, ["wd:Q1"])
+
+    with pytest.raises(KeyError):
+        mark_shipped([record], {"mt1_" + "6" * 26}, "20260715T000000Z")
 
 
 def test_registry_record_schema_accepts_valid_serialized_shape():

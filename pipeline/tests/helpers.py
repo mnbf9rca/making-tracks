@@ -1,5 +1,5 @@
 A2_PLACES_DDL = """
-CREATE TABLE places (
+CREATE TABLE IF NOT EXISTS places (
     place_id         TEXT PRIMARY KEY,
     region           TEXT NOT NULL,
     name             TEXT NOT NULL,

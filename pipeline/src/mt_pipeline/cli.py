@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import re
 import sqlite3
 import sys
 from collections.abc import Sequence
@@ -12,6 +13,7 @@ from . import acquire, audit, categorize, config, extract_stage, stages, store
 
 _DEFAULT_RUN_ID = "manual"
 _COMMANDS = ("acquire", "acquire-redirects", "audit", *stages.STAGE_ORDER)
+_VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -46,6 +48,10 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=("markdown", "json"),
         default="markdown",
         help="output format for the audit command",
+    )
+    parser.add_argument(
+        "--version",
+        help="publish version for reconcile, formatted YYYYMMDDThhmmssZ",
     )
     return parser
 
@@ -99,6 +105,9 @@ def _record_extract_metadata(conn, region, run_id: str, snap_dir, statuses: dict
 
 def main(argv=None) -> int:
     args = _build_parser().parse_args(_normalize_argv(argv))
+    if args.version is not None and not _VERSION_RE.fullmatch(args.version):
+        print("--version must match YYYYMMDDThhmmssZ", file=sys.stderr)
+        return 2
     try:
         region = config.load(args.region)
     except config.UnknownRegionError as exc:
@@ -200,7 +209,13 @@ def main(argv=None) -> int:
             stages.run_stage(conn, region.region_id, args.stage, run_id=args.run_id)
             print(f"{args.stage} complete for {region.region_id}: {counts}")
             return 0
-        stages.run_stage(conn, region.region_id, args.stage, run_id=args.run_id)
+        stages.run_stage(
+            conn,
+            region.region_id,
+            args.stage,
+            run_id=args.run_id,
+            version=args.version,
+        )
     except stages.StageOrderError as exc:
         print(str(exc), file=sys.stderr)
         return 1

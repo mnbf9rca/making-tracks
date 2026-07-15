@@ -20,6 +20,36 @@ def test_cli_enforces_stage_order(tmp_path, capsys):
     assert "categorize" in capsys.readouterr().err
 
 
+def test_cli_reconcile_requires_version(tmp_path, capsys):
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    store.mark_stage_complete(conn, "uk", "extract", "r1", "2026-07-15T00:00:00Z")
+    conn.close()
+
+    rc = cli.main(["--region", "uk", "reconcile", "--db", str(db), "--run-id", "r1"])
+
+    assert rc == 1
+    assert "--version" in capsys.readouterr().err
+
+
+def test_cli_rejects_bad_reconcile_version(tmp_path, capsys):
+    rc = cli.main(
+        [
+            "--region",
+            "uk",
+            "reconcile",
+            "--db",
+            str(tmp_path / "w.db"),
+            "--version",
+            "2026-07-15",
+        ]
+    )
+
+    assert rc == 2
+    assert "version" in capsys.readouterr().err.lower()
+
+
 def test_cli_maps_db_open_failure_to_clean_error(tmp_path, capsys):
     bad = tmp_path / "no_such_dir" / "w.db"
     rc = cli.main(["--region", "uk", "extract", "--db", str(bad)])
@@ -119,7 +149,7 @@ def test_cli_accepts_audit_subcommand_shape_from_console_argv(monkeypatch, tmp_p
     assert '"region": "uk"' in capsys.readouterr().out
 
 
-def test_cli_maps_missing_a2_places_table_to_clean_error(tmp_path, capsys):
+def test_cli_categorize_allows_empty_a2_places_table(tmp_path, capsys):
     db = tmp_path / "w.db"
     conn = store.connect(db)
     store.init_schema(conn)
@@ -128,10 +158,9 @@ def test_cli_maps_missing_a2_places_table_to_clean_error(tmp_path, capsys):
 
     rc = cli.main(["--region", "uk", "categorize", "--db", str(db), "--run-id", "cat1"])
 
-    assert rc == 1
-    err = capsys.readouterr().err
-    assert "A2 places table" in err
-    assert "Traceback" not in err
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "categorize complete for uk" in out
 
 
 def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path):

@@ -1,5 +1,6 @@
 import itertools
 import json
+import sqlite3
 
 from mt_pipeline import categorize as CZ
 from mt_pipeline import stages, store
@@ -102,8 +103,7 @@ def _seed_run(rows, places):
 
 
 def test_run_requires_a2_places_table():
-    conn = store.connect(":memory:")
-    store.init_schema(conn)
+    conn = sqlite3.connect(":memory:")
 
     try:
         CZ.run(conn, "uk", run_id="cat1", taxonomy=TAX)
