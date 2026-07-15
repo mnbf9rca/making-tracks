@@ -650,7 +650,7 @@ cd ios/App && xcodegen generate
 xcodebuild -project MakingTracks.xcodeproj -scheme MakingTracks \
   -destination 'platform=iOS Simulator,name=iPhone 16' build
 ```
-Expected: builds (after Tasks 5–6 provide `MapScreen`). **Not host-runnable — requires Xcode + a simulator.**
+**Build-order note:** the app target references `MapScreen` (Task 6) and `MLNMapViewRepresentable` (Task 5), so this `xcodebuild` **cannot succeed until Tasks 5–6 land** — at this task, only `xcodegen generate` is expected to succeed; run the full build as the final check of Task 6. **Not host-runnable — requires Xcode + a simulator.**
 
 - [ ] **Step 4: Commit**
 
@@ -717,10 +717,12 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             catch { return nil }                                   // real error path (un-observable on host)
         }
 
-        // Correct delegate selector is `mapView:didFinishLoadingStyle:` → `didFinishLoading style:`.
-        // (The earlier `didFinish style:` matched NO protocol requirement, so it compiled but was
-        // NEVER called — the entire pin substrate would silently never render. Verified against docs.)
-        func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
+        // The ObjC selector `mapView:didFinishLoadingStyle:` has NO NS_SWIFT_NAME, so it imports to
+        // Swift with the argument LABEL `didFinishLoadingStyle` (NOT `didFinishLoading style:`). Any
+        // other spelling is an optional-protocol method that compiles but is NEVER called → the pin
+        // substrate silently never renders. Verified against the MLNMapViewDelegate HEADER (the
+        // Swift-imported signature — docs prose and the raw selector are both misleading here).
+        func mapView(_ mapView: MLNMapView, didFinishLoadingStyle style: MLNStyle) {
             self.map = mapView
             // Badge icons MUST be registered or a symbol layer's icon-image renders NOTHING (silently).
             if let bookmark = UIImage(named: "badge-bookmark") { style.setImage(bookmark, forName: "badge-bookmark") }
@@ -790,6 +792,7 @@ private extension UIColor {
 }
 ```
 *(Applying the generated JSON to live MLN layers is the **single riskiest MLN surface** and no host test reaches it: opacity via `NSExpression(mglJSONObject:)` (the `mgl` prefix is retained despite the `MLN` class rename — verified); constants via `NSExpression(forConstantValue:)`; **filters via `NSPredicate(mglJSONObject:)`, NOT `NSExpression`** (`MLNVectorStyleLayer.predicate` is `NSPredicate?`); badge icons via `style.setImage(_:forName:)`. The `.foundationObject` bridge (Task 1) turns the host-proven `JSONValue` into the `NSArray`/`NSNumber` these initializers expect. All of this is `[XCODE/SIM]`-verified only — see Step 2's read-back check.)*
+*(**On the two representations of the pin layers:** `PinLayers.pinLayers()` returns the full JSON layer defs and is host-tested for the substrate **shape** (circle + two symbol layers, offsets); the wrapper rebuilds the layers **imperatively** above. This is deliberate, and the divergence risk is bounded to **cosmetic constants** (e.g. `circle-radius: 6`) — the **load-bearing expressions are single-sourced**: the wrapper calls the very same `PinLayers.fadeOpacityExpression()` / `bookmarkFilter()` / `heartFilter()` / `bookmarkOffset` / `heartOffset` / `pinColor`, so the matrix logic cannot diverge between the host-tested JSON and the live layers. Step 2's `[XCODE/SIM]` read-back covers the applied result end-to-end.)*
 
 - [ ] **Step 2: Build + read-back check (simulator) + commit**
 
@@ -884,7 +887,7 @@ git commit -m "Add MapScreen: viewportState-driven feature feed + dev harness (P
 
 **Ratifications (fable, thread `wp/b2`)** — the host-tested `MakingTracksMapStyle` seam (matrix + generated expressions + per-cell evaluator = §7 without a simulator); fade axis = `visit != .none`; B2 shell supersedes B1 Task 7 (issue #12); `MapPlace` minimal in `MakingTracksData`, provisional-until-B3; `[XCODE/SIM]` honesty.
 
-**Feasibility pre-verified (author, Swift 6.3.3 on host).** The pure core was prototyped and run: `JSONValue` (incl. Codable round-trip with bool≠double and the `foundationObject` bool→boolean-NSNumber bridge), `pinAppearance` + the generated `match` fade expression + badge filters + the evaluator over the **full 6-cell matrix** (every cell's evaluated expression equals `pinAppearance`), and the HSV `saturation` palette check (default palette 0.04–0.21 muted, pin 0.80). This is what Tasks 1–3's `swift test` re-runs; the MapLibre/`UIViewRepresentable` tasks are `[XCODE/SIM]` and **not** claimed host-verified.
+**Feasibility pre-verified (author, Swift 6.3.3 on host).** The pure core was prototyped and run: `JSONValue` (incl. Codable round-trip with bool≠double and the `foundationObject` bool→boolean-NSNumber bridge), `pinAppearance` + the generated `match` fade expression + badge filters + the evaluator over the **full 6-cell matrix** (every cell's evaluated expression equals `pinAppearance`), and the HSV `saturation` palette check (default palette 0.04–0.10 muted, pin 0.80). This is what Tasks 1–3's `swift test` re-runs; the MapLibre/`UIViewRepresentable` tasks are `[XCODE/SIM]` and **not** claimed host-verified.
 
 **Cross-package flags surfaced:**
 - **B1 Task 7 absorbed** — B2's XcodeGen shell is the one app shell; **issue #12 closes when it lands** (referencing this WP).
@@ -895,7 +898,7 @@ git commit -m "Add MapScreen: viewportState-driven feature feed + dev harness (P
 - **Protomaps demo basemap URL / badge icon assets** — dev placeholders; set to a current demo `.pmtiles` and provide `badge-bookmark`/`badge-heart` `UIImage`s at implementation (registered via `style.setImage`).
 
 **Adversarial review (per AGENTS.md gate) — COMPLETED. 3 independent critics (spec/§5.1-boundary fidelity; MapLibre-iOS-API correctness for the un-host-testable wrapper; coherence+test-quality that BUILT `MakingTracksMapStyle` on Swift 6.3.3). The build critic confirmed Tasks 1–3 compile clean under strict-concurrency `complete`, all tests pass, and the star matrix test reds under both neuters. All findings fixed and, for the pure parts, re-verified on the host.**
-- **Fixed — CRITICAL:** the style-loaded delegate was `didFinish style:` (matched no protocol requirement → compiled but **never called** → a pin-less map that "looks done") → corrected to `didFinishLoading style:`. This is exactly the class of bug no host test catches, caught by the API critic verifying against real MapLibre docs.
+- **Fixed — CRITICAL:** the style-loaded delegate must be `mapView(_:didFinishLoadingStyle style:)` (a pin-less map otherwise — an optional-protocol method with any other spelling compiles but is never called). The ObjC selector `mapView:didFinishLoadingStyle:` has **no `NS_SWIFT_NAME`**, so the Swift argument label is `didFinishLoadingStyle`. Verified against the `MLNMapViewDelegate` **header** (the Swift-imported signature — the raw selector and docs prose both mislead). This is exactly the class of bug no host test catches.
 - **Fixed — HIGH:** (a) badge filters were applied as `NSExpression` — but a layer filter is `MLNVectorStyleLayer.predicate` (`NSPredicate`, via `NSPredicate(mglJSONObject:)`) → corrected, with a `[XCODE/SIM]` note to confirm the modern `["==",["get",...]]` form vs legacy. (b) `AppDatabase+Live` used GRDB but the app target doesn't depend on it → moved `live()` into `MakingTracksData`. (c) **Overclaim** ("expression can never diverge from the matrix") — the evaluator is a same-module re-implementation, so it proves *generation*, not *rendering* → softened everywhere, and Task 5 gained a `[XCODE/SIM]` per-cell read-back so the JSON→MLN bridge has its own teeth; `addLayer` is fleshed out with named APIs (`NSExpression(mglJSONObject:)`/`forConstantValue:`, `NSPredicate(mglJSONObject:)`, `style.setImage`), not a stub.
 - **Fixed — MEDIUM:** badge icons were never registered (`icon-image` → nothing renders) → explicit `style.setImage` step; the (saved,loved) cell stacked both badges at one anchor → distinct `icon-offset` (host-tested different); `viewportState` ran synchronously on the main actor → `Task.detached`; XcodeGen `minVersion:` alone → `from: "6.27.0"`; tap hit-tested only the circle → all three pin layers.
 - **Fixed — LOW:** the palette-muted test was vacuous (a neon basemap passed) → HSV `saturation` assertion over all colours (host-verified); `Derivations.seen()` → `AppDatabase.seen(among:)`; new targets given `.swiftLanguageMode(.v6)`; `writeStyle` got a real error path; dead `PaperPalette.labels` dropped.
