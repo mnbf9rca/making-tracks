@@ -1,0 +1,6 @@
+{
+  "public_bucket": "making-tracks-tiles",
+  "private_bucket": "making-tracks-state",
+  "public_domain": "tiles.making-tracks.app",
+  "private_prefixes": { "registry": "registry/", "llm_cache": "llm-cache/", "feedback": "feedback/" }
+}
