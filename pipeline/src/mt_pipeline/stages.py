@@ -1,4 +1,4 @@
-"""No-op-but-dispatchable pipeline stages with order enforcement."""
+"""Pipeline stage dispatch with order enforcement."""
 
 from __future__ import annotations
 
@@ -23,6 +23,11 @@ def run_stage(conn, region: str, stage: str, *, run_id: str) -> None:
     if previous is not None and not store.stage_completed(conn, region, previous):
         raise StageOrderError(
             f"cannot run {stage!r} for region {region!r}: run {previous!r} first"
+        )
+    if stage == "score":
+        raise StageOrderError(
+            "score stage is blocked until A2 places land; "
+            "WP-A4 currently ships pure scoring primitives only"
         )
     if stage == "categorize":
         from . import categorize

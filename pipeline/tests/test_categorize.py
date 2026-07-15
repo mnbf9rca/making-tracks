@@ -238,7 +238,7 @@ def test_stage_dispatches_categorize_body_after_score():
         [("p", ["wd:Q1"])],
     )
     for stage in ("extract", "reconcile", "score"):
-        stages.run_stage(conn, "uk", stage, run_id="r1")
+        store.mark_stage_complete(conn, "uk", stage, "r1", "2026-07-15T00:00:00Z")
 
     stages.run_stage(conn, "uk", "categorize", run_id="cat1")
 
