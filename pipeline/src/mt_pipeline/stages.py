@@ -140,7 +140,12 @@ def _run_reconcile(conn, region: str, *, run_id: str, version: str) -> None:
 
 def _run_score(conn, region: str) -> None:
     row = conn.execute(
-        f"SELECT 1 FROM {store.PLACES_TABLE} WHERE region = ? LIMIT 1",
+        """
+        SELECT 1
+        FROM places
+        WHERE region = ?
+        LIMIT 1
+        """,
         (region,),
     ).fetchone()
     if row is None:
