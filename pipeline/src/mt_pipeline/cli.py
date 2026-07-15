@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import pathlib
+import re
 import sqlite3
 import sys
 
@@ -16,6 +18,9 @@ _COMMANDS = ("acquire", "acquire-redirects", *stages.STAGE_ORDER)
 _PIPELINE_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _DEFAULT_GOLDEN_AREAS = _PIPELINE_ROOT / "config" / "golden_areas.json"
 _DEFAULT_EVAL_OUT_DIR = _PIPELINE_ROOT.parent / "docs" / "superpowers" / "eval"
+_MAX_JSON_BYTES = 1_000_000
+_MAX_TSV_BYTES = 10_000_000
+_SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -73,6 +78,7 @@ def _build_eval_parser() -> argparse.ArgumentParser:
     report = subparsers.add_parser("report", help="score a labeled golden TSV")
     report.add_argument("labeled_tsv", help="hand-labeled golden TSV")
     report.add_argument("--config", required=True, help="scoring JSON config")
+    report.add_argument("--baseline", help="optional metric baseline JSON for regression gate")
     return parser
 
 
@@ -112,27 +118,94 @@ def _record_extract_metadata(conn, region, run_id: str, snap_dir, statuses: dict
     )
 
 
-def _load_json(path: pathlib.Path):
-    with path.open() as f:
-        return json.load(f)
+def _read_text_limited(path: pathlib.Path, *, max_bytes: int) -> str:
+    if path.stat().st_size > max_bytes:
+        raise ValueError(f"{path} exceeds {max_bytes} byte limit")
+    return path.read_text()
+
+
+def _load_json(path: pathlib.Path, *, max_bytes: int = _MAX_JSON_BYTES):
+    return json.loads(_read_text_limited(path, max_bytes=max_bytes))
+
+
+def _load_mapping_json(path: pathlib.Path) -> dict:
+    data = _load_json(path)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    return data
+
+
+def _load_metric_baseline(path: pathlib.Path) -> dict[str, float]:
+    data = _load_mapping_json(path)
+    baseline = {}
+    for key, value in data.items():
+        if not isinstance(key, str):
+            raise ValueError("baseline metric keys must be strings")
+        if not isinstance(value, int | float) or isinstance(value, bool):
+            raise ValueError(f"baseline metric {key!r} must be numeric")
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError(f"baseline metric {key!r} must be finite")
+        baseline[key] = number
+    return baseline
+
+
+def _safe_filename_token(value: str) -> str:
+    if not _SAFE_FILENAME_RE.fullmatch(value):
+        raise ValueError(f"{value!r} is not a safe filename token")
+    return value
+
+
+def _load_area_bbox(path: pathlib.Path, area: str) -> list[float]:
+    data = _load_mapping_json(path)
+    if data.get("version") != "1":
+        raise ValueError("golden areas config version must be '1'")
+    areas = data.get("areas")
+    if not isinstance(areas, dict):
+        raise ValueError("golden areas config must contain an areas object")
+    bbox = areas.get(area)
+    if not isinstance(bbox, list | tuple) or len(bbox) != 4:
+        raise ValueError(f"golden area {area!r} must be a four-number bbox")
+    out = []
+    for value in bbox:
+        if not isinstance(value, int | float) or isinstance(value, bool):
+            raise ValueError(f"golden area {area!r} bbox values must be numeric")
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError(f"golden area {area!r} bbox values must be finite")
+        out.append(number)
+    minlon, minlat, maxlon, maxlat = out
+    if not (-180 <= minlon < maxlon <= 180 and -90 <= minlat < maxlat <= 90):
+        raise ValueError(f"golden area {area!r} bbox is out of range")
+    return out
 
 
 def _run_eval(argv) -> int:
     args = _build_eval_parser().parse_args(argv)
     if args.eval_command == "report":
-        parsed = golden.parse_labeled_tsv(pathlib.Path(args.labeled_tsv).read_text())
+        try:
+            labeled_text = _read_text_limited(
+                pathlib.Path(args.labeled_tsv), max_bytes=_MAX_TSV_BYTES
+            )
+            parsed = golden.parse_labeled_tsv(labeled_text)
+        except (OSError, ValueError) as exc:
+            print(f"eval report error: {exc}", file=sys.stderr)
+            return 1
         if parsed.skipped:
             print("label parse skipped rows:", file=sys.stderr)
             for ident, reason in parsed.skipped:
                 print(f"- {ident}: {reason}", file=sys.stderr)
             return 1
         try:
-            config_data = _load_json(pathlib.Path(args.config))
+            config_data = _load_mapping_json(pathlib.Path(args.config))
             result = eval_report.eval_report(parsed.rows, config_data)
+            if args.baseline:
+                baseline = _load_metric_baseline(pathlib.Path(args.baseline))
+                eval_report.assert_no_regression(parsed.rows, config_data, baseline)
         except (OSError, json.JSONDecodeError) as exc:
             print(f"eval report error: {exc}", file=sys.stderr)
             return 1
-        except RuntimeError as exc:
+        except (AssertionError, RuntimeError, ValueError) as exc:
             print(str(exc), file=sys.stderr)
             return 1
         for key, value in sorted(result.metrics.items()):
@@ -142,9 +215,10 @@ def _run_eval(argv) -> int:
 
     if args.eval_command == "dump":
         try:
-            areas_config = _load_json(pathlib.Path(args.areas_config))
-            bbox = areas_config["areas"][args.area]
-        except (KeyError, OSError, json.JSONDecodeError) as exc:
+            area_token = _safe_filename_token(args.area)
+            run_token = _safe_filename_token(args.run_id)
+            bbox = _load_area_bbox(pathlib.Path(args.areas_config), args.area)
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
             print(f"eval dump config error: {exc}", file=sys.stderr)
             return 1
         try:
@@ -155,7 +229,7 @@ def _run_eval(argv) -> int:
             return 1
         out_dir = pathlib.Path(args.out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        stem = f"{args.run_id}-golden-{args.area}"
+        stem = f"{run_token}-golden-{area_token}"
         tsv_path = out_dir / f"{stem}.tsv"
         jsonl_path = out_dir / f"{stem}.jsonl"
         tsv_path.write_text(golden.render_tsv(rows))

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import json
+import math
 import sqlite3
-from collections.abc import Iterable, Sequence
-from typing import Any
+from collections.abc import Sequence
 
 from mt_contracts.place_id import is_valid_place_id
 from mt_contracts.text import strip_unsafe_text
@@ -16,7 +16,21 @@ INSTRUCTION_LINE = (
     "# Label the 'label' column only: yes = worth a detour; meh = fine but "
     "skippable; no = not interesting; (blank = skip). Do NOT edit other columns."
 )
-BASE_COLUMNS = ("place_id", "name", "lat", "lon", "category", "tier", "score")
+BASE_COLUMNS = (
+    "place_id",
+    "area",
+    "active",
+    "name",
+    "lat",
+    "lon",
+    "category",
+    "tier",
+    "score",
+    "data_version",
+)
+MAX_SIGNALS_JSON_BYTES = 65536
+MAX_SIGNAL_COUNT = 128
+MAX_SIGNAL_KEY_LEN = 64
 
 
 @dataclass(frozen=True)
@@ -53,11 +67,44 @@ def _format_float(value: float) -> str:
 
 
 def _clean_text(value: object) -> str:
-    return strip_unsafe_text(str(value))
+    cleaned = strip_unsafe_text(str(value))
+    if cleaned[:1] in {"=", "+", "-", "@"}:
+        return "'" + cleaned
+    return cleaned
+
+
+def _validate_signals_json(raw: str) -> dict[str, float | None]:
+    if len(raw.encode("utf-8")) > MAX_SIGNALS_JSON_BYTES:
+        raise ValueError("signals_json exceeds size limit")
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid signals_json: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("signals_json must be an object")
+    if len(payload) > MAX_SIGNAL_COUNT:
+        raise ValueError("signals_json has too many keys")
+    signals: dict[str, float | None] = {}
+    for key, value in payload.items():
+        if not isinstance(key, str) or not key:
+            raise ValueError("signals_json keys must be non-empty strings")
+        if len(key) > MAX_SIGNAL_KEY_LEN or strip_unsafe_text(key) != key:
+            raise ValueError(f"invalid signals_json key {key!r}")
+        if value is None:
+            signals[key] = None
+        elif isinstance(value, int | float) and not isinstance(value, bool):
+            number = float(value)
+            if not math.isfinite(number):
+                raise ValueError(f"non-finite signals_json value for {key!r}")
+            signals[key] = number
+        else:
+            raise ValueError(f"invalid signals_json value for {key!r}")
+    return signals
 
 
 def render_tsv(rows: Sequence[GoldenRow]) -> str:
-    data_versions = {row.data_version for row in rows}
+    active_versions = {row.data_version for row in rows if row.active}
+    data_versions = active_versions or {row.data_version for row in rows}
     data_version = next(iter(data_versions)) if len(data_versions) == 1 else ""
     signal_columns = _signal_columns(rows)
     header = [*BASE_COLUMNS, *signal_columns, "label"]
@@ -65,12 +112,15 @@ def render_tsv(rows: Sequence[GoldenRow]) -> str:
     for row in sorted(rows, key=lambda r: (-r.score, r.place_id)):
         fields = [
             row.place_id,
+            _clean_text(row.area),
+            "true" if row.active else "false",
             _clean_text(row.name),
             _format_float(row.lat),
             _format_float(row.lon),
             _clean_text(row.category),
             str(row.tier),
             _format_float(row.score),
+            _clean_text(row.data_version),
         ]
         for column in signal_columns:
             value = row.signals.get(column)
@@ -154,6 +204,13 @@ def parse_labeled_tsv(text: str) -> ParseResult:
             signals = {
                 name: _parse_optional_float(cells.get(name, "")) for name in signal_names
             }
+            active_raw = cells.get("active", "true").strip().lower()
+            if active_raw in {"", "true", "1", "yes"}:
+                active = True
+            elif active_raw in {"false", "0", "no"}:
+                active = False
+            else:
+                raise ValueError(f"invalid active value {cells.get('active')!r}")
         except ValueError as exc:
             skipped.append((place_id, f"invalid numeric field: {exc}"))
             continue
@@ -169,7 +226,7 @@ def parse_labeled_tsv(text: str) -> ParseResult:
 
         rows[place_id] = GoldenRow(
             place_id=place_id,
-            area="",
+            area=cells.get("area", ""),
             name=cells.get("name", ""),
             lat=lat,
             lon=lon,
@@ -178,8 +235,8 @@ def parse_labeled_tsv(text: str) -> ParseResult:
             score=score,
             signals=signals,
             label=label_value,
-            data_version=data_version or "",
-            active=True,
+            data_version=cells.get("data_version", "") or data_version or "",
+            active=active,
         )
         parsed += 1 if existing is None else 0
 
@@ -242,18 +299,18 @@ def dump_area(conn, area: str, bbox: Sequence[float], *, data_version: str) -> l
         ) from exc
 
     rows = []
-    for record in records:
-        signals = json.loads(record["signals_json"])
+    for place_id, name, lat, lon, category, tier, score, signals_json in records:
+        signals = _validate_signals_json(signals_json)
         rows.append(
             GoldenRow(
-                place_id=record["place_id"],
+                place_id=place_id,
                 area=area,
-                name=record["name"],
-                lat=record["lat"],
-                lon=record["lon"],
-                category=record["category"],
-                tier=record["tier"],
-                score=record["score"],
+                name=name,
+                lat=lat,
+                lon=lon,
+                category=category,
+                tier=tier,
+                score=score,
                 signals=signals,
                 label=None,
                 data_version=data_version,

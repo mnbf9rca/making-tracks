@@ -35,6 +35,8 @@ def eval_report(
 ) -> EvalReport:
     grouped: dict[str, list[GoldenRow]] = defaultdict(list)
     for row in labeled_rows:
+        if not row.active:
+            continue
         grouped[_area_key(row)].append(row)
 
     metrics: dict[str, float | None] = {}
@@ -67,4 +69,3 @@ def assert_no_regression(
             failures.append(f"{key}: actual={actual!r} baseline={expected!r}")
     if failures:
         raise AssertionError("ranking regression: " + "; ".join(failures))
-

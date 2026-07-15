@@ -153,6 +153,8 @@ def test_cli_eval_report_reads_labeled_tsv_and_config(monkeypatch, tmp_path, cap
     )
     config_path = tmp_path / "scoring.json"
     config_path.write_text('{"heritage": 1.0}')
+    baseline_path = tmp_path / "baseline.json"
+    baseline_path.write_text('{"all.llm_on.strict@5": 1.0}')
     captured = {}
 
     def fake_eval_report(rows, config, *, score_fn=None):
@@ -160,13 +162,71 @@ def test_cli_eval_report_reads_labeled_tsv_and_config(monkeypatch, tmp_path, cap
         captured["config"] = config
         return eval_report.EvalReport({"all.llm_on.strict@5": 1.0})
 
+    def fake_assert_no_regression(rows, config, baseline, *, score_fn=None):
+        captured["baseline"] = baseline
+
     monkeypatch.setattr(cli.eval_report, "eval_report", fake_eval_report)
-    rc = cli.main(["eval", "report", str(labeled), "--config", str(config_path)])
+    monkeypatch.setattr(cli.eval_report, "assert_no_regression", fake_assert_no_regression)
+    rc = cli.main(
+        [
+            "eval",
+            "report",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--baseline",
+            str(baseline_path),
+        ]
+    )
 
     assert rc == 0
     assert captured["rows"][0].place_id == "mt1_00000000000000000000000000"
     assert captured["config"] == {"heritage": 1.0}
+    assert captured["baseline"] == {"all.llm_on.strict@5": 1.0}
     assert "all.llm_on.strict@5\t1.000" in capsys.readouterr().out
+
+
+def test_cli_eval_report_returns_nonzero_on_regression(monkeypatch, tmp_path, capsys):
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tname\tlat\tlon\tcategory\ttier\tscore\theritage\tlabel",
+                "mt1_00000000000000000000000000\tX\t0\t0\tc\t1\t0\t1\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"heritage": 0.0}')
+    baseline_path = tmp_path / "baseline.json"
+    baseline_path.write_text('{"all.llm_on.strict@5": 1.0}')
+
+    def fake_eval_report(rows, config, *, score_fn=None):
+        return eval_report.EvalReport({"all.llm_on.strict@5": 0.0})
+
+    def fail_regression(rows, config, baseline, *, score_fn=None):
+        raise AssertionError("ranking regression: all.llm_on.strict@5")
+
+    monkeypatch.setattr(cli.eval_report, "eval_report", fake_eval_report)
+    monkeypatch.setattr(cli.eval_report, "assert_no_regression", fail_regression)
+
+    rc = cli.main(
+        [
+            "eval",
+            "report",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--baseline",
+            str(baseline_path),
+        ]
+    )
+
+    assert rc == 1
+    assert "ranking regression" in capsys.readouterr().err
 
 
 def test_cli_eval_report_surfaces_parse_skips_loudly(tmp_path, capsys):
@@ -199,3 +259,11 @@ def test_cli_eval_dump_is_blocked_until_a2_a3_a4_tables_land(tmp_path, capsys):
 
     assert rc == 1
     assert "BLOCKED-ON A2/A3/A4" in capsys.readouterr().err
+
+
+def test_cli_eval_dump_rejects_unsafe_filename_tokens(tmp_path, capsys):
+    db = tmp_path / "w.db"
+    rc = cli.main(["eval", "dump", "london", "--db", str(db), "--run-id", "../escape"])
+
+    assert rc == 1
+    assert "safe filename token" in capsys.readouterr().err
