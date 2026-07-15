@@ -107,7 +107,7 @@ def test_hostile_inputs_clamp_not_crash():
 **Interfaces:**
 - **`RARITY_KEYS` — a curated, versioned allowlist of CATEGORICAL tag keys** in `scoring.json` (`historic`, `tourism`, `memorial`, `amenity`, `building`, `man_made`, `leisure`, `natural`, …). **Only these keys' `key=value` pairs count for rarity (F2 — the fix for the degenerate signal).** Free-text / identifier keys — `name`, `*_name`, `ref`, `wikidata`, `wikipedia`, `website`, `url`, `image`, `addr:*`, `source`, `operator`, `brand`, `note`, `description` — are **excluded** (they are near-unique across the corpus, so counting them made `freq≈1 → rarity≈1.0` for *every* named feature, collapsing the signal to a constant and breaking one of the four Malaysia-floor discriminators).
 - `rarity.tag_value_frequency(conn, region) -> dict[str,int]` — a single pass over the region's `osm` `source_records`, counting `"key=value"` occurrences **only for keys in `RARITY_KEYS`**. Deterministic.
-- `rarity.rarity_score(place_tags, freq) -> float` — over the place's `RARITY_KEYS`-filtered tag-values, `max of (1 − freq[t]/max_freq)` (rarest categorical value → ~1.0; ubiquitous → ~0.0). `0.0` if the place has no counted tags. Deterministic (iterate sorted).
+- `rarity.rarity_score(place_tags, freq, *, rarity_keys=RARITY_KEYS) -> float` — **the `RARITY_KEYS` filter is applied HERE too** (a module constant, overridable via the keyword arg for tests/config): only `place_tags` whose key ∈ `rarity_keys` are considered, then `max of (1 − freq[t]/max_freq)` (rarest categorical value → ~1.0; ubiquitous → ~0.0). `0.0` if the place has no counted (in-allowlist) tags — so a `name=`-only place is unambiguously `0.0`, not `~1.0`. Deterministic (iterate sorted).
 
 - [ ] **Step 1: Failing test** (`test_score_rarity.py`):
 ```python
@@ -141,7 +141,7 @@ def test_identifier_and_name_tags_are_NOT_counted():
 - `composite.score(signal_values: dict[str,float|None], cfg) -> float` — `signal_values` maps each signal name → its value (or `None` if absent).
   - **Base:** `num = Σ cfg.weights[k]·v` and `den = Σ cfg.weights[k]` over **only the additive signals** whose `v is not None` — i.e. `{article, sitelinks, heritage, plaque, image, tag_rarity, pageviews, llm_curiosity}` (**NOT `class_penalty`**); `base = num/den` (0 if `den==0`).
   - **Fame-boost:** `evidence = mean(over the PRESENT of {heritage, plaque, article})` (0.0 if none present — never `mean([])`); `pv = signal_values.get("pageviews") or 0.0` (a genuine `0.0` and absent both mean "not famous" → both get the boost — a deliberate equivalence); `base += cfg.boost_weight·(1−pv)·evidence`.
-  - **Class penalty is MULTIPLICATIVE, applied OUTSIDE the renormalized sum (F1 — it cannot penalize as a positive weighted term):** `score = clamp01((base) · class_penalty)` where `class_penalty ∈ [0,1]` (1 = no penalty; a low-interest class like a parish → e.g. 0.3, which strictly lowers the score by a real margin). Return `min(1.0, max(0.0, …))`.
+  - **Class penalty is MULTIPLICATIVE, applied OUTSIDE the renormalized sum (F1 — it cannot penalize as a positive weighted term):** `cp = signal_values.get("class_penalty", 1.0)` (**default `1.0` = no penalty when absent — the fame-boost + base paths must never `KeyError` on a place with no class**); `score = clamp01(base · cp)` where `cp ∈ [0,1]` (a low-interest class like a parish → e.g. 0.3, which strictly lowers the score). Return `min(1.0, max(0.0, …))`.
 
 - [ ] **Step 1: Failing tests** (`test_score_composite.py`):
 ```python
@@ -236,7 +236,7 @@ def test_fame_boost_CHANGES_THE_ORDER_of_the_pair():
 
 > **⛔ BLOCKED-ON A2 impl (the `places` table) + `wp-acquire-impl` (real extracts).** Same declared shape as A2 Task 9 / A3 Task 6 — not discovered, declared. The pure determinism of signals/composite/tiers is guarded in Tasks 1–7 now; the real run waits.
 
-- [ ] **Step 1 (now):** a determinism test running the composite+tiering twice over a shuffled fixture → identical scores/tiers.
+- [ ] **Step 1 (now):** a determinism test running the composite+tiering over a signal-dict shuffled **200 times** (matching A2/A3's guard) → a single identical score/tier. Plus an **extreme-case clamp test**: signals + `boost_weight` chosen so `base + boost > 1.0` (e.g. all signals `1.0`, high `boost_weight`) → `score == 1.0` exactly (the `min(1.0, …)` clamp is exercised, not just asserted in prose).
 - [ ] **Step 2 (after A2 impl + real extracts):** `mt reconcile malaysia … && mt score malaysia --run-id r1`; a report script prints the **tier histogram** (T1–T4 counts), the **signal-coverage** (% of places with each signal present — expect pageviews ~0% for Malaysia, exercising the floor), and the **re-run-identical** confirmation. Commit `docs/superpowers/reports/2026-07-15-a4-malaysia-scoring.md`.
 - [ ] **Step 3: Commit** — `"Add scoring determinism guard + real malaysia tier-histogram report (after A2 impl)"`
 
