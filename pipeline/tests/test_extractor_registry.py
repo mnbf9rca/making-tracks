@@ -10,7 +10,6 @@ def test_enabled_for_returns_only_true_sources_in_registration_order():
         "wikidata": True,
         "wikipedia": True,
         "osm": False,
-        "national_register": None,
     }
     assert [name for name, _ in reg.enabled_for(sources)] == ["wikidata", "wikipedia"]
 
