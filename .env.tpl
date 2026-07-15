@@ -1,3 +1,7 @@
 export MODAL_TOKEN_ID="op://making-tracks/modal/token_id"
 export MODAL_TOKEN_SECRET="op://making-tracks/modal/token_secret"
 export NOUS_API_KEY="op://making-tracks/nousresearch/api_key"
+export R2_ACCESS_KEY_ID="op://making-tracks/cloudflare/r2_access_key_id"
+export R2_SECRET_ACCESS_KEY="op://making-tracks/cloudflare/r2_secret_access_key"
+export R2_S3_ENDPOINT="op://making-tracks/cloudflare/r2_s3_endpoint"
+export CLOUDFLARE_API_TOKEN="op://making-tracks/cloudflare/credential"
