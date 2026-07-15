@@ -114,7 +114,7 @@
     },
     "osm": {
       "bytes": 2229099958,
-      "index_bytes": 3875540576,
+      "index_bytes": 7734303936,
       "path": ".mt-data/uk/osm.osm.pbf",
       "sidecar": {
         "geofabrik_date": "2026-07-15",
@@ -149,6 +149,7 @@
   "total_records": 624124,
   "wall_time_notes": {
     "extract": "initial full extract banked wd/wp/osm, then failed loud at HE on ArcGIS ExportingData status JSON; HE rerun took about 61s via --only-source; Open Plaques rerun took about 30s via --only-source",
+    "osm_index_reuse_check": "scoped OSM extract against copied DB .mt-data/uk/work-idx-reuse-check.db succeeded with count 59,868 and 65,509 source-record rejects in 4,802s using sparse_file_array,.mt-data/uk/osm-node-locations.idx; real work.db remained unchanged; index file was accepted but extended from 3,875,540,576 bytes to 7,734,303,936 bytes",
     "redirects": "UK redirect-map acquisition took about 10m30s on VPS",
     "vps_cache_policy": "OSM PBF, sparse_file_array index, DB, snapshots, and redirect map retained on VPS"
   }
