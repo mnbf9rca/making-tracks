@@ -126,6 +126,137 @@ def test_binary_pbf_parity_with_xml(tmp_path):
     assert xml_rows == pbf_rows
 
 
+def _osm(nodes_xml):
+    return '<?xml version="1.0"?><osm version="0.6">' + nodes_xml + "</osm>"
+
+
+def test_corrupt_file_is_a_loud_typed_osm_parse_error(tmp_path):
+    over = tmp_path / "over.osm"
+    over.write_text(
+        _osm(
+            '<node id="1" lat="1" lon="1" version="1">'
+            f'<tag k="d" v="{"z" * 5000}"/></node>'
+        )
+    )
+    with pytest.raises(osm.OsmParseError):
+        osm.OsmExtractor(CFG).extract("uk", over, _db(tmp_path / "o"), run_id="r1")
+
+    garbage = tmp_path / "g.pbf"
+    garbage.write_bytes(b"not a real pbf")
+    with pytest.raises(osm.OsmParseError):
+        osm.OsmExtractor(CFG).extract("uk", garbage, _db(tmp_path / "g"), run_id="r1")
+
+
+def test_too_many_candidates_is_a_loud_bounded_abort(tmp_path, monkeypatch):
+    monkeypatch.setattr(osm, "MAX_CANDIDATE_RECORDS", 3)
+    nodes = "".join(
+        f'<node id="{index}" lat="1" lon="1" version="1">'
+        '<tag k="historic" v="x"/><tag k="name" v="Many"/></node>'
+        for index in range(10)
+    )
+    path = tmp_path / "many.osm"
+    path.write_text(_osm(nodes))
+
+    with pytest.raises(osm.TooManyCandidatesError):
+        osm.OsmExtractor(CFG).extract("uk", path, _db(tmp_path / "m"), run_id="r1")
+
+
+def test_too_many_tags_are_bounded(tmp_path):
+    tags = (
+        '<tag k="historic" v="x"/><tag k="name" v="Many Tags"/>'
+        + "".join(
+            f'<tag k="k{index}" v="v"/>'
+            for index in range(osm.MAX_TAGS_PER_FEATURE + 50)
+        )
+    )
+    path = tmp_path / "m.osm"
+    path.write_text(
+        _osm(f'<node id="1" lat="1" lon="1" version="1">{tags}</node>')
+    )
+    conn = _db(tmp_path / "d")
+
+    osm.OsmExtractor(CFG).extract("uk", path, conn, run_id="r1")
+    props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
+
+    assert len(props) <= osm.MAX_TAGS_PER_FEATURE
+
+
+def test_long_tag_key_is_truncated_at_the_edge(tmp_path):
+    longkey = "k" * 150
+    path = tmp_path / "lk.osm"
+    path.write_text(
+        _osm(
+            '<node id="1" lat="1" lon="1" version="1">'
+            '<tag k="historic" v="castle"/><tag k="name" v="LongKey"/>'
+            f'<tag k="{longkey}" v="v"/></node>'
+        )
+    )
+    conn = _db(tmp_path / "lk")
+
+    osm.OsmExtractor(CFG).extract("uk", path, conn, run_id="r1")
+    props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
+
+    assert ("k" * osm.MAX_TAG_KEY_LEN) in props
+    assert longkey not in props
+
+
+def test_garbage_wikidata_tag_is_dropped_record_kept(tmp_path):
+    path = tmp_path / "g.osm"
+    path.write_text(
+        _osm(
+            '<node id="1" lat="1" lon="1" version="1">'
+            '<tag k="historic" v="castle"/><tag k="name" v="Bad QID"/>'
+            '<tag k="wikidata" v="Qwerty; drop"/></node>'
+        )
+    )
+    conn = _db(tmp_path / "d")
+
+    osm.OsmExtractor(CFG).extract("uk", path, conn, run_id="r1")
+    props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
+
+    assert "wikidata" not in props
+    assert props["historic"] == "castle"
+
+
+def test_offglobe_coordinate_is_skipped_in_handler(tmp_path):
+    path = tmp_path / "o.osm"
+    path.write_text(
+        _osm(
+            '<node id="1" lat="99" lon="1" version="1">'
+            '<tag k="historic" v="x"/><tag k="name" v="Off Globe"/></node>'
+        )
+    )
+    conn = _db(tmp_path / "d")
+
+    assert osm.OsmExtractor(CFG).extract("uk", path, conn, run_id="r1") == 0
+
+
+def test_source_record_rejects_offglobe_coordinate_directly():
+    from mt_pipeline import source_record
+
+    with pytest.raises(source_record.SourceRecordError):
+        source_record.parse(
+            region="uk",
+            source="osm",
+            source_ref="osm:node/1",
+            name="X",
+            lat=99.0,
+            lon=1.0,
+            props={},
+        )
+
+
+def test_deterministic_same_file_same_records(tmp_path):
+    first = _db(tmp_path / "a")
+    second = _db(tmp_path / "b")
+
+    osm.OsmExtractor(CFG).extract("uk", FIX, first, run_id="r1")
+    osm.OsmExtractor(CFG).extract("uk", FIX, second, run_id="r2")
+    query = "SELECT source_ref, lat, lon FROM source_records ORDER BY id"
+
+    assert first.execute(query).fetchall() == second.execute(query).fetchall()
+
+
 def test_provenance_absent_sidecar_proceeds_with_warning(tmp_path, caplog):
     pbf = tmp_path / "dev.pbf"
     pbf.write_bytes(b"x")
