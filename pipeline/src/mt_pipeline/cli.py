@@ -46,6 +46,9 @@ def main(argv=None) -> int:
     except stages.StageOrderError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    except sqlite3.Error as exc:
+        print(f"database error running {args.stage!r}: {exc}", file=sys.stderr)
+        return 3
 
     print(f"{args.stage} complete for {region.region_id}")
     return 0

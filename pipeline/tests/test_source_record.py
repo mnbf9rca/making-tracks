@@ -116,6 +116,37 @@ def test_props_string_values_are_cleaned(monkeypatch):
     assert record.props["nested"]["t"] == "cd"
 
 
+def test_props_keys_and_list_strings_are_cleaned(monkeypatch):
+    import mt_contracts
+
+    monkeypatch.setattr(mt_contracts, "strip_unsafe_text", lambda s: s.replace("Z", ""))
+    record = _ok(props={"keZy": ["aZb"]})
+    assert record.props == {"key": ["ab"]}
+
+
+def test_props_rejects_empty_or_duplicate_cleaned_keys(monkeypatch):
+    import mt_contracts
+
+    monkeypatch.setattr(mt_contracts, "strip_unsafe_text", lambda s: s.replace("Z", ""))
+    with pytest.raises(sr.SourceRecordError, match="empty"):
+        _ok(props={"ZZ": "v"})
+    with pytest.raises(sr.SourceRecordError, match="duplicate"):
+        _ok(props={"aZ": 1, "a": 2})
+
+
+def test_props_serialized_size_is_capped(monkeypatch):
+    monkeypatch.setattr(sr, "PROPS_JSON_MAX", 24)
+    with pytest.raises(sr.SourceRecordError, match="too large"):
+        _ok(props={"desc": "x" * 40})
+
+
+def test_props_total_node_budget_is_capped(monkeypatch):
+    monkeypatch.setattr(sr, "PROPS_MAX_ITEMS", 4)
+    props = {f"k{i}": [1, 2, 3] for i in range(4)}
+    with pytest.raises(sr.SourceRecordError, match="too large"):
+        _ok(props=props)
+
+
 def test_record_owns_props_not_caller_alias():
     source_props = {"k": "v"}
     record = _ok(props=source_props)

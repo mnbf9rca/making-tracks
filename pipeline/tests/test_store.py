@@ -1,3 +1,5 @@
+import pytest
+
 from mt_pipeline import store
 
 
@@ -11,6 +13,15 @@ def test_schema_is_idempotent_and_versioned(conn):
     assert ver == store.WORKING_STORE_VERSION
 
 
+def test_schema_rejects_stale_version(conn):
+    store.init_schema(conn)
+    conn.execute(f"UPDATE {store.META_TABLE} SET schema_version = ?", (999,))
+    conn.commit()
+
+    with pytest.raises(store.StoreVersionError, match="999"):
+        store.init_schema(conn)
+
+
 def test_stage_completion_ledger(conn):
     assert store.stage_completed(conn, "uk", "extract") is False
     store.mark_stage_complete(
@@ -22,6 +33,24 @@ def test_stage_completion_ledger(conn):
     )
     assert store.stage_completed(conn, "uk", "extract") is True
     assert store.stage_completed(conn, "malaysia", "extract") is False
+
+
+def test_stage_run_id_is_parameterized(conn):
+    hostile = "r1'); DROP TABLE stage_runs;--"
+    store.mark_stage_complete(
+        conn,
+        "uk",
+        "extract",
+        run_id=hostile,
+        completed_at="2026-07-14T00:00:00Z",
+    )
+
+    tables = {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    assert store.STAGE_RUNS_TABLE in tables
+    row = conn.execute(f"SELECT run_id FROM {store.STAGE_RUNS_TABLE}").fetchone()
+    assert row[0] == hostile
 
 
 def test_mark_stage_complete_is_upsert(conn):

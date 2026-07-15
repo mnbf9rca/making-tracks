@@ -41,22 +41,37 @@ def _clean_text(value, *, field: str) -> str:
     return mt_contracts.strip_unsafe_text(value).strip()[:NAME_MAX]
 
 
-def _clean_props(node, depth: int = 0):
+def _spend_props_budget(budget: list[int], count: int = 1) -> None:
+    budget[0] -= count
+    if budget[0] < 0:
+        raise SourceRecordError("props too large")
+
+
+def _clean_props(node, depth: int = 0, budget: list[int] | None = None):
+    if budget is None:
+        budget = [PROPS_MAX_ITEMS]
     if depth > PROPS_MAX_DEPTH:
         raise SourceRecordError("props nested too deep")
     if isinstance(node, dict):
         if len(node) > PROPS_MAX_ITEMS:
             raise SourceRecordError("props has too many keys")
+        _spend_props_budget(budget, len(node))
         out = {}
         for key, value in node.items():
             if not isinstance(key, str):
                 raise SourceRecordError("props keys must be strings")
-            out[_clean_text(key, field="props key")] = _clean_props(value, depth + 1)
+            clean_key = _clean_text(key, field="props key")
+            if not clean_key:
+                raise SourceRecordError("props key empty after cleaning")
+            if clean_key in out:
+                raise SourceRecordError(f"duplicate props key after cleaning: {clean_key!r}")
+            out[clean_key] = _clean_props(value, depth + 1, budget)
         return out
     if isinstance(node, list):
         if len(node) > PROPS_MAX_ITEMS:
             raise SourceRecordError("props list too long")
-        return [_clean_props(value, depth + 1) for value in node]
+        _spend_props_budget(budget, len(node))
+        return [_clean_props(value, depth + 1, budget) for value in node]
     if isinstance(node, str):
         return _clean_text(node, field="props value")
     if node is None or isinstance(node, bool):

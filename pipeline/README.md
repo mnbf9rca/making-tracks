@@ -25,9 +25,8 @@ uv run mt-pipeline --region uk extract
 No-uv fallback for a Python 3.11 environment:
 
 ```bash
-pip install -e ./contracts ./pipeline
-cd pipeline
-python -m pytest -q
+python -m pip install -e ./contracts -e "./pipeline[dev]"
+python -m pytest pipeline/tests -q
 ```
 
 ## CLI

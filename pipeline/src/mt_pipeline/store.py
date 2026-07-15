@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS {STAGE_RUNS_TABLE} (
 """
 
 
+class StoreVersionError(sqlite3.DatabaseError):
+    pass
+
+
 def connect(db_path: str | pathlib.Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA foreign_keys = ON")
@@ -45,10 +49,18 @@ def connect(db_path: str | pathlib.Path) -> sqlite3.Connection:
 
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA)
-    if conn.execute(f"SELECT COUNT(*) FROM {META_TABLE}").fetchone()[0] == 0:
+    rows = conn.execute(f"SELECT schema_version FROM {META_TABLE}").fetchall()
+    if not rows:
         conn.execute(
             f"INSERT INTO {META_TABLE} (schema_version) VALUES (?)",
             (WORKING_STORE_VERSION,),
+        )
+    elif len(rows) != 1:
+        raise StoreVersionError(f"expected one working-store schema row, found {len(rows)}")
+    elif rows[0][0] != WORKING_STORE_VERSION:
+        raise StoreVersionError(
+            f"working-store schema version {rows[0][0]} "
+            f"does not match expected {WORKING_STORE_VERSION}"
         )
     conn.commit()
 
