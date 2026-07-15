@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import json
 import pathlib
 import sqlite3
 import sys
 
 from . import acquire, config, extract_stage, stages, store
+from .eval import golden, report as eval_report
 
 _DEFAULT_RUN_ID = "manual"
 _COMMANDS = ("acquire", "acquire-redirects", *stages.STAGE_ORDER)
+_PIPELINE_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_DEFAULT_GOLDEN_AREAS = _PIPELINE_ROOT / "config" / "golden_areas.json"
+_DEFAULT_EVAL_OUT_DIR = _PIPELINE_ROOT.parent / "docs" / "superpowers" / "eval"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -40,6 +45,34 @@ def _build_parser() -> argparse.ArgumentParser:
         "--only-source",
         help="for extract, replace only one enabled source from cached snapshot",
     )
+    return parser
+
+
+def _build_eval_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="mt-pipeline eval",
+        description="Making Tracks ranking eval tools.",
+    )
+    subparsers = parser.add_subparsers(dest="eval_command", required=True)
+
+    dump = subparsers.add_parser("dump", help="dump a golden area TSV+JSONL pair")
+    dump.add_argument("area", help="golden area id, e.g. london or kl")
+    dump.add_argument("--db", default="work.db", help="path to the SQLite store")
+    dump.add_argument("--run-id", default=_DEFAULT_RUN_ID, help="data version tag")
+    dump.add_argument(
+        "--areas-config",
+        default=str(_DEFAULT_GOLDEN_AREAS),
+        help="path to golden_areas.json",
+    )
+    dump.add_argument(
+        "--out-dir",
+        default=str(_DEFAULT_EVAL_OUT_DIR),
+        help="directory for TSV+JSONL dumps",
+    )
+
+    report = subparsers.add_parser("report", help="score a labeled golden TSV")
+    report.add_argument("labeled_tsv", help="hand-labeled golden TSV")
+    report.add_argument("--config", required=True, help="scoring JSON config")
     return parser
 
 
@@ -79,7 +112,66 @@ def _record_extract_metadata(conn, region, run_id: str, snap_dir, statuses: dict
     )
 
 
+def _load_json(path: pathlib.Path):
+    with path.open() as f:
+        return json.load(f)
+
+
+def _run_eval(argv) -> int:
+    args = _build_eval_parser().parse_args(argv)
+    if args.eval_command == "report":
+        parsed = golden.parse_labeled_tsv(pathlib.Path(args.labeled_tsv).read_text())
+        if parsed.skipped:
+            print("label parse skipped rows:", file=sys.stderr)
+            for ident, reason in parsed.skipped:
+                print(f"- {ident}: {reason}", file=sys.stderr)
+            return 1
+        try:
+            config_data = _load_json(pathlib.Path(args.config))
+            result = eval_report.eval_report(parsed.rows, config_data)
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"eval report error: {exc}", file=sys.stderr)
+            return 1
+        except RuntimeError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        for key, value in sorted(result.metrics.items()):
+            rendered = "undefined" if value is None else f"{value:.3f}"
+            print(f"{key}\t{rendered}")
+        return 0
+
+    if args.eval_command == "dump":
+        try:
+            areas_config = _load_json(pathlib.Path(args.areas_config))
+            bbox = areas_config["areas"][args.area]
+        except (KeyError, OSError, json.JSONDecodeError) as exc:
+            print(f"eval dump config error: {exc}", file=sys.stderr)
+            return 1
+        try:
+            conn = store.connect(args.db)
+            rows = golden.dump_area(conn, args.area, bbox, data_version=args.run_id)
+        except (sqlite3.Error, RuntimeError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        out_dir = pathlib.Path(args.out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        stem = f"{args.run_id}-golden-{args.area}"
+        tsv_path = out_dir / f"{stem}.tsv"
+        jsonl_path = out_dir / f"{stem}.jsonl"
+        tsv_path.write_text(golden.render_tsv(rows))
+        jsonl_path.write_text(golden.render_jsonl(rows))
+        print(f"wrote {tsv_path}")
+        print(f"wrote {jsonl_path}")
+        return 0
+
+    raise AssertionError(f"unhandled eval command: {args.eval_command}")
+
+
 def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv and argv[0] == "eval":
+        return _run_eval(argv[1:])
+
     args = _build_parser().parse_args(argv)
     try:
         region = config.load(args.region)

@@ -1,4 +1,5 @@
 from mt_pipeline import cli, store
+from mt_pipeline.eval import report as eval_report
 
 
 def test_cli_runs_a_stage(tmp_path):
@@ -135,3 +136,66 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
             "wikipedia": {"status": "preserved"},
         },
     }
+
+
+def test_cli_eval_report_reads_labeled_tsv_and_config(monkeypatch, tmp_path, capsys):
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tname\tlat\tlon\tcategory\ttier\tscore\theritage\tlabel",
+                "mt1_00000000000000000000000000\tX\t0\t0\tc\t1\t0\t1\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"heritage": 1.0}')
+    captured = {}
+
+    def fake_eval_report(rows, config, *, score_fn=None):
+        captured["rows"] = rows
+        captured["config"] = config
+        return eval_report.EvalReport({"all.llm_on.strict@5": 1.0})
+
+    monkeypatch.setattr(cli.eval_report, "eval_report", fake_eval_report)
+    rc = cli.main(["eval", "report", str(labeled), "--config", str(config_path)])
+
+    assert rc == 0
+    assert captured["rows"][0].place_id == "mt1_00000000000000000000000000"
+    assert captured["config"] == {"heritage": 1.0}
+    assert "all.llm_on.strict@5\t1.000" in capsys.readouterr().out
+
+
+def test_cli_eval_report_surfaces_parse_skips_loudly(tmp_path, capsys):
+    labeled = tmp_path / "bad.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tname\tlat\tlon\tcategory\ttier\tscore\theritage\tlabel",
+                "mt1_BADID\tX\t0\t0\tc\t1\t0\t1\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text("{}")
+
+    rc = cli.main(["eval", "report", str(labeled), "--config", str(config_path)])
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "skipped" in err
+    assert "invalid place_id" in err
+
+
+def test_cli_eval_dump_is_blocked_until_a2_a3_a4_tables_land(tmp_path, capsys):
+    db = tmp_path / "w.db"
+    rc = cli.main(["eval", "dump", "london", "--db", str(db), "--run-id", "v1"])
+
+    assert rc == 1
+    assert "BLOCKED-ON A2/A3/A4" in capsys.readouterr().err
