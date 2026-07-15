@@ -1,4 +1,5 @@
 import inspect
+import sqlite3
 
 import pytest
 
@@ -188,3 +189,12 @@ def test_injection_hostile_name_through_production_persist(tmp_path):
     assert store.SOURCE_RECORDS_TABLE in tables
     row = conn.execute(f"SELECT name FROM {store.SOURCE_RECORDS_TABLE}").fetchone()
     assert row[0].startswith("Robert')")
+
+
+def test_duplicate_source_ref_fails_loudly(tmp_path):
+    conn = store.connect(tmp_path / "w.db")
+    store.init_schema(conn)
+    sr.persist(conn, _ok(source="wd", source_ref="wd:Q42", name="First"), run_id="r1")
+
+    with pytest.raises(sqlite3.IntegrityError):
+        sr.persist(conn, _ok(source="wd", source_ref="wd:Q42", name="Second"), run_id="r2")

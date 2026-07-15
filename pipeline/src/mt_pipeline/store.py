@@ -5,7 +5,7 @@ from __future__ import annotations
 import pathlib
 import sqlite3
 
-WORKING_STORE_VERSION = 1
+WORKING_STORE_VERSION = 2
 SOURCE_RECORDS_TABLE = "source_records"
 STAGE_RUNS_TABLE = "stage_runs"
 META_TABLE = "meta"
@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS source_records (
     lat        REAL NOT NULL,
     lon        REAL NOT NULL,
     props_json TEXT NOT NULL,
-    run_id     TEXT NOT NULL
+    run_id     TEXT NOT NULL,
+    UNIQUE (source, source_ref)
 );
 CREATE INDEX IF NOT EXISTS idx_source_records_region
     ON source_records(region);
