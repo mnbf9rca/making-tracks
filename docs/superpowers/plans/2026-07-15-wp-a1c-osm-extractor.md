@@ -13,7 +13,10 @@
 - **Implements A1's interface + extends A1b's registry, never re-declares them.** Records are produced only via `mt_pipeline.source_record.parse(...)` / `persist(...)`; `osm` registers into `mt_pipeline.extractors.Registry` (from A1b, merged on develop) and runs through `extract_stage.build_registry`. Canonical-ref grammar + text-safety are `mt_contracts`' (via `parse`). **A1 preconditions** (present on develop): `source_record.parse`/`persist`/`SourceRecordError`; `store`; `config.RegionConfig`; `extractors.Registry`/`Extractor`; `is_canonical_ref` already accepts `osm:node/…`, `osm:way/…`.
 - **Streaming, bounded memory (fable).** `pyosmium` streams the file; the extractor holds only the *candidate* records (a filtered subset), never all nodes. The node-location index (for way centroids) uses pyosmium's location cache — in-memory for tests/regional extracts; a **disk-backed flex-mem index is the documented country-scale option** (a knob, not a code change).
 - **Deterministic (Principle 12).** `extract(pbf, …)` is a pure function of the dated `.pbf`: same file → identical records, identical order. Records emit in **stable lexical `source_ref` order** (collected then sorted), de-duped by `source_ref`. The **way-centroid is the arithmetic mean of the way's node locations** — a fixed, order-independent formula (a fixture way with hand-computed centroid pins it). No wall-clock/randomness in outputs.
-- **Never crash on hostile input (Principle 10 / §5.5 / binding carry-in).** OSM is open-world and vandalizable — a feature can carry thousands of tags and a hostile tag value can be huge. Every per-feature body runs inside a `try/except` that **skips** the feature (never aborts the stream). Raw-blob bounding at the edge: `MAX_TAGS_PER_FEATURE`, `MAX_TAG_KEY_LEN`/`MAX_TAG_VAL_LEN`, `MAX_NAME_LEN` — a small, shallow `props` reaches `parse`. `wikidata` is shape+length validated (`Q[0-9]+`, `MAX_QID_LEN`) before it becomes an A2 join key (a garbage value drops only the key). Nothing from OSM is interpolated into shell/SQL/LLM.
+- **Never crash on hostile input, with a per-feature vs file-level split (Principle 10 / §5.5 / binding carry-in; verified against pyosmium 4.3.1).** Two distinct failure classes:
+  - **Per-feature** hostile content *within OSM limits* (weird tag values, a feature with hundreds of tags, a missing `name`, an off-globe coordinate, a garbage `wikidata` tag): each per-feature body runs inside a `try/except` that **skips** the feature — never aborts the stream. Raw-blob bounding at the edge: `MAX_TAGS_PER_FEATURE` (props built once, bounded up front), `MAX_TAG_KEY_LEN`/`MAX_TAG_VAL_LEN`, `MAX_NAME_LEN` — a small, shallow `props` reaches `parse`. `wikidata` is shape+length validated (`Q[0-9]+`, `MAX_QID_LEN`) before it becomes an A2 join key (a garbage value drops only the key). `MAX_CANDIDATE_RECORDS` caps memory with a loud `TooManyCandidatesError`.
+  - **File-level** corruption (an over-long tag value — OSM itself caps values at ~255, so this is only reachable via a corrupt file — or a truncated/garbage `.pbf`): pyosmium's **reader raises `ValueError`/`RuntimeError` at the C level, escaping the per-feature guards**. That is caught in `extract` and re-raised as a **typed `OsmParseError` — a loud, clean abort**, because a corrupt file is not extractable (and it is backstopped by the provenance sha256 check). This distinction was found by actually running pyosmium; a naive per-feature-only guard would let a corrupt file crash the run with an uncaught exception.
+  Nothing from OSM is interpolated into shell/SQL/LLM.
 - **Self-describing provenance (A1b precedent).** The dated Geofabrik file is the determinism boundary. Acquisition (deferred, `WP-A1c-acquire`) writes a `<file>.pbf.meta.json` sidecar (`source_url`, `geofabrik_date`, `sha256`, `size`). Extract behaviour, pinned exactly: **sidecar present → verify the `.pbf` sha256, LOUD `ProvenanceError` on mismatch; sidecar absent (a hand-placed dev file) → proceed with a logged provenance warning.** (A truncated `.pbf` also fails pyosmium's own parse — an integrity backstop.)
 - **Candidate tags are CONSUMED config, not code (§4).** A bootstrap tag-filter ships here (`historic=*`, `tourism∈{attraction,artwork,viewpoint}`, `memorial=*`, …), header-marked `BOOTSTRAP: superseded by WP-A3`; A3's data audit refines from the real tag distribution with zero code change. OSM tag-value rarity is an **A4** scoring signal — A1c only *emits* the candidate tags in `props`; it does not score.
 - **`wikidata=*` is the free join (§5.2).** An OSM feature's `wikidata` tag rides in `props["wikidata"]` so A2 clusters it onto the QID-anchored place, exactly like A1b's `wp→wd` join. (A2 must read `props["wikidata"]` — already on issue #6.)
@@ -53,8 +56,8 @@ pipeline/tests/
 - Produces:
   - `osm.load_tag_config(path) -> dict[str, object]` — the consumed candidate-tag filter (`{key: True}` for key=*, `{key: [values]}` for key∈values).
   - `osm.is_candidate(tags: dict, config) -> bool`.
-  - `osm.ProvenanceError(Exception)`; `osm.verify_provenance(pbf_path) -> None` (sidecar present → verify sha256, raise on mismatch; absent → log warning, return).
-  - Caps: `MAX_TAGS_PER_FEATURE = 200`, `MAX_TAG_KEY_LEN = 100`, `MAX_TAG_VAL_LEN = 300`, `MAX_NAME_LEN = 300`, `MAX_QID_LEN = 24`.
+  - `osm.ProvenanceError`, `osm.OsmParseError` (file-level parse failure → loud abort), `osm.TooManyCandidatesError` (memory-bounded abort); `osm.verify_provenance(pbf_path) -> None` (sidecar present → verify sha256, raise on mismatch; absent → log warning, return).
+  - Caps: `MAX_TAGS_PER_FEATURE = 200`, `MAX_TAG_KEY_LEN = 100`, `MAX_TAG_VAL_LEN = 300`, `MAX_NAME_LEN = 300`, `MAX_QID_LEN = 24`, `MAX_CANDIDATE_RECORDS = 5_000_000`.
 
 - [ ] **Step 1: Write the failing helper tests**
 
@@ -130,15 +133,27 @@ import pathlib
 
 MAX_TAGS_PER_FEATURE = 200
 MAX_TAG_KEY_LEN = 100
-MAX_TAG_VAL_LEN = 300
+MAX_TAG_VAL_LEN = 300           # defense-in-depth: OSM itself caps tag values at 255 (pyosmium rejects longer)
 MAX_NAME_LEN = 300
 MAX_QID_LEN = 24
+MAX_CANDIDATE_RECORDS = 5_000_000   # loud-abort ceiling on candidates held (a real region is far smaller)
 
 _log = logging.getLogger(__name__)
 
 
 class ProvenanceError(Exception):
     pass
+
+
+class OsmParseError(Exception):
+    """The FILE could not be parsed by pyosmium (over-long tag, corrupt/truncated .pbf).
+    A file-level parse error escapes apply_file and is NOT a per-feature skip — it is a
+    loud, clean abort (a corrupt file is not extractable; provenance sha256 backstops it)."""
+
+
+class TooManyCandidatesError(Exception):
+    """More than MAX_CANDIDATE_RECORDS candidate features — a hostile/wrong file. Loud abort,
+    memory-bounded (we stop rather than grow unbounded)."""
 
 
 def load_tag_config(path) -> dict:
@@ -297,9 +312,11 @@ def _validate_qid(value):
     return isinstance(value, str) and len(value) <= MAX_QID_LEN and re.fullmatch(r"Q[0-9]+", value)
 
 
-def _bounded_props(tags) -> dict:
+def _bounded_props(o) -> dict:
+    # build the props dict ONCE from the TagList, bounded up front (never > MAX_TAGS_PER_FEATURE
+    # keys, each key/value length-capped) — so hostile tag bulk can't blow memory or reach parse.
     props: dict = {}
-    for i, t in enumerate(tags):
+    for i, t in enumerate(o.tags):
         if i >= MAX_TAGS_PER_FEATURE:
             break
         props[t.k[:MAX_TAG_KEY_LEN]] = t.v[:MAX_TAG_VAL_LEN]
@@ -315,31 +332,36 @@ class _CandidateHandler(osmium.SimpleHandler):
         self.config = config
         self.records: dict[str, dict] = {}     # source_ref -> record (dedup); only CANDIDATES held
 
-    def _emit(self, typ: str, oid: int, lat: float, lon: float, tags) -> None:
+    def _consider(self, typ: str, oid: int, lat: float, lon: float, o) -> None:
+        props = _bounded_props(o)
+        if not is_candidate(props, self.config):
+            return
         ref = f"osm:{typ}/{oid}"
         if ref in self.records:
             return
-        name = (tags.get("name") or "")[:MAX_NAME_LEN]
-        self.records[ref] = {"lat": lat, "lon": lon, "name": name, "props": _bounded_props(tags)}
+        if len(self.records) >= MAX_CANDIDATE_RECORDS:      # memory-bounded loud abort
+            raise TooManyCandidatesError(f"exceeded {MAX_CANDIDATE_RECORDS} candidates")
+        name = (props.get("name") or "")[:MAX_NAME_LEN]
+        self.records[ref] = {"lat": lat, "lon": lon, "name": name, "props": props}
 
     def node(self, o) -> None:
         try:
-            if not is_candidate(dict(o.tags), self.config) or not o.location.valid():
-                return
-            self._emit("node", o.id, o.location.lat, o.location.lon, o.tags)
-        except Exception:                       # one bad feature NEVER aborts the stream
-            return
+            if o.location.valid():
+                self._consider("node", o.id, o.location.lat, o.location.lon, o)
+        except TooManyCandidatesError:
+            raise                               # loud abort propagates
+        except Exception:
+            return                              # one bad feature NEVER aborts the stream
 
     def way(self, o) -> None:
         try:
-            if not is_candidate(dict(o.tags), self.config):
-                return
             locs = [(n.location.lat, n.location.lon) for n in o.nodes if n.location.valid()]
-            if not locs:
-                return
-            lat = sum(a for a, _ in locs) / len(locs)     # arithmetic-mean centroid (deterministic)
-            lon = sum(b for _, b in locs) / len(locs)
-            self._emit("way", o.id, lat, lon, o.tags)
+            if locs:
+                lat = sum(a for a, _ in locs) / len(locs)   # arithmetic-mean centroid (deterministic)
+                lon = sum(b for _, b in locs) / len(locs)
+                self._consider("way", o.id, lat, lon, o)
+        except TooManyCandidatesError:
+            raise
         except Exception:
             return
     # relations intentionally NOT handled → WP-A1c-relations
@@ -352,16 +374,23 @@ class OsmExtractor:
     def extract(self, region: str, snapshot_path, conn, *, run_id: str) -> int:
         verify_provenance(snapshot_path)                  # sidecar sha256 (loud) or dev-file warning
         handler = _CandidateHandler(self.tag_config)
-        handler.apply_file(str(snapshot_path), locations=True)   # streams; locations for way centroids
+        try:
+            handler.apply_file(str(snapshot_path), locations=True)   # streams; locations for way centroids
+        except TooManyCandidatesError:
+            raise
+        except (ValueError, RuntimeError) as e:
+            # pyosmium's READER raises at the C level for an over-long tag / corrupt / truncated
+            # file — this escapes the per-feature guards, so a corrupt FILE is a loud, clean abort
+            # (backstopped by the provenance sha256 check), NOT a silent skip.
+            raise OsmParseError(f"pyosmium could not parse {snapshot_path}: {e}") from e
         count = 0
         for ref in sorted(handler.records):               # stable lexical source_ref order
             r = handler.records[ref]
-            typ = "way" if ref.startswith("osm:way/") else "node"
             try:
                 rec = source_record.parse(region=region, source="osm", source_ref=ref,
                                           name=r["name"], lat=r["lat"], lon=r["lon"], props=r["props"])
             except source_record.SourceRecordError:
-                continue
+                continue                                  # per-feature: A1's boundary rejected it → skip
             source_record.persist(conn, rec, run_id=run_id)
             count += 1
         return count
@@ -370,7 +399,7 @@ class OsmExtractor:
 def make_extractor(tag_config_path) -> OsmExtractor:
     return OsmExtractor(load_tag_config(tag_config_path))
 ```
-*(pyosmium API note for the executor: `SimpleHandler` + `apply_file(path, locations=True)` gives ways their node locations via `o.nodes[i].location`; `o.tags.get(k)` / iterating `o.tags` yields `.k`/`.v`; `o.location.valid()` guards node coords. Verify these against the installed pyosmium version — see the feasibility gate.)*
+*(pyosmium API — **verified against 4.3.1 on this host**: `SimpleHandler` + `apply_file(path, locations=True)` gives ways their node locations via `o.nodes[i].location` (valid via `.valid()`); iterate `o.tags` for `.k`/`.v`; `o.location.valid()`/`.lat`/`.lon` for nodes; `SimpleWriter` + `osmium.osm.mutable.Node(id=, location=(lon, lat), tags=)`/`.Way(id=, nodes=[...], tags=)`. The reader raises `ValueError`/`RuntimeError` on a malformed file — caught and re-raised as `OsmParseError`.)*
 
 - [ ] **Step 4: Run to verify it passes**
 
@@ -401,14 +430,24 @@ git commit -m "Add pyosmium OSM extractor: streaming, crash-safe, arithmetic-mea
 def _osm(nodes_xml):
     return '<?xml version="1.0"?><osm version="0.6">' + nodes_xml + '</osm>'
 
-def test_hostile_tag_value_is_length_bounded(tmp_path):
-    x = _osm('<node id="1" lat="1" lon="1" version="1"><tag k="historic" v="castle"/>'
-             '<tag k="description" v="' + "z" * 5000 + '"/></node>')
-    p = tmp_path / "h.osm"; p.write_text(x)
-    conn = _db(tmp_path / "d")
-    osm.OsmExtractor(CFG).extract("uk", p, conn, run_id="r1")
-    props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
-    assert len(props["description"]) <= osm.MAX_TAG_VAL_LEN
+def test_corrupt_file_is_a_loud_typed_OsmParseError(tmp_path):
+    # A file-level parse error escapes pyosmium's reader (NOT a per-feature skip). It must
+    # surface as a clean typed OsmParseError, not an uncaught ValueError/RuntimeError.
+    # (OSM caps tag values at ~255, so an over-long tag is only reachable via a corrupt file.)
+    over = tmp_path / "over.osm"
+    over.write_text(_osm('<node id="1" lat="1" lon="1" version="1"><tag k="d" v="' + "z" * 5000 + '"/></node>'))
+    with pytest.raises(osm.OsmParseError):
+        osm.OsmExtractor(CFG).extract("uk", over, _db(tmp_path / "o"), run_id="r1")
+    garbage = tmp_path / "g.pbf"; garbage.write_bytes(b"not a real pbf")
+    with pytest.raises(osm.OsmParseError):
+        osm.OsmExtractor(CFG).extract("uk", garbage, _db(tmp_path / "g"), run_id="r1")
+
+def test_too_many_candidates_is_a_loud_bounded_abort(tmp_path, monkeypatch):
+    monkeypatch.setattr(osm, "MAX_CANDIDATE_RECORDS", 3)
+    nodes = "".join(f'<node id="{i}" lat="1" lon="1" version="1"><tag k="historic" v="x"/></node>' for i in range(10))
+    p = tmp_path / "many.osm"; p.write_text(_osm(nodes))
+    with pytest.raises(osm.TooManyCandidatesError):
+        osm.OsmExtractor(CFG).extract("uk", p, _db(tmp_path / "m"), run_id="r1")
 
 def test_too_many_tags_are_bounded(tmp_path):
     tags = '<tag k="historic" v="x"/>' + "".join(f'<tag k="k{i}" v="v"/>' for i in range(osm.MAX_TAGS_PER_FEATURE + 50))
@@ -527,6 +566,8 @@ git commit -m "Register osm extractor in the extract-stage build_registry"
 **Author self-review** — deliverables map to tasks: candidate-tag config + tag-match + provenance sidecar (T1); the pyosmium streaming extractor with nodes + arithmetic-mean way-centroids, crash-safe, deterministic, `.osm`+`.pbf` parity (T2); edge-hardening tests (T3); registry wiring (T4). Implements A1's `parse` interface; extends A1b's registry; consumes (not invents) the candidate-tag config; `wikidata=*` → `props` A2 join key. **One vandalized feature never crashes the stream** (per-feature guard). Deterministic (stable `source_ref` order, arithmetic-mean centroid). Relations deferred (`WP-A1c-relations`) — recall covered by the Wikidata union.
 
 **Ratifications (fable, thread `wp/a1c`)** — nodes + way-centroids (relations deferred, justified); `.osm` fixtures + a binary `.pbf` parity test (`SimpleWriter`); bootstrap tag config; deferred acquisition (`WP-A1c-acquire`) + self-describing `.pbf.meta.json` sidecar (present → verify sha256 loud; absent → warn); `osmium` dep.
+
+**Feasibility pre-verified (author, real pyosmium 4.3.1 installed on host).** Ran the extractor end-to-end against the `.osm` fixture and a `SimpleWriter` `.pbf`: node + way-centroid `(1.0, 1.0)` (hand-computed mean confirmed), `wikidata` join key captured, non-candidate + relation skipped, `.osm`/`.pbf` records identical. **This caught a real bug inspection would have missed:** pyosmium's reader raises `ValueError`/`RuntimeError` at the C level for an over-long tag / corrupt `.pbf`, escaping the per-feature guards — now wrapped as a loud typed `OsmParseError` (a naive per-feature-only guard would have crashed the run). Also confirmed a 250-tag node is accepted (so the tag-count bound is real) and the candidate cap raises.
 
 **Adversarial review (per AGENTS.md gate) — TO RUN before PR, with the strengthened checklist:** (1) fixes verified on the **executed path** (not prose); (2) tests have **teeth** — *neuter the fix, confirm the test goes red* (esp. the centroid formula, the tag bounds, the provenance sha256 mismatch, the wikidata shape validation); (3) **every strict comparison gets a test a loose comparison fails**; (4) the **feasibility critic installs `osmium`** into a scratch venv and runs the extractor against the fixtures — **if the sandbox blocks the C-extension build, request escalation explicitly (do not silently degrade to XML-only)**; it must verify the exact pyosmium API (`SimpleHandler.apply_file(locations=True)`, `o.nodes[i].location`, `o.tags`, `SimpleWriter`) against the installed version and confirm the hand-computed way centroid `(1.0, 1.0)`.
 
