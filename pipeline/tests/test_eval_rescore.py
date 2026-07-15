@@ -1,7 +1,6 @@
 from mt_pipeline.eval import golden as G
 from mt_pipeline.eval import rescore as RS
 from test_eval_golden import A, B, Z, row
-import pytest
 
 
 def fake_score(sig, cfg):
@@ -66,10 +65,8 @@ def test_llm_off_flips_the_ranking():
     assert off == [A, Z]
 
 
-def test_real_a4_composite_signature_when_available():
-    composite = pytest.importorskip(
-        "mt_pipeline.score.composite",
-        reason="BLOCKED-ON A4 landing: mt_pipeline.score.composite.score absent",
-    )
-    score = composite.score
-    assert score({"article": 1.0, "llm_curiosity": None}, {"article": 1.0}) == 1.0
+def test_real_a4_composite_signature_is_bound():
+    from mt_pipeline.score.composite import score
+
+    cfg = {"weights": {"article": 1.0, "llm_curiosity": 1.0}, "boost_weight": 0.0}
+    assert score({"article": 1.0, "llm_curiosity": None}, cfg) == 1.0

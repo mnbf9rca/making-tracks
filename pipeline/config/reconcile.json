@@ -1,0 +1,9 @@
+{
+  "fuzzy": {
+    "dist_defer_m": 150.0,
+    "min_alnum": 4,
+    "sim_defer": 0.85
+  },
+  "registry_path": "registry/{region}.jsonl",
+  "review_path": "reconcile-review/{region}.jsonl"
+}

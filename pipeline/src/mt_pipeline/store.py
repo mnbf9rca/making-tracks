@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 import sqlite3
-import json
 
-WORKING_STORE_VERSION = 3
+WORKING_STORE_VERSION = 4
 SOURCE_RECORDS_TABLE = "source_records"
 STAGE_RUNS_TABLE = "stage_runs"
 EXTRACT_RUN_METADATA_TABLE = "extract_run_metadata"
+PLACES_TABLE = "places"
 META_TABLE = "meta"
 
 _SCHEMA = """
@@ -45,6 +46,18 @@ CREATE TABLE IF NOT EXISTS extract_run_metadata (
     source_status_json     TEXT NOT NULL,
     PRIMARY KEY (region, run_id)
 );
+CREATE TABLE IF NOT EXISTS places (
+    place_id         TEXT PRIMARY KEY,
+    region           TEXT NOT NULL,
+    name             TEXT NOT NULL,
+    lat              REAL NOT NULL,
+    lon              REAL NOT NULL,
+    refs_json        TEXT NOT NULL,
+    member_refs_json TEXT NOT NULL,
+    status           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_places_region
+    ON places(region);
 """
 
 
@@ -73,17 +86,31 @@ def init_schema(conn: sqlite3.Connection) -> None:
         raise StoreVersionError(f"expected one working-store schema row, found {len(rows)}")
     elif rows[0][0] != 1:
         raise StoreVersionError(f"unexpected working-store schema row id {rows[0][0]}")
-    elif rows[0][1] == 2:
-        conn.execute(
-            "UPDATE meta SET schema_version = ? WHERE id = 1",
-            (WORKING_STORE_VERSION,),
-        )
-    elif rows[0][1] != WORKING_STORE_VERSION:
+    else:
+        _migrate(conn, rows[0][1])
+    conn.commit()
+
+
+def _migrate(conn: sqlite3.Connection, current_version: int) -> None:
+    if current_version > WORKING_STORE_VERSION:
         raise StoreVersionError(
-            f"working-store schema version {rows[0][1]} "
+            f"working-store schema version {current_version} "
             f"does not match expected {WORKING_STORE_VERSION}"
         )
-    conn.commit()
+    while current_version < WORKING_STORE_VERSION:
+        if current_version == 2:
+            current_version = 3
+        elif current_version == 3:
+            current_version = 4
+        else:
+            raise StoreVersionError(
+                f"working-store schema version {current_version} "
+                f"does not match expected {WORKING_STORE_VERSION}"
+            )
+        conn.execute(
+            "UPDATE meta SET schema_version = ? WHERE id = 1",
+            (current_version,),
+        )
 
 
 def mark_stage_complete(
@@ -163,3 +190,28 @@ def load_extract_run_metadata(
         "wikidata_snapshot_date": row[0],
         "source_statuses": json.loads(row[1]),
     }
+
+
+def replace_places(conn: sqlite3.Connection, *, region: str, places: list[dict]) -> None:
+    conn.execute("DELETE FROM places WHERE region = ?", (region,))
+    conn.executemany(
+        """
+        INSERT INTO places
+            (place_id, region, name, lat, lon, refs_json, member_refs_json, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (
+                place["place_id"],
+                region,
+                place["name"],
+                place["lat"],
+                place["lon"],
+                json.dumps(sorted(place["refs"])),
+                json.dumps(sorted(place["member_refs"])),
+                place["status"],
+            )
+            for place in places
+        ],
+    )
+    conn.commit()

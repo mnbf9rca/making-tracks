@@ -21,6 +21,7 @@ _DEFAULT_EVAL_OUT_DIR = _PIPELINE_ROOT.parent / "docs" / "superpowers" / "eval"
 _MAX_JSON_BYTES = 1_000_000
 _MAX_TSV_BYTES = 10_000_000
 _SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+_VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -49,6 +50,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--only-source",
         help="for extract, replace only one enabled source from cached snapshot",
+    )
+    parser.add_argument(
+        "--version",
+        help="publish version for reconcile, formatted YYYYMMDDThhmmssZ",
     )
     return parser
 
@@ -247,6 +252,9 @@ def main(argv=None) -> int:
         return _run_eval(argv[1:])
 
     args = _build_parser().parse_args(argv)
+    if args.version is not None and not _VERSION_RE.fullmatch(args.version):
+        print("--version must match YYYYMMDDThhmmssZ", file=sys.stderr)
+        return 2
     try:
         region = config.load(args.region)
     except config.UnknownRegionError as exc:
@@ -334,7 +342,13 @@ def main(argv=None) -> int:
             stages.run_stage(conn, region.region_id, args.stage, run_id=args.run_id)
             print(f"{args.stage} complete for {region.region_id}: {counts}")
             return 0
-        stages.run_stage(conn, region.region_id, args.stage, run_id=args.run_id)
+        stages.run_stage(
+            conn,
+            region.region_id,
+            args.stage,
+            run_id=args.run_id,
+            version=args.version,
+        )
     except stages.StageOrderError as exc:
         print(str(exc), file=sys.stderr)
         return 1
