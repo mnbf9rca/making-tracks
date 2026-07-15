@@ -7,10 +7,10 @@ import pathlib
 import sqlite3
 import sys
 
-from . import acquire, config, extract_stage, stages, store
+from . import acquire, audit, config, extract_stage, stages, store
 
 _DEFAULT_RUN_ID = "manual"
-_COMMANDS = ("acquire", "acquire-redirects", *stages.STAGE_ORDER)
+_COMMANDS = ("acquire", "acquire-redirects", "audit", *stages.STAGE_ORDER)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -40,7 +40,23 @@ def _build_parser() -> argparse.ArgumentParser:
         "--only-source",
         help="for extract, replace only one enabled source from cached snapshot",
     )
+    parser.add_argument(
+        "--audit-format",
+        choices=("markdown", "json"),
+        default="markdown",
+        help="output format for the audit command",
+    )
     return parser
+
+
+def _normalize_argv(argv) -> list[str] | None:
+    if argv is None:
+        args = sys.argv[1:]
+    else:
+        args = list(argv)
+    if len(args) >= 2 and args[0] == "audit" and not args[1].startswith("-"):
+        return ["--region", args[1], "audit", *args[2:]]
+    return args
 
 
 def _snapshot_dir(args) -> pathlib.Path:
@@ -80,7 +96,7 @@ def _record_extract_metadata(conn, region, run_id: str, snap_dir, statuses: dict
 
 
 def main(argv=None) -> int:
-    args = _build_parser().parse_args(argv)
+    args = _build_parser().parse_args(_normalize_argv(argv))
     try:
         region = config.load(args.region)
     except config.UnknownRegionError as exc:
@@ -125,6 +141,20 @@ def main(argv=None) -> int:
             print(f"database error running {args.stage!r}: {exc}", file=sys.stderr)
             return 3
         print(f"wikidata_redirects: {path}")
+        return 0
+
+    if args.stage == "audit":
+        try:
+            report = audit.audit_region(conn, region.region_id)
+        except sqlite3.Error as exc:
+            print(f"database error running {args.stage!r}: {exc}", file=sys.stderr)
+            return 3
+        rendered = (
+            audit.render_json(report)
+            if args.audit_format == "json"
+            else audit.render_markdown(report)
+        )
+        print(rendered, end="" if rendered.endswith("\n") else "\n")
         return 0
 
     try:

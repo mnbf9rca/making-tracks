@@ -24,6 +24,10 @@ def run_stage(conn, region: str, stage: str, *, run_id: str) -> None:
         raise StageOrderError(
             f"cannot run {stage!r} for region {region!r}: run {previous!r} first"
         )
+    if stage == "categorize":
+        from . import categorize
+
+        categorize.run(conn, region, run_id=run_id)
     store.mark_stage_complete(
         conn,
         region,

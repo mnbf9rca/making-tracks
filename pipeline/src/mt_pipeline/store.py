@@ -6,10 +6,12 @@ import pathlib
 import sqlite3
 import json
 
-WORKING_STORE_VERSION = 3
+WORKING_STORE_VERSION = 4
 SOURCE_RECORDS_TABLE = "source_records"
 STAGE_RUNS_TABLE = "stage_runs"
 EXTRACT_RUN_METADATA_TABLE = "extract_run_metadata"
+PLACES_TABLE = "places"
+PLACE_CATEGORIES_TABLE = "place_categories"
 META_TABLE = "meta"
 
 _SCHEMA = """
@@ -45,6 +47,26 @@ CREATE TABLE IF NOT EXISTS extract_run_metadata (
     source_status_json     TEXT NOT NULL,
     PRIMARY KEY (region, run_id)
 );
+CREATE TABLE IF NOT EXISTS places (
+    place_id         TEXT PRIMARY KEY,
+    region           TEXT NOT NULL,
+    name             TEXT NOT NULL,
+    lat              REAL NOT NULL,
+    lon              REAL NOT NULL,
+    refs_json        TEXT NOT NULL,
+    member_refs_json TEXT NOT NULL,
+    status           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_places_region
+    ON places(region);
+CREATE TABLE IF NOT EXISTS place_categories (
+    place_id TEXT PRIMARY KEY,
+    region   TEXT NOT NULL,
+    category TEXT NOT NULL,
+    run_id   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_place_categories_region
+    ON place_categories(region);
 """
 
 
@@ -73,7 +95,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         raise StoreVersionError(f"expected one working-store schema row, found {len(rows)}")
     elif rows[0][0] != 1:
         raise StoreVersionError(f"unexpected working-store schema row id {rows[0][0]}")
-    elif rows[0][1] == 2:
+    elif rows[0][1] in (2, 3):
         conn.execute(
             "UPDATE meta SET schema_version = ? WHERE id = 1",
             (WORKING_STORE_VERSION,),
