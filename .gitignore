@@ -1,0 +1,12 @@
+# Build artifacts and local state (never commit)
+__pycache__/
+*.pyc
+.venv/
+venv/
+ios/.build/
+.build/
+dist/
+*.egg-info/
+.mt-data/
+.pytest_cache/
+work.db
