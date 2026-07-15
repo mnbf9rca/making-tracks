@@ -77,6 +77,11 @@ final class InteractionsTests: XCTestCase {
         XCTAssertFalse(try db.isSeen("p1"))
     }
 
+    func testSaveToMissingListThrowsInsteadOfDroppingUserIntent() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        XCTAssertThrowsError(try db.addToList(ref("p_missing"), listID: 404))
+    }
+
     func testValidatingInitRejectsOutOfRangeAndOversize() throws {
         XCTAssertThrowsError(try PlaceRef(
             placeID: "p",

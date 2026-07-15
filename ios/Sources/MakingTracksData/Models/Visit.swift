@@ -36,6 +36,15 @@ public struct Visit: Codable, Sendable, FetchableRecord, MutablePersistableRecor
         self.createdAt = createdAt
     }
 
+    public init(row: Row) throws {
+        id = row["id"]
+        placeID = row["place_id"]
+        visitedAt = row["visited_at"]
+        let rawVerdict: String? = row["verdict"]
+        verdict = rawVerdict.flatMap(Verdict.init(rawValue:))
+        createdAt = row["created_at"]
+    }
+
     public mutating func didInsert(_ inserted: InsertionSuccess) {
         id = inserted.rowID
     }

@@ -24,6 +24,23 @@ final class ModelsTests: XCTestCase {
         XCTAssertNotNil(col)
     }
 
+    func testUnknownVerdictFetchesAsNilRatherThanMakingVisitUnreadable() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        try db.dbQueue.write { d in
+            try d.execute(
+                sql: """
+                    INSERT INTO visits (place_id, visited_at, verdict, created_at)
+                    VALUES ('p_future', 1, 'future_verdict', 1)
+                    """
+            )
+        }
+
+        let got = try db.dbQueue.read { try Visit.fetchOne($0) }
+        XCTAssertEqual(got?.placeID, "p_future")
+        XCTAssertNil(got?.verdict)
+        XCTAssertTrue(try db.isSeen("p_future"))
+    }
+
     func testPlaceRefCarriesProvenanceAndVerbatimPayload() throws {
         let raw = "{\"place_id\":\"p1\",\"name\":\"Big Ben\",\"lat\":51.5,\"lon\":-0.12,\"category\":\"architecture\",\"tier\":1,\"score\":0.8,\"source_refs\":[\"wd:Q42\"]}"
         let ref = try PlaceRef(

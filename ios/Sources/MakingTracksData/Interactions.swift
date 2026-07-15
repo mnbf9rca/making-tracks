@@ -50,13 +50,19 @@ extension AppDatabase {
     public func addToList(_ place: PlaceRef, listID: Int64) throws {
         try dbQueue.write { db in
             try snapshotIfNeeded(place, db)
-            try db.execute(
-                sql: """
-                    INSERT OR IGNORE INTO list_items (list_id, place_id, added_at)
-                    VALUES (?, ?, ?)
-                    """,
-                arguments: [listID, place.placeID, now()]
-            )
+            do {
+                try db.execute(
+                    sql: """
+                        INSERT INTO list_items (list_id, place_id, added_at)
+                        VALUES (?, ?, ?)
+                        """,
+                    arguments: [listID, place.placeID, now()]
+                )
+            } catch let error as DatabaseError
+                where error.extendedResultCode == .SQLITE_CONSTRAINT_PRIMARYKEY ||
+                    error.extendedResultCode == .SQLITE_CONSTRAINT_UNIQUE {
+                // Idempotent save: only an existing (list_id, place_id) row is ignored.
+            }
         }
     }
 }
