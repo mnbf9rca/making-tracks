@@ -1,0 +1,2 @@
+"""Golden-area evaluation harness."""
+
