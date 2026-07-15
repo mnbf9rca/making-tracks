@@ -274,6 +274,18 @@ def test_spatial_fuzzy_avoids_all_pairs_on_dispersed_fixture():
     assert bucketed == brute == []
     assert brute_counter.cluster_pairs_considered == 51_040
     assert bucketed_counter.cluster_pairs_considered < 1_000
+    assert brute_counter.member_pairs_considered > 0
+    assert bucketed_counter.member_pairs_considered == 0
+
+
+def test_pair_iterators_do_not_materialize_pair_lists():
+    clusters = [_single_cluster(index, lat=51.0 + index, lon=-1.0) for index in range(4)]
+    ordered = sorted(clusters, key=lambda cluster: min(cluster.refs))
+    all_pairs = C._all_cluster_pairs(ordered)
+    nearby_pairs = C._nearby_cluster_pairs(ordered, FUZZY)
+
+    assert not isinstance(all_pairs, list)
+    assert not isinstance(nearby_pairs, list)
 
 
 def test_spatial_fuzzy_emits_phase_telemetry(capsys):

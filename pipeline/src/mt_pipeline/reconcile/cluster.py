@@ -6,6 +6,7 @@ import difflib
 import itertools
 import math
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from mt_pipeline import progress
@@ -168,14 +169,14 @@ def _cluster_cells(
     }
 
 
-def _nearby_cluster_pairs(
+def _spatial_pair_context(
     ordered: list[Cluster], config: FuzzyConfig
-) -> list[tuple[int, int]]:
+) -> tuple[dict[tuple[int, int], set[int]], list[set[tuple[int, int]]]]:
     if len(ordered) < 2:
-        return []
+        return {}, [set() for _ in ordered]
     latitudes = [member.lat for cluster in ordered for member in cluster.members]
     if not latitudes:
-        return []
+        return {}, [set() for _ in ordered]
     min_cos = min(abs(math.cos(math.radians(lat))) for lat in latitudes)
     min_cos = max(min_cos, 0.01)
     threshold_rad = config.dist_defer_m / EARTH_RADIUS_M
@@ -183,38 +184,68 @@ def _nearby_cluster_pairs(
     lon_cell_rad = threshold_rad / min_cos
 
     buckets: dict[tuple[int, int], set[int]] = {}
+    cluster_cells = []
     for index, cluster in enumerate(ordered):
-        for cell in _cluster_cells(
+        cells = _cluster_cells(
             cluster,
             lat_cell_rad=lat_cell_rad,
             lon_cell_rad=lon_cell_rad,
-        ):
+        )
+        cluster_cells.append(cells)
+        for cell in cells:
             buckets.setdefault(cell, set()).add(index)
+    return buckets, cluster_cells
 
-    pairs: set[tuple[int, int]] = set()
-    for lat_index, lon_index in sorted(buckets):
-        left_indices = buckets[(lat_index, lon_index)]
+
+def _nearby_cluster_pairs(
+    ordered: list[Cluster], config: FuzzyConfig
+) -> Iterable[tuple[int, int]]:
+    buckets, cluster_cells = _spatial_pair_context(ordered, config)
+    return _nearby_cluster_pairs_from_context(ordered, buckets, cluster_cells)
+
+
+def _nearby_cluster_pairs_from_context(
+    ordered: list[Cluster],
+    buckets: dict[tuple[int, int], set[int]],
+    cluster_cells: list[set[tuple[int, int]]],
+) -> Iterable[tuple[int, int]]:
+    for left_index in range(len(ordered)):
         nearby_indices: set[int] = set()
-        for d_lat, d_lon in itertools.product((-1, 0, 1), repeat=2):
-            nearby_indices.update(
-                buckets.get((lat_index + d_lat, lon_index + d_lon), set())
-            )
-        for left in left_indices:
-            for right in nearby_indices:
-                if left < right:
-                    pairs.add((left, right))
-    return sorted(
-        pairs,
-        key=lambda pair: (_anchor(ordered[pair[0]]), _anchor(ordered[pair[1]])),
-    )
+        for lat_index, lon_index in cluster_cells[left_index]:
+            for d_lat, d_lon in itertools.product((-1, 0, 1), repeat=2):
+                nearby_indices.update(
+                    buckets.get((lat_index + d_lat, lon_index + d_lon), set())
+                )
+        for right_index in sorted(nearby_indices):
+            if left_index < right_index:
+                yield left_index, right_index
 
 
-def _all_cluster_pairs(ordered: list[Cluster]) -> list[tuple[int, int]]:
-    return [
-        (left_index, right_index)
-        for left_index in range(len(ordered))
-        for right_index in range(left_index + 1, len(ordered))
-    ]
+def _count_nearby_cluster_pairs(
+    ordered: list[Cluster],
+    buckets: dict[tuple[int, int], set[int]],
+    cluster_cells: list[set[tuple[int, int]]],
+) -> int:
+    total = 0
+    for left_index in range(len(ordered)):
+        nearby_indices: set[int] = set()
+        for lat_index, lon_index in cluster_cells[left_index]:
+            for d_lat, d_lon in itertools.product((-1, 0, 1), repeat=2):
+                nearby_indices.update(
+                    buckets.get((lat_index + d_lat, lon_index + d_lon), set())
+                )
+        total += sum(1 for right_index in nearby_indices if left_index < right_index)
+    return total
+
+
+def _all_cluster_pairs(ordered: list[Cluster]) -> Iterable[tuple[int, int]]:
+    for left_index in range(len(ordered)):
+        for right_index in range(left_index + 1, len(ordered)):
+            yield left_index, right_index
+
+
+def _count_all_cluster_pairs(ordered: list[Cluster]) -> int:
+    return len(ordered) * (len(ordered) - 1) // 2
 
 
 def fuzzy_defer(
@@ -234,28 +265,32 @@ def fuzzy_defer(
         for member in cluster.members
     }
     if spatial_index and config.dist_defer_m > 0:
-        pairs = _nearby_cluster_pairs(ordered, config)
+        buckets, cluster_cells = _spatial_pair_context(ordered, config)
+        pairs = _nearby_cluster_pairs_from_context(ordered, buckets, cluster_cells)
+        total_pairs = _count_nearby_cluster_pairs(ordered, buckets, cluster_cells)
     else:
         pairs = _all_cluster_pairs(ordered)
+        total_pairs = _count_all_cluster_pairs(ordered)
     phase = None
     if telemetry_region is not None:
         phase = progress.PhaseProgress(
             "reconcile.fuzzy_defer",
             region=telemetry_region,
-            total=len(pairs),
+            total=total_pairs,
             total_label="candidate_pairs",
             heartbeat_every_records=heartbeat_every_pairs,
         )
         phase.start()
 
     processed = 0
+    cluster_pairs_considered = 0
+    member_pairs_considered = 0
     try:
         for left_index, right_index in pairs:
             left = ordered[left_index]
             right = ordered[right_index]
             processed += 1
-            if stats is not None:
-                stats.cluster_pairs_considered += 1
+            cluster_pairs_considered += 1
             if phase is not None:
                 phase.tick(processed)
             if left.refs & right.refs:
@@ -269,8 +304,7 @@ def fuzzy_defer(
                     right_name = normalized[right_member.source_ref]
                     if _alnum_count(right_name) < config.min_alnum:
                         continue
-                    if stats is not None:
-                        stats.member_pairs_considered += 1
+                    member_pairs_considered += 1
                     dist_m = haversine_m(
                         left_member.lat,
                         left_member.lon,
@@ -296,6 +330,9 @@ def fuzzy_defer(
             if best is not None:
                 deferred.append(best)
     finally:
+        if stats is not None:
+            stats.cluster_pairs_considered += cluster_pairs_considered
+            stats.member_pairs_considered += member_pairs_considered
         if phase is not None:
             phase.done(processed)
     return deferred
