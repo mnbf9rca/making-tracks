@@ -5,7 +5,7 @@ from __future__ import annotations
 import pathlib
 import sqlite3
 
-WORKING_STORE_VERSION = 1
+WORKING_STORE_VERSION = 2
 SOURCE_RECORDS_TABLE = "source_records"
 STAGE_RUNS_TABLE = "stage_runs"
 META_TABLE = "meta"
