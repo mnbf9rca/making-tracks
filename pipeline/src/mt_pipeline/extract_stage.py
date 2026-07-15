@@ -2,19 +2,33 @@
 
 from __future__ import annotations
 
+import pathlib
+
 from .extractors import Registry
+from .extractors import osm as osm_extractor
 from .extractors import wikidata
 from .extractors.wikipedia import WikipediaExtractor
+
+DEFAULT_OSM_TAG_CONFIG = (
+    pathlib.Path(__file__).resolve().parents[2] / "config/osm_candidate_tags.json"
+)
 
 
 class UnregisteredEnabledSourceError(RuntimeError):
     pass
 
 
-def build_registry(allowlist_path, languages: set[str]) -> Registry:
+class MissingSnapshotError(RuntimeError):
+    pass
+
+
+def build_registry(allowlist_path, languages: set[str], *, osm_tag_config_path=None) -> Registry:
     registry = Registry()
     registry.register("wikidata", wikidata.make_extractor(allowlist_path))
     registry.register("wikipedia", WikipediaExtractor(languages))
+    registry.register(
+        "osm", osm_extractor.make_extractor(osm_tag_config_path or DEFAULT_OSM_TAG_CONFIG)
+    )
     return registry
 
 
@@ -37,7 +51,7 @@ def run_extract(conn, region_config, snapshots: dict, *, run_id: str, registry) 
     for source, extractor in registry.enabled_for(region_config.sources):
         snapshot_path = snapshots.get(source)
         if snapshot_path is None:
-            continue
+            raise MissingSnapshotError(f"enabled source {source!r} has no snapshot")
         counts[source] = extractor.extract(
             region_config.region_id, snapshot_path, conn, run_id=run_id
         )
