@@ -9,6 +9,10 @@ def test_window_is_leap_day_safe():
     assert pageviews.window_for("2024-02-29", 12) == ("2023-02-28", "2024-02-29")
 
 
+def test_non_year_window_uses_deterministic_fractional_month_approximation():
+    assert pageviews.window_for("2026-07-15", 3) == ("2026-04-15", "2026-07-15")
+
+
 def test_acquire_is_gated_by_the_per_run_flag(tmp_path):
     calls = []
 

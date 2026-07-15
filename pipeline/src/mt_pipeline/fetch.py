@@ -45,29 +45,30 @@ def get_json(
         raise FetchError(f"invalid target: {url!r}")
 
     try:
-        resp = _opener(expected_hosts).open(url, timeout=timeout)
+        with _opener(expected_hosts).open(url, timeout=timeout) as resp:
+            headers = getattr(resp, "headers", None)
+            if headers is not None and headers.get("Content-Encoding"):
+                raise FetchError(
+                    f"unexpected Content-Encoding {headers.get('Content-Encoding')!r}"
+                )
+
+            start = time.monotonic()
+            chunks: list[bytes] = []
+            total = 0
+            while True:
+                if time.monotonic() - start > deadline:
+                    raise FetchError("exceeded total download deadline")
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes:
+                    raise FetchError(f"response exceeded {max_bytes} bytes")
+                chunks.append(chunk)
     except FetchError:
         raise
     except Exception as exc:
         raise FetchError(str(exc)) from exc
-
-    headers = getattr(resp, "headers", None)
-    if headers is not None and headers.get("Content-Encoding"):
-        raise FetchError(f"unexpected Content-Encoding {headers.get('Content-Encoding')!r}")
-
-    start = time.monotonic()
-    chunks: list[bytes] = []
-    total = 0
-    while True:
-        if time.monotonic() - start > deadline:
-            raise FetchError("exceeded total download deadline")
-        chunk = resp.read(65536)
-        if not chunk:
-            break
-        total += len(chunk)
-        if total > max_bytes:
-            raise FetchError(f"response exceeded {max_bytes} bytes")
-        chunks.append(chunk)
 
     try:
         return json.loads(b"".join(chunks).decode("utf-8"))

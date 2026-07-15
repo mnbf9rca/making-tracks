@@ -48,6 +48,41 @@ def test_returns_parsed_json_within_cap(monkeypatch):
     ) == {"ok": 1}
 
 
+class _ClosableResponse:
+    headers = None
+
+    def __init__(self, body):
+        self._body = io.BytesIO(body)
+        self.closed = False
+
+    def read(self, size=-1):
+        return self._body.read(size)
+
+    def close(self):
+        self.closed = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+
+def test_response_is_closed_after_successful_read(monkeypatch):
+    response = _ClosableResponse(json.dumps({"ok": 1}).encode())
+
+    class Opener:
+        def open(self, url, timeout=None):
+            return response
+
+    monkeypatch.setattr(fetch, "_opener", lambda hosts: Opener())
+    assert fetch.get_json(
+        "https://query.wikidata.org/x", expected_hosts={"query.wikidata.org"}
+    ) == {"ok": 1}
+    assert response.closed
+
+
 def test_recursion_bomb_is_caught(monkeypatch):
     _body(monkeypatch, ("[" * 300000).encode())
     with pytest.raises(fetch.FetchError):
