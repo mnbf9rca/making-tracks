@@ -22,9 +22,9 @@ Canonical mint keys are exact, ASCII, lowercase-prefix, whitespace-free strings:
 - `plaque:openplaques/9876`
 - `wp:12345`
 
-`hehle` means Historic England List Entry. `wp` means a Wikipedia page id. New sources are append-only: add a new source grammar, priority entry, and conformance vectors without altering existing grammars or minted IDs.
+`hehle` means Historic England List Entry. `wp` means a Wikipedia page ID. New sources are append-only: add a new source grammar, priority entry, and conformance vectors without altering existing grammars or minted IDs.
 
-IDs are minted once for new clusters, then owned by the registry. Anchor priority is QID, OSM node, OSM way, OSM relation, Historic England, Open Plaques, Wikipedia page id; this is mint-time determinism only and has no meaning after mint. Registry lookup is by union of every ref ever attached to a place, so QID merges and OSM tag churn keep the same ID.
+IDs are minted once for new clusters, then owned by the registry. Anchor priority is QID, OSM node, OSM way, OSM relation, Historic England, Open Plaques, Wikipedia page ID; this is mint-time determinism only and has no meaning after mint. Registry lookup is by union of every ref ever attached to a place, so QID merges and OSM tag churn keep the same ID.
 
 Ambiguous multi-place ref matches raise `AmbiguousRefsError` with candidate `.place_ids`; the contract never silently merges. `superseded_by` is soft de-dup: loser IDs remain valid forever, resolve transitively to the terminal winner, and cycles are rejected. Published tiles must carry only winner IDs; `registry.tile_winner_violations` is the A7 guard.
 

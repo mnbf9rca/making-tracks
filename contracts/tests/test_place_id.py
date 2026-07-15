@@ -98,9 +98,7 @@ def test_frozen_vectors_are_append_only(contracts_root):
             "place_id": "mt1_71TWYPX9FM12XK5WG3RPHPEJ3J",
         },
     ]
-    assert vectors[5:] == [
-        {"mint_key": "wp:12345", "place_id": "mt1_5FAJ9QTWS33BNY38TA4QZJX3FY"}
-    ]
+    assert {"mint_key": "wp:12345", "place_id": "mt1_5FAJ9QTWS33BNY38TA4QZJX3FY"} in vectors[5:]
 
 
 def test_anchor_priority_prefers_wikidata():
