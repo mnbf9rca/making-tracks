@@ -53,6 +53,7 @@ def test_built_wheel_contains_machine_readable_contract_assets(
         names = set(zf.namelist())
     assert "mt_contracts/versions.json" in names
     assert "mt_contracts/schemas/place.schema.json" in names
+    assert "mt_contracts/schemas/registry-record.schema.json" in names
     assert "mt_contracts/regions/uk.json" in names
     assert "mt_contracts/regions/malaysia.json" in names
     assert "mt_contracts/basemap-budget.json" in names
@@ -76,6 +77,7 @@ assert cfg["region_id"] == "malaysia"
 assert set(cfg) == {"schema_version", "region_id", "display_name", "bbox", "languages", "sources", "basemap"}
 assert SCHEMA_VERSIONS["region_config"] == 1
 assert load_schema("region-config")["title"] == "RegionConfig"
+assert load_schema("registry-record")["title"] == "RegistryRecord"
 """
     subprocess.run(
         [sys.executable, "-c", script],

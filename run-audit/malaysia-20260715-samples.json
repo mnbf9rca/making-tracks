@@ -1,0 +1,67 @@
+[
+  {
+    "lat": 1.9963228,
+    "lon": 109.6469936,
+    "name": "Mount Kuwai",
+    "props": {
+      "name": "Mount Kuwai",
+      "reservation": "no",
+      "tourism": "attraction",
+      "wheelchair": "no"
+    },
+    "source": "osm",
+    "source_ref": "osm:node/10000151417"
+  },
+  {
+    "lat": 1.2500946,
+    "lon": 103.8333982,
+    "name": "Fort Serapong ruins",
+    "props": {
+      "historic": "fort",
+      "historic:civilization": "modern",
+      "name": "Fort Serapong ruins",
+      "name:zh": "\u5b9e\u62c9\u84ec\u70ae\u53f0\u5e9f\u589f",
+      "ruins": "yes"
+    },
+    "source": "osm",
+    "source_ref": "osm:node/10013124461"
+  },
+  {
+    "lat": 1.2889131,
+    "lon": 103.8563856,
+    "name": "Makan Angin",
+    "props": {
+      "artist_name": "Lim Soo Ngee",
+      "artwork_type": "sculpture",
+      "material": "bronze",
+      "name": "Makan Angin",
+      "start_date": "2014",
+      "tourism": "artwork"
+    },
+    "source": "osm",
+    "source_ref": "osm:node/10015169407"
+  },
+  {
+    "lat": 5.3586042,
+    "lon": 100.4890368,
+    "name": "The Mask",
+    "props": {
+      "name": "The Mask",
+      "tourism": "viewpoint"
+    },
+    "source": "osm",
+    "source_ref": "osm:node/10015260853"
+  },
+  {
+    "lat": 5.3623279,
+    "lon": 100.4856381,
+    "name": "Triple Rock",
+    "props": {
+      "name": "Triple Rock",
+      "name:en": "Triple Rock",
+      "tourism": "viewpoint"
+    },
+    "source": "osm",
+    "source_ref": "osm:node/10015260855"
+  }
+]

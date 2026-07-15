@@ -1,4 +1,5 @@
 import json
+import math
 import pathlib
 
 import pytest
@@ -150,7 +151,7 @@ def test_live_he_wgs84_multipoint_shape_is_accepted(tmp_path):
     assert abs(lon + 2.23911708088334) < 1e-12
 
 
-def test_epsg_27700_snapshot_is_rejected(tmp_path):
+def test_epsg_27700_snapshot_is_transformed_to_wgs84(tmp_path):
     feature = (
         '{"type":"Feature","properties":{"ListEntry":"1000016","Name":"BNG"},'
         '"geometry":{"type":"MultiPoint",'
@@ -162,9 +163,54 @@ def test_epsg_27700_snapshot_is_rejected(tmp_path):
         '"crs":{"type":"name","properties":{"name":"EPSG:27700"}},'
         '"features":[' + feature + "]}"
     )
-    with pytest.raises(he._snapshot.SnapshotParseError, match="EPSG:27700"):
+    conn = _db(tmp_path / "bng")
+
+    assert he.HistoricEnglandExtractor().extract("uk", path, conn, run_id="r1") == 1
+    lat, lon = conn.execute("SELECT lat, lon FROM source_records").fetchone()
+    assert abs(lat - 51.19883105846) < 0.00001
+    assert abs(lon + 2.23911708088334) < 0.00001
+
+
+def _meters_between(a_lat, a_lon, b_lat, b_lon):
+    return math.hypot(
+        (a_lat - b_lat) * 111_320,
+        (a_lon - b_lon) * 111_320 * math.cos(math.radians(b_lat)),
+    )
+
+
+def test_epsg_27700_transform_is_bounded_against_independent_wikidata_refs():
+    # Independent WGS84 refs are Wikidata P625 for the same NHLE P1216 ids,
+    # queried 2026-07-15. Tolerance allows published-point/rounding variance;
+    # measured max for these fixtures is about 4m.
+    refs = [
+        ("1181693", "Church of St Mary", 605975.000000001, 262455.000000002, 52.2218, 1.0141),
+        ("1192233", "St Margaret of Antioch", 519282.000000001, 191694.000000002, 51.611453, -0.278737),
+        ("1291494", "Westminster Abbey", 530081.581, 179490.5, 51.4994, -0.127367),
+    ]
+
+    errors = []
+    for _nhle, _name, easting, northing, expected_lat, expected_lon in refs:
+        lat, lon = he._bng_to_wgs84(easting, northing)
+        errors.append(_meters_between(lat, lon, expected_lat, expected_lon))
+
+    assert max(errors) < 25
+
+
+def test_unknown_declared_crs_is_rejected_loudly(tmp_path):
+    feature = (
+        '{"type":"Feature","properties":{"ListEntry":"1000017","Name":"Unknown CRS"},'
+        '"geometry":{"type":"Point","coordinates":[[1,2]]}}'
+    )
+    path = tmp_path / "unknown-crs.geojson"
+    path.write_text(
+        '{"type":"FeatureCollection",'
+        '"crs":{"type":"name","properties":{"name":"EPSG:3857"}},'
+        '"features":[' + feature + "]}"
+    )
+
+    with pytest.raises(he._snapshot.SnapshotParseError, match="EPSG:3857"):
         he.HistoricEnglandExtractor().extract(
-            "uk", path, _db(tmp_path / "bng"), run_id="r1"
+            "uk", path, _db(tmp_path / "unknown-crs"), run_id="r1"
         )
 
 

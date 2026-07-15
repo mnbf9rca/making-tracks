@@ -83,6 +83,37 @@ def test_captures_section4_signals(tmp_path):
     assert props["image"].startswith("https://")
 
 
+def test_matched_class_allows_subclass_hit_but_props_keep_actual_p31s(tmp_path):
+    snap = {
+        "results": {
+            "bindings": [
+                {
+                    "item": {"value": ".../Q42"},
+                    "lat": {"value": "1"},
+                    "lon": {"value": "1"},
+                    "p31": {"value": ".../Q123"},
+                    "p31s": {
+                        "value": "http://www.wikidata.org/entity/Q123|http://www.wikidata.org/entity/Q456"
+                    },
+                    "matched_class": {"value": ".../Q33506"},
+                    "label": {"value": "Subclass Place"},
+                }
+            ]
+        }
+    }
+    path = _write(tmp_path, snap, "subclass.json")
+    conn = _db(tmp_path)
+
+    assert wikidata.WikidataExtractor({"Q33506"}).extract(
+        "uk", path, conn, run_id="r1"
+    ) == 1
+
+    props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
+    assert props["p31"] == "Q123"
+    assert props["p31s"] == ["Q123", "Q456"]
+    assert props["matched_p31"] == "Q33506"
+
+
 def test_deterministic_stable_order_multi_record(tmp_path):
     snap = {
         "results": {

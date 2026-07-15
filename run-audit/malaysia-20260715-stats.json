@@ -1,0 +1,37 @@
+{
+  "counts_by_source": {
+    "osm": 3417
+  },
+  "db": ".mt-data/malaysia/work-disk.db",
+  "dropped_or_rejected": {
+    "osm_source_record_rejected": 2423
+  },
+  "region": "malaysia",
+  "run_id": "real-malaysia-20260715",
+  "snapshots": {
+    "osm": {
+      "bytes": 247889050,
+      "path": ".mt-data/malaysia/osm.osm.pbf"
+    },
+    "wikidata": {
+      "bytes": 158007,
+      "path": ".mt-data/malaysia/wikidata.snapshot.json",
+      "retrieved_at": "2026-07-15T05:07:41Z",
+      "segments": 140
+    },
+    "wikidata_redirects": {
+      "bytes": 5234,
+      "path": ".mt-data/malaysia/wikidata_redirects.snapshot.json",
+      "redirect_count": 6,
+      "retrieved_at": "2026-07-15T05:19:10Z",
+      "segments": 2
+    },
+    "wikipedia": {
+      "bytes": 7433,
+      "path": ".mt-data/malaysia/wikipedia.snapshot.json",
+      "retrieved_at": "2026-07-15T05:08:08Z",
+      "segments": 140
+    }
+  },
+  "total_records": 3417
+}
