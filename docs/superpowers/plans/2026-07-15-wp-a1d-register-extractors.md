@@ -11,15 +11,15 @@
 ## Global Constraints
 
 - **Implements A1's interface + extends A1b's registry, never re-declares them.** Records are produced only via `mt_pipeline.source_record.parse(region, source, source_ref, name, lat, lon, props)` / `persist(conn, record, *, run_id)`. Canonical-ref grammar + text-safety are `mt_contracts`' (via `parse`), never re-implemented.
-- **DEPENDENCY — blocked on A1b impl landing (honest, per the A1c lesson).** A1b's *plan* is merged (PR #34) but its *impl is not yet on develop* (only the `wp-a1b-plan` branch: no `extractors/`, no `extract_stage.py`, no `fetch.py`). This plan is written against A1b's published interface; **A1d's impl is BLOCKED on A1b's impl landing first** — Tasks 1/5 modify A1b files (`fetch.py`, `extract_stage.py`) and Tasks 2/4 conform to A1b's `Extractor` protocol. **A1 preconditions** (present on develop, PR #33): `source_record.parse`/`persist`/`SourceRecordError`; `store.connect`/`store.init_schema` + the `source_records` table; `config.RegionConfig` (`.region_id`, `.sources`). `mt_contracts.is_canonical_ref` already accepts `hehle:…` and `plaque:openplaques/…` — **no A0 change is required for A1d.**
+- **DEPENDENCY — A1b impl is MERGED (#39); A1c is a sibling in flight.** As of now the real A1b impl is on develop: `fetch.py` (`get_json`, `_opener`/`_AllowlistRedirect`, `MAX_RESPONSE_BYTES`), `extractors/__init__.py` (`Extractor` protocol, `Registry` with `enabled_for`/`registered_sources`), `extract_stage.py` (`build_registry(allowlist_path, languages)`, `run_extract`), and `wikidata._load_snapshot` (the `stat().st_size > MAX_SNAPSHOT_BYTES` pattern). **A1c's impl (osm register) is NOT yet merged** (codex in flight) — so A1d's `build_registry` change is presented as an **additive delta** (append two `register(...)` lines + one kwarg) that composes with whatever `build_registry` exists, and Task 5 does **not** reproduce A1c's osm line (Finding: presenting a merged A1b+A1c signature would fail to import on an A1b-only tree). **A1 preconditions** (PR #33): `source_record.parse`/`persist`/`SourceRecordError`; `store.connect`/`store.init_schema` + the `source_records` table; `config.RegionConfig` (`.region_id`, `.sources`). `mt_contracts.is_canonical_ref` already accepts `hehle:…` and `plaque:openplaques/…` — **no A0 change is required for A1d.**
 - **§4 signals are EMITTED, not scored (scoring is A4).** Historic England emits the listing **`grade`** in `props` → the §4 "heritage designation/grade" heuristic; Open Plaques' very presence (a `plaque:` ref clustered onto a place) is the §4 "plaque presence" heuristic, and the inscription/subject ride in `props`. A1d does not score, categorize, reconcile, or mint IDs.
 - **Registry key = region-config `sources` key = snapshots key (A1b `run_extract` contract).** Register Historic England under **`"historic_england"`** (it emits `source="hehle"`, `source_ref="hehle:<id>"`) and Open Plaques under **`"open_plaques"`** (emits `source="plaque"`, `source_ref="plaque:openplaques/<id>"`). The registry key differing from the emitted source is fine — `parse` only checks the ref prefix against the `source` arg the extractor passes. `enabled_for` uses `sources.get(s) is True`, so both register exactly like `wikidata`/`wikipedia`.
-- **Streaming, bounded memory (fable) — honestly.** The NHLE is ~400k entries; a whole-file `json.loads` would hold hundreds of MB. HE parses with **`ijson.items(f, "features.item")`** — one feature at a time, memory bounded by the per-feature dict, not the file. Open Plaques' dump is small (documented ≤ the download cap) and uses `json.loads`. In both cases the **download byte cap is the hard upper bound** on what reaches the parser.
+- **Streaming, bounded memory (fable) — honestly, with the exact bound stated.** The NHLE is ~400k entries; a whole-file `json.loads` would hold hundreds of MB. HE parses with **`ijson.items(f, "features.item")` — verified to stream feature-by-feature** (a 20k-feature file parsed at **0.8 MB peak heap**, not O(all features)). The honest bound is therefore **O(one feature at a time), not O(1)**: a *single hostile feature* (e.g. a polygon with a million-point ring) is still materialized whole by `ijson.items` — measured at ~31× the feature's raw bytes. Two guards bound this: (a) a **`stat().st_size > MAX_SNAPSHOT_BYTES`** check at the top of every `extract()` (mirroring A1b's `_load_snapshot` — the download cap in `get_to_file` does NOT protect the extract path or a hand-placed snapshot), and (b) **`MAX_RING_POINTS`** — a ring exceeding it is skipped per-feature rather than centroided. True O(1)-per-feature geometry (an `ijson.parse` event-stream centroid) is a documented follow-up (`WP-A1d-stream`) if real NHLE features prove large. Open Plaques uses `json.loads` (small dump) but gets the **same `stat()` size cap** — the asymmetry the review flagged is closed; neither extract path relies on the download cap.
 - **Deterministic (Principle 12).** `extract(snapshot, …)` is a pure function of the dated snapshot: same file → identical records, identical order. Records emit in **stable lexical `source_ref` order** (collected then sorted), de-duped by `source_ref` (keep-first). Way/polygon points use a **deterministic arithmetic-mean (vertex) centroid of the outer ring with the repeated closing vertex dropped** (the A1c lesson — order fixed by the file, not by an associativity assumption). No wall-clock/randomness in `extract` outputs; the snapshot date and `run_id` are metadata only. **All A1d code modules live under `extractors/`** (`_snapshot.py`, `historic_england.py`, `open_plaques.py`) — covered by A1b's recursive determinism guard once it lands; the `a1d_sources.json` config is data, not code (no guard gap).
-- **Never crash on hostile input, per-feature vs file-level (Principle 10 / §5.5 / binding carry-in).** Raw-blob bounding at the extractor edge BEFORE `parse`: `MAX_NAME_LEN`, `MAX_PROPS_KEYS`/`MAX_PROP_STR_LEN`, coordinate presence/finiteness. Each per-feature body runs in a `try/except` that **skips** the feature (dropped-feature counter + WARNING summary — never silent). File-level unparseability (truncated/garbage snapshot) is a **loud typed `SnapshotParseError`**. Nothing from a register is interpolated into shell/SQL/LLM.
+- **Never crash on hostile input, per-feature vs file-level (Principle 10 / §5.5 / binding carry-in).** The load-bearing edge bounds A1d owns (which A1's `parse` does **not** provide) are the **snapshot size cap** and the **per-ring vertex cap** (memory). Per-value string length is **already capped by A1** (`source_record._clean_text` caps every props value + name to `NAME_MAX=300`), so the extractors do **not** re-declare a redundant per-value cap and do **not** claim it as a tooth (a `MAX_NAME_LEN` on the derived name is kept only as cheap defense-in-depth). Each per-feature body runs in a `try/except` that **skips** the feature (dropped-feature counter + WARNING summary — never silent). A wrong-shape whole file (valid JSON that isn't a `FeatureCollection`/array) and a truncated/garbage snapshot are **loud typed `SnapshotParseError`** (§6 loud-abort, symmetric across both extractors — HE must not silently yield 0). `FileNotFoundError`/`OSError` on the extract path is caught and re-raised typed. Nothing from a register is interpolated into shell/SQL/LLM.
 - **SSRF-safe acquisition (fable condition — "low SSRF surface is not no SSRF surface").** A "single fixed-URL GET" still follows redirects. The shared download reuses **A1b's ONE protected opener** (`fetch._opener` → `_AllowlistRedirect`), re-validating the https + host allowlist **on every redirect hop**, plus a streaming byte cap, a wall-clock deadline (slowloris), and a rejected-`Content-Encoding` check — added as `fetch.get_to_file` so the security-critical opener stays **single-sourced in A1b** (no duplicated `_AllowlistRedirect`). A neuter-goes-red redirect test drives a real 302 to an off-allowlist host through `get_to_file` and asserts it is blocked.
 - **Self-describing provenance (A1b/A1c precedent).** Acquisition writes a `<file>.meta.json` sidecar (`source_url`, `snapshot_date`, `sha256`, `size`); `extract` verifies the `sha256` when the sidecar is present (loud `ProvenanceError` on mismatch; absent → logged warning, dev convenience). The sidecar is **untrusted** (Principle 10): size-bounded before read, malformed/non-dict/oversized → typed `ProvenanceError`, never `AttributeError`.
-- **Licensing/attribution is a plan-carried requirement.** **Historic England NHLE is OGL v3.0** → attribution is **required**: the attribution string travels in `a1d_sources.json` per source. **Open Plaques is CC0** (no obligation; courtesy credit). A1d does **not** build the surfacing UI: the **app credits screen is B-track**, and **WP-A7's manifest is the natural carrier** for per-source attribution strings so the app renders credits from data — **flagged as an A7 design input on issue #11**.
+- **Licensing/attribution is a plan-carried requirement — as DATA, not extractor state.** **Historic England NHLE is OGL v3.0** → attribution is **required**; the attribution string lives in `a1d_sources.json` (code-reviewed config) — the extractors do **not** carry it (it is inert in A1d; carrying it on the extractor was dead weight). **Open Plaques is CC0** (no obligation; courtesy credit). A1d does **not** build the surfacing UI: the **app credits screen is B-track**, and **WP-A7's manifest is the natural carrier** for per-source attribution so the app renders credits from data — **flagged as an A7 design input on issue #11, WITH the caveat that the manifest is an A0-frozen contract** (`manifest.schema.json` has no attribution field today), so A7 carrying attribution requires an **append-only field addition to `manifest.schema.json`** — not free.
 - **Consumed config, not invented.** Source URLs, allowed hosts, and attribution strings live in `pipeline/config/a1d_sources.json` (data the acquire step takes as input), header-marked so operations can update endpoints without a code change.
 - **Test-first**, against tiny hand-built `.geojson`/`.json` fixtures (prod consumes the full dumps); the feasibility critic installs `ijson` and runs the real streaming parse against the fixture.
 
@@ -34,8 +34,8 @@ pipeline/src/mt_pipeline/
   fetch.py                              # MODIFY (A1b): add get_to_file (streaming-to-disk counterpart of get_json, SAME _opener)
   extractors/
     _snapshot.py                        # shared: download_snapshot (via fetch.get_to_file) + write_sidecar + verify_sha256_sidecar; SnapshotError/SnapshotParseError/ProvenanceError
-    historic_england.py                 # HistoricEnglandExtractor (GeoJSON/ijson; grade; Point + outer-ring-mean centroid) + make_extractor
-    open_plaques.py                     # OpenPlaquesExtractor (JSON dump; inscription/subject; name derivation) + make_extractor
+    historic_england.py                 # HistoricEnglandExtractor (config-free; GeoJSON/ijson; grade; Point + outer-ring-mean centroid)
+    open_plaques.py                     # OpenPlaquesExtractor (config-free; JSON dump; inscription/subject; name derivation)
   extract_stage.py                      # MODIFY (A1b): register historic_england + open_plaques in build_registry
 pipeline/config/
   a1d_sources.json                      # BOOTSTRAP: source URLs, allowed_hosts, attribution strings (HE=OGL, plaques=CC0)
@@ -82,10 +82,13 @@ from mt_pipeline import fetch
 from mt_pipeline.extractors import _snapshot
 
 
-# ---- get_to_file: SSRF + cap ----
+# ---- get_to_file: https + cap + Content-Encoding. _FakeOpener returns a bare BytesIO (NO .headers)
+# on purpose — the impl uses `getattr(resp, "headers", None)` (like A1b's get_json), so a headerless
+# response must NOT AttributeError. (The earlier draft's `resp.headers` crashed these two tests.) ----
+import urllib.response
 class _FakeOpener:
     def __init__(self, body): self._body = body
-    def open(self, url, timeout=None): return io.BytesIO(self._body)
+    def open(self, url, timeout=None): return io.BytesIO(self._body)   # bare BytesIO: no .headers
 
 def test_get_to_file_rejects_non_https(tmp_path):
     with pytest.raises(fetch.FetchError):
@@ -93,7 +96,7 @@ def test_get_to_file_rejects_non_https(tmp_path):
 
 def test_get_to_file_streams_and_caps(tmp_path, monkeypatch):
     monkeypatch.setattr(fetch, "_opener", lambda hosts: _FakeOpener(b"x" * 5000))
-    with pytest.raises(fetch.FetchError):
+    with pytest.raises(fetch.FetchError, match="exceeded"):        # the byte cap actually fires
         fetch.get_to_file("https://historicengland.org.uk/x", tmp_path / "o",
                           expected_hosts={"historicengland.org.uk"}, max_bytes=1024)
 
@@ -103,23 +106,38 @@ def test_get_to_file_writes_bytes(tmp_path, monkeypatch):
                           expected_hosts={"historicengland.org.uk"})
     assert n == 5 and (tmp_path / "o").read_bytes() == b"HELLO"
 
-# ---- the SSRF teeth: a real 302 to an off-allowlist host must be BLOCKED on the executed path ----
-class _Mock302Handler(urllib.request.BaseHandler):
+def test_get_to_file_rejects_content_encoding(tmp_path, monkeypatch):
+    class _HdrOpener:                                              # a response WITH a Content-Encoding
+        def open(self, url, timeout=None):
+            m = email.message.Message(); m["Content-Encoding"] = "gzip"
+            return urllib.response.addinfourl(io.BytesIO(b"BODY"), m, url, 200)
+    monkeypatch.setattr(fetch, "_opener", lambda hosts: _HdrOpener())
+    with pytest.raises(fetch.FetchError, match="Content-Encoding"):
+        fetch.get_to_file("https://historicengland.org.uk/x", tmp_path / "o",
+                          expected_hosts={"historicengland.org.uk"})
+
+# ---- the SSRF teeth (verified against the real merged fetch.py). The mock 302s an allowlisted host
+# -> an OFF-allowlist target that, IF reached, serves a 200 body. So the REAL _AllowlistRedirect
+# BLOCKS the hop with "blocked redirect to '...'" (match green), while a NEUTERED handler FOLLOWS to
+# the off-allowlist target and completes — producing NO "blocked redirect to" message, so
+# `match="blocked redirect to"` goes RED. No evil->evil loop to mask the result (the A1b false-green). ----
+class _RedirectThenServe(urllib.request.BaseHandler):
     def __init__(self, location): self.location = location
     def https_open(self, req):
-        m = email.message.Message(); m["Location"] = self.location
-        fp = io.BytesIO(b""); fp.headers = m
-        return urllib.request.HTTPError(req.full_url, 302, "Found", m, fp)
+        if req.full_url == self.location:                         # reached off-allowlist target -> serve body
+            return urllib.response.addinfourl(io.BytesIO(b"EVIL-BODY"), email.message.Message(), req.full_url, 200)
+        m = email.message.Message(); m["Location"] = self.location   # first hop -> 302 to the target
+        return urllib.request.HTTPError(req.full_url, 302, "Found", m, io.BytesIO(b""))
 
-def _mock_opener(hosts, location):
+def _redirect_opener(hosts, location):
     o = urllib.request.OpenerDirector()
-    for h in (urllib.request.HTTPErrorProcessor(), fetch._AllowlistRedirect(hosts), _Mock302Handler(location)):
+    for h in (urllib.request.HTTPErrorProcessor(), fetch._AllowlistRedirect(hosts), _RedirectThenServe(location)):
         o.add_handler(h)
     return o
 
 def test_get_to_file_blocks_redirect_to_offallowlist_host(tmp_path, monkeypatch):
-    monkeypatch.setattr(fetch, "_opener", lambda h: _mock_opener(h, "https://evil.example/x"))
-    with pytest.raises(fetch.FetchError, match="blocked redirect"):
+    monkeypatch.setattr(fetch, "_opener", lambda h: _redirect_opener(h, "https://evil.example/x"))
+    with pytest.raises(fetch.FetchError, match="blocked redirect to"):   # A1b's real block message
         fetch.get_to_file("https://historicengland.org.uk/x", tmp_path / "o",
                           expected_hosts={"historicengland.org.uk"})
 
@@ -167,39 +185,39 @@ Expected: FAIL — `fetch.get_to_file` / `mt_pipeline.extractors._snapshot` not 
 
 - [ ] **Step 3: Add `fetch.get_to_file`**
 
-Append to `pipeline/src/mt_pipeline/fetch.py` (reuses the existing `_opener`/`_AllowlistRedirect`/`FetchError`/`MAX_RESPONSE_BYTES` from A1b — do NOT re-declare them):
+Append to `pipeline/src/mt_pipeline/fetch.py` (reuses the existing `_opener`/`_AllowlistRedirect`/`_validate_target`/`FetchError`/`MAX_RESPONSE_BYTES` and the module-level `import time` from A1b — do NOT re-declare them). **This mirrors `get_json`'s exact structure** (verified against the merged A1b `fetch.py`): the `getattr(resp, "headers", None)` guard (so a headerless response never `AttributeError`s), and the `except FetchError: raise` / `except Exception: raise FetchError(str(exc))` pair — so A1b's `_AllowlistRedirect` `FetchError("blocked redirect to …")` propagates **untouched** (the test's `match` pins it), while any other opener failure (a redirect *loop*, `URLError`, timeout) becomes a `FetchError` whose message does **not** contain the block phrase (so neutering the allowlist reds the redirect test):
 ```python
 def get_to_file(url: str, dest, *, expected_hosts: set[str], max_bytes: int = MAX_RESPONSE_BYTES,
                 timeout: int = 30, deadline: int = 120) -> int:
     """Stream url -> dest through the ONE protected opener (https + host allowlist re-validated on
     every redirect hop by _AllowlistRedirect), byte-capped and deadline-bounded. Counterpart of
-    get_json for large files. Single-sources the SSRF-critical opener — never a second open path."""
-    import time
+    get_json for large files — SAME opener, SAME except structure (never a second SSRF path)."""
     if not _validate_target(url, expected_hosts):
-        raise FetchError(f"refusing non-https or off-allowlist url: {url}")
-    start = time.monotonic()
+        raise FetchError(f"invalid target: {url!r}")
     written = 0
     try:
-        resp = _opener(expected_hosts).open(url, timeout=timeout)   # redirects re-validated here
-    except urllib.error.HTTPError as e:                             # _AllowlistRedirect raised on a bad hop
-        raise FetchError(f"blocked redirect or http error: {e}") from e
-    enc = (resp.headers.get("Content-Encoding") or "").lower()
-    if enc and enc not in ("identity",):
-        raise FetchError(f"unexpected Content-Encoding: {enc}")
-    with open(dest, "wb") as out:
-        while True:
-            if time.monotonic() - start > deadline:
-                raise FetchError("exceeded total download deadline (slowloris)")
-            chunk = resp.read(1 << 16)
-            if not chunk:
-                break
-            written += len(chunk)
-            if written > max_bytes:
-                raise FetchError(f"response exceeded max_bytes={max_bytes}")
-            out.write(chunk)
+        with _opener(expected_hosts).open(url, timeout=timeout) as resp:   # redirects re-validated here
+            headers = getattr(resp, "headers", None)
+            if headers is not None and headers.get("Content-Encoding"):
+                raise FetchError(f"unexpected Content-Encoding {headers.get('Content-Encoding')!r}")
+            start = time.monotonic()
+            with open(dest, "wb") as out:
+                while True:
+                    if time.monotonic() - start > deadline:
+                        raise FetchError("exceeded total download deadline")
+                    chunk = resp.read(65536)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > max_bytes:
+                        raise FetchError(f"response exceeded {max_bytes} bytes")
+                    out.write(chunk)
+    except FetchError:
+        raise                                    # blocked-redirect / cap / encoding — propagate typed & untouched
+    except Exception as exc:
+        raise FetchError(str(exc)) from exc      # URLError / timeout / redirect-loop HTTPError — typed, NO block phrase
     return written
 ```
-*(`_AllowlistRedirect.redirect_request` raises `FetchError("blocked redirect ...")` when a hop leaves the allowlist — A1b's behaviour; the test drives a real 302 through this path. If A1b surfaces the block as an `HTTPError`, the `except` above normalizes it to a `FetchError` whose message contains "blocked redirect".)*
 
 - [ ] **Step 4: Implement `_snapshot.py`**
 
@@ -218,6 +236,8 @@ import pathlib
 from .. import fetch
 
 MAX_SIDECAR_BYTES = 64 * 1024
+MAX_SNAPSHOT_BYTES = 512 * 1024 * 1024   # extract-path hard cap (the real NHLE is hundreds of MB);
+                                         # mirrors A1b's wikidata._load_snapshot stat() guard.
 _log = logging.getLogger(__name__)
 
 
@@ -226,11 +246,25 @@ class SnapshotError(Exception):
 
 
 class SnapshotParseError(SnapshotError):
-    """The snapshot FILE could not be parsed (truncated/garbage) — a loud, clean abort."""
+    """The snapshot FILE could not be parsed (truncated/garbage/wrong-shape) — a loud, clean abort."""
+
+
+class SnapshotTooLargeError(SnapshotError):
+    """The snapshot on disk exceeds MAX_SNAPSHOT_BYTES — loud abort BEFORE it is read/parsed."""
 
 
 class ProvenanceError(SnapshotError):
     pass
+
+
+def check_snapshot_size(path) -> None:
+    """Every extract() calls this FIRST. The download byte-cap protects only the download path;
+    the extract path (and any hand-placed snapshot) must be bounded here, not trusted."""
+    p = pathlib.Path(path)
+    if not p.exists():
+        raise SnapshotParseError(f"snapshot not found: {p} (was acquisition run?)")
+    if p.stat().st_size > MAX_SNAPSHOT_BYTES:
+        raise SnapshotTooLargeError(f"{p} exceeds {MAX_SNAPSHOT_BYTES} bytes")
 
 
 def _sha256_file(path) -> str:
@@ -276,7 +310,7 @@ def verify_sha256_sidecar(snapshot_path) -> None:
 - [ ] **Step 5: Run to verify it passes**
 
 Run: `cd pipeline && uv run python -m pytest tests/test_register_snapshot.py -q`
-Expected: PASS (8 passed) — incl. the redirect-to-evil block (neuter `_AllowlistRedirect` → this reds).
+Expected: PASS (9 passed) — incl. the Content-Encoding rejection and the redirect-to-evil block (neuter `_AllowlistRedirect.redirect_request` → the redirect test reds, because a neutered handler follows to the off-allowlist target and the "blocked redirect to" message is never produced).
 
 - [ ] **Step 6: Commit**
 
@@ -297,11 +331,10 @@ git commit -m "Add SSRF-safe get_to_file + shared register-snapshot acquisition/
 - Test: `pipeline/tests/test_historic_england.py`, `pipeline/tests/fixtures/registers/he_sample.geojson`
 
 **Interfaces:**
-- Consumes: `ijson`, `source_record.parse`/`persist`, `_snapshot.verify_sha256_sidecar`.
+- Consumes: `ijson`, `source_record.parse`/`persist`, `_snapshot.check_snapshot_size`/`verify_sha256_sidecar`.
 - Produces:
-  - `historic_england.HistoricEnglandExtractor(attribution: str)` — implements A1b's `Extractor`: `extract(region, snapshot_path, conn, *, run_id) -> int`.
-  - `historic_england.make_extractor(sources_config_path) -> HistoricEnglandExtractor` (loads the attribution string from `a1d_sources.json`).
-  - Each kept feature emits `source="hehle"`, `source_ref="hehle:<ListEntry>"` (`ListEntry` validated `[0-9]+`), `name` from `properties.Name` (bounded), `props = {"grade": <str>}` when present (the §4 heritage-grade signal). GeoJSON `coordinates` are `[lon, lat]`; **Point** → direct; **Polygon/MultiPolygon** → arithmetic-mean of the **outer ring**, closing vertex dropped. De-duped by `source_ref`, stable lexical order, per-feature skip-never-crash.
+  - `historic_england.HistoricEnglandExtractor()` — **config-free** (no constructor args), implements A1b's `Extractor`: `extract(region, snapshot_path, conn, *, run_id) -> int`. Registered directly in `build_registry` (no `make_extractor`; attribution/URL are acquisition + A7 data in `a1d_sources.json`, not extractor state).
+  - Each kept feature emits `source="hehle"`, `source_ref="hehle:<ListEntry>"` (`ListEntry` validated `[0-9]+`; ijson yields numbers as `Decimal`, `str()`-ed to bare digits), `name` from `properties.Name` (bounded), `props = {"grade": <str>}` when present (the §4 heritage-grade signal). GeoJSON `coordinates` are `[lon, lat]`; **Point** → direct; **Polygon/MultiPolygon** → arithmetic-mean of the **outer ring** (closing vertex dropped, `MAX_RING_POINTS`-capped). De-duped by `source_ref`, stable lexical order, per-feature skip-never-crash; wrong-shape / oversized / I/O-error snapshots are loud typed `_snapshot.SnapshotError`s.
 
 - [ ] **Step 1: Write the fixture + failing tests**
 
@@ -332,7 +365,7 @@ FIX = pathlib.Path(__file__).parent / "fixtures/registers/he_sample.geojson"
 
 def test_extracts_point_and_polygon_centroid_with_grade(tmp_path):
     conn = _db(tmp_path / "w")
-    n = he.HistoricEnglandExtractor("© Historic England, OGL v3.0").extract("uk", FIX, conn, run_id="r1")
+    n = he.HistoricEnglandExtractor().extract("uk", FIX, conn, run_id="r1")
     rows = conn.execute("SELECT source_ref, name, lat, lon FROM source_records ORDER BY source_ref").fetchall()
     assert n == 2                                        # 1000001 + 1000002; non-digit id + name-less skipped
     assert rows[0][0] == "hehle:1000001" and rows[1][0] == "hehle:1000002"
@@ -343,14 +376,25 @@ def test_extracts_point_and_polygon_centroid_with_grade(tmp_path):
 
 def test_grade_rides_in_props_as_the_heritage_signal(tmp_path):
     conn = _db(tmp_path / "w")
-    he.HistoricEnglandExtractor("attr").extract("uk", FIX, conn, run_id="r1")
+    he.HistoricEnglandExtractor().extract("uk", FIX, conn, run_id="r1")
     props = json.loads(conn.execute("SELECT props_json FROM source_records WHERE source_ref='hehle:1000001'").fetchone()[0])
     assert props["grade"] == "I"
 
-def test_make_extractor_loads_attribution(tmp_path):
-    cfg = pathlib.Path(__file__).parents[1] / "config/a1d_sources.json"
-    x = he.make_extractor(cfg)
-    assert "Historic England" in x.attribution and "OGL" in x.attribution.upper()
+def test_numeric_list_entry_stringifies_to_digits(tmp_path):
+    # ijson yields a numeric ListEntry as Decimal; str(Decimal(1000005)) == "1000005" must pass _LIST_ENTRY.
+    f = ('{"type":"Feature","properties":{"ListEntry":1000005,"Name":"Numeric Id","Grade":"II"},'
+         '"geometry":{"type":"Point","coordinates":[-0.1,51.4]}}')
+    p = tmp_path / "num.geojson"; p.write_text('{"type":"FeatureCollection","features":[' + f + "]}")
+    conn = _db(tmp_path / "num")
+    assert he.HistoricEnglandExtractor().extract("uk", p, conn, run_id="r1") == 1
+    assert conn.execute("SELECT source_ref FROM source_records").fetchone()[0] == "hehle:1000005"
+
+def test_a1d_sources_config_carries_ogl_attribution():
+    # The plan-carried licensing requirement lives in config DATA (A7 consumes it), not on the extractor.
+    cfg = json.loads((pathlib.Path(__file__).parents[1] / "config/a1d_sources.json").read_text())
+    assert "Open Government Licence" in cfg["historic_england"]["attribution"]      # OGL, spelled out
+    assert cfg["historic_england"]["license"] == "OGL-3.0"
+    assert cfg["open_plaques"]["license"] == "CC0-1.0"
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -401,18 +445,24 @@ import ijson
 from .. import source_record
 from . import _snapshot
 
-MAX_NAME_LEN = 300
-MAX_PROP_STR_LEN = 300
+MAX_NAME_LEN = 300              # cheap defense-in-depth; A1's parse also caps every string to 300
+MAX_RING_POINTS = 100_000       # a ring beyond this is refused (per-feature skip) so a hostile
+                                # million-point ring can't dominate the centroid sum (see Global Constraints)
+# NHLE GeoJSON property names. CONFIRM these against a REAL NHLE export in the feasibility step —
+# wrong keys silently yield 0 records (name-less → dropped) or a missing grade signal (Finding).
+HE_ID_KEY, HE_NAME_KEY, HE_GRADE_KEY = "ListEntry", "Name", "Grade"
 _LIST_ENTRY = re.compile(r"[0-9]+")
 _log = logging.getLogger(__name__)
 
 
 def _ring_centroid(ring):
-    # ring = list of [lon, lat]; drop the repeated closing vertex, arithmetic-mean the rest.
+    # ring = list of [lon, lat]. Refuse a pathological ring, drop the repeated closing vertex,
+    # then arithmetic-mean the rest (order fixed by the file — the A1c determinism lesson).
+    if len(ring) > MAX_RING_POINTS:
+        raise ValueError(f"ring too large: {len(ring)} > {MAX_RING_POINTS}")
     pts = ring[:-1] if len(ring) >= 2 and ring[0] == ring[-1] else ring
-    lon = sum(p[0] for p in pts) / len(pts)
-    lat = sum(p[1] for p in pts) / len(pts)
-    return lat, lon
+    n = len(pts)
+    return sum(p[1] for p in pts) / n, sum(p[0] for p in pts) / n   # (lat, lon)
 
 
 def _point_of(geometry):
@@ -429,36 +479,46 @@ def _point_of(geometry):
 
 
 class HistoricEnglandExtractor:
-    def __init__(self, attribution: str) -> None:
-        self.attribution = attribution
+    """Config-free: the register attribution/URL live in a1d_sources.json (used by acquisition +
+    A7), not on the extractor — carrying attribution here was inert weight."""
 
     def extract(self, region: str, snapshot_path, conn, *, run_id: str) -> int:
+        _snapshot.check_snapshot_size(snapshot_path)       # bound the EXTRACT path (not just download)
         _snapshot.verify_sha256_sidecar(snapshot_path)
         records: dict[str, dict] = {}
         dropped = 0
         try:
+            # Loud-abort if the top level isn't a FeatureCollection — a wrong-shape but valid-JSON
+            # file must NOT silently yield 0 records (symmetric with Open Plaques' non-array reject, §6).
+            with open(snapshot_path, "rb") as tf:
+                if next(ijson.items(tf, "type"), None) != "FeatureCollection":
+                    raise _snapshot.SnapshotParseError(f"{snapshot_path} is not a GeoJSON FeatureCollection")
             with open(snapshot_path, "rb") as f:
                 for feat in ijson.items(f, "features.item"):   # STREAMING: one feature at a time
                     try:
                         props = feat.get("properties") or {}
-                        raw_id = str(props.get("ListEntry", ""))
-                        if not _LIST_ENTRY.fullmatch(raw_id):
+                        raw_id = str(props.get(HE_ID_KEY, ""))     # ijson yields numbers as Decimal;
+                        if not _LIST_ENTRY.fullmatch(raw_id):      # str(Decimal(1000005)) == "1000005"
                             dropped += 1; continue
                         ref = f"hehle:{raw_id}"
                         if ref in records:
                             continue
                         lat, lon = _point_of(feat["geometry"])
-                        name = str(props.get("Name") or "")[:MAX_NAME_LEN]
+                        name = str(props.get(HE_NAME_KEY) or "")[:MAX_NAME_LEN]
                         out = {}
-                        grade = props.get("Grade")
+                        grade = props.get(HE_GRADE_KEY)
                         if isinstance(grade, str):
-                            out["grade"] = grade[:MAX_PROP_STR_LEN]
+                            out["grade"] = grade                   # A1 caps props values to 300 — no re-cap
                         records[ref] = {"lat": lat, "lon": lon, "name": name, "props": out}
-                    except Exception as e:                     # one bad feature never aborts the stream
+                    except Exception as e:                     # one bad feature (incl. oversized ring) skips
                         dropped += 1
                         _log.debug("skipped HE feature: %s: %s", type(e).__name__, e)
+        except _snapshot.SnapshotError:
+            raise                                              # our own loud aborts propagate typed
         except (ijson.JSONError, ValueError) as e:             # file-level unparseable → loud typed abort
             raise _snapshot.SnapshotParseError(f"could not parse NHLE GeoJSON {snapshot_path}: {e}") from e
+        except OSError as e:                                    # I/O on the extract path → typed, not raw
+            raise _snapshot.SnapshotParseError(f"could not read NHLE snapshot {snapshot_path}: {e}") from e
         if dropped:
             _log.warning("HE extract %s: skipped %d malformed feature(s)", snapshot_path, dropped)
         count = 0
@@ -472,18 +532,13 @@ class HistoricEnglandExtractor:
             source_record.persist(conn, rec, run_id=run_id)
             count += 1
         return count
-
-
-def make_extractor(sources_config_path) -> HistoricEnglandExtractor:
-    cfg = json.loads(pathlib.Path(sources_config_path).read_text())
-    return HistoricEnglandExtractor(cfg["historic_england"]["attribution"])
 ```
-*(`ijson.items(f, "features.item")` yields each feature dict from the `features` array without loading the whole FeatureCollection — bounded memory. Verify the `ijson.JSONError` symbol against the installed version in the feasibility run.)*
+*(`ijson.items(f, "features.item")` yields each feature from the `features` array without loading the whole FeatureCollection — **verified: 20k features parsed at 0.8 MB peak heap**. `ijson.items(tf, "type")` yields only the top-level `type` (nested `geometry.type` is a different path) and `next(...)` stops early when `type` is first (GeoJSON convention). `ijson.JSONError` — a truncated file raises `IncompleteJSONError`, a subclass — verified against 3.5.1 in the feasibility run.)*
 
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `cd pipeline && uv run python -m pytest tests/test_historic_england.py -q`
-Expected: PASS — point + polygon-centroid `(lat 1.0, lon 1.5)`, grade signal, attribution loaded.
+Expected: PASS — point + polygon-centroid `(lat 1.0, lon 1.5)`, grade signal, numeric-id stringify, config attribution.
 
 - [ ] **Step 5: Commit**
 
@@ -513,16 +568,36 @@ def _geojson(features):
 def test_corrupt_geojson_is_a_loud_typed_error(tmp_path):
     bad = tmp_path / "b.geojson"; bad.write_text('{"type":"FeatureCollection","features":[ NOT JSON')
     with pytest.raises(he._snapshot.SnapshotParseError):
-        he.HistoricEnglandExtractor("attr").extract("uk", bad, _db(tmp_path / "b"), run_id="r1")
+        he.HistoricEnglandExtractor().extract("uk", bad, _db(tmp_path / "b"), run_id="r1")
 
-def test_hostile_grade_length_is_bounded(tmp_path):
+def test_wrong_shape_valid_json_is_a_loud_typed_error(tmp_path):
+    # A valid JSON that isn't a FeatureCollection must LOUD-abort (§6), not silently yield 0.
+    bad = tmp_path / "w.geojson"; bad.write_text('{"type":"Topology","objects":{}}')
+    with pytest.raises(he._snapshot.SnapshotParseError):
+        he.HistoricEnglandExtractor().extract("uk", bad, _db(tmp_path / "w"), run_id="r1")
+
+def test_hostile_huge_grade_does_not_crash_record_kept(tmp_path):
+    # A 5000-char grade must not crash; A1's parse caps the value to 300. (Length-bounding is A1's job,
+    # not an A1d tooth — so we assert the record SURVIVES, not a redundant length equal to A1's cap.)
     f = ('{"type":"Feature","properties":{"ListEntry":"1000009","Name":"X","Grade":"'
          + "z" * 5000 + '"},"geometry":{"type":"Point","coordinates":[-0.1,51.4]}}')
     p = tmp_path / "g.geojson"; p.write_text(_geojson([f]))
     conn = _db(tmp_path / "g")
-    he.HistoricEnglandExtractor("attr").extract("uk", p, conn, run_id="r1")
+    assert he.HistoricEnglandExtractor().extract("uk", p, conn, run_id="r1") == 1
     props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
-    assert len(props["grade"]) <= he.MAX_PROP_STR_LEN
+    assert len(props["grade"]) == 300                    # A1's NAME_MAX cap applied downstream
+
+def test_oversized_ring_feature_is_skipped_not_crashed(tmp_path):
+    # A ring beyond MAX_RING_POINTS is refused per-feature (dropped), the good point survives — teeth:
+    # neuter the MAX_RING_POINTS guard and this record would persist (n==2), reddening the assert.
+    huge = ",".join("[0.0,0.0]" for _ in range(he.MAX_RING_POINTS + 5))
+    bad = ('{"type":"Feature","properties":{"ListEntry":"1000013","Name":"Huge"},'
+           '"geometry":{"type":"Polygon","coordinates":[[' + huge + ']]}}')
+    good = ('{"type":"Feature","properties":{"ListEntry":"1000014","Name":"Ok"},'
+            '"geometry":{"type":"Point","coordinates":[-0.1,51.4]}}')
+    p = tmp_path / "r.geojson"; p.write_text(_geojson([bad, good]))
+    conn = _db(tmp_path / "r")
+    assert he.HistoricEnglandExtractor().extract("uk", p, conn, run_id="r1") == 1   # huge ring skipped
 
 def test_malformed_geometry_feature_is_skipped_not_crashed(tmp_path):
     good = ('{"type":"Feature","properties":{"ListEntry":"1000010","Name":"Good"},'
@@ -530,7 +605,7 @@ def test_malformed_geometry_feature_is_skipped_not_crashed(tmp_path):
     bad = '{"type":"Feature","properties":{"ListEntry":"1000011","Name":"NoGeom"},"geometry":null}'
     p = tmp_path / "m.geojson"; p.write_text(_geojson([bad, good]))
     conn = _db(tmp_path / "m")
-    assert he.HistoricEnglandExtractor("attr").extract("uk", p, conn, run_id="r1") == 1   # bad skipped, good kept
+    assert he.HistoricEnglandExtractor().extract("uk", p, conn, run_id="r1") == 1   # bad skipped, good kept
 
 def test_polygon_centroid_is_arithmetic_mean_not_bbox(tmp_path):
     # asymmetric closed ring: mean lon=1.5, bbox-center lon=2.0. Neuter _ring_centroid -> bbox and this reds.
@@ -538,14 +613,14 @@ def test_polygon_centroid_is_arithmetic_mean_not_bbox(tmp_path):
          '"geometry":{"type":"Polygon","coordinates":[[[0.0,0.0],[0.0,2.0],[2.0,2.0],[4.0,0.0],[0.0,0.0]]]}}')
     p = tmp_path / "p.geojson"; p.write_text(_geojson([f]))
     conn = _db(tmp_path / "p")
-    he.HistoricEnglandExtractor("attr").extract("uk", p, conn, run_id="r1")
+    he.HistoricEnglandExtractor().extract("uk", p, conn, run_id="r1")
     lon = conn.execute("SELECT lon FROM source_records WHERE source_ref='hehle:1000012'").fetchone()[0]
     assert abs(lon - 1.5) < 1e-9
 
 def test_deterministic_same_file_same_records(tmp_path):
     ca = _db(tmp_path / "a"); cb = _db(tmp_path / "b")
-    he.HistoricEnglandExtractor("attr").extract("uk", FIX, ca, run_id="r1")
-    he.HistoricEnglandExtractor("attr").extract("uk", FIX, cb, run_id="r2")
+    he.HistoricEnglandExtractor().extract("uk", FIX, ca, run_id="r1")
+    he.HistoricEnglandExtractor().extract("uk", FIX, cb, run_id="r2")
     q = "SELECT source_ref, lat, lon FROM source_records ORDER BY id"
     assert ca.execute(q).fetchall() == cb.execute(q).fetchall()
 ```
@@ -569,11 +644,10 @@ git commit -m "Add Historic England edge-hardening tests (corrupt file, grade bo
 - Test: `pipeline/tests/test_open_plaques.py`, `pipeline/tests/fixtures/registers/plaques_sample.json`
 
 **Interfaces:**
-- Consumes: `source_record.parse`/`persist`, `_snapshot.verify_sha256_sidecar`.
+- Consumes: `source_record.parse`/`persist`, `_snapshot.check_snapshot_size`/`verify_sha256_sidecar`.
 - Produces:
-  - `open_plaques.OpenPlaquesExtractor(attribution: str)` — implements `Extractor`.
-  - `open_plaques.make_extractor(sources_config_path) -> OpenPlaquesExtractor`.
-  - Each geolocated plaque emits `source="plaque"`, `source_ref="plaque:openplaques/<id>"` (`id` validated `[0-9]+`), `name` derived from `title` → else `lead_subject_name` → else the bounded `inscription` (a non-empty name is required or A1 skips it), `props = {"inscription"?, "lead_subject"?}`. Plaques with null/missing coordinates are skipped. De-duped by `source_ref`, stable lexical order, per-feature skip-never-crash. **The plaque's presence is the §4 signal** (A4 detects a `plaque:` ref on a clustered place).
+  - `open_plaques.OpenPlaquesExtractor()` — **config-free** (no args), implements `Extractor`; registered directly in `build_registry`.
+  - Each geolocated plaque emits `source="plaque"`, `source_ref="plaque:openplaques/<id>"` (`id` validated `[0-9]+`), `name` derived from `title` → else `lead_subject_name` → else `inscription` (a non-empty name is required or A1 skips it — noted in §4 for the presence signal), `props = {"inscription"?, "lead_subject"?}`. Plaques with null/missing coordinates are skipped. De-duped by `source_ref`, stable lexical order, per-feature skip-never-crash. **The plaque's presence is the §4 signal** (A4 detects a `plaque:` ref on a clustered place).
 
 - [ ] **Step 1: Write the fixture + failing tests**
 
@@ -602,20 +676,20 @@ FIX = pathlib.Path(__file__).parent / "fixtures/registers/plaques_sample.json"
 
 def test_extracts_geolocated_plaques_skips_ungeolocated_and_bad_id(tmp_path):
     conn = _db(tmp_path / "w")
-    n = op.OpenPlaquesExtractor("CC0").extract("uk", FIX, conn, run_id="r1")
+    n = op.OpenPlaquesExtractor().extract("uk", FIX, conn, run_id="r1")
     rows = conn.execute("SELECT source_ref, name FROM source_records ORDER BY source_ref").fetchall()
     assert n == 2                                        # 9876 + 9877; null-coord + bad-id skipped
     assert rows[0][0] == "plaque:openplaques/9876" and rows[1][0] == "plaque:openplaques/9877"
 
 def test_name_falls_back_to_lead_subject_when_title_missing(tmp_path):
     conn = _db(tmp_path / "w")
-    op.OpenPlaquesExtractor("CC0").extract("uk", FIX, conn, run_id="r1")
+    op.OpenPlaquesExtractor().extract("uk", FIX, conn, run_id="r1")
     name = conn.execute("SELECT name FROM source_records WHERE source_ref='plaque:openplaques/9877'").fetchone()[0]
     assert name == "Grace Hopper"
 
 def test_inscription_rides_in_props(tmp_path):
     conn = _db(tmp_path / "w")
-    op.OpenPlaquesExtractor("CC0").extract("uk", FIX, conn, run_id="r1")
+    op.OpenPlaquesExtractor().extract("uk", FIX, conn, run_id="r1")
     props = json.loads(conn.execute("SELECT props_json FROM source_records WHERE source_ref='plaque:openplaques/9876'").fetchone()[0])
     assert "Ada Lovelace" in props["inscription"]
 ```
@@ -642,22 +716,25 @@ import re
 from .. import source_record
 from . import _snapshot
 
-MAX_NAME_LEN = 300
-MAX_PROP_STR_LEN = 300
+MAX_NAME_LEN = 300              # cheap defense-in-depth on the DERIVED name; A1 also caps to 300
 _PLAQUE_ID = re.compile(r"[0-9]+")
 _log = logging.getLogger(__name__)
 
 
 class OpenPlaquesExtractor:
-    def __init__(self, attribution: str) -> None:
-        self.attribution = attribution
+    """Config-free (attribution/URL live in a1d_sources.json). NOTE (§4): the plaque-presence
+    signal requires a non-empty name to survive A1's parse — a coordinate-bearing plaque with no
+    title/subject/inscription is dropped (rare in Open Plaques). A4 reads 'presence, not fame'."""
 
     def extract(self, region: str, snapshot_path, conn, *, run_id: str) -> int:
+        _snapshot.check_snapshot_size(snapshot_path)       # bound the extract path (parity with HE)
         _snapshot.verify_sha256_sidecar(snapshot_path)
         try:
             data = json.loads(pathlib.Path(snapshot_path).read_text())
         except (ValueError, RecursionError) as e:                 # file-level unparseable → loud abort
             raise _snapshot.SnapshotParseError(f"could not parse Open Plaques JSON {snapshot_path}: {e}") from e
+        except OSError as e:                                       # I/O on the extract path → typed
+            raise _snapshot.SnapshotParseError(f"could not read Open Plaques snapshot {snapshot_path}: {e}") from e
         if not isinstance(data, list):
             raise _snapshot.SnapshotParseError("Open Plaques dump must be a JSON array")
         records: dict[str, dict] = {}
@@ -678,12 +755,13 @@ class OpenPlaquesExtractor:
                 title = item.get("title")
                 subject = item.get("lead_subject_name")
                 inscription = item.get("inscription")
-                name = next((str(v)[:MAX_NAME_LEN] for v in (title, subject, inscription) if isinstance(v, str) and v.strip()), "")
-                out = {}
+                name = next((str(v)[:MAX_NAME_LEN] for v in (title, subject, inscription)
+                             if isinstance(v, str) and v.strip()), "")
+                out = {}                                          # A1 caps every props value to 300; no re-cap
                 if isinstance(inscription, str):
-                    out["inscription"] = inscription[:MAX_PROP_STR_LEN]
+                    out["inscription"] = inscription
                 if isinstance(subject, str):
-                    out["lead_subject"] = subject[:MAX_PROP_STR_LEN]
+                    out["lead_subject"] = subject
                 records[ref] = {"lat": lat, "lon": lon, "name": name, "props": out}
             except Exception as e:
                 dropped += 1
@@ -701,11 +779,6 @@ class OpenPlaquesExtractor:
             source_record.persist(conn, rec, run_id=run_id)
             count += 1
         return count
-
-
-def make_extractor(sources_config_path) -> OpenPlaquesExtractor:
-    cfg = json.loads(pathlib.Path(sources_config_path).read_text())
-    return OpenPlaquesExtractor(cfg["open_plaques"]["attribution"])
 ```
 
 - [ ] **Step 4: Run + hardening + commit**
@@ -715,20 +788,22 @@ Add these hardening tests to `test_open_plaques.py`, then run:
 def test_corrupt_dump_is_a_loud_typed_error(tmp_path):
     bad = tmp_path / "b.json"; bad.write_text("{ not json")
     with pytest.raises(op._snapshot.SnapshotParseError):
-        op.OpenPlaquesExtractor("CC0").extract("uk", bad, _db(tmp_path / "b"), run_id="r1")
+        op.OpenPlaquesExtractor().extract("uk", bad, _db(tmp_path / "b"), run_id="r1")
 
 def test_non_array_dump_is_rejected(tmp_path):
     bad = tmp_path / "o.json"; bad.write_text('{"plaques": []}')
     with pytest.raises(op._snapshot.SnapshotParseError):
-        op.OpenPlaquesExtractor("CC0").extract("uk", bad, _db(tmp_path / "o"), run_id="r1")
+        op.OpenPlaquesExtractor().extract("uk", bad, _db(tmp_path / "o"), run_id="r1")
 
-def test_hostile_inscription_length_bounded(tmp_path):
+def test_hostile_huge_inscription_does_not_crash_record_kept(tmp_path):
+    # A 5000-char inscription must not crash; A1's parse caps the value to 300. Length-bounding is
+    # A1's job (not an A1d tooth) — so assert the record SURVIVES, not a redundant length.
     p = tmp_path / "h.json"
     p.write_text(json.dumps([{"id": 5, "title": "T", "inscription": "z" * 5000, "latitude": 51.5, "longitude": -0.1}]))
     conn = _db(tmp_path / "h")
-    op.OpenPlaquesExtractor("CC0").extract("uk", p, conn, run_id="r1")
+    assert op.OpenPlaquesExtractor().extract("uk", p, conn, run_id="r1") == 1
     props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
-    assert len(props["inscription"]) <= op.MAX_PROP_STR_LEN
+    assert len(props["inscription"]) == 300              # A1's cap applied downstream
 ```
 
 Run: `cd pipeline && uv run python -m pytest tests/test_open_plaques.py -q`
@@ -749,7 +824,7 @@ git commit -m "Add Open Plaques extractor (plaque-presence signal, name derivati
 - Test: `pipeline/tests/test_extract_stage_registers.py`
 
 **Interfaces:**
-- Extend `build_registry` to also register `historic_england` and `open_plaques` (defaulting the sources-config path to the shipped `a1d_sources.json` so both are **always registered** — the A1c silent-skip lesson). `run_extract` is unchanged.
+- Add two `reg.register(...)` lines to the existing `build_registry` (an **additive delta** — the register extractors are config-free, constructed directly, so both are **always registered**, the A1c silent-skip lesson). Do **not** reproduce A1c's `osm` line (it may not have landed). No new kwarg (the extractors need no config for extraction). `run_extract` unchanged.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -791,6 +866,17 @@ def test_national_register_object_is_not_treated_as_enabled(tmp_path):
     counts = extract_stage.run_extract(conn, cfg, {"open_plaques": str(REG_FIX / "plaques_sample.json")},
                                        run_id="r1", registry=reg)
     assert counts == {"open_plaques": 2}                # national_register absent — object is not `is True`
+
+def test_registered_key_with_truthy_non_true_value_does_not_run(tmp_path):
+    # TEETH for `is True` (vs truthy): open_plaques IS registered, but a {"enabled": true} object value
+    # is not `is True`, so it must not run. Neuter enabled_for's `is True` -> bool(...) and this reds
+    # (the object is truthy). The national_register test above can't pin this — it's never registered.
+    conn = store.connect(tmp_path / "w.db"); store.init_schema(conn)
+    reg = _reg()
+    cfg = RC("uk", {"open_plaques": {"enabled": True}})   # REGISTERED key, truthy object, not `is True`
+    counts = extract_stage.run_extract(conn, cfg, {"open_plaques": str(REG_FIX / "plaques_sample.json")},
+                                       run_id="r1", registry=reg)
+    assert counts == {}                                  # not `is True` -> not enabled -> not run
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -800,23 +886,25 @@ Expected: FAIL — `build_registry` does not register the register extractors.
 
 - [ ] **Step 3: Modify `build_registry`**
 
-In `pipeline/src/mt_pipeline/extract_stage.py`, extend `build_registry` (composes with A1c's `osm_tag_config_path` default — keep it):
+In `pipeline/src/mt_pipeline/extract_stage.py`, **add the import and two `register(...)` lines** to the *existing* `build_registry` — do **not** rewrite its signature or reproduce A1c's `osm` line (on an A1b-only tree there is no `osm_extractor` symbol; on an A1b+A1c tree the `osm` line is already there and A1d leaves it untouched). The register extractors are config-free, so they register directly (always registered):
 ```python
-import pathlib
-from .extractors import historic_england, open_plaques
+from .extractors import historic_england, open_plaques   # add to the imports
 
-DEFAULT_A1D_SOURCES = pathlib.Path(__file__).resolve().parents[2] / "config/a1d_sources.json"
-
-def build_registry(allowlist_path, languages, *, osm_tag_config_path=None, a1d_sources_path=None):
+# ... inside build_registry(...), AFTER the existing wikidata/wikipedia (and, if present, osm) lines:
+    reg.register("historic_england", historic_england.HistoricEnglandExtractor())
+    reg.register("open_plaques", open_plaques.OpenPlaquesExtractor())
+```
+So on today's merged tree (A1b, no A1c) `build_registry(allowlist_path, languages)` becomes:
+```python
+def build_registry(allowlist_path, languages):
     reg = Registry()
     reg.register("wikidata", wikidata.make_extractor(allowlist_path))
     reg.register("wikipedia", WikipediaExtractor(languages))
-    reg.register("osm", osm_extractor.make_extractor(osm_tag_config_path or DEFAULT_OSM_TAG_CONFIG))
-    sources = a1d_sources_path or DEFAULT_A1D_SOURCES
-    reg.register("historic_england", historic_england.make_extractor(sources))
-    reg.register("open_plaques", open_plaques.make_extractor(sources))
+    reg.register("historic_england", historic_england.HistoricEnglandExtractor())
+    reg.register("open_plaques", open_plaques.OpenPlaquesExtractor())
     return reg
 ```
+(When A1c's `osm` registration lands, it sits between wikipedia and historic_england — the two additions don't collide.)
 
 - [ ] **Step 4: Run + full suite + commit**
 
@@ -888,13 +976,17 @@ git commit -m "Add Malaysia heritage-register feasibility spike (written verdict
 **Ratifications (fable, thread `wp/a1d`)** — HE + Open Plaques extractors + Malaysia written-verdict spike; BUILD acquisition with A1b's per-hop redirect discipline (neuter-goes-red redirect test included); GeoJSON/WGS84 + outer-ring-mean + closing-vertex dedup + `ijson` honest memory; spike = written verdict, default-excluded, follow-up-only; no A0 change; OGL attribution plan-carried, surfacing routed to A7's manifest (issue #11).
 
 **Global-constraint / cross-package flags surfaced:**
-- **Blocked on A1b impl landing** (registry, `extract_stage`, `fetch`) — same posture as A1c; stated honestly, not over-claimed.
+- **A1b impl is MERGED (#39); A1c is a sibling in flight.** A1d builds on the real merged `fetch.py`/`extractors/`/`extract_stage.py`. Task 5 is presented as an **additive delta** (two `register` lines) that does not reproduce A1c's osm line — so it applies cleanly to an A1b-only tree or an A1b+A1c tree.
 - **Region-config `sources` type**: pinned to the **shipped** schema (bool or `{id,enabled}` object; **null not used**; absence allowed). The stale `null` usage in the A0-plan draft and A1b's fixtures was flagged time-sensitively; codex's A1b impl is now pinned to the shipped form.
 - **`enabled_for` nested-object seam**: today `sources.get(s) is True` correctly skips `national_register` (an object) — right for the spike. A future register extractor needs `enabled_for` to understand the `{enabled}` shape; an **A1b/A2 seam, flagged not edited from A1d**.
-- **OGL attribution surfacing** → **WP-A7 manifest as per-source attribution carrier; A7 design input on issue #11** (app credits screen is B-track).
-- **`fetch.get_to_file`** single-sources the SSRF-critical opener in A1b (no duplicated `_AllowlistRedirect`) — coordinate with codex so the addition lands in A1b's `fetch.py`.
-- **Determinism guard coverage**: all A1d code lives under `extractors/` (A1b's recursive rglob guard covers it once landed); config is data. No guard gap.
+- **OGL attribution surfacing** → **WP-A7 manifest as per-source attribution carrier; A7 design input on issue #11** — with the caveat that the manifest is **A0-frozen** (`manifest.schema.json` has no attribution field), so A7 carrying it needs an **append-only schema field** (app credits screen is B-track).
+- **`fetch.get_to_file`** single-sources the SSRF-critical opener in A1b (no duplicated `_AllowlistRedirect`) — mirrors `get_json`'s exact `getattr(headers)` + `except FetchError/Exception` structure; the addition lands in A1b's `fetch.py`.
+- **Determinism guard coverage**: all A1d code lives under `extractors/` (A1b's recursive rglob guard covers it); `fetch.get_to_file`'s `time.monotonic` deadline is acquisition, not extract output; config is data. No guard gap.
 
-**Adversarial review (per AGENTS.md gate) — TO RUN before PR, with the strengthened checklist:** (1) fixes verified on the **executed path**; (2) tests have **teeth** — *neuter the fix, confirm the test goes red* (the redirect-allowlist block, the polygon centroid vs bbox, the grade/inscription length bounds, the sidecar sha256 mismatch, the `is True` register gate); (3) **every strict comparison gets a test a loose comparison fails**; (4) the **feasibility critic installs `ijson`** into a scratch venv and runs the real streaming parse against `he_sample.geojson` — **if the sandbox blocks the install, request escalation explicitly (do not silently degrade)** — verifying `ijson.items(f, "features.item")`, the exact `ijson` error symbol, the `[lon,lat]` order, and the outer-ring centroid `(lat 1.0, lon 1.5)`; and drives a real 302 through `fetch.get_to_file` to confirm the off-allowlist redirect is blocked.
+**Adversarial review (per AGENTS.md gate) — COMPLETED. 3 independent critics (security/untrusted-OSM+SSRF; spec+interface fidelity; coherence+test-quality run against a real ijson 3.5.1 venv). The venv critic ran 24 tests: 3 hard-failed, 3 passed-but-pinned-nothing — all now fixed and re-verified on the executed path against the merged A1b `fetch.py` + real ijson.**
+- **Fixed — HIGH:** (1) **SSRF redirect test was a FALSE GREEN** (the [[adversarial-gate-verify-executed-path]] lesson, re-introduced): the evil→evil mock made a neutered allowlist loop → `HTTPError` → my wrap hard-coded "blocked redirect" → `match` passed with SSRF disabled → **fixed** by mirroring `get_json`'s `except FetchError: raise`/`except Exception: raise FetchError(str(exc))` (so a neutered handler's message lacks the block phrase) **and** a body-serving (non-loop) mock; verified: real blocks with A1b's `"blocked redirect to '…'"`, neuter reds. (2) **`get_to_file` read `resp.headers` unguarded** → two tests died with `AttributeError` (the byte cap was never exercised) → **fixed** with `getattr(resp,"headers",None)` matching `get_json`; cap + a new Content-Encoding test now fire. (3) **"bounded memory" was false against a single hostile feature** (measured 20 MB → 625 MB, 31×) → claim corrected to the honest *O(one feature at a time)* (verified 20k features at 0.8 MB), plus a `stat().st_size` extract-path cap (both extractors) and `MAX_RING_POINTS` (oversized ring skipped). (4) **attribution test failed** (config spells out "Open Government Licence", never "OGL") and **attribution was dead-carried on the extractor** → **fixed** by making extractors config-free and asserting attribution in `a1d_sources.json` data.
+- **Fixed — MEDIUM:** (5) **Task 5 presented a merged A1b+A1c `build_registry`** that wouldn't import on an A1b-only tree → rewritten as an additive delta. (6) **grade/inscription length tests had no teeth** (redundant with A1's `NAME_MAX=300`) → dropped the redundant extractor caps and re-scoped the tests to skip-never-crash (record survives). (7) **`is True` register-gate test pinned nothing** (the object was never *registered*) → added a test giving a **registered** key a `{enabled:true}` object (neuter `is True`→`bool` reds it). (8) **HE silently yielded 0 on a wrong-shape file** → loud FeatureCollection type-check (symmetric with Open Plaques' non-array reject). (9) **`FileNotFoundError`/`OSError`/`MemoryError` escaped the typed contract** → `check_snapshot_size` + `except OSError` → typed `SnapshotError`.
+- **Fixed — LOW:** (10) **NHLE property names unverified** (`ListEntry`/`Name`/`Grade`) → hoisted to constants with a mandate to confirm against a real NHLE export in the feasibility step. (11) **ijson `Decimal` numeric id** → a numeric-`ListEntry` test pins `str(Decimal)` → bare digits. (12) **nameless plaque loses the presence signal** → documented as an inherent A1-interface constraint.
+- **Method:** every surviving fix carries a test that reds when neutered; the two false greens and the memory claim were caught by the **venv-running** critic and re-verified by me against the **merged** `fetch.py` — a read-only critic would have believed all three.
 
 **Cross-package needs surfaced** — `WP-A1d-malaysia-register` (only if the spike says machine-readable: append-only A0 prefix + extractor + `enabled_for` seam); A2 clusters `hehle:`/`plaque:` refs onto places (register refs join the union-of-refs registry, §5.2); A4 consumes `props["grade"]` (heritage-designation signal) and plaque presence; A7's manifest carries per-source attribution (issue #11); `fetch.get_to_file` lands in A1b's `fetch.py`.
