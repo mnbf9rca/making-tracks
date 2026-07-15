@@ -358,6 +358,7 @@ git commit -m "Add Extractor Protocol + registry (stable enabled-source dispatch
 ```python
 import json
 import pathlib
+import pytest
 from mt_pipeline import store
 from mt_pipeline.extractors import wikidata
 
@@ -371,11 +372,25 @@ def _write(tmp_path, snap, name="s.json"):
     obj = {"_meta": {"complete": True}, **snap}
     p = tmp_path / name; p.write_text(json.dumps(obj)); return p
 
-def test_incomplete_snapshot_is_refused(tmp_path):
-    import pytest
-    p = _write(tmp_path, {"_meta": {"complete": False}, "results": {"bindings": []}})
-    with pytest.raises(wikidata.SnapshotIncompleteError):   # never extract from a partial snapshot
+@pytest.mark.parametrize("meta", [
+    None,                  # no _meta key at all
+    {},                    # _meta present, no 'complete'
+    {"complete": False},   # explicit false
+    {"complete": 1},       # truthy int — strict identity (`is not True`) must STILL refuse
+    {"complete": "true"},  # truthy string — a loose `not meta.get(...)` would wrongly ACCEPT; we must refuse
+    "x",                   # non-dict _meta → must raise the TYPED error, not AttributeError
+])
+def test_incomplete_or_malformed_meta_is_refused(tmp_path, meta):
+    obj = {"results": {"bindings": []}}
+    if meta is not None:
+        obj["_meta"] = meta
+    p = tmp_path / "s.json"; p.write_text(json.dumps(obj))   # write directly — do NOT inject _meta
+    with pytest.raises(wikidata.SnapshotIncompleteError):    # never extract from a partial/malformed snapshot
         wikidata.WikidataExtractor({"Q33506"}).extract("uk", p, _db(tmp_path), run_id="r1")
+
+def test_complete_true_snapshot_is_accepted(tmp_path):
+    p = tmp_path / "ok.json"; p.write_text(json.dumps({"_meta": {"complete": True}, "results": {"bindings": []}}))
+    assert wikidata.WikidataExtractor({"Q33506"}).extract("uk", p, _db(tmp_path), run_id="r1") == 0
 
 def test_keeps_allowlisted_dedups_by_qid_drops_others_and_survives_malformed(tmp_path):
     conn = _db(tmp_path)
@@ -565,7 +580,7 @@ def make_extractor(allowlist_path) -> WikidataExtractor:
 - [ ] **Step 5: Run to verify it passes**
 
 Run: `cd pipeline && uv run python -m pytest tests/test_wikidata_extractor.py -q`
-Expected: PASS (8 passed).
+Expected: PASS (14 passed — 8 tests, the `_meta` gate one parametrised ×6).
 
 - [ ] **Step 6: Commit**
 
