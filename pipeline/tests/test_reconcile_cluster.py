@@ -40,3 +40,148 @@ def test_clustering_is_order_independent():
     assert [sorted(cluster.refs) for cluster in clusters_a] == [
         sorted(cluster.refs) for cluster in clusters_b
     ]
+
+
+FUZZY = C.FuzzyConfig(sim_defer=0.85, dist_defer_m=150.0, min_alnum=4)
+
+
+def test_normalize_name_keeps_non_latin_letters():
+    assert C.normalize_name("Café — 观音亭") == "cafe 观音亭"
+
+
+def test_close_similar_pair_defers_never_merges():
+    a = C.Cluster(
+        members=[
+            _m(
+                "osm:node/1",
+                {"osm:node/1"},
+                name="St Mary's Church",
+                lat=51.5000,
+                lon=-0.1200,
+            )
+        ],
+        refs={"osm:node/1"},
+    )
+    b = C.Cluster(
+        members=[
+            _m(
+                "hehle:9",
+                {"hehle:9"},
+                name="St Marys Church",
+                lat=51.50003,
+                lon=-0.12001,
+            )
+        ],
+        refs={"hehle:9"},
+    )
+
+    deferred = C.fuzzy_defer([a, b], FUZZY)
+
+    assert len(deferred) == 1
+    assert [cluster.refs for cluster in [a, b]] == [{"osm:node/1"}, {"hehle:9"}]
+
+
+def test_distinct_non_latin_names_do_not_defer_or_merge():
+    a = C.Cluster(
+        members=[
+            _m(
+                "osm:node/1",
+                {"osm:node/1"},
+                name="观音亭",
+                lat=3.1500,
+                lon=101.7000,
+            )
+        ],
+        refs={"osm:node/1"},
+    )
+    b = C.Cluster(
+        members=[
+            _m(
+                "osm:node/2",
+                {"osm:node/2"},
+                name="天后宫",
+                lat=3.15003,
+                lon=101.70001,
+            )
+        ],
+        refs={"osm:node/2"},
+    )
+
+    assert C.fuzzy_defer([a, b], FUZZY) == []
+
+
+def test_generic_name_close_pair_defers_never_merges():
+    a = C.Cluster(
+        members=[
+            _m(
+                "osm:node/1",
+                {"osm:node/1"},
+                name="Surau Al-Hidayah",
+                lat=3.15,
+                lon=101.70,
+            )
+        ],
+        refs={"osm:node/1"},
+    )
+    b = C.Cluster(
+        members=[
+            _m(
+                "osm:node/2",
+                {"osm:node/2"},
+                name="Surau Al-Hidayah",
+                lat=3.15012,
+                lon=101.70,
+            )
+        ],
+        refs={"osm:node/2"},
+    )
+
+    assert len(C.fuzzy_defer([a, b], FUZZY)) == 1
+    assert a.refs == {"osm:node/1"}
+    assert b.refs == {"osm:node/2"}
+
+
+def test_far_apart_same_name_splits():
+    a = C.Cluster(
+        members=[
+            _m(
+                "osm:node/1",
+                {"osm:node/1"},
+                name="St Mary's Church",
+                lat=51.5,
+                lon=-0.12,
+            )
+        ],
+        refs={"osm:node/1"},
+    )
+    b = C.Cluster(
+        members=[
+            _m(
+                "osm:node/2",
+                {"osm:node/2"},
+                name="St Mary's Church",
+                lat=52.0,
+                lon=-1.0,
+            )
+        ],
+        refs={"osm:node/2"},
+    )
+
+    assert C.fuzzy_defer([a, b], FUZZY) == []
+
+
+def test_empty_normalized_name_is_not_a_candidate():
+    a = C.Cluster(
+        members=[
+            _m("osm:node/1", {"osm:node/1"}, name="★☆♥", lat=3.15, lon=101.70)
+        ],
+        refs={"osm:node/1"},
+    )
+    b = C.Cluster(
+        members=[
+            _m("osm:node/2", {"osm:node/2"}, name="♦♣", lat=3.15001, lon=101.70)
+        ],
+        refs={"osm:node/2"},
+    )
+
+    assert C.fuzzy_defer([a, b], FUZZY) == []
