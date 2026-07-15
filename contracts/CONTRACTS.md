@@ -35,7 +35,7 @@ The schema applies named caps from `caps.py`. `SAFE_TEXT` guards every source- o
 
 ## Place Tile
 
-Tiles are z10 XYZ JSON envelopes served at `{publish_version}/tiles/10/{x}/{y}.json.gz`. Gzip uses `mtime=0`, so identical tile content produces stable bytes and stable SHA-256. `tilecodec.gzip_tile` enforces `MAX_TILE_COMPRESSED_BYTES`; readers use `tilecodec.safe_gunzip`, bounded by both `MAX_TILE_COMPRESSED_BYTES` and `MAX_TILE_UNCOMPRESSED_BYTES`. Do not use `gzip.decompress` for untrusted tile bytes.
+Tiles are z10 XYZ JSON envelopes served at `{publish_version}/tiles/10/{x}/{y}.json.gz`. Gzip uses `mtime=0` and header OS byte `255`, so identical tile content produces stable bytes and stable SHA-256 across Python/zlib platforms. `tilecodec.gzip_tile` enforces `MAX_TILE_COMPRESSED_BYTES`; readers use `tilecodec.safe_gunzip`, bounded by both `MAX_TILE_COMPRESSED_BYTES` and `MAX_TILE_UNCOMPRESSED_BYTES`. Do not use `gzip.decompress` for untrusted tile bytes.
 
 `MAX_PLACES_PER_TILE = 4000`. `caps.select_tile_places` deterministically sorts by tier ascending, score descending, then `place_id` ascending, and enforces both count and serialized-byte caps. A7 must log every dropped place.
 
