@@ -10,13 +10,15 @@
 
 ## Global Constraints
 
-- **Determinism is the whole point (Principle 12).** Every A8 mechanism is a pure function of its declared inputs — never of thread/process scheduling or wall-clock. The parallel extract's merged `source_records` (including surrogate ids) is **byte-identical regardless of which extractor finishes first** — a **completion-order-shuffle test is MANDATORY** on every parallel path. Fingerprints are content hashes, never timestamps.
-- **Single-writer to the working store, preserved BY CONSTRUCTION.** Extractors never write the working store concurrently: each writes its OWN ephemeral staging SQLite (`staging/{run_id}/{source}.db`, the same `source_records` shape), and a SINGLE sequential **merge** in fixed source order is the only writer of the real `source_records`. No cross-process lock on the working store is needed because no two processes touch it.
-- **Per-source ALL-OR-NOTHING; the `source_status_json` A2 consumes stays TRUTHFUL (fable's failure rule).** A source either fully populates its staging DB (→ merged) or fails (→ NOT merged, its staging discarded). Each source's merge into the working store is ONE transaction (`delete-then-insert` that source's rows), so a mid-run failure never leaves a half-merged source. The existing `record_extract_run_metadata(source_statuses=…)` contract is written truthfully: `{status:"success", count}` per merged source, `{status:"failure", error}` per failed one — A2's `succeeded_sources` gate (which decides tombstoning) reads real state, never an optimistic one.
+- **Determinism is the whole point (Principle 12) — but `id` is NOT part of the contract (hostile H5 / spec-fidelity / coherence M2, execution-proven).** A **full** extract run's merged `source_records` is byte-identical *regardless of completion order* (the mandatory completion-order-shuffle test) — achieved by merging into a **freshly recreated** table in fixed source order (so surrogate `id`s restart deterministically per run). But `source_records.id` is a rowid alias, and a `--only-source` re-extract does `DELETE`+`INSERT` into a populated table → freed rowids are not reused → the re-extracted store is content-equal but **id-different** from a clean full run (verified: osm ids `3,4 → 6,7`). So: **`id` carries no meaning and is excluded from every fingerprint and from the byte-identical claim; nothing downstream may key on it — the stable identity is the `(source, source_ref)` UNIQUE tuple.** The determinism guarantee is over CONTENT (the `(source,source_ref,name,lat,lon,props_json)` tuple), completion-order-invariant; it is NOT an id-stability claim across `--only-source`. Fingerprints are content hashes, never timestamps, never ids.
+- **Single-writer WITHIN a run by construction; ACROSS runs by a lock (hostile H7).** Extractors never write the working store concurrently: each writes its OWN ephemeral staging SQLite (`staging/{run_id}/{source}.db`), and a SINGLE **merge** is the only writer of `source_records`. But two CLI *invocations* (`mt extract uk` + `mt extract uk --only-source osm`) are two OS processes both merging → a working-store **exclusive lock** (a flock lockfile `mt-extract-{region}.lock`, or a `BEGIN EXCLUSIVE` spanning the whole merge) serialises them; a second invocation blocks or aborts loudly. The "no cross-process lock" is false across invocations.
+- **The full merge is ONE transaction — merge + `source_status_json` + the stage fingerprint/completion commit TOGETHER (hostile H8/M6/M8).** A per-source-atomic merge still leaves a *whole-run* hole: a crash between source 2 and source 3 mixes two runs' `source_records` and reconcile's order gate would run over the Frankenstein store. So the entire multi-source merge, the metadata write, AND the completion+fingerprint row are ONE `BEGIN…COMMIT` — a partial store is NEVER marked complete, and reconcile refuses it. (This is also the fingerprint-in-same-transaction-as-output guarantee — a fingerprint is never recorded for output that didn't commit.)
+- **Failure semantics are FAIL-FAST by default — UNCHANGED from the ratified sequential contract (spec-fidelity HIGH-2 / coherence M3).** The acquire-branch `run_extract` raises on any source failure (records the `failure` status, then `raise`), aborting the run — the §6 "source down → run aborts" contract A2 relies on. A8's parallel path **preserves this**: all sources extract into staging in parallel, per-source statuses are recorded truthfully, and if ANY required source failed, the merge does NOT run and the stage raises (no partial store). So **`parallel==sequential` holds** (identical on all-success; both fail-fast on failure). Isolate-and-continue (merge healthy sources, skip the failed one) is a DISTINCT behaviour behind an explicit `--continue-on-source-failure` flag — NOT the default, and flagged for re-ratification against A2's `succeeded_sources` gate (it changes what A2 sees). My original "isolate by default" was a silent contract change; this reverts it.
+- **Per-source ALL-OR-NOTHING; `source_status_json` stays TRUTHFUL even for a CRASHED worker (fable's rule + hostile H6).** A source either fully populates its staging DB (→ eligible to merge) or fails (→ not merged). **A worker that segfaults / is OOM-killed is NOT a Python exception** — so status is inferred from `process.exitcode` after `join()` (nonzero/`None` → `failure`) AND an explicit success sentinel the child writes into its staging DB; **never** from "no exception in the parent." Otherwise a killed worker records `success, count=0` and A2's tombstone gate mass-deletes that source's places. `record_extract_run_metadata(source_statuses=…)` gets `{status:"success", count}` / `{status:"failure", error}` — A2 reads real state.
 - **The §5.2 stage-ORDER gate is UNCHANGED.** `stages.run_stage`'s predecessor-completed check stays exactly as it is (extract→reconcile→score→categorize→publish). A8 adds a fingerprint SKIP *inside* a stage's execution, never a reordering or a bypass of the order gate.
 - **Acquisition is UNTOUCHED.** The acquire side (snapshot download) already has its ratified concurrency policy (bounded `ThreadPoolExecutor` at the network boundary, WDQS sequential). A8 parallelises only the **extract STAGE** (parsing already-downloaded snapshots into `source_records`) — CPU/IO-bound local work, no network etiquette to honour.
 - **`--force` is the only override; a SKIP is LOUD.** A short-circuit SKIP prints a pinned telemetry line naming the stage + the matched fingerprint; it is never silent. `--force` recomputes and re-runs regardless. A stale-serve (running with an unchanged fingerprint when an input actually changed) is **the most confidence-inspiring way to lie** — every fingerprint component gets a neuter-goes-red test.
-- **WORKING_STORE_VERSION coordination (the migration ladder codex owns).** A8 adds a `stage_fingerprints` table (per `(region, stage)`: the last fingerprint + completion). That is a schema addition → a WORKING_STORE_VERSION bump stacked on `wp-acquire-impl`'s v3 (like A3/A4 extended it) — **the migration is added to A2-impl's ladder, coordinated, not forked.** Staging DBs are EPHEMERAL (not the working-store schema) → no version implication.
+- **WORKING_STORE_VERSION coordination — integer assigned AT LAND, not pre-claimed (spec-fidelity MED).** A8 adds a `stage_fingerprints` table (a schema addition → a bump). Acquire is v3; A2-impl (places), A3 (place_categories), A4 (place_scores), and A8 all bump the SAME `WORKING_STORE_VERSION` constant and the same linear `elif` migration chain — so **A8 must NOT hardcode an integer** (every WP pre-claiming "v4" is a guaranteed merge collision). Instead: the migration ladder is single-owner (A2-impl owns it); A8's migration step is **appended at integration time** and its integer is whatever the tip is then. The plan pins the *step* (`CREATE TABLE stage_fingerprints`), not the number. Staging DBs are EPHEMERAL (not the working-store schema) → no version implication.
 - **BLOCKED-ON `wp-acquire-impl`'s extract surface.** A8 re-shapes `run_extract`/`extract_run_metadata` which live on `wp-acquire-impl` (WORKING_STORE_VERSION=3, `extract_run_metadata.source_status_json`, `run_extract(..., status_recorder=…)`), not yet merged to develop. Design targets that branch tip; the real parallel run + `--only-source` + short-circuit on real snapshots are BLOCKED-ON the acquire PR landing + real extracts. The merge logic, fingerprinting, and telemetry format are fixture-testable NOW.
 
 **Assignment (fable, thread `wp/a8`)** — the four ratified pieces designed properly: (1) parallel extractors, per-source staging, deterministic fixed-order merge, single-writer, per-source all-or-nothing with truthful metadata; (2) `--only-source` transactional delete-and-replace, reconcile-invalidated-by-any-extract-change ENFORCED; (3) stage short-circuit via a per-stage input fingerprint (exact components pinned), `--force` override, neuter-goes-red per component; (4) pinned telemetry (PROGRESS format, phase START/DONE, heartbeats, log-path). Determinism throughout; stage-order gate unchanged; acquisition untouched.
@@ -57,9 +59,9 @@ docs/superpowers/reports/
 **Interfaces:**
 - Consumes: `store`'s `source_records` schema (the acquire-branch shape).
 - Produces:
-  - `staging.open_staging(root, run_id, source) -> sqlite3.Connection` — an ephemeral per-source DB with the `source_records` schema; an extractor writes ONLY here.
+  - `staging.open_staging(root, run_id, source) -> sqlite3.Connection` — an ephemeral per-source DB with the `source_records` schema; **creates FRESH** (truncates/refuses any pre-existing file so a reused `run_id` or a crashed prior run can't leak stale rows — hostile M4); the run `rm -rf`s `staging/{run_id}/` on entry and on success.
   - `staging.STAGING_ORDER` — the FIXED source order (the registry's registration order: `wikidata, wikipedia, osm, historic_england, open_plaques`) used for the merge — deterministic, independent of completion.
-  - `merge.merge_sources(main_conn, staged: dict[str, str], succeeded: set[str], *, order=STAGING_ORDER) -> None` — for each source in `order` that is in `succeeded`, in ONE transaction: `DELETE FROM source_records WHERE source=?` then `INSERT` that source's staged rows **sorted by `source_ref`** (deterministic within-source order → deterministic surrogate ids). Sources absent from `succeeded` are NOT merged. Fixed order + within-source sort ⇒ the merged table is **byte-identical regardless of completion order**.
+  - `merge.merge_sources(main_conn, staged: dict[str, str], succeeded: set[str], *, order=STAGING_ORDER, full: bool) -> None` — in ONE transaction (the whole-run atomicity guarantee): for a **`full` run, DROP+recreate `source_records`** then INSERT every succeeded source in `order`, each sorted by `source_ref` → **surrogate ids restart deterministically per run** (a fresh table, not `max(rowid)+1` — hostile H5); for a **`--only-source`** merge (`full=False`), `DELETE FROM source_records WHERE source=?` then re-INSERT just that source (ids for THAT source churn — documented, and `id` is not in the contract). Sources absent from `succeeded` are NOT merged. Fixed order + within-source sort ⇒ a full run is **byte-identical regardless of completion order**.
 
 - [ ] **Step 1: Write the failing test — the MANDATORY completion-order-shuffle**
 
@@ -109,30 +111,39 @@ def test_a_failed_source_is_not_merged(tmp_path):
 **Interfaces:**
 - Consumes: `staging`, `merge`, the acquire-branch `registry.enabled_for`, `record_extract_run_metadata`.
 - Produces:
-  - `parallel.run_extract_parallel(conn, region_config, snapshots, *, run_id, registry, status_recorder=None, max_workers=None) -> dict[str,int]` — a **drop-in for `run_extract`** with the SAME contract: spawn one process per enabled source (`multiprocessing`, `spawn` start method for determinism), each running its extractor into `open_staging(...)`; collect per-source `(succeeded|failed, count|error)`; then `merge.merge_sources` the succeeded set in fixed order into `conn`; record the SAME `source_statuses` map via the existing `status_recorder`/`record_extract_run_metadata`. Returns per-source counts (merged sources only). Each source is independent (all-or-nothing).
-  - `extract_stage.run_extract(..., parallel: bool = True)` — `parallel=True` delegates to `run_extract_parallel`; `parallel=False` keeps the existing sequential path (kept for debugging + as the differential oracle). **Both paths produce the identical working store** (a test asserts sequential == parallel output).
+  - `parallel.run_extract_parallel(conn, region_config, snapshots, *, run_id, registry, status_recorder=None, extractor_options=None, max_workers=None, continue_on_source_failure=False) -> dict[str,int]` — a **drop-in for `run_extract`** (SAME signature, incl. `extractor_options` — spec-fidelity MED, not dropped): spawn one process per enabled source (`multiprocessing`, **`spawn`** start method), passing each child only **picklable args** (region_config, the source's snapshot path, allowlist/tag-config paths, `extractor_options`) and **rebuilding the registry inside the child via `build_registry(...)`** rather than pickling extractor instances (hostile M7 / L4 — robust to a future non-picklable extractor). Each child runs `assert_disk_floor` then its extractor into `open_staging(...)` and writes a **success sentinel** on clean completion. Parent: `join(timeout=…)` per worker (a hung extractor is `terminate()`+`failure` — hostile M3); derive each status from `exitcode` + the sentinel (a crashed worker → `failure`, never `success/0` — hostile H6); check the disk floor for **N concurrent stagings** before spawning (hostile M5). Then, in ONE transaction, `merge.merge_sources(full=True)` the succeeded set + record `source_statuses` + commit the fingerprint/completion. **FAIL-FAST by default**: if any required source failed, record statuses and `raise` WITHOUT merging (matching sequential + §6); `continue_on_source_failure=True` opts into isolate-and-merge-healthy (flagged for re-ratification).
+  - `extract_stage.run_extract(..., parallel: bool = True, continue_on_source_failure: bool = False)` — `parallel=True` delegates to `run_extract_parallel`; `parallel=False` keeps the sequential path (the differential oracle). **On an all-SUCCESS run both paths produce the identical working store** (a test asserts sequential == parallel on all-success; on a failure both fail-fast, so the store is identically absent — the equivalence is scoped to the success path, coherence M3).
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
 from mt_pipeline import extract_stage as X
 
-def test_parallel_equals_sequential_output(tmp_path, uk_config, fixture_snapshots, registry):
+def test_parallel_equals_sequential_on_all_success(tmp_path, uk_config, fixture_snapshots, registry):
     seq = _run_and_dump(X, uk_config, fixture_snapshots, registry, parallel=False)
     par = _run_and_dump(X, uk_config, fixture_snapshots, registry, parallel=True)
-    assert seq == par                                             # same source_records, ids included
+    assert seq == par                                             # identical store on an all-success run
 
-def test_one_failing_extractor_isolates_and_records_truthfully(tmp_path, uk_config, registry):
+def test_fail_fast_is_the_default_and_matches_sequential(uk_config, registry):
     snaps = {**fixture_snapshots, "osm": None}                    # osm snapshot missing -> that source fails
     statuses = {}
-    X.run_extract(main_conn, uk_config, snaps, run_id="r", registry=registry, parallel=True,
-                  status_recorder=lambda s, st: statuses.__setitem__(s, st))
-    assert statuses["osm"]["status"] == "failure"                 # truthful
-    assert statuses["wikidata"]["status"] == "success"           # the healthy source still merged
-    assert main_conn.execute("SELECT COUNT(*) FROM source_records WHERE source='osm'").fetchone()[0] == 0
+    import pytest
+    with pytest.raises(Exception):                               # parallel fail-fast, like sequential (§6)
+        X.run_extract(main_conn, uk_config, snaps, run_id="r", registry=registry, parallel=True,
+                      status_recorder=lambda s, st: statuses.__setitem__(s, st))
+    assert statuses["osm"]["status"] == "failure"                # status recorded truthfully BEFORE the raise
+    assert main_conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0] == 0   # NO partial merge
+
+def test_a_killed_worker_records_failure_not_success_zero(uk_config, registry):
+    # a segfault/OOM-kill is not a Python exception; the parent must infer failure from exitcode+sentinel
+    statuses = {}
+    with pytest.raises(Exception):
+        X.run_extract(main_conn, uk_config, fixture_snapshots, run_id="r", registry=_registry_that_SIGKILLs("osm"),
+                      parallel=True, status_recorder=lambda s, st: statuses.__setitem__(s, st))
+    assert statuses["osm"]["status"] == "failure"                # NOT success/count=0 (which would mass-tombstone in A2)
 ```
 
-- [ ] **Step 2–4:** implement `run_extract_parallel` (spawn-per-source into staging → merge succeeded → record statuses) + the `parallel` flag. **Teeth:** the equivalence test reds if parallel diverges from sequential (the determinism guarantee); the failure test reds if a failed source corrupts the store or its status lies (`success` when it failed). Use `spawn` (not `fork`) so no inherited state makes a run non-reproducible.
+- [ ] **Step 2–4:** implement `run_extract_parallel` (spawn-per-source, rebuild-registry-in-child, `assert_disk_floor`, `join(timeout)`, exitcode+sentinel status, one-transaction merge, fail-fast default). **Teeth:** the equivalence test reds if parallel diverges from sequential on all-success; the fail-fast test reds if a failure produces a partial merge or doesn't raise; the killed-worker test reds if a `SIGKILL`ed child is recorded `success` (the A2 mass-tombstone vector). Use `spawn` (not `fork`).
 - [ ] **Step 5: Commit** — `"Add parallel process-per-source extract (staging+merge; per-source failure isolation; parallel==sequential)"`
 
 ---
@@ -144,43 +155,53 @@ def test_one_failing_extractor_isolates_and_records_truthfully(tmp_path, uk_conf
 **Interfaces:**
 - Consumes: `store` (the working store + the new table), the config files, the stage inputs.
 - Produces:
-  - `store.stage_fingerprints` table `(region, stage, fingerprint, completed_at, PRIMARY KEY(region,stage))` (WORKING_STORE_VERSION bump, coordinated).
-  - `fingerprint.STAGE_INPUTS` — the PINNED, EXACT input set per stage (fable's list — enforced, not documented):
-    - **`extract`**: `sha256(each snapshot file)` + `sha256(wikidata_class_allowlist.json)` + `sha256(osm_candidate_tags.json)` + `CODE_MARKER["extract"]`.
-    - **`reconcile`**: `source_records CONTENT-hash` (a stable hash over `(source, source_ref, props_json)` sorted — so ANY extract change, incl. a single `--only-source`, changes it) + `sha256(redirect_map)` + `sha256(thresholds)` + `CODE_MARKER["reconcile"]`.
-    - **`score`**: `places content-hash` + `sha256(scoring.json)` + `sha256(pageview_cache)` + `CODE_MARKER["score"]`.
-    - **`categorize`**: `places content-hash` + `sha256(taxonomy.json)` + `CODE_MARKER["categorize"]`.
-  - `fingerprint.stage_fingerprint(conn, region, stage) -> str` — sha256 over the sorted-canonical tuple of that stage's inputs. `CODE_MARKER` is a per-stage constant bumped when the stage's logic changes (invalidates the cache on a code change — the "code marker" fable named).
-  - `fingerprint.should_skip(conn, region, stage, fp, *, force) -> bool` — `True` iff `not force` AND the stage previously completed AND its stored fingerprint `== fp`. `stages.run_stage` computes `fp`, and if `should_skip` → emit a LOUD SKIP telemetry line and return without re-running; else run + store `fp`.
+  - `store.stage_fingerprints` table `(region, stage, fingerprint, completed_at, PRIMARY KEY(region,stage))` (WORKING_STORE_VERSION bump, integer assigned at land).
+  - `fingerprint.content_hash(conn, region, table, cols) -> str` — sha256 over the rows of `table` for `region`, **`ORDER BY region, source, source_ref` (or the table's natural key) — an EXPLICIT order, never sqlite's physical order** (hostile H3 — an unordered SELECT hashes non-deterministically), with **floats quantized (`round(lat/lon, 7)`) and any JSON column canonicalized (`json.dumps(parsed, sort_keys, fixed separators)`)** so semantically-equal data hashes equal and equal-hash implies equal-meaning (hostile M2). `cols` is the EXACT column set the consuming stage reads.
+  - `fingerprint.STAGE_INPUTS` — the PINNED, EXACT input set per stage (fable's list, corrected):
+    - **`extract`**: `sha256(each snapshot file CONTENT)` + `sha256(wikidata_class_allowlist.json)` + `sha256(osm_candidate_tags.json)` + **the region's ENABLED-`sources` set** (hostile H2 — toggling a source off with unchanged files must invalidate) + `MODULE_MARKER["extract"]`.
+    - **`reconcile`**: `content_hash(source_records, cols=(source, source_ref, name, lat, lon, props_json))` — **the FULL logical row reconcile clusters on, NOT just `(source,source_ref,props_json)`** (the crown fix — hostile/spec/coherence HIGH, execution-proven: a `lat`/`lon`/`name` re-extract MUST move it; `id`/`run_id` excluded) + `[BLOCKED-ON A2 impl:` `sha256(redirect_map)` + `sha256(thresholds)]` + `MODULE_MARKER["reconcile"]`.
+    - **`score`** `[BLOCKED-ON A3/A4 impl]`: `content_hash(places, cols=score-reads)` + `sha256(scoring.json)` + `sha256(pageview_cache)` + `MODULE_MARKER["score"]`.
+    - **`categorize`** `[BLOCKED-ON A3 impl]`: `content_hash(places, cols=categorize-reads)` + `sha256(taxonomy.json)` + `MODULE_MARKER["categorize"]`.
+  - `fingerprint.MODULE_MARKER[stage]` — **AUTO-DERIVED: `sha256(the stage module's own source bytes)`, NOT a hand-typed constant** (hostile H4 — a hand-bumped marker forgotten after a logic change = a permanent silent stale-serve; a source-hash invalidates automatically, and a false positive from a comment edit is safe while a false negative is catastrophic). Immutable.
+  - `fingerprint.stage_fingerprint(conn, region, stage, *, inputs) -> str` — ONE signature (spec-fidelity MED): sha256 over the sorted-canonical `STAGE_INPUTS[stage]`. `inputs` is a resolver carrying the run's snapshot paths + resolved config paths + the region config (threaded from `run_stage`, which gains them — the extract fingerprint needs per-run snapshot paths that `(conn,region,stage)` alone can't supply).
+  - `fingerprint.should_skip(...)` → LOUD SKIP or run; **the fingerprint is written in the SAME transaction that commits the stage's output** (hostile M6 — never recorded for output that didn't commit). `--force` overrides.
 
 - [ ] **Step 1: Write the failing tests — neuter-goes-red on EVERY component**
 
 ```python
 from mt_pipeline.ergonomics import fingerprint as F
 
-def test_each_input_change_changes_the_fingerprint(tmp_path, populated_conn, configs):
-    base = F.stage_fingerprint(populated_conn, "uk", "reconcile")
-    # 1. a source_records content change (a single --only-source) MUST move the reconcile fingerprint:
-    populated_conn.execute("UPDATE source_records SET props_json='{\"x\":1}' WHERE id=1"); populated_conn.commit()
-    assert F.stage_fingerprint(populated_conn, "uk", "reconcile") != base    # extract change -> reconcile invalidated
-    # 2. neuter: if source_records were NOT in the fingerprint, this assertion would FAIL -> the component is load-bearing
+def test_reconcile_fp_moves_on_EVERY_reconcile_column(populated_conn, inputs):   # the crown fix — per-column
+    base = F.stage_fingerprint(populated_conn, "uk", "reconcile", inputs=inputs)
+    for col, val in [("lat", 99.9), ("lon", 88.8), ("name", "'RENAMED'"), ("props_json", "'{\"x\":1}'")]:
+        populated_conn.execute(f"UPDATE source_records SET {col}={val!r if col!='name' and col!='props_json' else val} WHERE id=1")
+        populated_conn.commit()
+        assert F.stage_fingerprint(populated_conn, "uk", "reconcile", inputs=inputs) != base   # lat/lon/name/props ALL move it
+        populated_conn.rollback_fixture()   # restore
+    # coherence-proven gap: hashing only (source,source_ref,props_json) leaves lat/lon/name UNGUARDED -> stale-serve
 
-def test_config_and_code_marker_each_invalidate(tmp_path, populated_conn, configs):
-    base = F.stage_fingerprint(populated_conn, "uk", "score")
-    configs.write("scoring.json", {"weights": {"article": 0.6}})              # config change
-    assert F.stage_fingerprint(populated_conn, "uk", "score") != base
-    old = F.CODE_MARKER["score"]; F.CODE_MARKER["score"] = old + "!"          # code change (marker bump)
-    assert F.stage_fingerprint(populated_conn, "uk", "score") != base
+def test_content_hash_is_order_and_whitespace_stable(populated_conn, inputs):
+    a = F.stage_fingerprint(populated_conn, "uk", "reconcile", inputs=inputs)
+    populated_conn.execute("VACUUM")                                          # physical reorder, same content
+    populated_conn.execute("UPDATE source_records SET props_json='{ \"x\" : 1 }' WHERE id=1")  # whitespace-only
+    # (props canonicalized + ORDER BY pinned) -> hash unchanged by physical order / JSON whitespace
+    ... # assert equal after restoring the canonical value
 
-def test_identical_inputs_skip_unless_forced(populated_conn, configs):
-    fp = F.stage_fingerprint(populated_conn, "uk", "extract")
-    F.record(populated_conn, "uk", "extract", fp)                             # a prior completed run
+def test_enabled_sources_and_module_marker_each_invalidate(populated_conn, inputs, uk_config):
+    base = F.stage_fingerprint(populated_conn, "uk", "extract", inputs=inputs)
+    uk_config.disable("osm")                                                  # toggle a source off (files unchanged)
+    assert F.stage_fingerprint(populated_conn, "uk", "extract", inputs=inputs) != base   # H2: enabled-set is a component
+    # MODULE_MARKER is sha256(module source): a logic edit auto-invalidates (no hand-bump), tested by a golden source-hash
+
+def test_identical_inputs_skip_unless_forced(populated_conn, inputs):
+    fp = F.stage_fingerprint(populated_conn, "uk", "extract", inputs=inputs)
+    F.record(populated_conn, "uk", "extract", fp)
     assert F.should_skip(populated_conn, "uk", "extract", fp, force=False) is True
     assert F.should_skip(populated_conn, "uk", "extract", fp, force=True) is False    # --force overrides
 ```
 
-- [ ] **Step 2–4:** implement the table + `stage_fingerprint` (each component in `STAGE_INPUTS`, sorted-canonical, sha256) + `should_skip` + wire into `run_stage` (compute fp → skip-or-run → store fp; the order gate stays). **Teeth:** the reconcile test reds if `source_records` isn't fingerprinted (a stale reconcile after an extract change — the trap); the config/marker tests red if a config or the code marker escapes the fingerprint (a stale-serve after a weight change); the skip test reds if `--force` doesn't override or an identical fingerprint doesn't skip. **Every component of `STAGE_INPUTS` has a neuter-goes-red test — a component you can remove without reding a test is a stale-serve vector.**
-- [ ] **Step 5: Commit** — `"Add stage short-circuit: per-stage input fingerprint (reconcile-invalidation enforced; --force; neuter-goes-red per component)"`
+- [ ] **Step 2–4 (SPLIT — spec-fidelity MED, the executable-now honesty):** implement + test the `extract` fingerprint (snapshots+allowlist+tag-config+enabled-sources+marker) and the `source_records` component of `reconcile` **NOW**; **mark `reconcile`'s `redirect_map`/`thresholds` (BLOCKED-ON A2 impl) and the entire `score`/`categorize` fingerprints (BLOCKED-ON A3/A4 — `scoring.json`/`taxonomy.json`/`places`/`place_scores`/`place_categories` don't exist on the acquire tip)** as the `STAGE_INPUTS` seam, wired when they land. Wire the fingerprint into `run_stage` (compute → skip-or-run → store fp IN the output transaction; the §5.2 order gate stays). **Teeth (host-verified): EVERY component of `STAGE_INPUTS` has a neuter-goes-red test** — `lat`/`lon`/`name`/`props_json` each move reconcile's fp (the crown, proven); the enabled-sources toggle moves extract's fp; the module-source-hash marker moves on a logic edit; identical inputs skip; a component you can delete without reding a test is a stale-serve vector.
+- [ ] **Step 5: Commit** — `"Add stage short-circuit: full-row content-hash (per-column neuter) + enabled-sources + auto-marker; extract+source_records now, score/categorize BLOCKED-ON A3/A4"`
 
 ---
 
@@ -191,7 +212,7 @@ def test_identical_inputs_skip_unless_forced(populated_conn, configs):
 **Interfaces:**
 - Consumes: `staging`/`merge`, `fingerprint`, the registry, `record_extract_run_metadata`.
 - Produces:
-  - `selective.reextract_one_source(conn, region_config, source, snapshot, *, run_id, registry) -> dict` — re-extract ONLY `source` from its cached `snapshot`: extract into staging, then `merge_sources(conn, {source: staging}, {source})` — whose per-source transaction is `DELETE FROM source_records WHERE source=? ` then re-insert (a **transactional delete-and-replace of just that source's rows**; other sources untouched). Update that source's `source_statuses` entry. Returns the new status/count.
+  - `selective.reextract_one_source(conn, region_config, source, snapshot, *, run_id, registry) -> dict` — under the **working-store lock** (H7), re-extract ONLY `source` from its cached `snapshot`: extract into staging, then `merge_sources(conn, {source: staging}, {source}, full=False)` — the per-source transaction is `DELETE FROM source_records WHERE source=?` then re-insert (a **transactional delete-and-replace of just that source's rows**; other sources untouched). Update that source's `source_statuses` entry, and re-record the fingerprint in the same transaction. Returns the new status/count. **That source's surrogate ids churn** (documented — `id` is not in the contract; the stable key is `(source, source_ref)`).
   - **The reconcile-invalidation is AUTOMATIC, not a separate step (fable: "enforce, don't document"):** because `reconcile`'s fingerprint includes the `source_records` content-hash (Task 3), replacing one source's rows changes that hash → reconcile's fingerprint no longer matches → the next `reconcile` run does NOT skip. `--only-source` does not need to (and must not) manually clear reconcile's completion; the fingerprint mechanism enforces it.
 
 - [ ] **Step 1: Write the failing tests**
@@ -222,7 +243,7 @@ def test_only_source_invalidates_reconcile_via_the_fingerprint(populated_conn, u
 
 **Interfaces:**
 - Produces (the FORMAT is the contract — monitors grep it, so it is PINNED and tested):
-  - `telemetry.progress(stage, region, *, done, total, extra="") -> str` — emits `PROGRESS stage=<stage> region=<region> done=<n> total=<n> pct=<0-100> [<extra>]` to stderr. Greppable on `^PROGRESS `.
+  - `telemetry.progress(stage, region, *, done, total, extra="") -> str` — emits `PROGRESS stage=<stage> region=<region> done=<n> total=<n> pct=<0-100> [<extra>]` to stderr. Greppable on `^PROGRESS `. **`pct = floor(100*done/total)` (truncation, pinned); `total=0 → pct=0`** (no div-by-zero — coherence L6/L1; a test pins a non-exact case `2/3 → 66` and `total=0`).
   - `telemetry.phase_start(stage, region)` / `phase_done(stage, region, *, counts)` — `PHASE start stage=… region=…` and `PHASE done stage=… region=… <k=v counts>`.
   - `telemetry.heartbeat(stage, region, *, done)` — emitted every **10,000 items OR 30 seconds**, whichever first: `HEARTBEAT stage=… region=… done=… elapsed_s=…` (`elapsed_s` is the only clock-derived field, and it's telemetry-only — never fingerprinted).
   - `telemetry.report_log_path(path)` — on a detached/background launch, prints `LOG path=<abs path>` so a monitor knows where to tail. (Satisfies AGENTS.md #60 "no silent long-running work"; A8 pins the exact tokens.)
@@ -271,4 +292,12 @@ def test_phase_and_heartbeat_tokens_are_stable():
 - **`score`/`categorize` fingerprint inputs (`scoring.json`, `taxonomy.json`, `place_scores`, `place_categories`) are BLOCKED-ON A3/A4 impls** — those config files + tables don't exist yet; the fingerprint framework is defined now and wired when they land (the `STAGE_INPUTS` map is the seam).
 - **Telemetry format is a monitor contract** — pinned + tested so `/babysit`-style monitors and the AGENTS.md #60 "no silent long-running work" rule can rely on the exact tokens.
 
-**Adversarial review (per AGENTS.md gate) — TO RUN before PR:** (1) fixes on the **executed path**; (2) **teeth** — the completion-order-shuffle test reds if the merge order depends on scheduling (surrogate ids diverge); parallel==sequential reds on any divergence; a failed source neither corrupts the store nor lies in `source_status_json`; **every fingerprint component has a neuter-goes-red test** (remove it → a stale-serve → red), especially reconcile's `source_records` content-hash (the trap); `--only-source` is scoped+transactional and invalidates reconcile via the fingerprint (not a manual clear); the telemetry tokens are pinned; (3) **the coherence critic RUNS the merge + fingerprint + telemetry on fixtures** (real sqlite, real hashing, shuffled completion orders) and confirms byte-identical merges + per-component fingerprint sensitivity + the pinned format; (4) confirm the **BLOCKED-ON honesty** — the real parallel/only-source/short-circuit runs on the acquire branch + real snapshots + A3/A4 config, no executed-path over-claim, and that A8 changes only the extract STAGE execution model (acquisition + the order gate + the A2 metadata contract all untouched).
+**Adversarial review (per AGENTS.md gate) — RAN before merge; 3 critics (spec-fidelity, hostile-data/determinism/concurrency, coherence-that-BUILDS-and-RUNS the merge+fingerprints+telemetry against real sqlite/hashlib/multiprocessing). All survivors folded; every fix host-verified.**
+
+*Crown finding (all three critics, execution-proven):* the reconcile content-hash was over `(source, source_ref, props_json)` only — so a `--only-source` that fixes a **coordinate or name** (reconcile's most load-bearing input) left the fingerprint UNMOVED → reconcile stale-serves the old clustering, and my own Task-3 test mutated only `props_json` so the gap shipped green (the "test proves nothing about the omission" trap, applied to me). **Fixed:** the content-hash is over the FULL logical row `(source, source_ref, name, lat, lon, props_json)` with a **per-column neuter test** (lat/lon/name/props each move it — host-verified), floats quantized + JSON canonicalized, and an EXPLICIT `ORDER BY` (an unordered SELECT hashed non-deterministically). `id`/`run_id` excluded.
+
+*Spec-fidelity + hostile HIGH:* the parallel path silently changed `run_extract` from **fail-fast to isolate-and-continue** (and `parallel=True` was default) → reverted to **fail-fast by default** (parallel preserves the ratified §6 contract; isolate is an explicit `--continue-on-source-failure` flag, re-ratification-flagged). A **crashed/OOM-killed worker isn't a Python exception** → status inferred from `exitcode`+a success sentinel, never "no exception" (else A2 mass-tombstones a `success/0` source). The full merge is now **ONE transaction** (merge + statuses + fingerprint) so a mid-run crash never marks a partial store complete (whole-run atomicity, not just per-source). A **working-store lock** serialises concurrent invocations. `id` is **out of the determinism contract** (autoincrement churns on `--only-source`; verified) — the stable key is `(source, source_ref)`; a full run drop+recreates for deterministic ids.
+
+*Other survivors:* the `CODE_MARKER` is **auto-derived from the stage module's source hash** (a hand-bumped constant forgotten after a logic change = permanent silent stale-serve). The extract fingerprint gains the **enabled-`sources` set** (toggling a source off with unchanged files must invalidate). Task 3 **split** — extract + `source_records`-reconcile testable now; `redirect_map`/`thresholds`/`score`/`categorize` BLOCKED-ON A2/A3/A4 (the executable-now over-claim, corrected). `run_extract_parallel` carries `extractor_options` + `assert_disk_floor` (per child + for N stagings) + `join(timeout)`; children **rebuild the registry from config paths** (spawn-robust). Staging DBs open fresh + cleaned up. `stage_fingerprint` single signature threading the run's paths. WORKING_STORE_VERSION integer **assigned at land** (not pre-claimed — avoids the parallel-WP ladder collision). Telemetry `pct=floor`, `total=0→0`.
+
+*Held under execution (coherence, verified):* the completion-order-shuffle merge is byte-identical across all permutations; the fingerprint neuter-goes-red on every INCLUDED component + is order/whitespace-stable; the telemetry strings match character-for-character; `spawn` is real+deterministic; and the BLOCKED-ON honesty holds (`mt_pipeline.ergonomics` absent; the acquire-branch `run_extract`/`extract_run_metadata`/`source_status_json`/WORKING_STORE_VERSION=3 signatures all match). A8 changes only the extract STAGE execution model — the §5.2 order gate, acquisition, and the A2 metadata contract are otherwise untouched.
