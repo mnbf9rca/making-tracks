@@ -1,3 +1,4 @@
+import json
 import sqlite3
 
 import pytest
@@ -14,6 +15,7 @@ def test_schema_is_idempotent_and_versioned(conn):
         store.SOURCE_RECORDS_TABLE,
         store.STAGE_RUNS_TABLE,
         store.EXTRACT_RUN_METADATA_TABLE,
+        store.PLACES_TABLE,
         store.META_TABLE,
     } <= tables
     ver = conn.execute(f"SELECT schema_version FROM {store.META_TABLE}").fetchone()[0]
@@ -41,7 +43,120 @@ def test_schema_migrates_v2_store(conn):
         r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
     assert version == store.WORKING_STORE_VERSION
-    assert store.EXTRACT_RUN_METADATA_TABLE in tables
+    assert {store.EXTRACT_RUN_METADATA_TABLE, store.PLACES_TABLE} <= tables
+
+
+def test_schema_migrates_v3_store(conn):
+    store.init_schema(conn)
+    conn.execute(f"UPDATE {store.META_TABLE} SET schema_version = ?", (3,))
+    conn.commit()
+
+    store.init_schema(conn)
+
+    version = conn.execute(f"SELECT schema_version FROM {store.META_TABLE}").fetchone()[0]
+    tables = {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    assert version == store.WORKING_STORE_VERSION
+    assert store.PLACES_TABLE in tables
+
+
+def test_replace_places_replaces_only_target_region_and_sorts_refs(conn):
+    store.init_schema(conn)
+    conn.execute(
+        f"""
+        INSERT INTO {store.PLACES_TABLE}
+            (place_id, region, name, lat, lon, refs_json, member_refs_json, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("uk-old", "uk", "Old UK", 51.5, -0.1, '["wd:Q1"]', '["wd:Q1"]', "active"),
+    )
+    conn.execute(
+        f"""
+        INSERT INTO {store.PLACES_TABLE}
+            (place_id, region, name, lat, lon, refs_json, member_refs_json, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("my-existing", "malaysia", "Existing MY", 3.1, 101.7, "[]", "[]", "active"),
+    )
+    conn.commit()
+
+    store.replace_places(
+        conn,
+        region="uk",
+        places=[
+            {
+                "place_id": "uk-new",
+                "name": "New UK",
+                "lat": 52.0,
+                "lon": -1.0,
+                "refs": ["wp:New_UK", "wd:Q2"],
+                "member_refs": ["plaque:2", "osm:node/1"],
+                "status": "active",
+            }
+        ],
+    )
+
+    rows = conn.execute(
+        f"""
+        SELECT region, place_id, name, refs_json, member_refs_json
+        FROM {store.PLACES_TABLE}
+        ORDER BY region, place_id
+        """
+    ).fetchall()
+    assert rows == [
+        ("malaysia", "my-existing", "Existing MY", "[]", "[]"),
+        (
+            "uk",
+            "uk-new",
+            "New UK",
+            '["wd:Q2", "wp:New_UK"]',
+            '["osm:node/1", "plaque:2"]',
+        ),
+    ]
+    assert json.loads(rows[1][3]) == ["wd:Q2", "wp:New_UK"]
+    assert json.loads(rows[1][4]) == ["osm:node/1", "plaque:2"]
+
+
+def test_replace_places_commits_replacement(conn):
+    store.init_schema(conn)
+    conn.execute(
+        f"""
+        INSERT INTO {store.PLACES_TABLE}
+            (place_id, region, name, lat, lon, refs_json, member_refs_json, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("uk-old", "uk", "Old UK", 51.5, -0.1, "[]", "[]", "active"),
+    )
+    conn.commit()
+
+    store.replace_places(
+        conn,
+        region="uk",
+        places=[
+            {
+                "place_id": "uk-new",
+                "name": "New UK",
+                "lat": 52.0,
+                "lon": -1.0,
+                "refs": [],
+                "member_refs": [],
+                "status": "active",
+            }
+        ],
+    )
+    conn.rollback()
+
+    rows = conn.execute(
+        f"""
+        SELECT region, place_id, name
+        FROM {store.PLACES_TABLE}
+        WHERE region = ?
+        ORDER BY place_id
+        """,
+        ("uk",),
+    ).fetchall()
+    assert rows == [("uk", "uk-new", "New UK")]
 
 
 def test_meta_table_enforces_single_schema_row(conn):
