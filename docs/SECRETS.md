@@ -13,7 +13,10 @@ In order of real strength:
 
 **Pipeline/agents (the default)** — wrap the WHOLE run, not each command (rate limits: see below):
 ```bash
-op run --env-file=.env.tpl -- uv run mt <stage> <region> ...   # one resolution burst per invocation
+op run --env-file=.env.tpl -- <entry-script-running-ALL-stages> # ONE burst per pipeline run
+# NOT one op run per stage: a 5-stage run as 5 op runs = 5 resolution bursts against a
+# daily budget as low as 1,000/account. The cron/orchestration entry script wraps the
+# entire predecessor-gated stage sequence under a single op run.
 ```
 Never `--no-masking` (or `OP_RUN_NO_MASKING`). Never `op inject -o` / any render-to-disk.
 
@@ -22,7 +25,8 @@ Never `--no-masking` (or `OP_RUN_NO_MASKING`). Never `op inject -o` / any render
 ## Mandatory guards (the silent-empty class)
 
 - **Every secret-consuming entry point verifies its required vars are NON-EMPTY and fails loud naming the variable.** Empty ≠ absent: declined biometric auth yields empty strings; malformed (non-`op://`-shaped) references pass through as LITERAL strings with no error. Well-formed-but-wrong references DO fail loud before the child runs.
-- **Preflight**: `op run --env-file=.env.tpl -- true` validates every reference resolves (cheap; catches typos before a long run).
+- **Preflight**: `op run --env-file=.env.tpl -- true` validates every well-formed reference resolves (cheap; catches wrong-but-well-formed refs before a long run).
+- **Template lint (catches the malformed-literal case the two guards above CANNOT)**: a typo'd `op:/vault/item` passes through as a non-empty literal with no error — slipping both the non-empty check and the preflight. Lint the template: every `.env.tpl` right-hand side must match `op://<vault>/<item>/<field>`; a test pins it. Belt: entry points may also format-check consumed values (a secret that still looks like `op:`-anything is a failure).
 - Precedence is deterministic and worth knowing: env-file beats same-named shell vars; last `--env-file` wins.
 
 ## Rate-limit budget (service accounts)
