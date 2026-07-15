@@ -3,7 +3,12 @@
   "wikidata": {
     "endpoint": "https://query.wikidata.org/sparql",
     "allowed_hosts": ["query.wikidata.org"],
-    "max_bytes": 33554432
+    "max_bytes": 33554432,
+    "region_overrides": {
+      "uk": {
+        "tile_degrees": 0.5
+      }
+    }
   },
   "wikipedia": {
     "endpoint": "https://en.wikipedia.org/w/api.php",

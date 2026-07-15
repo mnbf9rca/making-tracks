@@ -741,16 +741,30 @@ def qids_from_store(conn, *, region: str) -> list[str]:
     return sorted(qids)
 
 
+def _region_source_options(config: dict, region_id: str) -> dict:
+    options = dict(config)
+    overrides = options.pop("region_overrides", {})
+    if isinstance(overrides, dict):
+        region_override = overrides.get(region_id)
+        if isinstance(region_override, dict):
+            options.update(region_override)
+    return options
+
+
 def acquire_all(dest_dir, *, region_config, config_path=DEFAULT_CONFIG) -> dict[str, pathlib.Path]:
     config = load_config(config_path)
     dest = _ensure_dir(dest_dir)
     paths = {}
     if region_config.sources.get("wikidata") is True:
+        wikidata_options = _region_source_options(
+            config["wikidata"], region_config.region_id
+        )
         paths["wikidata"] = acquire_wikidata(
             dest,
             bbox=region_config.bbox,
             class_qids=load_class_qids(),
-            config=config["wikidata"],
+            config=wikidata_options,
+            tile_degrees=float(wikidata_options.get("tile_degrees", 1.0)),
         )
     if region_config.sources.get("wikipedia") is True:
         language = region_config.languages[0]

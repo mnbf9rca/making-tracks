@@ -1,4 +1,5 @@
 import json
+import types
 import urllib.parse
 
 import pytest
@@ -204,6 +205,63 @@ def test_wikidata_timeouts_are_retryable(tmp_path):
     )
 
     assert len(attempts) == 2
+
+
+def test_acquire_all_applies_region_wikidata_tile_override(tmp_path, monkeypatch):
+    config_path = tmp_path / "acquire_sources.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "wikidata": {
+                    "endpoint": "https://query.wikidata.org/sparql",
+                    "allowed_hosts": ["query.wikidata.org"],
+                    "max_bytes": 1234,
+                    "region_overrides": {"uk": {"tile_degrees": 0.5}},
+                },
+                "wikipedia": {
+                    "endpoint": "https://en.wikipedia.org/w/api.php",
+                    "allowed_hosts": ["en.wikipedia.org"],
+                },
+                "osm": {},
+            }
+        )
+    )
+    region_config = types.SimpleNamespace(
+        region_id="uk",
+        bbox=(-1.0, 50.0, 1.0, 51.0),
+        languages=["en"],
+        sources={"wikidata": True, "wikipedia": False, "osm": False},
+    )
+    captured = {}
+
+    def fake_acquire_wikidata(_dest, *, bbox, class_qids, config, tile_degrees):
+        captured.update(
+            {
+                "bbox": bbox,
+                "class_qids": class_qids,
+                "config": config,
+                "tile_degrees": tile_degrees,
+            }
+        )
+        return tmp_path / "wikidata.snapshot.json"
+
+    monkeypatch.setattr(acquire, "load_class_qids", lambda: ["Q33506"])
+    monkeypatch.setattr(acquire, "acquire_wikidata", fake_acquire_wikidata)
+    monkeypatch.setattr(acquire, "acquire_registers", lambda *_args, **_kwargs: {})
+
+    acquire.acquire_all(tmp_path, region_config=region_config, config_path=config_path)
+
+    assert captured == {
+        "bbox": region_config.bbox,
+        "class_qids": ["Q33506"],
+        "config": {
+            "endpoint": "https://query.wikidata.org/sparql",
+            "allowed_hosts": ["query.wikidata.org"],
+            "max_bytes": 1234,
+            "tile_degrees": 0.5,
+        },
+        "tile_degrees": 0.5,
+    }
 
 
 def test_wikipedia_acquisition_writes_complete_snapshot(tmp_path):
