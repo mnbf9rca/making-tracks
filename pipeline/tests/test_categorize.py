@@ -14,6 +14,19 @@ TAX = {
     "source_map": {"hehle": "architecture", "plaque": "memorials"},
 }
 
+A2_PLACES_DDL = """
+CREATE TABLE places (
+    place_id         TEXT PRIMARY KEY,
+    region           TEXT NOT NULL,
+    name             TEXT NOT NULL,
+    lat              REAL NOT NULL,
+    lon              REAL NOT NULL,
+    refs_json        TEXT NOT NULL,
+    member_refs_json TEXT NOT NULL,
+    status           TEXT NOT NULL
+)
+"""
+
 
 def _signals(**kwargs):
     return {"wd_p31": set(), "osm_tag": set(), "hehle": False, "plaque": False, **kwargs}
@@ -77,6 +90,7 @@ def test_only_config_labels_are_emittable():
 def _seed_run(rows, places):
     conn = store.connect(":memory:")
     store.init_schema(conn)
+    conn.execute(A2_PLACES_DDL)
     for row in rows:
         conn.execute(
             """
@@ -97,6 +111,18 @@ def _seed_run(rows, places):
         )
     conn.commit()
     return conn
+
+
+def test_run_requires_a2_places_table():
+    conn = store.connect(":memory:")
+    store.init_schema(conn)
+
+    try:
+        CZ.run(conn, "uk", run_id="cat1", taxonomy=TAX)
+    except CZ.PlacesTableMissingError as exc:
+        assert "A2 places table" in str(exc)
+    else:
+        raise AssertionError("categorize.run should fail closed until A2 places exists")
 
 
 def test_run_writes_place_categories_from_a2_places_shape():
@@ -153,6 +179,7 @@ def test_run_treats_hostile_json_as_empty_without_crashing():
     oversized_members = json.dumps(["wd:Q1"]) + (" " * 70_000)
     conn = store.connect(":memory:")
     store.init_schema(conn)
+    conn.execute(A2_PLACES_DDL)
     conn.execute(
         """
         INSERT INTO source_records

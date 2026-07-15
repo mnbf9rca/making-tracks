@@ -10,7 +10,6 @@ WORKING_STORE_VERSION = 4
 SOURCE_RECORDS_TABLE = "source_records"
 STAGE_RUNS_TABLE = "stage_runs"
 EXTRACT_RUN_METADATA_TABLE = "extract_run_metadata"
-PLACES_TABLE = "places"
 PLACE_CATEGORIES_TABLE = "place_categories"
 META_TABLE = "meta"
 
@@ -47,18 +46,6 @@ CREATE TABLE IF NOT EXISTS extract_run_metadata (
     source_status_json     TEXT NOT NULL,
     PRIMARY KEY (region, run_id)
 );
-CREATE TABLE IF NOT EXISTS places (
-    place_id         TEXT PRIMARY KEY,
-    region           TEXT NOT NULL,
-    name             TEXT NOT NULL,
-    lat              REAL NOT NULL,
-    lon              REAL NOT NULL,
-    refs_json        TEXT NOT NULL,
-    member_refs_json TEXT NOT NULL,
-    status           TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_places_region
-    ON places(region);
 CREATE TABLE IF NOT EXISTS place_categories (
     place_id TEXT PRIMARY KEY,
     region   TEXT NOT NULL,

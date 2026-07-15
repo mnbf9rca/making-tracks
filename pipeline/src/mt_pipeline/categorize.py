@@ -16,6 +16,10 @@ _TAXONOMY_PATH = _CONFIG_DIR / "taxonomy.json"
 _OSM_CANDIDATE_TAGS = _CONFIG_DIR / "osm_candidate_tags.json"
 
 
+class PlacesTableMissingError(RuntimeError):
+    """WP-A2 has not created the places table required by categorize."""
+
+
 def load_taxonomy(path: str | pathlib.Path = _TAXONOMY_PATH) -> dict:
     data = json.loads(pathlib.Path(path).read_text())
     _validate_taxonomy(data)
@@ -51,6 +55,7 @@ def category_for(signals: dict, taxonomy: dict) -> str:
 
 def run(conn, region: str, *, run_id: str, taxonomy: dict | None = None) -> dict[str, int]:
     taxonomy = taxonomy or load_taxonomy()
+    _require_places_table(conn)
     candidate_tags = osm.load_tag_config(_OSM_CANDIDATE_TAGS)
     conn.execute(
         """
@@ -93,6 +98,21 @@ def run(conn, region: str, *, run_id: str, taxonomy: dict | None = None) -> dict
         histogram[category] += 1
     conn.commit()
     return _ordered_histogram(histogram, taxonomy)
+
+
+def _require_places_table(conn) -> None:
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM sqlite_master
+        WHERE type = 'table' AND name = 'places'
+        """
+    ).fetchone()
+    if row is None:
+        raise PlacesTableMissingError(
+            "categorize requires the A2 places table "
+            "(place_id, region, name, lat, lon, refs_json, member_refs_json, status)"
+        )
 
 
 def _source_records_by_ref(conn, region: str) -> dict[str, tuple[str, dict]]:

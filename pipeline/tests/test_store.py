@@ -14,10 +14,10 @@ def test_schema_is_idempotent_and_versioned(conn):
         store.SOURCE_RECORDS_TABLE,
         store.STAGE_RUNS_TABLE,
         store.EXTRACT_RUN_METADATA_TABLE,
-        store.PLACES_TABLE,
         store.PLACE_CATEGORIES_TABLE,
         store.META_TABLE,
     } <= tables
+    assert "places" not in tables
     ver = conn.execute(f"SELECT schema_version FROM {store.META_TABLE}").fetchone()[0]
     assert ver == store.WORKING_STORE_VERSION
 

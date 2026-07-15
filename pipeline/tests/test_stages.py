@@ -2,6 +2,19 @@ import pytest
 
 from mt_pipeline import stages, store
 
+A2_PLACES_DDL = """
+CREATE TABLE places (
+    place_id         TEXT PRIMARY KEY,
+    region           TEXT NOT NULL,
+    name             TEXT NOT NULL,
+    lat              REAL NOT NULL,
+    lon              REAL NOT NULL,
+    refs_json        TEXT NOT NULL,
+    member_refs_json TEXT NOT NULL,
+    status           TEXT NOT NULL
+)
+"""
+
 
 def test_stage_order_is_the_spec_order():
     assert stages.STAGE_ORDER == ("extract", "reconcile", "score", "categorize", "publish")
@@ -35,6 +48,7 @@ def test_publish_blocked_names_categorize_after_extract_reconcile(conn):
 
 
 def test_full_order_runs(conn):
+    conn.execute(A2_PLACES_DDL)
     for stage in stages.STAGE_ORDER:
         stages.run_stage(conn, "uk", stage, run_id="r1")
     assert store.stage_completed(conn, "uk", "publish")
