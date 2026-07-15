@@ -102,6 +102,20 @@ def test_schema_migrates_v5_store(conn):
     }
     assert version == store.WORKING_STORE_VERSION
     assert store.PLACE_SCORES_TABLE in tables
+    indexes = {
+        r[1]
+        for r in conn.execute(f"PRAGMA index_list({store.PLACE_SCORES_TABLE})")
+    }
+    assert "idx_place_scores_region" in indexes
+    columns = {
+        r[1]: {"type": r[2], "notnull": bool(r[3]), "pk": bool(r[5])}
+        for r in conn.execute(f"PRAGMA table_info({store.PLACE_SCORES_TABLE})")
+    }
+    assert columns["place_id"]["pk"] is True
+    assert columns["run_id"] == {"type": "TEXT", "notnull": True, "pk": False}
+    assert columns["tier"] == {"type": "INTEGER", "notnull": True, "pk": False}
+    assert columns["score"] == {"type": "REAL", "notnull": True, "pk": False}
+    assert columns["signals_json"] == {"type": "TEXT", "notnull": True, "pk": False}
 
 
 def test_replace_places_replaces_only_target_region_and_sorts_refs(conn):
