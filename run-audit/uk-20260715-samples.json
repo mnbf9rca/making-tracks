@@ -1,0 +1,126 @@
+[
+  {
+    "lat": 51.504467,
+    "lon": -0.315267,
+    "name": "Roman Catholic Church of SS Peter and Paul",
+    "props": {
+      "image": "https://commons.wikimedia.org/wiki/Special:FilePath/%C3%89glise%20Saint-Pierre-et-Saint-Paul%20d%27Ealing.20201011%20103753.jpg",
+      "label": "Roman Catholic Church of SS Peter and Paul",
+      "matched_p31": "Q16970",
+      "p31": "Q1088552",
+      "p31s": [
+        "Q1088552"
+      ],
+      "sitelinks": 2
+    },
+    "source": "wd",
+    "source_ref": "wd:Q100018793"
+  },
+  {
+    "lat": 54.26445,
+    "lon": -0.8556,
+    "name": "Sinnington War Memorial",
+    "props": {
+      "image": "https://commons.wikimedia.org/wiki/Special:FilePath/1914%20-1918%20Memorial%20-%20geograph.org.uk%20-%201139267.jpg",
+      "label": "Sinnington War Memorial",
+      "matched_p31": "Q4989906",
+      "p31": "Q575759",
+      "p31s": [
+        "Q575759"
+      ],
+      "sitelinks": 1
+    },
+    "source": "wd",
+    "source_ref": "wd:Q100140938"
+  },
+  {
+    "lat": 54.911,
+    "lon": -6.147,
+    "name": "Mid Antrim (Northern Ireland Parliament constituency)",
+    "props": {
+      "extract": "Mid Antrim was a constituency of the Northern Ireland House of Commons.The House of Commons (Method of Voting and Redistribution of Seats) Act (Northern Ireland), 1929 introduced first-past-the-post elections for 48 single-member constituencies (including Antrim Mid).It was a single-member divisio",
+      "lang": "en",
+      "title": "Mid Antrim (Northern Ireland Parliament constituency)",
+      "wikidata": "Q6840909"
+    },
+    "source": "wp",
+    "source_ref": "wp:10000032"
+  },
+  {
+    "lat": 51.619,
+    "lon": -3.9341,
+    "name": "National Cycle Route 43",
+    "props": {
+      "extract": "National Cycle Network, Route 43 is part of the National Cycle Network and the Celtic Trail, which connects Swansea with Builth Wells. Most of the route is still awaiting development. As of June 2006, there is a 13-mile section out of Swansea that is open and signed.",
+      "lang": "en",
+      "title": "National Cycle Route 43",
+      "wikidata": "Q6972060"
+    },
+    "source": "wp",
+    "source_ref": "wp:10000096"
+  },
+  {
+    "lat": 51.6362209,
+    "lon": -2.3176818,
+    "name": "South Terrace",
+    "props": {
+      "direction": "202",
+      "name": "South Terrace",
+      "tourism": "viewpoint"
+    },
+    "source": "osm",
+    "source_ref": "osm:node/10000584309"
+  },
+  {
+    "lat": 54.5349221,
+    "lon": -2.6946264,
+    "name": "Thunder Stone",
+    "props": {
+      "historic": "yes",
+      "name": "Thunder Stone",
+      "natural": "stone"
+    },
+    "source": "osm",
+    "source_ref": "osm:node/10001359272"
+  },
+  {
+    "lat": 51.19882831843888,
+    "lon": -2.2391216711143587,
+    "name": "20 and 20A Whitbourne Springs",
+    "props": {
+      "grade": "II"
+    },
+    "source": "hehle",
+    "source_ref": "hehle:1021466"
+  },
+  {
+    "lat": 51.256553199047936,
+    "lon": -2.247299532321907,
+    "name": "TENNIS CORNER FARMHOUSE WITH GRANARY AND STABLE",
+    "props": {
+      "grade": "II"
+    },
+    "source": "hehle",
+    "source_ref": "hehle:1021467"
+  },
+  {
+    "lat": 51.51148,
+    "lon": -0.15424,
+    "name": "George Seferis blue plaque",
+    "props": {
+      "inscription": "George Seferis 1900-1971 Greek Ambassador, poet and Nobel laureate lived here 1957-1962"
+    },
+    "source": "plaque",
+    "source_ref": "plaque:openplaques/1"
+  },
+  {
+    "lat": 51.5352,
+    "lon": -0.1875,
+    "name": "Gilbert Bayes blue plaque",
+    "props": {
+      "inscription": "Gilbert Bayes 1872-1953 sculptor lived here 1931-1953"
+    },
+    "source": "plaque",
+    "source_ref": "plaque:openplaques/10"
+  }
+]
