@@ -69,8 +69,18 @@ pipeline/tests/
 ```python
 import io
 import json
+import email.message
+import urllib.request
+import urllib.response
 import pytest
 from mt_pipeline import fetch
+
+class _FakeOpener:
+    def __init__(self, body): self._body = body
+    def open(self, url, timeout=None): return io.BytesIO(self._body)
+
+def _body(monkeypatch, data):
+    monkeypatch.setattr(fetch, "_opener", lambda hosts: _FakeOpener(data))
 
 def test_rejects_non_https():
     with pytest.raises(fetch.FetchError):
@@ -81,19 +91,53 @@ def test_rejects_unexpected_host():
         fetch.get_json("https://evil.example/x", expected_hosts={"query.wikidata.org"})
 
 def test_streams_and_caps_oversize_body(monkeypatch):
-    big = b'{"x":"' + b"a" * 4096 + b'"}'
-    monkeypatch.setattr(fetch, "_open", lambda url, timeout: io.BytesIO(big))
+    _body(monkeypatch, b'{"x":"' + b"a" * 4096 + b'"}')
     with pytest.raises(fetch.FetchError):
         fetch.get_json("https://query.wikidata.org/x", expected_hosts={"query.wikidata.org"}, max_bytes=1024)
 
 def test_returns_parsed_json_within_cap(monkeypatch):
-    monkeypatch.setattr(fetch, "_open", lambda url, timeout: io.BytesIO(json.dumps({"ok": 1}).encode()))
+    _body(monkeypatch, json.dumps({"ok": 1}).encode())
     assert fetch.get_json("https://query.wikidata.org/x", expected_hosts={"query.wikidata.org"}) == {"ok": 1}
 
-def test_redirect_to_unexpected_host_is_blocked():
-    # SSRF: a 3xx to a non-allowlisted host must not be followed.
-    assert fetch._validate_target("http://169.254.169.254/x", {"query.wikidata.org"}) is False
-    assert fetch._validate_target("https://query.wikidata.org/x", {"query.wikidata.org"}) is True
+def test_recursion_bomb_is_caught(monkeypatch):
+    _body(monkeypatch, ("[" * 300000).encode())
+    with pytest.raises(fetch.FetchError):
+        fetch.get_json("https://query.wikidata.org/x", expected_hosts={"query.wikidata.org"})
+
+class _Mock302Handler(urllib.request.BaseHandler):
+    """A real urllib handler that returns a 302 to `location`, so the redirect flows
+    through the production opener chain (HTTPErrorProcessor → the redirect handler)."""
+    def __init__(self, location): self.location = location
+    def https_open(self, req):
+        h = email.message.Message(); h["Location"] = self.location
+        resp = urllib.response.addinfourl(io.BytesIO(b""), h, req.full_url, 302)
+        resp.msg = "Found"
+        return resp
+
+def _mock_opener(hosts, location):
+    # a manual OpenerDirector: error processor + our redirect handler + a mock 302
+    # transport, and NO default HTTPS transport — so the 302 flows through the real
+    # redirect handler with zero network. (build_opener would add the real transport.)
+    o = urllib.request.OpenerDirector()
+    for h in (urllib.request.HTTPErrorProcessor(), fetch._AllowlistRedirect(hosts), _Mock302Handler(location)):
+        o.add_handler(h)
+    return o
+
+def test_redirect_to_unexpected_host_is_blocked_THROUGH_get_json(monkeypatch):
+    # SSRF: drive an actual 302 to a non-allowlisted host through get_json's redirect
+    # handler and assert it is blocked (not merely _validate_target on the first URL).
+    hosts = {"query.wikidata.org"}
+    monkeypatch.setattr(fetch, "_opener", lambda h: _mock_opener(h, "https://evil.example/x"))
+    with pytest.raises(fetch.FetchError):
+        fetch.get_json("https://query.wikidata.org/x", expected_hosts=hosts)
+
+def test_redirect_to_allowlisted_host_is_permitted():
+    # a redirect to an allowed host returns a Request (followed), not an error
+    h = fetch._AllowlistRedirect({"query.wikidata.org"})
+    req = urllib.request.Request("https://query.wikidata.org/a")
+    out = h.redirect_request(req, io.BytesIO(b""), 302, "Found",
+                             email.message.Message(), "https://query.wikidata.org/b")
+    assert out is not None
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -127,7 +171,8 @@ def _validate_target(url: str, expected_hosts: set[str]) -> bool:
 
 
 class _AllowlistRedirect(urllib.request.HTTPRedirectHandler):
-    """Re-apply the https + host allowlist on EVERY redirect hop (SSRF defense)."""
+    """Re-apply the https + host allowlist on EVERY redirect hop (SSRF defense).
+    Installed on the executed get_json path via _opener — NOT a prose comment."""
     def __init__(self, expected_hosts: set[str]):
         self.expected_hosts = expected_hosts
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -136,8 +181,10 @@ class _AllowlistRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def _open(url: str, timeout: int):  # seam for tests
-    return urllib.request.urlopen(url, timeout=timeout)
+def _opener(expected_hosts: set[str]):
+    """The ONE network seam. Production: an opener whose redirect handler re-validates
+    every hop, so no code path fetches without the allowlist. Tests monkeypatch this."""
+    return urllib.request.build_opener(_AllowlistRedirect(expected_hosts))
 
 
 def get_json(url: str, *, expected_hosts: set[str], max_bytes: int = MAX_RESPONSE_BYTES,
@@ -145,14 +192,14 @@ def get_json(url: str, *, expected_hosts: set[str], max_bytes: int = MAX_RESPONS
     if not _validate_target(url, expected_hosts):
         raise FetchError(f"invalid target: {url!r}")
     try:
-        resp = _open(url, timeout)
+        resp = _opener(expected_hosts).open(url, timeout=timeout)   # redirects re-validated here
     except FetchError:
         raise
     except Exception as e:
         raise FetchError(str(e)) from e
-    enc = getattr(resp, "headers", {}).get("Content-Encoding") if hasattr(resp, "headers") else None
-    if enc:
-        raise FetchError(f"unexpected Content-Encoding {enc!r}")   # no silent decompression bomb
+    hdrs = getattr(resp, "headers", None)
+    if hdrs is not None and hdrs.get("Content-Encoding"):
+        raise FetchError(f"unexpected Content-Encoding {hdrs.get('Content-Encoding')!r}")  # no silent bomb
     start, chunks, total = time.monotonic(), [], 0
     while True:
         if time.monotonic() - start > deadline:
@@ -169,18 +216,18 @@ def get_json(url: str, *, expected_hosts: set[str], max_bytes: int = MAX_RESPONS
     except (ValueError, UnicodeDecodeError, RecursionError) as e:
         raise FetchError(f"invalid JSON: {e}") from e
 ```
-Wire the redirect handler in production acquisition (`urllib.request.build_opener(_AllowlistRedirect(expected_hosts)).open(...)`); the `_open` seam keeps tests network-free. (Note the test exercises `_validate_target` directly — the redirect handler composes it.)
+The `_opener` seam guarantees **one** code path with *both* the redirect-allowlist and the streaming cap/deadline/Content-Encoding checks. The test drives a real 302 through `get_json` and asserts `FetchError`.
 
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `cd pipeline && uv run python -m pytest tests/test_fetch.py -q`
-Expected: PASS (5 passed).
+Expected: PASS (7 passed) — including a real 302-through-`get_json` blocked by the redirect handler.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add pipeline/src/mt_pipeline/fetch.py pipeline/tests/test_fetch.py
-git commit -m "Add SSRF-safe byte-capped deadline-bounded fetch (extractor-edge network boundary)"
+git commit -m "Add SSRF-safe byte-capped deadline-bounded fetch (redirect handler wired on the get_json path)"
 ```
 
 ---
@@ -273,18 +320,22 @@ git commit -m "Add Extractor Protocol + registry (stable enabled-source dispatch
 **Interfaces:**
 - Consumes: `source_record.parse`/`persist`.
 - Produces:
-  - Caps: `MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024`, `MAX_RECORDS_PER_SNAPSHOT = 2_000_000`, `MAX_LABEL_LEN = 400`, `MAX_SITELINKS = 100_000`.
+  - Caps: `MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024`, `MAX_RECORDS_PER_SNAPSHOT = 2_000_000`, `MAX_LABEL_LEN = 300` (matches A1's props/name cap), `MAX_SITELINKS = 100_000`.
+  - `wikidata.SnapshotTooLargeError`, `wikidata.SnapshotIncompleteError` (the `_meta.complete` gate — refuses a partial snapshot; shared by both extractors via `_load_snapshot`).
   - `wikidata.load_allowlist(path) -> set[str]`.
   - `wikidata.WikidataExtractor(allowlist: set[str])` — implements `Extractor`; `extract(region, snapshot_path, conn, *, run_id) -> int`.
   - `wikidata.make_extractor(allowlist_path) -> WikidataExtractor` — the **production factory** (loads the bootstrap file; A3 replaces the file, no code change).
   - Each kept item emits `source=wd, source_ref=wd:<QID>` with `props = {p31, label, sitelinks (int, §4 signal), image? (P18 → §4 image-availability / image_url origin)}` — de-duped by QID (keep-first), stable lexical `source_ref` order, every field guarded.
+
+**Acquisition is a NAMED DEFERRED follow-up; its completeness contract is ENFORCED here.** The WDQS acquisition that *writes* the snapshot (segmented per P31-chunk × bbox-tile; descriptive `User-Agent`; backoff on `429`/`5xx`; a self-describing `_meta` of `endpoint` + full per-segment query text + `retrieved_at`; and `"complete": true` written **only after every segment succeeds**, loud-abort otherwise) is network I/O with no hermetic test surface, so it is deferred to a named follow-up (`WP-A1b-acquire`, flagged to fable for scheduling). **The enforcement point is built + tested here:** `_load_snapshot` raises `SnapshotIncompleteError` unless `_meta.complete is True`, so `extract` can never run against a partial/aborted snapshot — the ratified "never run against a partial snapshot" condition has teeth even though acquisition itself is deferred.
 
 - [ ] **Step 1: Write the golden fixture + failing test**
 
 `pipeline/tests/fixtures/wikidata/snapshot.json` (self-describing `_meta`; flat rows carrying the §4 signals; includes a hostile-shaped row and a duplicate QID to exercise the guards):
 ```json
 {"_meta": {"endpoint": "https://query.wikidata.org/sparql",
-           "queries": ["SELECT ... bbox-tile 0 x class-chunk 0 ..."], "retrieved_at": "2026-07-14"},
+           "queries": ["SELECT ... bbox-tile 0 x class-chunk 0 ..."], "retrieved_at": "2026-07-14",
+           "complete": true},
  "results": {"bindings": [
    {"item": {"value": "http://www.wikidata.org/entity/Q42"}, "lat": {"value": "51.5007"},
     "lon": {"value": "-0.1246"}, "p31": {"value": "http://www.wikidata.org/entity/Q33506"},
@@ -313,6 +364,17 @@ FIX = pathlib.Path(__file__).parent / "fixtures/wikidata/snapshot.json"
 def _db(tmp_path, name="w.db"):
     c = store.connect(tmp_path / name); store.init_schema(c); return c
 
+def _write(tmp_path, snap, name="s.json"):
+    # inject a complete _meta unless the snapshot overrides it (gate default)
+    obj = {"_meta": {"complete": True}, **snap}
+    p = tmp_path / name; p.write_text(json.dumps(obj)); return p
+
+def test_incomplete_snapshot_is_refused(tmp_path):
+    import pytest
+    p = _write(tmp_path, {"_meta": {"complete": False}, "results": {"bindings": []}})
+    with pytest.raises(wikidata.SnapshotIncompleteError):   # never extract from a partial snapshot
+        wikidata.WikidataExtractor({"Q33506"}).extract("uk", p, _db(tmp_path), run_id="r1")
+
 def test_keeps_allowlisted_dedups_by_qid_drops_others_and_survives_malformed(tmp_path):
     conn = _db(tmp_path)
     n = wikidata.WikidataExtractor({"Q33506", "Q570116"}).extract("uk", FIX, conn, run_id="r1")
@@ -334,7 +396,7 @@ def test_deterministic_stable_order_multi_record(tmp_path):
          "p31": {"value": ".../Q33506"}, "label": {"value": "Nine"}},
         {"item": {"value": ".../Q100"}, "lat": {"value": "1"}, "lon": {"value": "1"},
          "p31": {"value": ".../Q33506"}, "label": {"value": "Hundred"}}]}}
-    p = tmp_path / "s.json"; p.write_text(json.dumps(snap))
+    p = _write(tmp_path, snap, "s.json")
     conn = _db(tmp_path)
     wikidata.WikidataExtractor({"Q33506"}).extract("uk", p, conn, run_id="r1")
     order = [r[0] for r in conn.execute("SELECT source_ref FROM source_records ORDER BY id")]
@@ -345,7 +407,7 @@ def test_bad_coordinate_row_is_dropped_via_a1_parse(tmp_path):
     snap = {"results": {"bindings": [
         {"item": {"value": ".../Q42"}, "lat": {"value": "999"}, "lon": {"value": "0"},
          "p31": {"value": ".../Q33506"}, "label": {"value": "Off-globe"}}]}}
-    p = tmp_path / "b.json"; p.write_text(json.dumps(snap))
+    p = _write(tmp_path, snap, "b.json")
     conn = _db(tmp_path)
     assert wikidata.WikidataExtractor({"Q33506"}).extract("uk", p, conn, run_id="r1") == 0
 
@@ -353,7 +415,7 @@ def test_hostile_oversized_label_is_bounded_before_parse(tmp_path):
     snap = {"results": {"bindings": [
         {"item": {"value": ".../Q42"}, "lat": {"value": "1"}, "lon": {"value": "1"},
          "p31": {"value": ".../Q33506"}, "label": {"value": "x" * 5000}}]}}
-    p = tmp_path / "h.json"; p.write_text(json.dumps(snap))
+    p = _write(tmp_path, snap, "h.json")
     conn = _db(tmp_path)
     wikidata.WikidataExtractor({"Q33506"}).extract("uk", p, conn, run_id="r1")
     name = conn.execute("SELECT name FROM source_records").fetchone()[0]
@@ -405,12 +467,22 @@ from .. import source_record
 
 MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024
 MAX_RECORDS_PER_SNAPSHOT = 2_000_000
-MAX_LABEL_LEN = 400
+# NB: A1's source_record.parse truncates every props string AND the name to 300 chars
+# (its NAME_MAX) — that governs the FINAL stored length. These edge caps match it, so
+# the constant is not misleading; they also bound the raw field before parse.
+MAX_LABEL_LEN = 300
 MAX_SITELINKS = 100_000
 
 
 class SnapshotTooLargeError(Exception):
     pass
+
+
+class SnapshotIncompleteError(Exception):
+    """The snapshot is not marked complete — acquisition partial/aborted. Refuse to
+    extract from it (the enforcement point for the ratified 'never run against a
+    partial snapshot' condition). Acquisition writes `_meta.complete = true` ONLY
+    after every segment succeeds; a loud-abort leaves it absent/false."""
 
 
 def load_allowlist(path) -> set[str]:
@@ -422,9 +494,12 @@ def _load_snapshot(snapshot_path) -> dict:
     if p.stat().st_size > MAX_SNAPSHOT_BYTES:      # cap the on-disk file BEFORE reading (§5.5)
         raise SnapshotTooLargeError(f"{p} exceeds {MAX_SNAPSHOT_BYTES} bytes")
     try:
-        return json.loads(p.read_text())
+        data = json.loads(p.read_text())
     except (ValueError, RecursionError) as e:      # deep-JSON bomb / malformed
         raise SnapshotTooLargeError(f"unparseable snapshot: {e}") from e
+    if (data.get("_meta") or {}).get("complete") is not True:
+        raise SnapshotIncompleteError(f"{p} is not marked _meta.complete=true")
+    return data
 
 
 def _qid(uri: str) -> str:
@@ -487,7 +562,7 @@ def make_extractor(allowlist_path) -> WikidataExtractor:
 - [ ] **Step 5: Run to verify it passes**
 
 Run: `cd pipeline && uv run python -m pytest tests/test_wikidata_extractor.py -q`
-Expected: PASS (7 passed).
+Expected: PASS (8 passed).
 
 - [ ] **Step 6: Commit**
 
@@ -508,14 +583,15 @@ git commit -m "Add Wikidata extractor: crash-safe, deduped, §4 signals, allowli
 
 **Interfaces:**
 - Produces:
-  - Caps: `MAX_EXTRACT_LEN = 1200`, `MAX_TITLE_LEN = 400`, `MAX_QID_LEN = 24`, `MAX_LANG_LEN = 16` (reuses wikidata's `MAX_SNAPSHOT_BYTES`/`MAX_RECORDS_PER_SNAPSHOT` via a shared import).
+  - Caps: `MAX_EXTRACT_LEN = 300`, `MAX_TITLE_LEN = 300` (match A1's props/name cap), `MAX_QID_LEN = 24`, `MAX_LANG_LEN = 16` (reuses wikidata's `_load_snapshot` — incl. the size + `_meta.complete` gates — and `MAX_RECORDS_PER_SNAPSHOT`).
   - `wikipedia.WikipediaExtractor(languages: set[str])` — implements `Extractor`. Drops pages whose snapshot `lang ∉ languages`. Emits `source=wp, source_ref=wp:<pageid>` with `props = {lang, title, extract, wikidata?}`; the QID is added **only if** it matches `Q[0-9]+` and is short (else the key is omitted — never a garbage A2 join key, never a whole-record drop). De-duped by pageid, stable lexical `source_ref` order, every field guarded.
 
 - [ ] **Step 1: Write the fixture + failing test**
 
 `pipeline/tests/fixtures/wikipedia/snapshot.json`:
 ```json
-{"lang": "en", "pages": [
+{"_meta": {"lang": "en", "retrieved_at": "2026-07-14", "complete": true},
+ "lang": "en", "pages": [
   {"pageid": 12345, "title": "Big Ben", "lat": 51.5007, "lon": -0.1246,
    "extract": "The Great Bell of the striking clock at Westminster.", "wikidata": "Q42"},
   {"pageid": 67890, "title": "Some Hamlet", "lat": 51.4, "lon": -0.2,
@@ -537,6 +613,7 @@ FIX = pathlib.Path(__file__).parent / "fixtures/wikipedia/snapshot.json"
 def _db(tmp_path): c = store.connect(tmp_path / "w.db"); store.init_schema(c); return c
 
 def _snap(tmp_path, obj):
+    obj = {"_meta": {"complete": True}, **obj}   # complete unless the test overrides _meta
     p = tmp_path / "s.json"; p.write_text(json.dumps(obj)); return p
 
 def test_emits_wp_pageid_refs_skips_malformed(tmp_path):
@@ -598,8 +675,10 @@ import re
 from .. import source_record
 from .wikidata import _load_snapshot, MAX_RECORDS_PER_SNAPSHOT
 
-MAX_EXTRACT_LEN = 1200
-MAX_TITLE_LEN = 400
+# A1's parse caps props strings + name to 300 (NAME_MAX) — the final stored length.
+# These edge caps match it (and bound the raw field before parse).
+MAX_EXTRACT_LEN = 300
+MAX_TITLE_LEN = 300
 MAX_QID_LEN = 24
 MAX_LANG_LEN = 16
 _QID_RE = re.compile(r"Q[0-9]+")
@@ -831,18 +910,17 @@ import ast
 import pathlib
 import mt_pipeline
 
+# Wall-clock/randomness attrs that must not appear in extractor OUTPUT modules.
+# `fromisoformat` (pageviews window from a CONFIG date) and `replace`/`timedelta`/
+# `isoformat` are NOT banned, so pageviews.py passes without a blanket exclusion —
+# no module is skipped wholesale.
 _BANNED = {"now", "utcnow", "today", "time", "monotonic", "perf_counter",
            "random", "shuffle", "uuid4", "uuid1", "urandom", "randint", "choice"}
-# the ONLY sanctioned time use is in pageviews window arithmetic on a config date (date.fromisoformat),
-# plus fetch's time.monotonic() deadline (not an output value). Guard the extractor OUTPUT modules.
-_ALLOWED = {("pageviews.py", None), ("fetch.py", None)}
 
-def test_no_wallclock_or_randomness_in_extractor_output_modules():
+def test_no_wallclock_or_randomness_in_extractor_modules():
     root = pathlib.Path(mt_pipeline.__file__).parent / "extractors"
     offenders = []
-    for py in sorted(root.rglob("*.py")):
-        if py.name in {"pageviews.py"}:   # window arithmetic on a config date is deterministic
-            continue
+    for py in sorted(root.rglob("*.py")):     # every extractor module, pageviews included
         for node in ast.walk(ast.parse(py.read_text())):
             if isinstance(node, ast.Attribute) and node.attr in _BANNED:
                 offenders.append(f"{py.name}:{node.attr}")
@@ -909,5 +987,7 @@ git commit -m "Wire production wiki-extractor registry into the A1 extract stage
 - *Spec/interface (HIGH):* the prior draft **built A4's pageview *median* (out of scope) and only prosed A1b's ratified *acquisition*** → median deleted; resumable, cached, per-run-flag acquisition built and tested (crash mid-sweep → resume, no re-fetch); the extractors now **conform to the `Extractor` Protocol** as classes with a production `make_extractor`/`build_registry` wiring that loads the bootstrap allowlist (previously only a test-only adapter); `run_extract`/`enabled_for` now consume A1's **`RegionConfig` dataclass**, not a dict; the Wikidata extractor now captures the **§4 signals** (sitelink count, P18 image → `image_url` origin) that nothing else re-acquires.
 - *Coherence/test-quality:* determinism now tested with ≥2 records whose snapshot order differs from sorted; parse-delegation proven via a bad-coordinate row that must be dropped (exercising the skip path); hostile oversized fields asserted bounded; de-dup, don't-fabricate-join-key, malformed-record-skipped, oversized-snapshot, and SSRF all pinned; the determinism guard recurses over `extractors/`.
 - *Feasibility:* `window_for` crashed on a Feb-29 config snapshot date → clamped to Feb-28; duplicate-QID rows de-duped; the double label-slice removed.
+
+**Delta review (fable, independent, on PR #34) — CHANGES REQUIRED, fixed:** the gate had *reported* the SSRF fix as landed when it was defined-but-unwired — the lesson applied. (1) **SSRF (HIGH):** `_AllowlistRedirect` was defined but `get_json` fetched via `urlopen` (follows redirects to any host). Now `get_json` fetches through `_opener(expected_hosts)` = `build_opener(_AllowlistRedirect(...))` — **one** path with both the redirect-allowlist and the streaming cap/deadline/Content-Encoding checks; the test drives a **real 302 through `get_json`** and asserts `FetchError`. (2) **Partial-snapshot (MEDIUM):** the "never run against a partial snapshot" condition had no enforcement point. Now `_load_snapshot` refuses any snapshot without `_meta.complete == true` (`SnapshotIncompleteError`, tested); the network acquisition is honestly scoped as a named deferred follow-up whose completeness marker the gate enforces. Folds: the determinism guard no longer blanket-skips `pageviews.py` (it passes on specifics); `MAX_EXTRACT_LEN`/`MAX_*_LEN` aligned to A1's effective 300-char props/name cap (no longer misleading).
 
 **Cross-package needs surfaced** — codex: append `wp` (last) to A0's mint grammar + frozen vector (A2 minting only); A3: replace the bootstrap allowlist; A2: read `props["wikidata"]` as the wp→wd join key; A1: consider `UNIQUE(source, source_ref)` on `source_records`.
