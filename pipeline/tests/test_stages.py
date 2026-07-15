@@ -2,18 +2,7 @@ import pytest
 
 from mt_pipeline import stages, store
 
-A2_PLACES_DDL = """
-CREATE TABLE places (
-    place_id         TEXT PRIMARY KEY,
-    region           TEXT NOT NULL,
-    name             TEXT NOT NULL,
-    lat              REAL NOT NULL,
-    lon              REAL NOT NULL,
-    refs_json        TEXT NOT NULL,
-    member_refs_json TEXT NOT NULL,
-    status           TEXT NOT NULL
-)
-"""
+from helpers import A2_PLACES_DDL
 
 
 def test_stage_order_is_the_spec_order():

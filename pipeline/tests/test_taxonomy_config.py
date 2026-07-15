@@ -84,3 +84,17 @@ def test_load_taxonomy_rejects_map_values_outside_categories(tmp_path):
         assert "not-a-category" in str(exc)
     else:
         raise AssertionError("map values outside categories should raise ValueError")
+
+
+def test_load_taxonomy_rejects_unknown_precedence_kind(tmp_path):
+    data = _load("taxonomy.json")
+    data["precedence"] = ["wd_p31", "unknown_kind"]
+    path = tmp_path / "taxonomy.json"
+    path.write_text(json.dumps(data))
+
+    try:
+        categorize.load_taxonomy(path)
+    except ValueError as exc:
+        assert "unknown_kind" in str(exc)
+    else:
+        raise AssertionError("unknown precedence kind should raise ValueError")

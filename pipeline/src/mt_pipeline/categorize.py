@@ -4,20 +4,20 @@ from __future__ import annotations
 
 import json
 import pathlib
-import sys
-import time
 from collections import Counter
+from typing import TypedDict
 
 import mt_contracts
 
-from . import source_record
+from . import progress, source_record, store
 from .extractors import osm
 
 _CONFIG_DIR = pathlib.Path(__file__).resolve().parents[2] / "config"
 _TAXONOMY_PATH = _CONFIG_DIR / "taxonomy.json"
 _OSM_CANDIDATE_TAGS = _CONFIG_DIR / "osm_candidate_tags.json"
 _HEARTBEAT_EVERY_RECORDS = 10_000
-_HEARTBEAT_EVERY_SECONDS = 30.0
+_HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
+_PRECEDENCE_KINDS = {"wd_p31", "osm_tag", "hehle", "plaque"}
 _REQUIRED_TAXONOMY_KEYS = (
     "categories",
     "uncovered",
@@ -26,6 +26,13 @@ _REQUIRED_TAXONOMY_KEYS = (
     "tag_map",
     "source_map",
 )
+
+
+class _Signals(TypedDict):
+    wd_p31: set[str]
+    osm_tag: set[str]
+    hehle: bool
+    plaque: bool
 
 
 class PlacesTableMissingError(RuntimeError):
@@ -38,7 +45,7 @@ def load_taxonomy(path: str | pathlib.Path = _TAXONOMY_PATH) -> dict:
     return data
 
 
-def category_for(signals: dict, taxonomy: dict) -> str:
+def category_for(signals: _Signals, taxonomy: dict) -> str:
     categories = set(taxonomy["categories"])
     uncovered = taxonomy["uncovered"]
     for kind in taxonomy["precedence"]:
@@ -69,19 +76,12 @@ def run(conn, region: str, *, run_id: str, taxonomy: dict | None = None) -> dict
     taxonomy = taxonomy or load_taxonomy()
     _require_places_table(conn)
     candidate_tags = osm.load_tag_config(_OSM_CANDIDATE_TAGS)
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS place_categories (
-            place_id TEXT PRIMARY KEY,
-            region   TEXT NOT NULL,
-            category TEXT NOT NULL,
-            run_id   TEXT NOT NULL
-        )
-        """
-    )
     source_records = _source_records_by_ref(conn, region)
     histogram: Counter[str] = Counter()
-    conn.execute("DELETE FROM place_categories WHERE region = ?", (region,))
+    conn.execute(
+        f"DELETE FROM {store.PLACE_CATEGORIES_TABLE} WHERE region = ?",
+        (region,),
+    )
     total_places = conn.execute(
         """
         SELECT COUNT(*)
@@ -90,8 +90,15 @@ def run(conn, region: str, *, run_id: str, taxonomy: dict | None = None) -> dict
         """,
         (region,),
     ).fetchone()[0]
-    progress = _Progress("categorize.run", region=region, total=total_places)
-    progress.start()
+    phase = progress.PhaseProgress(
+        "categorize.run",
+        region=region,
+        total=total_places,
+        total_label="places",
+        heartbeat_every_records=_HEARTBEAT_EVERY_RECORDS,
+        heartbeat_every_seconds=_HEARTBEAT_EVERY_SECONDS,
+    )
+    phase.start()
 
     rows = conn.execute(
         """
@@ -105,7 +112,7 @@ def run(conn, region: str, *, run_id: str, taxonomy: dict | None = None) -> dict
     processed = 0
     for place_id, member_refs_json in rows:
         processed += 1
-        progress.tick(processed)
+        phase.tick(processed)
         member_refs = _load_json_list(member_refs_json)
         signals = _signals_for(member_refs, source_records, candidate_tags)
         category = category_for(signals, taxonomy)
@@ -122,7 +129,7 @@ def run(conn, region: str, *, run_id: str, taxonomy: dict | None = None) -> dict
         )
         histogram[category] += 1
     conn.commit()
-    progress.done(processed)
+    phase.done(processed)
     return _ordered_histogram(histogram, taxonomy)
 
 
@@ -161,8 +168,13 @@ def _signals_for(
     member_refs: list[str],
     source_records: dict[str, tuple[str, dict]],
     candidate_tags: dict,
-) -> dict:
-    signals = {"wd_p31": set(), "osm_tag": set(), "hehle": False, "plaque": False}
+) -> _Signals:
+    signals: _Signals = {
+        "wd_p31": set(),
+        "osm_tag": set(),
+        "hehle": False,
+        "plaque": False,
+    }
     for source_ref in sorted(member_refs):
         record = source_records.get(source_ref)
         if record is None:
@@ -210,6 +222,14 @@ def _validate_taxonomy(data: dict) -> None:
             raise ValueError(f"taxonomy {key} maps to unknown categories: {invalid}")
     if not isinstance(data["precedence"], list):
         raise ValueError("taxonomy precedence must be a list")
+    unknown_precedence = [
+        kind for kind in data["precedence"] if kind not in _PRECEDENCE_KINDS
+    ]
+    if unknown_precedence:
+        raise ValueError(
+            f"taxonomy precedence contains unsupported kinds: {unknown_precedence}; "
+            f"allowed kinds are: {sorted(_PRECEDENCE_KINDS)}"
+        )
 
 
 def _load_json_dict(value: str) -> dict:
@@ -246,40 +266,3 @@ def _ordered_histogram(histogram: Counter[str], taxonomy: dict) -> dict[str, int
         if category not in ordered:
             ordered[category] = count
     return ordered
-
-
-class _Progress:
-    def __init__(self, name: str, *, region: str, total: int):
-        self.name = name
-        self.region = region
-        self.total = total
-        self.started = time.monotonic()
-        self.last_heartbeat = self.started
-
-    def start(self) -> None:
-        print(
-            f"PHASE START {self.name} region={self.region} places={self.total}",
-            file=sys.stderr,
-        )
-
-    def tick(self, processed: int) -> None:
-        now = time.monotonic()
-        if processed % _HEARTBEAT_EVERY_RECORDS == 0 or (
-            now - self.last_heartbeat
-        ) >= _HEARTBEAT_EVERY_SECONDS:
-            self.last_heartbeat = now
-            elapsed = now - self.started
-            rate = processed / elapsed if elapsed > 0 else 0.0
-            print(
-                f"PHASE HEARTBEAT {self.name} region={self.region} "
-                f"processed={processed}/{self.total} rate={rate:.1f}/s elapsed={elapsed:.1f}s",
-                file=sys.stderr,
-            )
-
-    def done(self, processed: int) -> None:
-        elapsed = time.monotonic() - self.started
-        print(
-            f"PHASE DONE {self.name} region={self.region} "
-            f"processed={processed}/{self.total} elapsed={elapsed:.1f}s",
-            file=sys.stderr,
-        )

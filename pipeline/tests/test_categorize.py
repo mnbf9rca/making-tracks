@@ -4,6 +4,7 @@ import json
 from mt_pipeline import categorize as CZ
 from mt_pipeline import stages, store
 
+from helpers import A2_PLACES_DDL
 
 TAX = {
     "categories": ["history", "culture", "memorials", "architecture"],
@@ -13,19 +14,6 @@ TAX = {
     "tag_map": {"historic=castle": "history", "memorial=*": "memorials"},
     "source_map": {"hehle": "architecture", "plaque": "memorials"},
 }
-
-A2_PLACES_DDL = """
-CREATE TABLE places (
-    place_id         TEXT PRIMARY KEY,
-    region           TEXT NOT NULL,
-    name             TEXT NOT NULL,
-    lat              REAL NOT NULL,
-    lon              REAL NOT NULL,
-    refs_json        TEXT NOT NULL,
-    member_refs_json TEXT NOT NULL,
-    status           TEXT NOT NULL
-)
-"""
 
 
 def _signals(**kwargs):

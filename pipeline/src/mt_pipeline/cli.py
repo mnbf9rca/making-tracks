@@ -6,6 +6,7 @@ import argparse
 import pathlib
 import sqlite3
 import sys
+from collections.abc import Sequence
 
 from . import acquire, audit, categorize, config, extract_stage, stages, store
 
@@ -49,7 +50,8 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _normalize_argv(argv) -> list[str] | None:
+def _normalize_argv(argv: Sequence[str] | None) -> list[str]:
+    """Normalize argv, including the `mt audit <region>` shortcut."""
     if argv is None:
         args = sys.argv[1:]
     else:
