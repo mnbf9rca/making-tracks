@@ -1,7 +1,17 @@
-.venv/
+# Build artifacts and local state (never commit)
 __pycache__/
+*.pyc
+.venv/
+venv/
+ios/.build/
+.build/
+dist/
+*.egg-info/
 .pytest_cache/
 uv.lock
+work.db
+.worktrees/
+.env
 
 # Local acquisition snapshots, downloaded PBFs, SQLite stores, and real-run logs.
 .mt-data
