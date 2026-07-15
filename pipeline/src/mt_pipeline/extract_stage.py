@@ -2,19 +2,29 @@
 
 from __future__ import annotations
 
+import pathlib
+
 from .extractors import Registry
+from .extractors import osm as osm_extractor
 from .extractors import wikidata
 from .extractors.wikipedia import WikipediaExtractor
+
+DEFAULT_OSM_TAG_CONFIG = (
+    pathlib.Path(__file__).resolve().parents[2] / "config/osm_candidate_tags.json"
+)
 
 
 class UnregisteredEnabledSourceError(RuntimeError):
     pass
 
 
-def build_registry(allowlist_path, languages: set[str]) -> Registry:
+def build_registry(allowlist_path, languages: set[str], *, osm_tag_config_path=None) -> Registry:
     registry = Registry()
     registry.register("wikidata", wikidata.make_extractor(allowlist_path))
     registry.register("wikipedia", WikipediaExtractor(languages))
+    registry.register(
+        "osm", osm_extractor.make_extractor(osm_tag_config_path or DEFAULT_OSM_TAG_CONFIG)
+    )
     return registry
 
 
