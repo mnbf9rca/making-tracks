@@ -28,3 +28,11 @@ def test_no_wallclock_or_randomness_in_extractor_modules():
             if isinstance(node, ast.Attribute) and node.attr in _BANNED:
                 offenders.append(f"{path.name}:{node.attr}")
     assert offenders == []
+
+
+def test_determinism_scan_covers_register_extractors():
+    root = pathlib.Path(mt_pipeline.__file__).parent / "extractors"
+    scanned = {path.relative_to(root).as_posix() for path in root.rglob("*.py")}
+
+    assert "historic_england.py" in scanned
+    assert "open_plaques.py" in scanned

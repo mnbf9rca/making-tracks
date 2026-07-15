@@ -13,7 +13,6 @@ from . import _snapshot
 
 MAX_NAME_LEN = 300
 MAX_RING_POINTS = 100_000
-TEMP_TABLE = "_mt_he_records"
 
 # Confirmed 2026-07-15 against Historic England's ArcGIS item
 # 767f279327a24845bf47dfe5eae9862b. Listed building point layer 0 and polygon
@@ -47,6 +46,8 @@ def _geojson_coord_ref(snapshot_path) -> str:
             if prefix == "type" and event == "string":
                 top_type = value
             elif prefix == "properties.exceededTransferLimit" and event == "boolean":
+                # Defense in depth for accidental ArcGIS query snapshots. Normal
+                # acquisition uses the full Hub export, requested as WGS84 GeoJSON.
                 exceeded_transfer_limit = exceeded_transfer_limit or bool(value)
             elif prefix == "crs.properties.name" and event == "string":
                 crs_name = value
@@ -114,10 +115,10 @@ class HistoricEnglandExtractor:
         _geojson_coord_ref(snapshot_path)
         dropped = 0
         parse_dropped = 0
-        conn.execute(f"DROP TABLE IF EXISTS {TEMP_TABLE}")
+        conn.execute("DROP TABLE IF EXISTS _mt_he_records")
         conn.execute(
-            f"""
-            CREATE TEMP TABLE {TEMP_TABLE} (
+            """
+            CREATE TEMP TABLE _mt_he_records (
                 source_ref TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 lat REAL NOT NULL,
@@ -156,8 +157,8 @@ class HistoricEnglandExtractor:
                             parse_dropped += 1
                             continue
                         conn.execute(
-                            f"""
-                            INSERT OR IGNORE INTO {TEMP_TABLE}
+                            """
+                            INSERT OR IGNORE INTO _mt_he_records
                                 (source_ref, name, lat, lon, props_json)
                             VALUES (?, ?, ?, ?, ?)
                             """,
@@ -203,9 +204,9 @@ class HistoricEnglandExtractor:
 
         count = 0
         for source_ref, name, lat, lon, props_json in conn.execute(
-            f"""
+            """
             SELECT source_ref, name, lat, lon, props_json
-            FROM {TEMP_TABLE}
+            FROM _mt_he_records
             ORDER BY source_ref
             """
         ):
@@ -220,5 +221,5 @@ class HistoricEnglandExtractor:
             )
             source_record.persist(conn, record, run_id=run_id)
             count += 1
-        conn.execute(f"DROP TABLE IF EXISTS {TEMP_TABLE}")
+        conn.execute("DROP TABLE IF EXISTS _mt_he_records")
         return count
