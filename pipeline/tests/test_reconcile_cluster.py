@@ -185,3 +185,111 @@ def test_empty_normalized_name_is_not_a_candidate():
     )
 
     assert C.fuzzy_defer([a, b], FUZZY) == []
+
+
+def _single_cluster(index, *, lat, lon, name="Boundary Place"):
+    ref = f"osm:node/{index}"
+    return C.Cluster(
+        members=[_m(ref, {ref}, name=name, lat=lat, lon=lon)],
+        refs={ref},
+    )
+
+
+def _defer_key(item):
+    return (item.anchor_a, item.anchor_b, round(item.sim, 12), round(item.dist_m, 6))
+
+
+def _synthetic_fuzzy_fixture():
+    dispersed = [
+        _single_cluster(
+            1000 + index,
+            lat=50.0 + index * 0.004,
+            lon=-2.0 + (index % 7) * 0.02,
+            name=f"Dispersed Place {index}",
+        )
+        for index in range(240)
+    ]
+    boundary = [
+        _single_cluster(1, lat=51.500000, lon=-0.120000),
+        _single_cluster(2, lat=51.500000, lon=-0.117860),
+        _single_cluster(3, lat=51.501340, lon=-0.120000),
+        _single_cluster(4, lat=51.501340, lon=-0.117860),
+        _single_cluster(5, lat=51.501360, lon=-0.117830),
+        _single_cluster(6, lat=51.510000, lon=-0.120000),
+    ]
+    multi_member = C.Cluster(
+        members=[
+            _m(
+                "osm:node/500",
+                {"osm:node/500"},
+                name="Boundary Place",
+                lat=51.500020,
+                lon=-0.120020,
+            ),
+            _m(
+                "plaque:500",
+                {"plaque:500"},
+                name="Boundary Place",
+                lat=51.501330,
+                lon=-0.117850,
+            ),
+        ],
+        refs={"osm:node/500", "plaque:500"},
+    )
+    return dispersed + boundary + [multi_member]
+
+
+def test_spatial_fuzzy_matches_bruteforce_at_cell_boundaries():
+    clusters = _synthetic_fuzzy_fixture()
+
+    brute = C.fuzzy_defer(clusters, FUZZY, spatial_index=False)
+    bucketed = C.fuzzy_defer(clusters, FUZZY)
+
+    assert [_defer_key(item) for item in bucketed] == [
+        _defer_key(item) for item in brute
+    ]
+
+
+def test_spatial_fuzzy_avoids_all_pairs_on_dispersed_fixture():
+    clusters = [
+        _single_cluster(
+            index,
+            lat=51.0 + index * 0.01,
+            lon=-1.0,
+            name="Distant Place",
+        )
+        for index in range(320)
+    ]
+    brute_counter = C.FuzzyStats()
+    bucketed_counter = C.FuzzyStats()
+
+    brute = C.fuzzy_defer(
+        clusters,
+        FUZZY,
+        spatial_index=False,
+        stats=brute_counter,
+    )
+    bucketed = C.fuzzy_defer(clusters, FUZZY, stats=bucketed_counter)
+
+    assert bucketed == brute == []
+    assert brute_counter.cluster_pairs_considered == 51_040
+    assert bucketed_counter.cluster_pairs_considered < 1_000
+
+
+def test_spatial_fuzzy_emits_phase_telemetry(capsys):
+    clusters = [
+        _single_cluster(1, lat=51.500000, lon=-0.120000),
+        _single_cluster(2, lat=51.500010, lon=-0.120010),
+    ]
+
+    C.fuzzy_defer(
+        clusters,
+        FUZZY,
+        telemetry_region="uk",
+        heartbeat_every_pairs=1,
+    )
+
+    err = capsys.readouterr().err
+    assert "PHASE START reconcile.fuzzy_defer region=uk candidate_pairs=1" in err
+    assert "PHASE HEARTBEAT reconcile.fuzzy_defer region=uk processed=1/1" in err
+    assert "PHASE DONE reconcile.fuzzy_defer region=uk processed=1/1" in err

@@ -133,6 +133,8 @@ def reconcile(
     version: str,
     succeeded_sources: set[str],
     cfg: FuzzyConfig,
+    telemetry_region: str | None = None,
+    fuzzy_heartbeat_every_pairs: int | None = None,
 ) -> ReconcileResult:
     records = _copy_records(existing)
     bridged_records = _bridge_records(records, redirect_map)
@@ -142,7 +144,18 @@ def reconcile(
     places: list[dict] = []
 
     clusters = cluster_by_refs(members)
-    review.extend(_review_for_fuzzy(deferred) for deferred in fuzzy_defer(clusters, cfg))
+    fuzzy_kwargs = {}
+    if fuzzy_heartbeat_every_pairs is not None:
+        fuzzy_kwargs["heartbeat_every_pairs"] = fuzzy_heartbeat_every_pairs
+    review.extend(
+        _review_for_fuzzy(deferred)
+        for deferred in fuzzy_defer(
+            clusters,
+            cfg,
+            telemetry_region=telemetry_region,
+            **fuzzy_kwargs,
+        )
+    )
 
     for cluster in clusters:
         anchor_refs = sorted(ref for ref in cluster.refs if _is_mint_key(ref))
