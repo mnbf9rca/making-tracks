@@ -7,8 +7,14 @@ ios/.build/
 .build/
 dist/
 *.egg-info/
-.mt-data/
 .pytest_cache/
+uv.lock
 work.db
 .worktrees/
 .env
+
+# Local acquisition snapshots, downloaded PBFs, SQLite stores, and real-run logs.
+.mt-data
+.mt-data/
+pipeline/.mt-data/
+run-audit/raw/

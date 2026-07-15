@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import pathlib
+import time
 
 from .. import fetch
 
@@ -24,6 +25,10 @@ class SnapshotParseError(SnapshotError):
 
 
 class SnapshotTooLargeError(SnapshotError):
+    pass
+
+
+class SnapshotPendingError(SnapshotParseError):
     pass
 
 
@@ -47,6 +52,19 @@ def _sha256_file(path) -> str:
     return digest.hexdigest()
 
 
+def _validate_downloaded_snapshot(source_key: str, path: pathlib.Path) -> None:
+    if source_key != "historic_england":
+        return
+    try:
+        data = json.loads(path.read_text())
+    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
+        raise SnapshotParseError(f"{path} is not valid GeoJSON JSON: {exc}") from exc
+    if isinstance(data, dict) and data.get("status") == "ExportingData":
+        raise SnapshotPendingError(f"{path} is still exporting")
+    if not isinstance(data, dict) or data.get("type") != "FeatureCollection":
+        raise SnapshotParseError(f"{path} is not a GeoJSON FeatureCollection")
+
+
 def download_snapshot(
     source_key,
     dest_dir,
@@ -54,18 +72,36 @@ def download_snapshot(
     config,
     fetch_fn=fetch.get_to_file,
     enabled=False,
+    retries: int = 6,
+    sleep=time.sleep,
 ) -> pathlib.Path:
     entry = config[source_key]
     dest = pathlib.Path(dest_dir) / f"{source_key}.snapshot"
     if not enabled:
         _log.info("acquisition disabled for %s; expecting snapshot at %s", source_key, dest)
         return dest
-    size = fetch_fn(
-        entry["url"],
-        dest,
-        expected_hosts=set(entry["allowed_hosts"]),
-        max_bytes=entry.get("max_bytes", fetch.MAX_RESPONSE_BYTES),
-    )
+    for attempt in range(retries + 1):
+        size = fetch_fn(
+            entry["url"],
+            dest,
+            expected_hosts=set(entry["allowed_hosts"]),
+            max_bytes=entry.get("max_bytes", fetch.MAX_RESPONSE_BYTES),
+        )
+        try:
+            _validate_downloaded_snapshot(source_key, dest)
+            break
+        except SnapshotPendingError:
+            dest.unlink(missing_ok=True)
+            pathlib.Path(str(dest) + ".meta.json").unlink(missing_ok=True)
+            if attempt >= retries:
+                raise
+            sleep(float(2**attempt))
+        except Exception:
+            dest.unlink(missing_ok=True)
+            pathlib.Path(str(dest) + ".meta.json").unlink(missing_ok=True)
+            raise
+    else:
+        raise SnapshotError("unreachable snapshot retry state")
     sidecar = {
         "source_url": entry["url"],
         "snapshot_date": entry.get("snapshot_date"),

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import pathlib
 import sqlite3
+import json
 
-WORKING_STORE_VERSION = 2
+WORKING_STORE_VERSION = 3
 SOURCE_RECORDS_TABLE = "source_records"
 STAGE_RUNS_TABLE = "stage_runs"
+EXTRACT_RUN_METADATA_TABLE = "extract_run_metadata"
 META_TABLE = "meta"
 
 _SCHEMA = """
@@ -35,6 +37,13 @@ CREATE TABLE IF NOT EXISTS stage_runs (
     run_id       TEXT NOT NULL,
     completed_at TEXT NOT NULL,
     PRIMARY KEY (region, stage)
+);
+CREATE TABLE IF NOT EXISTS extract_run_metadata (
+    region                 TEXT NOT NULL,
+    run_id                 TEXT NOT NULL,
+    wikidata_snapshot_date TEXT NOT NULL,
+    source_status_json     TEXT NOT NULL,
+    PRIMARY KEY (region, run_id)
 );
 """
 
@@ -64,6 +73,11 @@ def init_schema(conn: sqlite3.Connection) -> None:
         raise StoreVersionError(f"expected one working-store schema row, found {len(rows)}")
     elif rows[0][0] != 1:
         raise StoreVersionError(f"unexpected working-store schema row id {rows[0][0]}")
+    elif rows[0][1] == 2:
+        conn.execute(
+            "UPDATE meta SET schema_version = ? WHERE id = 1",
+            (WORKING_STORE_VERSION,),
+        )
     elif rows[0][1] != WORKING_STORE_VERSION:
         raise StoreVersionError(
             f"working-store schema version {rows[0][1]} "
@@ -98,3 +112,54 @@ def stage_completed(conn: sqlite3.Connection, region: str, stage: str) -> bool:
         (region, stage),
     ).fetchone()
     return row is not None
+
+
+def record_extract_run_metadata(
+    conn: sqlite3.Connection,
+    *,
+    region: str,
+    run_id: str,
+    wikidata_snapshot_date: str,
+    source_statuses: dict,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO extract_run_metadata
+            (region, run_id, wikidata_snapshot_date, source_status_json)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(region, run_id) DO UPDATE SET
+            wikidata_snapshot_date = excluded.wikidata_snapshot_date,
+            source_status_json = excluded.source_status_json
+        """,
+        (
+            region,
+            run_id,
+            wikidata_snapshot_date,
+            json.dumps(source_statuses, sort_keys=True),
+        ),
+    )
+    conn.commit()
+
+
+def load_extract_run_metadata(
+    conn: sqlite3.Connection,
+    *,
+    region: str,
+    run_id: str,
+) -> dict | None:
+    row = conn.execute(
+        """
+        SELECT wikidata_snapshot_date, source_status_json
+        FROM extract_run_metadata
+        WHERE region = ? AND run_id = ?
+        """,
+        (region, run_id),
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "region": region,
+        "run_id": run_id,
+        "wikidata_snapshot_date": row[0],
+        "source_statuses": json.loads(row[1]),
+    }

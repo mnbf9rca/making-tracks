@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import pathlib
 import time
+import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 
@@ -41,16 +42,19 @@ def get_json(
     max_bytes: int = MAX_RESPONSE_BYTES,
     timeout: int = 30,
     deadline: int = 120,
+    headers: dict[str, str] | None = None,
 ) -> dict:
     if not _validate_target(url, expected_hosts):
         raise FetchError(f"invalid target: {url!r}")
 
     try:
-        with _opener(expected_hosts).open(url, timeout=timeout) as resp:
-            headers = getattr(resp, "headers", None)
-            if headers is not None and headers.get("Content-Encoding"):
+        request = urllib.request.Request(url, headers=headers or {})
+        with _opener(expected_hosts).open(request, timeout=timeout) as resp:
+            response_headers = getattr(resp, "headers", None)
+            if response_headers is not None and response_headers.get("Content-Encoding"):
                 raise FetchError(
-                    f"unexpected Content-Encoding {headers.get('Content-Encoding')!r}"
+                    "unexpected Content-Encoding "
+                    f"{response_headers.get('Content-Encoding')!r}"
                 )
 
             start = time.monotonic()
@@ -68,6 +72,8 @@ def get_json(
                 chunks.append(chunk)
     except FetchError:
         raise
+    except urllib.error.HTTPError as exc:
+        raise FetchError(f"http {exc.code}: {exc.reason}") from exc
     except Exception as exc:
         raise FetchError(str(exc)) from exc
 

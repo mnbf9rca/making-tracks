@@ -53,6 +53,19 @@ def _https(url: str) -> str | None:
     return None
 
 
+def _qid_list(value) -> list[str]:
+    if not isinstance(value, str):
+        return []
+    qids = []
+    for item in value.split("|"):
+        qid = _qid(item.strip())
+        if qid and qid not in qids:
+            qids.append(qid)
+        if len(qids) >= 8:
+            break
+    return qids
+
+
 class WikidataExtractor:
     def __init__(self, allowlist: set[str]) -> None:
         self.allowlist = allowlist
@@ -72,8 +85,17 @@ class WikidataExtractor:
         for binding in bindings:
             try:
                 qid = _qid(binding["item"]["value"])
+                actual_p31s = _qid_list(binding.get("p31s", {}).get("value"))
                 p31 = _qid(binding["p31"]["value"])
-                if p31 not in self.allowlist or qid in projected:
+                if not actual_p31s:
+                    actual_p31s = [p31]
+                matched_p31 = _qid(
+                    binding.get("matched_class", binding.get("p31", {}))["value"]
+                )
+                if (
+                    matched_p31 not in self.allowlist
+                    and not any(item in self.allowlist for item in actual_p31s)
+                ) or qid in projected:
                     continue
                 lat = float(binding["lat"]["value"])
                 lon = float(binding["lon"]["value"])
@@ -82,7 +104,13 @@ class WikidataExtractor:
                     int(binding.get("sitelinks", {}).get("value", 0) or 0),
                     MAX_SITELINKS,
                 )
-                props = {"p31": p31, "label": label, "sitelinks": sitelinks}
+                props = {
+                    "p31": actual_p31s[0],
+                    "p31s": actual_p31s,
+                    "label": label,
+                    "matched_p31": matched_p31,
+                    "sitelinks": sitelinks,
+                }
                 image = _https(binding.get("image", {}).get("value"))
                 if image:
                     props["image"] = image

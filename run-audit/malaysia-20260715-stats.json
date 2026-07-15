@@ -1,0 +1,82 @@
+{
+  "commands": [
+    "mt-pipeline --region malaysia acquire --data-dir .mt-data",
+    "mt-pipeline --region malaysia extract --db .mt-data/malaysia/work.db --snapshot-dir .mt-data/malaysia --osm-index-type sparse_file_array,.mt-data/malaysia/osm-node-locations.idx --run-id real-malaysia-20260715",
+    "mt-pipeline --region malaysia acquire-redirects --db .mt-data/malaysia/work.db --snapshot-dir .mt-data/malaysia"
+  ],
+  "counts_by_source": {
+    "osm": 3417,
+    "wd": 557,
+    "wp": 1180
+  },
+  "db": ".mt-data/malaysia/work.db",
+  "dropped_or_rejected": {
+    "osm_source_record_rejected": 2423
+  },
+  "extract_run_metadata": {
+    "source_statuses": {
+      "historic_england": {
+        "status": "disabled"
+      },
+      "national_register": {
+        "status": "disabled"
+      },
+      "open_plaques": {
+        "status": "disabled"
+      },
+      "osm": {
+        "count": 3417,
+        "status": "success"
+      },
+      "wikidata": {
+        "count": 557,
+        "status": "success"
+      },
+      "wikipedia": {
+        "count": 1180,
+        "status": "success"
+      }
+    },
+    "wikidata_snapshot_date": "2026-07-15T07:22:48Z"
+  },
+  "region": "malaysia",
+  "run_id": "real-malaysia-20260715",
+  "snapshots": {
+    "osm": {
+      "bytes": 247889050,
+      "path": ".mt-data/malaysia/osm.osm.pbf",
+      "sidecar": {
+        "geofabrik_date": "2026-07-15",
+        "sha256": "1e75d75cbee099c9350ccf5894b6fbb8f05d6347455742459a124bf84d3c4c3b",
+        "size": 247889050,
+        "source_url": "https://download.geofabrik.de/asia/malaysia-singapore-brunei-latest.osm.pbf"
+      }
+    },
+    "wikidata": {
+      "bytes": 700051,
+      "path": ".mt-data/malaysia/wikidata.snapshot.json",
+      "raw_rows": 591,
+      "retrieved_at": "2026-07-15T07:22:48Z",
+      "segments": 140
+    },
+    "wikidata_redirects": {
+      "bytes": 50550,
+      "path": ".mt-data/malaysia/wikidata_redirects.snapshot.json",
+      "redirect_count": 6,
+      "retrieved_at": "2026-07-15T08:16:53Z",
+      "segments": 18,
+      "wikidata_retrieved_at": "2026-07-15T07:22:48Z"
+    },
+    "wikipedia": {
+      "bytes": 2647430,
+      "path": ".mt-data/malaysia/wikipedia.snapshot.json",
+      "raw_pages": 5868,
+      "retrieved_at": "2026-07-15T08:03:37Z",
+      "segments": 5764
+    }
+  },
+  "total_records": 5154,
+  "wall_time_notes": {
+    "extract": "observed about 11m20s on VPS; exact timer was not captured"
+  }
+}
