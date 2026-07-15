@@ -30,7 +30,7 @@ def sitelinks(sig: Mapping[str, object]) -> float:
 
 
 def heritage(sig: Mapping[str, object], grades: Mapping[str, float] | None = None) -> float:
-    table = grades or HERITAGE_GRADES
+    table = HERITAGE_GRADES if grades is None else grades
     for key in ("hehle", "heritage"):
         member = _mapping(sig.get(key))
         if member:

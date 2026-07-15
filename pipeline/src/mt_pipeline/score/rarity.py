@@ -84,7 +84,16 @@ def _extract_tags(props) -> Mapping[str, object]:
 def _normalize_place_tags(place_tags) -> set[str]:
     if isinstance(place_tags, Mapping):
         return {f"{key}={value}" for key, value in place_tags.items() if value is not None}
-    return {str(tag) for tag in place_tags}
+    if isinstance(place_tags, (str, bytes, bytearray)):
+        tag = (
+            place_tags.decode()
+            if isinstance(place_tags, (bytes, bytearray))
+            else place_tags
+        )
+        return {tag}
+    if isinstance(place_tags, Iterable):
+        return {str(tag) for tag in place_tags}
+    return {str(place_tags)}
 
 
 def _tag_key(tag: str) -> str:

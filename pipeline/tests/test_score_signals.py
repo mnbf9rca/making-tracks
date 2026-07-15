@@ -21,6 +21,10 @@ def test_heritage_grade_table_exact():
     assert S.heritage({}) == 0.0
 
 
+def test_heritage_allows_explicit_empty_grade_table():
+    assert S.heritage({"hehle": {"grade": "I"}}, grades={}) == 0.0
+
+
 def test_hostile_inputs_clamp_not_crash():
     assert S.sitelinks({"wd": {"sitelinks": 10**9}}) == 1.0
     assert S.sitelinks({"wd": {"sitelinks": -5}}) == 0.0

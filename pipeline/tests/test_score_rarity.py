@@ -43,6 +43,21 @@ def test_identifier_and_name_tags_are_not_counted():
     assert R.rarity_score({"name=Something Never Seen"}, freq) == 0.0
 
 
+def test_string_place_tag_is_treated_as_one_tag_not_characters():
+    freq = {"amenity=pub": 1, "amenity=bench": 3}
+
+    assert R.rarity_score("amenity=pub", freq) > 0.0
+
+
+def test_place_tag_normalization_accepts_common_shapes():
+    freq = {"amenity=pub": 1, "123": 1, "amenity=bench": 3}
+
+    assert R.rarity_score({"amenity": "pub"}, freq) > 0.0
+    assert R.rarity_score(b"amenity=pub", freq) > 0.0
+    assert R.rarity_score(["amenity=pub"], freq) > 0.0
+    assert R.rarity_score(123, freq, rarity_keys={"123"}) > 0.0
+
+
 def test_tag_value_frequency_reads_osm_props_for_region_only(conn):
     conn.execute(
         """
