@@ -1,0 +1,9 @@
+{
+  "_header": "BOOTSTRAP: superseded by WP-A3. Obvious OSM candidate tags only; A3's audit refines from real tag distribution.",
+  "tags": {
+    "historic": true,
+    "tourism": ["attraction", "artwork", "viewpoint"],
+    "memorial": true,
+    "man_made": ["obelisk"]
+  }
+}
