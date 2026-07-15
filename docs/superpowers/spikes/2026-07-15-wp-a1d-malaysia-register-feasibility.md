@@ -38,6 +38,8 @@ I did not find an official, stable, machine-readable national heritage register 
 
 Keep `national_register` disabled for Malaysia. A1d should not scrape HTML pages, PDFs, gazette notices, or image-backed portal content to synthesize a register. That would violate the project's untrusted-data and determinism rules and would create brittle ids without an upstream stable-id contract.
 
+The A1d Open Plaques source is also disabled for Malaysia because the verified dump is country-scoped to the United Kingdom. Malaysia recall remains on Wikidata, Wikipedia, and OSM until a Malaysia-scoped register or plaque feed is separately approved.
+
 ## Follow-Up Trigger
 
 Revisit only if an official source appears with all of:

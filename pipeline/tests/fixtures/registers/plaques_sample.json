@@ -5,20 +5,23 @@
     "inscription": "Ada Lovelace lived here",
     "lead_subject_name": "Ada Lovelace",
     "latitude": 51.52,
-    "longitude": -0.14
+    "longitude": -0.14,
+    "area": {"country": {"alpha2": "gb"}}
   },
   {
     "id": 9999,
     "title": "Ungeolocated",
     "inscription": "somewhere",
     "latitude": null,
-    "longitude": null
+    "longitude": null,
+    "area": {"country": {"alpha2": "gb"}}
   },
   {
     "id": "bad-id",
     "title": "Bad",
     "latitude": 51.5,
-    "longitude": -0.1
+    "longitude": -0.1,
+    "area": {"country": {"alpha2": "gb"}}
   },
   {
     "id": 9877,
@@ -26,6 +29,15 @@
     "inscription": "In memory",
     "lead_subject_name": "Grace Hopper",
     "latitude": 51.53,
-    "longitude": -0.15
+    "longitude": -0.15,
+    "area": {"country": {"alpha2": "gb"}}
+  },
+  {
+    "id": 9878,
+    "title": "Wrong country",
+    "inscription": "Not in this region",
+    "latitude": 40.0,
+    "longitude": -73.0,
+    "area": {"country": {"alpha2": "us"}}
   }
 ]

@@ -51,7 +51,7 @@ def test_national_register_object_is_not_treated_as_enabled(tmp_path):
     store.init_schema(conn)
     registry = _registry()
     cfg = RC(
-        "malaysia",
+        "uk",
         {
             "historic_england": False,
             "open_plaques": True,

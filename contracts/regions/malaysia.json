@@ -9,7 +9,7 @@
     "wikipedia": true,
     "osm": true,
     "historic_england": false,
-    "open_plaques": true,
+    "open_plaques": false,
     "national_register": {"id": "malaysia_heritage", "enabled": false}
   },
   "basemap": {

@@ -39,6 +39,7 @@ def test_get_to_file_streams_and_caps(tmp_path, monkeypatch):
             expected_hosts={"historicengland.org.uk"},
             max_bytes=1024,
         )
+    assert not (tmp_path / "o").exists()
 
 
 def test_get_to_file_writes_bytes(tmp_path, monkeypatch):
@@ -134,6 +135,12 @@ def test_verify_sha256_sidecar_loud_on_mismatch(tmp_path):
     with pytest.raises(_snapshot.ProvenanceError):
         _snapshot.verify_sha256_sidecar(snap)
 
+    (tmp_path / "he.geojson.meta.json").write_text(
+        json.dumps({"source_url": "u", "sha256": good, "size": 5})
+    )
+    with pytest.raises(_snapshot.ProvenanceError):
+        _snapshot.verify_sha256_sidecar(snap)
+
 
 def test_verify_sidecar_absent_warns(tmp_path, caplog):
     snap = tmp_path / "dev.json"
@@ -163,11 +170,13 @@ def test_download_snapshot_writes_sidecar_via_injected_fetch(tmp_path):
         "historic_england": {
             "url": "https://historicengland.org.uk/nhle.geojson",
             "allowed_hosts": ["historicengland.org.uk"],
+            "max_bytes": 99,
             "snapshot_date": "2026-07-14",
         }
     }
 
     def fake_fetch(url, dest, *, expected_hosts, **kwargs):
+        assert kwargs["max_bytes"] == 99
         pathlib.Path(dest).write_bytes(b"GEOJSON")
         return 7
 

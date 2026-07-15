@@ -70,7 +70,8 @@ def test_a1d_sources_config_carries_ogl_attribution():
 
     assert "Open Government Licence" in cfg["historic_england"]["attribution"]
     assert cfg["historic_england"]["license"] == "OGL-3.0"
-    assert cfg["open_plaques"]["license"] == "CC0-1.0"
+    assert cfg["historic_england"]["max_bytes"] > 167_768_010
+    assert cfg["open_plaques"]["license"] == "PDDL-1.0"
 
 
 def _geojson(features):
@@ -91,6 +92,60 @@ def test_wrong_shape_valid_json_is_a_loud_typed_error(tmp_path):
 
     with pytest.raises(he._snapshot.SnapshotParseError):
         he.HistoricEnglandExtractor().extract("uk", bad, _db(tmp_path / "w"), run_id="r1")
+
+
+def test_non_array_features_is_a_loud_typed_error(tmp_path):
+    bad = tmp_path / "features.geojson"
+    bad.write_text('{"type":"FeatureCollection","features":{}}')
+
+    with pytest.raises(he._snapshot.SnapshotParseError):
+        he.HistoricEnglandExtractor().extract("uk", bad, _db(tmp_path / "f"), run_id="r1")
+
+
+def test_arcgis_exceeded_transfer_limit_is_rejected(tmp_path):
+    bad = tmp_path / "partial.geojson"
+    bad.write_text(
+        '{"type":"FeatureCollection","properties":{"exceededTransferLimit":true},'
+        '"features":[]}'
+    )
+
+    with pytest.raises(he._snapshot.SnapshotParseError, match="exceededTransferLimit"):
+        he.HistoricEnglandExtractor().extract("uk", bad, _db(tmp_path / "p"), run_id="r1")
+
+
+def test_multipoint_uses_mean_coordinate(tmp_path):
+    feature = (
+        '{"type":"Feature","properties":{"ListEntry":"1000015","Name":"Multi"},'
+        '"geometry":{"type":"MultiPoint","coordinates":[[-2.0,51.0],[-4.0,53.0]]}}'
+    )
+    path = tmp_path / "mp.geojson"
+    path.write_text(_geojson([feature]))
+    conn = _db(tmp_path / "mp")
+
+    assert he.HistoricEnglandExtractor().extract("uk", path, conn, run_id="r1") == 1
+    lat, lon = conn.execute("SELECT lat, lon FROM source_records").fetchone()
+    assert abs(lat - 52.0) < 1e-9
+    assert abs(lon + 3.0) < 1e-9
+
+
+def test_epsg_27700_snapshot_coordinates_convert_to_wgs84(tmp_path):
+    feature = (
+        '{"type":"Feature","properties":{"ListEntry":"1000016","Name":"BNG"},'
+        '"geometry":{"type":"MultiPoint",'
+        '"coordinates":[[383388.770967568,144429.456597934]]}}'
+    )
+    path = tmp_path / "bng.geojson"
+    path.write_text(
+        '{"type":"FeatureCollection",'
+        '"crs":{"type":"name","properties":{"name":"EPSG:27700"}},'
+        '"features":[' + feature + "]}"
+    )
+    conn = _db(tmp_path / "bng")
+
+    assert he.HistoricEnglandExtractor().extract("uk", path, conn, run_id="r1") == 1
+    lat, lon = conn.execute("SELECT lat, lon FROM source_records").fetchone()
+    assert abs(lat - 51.19883105846) < 1e-5
+    assert abs(lon + 2.23911708088334) < 1e-5
 
 
 def test_hostile_huge_grade_does_not_crash_record_kept(tmp_path):

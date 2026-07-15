@@ -94,8 +94,18 @@ def verify_sha256_sidecar(snapshot_path) -> None:
         raise ProvenanceError(
             f"unparseable provenance sidecar for {snapshot_path}: {exc}"
         ) from exc
-    if not isinstance(meta, dict) or not isinstance(meta.get("sha256"), str):
-        raise ProvenanceError(f"provenance sidecar for {snapshot_path} lacks sha256")
+    if not isinstance(meta, dict):
+        raise ProvenanceError(f"provenance sidecar for {snapshot_path} must be an object")
+    for field, typ in (("sha256", str), ("source_url", str), ("size", int)):
+        if not isinstance(meta.get(field), typ):
+            raise ProvenanceError(
+                f"provenance sidecar for {snapshot_path} lacks {field}"
+            )
+    actual_size = pathlib.Path(snapshot_path).stat().st_size
+    if actual_size != meta["size"]:
+        raise ProvenanceError(
+            f"size mismatch for {snapshot_path}: {actual_size} != {meta['size']}"
+        )
     actual = _sha256_file(snapshot_path)
     if actual != meta["sha256"]:
         raise ProvenanceError(

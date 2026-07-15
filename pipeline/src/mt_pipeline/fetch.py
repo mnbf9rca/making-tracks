@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import time
 import urllib.request
 from urllib.parse import urlparse
@@ -89,6 +90,8 @@ def get_to_file(
         raise FetchError(f"invalid target: {url!r}")
 
     written = 0
+    dest_path = pathlib.Path(dest)
+    tmp_path = dest_path.with_name(f".{dest_path.name}.tmp")
     try:
         with _opener(expected_hosts).open(url, timeout=timeout) as resp:
             headers = getattr(resp, "headers", None)
@@ -98,7 +101,7 @@ def get_to_file(
                 )
 
             start = time.monotonic()
-            with open(dest, "wb") as out:
+            with open(tmp_path, "wb") as out:
                 while True:
                     if time.monotonic() - start > deadline:
                         raise FetchError("exceeded total download deadline")
@@ -109,8 +112,11 @@ def get_to_file(
                     if written > max_bytes:
                         raise FetchError(f"response exceeded {max_bytes} bytes")
                     out.write(chunk)
+        tmp_path.replace(dest_path)
     except FetchError:
+        tmp_path.unlink(missing_ok=True)
         raise
     except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
         raise FetchError(str(exc)) from exc
     return written

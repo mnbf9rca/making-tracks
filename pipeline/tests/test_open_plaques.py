@@ -53,6 +53,13 @@ def test_inscription_rides_in_props(tmp_path):
     assert "Ada Lovelace" in props["inscription"]
 
 
+def test_region_country_scope_drops_non_matching_plaques(tmp_path):
+    conn = _db(tmp_path / "my")
+
+    assert op.OpenPlaquesExtractor().extract("malaysia", FIX, conn, run_id="r1") == 0
+    assert conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0] == 0
+
+
 def test_corrupt_dump_is_a_loud_typed_error(tmp_path):
     bad = tmp_path / "b.json"
     bad.write_text("{ not json")
@@ -80,6 +87,7 @@ def test_hostile_huge_inscription_does_not_crash_record_kept(tmp_path):
                     "inscription": "z" * 5000,
                     "latitude": 51.5,
                     "longitude": -0.1,
+                    "area": {"country": {"alpha2": "gb"}},
                 }
             ]
         )

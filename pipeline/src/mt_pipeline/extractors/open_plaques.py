@@ -13,7 +13,24 @@ from . import _snapshot
 MAX_NAME_LEN = 300
 
 _PLAQUE_ID = re.compile(r"[0-9]+")
+_COUNTRY_BY_REGION = {
+    "uk": "gb",
+    "malaysia": "my",
+}
 _log = logging.getLogger(__name__)
+
+
+def _country_code(item) -> str | None:
+    area = item.get("area")
+    if not isinstance(area, dict):
+        return None
+    country = area.get("country")
+    if not isinstance(country, dict):
+        return None
+    alpha2 = country.get("alpha2")
+    if not isinstance(alpha2, str):
+        return None
+    return alpha2.lower()
 
 
 class OpenPlaquesExtractor:
@@ -35,11 +52,16 @@ class OpenPlaquesExtractor:
         if not isinstance(data, list):
             raise _snapshot.SnapshotParseError("Open Plaques dump must be a JSON array")
 
-        records: dict[str, dict] = {}
+        records: dict[str, source_record.SourceRecord] = {}
         dropped = 0
+        parse_dropped = 0
+        expected_country = _COUNTRY_BY_REGION.get(region)
         for item in data:
             try:
                 if not isinstance(item, dict):
+                    dropped += 1
+                    continue
+                if expected_country and _country_code(item) != expected_country:
                     dropped += 1
                     continue
                 raw_id = str(item.get("id", ""))
@@ -57,6 +79,15 @@ class OpenPlaquesExtractor:
 
                 title = item.get("title")
                 subject = item.get("lead_subject_name")
+                subjects = item.get("subjects")
+                if not subject and isinstance(subjects, list) and subjects:
+                    first_subject = subjects[0]
+                    if isinstance(first_subject, dict):
+                        subject = first_subject.get("full_name") or first_subject.get(
+                            "title"
+                        )
+                    elif isinstance(first_subject, str):
+                        subject = first_subject
                 inscription = item.get("inscription")
                 name = next(
                     (
@@ -72,36 +103,37 @@ class OpenPlaquesExtractor:
                     props["inscription"] = inscription
                 if isinstance(subject, str):
                     props["lead_subject"] = subject
-                records[source_ref] = {
-                    "lat": lat,
-                    "lon": lon,
-                    "name": name,
-                    "props": props,
-                }
+                try:
+                    record = source_record.parse(
+                        region=region,
+                        source="plaque",
+                        source_ref=source_ref,
+                        name=name,
+                        lat=lat,
+                        lon=lon,
+                        props=props,
+                    )
+                except source_record.SourceRecordError:
+                    parse_dropped += 1
+                    continue
+                records[source_ref] = record
             except Exception as exc:
                 dropped += 1
                 _log.debug("skipped plaque: %s: %s", type(exc).__name__, exc)
 
-        if dropped:
+        if dropped or parse_dropped:
             _log.warning(
                 "Open Plaques extract %s: skipped %d record(s)", snapshot_path, dropped
             )
+            if parse_dropped:
+                _log.warning(
+                    "Open Plaques extract %s: dropped %d record(s) at source-record validation",
+                    snapshot_path,
+                    parse_dropped,
+                )
 
         count = 0
         for source_ref in sorted(records):
-            item = records[source_ref]
-            try:
-                record = source_record.parse(
-                    region=region,
-                    source="plaque",
-                    source_ref=source_ref,
-                    name=item["name"],
-                    lat=item["lat"],
-                    lon=item["lon"],
-                    props=item["props"],
-                )
-            except source_record.SourceRecordError:
-                continue
-            source_record.persist(conn, record, run_id=run_id)
+            source_record.persist(conn, records[source_ref], run_id=run_id)
             count += 1
         return count
