@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS source_records (
     lat        REAL NOT NULL,
     lon        REAL NOT NULL,
     props_json TEXT NOT NULL,
-    run_id     TEXT NOT NULL
+    run_id     TEXT NOT NULL,
+    UNIQUE (source, source_ref)
 );
 CREATE INDEX IF NOT EXISTS idx_source_records_region
     ON source_records(region);
