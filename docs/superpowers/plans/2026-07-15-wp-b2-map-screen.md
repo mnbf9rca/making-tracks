@@ -261,7 +261,7 @@ final class PaperStyleTests: XCTestCase {
     func testEveryPaletteColourIsMutedAndPinIsSaturated() {
         // §5.1: "muted/paper-like … the pins are the ONLY saturated colour." Assert HSV saturation:
         // every basemap colour < MUTED_MAX; the pin colour >= MUTED_MAX. (Verified on host: the
-        // default palette is 0.04–0.10; #E4572E pin is 0.80. Teeth: a neon basemap colour reds.)
+        // default palette is 0.04–0.10; #E4572E pin is 0.80. Teeth: a neon basemap colour fails (goes red).)
         let p = PaperPalette.default
         for hex in [p.background, p.land, p.water, p.roads, p.boundaries] {
             XCTAssertLessThan(saturation(hex: hex), MUTED_MAX, "basemap colour \(hex) is not muted")
@@ -714,7 +714,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         func writeStyle(_ json: String) -> URL? {
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("mt-style.json")
             do { try Data(json.utf8).write(to: url); return url }
-            catch { return nil }                                   // real error path (un-observable on host)
+            catch { return nil }                                   // real error path (unobservable on host)
         }
 
         // The ObjC selector `mapView:didFinishLoadingStyle:` has NO NS_SWIFT_NAME, so it imports to
@@ -799,7 +799,7 @@ private extension UIColor {
 Build via the Task 4 `xcodebuild` command. **Not host-runnable.** Then — because the host proof covers only *generation*, not the JSON→MLN *application* — add a `[XCODE/SIM]` read-back test that closes the loop: after the style loads, for each of the 6 matrix cells, set the shape source to a single synthetic feature with that cell's `featureProperties`, then assert `MLNCircleStyleLayer.circleOpacity` evaluated for the feature equals `pinAppearance(cell).opacity`, and evaluate each badge layer's `predicate` against the feature and assert it matches `showBookmarkBadge`/`showHeartBadge`. This gives the JSON→MLN bridge teeth (in the simulator) that the host tests cannot.
 ```bash
 git add ios/App/Sources/Map/MLNMapViewRepresentable.swift
-git commit -m "Add MLNMapView @MainActor wrapper: didFinishLoading, circle+badge layers via NSExpression/NSPredicate, badge icon registration, visibleFeatures(at:) tap"
+git commit -m "Add MLNMapView @MainActor wrapper: didFinishLoadingStyle, circle+badge layers via NSExpression/NSPredicate, badge icon registration, visibleFeatures(at:) tap"
 ```
 
 ---
