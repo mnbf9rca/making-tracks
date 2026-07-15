@@ -1,0 +1,38 @@
+{
+  "version": "1",
+  "weights": {
+    "article": 1.0,
+    "sitelinks": 0.4,
+    "heritage": 1.3,
+    "plaque": 0.8,
+    "image": 0.5,
+    "tag_rarity": 1.0,
+    "pageviews": 1.0,
+    "llm_curiosity": 1.0
+  },
+  "boost_weight": 0.2,
+  "tiers": {
+    "t1_min": 0.85,
+    "t2_min": 0.65,
+    "t3_min": 0.35
+  },
+  "heritage_grades": {
+    "I": 1.0,
+    "II*": 0.7,
+    "II": 0.5
+  },
+  "class_penalties": {
+    "Q532": 0.3,
+    "Q486972": 0.3
+  },
+  "rarity_keys": [
+    "amenity",
+    "building",
+    "historic",
+    "leisure",
+    "man_made",
+    "memorial",
+    "natural",
+    "tourism"
+  ]
+}

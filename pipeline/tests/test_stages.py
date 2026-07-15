@@ -37,12 +37,38 @@ def test_publish_blocked_names_categorize_after_extract_reconcile(conn):
 
 
 def test_full_order_runs(conn):
+    store.replace_places(
+        conn,
+        region="uk",
+        places=[
+            {
+                "place_id": "mt:uk:1",
+                "name": "Example Place",
+                "lat": 51.5,
+                "lon": -0.1,
+                "refs": ["wd:Q1"],
+                "member_refs": ["wd:Q1"],
+                "status": "active",
+            }
+        ],
+    )
     for stage in stages.STAGE_ORDER:
         if stage == "reconcile":
             store.mark_stage_complete(conn, "uk", "reconcile", "r1", "2026-07-15T00:00:00Z")
             continue
         stages.run_stage(conn, "uk", stage, run_id="r1")
     assert store.stage_completed(conn, "uk", "publish")
+
+
+def test_score_stage_is_blocked_when_reconcile_has_no_places(conn):
+    stages.run_stage(conn, "uk", "extract", run_id="r1")
+    store.mark_stage_complete(conn, "uk", "reconcile", "r1", "2026-07-15T00:00:00Z")
+
+    with pytest.raises(stages.StageOrderError) as exc:
+        stages.run_stage(conn, "uk", "score", run_id="r1")
+
+    assert "no places" in str(exc.value)
+    assert not store.stage_completed(conn, "uk", "score")
 
 
 def test_order_is_per_region(conn):

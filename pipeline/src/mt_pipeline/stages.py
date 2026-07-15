@@ -1,4 +1,4 @@
-"""Pipeline stages with order enforcement."""
+"""Pipeline stage dispatch with order enforcement."""
 
 from __future__ import annotations
 
@@ -138,6 +138,17 @@ def _run_reconcile(conn, region: str, *, run_id: str, version: str) -> None:
     store.replace_places(conn, region=region, places=result.places)
 
 
+def _run_score(conn, region: str) -> None:
+    row = conn.execute(
+        f"SELECT 1 FROM {store.PLACES_TABLE} WHERE region = ? LIMIT 1",
+        (region,),
+    ).fetchone()
+    if row is None:
+        raise StageOrderError(
+            "cannot run score: reconcile completed but no places are available"
+        )
+
+
 def run_stage(conn, region: str, stage: str, *, run_id: str, version: str | None = None) -> None:
     previous = predecessor(stage)
     if previous is not None and not store.stage_completed(conn, region, previous):
@@ -148,6 +159,8 @@ def run_stage(conn, region: str, stage: str, *, run_id: str, version: str | None
         if version is None:
             raise StageVersionError("--version is required for reconcile")
         _run_reconcile(conn, region, run_id=run_id, version=version)
+    elif stage == "score":
+        _run_score(conn, region)
     store.mark_stage_complete(
         conn,
         region,
