@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="test">
+  <node id="1" lat="0.0" lon="0.0"/>
+  <node id="2" lat="0.0" lon="2.0"/>
+  <node id="3" lat="2.0" lon="2.0"/>
+  <node id="4" lat="4.0" lon="0.0"/>
+  <node id="10" lat="51.5" lon="-0.12" version="1">
+    <tag k="historic" v="memorial"/>
+    <tag k="name" v="A Memorial"/>
+    <tag k="wikidata" v="Q42"/>
+  </node>
+  <node id="11" lat="51.4" lon="-0.10" version="1">
+    <tag k="amenity" v="bench"/>
+  </node>
+  <way id="100" version="1">
+    <nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="4"/><nd ref="1"/>
+    <tag k="historic" v="castle"/>
+    <tag k="name" v="A Castle"/>
+  </way>
+  <relation id="200" version="1">
+    <member type="way" ref="100" role="outer"/>
+    <tag k="historic" v="ruins"/>
+  </relation>
+</osm>
