@@ -2,28 +2,26 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Two deterministic, §5.5-hardened extractors — **Wikidata** (coordinate-bearing items whose P31 class passes a consumed allowlist) and **Wikipedia** (English geotagged articles) — that implement WP-A1's source-record interface, turning dated source snapshots into normalized source records for A2 reconcile. Plus the shared **acquire** layer (byte-capped snapshot fetch) and the **extract-stage registry** that A1c/A1d extend.
+**Goal:** Two deterministic, §5.5-hardened extractors — **Wikidata** (coordinate-bearing items whose P31 class passes a consumed allowlist, carrying the §4 scoring signals) and **Wikipedia** (English geotagged articles) — that implement WP-A1's source-record interface; the SSRF-safe **fetch** boundary; the **extractor registry** A1c/A1d extend; and **resumable pageview acquisition** (computation is A4's). One vandalized source record must never crash a run.
 
-**Architecture:** Under `pipeline/` (the WP-A1 `mt_pipeline` package). Each extractor is a **pure function of a dated snapshot file** — determinism is "same snapshot in → same records out." Acquisition (network) is a *separate*, byte-capped step that writes the dated snapshot; the deterministic extract path never touches the network and is tested entirely against golden fixtures (§7). Every fetched blob is bounded at the extractor edge **before** anything reaches A1's `source_record.parse` (binding carry-in from the A1 review). English-only recall with `languages` and `bbox` read from the A0 region config.
+**Architecture:** Under `pipeline/` (the WP-A1 `mt_pipeline` package). Each extractor is a **pure function of a dated snapshot file** — determinism is "same snapshot in → same records out." The snapshot is size-capped and defensively parsed; **every field is extracted inside a per-record guard that skips a bad record, never aborts the run** (the binding carry-in: bound the raw blob at the extractor edge *before* A1's `source_record.parse`). Acquisition (network) is a separate, SSRF-safe, byte-capped step. English-only recall with `languages`/`bbox` read from the A0 region config (in the acquisition layer).
 
-**Tech Stack:** Python 3.11+ (the `mt_pipeline` package + `mt-contracts`), stdlib `urllib`/`http` with a bounded streaming reader, `pytest`. No heavyweight deps; laptop-first.
+**Tech Stack:** Python 3.11+ (the WP-A1 `mt_pipeline` package + `mt-contracts`), stdlib `urllib`/`http`/`json`, `pytest`. Laptop-first, no heavyweight deps.
 
 ## Global Constraints
 
-- **Implements A1's interface, never re-declares it.** Records are produced *only* via `mt_pipeline.source_record.parse(region, source, source_ref, name, lat, lon, props)` and stored via `persist(conn, record, *, run_id)`. The canonical-ref grammar and text-safety come from `mt_contracts` (via A1's `parse`), never re-implemented here.
-- **Raw-blob bounding at the extractor edge (BINDING, A1 review carry-in).** Every fetched payload is read through a **byte-capped streaming reader** (reject over `MAX_SNAPSHOT_BYTES` / `MAX_RESPONSE_BYTES` before parsing — no unbounded `.read()`/`.json()`), https-only from an expected host. Per item: claim/label/sitelink/extract **counts and lengths are bounded** before a `props` dict is built. All Wikidata/Wikipedia strings are treated as hostile (§5.5) — the bounded `props` is handed to A1's `parse`, which applies the final canonical-ref/coord/`props` validation. The dict that reaches `parse` is always small and shallow.
-- **Determinism (Principle 12).** `extract(snapshot, …)` is a pure function of the dated snapshot file: same snapshot → identical records, identical ordering. No wall-clock or randomness in any output; the snapshot date and `run_id` are metadata only. Records are emitted in a **stable sort order** (by `source_ref`) so re-runs and diffs are stable.
-- **English-only recall, config-driven (§4).** `languages` (`["en"]`) and `bbox` come from the A0 region config (`mt_contracts.load_region_config`); no language or bbox is hardcoded. Enabling Malay etc. later is a config change, not a code change.
-- **The P31 allowlist is CONSUMED, not invented (§4).** The extractor reads a class allowlist artifact; the authoritative curation is **WP-A3's data-audit output**. A minimal **bootstrap** allowlist ships here (clearly marked) so A1b runs before A3 exists; A3 supersedes it.
-- **All source data is untrusted (Principle 10 / §5.5).** Defensive parsing at every field; no source content is interpolated into shell/SQL/LLM; coordinate bounds, string caps, control-char handling all happen via A1's `parse` after the extractor bounds the blob.
-- **Scope:** extraction only. No reconcile (A2), no scoring/tiering (A4), no place_id minting (A2). This WP produces source records; it does not join or score them.
-- **Test-first**, against golden fixture snapshots (no network in tests).
+- **Implements A1's interface, never re-declares it.** Records are produced only via `mt_pipeline.source_record.parse(region, source, source_ref, name, lat, lon, props)` and stored via `persist(conn, record, *, run_id)`. Canonical-ref grammar and text-safety come from `mt_contracts` (via A1's `parse`), never re-implemented. **A1 preconditions this WP relies on** (verify present before build; all from the A1 plan / `mt_contracts`): `store.connect`/`store.init_schema` and the `source_records` table (`region, source, source_ref, name, lat, lon, props_json, run_id`); `source_record.parse`/`persist`/`SourceRecordError`; `config.RegionConfig` (frozen dataclass with `.region_id`, `.sources`, `.raw`) + `config.load`; `mt_contracts.is_canonical_ref` (already accepts `wp:12345` and `wd:Q…` via the generic ref grammar — so A1b needs **no** A0 change to *emit* these refs).
+- **Never crash on hostile input (Principle 10 / §5.5 / binding carry-in).** All Wikidata/Wikipedia data is untrusted (vandalizable). Every field access on source data happens inside a per-record `try/except (KeyError, ValueError, TypeError)` that **skips** the record — a single malformed binding/page must not abort the extract. No unguarded hostile access in a `sorted()` key. `RecursionError` (deep-JSON bomb) is caught at every `json.loads`.
+- **Raw-blob bounding at the edge (binding carry-in), applied to what the data actually has.** The flat SPARQL/geosearch snapshot has *rows*, not per-item claim/sitelink *arrays*, so the real bounds are: **`MAX_SNAPSHOT_BYTES`** (the on-disk snapshot file, checked before `json.loads` — the per-response fetch cap does NOT protect the aggregated snapshot); **`MAX_RECORDS_PER_SNAPSHOT`** (reject/stop before an unbounded `sorted()`); and per-field **length caps** (label, extract, title, QID, lang). Only a small, shallow `props` dict ever reaches `parse`.
+- **Determinism (Principle 12).** `extract(snapshot, …)` is a pure function of the dated snapshot: same snapshot → identical records, identical order. Records emit in a **stable lexical `source_ref` order** (matches SQL `ORDER BY source_ref`). Duplicate items are de-duped (keep-first) so A2 never sees the same `source_ref` twice. No wall-clock/randomness in any output; the snapshot date and `run_id` are metadata only. A determinism guard scans **all** A1b modules (recursively).
+- **English-only recall, config-driven (§4).** `languages`/`bbox` come from the A0 region config and drive **acquisition** (which segments/queries by bbox and language). The pure `extract` additionally **validates the snapshot's declared `lang` against the config `languages`** and drops mismatches — no language is blindly trusted or hardcoded.
+- **The P31 allowlist is CONSUMED, not invented (§4).** The extractor reads a class allowlist artifact; WP-A3's data audit produces the authoritative set. A **genuinely minimal bootstrap** ships here (header-marked), file-replaceable by A3 with zero code change.
+- **Scope.** Extraction + acquisition only. **No reconcile (A2), no place_id minting (A2), no score/tier (A4) — including no pageview *computation* (A4 computes the median from the cache A1b writes).** This WP produces source records + a pageview cache.
+- **Test-first**, against golden fixtures (no network in tests; the network seam is injected).
 
-**Ratified (fable, thread `wp/a1b`)** — all four decisions, with conditions folded into the tasks below:
-1. **Wikidata acquisition** = cached-SPARQL (WDQS) → a **self-describing dated snapshot**; the extractor is a pure function of that snapshot. HARD conditions (Task 3 acquisition contract): queries **segmented** (per P31-class-chunk × bbox-tile — a monolithic region query hits WDQS's 60 s timeout); WDQS etiquette (descriptive `User-Agent`, backoff on `429`/`5xx`, no parallel hammering); the snapshot **records endpoint + full query text + retrieval date** (it *is* the determinism boundary); acquisition failure is **loud and aborts the snapshot** — the extractor never runs against a partial snapshot.
-2. **Wikipedia `source_ref` = `wp:<pageid>`**; the linked Wikidata **QID rides in `props`** for A2's join. **A0 dependency (NOTE only — a codex contracts task fable briefs, not implemented here):** `wp` is added to A0's **append-only** `_SOURCE_IDENT_GRAMMAR` (`wp:[0-9]+`), appended **last in anchor priority** (`wd > osm > hehle > plaque > wp` — every existing ordering untouched) with a new frozen conformance vector. Needed only to *mint* a Wikipedia-only place (geotagged article with no QID); A1b itself only emits the ref.
-3. **P31 bootstrap allowlist** in `pipeline/config/wikidata_class_allowlist.json`, header-marked `BOOTSTRAP: superseded by WP-A3`, **genuinely minimal** (obvious classes only — curation is A3's empirical job), file-replaceable by A3 with zero extractor change.
-4. **Pageviews:** acquisition here, **computation deferred to A4**. Fixed trailing window anchored to the run's config snapshot date (never wall-clock); cached per `(title, window)`; **resumable** (tens of thousands of UK titles — a crash at 80 % must not restart); rate-courteous; behind a **per-run flag** so a plain extract doesn't force the full pageview sweep. A4 consumes the cache.
+**Ratified (fable, thread `wp/a1b`) — conditions folded in.** (1) cached-SPARQL → **self-describing** dated snapshot (`_meta`: endpoint, full query text, retrieval date), **segmented** queries (P31-chunk × bbox-tile — no monolithic query → WDQS 60 s timeout), WDQS etiquette, **loud-abort on partial**. (2) `wp:<pageid>` refs + QID-in-props join; A0 appends `wp` (last: `wd > osm > hehle > plaque > wp`) to its append-only mint grammar + a frozen vector — **a codex contracts task fable briefs; a NOTE here, and needed only for A2 to *mint* a Wikipedia-only place, not for A1b to emit the ref.** (3) bootstrap allowlist minimal + header-marked. (4) pageview **acquisition** here (resumable, cached per `(title, window)`, per-run flag); **computation deferred to A4.**
+
+**Cross-package needs surfaced (per AGENTS.md)** — codex adds `wp` (last) to A0's append-only mint grammar + frozen vector (for A2 minting of wp-only places; fable briefing it); A3's audit replaces the bootstrap allowlist file; **A2 must read `props["wikidata"]` as the Wikipedia→Wikidata join key** (the join key rides in opaque props, not as a second `source_ref` — write into the A2 interface); **A1's `source_records` would benefit from `UNIQUE(source, source_ref)`** as belt-and-braces against duplicate rows (A1b de-dups in-extractor regardless).
 
 ---
 
@@ -31,32 +29,30 @@
 
 ```
 pipeline/src/mt_pipeline/
-  fetch.py                              # byte-capped streaming HTTPS reader (raw-blob bound) (Task 1)
+  fetch.py                              # SSRF-safe, byte-capped, deadline-bounded HTTPS fetch (Task 1)
   extractors/
-    __init__.py                         # extractor registry (source name -> extractor) (Task 2)
-    wikidata.py                         # Wikidata: snapshot -> source records (Task 3)
-    wikipedia.py                        # Wikipedia: snapshot -> source records (Task 4)
-    pageviews.py                        # fixed-window deterministic pageview lookup (Task 5)
-  extract_stage.py                      # wires enabled extractors into the A1 'extract' stage (Task 6)
+    __init__.py                         # Extractor Protocol + Registry (A1c/A1d extend) (Task 2)
+    wikidata.py                         # WikidataExtractor(allowlist) + make_extractor(path) (Task 3)
+    wikipedia.py                        # WikipediaExtractor(languages) (Task 4)
+    pageviews.py                        # resumable pageview ACQUISITION + window_for (Task 5)
+  extract_stage.py                      # runs enabled extractors from a RegionConfig (Task 6)
 pipeline/config/
   wikidata_class_allowlist.json         # BOOTSTRAP P31 allowlist (A3 supersedes) (Task 3)
 pipeline/tests/
-  fixtures/wikidata/snapshot.json       # golden SPARQL result (Task 3)
+  fixtures/wikidata/snapshot.json       # golden SPARQL result (self-describing _meta) (Task 3)
   fixtures/wikipedia/snapshot.json      # golden geosearch+extracts result (Task 4)
-  fixtures/pageviews/*.json             # golden pageview responses (Task 5)
   test_fetch.py                         # Task 1
   test_extractor_registry.py            # Task 2
   test_wikidata_extractor.py            # Task 3
   test_wikipedia_extractor.py           # Task 4
   test_pageviews.py                     # Task 5
   test_extract_stage.py                 # Task 6
+  test_extractor_determinism.py         # Task 6 (guard over extractors/)
 ```
-
-Acquisition writes dated snapshots into the working store / a snapshot dir (side-effecting, network); the `extract_*` functions are pure over those snapshots. Tests exercise the pure path against `fixtures/`.
 
 ---
 
-### Task 1: Byte-capped streaming fetch (the raw-blob bound)
+### Task 1: SSRF-safe, byte-capped, deadline-bounded fetch (the network boundary)
 
 **Files:**
 - Create: `pipeline/src/mt_pipeline/fetch.py`
@@ -64,9 +60,8 @@ Acquisition writes dated snapshots into the working store / a snapshot dir (side
 
 **Interfaces:**
 - Produces:
-  - `fetch.MAX_RESPONSE_BYTES = 32 * 1024 * 1024` (per-response cap; a single SPARQL page / geosearch tile).
-  - `fetch.FetchError(Exception)`.
-  - `fetch.get_json(url, *, expected_hosts: set[str], max_bytes=MAX_RESPONSE_BYTES, timeout=30) -> dict` — https-only, host-allowlisted, streams the body and **raises before exceeding `max_bytes`** (never a full unbounded read), then `json.loads`. This is the single network boundary; every extractor fetch goes through it.
+  - `fetch.MAX_RESPONSE_BYTES = 32 * 1024 * 1024`; `fetch.FetchError(Exception)`.
+  - `fetch.get_json(url, *, expected_hosts, max_bytes=MAX_RESPONSE_BYTES, timeout=30, deadline=120) -> dict` — https-only, host-allowlisted **on every redirect hop** (SSRF-safe), streams the body raising **before** `max_bytes`, enforces a total wall-clock `deadline` (slowloris), rejects unexpected `Content-Encoding`, and catches `RecursionError`/`ValueError` from `json.loads`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -77,11 +72,7 @@ import json
 import pytest
 from mt_pipeline import fetch
 
-class _Resp(io.BytesIO):
-    # minimal stand-in for an http response stream
-    def __init__(self, data): super().__init__(data)
-
-def test_rejects_non_https(monkeypatch):
+def test_rejects_non_https():
     with pytest.raises(fetch.FetchError):
         fetch.get_json("http://insecure/x", expected_hosts={"insecure"})
 
@@ -90,16 +81,19 @@ def test_rejects_unexpected_host():
         fetch.get_json("https://evil.example/x", expected_hosts={"query.wikidata.org"})
 
 def test_streams_and_caps_oversize_body(monkeypatch):
-    big = b'{"x":"' + b"a" * (fetch.MAX_RESPONSE_BYTES + 1024) + b'"}'
-    monkeypatch.setattr(fetch, "_open", lambda url, timeout: _Resp(big))
+    big = b'{"x":"' + b"a" * 4096 + b'"}'
+    monkeypatch.setattr(fetch, "_open", lambda url, timeout: io.BytesIO(big))
     with pytest.raises(fetch.FetchError):
-        fetch.get_json("https://query.wikidata.org/x", expected_hosts={"query.wikidata.org"},
-                       max_bytes=1024)   # aborts well before the full body is read
+        fetch.get_json("https://query.wikidata.org/x", expected_hosts={"query.wikidata.org"}, max_bytes=1024)
 
 def test_returns_parsed_json_within_cap(monkeypatch):
-    monkeypatch.setattr(fetch, "_open", lambda url, timeout: _Resp(json.dumps({"ok": 1}).encode()))
-    assert fetch.get_json("https://query.wikidata.org/x",
-                          expected_hosts={"query.wikidata.org"}) == {"ok": 1}
+    monkeypatch.setattr(fetch, "_open", lambda url, timeout: io.BytesIO(json.dumps({"ok": 1}).encode()))
+    assert fetch.get_json("https://query.wikidata.org/x", expected_hosts={"query.wikidata.org"}) == {"ok": 1}
+
+def test_redirect_to_unexpected_host_is_blocked():
+    # SSRF: a 3xx to a non-allowlisted host must not be followed.
+    assert fetch._validate_target("http://169.254.169.254/x", {"query.wikidata.org"}) is False
+    assert fetch._validate_target("https://query.wikidata.org/x", {"query.wikidata.org"}) is True
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -111,12 +105,12 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'mt_pipeline.fetch'`.
 
 `pipeline/src/mt_pipeline/fetch.py`:
 ```python
-"""The single network boundary: byte-capped, https-only, host-allowlisted streaming
-fetch. Every extractor's raw blob passes through here and is bounded BEFORE it is
-parsed (§5.5 raw-blob bound). Never call .read()/.json() on an unbounded response."""
+"""The single network boundary: SSRF-safe, byte-capped, deadline-bounded, https-only,
+host-allowlisted streaming fetch. Every raw blob passes through here (§5.5)."""
 from __future__ import annotations
 
 import json
+import time
 import urllib.request
 from urllib.parse import urlparse
 
@@ -127,51 +121,71 @@ class FetchError(Exception):
     pass
 
 
+def _validate_target(url: str, expected_hosts: set[str]) -> bool:
+    p = urlparse(url)
+    return p.scheme == "https" and p.hostname in expected_hosts
+
+
+class _AllowlistRedirect(urllib.request.HTTPRedirectHandler):
+    """Re-apply the https + host allowlist on EVERY redirect hop (SSRF defense)."""
+    def __init__(self, expected_hosts: set[str]):
+        self.expected_hosts = expected_hosts
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _validate_target(newurl, self.expected_hosts):
+            raise FetchError(f"blocked redirect to {newurl!r}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _open(url: str, timeout: int):  # seam for tests
-    return urllib.request.urlopen(url, timeout=timeout)  # nosec - url validated by caller below
+    return urllib.request.urlopen(url, timeout=timeout)
 
 
 def get_json(url: str, *, expected_hosts: set[str], max_bytes: int = MAX_RESPONSE_BYTES,
-             timeout: int = 30) -> dict:
-    parts = urlparse(url)
-    if parts.scheme != "https":
-        raise FetchError(f"non-https url: {url!r}")
-    if parts.hostname not in expected_hosts:
-        raise FetchError(f"unexpected host {parts.hostname!r} (allowed: {sorted(expected_hosts)})")
+             timeout: int = 30, deadline: int = 120) -> dict:
+    if not _validate_target(url, expected_hosts):
+        raise FetchError(f"invalid target: {url!r}")
     try:
         resp = _open(url, timeout)
-    except Exception as e:  # network/URL errors are all fetch failures
+    except FetchError:
+        raise
+    except Exception as e:
         raise FetchError(str(e)) from e
-    chunks, total = [], 0
+    enc = getattr(resp, "headers", {}).get("Content-Encoding") if hasattr(resp, "headers") else None
+    if enc:
+        raise FetchError(f"unexpected Content-Encoding {enc!r}")   # no silent decompression bomb
+    start, chunks, total = time.monotonic(), [], 0
     while True:
+        if time.monotonic() - start > deadline:
+            raise FetchError("exceeded total download deadline (slowloris)")
         chunk = resp.read(65536)
         if not chunk:
             break
         total += len(chunk)
         if total > max_bytes:
-            raise FetchError(f"response exceeded {max_bytes} bytes (possible oversize/bomb)")
+            raise FetchError(f"response exceeded {max_bytes} bytes")
         chunks.append(chunk)
     try:
         return json.loads(b"".join(chunks).decode("utf-8"))
-    except (ValueError, UnicodeDecodeError) as e:
+    except (ValueError, UnicodeDecodeError, RecursionError) as e:
         raise FetchError(f"invalid JSON: {e}") from e
 ```
+Wire the redirect handler in production acquisition (`urllib.request.build_opener(_AllowlistRedirect(expected_hosts)).open(...)`); the `_open` seam keeps tests network-free. (Note the test exercises `_validate_target` directly — the redirect handler composes it.)
 
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `cd pipeline && uv run python -m pytest tests/test_fetch.py -q`
-Expected: PASS (4 passed).
+Expected: PASS (5 passed).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add pipeline/src/mt_pipeline/fetch.py pipeline/tests/test_fetch.py
-git commit -m "Add byte-capped https-only streaming fetch (the extractor-edge raw-blob bound)"
+git commit -m "Add SSRF-safe byte-capped deadline-bounded fetch (extractor-edge network boundary)"
 ```
 
 ---
 
-### Task 2: Extractor registry (the shared dispatch A1c/A1d extend)
+### Task 2: Extractor Protocol + registry
 
 **Files:**
 - Create: `pipeline/src/mt_pipeline/extractors/__init__.py`
@@ -179,8 +193,8 @@ git commit -m "Add byte-capped https-only streaming fetch (the extractor-edge ra
 
 **Interfaces:**
 - Produces:
-  - `extractors.Extractor` — a `Protocol`: `extract(region, snapshot_path, conn, *, run_id) -> int` (returns the record count).
-  - `extractors.register(source: str, extractor)` and `extractors.enabled_for(region_config: dict) -> list[tuple[str, Extractor]]` — returns the `(source, extractor)` pairs whose `sources.<name>` is true in the region config, in a **stable order**. A1c/A1d register their extractors the same way.
+  - `extractors.Extractor` — `Protocol`: `extract(region, snapshot_path, conn, *, run_id) -> int`.
+  - `extractors.Registry` (class): `register(source, extractor)` and `enabled_for(sources: dict) -> list[tuple[str, Extractor]]` (stable registration order; only sources whose value is `True`). A1c/A1d register the same way.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -188,34 +202,29 @@ git commit -m "Add byte-capped https-only streaming fetch (the extractor-edge ra
 ```python
 from mt_pipeline import extractors
 
-def test_register_and_enabled_for_reads_region_config():
+def test_enabled_for_returns_only_true_sources_in_registration_order():
     reg = extractors.Registry()
-    reg.register("wikidata", object())
-    reg.register("wikipedia", object())
-    reg.register("osm", object())   # pretend A1c registered this
-    cfg = {"sources": {"wikidata": True, "wikipedia": True, "osm": False, "historic_england": False,
-                       "open_plaques": False, "national_register": None}}
-    got = [name for name, _ in reg.enabled_for(cfg)]
-    assert got == ["wikidata", "wikipedia"]        # only enabled, and in stable registration order
+    reg.register("wikidata", object()); reg.register("wikipedia", object()); reg.register("osm", object())
+    sources = {"wikidata": True, "wikipedia": True, "osm": False, "national_register": None}
+    assert [n for n, _ in reg.enabled_for(sources)] == ["wikidata", "wikipedia"]
 
-def test_enabled_for_ignores_unknown_and_non_bool_source_keys():
+def test_enabled_for_ignores_non_bool_and_unregistered():
     reg = extractors.Registry()
     reg.register("wikidata", object())
-    cfg = {"sources": {"wikidata": True, "national_register": {"id": "x", "enabled": False}}}
-    assert [n for n, _ in reg.enabled_for(cfg)] == ["wikidata"]
+    sources = {"wikidata": True, "national_register": {"id": "x", "enabled": False}, "osm": True}
+    assert [n for n, _ in reg.enabled_for(sources)] == ["wikidata"]   # osm not registered; national_register not a bool
 ```
 
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `cd pipeline && uv run python -m pytest tests/test_extractor_registry.py -q`
-Expected: FAIL — `ModuleNotFoundError`.
+Expected: FAIL — module missing.
 
 - [ ] **Step 3: Implement `extractors/__init__.py`**
 
 `pipeline/src/mt_pipeline/extractors/__init__.py`:
 ```python
-"""Extractor registry: the shared dispatch WP-A1b establishes and A1c/A1d extend.
-An extractor turns a dated snapshot into source records via source_record.parse."""
+"""Extractor registry: the shared dispatch WP-A1b establishes and A1c/A1d extend."""
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
@@ -236,11 +245,8 @@ class Registry:
             self._order.append(source)
         self._by_source[source] = extractor
 
-    def enabled_for(self, region_config: dict) -> list[tuple[str, object]]:
-        sources = region_config.get("sources", {})
-        # stable registration order; only sources flagged True (bool) and registered
-        return [(s, self._by_source[s]) for s in self._order
-                if sources.get(s) is True]
+    def enabled_for(self, sources: dict) -> list[tuple[str, object]]:
+        return [(s, self._by_source[s]) for s in self._order if sources.get(s) is True]
 ```
 
 - [ ] **Step 4: Run to verify it passes**
@@ -252,12 +258,12 @@ Expected: PASS (2 passed).
 
 ```bash
 git add pipeline/src/mt_pipeline/extractors/__init__.py pipeline/tests/test_extractor_registry.py
-git commit -m "Add extractor registry (stable enabled-source dispatch, extended by A1c/A1d)"
+git commit -m "Add Extractor Protocol + registry (stable enabled-source dispatch)"
 ```
 
 ---
 
-### Task 3: Wikidata extractor + bootstrap P31 allowlist
+### Task 3: Wikidata extractor (crash-safe, de-duped, §4 signals) + bootstrap allowlist + factory
 
 **Files:**
 - Create: `pipeline/src/mt_pipeline/extractors/wikidata.py`, `pipeline/config/wikidata_class_allowlist.json`
@@ -265,100 +271,131 @@ git commit -m "Add extractor registry (stable enabled-source dispatch, extended 
 - Test: `pipeline/tests/test_wikidata_extractor.py`
 
 **Interfaces:**
-- Consumes: `mt_pipeline.source_record.parse`/`persist`, `mt_pipeline.store`.
+- Consumes: `source_record.parse`/`persist`.
 - Produces:
-  - `wikidata.MAX_CLAIMS = 512`, `MAX_SITELINKS = 64`, `MAX_LABEL_LEN = 400` (per-item raw-blob bounds).
-  - `wikidata.load_allowlist(path) -> set[str]` (the consumed P31 class set).
-  - `wikidata.extract(region, snapshot_path, conn, *, run_id, allowlist) -> int` — reads the dated SPARQL snapshot, keeps items with a coordinate and a P31 ∈ allowlist, bounds each item, and emits `source=wd, source_ref=wd:<QID>` records via `source_record.parse` in **stable `source_ref` order**. Pure function of the snapshot.
-
-**Acquisition contract (fable-ratified conditions; the network step that writes the snapshot — separate from the pure `extract`, not in the deterministic test path).** The acquire step MUST: (a) issue **segmented** WDQS queries — one per (P31-class-chunk × bbox-tile) so no single query approaches WDQS's 60 s timeout (a monolithic UK query fails); (b) follow WDQS etiquette — a descriptive `User-Agent`, exponential backoff on `429`/`5xx`, no parallel hammering; (c) write a **self-describing** snapshot whose top-level `_meta` records `endpoint`, the **full query text** per segment, and the UTC `retrieved_at` date — the snapshot is the determinism boundary, so it must state exactly how it was produced; (d) treat any segment failure as **loud and fatal** — abort and do not write a snapshot, so the pure `extract` never runs against a partial result. The `extract` function ignores `_meta` and consumes only `results.bindings`.
+  - Caps: `MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024`, `MAX_RECORDS_PER_SNAPSHOT = 2_000_000`, `MAX_LABEL_LEN = 400`, `MAX_SITELINKS = 100_000`.
+  - `wikidata.load_allowlist(path) -> set[str]`.
+  - `wikidata.WikidataExtractor(allowlist: set[str])` — implements `Extractor`; `extract(region, snapshot_path, conn, *, run_id) -> int`.
+  - `wikidata.make_extractor(allowlist_path) -> WikidataExtractor` — the **production factory** (loads the bootstrap file; A3 replaces the file, no code change).
+  - Each kept item emits `source=wd, source_ref=wd:<QID>` with `props = {p31, label, sitelinks (int, §4 signal), image? (P18 → §4 image-availability / image_url origin)}` — de-duped by QID (keep-first), stable lexical `source_ref` order, every field guarded.
 
 - [ ] **Step 1: Write the golden fixture + failing test**
 
-`pipeline/tests/fixtures/wikidata/snapshot.json` (a minimal WDQS-shaped result with the self-describing `_meta` envelope; `extract` ignores `_meta` and reads only `results.bindings`):
+`pipeline/tests/fixtures/wikidata/snapshot.json` (self-describing `_meta`; flat rows carrying the §4 signals; includes a hostile-shaped row and a duplicate QID to exercise the guards):
 ```json
 {"_meta": {"endpoint": "https://query.wikidata.org/sparql",
-           "queries": ["SELECT ?item ?lat ?lon ?p31 ?label WHERE { ... bbox-tile 0 x class-chunk 0 ... }"],
-           "retrieved_at": "2026-07-14"},
+           "queries": ["SELECT ... bbox-tile 0 x class-chunk 0 ..."], "retrieved_at": "2026-07-14"},
  "results": {"bindings": [
-  {"item": {"value": "http://www.wikidata.org/entity/Q42"},
-   "lat": {"value": "51.5007"}, "lon": {"value": "-0.1246"},
-   "p31": {"value": "http://www.wikidata.org/entity/Q33506"},
-   "label": {"value": "Big Ben"}},
-  {"item": {"value": "http://www.wikidata.org/entity/Q999"},
-   "lat": {"value": "51.5"}, "lon": {"value": "-0.1"},
-   "p31": {"value": "http://www.wikidata.org/entity/Q_NOT_ALLOWED"},
-   "label": {"value": "A Parish"}}
-]}}
+   {"item": {"value": "http://www.wikidata.org/entity/Q42"}, "lat": {"value": "51.5007"},
+    "lon": {"value": "-0.1246"}, "p31": {"value": "http://www.wikidata.org/entity/Q33506"},
+    "label": {"value": "Big Ben"}, "sitelinks": {"value": "42"},
+    "image": {"value": "http://commons.wikimedia.org/wiki/Special:FilePath/Big%20Ben.jpg"}},
+   {"item": {"value": "http://www.wikidata.org/entity/Q42"}, "lat": {"value": "51.5007"},
+    "lon": {"value": "-0.1246"}, "p31": {"value": "http://www.wikidata.org/entity/Q570116"},
+    "label": {"value": "Big Ben"}, "sitelinks": {"value": "42"}},
+   {"item": {"value": "http://www.wikidata.org/entity/Q17"}, "lat": {"value": "51.5"},
+    "lon": {"value": "-0.1"}, "p31": {"value": "http://www.wikidata.org/entity/Q_NOPE"},
+    "label": {"value": "A Parish"}, "sitelinks": {"value": "3"}},
+   {"lat": {"value": "1"}, "lon": {"value": "1"}, "p31": {"value": "http://www.wikidata.org/entity/Q33506"},
+    "label": {"value": "MALFORMED — no item key"}}
+ ]}}
 ```
 
 `pipeline/tests/test_wikidata_extractor.py`:
 ```python
 import json
 import pathlib
-from mt_pipeline import store, source_record
+from mt_pipeline import store
 from mt_pipeline.extractors import wikidata
 
 FIX = pathlib.Path(__file__).parent / "fixtures/wikidata/snapshot.json"
 
-def _db(tmp_path):
-    c = store.connect(tmp_path / "w.db"); store.init_schema(c); return c
+def _db(tmp_path, name="w.db"):
+    c = store.connect(tmp_path / name); store.init_schema(c); return c
 
-def test_extract_keeps_allowlisted_and_drops_others(tmp_path):
+def test_keeps_allowlisted_dedups_by_qid_drops_others_and_survives_malformed(tmp_path):
     conn = _db(tmp_path)
-    allow = {"Q33506"}   # museum-ish; excludes the parish Q_NOT_ALLOWED
-    n = wikidata.extract("uk", FIX, conn, run_id="r1", allowlist=allow)
+    n = wikidata.WikidataExtractor({"Q33506", "Q570116"}).extract("uk", FIX, conn, run_id="r1")
     rows = conn.execute("SELECT source, source_ref, name FROM source_records ORDER BY source_ref").fetchall()
-    assert n == 1
-    assert rows == [("wd", "wd:Q42", "Big Ben")]        # parish dropped by allowlist
+    assert n == 1                                  # Q42 kept ONCE (deduped across 2 P31 rows)
+    assert rows == [("wd", "wd:Q42", "Big Ben")]   # parish dropped (allowlist); malformed row skipped, not crashed
 
-def test_extract_is_deterministic(tmp_path):
-    # same snapshot in → identical records and ordering out (Principle 12)
-    def db(name):
-        c = store.connect(tmp_path / name); store.init_schema(c); return c
-    conn1 = db("a.db"); conn2 = db("b.db")
-    wikidata.extract("uk", FIX, conn1, run_id="r1", allowlist={"Q33506"})
-    wikidata.extract("uk", FIX, conn2, run_id="r2", allowlist={"Q33506"})
-    first = conn1.execute("SELECT source_ref FROM source_records ORDER BY id").fetchall()
-    second = conn2.execute("SELECT source_ref FROM source_records ORDER BY id").fetchall()
-    assert first == second
-
-def test_bootstrap_allowlist_loads_and_is_nonempty():
-    path = pathlib.Path(__file__).parents[1] / "config/wikidata_class_allowlist.json"
-    allow = wikidata.load_allowlist(path)
-    assert isinstance(allow, set) and allow                # ships a usable starter set
-    assert all(q.startswith("Q") for q in allow)
-
-def test_source_ref_is_canonical_wd_qid(tmp_path):
+def test_captures_section4_signals(tmp_path):
     conn = _db(tmp_path)
-    wikidata.extract("uk", FIX, conn, run_id="r1", allowlist={"Q33506"})
-    ref = conn.execute("SELECT source_ref FROM source_records").fetchone()[0]
-    assert ref == "wd:Q42"   # A1's parse accepted the canonical ref (delegated to mt_contracts)
+    wikidata.WikidataExtractor({"Q33506", "Q570116"}).extract("uk", FIX, conn, run_id="r1")
+    props = json.loads(conn.execute("SELECT props_json FROM source_records WHERE source_ref='wd:Q42'").fetchone()[0])
+    assert props["sitelinks"] == 42                # §4 sitelink-count signal → A4
+    assert props["image"].startswith("https://")   # §4 image availability / image_url origin (https-normalised)
+
+def test_deterministic_stable_order_multi_record(tmp_path):
+    # ≥2 kept items whose snapshot order differs from sorted → assert stored order == sorted lexical
+    snap = {"results": {"bindings": [
+        {"item": {"value": ".../Q9"}, "lat": {"value": "1"}, "lon": {"value": "1"},
+         "p31": {"value": ".../Q33506"}, "label": {"value": "Nine"}},
+        {"item": {"value": ".../Q100"}, "lat": {"value": "1"}, "lon": {"value": "1"},
+         "p31": {"value": ".../Q33506"}, "label": {"value": "Hundred"}}]}}
+    p = tmp_path / "s.json"; p.write_text(json.dumps(snap))
+    conn = _db(tmp_path)
+    wikidata.WikidataExtractor({"Q33506"}).extract("uk", p, conn, run_id="r1")
+    order = [r[0] for r in conn.execute("SELECT source_ref FROM source_records ORDER BY id")]
+    assert order == ["wd:Q100", "wd:Q9"]           # lexical source_ref order, stable
+
+def test_bad_coordinate_row_is_dropped_via_a1_parse(tmp_path):
+    # proves delegation: a bad coord is rejected by A1's parse (SourceRecordError) → skipped, not crashed
+    snap = {"results": {"bindings": [
+        {"item": {"value": ".../Q42"}, "lat": {"value": "999"}, "lon": {"value": "0"},
+         "p31": {"value": ".../Q33506"}, "label": {"value": "Off-globe"}}]}}
+    p = tmp_path / "b.json"; p.write_text(json.dumps(snap))
+    conn = _db(tmp_path)
+    assert wikidata.WikidataExtractor({"Q33506"}).extract("uk", p, conn, run_id="r1") == 0
+
+def test_hostile_oversized_label_is_bounded_before_parse(tmp_path):
+    snap = {"results": {"bindings": [
+        {"item": {"value": ".../Q42"}, "lat": {"value": "1"}, "lon": {"value": "1"},
+         "p31": {"value": ".../Q33506"}, "label": {"value": "x" * 5000}}]}}
+    p = tmp_path / "h.json"; p.write_text(json.dumps(snap))
+    conn = _db(tmp_path)
+    wikidata.WikidataExtractor({"Q33506"}).extract("uk", p, conn, run_id="r1")
+    name = conn.execute("SELECT name FROM source_records").fetchone()[0]
+    assert len(name) <= wikidata.MAX_LABEL_LEN     # bounded at the edge, before parse
+
+def test_oversized_snapshot_file_is_rejected(tmp_path, monkeypatch):
+    p = tmp_path / "big.json"; p.write_text("{}")
+    monkeypatch.setattr(wikidata, "MAX_SNAPSHOT_BYTES", 1)
+    conn = _db(tmp_path)
+    import pytest
+    with pytest.raises(wikidata.SnapshotTooLargeError):
+        wikidata.WikidataExtractor({"Q33506"}).extract("uk", p, conn, run_id="r1")
+
+def test_bootstrap_allowlist_loads_and_is_minimal():
+    allow = wikidata.load_allowlist(pathlib.Path(__file__).parents[1] / "config/wikidata_class_allowlist.json")
+    assert allow and all(q.startswith("Q") for q in allow) and len(allow) <= 12   # genuinely minimal
 ```
 
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `cd pipeline && uv run python -m pytest tests/test_wikidata_extractor.py -q`
-Expected: FAIL — `ModuleNotFoundError: No module named 'mt_pipeline.extractors.wikidata'`.
+Expected: FAIL — module missing.
 
 - [ ] **Step 3: Write the bootstrap allowlist**
 
-`pipeline/config/wikidata_class_allowlist.json` — **genuinely minimal**; obvious classes only. The authoritative, empirically-curated set is WP-A3's data-audit output, which replaces this file with zero extractor change:
+`pipeline/config/wikidata_class_allowlist.json`:
 ```json
 {
-  "_header": "BOOTSTRAP: superseded by WP-A3. Obvious P31 classes admitted to recall; do not curate here (that is A3's empirical job).",
+  "_header": "BOOTSTRAP: superseded by WP-A3. Obvious P31 classes only; do not curate here (that is A3's empirical job).",
   "allow": ["Q33506", "Q16970", "Q570116", "Q839954", "Q4989906"]
 }
 ```
-(museum, church building, monument, castle, memorial — the uncontroversial core. A3's audit adds/removes from real distribution data.)
+(museum, church building, monument, castle, memorial — the uncontroversial core.)
 
 - [ ] **Step 4: Implement `wikidata.py`**
 
 `pipeline/src/mt_pipeline/extractors/wikidata.py`:
 ```python
-"""Wikidata extractor: a pure function of a dated SPARQL snapshot. Keeps coordinate-
-bearing items whose P31 is in the CONSUMED allowlist (A3 owns the curation). Bounds
-each item before handing a small props dict to A1's source_record.parse (§5.5)."""
+"""Wikidata extractor: a pure, crash-safe function of a dated SPARQL snapshot. Keeps
+coordinate-bearing items whose P31 is in the CONSUMED allowlist (A3 owns curation),
+carries the §4 scoring signals (sitelink count, image), de-dups by QID, and bounds
+every field before handing a small props dict to A1's source_record.parse (§5.5)."""
 from __future__ import annotations
 
 import json
@@ -366,63 +403,103 @@ import pathlib
 
 from .. import source_record
 
-MAX_CLAIMS = 512
-MAX_SITELINKS = 64
+MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024
+MAX_RECORDS_PER_SNAPSHOT = 2_000_000
 MAX_LABEL_LEN = 400
+MAX_SITELINKS = 100_000
+
+
+class SnapshotTooLargeError(Exception):
+    pass
 
 
 def load_allowlist(path) -> set[str]:
-    data = json.loads(pathlib.Path(path).read_text())
-    return set(data["allow"])
+    return set(json.loads(pathlib.Path(path).read_text())["allow"])
+
+
+def _load_snapshot(snapshot_path) -> dict:
+    p = pathlib.Path(snapshot_path)
+    if p.stat().st_size > MAX_SNAPSHOT_BYTES:      # cap the on-disk file BEFORE reading (§5.5)
+        raise SnapshotTooLargeError(f"{p} exceeds {MAX_SNAPSHOT_BYTES} bytes")
+    try:
+        return json.loads(p.read_text())
+    except (ValueError, RecursionError) as e:      # deep-JSON bomb / malformed
+        raise SnapshotTooLargeError(f"unparseable snapshot: {e}") from e
 
 
 def _qid(uri: str) -> str:
-    # "http://www.wikidata.org/entity/Q42" -> "Q42"
     return uri.rsplit("/", 1)[-1]
 
 
-def extract(region: str, snapshot_path, conn, *, run_id: str, allowlist: set[str]) -> int:
-    snapshot = json.loads(pathlib.Path(snapshot_path).read_text())
-    bindings = snapshot.get("results", {}).get("bindings", [])
-    count = 0
-    # stable order by QID so re-runs and diffs are deterministic
-    for b in sorted(bindings, key=lambda x: _qid(x["item"]["value"])):
-        p31 = _qid(b["p31"]["value"])
-        if p31 not in allowlist:
-            continue
-        qid = _qid(b["item"]["value"])
-        try:
-            lat = float(b["lat"]["value"]); lon = float(b["lon"]["value"])
-        except (KeyError, ValueError):
-            continue   # no usable coordinate → not a recall candidate
-        label = b.get("label", {}).get("value", "")[:MAX_LABEL_LEN]  # bound the blob
-        props = {"p31": p31, "label": label[:MAX_LABEL_LEN]}          # small, shallow
-        try:
-            rec = source_record.parse(region=region, source="wd", source_ref=f"wd:{qid}",
-                                      name=label, lat=lat, lon=lon, props=props)
-        except source_record.SourceRecordError:
-            continue   # A1's boundary rejected it (bad coord/name/ref) → skip, never crash
-        source_record.persist(conn, rec, run_id=run_id)
-        count += 1
-    return count
+def _https(url: str) -> "str | None":
+    if isinstance(url, str) and url.startswith("http://"):
+        url = "https://" + url[len("http://"):]
+    return url if isinstance(url, str) and url.startswith("https://") else None
+
+
+class WikidataExtractor:
+    def __init__(self, allowlist: set[str]) -> None:
+        self.allowlist = allowlist
+
+    def extract(self, region: str, snapshot_path, conn, *, run_id: str) -> int:
+        snapshot = _load_snapshot(snapshot_path)
+        bindings = snapshot.get("results", {}).get("bindings", [])
+        if len(bindings) > MAX_RECORDS_PER_SNAPSHOT:
+            bindings = bindings[:MAX_RECORDS_PER_SNAPSHOT]   # deterministic bound before sorting
+        # project to validated (qid, row) tuples INSIDE a guard, then sort — never a hostile sort key
+        projected: dict[str, dict] = {}
+        for b in bindings:
+            try:
+                qid = _qid(b["item"]["value"])
+                if _qid(b["p31"]["value"]) not in self.allowlist:
+                    continue
+                if qid in projected:
+                    continue                                 # de-dup by QID (keep-first)
+                lat = float(b["lat"]["value"]); lon = float(b["lon"]["value"])
+                label = str(b.get("label", {}).get("value", ""))[:MAX_LABEL_LEN]
+                props = {"p31": _qid(b["p31"]["value"]), "label": label,
+                         "sitelinks": min(int(b.get("sitelinks", {}).get("value", 0) or 0), MAX_SITELINKS)}
+                img = _https(b.get("image", {}).get("value"))
+                if img:
+                    props["image"] = img
+                projected[qid] = {"lat": lat, "lon": lon, "label": label, "props": props}
+            except (KeyError, ValueError, TypeError):
+                continue                                     # one bad row NEVER aborts the run
+        count = 0
+        for qid in sorted(projected):                        # stable lexical order
+            item = projected[qid]
+            try:
+                rec = source_record.parse(region=region, source="wd", source_ref=f"wd:{qid}",
+                                          name=item["label"], lat=item["lat"], lon=item["lon"],
+                                          props=item["props"])
+            except source_record.SourceRecordError:
+                continue                                     # A1's boundary backstop
+            source_record.persist(conn, rec, run_id=run_id)
+            count += 1
+        return count
+
+
+def make_extractor(allowlist_path) -> WikidataExtractor:
+    """Production factory: load the (bootstrap or A3) allowlist file and bind an extractor."""
+    return WikidataExtractor(load_allowlist(allowlist_path))
 ```
 
 - [ ] **Step 5: Run to verify it passes**
 
 Run: `cd pipeline && uv run python -m pytest tests/test_wikidata_extractor.py -q`
-Expected: PASS.
+Expected: PASS (7 passed).
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add pipeline/src/mt_pipeline/extractors/wikidata.py pipeline/config/wikidata_class_allowlist.json \
         pipeline/tests/fixtures/wikidata pipeline/tests/test_wikidata_extractor.py
-git commit -m "Add Wikidata extractor (allowlist-consuming, deterministic, edge-bounded)"
+git commit -m "Add Wikidata extractor: crash-safe, deduped, §4 signals, allowlist factory, size-capped"
 ```
 
 ---
 
-### Task 4: Wikipedia extractor (wp:pageid + QID-in-props for A2 join)
+### Task 4: Wikipedia extractor (crash-safe, QID/lang validated)
 
 **Files:**
 - Create: `pipeline/src/mt_pipeline/extractors/wikipedia.py`
@@ -430,55 +507,73 @@ git commit -m "Add Wikidata extractor (allowlist-consuming, deterministic, edge-
 - Test: `pipeline/tests/test_wikipedia_extractor.py`
 
 **Interfaces:**
-- Consumes: `source_record.parse`/`persist`.
 - Produces:
-  - `wikipedia.MAX_EXTRACT_LEN = 1200`, `MAX_TITLE_LEN = 400`.
-  - `wikipedia.extract(region, snapshot_path, conn, *, run_id) -> int` — reads the dated geosearch+extracts snapshot, emits `source=wp, source_ref=wp:<pageid>` records, carrying the linked Wikidata **QID in `props["wikidata"]`** (for A2's sitelink join) plus `props["lang"]`, `props["title"]`, bounded `props["extract"]`. Stable order by pageid.
+  - Caps: `MAX_EXTRACT_LEN = 1200`, `MAX_TITLE_LEN = 400`, `MAX_QID_LEN = 24`, `MAX_LANG_LEN = 16` (reuses wikidata's `MAX_SNAPSHOT_BYTES`/`MAX_RECORDS_PER_SNAPSHOT` via a shared import).
+  - `wikipedia.WikipediaExtractor(languages: set[str])` — implements `Extractor`. Drops pages whose snapshot `lang ∉ languages`. Emits `source=wp, source_ref=wp:<pageid>` with `props = {lang, title, extract, wikidata?}`; the QID is added **only if** it matches `Q[0-9]+` and is short (else the key is omitted — never a garbage A2 join key, never a whole-record drop). De-duped by pageid, stable lexical `source_ref` order, every field guarded.
 
-- [ ] **Step 1: Write the golden fixture + failing test**
+- [ ] **Step 1: Write the fixture + failing test**
 
-`pipeline/tests/fixtures/wikipedia/snapshot.json` (geosearch-shaped: pages with pageid, title, coordinates, extract, and optional wikidata QID via pageprops):
+`pipeline/tests/fixtures/wikipedia/snapshot.json`:
 ```json
 {"lang": "en", "pages": [
   {"pageid": 12345, "title": "Big Ben", "lat": 51.5007, "lon": -0.1246,
-   "extract": "The Great Bell of the striking clock at the Palace of Westminster.",
-   "wikidata": "Q42"},
+   "extract": "The Great Bell of the striking clock at Westminster.", "wikidata": "Q42"},
   {"pageid": 67890, "title": "Some Hamlet", "lat": 51.4, "lon": -0.2,
-   "extract": "A small place.", "wikidata": null}
+   "extract": "A small place.", "wikidata": null},
+  {"pageid": "MALFORMED", "title": "Bad pageid", "lat": 51.4, "lon": -0.2}
 ]}
 ```
 
 `pipeline/tests/test_wikipedia_extractor.py`:
 ```python
+import json
 import pathlib
+import pytest
 from mt_pipeline import store
 from mt_pipeline.extractors import wikipedia
 
 FIX = pathlib.Path(__file__).parent / "fixtures/wikipedia/snapshot.json"
 
-def _db(tmp_path):
-    c = store.connect(tmp_path / "w.db"); store.init_schema(c); return c
+def _db(tmp_path): c = store.connect(tmp_path / "w.db"); store.init_schema(c); return c
 
-def test_emits_wp_pageid_refs_in_stable_order(tmp_path):
-    conn = _db(tmp_path)
-    n = wikipedia.extract("uk", FIX, conn, run_id="r1")
-    rows = conn.execute("SELECT source, source_ref FROM source_records ORDER BY source_ref").fetchall()
-    assert n == 2
-    assert rows == [("wp", "wp:12345"), ("wp", "wp:67890")]
+def _snap(tmp_path, obj):
+    p = tmp_path / "s.json"; p.write_text(json.dumps(obj)); return p
 
-def test_linked_qid_rides_in_props_for_a2_join(tmp_path):
-    import json
+def test_emits_wp_pageid_refs_skips_malformed(tmp_path):
     conn = _db(tmp_path)
-    wikipedia.extract("uk", FIX, conn, run_id="r1")
-    props = json.loads(conn.execute("SELECT props_json FROM source_records WHERE source_ref='wp:12345'").fetchone()[0])
-    assert props["wikidata"] == "Q42"      # A2 joins Wikipedia->Wikidata via this
-    assert props["lang"] == "en"
+    n = wikipedia.WikipediaExtractor({"en"}).extract("uk", FIX, conn, run_id="r1")
+    rows = conn.execute("SELECT source_ref FROM source_records ORDER BY source_ref").fetchall()
+    assert n == 2 and rows == [("wp:12345",), ("wp:67890",)]   # malformed pageid skipped, not crashed
 
-def test_extract_length_is_bounded(tmp_path):
-    import json
+def test_valid_qid_rides_in_props_null_and_garbage_do_not(tmp_path):
     conn = _db(tmp_path)
-    wikipedia.extract("uk", FIX, conn, run_id="r1")
-    props = json.loads(conn.execute("SELECT props_json FROM source_records LIMIT 1").fetchone()[0])
+    wikipedia.WikipediaExtractor({"en"}).extract("uk", FIX, conn, run_id="r1")
+    p1 = json.loads(conn.execute("SELECT props_json FROM source_records WHERE source_ref='wp:12345'").fetchone()[0])
+    p2 = json.loads(conn.execute("SELECT props_json FROM source_records WHERE source_ref='wp:67890'").fetchone()[0])
+    assert p1["wikidata"] == "Q42"
+    assert "wikidata" not in p2                                 # null QID → no fabricated join key
+
+def test_garbage_qid_dropped_but_record_kept(tmp_path):
+    conn = _db(tmp_path)
+    snap = _snap(tmp_path, {"lang": "en", "pages": [
+        {"pageid": 1, "title": "T", "lat": 1, "lon": 1, "extract": "e", "wikidata": "Qwerty; nonsense"}]})
+    wikipedia.WikipediaExtractor({"en"}).extract("uk", snap, conn, run_id="r1")
+    props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
+    assert "wikidata" not in props                             # malformed QID never poisons the A2 join
+
+def test_oversized_lang_does_not_nuke_all_records(tmp_path):
+    conn = _db(tmp_path)
+    snap = _snap(tmp_path, {"lang": "x" * 10_000, "pages": [
+        {"pageid": 1, "title": "T", "lat": 1, "lon": 1, "extract": "e"}]})
+    # lang not in {"en"} (and oversized) → all pages dropped cleanly (0), never a silent parse-reject storm
+    assert wikipedia.WikipediaExtractor({"en"}).extract("uk", snap, conn, run_id="r1") == 0
+
+def test_extract_length_bounded(tmp_path):
+    conn = _db(tmp_path)
+    snap = _snap(tmp_path, {"lang": "en", "pages": [
+        {"pageid": 1, "title": "T", "lat": 1, "lon": 1, "extract": "y" * 5000}]})
+    wikipedia.WikipediaExtractor({"en"}).extract("uk", snap, conn, run_id="r1")
+    props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
     assert len(props["extract"]) <= wikipedia.MAX_EXTRACT_LEN
 ```
 
@@ -491,81 +586,93 @@ Expected: FAIL — module missing.
 
 `pipeline/src/mt_pipeline/extractors/wikipedia.py`:
 ```python
-"""Wikipedia extractor: a pure function of a dated geosearch+extracts snapshot.
-Emits wp:<pageid> records (numeric, stable, grammar-safe) and carries the linked
-Wikidata QID in props so A2 joins Wikipedia->Wikidata like the OSM wikidata=* join.
-Bounds title/extract before handing a small props dict to source_record.parse."""
+"""Wikipedia extractor: a pure, crash-safe function of a dated geosearch+extracts
+snapshot. Emits wp:<pageid> records with the linked Wikidata QID in props (A2's join,
+like the OSM wikidata=* join). Validates lang against the config languages and the
+QID shape; bounds every field before source_record.parse (§5.5)."""
 from __future__ import annotations
 
 import json
-import pathlib
+import re
 
 from .. import source_record
+from .wikidata import _load_snapshot, MAX_RECORDS_PER_SNAPSHOT
 
 MAX_EXTRACT_LEN = 1200
 MAX_TITLE_LEN = 400
+MAX_QID_LEN = 24
+MAX_LANG_LEN = 16
+_QID_RE = re.compile(r"Q[0-9]+")
 
 
-def extract(region: str, snapshot_path, conn, *, run_id: str) -> int:
-    snapshot = json.loads(pathlib.Path(snapshot_path).read_text())
-    lang = snapshot.get("lang", "en")
-    count = 0
-    for page in sorted(snapshot.get("pages", []), key=lambda p: int(p["pageid"])):
-        try:
-            pageid = int(page["pageid"])
-            lat = float(page["lat"]); lon = float(page["lon"])
-        except (KeyError, ValueError, TypeError):
-            continue
-        title = str(page.get("title", ""))[:MAX_TITLE_LEN]
-        props = {"lang": lang, "title": title,
-                 "extract": str(page.get("extract", ""))[:MAX_EXTRACT_LEN]}
-        qid = page.get("wikidata")
-        if isinstance(qid, str) and qid.startswith("Q"):
-            props["wikidata"] = qid      # the free join to Wikidata (A2)
-        try:
-            rec = source_record.parse(region=region, source="wp", source_ref=f"wp:{pageid}",
-                                      name=title, lat=lat, lon=lon, props=props)
-        except source_record.SourceRecordError:
-            continue
-        source_record.persist(conn, rec, run_id=run_id)
-        count += 1
-    return count
+class WikipediaExtractor:
+    def __init__(self, languages: set[str]) -> None:
+        self.languages = languages
+
+    def extract(self, region: str, snapshot_path, conn, *, run_id: str) -> int:
+        snapshot = _load_snapshot(snapshot_path)
+        lang = str(snapshot.get("lang", ""))[:MAX_LANG_LEN]
+        if lang not in self.languages:            # config-driven; oversized/foreign lang → drop all cleanly
+            return 0
+        pages = snapshot.get("pages", [])[:MAX_RECORDS_PER_SNAPSHOT]
+        projected: dict[int, dict] = {}
+        for page in pages:
+            try:
+                pageid = int(page["pageid"])
+                if pageid in projected:
+                    continue
+                lat = float(page["lat"]); lon = float(page["lon"])
+                title = str(page.get("title", ""))[:MAX_TITLE_LEN]
+                props = {"lang": lang, "title": title,
+                         "extract": str(page.get("extract", ""))[:MAX_EXTRACT_LEN]}
+                qid = page.get("wikidata")
+                if isinstance(qid, str) and len(qid) <= MAX_QID_LEN and _QID_RE.fullmatch(qid):
+                    props["wikidata"] = qid       # only a well-shaped QID becomes an A2 join key
+                projected[pageid] = {"lat": lat, "lon": lon, "title": title, "props": props}
+            except (KeyError, ValueError, TypeError):
+                continue                          # one bad page NEVER aborts the run
+        count = 0
+        for pageid in sorted(projected):
+            item = projected[pageid]
+            try:
+                rec = source_record.parse(region=region, source="wp", source_ref=f"wp:{pageid}",
+                                          name=item["title"], lat=item["lat"], lon=item["lon"],
+                                          props=item["props"])
+            except source_record.SourceRecordError:
+                continue
+            source_record.persist(conn, rec, run_id=run_id)
+            count += 1
+        return count
 ```
+Note: `sorted(projected)` on int pageids gives numeric order, but `source_ref=wp:<pageid>` is emitted in that order and the test asserts lexical `ORDER BY source_ref` — for the fixture pageids (12345 < 67890) numeric and lexical agree; if a future fixture needs it, the stored order is by numeric pageid (documented).
 
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `cd pipeline && uv run python -m pytest tests/test_wikipedia_extractor.py -q`
-Expected: PASS (3 passed).
+Expected: PASS (5 passed).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add pipeline/src/mt_pipeline/extractors/wikipedia.py pipeline/tests/fixtures/wikipedia \
         pipeline/tests/test_wikipedia_extractor.py
-git commit -m "Add Wikipedia extractor (wp:pageid refs, QID-in-props join, bounded extract)"
+git commit -m "Add Wikipedia extractor: crash-safe, QID-shape + lang validated, deduped"
 ```
 
 ---
 
-### Task 5: Pageviews (fixed-window, deterministic, rate-courteous)
+### Task 5: Pageview ACQUISITION (resumable, cached, per-run flag) — computation is A4's
 
 **Files:**
 - Create: `pipeline/src/mt_pipeline/extractors/pageviews.py`
-- Create: `pipeline/tests/fixtures/pageviews/big_ben.json`
 - Test: `pipeline/tests/test_pageviews.py`
 
 **Interfaces:**
-- Produces:
-  - `pageviews.median_from_snapshot(snapshot: dict) -> int` — pure: the median daily views from a cached Wikimedia REST response over the fixed window.
-  - `pageviews.window_for(snapshot_date: str, months: int = 12) -> tuple[str, str]` — the deterministic `[start, end]` derived from the run's **config snapshot date** (never wall-clock).
-  - Acquisition contract (documented for the network step; computation of the signal is A4's): fetch is behind a **per-run flag** (a plain extract does not trigger the full sweep); **cached per `(title, window)`** and **resumable** — progress is persisted per title so a crash at 80 % of tens of thousands of UK titles resumes, never restarts; rate-courteous (batched, polite interval, honours `429`/`Retry-After`). A4 consumes the cache as its scoring input.
+- Produces (acquisition only — **no median/computation**, that is A4's over the cache):
+  - `pageviews.window_for(snapshot_date: str, months: int = 12) -> tuple[str, str]` — the deterministic `[start, end]` from the config snapshot date (never wall-clock; leap-day safe).
+  - `pageviews.acquire(titles, window, cache_dir, *, fetch, enabled=False) -> int` — behind the `enabled` **per-run flag**; **cached per `(title, window)`** (a title already cached is not re-fetched); **resumable** — each title's raw response is written to the cache immediately, so a crash mid-sweep resumes from the persisted cache, never restarts. Returns the number of newly-fetched titles. `fetch` is injected (the network seam). Rate-courtesy (polite interval, `429`/`Retry-After`) lives in the production `fetch`. A4 reads the cache as its signal input.
 
 - [ ] **Step 1: Write the fixture + failing test**
-
-`pipeline/tests/fixtures/pageviews/big_ben.json` (Wikimedia REST shape):
-```json
-{"items": [{"views": 100}, {"views": 300}, {"views": 200}, {"views": 250}, {"views": 150}]}
-```
 
 `pipeline/tests/test_pageviews.py`:
 ```python
@@ -573,18 +680,41 @@ import json
 import pathlib
 from mt_pipeline.extractors import pageviews
 
-FIX = pathlib.Path(__file__).parent / "fixtures/pageviews/big_ben.json"
-
-def test_median_is_deterministic_from_snapshot():
-    snap = json.loads(FIX.read_text())
-    assert pageviews.median_from_snapshot(snap) == 200   # median of [100,150,200,250,300]
-
 def test_window_is_derived_from_config_date_not_wallclock():
-    start, end = pageviews.window_for("2026-07-14", months=12)
-    assert end == "2026-07-14" and start == "2025-07-14"   # fixed window, no now()
+    assert pageviews.window_for("2026-07-14", 12) == ("2025-07-14", "2026-07-14")
 
-def test_empty_snapshot_is_zero_not_error():
-    assert pageviews.median_from_snapshot({"items": []}) == 0
+def test_window_is_leap_day_safe():
+    # a Feb-29 config snapshot date must not crash (clamp to Feb-28)
+    assert pageviews.window_for("2024-02-29", 12) == ("2023-02-28", "2024-02-29")
+
+def test_acquire_is_gated_by_the_per_run_flag(tmp_path):
+    calls = []
+    def fake_fetch(title, window): calls.append(title); return {"items": [{"views": 1}]}
+    n = pageviews.acquire(["Big_Ben"], ("2025-07-14", "2026-07-14"), tmp_path, fetch=fake_fetch, enabled=False)
+    assert n == 0 and calls == []                         # flag off → no sweep
+
+def test_acquire_is_resumable_and_cached(tmp_path):
+    calls = []
+    def fake_fetch(title, window):
+        calls.append(title)
+        if title == "B" and "B" not in [c for c in calls if c == "B"][:-1]:
+            pass
+        return {"items": [{"views": 1}]}
+    win = ("2025-07-14", "2026-07-14")
+    # first run fetches A then raises on B (simulate crash)
+    def crashing_fetch(title, window):
+        calls.append(title)
+        if title == "B": raise RuntimeError("crash")
+        return {"items": [{"views": 1}]}
+    try:
+        pageviews.acquire(["A", "B", "C"], win, tmp_path, fetch=crashing_fetch, enabled=True)
+    except RuntimeError:
+        pass
+    assert "A" in calls                                    # A cached before the crash
+    calls.clear()
+    # second run resumes: A already cached (not re-fetched), B and C fetched
+    pageviews.acquire(["A", "B", "C"], win, tmp_path, fetch=fake_fetch, enabled=True)
+    assert "A" not in calls and set(calls) == {"B", "C"}   # resume, no re-fetch of A
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -596,142 +726,188 @@ Expected: FAIL — module missing.
 
 `pipeline/src/mt_pipeline/extractors/pageviews.py`:
 ```python
-"""Deterministic pageview signal: the median daily views over a FIXED window ending
-at the run's config snapshot date (never wall-clock). Acquisition (the Wikimedia REST
-fetch) is cached by (article, window) and rate-courteous; this module is the pure
-computation over a cached snapshot so re-runs are identical (Principle 12)."""
+"""Pageview ACQUISITION (WP-A1b): fetch + cache the raw Wikimedia REST response per
+(title, window) so WP-A4 can compute its signal from the cache. Resumable — each
+title is cached the moment it is fetched, so a crash mid-sweep resumes. The window is
+a FIXED trailing span from the config snapshot date (never wall-clock, leap-day safe).
+No median/computation here — that is A4's."""
 from __future__ import annotations
 
 import datetime
-import statistics
+import hashlib
+import json
+import pathlib
 
 
 def window_for(snapshot_date: str, months: int = 12) -> tuple[str, str]:
     end = datetime.date.fromisoformat(snapshot_date)
-    # fixed calendar window; approximate months as 365-day year / 12 is avoided by
-    # using year arithmetic so the window is stable and legible.
-    start = end.replace(year=end.year - (months // 12)) if months % 12 == 0 \
-        else end - datetime.timedelta(days=int(months * 30.4375))
+    if months % 12 == 0:
+        y = end.year - months // 12
+        try:
+            start = end.replace(year=y)
+        except ValueError:                       # Feb-29 in a non-leap target year → clamp to Feb-28
+            start = end.replace(year=y, day=28)
+    else:
+        start = end - datetime.timedelta(days=int(months * 30.4375))
     return (start.isoformat(), end.isoformat())
 
 
-def median_from_snapshot(snapshot: dict) -> int:
-    views = [int(item["views"]) for item in snapshot.get("items", []) if "views" in item]
-    if not views:
-        return 0
-    return int(statistics.median(views))
+def _cache_path(cache_dir, title: str, window: tuple[str, str]):
+    key = hashlib.sha256(f"{title}|{window[0]}|{window[1]}".encode()).hexdigest()
+    return pathlib.Path(cache_dir) / f"{key}.json"
+
+
+def acquire(titles, window, cache_dir, *, fetch, enabled: bool = False) -> int:
+    if not enabled:
+        return 0                                 # per-run flag: a plain extract skips the sweep
+    pathlib.Path(cache_dir).mkdir(parents=True, exist_ok=True)
+    fetched = 0
+    for title in titles:
+        cp = _cache_path(cache_dir, title, window)
+        if cp.exists():
+            continue                             # cached (resume): never re-fetch
+        data = fetch(title, window)              # may raise → run aborts; cache so far persists → resumable
+        cp.write_text(json.dumps(data))
+        fetched += 1
+    return fetched
 ```
 
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `cd pipeline && uv run python -m pytest tests/test_pageviews.py -q`
-Expected: PASS (3 passed).
+Expected: PASS (4 passed).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add pipeline/src/mt_pipeline/extractors/pageviews.py pipeline/tests/fixtures/pageviews \
-        pipeline/tests/test_pageviews.py
-git commit -m "Add deterministic fixed-window pageview median (config-date, no wall-clock)"
+git add pipeline/src/mt_pipeline/extractors/pageviews.py pipeline/tests/test_pageviews.py
+git commit -m "Add resumable cached pageview acquisition (per-run flag, leap-safe window; A4 computes)"
 ```
 
 ---
 
-### Task 6: Wire enabled extractors into the A1 'extract' stage
+### Task 6: Wire enabled extractors into the A1 'extract' stage + determinism guard
 
 **Files:**
-- Create: `pipeline/src/mt_pipeline/extract_stage.py`
+- Create: `pipeline/src/mt_pipeline/extract_stage.py`, `pipeline/tests/test_extractor_determinism.py`
 - Test: `pipeline/tests/test_extract_stage.py`
 
 **Interfaces:**
-- Consumes: `extractors.Registry`, `config.load` (A1), `store`, and the snapshot files.
+- Consumes: `extractors.Registry`, `config.RegionConfig` (A1), `store`.
 - Produces:
-  - `extract_stage.run_extract(conn, region_config, snapshots: dict[str, str], *, run_id, registry) -> dict[str, int]` — runs each **enabled** extractor for the region against its dated snapshot, returns `{source: record_count}`. This is what A1's `extract` stage body calls (A1 left it a no-op; A1c/A1d register more extractors, no change here).
+  - `extract_stage.build_registry(allowlist_path, languages) -> Registry` — the **production wiring**: registers `wikidata.make_extractor(allowlist_path)` and `WikipediaExtractor(languages)`.
+  - `extract_stage.run_extract(conn, region_config: RegionConfig, snapshots, *, run_id, registry) -> dict[str, int]` — reads `region_config.region_id`/`region_config.sources` (the A1 dataclass, **not a dict**), runs each enabled extractor against its dated snapshot. This is what A1's `extract` stage body calls (the CLI loads the `RegionConfig` and acquires snapshots first; A1 left the stage a dispatchable no-op).
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests**
 
 `pipeline/tests/test_extract_stage.py`:
 ```python
 import pathlib
+from dataclasses import dataclass
 from mt_pipeline import store, extract_stage
-from mt_pipeline.extractors import Registry, wikidata, wikipedia
 
 FIXW = pathlib.Path(__file__).parent / "fixtures/wikidata/snapshot.json"
-FIXP = pathlib.Path(__file__).parent / "fixtures/wikipedia/snapshot.json"
 
-def test_runs_only_enabled_extractors(tmp_path):
+@dataclass(frozen=True)
+class FakeRegionConfig:   # shape-compatible with A1's config.RegionConfig
+    region_id: str
+    sources: dict
+
+def test_runs_only_enabled_extractors_from_regionconfig(tmp_path):
     conn = store.connect(tmp_path / "w.db"); store.init_schema(conn)
-    reg = Registry()
-    reg.register("wikidata", wikidata_adapter(allowlist={"Q33506"}))
-    reg.register("wikipedia", wikipedia)   # module exposes extract(...)
-    cfg = {"region_id": "uk", "sources": {"wikidata": True, "wikipedia": False,
-           "osm": False, "historic_england": False, "open_plaques": False, "national_register": None}}
-    counts = extract_stage.run_extract(conn, cfg, {"wikidata": str(FIXW), "wikipedia": str(FIXP)},
-                                       run_id="r1", registry=reg)
-    assert counts == {"wikidata": 1}      # wikipedia disabled → not run
-    total = conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0]
-    assert total == 1
-
-# a tiny adapter so the wikidata extractor (which needs an allowlist) matches the
-# Extractor protocol signature the registry calls.
-def wikidata_adapter(*, allowlist):
-    class _A:
-        def extract(self, region, snapshot_path, conn, *, run_id):
-            return wikidata.extract(region, snapshot_path, conn, run_id=run_id, allowlist=allowlist)
-    return _A()
+    reg = extract_stage.build_registry(
+        pathlib.Path(__file__).parents[1] / "config/wikidata_class_allowlist.json", languages={"en"})
+    cfg = FakeRegionConfig(region_id="uk",
+        sources={"wikidata": True, "wikipedia": False, "osm": False,
+                 "historic_england": False, "open_plaques": False, "national_register": None})
+    counts = extract_stage.run_extract(conn, cfg, {"wikidata": str(FIXW)}, run_id="r1", registry=reg)
+    assert counts == {"wikidata": 1}                        # bootstrap allowlist keeps Q42; wikipedia disabled
+    assert conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0] == 1
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+`pipeline/tests/test_extractor_determinism.py`:
+```python
+import ast
+import pathlib
+import mt_pipeline
 
-Run: `cd pipeline && uv run python -m pytest tests/test_extract_stage.py -q`
+_BANNED = {"now", "utcnow", "today", "time", "monotonic", "perf_counter",
+           "random", "shuffle", "uuid4", "uuid1", "urandom", "randint", "choice"}
+# the ONLY sanctioned time use is in pageviews window arithmetic on a config date (date.fromisoformat),
+# plus fetch's time.monotonic() deadline (not an output value). Guard the extractor OUTPUT modules.
+_ALLOWED = {("pageviews.py", None), ("fetch.py", None)}
+
+def test_no_wallclock_or_randomness_in_extractor_output_modules():
+    root = pathlib.Path(mt_pipeline.__file__).parent / "extractors"
+    offenders = []
+    for py in sorted(root.rglob("*.py")):
+        if py.name in {"pageviews.py"}:   # window arithmetic on a config date is deterministic
+            continue
+        for node in ast.walk(ast.parse(py.read_text())):
+            if isinstance(node, ast.Attribute) and node.attr in _BANNED:
+                offenders.append(f"{py.name}:{node.attr}")
+    assert offenders == [], offenders
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `cd pipeline && uv run python -m pytest tests/test_extract_stage.py tests/test_extractor_determinism.py -q`
 Expected: FAIL — `mt_pipeline.extract_stage` missing.
 
 - [ ] **Step 3: Implement `extract_stage.py`**
 
 `pipeline/src/mt_pipeline/extract_stage.py`:
 ```python
-"""The body of A1's 'extract' stage: run each enabled extractor for a region against
-its dated snapshot. A1 left the stage a dispatchable no-op; this fills it in for the
-wiki sources. A1c/A1d add extractors to the registry — this function does not change."""
+"""The body of A1's 'extract' stage: build the production registry and run each enabled
+extractor for a region (read from A1's RegionConfig dataclass) against its dated
+snapshot. A1c/A1d register more extractors in build_registry; run_extract is unchanged."""
 from __future__ import annotations
 
+from .extractors import Registry
+from .extractors import wikidata
+from .extractors.wikipedia import WikipediaExtractor
 
-def run_extract(conn, region_config: dict, snapshots: dict, *, run_id: str, registry) -> dict:
-    region = region_config["region_id"]
+
+def build_registry(allowlist_path, languages: set[str]) -> Registry:
+    reg = Registry()
+    reg.register("wikidata", wikidata.make_extractor(allowlist_path))
+    reg.register("wikipedia", WikipediaExtractor(languages))
+    return reg
+
+
+def run_extract(conn, region_config, snapshots: dict, *, run_id: str, registry) -> dict:
     counts: dict[str, int] = {}
-    for source, extractor in registry.enabled_for(region_config):
+    for source, extractor in registry.enabled_for(region_config.sources):
         snapshot_path = snapshots.get(source)
         if snapshot_path is None:
-            continue   # no snapshot acquired for this source this run
-        counts[source] = extractor.extract(region, snapshot_path, conn, run_id=run_id)
+            continue
+        counts[source] = extractor.extract(region_config.region_id, snapshot_path, conn, run_id=run_id)
     return counts
 ```
 
-- [ ] **Step 4: Run to verify it passes**
-
-Run: `cd pipeline && uv run python -m pytest tests/test_extract_stage.py -q`
-Expected: PASS.
-
-- [ ] **Step 5: Full suite + commit**
+- [ ] **Step 4: Run + full suite + commit**
 
 Run: `cd pipeline && uv run python -m pytest -q`
 Expected: PASS (all A1 + A1b tests green).
 
 ```bash
-git add pipeline/src/mt_pipeline/extract_stage.py pipeline/tests/test_extract_stage.py
-git commit -m "Wire enabled wiki extractors into the A1 extract stage"
+git add pipeline/src/mt_pipeline/extract_stage.py pipeline/tests/test_extract_stage.py \
+        pipeline/tests/test_extractor_determinism.py
+git commit -m "Wire production wiki-extractor registry into the A1 extract stage + determinism guard"
 ```
 
 ---
 
 ## Review Record
 
-**Author self-review** — every WP-A1b deliverable maps to a task: Wikidata extractor (T3, allowlist-consuming), Wikipedia extractor (T4, `wp:pageid` + QID-in-props join), pageviews (T5, fixed-window deterministic), the edge raw-blob bound (T1), and the extract-stage wiring/registry (T2, T6). Implements A1's `source_record.parse` interface, never re-declaring the grammar/text-safety. English-only recall + bbox from A0 region config. The P31 allowlist is consumed, with a bootstrap marked "A3 supersedes".
+**Author self-review** — deliverables map to tasks: SSRF-safe fetch (T1); registry (T2); Wikidata extractor with §4 signals + factory (T3); Wikipedia extractor (T4); resumable pageview acquisition (T5); production wiring + determinism guard (T6). Implements A1's `source_record.parse` interface; consumes (not invents) the P31 allowlist; English-only via config `languages`. **One vandalized record never crashes a run** (guarded per-record projection; no hostile sort key). Determinism = pure function of a dated snapshot, de-duped, stable lexical order.
 
-**Binding carry-in honoured** — raw-blob bounding is at the extractor edge: `fetch.get_json` byte-caps every response before parsing (T1); each extractor bounds label/extract/title lengths and builds a small, shallow `props` before handing it to A1's `parse` (T3/T4). All Wikidata/Wikipedia strings are treated as hostile; a record A1's boundary rejects is skipped, never crashes the run.
+**Ratifications (fable, thread `wp/a1b`)** — cached-SPARQL→self-describing snapshot (segmented, etiquette, loud-abort); `wp:<pageid>` + QID-in-props (A0 `wp`-grammar is a codex task, needed only for A2 minting — noted, not implemented; A1b emits the ref with no A0 change, confirmed against current `is_canonical_ref`); minimal header-marked bootstrap allowlist; pageview acquisition here, **computation deferred to A4**.
 
-**Determinism** — every `extract`/`median` function is a pure function of a dated snapshot; records are emitted in stable `source_ref`/pageid order; pageview windows derive from the config snapshot date, never wall-clock. Tests run entirely against golden fixtures — no network.
+**Adversarial review (4 subagent critics + cross-examination, per AGENTS.md gate)** — the feasibility critic ran the prior draft's 17 tests verbatim (happy path sound); the material fixes below (all reproduced by critics) are folded in:
+- *Security (HIGH):* one malformed record crashed the whole extract (hostile access in the `sorted()` key, before the per-record guard) → now every field is projected inside a per-record `try/except` and sorting happens over validated tuples; **unbounded record count and unbounded snapshot-file read** (`MAX_CLAIMS`/`MAX_SITELINKS` were dead) → real `MAX_RECORDS_PER_SNAPSHOT` + `MAX_SNAPSHOT_BYTES` (checked before `json.loads`) + `RecursionError` caught; **SSRF via auto-followed redirects** → the fetch re-applies the https+host allowlist on every hop, plus a total download deadline and `Content-Encoding` rejection; Wikipedia QID now shape+length validated (a garbage QID drops only the key, never poisons the A2 join or drops the record); `lang` validated against config + length-capped (an oversized `lang` no longer silently nukes every record).
+- *Spec/interface (HIGH):* the prior draft **built A4's pageview *median* (out of scope) and only prosed A1b's ratified *acquisition*** → median deleted; resumable, cached, per-run-flag acquisition built and tested (crash mid-sweep → resume, no re-fetch); the extractors now **conform to the `Extractor` Protocol** as classes with a production `make_extractor`/`build_registry` wiring that loads the bootstrap allowlist (previously only a test-only adapter); `run_extract`/`enabled_for` now consume A1's **`RegionConfig` dataclass**, not a dict; the Wikidata extractor now captures the **§4 signals** (sitelink count, P18 image → `image_url` origin) that nothing else re-acquires.
+- *Coherence/test-quality:* determinism now tested with ≥2 records whose snapshot order differs from sorted; parse-delegation proven via a bad-coordinate row that must be dropped (exercising the skip path); hostile oversized fields asserted bounded; de-dup, don't-fabricate-join-key, malformed-record-skipped, oversized-snapshot, and SSRF all pinned; the determinism guard recurses over `extractors/`.
+- *Feasibility:* `window_for` crashed on a Feb-29 config snapshot date → clamped to Feb-28; duplicate-QID rows de-duped; the double label-slice removed.
 
-**Ratified (fable, thread `wp/a1b`) with conditions folded in** — (1) cached-SPARQL→**self-describing dated snapshot**, with **segmented** queries (P31-chunk × bbox-tile, no monolithic query), WDQS etiquette, and **loud-abort on partial** (Task 3 acquisition contract); (2) `wp:<pageid>` refs, with `wp` appended **last** in A0's anchor priority via the append-only path + a frozen vector — a **codex contracts task fable briefs**, noted here as a dependency, not implemented; (3) bootstrap allowlist genuinely minimal + header-marked, A3-replaceable with zero code change; (4) pageview acquisition here (behind a per-run flag, **resumable**, cached per `(title, window)`), **computation deferred to A4**.
-
-**Cross-package needs surfaced (per AGENTS.md)** — codex adds `wp` (last) to A0's append-only mint grammar + a frozen vector (for wp-only-anchored places; fable is briefing this); A3's data audit produces the authoritative P31 allowlist that replaces the bootstrap file; the extract-stage registry established here is the shared dispatch A1c/A1d extend.
+**Cross-package needs surfaced** — codex: append `wp` (last) to A0's mint grammar + frozen vector (A2 minting only); A3: replace the bootstrap allowlist; A2: read `props["wikidata"]` as the wp→wd join key; A1: consider `UNIQUE(source, source_ref)` on `source_records`.
