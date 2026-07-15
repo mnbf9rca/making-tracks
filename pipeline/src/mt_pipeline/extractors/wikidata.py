@@ -59,7 +59,12 @@ class WikidataExtractor:
 
     def extract(self, region: str, snapshot_path, conn, *, run_id: str) -> int:
         snapshot = _load_snapshot(snapshot_path)
-        bindings = snapshot.get("results", {}).get("bindings", [])
+        results = snapshot.get("results", {})
+        if not isinstance(results, dict):
+            return 0
+        bindings = results.get("bindings", [])
+        if not isinstance(bindings, list):
+            return 0
         if len(bindings) > MAX_RECORDS_PER_SNAPSHOT:
             bindings = bindings[:MAX_RECORDS_PER_SNAPSHOT]
 

@@ -6,6 +6,7 @@ import datetime
 import hashlib
 import json
 import pathlib
+import os
 
 
 def window_for(snapshot_date: str, months: int = 12) -> tuple[str, str]:
@@ -34,9 +35,21 @@ def acquire(titles, window, cache_dir, *, fetch, enabled: bool = False) -> int:
     fetched = 0
     for title in titles:
         cache_path = _cache_path(cache_dir, title, window)
-        if cache_path.exists():
+        if _cache_complete(cache_path):
             continue
         data = fetch(title, window)
-        cache_path.write_text(json.dumps(data))
+        tmp_path = cache_path.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(data))
+        os.replace(tmp_path, cache_path)
         fetched += 1
     return fetched
+
+
+def _cache_complete(cache_path: pathlib.Path) -> bool:
+    if not cache_path.exists():
+        return False
+    try:
+        json.loads(cache_path.read_text())
+    except (OSError, ValueError, RecursionError):
+        return False
+    return True

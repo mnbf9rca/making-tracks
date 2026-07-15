@@ -100,3 +100,29 @@ def test_extract_length_bounded(tmp_path):
     wikipedia.WikipediaExtractor({"en"}).extract("uk", snap, conn, run_id="r1")
     props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
     assert len(props["extract"]) <= wikipedia.MAX_EXTRACT_LEN
+
+
+def test_emits_in_stable_lexical_source_ref_order(tmp_path):
+    conn = _db(tmp_path)
+    snap = _snap(
+        tmp_path,
+        {
+            "lang": "en",
+            "pages": [
+                {"pageid": 9, "title": "Nine", "lat": 1, "lon": 1},
+                {"pageid": 100, "title": "Hundred", "lat": 1, "lon": 1},
+            ],
+        },
+    )
+    wikipedia.WikipediaExtractor({"en"}).extract("uk", snap, conn, run_id="r1")
+    order = [
+        row[0]
+        for row in conn.execute("SELECT source_ref FROM source_records ORDER BY id")
+    ]
+    assert order == ["wp:100", "wp:9"]
+
+
+def test_malformed_pages_container_is_dropped_cleanly(tmp_path):
+    conn = _db(tmp_path)
+    snap = _snap(tmp_path, {"lang": "en", "pages": None})
+    assert wikipedia.WikipediaExtractor({"en"}).extract("uk", snap, conn, run_id="r1") == 0

@@ -24,7 +24,10 @@ class WikipediaExtractor:
         if lang not in self.languages:
             return 0
 
-        pages = snapshot.get("pages", [])[:MAX_RECORDS_PER_SNAPSHOT]
+        pages = snapshot.get("pages", [])
+        if not isinstance(pages, list):
+            return 0
+        pages = pages[:MAX_RECORDS_PER_SNAPSHOT]
         projected: dict[int, dict] = {}
         for page in pages:
             try:
@@ -56,7 +59,7 @@ class WikipediaExtractor:
                 continue
 
         count = 0
-        for pageid in sorted(projected):
+        for pageid in sorted(projected, key=lambda pid: f"wp:{pid}"):
             item = projected[pageid]
             try:
                 record = source_record.parse(

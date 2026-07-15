@@ -170,3 +170,11 @@ def test_bootstrap_allowlist_loads_and_is_minimal():
     assert allow
     assert all(q.startswith("Q") for q in allow)
     assert len(allow) <= 12
+
+
+def test_malformed_results_container_is_dropped_cleanly(tmp_path):
+    path = _write(tmp_path, {"results": []}, "malformed.json")
+    conn = _db(tmp_path)
+    assert wikidata.WikidataExtractor({"Q33506"}).extract(
+        "uk", path, conn, run_id="r1"
+    ) == 0
