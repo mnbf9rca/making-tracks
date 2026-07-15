@@ -9,7 +9,7 @@ from typing import TypedDict
 
 import mt_contracts
 
-from . import progress, source_record, store
+from . import progress, source_record
 from .extractors import osm
 
 _CONFIG_DIR = pathlib.Path(__file__).resolve().parents[2] / "config"
@@ -79,7 +79,7 @@ def run(conn, region: str, *, run_id: str, taxonomy: dict | None = None) -> dict
     source_records = _source_records_by_ref(conn, region)
     histogram: Counter[str] = Counter()
     conn.execute(
-        f"DELETE FROM {store.PLACE_CATEGORIES_TABLE} WHERE region = ?",
+        "DELETE FROM place_categories WHERE region = ?",
         (region,),
     )
     total_places = conn.execute(
