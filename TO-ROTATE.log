@@ -1,0 +1,3 @@
+# TO-ROTATE.log — compromised-secret ledger (committed for durability)
+# Append-only. Format: ISO-timestamp | op://reference-or-name | exposure vector | logged-by
+# NEVER write secret VALUES here. Rob rotates and strikes through entries when done.
