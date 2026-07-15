@@ -1,67 +1,61 @@
 [
   {
+    "lat": 1.395305555,
+    "lon": 103.625277777,
+    "name": "X Park Sunway Iskandar",
+    "props": {
+      "matched_p31": "Q570116",
+      "p31": "Q2416723",
+      "p31s": [
+        "Q2416723"
+      ]
+    },
+    "source": "wd",
+    "source_ref": "wd:Q100147510"
+  },
+  {
+    "lat": 1.3281,
+    "lon": 103.8471,
+    "name": "Sun Yat Sen Memorial Hall (Singapore)",
+    "props": {
+      "matched_p31": "Q4989906",
+      "p31": "Q136484019",
+      "p31s": [
+        "Q136484019",
+        "Q3950"
+      ]
+    },
+    "source": "wd",
+    "source_ref": "wd:Q10123616"
+  },
+  {
+    "lat": 6.136021,
+    "lon": 100.371764,
+    "name": "Darul Aman Stadium",
+    "props": {
+      "wikidata": "Q5225771"
+    },
+    "source": "wp",
+    "source_ref": "wp:10006953"
+  },
+  {
+    "lat": 1.3554,
+    "lon": 103.9398,
+    "name": "Masjid Darul Ghufran",
+    "props": {
+      "wikidata": "Q4262113"
+    },
+    "source": "wp",
+    "source_ref": "wp:10009609"
+  },
+  {
     "lat": 1.9963228,
     "lon": 109.6469936,
     "name": "Mount Kuwai",
     "props": {
-      "name": "Mount Kuwai",
-      "reservation": "no",
-      "tourism": "attraction",
-      "wheelchair": "no"
+      "tourism": "attraction"
     },
     "source": "osm",
     "source_ref": "osm:node/10000151417"
-  },
-  {
-    "lat": 1.2500946,
-    "lon": 103.8333982,
-    "name": "Fort Serapong ruins",
-    "props": {
-      "historic": "fort",
-      "historic:civilization": "modern",
-      "name": "Fort Serapong ruins",
-      "name:zh": "\u5b9e\u62c9\u84ec\u70ae\u53f0\u5e9f\u589f",
-      "ruins": "yes"
-    },
-    "source": "osm",
-    "source_ref": "osm:node/10013124461"
-  },
-  {
-    "lat": 1.2889131,
-    "lon": 103.8563856,
-    "name": "Makan Angin",
-    "props": {
-      "artist_name": "Lim Soo Ngee",
-      "artwork_type": "sculpture",
-      "material": "bronze",
-      "name": "Makan Angin",
-      "start_date": "2014",
-      "tourism": "artwork"
-    },
-    "source": "osm",
-    "source_ref": "osm:node/10015169407"
-  },
-  {
-    "lat": 5.3586042,
-    "lon": 100.4890368,
-    "name": "The Mask",
-    "props": {
-      "name": "The Mask",
-      "tourism": "viewpoint"
-    },
-    "source": "osm",
-    "source_ref": "osm:node/10015260853"
-  },
-  {
-    "lat": 5.3623279,
-    "lon": 100.4856381,
-    "name": "Triple Rock",
-    "props": {
-      "name": "Triple Rock",
-      "name:en": "Triple Rock",
-      "tourism": "viewpoint"
-    },
-    "source": "osm",
-    "source_ref": "osm:node/10015260855"
   }
 ]
