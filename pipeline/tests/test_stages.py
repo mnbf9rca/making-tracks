@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from mt_pipeline import source_record, stages, store
+from mt_pipeline import categorize, source_record, stages, store
 
 from helpers import A2_PLACES_DDL
 
@@ -79,6 +79,7 @@ def test_score_stage_is_blocked_when_reconcile_has_no_places(conn):
 
 
 def test_categorize_stage_dispatches_after_score_predecessor(conn):
+    expected_category = categorize.load_taxonomy()["class_map"]["Q33506"]
     conn.execute(A2_PLACES_DDL)
     conn.execute(
         """
@@ -102,7 +103,7 @@ def test_categorize_stage_dispatches_after_score_predecessor(conn):
     assert store.stage_completed(conn, "uk", "categorize")
     assert conn.execute(
         "SELECT category FROM place_categories WHERE place_id = 'p'"
-    ).fetchone()[0] == "culture"
+    ).fetchone()[0] == expected_category
 
 
 def test_order_is_per_region(conn):

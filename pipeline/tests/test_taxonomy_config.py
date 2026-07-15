@@ -47,6 +47,14 @@ def test_taxonomy_source_map_matches_source_precedence_entries():
         assert source_map[kind] in data["categories"]
 
 
+def test_real_taxonomy_pins_deliberate_head_mappings():
+    data = _load("taxonomy.json")
+
+    assert data["class_map"]["Q33506"] == "museum"
+    assert data["tag_map"]["memorial=*"] == "memorial"
+    assert data["source_map"]["hehle"] == "historic_building"
+
+
 def test_wikidata_allowlist_is_a3_marked_allow_only_qid_list():
     data = _load("wikidata_class_allowlist.json")
 

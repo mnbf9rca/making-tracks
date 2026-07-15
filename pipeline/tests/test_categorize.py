@@ -233,6 +233,7 @@ def test_run_is_deterministic_across_member_and_record_order():
 
 
 def test_stage_dispatches_categorize_body_after_score():
+    expected_category = CZ.load_taxonomy()["class_map"]["Q33506"]
     conn = _seed_run(
         [("uk", "wd", "wd:Q1", "Museum", 1, 1, json.dumps({"p31": "Q33506"}), "r")],
         [("p", ["wd:Q1"])],
@@ -245,4 +246,4 @@ def test_stage_dispatches_categorize_body_after_score():
     assert store.stage_completed(conn, "uk", "categorize")
     assert conn.execute("SELECT category FROM place_categories WHERE place_id = 'p'").fetchone()[
         0
-    ] == "culture"
+    ] == expected_category
