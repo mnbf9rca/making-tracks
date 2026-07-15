@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 import sqlite3
-import json
 
 WORKING_STORE_VERSION = 4
 SOURCE_RECORDS_TABLE = "source_records"
@@ -207,8 +207,8 @@ def replace_places(conn: sqlite3.Connection, *, region: str, places: list[dict])
                 place["name"],
                 place["lat"],
                 place["lon"],
-                json.dumps(place["refs"], sort_keys=True),
-                json.dumps(place["member_refs"], sort_keys=True),
+                json.dumps(sorted(place["refs"])),
+                json.dumps(sorted(place["member_refs"])),
                 place["status"],
             )
             for place in places

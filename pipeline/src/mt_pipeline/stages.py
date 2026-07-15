@@ -113,8 +113,11 @@ def _run_reconcile(conn, region: str, *, run_id: str, version: str) -> None:
     redirect_path = pathlib.Path(".mt-data") / region / "wikidata_redirects.snapshot.json"
     if not redirect_path.exists():
         raise StageOrderError(f"cannot run reconcile: missing redirect map {redirect_path}")
-    redirect_snapshot = redirects.load_redirect_snapshot(redirect_path)
-    redirects.assert_fresh(redirect_snapshot, metadata["wikidata_snapshot_date"])
+    try:
+        redirect_snapshot = redirects.load_redirect_snapshot(redirect_path)
+        redirects.assert_fresh(redirect_snapshot, metadata["wikidata_snapshot_date"])
+    except redirects.RedirectMapError as exc:
+        raise StageOrderError(f"cannot run reconcile: redirect map rejected: {exc}") from exc
 
     reconcile_config = _load_reconcile_config()
     fuzzy_config = cluster.FuzzyConfig(**reconcile_config["fuzzy"])

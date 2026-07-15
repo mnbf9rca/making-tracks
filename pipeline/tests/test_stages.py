@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from mt_pipeline import source_record, stages, store
@@ -140,3 +142,40 @@ def test_reconcile_stage_refuses_missing_redirect_map(conn, tmp_path, monkeypatc
             run_id="real",
             version="20260715T000000Z",
         )
+
+
+def test_reconcile_stage_refuses_stale_redirect_map(conn, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    stages.run_stage(conn, "malaysia", "extract", run_id="real")
+    store.record_extract_run_metadata(
+        conn,
+        region="malaysia",
+        run_id="real",
+        wikidata_snapshot_date="2026-07-15T00:00:00Z",
+        source_statuses={"wikidata": {"status": "success", "count": 0}},
+    )
+    redirect_path = tmp_path / ".mt-data" / "malaysia" / "wikidata_redirects.snapshot.json"
+    redirect_path.parent.mkdir(parents=True)
+    redirect_path.write_text(
+        json.dumps(
+            {
+                "_meta": {
+                    "complete": True,
+                    "retrieved_at": "2026-07-14T00:00:00Z",
+                    "wikidata_retrieved_at": "2026-07-15T00:00:00Z",
+                },
+                "redirects": {},
+            }
+        )
+    )
+
+    with pytest.raises(stages.StageOrderError, match="redirect map"):
+        stages.run_stage(
+            conn,
+            "malaysia",
+            "reconcile",
+            run_id="real",
+            version="20260715T000000Z",
+        )
+
+    assert not store.stage_completed(conn, "malaysia", "reconcile")
