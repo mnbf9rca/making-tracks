@@ -3,6 +3,7 @@ import json
 import pytest
 
 from mt_contracts.place_id import is_valid_place_id
+from mt_pipeline import store
 from mt_pipeline.eval import golden as G
 
 A = "mt1_" + "0" * 26
@@ -277,17 +278,11 @@ def test_same_data_version_with_changed_candidate_set_is_rejected():
 def test_dump_area_reads_planned_a2_a3_a4_tables(conn):
     conn.executescript(
         """
-        CREATE TABLE places (
-            place_id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            lat REAL NOT NULL,
-            lon REAL NOT NULL
-        );
-        CREATE TABLE place_categories (
+        CREATE TABLE IF NOT EXISTS place_categories (
             place_id TEXT PRIMARY KEY,
             category TEXT NOT NULL
         );
-        CREATE TABLE place_scores (
+        CREATE TABLE IF NOT EXISTS place_scores (
             place_id TEXT PRIMARY KEY,
             tier INTEGER NOT NULL,
             score REAL NOT NULL,
@@ -295,8 +290,30 @@ def test_dump_area_reads_planned_a2_a3_a4_tables(conn):
         );
         """
     )
-    conn.execute("INSERT INTO places VALUES (?, ?, ?, ?)", (A, "In", 51.51, -0.11))
-    conn.execute("INSERT INTO places VALUES (?, ?, ?, ?)", (B, "Out", 52.0, -0.11))
+    store.replace_places(
+        conn,
+        region="uk",
+        places=[
+            {
+                "place_id": A,
+                "name": "In",
+                "lat": 51.51,
+                "lon": -0.11,
+                "refs": ["wd:Q1"],
+                "member_refs": ["wd:Q1"],
+                "status": "active",
+            },
+            {
+                "place_id": B,
+                "name": "Out",
+                "lat": 52.0,
+                "lon": -0.11,
+                "refs": ["wd:Q2"],
+                "member_refs": ["wd:Q2"],
+                "status": "active",
+            },
+        ],
+    )
     conn.execute("INSERT INTO place_categories VALUES (?, ?)", (A, "history"))
     conn.execute("INSERT INTO place_categories VALUES (?, ?)", (B, "history"))
     conn.execute(
@@ -332,17 +349,11 @@ def test_dump_area_reads_planned_a2_a3_a4_tables(conn):
 def test_dump_area_rejects_malformed_signals_json(conn):
     conn.executescript(
         """
-        CREATE TABLE places (
-            place_id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            lat REAL NOT NULL,
-            lon REAL NOT NULL
-        );
-        CREATE TABLE place_categories (
+        CREATE TABLE IF NOT EXISTS place_categories (
             place_id TEXT PRIMARY KEY,
             category TEXT NOT NULL
         );
-        CREATE TABLE place_scores (
+        CREATE TABLE IF NOT EXISTS place_scores (
             place_id TEXT PRIMARY KEY,
             tier INTEGER NOT NULL,
             score REAL NOT NULL,
@@ -350,7 +361,21 @@ def test_dump_area_rejects_malformed_signals_json(conn):
         );
         """
     )
-    conn.execute("INSERT INTO places VALUES (?, ?, ?, ?)", (A, "In", 51.51, -0.11))
+    store.replace_places(
+        conn,
+        region="uk",
+        places=[
+            {
+                "place_id": A,
+                "name": "In",
+                "lat": 51.51,
+                "lon": -0.11,
+                "refs": ["wd:Q1"],
+                "member_refs": ["wd:Q1"],
+                "status": "active",
+            }
+        ],
+    )
     conn.execute("INSERT INTO place_categories VALUES (?, ?)", (A, "history"))
     conn.execute("INSERT INTO place_scores VALUES (?, ?, ?, ?)", (A, 2, 0.8, '["bad"]'))
 
