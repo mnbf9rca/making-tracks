@@ -75,6 +75,8 @@ def _find_nondeterministic_calls(path_name: str, source: str) -> list[str]:
             continue
         if path_name == "fetch.py" and fn in {"get_json", "get_to_file"} and name == "monotonic":
             continue
+        if path_name in {"audit.py", "categorize.py"} and fn in {"__init__", "tick", "done"} and name == "monotonic":
+            continue
         offenders.append(f"{path_name}:{fn}:{name}")
     return offenders
 

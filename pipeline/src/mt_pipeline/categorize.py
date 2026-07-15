@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import pathlib
+import sys
+import time
 from collections import Counter
 
 import mt_contracts
@@ -14,6 +16,16 @@ from .extractors import osm
 _CONFIG_DIR = pathlib.Path(__file__).resolve().parents[2] / "config"
 _TAXONOMY_PATH = _CONFIG_DIR / "taxonomy.json"
 _OSM_CANDIDATE_TAGS = _CONFIG_DIR / "osm_candidate_tags.json"
+_HEARTBEAT_EVERY_RECORDS = 10_000
+_HEARTBEAT_EVERY_SECONDS = 30.0
+_REQUIRED_TAXONOMY_KEYS = (
+    "categories",
+    "uncovered",
+    "precedence",
+    "class_map",
+    "tag_map",
+    "source_map",
+)
 
 
 class PlacesTableMissingError(RuntimeError):
@@ -70,6 +82,16 @@ def run(conn, region: str, *, run_id: str, taxonomy: dict | None = None) -> dict
     source_records = _source_records_by_ref(conn, region)
     histogram: Counter[str] = Counter()
     conn.execute("DELETE FROM place_categories WHERE region = ?", (region,))
+    total_places = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM places
+        WHERE region = ? AND status = 'live'
+        """,
+        (region,),
+    ).fetchone()[0]
+    progress = _Progress("categorize.run", region=region, total=total_places)
+    progress.start()
 
     rows = conn.execute(
         """
@@ -80,7 +102,10 @@ def run(conn, region: str, *, run_id: str, taxonomy: dict | None = None) -> dict
         """,
         (region,),
     )
+    processed = 0
     for place_id, member_refs_json in rows:
+        processed += 1
+        progress.tick(processed)
         member_refs = _load_json_list(member_refs_json)
         signals = _signals_for(member_refs, source_records, candidate_tags)
         category = category_for(signals, taxonomy)
@@ -97,6 +122,7 @@ def run(conn, region: str, *, run_id: str, taxonomy: dict | None = None) -> dict
         )
         histogram[category] += 1
     conn.commit()
+    progress.done(processed)
     return _ordered_histogram(histogram, taxonomy)
 
 
@@ -161,6 +187,9 @@ def _signals_for(
 
 
 def _validate_taxonomy(data: dict) -> None:
+    missing = [key for key in _REQUIRED_TAXONOMY_KEYS if key not in data]
+    if missing:
+        raise ValueError(f"taxonomy missing required keys: {missing}")
     categories = data.get("categories")
     uncovered = data.get("uncovered")
     if not isinstance(categories, list) or not (5 <= len(categories) <= 7):
@@ -172,6 +201,15 @@ def _validate_taxonomy(data: dict) -> None:
             raise ValueError(f"invalid taxonomy label: {label!r}")
         if mt_contracts.strip_unsafe_text(label) != label:
             raise ValueError(f"unsafe taxonomy label: {label!r}")
+    for key in ("class_map", "tag_map", "source_map"):
+        mapping = data[key]
+        if not isinstance(mapping, dict):
+            raise ValueError(f"taxonomy {key} must be an object")
+        invalid = sorted({value for value in mapping.values() if value not in categories})
+        if invalid:
+            raise ValueError(f"taxonomy {key} maps to unknown categories: {invalid}")
+    if not isinstance(data["precedence"], list):
+        raise ValueError("taxonomy precedence must be a list")
 
 
 def _load_json_dict(value: str) -> dict:
@@ -208,3 +246,40 @@ def _ordered_histogram(histogram: Counter[str], taxonomy: dict) -> dict[str, int
         if category not in ordered:
             ordered[category] = count
     return ordered
+
+
+class _Progress:
+    def __init__(self, name: str, *, region: str, total: int):
+        self.name = name
+        self.region = region
+        self.total = total
+        self.started = time.monotonic()
+        self.last_heartbeat = self.started
+
+    def start(self) -> None:
+        print(
+            f"PHASE START {self.name} region={self.region} places={self.total}",
+            file=sys.stderr,
+        )
+
+    def tick(self, processed: int) -> None:
+        now = time.monotonic()
+        if processed % _HEARTBEAT_EVERY_RECORDS == 0 or (
+            now - self.last_heartbeat
+        ) >= _HEARTBEAT_EVERY_SECONDS:
+            self.last_heartbeat = now
+            elapsed = now - self.started
+            rate = processed / elapsed if elapsed > 0 else 0.0
+            print(
+                f"PHASE HEARTBEAT {self.name} region={self.region} "
+                f"processed={processed}/{self.total} rate={rate:.1f}/s elapsed={elapsed:.1f}s",
+                file=sys.stderr,
+            )
+
+    def done(self, processed: int) -> None:
+        elapsed = time.monotonic() - self.started
+        print(
+            f"PHASE DONE {self.name} region={self.region} "
+            f"processed={processed}/{self.total} elapsed={elapsed:.1f}s",
+            file=sys.stderr,
+        )

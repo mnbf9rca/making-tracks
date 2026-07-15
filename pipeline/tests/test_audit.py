@@ -44,6 +44,21 @@ def test_audit_counts_p31_and_candidate_osm_tags_sorted():
     assert "Q16970" in audit.render_markdown(rep)
 
 
+def test_audit_emits_phase_and_heartbeat_telemetry(monkeypatch, capsys):
+    monkeypatch.setattr(audit, "_HEARTBEAT_EVERY_RECORDS", 1)
+    rows = [
+        ("uk", "wd", "wd:Q1", "A", 1, 1, json.dumps({"p31": "Q16970"}), "r"),
+        ("uk", "wd", "wd:Q2", "B", 1, 1, json.dumps({"p31": "Q33506"}), "r"),
+    ]
+
+    audit.audit_region(_seed(rows), "uk")
+
+    err = capsys.readouterr().err
+    assert "PHASE START audit_region region=uk records=2" in err
+    assert "PHASE HEARTBEAT audit_region region=uk processed=1/2" in err
+    assert "PHASE DONE audit_region region=uk processed=2/2" in err
+
+
 def test_audit_skips_oversized_or_deeply_nested_props_json():
     deep_json = "[" * 10_000 + "]" * 10_000
     oversized = "{" + '"p31":"' + ("Q" * 70_000) + '"}'

@@ -119,6 +119,21 @@ def test_cli_accepts_audit_subcommand_shape_from_console_argv(monkeypatch, tmp_p
     assert '"region": "uk"' in capsys.readouterr().out
 
 
+def test_cli_maps_missing_a2_places_table_to_clean_error(tmp_path, capsys):
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    for stage in ("extract", "reconcile", "score"):
+        store.mark_stage_complete(conn, "uk", stage, "r1", "2026-07-15T00:00:00Z")
+
+    rc = cli.main(["--region", "uk", "categorize", "--db", str(db), "--run-id", "cat1"])
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "A2 places table" in err
+    assert "Traceback" not in err
+
+
 def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path):
     captured = {}
 

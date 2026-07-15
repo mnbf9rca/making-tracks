@@ -7,7 +7,7 @@ import pathlib
 import sqlite3
 import sys
 
-from . import acquire, audit, config, extract_stage, stages, store
+from . import acquire, audit, categorize, config, extract_stage, stages, store
 
 _DEFAULT_RUN_ID = "manual"
 _COMMANDS = ("acquire", "acquire-redirects", "audit", *stages.STAGE_ORDER)
@@ -200,6 +200,9 @@ def main(argv=None) -> int:
             return 0
         stages.run_stage(conn, region.region_id, args.stage, run_id=args.run_id)
     except stages.StageOrderError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except categorize.PlacesTableMissingError as exc:
         print(str(exc), file=sys.stderr)
         return 1
     except (

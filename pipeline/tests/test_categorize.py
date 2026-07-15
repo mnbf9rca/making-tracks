@@ -161,6 +161,24 @@ def test_run_writes_place_categories_from_a2_places_shape():
     ]
 
 
+def test_run_emits_phase_and_heartbeat_telemetry(monkeypatch, capsys):
+    monkeypatch.setattr(CZ, "_HEARTBEAT_EVERY_RECORDS", 1)
+    conn = _seed_run(
+        [
+            ("uk", "wd", "wd:Q1", "Museum", 1, 1, json.dumps({"p31": "Q33506"}), "r"),
+            ("uk", "wd", "wd:Q2", "Castle", 1, 1, json.dumps({"p31": "Q23413"}), "r"),
+        ],
+        [("p1", ["wd:Q1"]), ("p2", ["wd:Q2"])],
+    )
+
+    CZ.run(conn, "uk", run_id="cat1", taxonomy=TAX)
+
+    err = capsys.readouterr().err
+    assert "PHASE START categorize.run region=uk places=2" in err
+    assert "PHASE HEARTBEAT categorize.run region=uk processed=1/2" in err
+    assert "PHASE DONE categorize.run region=uk processed=2/2" in err
+
+
 def test_run_removes_stale_place_categories_for_region():
     conn = _seed_run(
         [("uk", "wd", "wd:Q1", "Museum", 1, 1, json.dumps({"p31": "Q33506"}), "r")],
