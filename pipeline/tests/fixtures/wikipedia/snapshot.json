@@ -1,0 +1,28 @@
+{
+  "_meta": {"lang": "en", "retrieved_at": "2026-07-14", "complete": true},
+  "lang": "en",
+  "pages": [
+    {
+      "pageid": 12345,
+      "title": "Big Ben",
+      "lat": 51.5007,
+      "lon": -0.1246,
+      "extract": "The Great Bell of the striking clock at Westminster.",
+      "wikidata": "Q42"
+    },
+    {
+      "pageid": 67890,
+      "title": "Some Hamlet",
+      "lat": 51.4,
+      "lon": -0.2,
+      "extract": "A small place.",
+      "wikidata": null
+    },
+    {
+      "pageid": "MALFORMED",
+      "title": "Bad pageid",
+      "lat": 51.4,
+      "lon": -0.2
+    }
+  ]
+}

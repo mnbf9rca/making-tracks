@@ -1,0 +1,45 @@
+{
+  "_meta": {
+    "endpoint": "https://query.wikidata.org/sparql",
+    "queries": ["SELECT ... bbox-tile 0 x class-chunk 0 ..."],
+    "retrieved_at": "2026-07-14",
+    "complete": true
+  },
+  "results": {
+    "bindings": [
+      {
+        "item": {"value": "http://www.wikidata.org/entity/Q42"},
+        "lat": {"value": "51.5007"},
+        "lon": {"value": "-0.1246"},
+        "p31": {"value": "http://www.wikidata.org/entity/Q33506"},
+        "label": {"value": "Big Ben"},
+        "sitelinks": {"value": "42"},
+        "image": {
+          "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Big%20Ben.jpg"
+        }
+      },
+      {
+        "item": {"value": "http://www.wikidata.org/entity/Q42"},
+        "lat": {"value": "51.5007"},
+        "lon": {"value": "-0.1246"},
+        "p31": {"value": "http://www.wikidata.org/entity/Q570116"},
+        "label": {"value": "Big Ben"},
+        "sitelinks": {"value": "42"}
+      },
+      {
+        "item": {"value": "http://www.wikidata.org/entity/Q17"},
+        "lat": {"value": "51.5"},
+        "lon": {"value": "-0.1"},
+        "p31": {"value": "http://www.wikidata.org/entity/Q_NOPE"},
+        "label": {"value": "A Parish"},
+        "sitelinks": {"value": "3"}
+      },
+      {
+        "lat": {"value": "1"},
+        "lon": {"value": "1"},
+        "p31": {"value": "http://www.wikidata.org/entity/Q33506"},
+        "label": {"value": "MALFORMED - no item key"}
+      }
+    ]
+  }
+}
