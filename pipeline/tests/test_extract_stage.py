@@ -52,10 +52,10 @@ def test_enabled_but_unregistered_source_fails_loudly(tmp_path):
     )
     cfg = FakeRegionConfig(
         region_id="uk",
-        sources={"wikidata": True, "historic_england": True},
+        sources={"wikidata": True, "unknown_register": True},
     )
     with pytest.raises(
-        extract_stage.UnregisteredEnabledSourceError, match="historic_england"
+        extract_stage.UnregisteredEnabledSourceError, match="unknown_register"
     ):
         extract_stage.run_extract(
             conn, cfg, {"wikidata": str(FIXW)}, run_id="r1", registry=reg

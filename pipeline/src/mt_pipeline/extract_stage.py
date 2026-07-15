@@ -5,6 +5,7 @@ from __future__ import annotations
 import pathlib
 
 from .extractors import Registry
+from .extractors import historic_england, open_plaques
 from .extractors import osm as osm_extractor
 from .extractors import wikidata
 from .extractors.wikipedia import WikipediaExtractor
@@ -29,6 +30,8 @@ def build_registry(allowlist_path, languages: set[str], *, osm_tag_config_path=N
     registry.register(
         "osm", osm_extractor.make_extractor(osm_tag_config_path or DEFAULT_OSM_TAG_CONFIG)
     )
+    registry.register("historic_england", historic_england.HistoricEnglandExtractor())
+    registry.register("open_plaques", open_plaques.OpenPlaquesExtractor())
     return registry
 
 

@@ -1,0 +1,19 @@
+{
+  "_header": "BOOTSTRAP: register source endpoints + attribution. Ops updates URLs without a code change. HE=OGL v3.0 (attribution REQUIRED); Open Plaques=PDDL 1.0.",
+  "historic_england": {
+    "url": "https://opendata-historicengland.hub.arcgis.com/api/download/v1/items/767f279327a24845bf47dfe5eae9862b/geojson?layers=0&outSR=4326",
+    "allowed_hosts": ["opendata-historicengland.hub.arcgis.com", "services-eu1.arcgis.com", "stg-arcgisazurecdataprodeu1.az.arcgis.com"],
+    "max_bytes": 536870912,
+    "snapshot_date": null,
+    "license": "OGL-3.0",
+    "attribution": "Contains Historic England data licensed under the Open Government Licence v3.0."
+  },
+  "open_plaques": {
+    "url": "https://openplaques.s3.eu-west-2.amazonaws.com/open-plaques-United-Kingdom-2025-12-15.json",
+    "allowed_hosts": ["openplaques.s3.eu-west-2.amazonaws.com"],
+    "max_bytes": 67108864,
+    "snapshot_date": "2025-12-15",
+    "license": "PDDL-1.0",
+    "attribution": "Plaque data from Open Plaques (openplaques.org), released under the Public Domain Dedication and License 1.0."
+  }
+}
