@@ -571,6 +571,7 @@ def acquire_osm(
     entry = config[region_id]
     expected_hosts = set(entry["allowed_hosts"])
     max_bytes = int(entry.get("max_bytes", fetch.MAX_RESPONSE_BYTES))
+    md5_path = out.with_name(f"{out.name}.md5")
 
     try:
         size = download_file(
@@ -580,7 +581,6 @@ def acquire_osm(
             max_bytes=max_bytes,
         )
         if fetch_text is None:
-            md5_path = out.with_name(f"{out.name}.md5")
             fetch.get_to_file(
                 entry["md5_url"],
                 md5_path,
@@ -608,6 +608,7 @@ def acquire_osm(
         pathlib.Path(str(out) + ".meta.json").write_text(json.dumps(sidecar, sort_keys=True))
     except Exception:
         out.unlink(missing_ok=True)
+        md5_path.unlink(missing_ok=True)
         pathlib.Path(str(out) + ".meta.json").unlink(missing_ok=True)
         raise
 

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the deferred source-acquisition layer and prove it by running real Malaysia and UK extraction.
+**Goal:** Build the deferred source-acquisition layer and prove it by running real Malaysia and UK extractions.
 
 **Architecture:** Add a `mt_pipeline.acquire` module that writes deterministic local snapshots under an ignored data directory. The CLI gets an `acquire` command and an extract path that can consume those snapshots. Network code remains behind injected fetch functions and the existing hardened `fetch` boundary.
 

@@ -73,3 +73,36 @@ def test_osm_acquisition_aborts_loudly_on_md5_mismatch(tmp_path):
 
     assert not (tmp_path / "osm.osm.pbf").exists()
     assert not (tmp_path / "osm.osm.pbf.meta.json").exists()
+
+
+def test_osm_acquisition_cleans_transient_md5_file_on_download_failure(
+    tmp_path, monkeypatch
+):
+    def download(_url, dest, **_kwargs):
+        pathlib.Path(dest).write_bytes(b"PBF")
+        return 3
+
+    def fail_md5_download(_url, dest, **_kwargs):
+        pathlib.Path(dest).write_text("partial")
+        raise RuntimeError("network failed")
+
+    monkeypatch.setattr(acquire.fetch, "get_to_file", fail_md5_download)
+
+    with pytest.raises(RuntimeError, match="network failed"):
+        acquire.acquire_osm(
+            tmp_path,
+            region_id="uk",
+            config={
+                "uk": {
+                    "url": "https://download.geofabrik.de/europe/x.osm.pbf",
+                    "md5_url": "https://download.geofabrik.de/europe/x.osm.pbf.md5",
+                    "allowed_hosts": ["download.geofabrik.de"],
+                }
+            },
+            download_file=download,
+            retrieved_at="2026-07-15T00:00:00Z",
+        )
+
+    assert not (tmp_path / "osm.osm.pbf").exists()
+    assert not (tmp_path / "osm.osm.pbf.md5").exists()
+    assert not (tmp_path / "osm.osm.pbf.meta.json").exists()
