@@ -74,3 +74,43 @@ def get_json(
         return json.loads(b"".join(chunks).decode("utf-8"))
     except (ValueError, UnicodeDecodeError, RecursionError) as exc:
         raise FetchError(f"invalid JSON: {exc}") from exc
+
+
+def get_to_file(
+    url: str,
+    dest,
+    *,
+    expected_hosts: set[str],
+    max_bytes: int = MAX_RESPONSE_BYTES,
+    timeout: int = 30,
+    deadline: int = 120,
+) -> int:
+    if not _validate_target(url, expected_hosts):
+        raise FetchError(f"invalid target: {url!r}")
+
+    written = 0
+    try:
+        with _opener(expected_hosts).open(url, timeout=timeout) as resp:
+            headers = getattr(resp, "headers", None)
+            if headers is not None and headers.get("Content-Encoding"):
+                raise FetchError(
+                    f"unexpected Content-Encoding {headers.get('Content-Encoding')!r}"
+                )
+
+            start = time.monotonic()
+            with open(dest, "wb") as out:
+                while True:
+                    if time.monotonic() - start > deadline:
+                        raise FetchError("exceeded total download deadline")
+                    chunk = resp.read(65536)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > max_bytes:
+                        raise FetchError(f"response exceeded {max_bytes} bytes")
+                    out.write(chunk)
+    except FetchError:
+        raise
+    except Exception as exc:
+        raise FetchError(str(exc)) from exc
+    return written
