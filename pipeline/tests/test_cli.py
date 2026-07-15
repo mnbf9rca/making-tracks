@@ -20,6 +20,36 @@ def test_cli_enforces_stage_order(tmp_path, capsys):
     assert "categorize" in capsys.readouterr().err
 
 
+def test_cli_reconcile_requires_version(tmp_path, capsys):
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    store.mark_stage_complete(conn, "uk", "extract", "r1", "2026-07-15T00:00:00Z")
+    conn.close()
+
+    rc = cli.main(["--region", "uk", "reconcile", "--db", str(db), "--run-id", "r1"])
+
+    assert rc == 1
+    assert "--version" in capsys.readouterr().err
+
+
+def test_cli_rejects_bad_reconcile_version(tmp_path, capsys):
+    rc = cli.main(
+        [
+            "--region",
+            "uk",
+            "reconcile",
+            "--db",
+            str(tmp_path / "w.db"),
+            "--version",
+            "2026-07-15",
+        ]
+    )
+
+    assert rc == 2
+    assert "version" in capsys.readouterr().err.lower()
+
+
 def test_cli_maps_db_open_failure_to_clean_error(tmp_path, capsys):
     bad = tmp_path / "no_such_dir" / "w.db"
     rc = cli.main(["--region", "uk", "extract", "--db", str(bad)])

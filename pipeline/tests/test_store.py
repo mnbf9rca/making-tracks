@@ -14,6 +14,7 @@ def test_schema_is_idempotent_and_versioned(conn):
         store.SOURCE_RECORDS_TABLE,
         store.STAGE_RUNS_TABLE,
         store.EXTRACT_RUN_METADATA_TABLE,
+        store.PLACES_TABLE,
         store.META_TABLE,
     } <= tables
     ver = conn.execute(f"SELECT schema_version FROM {store.META_TABLE}").fetchone()[0]
@@ -41,7 +42,22 @@ def test_schema_migrates_v2_store(conn):
         r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
     assert version == store.WORKING_STORE_VERSION
-    assert store.EXTRACT_RUN_METADATA_TABLE in tables
+    assert {store.EXTRACT_RUN_METADATA_TABLE, store.PLACES_TABLE} <= tables
+
+
+def test_schema_migrates_v3_store(conn):
+    store.init_schema(conn)
+    conn.execute(f"UPDATE {store.META_TABLE} SET schema_version = ?", (3,))
+    conn.commit()
+
+    store.init_schema(conn)
+
+    version = conn.execute(f"SELECT schema_version FROM {store.META_TABLE}").fetchone()[0]
+    tables = {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    assert version == store.WORKING_STORE_VERSION
+    assert store.PLACES_TABLE in tables
 
 
 def test_meta_table_enforces_single_schema_row(conn):

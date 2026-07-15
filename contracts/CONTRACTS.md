@@ -28,6 +28,8 @@ IDs are minted once for new clusters, then owned by the registry. Anchor priorit
 
 Ambiguous multi-place ref matches raise `AmbiguousRefsError` with candidate `.place_ids`; the contract never silently merges. `superseded_by` is soft de-dup: loser IDs remain valid forever, resolve transitively to the terminal winner, and cycles are rejected. Published tiles must carry only winner IDs; `registry.tile_winner_violations` is the A7 guard.
 
+Registry records use `first_shipped_version` as the first pipeline version that minted the place and made it eligible for publish; reconcile sets it at mint time and never rewrites it. After a successful publish, A7 calls `registry.mark_shipped(records, shipped_ids, publish_version)`, which advances `last_seen_version` for the IDs that actually shipped and backfills `first_shipped_version` only for legacy records where it is empty. A7 must not mutate registry records directly.
+
 ## Place JSON
 
 Place records contain `place_id`, `name`, `lat`, `lon`, `category`, `tier`, `score`, optional `alt_names`, `blurb`, `image_url`, `wikipedia_title`, and `source_refs`.
