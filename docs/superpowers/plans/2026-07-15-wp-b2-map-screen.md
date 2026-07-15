@@ -233,7 +233,7 @@ git commit -m "Add MapPlace + MakingTracksMapStyle scaffold + pin-matrix truth (
 
 **Interfaces:**
 - Produces:
-  - `PaperPalette` — `public struct PaperPalette: Sendable { public var background, land, water, roads, boundaries, labels: String }` with a `.default` muted/paper palette (hex strings; B2's authored deliverable — the spec mandates "muted/paper-like … pins the only saturated colour" but no exact hexes).
+  - `PaperPalette` — `public struct PaperPalette: Sendable { public var background, land, water, roads, boundaries: String }` with a `.default` muted/paper palette (hex strings; B2's authored deliverable — the spec mandates "muted/paper-like … pins the only saturated colour" but no exact hexes), plus a pure `saturation(hex:)` so the muted mandate is host-tested.
   - `paperBasemapStyle(pmtilesURL: String, palette: PaperPalette = .default) -> JSONValue` — a MapLibre **style-spec v8** object: a `vector` source of type `pmtiles://<url>` and muted background/land/water/road/boundary/label layers against the **Protomaps basemap vector schema** (the demo tiles' layer names: `earth`, `water`, `roads`, `boundaries`, `places`). The pins source/layers are added by `PinLayers` (Task 3).
 
 - [ ] **Step 1: Write the failing test**
