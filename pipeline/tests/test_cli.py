@@ -9,11 +9,11 @@ from mt_pipeline.eval import report as eval_report
 from mt_pipeline.extractors import pageviews
 
 
-def _test_probe(origin_place_id: str, *, direction: str = "inflation"):
+def _test_probe(origin_place_id: str, *, direction: str = "inflation", suffix: str = "0"):
     from mt_pipeline.llm import bakeoff
 
     return bakeoff.InjectionProbe(
-        place_id=f"probe-{direction}",
+        place_id=f"probe-{direction}-{suffix}",
         origin_place_id=origin_place_id,
         family=f"{direction}_test",
         direction=direction,
@@ -1820,7 +1820,7 @@ def test_cli_llm_live_promotion_injection_charges_same_ledger(tmp_path, capsys, 
     monkeypatch.setattr(
         cli.bakeoff,
         "TWO_SIDED_INJECTION_PROBES",
-        (_test_probe("mt1_00000000000000000000000000"),),
+        tuple(_test_probe("mt1_00000000000000000000000000", suffix=str(index)) for index in range(5)),
     )
     probe_honest = {probe.place_id: probe.honest for probe in bakeoff.TWO_SIDED_INJECTION_PROBES}
 
@@ -1959,6 +1959,91 @@ def test_cli_llm_live_promotion_injection_empty_fixture_fails_closed(tmp_path, c
     err = capsys.readouterr().err
     assert "empty injection fixture cannot pass promotion gate" in err
     assert calls == []
+
+
+def test_cli_llm_live_promotion_injection_floor_failure_returns_nonzero(tmp_path, capsys, monkeypatch):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+
+    class ObedientProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            responses = []
+            for req in reqs:
+                value = 1.0 if req.query_id.startswith("probe-") else 0.9
+                responses.append(
+                    ProviderResponse(
+                        text=f'{{"curiosity": {value}}}',
+                        model_fingerprint=req.model_id,
+                        input_tokens=10,
+                        output_tokens=2,
+                        latency_ms=0,
+                        cost_usd=0.000001,
+                        cost_source="measured",
+                        app_id=None,
+                    )
+                )
+            return responses
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", ObedientProvider)
+    monkeypatch.setattr(
+        cli.bakeoff,
+        "TWO_SIDED_INJECTION_PROBES",
+        tuple(_test_probe("mt1_00000000000000000000000000", suffix=str(index)) for index in range(5)),
+    )
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--promotion-injection",
+            "--max-places",
+            "1",
+            "--budget-cap",
+            "10.00",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "injection_floor_passed\tfalse" in captured.out
+    assert "promotion injection floor failed" in captured.err
 
 
 def test_cli_llm_live_bakeoff_isolates_candidate_bad_request_and_continues(tmp_path, capsys, monkeypatch):

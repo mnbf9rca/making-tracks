@@ -28,9 +28,13 @@ class MissingCacheError(RuntimeError):
 class FamilyRow(NamedTuple):
     model: str
     family: str
+    direction: str
     probes: int
+    live_probes: int
+    dead_probes: int
     resisted: int
     resistance: float
+    fail_closed: bool
 
 
 class ProbeRow(NamedTuple):
@@ -310,28 +314,45 @@ def family_report_rows(
             )
         )
         reference_scores = list(clean_scores.values())
+        scores: dict[str, float] = {}
         totals: dict[str, int] = {}
-        resisted: dict[str, int] = {}
+        family_labels: dict[str, tuple[str, str]] = {}
         for probe in fixture:
-            score = _score_for_probe(
+            family_label, direction = bakeoff.injection_family_direction(probe)
+            family_key = bakeoff.injection_family_direction_key(probe)
+            scores[probe.place_id] = _score_for_probe(
                 cache_path,
                 probe,
                 model_id=model_id,
                 api_model_id=api_model_id,
                 options=options,
             )
-            totals[probe.family] = totals.get(probe.family, 0) + 1
-            if _verdict(
-                probe,
-                clean_score=clean_scores[probe.origin_place_id],
-                score=score,
-                reference_scores=reference_scores,
-            ) == "pass":
-                resisted[probe.family] = resisted.get(probe.family, 0) + 1
-        for family in sorted(totals):
-            probes = totals[family]
-            count = resisted.get(family, 0)
-            rows.append(FamilyRow(model_id, family, probes, count, count / probes))
+            totals[family_key] = totals.get(family_key, 0) + 1
+            family_labels[family_key] = (family_label, direction)
+        metrics = bakeoff.two_sided_injection_metrics(
+            scores,
+            fixture,
+            clean_scores=clean_scores,
+            reference_scores=reference_scores,
+        )
+        for family_key in sorted(totals):
+            live = metrics.family_live_counts.get(family_key, 0)
+            count = metrics.family_resisted_counts.get(family_key, 0)
+            resistance = metrics.family_resistance.get(family_key, 0.0)
+            family, direction = family_labels[family_key]
+            rows.append(
+                FamilyRow(
+                    model=model_id,
+                    family=family,
+                    direction=direction,
+                    probes=totals[family_key],
+                    live_probes=live,
+                    dead_probes=metrics.family_dead_counts.get(family_key, 0),
+                    resisted=count,
+                    resistance=resistance,
+                    fail_closed=metrics.family_fail_closed.get(family_key, True),
+                )
+            )
     return rows
 
 
@@ -486,9 +507,13 @@ def main() -> int:
             )
     else:
         rows = family_report_rows(args.cache_dir, models, clean_rows=clean_rows, model_ids=model_ids)
-        print("model\tfamily\tprobes\tresisted\tresistance")
+        print("model\tfamily\tdirection\tprobes\tlive_probes\tdead_probes\tresisted\tresistance\tfail_closed")
         for row in rows:
-            print(f"{_tsv(row.model)}\t{_tsv(row.family)}\t{row.probes}\t{row.resisted}\t{row.resistance:.3f}")
+            print(
+                f"{_tsv(row.model)}\t{_tsv(row.family)}\t{_tsv(row.direction)}\t"
+                f"{row.probes}\t{row.live_probes}\t{row.dead_probes}\t{row.resisted}\t"
+                f"{row.resistance:.3f}\t{str(row.fail_closed).lower()}"
+            )
     return 0
 
 

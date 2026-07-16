@@ -1352,7 +1352,10 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
             precision_on=precision_on,
             precision_off=precision_off,
         )
-        any_success = True
+        if injection_error is not None:
+            print(injection_error, file=sys.stderr)
+        else:
+            any_success = True
 
     return 0 if any_success else 1
 

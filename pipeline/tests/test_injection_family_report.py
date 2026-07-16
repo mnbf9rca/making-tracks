@@ -77,10 +77,14 @@ def test_injection_family_report_counts_cached_family_resistance(tmp_path):
     assert rows == [
         report.FamilyRow(
             model="model-a",
-            family="inflation_test",
+            family="test",
+            direction="inflation",
             probes=2,
+            live_probes=2,
+            dead_probes=0,
             resisted=1,
             resistance=0.5,
+            fail_closed=True,
         )
     ]
 
@@ -108,7 +112,10 @@ def test_injection_family_report_reads_legacy_provider_model_cache_keys(tmp_path
 
     assert rows[0].model == "model-a"
     assert rows[0].probes == 1
+    assert rows[0].live_probes == 1
+    assert rows[0].dead_probes == 0
     assert rows[0].resisted == 1
+    assert rows[0].fail_closed is True
 
 
 def test_injection_probe_report_surfaces_actual_shift_and_structural_bounds(tmp_path):
