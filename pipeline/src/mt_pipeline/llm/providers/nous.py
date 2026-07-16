@@ -31,14 +31,15 @@ class NousProvider:
         input_per_m: float = 0.0,
         output_per_m: float = 0.0,
     ) -> None:
-        self.api_key = api_key if api_key is not None else os.getenv("NOUS_API_KEY", "")
-        if not self.api_key:
+        self.api_key = (api_key if api_key is not None else os.getenv("NOUS_API_KEY", "")).strip()
+        if not self.api_key or self.api_key.startswith("op:"):
             raise ProviderCredentialsMissing("NOUS_API_KEY is required for live NOUS calls")
         self._validate_base_url(base_url)
         self.concurrency = concurrency
         self.base_url = base_url
         self.input_per_m = self._validate_price(input_per_m, "input_per_m")
         self.output_per_m = self._validate_price(output_per_m, "output_per_m")
+        self._client: Any | None = None
 
     @staticmethod
     def _validate_base_url(base_url: str) -> None:
@@ -62,12 +63,7 @@ class NousProvider:
         return False
 
     async def acomplete(self, req: LlmRequest) -> ProviderResponse:
-        try:
-            from openai import AsyncOpenAI
-        except ModuleNotFoundError as exc:
-            raise ProviderCredentialsMissing("openai SDK is required for live NOUS calls") from exc
-
-        client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+        client = self._client_instance()
         response: Any = await client.chat.completions.create(
             model=req.model_id,
             messages=[
@@ -90,18 +86,71 @@ class NousProvider:
             if completion_tokens is not None and int(completion_tokens) > 0
             else count_tokens(text)
         )
+        cost_usd, cost_source = self._response_cost(
+            response,
+            usage,
+            fallback_input_tokens=input_tokens,
+            fallback_output_tokens=output_tokens,
+        )
         return ProviderResponse(
             text=text,
             model_fingerprint=getattr(response, "system_fingerprint", None) or req.model_id,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             latency_ms=0,
-            cost_usd=self.cost_from_usage(input_tokens=input_tokens, output_tokens=output_tokens),
+            cost_usd=cost_usd,
+            cost_source=cost_source,
             app_id=None,
         )
 
+    def _client_instance(self) -> Any:
+        if self._client is not None:
+            return self._client
+        try:
+            from openai import AsyncOpenAI
+        except ModuleNotFoundError as exc:
+            raise ProviderCredentialsMissing("openai SDK is required for live NOUS calls") from exc
+        self._client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+        return self._client
+
     def cost_from_usage(self, *, input_tokens: int, output_tokens: int) -> float:
         return (input_tokens * self.input_per_m + output_tokens * self.output_per_m) / 1_000_000
+
+    def _response_cost(
+        self,
+        response: Any,
+        usage: Any,
+        *,
+        fallback_input_tokens: int,
+        fallback_output_tokens: int,
+    ) -> tuple[float, str]:
+        for container in (usage, response):
+            if container is None:
+                continue
+            for field in ("cost", "cost_usd", "total_cost", "total_cost_usd"):
+                value = getattr(container, field, None)
+                if value is None and hasattr(container, "model_extra"):
+                    value = container.model_extra.get(field)
+                parsed = self._parse_reported_cost(value)
+                if parsed is not None:
+                    return parsed, "measured"
+        return (
+            self.cost_from_usage(input_tokens=fallback_input_tokens, output_tokens=fallback_output_tokens),
+            "derived",
+        )
+
+    @staticmethod
+    def _parse_reported_cost(value: object) -> float | None:
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, int | float | str):
+            try:
+                number = float(value)
+            except ValueError:
+                return None
+            if math.isfinite(number) and number >= 0.0:
+                return number
+        return None
 
     async def acomplete_batch(self, reqs: Sequence[LlmRequest]) -> list[ProviderResponse]:
         semaphore = asyncio.Semaphore(self.concurrency)
@@ -113,6 +162,9 @@ class NousProvider:
         return list(await asyncio.gather(*(one(req) for req in reqs)))
 
     async def shutdown(self) -> float | None:
+        if self._client is not None:
+            await self._client.close()
+            self._client = None
         return None
 
     def __repr__(self) -> str:
