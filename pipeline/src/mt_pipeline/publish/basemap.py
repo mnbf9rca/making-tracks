@@ -58,7 +58,7 @@ def require_pmtiles() -> str:
     try:
         # Audit note: list-form argv, shell=False; dynamic executable is name/file
         # validated here and version-pinned below before any extract command runs.
-        result = subprocess.run(
+        result = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit -- shell=False list argv; executable is _validate_pmtiles_executable-checked and v1.31.1-pinned.
             _pmtiles_version_argv(path),
             capture_output=True,
             check=False,
@@ -138,7 +138,7 @@ def cut_basemap(region_config: dict[str, Any], out_path: Path) -> BasemapArtifac
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # Audit note: list-form argv, shell=False; executable, HTTPS source, safe
     # output filename, and finite bbox are validated by _pmtiles_extract_argv.
-    subprocess.run(argv, check=True)
+    subprocess.run(argv, check=True)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit -- shell=False list argv from _pmtiles_extract_argv validators: pinned executable, HTTPS source, safe output name, finite bbox.
 
     size = out_path.stat().st_size
     budget = min(int(cfg["size_budget_bytes"]), PACK_BUDGET_CEILING_BYTES)
