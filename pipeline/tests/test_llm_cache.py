@@ -24,6 +24,12 @@ def test_cache_key_survives_a_slash_bearing_model_id():
     assert a != b
 
 
+def test_cache_key_handles_real_openrouter_style_model_id():
+    key = C.cache_key("curiosity", "meta-llama/llama-3.1-8b-instruct", "curiosity-v1", "H")
+
+    assert key == "curiosity/meta-llama%2Fllama-3%2E1-8b-instruct/curiosity-v1/H"
+
+
 def test_cache_key_encodes_dot_segments_to_prevent_path_traversal():
     key = C.cache_key("curiosity", "..", "v1", "H")
 

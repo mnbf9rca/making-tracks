@@ -7,7 +7,7 @@
       "input_per_m": 0.0,
       "output_per_m": 0.0
     },
-    "nous-hermes-3-llama-3.1-8b": {
+    "nous-meta-llama-3.1-8b-instruct": {
       "provider": "nous",
       "input_per_m": 0.15,
       "output_per_m": 0.60
