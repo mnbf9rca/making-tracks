@@ -51,6 +51,7 @@ class ProviderResponse(FrozenModel):
     output_tokens: int = Field(ge=0)
     latency_ms: int = Field(ge=0)
     cost_usd: float = Field(ge=0.0)
+    cost_source: str = "derived"
     app_id: str | None = None
 
     @field_validator("input_tokens", "output_tokens", "latency_ms", mode="before")
@@ -65,6 +66,13 @@ class ProviderResponse(FrozenModel):
     def _reject_bool_cost(cls, value: object) -> object:
         if isinstance(value, bool):
             raise ValueError("cost_usd must not be bool")
+        return value
+
+    @field_validator("cost_source")
+    @classmethod
+    def _cost_source_known(cls, value: str) -> str:
+        if value not in {"measured", "derived", "cache"}:
+            raise ValueError("cost_source must be measured, derived, or cache")
         return value
 
 

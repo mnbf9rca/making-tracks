@@ -87,24 +87,25 @@ def test_default_round1_roster_and_pricing_bind_real_portal_ids():
     pricing = json.loads((root / "llm_pricing.json").read_text())["models"]
     by_id = {row["id"]: row for row in models}
     expected = {
-        "tencent/hy3:free": 16,
-        "meta-llama/llama-3.1-8b-instruct": 16,
-        "nousresearch/hermes-4-70b": 16,
-        "nex-agi/nex-n2-mini": 128,
+        "nous-tencent-hy3-free": ("tencent/hy3:free", 16),
+        "nous-meta-llama-3.1-8b-instruct": ("meta-llama/llama-3.1-8b-instruct", 16),
+        "nous-hermes-4-70b": ("nousresearch/hermes-4-70b", 16),
+        "nous-nex-n2-mini": ("nex-agi/nex-n2-mini", 128),
     }
 
-    for model_id, max_tokens in expected.items():
+    for model_id, (api_model_id, max_tokens) in expected.items():
         assert by_id[model_id]["provider"] == "nous"
+        assert by_id[model_id]["api_model_id"] == api_model_id
         assert by_id[model_id].get("max_tokens", 16) == max_tokens
         assert pricing[model_id]["provider"] == "nous"
 
-    assert pricing["tencent/hy3:free"]["input_per_m"] == 0.0
-    assert pricing["tencent/hy3:free"]["output_per_m"] == 0.0
-    assert pricing["nousresearch/hermes-4-70b"]["input_per_m"] == 0.05
-    assert pricing["nousresearch/hermes-4-70b"]["output_per_m"] == 0.20
-    assert by_id["nousresearch/hermes-4-70b"]["seed"] is None
-    assert by_id["nex-agi/nex-n2-mini"]["seed"] is None
-    assert by_id["nex-agi/nex-n2-mini"]["reasoning"] == {
+    assert pricing["nous-tencent-hy3-free"]["input_per_m"] == 0.0
+    assert pricing["nous-tencent-hy3-free"]["output_per_m"] == 0.0
+    assert pricing["nous-hermes-4-70b"]["input_per_m"] == 0.05
+    assert pricing["nous-hermes-4-70b"]["output_per_m"] == 0.20
+    assert by_id["nous-hermes-4-70b"]["seed"] is None
+    assert by_id["nous-nex-n2-mini"]["seed"] is None
+    assert by_id["nous-nex-n2-mini"]["reasoning"] == {
         "enabled": True,
         "effort": "low",
         "exclude": True,
@@ -115,10 +116,10 @@ def test_default_round1_roster_entries_construct_requests_and_cache_keys():
     root = C.PROJECT_ROOT / "pipeline" / "config"
     models = json.loads((root / "llm_models.json").read_text())["models"]
     expected_ids = {
-        "tencent/hy3:free",
-        "meta-llama/llama-3.1-8b-instruct",
-        "nousresearch/hermes-4-70b",
-        "nex-agi/nex-n2-mini",
+        "nous-tencent-hy3-free",
+        "nous-meta-llama-3.1-8b-instruct",
+        "nous-hermes-4-70b",
+        "nous-nex-n2-mini",
     }
 
     for model in models:
@@ -126,7 +127,7 @@ def test_default_round1_roster_entries_construct_requests_and_cache_keys():
             continue
         req = Q.curiosity_request(
             query_id="mt1_00000000000000000000000000",
-            model_id=model["id"],
+            model_id=model["api_model_id"],
             place={"name": "Old Windmill", "summary": "A mill", "tags": ["heritage"]},
             max_tokens=model.get("max_tokens", Q.CURIOSITY_MAX_TOKENS),
             reasoning=model.get("reasoning"),
@@ -142,6 +143,7 @@ def test_default_round1_roster_entries_construct_requests_and_cache_keys():
 
         assert "/" not in key.split("/")[1]
         assert ":" not in key.split("/")[1]
+        assert req.model_id == model["api_model_id"]
         assert req.max_tokens == model.get("max_tokens", Q.CURIOSITY_MAX_TOKENS)
         assert req.reasoning == model.get("reasoning")
         assert req.seed == model.get("seed", 0)

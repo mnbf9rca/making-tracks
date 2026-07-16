@@ -1,4 +1,7 @@
 import dataclasses
+import json
+
+import pytest
 
 from mt_pipeline import cli, store
 from mt_pipeline.ergonomics import fingerprint
@@ -1112,3 +1115,1020 @@ def test_cli_llm_bakeoff_runs_keyless_fake_provider(tmp_path, capsys):
     assert "model\tprovider\tprecision_at_k_llm_on" in out
     assert "inflation_resistance\tdeflation_resistance\thonest_suppression_rate\ttwo_sided_injection_resistance\tinjection_floor_passed" in out
     assert "fake-curiosity-v1\t" in out
+
+
+def test_cli_llm_bakeoff_without_live_does_not_construct_nous_provider(tmp_path, capsys, monkeypatch):
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous","api_model_id":"Nous-API-Cheap"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+
+    def fail_provider_construction(**_kwargs):
+        raise AssertionError("NOUS provider must not be constructed without --live")
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", fail_provider_construction)
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+        ]
+    )
+
+    assert rc == 1
+    assert "live bakeoff is blocked on keys" in capsys.readouterr().err
+
+
+def test_cli_llm_live_bakeoff_requires_max_places(tmp_path, capsys, monkeypatch):
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text("")
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text("{}")
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+
+    rc = cli.main(["llm", "bakeoff", "--live", "--labeled", str(labeled), "--config", str(config_path)])
+
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "--max-places is required with --live" in err
+
+
+@pytest.mark.parametrize("max_places", ["0", "-1"])
+def test_cli_llm_live_bakeoff_rejects_nonpositive_max_places(tmp_path, capsys, monkeypatch, max_places):
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text("")
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text("{}")
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            max_places,
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+        ]
+    )
+
+    assert rc == 2
+    assert "--max-places must be positive with --live" in capsys.readouterr().err
+
+
+def test_cli_llm_live_bakeoff_rejects_empty_nous_key(tmp_path, capsys, monkeypatch):
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text("")
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text("{}")
+    monkeypatch.setenv("NOUS_API_KEY", "")
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+        ]
+    )
+
+    assert rc == 1
+    assert "NOUS_API_KEY is required and must be non-empty" in capsys.readouterr().err
+
+
+def test_cli_llm_live_bakeoff_reports_per_place_cache_and_precision(tmp_path, capsys, monkeypatch):
+    from mt_pipeline.llm import bakeoff, curiosity
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+                "mt1_11111111111111111111111111\tkl\ttrue\tB\t0\t0\tc\t1\t0\tv1\t0.9\t\trob\t\tno",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous","api_model_id":"Nous-API-Cheap"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+    calls = []
+    constructed = {"count": 0}
+
+    class StubNousProvider:
+        def __init__(self, **_kwargs):
+            constructed["count"] += 1
+            pass
+
+        async def acomplete_batch(self, reqs):
+            calls.extend(req.query_id for req in reqs)
+            responses = []
+            for req in reqs:
+                assert req.model_id == "Nous-API-Cheap"
+                value = 0.9 if req.query_id.endswith("0" * 26) else 0.1
+                responses.append(
+                    ProviderResponse(
+                        text=f'{{"curiosity": {value}}}',
+                        model_fingerprint=req.model_id,
+                        input_tokens=10,
+                        output_tokens=2,
+                        latency_ms=0,
+                        cost_usd=0.00001,
+                        app_id=None,
+                    )
+                )
+            return responses
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", StubNousProvider)
+    cache_dir = tmp_path / "cache"
+    argv = [
+        "llm",
+        "bakeoff",
+        "--live",
+        "--max-places",
+        "2",
+        "--labeled",
+        str(labeled),
+        "--config",
+        str(config_path),
+        "--models",
+        str(models),
+        "--pricing",
+        str(pricing),
+        "--cache-dir",
+        str(cache_dir),
+        "--k",
+        "1",
+    ]
+
+    assert cli.main(argv) == 0
+    first = capsys.readouterr().out
+    assert f"prompt_version\t{curiosity.CURIOSITY_PROMPT_VERSION}" in first
+    assert "place_id\tmodel\tcuriosity\tcache_hit\tcost_usd\tcost_source" in first
+    assert "mt1_00000000000000000000000000\tnous-cheap\t0.900000\tfalse\t0.00001000\tderived" in first
+    assert "mt1_11111111111111111111111111\tnous-cheap\t0.100000\tfalse\t0.00001000\tderived" in first
+    expected_first_cost = (2 + len(bakeoff.INJECTION_PROBES)) * 0.00001
+    assert f"injection_scope\t{bakeoff.ROUND1_INJECTION_SCOPE}" in first
+    assert f"injection_probes\t{len(bakeoff.INJECTION_PROBES)}/{len(bakeoff.INJECTION_PROBES)}" in first
+    assert f"injection_cost_usd\t{len(bakeoff.INJECTION_PROBES) * 0.00001:.8f}" in first
+    assert f"total_incremental_cost_usd\t{expected_first_cost:.8f}" in first
+    assert "estimated_golden_cost_usd\t" in first
+    assert "precision_at_1_llm_on\t1.000" in first
+    assert "precision_at_1_llm_off\t0.000" in first
+    assert calls[:2] == ["mt1_00000000000000000000000000", "mt1_11111111111111111111111111"]
+    assert set(calls[2:]) == {probe.place_id for probe in bakeoff.INJECTION_PROBES}
+    assert constructed["count"] == 1
+
+    assert cli.main(argv) == 0
+    second = capsys.readouterr().out
+    assert "mt1_00000000000000000000000000\tnous-cheap\t0.900000\ttrue\t0.00000000\tcache" in second
+    assert "mt1_11111111111111111111111111\tnous-cheap\t0.100000\ttrue\t0.00000000\tcache" in second
+    assert "cache_hits\t2/2" in second
+    assert f"injection_cache_hits\t{len(bakeoff.INJECTION_PROBES)}/{len(bakeoff.INJECTION_PROBES)}" in second
+    assert "total_incremental_cost_usd\t0.00000000" in second
+    assert "estimated_golden_cost_usd\t" in second
+    assert calls[:2] == ["mt1_00000000000000000000000000", "mt1_11111111111111111111111111"]
+    assert set(calls[2:]) == {probe.place_id for probe in bakeoff.INJECTION_PROBES}
+    assert constructed["count"] == 1
+
+
+def test_cli_llm_live_bakeoff_refuses_when_ledger_plus_estimate_exceeds_cap(tmp_path, capsys, monkeypatch):
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":1000.0,"output_per_m":1000.0}}}')
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    initial_ledger = {"schema_version": 1, "total_usd": 9.99, "measured_usd": 9.99, "derived_usd": 0.0, "runs": 1}
+    (cache_dir.parent / "live-cost-ledger.json").write_text(json.dumps(initial_ledger))
+
+    def fail_provider_construction(**_kwargs):
+        raise AssertionError("NOUS provider must not be constructed after budget refusal")
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", fail_provider_construction)
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--budget-cap",
+            "10.00",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(cache_dir),
+        ]
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "budget cap exceeded" in err
+    assert "ledger_total_usd=9.99000000" in err
+    assert json.loads((cache_dir.parent / "live-cost-ledger.json").read_text()) == initial_ledger
+
+
+def test_cli_llm_live_bakeoff_allows_cached_run_near_cap_without_provider(tmp_path, monkeypatch):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":1000.0,"output_per_m":1000.0}}}')
+    cache_dir = tmp_path / "cache"
+
+    class FirstRunProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, _reqs):
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint="nous-cheap",
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.00001,
+                    cost_source="measured",
+                    app_id=None,
+                )
+            ]
+
+        async def shutdown(self):
+            return None
+
+    argv = [
+        "llm",
+        "bakeoff",
+        "--live",
+        "--max-places",
+        "1",
+        "--budget-cap",
+        "10.00",
+        "--labeled",
+        str(labeled),
+        "--config",
+        str(config_path),
+        "--models",
+        str(models),
+        "--pricing",
+        str(pricing),
+        "--cache-dir",
+        str(cache_dir),
+    ]
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", FirstRunProvider)
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", ())
+    assert cli.main(argv) == 0
+    (cache_dir.parent / "live-cost-ledger.json").write_text(
+        json.dumps({"schema_version": 1, "total_usd": 9.99, "measured_usd": 9.99, "derived_usd": 0.0, "runs": 1})
+    )
+
+    def fail_provider_construction(**_kwargs):
+        raise AssertionError("cached run must not construct provider")
+
+    monkeypatch.setattr(nous, "NousProvider", fail_provider_construction)
+
+    assert cli.main(argv) == 0
+
+
+def test_cli_llm_live_bakeoff_rejects_inconsistent_cost_ledger(tmp_path, capsys, monkeypatch):
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    (cache_dir.parent / "live-cost-ledger.json").write_text(
+        json.dumps({"schema_version": 1, "total_usd": 0.0, "measured_usd": 9.99, "derived_usd": 0.0, "runs": 1})
+    )
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--budget-cap",
+            "10.00",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(cache_dir),
+        ]
+    )
+
+    assert rc == 1
+    assert "total_usd must equal measured_usd + derived_usd" in capsys.readouterr().err
+
+
+def test_cli_llm_live_bakeoff_updates_and_prints_cost_ledger(tmp_path, capsys, monkeypatch):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+    cache_dir = tmp_path / "cache"
+
+    class MeasuredCostNousProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint=reqs[0].model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.000123,
+                    cost_source="measured",
+                    app_id=None,
+                )
+            ]
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", MeasuredCostNousProvider)
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", ())
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--budget-cap",
+            "10.00",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(cache_dir),
+        ]
+    )
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "place_id\tmodel\tcuriosity\tcache_hit\tcost_usd\tcost_source" in out
+    assert "total_incremental_cost_usd\t0.00012300" in out
+    assert "ledger_total_usd\t0.00012300" in out
+    assert "ledger_budget_cap_usd\t10.00000000" in out
+    ledger = json.loads((cache_dir.parent / "live-cost-ledger.json").read_text())
+    assert ledger["total_usd"] == pytest.approx(0.000123)
+    assert ledger["measured_usd"] == pytest.approx(0.000123)
+    assert ledger["derived_usd"] == pytest.approx(0.0)
+    assert ledger["runs"] == 1
+
+
+def test_cli_llm_live_bakeoff_preserves_mixed_cost_sources(tmp_path, capsys, monkeypatch):
+    from mt_pipeline.llm import bakeoff
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", (bakeoff.INJECTION_PROBES[0],))
+
+    class MixedCostProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint=reqs[0].model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.0002,
+                    cost_source="measured",
+                    app_id=None,
+                ),
+                ProviderResponse(
+                    text=f'{{"curiosity": {bakeoff.INJECTION_PROBES[0].honest}}}',
+                    model_fingerprint=reqs[1].model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.0003,
+                    cost_source="derived",
+                    app_id=None,
+                ),
+            ]
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", MixedCostProvider)
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--budget-cap",
+            "10.00",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(cache_dir),
+        ]
+    )
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "ledger_measured_usd\t0.00020000" in out
+    assert "ledger_derived_usd\t0.00030000" in out
+    ledger = json.loads((cache_dir.parent / "live-cost-ledger.json").read_text())
+    assert ledger["total_usd"] == pytest.approx(0.0005)
+    assert ledger["measured_usd"] == pytest.approx(0.0002)
+    assert ledger["derived_usd"] == pytest.approx(0.0003)
+
+
+def test_cli_llm_live_promotion_injection_charges_same_ledger(tmp_path, capsys, monkeypatch):
+    from mt_pipeline.llm import bakeoff
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+    cache_dir = tmp_path / "cache"
+    probe_honest = {probe.place_id: probe.honest for probe in bakeoff.TWO_SIDED_INJECTION_PROBES}
+    calls = []
+    constructed = {"count": 0}
+
+    class PromotionProvider:
+        def __init__(self, **_kwargs):
+            constructed["count"] += 1
+
+        async def acomplete_batch(self, reqs):
+            calls.extend(req.query_id for req in reqs)
+            responses = []
+            for req in reqs:
+                if req.query_id in probe_honest:
+                    value = probe_honest[req.query_id]
+                    cost = 0.000001
+                else:
+                    value = 0.9
+                    cost = 0.000123
+                responses.append(
+                    ProviderResponse(
+                        text=f'{{"curiosity": {value}}}',
+                        model_fingerprint=req.model_id,
+                        input_tokens=10,
+                        output_tokens=2,
+                        latency_ms=0,
+                        cost_usd=cost,
+                        cost_source="measured",
+                        app_id=None,
+                    )
+                )
+            return responses
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", PromotionProvider)
+
+    argv = [
+        "llm",
+        "bakeoff",
+        "--live",
+        "--promotion-injection",
+        "--max-places",
+        "1",
+        "--budget-cap",
+        "10.00",
+        "--labeled",
+        str(labeled),
+        "--config",
+        str(config_path),
+        "--models",
+        str(models),
+        "--pricing",
+        str(pricing),
+        "--cache-dir",
+        str(cache_dir),
+    ]
+
+    rc = cli.main(argv)
+
+    assert rc == 0
+    expected_injection_cost = len(bakeoff.TWO_SIDED_INJECTION_PROBES) * 0.000001
+    expected_total = 0.000123 + expected_injection_cost
+    out = capsys.readouterr().out
+    assert f"injection_scope\t{bakeoff.PROMOTION_INJECTION_SCOPE}" in out
+    assert (
+        f"injection_probes\t{len(bakeoff.TWO_SIDED_INJECTION_PROBES)}/"
+        f"{len(bakeoff.TWO_SIDED_INJECTION_PROBES)}"
+    ) in out
+    assert f"injection_cost_usd\t{expected_injection_cost:.8f}" in out
+    assert "injection_floor_passed\ttrue" in out
+    assert f"total_incremental_cost_usd\t{expected_total:.8f}" in out
+    assert f"ledger_total_usd\t{expected_total:.8f}" in out
+    ledger = json.loads((cache_dir.parent / "live-cost-ledger.json").read_text())
+    assert ledger["total_usd"] == pytest.approx(expected_total)
+    assert ledger["measured_usd"] == pytest.approx(expected_total)
+    assert ledger["derived_usd"] == pytest.approx(0.0)
+    assert ledger["runs"] == 1
+    assert constructed["count"] == 1
+    assert calls[0] == "mt1_00000000000000000000000000"
+    assert set(calls[1:]) == set(probe_honest)
+
+    def fail_provider_construction(**_kwargs):
+        raise AssertionError("cached promotion run must not construct provider")
+
+    monkeypatch.setattr(nous, "NousProvider", fail_provider_construction)
+    assert cli.main(argv) == 0
+    cached = capsys.readouterr().out
+    assert (
+        f"injection_cache_hits\t{len(bakeoff.TWO_SIDED_INJECTION_PROBES)}/"
+        f"{len(bakeoff.TWO_SIDED_INJECTION_PROBES)}"
+    ) in cached
+    assert "total_incremental_cost_usd\t0.00000000" in cached
+
+
+def test_cli_llm_live_promotion_injection_empty_fixture_fails_closed(tmp_path, capsys, monkeypatch):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+    calls = []
+
+    class PlaceOnlyProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            calls.extend(req.query_id for req in reqs)
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint=reqs[0].model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.000123,
+                    cost_source="measured",
+                    app_id=None,
+                )
+            ]
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", PlaceOnlyProvider)
+    monkeypatch.setattr(cli.bakeoff, "TWO_SIDED_INJECTION_PROBES", ())
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--promotion-injection",
+            "--max-places",
+            "1",
+            "--budget-cap",
+            "10.00",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "empty injection fixture cannot pass promotion gate" in err
+    assert calls == []
+
+
+def test_cli_llm_live_bakeoff_shuts_down_provider_when_batch_raises(tmp_path, monkeypatch):
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+    torn_down = {"value": False}
+    attempted = []
+
+    class RaisingNousProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            attempted.extend(reqs)
+            raise RuntimeError("network failed")
+
+        async def shutdown(self):
+            torn_down["value"] = True
+            return 0.0
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", RaisingNousProvider)
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    assert rc == 1
+    assert torn_down["value"] is True
+    ledger = json.loads((tmp_path / "live-cost-ledger.json").read_text())
+    expected = cli._estimate_request_cost(
+        attempted,
+        {"provider": "nous", "input_per_m": 0.15, "output_per_m": 0.60},
+        model_id="nous-cheap",
+    )
+    assert len(attempted) == 1 + len(cli.bakeoff.INJECTION_PROBES)
+    assert ledger["derived_usd"] == pytest.approx(expected)
+    assert ledger["runs"] == 1
+
+
+def test_cli_llm_live_bakeoff_charges_full_estimate_on_batch_size_mismatch(tmp_path, monkeypatch):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+    attempted = []
+
+    class ShortBatchProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            attempted.extend(reqs)
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint=reqs[0].model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.00001,
+                    cost_source="derived",
+                    app_id=None,
+                )
+            ]
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", ShortBatchProvider)
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    assert rc == 1
+    expected = cli._estimate_request_cost(
+        attempted,
+        {"provider": "nous", "input_per_m": 0.15, "output_per_m": 0.60},
+        model_id="nous-cheap",
+    )
+    ledger = json.loads((tmp_path / "live-cost-ledger.json").read_text())
+    assert len(attempted) == 1 + len(cli.bakeoff.INJECTION_PROBES)
+    assert ledger["derived_usd"] == pytest.approx(expected)
+    assert ledger["runs"] == 1
+
+
+def test_cli_llm_live_bakeoff_shuts_down_provider_when_response_parse_fails(tmp_path, monkeypatch):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+    torn_down = {"value": False}
+
+    class BadJsonNousProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, _reqs):
+            return [
+                ProviderResponse(
+                    text='{"curiosity": true}',
+                    model_fingerprint="nous-cheap",
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.00001,
+                    app_id=None,
+                )
+            ]
+
+        async def shutdown(self):
+            torn_down["value"] = True
+            return 0.0
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", BadJsonNousProvider)
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", ())
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    assert rc == 1
+    assert torn_down["value"] is True
+    ledger = json.loads((tmp_path / "live-cost-ledger.json").read_text())
+    assert ledger["derived_usd"] == pytest.approx(0.00001)
+    assert ledger["runs"] == 1

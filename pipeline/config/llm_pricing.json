@@ -7,22 +7,22 @@
       "input_per_m": 0.0,
       "output_per_m": 0.0
     },
-    "tencent/hy3:free": {
+    "nous-tencent-hy3-free": {
       "provider": "nous",
       "input_per_m": 0.0,
       "output_per_m": 0.0
     },
-    "meta-llama/llama-3.1-8b-instruct": {
+    "nous-meta-llama-3.1-8b-instruct": {
       "provider": "nous",
       "input_per_m": 0.05,
       "output_per_m": 0.08
     },
-    "nousresearch/hermes-4-70b": {
+    "nous-hermes-4-70b": {
       "provider": "nous",
       "input_per_m": 0.05,
       "output_per_m": 0.20
     },
-    "nex-agi/nex-n2-mini": {
+    "nous-nex-n2-mini": {
       "provider": "nous",
       "input_per_m": 0.025,
       "output_per_m": 0.10
