@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import pathlib
 from dataclasses import dataclass
 from typing import Any
@@ -23,6 +24,7 @@ _RECONCILE_CONFIG = _PIPELINE_ROOT / "config" / "reconcile.json"
 _DEFAULT_STAGING_ROOT = pathlib.Path("publish-staging")
 _HEARTBEAT_EVERY_RECORDS = 10_000
 _HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
+_LOGGER = logging.getLogger(__name__)
 
 
 class PublishStageError(RuntimeError):
@@ -157,7 +159,11 @@ def _joined_places(conn, region: str) -> list[dict[str, Any]]:
                 "category": category,
                 "tier": tier,
                 "score": score,
-                "source_refs": _json_list(member_refs_json),
+                "source_refs": _json_list(
+                    member_refs_json,
+                    region=region,
+                    place_id=str(place_id),
+                ),
             }
         )
         phase.tick(processed)
@@ -165,12 +171,22 @@ def _joined_places(conn, region: str) -> list[dict[str, Any]]:
     return out
 
 
-def _json_list(value: str) -> list[str]:
+def _json_list(value: str, *, region: str, place_id: str) -> list[str]:
     try:
         data = json.loads(value)
     except (ValueError, RecursionError) as exc:
+        _LOGGER.warning(
+            "malformed member_refs_json region=%s place_id=%s",
+            region,
+            place_id,
+        )
         return []
     if not isinstance(data, list) or not all(isinstance(item, str) for item in data):
+        _LOGGER.warning(
+            "malformed member_refs_json region=%s place_id=%s",
+            region,
+            place_id,
+        )
         return []
     return data
 

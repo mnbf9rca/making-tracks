@@ -637,7 +637,7 @@ def test_publish_stage_requires_registry_ref_coverage_before_basemap_cut(
 
 
 def test_publish_stage_quarantines_malformed_member_refs_json(
-    conn, tmp_path, monkeypatch
+    conn, tmp_path, monkeypatch, caplog
 ):
     monkeypatch.chdir(tmp_path)
     _seed_publish_inputs(conn)
@@ -680,6 +680,7 @@ def test_publish_stage_quarantines_malformed_member_refs_json(
     monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
     monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
 
+    caplog.set_level("WARNING")
     result = P.run(
         conn,
         "malaysia",
@@ -691,6 +692,12 @@ def test_publish_stage_quarantines_malformed_member_refs_json(
 
     assert result.counts.invalid_excluded == 1
     assert result.counts.total_published == 0
+    assert any(
+        "malformed member_refs_json" in record.message
+        and "place_id=mt1_" in record.message
+        and "region=malaysia" in record.message
+        for record in caplog.records
+    )
 
 
 def _seed_publish_inputs(conn):
