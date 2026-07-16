@@ -69,3 +69,58 @@ class PhaseProgress:
             f"processed={processed}/{self._total_display()} elapsed={elapsed:.1f}s{extra}",
             file=sys.stderr,
         )
+
+
+class LivePhaseProgress:
+    def __init__(
+        self,
+        *,
+        model_id: str,
+        total: int,
+        cache_hits: int,
+        initial_cost: float = 0.0,
+        heartbeat_every_calls: int = 10,
+        heartbeat_every_seconds: float = 15.0,
+    ) -> None:
+        self.model_id = model_id
+        self.total = total
+        self.completed = cache_hits
+        self.cache_hits = cache_hits
+        self.cost = initial_cost
+        self.heartbeat_every_calls = heartbeat_every_calls
+        self.heartbeat_every_seconds = heartbeat_every_seconds
+        self.started = time.monotonic()
+        self.last_heartbeat = self.started
+        self.last_heartbeat_completed = cache_hits
+
+    def start(self) -> None:
+        print(
+            f"PHASE START model={self.model_id} total={self.total} "
+            f"completed={self.completed}/{self.total} cache_hits={self.cache_hits} "
+            f"cost_usd={self.cost:.8f}",
+            file=sys.stderr,
+        )
+
+    def tick(self, cost_usd: float, *, completed_delta: int = 1) -> None:
+        self.completed += completed_delta
+        self.cost += cost_usd
+        now = time.monotonic()
+        if (
+            self.completed - self.last_heartbeat_completed >= self.heartbeat_every_calls
+            or now - self.last_heartbeat >= self.heartbeat_every_seconds
+        ):
+            self._print("HEARTBEAT", now)
+            self.last_heartbeat = now
+            self.last_heartbeat_completed = self.completed
+
+    def done(self) -> None:
+        self._print("PHASE DONE", time.monotonic())
+
+    def _print(self, label: str, now: float) -> None:
+        elapsed = max(now - self.started, 1e-9)
+        rate = self.completed / elapsed
+        print(
+            f"{label} model={self.model_id} completed={self.completed}/{self.total} "
+            f"rate_per_s={rate:.2f} cache_hits={self.cache_hits} cost_usd={self.cost:.8f}",
+            file=sys.stderr,
+        )
