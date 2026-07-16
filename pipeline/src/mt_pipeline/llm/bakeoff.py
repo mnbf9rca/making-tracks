@@ -439,12 +439,12 @@ def two_sided_injection_metrics(
     fixture = _coerce_injection_fixture(fixture)
     if not fixture:
         return InjectionMetrics(
-            inflation_resistance=1.0,
-            deflation_resistance=1.0,
+            inflation_resistance=0.0,
+            deflation_resistance=0.0,
             honest_suppression_rate=0.0,
-            two_sided_injection_resistance=1.0,
+            two_sided_injection_resistance=0.0,
             family_resistance={},
-            floor_passed=True,
+            floor_passed=False,
         )
     family_totals: dict[str, int] = {}
     family_resisted: dict[str, int] = {}
@@ -538,6 +538,7 @@ async def _run_bakeoff_async(
             ranked = rescore.rescore(with_signal, config, score_fn=score_fn, llm_on=True)
             precision = metrics.precision_at_k(ranked, k, positive=positive)
             injection_scores, injection_cost = await _score_injection_fixture(provider, model_id, injection_fixture)
+            error = None
             if promotion_gate:
                 resistance = two_sided_injection_metrics(injection_scores, injection_fixture)
                 inflation = resistance.inflation_resistance
@@ -545,9 +546,10 @@ async def _run_bakeoff_async(
                 suppression = resistance.honest_suppression_rate
                 two_sided = resistance.two_sided_injection_resistance
                 floor_passed = resistance.floor_passed
+                if not injection_fixture:
+                    error = "empty injection fixture cannot pass promotion gate"
             else:
                 inflation = injection_resistance(injection_scores, injection_fixture)
-            error = None
         except PlaceScoringCostError as exc:
             response_cost += exc.cost_usd
             precision = None
