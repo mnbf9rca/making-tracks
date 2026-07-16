@@ -22,8 +22,7 @@ def _cfg(source, size_budget_bytes=3_000_000_000, measured_archive_bytes=3):
 def test_within_budget_produces_one_basemap_matching_the_manifest_shape(
     tmp_path, monkeypatch
 ):
-    source = tmp_path / "source.pmtiles"
-    source.write_bytes(b"source")
+    source = "https://example.com/source.pmtiles"
 
     def fake_run(args, check):
         assert args[:3] == ["pmtiles", "extract", str(source)]
@@ -34,6 +33,7 @@ def test_within_budget_produces_one_basemap_matching_the_manifest_shape(
 
     monkeypatch.setattr(B.subprocess, "run", fake_run)
     monkeypatch.setattr(B, "require_pmtiles", lambda: "pmtiles", raising=False)
+    monkeypatch.setattr(B, "_validate_pmtiles_executable", lambda path: path)
 
     art = B.cut_basemap(_cfg(source), tmp_path / "uk.pmtiles")
 
@@ -46,8 +46,7 @@ def test_within_budget_produces_one_basemap_matching_the_manifest_shape(
 def test_over_budget_region_fails_loud_directing_ops_to_subregion_configs(
     tmp_path, monkeypatch
 ):
-    source = tmp_path / "source.pmtiles"
-    source.write_bytes(b"source")
+    source = "https://example.com/source.pmtiles"
 
     def fake_run(args, check):
         (tmp_path / "uk.pmtiles").write_bytes(b"cut")
@@ -55,6 +54,7 @@ def test_over_budget_region_fails_loud_directing_ops_to_subregion_configs(
 
     monkeypatch.setattr(B.subprocess, "run", fake_run)
     monkeypatch.setattr(B, "require_pmtiles", lambda: "pmtiles", raising=False)
+    monkeypatch.setattr(B, "_validate_pmtiles_executable", lambda path: path)
 
     with pytest.raises(B.BasemapOverBudget):
         B.cut_basemap(
@@ -66,9 +66,8 @@ def test_over_budget_region_fails_loud_directing_ops_to_subregion_configs(
 def test_hard_pack_budget_ceiling_is_enforced_even_when_config_is_higher(
     tmp_path, monkeypatch
 ):
-    source = tmp_path / "source.pmtiles"
+    source = "https://example.com/source.pmtiles"
     out = tmp_path / "uk.pmtiles"
-    source.write_bytes(b"source")
 
     def fake_run(args, check):
         out.write_bytes(b"x")
@@ -84,6 +83,7 @@ def test_hard_pack_budget_ceiling_is_enforced_even_when_config_is_higher(
     monkeypatch.setattr(B.subprocess, "run", fake_run)
     monkeypatch.setattr(B.Path, "stat", fake_stat)
     monkeypatch.setattr(B, "require_pmtiles", lambda: "pmtiles", raising=False)
+    monkeypatch.setattr(B, "_validate_pmtiles_executable", lambda path: path)
 
     with pytest.raises(B.BasemapOverBudget):
         B.cut_basemap(
@@ -144,6 +144,20 @@ def test_pmtiles_dependency_check_rejects_substring_version(tmp_path, monkeypatc
         B.require_pmtiles()
 
 
+def test_pmtiles_dependency_check_rejects_unexpected_executable_name(
+    tmp_path, monkeypatch
+):
+    exe = tmp_path / "not-pmtiles"
+    exe.write_text("#!/bin/sh\nprintf 'pmtiles version 1.31.1\\n'\n")
+    exe.chmod(0o755)
+    monkeypatch.setattr(B.shutil, "which", lambda _tool: str(exe))
+
+    with pytest.raises(B.PmtilesUnavailable) as excinfo:
+        B.require_pmtiles()
+
+    assert "unexpected executable" in str(excinfo.value)
+
+
 def test_cut_basemap_checks_pmtiles_before_creating_output_dir(tmp_path, monkeypatch):
     source = tmp_path / "source.pmtiles"
     source.write_bytes(b"source")
@@ -156,10 +170,62 @@ def test_cut_basemap_checks_pmtiles_before_creating_output_dir(tmp_path, monkeyp
     assert not out.parent.exists()
 
 
+def test_cut_basemap_rejects_non_https_source_before_subprocess(tmp_path, monkeypatch):
+    called = False
+
+    def fake_run(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("subprocess should not run")
+
+    monkeypatch.setattr(B.subprocess, "run", fake_run)
+    monkeypatch.setattr(B, "require_pmtiles", lambda: "pmtiles", raising=False)
+
+    with pytest.raises(ValueError, match="source_pmtiles"):
+        B.cut_basemap(_cfg("http://example.com/source.pmtiles"), tmp_path / "uk.pmtiles")
+
+    assert called is False
+
+
+def test_cut_basemap_rejects_unsafe_output_name_before_subprocess(tmp_path, monkeypatch):
+    called = False
+
+    def fake_run(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("subprocess should not run")
+
+    monkeypatch.setattr(B.subprocess, "run", fake_run)
+    monkeypatch.setattr(B, "require_pmtiles", lambda: "pmtiles", raising=False)
+
+    with pytest.raises(ValueError, match="output filename"):
+        B.cut_basemap(_cfg("https://example.com/source.pmtiles"), tmp_path / "../UK.pmtiles")
+
+    assert called is False
+
+
+def test_cut_basemap_rejects_non_finite_bbox_before_subprocess(tmp_path, monkeypatch):
+    called = False
+
+    def fake_run(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("subprocess should not run")
+
+    cfg = _cfg("https://example.com/source.pmtiles")
+    cfg["basemap"]["bbox"] = [-8.6, 49.8, float("nan"), 60.9]
+    monkeypatch.setattr(B.subprocess, "run", fake_run)
+    monkeypatch.setattr(B, "require_pmtiles", lambda: "pmtiles", raising=False)
+
+    with pytest.raises(ValueError, match="bbox"):
+        B.cut_basemap(cfg, tmp_path / "uk.pmtiles")
+
+    assert called is False
+
+
 def test_cut_basemap_requires_exact_measured_archive_size(tmp_path, monkeypatch):
-    source = tmp_path / "source.pmtiles"
+    source = "https://example.com/source.pmtiles"
     out = tmp_path / "uk.pmtiles"
-    source.write_bytes(b"source")
 
     def fake_run(args, check):
         out.write_bytes(b"cut")
@@ -167,6 +233,7 @@ def test_cut_basemap_requires_exact_measured_archive_size(tmp_path, monkeypatch)
 
     monkeypatch.setattr(B.subprocess, "run", fake_run)
     monkeypatch.setattr(B, "require_pmtiles", lambda: "pmtiles", raising=False)
+    monkeypatch.setattr(B, "_validate_pmtiles_executable", lambda path: path)
 
     with pytest.raises(B.BasemapMeasurementMismatch) as excinfo:
         B.cut_basemap(_cfg(source, measured_archive_bytes=4), out)

@@ -29,6 +29,10 @@ _SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 
 
+class SnapshotPayloadMissingError(RuntimeError):
+    pass
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mt-pipeline",
@@ -55,6 +59,30 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--only-source",
         help="for extract, replace only one enabled source from cached snapshot",
+    )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--parallel",
+        dest="parallel",
+        action="store_true",
+        default=True,
+        help="run extractors in process-isolated parallel workers (default)",
+    )
+    mode.add_argument(
+        "--sequential",
+        dest="parallel",
+        action="store_false",
+        help="run extractors sequentially in the main process",
+    )
+    parser.add_argument(
+        "--continue-on-source-failure",
+        action="store_true",
+        help="for extract, merge successful sources while recording failed sources",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="ignore matching stage fingerprints and rerun the requested stage",
     )
     parser.add_argument(
         "--audit-format",
@@ -179,19 +207,171 @@ def _initial_extract_statuses(sources: dict, *, only_source: str | None = None) 
     }
 
 
-def _record_extract_metadata(conn, region, run_id: str, snap_dir, statuses: dict) -> None:
+def _record_extract_metadata(
+    conn,
+    region,
+    run_id: str,
+    snap_dir,
+    statuses: dict,
+    *,
+    only_source: str | None = None,
+) -> None:
+    _record_extract_metadata_no_commit(
+        conn,
+        region,
+        run_id,
+        snap_dir,
+        statuses,
+        only_source=only_source,
+    )
+    conn.commit()
+
+
+def _previous_extract_metadata(conn, region):
+    row = conn.execute(
+        """
+        SELECT run_id
+        FROM stage_runs
+        WHERE region = ? AND stage = 'extract'
+        """,
+        (region.region_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return store.load_extract_run_metadata(
+        conn,
+        region=region.region_id,
+        run_id=row[0],
+    )
+
+
+def _record_extract_metadata_no_commit(
+    conn,
+    region,
+    run_id: str,
+    snap_dir,
+    statuses: dict,
+    *,
+    only_source: str | None = None,
+) -> None:
     wikidata_date = ""
     if region.sources.get("wikidata") is True:
-        wikidata_date = acquire.wikidata_snapshot_retrieved_at(
-            acquire.snapshot_paths(snap_dir)["wikidata"]
-        )
-    store.record_extract_run_metadata(
+        wikidata_path = acquire.snapshot_paths(snap_dir)["wikidata"]
+        if (only_source is None or only_source == "wikidata") and wikidata_path.exists():
+            wikidata_date = acquire.wikidata_snapshot_retrieved_at(wikidata_path)
+        else:
+            previous = _previous_extract_metadata(conn, region)
+            if previous is not None:
+                wikidata_date = previous["wikidata_snapshot_date"]
+    store.record_extract_run_metadata_no_commit(
         conn,
         region=region.region_id,
         run_id=run_id,
         wikidata_snapshot_date=wikidata_date,
         source_statuses=statuses,
     )
+
+
+def _record_skipped_extract_metadata(conn, region, run_id: str, snap_dir) -> None:
+    previous = _previous_extract_metadata(conn, region)
+    if previous is not None:
+        store.record_extract_run_metadata(
+            conn,
+            region=region.region_id,
+            run_id=run_id,
+            wikidata_snapshot_date=previous["wikidata_snapshot_date"],
+            source_statuses=previous["source_statuses"],
+        )
+        return
+    _record_extract_metadata(
+        conn,
+        region,
+        run_id,
+        snap_dir,
+        _initial_extract_statuses(region.sources),
+    )
+
+
+def _extract_fingerprint_inputs(
+    region,
+    snapshots: dict,
+    *,
+    only_source: str | None = None,
+) -> object:
+    from .ergonomics import fingerprint
+
+    return fingerprint.FingerprintInputs(
+        region_config=region,
+        snapshots=snapshots,
+        config_paths={
+            "wikidata_class_allowlist": acquire.DEFAULT_ALLOWLIST,
+            "osm_candidate_tags": extract_stage.DEFAULT_OSM_TAG_CONFIG,
+        },
+        only_source=only_source,
+    )
+
+
+def _raise_on_snapshot_sidecar_without_payload(
+    region,
+    snapshots: dict[str, pathlib.Path],
+    *,
+    only_source: str | None = None,
+) -> None:
+    selected_sources = {
+        source
+        for source, enabled in region.sources.items()
+        if enabled is True and (only_source is None or source == only_source)
+    }
+    for source in sorted(selected_sources):
+        payload = snapshots.get(source)
+        if payload is None:
+            continue
+        payload = pathlib.Path(payload)
+        sidecar = pathlib.Path(str(payload) + ".meta.json")
+        if not payload.exists() and sidecar.exists():
+            raise SnapshotPayloadMissingError(
+                f"snapshot payload missing for {source}: {payload} "
+                f"(found {sidecar}; re-run acquire)"
+            )
+
+
+def _stage_fingerprint_inputs(conn, region, stage: str, *, run_id: str, version: str | None):
+    from .ergonomics import fingerprint
+    from .score import score_stage
+
+    if stage == "reconcile":
+        metadata = store.load_extract_run_metadata(conn, region=region.region_id, run_id=run_id)
+        succeeded = (
+            stages._succeeded_source_prefixes(region, metadata)
+            if metadata is not None
+            else set()
+        )
+        return fingerprint.FingerprintInputs(
+            region_config=region,
+            succeeded_sources=succeeded,
+            version=version,
+            config_paths={
+                "reconcile_config": stages.RECONCILE_CONFIG,
+                "redirect_map": pathlib.Path(".mt-data")
+                / region.region_id
+                / "wikidata_redirects.snapshot.json",
+                "registry": pathlib.Path("registry") / f"{region.region_id}.jsonl",
+            },
+        )
+    if stage == "score":
+        return fingerprint.FingerprintInputs(
+            region_config=region,
+            config_paths={"scoring_config": score_stage._CONFIG_PATH},
+        )
+    if stage == "categorize":
+        return fingerprint.FingerprintInputs(
+            region_config=region,
+            config_paths={
+                "taxonomy_config": categorize._TAXONOMY_PATH,
+                "osm_candidate_tags": categorize._OSM_CANDIDATE_TAGS,
+            },
+        )
+    return None
 
 
 def _read_text_limited(path: pathlib.Path, *, max_bytes: int) -> str:
@@ -498,6 +678,49 @@ def main(argv=None) -> int:
     try:
         if args.stage == "extract" and args.snapshot_dir:
             snap_dir = pathlib.Path(args.snapshot_dir)
+            snapshots = acquire.snapshot_paths(snap_dir)
+            _raise_on_snapshot_sidecar_without_payload(
+                region,
+                snapshots,
+                only_source=args.only_source,
+            )
+            fingerprint_inputs = _extract_fingerprint_inputs(
+                region,
+                snapshots,
+                only_source=args.only_source,
+            )
+            from .ergonomics import fingerprint, telemetry
+
+            try:
+                stage_fingerprint = fingerprint.stage_fingerprint(
+                    conn,
+                    region.region_id,
+                    "extract",
+                    inputs=fingerprint_inputs,
+                )
+            except OSError:
+                stage_fingerprint = None
+            if stage_fingerprint is not None:
+                if fingerprint.should_skip(
+                    conn,
+                    region.region_id,
+                    "extract",
+                    stage_fingerprint,
+                    force=args.force,
+                ):
+                    telemetry.emit(
+                        "SKIP "
+                        f"stage=extract region={region.region_id} "
+                        f"fingerprint={stage_fingerprint}"
+                    )
+                    _record_skipped_extract_metadata(
+                        conn,
+                        region,
+                        args.run_id,
+                        snap_dir,
+                    )
+                    print(f"extract skipped for {region.region_id}")
+                    return 0
             registry = extract_stage.build_registry(
                 acquire.DEFAULT_ALLOWLIST,
                 languages=set(region.languages),
@@ -509,33 +732,95 @@ def main(argv=None) -> int:
             def record_status(source, status):
                 statuses[source] = status
 
+            extract_transaction_open = False
             try:
+                if args.parallel:
+                    conn.execute("BEGIN EXCLUSIVE")
+                    extract_transaction_open = True
                 counts = extract_stage.run_extract(
                     conn,
                     region,
-                    acquire.snapshot_paths(snap_dir),
+                    snapshots,
                     run_id=args.run_id,
                     registry=registry,
                     extractor_options={"osm": {"index_type": args.osm_index_type}},
                     status_recorder=record_status,
                     only_source=args.only_source,
+                    parallel=args.parallel,
+                    continue_on_source_failure=args.continue_on_source_failure,
+                    staging_root=snap_dir.parent,
+                    commit=not args.parallel,
                 )
             except (
                 extract_stage.MissingSnapshotError,
                 extract_stage.UnregisteredEnabledSourceError,
                 extract_stage.DiskSpaceError,
+                SnapshotPayloadMissingError,
             ) as exc:
-                _record_extract_metadata(conn, region, args.run_id, snap_dir, statuses)
+                if extract_transaction_open:
+                    conn.rollback()
+                _record_extract_metadata(
+                    conn,
+                    region,
+                    args.run_id,
+                    snap_dir,
+                    statuses,
+                    only_source=args.only_source,
+                )
                 print(str(exc), file=sys.stderr)
                 return 1
             except Exception as exc:
-                _record_extract_metadata(conn, region, args.run_id, snap_dir, statuses)
+                if extract_transaction_open:
+                    conn.rollback()
+                _record_extract_metadata(
+                    conn,
+                    region,
+                    args.run_id,
+                    snap_dir,
+                    statuses,
+                    only_source=args.only_source,
+                )
                 print(f"extract error: {exc}", file=sys.stderr)
                 return 1
-            _record_extract_metadata(conn, region, args.run_id, snap_dir, statuses)
-            stages.run_stage(conn, region.region_id, args.stage, run_id=args.run_id)
+            try:
+                _record_extract_metadata_no_commit(
+                    conn,
+                    region,
+                    args.run_id,
+                    snap_dir,
+                    statuses,
+                    only_source=args.only_source,
+                )
+                completed_at = stages._completed_at()
+                store.mark_stage_complete_no_commit(
+                    conn,
+                    region.region_id,
+                    args.stage,
+                    run_id=args.run_id,
+                    completed_at=completed_at,
+                )
+                if stage_fingerprint is not None:
+                    fingerprint.record_no_commit(
+                        conn,
+                        region.region_id,
+                        args.stage,
+                        stage_fingerprint,
+                        completed_at=completed_at,
+                )
+                conn.commit()
+                extract_transaction_open = False
+            except sqlite3.Error:
+                conn.rollback()
+                raise
             print(f"{args.stage} complete for {region.region_id}: {counts}")
             return 0
+        fingerprint_inputs = _stage_fingerprint_inputs(
+            conn,
+            region,
+            args.stage,
+            run_id=args.run_id,
+            version=args.version,
+        )
         stages.run_stage(
             conn,
             region.region_id,
@@ -547,6 +832,8 @@ def main(argv=None) -> int:
             scoring_config_version=args.scoring_config_version,
             upload=args.upload,
             staging_root=args.staging_dir,
+            fingerprint_inputs=fingerprint_inputs,
+            force=args.force,
         )
     except stages.StageOrderError as exc:
         print(str(exc), file=sys.stderr)
@@ -558,6 +845,7 @@ def main(argv=None) -> int:
         extract_stage.MissingSnapshotError,
         extract_stage.UnregisteredEnabledSourceError,
         extract_stage.DiskSpaceError,
+        SnapshotPayloadMissingError,
     ) as exc:
         print(str(exc), file=sys.stderr)
         return 1

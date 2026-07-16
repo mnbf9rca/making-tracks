@@ -49,7 +49,9 @@ def _succeeded_source_prefixes(region_config, metadata: dict) -> set[str]:
     enabled = _enabled_sources(region_config)
     missing = enabled - set(SOURCE_KEY_TO_PREFIX)
     if missing:
-        raise StageOrderError(f"enabled sources missing reconcile source mapping: {sorted(missing)}")
+        raise StageOrderError(
+            f"enabled sources missing reconcile source mapping: {sorted(missing)}"
+        )
     statuses = metadata["source_statuses"]
     return {
         SOURCE_KEY_TO_PREFIX[source]
@@ -176,12 +178,35 @@ def run_stage(
     scoring_config_version: str | None = None,
     upload: bool = False,
     staging_root: str | pathlib.Path | None = None,
+    fingerprint_inputs=None,
+    force: bool = False,
 ) -> None:
     previous = predecessor(stage)
     if previous is not None and not store.stage_completed(conn, region, previous):
         raise StageOrderError(
             f"cannot run {stage!r} for region {region!r}: run {previous!r} first"
         )
+    stage_fingerprint = None
+    if fingerprint_inputs is not None:
+        from .ergonomics import fingerprint, telemetry
+
+        stage_fingerprint = fingerprint.stage_fingerprint(
+            conn,
+            region,
+            stage,
+            inputs=fingerprint_inputs,
+        )
+        if fingerprint.should_skip(
+            conn,
+            region,
+            stage,
+            stage_fingerprint,
+            force=force,
+        ):
+            telemetry.emit(
+                f"SKIP stage={stage} region={region} fingerprint={stage_fingerprint}"
+            )
+            return
     if stage == "reconcile":
         if version is None:
             raise StageVersionError("--version is required for reconcile")
@@ -224,13 +249,25 @@ def run_stage(
             runtime_paths.RuntimePathError,
         ) as exc:
             raise StageOrderError(str(exc)) from exc
-    store.mark_stage_complete(
+    completed_at = _completed_at()
+    store.mark_stage_complete_no_commit(
         conn,
         region,
         stage,
         run_id=run_id,
-        completed_at=_completed_at(),
+        completed_at=completed_at,
     )
+    if stage_fingerprint is not None:
+        from .ergonomics import fingerprint
+
+        fingerprint.record_no_commit(
+            conn,
+            region,
+            stage,
+            stage_fingerprint,
+            completed_at=completed_at,
+        )
+    conn.commit()
 
 
 def _completed_at() -> str:

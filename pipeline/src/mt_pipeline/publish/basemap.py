@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 import shutil
 import subprocess
@@ -24,6 +25,8 @@ PMTILES_LINUX_X86_64_URL = (
 PMTILES_LINUX_X86_64_SHA256 = (
     "71b2212d6796e172b8ba27c21e662c25ec93cacdb88adc35e508617e720f6292"
 )
+_BASEMAP_FILENAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,123}\.pmtiles$")
+_HTTPS_URL_RE = re.compile(r"^https://[^\x00-\x1f\x7f-\x9f\s]+$")
 
 
 class BasemapOverBudget(ValueError):
@@ -51,9 +54,12 @@ def require_pmtiles() -> str:
     path = shutil.which(PMTILES_TOOL)
     if path is None:
         raise PmtilesUnavailable(_pmtiles_install_message("Missing required tool 'pmtiles'."))
+    path = _validate_pmtiles_executable(path)
     try:
+        # Audit note: list-form argv, shell=False; dynamic executable is name/file
+        # validated here and version-pinned below before any extract command runs.
         result = subprocess.run(
-            [path, "version"],
+            _pmtiles_version_argv(path),
             capture_output=True,
             check=False,
             text=True,
@@ -74,6 +80,23 @@ def require_pmtiles() -> str:
             )
         )
     return path
+
+
+def _validate_pmtiles_executable(path: str) -> str:
+    resolved = Path(path).resolve()
+    if resolved.name != PMTILES_TOOL:
+        raise PmtilesUnavailable(
+            _pmtiles_install_message(f"Found unexpected executable for pmtiles: {path}.")
+        )
+    if not resolved.is_file():
+        raise PmtilesUnavailable(
+            _pmtiles_install_message(f"pmtiles executable is not a file: {path}.")
+        )
+    return str(resolved)
+
+
+def _pmtiles_version_argv(pmtiles: str) -> list[str]:
+    return [_validate_pmtiles_executable(pmtiles), "version"]
 
 
 def _pmtiles_version_matches(version_output: str) -> bool:
@@ -104,22 +127,18 @@ def cut_basemap(region_config: dict[str, Any], out_path: Path) -> BasemapArtifac
     if maxzoom != BASEMAP_MAXZOOM:
         raise ValueError(f"{region} basemap maxzoom must be {BASEMAP_MAXZOOM}")
 
-    bbox = [float(value) for value in cfg["bbox"]]
-    bbox_arg = ",".join(str(value) for value in bbox)
     out_path = Path(out_path)
     pmtiles = require_pmtiles()
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        [
-            pmtiles,
-            "extract",
-            str(cfg["source_pmtiles"]),
-            str(out_path),
-            f"--maxzoom={BASEMAP_MAXZOOM}",
-            f"--bbox={bbox_arg}",
-        ],
-        check=True,
+    argv, bbox = _pmtiles_extract_argv(
+        pmtiles,
+        source_pmtiles=str(cfg["source_pmtiles"]),
+        out_path=out_path,
+        bbox_values=cfg["bbox"],
     )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    # Audit note: list-form argv, shell=False; executable, HTTPS source, safe
+    # output filename, and finite bbox are validated by _pmtiles_extract_argv.
+    subprocess.run(argv, check=True)
 
     size = out_path.stat().st_size
     budget = min(int(cfg["size_budget_bytes"]), PACK_BUDGET_CEILING_BYTES)
@@ -140,6 +159,55 @@ def cut_basemap(region_config: dict[str, Any], out_path: Path) -> BasemapArtifac
         bytes=size,
         bbox=bbox,
     )
+
+
+def _pmtiles_extract_argv(
+    pmtiles: str,
+    *,
+    source_pmtiles: str,
+    out_path: Path,
+    bbox_values: Any,
+) -> tuple[list[str], list[float]]:
+    source = _validate_source_pmtiles(source_pmtiles)
+    output = _validate_output_path(out_path)
+    bbox = _validate_bbox(bbox_values)
+    bbox_arg = ",".join(str(value) for value in bbox)
+    return (
+        [
+            _validate_pmtiles_executable(pmtiles),
+            "extract",
+            source,
+            output,
+            f"--maxzoom={BASEMAP_MAXZOOM}",
+            f"--bbox={bbox_arg}",
+        ],
+        bbox,
+    )
+
+
+def _validate_source_pmtiles(value: str) -> str:
+    if len(value) > 2048 or not _HTTPS_URL_RE.fullmatch(value):
+        raise ValueError("source_pmtiles must be an https URL without whitespace/control chars")
+    return value
+
+
+def _validate_output_path(path: Path) -> str:
+    path = Path(path)
+    if not _BASEMAP_FILENAME_RE.fullmatch(path.name):
+        raise ValueError(f"unsafe basemap output filename: {path.name}")
+    return str(path)
+
+
+def _validate_bbox(values: Any) -> list[float]:
+    try:
+        bbox = [float(value) for value in values]
+    except (TypeError, ValueError) as exc:
+        raise ValueError("basemap bbox must contain four finite numbers") from exc
+    if len(bbox) != 4 or not all(math.isfinite(value) for value in bbox):
+        raise ValueError("basemap bbox must contain four finite numbers")
+    if not all(-180.0 <= value <= 180.0 for value in bbox):
+        raise ValueError("basemap bbox values must be between -180 and 180")
+    return bbox
 
 
 def _sha256_file(path: Path) -> str:

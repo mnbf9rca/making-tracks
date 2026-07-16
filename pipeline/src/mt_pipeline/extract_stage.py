@@ -139,6 +139,11 @@ def run_extract(
     extractor_options: dict | None = None,
     status_recorder=None,
     only_source: str | None = None,
+    parallel: bool = False,
+    continue_on_source_failure: bool = False,
+    staging_root: str | pathlib.Path = ".mt-data",
+    worker_timeout_s: float | None = None,
+    commit: bool = True,
 ) -> dict:
     _assert_enabled_sources_registered(region_config, registry)
     counts: dict[str, int] = {}
@@ -154,6 +159,23 @@ def run_extract(
             raise UnregisteredEnabledSourceError(
                 f"source {only_source!r} is not enabled and registered"
             )
+    if parallel:
+        from .ergonomics import parallel as parallel_extract
+
+        return parallel_extract.run_extract_parallel(
+            conn,
+            region_config,
+            snapshots,
+            run_id=run_id,
+            enabled_extractors=enabled_extractors,
+            extractor_options=extractor_options,
+            status_recorder=status_recorder,
+            only_source=only_source,
+            continue_on_source_failure=continue_on_source_failure,
+            staging_root=staging_root,
+            worker_timeout_s=worker_timeout_s,
+            commit=commit,
+        )
     for source, extractor in enabled_extractors:
         snapshot_path = snapshots.get(source)
         if snapshot_path is None:
