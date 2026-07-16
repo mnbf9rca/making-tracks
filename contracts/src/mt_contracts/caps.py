@@ -36,6 +36,10 @@ PROVENANCE_MIN = 1
 PROVENANCE_MAX = 32
 MODEL_MAX = 128
 PROMPT_VERSION_MAX = 64
+ATTRIBUTION_MAX = 32
+ATTRIBUTION_SOURCE_MAX = 32
+ATTRIBUTION_LICENSE_MAX = 32
+ATTRIBUTION_TEXT_MAX = 512
 
 CAPS_SCHEMA_MAP = {
     ("place", ("properties", "name"), "maxLength"): "NAME_MAX",
@@ -63,6 +67,10 @@ CAPS_SCHEMA_MAP = {
     ("manifest", ("properties", "provenance"), "maxItems"): "PROVENANCE_MAX",
     ("manifest", ("properties", "provenance", "items", "properties", "model"), "maxLength"): "MODEL_MAX",
     ("manifest", ("properties", "provenance", "items", "properties", "prompt_version"), "maxLength"): "PROMPT_VERSION_MAX",
+    ("manifest", ("properties", "attribution"), "maxItems"): "ATTRIBUTION_MAX",
+    ("manifest", ("properties", "attribution", "items", "properties", "source"), "maxLength"): "ATTRIBUTION_SOURCE_MAX",
+    ("manifest", ("properties", "attribution", "items", "properties", "license"), "maxLength"): "ATTRIBUTION_LICENSE_MAX",
+    ("manifest", ("properties", "attribution", "items", "properties", "text"), "maxLength"): "ATTRIBUTION_TEXT_MAX",
     ("region-config", ("properties", "region_id"), "maxLength"): "REGION_ID_MAX",
     ("region-config", ("properties", "display_name"), "maxLength"): "DISPLAY_NAME_MAX",
     ("region-config", ("properties", "languages"), "maxItems"): "LANGUAGES_MAX",
