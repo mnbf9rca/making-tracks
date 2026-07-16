@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pathlib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -99,48 +100,54 @@ STAGE_READS = {
     },
 }
 
-STAGE_INPUT_COMPONENTS = {
+_FINGERPRINT_COMPONENT_COVERAGE = {
     "extract": {
-        "snapshots",
-        "wikidata_class_allowlist",
-        "osm_candidate_tags",
-        "enabled_sources",
-        "only_source",
-        "languages",
-        "pageview_window",
-        "pageview_cache_files",
-        "module_marker",
+        "snapshots": {"snapshots"},
+        "wikidata_class_allowlist": {"wikidata_class_allowlist"},
+        "osm_candidate_tags": {"osm_candidate_tags"},
+        "enabled_sources": {"enabled_sources"},
+        "only_source": {"only_source"},
+        "languages": {"languages"},
+        "pageview_window": {"pageview_window"},
+        "pageview_cache_files": {"pageview_cache_files"},
+        "module_marker": {"module_marker"},
     },
     "reconcile": {
-        "source_records.source",
-        "source_records.source_ref",
-        "source_records.name",
-        "source_records.lat",
-        "source_records.lon",
-        "source_records.props_json",
-        "succeeded_sources",
-        "version",
-        "reconcile_config",
-        "redirect_map",
-        "registry",
-        "module_marker",
+        "source_records": {
+            "source_records.source",
+            "source_records.source_ref",
+            "source_records.name",
+            "source_records.lat",
+            "source_records.lon",
+            "source_records.props_json",
+        },
+        "succeeded_sources": {"succeeded_sources"},
+        "version": {"version"},
+        "reconcile_config": {"reconcile_config"},
+        "redirect_map": {"redirect_map"},
+        "registry": {"registry"},
+        "module_marker": {"module_marker"},
     },
     "score": {
-        "places",
-        "source_records.source",
-        "source_records.source_ref",
-        "source_records.props_json",
-        "scoring_config",
-        "module_marker",
+        "places": {"places"},
+        "source_records": {
+            "source_records.source",
+            "source_records.source_ref",
+            "source_records.props_json",
+        },
+        "scoring_config": {"scoring_config"},
+        "module_marker": {"module_marker"},
     },
     "categorize": {
-        "places",
-        "source_records.source",
-        "source_records.source_ref",
-        "source_records.props_json",
-        "taxonomy_config",
-        "osm_candidate_tags",
-        "module_marker",
+        "places": {"places"},
+        "source_records": {
+            "source_records.source",
+            "source_records.source_ref",
+            "source_records.props_json",
+        },
+        "taxonomy_config": {"taxonomy_config"},
+        "osm_candidate_tags": {"osm_candidate_tags"},
+        "module_marker": {"module_marker"},
     },
 }
 
@@ -158,17 +165,36 @@ class FingerprintInputs:
     pageview_window: tuple[str, str] | None = None
 
 
-def fingerprint_covers(stage: str) -> set[str]:
-    return set(STAGE_INPUT_COMPONENTS[stage])
+def fingerprint_covers(stage: str, components: Mapping[str, Any]) -> set[str]:
+    coverage = _FINGERPRINT_COMPONENT_COVERAGE[stage]
+    unknown = set(components) - set(coverage)
+    if unknown:
+        raise ValueError(
+            f"{stage} fingerprint component(s) lack coverage metadata: {sorted(unknown)}"
+        )
+    covered: set[str] = set()
+    for component in components:
+        covered.update(coverage[component])
+    return covered
 
 
 def stage_fingerprint(conn, region: str, stage: str, *, inputs: FingerprintInputs) -> str:
+    return _hash_obj(fingerprint_components(conn, region, stage, inputs=inputs))
+
+
+def fingerprint_components(
+    conn,
+    region: str,
+    stage: str,
+    *,
+    inputs: FingerprintInputs,
+) -> dict[str, Any]:
     if stage == "extract":
-        components = _extract_components(inputs)
+        return _extract_components(inputs)
     elif stage == "reconcile":
-        components = _reconcile_components(conn, region, inputs)
+        return _reconcile_components(conn, region, inputs)
     elif stage == "score":
-        components = {
+        return {
             "places": content_hash(
                 conn,
                 region,
@@ -185,7 +211,7 @@ def stage_fingerprint(conn, region: str, stage: str, *, inputs: FingerprintInput
             "module_marker": module_marker("score"),
         }
     elif stage == "categorize":
-        components = {
+        return {
             "places": content_hash(
                 conn,
                 region,
@@ -204,7 +230,6 @@ def stage_fingerprint(conn, region: str, stage: str, *, inputs: FingerprintInput
         }
     else:
         raise ValueError(f"unknown stage: {stage!r}")
-    return _hash_obj(components)
 
 
 def content_hash(conn, region: str, table: str, cols: tuple[str, ...]) -> str:
@@ -352,33 +377,29 @@ def _extract_components(inputs: FingerprintInputs) -> dict[str, Any]:
         for source, path in sorted((inputs.snapshots or {}).items())
         if source in enabled_sources
     }
-    return {
+    components = {
         "snapshots": snapshots,
-        "wikidata_class_allowlist": (
-            _file_hash_from_inputs(inputs, "wikidata_class_allowlist")
-            if "wikidata" in enabled_sources
-            else ""
-        ),
-        "osm_candidate_tags": (
-            _file_hash_from_inputs(inputs, "osm_candidate_tags")
-            if "osm" in enabled_sources
-            else ""
-        ),
         "enabled_sources": enabled_sources,
         "only_source": inputs.only_source or "",
         "languages": sorted(getattr(region_config, "languages", [])),
-        "pageview_window": (
-            list(inputs.pageview_window)
-            if "wikipedia" in enabled_sources and inputs.pageview_window is not None
-            else []
-        ),
-        "pageview_cache_files": (
-            _file_list_hash_limited(inputs.pageview_cache_files)
-            if "wikipedia" in enabled_sources
-            else ""
-        ),
         "module_marker": module_marker("extract"),
     }
+    if "wikidata" in enabled_sources:
+        components["wikidata_class_allowlist"] = _file_hash_from_inputs(
+            inputs, "wikidata_class_allowlist"
+        )
+    if "osm" in enabled_sources:
+        components["osm_candidate_tags"] = _file_hash_from_inputs(
+            inputs, "osm_candidate_tags"
+        )
+    if "wikipedia" in enabled_sources:
+        components["pageview_window"] = (
+            list(inputs.pageview_window) if inputs.pageview_window is not None else []
+        )
+        components["pageview_cache_files"] = _file_list_hash_limited(
+            inputs.pageview_cache_files
+        )
+    return components
 
 
 def _reconcile_components(conn, region: str, inputs: FingerprintInputs) -> dict[str, Any]:

@@ -1,11 +1,12 @@
 import json
 import pathlib
+import inspect
 from dataclasses import dataclass, replace
 
 from mt_contracts import place_id as place_id_module
 from mt_contracts import registry as registry_module
 from mt_contracts import text as text_module
-from mt_pipeline import source_record, store
+from mt_pipeline import extract_stage, source_record, store
 from mt_pipeline.ergonomics import fingerprint as F
 from mt_pipeline.ergonomics import merge as merge_module
 from mt_pipeline.ergonomics import staging as staging_module
@@ -649,6 +650,72 @@ def test_identical_fingerprint_skips_unless_forced(conn, tmp_path):
     assert F.should_skip(conn, "uk", "extract", "other", force=False) is False
 
 
-def test_every_declared_stage_read_is_fingerprinted():
+def test_fingerprint_covers_tracks_actual_component_presence(conn, tmp_path):
+    components = F.fingerprint_components(conn, "uk", "extract", inputs=_inputs(tmp_path))
+
+    assert "languages" in F.fingerprint_covers("extract", components)
+
+    without_languages = dict(components)
+    without_languages.pop("languages")
+    assert "languages" not in F.fingerprint_covers("extract", without_languages)
+
+
+def test_extract_fingerprint_covers_build_registry_inputs(conn, tmp_path):
+    parameter_to_read = {
+        "allowlist_path": "wikidata_class_allowlist",
+        "languages": "languages",
+        "osm_tag_config_path": "osm_candidate_tags",
+    }
+    ignored_parameters = {"self", "cls"}
+    signature = inspect.signature(extract_stage.build_registry)
+    unmapped = set(signature.parameters) - set(parameter_to_read) - ignored_parameters
+    assert unmapped == set()
+    required_reads = {
+        parameter_to_read[name]
+        for name in signature.parameters
+    }
+    components = F.fingerprint_components(conn, "uk", "extract", inputs=_inputs(tmp_path))
+
+    assert required_reads == set(parameter_to_read.values())
+    assert required_reads <= F.STAGE_READS["extract"]
+    assert required_reads <= F.fingerprint_covers("extract", components)
+
+
+def test_unselected_extract_source_configs_are_not_claimed_as_fingerprinted(conn, tmp_path):
+    inputs = _inputs(
+        tmp_path,
+        FakeRegionConfig(
+            region_id="malaysia",
+            sources={"wikipedia": True},
+            languages=["en"],
+        ),
+    )
+    inputs = replace(
+        inputs,
+        snapshots={"wikipedia": tmp_path / "wikidata.snapshot.json"},
+        pageview_window=("2025-07-15", "2026-07-15"),
+    )
+    components = F.fingerprint_components(conn, "malaysia", "extract", inputs=inputs)
+    covered = F.fingerprint_covers("extract", components)
+
+    assert "wikidata_class_allowlist" not in components
+    assert "osm_candidate_tags" not in components
+    assert "wikidata_class_allowlist" not in covered
+    assert "osm_candidate_tags" not in covered
+
+
+def test_every_declared_stage_read_is_fingerprinted(conn, tmp_path):
+    _insert_source(conn)
+    _insert_place(conn)
+    inputs = _inputs(
+        tmp_path,
+        FakeRegionConfig(
+            region_id="uk",
+            sources={"wikidata": True, "wikipedia": True, "osm": True},
+            languages=["en"],
+        ),
+    )
+    inputs = replace(inputs, pageview_window=("2025-07-15", "2026-07-15"))
     for stage, reads in F.STAGE_READS.items():
-        assert reads - F.fingerprint_covers(stage) == set()
+        components = F.fingerprint_components(conn, "uk", stage, inputs=inputs)
+        assert reads - F.fingerprint_covers(stage, components) == set()

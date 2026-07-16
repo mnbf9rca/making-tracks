@@ -637,13 +637,49 @@ def test_publish_stage_requires_registry_ref_coverage_before_basemap_cut(
 
 
 def test_publish_stage_quarantines_malformed_member_refs_json(
-    conn, tmp_path, monkeypatch
+    conn, tmp_path, monkeypatch, caplog
+):
+    result = _run_with_member_refs_json(
+        conn, tmp_path, monkeypatch, caplog, member_refs_json="not-json"
+    )
+
+    assert result.counts.invalid_excluded == 1
+    assert result.counts.total_published == 0
+    assert any(
+        "malformed member_refs_json (parse error)" in record.message
+        and "place_id=mt1_" in record.message
+        and "region=malaysia" in record.message
+        and record.exc_info is not None
+        for record in caplog.records
+    )
+
+
+def test_publish_stage_warns_on_non_list_member_refs_json(
+    conn, tmp_path, monkeypatch, caplog
+):
+    result = _run_with_member_refs_json(
+        conn, tmp_path, monkeypatch, caplog, member_refs_json='{"ref":"wd:Q100"}'
+    )
+
+    assert result.counts.invalid_excluded == 1
+    assert result.counts.total_published == 0
+    assert any(
+        "malformed member_refs_json (not list[str], got dict)" in record.message
+        and "place_id=mt1_" in record.message
+        and "region=malaysia" in record.message
+        and record.exc_info is None
+        for record in caplog.records
+    )
+
+
+def _run_with_member_refs_json(
+    conn, tmp_path, monkeypatch, caplog, *, member_refs_json: str
 ):
     monkeypatch.chdir(tmp_path)
     _seed_publish_inputs(conn)
     conn.execute(
         "UPDATE places SET member_refs_json = ? WHERE place_id = ?",
-        ("not-json", A),
+        (member_refs_json, A),
     )
     conn.commit()
     LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
@@ -680,7 +716,8 @@ def test_publish_stage_quarantines_malformed_member_refs_json(
     monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
     monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
 
-    result = P.run(
+    caplog.set_level("WARNING")
+    return P.run(
         conn,
         "malaysia",
         publish_version="20260715T120000Z",
@@ -688,9 +725,6 @@ def test_publish_stage_quarantines_malformed_member_refs_json(
         scoring_config_version="scoring-v1",
         staging_root=tmp_path / "stage",
     )
-
-    assert result.counts.invalid_excluded == 1
-    assert result.counts.total_published == 0
 
 
 def _seed_publish_inputs(conn):

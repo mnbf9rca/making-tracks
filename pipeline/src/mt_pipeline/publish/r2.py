@@ -45,6 +45,10 @@ class PublishLockUnavailable(RuntimeError):
     """Raised when the per-region publish lock cannot be acquired."""
 
 
+class RegistryBlobInvalid(TypeError):
+    """Raised when a registry JSONL upload body is not bytes."""
+
+
 class Boto3Unavailable(RuntimeError):
     """Raised when R2 upload is requested without the boto3 dependency."""
 
@@ -66,7 +70,6 @@ class PublishOp:
 class PublishResult:
     plan: "PublishPlan"
     uploaded: int = 0
-    skipped: int = 0
     dry_run: bool = True
 
 
@@ -137,8 +140,8 @@ class PublishPlan:
                 PublishOp(
                     kind="registry",
                     bucket=private,
-                    key=f"{prefixes.get('registry', 'registry/')}{region}.json",
-                    body=_json_bytes(registry_blob),
+                    key=f"{prefixes.get('registry', 'registry/')}{region}.jsonl",
+                    body=_registry_blob_bytes(registry_blob),
                 )
             )
         if cache_blob is not None:
@@ -192,7 +195,6 @@ def publish_to_r2(
     *,
     client=None,
     upload: bool = False,
-    uploaded_ledger: set[tuple[str, int, int, str]] | None = None,
     registry_blob: bytes | None = None,
 ) -> PublishResult:
     staging = Path(staging)
@@ -225,24 +227,23 @@ def publish_to_r2(
         client = _default_client()
 
     _assert_not_live(client, layout, region, publish_version)
-    _assert_prefix_absent_or_ledgered(client, layout, region, publish_version, uploaded_ledger)
+    _assert_prefix_absent(client, layout, region, publish_version)
     lock_key = f"{region}/publish.lock"
-    _acquire_lock(client, layout, region, publish_version, lock_key)
+    lock_etag = _acquire_lock(client, layout, region, publish_version, lock_key)
     uploaded = 0
-    skipped = 0
     try:
         for op in plan.ops:
-            if op.kind == "tile" and _ledger_contains(uploaded_ledger, publish_version, op):
-                skipped += 1
-                continue
-            body = op.body if op.body is not None else op.source_path.open("rb")
-            client.put_object(Bucket=op.bucket, Key=op.key, Body=body)
-            if hasattr(body, "close"):
-                body.close()
+            if op.body is not None:
+                client.put_object(Bucket=op.bucket, Key=op.key, Body=op.body)
+            else:
+                if op.source_path is None:
+                    raise ValueError(f"publish op {op.kind!r} has no body or source_path")
+                with op.source_path.open("rb") as body:
+                    client.put_object(Bucket=op.bucket, Key=op.key, Body=body)
             uploaded += 1
     finally:
-        client.delete_object(Bucket=layout["private_bucket"], Key=lock_key)
-    return PublishResult(plan=plan, uploaded=uploaded, skipped=skipped, dry_run=False)
+        _release_lock(client, layout, lock_key, lock_etag)
+    return PublishResult(plan=plan, uploaded=uploaded, dry_run=False)
 
 
 def _validate_layout(layout: Mapping[str, Any]) -> None:
@@ -252,6 +253,14 @@ def _validate_layout(layout: Mapping[str, Any]) -> None:
 
 def _json_bytes(obj: Any) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _registry_blob_bytes(obj: Any) -> bytes:
+    if isinstance(obj, bytes):
+        return obj
+    if isinstance(obj, bytearray):
+        return bytes(obj)
+    raise RegistryBlobInvalid("registry JSONL blob must be bytes")
 
 
 def _current_op(layout: Mapping[str, Any], region: str, publish_version: str) -> PublishOp:
@@ -357,12 +366,11 @@ def _assert_not_live(client, layout: Mapping[str, Any], region: str, publish_ver
         raise VersionAlreadyLive(publish_version)
 
 
-def _assert_prefix_absent_or_ledgered(
+def _assert_prefix_absent(
     client,
     layout: Mapping[str, Any],
     region: str,
     publish_version: str,
-    uploaded_ledger: set[tuple[str, int, int, str]] | None,
 ) -> None:
     resp = client.list_objects_v2(
         Bucket=layout["public_bucket"], Prefix=f"{region}/{publish_version}/", MaxKeys=1
@@ -371,7 +379,13 @@ def _assert_prefix_absent_or_ledgered(
         raise ExistingVersionPrefix(f"{region}/{publish_version}/ already exists")
 
 
-def _acquire_lock(client, layout: Mapping[str, Any], region: str, publish_version: str, key: str) -> None:
+def _acquire_lock(
+    client,
+    layout: Mapping[str, Any],
+    region: str,
+    publish_version: str,
+    key: str,
+) -> str | None:
     now = int(time.time())
     body = _json_bytes(
         {
@@ -383,13 +397,24 @@ def _acquire_lock(client, layout: Mapping[str, Any], region: str, publish_versio
         }
     )
     try:
-        client.put_object(Bucket=layout["private_bucket"], Key=key, Body=body, IfNoneMatch="*")
+        response = client.put_object(
+            Bucket=layout["private_bucket"], Key=key, Body=body, IfNoneMatch="*"
+        )
+        return _etag(response)
     except Exception as exc:
         if not _is_precondition_failed(exc):
             raise PublishLockUnavailable("could not acquire publish lock") from exc
         if not _delete_if_stale_lock(client, layout, key, now):
             raise PublishLockUnavailable("publish lock is held") from exc
-        client.put_object(Bucket=layout["private_bucket"], Key=key, Body=body, IfNoneMatch="*")
+        try:
+            response = client.put_object(
+                Bucket=layout["private_bucket"], Key=key, Body=body, IfNoneMatch="*"
+            )
+            return _etag(response)
+        except Exception as retry_exc:
+            if _is_precondition_failed(retry_exc):
+                raise PublishLockUnavailable("publish lock is held") from retry_exc
+            raise PublishLockUnavailable("could not acquire publish lock") from retry_exc
 
 
 def _delete_if_stale_lock(client, layout: Mapping[str, Any], key: str, now: int) -> bool:
@@ -398,11 +423,43 @@ def _delete_if_stale_lock(client, layout: Mapping[str, Any], key: str, now: int)
         data = json.loads(obj["Body"].read())
     except Exception:
         return False
+    etag = _etag(obj)
+    if etag is None:
+        return False
     expires_at = data.get("expires_at")
     if isinstance(expires_at, int | float) and expires_at < now:
-        client.delete_object(Bucket=layout["private_bucket"], Key=key)
+        try:
+            client.delete_object(Bucket=layout["private_bucket"], Key=key, IfMatch=etag)
+        except Exception as exc:
+            if _is_precondition_failed(exc):
+                return False
+            raise PublishLockUnavailable("could not delete stale publish lock") from exc
         return True
     return False
+
+
+def _release_lock(
+    client,
+    layout: Mapping[str, Any],
+    key: str,
+    etag: str | None,
+) -> None:
+    kwargs = {"Bucket": layout["private_bucket"], "Key": key}
+    if etag is not None:
+        kwargs["IfMatch"] = etag
+    try:
+        client.delete_object(**kwargs)
+    except Exception as exc:
+        if _is_precondition_failed(exc):
+            return
+        raise
+
+
+def _etag(response: Any) -> str | None:
+    if not isinstance(response, Mapping):
+        return None
+    value = response.get("ETag")
+    return str(value) if value is not None else None
 
 
 def _error_code(exc: Exception) -> str | None:
@@ -421,24 +478,3 @@ def _is_missing_key(exc: Exception) -> bool:
 
 def _is_precondition_failed(exc: Exception) -> bool:
     return _error_code(exc) in {"PreconditionFailed", "412"}
-
-
-def _ledger_contains(
-    uploaded_ledger: set[tuple[str, int, int, str]] | None,
-    publish_version: str,
-    op: PublishOp,
-) -> bool:
-    if not uploaded_ledger:
-        return False
-    parts = op.key.split("/")
-    if len(parts) < 6:
-        return False
-    try:
-        x = int(parts[-2])
-        y = int(parts[-1].removesuffix(".json.gz"))
-    except ValueError:
-        return False
-    import hashlib
-
-    body = op.body if op.body is not None else op.source_path.read_bytes()
-    return (publish_version, x, y, hashlib.sha256(body).hexdigest()) in uploaded_ledger
