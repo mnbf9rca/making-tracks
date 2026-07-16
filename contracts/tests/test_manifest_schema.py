@@ -44,6 +44,21 @@ def test_manifest_rejects_non_v1_basemap_maxzoom(contracts_root):
     assert not is_valid("manifest", inst)
 
 
+def test_manifest_with_attribution_requires_reader_v2(contracts_root):
+    inst = json.loads((contracts_root / "fixtures/manifest/valid/uk.json").read_text())
+    inst["min_reader_version"] = 1
+    inst["attribution"] = [
+        {
+            "source": "osm",
+            "license": "ODbL-1.0",
+            "text": "Place data from OpenStreetMap contributors.",
+        }
+    ]
+    assert not is_valid("manifest", inst)
+    inst["min_reader_version"] = 2
+    validate_instance("manifest", inst)
+
+
 def test_sha256_hex_matches_hashlib():
     data = b"making tracks"
     assert sha256_hex(data) == hashlib.sha256(data).hexdigest()

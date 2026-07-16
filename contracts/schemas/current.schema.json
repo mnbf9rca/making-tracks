@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.making-tracks.app/current/1",
+  "title": "CurrentPointer",
+  "description": "Stable per-region pointer to the currently visible publish version. Rollback is a repoint to an older immutable version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "publish_version"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "publish_version": {"type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z$"}
+  }
+}
