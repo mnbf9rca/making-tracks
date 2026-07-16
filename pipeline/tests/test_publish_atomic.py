@@ -83,7 +83,7 @@ def test_all_private_kind_ops_target_the_private_bucket_and_layout_is_distinct()
         "20260715T120000Z",
         _arts(),
         basemap=True,
-        registry_blob={"x": 1},
+        registry_blob=b'{"x":1}\n',
         cache_blob={"y": 1},
     )
     for op in plan.ops:
@@ -95,6 +95,35 @@ def test_all_private_kind_ops_target_the_private_bucket_and_layout_is_distinct()
     bad = {**layout, "private_bucket": layout["public_bucket"]}
     with pytest.raises(R.LayoutInvalid):
         R.PublishPlan.for_version(bad, "uk", "20260715T120000Z", _arts(), basemap=True)
+
+
+def test_for_version_uses_registry_jsonl_extension():
+    blob = b'{"place_id":"mt1"}\n'
+    layout = _layout()
+    plan = R.PublishPlan.for_version(
+        layout,
+        "uk",
+        "20260715T120000Z",
+        _arts(),
+        basemap=True,
+        registry_blob=blob,
+    )
+
+    registry_ops = [op for op in plan.ops if op.kind == "registry"]
+    assert [op.key for op in registry_ops] == ["registry/uk.jsonl"]
+    assert [op.body for op in registry_ops] == [blob]
+
+
+def test_for_version_rejects_non_bytes_registry_jsonl_blob():
+    with pytest.raises(R.RegistryBlobInvalid):
+        R.PublishPlan.for_version(
+            _layout(),
+            "uk",
+            "20260715T120000Z",
+            _arts(),
+            basemap=True,
+            registry_blob={"x": 1},
+        )
 
 
 def test_existing_version_prefix_is_refused_even_with_a_ledger(tmp_path):
@@ -117,7 +146,6 @@ def test_existing_version_prefix_is_refused_even_with_a_ledger(tmp_path):
             _layout(),
             client=ExistingPrefixClient(),
             upload=True,
-            uploaded_ledger={("20260715T120000Z", 1, 2, "0" * 64)},
         )
 
 
@@ -143,9 +171,12 @@ def test_upload_path_locks_uploads_content_manifest_current_then_private_registr
             if hasattr(Body, "read"):
                 Body.read()
             self.puts.append((Bucket, Key, IfNoneMatch))
+            if Key == "uk/publish.lock":
+                return {"ETag": '"lock-etag"'}
+            return {"ETag": '"content-etag"'}
 
-        def delete_object(self, *, Bucket, Key):
-            self.deleted.append((Bucket, Key))
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            self.deleted.append((Bucket, Key, IfMatch))
 
     client = MissingCurrentUploadClient()
     result = R.publish_to_r2(
@@ -167,7 +198,7 @@ def test_upload_path_locks_uploads_content_manifest_current_then_private_registr
         "registry/uk.jsonl",
     ]
     assert client.puts[0][2] == "*"
-    assert client.deleted == [("making-tracks-state", "uk/publish.lock")]
+    assert client.deleted == [("making-tracks-state", "uk/publish.lock", '"lock-etag"')]
 
 
 def test_default_client_uses_committed_r2_s3_endpoint_contract(monkeypatch):
@@ -297,7 +328,7 @@ def test_upload_recovers_a_stale_publish_lock(tmp_path):
         def get_object(self, *, Bucket, Key):
             if Key == "uk/current.json":
                 raise FileNotFoundError(Key)
-            return {"Body": BytesIO(b'{"expires_at":0}')}
+            return {"Body": BytesIO(b'{"expires_at":0}'), "ETag": '"stale-etag"'}
 
         def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
             return {"KeyCount": 0}
@@ -307,15 +338,136 @@ def test_upload_recovers_a_stale_publish_lock(tmp_path):
                 self.lock_attempts += 1
                 if self.lock_attempts == 1:
                     raise PreconditionFailed()
+                return {"ETag": '"fresh-etag"'}
+            return {"ETag": '"content-etag"'}
 
-        def delete_object(self, *, Bucket, Key):
-            self.deleted.append((Bucket, Key))
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            self.deleted.append((Bucket, Key, IfMatch))
 
     client = StaleLockClient()
     R.publish_to_r2(version_root, _layout(), client=client, upload=True)
 
     assert client.lock_attempts == 2
-    assert ("making-tracks-state", "uk/publish.lock") in client.deleted
+    assert ("making-tracks-state", "uk/publish.lock", '"stale-etag"') in client.deleted
+    assert ("making-tracks-state", "uk/publish.lock", '"fresh-etag"') in client.deleted
+
+
+def test_stale_lock_delete_is_conditional_on_the_stale_object(tmp_path):
+    version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
+    (version_root / "tiles/10").mkdir(parents=True)
+    (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    (version_root / "manifest.json").write_text("{}")
+
+    class PreconditionFailed(Exception):
+        response = {"Error": {"Code": "PreconditionFailed"}}
+
+    class StaleDeleteRaceClient:
+        def __init__(self):
+            self.lock_attempts = 0
+            self.delete_if_match = []
+
+        def get_object(self, *, Bucket, Key):
+            if Key == "uk/current.json":
+                raise FileNotFoundError(Key)
+            return {"Body": BytesIO(b'{"expires_at":0}'), "ETag": '"old-lock"'}
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            if Key == "uk/publish.lock":
+                self.lock_attempts += 1
+                raise PreconditionFailed()
+            return {"ETag": '"content-etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            self.delete_if_match.append(IfMatch)
+            raise PreconditionFailed()
+
+    client = StaleDeleteRaceClient()
+
+    with pytest.raises(R.PublishLockUnavailable, match="publish lock is held"):
+        R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+
+    assert client.lock_attempts == 1
+    assert client.delete_if_match == ['"old-lock"']
+
+
+def test_stale_lock_retry_race_reports_lock_unavailable(tmp_path):
+    version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
+    (version_root / "tiles/10").mkdir(parents=True)
+    (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    (version_root / "manifest.json").write_text("{}")
+
+    class PreconditionFailed(Exception):
+        response = {"Error": {"Code": "PreconditionFailed"}}
+
+    class RetryRaceClient:
+        def __init__(self):
+            self.lock_attempts = 0
+
+        def get_object(self, *, Bucket, Key):
+            if Key == "uk/current.json":
+                raise FileNotFoundError(Key)
+            return {"Body": BytesIO(b'{"expires_at":0}'), "ETag": '"stale-etag"'}
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            if Key == "uk/publish.lock":
+                self.lock_attempts += 1
+                raise PreconditionFailed()
+            return {"ETag": '"content-etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            pass
+
+    client = RetryRaceClient()
+
+    with pytest.raises(R.PublishLockUnavailable, match="publish lock is held"):
+        R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+
+    assert client.lock_attempts == 2
+
+
+def test_file_body_is_closed_when_upload_fails(tmp_path):
+    version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
+    (version_root / "tiles/10/1").mkdir(parents=True)
+    (version_root / "tiles/10/1/2.json.gz").write_bytes(b"tile")
+    (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    (version_root / "manifest.json").write_text("{}")
+
+    class FailingUploadClient:
+        def __init__(self):
+            self.tile_body = None
+            self.deleted = []
+
+        def get_object(self, *, Bucket, Key):
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            if Key == "uk/publish.lock":
+                return {"ETag": '"lock-etag"'}
+            if Key == "uk/20260715T120000Z/tiles/10/1/2.json.gz":
+                self.tile_body = Body
+                raise RuntimeError("upload failed")
+            return {"ETag": '"content-etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            self.deleted.append((Bucket, Key, IfMatch))
+
+    client = FailingUploadClient()
+
+    with pytest.raises(RuntimeError, match="upload failed"):
+        R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+
+    assert client.tile_body is not None
+    assert client.tile_body.closed is True
+    assert client.deleted == [("making-tracks-state", "uk/publish.lock", '"lock-etag"')]
 
 
 def test_the_real_r2_layout_config_has_two_distinct_buckets():
