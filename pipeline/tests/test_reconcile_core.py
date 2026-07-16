@@ -79,6 +79,11 @@ def test_indexed_resolver_updates_post_trim_refs():
     resolver.update_record(record)
 
     _assert_resolves_like_contract(resolver, records, {"wd:Q500"})
+    assert "plaque:000" in record.refs
+    assert "plaque:299" not in record.refs
+    assert resolver.resolve({"plaque:000"}) == "p-trim"
+    assert resolver.resolve({"plaque:299"}) is None
+    _assert_resolves_like_contract(resolver, records, {"plaque:000"})
     _assert_resolves_like_contract(resolver, records, {"plaque:299"})
 
 
