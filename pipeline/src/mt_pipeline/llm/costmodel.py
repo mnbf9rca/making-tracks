@@ -7,7 +7,7 @@ import math
 from typing import Any
 
 from .curiosity import CURIOSITY_MAX_TOKENS, render_prompt
-from .models import CostRow, CostTable
+from .models import CostRow, CostTable, LlmRequest
 
 
 def count_tokens(text: str, *, tokenizer: Any = None) -> int:
@@ -17,6 +17,12 @@ def count_tokens(text: str, *, tokenizer: Any = None) -> int:
             return max(1, len(tokens))
         raise TypeError("tokenizer must expose encode(text)")
     return max(1, len(text.encode("utf-8")))
+
+
+def count_request_tokens(req: LlmRequest, *, tokenizer: Any = None) -> int:
+    return count_tokens(req.system, tokenizer=tokenizer) + sum(
+        count_tokens(message.content, tokenizer=tokenizer) for message in req.messages
+    )
 
 
 def estimate_cost(

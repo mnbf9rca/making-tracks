@@ -75,7 +75,7 @@ class CuriosityResult(FrozenModel):
     def _reject_bool_and_non_finite(cls, value: object) -> object:
         if isinstance(value, bool):
             raise ValueError("curiosity must be a number, not a bool")
-        if isinstance(value, int | float) and not math.isfinite(float(value)):
+        if isinstance(value, (int, float)) and not math.isfinite(float(value)):
             raise ValueError("curiosity must be finite")
         return value
 

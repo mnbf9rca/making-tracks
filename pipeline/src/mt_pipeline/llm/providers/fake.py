@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 import json
 
-from ..costmodel import count_tokens
+from ..costmodel import count_request_tokens, count_tokens
 from ..models import LlmRequest, ProviderResponse
 
 
@@ -24,7 +24,7 @@ class FakeProvider:
         return ProviderResponse(
             text=text,
             model_fingerprint=f"fake:{req.model_id}",
-            input_tokens=count_tokens(req.system + "\n" + "\n".join(m.content for m in req.messages)),
+            input_tokens=count_request_tokens(req),
             output_tokens=count_tokens(text),
             latency_ms=0,
             cost_usd=self._price_per_call_usd,

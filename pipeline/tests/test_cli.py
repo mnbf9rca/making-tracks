@@ -397,6 +397,56 @@ def test_cli_llm_cost_reads_jsonl_and_reports_keyless_cost(tmp_path, capsys):
     assert "byte-estimate" in out
 
 
+def _write_llm_cost_inputs(tmp_path):
+    corpus = tmp_path / "golden.jsonl"
+    corpus.write_text(
+        '{"place_id":"mt1_00000000000000000000000000","name":"Old Windmill",'
+        '"category":"historic","evidence":"",'
+        '"signals":{"article":1.0,"tag_rarity":0.5}}\n'
+    )
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"fake-curiosity-v1","provider":"fake"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"fake-curiosity-v1":{"input_per_m":0.15,"output_per_m":0.60}}}')
+    return corpus, models, pricing
+
+
+def test_cli_llm_cost_invalid_jsonl_reports_error(tmp_path, capsys):
+    corpus, models, pricing = _write_llm_cost_inputs(tmp_path)
+    corpus.write_text(corpus.read_text() + "not-json\n")
+
+    rc = cli.main(["llm", "cost", "--corpus", str(corpus), "--models", str(models), "--pricing", str(pricing)])
+
+    assert rc == 1
+    assert "llm cost error:" in capsys.readouterr().err
+
+
+def test_cli_llm_cost_models_missing_or_not_list_reports_error(tmp_path, capsys):
+    corpus, models, pricing = _write_llm_cost_inputs(tmp_path)
+    models.write_text('{"not_models":[{"id":"fake-curiosity-v1","provider":"fake"}]}')
+
+    rc = cli.main(["llm", "cost", "--corpus", str(corpus), "--models", str(models), "--pricing", str(pricing)])
+
+    assert rc == 1
+    assert "llm cost error:" in capsys.readouterr().err
+
+    models.write_text('{"models":{"id":"fake-curiosity-v1","provider":"fake"}}')
+    rc = cli.main(["llm", "cost", "--corpus", str(corpus), "--models", str(models), "--pricing", str(pricing)])
+
+    assert rc == 1
+    assert "llm cost error:" in capsys.readouterr().err
+
+
+def test_cli_llm_cost_pricing_models_not_dict_reports_error(tmp_path, capsys):
+    corpus, models, pricing = _write_llm_cost_inputs(tmp_path)
+    pricing.write_text('{"models":[{"fake-curiosity-v1":{"input_per_m":0.15,"output_per_m":0.60}}]}')
+
+    rc = cli.main(["llm", "cost", "--corpus", str(corpus), "--models", str(models), "--pricing", str(pricing)])
+
+    assert rc == 1
+    assert "llm cost error:" in capsys.readouterr().err
+
+
 def test_cli_llm_bakeoff_runs_keyless_fake_provider(tmp_path, capsys):
     labeled = tmp_path / "golden.tsv"
     labeled.write_text(

@@ -13,7 +13,7 @@ import os
 from typing import Any
 from urllib.parse import urlparse
 
-from ..costmodel import count_tokens
+from ..costmodel import count_request_tokens, count_tokens
 from ..models import LlmRequest, ProviderResponse
 from ..provider import ProviderCredentialsMissing
 
@@ -82,8 +82,14 @@ class NousProvider:
         )
         text = response.choices[0].message.content or ""
         usage = getattr(response, "usage", None)
-        input_tokens = int(getattr(usage, "prompt_tokens", 0) or count_tokens(req.system))
-        output_tokens = int(getattr(usage, "completion_tokens", 0) or count_tokens(text))
+        prompt_tokens = getattr(usage, "prompt_tokens", None)
+        completion_tokens = getattr(usage, "completion_tokens", None)
+        input_tokens = int(prompt_tokens) if prompt_tokens is not None and int(prompt_tokens) > 0 else count_request_tokens(req)
+        output_tokens = (
+            int(completion_tokens)
+            if completion_tokens is not None and int(completion_tokens) > 0
+            else count_tokens(text)
+        )
         return ProviderResponse(
             text=text,
             model_fingerprint=getattr(response, "system_fingerprint", None) or req.model_id,

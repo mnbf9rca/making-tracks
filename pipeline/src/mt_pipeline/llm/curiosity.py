@@ -34,7 +34,7 @@ def _clean(value: object, limit: int) -> str:
         return ""
     if isinstance(value, str):
         raw = value[: limit * 4]
-    elif isinstance(value, int | float):
+    elif isinstance(value, (int, float)):
         raw = str(value)
     else:
         return ""
@@ -47,7 +47,7 @@ def _clean(value: object, limit: int) -> str:
 
 
 def _clean_tags(raw_tags: object) -> list[str]:
-    if not isinstance(raw_tags, Sequence) or isinstance(raw_tags, str | bytes):
+    if not isinstance(raw_tags, Sequence) or isinstance(raw_tags, (str, bytes)):
         return []
     tags = []
     for raw in raw_tags[:MAX_TAGS]:

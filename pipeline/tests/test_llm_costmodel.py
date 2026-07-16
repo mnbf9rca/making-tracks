@@ -1,12 +1,30 @@
 import pytest
 
 from mt_pipeline.llm import costmodel as K
+from mt_pipeline.llm import models as M
 
 
 def test_token_count_upper_bounds_bytes():
     text = "Old Windmill heritage site"
 
     assert 0 < K.count_tokens(text) <= len(text.encode("utf-8"))
+
+
+def test_request_token_count_includes_system_and_messages():
+    req = M.LlmRequest(
+        model_id="fake-1",
+        system="score",
+        messages=(M.Message(role="user", content="Old Windmill"), M.Message(role="user", content="heritage")),
+        max_tokens=16,
+        temperature=0.0,
+        top_p=1.0,
+        seed=7,
+        prompt_version="curiosity-v1",
+        task_id="curiosity",
+        query_id="mt1_x",
+    )
+
+    assert K.count_request_tokens(req) == K.count_tokens("score") + K.count_tokens("Old Windmill") + K.count_tokens("heritage")
 
 
 def test_cost_scales_with_corpus_and_pins_source():
