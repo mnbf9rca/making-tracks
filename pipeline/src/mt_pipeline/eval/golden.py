@@ -18,8 +18,9 @@ INSTRUCTION_LINE = (
     "meh = fine but skippable; no = not interesting; blank = skip. "
     "labeled_by: rob, llm-research, rob-confirmed, or blank. "
     "evidence: optional one-line note. Do NOT edit: place_id, area, active, "
-    "name, lat, lon, category, tier, score, data_version, or signal columns."
+    "name, lat, lon, category, tier, score, data_version, sample_weight, or signal columns."
 )
+SAMPLE_WEIGHT_LINE = "# sample_weight: inverse-propensity design weight; do not edit"
 BASE_COLUMNS = (
     "place_id",
     "area",
@@ -31,10 +32,12 @@ BASE_COLUMNS = (
     "tier",
     "score",
     "data_version",
+    "sample_weight",
 )
 MAX_SIGNALS_JSON_BYTES = 65536
 MAX_SIGNAL_COUNT = 128
 MAX_SIGNAL_KEY_LEN = 64
+MAX_SAMPLE_WEIGHT = 1_000_000.0
 
 
 @dataclass(frozen=True)
@@ -50,6 +53,7 @@ class GoldenRow:
     signals: dict[str, float | None]
     label: str | None
     data_version: str
+    sample_weight: float = 1.0
     active: bool = True
     labeled_by: str | None = None
     evidence: str = ""
@@ -114,7 +118,12 @@ def render_tsv(rows: Sequence[GoldenRow]) -> str:
     data_version = next(iter(data_versions)) if len(data_versions) == 1 else ""
     signal_columns = _signal_columns(rows)
     header = [*BASE_COLUMNS, *signal_columns, "labeled_by", "evidence", "label"]
-    lines = [INSTRUCTION_LINE, f"# data_version: {data_version}", "\t".join(header)]
+    lines = [
+        INSTRUCTION_LINE,
+        f"# data_version: {data_version}",
+        SAMPLE_WEIGHT_LINE,
+        "\t".join(header),
+    ]
     for row in sorted(rows, key=lambda r: (-r.score, r.place_id)):
         fields = [
             row.place_id,
@@ -127,6 +136,7 @@ def render_tsv(rows: Sequence[GoldenRow]) -> str:
             str(row.tier),
             _format_float(row.score),
             _clean_text(row.data_version),
+            _format_float(row.sample_weight),
         ]
         for column in signal_columns:
             value = row.signals.get(column)
@@ -155,6 +165,7 @@ def render_jsonl(rows: Sequence[GoldenRow]) -> str:
             "labeled_by": row.labeled_by,
             "evidence": _clean_text(row.evidence),
             "data_version": row.data_version,
+            "sample_weight": row.sample_weight,
             "active": row.active,
         }
         lines.append(json.dumps(payload, sort_keys=False, separators=(",", ":")))
@@ -166,6 +177,16 @@ def _parse_optional_float(raw: str) -> float | None:
     if value == "":
         return None
     return float(value)
+
+
+def _parse_sample_weight(raw: str) -> float:
+    value = raw.strip()
+    if value == "":
+        return 1.0
+    number = float(value)
+    if not math.isfinite(number) or number <= 0 or number > MAX_SAMPLE_WEIGHT:
+        raise ValueError(f"invalid sample_weight {raw!r}")
+    return number
 
 
 def parse_labeled_tsv(text: str) -> ParseResult:
@@ -214,6 +235,7 @@ def parse_labeled_tsv(text: str) -> ParseResult:
             lat = float(cells.get("lat", "0") or 0)
             lon = float(cells.get("lon", "0") or 0)
             tier = int(cells.get("tier", "0") or 0)
+            sample_weight = _parse_sample_weight(cells.get("sample_weight", ""))
             signal_names = [
                 name
                 for name in header
@@ -254,6 +276,7 @@ def parse_labeled_tsv(text: str) -> ParseResult:
             signals=signals,
             label=label_value,
             data_version=cells.get("data_version", "") or data_version or "",
+            sample_weight=sample_weight,
             active=active,
             labeled_by=labeled_by_value,
             evidence=cells.get("evidence", ""),

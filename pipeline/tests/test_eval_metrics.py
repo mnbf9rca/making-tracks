@@ -36,3 +36,68 @@ def test_precision_at_k_treats_meh_as_positive_only_when_requested():
     ranked = [row(A, "meh", 1.0, "meh"), row(B, "no", 0.9, "no")]
     assert M.precision_at_k(ranked, 1, positive={"yes"}) == 0.0
     assert M.precision_at_k(ranked, 1, positive={"yes", "meh"}) == 1.0
+
+
+def test_weighted_auc_uses_sample_weight():
+    middle_negative = row(A, "no", 0.5, "no", sample_weight=1.0)
+    high_tail_positive = row(C, "tail yes", 0.8, "yes", sample_weight=47.0)
+    low_census_positive = row(B, "top yes", 0.1, "yes", sample_weight=1.0)
+    weighted_with_tail_positive = M.weighted_auc(
+        [middle_negative, high_tail_positive, low_census_positive],
+        positive={"yes"},
+    )
+    neutered = M.weighted_auc(
+        [
+            row(A, "no", 0.5, "no", sample_weight=1.0),
+            row(C, "tail yes", 0.8, "yes", sample_weight=1.0),
+            row(B, "top yes", 0.1, "yes", sample_weight=1.0),
+        ],
+        positive={"yes"},
+    )
+
+    assert weighted_with_tail_positive == 47 / 48
+    assert neutered == 0.5
+
+
+def test_weighted_auc_ignores_unlabeled_rows():
+    ranked = [
+        row(A, "unlabeled high", 1.0, None, sample_weight=1000.0),
+        row(B, "yes", 0.8, "yes", sample_weight=1.0),
+        row(C, "no", 0.2, "no", sample_weight=1.0),
+    ]
+
+    assert M.weighted_auc(ranked, positive={"yes"}) == 1.0
+
+
+def test_weighted_auc_gives_ties_half_credit():
+    ranked = [
+        row(A, "yes", 0.5, "yes", sample_weight=2.0),
+        row(B, "no", 0.5, "no", sample_weight=3.0),
+    ]
+
+    assert M.weighted_auc(ranked, positive={"yes"}) == 0.5
+
+
+def test_weighted_auc_rejects_invalid_direct_weights():
+    ranked = [
+        row(A, "yes", 0.5, "yes", sample_weight=-1.0),
+        row(B, "no", 0.4, "no", sample_weight=1.0),
+    ]
+
+    try:
+        M.weighted_auc(ranked, positive={"yes"})
+    except ValueError as exc:
+        assert "sample_weight" in str(exc)
+    else:
+        raise AssertionError("expected invalid sample_weight to raise")
+
+    oversized = [
+        row(A, "yes", 0.5, "yes", sample_weight=1_000_001.0),
+        row(B, "no", 0.4, "no", sample_weight=1.0),
+    ]
+    try:
+        M.weighted_auc(oversized, positive={"yes"})
+    except ValueError as exc:
+        assert "sample_weight" in str(exc)
+    else:
+        raise AssertionError("expected oversized sample_weight to raise")

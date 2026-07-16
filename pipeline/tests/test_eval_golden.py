@@ -23,6 +23,7 @@ def row(
     dv="v1",
     labeled_by=None,
     evidence="",
+    sample_weight=1.0,
     **sig,
 ):
     return G.GoldenRow(
@@ -37,6 +38,7 @@ def row(
         {"article": sig.get("article", 0.0), "llm_curiosity": None},
         label,
         data_version=dv,
+        sample_weight=sample_weight,
         active=active,
         labeled_by=labeled_by,
         evidence=evidence,
@@ -85,14 +87,55 @@ def test_tsv_layout_and_is_deterministic():
     lines = tsv.splitlines()
     assert lines[0].startswith("# Edit only: label, labeled_by, evidence.")
     assert lines[1] == "# data_version: v1"
+    assert lines[2] == "# sample_weight: inverse-propensity design weight; do not edit"
     assert "Edit only: label, labeled_by, evidence." in lines[0]
     assert "Do NOT edit: place_id, area, active" in lines[0]
-    assert lines[2].startswith("place_id\t")
-    assert "\tarea\tactive\t" in lines[2]
-    assert "\tdata_version\t" in lines[2]
-    assert "\tlabeled_by\tevidence\tlabel" in lines[2]
-    assert "\tlabel" in lines[2]
+    assert lines[3].startswith("place_id\t")
+    assert "\tarea\tactive\t" in lines[3]
+    assert "\tdata_version\tsample_weight\tarticle\t" in lines[3]
+    assert "\tlabeled_by\tevidence\tlabel" in lines[3]
+    assert "\tlabel" in lines[3]
     assert "\tNone" not in tsv
+
+
+def test_sample_weight_round_trips_and_is_not_a_signal():
+    weighted = [row(A, "Sampled Tail", 0.4, "meh", sample_weight=47.0)]
+    parsed = G.parse_labeled_tsv(G.render_tsv(weighted))
+
+    assert parsed.skipped == []
+    assert parsed.rows[0].sample_weight == 47.0
+    assert "sample_weight" not in parsed.rows[0].signals
+
+
+def test_old_tsv_without_sample_weight_defaults_to_one():
+    old_header = "place_id\tname\tlat\tlon\tcategory\ttier\tscore\tarticle\tlabel"
+    old_row = f"{A}\tOld\t0\t0\tc\t1\t0.5\t0.25\tyes"
+    parsed = G.parse_labeled_tsv(f"# data_version: v1\n{old_header}\n{old_row}\n")
+
+    assert parsed.skipped == []
+    assert parsed.rows[0].sample_weight == 1.0
+    assert parsed.rows[0].signals == {"article": 0.25}
+
+
+def test_oversized_sample_weight_is_counted_skip():
+    header = "place_id\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tsample_weight\tarticle\tlabel"
+    bad_row = f"{A}\tBad\t0\t0\tc\t1\t0.5\tv1\t1000001\t0.25\tyes"
+    parsed = G.parse_labeled_tsv(f"# data_version: v1\n{header}\n{bad_row}\n")
+
+    assert parsed.parsed == 0
+    assert len(parsed.skipped) == 1
+    assert "sample_weight" in parsed.skipped[0][1]
+
+
+def test_merged_labels_keep_new_dump_sample_weight():
+    existing = [row(A, "Old", 0.4, "yes", dv="v1", sample_weight=47.0)]
+    new_rows = [row(A, "New", 0.5, dv="v2", sample_weight=1.0)]
+
+    merged, retired = G.merge_labels(new_rows, existing)
+
+    assert retired == []
+    assert merged[0].label == "yes"
+    assert merged[0].sample_weight == 1.0
 
 
 def test_render_tsv_escapes_spreadsheet_formula_text():
@@ -114,6 +157,7 @@ def test_active_retired_metadata_survives_tsv_round_trip():
     assert parsed.data_version == "v2"
     assert by_id[A].area == "london" and by_id[A].active and by_id[A].data_version == "v2"
     assert by_id[B].area == "london" and not by_id[B].active and by_id[B].data_version == "v1"
+    assert by_id[A].sample_weight == 1.0
     assert by_id[B].labeled_by == "llm-research"
     assert by_id[B].evidence == "source note"
 
@@ -122,6 +166,7 @@ def test_jsonl_is_deterministic_and_carries_active_data_version_and_signals():
     jsonl = G.render_jsonl(list(reversed(ROWS)))
     assert G.render_jsonl(list(reversed(ROWS))) == jsonl
     assert '"data_version":"v1"' in jsonl
+    assert '"sample_weight":1.0' in jsonl
     assert '"active":true' in jsonl
     assert '"labeled_by":null' in jsonl
     assert '"evidence":""' in jsonl
@@ -157,7 +202,7 @@ def test_label_survives_edit_and_is_normalised():
 
 def test_labeled_by_and_evidence_survive_edit_and_are_validated():
     tsv = G.render_tsv(ROWS)
-    header = tsv.splitlines()[2].split("\t")
+    header = tsv.splitlines()[3].split("\t")
     labeled_by_idx = header.index("labeled_by")
     evidence_idx = header.index("evidence")
     out = []
@@ -207,7 +252,7 @@ def test_valid_short_and_extra_rows_are_padded_and_truncated():
 
 def test_duplicate_conflicting_non_blank_label_is_counted_warning_and_last_wins():
     edited = _set_label(G.render_tsv(ROWS), A, "yes")
-    duplicate = edited + f"{A}\tlondon\ttrue\tX\t0\t0\tc\t1\t0\tv1\t0\t\trob\tmanual note\tno\n"
+    duplicate = edited + f"{A}\tlondon\ttrue\tX\t0\t0\tc\t1\t0\tv1\t1\t0\t\trob\tmanual note\tno\n"
     res = G.parse_labeled_tsv(duplicate)
     parsed = {r.place_id: r for r in res.rows}[A]
     assert parsed.label == "no"
