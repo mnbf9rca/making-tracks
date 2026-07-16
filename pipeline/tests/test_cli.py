@@ -7,6 +7,7 @@ from mt_pipeline import cli, store
 from mt_pipeline.ergonomics import fingerprint
 from mt_pipeline.eval import report as eval_report
 from mt_pipeline.extractors import pageviews
+from mt_pipeline.publish import publish_stage
 
 
 def _test_probe(origin_place_id: str, *, direction: str = "inflation", suffix: str = "0"):
@@ -73,6 +74,47 @@ def test_cli_publish_missing_pmtiles_is_clean_error(tmp_path, capsys, monkeypatc
     err = capsys.readouterr().err
     assert "pmtiles" in err
     assert "v1.31.1" in err
+    assert "Traceback" not in err
+
+
+def test_cli_publish_upload_missing_boto3_is_clean_error(tmp_path, capsys, monkeypatch):
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    store.mark_stage_complete(
+        conn, "malaysia", "categorize", "cat1", "2026-07-15T00:00:00Z"
+    )
+    conn.close()
+    monkeypatch.setattr(publish_stage.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    def missing_boto3(name):
+        if name == "boto3":
+            raise ModuleNotFoundError("No module named 'boto3'")
+        raise AssertionError(f"unexpected import check for {name}")
+
+    monkeypatch.setattr(publish_stage.r2, "_import_module", missing_boto3)
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "publish",
+            "--db",
+            str(db),
+            "--run-id",
+            "real-malaysia-20260715",
+            "--publish-version",
+            "20260716T000000Z",
+            "--generated-at",
+            "2026-07-16T00:00:00Z",
+            "--upload",
+        ]
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "boto3>=1.34" in err
+    assert "--upload" in err
     assert "Traceback" not in err
 
 

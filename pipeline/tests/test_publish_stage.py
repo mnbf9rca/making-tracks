@@ -234,6 +234,41 @@ def test_publish_stage_checks_pmtiles_before_staging(conn, tmp_path, monkeypatch
     assert not (tmp_path / "stage").exists()
 
 
+def test_publish_stage_checks_boto3_before_staging_when_upload_requested(
+    conn, tmp_path, monkeypatch
+):
+    _seed_publish_inputs(conn)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    def missing_boto3(name):
+        if name == "boto3":
+            raise ModuleNotFoundError("No module named 'boto3'")
+        raise AssertionError(f"unexpected import check for {name}")
+
+    monkeypatch.setattr(P.r2, "_import_module", missing_boto3, raising=False)
+
+    def fail_registry_path(_conn, _region):
+        raise AssertionError("registry path should wait for boto3 upload preflight")
+
+    monkeypatch.setattr(P, "_registry_path", fail_registry_path)
+
+    with pytest.raises(P.r2.Boto3Unavailable) as excinfo:
+        P.run(
+            conn,
+            "malaysia",
+            publish_version="20260715T120000Z",
+            generated_at="2026-07-15T12:00:00Z",
+            scoring_config_version="scoring-v1",
+            upload=True,
+            staging_root=tmp_path / "stage",
+        )
+
+    assert "boto3" in str(excinfo.value)
+    assert "--upload" in str(excinfo.value)
+    assert "boto3>=1.34" in str(excinfo.value)
+    assert not (tmp_path / "stage").exists()
+
+
 def test_publish_stage_resolves_relative_registry_path_beside_db(
     conn, tmp_path, monkeypatch
 ):
