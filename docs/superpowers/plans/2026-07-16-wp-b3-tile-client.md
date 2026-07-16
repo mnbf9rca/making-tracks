@@ -121,16 +121,19 @@ Depends on `MakingTracksData` (for `PlaceRef`/`MapPlace`) and the **system `zlib
   Codable can't express:** (a) `check_version`-equivalent on `schema_version`; (b) the
   `min_reader_version` reader gate (§5.6 two-branch); (c) **re-evaluate the schema `allOf`
   explicitly** — non-empty `attribution` with `min_reader_version < 2` is schema-INVALID and
-  must be refused, not accepted because `1 > 2` is false; (d) **attribution-source cross-check**
-  — if decoded tiles carry `source_refs` for an attribution-requiring source (`osm`,
-  `historic_england`, `open_plaques` per `a1d_sources.json`) but the manifest omits that
-  source's credit, **refuse** (a stripped-attribution manifest is schema-valid yet a license
-  breach). A schema-invalid/inconsistent manifest is a **loud** failure: refuse the pin, keep
-  serving the last verified cached publish, surface an error — never silent, never empty (§5.6
-  "never silently misread"). Exposes `PinnedPublish{region, publishVersion, manifest}`,
-  `attribution`, and the **`basemapURL`** (`{region}/{pv}/{basemap.filename}`) for B2 to hand
-  MapLibre's `pmtiles://` source (closes the end-to-end milestone; B3 does not fetch the
-  basemap).
+  must be refused, not accepted because `1 > 2` is false. **(The attribution-*source*
+  cross-check moves to decode time — see `PlaceDecoder` / `TileClient` below. It cannot run
+  here: the manifest is validated *before* any tile is fetched, and the manifest carries no
+  source index — `provenance[]` records task/model/prompt_version, not source identity — so
+  `ManifestClient` has no tile data to check against. This corrects the first draft, which
+  wrongly placed the check at manifest time.)** A schema-invalid/inconsistent manifest is a
+  **loud** failure: refuse the pin, keep serving the last verified cached publish, surface an
+  error — never silent, never empty (§5.6 "never silently misread"). Exposes
+  `PinnedPublish{region, publishVersion, manifest}`, `attribution`, the **`basemapURL`**
+  (`{region}/{pv}/{basemap.filename}`) **and `basemapIntegrity(sha256, bytes)`** (from
+  `manifest.basemap`) so B2/MapLibre — and B7's offline packs — can verify the basemap they
+  stream; without the integrity values the sha-verified trust boundary would not extend to the
+  basemap (B3 exposes; B2 fetches; B3 does not fetch the basemap).
 - **`TileCodec`.** sha256 verify of the raw `.gz` against the manifest `{sha256, bytes}` **before**
   inflating, then **bomb-safe streaming gunzip via `zlib`**: `inflateInit2(16 + MAX_WBITS)` —
   which handles the gzip wrapper natively and is the **exact `wbits` of the Python `safe_gunzip`**
@@ -144,7 +147,16 @@ Depends on `MakingTracksData` (for `PlaceRef`/`MapPlace`) and the **system `zlib
 - **`PlaceDecoder`.** Strict §5.5 typed decode enforcing **every** `place/1` cap (Task 4),
   **skip malformed places/tiles, never throw**; cross-checks the tile's internal `z/x/y` against
   the requested coordinate (a manifest-consistent-but-mislabeled tile). Produces `MapPlace`, and
-  `PlaceRef` on demand (re-validating what `PlaceRef`'s init doesn't).
+  `PlaceRef` on demand (re-validating what `PlaceRef`'s init doesn't). **The attribution-source
+  cross-check runs HERE, incrementally, on already-`source_refs`-validated places:** a decoded
+  place carrying a `source_ref` for an attribution-requiring source (`osm`, `historic_england`,
+  `open_plaques` per `a1d_sources.json`) whose credit is **absent from the pinned manifest's
+  `attribution`** is a license breach (a stripped-attribution manifest is schema-valid but
+  illegal to display). On detection `TileClient` **revokes the pin, evicts the offending
+  publish's cache, and transitions `loadState` to `.manifestInvalid`** — the license-breach
+  publish is not served. The prefix is extracted **only from pattern-valid `source_refs`** (the
+  pattern is enforced first — Task 4 — so a malformed ref like `OSM:way/123` cannot spoof a
+  prefix match).
 - **`TileCoverage`.** `lonlat_to_z10` reproduction + viewport-bbox→covering-tiles + the padded
   ring; deterministic duplicate-`(x,y)` handling. Host-tested against `partition.py`.
 - **`TileCache`.** sha256-keyed disk cache, LRU under the tunable cap, repoint purge.
@@ -160,13 +172,15 @@ Depends on `MakingTracksData` (for `PlaceRef`/`MapPlace`) and the **system `zlib
    gate. Teeth: gate truth table (incl. `min_reader_version=3`+cache → `.updateAvailable`,
    fresh+no-cache → `.updateRequired`); **a 3xx redirect to a foreign host is refused**; a wrong
    host is refused.
-2. **`ManifestClient` + gates + basemap URL.** Strict decode (attribution/generated_at optional);
-   the four gates (schema_version, min_reader_version two-branch, **allOf re-validation**,
-   **attribution-source cross-check**); loud failure on schema-invalid/inconsistent manifest;
-   expose `attribution` + `basemapURL`. Teeth: the **live UK manifest fixture** pins clean; a
-   synthetic **`min_reader_version=1` + non-empty attribution** manifest is REFUSED (allOf); a
-   manifest that **strips OSM attribution while tiles carry `osm:` refs** is REFUSED; a
-   `min_reader_version=3` manifest with a readable cache → `.updateAvailable`.
+2. **`ManifestClient` + manifest-time gates + basemap URL/integrity.** Strict decode
+   (attribution/generated_at optional); the **three manifest-time gates** (schema_version,
+   min_reader_version two-branch, **allOf re-validation**) — the attribution-*source*
+   cross-check is NOT here (it needs tile data; it runs in Task 4/5); loud failure on
+   schema-invalid manifest; expose `attribution`, `basemapURL`, `basemapIntegrity(sha256,
+   bytes)`. Teeth: the **live UK manifest fixture** pins clean; a synthetic
+   **`min_reader_version=1` + non-empty attribution** manifest is REFUSED (allOf); a
+   `min_reader_version=3` manifest with a readable cache → `.updateAvailable`; a schema-invalid
+   manifest on a cold cache → `.unavailable`.
 3. **`TileCodec` (sha256 verify + bomb-safe streaming gunzip).** zlib `inflateInit2(16+MAX_WBITS)`,
    incremental 8 MiB ceiling, 1 MiB pre-inflate refusal, end-of-stream + no-trailing-garbage.
    Teeth: **a 1-byte-flipped tile fails sha**; **a sha-MATCHING, ≤1 MiB-compressed,
@@ -177,12 +191,18 @@ Depends on `MakingTracksData` (for `PlaceRef`/`MapPlace`) and the **system `zlib
    every** cap — each a neuter-goes-red drop: bad `place_id` pattern, `name`/`category`/`blurb`/
    `wikipedia_title` over-length **and** a **U+202E RTL-override in `name`** (the bidi spoof —
    the most dangerous omission; the text pattern REJECTS it, plain-text rendering does not save
-   it), over-count `alt_names`, non-unique / over-length `source_refs`, `tier=5`, `score=1.1`,
+   it), over-count `alt_names`, non-unique / over-length **/ pattern-violating** `source_refs` (e.g.
+   `OSM:way/123` — uppercase prefix fails `^[a-z]…`; pattern enforced **before** any prefix is
+   extracted for the attribution cross-check, so a malformed ref cannot spoof a source match),
+   `tier=5`, `score=1.1`,
    out-of-range coord, non-https `image_url`, **and an `image_url` whose host is not on the
    Wikimedia allowlist** (`upload.wikimedia.org` / `commons.wikimedia.org` — verify against
    `wikidata.py` P18 output; a non-allowlisted host is **nulled**, the place kept; B4 re-pins the
    allowlist at fetch time — defense in depth). Malformed → that place dropped, tile still yields
-   the rest; a fully-malformed tile → skipped, map uncrashed. `TileCoverage` cross-checked vs
+   the rest; a fully-malformed tile → skipped, map uncrashed. **Attribution-source cross-check
+   tooth (relocated here from manifest time):** a pinned manifest that **strips OSM attribution
+   while a decoded tile carries a valid `osm:` ref** → `TileClient` revokes the pin, evicts that
+   publish, sets `.manifestInvalid` (license breach, not served). `TileCoverage` cross-checked vs
    `partition.lonlat_to_z10` + the 1-ring.
 5. **`TileClient` façade + the pinned public API.** Wire fetch→cache→codec→decode; pin-for-session;
    repoint swap + cache purge; padded prefetch, bounded concurrency, cancel-on-change.
@@ -196,13 +216,18 @@ Depends on `MakingTracksData` (for `PlaceRef`/`MapPlace`) and the **system `zlib
        public func placeRef(for placeID: String) async -> PlaceRef?               // for B4 hand-off, on demand
        public var attribution: [Attribution] { get async }         // required-to-display (legal)
        public var basemapURL: URL? { get async }                   // {region}/{pv}/{filename} for B2's pmtiles source
-       public var loadState: TileLoadState { get async }           // .ok | .stale | .updateAvailable | .updateRequired | .offline | .manifestInvalid
+       public var basemapIntegrity: (sha256: String, bytes: Int)? { get async }  // manifest.basemap — B2/B7 verify the streamed basemap
+       public var loadState: TileLoadState { get async }           // .ok | .stale | .updateAvailable | .updateRequired | .offline | .manifestInvalid | .unavailable
    }
    ```
    Host tests: end-to-end from live fixtures through the stubbed fetcher → `MapPlace`s; a
    mid-session repoint pins the old pv until `refreshPin()`; offline → `.stale` + served cache
-   (`places()` returns cache, does **not** throw); schema-invalid manifest → `.manifestInvalid`,
-   last-verified cache still served.
+   (`places()` returns cache, does **not** throw); schema-invalid manifest **with** a
+   last-verified cache → `.manifestInvalid` (that cache still served); schema-invalid manifest
+   **or** offline on a **cold cache** (fresh install, nothing to serve) → **`.unavailable`** — a
+   loud "can't load data, retry" surface, **never a silent empty map** ("never empty map" means
+   never *silently* empty; a loud error state is the honored fallback). `refreshPin()` and the
+   app shell branch on these states.
 6. **`[XCODE/SIM]` integration note (minimal, isolated).** Document the single seam where B2's
    `MLNMapView` camera-idle calls `places(inViewport:zoom:)` and where B2 hands `basemapURL` to
    the `pmtiles://` source. **No host-verification claim** for the map wiring; everything B3 owns
@@ -216,9 +241,11 @@ Depends on `MakingTracksData` (for `PlaceRef`/`MapPlace`) and the **system `zlib
   values only (no HTML/attributed rendering — B2/B4); **skip-not-crash** for every malformed case.
   **P10:** published tiles are untrusted even though we published them.
 - **§5.6 / §6:** newer + cache → `.updateAvailable` (serve cached older + nudge); newer + no cache
-  → `.updateRequired`; schema-invalid manifest → `.manifestInvalid` (loud, serve last verified);
-  older tolerated in-window; offline → serve cache + `.stale`; **never silently misread, never
-  empty map, never block the map.**
+  → `.updateRequired`; schema-invalid manifest + cache → `.manifestInvalid` (loud, serve last
+  verified); **schema-invalid/offline on a cold cache → `.unavailable`** (loud "can't load,
+  retry"); a license-breach publish → revoke pin + evict + `.manifestInvalid`; older tolerated
+  in-window; offline + cache → serve cache + `.stale`; **never silently misread, never *silently*
+  empty (a loud error state is allowed), never block the map.**
 - **Determinism:** sha256 over gzipped bytes; cache key `region/pv/x/y` + sha, no wall-clock.
 - **Non-goals (seams left, not built):** offline region packs (**B7**); snapshot fallback for
   absent places + place-card image *fetch* with the allowlist re-pin (**B4**, via B1); the
