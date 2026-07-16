@@ -11,12 +11,14 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 _REGION_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _PUBLISH_VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 _PRIVATE_KINDS = {"registry", "cache", "feedback", "lock"}
 _PUBLIC_KINDS = {"tile", "basemap", "manifest", "current"}
+_R2_UPLOAD_ENV_VARS = ("R2_S3_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY")
 
 
 class UnsafePathComponent(ValueError):
@@ -45,6 +47,10 @@ class PublishLockUnavailable(RuntimeError):
 
 class Boto3Unavailable(RuntimeError):
     """Raised when R2 upload is requested without the boto3 dependency."""
+
+
+class R2EnvironmentUnavailable(RuntimeError):
+    """Raised when R2 upload is requested without the required env vars."""
 
 
 @dataclass(frozen=True)
@@ -289,14 +295,48 @@ def require_boto3() -> None:
         ) from exc
 
 
+def require_upload_environment() -> None:
+    missing = [name for name in _R2_UPLOAD_ENV_VARS if not os.environ.get(name, "").strip()]
+    invalid = []
+    if "R2_S3_ENDPOINT" not in missing and not _valid_r2_s3_endpoint(
+        os.environ["R2_S3_ENDPOINT"]
+    ):
+        invalid.append("R2_S3_ENDPOINT")
+    rejected = [*missing, *invalid]
+    if rejected:
+        raise R2EnvironmentUnavailable(
+            "publish --upload requires valid R2 env var(s): "
+            f"{', '.join(rejected)}; run via op run --env-file=.env.tpl"
+        )
+
+
+def _valid_r2_s3_endpoint(value: str) -> bool:
+    if value != value.strip() or value.startswith("op:"):
+        return False
+    parsed = urlparse(value)
+    try:
+        port = parsed.port
+    except ValueError:
+        return False
+    host = parsed.hostname
+    if parsed.scheme != "https" or host is None or port is not None:
+        return False
+    if parsed.username is not None or parsed.password is not None:
+        return False
+    if parsed.path not in ("", "/") or parsed.params or parsed.query or parsed.fragment:
+        return False
+    suffix = ".r2.cloudflarestorage.com"
+    return host.endswith(suffix) and len(host) > len(suffix)
+
+
 def _default_client():
     require_boto3()
+    require_upload_environment()
     boto3 = _import_module("boto3")
 
-    account_id = os.environ["R2_ACCOUNT_ID"]
     return boto3.client(
         "s3",
-        endpoint_url=f"https://{account_id}.r2.cloudflarestorage.com",
+        endpoint_url=os.environ["R2_S3_ENDPOINT"],
         aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
     )

@@ -269,6 +269,41 @@ def test_publish_stage_checks_boto3_before_staging_when_upload_requested(
     assert not (tmp_path / "stage").exists()
 
 
+def test_publish_stage_checks_r2_env_before_staging_when_upload_requested(
+    conn, tmp_path, monkeypatch
+):
+    _seed_publish_inputs(conn)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+    monkeypatch.setattr(P.r2, "_import_module", lambda name: object())
+    monkeypatch.delenv("R2_S3_ENDPOINT", raising=False)
+    monkeypatch.delenv("R2_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("R2_SECRET_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("R2_ACCOUNT_ID", raising=False)
+
+    def fail_registry_path(_conn, _region):
+        raise AssertionError("registry path should wait for R2 env upload preflight")
+
+    monkeypatch.setattr(P, "_registry_path", fail_registry_path)
+
+    with pytest.raises(P.r2.R2EnvironmentUnavailable) as excinfo:
+        P.run(
+            conn,
+            "malaysia",
+            publish_version="20260715T120000Z",
+            generated_at="2026-07-15T12:00:00Z",
+            scoring_config_version="scoring-v1",
+            upload=True,
+            staging_root=tmp_path / "stage",
+        )
+
+    message = str(excinfo.value)
+    assert "R2_S3_ENDPOINT" in message
+    assert "R2_ACCESS_KEY_ID" in message
+    assert "R2_SECRET_ACCESS_KEY" in message
+    assert "R2_ACCOUNT_ID" not in message
+    assert not (tmp_path / "stage").exists()
+
+
 def test_publish_stage_resolves_relative_registry_path_beside_db(
     conn, tmp_path, monkeypatch
 ):

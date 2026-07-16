@@ -118,6 +118,48 @@ def test_cli_publish_upload_missing_boto3_is_clean_error(tmp_path, capsys, monke
     assert "Traceback" not in err
 
 
+def test_cli_publish_upload_missing_r2_env_is_clean_error(tmp_path, capsys, monkeypatch):
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    store.mark_stage_complete(
+        conn, "malaysia", "categorize", "cat1", "2026-07-15T00:00:00Z"
+    )
+    conn.close()
+    monkeypatch.setattr(publish_stage.basemap, "require_pmtiles", lambda: "pmtiles")
+    monkeypatch.setattr(publish_stage.r2, "_import_module", lambda name: object())
+    monkeypatch.delenv("R2_S3_ENDPOINT", raising=False)
+    monkeypatch.setenv("R2_ACCESS_KEY_ID", "visible-access-key")
+    monkeypatch.delenv("R2_SECRET_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("R2_ACCOUNT_ID", raising=False)
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "publish",
+            "--db",
+            str(db),
+            "--run-id",
+            "real-malaysia-20260715",
+            "--publish-version",
+            "20260716T000000Z",
+            "--generated-at",
+            "2026-07-16T00:00:00Z",
+            "--upload",
+        ]
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "R2_S3_ENDPOINT" in err
+    assert "R2_SECRET_ACCESS_KEY" in err
+    assert "R2_ACCESS_KEY_ID" not in err
+    assert "R2_ACCOUNT_ID" not in err
+    assert "visible-access-key" not in err
+    assert "Traceback" not in err
+
+
 def test_cli_reconcile_requires_version(tmp_path, capsys):
     db = tmp_path / "w.db"
     conn = store.connect(db)

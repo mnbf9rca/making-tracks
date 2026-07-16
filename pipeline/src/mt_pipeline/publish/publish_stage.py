@@ -51,6 +51,7 @@ def run(
     basemap.require_pmtiles()
     if upload:
         r2.require_boto3()
+        r2.require_upload_environment()
     scoring_config_version = scoring_config_version or str(score_stage.load_config()["version"])
 
     region_config = config.load(region)
