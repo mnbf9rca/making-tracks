@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+from collections.abc import Callable
 from typing import Protocol
 
 from jsonschema import ValidationError
@@ -49,21 +50,28 @@ class LocalRegistryStore:
     def __init__(self, path) -> None:
         self.path = pathlib.Path(path)
 
-    def load(self) -> list[RegistryRecord]:
+    def load(
+        self, progress_tick: Callable[[int], None] | None = None
+    ) -> list[RegistryRecord]:
         if not self.path.exists():
             return []
         records = []
-        for line_number, line in enumerate(self.path.read_text().splitlines(), start=1):
-            if not line.strip():
-                continue
-            try:
-                data = json.loads(line)
-                validate_instance("registry-record", data)
-            except (json.JSONDecodeError, ValidationError, ValueError, KeyError) as exc:
-                raise ValueError(
-                    f"invalid registry record at {self.path}:{line_number}: {exc}"
-                ) from exc
-            records.append(_record_from_json(data))
+        processed = 0
+        with self.path.open(encoding="utf-8") as fh:
+            for line_number, line in enumerate(fh, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    data = json.loads(line)
+                    validate_instance("registry-record", data)
+                except (json.JSONDecodeError, ValidationError, ValueError, KeyError) as exc:
+                    raise ValueError(
+                        f"invalid registry record at {self.path}:{line_number}: {exc}"
+                    ) from exc
+                records.append(_record_from_json(data))
+                processed += 1
+                if progress_tick is not None:
+                    progress_tick(processed)
         return sorted(records, key=lambda record: record.place_id)
 
     def save(self, records: list[RegistryRecord]) -> None:

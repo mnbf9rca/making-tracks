@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import time
+from collections.abc import Callable
 
 HEARTBEAT_EVERY_RECORDS = 10_000
 HEARTBEAT_EVERY_SECONDS = 30.0
@@ -15,7 +16,7 @@ class PhaseProgress:
         name: str,
         *,
         region: str,
-        total: int,
+        total: int | None,
         total_label: str,
         heartbeat_every_records: int = HEARTBEAT_EVERY_RECORDS,
         heartbeat_every_seconds: float = HEARTBEAT_EVERY_SECONDS,
@@ -29,25 +30,35 @@ class PhaseProgress:
         self.started = time.monotonic()
         self.last_heartbeat = self.started
 
+    def _total_display(self) -> str:
+        return "unknown" if self.total is None else str(self.total)
+
     def start(self) -> None:
         print(
             f"PHASE START {self.name} region={self.region} "
-            f"{self.total_label}={self.total}",
+            f"{self.total_label}={self._total_display()}",
             file=sys.stderr,
         )
 
-    def tick(self, processed: int) -> None:
+    def tick(
+        self,
+        processed: int,
+        *,
+        extra: str | Callable[[], str] = "",
+        force: bool = False,
+    ) -> None:
         now = time.monotonic()
-        if processed % self.heartbeat_every_records == 0 or (
+        if force or processed % self.heartbeat_every_records == 0 or (
             now - self.last_heartbeat
         ) >= self.heartbeat_every_seconds:
             self.last_heartbeat = now
             elapsed = now - self.started
             rate = processed / elapsed if elapsed > 0 else 0.0
+            extra_text = extra() if callable(extra) else extra
             print(
                 f"PHASE HEARTBEAT {self.name} region={self.region} "
-                f"processed={processed}/{self.total} rate={rate:.1f}/s "
-                f"elapsed={elapsed:.1f}s",
+                f"processed={processed}/{self._total_display()} rate={rate:.1f}/s "
+                f"elapsed={elapsed:.1f}s{extra_text}",
                 file=sys.stderr,
             )
 
@@ -55,6 +66,6 @@ class PhaseProgress:
         elapsed = time.monotonic() - self.started
         print(
             f"PHASE DONE {self.name} region={self.region} "
-            f"processed={processed}/{self.total} elapsed={elapsed:.1f}s{extra}",
+            f"processed={processed}/{self._total_display()} elapsed={elapsed:.1f}s{extra}",
             file=sys.stderr,
         )
