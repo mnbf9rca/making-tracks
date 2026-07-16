@@ -247,6 +247,7 @@ def run_stage(
             publish_stage.basemap.BasemapOverBudget,
             publish_stage.basemap.PmtilesUnavailable,
             publish_stage.r2.Boto3Unavailable,
+            publish_stage.r2.R2EnvironmentUnavailable,
             runtime_paths.RuntimePathError,
         ) as exc:
             raise StageOrderError(str(exc)) from exc

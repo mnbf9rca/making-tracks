@@ -170,6 +170,95 @@ def test_upload_path_locks_uploads_content_manifest_current_then_private_registr
     assert client.deleted == [("making-tracks-state", "uk/publish.lock")]
 
 
+def test_default_client_uses_committed_r2_s3_endpoint_contract(monkeypatch):
+    calls = []
+
+    class FakeBoto3:
+        def client(self, service, **kwargs):
+            calls.append((service, kwargs))
+            return object()
+
+    monkeypatch.setattr(R, "_import_module", lambda name: FakeBoto3())
+    monkeypatch.setenv("R2_S3_ENDPOINT", "https://example.r2.cloudflarestorage.com")
+    monkeypatch.setenv("R2_ACCESS_KEY_ID", "access-key")
+    monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "secret-key")
+    monkeypatch.delenv("R2_ACCOUNT_ID", raising=False)
+
+    R._default_client()
+
+    assert calls == [
+        (
+            "s3",
+            {
+                "endpoint_url": "https://example.r2.cloudflarestorage.com",
+                "aws_access_key_id": "access-key",
+                "aws_secret_access_key": "secret-key",
+            },
+        )
+    ]
+
+
+def test_upload_env_preflight_reports_missing_names_without_values(monkeypatch):
+    monkeypatch.setattr(R, "_import_module", lambda name: object())
+    monkeypatch.delenv("R2_S3_ENDPOINT", raising=False)
+    monkeypatch.setenv("R2_ACCESS_KEY_ID", "visible-access")
+    monkeypatch.delenv("R2_SECRET_ACCESS_KEY", raising=False)
+
+    with pytest.raises(R.R2EnvironmentUnavailable) as excinfo:
+        R.require_upload_environment()
+
+    message = str(excinfo.value)
+    assert "R2_S3_ENDPOINT" in message
+    assert "R2_SECRET_ACCESS_KEY" in message
+    assert "R2_ACCESS_KEY_ID" not in message
+    assert "visible-access" not in message
+
+
+def test_upload_env_preflight_treats_empty_and_whitespace_as_missing(monkeypatch):
+    monkeypatch.setattr(R, "_import_module", lambda name: object())
+    monkeypatch.setenv("R2_S3_ENDPOINT", "   ")
+    monkeypatch.setenv("R2_ACCESS_KEY_ID", "")
+    monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "visible-secret")
+
+    with pytest.raises(R.R2EnvironmentUnavailable) as excinfo:
+        R.require_upload_environment()
+
+    message = str(excinfo.value)
+    assert "R2_S3_ENDPOINT" in message
+    assert "R2_ACCESS_KEY_ID" in message
+    assert "R2_SECRET_ACCESS_KEY" not in message
+    assert "visible-secret" not in message
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "op:/making-tracks/cloudflare/r2_s3_endpoint",
+        "op://making-tracks/cloudflare/r2_s3_endpoint",
+        "http://example.r2.cloudflarestorage.com",
+        "https://r2.cloudflarestorage.com",
+        "https://attacker.example.com",
+        "https://example.r2.cloudflarestorage.com.evil.com",
+    ],
+)
+def test_upload_env_preflight_rejects_invalid_r2_endpoint_without_value(
+    monkeypatch, endpoint
+):
+    monkeypatch.setattr(R, "_import_module", lambda name: object())
+    monkeypatch.setenv("R2_S3_ENDPOINT", endpoint)
+    monkeypatch.setenv("R2_ACCESS_KEY_ID", "access-key")
+    monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "secret-key")
+
+    with pytest.raises(R.R2EnvironmentUnavailable) as excinfo:
+        R.require_upload_environment()
+
+    message = str(excinfo.value)
+    assert "R2_S3_ENDPOINT" in message
+    assert endpoint not in message
+    assert "access-key" not in message
+    assert "secret-key" not in message
+
+
 def test_live_current_and_unavailable_current_are_fail_closed(tmp_path):
     version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
     (version_root / "tiles/10").mkdir(parents=True)
