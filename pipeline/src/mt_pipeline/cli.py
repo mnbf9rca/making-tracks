@@ -656,8 +656,8 @@ def _select_live_nous_model(
     rows: list[golden.GoldenRow],
     *,
     requested_model: str | None,
-) -> tuple[str, str, dict, float]:
-    candidates: list[tuple[float, str, str, dict]] = []
+) -> tuple[str, str, dict, float, bakeoff.ModelOptions]:
+    candidates: list[tuple[float, str, str, dict, bakeoff.ModelOptions]] = []
     prompts = [
         curiosity.render_prompt({"name": row.name, "summary": row.evidence, "tags": [row.category]})
         for row in rows
@@ -672,23 +672,24 @@ def _select_live_nous_model(
         if provider_id != "nous":
             continue
         api_model_id = str(model.get("api_model_id", model_id))
+        model_options = _model_request_options(model)
         model_pricing = pricing.get(model_id)
         if not isinstance(model_pricing, dict):
             raise ValueError(f"pricing missing for model {model_id!r}")
         estimate = costmodel.estimate_cost(
             prompts,
             model_pricing,
-            output_token_cap=curiosity.CURIOSITY_MAX_TOKENS,
+            output_token_cap=_model_output_token_cap(model_options),
             model=model_id,
             provider=provider_id,
         )
-        candidates.append((estimate.total_usd, model_id, api_model_id, model_pricing))
+        candidates.append((estimate.total_usd, model_id, api_model_id, model_pricing, model_options))
     if not candidates:
         if requested_model is not None:
             raise ValueError(f"requested live model {requested_model!r} is not a NOUS model in the roster")
         raise ValueError("live bakeoff requires at least one NOUS model in the roster")
-    estimated_cost, model_id, api_model_id, model_pricing = sorted(candidates, key=lambda item: (item[0], item[1]))[0]
-    return model_id, api_model_id, model_pricing, estimated_cost
+    estimated_cost, model_id, api_model_id, model_pricing, model_options = sorted(candidates, key=lambda item: (item[0], item[1]))[0]
+    return model_id, api_model_id, model_pricing, estimated_cost, model_options
 
 
 def _curiosity_cache(cache_dir: pathlib.Path) -> llm_cache.LlmCache:
@@ -698,19 +699,54 @@ def _curiosity_cache(cache_dir: pathlib.Path) -> llm_cache.LlmCache:
     return llm_cache.LlmCache(cache_dir, validators=validators)
 
 
-def _live_request(row: golden.GoldenRow, *, api_model_id: str) -> curiosity.LlmRequest:
+def _model_request_options(model: dict) -> bakeoff.ModelOptions:
+    options: dict[str, object] = {}
+    for key in ("max_tokens", "reasoning", "seed"):
+        if key in model:
+            options[key] = model[key]
+    return options
+
+
+def _model_output_token_cap(model_options: bakeoff.ModelOptions) -> int:
+    max_tokens = model_options.get("max_tokens", curiosity.CURIOSITY_MAX_TOKENS)
+    if not isinstance(max_tokens, int) or isinstance(max_tokens, bool):
+        raise ValueError("model max_tokens must be an integer")
+    if max_tokens <= 0:
+        raise ValueError("model max_tokens must be positive")
+    if max_tokens > 4096:
+        raise ValueError("model max_tokens must be at most 4096")
+    return max_tokens
+
+
+def _live_request(
+    row: golden.GoldenRow,
+    *,
+    api_model_id: str,
+    model_options: bakeoff.ModelOptions,
+) -> curiosity.LlmRequest:
     return curiosity.curiosity_request(
         query_id=row.place_id,
         model_id=api_model_id,
         place={"name": row.name, "summary": row.evidence, "tags": [row.category]},
+        max_tokens=_model_output_token_cap(model_options),
+        reasoning=model_options.get("reasoning"),  # type: ignore[arg-type]
+        seed=model_options.get("seed", 0),  # type: ignore[arg-type]
     )
 
 
-def _live_injection_request(probe: bakeoff.InjectionProbe, *, api_model_id: str) -> curiosity.LlmRequest:
+def _live_injection_request(
+    probe: bakeoff.InjectionProbe,
+    *,
+    api_model_id: str,
+    model_options: bakeoff.ModelOptions,
+) -> curiosity.LlmRequest:
     return curiosity.curiosity_request(
         query_id=probe.place_id,
         model_id=api_model_id,
         place=probe.place,
+        max_tokens=_model_output_token_cap(model_options),
+        reasoning=model_options.get("reasoning"),  # type: ignore[arg-type]
+        seed=model_options.get("seed", 0),  # type: ignore[arg-type]
     )
 
 
@@ -718,6 +754,7 @@ def _collect_live_cache_state(
     rows: list[golden.GoldenRow],
     *,
     api_model_id: str,
+    model_options: bakeoff.ModelOptions,
     cache_dir: pathlib.Path,
 ) -> tuple[
     llm_cache.LlmCache,
@@ -731,7 +768,7 @@ def _collect_live_cache_state(
     misses: list[tuple[golden.GoldenRow, str, curiosity.LlmRequest]] = []
 
     for row in rows:
-        req = _live_request(row, api_model_id=api_model_id)
+        req = _live_request(row, api_model_id=api_model_id, model_options=model_options)
         rendered_prompt = req.messages[0].content
         input_hash = llm_cache.input_hash(
             task_id=req.task_id,
@@ -753,6 +790,7 @@ def _collect_live_injection_cache_state(
     fixture: tuple[bakeoff.InjectionProbe, ...],
     *,
     api_model_id: str,
+    model_options: bakeoff.ModelOptions,
 ) -> tuple[
     dict[str, float],
     list[tuple[str, float, bool, float, str]],
@@ -762,7 +800,7 @@ def _collect_live_injection_cache_state(
     output_rows: list[tuple[str, float, bool, float, str]] = []
     misses: list[tuple[bakeoff.InjectionProbe, str, curiosity.LlmRequest]] = []
     for probe in fixture:
-        req = _live_injection_request(probe, api_model_id=api_model_id)
+        req = _live_injection_request(probe, api_model_id=api_model_id, model_options=model_options)
         rendered_prompt = req.messages[0].content
         input_hash = llm_cache.input_hash(
             task_id=req.task_id,
@@ -784,12 +822,15 @@ def _estimate_request_cost(
     model_pricing: dict,
     *,
     model_id: str,
+    model_options: bakeoff.ModelOptions | None = None,
 ) -> float:
+    if model_options is None:
+        model_options = {}
     prompts = [req.messages[0].content for req in requests]
     return costmodel.estimate_cost(
         prompts,
         model_pricing,
-        output_token_cap=curiosity.CURIOSITY_MAX_TOKENS,
+        output_token_cap=_model_output_token_cap(model_options),
         model=model_id,
         provider="nous",
     ).total_usd
@@ -807,6 +848,7 @@ async def _score_live_with_cache_async(
     injection_output_rows: list[tuple[str, float, bool, float, str]],
     injection_misses: list[tuple[bakeoff.InjectionProbe, str, curiosity.LlmRequest]],
     model_pricing: dict,
+    model_options: bakeoff.ModelOptions,
     api_key: str,
 ) -> tuple[
     dict[str, float],
@@ -853,6 +895,7 @@ async def _score_live_with_cache_async(
                     [req for _, _, _, req in batch],
                     model_pricing,
                     model_id=batch[0][3].model_id,
+                    model_options=model_options,
                 )
                 if estimated_failure_cost > 0.0:
                     charged_rows.append(("unknown", 0.0, False, estimated_failure_cost, "derived"))
@@ -863,6 +906,7 @@ async def _score_live_with_cache_async(
                     [req for _, _, _, req in batch],
                     model_pricing,
                     model_id=batch[0][3].model_id,
+                    model_options=model_options,
                 )
                 returned_cost = sum(response.cost_usd for response in responses)
                 charged_rows.extend(
@@ -932,7 +976,7 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
         rows = parsed.rows[: args.max_places]
         if not rows:
             raise ValueError("live bakeoff has no parsed rows to score")
-        model_id, api_model_id, model_pricing, estimated_cost = _select_live_nous_model(
+        model_id, api_model_id, model_pricing, estimated_cost, model_options = _select_live_nous_model(
             model_rows,
             pricing,
             rows,
@@ -950,18 +994,21 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
             cache, curiosities, per_place, misses = _collect_live_cache_state(
                 rows,
                 api_model_id=api_model_id,
+                model_options=model_options,
                 cache_dir=cache_dir,
             )
             injection_scores, injection_per_place, injection_misses = _collect_live_injection_cache_state(
                 cache,
                 injection_fixture,
                 api_model_id=api_model_id,
+                model_options=model_options,
             )
             ledger = _load_cost_ledger(cache_dir)
             estimated_miss_cost = _estimate_request_cost(
                 [req for _, _, req in misses] + [req for _, _, req in injection_misses],
                 model_pricing,
                 model_id=model_id,
+                model_options=model_options,
             )
             if float(ledger["total_usd"]) + estimated_miss_cost > budget_cap:
                 raise ValueError(
@@ -991,6 +1038,7 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
                     injection_output_rows=injection_per_place,
                     injection_misses=injection_misses,
                     model_pricing=model_pricing,
+                    model_options=model_options,
                     api_key=api_key,
                 )
             )
@@ -1217,7 +1265,7 @@ def _run_llm(argv) -> int:
                     model_rows=model_rows,
                     pricing=pricing,
                 )
-            selected: list[tuple[str, str]] = []
+            selected: list[bakeoff.ModelCandidate] = []
             providers = {}
             for model in model_rows:
                 if not isinstance(model, dict):
@@ -1226,7 +1274,7 @@ def _run_llm(argv) -> int:
                 provider_id = str(model["provider"])
                 if provider_id != "fake":
                     continue
-                selected.append((model_id, model_id))
+                selected.append((model_id, model_id, model))
                 providers[model_id] = FakeProvider(
                     scorer=lambda req: 0.9 if req.query_id.endswith("0" * 26) else 0.1,
                     price_per_call_usd=0.0,

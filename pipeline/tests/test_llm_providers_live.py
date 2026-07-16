@@ -47,6 +47,28 @@ def test_nous_usage_cost_is_computed_from_pricing():
     assert provider.cost_from_usage(input_tokens=1000, output_tokens=100) == pytest.approx(0.00021)
 
 
+def test_nous_request_kwargs_include_per_model_cap_and_reasoning():
+    from mt_pipeline.llm.curiosity import curiosity_request
+    from mt_pipeline.llm.providers.nous import NousProvider
+
+    provider = NousProvider(api_key="sk-secret-123", concurrency=1)
+    req = curiosity_request(
+        query_id="mt1_reasoning",
+        model_id="nex-agi/nex-n2-mini",
+        place={"name": "Old Windmill", "summary": "a mill", "tags": ["heritage"]},
+        max_tokens=128,
+        reasoning={"enabled": True, "effort": "low", "exclude": True},
+        seed=None,
+    )
+
+    kwargs = provider._chat_completion_kwargs(req)
+
+    assert kwargs["model"] == "nex-agi/nex-n2-mini"
+    assert kwargs["max_tokens"] == 128
+    assert "seed" not in kwargs
+    assert kwargs["extra_body"] == {"reasoning": {"enabled": True, "effort": "low", "exclude": True}}
+
+
 def test_nous_prefers_provider_reported_usage_cost():
     from mt_pipeline.llm.curiosity import curiosity_request
     from mt_pipeline.llm.providers.nous import NousProvider
@@ -123,7 +145,7 @@ def test_nous_live_smoke(request):
     try:
         req = curiosity_request(
             query_id="mt1_smoke",
-            model_id="meta-llama/llama-3.1-8b-instruct",
+            model_id="tencent/hy3:free",
             place={"name": "Old Windmill", "summary": "a mill", "tags": ["heritage"]},
         )
         resp = asyncio.run(provider.acomplete(req))

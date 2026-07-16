@@ -64,18 +64,7 @@ class NousProvider:
 
     async def acomplete(self, req: LlmRequest) -> ProviderResponse:
         client = self._client_instance()
-        response: Any = await client.chat.completions.create(
-            model=req.model_id,
-            messages=[
-                {"role": "system", "content": req.system},
-                *[{"role": msg.role, "content": msg.content} for msg in req.messages],
-            ],
-            max_tokens=req.max_tokens,
-            temperature=req.temperature,
-            top_p=req.top_p,
-            seed=req.seed,
-            response_format={"type": "json_object"},
-        )
+        response: Any = await client.chat.completions.create(**self._chat_completion_kwargs(req))
         text = response.choices[0].message.content or ""
         usage = getattr(response, "usage", None)
         prompt_tokens = getattr(usage, "prompt_tokens", None)
@@ -102,6 +91,24 @@ class NousProvider:
             cost_source=cost_source,
             app_id=None,
         )
+
+    def _chat_completion_kwargs(self, req: LlmRequest) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "model": req.model_id,
+            "messages": [
+                {"role": "system", "content": req.system},
+                *[{"role": msg.role, "content": msg.content} for msg in req.messages],
+            ],
+            "max_tokens": req.max_tokens,
+            "temperature": req.temperature,
+            "top_p": req.top_p,
+            "response_format": {"type": "json_object"},
+        }
+        if req.seed is not None:
+            kwargs["seed"] = req.seed
+        if req.reasoning is not None:
+            kwargs["extra_body"] = {"reasoning": req.reasoning}
+        return kwargs
 
     def _client_instance(self) -> Any:
         if self._client is not None:
