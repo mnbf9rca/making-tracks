@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from mt_contracts.registry import RegistryRecord
 
 from mt_pipeline import source_record, stages, store
@@ -49,6 +51,7 @@ def test_publish_stage_builds_local_staging_and_marks_shipped(
         )
 
     monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
 
     result = P.run(
         conn,
@@ -92,6 +95,22 @@ def test_publish_stage_dispatch_requires_publish_version(conn):
         raise AssertionError("publish without version should fail")
 
 
+def test_publish_stage_checks_pmtiles_before_staging(conn, tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", "")
+
+    with pytest.raises(basemap.PmtilesUnavailable):
+        P.run(
+            conn,
+            "malaysia",
+            publish_version="20260715T120000Z",
+            generated_at="2026-07-15T12:00:00Z",
+            scoring_config_version="scoring-v1",
+            staging_root=tmp_path / "stage",
+        )
+
+    assert not (tmp_path / "stage").exists()
+
+
 def test_publish_stage_quarantines_malformed_member_refs_json(
     conn, tmp_path, monkeypatch
 ):
@@ -126,6 +145,7 @@ def test_publish_stage_quarantines_malformed_member_refs_json(
         )
 
     monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
 
     result = P.run(
         conn,

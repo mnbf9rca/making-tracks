@@ -6,7 +6,7 @@ from mt_contracts.caps import PACK_BUDGET_CEILING_BYTES
 from mt_pipeline.publish import basemap as B
 
 
-def _cfg(source, size_budget_bytes=3_000_000_000, measured_archive_bytes=1_400_000_000):
+def _cfg(source, size_budget_bytes=3_000_000_000, measured_archive_bytes=3):
     return {
         "region": "uk",
         "basemap": {
@@ -33,6 +33,7 @@ def test_within_budget_produces_one_basemap_matching_the_manifest_shape(
         return subprocess.CompletedProcess(args=args, returncode=0)
 
     monkeypatch.setattr(B.subprocess, "run", fake_run)
+    monkeypatch.setattr(B, "require_pmtiles", lambda: "pmtiles", raising=False)
 
     art = B.cut_basemap(_cfg(source), tmp_path / "uk.pmtiles")
 
@@ -53,6 +54,7 @@ def test_over_budget_region_fails_loud_directing_ops_to_subregion_configs(
         return subprocess.CompletedProcess(args=args, returncode=0)
 
     monkeypatch.setattr(B.subprocess, "run", fake_run)
+    monkeypatch.setattr(B, "require_pmtiles", lambda: "pmtiles", raising=False)
 
     with pytest.raises(B.BasemapOverBudget):
         B.cut_basemap(
@@ -81,9 +83,92 @@ def test_hard_pack_budget_ceiling_is_enforced_even_when_config_is_higher(
 
     monkeypatch.setattr(B.subprocess, "run", fake_run)
     monkeypatch.setattr(B.Path, "stat", fake_stat)
+    monkeypatch.setattr(B, "require_pmtiles", lambda: "pmtiles", raising=False)
 
     with pytest.raises(B.BasemapOverBudget):
         B.cut_basemap(
             _cfg(source, size_budget_bytes=PACK_BUDGET_CEILING_BYTES + 100),
             out,
         )
+
+
+def test_pmtiles_dependency_check_fails_actionably_when_missing(monkeypatch):
+    monkeypatch.setenv("PATH", "")
+
+    with pytest.raises(B.PmtilesUnavailable) as excinfo:
+        B.require_pmtiles()
+
+    message = str(excinfo.value)
+    assert "pmtiles" in message
+    assert "v1.31.1" in message
+    assert "protomaps/go-pmtiles" in message
+    assert "~/.local/bin" in message
+    assert "71b2212d6796e172b8ba27c21e662c25ec93cacdb88adc35e508617e720f6292" in message
+
+
+def test_pmtiles_dependency_check_accepts_binary_on_path(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    exe = bin_dir / "pmtiles"
+    exe.write_text("#!/bin/sh\nprintf 'pmtiles version 1.31.1\\n'\n")
+    exe.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+
+    assert B.require_pmtiles() == str(exe)
+
+
+def test_pmtiles_dependency_check_rejects_wrong_version(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    exe = bin_dir / "pmtiles"
+    exe.write_text("#!/bin/sh\nprintf 'pmtiles version 1.30.0\\n'\n")
+    exe.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+
+    with pytest.raises(B.PmtilesUnavailable) as excinfo:
+        B.require_pmtiles()
+
+    assert "v1.31.1" in str(excinfo.value)
+    assert "1.30.0" in str(excinfo.value)
+
+
+def test_pmtiles_dependency_check_rejects_substring_version(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    exe = bin_dir / "pmtiles"
+    exe.write_text("#!/bin/sh\nprintf 'pmtiles version 1.31.10\\n'\n")
+    exe.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+
+    with pytest.raises(B.PmtilesUnavailable):
+        B.require_pmtiles()
+
+
+def test_cut_basemap_checks_pmtiles_before_creating_output_dir(tmp_path, monkeypatch):
+    source = tmp_path / "source.pmtiles"
+    source.write_bytes(b"source")
+    out = tmp_path / "missing-parent" / "uk.pmtiles"
+    monkeypatch.setenv("PATH", "")
+
+    with pytest.raises(B.PmtilesUnavailable):
+        B.cut_basemap(_cfg(source), out)
+
+    assert not out.parent.exists()
+
+
+def test_cut_basemap_requires_exact_measured_archive_size(tmp_path, monkeypatch):
+    source = tmp_path / "source.pmtiles"
+    out = tmp_path / "uk.pmtiles"
+    source.write_bytes(b"source")
+
+    def fake_run(args, check):
+        out.write_bytes(b"cut")
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    monkeypatch.setattr(B.subprocess, "run", fake_run)
+    monkeypatch.setattr(B, "require_pmtiles", lambda: "pmtiles", raising=False)
+
+    with pytest.raises(B.BasemapMeasurementMismatch) as excinfo:
+        B.cut_basemap(_cfg(source, measured_archive_bytes=4), out)
+
+    assert "expected exact measured size" in str(excinfo.value)

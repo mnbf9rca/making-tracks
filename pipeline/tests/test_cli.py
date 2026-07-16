@@ -21,6 +21,39 @@ def test_cli_enforces_stage_order(tmp_path, capsys):
     assert "categorize" in capsys.readouterr().err
 
 
+def test_cli_publish_missing_pmtiles_is_clean_error(tmp_path, capsys, monkeypatch):
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    store.mark_stage_complete(
+        conn, "malaysia", "categorize", "cat1", "2026-07-15T00:00:00Z"
+    )
+    conn.close()
+    monkeypatch.setenv("PATH", "")
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "publish",
+            "--db",
+            str(db),
+            "--run-id",
+            "real-malaysia-20260715",
+            "--publish-version",
+            "20260716T000000Z",
+            "--generated-at",
+            "2026-07-16T00:00:00Z",
+        ]
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "pmtiles" in err
+    assert "v1.31.1" in err
+    assert "Traceback" not in err
+
+
 def test_cli_reconcile_requires_version(tmp_path, capsys):
     db = tmp_path / "w.db"
     conn = store.connect(db)

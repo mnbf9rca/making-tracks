@@ -46,6 +46,7 @@ def run(
     staging_root: str | pathlib.Path = _DEFAULT_STAGING_ROOT,
 ) -> PublishStageResult:
     r2.validate_path_components(region, publish_version)
+    basemap.require_pmtiles()
     scoring_config_version = scoring_config_version or str(score_stage.load_config()["version"])
 
     region_config = config.load(region)

@@ -209,7 +209,12 @@ def run_stage(
                 upload=upload,
                 **kwargs,
             )
-        except publish_stage.PublishStageError as exc:
+        except (
+            publish_stage.PublishStageError,
+            publish_stage.basemap.BasemapMeasurementMismatch,
+            publish_stage.basemap.BasemapOverBudget,
+            publish_stage.basemap.PmtilesUnavailable,
+        ) as exc:
             raise StageOrderError(str(exc)) from exc
     store.mark_stage_complete(
         conn,
