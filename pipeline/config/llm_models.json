@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "id": "fake-curiosity-v1",
+      "provider": "fake",
+      "tokenizer": "byte-estimate"
+    },
+    {
+      "id": "nous-hermes-3-llama-3.1-8b",
+      "provider": "nous",
+      "tokenizer": "byte-estimate"
+    },
+    {
+      "id": "modal-meta-llama-3.1-8b",
+      "provider": "modal",
+      "tokenizer": "byte-estimate"
+    }
+  ]
+}
