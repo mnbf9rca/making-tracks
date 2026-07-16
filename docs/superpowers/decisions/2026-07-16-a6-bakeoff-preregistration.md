@@ -702,11 +702,18 @@ pre-merge window. Blocker 1 has since converted the recoverable-by-luck propensi
 3. **`meh` is ordinally between `no` and `yes`.** Somers' D assumes it. If `meh` is "labeler
    unsure" rather than "genuinely middling", the ordinal companion is partly measuring label
    noise. Not distinguishable from the data.
-4. **The labels are correct.** All 158 KL labels are `labeled_by=llm-research` — an LLM
-   labeled the ground truth an LLM is evaluated against. Correlated error between labeler and
-   candidate is **not detectable by any metric here** and is the largest unquantified risk in
-   the design. Cheapest mitigation: a human spot-check of ~20 random KL labels. Not blocking;
-   Rob's call.
+4. **The labels are correct — and the risk is program-wide, not KL-only.** Verified: **all
+   158 KL labels AND all 300 London labels are `labeled_by=llm-research`** — zero human
+   (`rob`/`rob-confirmed`) labels in either set. So an LLM labeled the ground truth an LLM is
+   evaluated against, on **both** the screen and the confirmation set. Correlated error between
+   labeler and candidate is **not detectable by any metric here**, and — critically — **the
+   London reveal does not break it** (same labeler provenance; see §11.3): London controls
+   held-out/geographic error only. This is the largest unquantified risk in the design, and
+   the *only* mechanism that can break it is genuine human labels. **For any cell claiming
+   Rob's ~0.85, a human relabel of a boundary-stratum sample is BLOCKING (§11.3)** — no longer
+   "Rob's call". A broader human-labeled hold-out would retire the risk entirely; until then,
+   a high AUC against LLM labels is evidence of *labeler agreement*, which is necessary but not
+   sufficient for place quality.
 
 ---
 
@@ -724,3 +731,173 @@ pre-merge window. Blocker 1 has since converted the recoverable-by-luck propensi
 - UK has no committed places-written artifact (§5); `616,477` lives only in #75's comment.
 - Merged `sample_weight` tail = `47.0` where the design weight is `46.81` (§1, blocker 1) —
   0.4%, non-blocking, flagged to codex4 for the next re-dump.
+
+---
+
+## 11. Round-2 v2 grid — pre-registration (Rob-directed)
+
+Round 1 measured that no 8B earns weight at prompt v1 (§7b), that the budget binds only on
+reasoning/frontier (§5), and that both round-1b advancers fail injection two-sided (§4). The
+v2 grid asks the next question **before it runs**: *within the production budget, which
+(model × prompt) reaches useful AUC?* Rob's hypothesis to test: **~0.85 strict AUC is
+achievable inside a $40–60 / 600k-place production budget.** All cells measured; nothing
+guessed.
+
+### 11.1 Economics and model admission
+
+- **Production target (Rob):** $40–60 per 600k places ⇒ admit models at **≤ ~$0.25–0.38 / M
+  input** at the v1 token profile.
+- **Blended 600k cost is thin-dominated (measured source mix).** Only `wp` records carry a
+  Wikipedia lead extract: **21,604 / 624,124 = 3.46%** (A3 audit,
+  `reports/2026-07-15-a3-taxonomy-derivation.md:10`) — a records-based **proxy** for the
+  places-with-extract fraction (the exact count is a reconciled-DB query, not yet run); the
+  other ~96.5% are thin (`name`/`category`, no extract). So:
+  ```
+  blended_600k = 600_000 × [ f_ext·(in_tok_rich·in$/M) + (1−f_ext)·(in_tok_thin·in$/M)
+                             + out_tok·out$/M ] / 1e6,      f_ext = 0.0346
+  ```
+  **Consequence, load-bearing:** extract *length* barely moves the blended cost (only 3.46% of
+  places pay it), so **full-lead extracts are affordable if they help quality** — the axis is
+  a quality question, not a cost one.
+- **Admission (listed input $/M, planning-only — real = measured `usage.cost`):** the nine
+  budget models below all sit ≤ $0.38/M input. Reasoning/rationale cells expand *output*
+  tokens (thinking bills as output), so the pricier admitted models (`gemini-3.1-flash-lite`
+  ~$34, `qwen3.7-plus` ~$38 blended at bare-float) are **production-cost-marginal** — admitted
+  for the KL screen, flagged if their measured production cost exceeds $40–60.
+- **One frontier reference cell** (`claude-haiku-4.5` *or* `gpt-5.6-luna`, single KL screen
+  ~$0.30, blended ~$130/600k) — **above-class, never production-admitted** — a ceiling to show
+  what money *could* buy and to bracket Rob's 0.85 hypothesis.
+
+### 11.2 The cells — an efficient screening design (~20), not a factorial
+
+A full factorial (10 models × 3 richness × 3 extract-len × 2 output × 3 effort ≈ 540) is
+absurd at n=158. This is a **main-effects screen + sparse interaction probes**: vary the model
+axis at one anchor prompt (Block A), vary the prompt axes on one anchor model (Blocks B/C),
+and add a few cells that check whether the model ranking survives a richer prompt (Block D).
+Anchor prompt **P\*** = `+extract@1000` · `bare-float` · `effort=low` (reasoning models) /
+`none` (non-reasoning). Anchor model = `nex-n2-mini` (cheapest, discriminating in round-1b,
+and the effort-sweep model — reuse).
+
+| # | block / purpose | model | richness | extract-len | output | effort |
+|---|---|---|---|---|---|---|
+| A1 | model main effect | nex-n2-mini | +extract | 1000 | bare | low |
+| A2 | " | gpt-oss-120b | +extract | 1000 | bare | low |
+| A3 | " | glm-4.7-flash | +extract | 1000 | bare | low |
+| A4 | " | llama-3.3-70b | +extract | 1000 | bare | — |
+| A5 | " | hermes-4-70b | +extract | 1000 | bare | — |
+| A6 | " | step-3.7-flash | +extract | 1000 | bare | — |
+| A7 | " (conditional — if hy3 shape-probes clean) | hy3 | +extract | 1000 | bare | — |
+| A8 | " (cost-marginal) | gemini-3.1-flash-lite | +extract | 1000 | bare | — |
+| A9 | " (cost-marginal) | qwen3.7-plus | +extract | 1000 | bare | — |
+| A10 | **frontier reference** (above-class) | haiku *or* gpt-5.6-luna | +extract | 1000 | bare | — |
+| B1 | richness main effect | nex-n2-mini | v1-thin | — | bare | low |
+| B2 | " | nex-n2-mini | +tags | — | bare | low |
+| B3 | extract-length main effect | nex-n2-mini | +extract | **300** | bare | low |
+| B4 | " | nex-n2-mini | +extract | **full-lead** | bare | low |
+| B5 | output-form main effect (**= injection-hardening v2 probe**) | nex-n2-mini | +extract | 1000 | **rationale** | low |
+| C1 | effort main effect | nex-n2-mini | +extract | 1000 | bare | **none** |
+| C2 | " | nex-n2-mini | +extract | 1000 | bare | **high** |
+| D1 | model×prompt interaction probe | hermes-4-70b | +extract | **full-lead** | **rationale** | — |
+| D2 | " | gpt-oss-120b | +extract | **full-lead** | **rationale** | high |
+| D3 | richness-transfer probe | llama-3.3-70b | **v1-thin** | — | bare | — |
+
+`deepseek-v4-pro` stays in the roster config **`enabled: false`** (listed, not run this grid).
+`+extract@1000` on `nex-n2-mini` at `effort=low` is the shared anchor (A1) that B/C reuse —
+so 20 distinct cells, ~15 of them new calls. Extract-length is only swept inside the
+`+extract` arm (it is undefined for `v1-thin`/`+tags`, hence the `—`).
+
+**Notes tying axes to prior findings:**
+- **Extract length is swept because 300 was an untested constant that clipped the median.**
+  Per fable's snapshot of the real extract corpus (not re-verified locally — VPS data): extract length median **492**, p90 **1221**, max **4162** chars — so the
+  inherited 300-char cap was discarding *half of every lead*. Rob's rule: a constant that
+  affects quality gets swept, never assumed. (No re-acquisition — the snapshot already holds
+  full leads.)
+- **Output-form doubles as the injection-hardening v2 probe.** `rationale-then-score` is
+  exactly §4's v2 direction ("require the score justified from *attributes* so a bare
+  imperative has nothing to cite"). B5/D1/D2 measure whether rationale both **lifts AUC** and
+  **raises injection resistance** — the v2 win is the cell that does both. (Re-run the §4
+  corpus under the winning output-form to confirm; not assumed.)
+
+### 11.3 Statistics, and the fishing protection (stated explicitly)
+
+- **Per cell:** strict AUC (KL-158) + Somers' D + measured cost/1k + input/output token counts
+  from `usage.cost`. Same metric machinery as §2 (midrank ties, etc.).
+- **The KL grid is a LIBERAL screen — a hypothesis generator, not a promotion gate.** Twenty
+  cells fished against n=158 *will* produce a high cell by chance; that is expected. **No cell
+  is promoted on KL.**
+
+**The labeler-correlation hole — London does NOT break it (verified, and it demotes the
+confirmation layer).** The §9 assumption-4 risk is worse than the KL-only framing there
+implies. I checked both golden files: **KL-158 is 100% `labeled_by=llm-research` and
+London-300 is *also* 100% `labeled_by=llm-research`** — zero human (`rob`/`rob-confirmed`)
+labels in either. So the London reveal shares the *identical labeler provenance* as the
+screen. A candidate that scores high by **agreeing with the LLM labeler** (correlated error,
+not real place quality) posts an elevated AUC on **both** KL and London. Therefore:
+
+- **London confirms *held-out sampling* (disjoint cities → real overfitting/geographic
+  control) but does NOT confirm against labeler correlation.** It is demoted here from
+  "independent confirmation" to "sampling-error replication." (§9 assumption 4 is restated at
+  program scope — both sets are LLM-labeled — in this PR.)
+- **The only mechanism that can break labeler correlation is human labels, so the human check
+  is promoted to BLOCKING** (not §9's "Rob's call") for any cell claiming to validate Rob's
+  0.85 hypothesis — and it is **aimed at the `meh`/`yes` boundary**, not the confident top-20,
+  because that ambiguous stratum is exactly where an LLM labeler and an LLM candidate share
+  error. Concretely: any cell reaching ≥ 0.80 KL AUC requires a **human relabel of a
+  boundary-stratum sample** (≥ 20 places drawn from the score band around the yes/meh cut)
+  before its AUC is treated as evidence of quality rather than labeler agreement.
+
+**Multiplicity is controlled, but power collapses at 20 cells — stated, not hidden.** Holm at
+the London layer *does* control family-wise error (Holm is valid under arbitrary dependence,
+and KL and London are independent samples, so conditioning on which cells advanced does not
+corrupt the London p-values). **But** the §3 multiplicity math was written for ~6 candidates.
+The screen threshold sits on the null (AUC > 0.5), so under the null **~10 of 20 cells
+advance**, and Holm's leading bar becomes ≈ α/10 ≈ 0.005 one-sided — tested against London's
+*tail-only bootstrap* CIs (150 sampled rows, wide). **Plausible outcome: nothing clears,
+including a genuine 0.85** — an underpowered false-negative regime, not evidence of absence.
+**Pre-registered mitigation:** tighten the *advance* rule for this grid — a cell advances to
+London only if its KL strict AUC ≥ **0.70** *and* its bootstrap CI lower bound > 0.5 (not the
+bare > 0.5 point-estimate screen). That keeps the advancing set small (fewer, stronger cells),
+restoring London power; the liberal-fishing is contained on KL where it is free.
+
+**One London reveal for the whole program.** §3 pins London to a *single* reveal. The v2 grid
+is **KL-only**; it spends **no** London reveal. London is revealed **once**, on the single
+overall winner across all rounds, under Holm over every cell that ever advanced — round 1 and
+the v2 grid included. If any candidate reveal was already spent, the grid does **not** get a
+second look; its winner either shares that one reveal or waits. (If this constrains the grid,
+that is Rob's quarantine to relax, explicitly, not the grid's to erode.)
+
+- **"Powered" is scoped honestly.** The 0.85-vs-chance arithmetic holds (null SE 0.046 →
+  (0.85−0.5)/0.046 ≈ 7.6 SE). But the grid's real task is **cell-vs-cell** ranking, whose
+  detectable ΔAUC is covariance-conditional (§3: ~0.04 at ρ≈0.95 to ~0.18 at ρ=0). So the grid
+  can tell a 0.85 cell from chance, but distinguishing it from a 0.75 competitor is powered
+  *only if between-scorer ρ is high* — unknown a priori. The grid ranks; it does not guarantee
+  the true best cell is separable from its near-neighbours at n=158.
+- **The grid's own EVAL cost counts against the $20 cap (§5).** Rough budget: bare-float cells
+  are ~$0.001–0.05 each on KL-158; reasoning-`high`/`rationale` cells at the ~$0.02/place rate
+  §5 measured for `glm-5.2` run ~$3 each; the frontier reference ~$0.30. Across ~15 new calls
+  (a few reasoning-heavy) the grid is plausibly **~$12–18** — under $20 but not by much. The
+  running measured total is reported against the cap after every cell (§5); if it would breach,
+  it pauses for Rob, per the amended ceiling.
+- **Effort answered once (C1/A1/C2):** report AUC and cost/1k across `none`/`low`/`high` on
+  `nex-n2-mini`; effort is admitted only if its AUC gain justifies its output-token cost
+  multiple. One model, one answer.
+
+### 11.4 Pre-registered contingencies
+
+- **The main-effects assumption.** The screen assumes model and prompt effects are roughly
+  **separable** (why 20 cells suffice, not 540). D1–D3 test it: if the model ranking **flips**
+  between Block A (bare-float) and the richer D cells, or richness fails to transfer (D3 vs
+  B1), separability is broken. **Response:** run a fuller model × prompt sub-grid — on the
+  top-3 by Block-A AUC **UNION any model that ranked strongest in the D interaction cells**
+  (so a model whose strength only appears under a rich prompt — the exact failure the probes
+  detect — is not excluded from the sub-grid meant to rescue it).
+- **Block A is "best-at-anchor", not a clean architecture main effect.** Reasoning models run
+  `effort=low`, non-reasoning `none`, so A conflates architecture with effort tier; the effort
+  confound is *bounded* by C1/C2 (effort measured on `nex-n2-mini`), and the model axis is read
+  as "best each does at the anchor prompt", not "architecture, all else equal."
+- **The prompt sweep is anchored on `nex-n2-mini`, which FAILS injection (§4).** The winning
+  prompt config is therefore a hypothesis about *a non-shippable model*; before any prompt
+  config is adopted for production it must be **re-validated on the model that actually clears
+  the injection floor** — the best prompt for nex-n2 is not assumed to transfer. (The
+  injection-hardening lesson of B5/D — does `rationale-then-score` raise resistance — is
+  model-transferable and worth measuring even here; the *AUC-optimal* prompt is not.)
