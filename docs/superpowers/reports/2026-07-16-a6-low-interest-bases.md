@@ -17,4 +17,4 @@ Selection rule: expected boringness from the golden-set row content, not low com
 | `mt1_5FAWG4Z56G5TH7PX8XYT9ANXDR` | Puteri Wilayah National Secondary School | Ordinary functioning secondary school, not visitable by walkers. |
 | `mt1_68YXDNA8RKWSKKPXS8M76XVS7E` | KL City Walk | Ordinary shopping and dining arcade street. |
 
-Structural live-bound ratification is still pending a regenerated cache over the admitted round-1b roster. As of this report, `origin/wp-a6-round1b-roster` is not present locally after fetch, and the local `wp-a6-round1b-roster` branch is still `origin/develop`.
+Structural live-bound ratification is still pending a regenerated cache over the admitted roster. This branch adds the round-1b roster candidates; the cached structural-bound table still needs to be generated on the machine that has the A6 round-1 live cache.

@@ -91,6 +91,9 @@ def test_default_round1_roster_and_pricing_bind_real_portal_ids():
         "nous-meta-llama-3.1-8b-instruct": ("meta-llama/llama-3.1-8b-instruct", 16),
         "nous-hermes-4-70b": ("nousresearch/hermes-4-70b", 16),
         "nous-nex-n2-mini": ("nex-agi/nex-n2-mini", 256),
+        "nous-deepseek-v4-pro": ("deepseek/deepseek-v4-pro", 256),
+        "nous-glm-5.2": ("z-ai/glm-5.2", 256),
+        "nous-muse-spark-1.1": ("meta/muse-spark-1.1", 256),
     }
 
     for model_id, (api_model_id, max_tokens) in expected.items():
@@ -112,6 +115,19 @@ def test_default_round1_roster_and_pricing_bind_real_portal_ids():
         "effort": "low",
         "exclude": True,
     }
+    for model_id in ("nous-deepseek-v4-pro", "nous-glm-5.2", "nous-muse-spark-1.1"):
+        assert by_id[model_id]["seed"] is None
+        assert by_id[model_id]["reasoning"] == {
+            "enabled": True,
+            "effort": "xhigh",
+            "exclude": True,
+        }
+    assert pricing["nous-deepseek-v4-pro"]["input_per_m"] == 0.435
+    assert pricing["nous-deepseek-v4-pro"]["output_per_m"] == 0.87
+    assert pricing["nous-glm-5.2"]["input_per_m"] == 0.9408
+    assert pricing["nous-glm-5.2"]["output_per_m"] == 2.9568
+    assert pricing["nous-muse-spark-1.1"]["input_per_m"] == 1.25
+    assert pricing["nous-muse-spark-1.1"]["output_per_m"] == 4.25
 
 
 def test_default_round1_roster_entries_construct_requests_and_cache_keys():
@@ -121,6 +137,9 @@ def test_default_round1_roster_entries_construct_requests_and_cache_keys():
         "nous-meta-llama-3.1-8b-instruct",
         "nous-hermes-4-70b",
         "nous-nex-n2-mini",
+        "nous-deepseek-v4-pro",
+        "nous-glm-5.2",
+        "nous-muse-spark-1.1",
     }
 
     for model in models:
