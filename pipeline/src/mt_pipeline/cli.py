@@ -33,6 +33,10 @@ _SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 
 
+class SnapshotPayloadMissingError(RuntimeError):
+    pass
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mt-pipeline",
@@ -60,6 +64,30 @@ def _build_parser() -> argparse.ArgumentParser:
         "--only-source",
         help="for extract, replace only one enabled source from cached snapshot",
     )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--parallel",
+        dest="parallel",
+        action="store_true",
+        default=True,
+        help="run extractors in process-isolated parallel workers (default)",
+    )
+    mode.add_argument(
+        "--sequential",
+        dest="parallel",
+        action="store_false",
+        help="run extractors sequentially in the main process",
+    )
+    parser.add_argument(
+        "--continue-on-source-failure",
+        action="store_true",
+        help="for extract, merge successful sources while recording failed sources",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="ignore matching stage fingerprints and rerun the requested stage",
+    )
     parser.add_argument(
         "--audit-format",
         choices=("markdown", "json"),
@@ -69,6 +97,27 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version",
         help="publish version for reconcile, formatted YYYYMMDDThhmmssZ",
+    )
+    parser.add_argument(
+        "--publish-version",
+        help="publish version for publish, formatted YYYYMMDDThhmmssZ",
+    )
+    parser.add_argument(
+        "--generated-at",
+        help="manifest generated_at timestamp for publish (must be supplied by the run)",
+    )
+    parser.add_argument(
+        "--scoring-config-version",
+        help="A4 scoring config version recorded in manifest score provenance",
+    )
+    parser.add_argument(
+        "--staging-dir",
+        help="local staging root for publish artifacts",
+    )
+    parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="upload staged publish artifacts to R2 after local staging",
     )
     return parser
 
@@ -152,6 +201,11 @@ def _build_llm_parser() -> argparse.ArgumentParser:
         default=str(_PIPELINE_ROOT.parent / ".mt-data" / "llm-cache"),
         help="local validate-on-read LLM cache directory",
     )
+    bakeoff_cmd.add_argument(
+        "--promotion-injection",
+        action="store_true",
+        help="run the full two-sided injection promotion gate instead of the round-1 partial screen",
+    )
     return parser
 
 
@@ -176,19 +230,271 @@ def _initial_extract_statuses(sources: dict, *, only_source: str | None = None) 
     }
 
 
-def _record_extract_metadata(conn, region, run_id: str, snap_dir, statuses: dict) -> None:
+def _record_extract_metadata(
+    conn,
+    region,
+    run_id: str,
+    snap_dir,
+    statuses: dict,
+    *,
+    only_source: str | None = None,
+) -> None:
+    _record_extract_metadata_no_commit(
+        conn,
+        region,
+        run_id,
+        snap_dir,
+        statuses,
+        only_source=only_source,
+    )
+    conn.commit()
+
+
+def _previous_extract_metadata(conn, region):
+    row = conn.execute(
+        """
+        SELECT run_id
+        FROM stage_runs
+        WHERE region = ? AND stage = 'extract'
+        """,
+        (region.region_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return store.load_extract_run_metadata(
+        conn,
+        region=region.region_id,
+        run_id=row[0],
+    )
+
+
+def _record_extract_metadata_no_commit(
+    conn,
+    region,
+    run_id: str,
+    snap_dir,
+    statuses: dict,
+    *,
+    only_source: str | None = None,
+) -> None:
     wikidata_date = ""
     if region.sources.get("wikidata") is True:
-        wikidata_date = acquire.wikidata_snapshot_retrieved_at(
-            acquire.snapshot_paths(snap_dir)["wikidata"]
-        )
-    store.record_extract_run_metadata(
+        wikidata_path = acquire.snapshot_paths(snap_dir)["wikidata"]
+        if (only_source is None or only_source == "wikidata") and wikidata_path.exists():
+            wikidata_date = acquire.wikidata_snapshot_retrieved_at(wikidata_path)
+        else:
+            previous = _previous_extract_metadata(conn, region)
+            if previous is not None:
+                wikidata_date = previous["wikidata_snapshot_date"]
+    store.record_extract_run_metadata_no_commit(
         conn,
         region=region.region_id,
         run_id=run_id,
         wikidata_snapshot_date=wikidata_date,
         source_statuses=statuses,
     )
+
+
+def _pageview_extract_options(
+    region,
+    snap_dir: pathlib.Path,
+    *,
+    only_source: str | None,
+) -> dict | None:
+    pageview_options = acquire.pageview_region_options(region)
+    if (
+        pageview_options is None
+        or region.sources.get("wikipedia") is not True
+        or only_source not in {None, "wikipedia"}
+    ):
+        return None
+    pageview_cache = snap_dir / "pageviews"
+    window = acquire.pageview_window_for_wikipedia_snapshot(
+        acquire.snapshot_paths(snap_dir)["wikipedia"],
+        region,
+    )
+    if window is None:
+        return None
+    cached_window = acquire.pageviews.manifest_window(pageview_cache)
+    if cached_window is not None and cached_window != window:
+        raise acquire.AcquireError(
+            "pageview cache window "
+            f"{cached_window[0]}..{cached_window[1]} does not match "
+            f"wikipedia snapshot window {window[0]}..{window[1]}"
+        )
+    return {
+        "pageview_cache_dir": pageview_cache,
+        "pageview_window": window,
+    }
+
+
+def _pageview_max_titles(region) -> int:
+    pageview_options = acquire.pageview_region_options(region) or {}
+    pageview_config = acquire.load_config().get("pageviews", {})
+    if not isinstance(pageview_config, dict):
+        pageview_config = {}
+    return int(
+        pageview_options.get(
+            "max_titles",
+            pageview_config.get("max_titles", acquire.MAX_PAGEVIEW_TITLES),
+        )
+    )
+
+
+def _pageview_cache_files(
+    wikipedia_snapshot: pathlib.Path,
+    pageview_cache: pathlib.Path,
+    window: tuple[str, str],
+    *,
+    max_titles: int,
+) -> tuple[pathlib.Path, ...]:
+    return tuple(
+        acquire.pageviews._cache_path(pageview_cache, title, window)
+        for title in acquire._wikipedia_titles(wikipedia_snapshot, max_titles=max_titles)
+    )
+
+
+def _extractor_options(
+    region,
+    snap_dir: pathlib.Path,
+    *,
+    osm_index_type: str,
+    only_source: str | None,
+) -> dict:
+    options = {"osm": {"index_type": osm_index_type}}
+    pageview_options = _pageview_extract_options(
+        region,
+        snap_dir,
+        only_source=only_source,
+    )
+    if pageview_options is not None:
+        options["wikipedia"] = pageview_options
+    return options
+
+
+def _record_skipped_extract_metadata(conn, region, run_id: str, snap_dir) -> None:
+    previous = _previous_extract_metadata(conn, region)
+    if previous is not None:
+        store.record_extract_run_metadata(
+            conn,
+            region=region.region_id,
+            run_id=run_id,
+            wikidata_snapshot_date=previous["wikidata_snapshot_date"],
+            source_statuses=previous["source_statuses"],
+        )
+        return
+    _record_extract_metadata(
+        conn,
+        region,
+        run_id,
+        snap_dir,
+        _initial_extract_statuses(region.sources),
+    )
+
+
+def _extract_fingerprint_inputs(
+    region,
+    snapshots: dict,
+    *,
+    snap_dir: pathlib.Path | None = None,
+    only_source: str | None = None,
+) -> object:
+    from .ergonomics import fingerprint
+
+    pageview_options = (
+        _pageview_extract_options(region, snap_dir, only_source=only_source)
+        if snap_dir is not None
+        else None
+    )
+    pageview_window = None
+    pageview_cache_files = ()
+    if pageview_options is not None and snap_dir is not None:
+        pageview_window = pageview_options["pageview_window"]
+        pageview_cache_files = _pageview_cache_files(
+            acquire.snapshot_paths(snap_dir)["wikipedia"],
+            pageview_options["pageview_cache_dir"],
+            pageview_window,
+            max_titles=_pageview_max_titles(region),
+        )
+    return fingerprint.FingerprintInputs(
+        region_config=region,
+        snapshots=snapshots,
+        config_paths={
+            "wikidata_class_allowlist": acquire.DEFAULT_ALLOWLIST,
+            "osm_candidate_tags": extract_stage.DEFAULT_OSM_TAG_CONFIG,
+        },
+        only_source=only_source,
+        pageview_cache_dir=(
+            pageview_options["pageview_cache_dir"]
+            if pageview_options is not None
+            else None
+        ),
+        pageview_cache_files=pageview_cache_files,
+        pageview_window=pageview_window,
+    )
+
+
+def _raise_on_snapshot_sidecar_without_payload(
+    region,
+    snapshots: dict[str, pathlib.Path],
+    *,
+    only_source: str | None = None,
+) -> None:
+    selected_sources = {
+        source
+        for source, enabled in region.sources.items()
+        if enabled is True and (only_source is None or source == only_source)
+    }
+    for source in sorted(selected_sources):
+        payload = snapshots.get(source)
+        if payload is None:
+            continue
+        payload = pathlib.Path(payload)
+        sidecar = pathlib.Path(str(payload) + ".meta.json")
+        if not payload.exists() and sidecar.exists():
+            raise SnapshotPayloadMissingError(
+                f"snapshot payload missing for {source}: {payload} "
+                f"(found {sidecar}; re-run acquire)"
+            )
+
+
+def _stage_fingerprint_inputs(conn, region, stage: str, *, run_id: str, version: str | None):
+    from .ergonomics import fingerprint
+    from .score import score_stage
+
+    if stage == "reconcile":
+        metadata = store.load_extract_run_metadata(conn, region=region.region_id, run_id=run_id)
+        succeeded = (
+            stages._succeeded_source_prefixes(region, metadata)
+            if metadata is not None
+            else set()
+        )
+        return fingerprint.FingerprintInputs(
+            region_config=region,
+            succeeded_sources=succeeded,
+            version=version,
+            config_paths={
+                "reconcile_config": stages.RECONCILE_CONFIG,
+                "redirect_map": pathlib.Path(".mt-data")
+                / region.region_id
+                / "wikidata_redirects.snapshot.json",
+                "registry": pathlib.Path("registry") / f"{region.region_id}.jsonl",
+            },
+        )
+    if stage == "score":
+        return fingerprint.FingerprintInputs(
+            region_config=region,
+            config_paths={"scoring_config": score_stage._CONFIG_PATH},
+        )
+    if stage == "categorize":
+        return fingerprint.FingerprintInputs(
+            region_config=region,
+            config_paths={
+                "taxonomy_config": categorize._TAXONOMY_PATH,
+                "osm_candidate_tags": categorize._OSM_CANDIDATE_TAGS,
+            },
+        )
+    return None
 
 
 def _read_text_limited(path: pathlib.Path, *, max_bytes: int) -> str:
@@ -256,6 +562,10 @@ def _require_nous_api_key() -> str:
 
 def _format_optional_metric(value: float | None) -> str:
     return "undefined" if value is None else f"{value:.3f}"
+
+
+def _format_optional_bool(value: bool | None) -> str:
+    return "undefined" if value is None else str(value).lower()
 
 
 def _validate_budget_cap(value: float) -> float:
@@ -396,6 +706,14 @@ def _live_request(row: golden.GoldenRow, *, api_model_id: str) -> curiosity.LlmR
     )
 
 
+def _live_injection_request(probe: bakeoff.InjectionProbe, *, api_model_id: str) -> curiosity.LlmRequest:
+    return curiosity.curiosity_request(
+        query_id=probe.place_id,
+        model_id=api_model_id,
+        place=probe.place,
+    )
+
+
 def _collect_live_cache_state(
     rows: list[golden.GoldenRow],
     *,
@@ -430,13 +748,44 @@ def _collect_live_cache_state(
     return cache, curiosities, output_rows, misses
 
 
+def _collect_live_injection_cache_state(
+    cache: llm_cache.LlmCache,
+    fixture: tuple[bakeoff.InjectionProbe, ...],
+    *,
+    api_model_id: str,
+) -> tuple[
+    dict[str, float],
+    list[tuple[str, float, bool, float, str]],
+    list[tuple[bakeoff.InjectionProbe, str, curiosity.LlmRequest]],
+]:
+    scores: dict[str, float] = {}
+    output_rows: list[tuple[str, float, bool, float, str]] = []
+    misses: list[tuple[bakeoff.InjectionProbe, str, curiosity.LlmRequest]] = []
+    for probe in fixture:
+        req = _live_injection_request(probe, api_model_id=api_model_id)
+        rendered_prompt = req.messages[0].content
+        input_hash = llm_cache.input_hash(
+            task_id=req.task_id,
+            prompt_version=req.prompt_version,
+            rendered_prompt=rendered_prompt,
+        )
+        cached = cache.get(req.task_id, req.model_id, req.prompt_version, input_hash)
+        if cached is not None:
+            value = cached.curiosity
+            scores[probe.place_id] = value
+            output_rows.append((probe.place_id, value, True, 0.0, "cache"))
+        else:
+            misses.append((probe, input_hash, req))
+    return scores, output_rows, misses
+
+
 def _estimate_request_cost(
-    requests: list[tuple[golden.GoldenRow, str, curiosity.LlmRequest]],
+    requests: Sequence[curiosity.LlmRequest],
     model_pricing: dict,
     *,
     model_id: str,
 ) -> float:
-    prompts = [req.messages[0].content for _, _, req in requests]
+    prompts = [req.messages[0].content for req in requests]
     return costmodel.estimate_cost(
         prompts,
         model_pricing,
@@ -454,9 +803,21 @@ async def _score_live_with_cache_async(
     curiosities: dict[str, float],
     output_rows: list[tuple[str, float, bool, float, str]],
     misses: list[tuple[golden.GoldenRow, str, curiosity.LlmRequest]],
+    injection_scores: dict[str, float],
+    injection_output_rows: list[tuple[str, float, bool, float, str]],
+    injection_misses: list[tuple[bakeoff.InjectionProbe, str, curiosity.LlmRequest]],
     model_pricing: dict,
     api_key: str,
-) -> tuple[dict[str, float], list[tuple[str, float, bool, float, str]], float, int, dict[str, float | int]]:
+) -> tuple[
+    dict[str, float],
+    list[tuple[str, float, bool, float, str]],
+    dict[str, float],
+    list[tuple[str, float, bool, float, str]],
+    float,
+    int,
+    int,
+    dict[str, float | int],
+]:
     from .llm.providers import nous as nous_provider
 
     total_response_cost = 0.0
@@ -464,31 +825,75 @@ async def _score_live_with_cache_async(
     provider = None
     session_cost: float | None = None
     try:
-        if misses:
+        if misses or injection_misses:
+            batch: list[
+                tuple[
+                    str,
+                    golden.GoldenRow | bakeoff.InjectionProbe,
+                    str,
+                    curiosity.LlmRequest,
+                ]
+            ] = [
+                ("place", row, input_hash, req)
+                for row, input_hash, req in misses
+            ] + [
+                ("injection", probe, input_hash, req)
+                for probe, input_hash, req in injection_misses
+            ]
             provider = nous_provider.NousProvider(
                 api_key=api_key,
                 concurrency=1,
                 input_per_m=float(model_pricing.get("input_per_m", 0.0)),
                 output_per_m=float(model_pricing.get("output_per_m", 0.0)),
             )
-            responses = await provider.acomplete_batch([req for _, _, req in misses])
-            if len(responses) != len(misses):
+            try:
+                responses = await provider.acomplete_batch([req for _, _, _, req in batch])
+            except Exception:
+                estimated_failure_cost = _estimate_request_cost(
+                    [req for _, _, _, req in batch],
+                    model_pricing,
+                    model_id=batch[0][3].model_id,
+                )
+                if estimated_failure_cost > 0.0:
+                    charged_rows.append(("unknown", 0.0, False, estimated_failure_cost, "derived"))
+                    total_response_cost += estimated_failure_cost
+                raise
+            if len(responses) != len(batch):
+                estimated_failure_cost = _estimate_request_cost(
+                    [req for _, _, _, req in batch],
+                    model_pricing,
+                    model_id=batch[0][3].model_id,
+                )
+                returned_cost = sum(response.cost_usd for response in responses)
                 charged_rows.extend(
                     ("unknown", 0.0, False, response.cost_usd, response.cost_source)
                     for response in responses
                 )
+                total_response_cost += returned_cost
+                if returned_cost < estimated_failure_cost:
+                    charged_rows.append(
+                        ("unknown", 0.0, False, estimated_failure_cost - returned_cost, "derived")
+                    )
+                    total_response_cost += estimated_failure_cost - returned_cost
                 raise ValueError("provider returned a different number of responses")
-            for (row, input_hash, req), response in zip(misses, responses, strict=True):
-                charged_rows.append((row.place_id, 0.0, False, response.cost_usd, response.cost_source))
+            for (kind, item, input_hash, req), response in zip(batch, responses, strict=True):
+                place_id = item.place_id
+                charged_rows.append((place_id, 0.0, False, response.cost_usd, response.cost_source))
                 total_response_cost += response.cost_usd
+            for (kind, item, input_hash, req), response in zip(batch, responses, strict=True):
+                place_id = item.place_id
                 parsed = curiosity.parse_curiosity(response.text)
                 cache.put(
                     llm_cache.cache_key(req.task_id, req.model_id, req.prompt_version, input_hash),
                     parsed.model_dump(),
                 )
                 value = parsed.curiosity
-                curiosities[row.place_id] = value
-                output_rows.append((row.place_id, value, False, response.cost_usd, response.cost_source))
+                if kind == "place":
+                    curiosities[place_id] = value
+                    output_rows.append((place_id, value, False, response.cost_usd, response.cost_source))
+                else:
+                    injection_scores[place_id] = value
+                    injection_output_rows.append((place_id, value, False, response.cost_usd, response.cost_source))
     finally:
         if provider is not None:
             session_cost = await provider.shutdown()
@@ -496,11 +901,22 @@ async def _score_live_with_cache_async(
             ledger = _update_cost_ledger(cache_dir, ledger, charged_rows)
 
     output_rows.sort(key=lambda item: item[0])
+    injection_output_rows.sort(key=lambda item: item[0])
     total_cost = session_cost if session_cost is not None else total_response_cost
     cache_hits = sum(1 for _, _, hit, _, _ in output_rows if hit)
+    injection_cache_hits = sum(1 for _, _, hit, _, _ in injection_output_rows if hit)
     if not charged_rows:
-        ledger = _update_cost_ledger(cache_dir, ledger, output_rows)
-    return curiosities, output_rows, total_cost, cache_hits, ledger
+        ledger = _update_cost_ledger(cache_dir, ledger, [*output_rows, *injection_output_rows])
+    return (
+        curiosities,
+        output_rows,
+        injection_scores,
+        injection_output_rows,
+        total_cost,
+        cache_hits,
+        injection_cache_hits,
+        ledger,
+    )
 
 
 def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, model_rows: list, pricing: dict) -> int:
@@ -522,6 +938,13 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
             rows,
             requested_model=args.model,
         )
+        injection_fixture = (
+            tuple(bakeoff.TWO_SIDED_INJECTION_PROBES)
+            if args.promotion_injection
+            else tuple(bakeoff.INJECTION_PROBES)
+        )
+        if args.promotion_injection and not injection_fixture:
+            raise ValueError("empty injection fixture cannot pass promotion gate")
         cache_dir = pathlib.Path(args.cache_dir)
         with _locked_cost_ledger(cache_dir):
             cache, curiosities, per_place, misses = _collect_live_cache_state(
@@ -529,8 +952,17 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
                 api_model_id=api_model_id,
                 cache_dir=cache_dir,
             )
+            injection_scores, injection_per_place, injection_misses = _collect_live_injection_cache_state(
+                cache,
+                injection_fixture,
+                api_model_id=api_model_id,
+            )
             ledger = _load_cost_ledger(cache_dir)
-            estimated_miss_cost = _estimate_request_cost(misses, model_pricing, model_id=model_id)
+            estimated_miss_cost = _estimate_request_cost(
+                [req for _, _, req in misses] + [req for _, _, req in injection_misses],
+                model_pricing,
+                model_id=model_id,
+            )
             if float(ledger["total_usd"]) + estimated_miss_cost > budget_cap:
                 raise ValueError(
                     "budget cap exceeded: "
@@ -538,7 +970,16 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
                     f"estimated_run_cost_usd={estimated_miss_cost:.8f} "
                     f"budget_cap_usd={budget_cap:.8f}"
                 )
-            curiosities, per_place, total_cost, cache_hits, ledger = asyncio.run(
+            (
+                curiosities,
+                per_place,
+                injection_scores,
+                injection_per_place,
+                total_cost,
+                cache_hits,
+                injection_cache_hits,
+                ledger,
+            ) = asyncio.run(
                 _score_live_with_cache_async(
                     cache_dir=cache_dir,
                     cache=cache,
@@ -546,6 +987,9 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
                     curiosities=curiosities,
                     output_rows=per_place,
                     misses=misses,
+                    injection_scores=injection_scores,
+                    injection_output_rows=injection_per_place,
+                    injection_misses=injection_misses,
                     model_pricing=model_pricing,
                     api_key=api_key,
                 )
@@ -555,6 +999,29 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
         ranked_off = rescore.rescore(rows, config_data, llm_on=False)
         precision_on = eval_metrics.precision_at_k(ranked_on, args.k, positive={"yes"})
         precision_off = eval_metrics.precision_at_k(ranked_off, args.k, positive={"yes"})
+        injection_scope = (
+            bakeoff.PROMOTION_INJECTION_SCOPE
+            if args.promotion_injection
+            else bakeoff.ROUND1_INJECTION_SCOPE
+        )
+        inflation_resistance = None
+        deflation_resistance = None
+        honest_suppression_rate = None
+        two_sided_resistance = None
+        injection_floor_passed = None
+        injection_error = None
+        if args.promotion_injection:
+            resistance = bakeoff.two_sided_injection_metrics(injection_scores, injection_fixture)
+            inflation_resistance = resistance.inflation_resistance
+            deflation_resistance = resistance.deflation_resistance
+            honest_suppression_rate = resistance.honest_suppression_rate
+            two_sided_resistance = resistance.two_sided_injection_resistance
+            injection_floor_passed = resistance.floor_passed
+            if not injection_floor_passed:
+                injection_error = "promotion injection floor failed"
+        else:
+            inflation_resistance = bakeoff.injection_resistance(injection_scores, injection_fixture)
+        injection_cost = sum(cost for _, _, _, cost, _ in injection_per_place)
     except (
         OSError,
         json.JSONDecodeError,
@@ -577,8 +1044,19 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
     for place_id, value, cache_hit, cost_usd, cost_source in per_place:
         print(f"{place_id}\t{model_id}\t{value:.6f}\t{str(cache_hit).lower()}\t{cost_usd:.8f}\t{cost_source}")
     print(f"cache_hits\t{cache_hits}/{len(per_place)}")
+    print(f"injection_scope\t{injection_scope or 'none'}")
+    print(f"injection_probes\t{len(injection_per_place)}/{len(injection_fixture)}")
+    print(f"injection_cache_hits\t{injection_cache_hits}/{len(injection_per_place)}")
+    print(f"injection_cost_usd\t{injection_cost:.8f}")
+    print(f"inflation_resistance\t{_format_optional_metric(inflation_resistance)}")
+    print(f"deflation_resistance\t{_format_optional_metric(deflation_resistance)}")
+    print(f"honest_suppression_rate\t{_format_optional_metric(honest_suppression_rate)}")
+    print(f"two_sided_injection_resistance\t{_format_optional_metric(two_sided_resistance)}")
+    print(f"injection_floor_passed\t{_format_optional_bool(injection_floor_passed)}")
+    print(f"injection_error\t{injection_error or ''}")
     print(f"total_incremental_cost_usd\t{total_cost:.8f}")
-    print(f"estimated_total_cost_usd\t{estimated_cost:.8f}")
+    print(f"estimated_golden_cost_usd\t{estimated_cost:.8f}")
+    print(f"estimated_run_cost_usd\t{estimated_miss_cost:.8f}")
     print(f"ledger_total_usd\t{float(ledger['total_usd']):.8f}")
     print(f"ledger_budget_cap_usd\t{budget_cap:.8f}")
     print(f"ledger_measured_usd\t{float(ledger['measured_usd']):.8f}")
@@ -763,16 +1241,24 @@ def _run_llm(argv) -> int:
                 pricing,
                 k=args.k,
                 config=config_data,
+                promotion_gate=args.promotion_injection,
             )
         except (OSError, json.JSONDecodeError, ValueError, KeyError, TypeError, RuntimeError) as exc:
             print(f"llm bakeoff error: {exc}", file=sys.stderr)
             return 1
-        print("model\tprovider\tprecision_at_k_llm_on\tprecision_at_k_llm_off_baseline\tlift\tcost_usd\tlift_per_usd\tinjection_resistance\terror")
+        print(
+            "model\tprovider\tprecision_at_k_llm_on\tprecision_at_k_llm_off_baseline\tlift\t"
+            "cost_usd\tinjection_cost_usd\tlift_per_usd\tinjection_scope\tinflation_resistance\t"
+            "deflation_resistance\thonest_suppression_rate\ttwo_sided_injection_resistance\t"
+            "injection_floor_passed\terror"
+        )
         for row in report.rows:
             print(
                 f"{row.model}\t{row.provider}\t{row.precision_at_k_llm_on}\t"
                 f"{row.precision_at_k_llm_off_baseline}\t{row.lift}\t{row.cost_usd}\t"
-                f"{row.lift_per_usd}\t{row.injection_resistance}\t{row.error or ''}"
+                f"{row.injection_cost_usd}\t{row.lift_per_usd}\t{row.injection_scope}\t"
+                f"{row.inflation_resistance}\t{row.deflation_resistance}\t{row.honest_suppression_rate}\t"
+                f"{row.two_sided_injection_resistance}\t{row.injection_floor_passed}\t{row.error or ''}"
             )
         return 0
 
@@ -789,6 +1275,9 @@ def main(argv=None) -> int:
     args = _build_parser().parse_args(argv)
     if args.version is not None and not _VERSION_RE.fullmatch(args.version):
         print("--version must match YYYYMMDDThhmmssZ", file=sys.stderr)
+        return 2
+    if args.publish_version is not None and not _VERSION_RE.fullmatch(args.publish_version):
+        print("--publish-version must match YYYYMMDDThhmmssZ", file=sys.stderr)
         return 2
     try:
         region = config.load(args.region)
@@ -853,50 +1342,180 @@ def main(argv=None) -> int:
     try:
         if args.stage == "extract" and args.snapshot_dir:
             snap_dir = pathlib.Path(args.snapshot_dir)
+            snapshots = acquire.snapshot_paths(snap_dir)
+            statuses = _initial_extract_statuses(
+                region.sources, only_source=args.only_source
+            )
+            _raise_on_snapshot_sidecar_without_payload(
+                region,
+                snapshots,
+                only_source=args.only_source,
+            )
+            try:
+                fingerprint_inputs = _extract_fingerprint_inputs(
+                    region,
+                    snapshots,
+                    snap_dir=snap_dir,
+                    only_source=args.only_source,
+                )
+            except acquire.AcquireError as exc:
+                _record_extract_metadata(
+                    conn,
+                    region,
+                    args.run_id,
+                    snap_dir,
+                    statuses,
+                    only_source=args.only_source,
+                )
+                print(str(exc), file=sys.stderr)
+                return 1
+            from .ergonomics import fingerprint, telemetry
+
+            try:
+                stage_fingerprint = fingerprint.stage_fingerprint(
+                    conn,
+                    region.region_id,
+                    "extract",
+                    inputs=fingerprint_inputs,
+                )
+            except OSError:
+                stage_fingerprint = None
+            if stage_fingerprint is not None:
+                if fingerprint.should_skip(
+                    conn,
+                    region.region_id,
+                    "extract",
+                    stage_fingerprint,
+                    force=args.force,
+                ):
+                    telemetry.emit(
+                        "SKIP "
+                        f"stage=extract region={region.region_id} "
+                        f"fingerprint={stage_fingerprint}"
+                    )
+                    _record_skipped_extract_metadata(
+                        conn,
+                        region,
+                        args.run_id,
+                        snap_dir,
+                    )
+                    print(f"extract skipped for {region.region_id}")
+                    return 0
             registry = extract_stage.build_registry(
                 acquire.DEFAULT_ALLOWLIST,
                 languages=set(region.languages),
             )
-            statuses = _initial_extract_statuses(
-                region.sources, only_source=args.only_source
-            )
-
             def record_status(source, status):
                 statuses[source] = status
 
+            extract_transaction_open = False
             try:
+                if args.parallel:
+                    conn.execute("BEGIN EXCLUSIVE")
+                    extract_transaction_open = True
                 counts = extract_stage.run_extract(
                     conn,
                     region,
-                    acquire.snapshot_paths(snap_dir),
+                    snapshots,
                     run_id=args.run_id,
                     registry=registry,
-                    extractor_options={"osm": {"index_type": args.osm_index_type}},
+                    extractor_options=_extractor_options(
+                        region,
+                        snap_dir,
+                        osm_index_type=args.osm_index_type,
+                        only_source=args.only_source,
+                    ),
                     status_recorder=record_status,
                     only_source=args.only_source,
+                    parallel=args.parallel,
+                    continue_on_source_failure=args.continue_on_source_failure,
+                    staging_root=snap_dir.parent,
+                    commit=not args.parallel,
                 )
             except (
                 extract_stage.MissingSnapshotError,
                 extract_stage.UnregisteredEnabledSourceError,
                 extract_stage.DiskSpaceError,
+                SnapshotPayloadMissingError,
+                acquire.AcquireError,
             ) as exc:
-                _record_extract_metadata(conn, region, args.run_id, snap_dir, statuses)
+                if extract_transaction_open:
+                    conn.rollback()
+                _record_extract_metadata(
+                    conn,
+                    region,
+                    args.run_id,
+                    snap_dir,
+                    statuses,
+                    only_source=args.only_source,
+                )
                 print(str(exc), file=sys.stderr)
                 return 1
             except Exception as exc:
-                _record_extract_metadata(conn, region, args.run_id, snap_dir, statuses)
+                if extract_transaction_open:
+                    conn.rollback()
+                _record_extract_metadata(
+                    conn,
+                    region,
+                    args.run_id,
+                    snap_dir,
+                    statuses,
+                    only_source=args.only_source,
+                )
                 print(f"extract error: {exc}", file=sys.stderr)
                 return 1
-            _record_extract_metadata(conn, region, args.run_id, snap_dir, statuses)
-            stages.run_stage(conn, region.region_id, args.stage, run_id=args.run_id)
+            try:
+                _record_extract_metadata_no_commit(
+                    conn,
+                    region,
+                    args.run_id,
+                    snap_dir,
+                    statuses,
+                    only_source=args.only_source,
+                )
+                completed_at = stages._completed_at()
+                store.mark_stage_complete_no_commit(
+                    conn,
+                    region.region_id,
+                    args.stage,
+                    run_id=args.run_id,
+                    completed_at=completed_at,
+                )
+                if stage_fingerprint is not None:
+                    fingerprint.record_no_commit(
+                        conn,
+                        region.region_id,
+                        args.stage,
+                        stage_fingerprint,
+                        completed_at=completed_at,
+                )
+                conn.commit()
+                extract_transaction_open = False
+            except sqlite3.Error:
+                conn.rollback()
+                raise
             print(f"{args.stage} complete for {region.region_id}: {counts}")
             return 0
+        fingerprint_inputs = _stage_fingerprint_inputs(
+            conn,
+            region,
+            args.stage,
+            run_id=args.run_id,
+            version=args.version,
+        )
         stages.run_stage(
             conn,
             region.region_id,
             args.stage,
             run_id=args.run_id,
             version=args.version,
+            publish_version=args.publish_version,
+            generated_at=args.generated_at,
+            scoring_config_version=args.scoring_config_version,
+            upload=args.upload,
+            staging_root=args.staging_dir,
+            fingerprint_inputs=fingerprint_inputs,
+            force=args.force,
         )
     except stages.StageOrderError as exc:
         print(str(exc), file=sys.stderr)
@@ -908,6 +1527,8 @@ def main(argv=None) -> int:
         extract_stage.MissingSnapshotError,
         extract_stage.UnregisteredEnabledSourceError,
         extract_stage.DiskSpaceError,
+        SnapshotPayloadMissingError,
+        acquire.AcquireError,
     ) as exc:
         print(str(exc), file=sys.stderr)
         return 1

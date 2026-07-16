@@ -1,9 +1,12 @@
+import dataclasses
 import json
 
 import pytest
 
 from mt_pipeline import cli, store
+from mt_pipeline.ergonomics import fingerprint
 from mt_pipeline.eval import report as eval_report
+from mt_pipeline.extractors import pageviews
 
 
 def test_cli_runs_a_stage(tmp_path):
@@ -23,6 +26,39 @@ def test_cli_enforces_stage_order(tmp_path, capsys):
     rc = cli.main(["--region", "uk", "publish", "--db", str(tmp_path / "w.db")])
     assert rc == 1
     assert "categorize" in capsys.readouterr().err
+
+
+def test_cli_publish_missing_pmtiles_is_clean_error(tmp_path, capsys, monkeypatch):
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    store.mark_stage_complete(
+        conn, "malaysia", "categorize", "cat1", "2026-07-15T00:00:00Z"
+    )
+    conn.close()
+    monkeypatch.setenv("PATH", "")
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "publish",
+            "--db",
+            str(db),
+            "--run-id",
+            "real-malaysia-20260715",
+            "--publish-version",
+            "20260716T000000Z",
+            "--generated-at",
+            "2026-07-16T00:00:00Z",
+        ]
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "pmtiles" in err
+    assert "v1.31.1" in err
+    assert "Traceback" not in err
 
 
 def test_cli_reconcile_requires_version(tmp_path, capsys):
@@ -68,7 +104,7 @@ def test_cli_maps_stage_write_failure_to_clean_error(monkeypatch, tmp_path, caps
     def fail_mark_stage_complete(*_args, **_kwargs):
         raise sqlite3.OperationalError("disk is full")
 
-    monkeypatch.setattr(store, "mark_stage_complete", fail_mark_stage_complete)
+    monkeypatch.setattr(store, "mark_stage_complete_no_commit", fail_mark_stage_complete)
 
     rc = cli.main(["--region", "uk", "extract", "--db", str(tmp_path / "w.db")])
 
@@ -184,6 +220,10 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
         extractor_options,
         status_recorder,
         only_source,
+        parallel,
+        continue_on_source_failure,
+        staging_root,
+        commit,
     ):
         captured["region"] = region.region_id
         captured["snapshots"] = snapshots
@@ -191,6 +231,10 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
         captured["registry"] = registry
         captured["extractor_options"] = extractor_options
         captured["only_source"] = only_source
+        captured["parallel"] = parallel
+        captured["continue_on_source_failure"] = continue_on_source_failure
+        captured["staging_root"] = staging_root
+        captured["commit"] = commit
         status_recorder("wikidata", {"status": "success", "count": 1})
         conn.execute("SELECT 1")
         return {"wikidata": 1}
@@ -229,6 +273,10 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
     assert captured["snapshots"]["osm"] == snapshot_dir / "osm.osm.pbf"
     assert captured["run_id"] == "real"
     assert captured["only_source"] == "wikidata"
+    assert captured["parallel"] is True
+    assert captured["continue_on_source_failure"] is False
+    assert captured["staging_root"] == snapshot_dir.parent
+    assert captured["commit"] is False
     assert captured["extractor_options"] == {
         "osm": {"index_type": "sparse_file_array,/tmp/osm.idx"}
     }
@@ -247,6 +295,579 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
             "wikipedia": {"status": "preserved"},
         },
     }
+
+
+def test_cli_extract_threads_pageview_options_for_wikipedia_only(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_build_registry(*_args, **_kwargs):
+        return object()
+
+    def fake_run_extract(
+        conn,
+        region,
+        snapshots,
+        *,
+        run_id,
+        registry,
+        extractor_options,
+        status_recorder,
+        only_source,
+        parallel,
+        continue_on_source_failure,
+        staging_root,
+        commit,
+    ):
+        captured["extractor_options"] = extractor_options
+        captured["only_source"] = only_source
+        captured["parallel"] = parallel
+        status_recorder("wikipedia", {"status": "success", "count": 1})
+        conn.execute("SELECT 1")
+        return {"wikipedia": 1}
+
+    monkeypatch.setattr(cli.extract_stage, "build_registry", fake_build_registry)
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fake_run_extract)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "wikipedia.snapshot.json").write_text(
+        '{"_meta":{"complete":true,"retrieved_at":"2026-07-15T00:00:00Z"},"pages":[]}'
+    )
+    pageviews.ensure_manifest(
+        snapshot_dir / "pageviews",
+        ("2025-07-15", "2026-07-15"),
+    )
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(tmp_path / "w.db"),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--only-source",
+            "wikipedia",
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 0
+    assert captured["only_source"] == "wikipedia"
+    assert captured["parallel"] is True
+    assert captured["extractor_options"]["wikipedia"] == {
+        "pageview_cache_dir": snapshot_dir / "pageviews",
+        "pageview_window": ("2025-07-15", "2026-07-15"),
+    }
+
+
+def test_extract_fingerprint_inputs_thread_pageview_window_and_selected_cache_files(tmp_path):
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    wikipedia_snapshot = snapshot_dir / "wikipedia.snapshot.json"
+    wikipedia_snapshot.write_text(
+        '{"_meta":{"complete":true,"retrieved_at":"2026-07-15T00:00:00Z"},"pages":[{"title":"B"},{"title":"A"}]}'
+    )
+    pageviews.ensure_manifest(
+        snapshot_dir / "pageviews",
+        ("2025-07-15", "2026-07-15"),
+    )
+    region = cli.config.load("malaysia")
+
+    inputs = cli._extract_fingerprint_inputs(
+        region,
+        cli.acquire.snapshot_paths(snapshot_dir),
+        snap_dir=snapshot_dir,
+        only_source="wikipedia",
+    )
+
+    assert inputs.pageview_window == ("2025-07-15", "2026-07-15")
+    assert inputs.pageview_cache_files == (
+        pageviews._cache_path(
+            snapshot_dir / "pageviews",
+            "A",
+            ("2025-07-15", "2026-07-15"),
+        ),
+        pageviews._cache_path(
+            snapshot_dir / "pageviews",
+            "B",
+            ("2025-07-15", "2026-07-15"),
+        ),
+    )
+
+
+def test_cli_extract_rejects_mismatched_pageview_manifest(monkeypatch, tmp_path, capsys):
+    def fail_run_extract(*_args, **_kwargs):
+        raise AssertionError("extract should not start with a stale pageview manifest")
+
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fail_run_extract)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "wikipedia.snapshot.json").write_text(
+        '{"_meta":{"complete":true,"retrieved_at":"2026-07-15T00:00:00Z"},"pages":[]}'
+    )
+    pageviews.ensure_manifest(
+        snapshot_dir / "pageviews",
+        ("2025-07-14", "2026-07-14"),
+    )
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(tmp_path / "w.db"),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--only-source",
+            "wikipedia",
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 1
+    assert "pageview cache window" in capsys.readouterr().err
+
+
+def test_cli_extract_skips_matching_stage_fingerprint(monkeypatch, tmp_path, capsys):
+    def fail_run_extract(*_args, **_kwargs):
+        raise AssertionError("extract should be skipped before source work")
+
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fail_run_extract)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    wikidata_snapshot = snapshot_dir / "wikidata.snapshot.json"
+    wikidata_snapshot.write_text(
+        '{"_meta":{"retrieved_at":"2026-07-15T00:00:00Z"}}'
+    )
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    region = cli.config.load("malaysia")
+    snapshots = cli.acquire.snapshot_paths(snapshot_dir)
+    fp = fingerprint.stage_fingerprint(
+        conn,
+        "malaysia",
+        "extract",
+        inputs=cli._extract_fingerprint_inputs(
+            region,
+            snapshots,
+            only_source="wikidata",
+        ),
+    )
+    fingerprint.record(
+        conn,
+        "malaysia",
+        "extract",
+        fp,
+        completed_at="2026-07-15T00:00:00Z",
+    )
+    store.record_extract_run_metadata(
+        conn,
+        region="malaysia",
+        run_id="old",
+        wikidata_snapshot_date="2026-07-15T00:00:00Z",
+        source_statuses={"wikidata": {"status": "success", "count": 1}},
+    )
+    store.mark_stage_complete(
+        conn,
+        "malaysia",
+        "extract",
+        run_id="old",
+        completed_at="2026-07-15T00:00:00Z",
+    )
+    conn.close()
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(db),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--only-source",
+            "wikidata",
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "extract skipped for malaysia" in captured.out
+    assert "SKIP stage=extract region=malaysia fingerprint=" in captured.err
+    conn = store.connect(db)
+    assert store.load_extract_run_metadata(conn, region="malaysia", run_id="real") == {
+        "region": "malaysia",
+        "run_id": "real",
+        "wikidata_snapshot_date": "2026-07-15T00:00:00Z",
+        "source_statuses": {"wikidata": {"status": "success", "count": 1}},
+    }
+
+
+def test_reconcile_fingerprint_inputs_intersect_successes_with_enabled_sources(
+    monkeypatch, tmp_path
+):
+    conn = store.connect(tmp_path / "w.db")
+    store.init_schema(conn)
+    store.record_extract_run_metadata(
+        conn,
+        region="uk",
+        run_id="r1",
+        wikidata_snapshot_date="2026-07-15T00:00:00Z",
+        source_statuses={
+            "osm": {"status": "success", "count": 1},
+            "wikidata": {"status": "success", "count": 1},
+        },
+    )
+    region = dataclasses.replace(
+        cli.config.load("uk"),
+        sources={**cli.config.load("uk").sources, "osm": False},
+    )
+
+    inputs = cli._stage_fingerprint_inputs(
+        conn,
+        region,
+        "reconcile",
+        run_id="r1",
+        version="20260716T000000Z",
+    )
+
+    assert inputs.succeeded_sources == {"wd"}
+
+
+def test_cli_extract_fails_early_when_snapshot_sidecar_has_no_payload(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    def fail_run_extract(*_args, **_kwargs):
+        raise AssertionError("extract should not start with a missing snapshot payload")
+
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fail_run_extract)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "osm.osm.pbf.meta.json").write_text(
+        '{"geofabrik_date":"2026-07-15","sha256":"deadbeef","size":123,"source_url":"https://download.geofabrik.de/example.osm.pbf"}'
+    )
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(tmp_path / "w.db"),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--only-source",
+            "osm",
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "snapshot payload missing" in err
+    assert "osm.osm.pbf" in err
+    assert "re-run acquire" in err
+
+
+def test_cli_full_extract_fails_early_when_selected_snapshot_sidecar_has_no_payload(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    def fail_run_extract(*_args, **_kwargs):
+        raise AssertionError("extract should not start with a missing snapshot payload")
+
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fail_run_extract)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "wikidata.snapshot.json").write_text(
+        '{"_meta":{"retrieved_at":"2026-07-15T00:00:00Z"}}'
+    )
+    (snapshot_dir / "osm.osm.pbf.meta.json").write_text(
+        '{"geofabrik_date":"2026-07-15","sha256":"deadbeef","size":123,"source_url":"https://download.geofabrik.de/example.osm.pbf"}'
+    )
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(tmp_path / "w.db"),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "snapshot payload missing for osm" in err
+    assert "re-run acquire" in err
+
+
+def test_cli_extract_ignores_sidecars_for_disabled_sources(
+    monkeypatch,
+    tmp_path,
+):
+    captured = {}
+
+    def fake_build_registry(*_args, **_kwargs):
+        return object()
+
+    def fake_run_extract(
+        _conn,
+        _region,
+        _snapshots,
+        *,
+        run_id,
+        registry,
+        extractor_options,
+        status_recorder,
+        only_source,
+        parallel,
+        continue_on_source_failure,
+        staging_root,
+        commit,
+    ):
+        captured["parallel"] = parallel
+        status_recorder("wikidata", {"status": "success", "count": 1})
+        return {"wikidata": 1}
+
+    monkeypatch.setattr(cli.extract_stage, "build_registry", fake_build_registry)
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fake_run_extract)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "wikidata.snapshot.json").write_text(
+        '{"_meta":{"retrieved_at":"2026-07-15T00:00:00Z"}}'
+    )
+    (snapshot_dir / "historic_england.snapshot.meta.json").write_text(
+        '{"sha256":"deadbeef"}'
+    )
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(tmp_path / "w.db"),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--only-source",
+            "wikidata",
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 0
+    assert captured["parallel"] is True
+
+
+def test_cli_only_source_osm_preserves_previous_wikidata_date_without_wikidata_payload(
+    monkeypatch,
+    tmp_path,
+):
+    def fake_build_registry(*_args, **_kwargs):
+        return object()
+
+    def fake_run_extract(
+        _conn,
+        _region,
+        _snapshots,
+        *,
+        run_id,
+        registry,
+        extractor_options,
+        status_recorder,
+        only_source,
+        parallel,
+        continue_on_source_failure,
+        staging_root,
+        commit,
+    ):
+        assert only_source == "osm"
+        status_recorder("osm", {"status": "success", "count": 1})
+        return {"osm": 1}
+
+    monkeypatch.setattr(cli.extract_stage, "build_registry", fake_build_registry)
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fake_run_extract)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "osm.osm.pbf").write_bytes(b"osm")
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    store.record_extract_run_metadata(
+        conn,
+        region="malaysia",
+        run_id="old",
+        wikidata_snapshot_date="2026-07-15T00:00:00Z",
+        source_statuses={"wikidata": {"status": "success", "count": 1}},
+    )
+    store.mark_stage_complete(
+        conn,
+        "malaysia",
+        "extract",
+        run_id="old",
+        completed_at="2026-07-15T00:00:00Z",
+    )
+    conn.close()
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(db),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--only-source",
+            "osm",
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 0
+    conn = store.connect(db)
+    assert store.load_extract_run_metadata(conn, region="malaysia", run_id="real")[
+        "wikidata_snapshot_date"
+    ] == "2026-07-15T00:00:00Z"
+
+
+def test_cli_extract_keeps_typed_error_for_enabled_source_without_snapshot_mapping(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    class FutureRegion:
+        region_id = "future"
+        display_name = "Future"
+        bbox = (0.0, 0.0, 1.0, 1.0)
+        languages = ("en",)
+        sources = {"national_register": True}
+
+    monkeypatch.setattr(cli.config, "load", lambda _region: FutureRegion())
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+
+    rc = cli.main(
+        [
+            "--region",
+            "future",
+            "extract",
+            "--db",
+            str(tmp_path / "w.db"),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 1
+    assert "national_register" in capsys.readouterr().err
+
+
+def test_cli_parallel_extract_rolls_back_merge_metadata_and_stage_together(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    def fake_build_registry(*_args, **_kwargs):
+        return object()
+
+    def fake_run_extract(
+        conn,
+        region,
+        _snapshots,
+        *,
+        run_id,
+        registry,
+        extractor_options,
+        status_recorder,
+        only_source,
+        parallel,
+        continue_on_source_failure,
+        staging_root,
+        commit,
+    ):
+        assert parallel is True
+        assert commit is False
+        status_recorder("wikidata", {"status": "success", "count": 1})
+        conn.execute(
+            """
+            INSERT INTO source_records
+                (region, source, source_ref, name, lat, lon, props_json, run_id)
+            VALUES (?, 'wd', 'wd:Q1', 'A', 1, 1, '{}', ?)
+            """,
+            (region.region_id, run_id),
+        )
+        return {"wikidata": 1}
+
+    def fail_mark_stage(*_args, **_kwargs):
+        import sqlite3
+
+        raise sqlite3.OperationalError("stage write failed")
+
+    monkeypatch.setattr(cli.extract_stage, "build_registry", fake_build_registry)
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fake_run_extract)
+    monkeypatch.setattr(store, "mark_stage_complete_no_commit", fail_mark_stage)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "wikidata.snapshot.json").write_text(
+        '{"_meta":{"retrieved_at":"2026-07-15T00:00:00Z"}}'
+    )
+    db = tmp_path / "w.db"
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(db),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--only-source",
+            "wikidata",
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 3
+    assert "stage write failed" in capsys.readouterr().err
+    conn = store.connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0] == 0
+    assert (
+        store.load_extract_run_metadata(conn, region="malaysia", run_id="real")
+        is None
+    )
+    assert not store.stage_completed(conn, "malaysia", "extract")
 
 
 def test_cli_eval_report_reads_labeled_tsv_and_config(monkeypatch, tmp_path, capsys):
@@ -492,6 +1113,7 @@ def test_cli_llm_bakeoff_runs_keyless_fake_provider(tmp_path, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "model\tprovider\tprecision_at_k_llm_on" in out
+    assert "inflation_resistance\tdeflation_resistance\thonest_suppression_rate\ttwo_sided_injection_resistance\tinjection_floor_passed" in out
     assert "fake-curiosity-v1\t" in out
 
 
@@ -608,7 +1230,7 @@ def test_cli_llm_live_bakeoff_rejects_empty_nous_key(tmp_path, capsys, monkeypat
 
 
 def test_cli_llm_live_bakeoff_reports_per_place_cache_and_precision(tmp_path, capsys, monkeypatch):
-    from mt_pipeline.llm import curiosity
+    from mt_pipeline.llm import bakeoff, curiosity
     from mt_pipeline.llm.models import ProviderResponse
     from mt_pipeline.llm.providers import nous
 
@@ -690,11 +1312,16 @@ def test_cli_llm_live_bakeoff_reports_per_place_cache_and_precision(tmp_path, ca
     assert "place_id\tmodel\tcuriosity\tcache_hit\tcost_usd\tcost_source" in first
     assert "mt1_00000000000000000000000000\tnous-cheap\t0.900000\tfalse\t0.00001000\tderived" in first
     assert "mt1_11111111111111111111111111\tnous-cheap\t0.100000\tfalse\t0.00001000\tderived" in first
-    assert "total_incremental_cost_usd\t0.00002000" in first
-    assert "estimated_total_cost_usd\t" in first
+    expected_first_cost = (2 + len(bakeoff.INJECTION_PROBES)) * 0.00001
+    assert f"injection_scope\t{bakeoff.ROUND1_INJECTION_SCOPE}" in first
+    assert f"injection_probes\t{len(bakeoff.INJECTION_PROBES)}/{len(bakeoff.INJECTION_PROBES)}" in first
+    assert f"injection_cost_usd\t{len(bakeoff.INJECTION_PROBES) * 0.00001:.8f}" in first
+    assert f"total_incremental_cost_usd\t{expected_first_cost:.8f}" in first
+    assert "estimated_golden_cost_usd\t" in first
     assert "precision_at_1_llm_on\t1.000" in first
     assert "precision_at_1_llm_off\t0.000" in first
-    assert calls == ["mt1_00000000000000000000000000", "mt1_11111111111111111111111111"]
+    assert calls[:2] == ["mt1_00000000000000000000000000", "mt1_11111111111111111111111111"]
+    assert set(calls[2:]) == {probe.place_id for probe in bakeoff.INJECTION_PROBES}
     assert constructed["count"] == 1
 
     assert cli.main(argv) == 0
@@ -702,9 +1329,11 @@ def test_cli_llm_live_bakeoff_reports_per_place_cache_and_precision(tmp_path, ca
     assert "mt1_00000000000000000000000000\tnous-cheap\t0.900000\ttrue\t0.00000000\tcache" in second
     assert "mt1_11111111111111111111111111\tnous-cheap\t0.100000\ttrue\t0.00000000\tcache" in second
     assert "cache_hits\t2/2" in second
+    assert f"injection_cache_hits\t{len(bakeoff.INJECTION_PROBES)}/{len(bakeoff.INJECTION_PROBES)}" in second
     assert "total_incremental_cost_usd\t0.00000000" in second
-    assert "estimated_total_cost_usd\t" in second
-    assert calls == ["mt1_00000000000000000000000000", "mt1_11111111111111111111111111"]
+    assert "estimated_golden_cost_usd\t" in second
+    assert calls[:2] == ["mt1_00000000000000000000000000", "mt1_11111111111111111111111111"]
+    assert set(calls[2:]) == {probe.place_id for probe in bakeoff.INJECTION_PROBES}
     assert constructed["count"] == 1
 
 
@@ -731,9 +1360,8 @@ def test_cli_llm_live_bakeoff_refuses_when_ledger_plus_estimate_exceeds_cap(tmp_
     pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":1000.0,"output_per_m":1000.0}}}')
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
-    (cache_dir.parent / "live-cost-ledger.json").write_text(
-        json.dumps({"schema_version": 1, "total_usd": 9.99, "measured_usd": 9.99, "derived_usd": 0.0, "runs": 1})
-    )
+    initial_ledger = {"schema_version": 1, "total_usd": 9.99, "measured_usd": 9.99, "derived_usd": 0.0, "runs": 1}
+    (cache_dir.parent / "live-cost-ledger.json").write_text(json.dumps(initial_ledger))
 
     def fail_provider_construction(**_kwargs):
         raise AssertionError("NOUS provider must not be constructed after budget refusal")
@@ -767,6 +1395,7 @@ def test_cli_llm_live_bakeoff_refuses_when_ledger_plus_estimate_exceeds_cap(tmp_
     err = capsys.readouterr().err
     assert "budget cap exceeded" in err
     assert "ledger_total_usd=9.99000000" in err
+    assert json.loads((cache_dir.parent / "live-cost-ledger.json").read_text()) == initial_ledger
 
 
 def test_cli_llm_live_bakeoff_allows_cached_run_near_cap_without_provider(tmp_path, monkeypatch):
@@ -835,6 +1464,7 @@ def test_cli_llm_live_bakeoff_allows_cached_run_near_cap_without_provider(tmp_pa
     ]
     monkeypatch.setenv("NOUS_API_KEY", "sk-test")
     monkeypatch.setattr(nous, "NousProvider", FirstRunProvider)
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", ())
     assert cli.main(argv) == 0
     (cache_dir.parent / "live-cost-ledger.json").write_text(
         json.dumps({"schema_version": 1, "total_usd": 9.99, "measured_usd": 9.99, "derived_usd": 0.0, "runs": 1})
@@ -947,6 +1577,7 @@ def test_cli_llm_live_bakeoff_updates_and_prints_cost_ledger(tmp_path, capsys, m
 
     monkeypatch.setenv("NOUS_API_KEY", "sk-test")
     monkeypatch.setattr(nous, "NousProvider", MeasuredCostNousProvider)
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", ())
 
     rc = cli.main(
         [
@@ -983,6 +1614,297 @@ def test_cli_llm_live_bakeoff_updates_and_prints_cost_ledger(tmp_path, capsys, m
     assert ledger["runs"] == 1
 
 
+def test_cli_llm_live_bakeoff_preserves_mixed_cost_sources(tmp_path, capsys, monkeypatch):
+    from mt_pipeline.llm import bakeoff
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", (bakeoff.INJECTION_PROBES[0],))
+
+    class MixedCostProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint=reqs[0].model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.0002,
+                    cost_source="measured",
+                    app_id=None,
+                ),
+                ProviderResponse(
+                    text=f'{{"curiosity": {bakeoff.INJECTION_PROBES[0].honest}}}',
+                    model_fingerprint=reqs[1].model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.0003,
+                    cost_source="derived",
+                    app_id=None,
+                ),
+            ]
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", MixedCostProvider)
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--budget-cap",
+            "10.00",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(cache_dir),
+        ]
+    )
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "ledger_measured_usd\t0.00020000" in out
+    assert "ledger_derived_usd\t0.00030000" in out
+    ledger = json.loads((cache_dir.parent / "live-cost-ledger.json").read_text())
+    assert ledger["total_usd"] == pytest.approx(0.0005)
+    assert ledger["measured_usd"] == pytest.approx(0.0002)
+    assert ledger["derived_usd"] == pytest.approx(0.0003)
+
+
+def test_cli_llm_live_promotion_injection_charges_same_ledger(tmp_path, capsys, monkeypatch):
+    from mt_pipeline.llm import bakeoff
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+    cache_dir = tmp_path / "cache"
+    probe_honest = {probe.place_id: probe.honest for probe in bakeoff.TWO_SIDED_INJECTION_PROBES}
+    calls = []
+    constructed = {"count": 0}
+
+    class PromotionProvider:
+        def __init__(self, **_kwargs):
+            constructed["count"] += 1
+
+        async def acomplete_batch(self, reqs):
+            calls.extend(req.query_id for req in reqs)
+            responses = []
+            for req in reqs:
+                if req.query_id in probe_honest:
+                    value = probe_honest[req.query_id]
+                    cost = 0.000001
+                else:
+                    value = 0.9
+                    cost = 0.000123
+                responses.append(
+                    ProviderResponse(
+                        text=f'{{"curiosity": {value}}}',
+                        model_fingerprint=req.model_id,
+                        input_tokens=10,
+                        output_tokens=2,
+                        latency_ms=0,
+                        cost_usd=cost,
+                        cost_source="measured",
+                        app_id=None,
+                    )
+                )
+            return responses
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", PromotionProvider)
+
+    argv = [
+        "llm",
+        "bakeoff",
+        "--live",
+        "--promotion-injection",
+        "--max-places",
+        "1",
+        "--budget-cap",
+        "10.00",
+        "--labeled",
+        str(labeled),
+        "--config",
+        str(config_path),
+        "--models",
+        str(models),
+        "--pricing",
+        str(pricing),
+        "--cache-dir",
+        str(cache_dir),
+    ]
+
+    rc = cli.main(argv)
+
+    assert rc == 0
+    expected_injection_cost = len(bakeoff.TWO_SIDED_INJECTION_PROBES) * 0.000001
+    expected_total = 0.000123 + expected_injection_cost
+    out = capsys.readouterr().out
+    assert f"injection_scope\t{bakeoff.PROMOTION_INJECTION_SCOPE}" in out
+    assert (
+        f"injection_probes\t{len(bakeoff.TWO_SIDED_INJECTION_PROBES)}/"
+        f"{len(bakeoff.TWO_SIDED_INJECTION_PROBES)}"
+    ) in out
+    assert f"injection_cost_usd\t{expected_injection_cost:.8f}" in out
+    assert "injection_floor_passed\ttrue" in out
+    assert f"total_incremental_cost_usd\t{expected_total:.8f}" in out
+    assert f"ledger_total_usd\t{expected_total:.8f}" in out
+    ledger = json.loads((cache_dir.parent / "live-cost-ledger.json").read_text())
+    assert ledger["total_usd"] == pytest.approx(expected_total)
+    assert ledger["measured_usd"] == pytest.approx(expected_total)
+    assert ledger["derived_usd"] == pytest.approx(0.0)
+    assert ledger["runs"] == 1
+    assert constructed["count"] == 1
+    assert calls[0] == "mt1_00000000000000000000000000"
+    assert set(calls[1:]) == set(probe_honest)
+
+    def fail_provider_construction(**_kwargs):
+        raise AssertionError("cached promotion run must not construct provider")
+
+    monkeypatch.setattr(nous, "NousProvider", fail_provider_construction)
+    assert cli.main(argv) == 0
+    cached = capsys.readouterr().out
+    assert (
+        f"injection_cache_hits\t{len(bakeoff.TWO_SIDED_INJECTION_PROBES)}/"
+        f"{len(bakeoff.TWO_SIDED_INJECTION_PROBES)}"
+    ) in cached
+    assert "total_incremental_cost_usd\t0.00000000" in cached
+
+
+def test_cli_llm_live_promotion_injection_empty_fixture_fails_closed(tmp_path, capsys, monkeypatch):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+    calls = []
+
+    class PlaceOnlyProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            calls.extend(req.query_id for req in reqs)
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint=reqs[0].model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.000123,
+                    cost_source="measured",
+                    app_id=None,
+                )
+            ]
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", PlaceOnlyProvider)
+    monkeypatch.setattr(cli.bakeoff, "TWO_SIDED_INJECTION_PROBES", ())
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--promotion-injection",
+            "--max-places",
+            "1",
+            "--budget-cap",
+            "10.00",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "empty injection fixture cannot pass promotion gate" in err
+    assert calls == []
+
+
 def test_cli_llm_live_bakeoff_shuts_down_provider_when_batch_raises(tmp_path, monkeypatch):
     from mt_pipeline.llm.providers import nous
 
@@ -1005,12 +1927,14 @@ def test_cli_llm_live_bakeoff_shuts_down_provider_when_batch_raises(tmp_path, mo
     pricing = tmp_path / "pricing.json"
     pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
     torn_down = {"value": False}
+    attempted = []
 
     class RaisingNousProvider:
         def __init__(self, **_kwargs):
             pass
 
-        async def acomplete_batch(self, _reqs):
+        async def acomplete_batch(self, reqs):
+            attempted.extend(reqs)
             raise RuntimeError("network failed")
 
         async def shutdown(self):
@@ -1042,6 +1966,96 @@ def test_cli_llm_live_bakeoff_shuts_down_provider_when_batch_raises(tmp_path, mo
 
     assert rc == 1
     assert torn_down["value"] is True
+    ledger = json.loads((tmp_path / "live-cost-ledger.json").read_text())
+    expected = cli._estimate_request_cost(
+        attempted,
+        {"provider": "nous", "input_per_m": 0.15, "output_per_m": 0.60},
+        model_id="nous-cheap",
+    )
+    assert len(attempted) == 1 + len(cli.bakeoff.INJECTION_PROBES)
+    assert ledger["derived_usd"] == pytest.approx(expected)
+    assert ledger["runs"] == 1
+
+
+def test_cli_llm_live_bakeoff_charges_full_estimate_on_batch_size_mismatch(tmp_path, monkeypatch):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+    attempted = []
+
+    class ShortBatchProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            attempted.extend(reqs)
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint=reqs[0].model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.00001,
+                    cost_source="derived",
+                    app_id=None,
+                )
+            ]
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", ShortBatchProvider)
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    assert rc == 1
+    expected = cli._estimate_request_cost(
+        attempted,
+        {"provider": "nous", "input_per_m": 0.15, "output_per_m": 0.60},
+        model_id="nous-cheap",
+    )
+    ledger = json.loads((tmp_path / "live-cost-ledger.json").read_text())
+    assert len(attempted) == 1 + len(cli.bakeoff.INJECTION_PROBES)
+    assert ledger["derived_usd"] == pytest.approx(expected)
+    assert ledger["runs"] == 1
 
 
 def test_cli_llm_live_bakeoff_shuts_down_provider_when_response_parse_fails(tmp_path, monkeypatch):
@@ -1091,6 +2105,7 @@ def test_cli_llm_live_bakeoff_shuts_down_provider_when_response_parse_fails(tmp_
 
     monkeypatch.setenv("NOUS_API_KEY", "sk-test")
     monkeypatch.setattr(nous, "NousProvider", BadJsonNousProvider)
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", ())
 
     rc = cli.main(
         [

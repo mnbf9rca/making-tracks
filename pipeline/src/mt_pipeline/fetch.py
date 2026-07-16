@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+import email.utils
 import json
 import pathlib
 import time
@@ -13,7 +15,31 @@ MAX_RESPONSE_BYTES = 32 * 1024 * 1024
 
 
 class FetchError(Exception):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int | None = None,
+        retry_after: float | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status = status
+        self.retry_after = retry_after
+
+
+def _retry_after_seconds(value: str) -> float | None:
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        parsed = email.utils.parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.UTC)
+    now = datetime.datetime.now(datetime.UTC)
+    return max(0.0, (parsed - now).total_seconds())
 
 
 def _validate_target(url: str, expected_hosts: set[str]) -> bool:
@@ -73,7 +99,15 @@ def get_json(
     except FetchError:
         raise
     except urllib.error.HTTPError as exc:
-        raise FetchError(f"http {exc.code}: {exc.reason}") from exc
+        retry_after = None
+        header_value = exc.headers.get("Retry-After") if exc.headers is not None else None
+        if header_value is not None:
+            retry_after = _retry_after_seconds(header_value)
+        raise FetchError(
+            f"http {exc.code}: {exc.reason}",
+            status=exc.code,
+            retry_after=retry_after,
+        ) from exc
     except Exception as exc:
         raise FetchError(str(exc)) from exc
 

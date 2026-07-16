@@ -6,7 +6,7 @@ import json
 import pathlib
 import re
 
-from . import config, store
+from . import config, runtime_paths, store
 from .reconcile import cluster, reconcile as reconcile_core, redirects, refs, review
 from .reconcile.registry_file import LocalRegistryStore
 
@@ -49,7 +49,9 @@ def _succeeded_source_prefixes(region_config, metadata: dict) -> set[str]:
     enabled = _enabled_sources(region_config)
     missing = enabled - set(SOURCE_KEY_TO_PREFIX)
     if missing:
-        raise StageOrderError(f"enabled sources missing reconcile source mapping: {sorted(missing)}")
+        raise StageOrderError(
+            f"enabled sources missing reconcile source mapping: {sorted(missing)}"
+        )
     statuses = metadata["source_statuses"]
     return {
         SOURCE_KEY_TO_PREFIX[source]
@@ -133,8 +135,12 @@ def _run_reconcile(conn, region: str, *, run_id: str, version: str) -> None:
 
     reconcile_config = _load_reconcile_config()
     fuzzy_config = cluster.FuzzyConfig(**reconcile_config["fuzzy"])
-    registry_path = pathlib.Path(reconcile_config["registry_path"].format(region=region))
-    review_path = pathlib.Path(reconcile_config["review_path"].format(region=region))
+    registry_path = runtime_paths.resolve_near_db(
+        conn, reconcile_config["registry_path"].format(region=region)
+    )
+    review_path = runtime_paths.resolve_near_db(
+        conn, reconcile_config["review_path"].format(region=region)
+    )
 
     registry = LocalRegistryStore(registry_path)
     result = reconcile_core.reconcile(
@@ -160,29 +166,108 @@ def _run_score(conn, region: str, *, run_id: str) -> None:
         raise StageOrderError(str(exc)) from exc
 
 
-def run_stage(conn, region: str, stage: str, *, run_id: str, version: str | None = None) -> None:
+def run_stage(
+    conn,
+    region: str,
+    stage: str,
+    *,
+    run_id: str,
+    version: str | None = None,
+    publish_version: str | None = None,
+    generated_at: str | None = None,
+    scoring_config_version: str | None = None,
+    upload: bool = False,
+    staging_root: str | pathlib.Path | None = None,
+    fingerprint_inputs=None,
+    force: bool = False,
+) -> None:
     previous = predecessor(stage)
     if previous is not None and not store.stage_completed(conn, region, previous):
         raise StageOrderError(
             f"cannot run {stage!r} for region {region!r}: run {previous!r} first"
         )
+    stage_fingerprint = None
+    if fingerprint_inputs is not None:
+        from .ergonomics import fingerprint, telemetry
+
+        stage_fingerprint = fingerprint.stage_fingerprint(
+            conn,
+            region,
+            stage,
+            inputs=fingerprint_inputs,
+        )
+        if fingerprint.should_skip(
+            conn,
+            region,
+            stage,
+            stage_fingerprint,
+            force=force,
+        ):
+            telemetry.emit(
+                f"SKIP stage={stage} region={region} fingerprint={stage_fingerprint}"
+            )
+            return
     if stage == "reconcile":
         if version is None:
             raise StageVersionError("--version is required for reconcile")
-        _run_reconcile(conn, region, run_id=run_id, version=version)
+        try:
+            _run_reconcile(conn, region, run_id=run_id, version=version)
+        except runtime_paths.RuntimePathError as exc:
+            raise StageOrderError(str(exc)) from exc
     elif stage == "score":
         _run_score(conn, region, run_id=run_id)
     elif stage == "categorize":
         from . import categorize
 
         categorize.run(conn, region, run_id=run_id)
-    store.mark_stage_complete(
+    elif stage == "publish":
+        from .publish import publish_stage
+
+        effective_version = publish_version or version
+        if effective_version is None:
+            raise StageVersionError("--publish-version is required for publish")
+        if generated_at is None:
+            raise StageVersionError("--generated-at is required for publish")
+        kwargs = {}
+        if staging_root is not None:
+            kwargs["staging_root"] = staging_root
+        try:
+            publish_stage.run(
+                conn,
+                region,
+                publish_version=effective_version,
+                generated_at=generated_at,
+                scoring_config_version=scoring_config_version,
+                upload=upload,
+                **kwargs,
+            )
+        except (
+            publish_stage.PublishStageError,
+            publish_stage.basemap.BasemapMeasurementMismatch,
+            publish_stage.basemap.BasemapOverBudget,
+            publish_stage.basemap.PmtilesUnavailable,
+            runtime_paths.RuntimePathError,
+        ) as exc:
+            raise StageOrderError(str(exc)) from exc
+    completed_at = _completed_at()
+    store.mark_stage_complete_no_commit(
         conn,
         region,
         stage,
         run_id=run_id,
-        completed_at=_completed_at(),
+        completed_at=completed_at,
     )
+    if stage_fingerprint is not None:
+        from .ergonomics import fingerprint
+
+        fingerprint.record_no_commit(
+            conn,
+            region,
+            stage,
+            stage_fingerprint,
+            completed_at=completed_at,
+        )
+    conn.commit()
 
 
 def _completed_at() -> str:
