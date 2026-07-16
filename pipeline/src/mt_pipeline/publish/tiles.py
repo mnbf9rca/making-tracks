@@ -52,6 +52,86 @@ def _non_live_ids(records: list[registry.RegistryRecord]) -> set[str]:
     return {record.place_id for record in records if record.status != "live"}
 
 
+def _registry_records_by_id(
+    records: Iterable[registry.RegistryRecord],
+) -> dict[str, registry.RegistryRecord]:
+    return {record.place_id: record for record in records}
+
+
+def _resolve_superseded_from_by_id(
+    by_id: Mapping[str, registry.RegistryRecord],
+    place_id: str,
+    resolved: dict[str, str],
+) -> str:
+    if place_id in resolved:
+        return resolved[place_id]
+    seen: list[str] = []
+    seen_set: set[str] = set()
+    current = place_id
+    while True:
+        cached = resolved.get(current)
+        if cached is not None:
+            for item in seen:
+                resolved[item] = cached
+            return cached
+        record = by_id.get(current)
+        next_id = record.superseded_by if record else None
+        if not next_id:
+            for item in seen:
+                resolved[item] = current
+            resolved[current] = current
+            return current
+        if next_id in seen_set:
+            raise ValueError(f"superseded_by cycle at {next_id}")
+        seen.append(current)
+        seen_set.add(current)
+        current = next_id
+
+
+def _winner_violations_for_publish(
+    tile_place_ids: Iterable[str],
+    records: Iterable[registry.RegistryRecord],
+    *,
+    region: str | None = None,
+) -> list[str]:
+    ids = list(tile_place_ids)
+    phase = None
+    if region is not None:
+        phase = progress.PhaseProgress(
+            "publish.winner_validation",
+            region=region,
+            total=len(ids),
+            total_label="places",
+            heartbeat_every_records=_HEARTBEAT_EVERY_RECORDS,
+            heartbeat_every_seconds=_HEARTBEAT_EVERY_SECONDS,
+        )
+        phase.start()
+    by_id = _registry_records_by_id(records)
+    violations: list[str] = []
+    resolved: dict[str, str] = {}
+    processed = 0
+    try:
+        for pid in ids:
+            processed += 1
+            if _resolve_superseded_from_by_id(by_id, pid, resolved) != pid:
+                violations.append(pid)
+            if phase is not None:
+                phase.tick(
+                    processed,
+                    extra=lambda: f" non_winner_excluded={len(violations)}",
+                )
+    except ValueError:
+        if phase is not None:
+            phase.done(
+                processed,
+                extra=f" non_winner_excluded={len(violations)} error=cycle",
+            )
+        raise
+    if phase is not None:
+        phase.done(processed, extra=f" non_winner_excluded={len(violations)}")
+    return violations
+
+
 def _count_by_tier(places: Iterable[Mapping[str, Any]]) -> tuple[int, int, int, int]:
     counts = [0, 0, 0, 0]
     for place in places:
@@ -133,7 +213,7 @@ def emit_tiles(
         )
 
     ids = [str(place["place_id"]) for place in valid]
-    superseded = set(registry.tile_winner_violations(ids, records))
+    superseded = set(_winner_violations_for_publish(ids, records, region=region))
     blocked = superseded | (set(ids) & non_live_ids)
     live_winners = [place for place in valid if place["place_id"] not in blocked]
     non_winner_excluded = len(valid) - len(live_winners)
