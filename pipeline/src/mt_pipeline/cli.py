@@ -201,6 +201,12 @@ def _build_llm_parser() -> argparse.ArgumentParser:
     bakeoff_cmd.add_argument("--k", type=int, default=5, help="precision@k cutoff")
     bakeoff_cmd.add_argument("--live", action="store_true", help="enable guarded live provider calls")
     bakeoff_cmd.add_argument("--max-places", type=int, help="required cap for --live provider calls")
+    bakeoff_cmd.add_argument(
+        "--concurrency",
+        type=int,
+        default=8,
+        help="maximum concurrent live provider requests",
+    )
     bakeoff_cmd.add_argument("--model", help="specific live model id; defaults to all NOUS rows sorted by estimated cost")
     bakeoff_cmd.add_argument(
         "--budget-cap",
@@ -940,6 +946,7 @@ async def _score_live_with_cache_async(
     model_pricing: dict,
     model_options: bakeoff.ModelOptions,
     api_key: str,
+    concurrency: int,
 ) -> tuple[
     dict[str, float],
     list[tuple[str, float, bool, float, str]],
@@ -974,7 +981,7 @@ async def _score_live_with_cache_async(
             ]
             provider = nous_provider.NousProvider(
                 api_key=api_key,
-                concurrency=1,
+                concurrency=concurrency,
                 input_per_m=float(model_pricing.get("input_per_m", 0.0)),
                 output_per_m=float(model_pricing.get("output_per_m", 0.0)),
             )
@@ -1150,6 +1157,9 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
     if args.max_places <= 0:
         print("--max-places must be positive with --live", file=sys.stderr)
         return 2
+    if args.concurrency <= 0:
+        print("--concurrency must be positive with --live", file=sys.stderr)
+        return 2
     try:
         budget_cap = _validate_budget_cap(args.budget_cap)
         api_key = _require_nous_api_key()
@@ -1246,6 +1256,7 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
                             model_pricing=model_pricing,
                             model_options=model_options,
                             api_key=api_key,
+                            concurrency=args.concurrency,
                         )
                     )
                 except LiveCandidateError as exc:
@@ -1482,6 +1493,9 @@ def _run_llm(argv) -> int:
             return 2
         if args.live and args.max_places <= 0:
             print("--max-places must be positive with --live", file=sys.stderr)
+            return 2
+        if args.live and args.concurrency <= 0:
+            print("--concurrency must be positive with --live", file=sys.stderr)
             return 2
         if args.live:
             try:

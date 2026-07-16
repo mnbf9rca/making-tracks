@@ -91,7 +91,9 @@ def test_default_round1_roster_and_pricing_bind_real_portal_ids():
         "nous-meta-llama-3.1-8b-instruct": ("meta-llama/llama-3.1-8b-instruct", 16),
         "nous-hermes-4-70b": ("nousresearch/hermes-4-70b", 16),
         "nous-nex-n2-mini": ("nex-agi/nex-n2-mini", 256),
-        "nous-deepseek-v4-pro": ("deepseek/deepseek-v4-pro", 256),
+        "nous-deepseek-v4-pro-none": ("deepseek/deepseek-v4-pro", 256),
+        "nous-deepseek-v4-pro-low": ("deepseek/deepseek-v4-pro", 256),
+        "nous-deepseek-v4-pro-high": ("deepseek/deepseek-v4-pro", 256),
         "nous-glm-5.2": ("z-ai/glm-5.2", 256),
         "nous-muse-spark-1.1": ("meta/muse-spark-1.1", 256),
     }
@@ -115,15 +117,23 @@ def test_default_round1_roster_and_pricing_bind_real_portal_ids():
         "effort": "low",
         "exclude": True,
     }
-    for model_id in ("nous-deepseek-v4-pro", "nous-glm-5.2", "nous-muse-spark-1.1"):
+    assert "reasoning" not in by_id["nous-deepseek-v4-pro-none"]
+    for model_id, effort in {
+        "nous-deepseek-v4-pro-low": "low",
+        "nous-deepseek-v4-pro-high": "high",
+    }.items():
         assert by_id[model_id]["seed"] is None
         assert by_id[model_id]["reasoning"] == {
             "enabled": True,
-            "effort": "xhigh",
+            "effort": effort,
             "exclude": True,
         }
-    assert pricing["nous-deepseek-v4-pro"]["input_per_m"] == 0.435
-    assert pricing["nous-deepseek-v4-pro"]["output_per_m"] == 0.87
+    for model_id in ("nous-glm-5.2", "nous-muse-spark-1.1"):
+        assert by_id[model_id]["seed"] is None
+        assert "reasoning" not in by_id[model_id]
+    for model_id in ("nous-deepseek-v4-pro-none", "nous-deepseek-v4-pro-low", "nous-deepseek-v4-pro-high"):
+        assert pricing[model_id]["input_per_m"] == 0.435
+        assert pricing[model_id]["output_per_m"] == 0.87
     assert pricing["nous-glm-5.2"]["input_per_m"] == 0.9408
     assert pricing["nous-glm-5.2"]["output_per_m"] == 2.9568
     assert pricing["nous-muse-spark-1.1"]["input_per_m"] == 1.25
@@ -137,7 +147,9 @@ def test_default_round1_roster_entries_construct_requests_and_cache_keys():
         "nous-meta-llama-3.1-8b-instruct",
         "nous-hermes-4-70b",
         "nous-nex-n2-mini",
-        "nous-deepseek-v4-pro",
+        "nous-deepseek-v4-pro-none",
+        "nous-deepseek-v4-pro-low",
+        "nous-deepseek-v4-pro-high",
         "nous-glm-5.2",
         "nous-muse-spark-1.1",
     }
