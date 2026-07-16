@@ -1,6 +1,22 @@
+<<<<<<< HEAD
+# Build artifacts and local state (never commit)
+__pycache__/
+*.pyc
+.venv/
+venv/
+ios/.build/
+.build/
+dist/
+*.egg-info/
+.pytest_cache/
+work.db
+.worktrees/
+.env
+=======
 # Agent Message Queue
 .agent-mail/
 .amqrc
+>>>>>>> origin/develop
 
 
 # Byte-compiled / optimized / DLL files
