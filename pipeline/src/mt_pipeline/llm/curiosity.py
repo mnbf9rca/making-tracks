@@ -88,6 +88,7 @@ def curiosity_request(
     place: Mapping[str, object],
     prompt_version: str = CURIOSITY_PROMPT_VERSION,
     max_tokens: int = CURIOSITY_MAX_TOKENS,
+    provider_tags: tuple[str, ...] | None = None,
     reasoning: dict[str, object] | None = None,
     seed: int | None = 0,
 ) -> LlmRequest:
@@ -96,6 +97,7 @@ def curiosity_request(
         system=SYSTEM_PROMPT,
         messages=(Message(role="user", content=render_prompt(place)),),
         max_tokens=max_tokens,
+        provider_tags=provider_tags,
         reasoning=reasoning,
         temperature=0.0,
         top_p=1.0,

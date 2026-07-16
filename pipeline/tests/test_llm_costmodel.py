@@ -101,6 +101,7 @@ def test_default_round1_roster_and_pricing_bind_real_portal_ids():
 
     assert pricing["nous-tencent-hy3-free"]["input_per_m"] == 0.0
     assert pricing["nous-tencent-hy3-free"]["output_per_m"] == 0.0
+    assert by_id["nous-tencent-hy3-free"]["provider_tags"] == ["making-tracks", "curiosity"]
     assert pricing["nous-hermes-4-70b"]["input_per_m"] == 0.05
     assert pricing["nous-hermes-4-70b"]["output_per_m"] == 0.20
     assert by_id["nous-hermes-4-70b"]["seed"] is None
@@ -130,6 +131,7 @@ def test_default_round1_roster_entries_construct_requests_and_cache_keys():
             model_id=model["api_model_id"],
             place={"name": "Old Windmill", "summary": "A mill", "tags": ["heritage"]},
             max_tokens=model.get("max_tokens", Q.CURIOSITY_MAX_TOKENS),
+            provider_tags=tuple(model["provider_tags"]) if "provider_tags" in model else None,
             reasoning=model.get("reasoning"),
             seed=model.get("seed", 0),
         )
@@ -145,6 +147,7 @@ def test_default_round1_roster_entries_construct_requests_and_cache_keys():
         assert ":" not in key.split("/")[1]
         assert req.model_id == model["api_model_id"]
         assert req.max_tokens == model.get("max_tokens", Q.CURIOSITY_MAX_TOKENS)
+        assert req.provider_tags == (tuple(model["provider_tags"]) if "provider_tags" in model else None)
         assert req.reasoning == model.get("reasoning")
         assert req.seed == model.get("seed", 0)
 

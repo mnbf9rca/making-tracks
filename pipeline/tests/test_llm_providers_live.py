@@ -69,6 +69,34 @@ def test_nous_request_kwargs_include_per_model_cap_and_reasoning():
     assert kwargs["extra_body"] == {"reasoning": {"enabled": True, "effort": "low", "exclude": True}}
 
 
+def test_nous_request_kwargs_merge_provider_tags_with_reasoning():
+    from mt_pipeline.llm.models import LlmRequest, Message
+    from mt_pipeline.llm.providers.nous import NousProvider
+
+    provider = NousProvider(api_key="sk-secret-123", concurrency=1)
+    req = LlmRequest(
+        model_id="tencent/hy3:free",
+        system="score",
+        messages=(Message(role="user", content="x"),),
+        max_tokens=16,
+        provider_tags=("making-tracks", "curiosity"),
+        reasoning={"enabled": True, "effort": "low", "exclude": True},
+        temperature=0.0,
+        top_p=1.0,
+        seed=None,
+        prompt_version="curiosity-v1",
+        task_id="curiosity",
+        query_id="mt1_x",
+    )
+
+    kwargs = provider._chat_completion_kwargs(req)
+
+    assert kwargs["extra_body"] == {
+        "tags": ["making-tracks", "curiosity"],
+        "reasoning": {"enabled": True, "effort": "low", "exclude": True},
+    }
+
+
 def test_nous_prefers_provider_reported_usage_cost():
     from mt_pipeline.llm.curiosity import curiosity_request
     from mt_pipeline.llm.providers.nous import NousProvider

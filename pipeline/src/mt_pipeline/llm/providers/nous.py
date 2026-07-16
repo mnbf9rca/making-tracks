@@ -7,7 +7,7 @@ scoped to NOUS so callers do not route through a generic OpenAI provider.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 import math
 import os
 from typing import Any
@@ -19,6 +19,14 @@ from ..provider import ProviderCredentialsMissing
 
 DEFAULT_BASE_URL = "https://inference-api.nousresearch.com/v1"
 ALLOWED_HOST = "inference-api.nousresearch.com"
+
+
+def _jsonable(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_jsonable(item) for item in value]
+    return value
 
 
 class NousProvider:
@@ -106,8 +114,13 @@ class NousProvider:
         }
         if req.seed is not None:
             kwargs["seed"] = req.seed
+        extra_body: dict[str, Any] = {}
+        if req.provider_tags:
+            extra_body["tags"] = list(req.provider_tags)
         if req.reasoning is not None:
-            kwargs["extra_body"] = {"reasoning": req.reasoning}
+            extra_body["reasoning"] = _jsonable(req.reasoning)
+        if extra_body:
+            kwargs["extra_body"] = extra_body
         return kwargs
 
     def _client_instance(self) -> Any:

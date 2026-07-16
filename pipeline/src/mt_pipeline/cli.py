@@ -37,6 +37,10 @@ class SnapshotPayloadMissingError(RuntimeError):
     pass
 
 
+class LiveCandidateError(RuntimeError):
+    """A live provider candidate failed after the run-level budget checks passed."""
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mt-pipeline",
@@ -189,7 +193,7 @@ def _build_llm_parser() -> argparse.ArgumentParser:
     bakeoff_cmd.add_argument("--k", type=int, default=5, help="precision@k cutoff")
     bakeoff_cmd.add_argument("--live", action="store_true", help="enable guarded live provider calls")
     bakeoff_cmd.add_argument("--max-places", type=int, help="required cap for --live provider calls")
-    bakeoff_cmd.add_argument("--model", help="specific live model id; defaults to cheapest NOUS row")
+    bakeoff_cmd.add_argument("--model", help="specific live model id; defaults to all NOUS rows sorted by estimated cost")
     bakeoff_cmd.add_argument(
         "--budget-cap",
         type=float,
@@ -650,13 +654,13 @@ def _update_cost_ledger(
     return updated
 
 
-def _select_live_nous_model(
+def _live_nous_candidates(
     model_rows: list[object],
     pricing: dict,
     rows: list[golden.GoldenRow],
     *,
     requested_model: str | None,
-) -> tuple[str, str, dict, float, bakeoff.ModelOptions]:
+) -> list[tuple[float, str, str, dict, bakeoff.ModelOptions]]:
     candidates: list[tuple[float, str, str, dict, bakeoff.ModelOptions]] = []
     prompts = [
         curiosity.render_prompt({"name": row.name, "summary": row.evidence, "tags": [row.category]})
@@ -688,7 +692,22 @@ def _select_live_nous_model(
         if requested_model is not None:
             raise ValueError(f"requested live model {requested_model!r} is not a NOUS model in the roster")
         raise ValueError("live bakeoff requires at least one NOUS model in the roster")
-    estimated_cost, model_id, api_model_id, model_pricing, model_options = sorted(candidates, key=lambda item: (item[0], item[1]))[0]
+    return sorted(candidates, key=lambda item: (item[0], item[1]))
+
+
+def _select_live_nous_model(
+    model_rows: list[object],
+    pricing: dict,
+    rows: list[golden.GoldenRow],
+    *,
+    requested_model: str | None,
+) -> tuple[str, str, dict, float, bakeoff.ModelOptions]:
+    estimated_cost, model_id, api_model_id, model_pricing, model_options = _live_nous_candidates(
+        model_rows,
+        pricing,
+        rows,
+        requested_model=requested_model,
+    )[0]
     return model_id, api_model_id, model_pricing, estimated_cost, model_options
 
 
@@ -701,7 +720,7 @@ def _curiosity_cache(cache_dir: pathlib.Path) -> llm_cache.LlmCache:
 
 def _model_request_options(model: dict) -> bakeoff.ModelOptions:
     options: dict[str, object] = {}
-    for key in ("max_tokens", "reasoning", "seed"):
+    for key in ("max_tokens", "reasoning", "provider_tags", "seed"):
         if key in model:
             options[key] = model[key]
     return options
@@ -729,6 +748,7 @@ def _live_request(
         model_id=api_model_id,
         place={"name": row.name, "summary": row.evidence, "tags": [row.category]},
         max_tokens=_model_output_token_cap(model_options),
+        provider_tags=model_options.get("provider_tags"),  # type: ignore[arg-type]
         reasoning=model_options.get("reasoning"),  # type: ignore[arg-type]
         seed=model_options.get("seed", 0),  # type: ignore[arg-type]
     )
@@ -745,6 +765,7 @@ def _live_injection_request(
         model_id=api_model_id,
         place=probe.place,
         max_tokens=_model_output_token_cap(model_options),
+        provider_tags=model_options.get("provider_tags"),  # type: ignore[arg-type]
         reasoning=model_options.get("reasoning"),  # type: ignore[arg-type]
         seed=model_options.get("seed", 0),  # type: ignore[arg-type]
     )
@@ -890,7 +911,7 @@ async def _score_live_with_cache_async(
             )
             try:
                 responses = await provider.acomplete_batch([req for _, _, _, req in batch])
-            except Exception:
+            except Exception as exc:
                 estimated_failure_cost = _estimate_request_cost(
                     [req for _, _, _, req in batch],
                     model_pricing,
@@ -900,7 +921,7 @@ async def _score_live_with_cache_async(
                 if estimated_failure_cost > 0.0:
                     charged_rows.append(("unknown", 0.0, False, estimated_failure_cost, "derived"))
                     total_response_cost += estimated_failure_cost
-                raise
+                raise LiveCandidateError(str(exc)) from exc
             if len(responses) != len(batch):
                 estimated_failure_cost = _estimate_request_cost(
                     [req for _, _, _, req in batch],
@@ -919,14 +940,17 @@ async def _score_live_with_cache_async(
                         ("unknown", 0.0, False, estimated_failure_cost - returned_cost, "derived")
                     )
                     total_response_cost += estimated_failure_cost - returned_cost
-                raise ValueError("provider returned a different number of responses")
+                raise LiveCandidateError("provider returned a different number of responses")
             for (kind, item, input_hash, req), response in zip(batch, responses, strict=True):
                 place_id = item.place_id
                 charged_rows.append((place_id, 0.0, False, response.cost_usd, response.cost_source))
                 total_response_cost += response.cost_usd
             for (kind, item, input_hash, req), response in zip(batch, responses, strict=True):
                 place_id = item.place_id
-                parsed = curiosity.parse_curiosity(response.text)
+                try:
+                    parsed = curiosity.parse_curiosity(response.text)
+                except curiosity.CuriosityParseError as exc:
+                    raise LiveCandidateError(str(exc)) from exc
                 cache.put(
                     llm_cache.cache_key(req.task_id, req.model_id, req.prompt_version, input_hash),
                     parsed.model_dump(),
@@ -940,9 +964,18 @@ async def _score_live_with_cache_async(
                     injection_output_rows.append((place_id, value, False, response.cost_usd, response.cost_source))
     finally:
         if provider is not None:
-            session_cost = await provider.shutdown()
+            try:
+                session_cost = await provider.shutdown()
+            except Exception as exc:
+                shutdown_error = exc
+            else:
+                shutdown_error = None
+        else:
+            shutdown_error = None
         if charged_rows:
             ledger = _update_cost_ledger(cache_dir, ledger, charged_rows)
+        if shutdown_error is not None:
+            raise LiveCandidateError(str(shutdown_error)) from shutdown_error
 
     output_rows.sort(key=lambda item: item[0])
     injection_output_rows.sort(key=lambda item: item[0])
@@ -963,126 +996,54 @@ async def _score_live_with_cache_async(
     )
 
 
-def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, model_rows: list, pricing: dict) -> int:
-    if args.max_places is None:
-        print("--max-places is required with --live", file=sys.stderr)
-        return 2
-    if args.max_places <= 0:
-        print("--max-places must be positive with --live", file=sys.stderr)
-        return 2
-    try:
-        budget_cap = _validate_budget_cap(args.budget_cap)
-        api_key = _require_nous_api_key()
-        rows = parsed.rows[: args.max_places]
-        if not rows:
-            raise ValueError("live bakeoff has no parsed rows to score")
-        model_id, api_model_id, model_pricing, estimated_cost, model_options = _select_live_nous_model(
-            model_rows,
-            pricing,
-            rows,
-            requested_model=args.model,
-        )
-        injection_fixture = (
-            tuple(bakeoff.TWO_SIDED_INJECTION_PROBES)
-            if args.promotion_injection
-            else tuple(bakeoff.INJECTION_PROBES)
-        )
-        if args.promotion_injection and not injection_fixture:
-            raise ValueError("empty injection fixture cannot pass promotion gate")
-        cache_dir = pathlib.Path(args.cache_dir)
-        with _locked_cost_ledger(cache_dir):
-            cache, curiosities, per_place, misses = _collect_live_cache_state(
-                rows,
-                api_model_id=api_model_id,
-                model_options=model_options,
-                cache_dir=cache_dir,
-            )
-            injection_scores, injection_per_place, injection_misses = _collect_live_injection_cache_state(
-                cache,
-                injection_fixture,
-                api_model_id=api_model_id,
-                model_options=model_options,
-            )
-            ledger = _load_cost_ledger(cache_dir)
-            estimated_miss_cost = _estimate_request_cost(
-                [req for _, _, req in misses] + [req for _, _, req in injection_misses],
-                model_pricing,
-                model_id=model_id,
-                model_options=model_options,
-            )
-            if float(ledger["total_usd"]) + estimated_miss_cost > budget_cap:
-                raise ValueError(
-                    "budget cap exceeded: "
-                    f"ledger_total_usd={float(ledger['total_usd']):.8f} "
-                    f"estimated_run_cost_usd={estimated_miss_cost:.8f} "
-                    f"budget_cap_usd={budget_cap:.8f}"
-                )
-            (
-                curiosities,
-                per_place,
-                injection_scores,
-                injection_per_place,
-                total_cost,
-                cache_hits,
-                injection_cache_hits,
-                ledger,
-            ) = asyncio.run(
-                _score_live_with_cache_async(
-                    cache_dir=cache_dir,
-                    cache=cache,
-                    ledger=ledger,
-                    curiosities=curiosities,
-                    output_rows=per_place,
-                    misses=misses,
-                    injection_scores=injection_scores,
-                    injection_output_rows=injection_per_place,
-                    injection_misses=injection_misses,
-                    model_pricing=model_pricing,
-                    model_options=model_options,
-                    api_key=api_key,
-                )
-            )
-        with_signal = bakeoff.with_curiosity(rows, curiosities)
-        ranked_on = rescore.rescore(with_signal, config_data, llm_on=True)
-        ranked_off = rescore.rescore(rows, config_data, llm_on=False)
-        precision_on = eval_metrics.precision_at_k(ranked_on, args.k, positive={"yes"})
-        precision_off = eval_metrics.precision_at_k(ranked_off, args.k, positive={"yes"})
-        injection_scope = (
-            bakeoff.PROMOTION_INJECTION_SCOPE
-            if args.promotion_injection
-            else bakeoff.ROUND1_INJECTION_SCOPE
-        )
-        inflation_resistance = None
-        deflation_resistance = None
-        honest_suppression_rate = None
-        two_sided_resistance = None
-        injection_floor_passed = None
-        injection_error = None
-        if args.promotion_injection:
-            resistance = bakeoff.two_sided_injection_metrics(injection_scores, injection_fixture)
-            inflation_resistance = resistance.inflation_resistance
-            deflation_resistance = resistance.deflation_resistance
-            honest_suppression_rate = resistance.honest_suppression_rate
-            two_sided_resistance = resistance.two_sided_injection_resistance
-            injection_floor_passed = resistance.floor_passed
-            if not injection_floor_passed:
-                injection_error = "promotion injection floor failed"
-        else:
-            inflation_resistance = bakeoff.injection_resistance(injection_scores, injection_fixture)
-        injection_cost = sum(cost for _, _, _, cost, _ in injection_per_place)
-    except (
-        OSError,
-        json.JSONDecodeError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RuntimeError,
-        llm_cache.LlmCacheCorrupt,
-        curiosity.CuriosityParseError,
-    ) as exc:
-        print(f"llm bakeoff error: {exc}", file=sys.stderr)
-        return 1
+def _print_live_candidate_error(
+    *,
+    model_id: str,
+    api_model_id: str,
+    exc: Exception,
+    estimated_miss_cost: float,
+    ledger: dict[str, float | int],
+    budget_cap: float,
+) -> None:
+    print(f"live\ttrue")
+    print(f"model\t{model_id}")
+    print(f"api_model\t{api_model_id}")
+    print(f"provider\tnous")
+    print(f"prompt_version\t{curiosity.CURIOSITY_PROMPT_VERSION}")
+    print(f"error\t{exc}")
+    print(f"estimated_run_cost_usd\t{estimated_miss_cost:.8f}")
+    print(f"ledger_total_usd\t{float(ledger['total_usd']):.8f}")
+    print(f"ledger_budget_cap_usd\t{budget_cap:.8f}")
+    print(f"ledger_measured_usd\t{float(ledger['measured_usd']):.8f}")
+    print(f"ledger_derived_usd\t{float(ledger['derived_usd']):.8f}")
 
+
+def _print_live_candidate_report(
+    *,
+    args,
+    model_id: str,
+    api_model_id: str,
+    per_place: list[tuple[str, float, bool, float, str]],
+    cache_hits: int,
+    injection_scope: str | None,
+    injection_per_place: list[tuple[str, float, bool, float, str]],
+    injection_fixture: tuple[bakeoff.InjectionProbe, ...],
+    injection_cache_hits: int,
+    injection_cost: float,
+    inflation_resistance: float | None,
+    deflation_resistance: float | None,
+    honest_suppression_rate: float | None,
+    two_sided_resistance: float | None,
+    injection_floor_passed: bool | None,
+    injection_error: str | None,
+    total_cost: float,
+    estimated_cost: float,
+    estimated_miss_cost: float,
+    ledger: dict[str, float | int],
+    budget_cap: float,
+    precision_on: float | None,
+    precision_off: float | None,
+) -> None:
     print(f"live\ttrue")
     print(f"model\t{model_id}")
     print(f"api_model\t{api_model_id}")
@@ -1111,7 +1072,203 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
     print(f"ledger_derived_usd\t{float(ledger['derived_usd']):.8f}")
     print(f"precision_at_{args.k}_llm_on\t{_format_optional_metric(precision_on)}")
     print(f"precision_at_{args.k}_llm_off\t{_format_optional_metric(precision_off)}")
-    return 0
+
+
+def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, model_rows: list, pricing: dict) -> int:
+    if args.max_places is None:
+        print("--max-places is required with --live", file=sys.stderr)
+        return 2
+    if args.max_places <= 0:
+        print("--max-places must be positive with --live", file=sys.stderr)
+        return 2
+    try:
+        budget_cap = _validate_budget_cap(args.budget_cap)
+        api_key = _require_nous_api_key()
+        rows = parsed.rows[: args.max_places]
+        if not rows:
+            raise ValueError("live bakeoff has no parsed rows to score")
+        candidates = _live_nous_candidates(
+            model_rows,
+            pricing,
+            rows,
+            requested_model=args.model,
+        )
+        injection_fixture = (
+            tuple(bakeoff.TWO_SIDED_INJECTION_PROBES)
+            if args.promotion_injection
+            else tuple(bakeoff.INJECTION_PROBES)
+        )
+        if args.promotion_injection and not injection_fixture:
+            raise ValueError("empty injection fixture cannot pass promotion gate")
+        cache_dir = pathlib.Path(args.cache_dir)
+    except (
+        OSError,
+        json.JSONDecodeError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+        llm_cache.LlmCacheCorrupt,
+        curiosity.CuriosityParseError,
+    ) as exc:
+        print(f"llm bakeoff error: {exc}", file=sys.stderr)
+        return 1
+
+    any_success = False
+    for estimated_cost, model_id, api_model_id, model_pricing, model_options in candidates:
+        candidate_error: Exception | None = None
+        try:
+            with _locked_cost_ledger(cache_dir):
+                cache, curiosities, per_place, misses = _collect_live_cache_state(
+                    rows,
+                    api_model_id=api_model_id,
+                    model_options=model_options,
+                    cache_dir=cache_dir,
+                )
+                injection_scores, injection_per_place, injection_misses = _collect_live_injection_cache_state(
+                    cache,
+                    injection_fixture,
+                    api_model_id=api_model_id,
+                    model_options=model_options,
+                )
+                ledger = _load_cost_ledger(cache_dir)
+                estimated_miss_cost = _estimate_request_cost(
+                    [req for _, _, req in misses] + [req for _, _, req in injection_misses],
+                    model_pricing,
+                    model_id=model_id,
+                    model_options=model_options,
+                )
+                if float(ledger["total_usd"]) + estimated_miss_cost > budget_cap:
+                    print(
+                        "budget cap exceeded: "
+                        f"ledger_total_usd={float(ledger['total_usd']):.8f} "
+                        f"estimated_run_cost_usd={estimated_miss_cost:.8f} "
+                        f"budget_cap_usd={budget_cap:.8f}",
+                        file=sys.stderr,
+                    )
+                    return 1
+                try:
+                    (
+                        curiosities,
+                        per_place,
+                        injection_scores,
+                        injection_per_place,
+                        total_cost,
+                        cache_hits,
+                        injection_cache_hits,
+                        ledger,
+                    ) = asyncio.run(
+                        _score_live_with_cache_async(
+                            cache_dir=cache_dir,
+                            cache=cache,
+                            ledger=ledger,
+                            curiosities=curiosities,
+                            output_rows=per_place,
+                            misses=misses,
+                            injection_scores=injection_scores,
+                            injection_output_rows=injection_per_place,
+                            injection_misses=injection_misses,
+                            model_pricing=model_pricing,
+                            model_options=model_options,
+                            api_key=api_key,
+                        )
+                    )
+                except LiveCandidateError as exc:
+                    candidate_error = exc
+                    ledger = _load_cost_ledger(cache_dir)
+        except (
+            OSError,
+            json.JSONDecodeError,
+            ValueError,
+            KeyError,
+            TypeError,
+            RuntimeError,
+            llm_cache.LlmCacheCorrupt,
+            curiosity.CuriosityParseError,
+        ) as exc:
+            print(f"llm bakeoff error: {exc}", file=sys.stderr)
+            return 1
+        if candidate_error is not None:
+            _print_live_candidate_error(
+                model_id=model_id,
+                api_model_id=api_model_id,
+                exc=candidate_error,
+                estimated_miss_cost=estimated_miss_cost,
+                ledger=ledger,
+                budget_cap=budget_cap,
+            )
+            continue
+
+        try:
+            with_signal = bakeoff.with_curiosity(rows, curiosities)
+            ranked_on = rescore.rescore(with_signal, config_data, llm_on=True)
+            ranked_off = rescore.rescore(rows, config_data, llm_on=False)
+            precision_on = eval_metrics.precision_at_k(ranked_on, args.k, positive={"yes"})
+            precision_off = eval_metrics.precision_at_k(ranked_off, args.k, positive={"yes"})
+            injection_scope = (
+                bakeoff.PROMOTION_INJECTION_SCOPE
+                if args.promotion_injection
+                else bakeoff.ROUND1_INJECTION_SCOPE
+            )
+            inflation_resistance = None
+            deflation_resistance = None
+            honest_suppression_rate = None
+            two_sided_resistance = None
+            injection_floor_passed = None
+            injection_error = None
+            if args.promotion_injection:
+                resistance = bakeoff.two_sided_injection_metrics(injection_scores, injection_fixture)
+                inflation_resistance = resistance.inflation_resistance
+                deflation_resistance = resistance.deflation_resistance
+                honest_suppression_rate = resistance.honest_suppression_rate
+                two_sided_resistance = resistance.two_sided_injection_resistance
+                injection_floor_passed = resistance.floor_passed
+                if not injection_floor_passed:
+                    injection_error = "promotion injection floor failed"
+            else:
+                inflation_resistance = bakeoff.injection_resistance(injection_scores, injection_fixture)
+            injection_cost = sum(cost for _, _, _, cost, _ in injection_per_place)
+        except (
+            OSError,
+            json.JSONDecodeError,
+            ValueError,
+            KeyError,
+            TypeError,
+            RuntimeError,
+            llm_cache.LlmCacheCorrupt,
+            curiosity.CuriosityParseError,
+        ) as exc:
+            print(f"llm bakeoff error: {exc}", file=sys.stderr)
+            return 1
+
+        _print_live_candidate_report(
+            args=args,
+            model_id=model_id,
+            api_model_id=api_model_id,
+            per_place=per_place,
+            cache_hits=cache_hits,
+            injection_scope=injection_scope,
+            injection_per_place=injection_per_place,
+            injection_fixture=injection_fixture,
+            injection_cache_hits=injection_cache_hits,
+            injection_cost=injection_cost,
+            inflation_resistance=inflation_resistance,
+            deflation_resistance=deflation_resistance,
+            honest_suppression_rate=honest_suppression_rate,
+            two_sided_resistance=two_sided_resistance,
+            injection_floor_passed=injection_floor_passed,
+            injection_error=injection_error,
+            total_cost=total_cost,
+            estimated_cost=estimated_cost,
+            estimated_miss_cost=estimated_miss_cost,
+            ledger=ledger,
+            budget_cap=budget_cap,
+            precision_on=precision_on,
+            precision_off=precision_off,
+        )
+        any_success = True
+
+    return 0 if any_success else 1
 
 
 def _safe_filename_token(value: str) -> str:
