@@ -150,6 +150,27 @@ def test_reconcile_fingerprint_is_order_and_json_whitespace_stable(tmp_path):
     )
 
 
+def test_content_hash_rejects_unknown_sql_shape(conn):
+    store.init_schema(conn)
+    malicious_table = "source_records; DROP TABLE source_records;--"
+    malicious_cols = ("source", "source_ref) FROM source_records; DROP TABLE places;--")
+
+    for table, cols in (
+        (malicious_table, F.SOURCE_RECORD_RECONCILE_COLS),
+        ("source_records", malicious_cols),
+    ):
+        try:
+            F.content_hash(conn, "uk", table, cols)
+        except ValueError as exc:
+            assert "unsupported content-hash shape" in str(exc)
+        else:
+            raise AssertionError("content_hash accepted a dynamic SQL shape")
+
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "source_records" in tables
+    assert "places" in tables
+
+
 def test_extract_fingerprint_moves_on_enabled_sources_languages_and_files(tmp_path):
     inputs = _inputs(tmp_path)
     base = F.stage_fingerprint(_conn(tmp_path / "db"), "uk", "extract", inputs=inputs)
@@ -254,6 +275,19 @@ def test_categorize_fingerprint_moves_on_source_records_and_configs(tmp_path):
     _insert_source(changed_source, props={"p31": "Q2"})
     _insert_place(changed_source)
     assert F.stage_fingerprint(changed_source, "uk", "categorize", inputs=inputs) != base
+
+    for column, value in (
+        ("member_refs_json", '["wd:Q2"]'),
+        ("status", "tombstoned"),
+    ):
+        changed_place = _conn(tmp_path / f"changed-categorize-place-{column}")
+        _insert_source(changed_place, props={"p31": "Q1"})
+        _insert_place(changed_place)
+        changed_place.execute(
+            f"UPDATE places SET {column} = ? WHERE place_id = ?",
+            (value, "p1"),
+        )
+        assert F.stage_fingerprint(changed_place, "uk", "categorize", inputs=inputs) != base
 
     changed_taxonomy = _inputs(tmp_path / "changed-taxonomy")
     changed_taxonomy.config_paths["taxonomy_config"].write_text(

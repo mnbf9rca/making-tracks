@@ -79,7 +79,13 @@ def _merge_one(
 
     if not full:
         if region is None:
-            main_conn.execute("DELETE FROM source_records WHERE source = ?", (stored,))
+            regions = sorted({row[0] for row in rows})
+            if not regions:
+                raise ValueError("region is required for empty partial source merges")
+            main_conn.executemany(
+                "DELETE FROM source_records WHERE region = ? AND source = ?",
+                [(staged_region, stored) for staged_region in regions],
+            )
         else:
             main_conn.execute(
                 "DELETE FROM source_records WHERE region = ? AND source = ?",

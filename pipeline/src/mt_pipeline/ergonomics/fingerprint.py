@@ -13,6 +13,44 @@ from .. import extract_stage, stages, store
 SOURCE_RECORD_RECONCILE_COLS = ("source", "source_ref", "name", "lat", "lon", "props_json")
 SOURCE_RECORD_PROPS_COLS = ("source", "source_ref", "props_json")
 
+_SOURCE_RECORD_RECONCILE_SQL = """
+SELECT source, source_ref, name, lat, lon, props_json
+FROM source_records
+WHERE region = ?
+ORDER BY region, source, source_ref
+"""
+
+_SOURCE_RECORD_PROPS_SQL = """
+SELECT source, source_ref, props_json
+FROM source_records
+WHERE region = ?
+ORDER BY region, source, source_ref
+"""
+
+_PLACES_SCORE_SQL = """
+SELECT place_id, name, lat, lon, member_refs_json, status
+FROM places
+WHERE region = ?
+ORDER BY region, place_id
+"""
+
+_PLACES_CATEGORIZE_SQL = """
+SELECT place_id, member_refs_json, status
+FROM places
+WHERE region = ?
+ORDER BY region, place_id
+"""
+
+_CONTENT_HASH_QUERIES = {
+    ("source_records", SOURCE_RECORD_RECONCILE_COLS): _SOURCE_RECORD_RECONCILE_SQL,
+    ("source_records", SOURCE_RECORD_PROPS_COLS): _SOURCE_RECORD_PROPS_SQL,
+    (
+        "places",
+        ("place_id", "name", "lat", "lon", "member_refs_json", "status"),
+    ): _PLACES_SCORE_SQL,
+    ("places", ("place_id", "member_refs_json", "status")): _PLACES_CATEGORIZE_SQL,
+}
+
 STAGE_READS = {
     "extract": {
         "snapshots",
@@ -160,17 +198,10 @@ def stage_fingerprint(conn, region: str, stage: str, *, inputs: FingerprintInput
 
 
 def content_hash(conn, region: str, table: str, cols: tuple[str, ...]) -> str:
-    order_by = _order_by(table)
-    col_sql = ", ".join(cols)
-    rows = conn.execute(
-        f"""
-        SELECT {col_sql}
-        FROM {table}
-        WHERE region = ?
-        ORDER BY {order_by}
-        """,
-        (region,),
-    ).fetchall()
+    query = _CONTENT_HASH_QUERIES.get((table, cols))
+    if query is None:
+        raise ValueError(f"unsupported content-hash shape: {table} {cols}")
+    rows = conn.execute(query, (region,)).fetchall()
     payload = [
         [_canonical_value(col, value) for col, value in zip(cols, row, strict=True)]
         for row in rows
@@ -313,11 +344,3 @@ def _canonical_value(column: str, value):
         except (ValueError, RecursionError):
             return value
     return value
-
-
-def _order_by(table: str) -> str:
-    if table == "source_records":
-        return "region, source, source_ref"
-    if table == "places":
-        return "region, place_id"
-    return "region"

@@ -72,6 +72,85 @@ def test_failed_source_is_not_merged(tmp_path):
     assert dump == [(1, "wd", "wd:Q1", "A")]
 
 
+def test_partial_merge_without_region_preserves_other_regions(tmp_path):
+    main = _main_conn()
+    main.executemany(
+        """
+        INSERT INTO source_records
+            (source, source_ref, region, name, lat, lon, props_json, run_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            ("osm", "osm:node/old-uk", "uk", "Old UK", 0.0, 0.0, "{}", "old"),
+            (
+                "osm",
+                "osm:node/old-my",
+                "malaysia",
+                "Old Malaysia",
+                0.0,
+                0.0,
+                "{}",
+                "old",
+            ),
+        ],
+    )
+    main.commit()
+    staged = _stage(tmp_path, "r", "osm", [("osm:node/new-uk", "New UK")])
+
+    M.merge_sources(
+        main,
+        {"osm": staged},
+        {"osm"},
+        order=("osm",),
+        full=False,
+    )
+
+    assert main.execute(
+        """
+        SELECT region, source_ref, name
+        FROM source_records
+        ORDER BY region, source_ref
+        """
+    ).fetchall() == [
+        ("malaysia", "osm:node/old-my", "Old Malaysia"),
+        ("uk", "osm:node/new-uk", "New UK"),
+    ]
+
+
+def test_empty_partial_merge_without_region_fails_without_deleting_rows(tmp_path):
+    main = _main_conn()
+    main.execute(
+        """
+        INSERT INTO source_records
+            (source, source_ref, region, name, lat, lon, props_json, run_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("osm", "osm:node/old", "uk", "Old", 0.0, 0.0, "{}", "old"),
+    )
+    main.commit()
+    staged = _stage(tmp_path, "r", "osm", [])
+
+    try:
+        M.merge_sources(
+            main,
+            {"osm": staged},
+            {"osm"},
+            order=("osm",),
+            full=False,
+        )
+    except ValueError as exc:
+        assert "region is required" in str(exc)
+    else:
+        raise AssertionError("empty partial merge without region did not fail")
+
+    assert main.execute(
+        """
+        SELECT region, source, source_ref, name
+        FROM source_records
+        """
+    ).fetchall() == [("uk", "osm", "osm:node/old", "Old")]
+
+
 def test_open_staging_recreates_existing_source_database(tmp_path):
     conn = S.open_staging(tmp_path, "r", "wikidata")
     conn.execute(
