@@ -84,3 +84,41 @@ def test_inactive_rows_are_not_scored_in_reports():
     ]
     result = R.eval_report(rows, BASELINE_CONFIG, score_fn=fake_score, ks=(1,))
     assert result.metrics["kl.llm_on.strict@1"] == 1.0
+
+
+def test_eval_report_marks_under_labeled_precision_denominator():
+    rows = [
+        G.GoldenRow(
+            "mt1_" + "0" * 26,
+            "kl",
+            "yes",
+            0,
+            0,
+            "c",
+            1,
+            0,
+            {"heritage": 1.0},
+            "yes",
+            "v1",
+            active=True,
+        ),
+        G.GoldenRow(
+            "mt1_" + "1" * 26,
+            "kl",
+            "no",
+            0,
+            0,
+            "c",
+            1,
+            0,
+            {"heritage": 0.0},
+            "no",
+            "v1",
+            active=True,
+        ),
+    ]
+
+    result = R.eval_report(rows, BASELINE_CONFIG, score_fn=fake_score, ks=(5,))
+
+    assert "kl.llm_on.strict@5" not in result.metrics
+    assert result.metrics["kl.llm_on.strict@5/n2"] is None

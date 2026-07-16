@@ -26,6 +26,18 @@ def _area_key(row: GoldenRow) -> str:
     return row.area or "all"
 
 
+def _precision_key(
+    area: str,
+    variant: str,
+    mode: str,
+    k: int,
+    ranked: Sequence[GoldenRow],
+) -> str:
+    labeled = sum(1 for row in ranked if row.label is not None)
+    suffix = f"@{k}" if labeled >= k else f"@{k}/n{labeled}"
+    return f"{area}.{variant}.{mode}{suffix}"
+
+
 def eval_report(
     labeled_rows: Sequence[GoldenRow],
     config: Any,
@@ -45,11 +57,17 @@ def eval_report(
         for variant, llm_on in (("llm_on", True), ("llm_off", False)):
             ranked = rescore(rows, config, score_fn=score_fn, llm_on=llm_on)
             for k in ks:
-                metrics[f"{area}.{variant}.strict@{k}"] = precision_at_k(
-                    ranked, k, positive=STRICT_POSITIVE
+                strict_key = _precision_key(area, variant, "strict", k, ranked)
+                lenient_key = _precision_key(area, variant, "lenient", k, ranked)
+                metrics[strict_key] = precision_at_k(
+                    ranked,
+                    k,
+                    positive=STRICT_POSITIVE,
                 )
-                metrics[f"{area}.{variant}.lenient@{k}"] = precision_at_k(
-                    ranked, k, positive=LENIENT_POSITIVE
+                metrics[lenient_key] = precision_at_k(
+                    ranked,
+                    k,
+                    positive=LENIENT_POSITIVE,
                 )
     return EvalReport(metrics=metrics)
 

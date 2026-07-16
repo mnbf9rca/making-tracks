@@ -41,7 +41,7 @@ def test_acquire_is_resumable_and_cached(tmp_path):
         calls.append(title)
         if title == "B":
             raise RuntimeError("crash")
-        return {"items": [{"views": 1}]}
+        return {"title": title, "window": list(window), "daily": [1]}
 
     try:
         pageviews.acquire(["A", "B", "C"], window, tmp_path, fetch=crashing_fetch, enabled=True)
@@ -53,7 +53,7 @@ def test_acquire_is_resumable_and_cached(tmp_path):
 
     def fake_fetch(title, window):
         calls.append(title)
-        return {"items": [{"views": 1}]}
+        return {"title": title, "window": list(window), "daily": [1]}
 
     pageviews.acquire(["A", "B", "C"], window, tmp_path, fetch=fake_fetch, enabled=True)
     assert "A" not in calls
@@ -120,7 +120,7 @@ def test_corrupt_cache_file_is_refetched(tmp_path):
 
     def fake_fetch(title, window):
         calls.append(title)
-        return {"items": [{"views": 2}]}
+        return {"title": title, "window": list(window), "daily": [2]}
 
     assert pageviews.acquire(["A"], window, tmp_path, fetch=fake_fetch, enabled=True) == 1
     assert calls == ["A"]
@@ -140,6 +140,41 @@ def test_read_validates_cache_schema_and_returns_daily_values(tmp_path):
         '{"title":"A","window":["2025-07-14","2026-07-14"],"daily":["bad"]}'
     )
     assert pageviews.read(tmp_path, "A", window) is None
+
+
+def test_read_rejects_raw_api_shaped_cache_entry(tmp_path):
+    window = ("2025-07-14", "2026-07-14")
+    cache_path = pageviews._cache_path(tmp_path, "A", window)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text('{"items":[{"views":99}]}')
+
+    assert pageviews.read(tmp_path, "A", window) is None
+
+
+def test_acquire_refetches_raw_api_shaped_cache_entry(tmp_path):
+    calls = []
+    window = ("2025-07-14", "2026-07-14")
+    cache_path = pageviews._cache_path(tmp_path, "A", window)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text('{"items":[{"views":99}]}')
+
+    def fake_fetch(title, window):
+        calls.append(title)
+        return {"title": title, "window": list(window), "daily": [1]}
+
+    assert pageviews.acquire(["A"], window, tmp_path, fetch=fake_fetch, enabled=True) == 1
+    assert calls == ["A"]
+    assert pageviews.read(tmp_path, "A", window) == [1]
+
+
+def test_manifest_window_rejects_inverted_window(tmp_path):
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    (cache_dir / "manifest.json").write_text(
+        '{"window":["2026-07-14","2025-07-14"]}'
+    )
+
+    assert pageviews.manifest_window(cache_dir) is None
 
 
 def test_entry_from_api_response_rejects_invalid_payload():

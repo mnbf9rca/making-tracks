@@ -59,9 +59,11 @@ def manifest_window(cache_dir) -> tuple[str, str] | None:
     ):
         return None
     try:
-        datetime.date.fromisoformat(window[0])
-        datetime.date.fromisoformat(window[1])
+        start = datetime.date.fromisoformat(window[0])
+        end = datetime.date.fromisoformat(window[1])
     except ValueError:
+        return None
+    if start > end:
         return None
     return (window[0], window[1])
 
@@ -78,7 +80,11 @@ def ensure_manifest(cache_dir, window: tuple[str, str]) -> None:
 
 def _cache_file_within_limit(path: pathlib.Path) -> bool:
     try:
-        return path.exists() and path.stat().st_size <= MAX_CACHE_BYTES
+        return (
+            path.exists()
+            and not path.is_symlink()
+            and path.stat().st_size <= MAX_CACHE_BYTES
+        )
     except OSError:
         return False
 
@@ -202,18 +208,19 @@ def _daily_values(
         raw_items = data.get("items")
         if not isinstance(raw_items, list) or len(raw_items) > MAX_DAILY_POINTS:
             return None
-        if any(value is not None for value in (project, access, agent, granularity)):
-            for item in raw_items:
-                if not _item_matches_request(
-                    item,
-                    title=title,
-                    window=window,
-                    project=project,
-                    access=access,
-                    agent=agent,
-                    granularity=granularity,
-                ):
-                    return None
+        if any(value is None for value in (project, access, agent, granularity)):
+            return None
+        for item in raw_items:
+            if not _item_matches_request(
+                item,
+                title=title,
+                window=window,
+                project=project,
+                access=access,
+                agent=agent,
+                granularity=granularity,
+            ):
+                return None
         raw_values = [
             item.get("views")
             for item in raw_items
