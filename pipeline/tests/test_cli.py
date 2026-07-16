@@ -972,4 +972,5 @@ def test_cli_llm_bakeoff_runs_keyless_fake_provider(tmp_path, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "model\tprovider\tprecision_at_k_llm_on" in out
+    assert "inflation_resistance\tdeflation_resistance\thonest_suppression_rate\ttwo_sided_injection_resistance\tinjection_floor_passed" in out
     assert "fake-curiosity-v1\t" in out

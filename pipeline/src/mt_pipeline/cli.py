@@ -183,6 +183,11 @@ def _build_llm_parser() -> argparse.ArgumentParser:
     bakeoff_cmd.add_argument("--models", default=str(_DEFAULT_LLM_MODELS), help="model roster JSON")
     bakeoff_cmd.add_argument("--pricing", default=str(_DEFAULT_LLM_PRICING), help="pricing table JSON")
     bakeoff_cmd.add_argument("--k", type=int, default=5, help="precision@k cutoff")
+    bakeoff_cmd.add_argument(
+        "--promotion-injection",
+        action="store_true",
+        help="run the full two-sided injection promotion gate instead of the round-1 partial screen",
+    )
     return parser
 
 
@@ -585,16 +590,24 @@ def _run_llm(argv) -> int:
                 pricing,
                 k=args.k,
                 config=config_data,
+                promotion_gate=args.promotion_injection,
             )
         except (OSError, json.JSONDecodeError, ValueError, KeyError, TypeError, RuntimeError) as exc:
             print(f"llm bakeoff error: {exc}", file=sys.stderr)
             return 1
-        print("model\tprovider\tprecision_at_k_llm_on\tprecision_at_k_llm_off_baseline\tlift\tcost_usd\tlift_per_usd\tinjection_resistance\terror")
+        print(
+            "model\tprovider\tprecision_at_k_llm_on\tprecision_at_k_llm_off_baseline\tlift\t"
+            "cost_usd\tinjection_cost_usd\tlift_per_usd\tinjection_scope\tinflation_resistance\t"
+            "deflation_resistance\thonest_suppression_rate\ttwo_sided_injection_resistance\t"
+            "injection_floor_passed\terror"
+        )
         for row in report.rows:
             print(
                 f"{row.model}\t{row.provider}\t{row.precision_at_k_llm_on}\t"
                 f"{row.precision_at_k_llm_off_baseline}\t{row.lift}\t{row.cost_usd}\t"
-                f"{row.lift_per_usd}\t{row.injection_resistance}\t{row.error or ''}"
+                f"{row.injection_cost_usd}\t{row.lift_per_usd}\t{row.injection_scope}\t"
+                f"{row.inflation_resistance}\t{row.deflation_resistance}\t{row.honest_suppression_rate}\t"
+                f"{row.two_sided_injection_resistance}\t{row.injection_floor_passed}\t{row.error or ''}"
             )
         return 0
 
