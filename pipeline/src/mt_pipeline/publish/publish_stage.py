@@ -10,7 +10,7 @@ from typing import Any
 from mt_contracts import registry as registry_contract
 from mt_contracts.tilecodec import safe_gunzip
 
-from mt_pipeline import config, runtime_paths
+from mt_pipeline import config, progress, runtime_paths
 from mt_pipeline.reconcile.registry_file import LocalRegistryStore
 from mt_pipeline.score import score_stage
 
@@ -21,6 +21,8 @@ _A1D_SOURCES = _PIPELINE_ROOT / "config" / "a1d_sources.json"
 _R2_LAYOUT = _PIPELINE_ROOT / "config" / "r2_layout.json"
 _RECONCILE_CONFIG = _PIPELINE_ROOT / "config" / "reconcile.json"
 _DEFAULT_STAGING_ROOT = pathlib.Path("publish-staging")
+_HEARTBEAT_EVERY_RECORDS = 10_000
+_HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
 
 
 class PublishStageError(RuntimeError):
@@ -55,8 +57,8 @@ def run(
     registry_records = _load_registry(registry_store, region)
     _assert_db_inputs(conn, region)
     joined = _joined_places(conn, region)
-    _assert_registry_covers_live_inputs(registry_records, joined, registry_path)
-    tile_arts, counts = tiles.emit_tiles(joined, registry_records)
+    _assert_registry_covers_live_inputs(registry_records, joined, registry_path, region)
+    tile_arts, counts = tiles.emit_tiles(joined, registry_records, region=region)
     shipped_places = _places_from_tiles(tile_arts)
     shipped_ids = {place["place_id"] for place in shipped_places}
     _assert_registry_covers_shipped(registry_records, shipped_ids, registry_path)
@@ -117,6 +119,15 @@ def run(
 
 
 def _joined_places(conn, region: str) -> list[dict[str, Any]]:
+    phase = progress.PhaseProgress(
+        "publish.joined_place_load",
+        region=region,
+        total=None,
+        total_label="places",
+        heartbeat_every_records=_HEARTBEAT_EVERY_RECORDS,
+        heartbeat_every_seconds=_HEARTBEAT_EVERY_SECONDS,
+    )
+    phase.start()
     rows = conn.execute(
         """
         SELECT p.place_id, p.name, p.lat, p.lon, p.member_refs_json,
@@ -127,12 +138,13 @@ def _joined_places(conn, region: str) -> list[dict[str, Any]]:
         JOIN place_scores s
           ON s.place_id = p.place_id AND s.region = p.region
         WHERE p.region = ? AND p.status = 'live'
-        ORDER BY p.place_id
         """,
         (region,),
-    ).fetchall()
+    )
     out = []
+    processed = 0
     for place_id, name, lat, lon, member_refs_json, category, tier, score in rows:
+        processed += 1
         out.append(
             {
                 "place_id": place_id,
@@ -145,6 +157,8 @@ def _joined_places(conn, region: str) -> list[dict[str, Any]]:
                 "source_refs": _json_list(member_refs_json),
             }
         )
+        phase.tick(processed)
+    phase.done(processed)
     return out
 
 
@@ -180,58 +194,90 @@ def _load_registry(
     path = registry_store.path
     if not path.exists():
         raise PublishStageError(f"publish registry missing for {region}: {path}")
+    phase = progress.PhaseProgress(
+        "publish.registry_load",
+        region=region,
+        total=None,
+        total_label="records",
+        heartbeat_every_records=_HEARTBEAT_EVERY_RECORDS,
+        heartbeat_every_seconds=_HEARTBEAT_EVERY_SECONDS,
+    )
+    phase.start()
+    processed = 0
+
+    def tick_registry_load(done: int) -> None:
+        nonlocal processed
+        processed = done
+        phase.tick(done)
+
     try:
-        records = registry_store.load()
+        records = registry_store.load(progress_tick=tick_registry_load)
     except ValueError as exc:
+        phase.done(processed, extra=" error=parse")
         raise PublishStageError(
             f"publish registry rejected for {region}: {path}: {exc}"
         ) from exc
+    phase.done(len(records))
     if not records:
         raise PublishStageError(f"publish registry empty for {region}: {path}")
     return records
 
 
 def _assert_db_inputs(conn, region: str) -> None:
-    live_places = _count(
-        conn,
-        "SELECT COUNT(*) FROM places WHERE region = ? AND status = 'live'",
-        region,
+    phase = progress.PhaseProgress(
+        "publish.db_input_validation",
+        region=region,
+        total=None,
+        total_label="places",
+        heartbeat_every_records=_HEARTBEAT_EVERY_RECORDS,
+        heartbeat_every_seconds=_HEARTBEAT_EVERY_SECONDS,
     )
-    if live_places == 0:
-        raise PublishStageError(f"publish input has no live places for {region}")
-
-    scored_live_places = _count(
-        conn,
+    phase.start()
+    rows = conn.execute(
         """
-        SELECT COUNT(DISTINCT p.place_id)
+        SELECT p.place_id, s.place_id IS NOT NULL, c.place_id IS NOT NULL
         FROM places p
-        JOIN place_scores s
+        LEFT JOIN place_scores s
           ON s.place_id = p.place_id AND s.region = p.region
-        WHERE p.region = ? AND p.status = 'live'
-        """,
-        region,
-    )
-    if scored_live_places != live_places:
-        missing = live_places - scored_live_places
-        raise PublishStageError(
-            f"publish input has {missing} live {region} place(s) missing place_scores"
-        )
-
-    categorized_live_places = _count(
-        conn,
-        """
-        SELECT COUNT(DISTINCT p.place_id)
-        FROM places p
-        JOIN place_categories c
+        LEFT JOIN place_categories c
           ON c.place_id = p.place_id AND c.region = p.region
         WHERE p.region = ? AND p.status = 'live'
         """,
-        region,
+        (region,),
     )
-    if categorized_live_places != live_places:
-        missing = live_places - categorized_live_places
+    processed = 0
+    missing_scores = 0
+    missing_categories = 0
+    for _place_id, has_score, has_category in rows:
+        processed += 1
+        if not has_score:
+            missing_scores += 1
+        if not has_category:
+            missing_categories += 1
+        phase.tick(
+            processed,
+            extra=lambda: (
+                f" missing_scores={missing_scores}"
+                f" missing_categories={missing_categories}"
+            ),
+        )
+    phase.done(
+        processed,
+        extra=(
+            f" missing_scores={missing_scores}"
+            f" missing_categories={missing_categories}"
+        ),
+    )
+    if processed == 0:
+        raise PublishStageError(f"publish input has no live places for {region}")
+    if missing_scores:
         raise PublishStageError(
-            f"publish input has {missing} live {region} place(s) missing place_categories"
+            f"publish input has {missing_scores} live {region} place(s) missing place_scores"
+        )
+
+    if missing_categories:
+        raise PublishStageError(
+            f"publish input has {missing_categories} live {region} place(s) missing place_categories"
         )
 
 
@@ -256,16 +302,36 @@ def _assert_registry_covers_live_inputs(
     registry_records: list[registry_contract.RegistryRecord],
     joined_places: list[dict[str, Any]],
     registry_path: pathlib.Path,
+    region: str,
 ) -> None:
+    phase = progress.PhaseProgress(
+        "publish.coverage_validation",
+        region=region,
+        total=len(joined_places),
+        total_label="places",
+        heartbeat_every_records=_HEARTBEAT_EVERY_RECORDS,
+        heartbeat_every_seconds=_HEARTBEAT_EVERY_SECONDS,
+    )
+    phase.start()
     by_id = {record.place_id: record for record in registry_records}
     missing_ids: list[str] = []
     non_live_ids: list[str] = []
     missing_refs: dict[str, set[str]] = {}
+    processed = 0
     for place in joined_places:
+        processed += 1
         place_id = str(place["place_id"])
         record = by_id.get(place_id)
         if record is None:
             missing_ids.append(place_id)
+            phase.tick(
+                processed,
+                extra=lambda: _coverage_progress_extra(
+                    missing_ids,
+                    non_live_ids,
+                    missing_refs,
+                ),
+            )
             continue
         if record.status != "live" or record.superseded_by:
             non_live_ids.append(place_id)
@@ -273,6 +339,19 @@ def _assert_registry_covers_live_inputs(
         missing = refs - set(record.refs)
         if missing:
             missing_refs[place_id] = missing
+        phase.tick(
+            processed,
+            extra=lambda: _coverage_progress_extra(
+                missing_ids,
+                non_live_ids,
+                missing_refs,
+            ),
+        )
+
+    phase.done(
+        processed,
+        extra=_coverage_progress_extra(missing_ids, non_live_ids, missing_refs),
+    )
 
     if missing_ids:
         sample = ", ".join(sorted(missing_ids)[:20])
@@ -305,8 +384,16 @@ def _assert_registry_covers_live_inputs(
         )
 
 
-def _count(conn, sql: str, region: str) -> int:
-    return int(conn.execute(sql, (region,)).fetchone()[0])
+def _coverage_progress_extra(
+    missing_ids: list[str],
+    non_live_ids: list[str],
+    missing_refs: dict[str, set[str]],
+) -> str:
+    return (
+        f" missing_ids={len(missing_ids)}"
+        f" non_live_ids={len(non_live_ids)}"
+        f" missing_ref_places={len(missing_refs)}"
+    )
 
 
 def _registry_path(conn, region: str) -> pathlib.Path:

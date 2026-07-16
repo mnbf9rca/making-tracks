@@ -84,6 +84,129 @@ def test_publish_stage_builds_local_staging_and_marks_shipped(
     assert shipped[B].last_seen_version == "20260701T000000Z"
 
 
+def test_publish_stage_emits_phase_heartbeats_for_slow_publish_steps(
+    conn, tmp_path, monkeypatch, capsys
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(P, "_HEARTBEAT_EVERY_RECORDS", 1, raising=False)
+    monkeypatch.setattr(P.tiles, "_HEARTBEAT_EVERY_RECORDS", 1, raising=False)
+    _seed_publish_inputs(conn)
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [
+            RegistryRecord(
+                place_id=A,
+                refs={"wd:Q100", "osm:node/100"},
+                mint_anchor="wd:Q100",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+            RegistryRecord(
+                place_id=B,
+                refs={"wd:Q200"},
+                mint_anchor="wd:Q200",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+        ]
+    )
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename="malaysia.pmtiles",
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    P.run(
+        conn,
+        "malaysia",
+        publish_version="20260715T120000Z",
+        generated_at="2026-07-15T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+    )
+
+    err = capsys.readouterr().err
+    assert "PHASE START publish.registry_load region=malaysia records=unknown" in err
+    assert "PHASE HEARTBEAT publish.registry_load region=malaysia processed=1/unknown" in err
+    assert "PHASE DONE publish.registry_load region=malaysia processed=2/unknown" in err
+    assert "PHASE START publish.db_input_validation region=malaysia places=unknown" in err
+    assert "PHASE HEARTBEAT publish.db_input_validation region=malaysia processed=1/unknown" in err
+    assert "PHASE DONE publish.db_input_validation region=malaysia processed=2/unknown" in err
+    assert "PHASE START publish.joined_place_load region=malaysia places=unknown" in err
+    assert "PHASE HEARTBEAT publish.joined_place_load region=malaysia processed=1/unknown" in err
+    assert "PHASE DONE publish.joined_place_load region=malaysia processed=2/unknown" in err
+    assert "PHASE START publish.coverage_validation region=malaysia places=2" in err
+    assert "PHASE HEARTBEAT publish.coverage_validation region=malaysia processed=1/2" in err
+    assert "PHASE DONE publish.coverage_validation region=malaysia processed=2/2" in err
+    assert "PHASE START publish.tile_emit region=malaysia places=2" in err
+    assert "PHASE HEARTBEAT publish.tile_emit region=malaysia processed=1/2" in err
+    assert "PHASE DONE publish.tile_emit region=malaysia processed=2/2" in err
+    assert "PHASE START publish.tile_group region=malaysia places=1" in err
+    assert "PHASE HEARTBEAT publish.tile_group region=malaysia processed=1/1" in err
+    assert "PHASE DONE publish.tile_group region=malaysia processed=1/1" in err
+    assert "PHASE START publish.tile_write region=malaysia tiles=1" in err
+    assert "current_tile=" in err
+    assert "gzip_attempt=1" in err
+    assert "PHASE HEARTBEAT publish.tile_write region=malaysia processed=1/1" in err
+    assert "PHASE DONE publish.tile_write region=malaysia processed=1/1" in err
+    assert "tiles=1" in err
+    assert "invalid_excluded=0" in err
+    assert "uncategorized_excluded=1" in err
+
+
+def test_publish_stage_reports_registry_load_progress_before_parse_error(
+    conn, tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(P, "_HEARTBEAT_EVERY_RECORDS", 1, raising=False)
+    _seed_publish_inputs(conn)
+    registry_path = tmp_path / "registry/malaysia.jsonl"
+    registry_path.parent.mkdir(parents=True)
+    registry_path.write_text(
+        json.dumps(
+            {
+                "first_shipped_version": "20260701T000000Z",
+                "last_seen_version": "20260701T000000Z",
+                "mint_anchor": "wd:Q100",
+                "place_id": A,
+                "refs": ["wd:Q100", "osm:node/100"],
+                "schema_version": 1,
+                "status": "live",
+                "superseded_by": None,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n{not-json}\n"
+    )
+
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    with pytest.raises(P.PublishStageError, match="publish registry rejected"):
+        P.run(
+            conn,
+            "malaysia",
+            publish_version="20260715T120000Z",
+            generated_at="2026-07-15T12:00:00Z",
+            scoring_config_version="scoring-v1",
+            staging_root=tmp_path / "stage",
+        )
+
+    err = capsys.readouterr().err
+    assert "PHASE START publish.registry_load region=malaysia records=unknown" in err
+    assert "PHASE HEARTBEAT publish.registry_load region=malaysia processed=1/unknown" in err
+    assert "PHASE DONE publish.registry_load region=malaysia processed=1/unknown" in err
+    assert "error=parse" in err
+
+
 def test_publish_stage_dispatch_requires_publish_version(conn):
     store.mark_stage_complete(conn, "malaysia", "categorize", "r1", "2026-07-15T00:00:00Z")
 
