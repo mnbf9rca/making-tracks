@@ -99,6 +99,32 @@ def test_dense_cell_reselects_under_the_compressed_cap(monkeypatch):
     assert [place["place_id"] for place in _shipped(arts)] == [_pid(1), _pid(2)]
 
 
+def test_emission_consumes_a0_selection_and_winner_primitives(monkeypatch):
+    calls = {"select": 0, "winners": 0}
+
+    def fake_select(places):
+        calls["select"] += 1
+        ordered = sorted(places, key=lambda p: p["place_id"])
+        return ordered[:1], ordered[1:]
+
+    def fake_winners(ids, records):
+        calls["winners"] += 1
+        return [ids[-1]]
+
+    monkeypatch.setattr(T.caps, "select_tile_places", fake_select)
+    monkeypatch.setattr(T.registry, "tile_winner_violations", fake_winners)
+
+    arts, counts = T.emit_tiles(
+        [_p(_pid(1), 1, 0.9), _p(_pid(2), 1, 0.8), _p(_pid(3), 1, 0.7)],
+        [],
+    )
+
+    assert calls == {"select": 1, "winners": 1}
+    assert counts.non_winner_excluded == 1
+    assert counts.overflow_dropped == 1
+    assert [place["place_id"] for place in _shipped(arts)] == [_pid(1)]
+
+
 def test_emission_is_byte_identical_on_repeat():
     places = [_p(_pid(1), 1, 0.9), _p(_pid(3), 2, 0.5)]
     a1, _ = T.emit_tiles(places, [])

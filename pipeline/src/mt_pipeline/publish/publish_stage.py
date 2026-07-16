@@ -81,18 +81,28 @@ def run(
         manifest_obj=manifest_obj,
         basemap_path=basemap_path,
     )
-    layout = json.loads(_R2_LAYOUT.read_text())
-    publish_result = r2.publish_to_r2(staging_dir, layout, upload=upload)
-
     shipped_ids = {place["place_id"] for place in shipped_places}
+    updated_registry = None
+    registry_blob = None
     if shipped_ids:
-        registry_store.save(
-            registry_contract.mark_shipped(
-                registry_records,
-                shipped_ids,
-                publish_version,
-            )
+        updated_registry = registry_contract.mark_shipped(
+            registry_records,
+            shipped_ids,
+            publish_version,
         )
+        registry_blob = _registry_jsonl(updated_registry)
+
+    layout = json.loads(_R2_LAYOUT.read_text())
+    publish_result = r2.publish_to_r2(
+        staging_dir,
+        layout,
+        upload=upload,
+        registry_blob=registry_blob,
+    )
+
+    if shipped_ids and upload and not publish_result.dry_run:
+        assert updated_registry is not None
+        registry_store.save(updated_registry)
 
     return PublishStageResult(
         staging_dir=staging_dir,
@@ -138,9 +148,9 @@ def _json_list(value: str) -> list[str]:
     try:
         data = json.loads(value)
     except (ValueError, RecursionError) as exc:
-        raise PublishStageError("places.member_refs_json is malformed") from exc
+        return []
     if not isinstance(data, list) or not all(isinstance(item, str) for item in data):
-        raise PublishStageError("places.member_refs_json must be a string array")
+        return []
     return data
 
 
@@ -163,3 +173,25 @@ def _region_doc(region_config: config.RegionConfig) -> dict[str, Any]:
 def _registry_path(region: str) -> pathlib.Path:
     reconcile = json.loads(_RECONCILE_CONFIG.read_text())
     return pathlib.Path(reconcile["registry_path"].format(region=region))
+
+
+def _registry_jsonl(records) -> bytes:
+    rows = []
+    for record in sorted(records, key=lambda item: item.place_id):
+        rows.append(
+            json.dumps(
+                {
+                    "first_shipped_version": record.first_shipped_version,
+                    "last_seen_version": record.last_seen_version,
+                    "mint_anchor": record.mint_anchor,
+                    "place_id": record.place_id,
+                    "refs": sorted(record.refs),
+                    "schema_version": record.schema_version,
+                    "status": record.status,
+                    "superseded_by": record.superseded_by,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+    return ("\n".join(rows) + ("\n" if rows else "")).encode("utf-8")

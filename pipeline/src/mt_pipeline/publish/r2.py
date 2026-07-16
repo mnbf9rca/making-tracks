@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,14 @@ class VersionAlreadyLive(ValueError):
 
 class ExistingVersionPrefix(ValueError):
     """Raised when upload would mutate an existing non-identical version prefix."""
+
+
+class CurrentPointerUnavailable(RuntimeError):
+    """Raised when the live-version guard cannot determine current state."""
+
+
+class PublishLockUnavailable(RuntimeError):
+    """Raised when the per-region publish lock cannot be acquired."""
 
 
 @dataclass(frozen=True)
@@ -173,17 +182,28 @@ def publish_to_r2(
     client=None,
     upload: bool = False,
     uploaded_ledger: set[tuple[str, int, int, str]] | None = None,
+    registry_blob: bytes | None = None,
 ) -> PublishResult:
     staging = Path(staging)
     region = staging.parent.name
     publish_version = staging.name
     validate_path_components(region, publish_version)
     tile_ops, basemap_op, manifest_op = _ops_from_staging(staging, layout, region, publish_version)
+    ops = [*tile_ops, basemap_op, manifest_op, _current_op(layout, region, publish_version)]
+    if registry_blob is not None:
+        ops.append(
+            PublishOp(
+                kind="registry",
+                bucket=str(layout["private_bucket"]),
+                key=f"{layout.get('private_prefixes', {}).get('registry', 'registry/')}{region}.jsonl",
+                body=registry_blob,
+            )
+        )
     plan = PublishPlan(
         layout=layout,
         region=region,
         publish_version=publish_version,
-        ops=tuple([*tile_ops, basemap_op, manifest_op, _current_op(layout, region, publish_version)]),
+        ops=tuple(ops),
     )
     _validate_layout(layout)
     plan._assert_bucket_invariants()
@@ -196,7 +216,7 @@ def publish_to_r2(
     _assert_not_live(client, layout, region, publish_version)
     _assert_prefix_absent_or_ledgered(client, layout, region, publish_version, uploaded_ledger)
     lock_key = f"{region}/publish.lock"
-    client.put_object(Bucket=layout["private_bucket"], Key=lock_key, Body=b"locked", IfNoneMatch="*")
+    _acquire_lock(client, layout, region, publish_version, lock_key)
     uploaded = 0
     skipped = 0
     try:
@@ -204,8 +224,10 @@ def publish_to_r2(
             if op.kind == "tile" and _ledger_contains(uploaded_ledger, publish_version, op):
                 skipped += 1
                 continue
-            body = op.body if op.body is not None else op.source_path.read_bytes()
+            body = op.body if op.body is not None else op.source_path.open("rb")
             client.put_object(Bucket=op.bucket, Key=op.key, Body=body)
+            if hasattr(body, "close"):
+                body.close()
             uploaded += 1
     finally:
         client.delete_object(Bucket=layout["private_bucket"], Key=lock_key)
@@ -267,8 +289,12 @@ def _default_client():
 def _assert_not_live(client, layout: Mapping[str, Any], region: str, publish_version: str) -> None:
     try:
         obj = client.get_object(Bucket=layout["public_bucket"], Key=f"{region}/current.json")
-    except Exception:
+    except FileNotFoundError:
         return
+    except Exception as exc:
+        if _is_missing_key(exc):
+            return
+        raise CurrentPointerUnavailable("could not read current publish pointer") from exc
     body = obj["Body"].read()
     current = json.loads(body)
     if current.get("publish_version") == publish_version:
@@ -282,8 +308,6 @@ def _assert_prefix_absent_or_ledgered(
     publish_version: str,
     uploaded_ledger: set[tuple[str, int, int, str]] | None,
 ) -> None:
-    if uploaded_ledger:
-        return
     resp = client.list_objects_v2(
         Bucket=layout["public_bucket"], Prefix=f"{region}/{publish_version}/", MaxKeys=1
     )
@@ -291,12 +315,64 @@ def _assert_prefix_absent_or_ledgered(
         raise ExistingVersionPrefix(f"{region}/{publish_version}/ already exists")
 
 
+def _acquire_lock(client, layout: Mapping[str, Any], region: str, publish_version: str, key: str) -> None:
+    now = int(time.time())
+    body = _json_bytes(
+        {
+            "schema_version": 1,
+            "region": region,
+            "publish_version": publish_version,
+            "acquired_at": now,
+            "expires_at": now + 30 * 60,
+        }
+    )
+    try:
+        client.put_object(Bucket=layout["private_bucket"], Key=key, Body=body, IfNoneMatch="*")
+    except Exception as exc:
+        if not _is_precondition_failed(exc):
+            raise PublishLockUnavailable("could not acquire publish lock") from exc
+        if not _delete_if_stale_lock(client, layout, key, now):
+            raise PublishLockUnavailable("publish lock is held") from exc
+        client.put_object(Bucket=layout["private_bucket"], Key=key, Body=body, IfNoneMatch="*")
+
+
+def _delete_if_stale_lock(client, layout: Mapping[str, Any], key: str, now: int) -> bool:
+    try:
+        obj = client.get_object(Bucket=layout["private_bucket"], Key=key)
+        data = json.loads(obj["Body"].read())
+    except Exception:
+        return False
+    expires_at = data.get("expires_at")
+    if isinstance(expires_at, int | float) and expires_at < now:
+        client.delete_object(Bucket=layout["private_bucket"], Key=key)
+        return True
+    return False
+
+
+def _error_code(exc: Exception) -> str | None:
+    response = getattr(exc, "response", None)
+    if isinstance(response, Mapping):
+        error = response.get("Error")
+        if isinstance(error, Mapping):
+            code = error.get("Code")
+            return str(code) if code is not None else None
+    return None
+
+
+def _is_missing_key(exc: Exception) -> bool:
+    return _error_code(exc) in {"NoSuchKey", "404", "NotFound"}
+
+
+def _is_precondition_failed(exc: Exception) -> bool:
+    return _error_code(exc) in {"PreconditionFailed", "412"}
+
+
 def _ledger_contains(
     uploaded_ledger: set[tuple[str, int, int, str]] | None,
     publish_version: str,
     op: PublishOp,
 ) -> bool:
-    if not uploaded_ledger or op.body is None:
+    if not uploaded_ledger:
         return False
     parts = op.key.split("/")
     if len(parts) < 6:
@@ -308,4 +384,5 @@ def _ledger_contains(
         return False
     import hashlib
 
-    return (publish_version, x, y, hashlib.sha256(op.body).hexdigest()) in uploaded_ledger
+    body = op.body if op.body is not None else op.source_path.read_bytes()
+    return (publish_version, x, y, hashlib.sha256(body).hexdigest()) in uploaded_ledger

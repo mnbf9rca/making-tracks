@@ -67,11 +67,17 @@ def test_publish_stage_builds_local_staging_and_marks_shipped(
     assert result.counts.total_published == 1
     assert result.counts.uncategorized_excluded == 1
     assert (result.staging_dir / "tiles/10").exists()
+    registry_ops = [
+        op for op in result.publish_result.plan.ops if op.kind == "registry"
+    ]
+    assert len(registry_ops) == 1
+    assert registry_ops[0].bucket == "making-tracks-state"
+    assert registry_ops[0].key == "registry/malaysia.jsonl"
 
     saved = LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").load()
     shipped = {record.place_id: record for record in saved}
     assert shipped[A].first_shipped_version == "20260701T000000Z"
-    assert shipped[A].last_seen_version == "20260715T120000Z"
+    assert shipped[A].last_seen_version == "20260701T000000Z"
     assert shipped[B].last_seen_version == "20260701T000000Z"
 
 
@@ -84,6 +90,54 @@ def test_publish_stage_dispatch_requires_publish_version(conn):
         assert "--publish-version" in str(exc)
     else:
         raise AssertionError("publish without version should fail")
+
+
+def test_publish_stage_quarantines_malformed_member_refs_json(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    conn.execute(
+        "UPDATE places SET member_refs_json = ? WHERE place_id = ?",
+        ("not-json", A),
+    )
+    conn.commit()
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [
+            RegistryRecord(
+                place_id=A,
+                refs={"wd:Q100", "osm:node/100"},
+                mint_anchor="wd:Q100",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            )
+        ]
+    )
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename="malaysia.pmtiles",
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+
+    result = P.run(
+        conn,
+        "malaysia",
+        publish_version="20260715T120000Z",
+        generated_at="2026-07-15T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+    )
+
+    assert result.counts.invalid_excluded == 1
+    assert result.counts.total_published == 0
 
 
 def _seed_publish_inputs(conn):

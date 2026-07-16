@@ -6,6 +6,21 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "min_reader_version", "region", "publish_version", "tile_z", "tiles", "counts", "basemap", "provenance"],
+  "allOf": [
+    {
+      "if": {
+        "required": ["attribution"],
+        "properties": {
+          "attribution": {"type": "array", "minItems": 1}
+        }
+      },
+      "then": {
+        "properties": {
+          "min_reader_version": {"minimum": 2}
+        }
+      }
+    }
+  ],
   "properties": {
     "schema_version": {"type": "integer", "const": 1},
     "min_reader_version": {"type": "integer", "minimum": 1},

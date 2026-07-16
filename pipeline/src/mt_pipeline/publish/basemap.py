@@ -47,8 +47,7 @@ def cut_basemap(region_config: dict[str, Any], out_path: Path) -> BasemapArtifac
         check=True,
     )
 
-    data = out_path.read_bytes()
-    size = len(data)
+    size = out_path.stat().st_size
     budget = min(int(cfg["size_budget_bytes"]), PACK_BUDGET_CEILING_BYTES)
     if size > budget:
         raise BasemapOverBudget(
@@ -57,7 +56,15 @@ def cut_basemap(region_config: dict[str, Any], out_path: Path) -> BasemapArtifac
     return BasemapArtifact(
         filename=out_path.name,
         maxzoom=BASEMAP_MAXZOOM,
-        sha256=hashlib.sha256(data).hexdigest(),
+        sha256=_sha256_file(out_path),
         bytes=size,
         bbox=bbox,
     )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()

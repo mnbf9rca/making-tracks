@@ -7,7 +7,8 @@ import pytest
 from mt_pipeline.publish import attribution as A
 
 
-A1D = json.loads(pathlib.Path("config/a1d_sources.json").read_text())
+PIPELINE_ROOT = pathlib.Path(__file__).resolve().parents[1]
+A1D = json.loads((PIPELINE_ROOT / "config/a1d_sources.json").read_text())
 
 
 def _pid(suffix: str) -> str:
@@ -36,7 +37,9 @@ def test_OSM_is_ODbL_and_ships_attribution():
         A.sources_used([{"place_id": _pid("A"), "source_refs": ["osm:node/1"]}]),
         A1D,
     )
-    assert any(attr["source"] == "osm" and "ODbL" in attr["license"] for attr in out)
+    osm = [attr for attr in out if attr["source"] == "osm"][0]
+    assert osm["license"] == "ODbL-1.0"
+    assert osm["text"] == A1D["osm"]["attribution"]
 
 
 def test_cc0_only_region_needs_no_attribution():
@@ -44,13 +47,13 @@ def test_cc0_only_region_needs_no_attribution():
 
 
 def test_heuristic_score_provenance_and_current_pointer_are_contracted():
-    schema = json.loads(pathlib.Path("../contracts/schemas/manifest.schema.json").read_text())
+    schema = json.loads((PIPELINE_ROOT.parent / "contracts/schemas/manifest.schema.json").read_text())
     task_id = schema["properties"]["provenance"]["items"]["properties"]["task_id"]
     assert "score" in task_id["enum"]
     assert "attribution" in schema["properties"]
     assert "attribution" not in schema["required"]
 
-    current = json.loads(pathlib.Path("../contracts/schemas/current.schema.json").read_text())
+    current = json.loads((PIPELINE_ROOT.parent / "contracts/schemas/current.schema.json").read_text())
     assert "publish_version" in current["properties"]
     assert current["additionalProperties"] is False
 
@@ -63,13 +66,15 @@ def test_heuristic_score_provenance_and_current_pointer_are_contracted():
 
 
 def test_attribution_string_with_a_control_char_fails_validation():
-    schema = json.loads(pathlib.Path("../contracts/schemas/manifest.schema.json").read_text())
-    bad_attr = {"source": "x", "license": "y", "text": "credit\u202eevil"}
-    with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate(
-            {"attribution": [bad_attr]},
-            {
-                "type": "object",
-                "properties": {"attribution": schema["properties"]["attribution"]},
-            },
-        )
+    schema = json.loads((PIPELINE_ROOT.parent / "contracts/schemas/manifest.schema.json").read_text())
+    for key in ("source", "license", "text"):
+        bad_attr = {"source": "x", "license": "y", "text": "credit"}
+        bad_attr[key] = f"{bad_attr[key]}\u202eevil"
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate(
+                {"attribution": [bad_attr]},
+                {
+                    "type": "object",
+                    "properties": {"attribution": schema["properties"]["attribution"]},
+                },
+            )

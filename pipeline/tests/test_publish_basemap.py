@@ -2,6 +2,7 @@ import subprocess
 
 import pytest
 
+from mt_contracts.caps import PACK_BUDGET_CEILING_BYTES
 from mt_pipeline.publish import basemap as B
 
 
@@ -57,4 +58,32 @@ def test_over_budget_region_fails_loud_directing_ops_to_subregion_configs(
         B.cut_basemap(
             _cfg(source, size_budget_bytes=1, measured_archive_bytes=5_000_000_000),
             tmp_path / "uk.pmtiles",
+        )
+
+
+def test_hard_pack_budget_ceiling_is_enforced_even_when_config_is_higher(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "source.pmtiles"
+    out = tmp_path / "uk.pmtiles"
+    source.write_bytes(b"source")
+
+    def fake_run(args, check):
+        out.write_bytes(b"x")
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    real_stat = B.Path.stat
+
+    def fake_stat(self, *args, **kwargs):
+        if self == out:
+            return type("S", (), {"st_size": PACK_BUDGET_CEILING_BYTES + 1})()
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(B.subprocess, "run", fake_run)
+    monkeypatch.setattr(B.Path, "stat", fake_stat)
+
+    with pytest.raises(B.BasemapOverBudget):
+        B.cut_basemap(
+            _cfg(source, size_budget_bytes=PACK_BUDGET_CEILING_BYTES + 100),
+            out,
         )
