@@ -33,6 +33,7 @@ public struct PlaceResolver<Tile: TileResolving, Snapshots: SnapshotReading>: Se
             return .tile(placeRef)
         }
         guard let snapshot = try? snapshots.snapshot(for: placeID),
+              let rawJSON = Self.actionRawJSON(for: snapshot),
               let placeRef = try? PlaceRef(
                 placeID: snapshot.placeID,
                 name: snapshot.name,
@@ -42,9 +43,25 @@ public struct PlaceResolver<Tile: TileResolving, Snapshots: SnapshotReading>: Se
                 tier: snapshot.tier,
                 schemaVersion: snapshot.snapshotSchemaVersion,
                 fetchedAt: snapshot.fetchedAt,
-                rawJSON: snapshot.snapshotJSON
+                rawJSON: rawJSON
               )
         else { return .unavailable }
         return .snapshot(placeRef, snapshot)
+    }
+
+    private static func actionRawJSON(for snapshot: PlaceSnapshot) -> String? {
+        let object: [String: Any] = [
+            "place_id": snapshot.placeID,
+            "name": snapshot.name,
+            "lat": snapshot.lat,
+            "lon": snapshot.lon,
+            "category": snapshot.category,
+            "tier": snapshot.tier,
+            "source_refs": [],
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else {
+            return nil
+        }
+        return String(decoding: data, as: UTF8.self)
     }
 }

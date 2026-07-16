@@ -91,6 +91,57 @@ final class PlaceCardModelTests: XCTestCase {
         XCTAssertNil(model?.imageURL)
         XCTAssertEqual(model?.pinState, PinState(saved: false, visit: .loved))
     }
+
+    func testSnapshotJSONWithMismatchedPlaceIDIgnoresJSONDisplayFields() throws {
+        let snapshot = makeSnapshot(
+            name: "Snapshot name",
+            category: "snapshot-category",
+            snapshotJSON: jsonString([
+                "place_id": "mt1_11111111111111111111111111",
+                "name": "Wrong safe name",
+                "lat": 51.5,
+                "lon": -0.12,
+                "category": "wrong-category",
+                "tier": 1,
+                "score": 0.9,
+                "source_refs": ["osm:node/1"],
+                "image_url": "https://upload.wikimedia.org/wrong.jpg",
+                "blurb": "Wrong blurb",
+            ])
+        )
+
+        let model = PlaceCardModel.from(snapshot: snapshot, pinState: PinState(saved: false, visit: .none))
+
+        XCTAssertEqual(model?.name, "Snapshot name")
+        XCTAssertEqual(model?.category, "snapshot-category")
+        XCTAssertNil(model?.blurb)
+        XCTAssertNil(model?.imageURL)
+        XCTAssertEqual(model?.sourceNames, [])
+    }
+
+    func testSnapshotJSONWithUnknownKeysIgnoresJSONDisplayFields() throws {
+        let snapshot = makeSnapshot(
+            name: "Snapshot name",
+            category: "snapshot-category",
+            snapshotJSON: jsonString([
+                "place_id": "mt1_00000000000000000000000000",
+                "name": "Safe name",
+                "lat": 51.5,
+                "lon": -0.12,
+                "category": "architecture",
+                "tier": 1,
+                "score": 0.9,
+                "source_refs": ["wd:Q42"],
+                "unexpected": "safe but not contracted",
+            ])
+        )
+
+        let model = PlaceCardModel.from(snapshot: snapshot, pinState: PinState(saved: false, visit: .none))
+
+        XCTAssertEqual(model?.name, "Snapshot name")
+        XCTAssertEqual(model?.category, "snapshot-category")
+        XCTAssertEqual(model?.sourceNames, [])
+    }
 }
 
 private func makeSnapshot(

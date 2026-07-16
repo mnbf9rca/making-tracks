@@ -50,7 +50,7 @@ public struct PlaceCardModel: Sendable, Equatable {
         if enforceByteCap, rawJSON.utf8.count > maxSnapshotJSONBytes {
             object = [:]
         } else {
-            object = (try? JSONSerialization.jsonObject(with: Data(rawJSON.utf8))) as? [String: Any] ?? [:]
+            object = strictPlaceObject(rawJSON, matching: fallback.placeID) ?? [:]
         }
 
         let safeName = safeText(object["name"] as? String, max: PlaceRef.maxNameLength)
@@ -81,6 +81,14 @@ public struct PlaceCardModel: Sendable, Equatable {
               PlaceContentGuards.isSafeText(text)
         else { return nil }
         return text
+    }
+
+    private static func strictPlaceObject(_ rawJSON: String, matching placeID: String) -> [String: Any]? {
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(rawJSON.utf8))) as? [String: Any],
+              Set(object.keys).isSubset(of: PlaceContentGuards.allowedPlaceKeys),
+              object["place_id"] as? String == placeID
+        else { return nil }
+        return object
     }
 
     private static func safeTextArray(_ values: [String]?, maxItems: Int, maxScalars: Int) -> [String] {

@@ -38,6 +38,30 @@ final class ImageLoaderTests: XCTestCase {
 
         XCTAssertEqual(data, Data([1, 2, 3]))
     }
+
+    func testOversizeContentLengthIsRejected() async throws {
+        RecordingImageURLProtocol.response = .ok(
+            Data([1, 2, 3]),
+            contentLength: ImageLoader.maxImageBytes + 1
+        )
+        let loader = ImageLoader(configuration: recordingConfiguration())
+
+        let data = await loader.fetch(URL(string: "https://upload.wikimedia.org/file.jpg")!)
+
+        XCTAssertNil(data)
+    }
+
+    func testOversizeBodyIsRejectedEvenWithoutContentLength() async throws {
+        RecordingImageURLProtocol.response = .ok(
+            Data(repeating: 1, count: ImageLoader.maxImageBytes + 1),
+            contentLength: nil
+        )
+        let loader = ImageLoader(configuration: recordingConfiguration())
+
+        let data = await loader.fetch(URL(string: "https://upload.wikimedia.org/file.jpg")!)
+
+        XCTAssertNil(data)
+    }
 }
 
 private func recordingConfiguration() -> URLSessionConfiguration {
@@ -48,7 +72,7 @@ private func recordingConfiguration() -> URLSessionConfiguration {
 
 private final class RecordingImageURLProtocol: URLProtocol, @unchecked Sendable {
     enum Response: Sendable {
-        case ok(Data)
+        case ok(Data, contentLength: Int? = nil)
         case redirect(to: String)
     }
 
@@ -66,16 +90,8 @@ private final class RecordingImageURLProtocol: URLProtocol, @unchecked Sendable 
     override func startLoading() {
         Self.requestedURLs.append(request.url!)
         switch Self.response {
-        case .ok(let data):
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: data)
-            client?.urlProtocolDidFinishLoading(self)
+        case .ok(let data, let contentLength):
+            startLoadingOK(data: data, contentLength: contentLength)
         case .redirect(let location):
             let response = HTTPURLResponse(
                 url: request.url!,
@@ -87,6 +103,22 @@ private final class RecordingImageURLProtocol: URLProtocol, @unchecked Sendable 
             client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: URL(string: location)!), redirectResponse: response)
             client?.urlProtocolDidFinishLoading(self)
         }
+    }
+
+    private func startLoadingOK(data: Data, contentLength: Int?) {
+        var headers: [String: String] = [:]
+        if let contentLength {
+            headers["Content-Length"] = String(contentLength)
+        }
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: headers
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
     }
 
     override func stopLoading() {}

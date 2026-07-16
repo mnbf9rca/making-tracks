@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-import MakingTracksData
+@testable import MakingTracksData
 @testable import MakingTracksCore
 
 final class CoreLoopControllerTests: XCTestCase {
@@ -19,6 +19,32 @@ final class CoreLoopControllerTests: XCTestCase {
         XCTAssertEqual(snapshot, try db.snapshot(for: "p_resolve"))
         let missingSource = await resolver.source(for: "missing")
         XCTAssertEqual(missingSource, .unavailable)
+    }
+
+    func testResolverReturnsSnapshotEvenWhenSnapshotJSONIsOverCap() async throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let oversized = PlaceSnapshot(
+            placeID: "p_oversize",
+            name: "Snapshot name",
+            lat: 51.5,
+            lon: -0.12,
+            category: "history",
+            tier: 2,
+            snapshotJSON: String(repeating: "x", count: PlaceCardModel.maxSnapshotJSONBytes + 1),
+            snapshotSchemaVersion: 1,
+            fetchedAt: Date(timeIntervalSince1970: 0)
+        )
+        try await db.dbQueue.write { try oversized.insert($0) }
+        let resolver = PlaceResolver(tile: StubTileResolver(refs: [:]), snapshots: db)
+
+        guard case .snapshot(let actionRef, let snapshot) = await resolver.source(for: "p_oversize") else {
+            return XCTFail("expected snapshot fallback despite over-cap raw JSON")
+        }
+
+        XCTAssertLessThanOrEqual(actionRef.rawJSON.utf8.count, PlaceRef.maxRawJSONBytes)
+        XCTAssertEqual(actionRef.placeID, "p_oversize")
+        XCTAssertEqual(snapshot, oversized)
+        XCTAssertEqual(PlaceCardModel.from(snapshot: snapshot, pinState: PinState(saved: false, visit: .none))?.name, "Snapshot name")
     }
 
     func testCoreLoopTogglesAreReversibleAndEmitChangedPlaceIDs() async throws {
@@ -90,6 +116,34 @@ final class CoreLoopControllerTests: XCTestCase {
         for (placeID, saved, visit) in cases {
             XCTAssertEqual(state[placeID], PinState(saved: saved, visit: visit), placeID)
         }
+    }
+
+    func testCoreLoopTransitionsPreserveOrthogonalAxes() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let controller = CoreLoopController(database: db)
+        let savedLoved = try makePlace("p_saved_loved_transition")
+        try controller.setSaved(savedLoved, true)
+        try controller.setVisited(savedLoved, true)
+        try controller.setLoved(placeID: savedLoved.placeID, true)
+
+        try controller.setSaved(savedLoved, false)
+        XCTAssertEqual(
+            try db.viewportState([savedLoved.placeID])[savedLoved.placeID],
+            PinState(saved: false, visit: .loved)
+        )
+
+        try controller.setSaved(savedLoved, true)
+        try controller.setLoved(placeID: savedLoved.placeID, false)
+        XCTAssertEqual(
+            try db.viewportState([savedLoved.placeID])[savedLoved.placeID],
+            PinState(saved: true, visit: .visited)
+        )
+
+        try controller.setVisited(savedLoved, false)
+        XCTAssertEqual(
+            try db.viewportState([savedLoved.placeID])[savedLoved.placeID],
+            PinState(saved: true, visit: .none)
+        )
     }
 }
 
