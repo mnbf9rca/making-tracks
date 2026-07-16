@@ -40,6 +40,58 @@ Issue-closing discipline: GitHub's `closes #N` keywords only fire on merges to t
 
 Worktree discipline: **one git worktree per agent, always.** Never work in the repo root checkout and never switch its branch — multiple agents share this machine, and an uncommitted edit in a shared checkout gets stranded (or destroyed) when another agent switches branches. Start every assignment by setting up your isolated workspace — use the `superpowers:using-git-worktrees` skill if your harness has it (the project-standard mechanism), otherwise fall back per that skill's convention: `git worktree add .worktrees/<branch> -b <branch>` inside the repo (the `.worktrees/` directory is gitignored; verify with `git check-ignore .worktrees` before creating) — and do all work there. Do not create sibling directories outside the repo.
 
+## iOS Simulator runbook (agents)
+
+Host-only package tests do not use the simulator. For `/ios` Swift package work that is covered by host tests, run `cd ios && swift test` on the macOS host. These tests never touch CoreSimulator and must not take the simulator lock.
+
+Simulator-backed `xcodebuild` runs are shared-machine resources and must use one designated simulator plus a file lock. The designated simulator is:
+
+- Name: `agent-ios-tests`
+- Device type: `iPhone 17`
+- Runtime: `com.apple.CoreSimulator.SimRuntime.iOS-26-2`
+- UDID: `C4A64D49-24A2-4429-B6E2-AD9A14142A99`
+- Creation command: `xcrun simctl create agent-ios-tests "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-26-2`
+
+Every simulator test run must hold `flock` on `/tmp/agent-ios-sim.lock` around the whole boot-and-test sequence. If `flock` is not available in `PATH`, stop and install/provide it; do not run simulator tests unlocked. As of 2026-07-16, this host does not expose `flock` in the default agent `PATH`, so `[XCODE/SIM]` work must provision it first. Two runs against one simulator collide in `testmanagerd` and app install state. Boot with `xcrun simctl bootstatus "$UDID" -b`; this is idempotent and blocking. Do not use `simctl boot` in agent scripts.
+
+Use exactly one destination, by UDID, and disable parallel/concurrent destination testing:
+
+```bash
+flock /tmp/agent-ios-sim.lock sh -ec '
+  UDID=C4A64D49-24A2-4429-B6E2-AD9A14142A99
+  xcrun simctl bootstatus "$UDID" -b
+  xcodebuild \
+    <project-or-workspace-args> \
+    -scheme <scheme> \
+    -destination "platform=iOS Simulator,id=$UDID" \
+    -parallel-testing-enabled NO \
+    -disable-concurrent-destination-testing \
+    test
+'
+```
+
+Current repo state: `/ios` is a Swift package, so use `swift test` there. When a B-track work package creates the app `.xcodeproj` or `.xcworkspace`, replace `<project-or-workspace-args>` and `<scheme>` with that package's real `xcodebuild` arguments; do not invent paths in shared docs.
+
+Parallel testing and multi-destination runs are the normal paths that spawn simulator clones. The single-destination command above, with `-parallel-testing-enabled NO` and `-disable-concurrent-destination-testing`, is the required defense against clone creation. If a run leaks clones, they hide in XCTest's separate device set; inspect it with:
+
+```bash
+xcrun simctl --set testing list
+```
+
+Weekly simulator cleanup for agents also takes the simulator lock, so cleanup cannot race an active simulator test:
+
+```bash
+flock /tmp/agent-ios-sim.lock sh -ec '
+  xcrun simctl --set testing delete all
+  xcrun simctl delete unavailable
+  find ~/Library/Developer/Xcode/DerivedData -mindepth 1 -maxdepth 1 -type d -mtime +14 \
+    \( -name "MakingTracks-*" -o -name "MakingTracksData-*" -o -name "agent-ios-tests-*" \) \
+    -prune -print -exec rm -rf {} +
+'
+```
+
+Never put `simctl delete all` or `simctl shutdown all` in shared scripts. Those commands destroy or disrupt other agents' and Rob's simulators. One simulator plus `flock` is the policy; add a simulator pool only if lock waits become a measured bottleneck.
+
 ## Review gates (mandatory before declaring anything complete)
 
 Nothing is "done" on the author's say-so. Before you declare a plan complete, open a PR, or report a build finished:
@@ -48,6 +100,7 @@ Nothing is "done" on the author's say-so. Before you declare a plan complete, op
 2. **No subagent capability?** Then request the review explicitly: message fable on AMQ (kind: review_request) with the artifact path and wait for the response before declaring completion.
 3. **Builders additionally:** full test suite green is a precondition, not evidence of review. Paste the actual test output (counts, not adjectives) in the PR description. A PR whose description says "tests pass" without output is incomplete.
 4. **Automated review comments are part of the gate.** Sourcery reviews a PR only when the `sourcery-review` label is applied — apply it yourself the moment you open the PR (`gh pr edit <n> --add-label sourcery-review`); an unlabelled PR is silently skipped, and absence of comments then means nothing. Before a PR is merge-eligible, its author processes every review comment — use the `pr-tools:process-review` skill where available, otherwise apply the same discipline manually: triage each comment with technical rigor (verify against plan/spec — neither performative agreement nor reflexive dismissal), fix-and-reply or rebut-with-evidence, and resolve the thread. **Nothing merges with unresolved review comments — and the automated review can take time to arrive, so its absence is not cleanliness.** A PR is merge-eligible only after the automated reviewer has actually posted its review (check the PR's reviews list for it) AND every resulting thread is resolved.
-5. **Independent review still happens.** The self-review pass does not replace the design lead's review of plans and PRs; it raises the floor so that review isn't the first pair of critical eyes.
+5. **Greptile is explicit-spend only.** Greptile (`greptile-review` label) costs $1/review and is applied only on fable's explicit instruction: `develop`→`main` promotions, security-surface PRs, and escalations. Sourcery remains the default automated layer; never apply `greptile-review` by default.
+6. **Independent review still happens.** The self-review pass does not replace the design lead's review of plans and PRs; it raises the floor so that review isn't the first pair of critical eyes.
 
 The one standing exception: trivial mechanical changes (typo fixes, comment corrections) need tests green but not the adversarial pass. When unsure whether something is trivial, it isn't.
