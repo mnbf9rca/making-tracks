@@ -187,3 +187,24 @@ def test_absence_ages_a_place_only_when_vanish_is_verified():
     )
     assert verified_vanish_run.records[0].last_seen_version == V1
     assert verified_vanish_run.records[0].status == "live"
+
+
+def test_reconcile_threads_region_to_fuzzy_telemetry(capsys):
+    R.reconcile(
+        [
+            _m("osm:node/1", {"osm:node/1"}, name="Same Place", lat=51.5, lon=-0.12),
+            _m("osm:node/2", {"osm:node/2"}, name="Same Place", lat=51.50001, lon=-0.12),
+        ],
+        [],
+        {},
+        version=V1,
+        succeeded_sources=SUCCEEDED,
+        cfg=FUZZY,
+        telemetry_region="uk",
+        fuzzy_heartbeat_every_pairs=1,
+    )
+
+    err = capsys.readouterr().err
+    assert "PHASE START reconcile.fuzzy_defer region=uk candidate_pairs=1" in err
+    assert "PHASE HEARTBEAT reconcile.fuzzy_defer region=uk processed=1/1" in err
+    assert "PHASE DONE reconcile.fuzzy_defer region=uk processed=1/1" in err

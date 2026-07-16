@@ -132,6 +132,7 @@ def _run_reconcile(conn, region: str, *, run_id: str, version: str) -> None:
         version=version,
         succeeded_sources=_succeeded_source_prefixes(region_config, metadata),
         cfg=fuzzy_config,
+        telemetry_region=region,
     )
     registry.save(result.records)
     review.write_review(review_path, _review_items(result.review))
