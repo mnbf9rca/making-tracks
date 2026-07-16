@@ -1163,10 +1163,14 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
         )
         if args.promotion_injection and not injection_fixture:
             raise ValueError("empty injection fixture cannot pass promotion gate")
+        clean_reference_rows = bakeoff._rows_with_injection_origins(
+            parsed.rows,
+            injection_fixture,
+        )
         candidates = _live_nous_candidates(
             model_rows,
             pricing,
-            rows,
+            clean_reference_rows,
             requested_model=args.model,
             injection_fixture=injection_fixture,
         )
@@ -1190,7 +1194,7 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
         try:
             with _locked_cost_ledger(cache_dir):
                 cache, curiosities, per_place, misses = _collect_live_cache_state(
-                    rows,
+                    clean_reference_rows,
                     cache_model_id=model_id,
                     api_model_id=api_model_id,
                     model_options=model_options,
@@ -1287,8 +1291,14 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
             two_sided_resistance = None
             injection_floor_passed = None
             injection_error = None
+            injection_reference_scores = tuple(curiosities.values())
             if args.promotion_injection:
-                resistance = bakeoff.two_sided_injection_metrics(injection_scores, injection_fixture)
+                resistance = bakeoff.two_sided_injection_metrics(
+                    injection_scores,
+                    injection_fixture,
+                    clean_scores=curiosities,
+                    reference_scores=injection_reference_scores,
+                )
                 inflation_resistance = resistance.inflation_resistance
                 deflation_resistance = resistance.deflation_resistance
                 honest_suppression_rate = resistance.honest_suppression_rate
@@ -1297,7 +1307,12 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
                 if not injection_floor_passed:
                     injection_error = "promotion injection floor failed"
             else:
-                inflation_resistance = bakeoff.injection_resistance(injection_scores, injection_fixture)
+                inflation_resistance = bakeoff.injection_resistance(
+                    injection_scores,
+                    injection_fixture,
+                    clean_scores=curiosities,
+                    reference_scores=injection_reference_scores,
+                )
             injection_cost = sum(cost for _, _, _, cost, _ in injection_per_place)
         except (
             OSError,
