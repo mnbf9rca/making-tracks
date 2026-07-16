@@ -6,6 +6,7 @@ import json
 import os
 import re
 import time
+from importlib import import_module as _import_module
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,6 +41,10 @@ class CurrentPointerUnavailable(RuntimeError):
 
 class PublishLockUnavailable(RuntimeError):
     """Raised when the per-region publish lock cannot be acquired."""
+
+
+class Boto3Unavailable(RuntimeError):
+    """Raised when R2 upload is requested without the boto3 dependency."""
 
 
 @dataclass(frozen=True)
@@ -274,8 +279,19 @@ def _ops_from_staging(
     )
 
 
+def require_boto3() -> None:
+    try:
+        _import_module("boto3")
+    except ImportError as exc:
+        raise Boto3Unavailable(
+            "boto3>=1.34 is required for publish --upload; install the "
+            "pipeline package dependencies before retrying"
+        ) from exc
+
+
 def _default_client():
-    import boto3
+    require_boto3()
+    boto3 = _import_module("boto3")
 
     account_id = os.environ["R2_ACCOUNT_ID"]
     return boto3.client(
