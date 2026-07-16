@@ -30,8 +30,10 @@ fake-curiosity-v1	fake	41786	16	0.00000000	byte-estimate
 nous-tencent-hy3-free	nous	41786	16	0.00000000	byte-estimate
 nous-meta-llama-3.1-8b-instruct	nous	41786	16	0.00229154	byte-estimate
 nous-hermes-4-70b	nous	41786	16	0.00259490	byte-estimate
-nous-nex-n2-mini	nous	41786	128	0.00306705	byte-estimate
+nous-nex-n2-mini	nous	41786	256	0.00508945	byte-estimate
 modal-meta-llama-3.1-8b	modal	41786	0	0.00479688	byte-estimate
 ```
 
-Live bake-off status: blocked on Rob's provider keys and op-run smoke test.
+Live bake-off follow-up: `nous-tencent-hy3-free` is retained in the roster as S1 but skipped
+for live round 1 because six probed request shapes returned 400 `missing user tag`.
+`nous-nex-n2-mini` now uses a 256-token output cap for the reasoning-enabled S4 run.

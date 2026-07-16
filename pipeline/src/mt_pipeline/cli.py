@@ -41,6 +41,14 @@ class LiveCandidateError(RuntimeError):
     """A live provider candidate failed after the run-level budget checks passed."""
 
 
+def _llm_response_excerpt(text: str, *, limit: int = 240) -> str:
+    return repr(text[:limit])
+
+
+def _live_exception_excerpt(exc: Exception, *, limit: int = 240) -> str:
+    return repr(str(exc)[:limit])
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mt-pipeline",
@@ -660,12 +668,9 @@ def _live_nous_candidates(
     rows: list[golden.GoldenRow],
     *,
     requested_model: str | None,
+    injection_fixture: tuple[bakeoff.InjectionProbe, ...] = (),
 ) -> list[tuple[float, str, str, dict, bakeoff.ModelOptions]]:
     candidates: list[tuple[float, str, str, dict, bakeoff.ModelOptions]] = []
-    prompts = [
-        curiosity.render_prompt({"name": row.name, "summary": row.evidence, "tags": [row.category]})
-        for row in rows
-    ]
     for model in model_rows:
         if not isinstance(model, dict):
             raise ValueError("model roster entries must be objects")
@@ -675,24 +680,48 @@ def _live_nous_candidates(
             continue
         if provider_id != "nous":
             continue
+        skip_reason = _live_skip_reason(model)
+        if skip_reason is not None:
+            if requested_model == model_id:
+                raise ValueError(f"requested live model {model_id!r} is skipped: {skip_reason}")
+            continue
         api_model_id = str(model.get("api_model_id", model_id))
         model_options = _model_request_options(model)
         model_pricing = pricing.get(model_id)
         if not isinstance(model_pricing, dict):
             raise ValueError(f"pricing missing for model {model_id!r}")
-        estimate = costmodel.estimate_cost(
-            prompts,
-            model_pricing,
-            output_token_cap=_model_output_token_cap(model_options),
-            model=model_id,
-            provider=provider_id,
+        requests = _live_candidate_requests(
+            rows,
+            injection_fixture,
+            cache_model_id=model_id,
+            api_model_id=api_model_id,
+            model_options=model_options,
         )
-        candidates.append((estimate.total_usd, model_id, api_model_id, model_pricing, model_options))
+        estimate = _estimate_request_cost(
+            requests,
+            model_pricing,
+            model=model_id,
+        )
+        candidates.append((estimate, model_id, api_model_id, model_pricing, model_options))
     if not candidates:
         if requested_model is not None:
             raise ValueError(f"requested live model {requested_model!r} is not a NOUS model in the roster")
         raise ValueError("live bakeoff requires at least one NOUS model in the roster")
     return sorted(candidates, key=lambda item: (item[0], item[1]))
+
+
+def _live_skip_reason(model: dict) -> str | None:
+    value = model.get("live_skip_reason")
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("model live_skip_reason must be a string")
+    reason = value.strip()
+    if not reason:
+        raise ValueError("model live_skip_reason must be non-empty")
+    if len(reason) > 512 or any(ord(ch) < 32 for ch in reason):
+        raise ValueError("model live_skip_reason must be printable text up to 512 chars")
+    return reason
 
 
 def _select_live_nous_model(
@@ -740,12 +769,14 @@ def _model_output_token_cap(model_options: bakeoff.ModelOptions) -> int:
 def _live_request(
     row: golden.GoldenRow,
     *,
+    cache_model_id: str,
     api_model_id: str,
     model_options: bakeoff.ModelOptions,
 ) -> curiosity.LlmRequest:
     return curiosity.curiosity_request(
         query_id=row.place_id,
-        model_id=api_model_id,
+        model_id=cache_model_id,
+        provider_model_id=api_model_id,
         place={"name": row.name, "summary": row.evidence, "tags": [row.category]},
         max_tokens=_model_output_token_cap(model_options),
         provider_tags=model_options.get("provider_tags"),  # type: ignore[arg-type]
@@ -757,12 +788,14 @@ def _live_request(
 def _live_injection_request(
     probe: bakeoff.InjectionProbe,
     *,
+    cache_model_id: str,
     api_model_id: str,
     model_options: bakeoff.ModelOptions,
 ) -> curiosity.LlmRequest:
     return curiosity.curiosity_request(
         query_id=probe.place_id,
-        model_id=api_model_id,
+        model_id=cache_model_id,
+        provider_model_id=api_model_id,
         place=probe.place,
         max_tokens=_model_output_token_cap(model_options),
         provider_tags=model_options.get("provider_tags"),  # type: ignore[arg-type]
@@ -774,6 +807,7 @@ def _live_injection_request(
 def _collect_live_cache_state(
     rows: list[golden.GoldenRow],
     *,
+    cache_model_id: str,
     api_model_id: str,
     model_options: bakeoff.ModelOptions,
     cache_dir: pathlib.Path,
@@ -789,7 +823,7 @@ def _collect_live_cache_state(
     misses: list[tuple[golden.GoldenRow, str, curiosity.LlmRequest]] = []
 
     for row in rows:
-        req = _live_request(row, api_model_id=api_model_id, model_options=model_options)
+        req = _live_request(row, cache_model_id=cache_model_id, api_model_id=api_model_id, model_options=model_options)
         rendered_prompt = req.messages[0].content
         input_hash = llm_cache.input_hash(
             task_id=req.task_id,
@@ -810,6 +844,7 @@ def _collect_live_injection_cache_state(
     cache: llm_cache.LlmCache,
     fixture: tuple[bakeoff.InjectionProbe, ...],
     *,
+    cache_model_id: str,
     api_model_id: str,
     model_options: bakeoff.ModelOptions,
 ) -> tuple[
@@ -821,7 +856,7 @@ def _collect_live_injection_cache_state(
     output_rows: list[tuple[str, float, bool, float, str]] = []
     misses: list[tuple[bakeoff.InjectionProbe, str, curiosity.LlmRequest]] = []
     for probe in fixture:
-        req = _live_injection_request(probe, api_model_id=api_model_id, model_options=model_options)
+        req = _live_injection_request(probe, cache_model_id=cache_model_id, api_model_id=api_model_id, model_options=model_options)
         rendered_prompt = req.messages[0].content
         input_hash = llm_cache.input_hash(
             task_id=req.task_id,
@@ -838,23 +873,57 @@ def _collect_live_injection_cache_state(
     return scores, output_rows, misses
 
 
+def _live_candidate_requests(
+    rows: list[golden.GoldenRow],
+    injection_fixture: tuple[bakeoff.InjectionProbe, ...],
+    *,
+    cache_model_id: str,
+    api_model_id: str,
+    model_options: bakeoff.ModelOptions,
+) -> list[curiosity.LlmRequest]:
+    return [
+        *[
+            _live_request(
+                row,
+                cache_model_id=cache_model_id,
+                api_model_id=api_model_id,
+                model_options=model_options,
+            )
+            for row in rows
+        ],
+        *[
+            _live_injection_request(
+                probe,
+                cache_model_id=cache_model_id,
+                api_model_id=api_model_id,
+                model_options=model_options,
+            )
+            for probe in injection_fixture
+        ],
+    ]
+
+
 def _estimate_request_cost(
     requests: Sequence[curiosity.LlmRequest],
     model_pricing: dict,
     *,
-    model_id: str,
-    model_options: bakeoff.ModelOptions | None = None,
+    model: str,
 ) -> float:
-    if model_options is None:
-        model_options = {}
-    prompts = [req.messages[0].content for req in requests]
-    return costmodel.estimate_cost(
-        prompts,
-        model_pricing,
-        output_token_cap=_model_output_token_cap(model_options),
-        model=model_id,
-        provider="nous",
-    ).total_usd
+    input_per_m = _non_negative_price(model_pricing, "input_per_m", model=model)
+    output_per_m = _non_negative_price(model_pricing, "output_per_m", model=model)
+    input_tokens = sum(costmodel.count_request_tokens(req) for req in requests)
+    output_tokens = sum(req.max_tokens for req in requests)
+    return input_tokens * input_per_m / 1_000_000 + output_tokens * output_per_m / 1_000_000
+
+
+def _non_negative_price(model_pricing: dict, key: str, *, model: str) -> float:
+    value = model_pricing[key]
+    if isinstance(value, bool):
+        raise ValueError(f"pricing for {model!r} field {key!r} must be numeric")
+    number = float(value)
+    if not math.isfinite(number) or number < 0.0:
+        raise ValueError(f"pricing for {model!r} field {key!r} must be finite and non-negative")
+    return number
 
 
 async def _score_live_with_cache_async(
@@ -915,19 +984,17 @@ async def _score_live_with_cache_async(
                 estimated_failure_cost = _estimate_request_cost(
                     [req for _, _, _, req in batch],
                     model_pricing,
-                    model_id=batch[0][3].model_id,
-                    model_options=model_options,
+                    model=batch[0][3].model_id,
                 )
                 if estimated_failure_cost > 0.0:
                     charged_rows.append(("unknown", 0.0, False, estimated_failure_cost, "derived"))
                     total_response_cost += estimated_failure_cost
-                raise LiveCandidateError(str(exc)) from exc
+                raise LiveCandidateError(f"provider request failed: {_live_exception_excerpt(exc)}") from exc
             if len(responses) != len(batch):
                 estimated_failure_cost = _estimate_request_cost(
                     [req for _, _, _, req in batch],
                     model_pricing,
-                    model_id=batch[0][3].model_id,
-                    model_options=model_options,
+                    model=batch[0][3].model_id,
                 )
                 returned_cost = sum(response.cost_usd for response in responses)
                 charged_rows.extend(
@@ -950,7 +1017,9 @@ async def _score_live_with_cache_async(
                 try:
                     parsed = curiosity.parse_curiosity(response.text)
                 except curiosity.CuriosityParseError as exc:
-                    raise LiveCandidateError(str(exc)) from exc
+                    raise LiveCandidateError(
+                        f"{exc}: kind={kind} place_id={place_id} response={_llm_response_excerpt(response.text)}"
+                    ) from exc
                 cache.put(
                     llm_cache.cache_key(req.task_id, req.model_id, req.prompt_version, input_hash),
                     parsed.model_dump(),
@@ -975,7 +1044,7 @@ async def _score_live_with_cache_async(
         if charged_rows:
             ledger = _update_cost_ledger(cache_dir, ledger, charged_rows)
         if shutdown_error is not None:
-            raise LiveCandidateError(str(shutdown_error)) from shutdown_error
+            raise LiveCandidateError(f"provider shutdown failed: {_live_exception_excerpt(shutdown_error)}") from shutdown_error
 
     output_rows.sort(key=lambda item: item[0])
     injection_output_rows.sort(key=lambda item: item[0])
@@ -1087,12 +1156,6 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
         rows = parsed.rows[: args.max_places]
         if not rows:
             raise ValueError("live bakeoff has no parsed rows to score")
-        candidates = _live_nous_candidates(
-            model_rows,
-            pricing,
-            rows,
-            requested_model=args.model,
-        )
         injection_fixture = (
             tuple(bakeoff.TWO_SIDED_INJECTION_PROBES)
             if args.promotion_injection
@@ -1100,6 +1163,13 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
         )
         if args.promotion_injection and not injection_fixture:
             raise ValueError("empty injection fixture cannot pass promotion gate")
+        candidates = _live_nous_candidates(
+            model_rows,
+            pricing,
+            rows,
+            requested_model=args.model,
+            injection_fixture=injection_fixture,
+        )
         cache_dir = pathlib.Path(args.cache_dir)
     except (
         OSError,
@@ -1121,6 +1191,7 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
             with _locked_cost_ledger(cache_dir):
                 cache, curiosities, per_place, misses = _collect_live_cache_state(
                     rows,
+                    cache_model_id=model_id,
                     api_model_id=api_model_id,
                     model_options=model_options,
                     cache_dir=cache_dir,
@@ -1128,6 +1199,7 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
                 injection_scores, injection_per_place, injection_misses = _collect_live_injection_cache_state(
                     cache,
                     injection_fixture,
+                    cache_model_id=model_id,
                     api_model_id=api_model_id,
                     model_options=model_options,
                 )
@@ -1135,8 +1207,7 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
                 estimated_miss_cost = _estimate_request_cost(
                     [req for _, _, req in misses] + [req for _, _, req in injection_misses],
                     model_pricing,
-                    model_id=model_id,
-                    model_options=model_options,
+                    model=model_id,
                 )
                 if float(ledger["total_usd"]) + estimated_miss_cost > budget_cap:
                     print(

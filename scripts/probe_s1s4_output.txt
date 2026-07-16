@@ -1,0 +1,40 @@
+--- s1-current-tags ---
+request {"extra_body": {"tags": ["making-tracks", "curiosity"]}, "max_tokens": 16, "model": "tencent/hy3:free", "response_format": {"type": "json_object"}, "seed": 0, "temperature": 0.0, "top_p": 1.0}
+error BadRequestError Error code: 400 - {'status': 400, 'message': 'This request is not valid. Check the model name and other parameters. Additional info: missing user tag'}
+body {'status': 400, 'message': 'This request is not valid. Check the model name and other parameters. Additional info: missing user tag'}
+--- s1-current-tags-plus-user ---
+request {"extra_body": {"tags": ["making-tracks", "curiosity"]}, "max_tokens": 16, "model": "tencent/hy3:free", "response_format": {"type": "json_object"}, "seed": 0, "temperature": 0.0, "top_p": 1.0, "user": "making-tracks-eval"}
+error BadRequestError Error code: 400 - {'status': 400, 'message': 'This request is not valid. Check the model name and other parameters. Additional info: missing user tag'}
+body {'status': 400, 'message': 'This request is not valid. Check the model name and other parameters. Additional info: missing user tag'}
+--- s1-current-tags-plus-metadata-user ---
+request {"extra_body": {"tags": ["making-tracks", "curiosity"]}, "max_tokens": 16, "metadata": {"app": "making-tracks", "user": "making-tracks-eval"}, "model": "tencent/hy3:free", "response_format": {"type": "json_object"}, "seed": 0, "temperature": 0.0, "top_p": 1.0}
+error BadRequestError Error code: 400 - {'status': 400, 'message': 'This request is not valid. Check the model name and other parameters. Additional info: missing user tag'}
+body {'status': 400, 'message': 'This request is not valid. Check the model name and other parameters. Additional info: missing user tag'}
+--- s1-tags-with-user-tag ---
+request {"extra_body": {"tags": ["making-tracks", "curiosity", "user:making-tracks-eval"]}, "max_tokens": 16, "model": "tencent/hy3:free", "response_format": {"type": "json_object"}, "seed": 0, "temperature": 0.0, "top_p": 1.0}
+error BadRequestError Error code: 400 - {'status': 400, 'message': 'This request is not valid. Check the model name and other parameters. Additional info: missing user tag'}
+body {'status': 400, 'message': 'This request is not valid. Check the model name and other parameters. Additional info: missing user tag'}
+--- s1-extra-body-user ---
+request {"extra_body": {"tags": ["making-tracks", "curiosity"], "user": "making-tracks-eval"}, "max_tokens": 16, "model": "tencent/hy3:free", "response_format": {"type": "json_object"}, "seed": 0, "temperature": 0.0, "top_p": 1.0}
+error BadRequestError Error code: 400 - {'status': 400, 'message': 'This request is not valid. Check the model name and other parameters. Additional info: missing user tag'}
+body {'status': 400, 'message': 'This request is not valid. Check the model name and other parameters. Additional info: missing user tag'}
+--- s1-current-tags-plus-app-headers ---
+request {"extra_body": {"tags": ["making-tracks", "curiosity"]}, "extra_headers": "<redacted>", "max_tokens": 16, "model": "tencent/hy3:free", "response_format": {"type": "json_object"}, "seed": 0, "temperature": 0.0, "top_p": 1.0}
+error BadRequestError Error code: 400 - {'status': 400, 'message': 'This request is not valid. Check the model name and other parameters. Additional info: missing user tag'}
+body {'status': 400, 'message': 'This request is not valid. Check the model name and other parameters. Additional info: missing user tag'}
+--- s4-current-reasoning ---
+request {"extra_body": {"reasoning": {"effort": "low", "enabled": true, "exclude": true}}, "max_tokens": 128, "model": "nex-agi/nex-n2-mini", "response_format": {"type": "json_object"}, "temperature": 0.0, "top_p": 1.0}
+ok text= '{\n  "curiosity": 0.25\n}'
+usage CompletionUsage(completion_tokens=17, prompt_tokens=98, total_tokens=115, completion_tokens_details=CompletionTokensDetails(accepted_prediction_tokens=None, audio_tokens=0, reasoning_tokens=2, rejected_prediction_tokens=None, image_tokens=0), prompt_tokens_details=PromptTokensDetails(audio_tokens=0, cache_write_tokens=0, cached_tokens=0, video_tokens=0), cost=4.15e-06, is_byok=False, cost_details={'upstream_inference_cost': 4.15e-06, 'upstream_inference_prompt_cost': 2.45e-06, 'upstream_inference_completions_cost': 1.7e-06})
+--- s4-reasoning-disabled-cap16 ---
+request {"max_tokens": 16, "model": "nex-agi/nex-n2-mini", "response_format": {"type": "json_object"}, "temperature": 0.0, "top_p": 1.0}
+ok text= '{\n"curiosity": 0.32\n}'
+usage CompletionUsage(completion_tokens=16, prompt_tokens=98, total_tokens=114, completion_tokens_details=CompletionTokensDetails(accepted_prediction_tokens=None, audio_tokens=0, reasoning_tokens=2, rejected_prediction_tokens=None, image_tokens=0), prompt_tokens_details=PromptTokensDetails(audio_tokens=0, cache_write_tokens=0, cached_tokens=0, video_tokens=0), cost=4.05e-06, is_byok=False, cost_details={'upstream_inference_cost': 4.05e-06, 'upstream_inference_prompt_cost': 2.45e-06, 'upstream_inference_completions_cost': 1.6e-06})
+--- s4-reasoning-explicit-disabled-cap16 ---
+request {"extra_body": {"reasoning": {"enabled": false}}, "max_tokens": 16, "model": "nex-agi/nex-n2-mini", "response_format": {"type": "json_object"}, "temperature": 0.0, "top_p": 1.0}
+ok text= '{\n  "curiosity": 0.38\n}'
+usage CompletionUsage(completion_tokens=16, prompt_tokens=98, total_tokens=114, completion_tokens_details=CompletionTokensDetails(accepted_prediction_tokens=None, audio_tokens=0, reasoning_tokens=2, rejected_prediction_tokens=None, image_tokens=0), prompt_tokens_details=PromptTokensDetails(audio_tokens=0, cache_write_tokens=0, cached_tokens=0, video_tokens=0), cost=4.05e-06, is_byok=False, cost_details={'upstream_inference_cost': 4.05e-06, 'upstream_inference_prompt_cost': 2.45e-06, 'upstream_inference_completions_cost': 1.6e-06})
+--- s4-current-reasoning-cap256 ---
+request {"extra_body": {"reasoning": {"effort": "low", "enabled": true, "exclude": true}}, "max_tokens": 256, "model": "nex-agi/nex-n2-mini", "response_format": {"type": "json_object"}, "temperature": 0.0, "top_p": 1.0}
+ok text= '{\n  "curiosity": 0.28\n}'
+usage CompletionUsage(completion_tokens=17, prompt_tokens=98, total_tokens=115, completion_tokens_details=CompletionTokensDetails(accepted_prediction_tokens=None, audio_tokens=0, reasoning_tokens=2, rejected_prediction_tokens=None, image_tokens=0), prompt_tokens_details=PromptTokensDetails(audio_tokens=0, cache_write_tokens=0, cached_tokens=0, video_tokens=0), cost=4.15e-06, is_byok=False, cost_details={'upstream_inference_cost': 4.15e-06, 'upstream_inference_prompt_cost': 2.45e-06, 'upstream_inference_completions_cost': 1.7e-06})

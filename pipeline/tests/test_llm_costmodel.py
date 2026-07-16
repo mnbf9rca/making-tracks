@@ -90,7 +90,7 @@ def test_default_round1_roster_and_pricing_bind_real_portal_ids():
         "nous-tencent-hy3-free": ("tencent/hy3:free", 16),
         "nous-meta-llama-3.1-8b-instruct": ("meta-llama/llama-3.1-8b-instruct", 16),
         "nous-hermes-4-70b": ("nousresearch/hermes-4-70b", 16),
-        "nous-nex-n2-mini": ("nex-agi/nex-n2-mini", 128),
+        "nous-nex-n2-mini": ("nex-agi/nex-n2-mini", 256),
     }
 
     for model_id, (api_model_id, max_tokens) in expected.items():
@@ -102,6 +102,7 @@ def test_default_round1_roster_and_pricing_bind_real_portal_ids():
     assert pricing["nous-tencent-hy3-free"]["input_per_m"] == 0.0
     assert pricing["nous-tencent-hy3-free"]["output_per_m"] == 0.0
     assert by_id["nous-tencent-hy3-free"]["provider_tags"] == ["making-tracks", "curiosity"]
+    assert by_id["nous-tencent-hy3-free"]["live_skip_reason"].startswith("admission-failed:")
     assert pricing["nous-hermes-4-70b"]["input_per_m"] == 0.05
     assert pricing["nous-hermes-4-70b"]["output_per_m"] == 0.20
     assert by_id["nous-hermes-4-70b"]["seed"] is None
@@ -117,7 +118,6 @@ def test_default_round1_roster_entries_construct_requests_and_cache_keys():
     root = C.PROJECT_ROOT / "pipeline" / "config"
     models = json.loads((root / "llm_models.json").read_text())["models"]
     expected_ids = {
-        "nous-tencent-hy3-free",
         "nous-meta-llama-3.1-8b-instruct",
         "nous-hermes-4-70b",
         "nous-nex-n2-mini",
