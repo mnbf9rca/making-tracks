@@ -27,6 +27,21 @@
       "input_per_m": 0.025,
       "output_per_m": 0.10
     },
+    "nous-deepseek-v4-pro": {
+      "provider": "nous",
+      "input_per_m": 0.435,
+      "output_per_m": 0.87
+    },
+    "nous-glm-5.2": {
+      "provider": "nous",
+      "input_per_m": 0.9408,
+      "output_per_m": 2.9568
+    },
+    "nous-muse-spark-1.1": {
+      "provider": "nous",
+      "input_per_m": 1.25,
+      "output_per_m": 4.25
+    },
     "modal-meta-llama-3.1-8b": {
       "provider": "modal",
       "input_per_m": 0.0,

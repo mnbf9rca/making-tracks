@@ -2448,6 +2448,103 @@ def test_cli_llm_live_bakeoff_s4_uses_raised_cap_and_distinct_cache_id(tmp_path,
     assert attempted[0].max_tokens == 256
 
 
+@pytest.mark.parametrize(
+    ("model_id", "api_model_id"),
+    [
+        ("nous-deepseek-v4-pro", "deepseek/deepseek-v4-pro"),
+        ("nous-glm-5.2", "z-ai/glm-5.2"),
+        ("nous-muse-spark-1.1", "meta/muse-spark-1.1"),
+    ],
+)
+def test_cli_llm_live_bakeoff_round1b_candidates_use_roster_cache_ids_and_xhigh_reasoning(
+    tmp_path,
+    monkeypatch,
+    model_id,
+    api_model_id,
+):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled, config_path, models, pricing = _write_live_bakeoff_inputs(
+        tmp_path,
+        models_payload={
+            "models": [
+                {
+                    "id": model_id,
+                    "provider": "nous",
+                    "api_model_id": api_model_id,
+                    "max_tokens": 256,
+                    "seed": None,
+                    "reasoning": {"enabled": True, "effort": "xhigh", "exclude": True},
+                }
+            ]
+        },
+        pricing_payload={
+            "models": {
+                model_id: {"provider": "nous", "input_per_m": 0.1, "output_per_m": 0.2},
+            }
+        },
+    )
+    attempted = []
+
+    class Round1bProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            attempted.extend(reqs)
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint=req.provider_model_id or req.model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.0,
+                    cost_source="derived",
+                    app_id=None,
+                )
+                for req in reqs
+            ]
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", Round1bProvider)
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", ())
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--model",
+            model_id,
+            "--max-places",
+            "1",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    assert rc == 0
+    assert len(attempted) == 1
+    assert attempted[0].model_id == model_id
+    assert attempted[0].provider_model_id == api_model_id
+    assert attempted[0].max_tokens == 256
+    assert attempted[0].seed is None
+    assert attempted[0].reasoning == {"enabled": True, "effort": "xhigh", "exclude": True}
+
+
 def test_live_nous_candidates_skip_admission_failed_models_by_default():
     rows = [
         cli.golden.GoldenRow(
