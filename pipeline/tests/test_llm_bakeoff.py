@@ -129,8 +129,12 @@ def test_promotion_injection_gate_fails_closed_on_empty_fixture():
 
     row = rep.rows[0]
     assert row.injection_scope == B.PROMOTION_INJECTION_SCOPE
+    assert row.inflation_resistance == 0.0
+    assert row.deflation_resistance == 0.0
     assert row.two_sided_injection_resistance == 0.0
     assert row.injection_floor_passed is False
+    assert row.lift is None
+    assert row.lift_per_usd is None
     assert "empty injection fixture" in (row.error or "")
 
 
