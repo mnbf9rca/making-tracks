@@ -17,7 +17,7 @@ from mt_pipeline.llm import cache as llm_cache
 from mt_pipeline.llm import curiosity
 
 
-DEFAULT_MODEL_IDS = ("nous-hermes-4-70b", "nous-nex-n2-mini")
+DEFAULT_MODEL_IDS = ("nous-hermes-4-70b", "nous-nex-n2-mini-low")
 REQUEST_OPTION_KEYS = ("max_tokens", "reasoning", "provider_tags", "seed")
 
 

@@ -34,7 +34,7 @@
       "seed": null
     },
     {
-      "id": "nous-nex-n2-mini",
+      "id": "nous-nex-n2-mini-none",
       "provider": "nous",
       "api_model_id": "nex-agi/nex-n2-mini",
       "tokenizer": "byte-estimate",
@@ -42,8 +42,34 @@
       "max_tokens": 256,
       "seed": null,
       "reasoning": {
+        "enabled": false
+      }
+    },
+    {
+      "id": "nous-nex-n2-mini-low",
+      "provider": "nous",
+      "api_model_id": "nex-agi/nex-n2-mini",
+      "tokenizer": "byte-estimate",
+      "slot": "S4-low",
+      "max_tokens": 1024,
+      "seed": null,
+      "reasoning": {
         "enabled": true,
         "effort": "low",
+        "exclude": true
+      }
+    },
+    {
+      "id": "nous-nex-n2-mini-high",
+      "provider": "nous",
+      "api_model_id": "nex-agi/nex-n2-mini",
+      "tokenizer": "byte-estimate",
+      "slot": "S4-high",
+      "max_tokens": 1024,
+      "seed": null,
+      "reasoning": {
+        "enabled": true,
+        "effort": "high",
         "exclude": true
       }
     },
@@ -54,34 +80,9 @@
       "tokenizer": "byte-estimate",
       "slot": "S5",
       "max_tokens": 256,
-      "seed": null
-    },
-    {
-      "id": "nous-deepseek-v4-pro-low",
-      "provider": "nous",
-      "api_model_id": "deepseek/deepseek-v4-pro",
-      "tokenizer": "byte-estimate",
-      "slot": "S5-low",
-      "max_tokens": 256,
       "seed": null,
       "reasoning": {
-        "enabled": true,
-        "effort": "low",
-        "exclude": true
-      }
-    },
-    {
-      "id": "nous-deepseek-v4-pro-high",
-      "provider": "nous",
-      "api_model_id": "deepseek/deepseek-v4-pro",
-      "tokenizer": "byte-estimate",
-      "slot": "S5-high",
-      "max_tokens": 256,
-      "seed": null,
-      "reasoning": {
-        "enabled": true,
-        "effort": "high",
-        "exclude": true
+        "enabled": false
       }
     },
     {
@@ -91,7 +92,10 @@
       "tokenizer": "byte-estimate",
       "slot": "S6",
       "max_tokens": 256,
-      "seed": null
+      "seed": null,
+      "reasoning": {
+        "enabled": false
+      }
     },
     {
       "id": "nous-muse-spark-1.1",
@@ -100,7 +104,8 @@
       "tokenizer": "byte-estimate",
       "slot": "S7",
       "max_tokens": 256,
-      "seed": null
+      "seed": null,
+      "live_skip_reason": "admission-failed: VPS probe with reasoning.enabled=false burned reasoning_tokens=253/256, finish=length, empty content; mandatory reasoning model cannot run snap task economically and is priced out of the $40-60 production class"
     },
     {
       "id": "modal-meta-llama-3.1-8b",

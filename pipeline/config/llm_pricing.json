@@ -22,22 +22,22 @@
       "input_per_m": 0.05,
       "output_per_m": 0.20
     },
-    "nous-nex-n2-mini": {
+    "nous-nex-n2-mini-none": {
+      "provider": "nous",
+      "input_per_m": 0.025,
+      "output_per_m": 0.10
+    },
+    "nous-nex-n2-mini-low": {
+      "provider": "nous",
+      "input_per_m": 0.025,
+      "output_per_m": 0.10
+    },
+    "nous-nex-n2-mini-high": {
       "provider": "nous",
       "input_per_m": 0.025,
       "output_per_m": 0.10
     },
     "nous-deepseek-v4-pro-none": {
-      "provider": "nous",
-      "input_per_m": 0.435,
-      "output_per_m": 0.87
-    },
-    "nous-deepseek-v4-pro-low": {
-      "provider": "nous",
-      "input_per_m": 0.435,
-      "output_per_m": 0.87
-    },
-    "nous-deepseek-v4-pro-high": {
       "provider": "nous",
       "input_per_m": 0.435,
       "output_per_m": 0.87

@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 import json
 
@@ -1543,6 +1544,124 @@ def test_cli_llm_live_bakeoff_passes_configured_concurrency_to_nous_provider(
     assert seen_concurrency == [expected_concurrency]
 
 
+def test_cli_llm_live_bakeoff_emits_stderr_phase_telemetry(tmp_path, capsys, monkeypatch):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled, config_path, models, pricing = _write_live_bakeoff_inputs(
+        tmp_path,
+        models_payload={"models": [{"id": "nous-telemetry", "provider": "nous"}]},
+        pricing_payload={
+            "models": {
+                "nous-telemetry": {"provider": "nous", "input_per_m": 0.15, "output_per_m": 0.60},
+            }
+        },
+    )
+    probes = tuple(_test_probe("mt1_00000000000000000000000000", suffix=str(index)) for index in range(9))
+
+    class TelemetryProvider:
+        def __init__(self, **kwargs):
+            self.concurrency = kwargs["concurrency"]
+
+        async def acomplete(self, req):
+            return ProviderResponse(
+                text='{"curiosity": 0.9}',
+                model_fingerprint=req.model_id,
+                input_tokens=10,
+                output_tokens=2,
+                latency_ms=0,
+                cost_usd=0.00001,
+                cost_source="derived",
+                app_id=None,
+            )
+
+        async def acomplete_batch(self, reqs):
+            return [await self.acomplete(req) for req in reqs]
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", TelemetryProvider)
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", probes)
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "PHASE START model=nous-telemetry total=10" in err
+    assert "HEARTBEAT model=nous-telemetry completed=10/10" in err
+    assert "cache_hits=0" in err
+    assert "cost_usd=0.00010000" in err
+    assert "PHASE DONE model=nous-telemetry completed=10/10" in err
+
+
+def test_live_batch_telemetry_emits_time_heartbeat_while_request_is_in_flight(capsys):
+    from mt_pipeline.llm.models import ProviderResponse
+
+    request = cli.curiosity.curiosity_request(
+        query_id="mt1_slow",
+        model_id="nous-slow",
+        provider_model_id="nous/slow",
+        place={"name": "A", "summary": "Historic marker", "tags": ["historic"]},
+    )
+
+    class SlowProvider:
+        concurrency = 1
+
+        async def acomplete(self, req):
+            await asyncio.sleep(0.03)
+            return ProviderResponse(
+                text='{"curiosity": 0.9}',
+                model_fingerprint=req.model_id,
+                input_tokens=10,
+                output_tokens=2,
+                latency_ms=0,
+                cost_usd=0.00001,
+                cost_source="derived",
+                app_id=None,
+            )
+
+    telemetry = cli.progress.LivePhaseProgress(
+        model_id="nous-slow",
+        total=1,
+        cache_hits=0,
+        heartbeat_every_seconds=0.01,
+    )
+    telemetry.start()
+    responses = asyncio.run(
+        cli._complete_live_batch_with_telemetry(
+            SlowProvider(),
+            [request],
+            telemetry=telemetry,
+        )
+    )
+    telemetry.done()
+
+    assert len(responses) == 1
+    err = capsys.readouterr().err
+    assert "HEARTBEAT model=nous-slow completed=0/1" in err
+    assert "PHASE DONE model=nous-slow completed=1/1" in err
+
+
 def test_cli_llm_live_bakeoff_refuses_when_ledger_plus_estimate_exceeds_cap(tmp_path, capsys, monkeypatch):
     from mt_pipeline.llm.providers import nous
 
@@ -2530,7 +2649,7 @@ def test_cli_llm_live_bakeoff_rejects_explicit_skipped_candidate_without_provide
     assert "requested live model 's1' is skipped: admission-failed" in capsys.readouterr().err
 
 
-def test_cli_llm_live_bakeoff_s4_uses_raised_cap_and_distinct_cache_id(tmp_path, monkeypatch):
+def test_cli_llm_live_bakeoff_s4_low_effort_uses_raised_cap_and_distinct_cache_id(tmp_path, monkeypatch):
     from mt_pipeline.llm.models import ProviderResponse
     from mt_pipeline.llm.providers import nous
 
@@ -2539,10 +2658,10 @@ def test_cli_llm_live_bakeoff_s4_uses_raised_cap_and_distinct_cache_id(tmp_path,
         models_payload={
             "models": [
                 {
-                    "id": "nous-nex-n2-mini",
+                    "id": "nous-nex-n2-mini-low",
                     "provider": "nous",
                     "api_model_id": "nex-agi/nex-n2-mini",
-                    "max_tokens": 256,
+                    "max_tokens": 1024,
                     "seed": None,
                     "reasoning": {"enabled": True, "effort": "low", "exclude": True},
                 }
@@ -2550,7 +2669,7 @@ def test_cli_llm_live_bakeoff_s4_uses_raised_cap_and_distinct_cache_id(tmp_path,
         },
         pricing_payload={
             "models": {
-                "nous-nex-n2-mini": {"provider": "nous", "input_per_m": 0.025, "output_per_m": 0.10},
+                "nous-nex-n2-mini-low": {"provider": "nous", "input_per_m": 0.025, "output_per_m": 0.10},
             }
         },
     )
@@ -2605,22 +2724,21 @@ def test_cli_llm_live_bakeoff_s4_uses_raised_cap_and_distinct_cache_id(tmp_path,
 
     assert rc == 0
     assert len(attempted) == 1
-    assert attempted[0].model_id == "nous-nex-n2-mini"
+    assert attempted[0].model_id == "nous-nex-n2-mini-low"
     assert attempted[0].provider_model_id == "nex-agi/nex-n2-mini"
-    assert attempted[0].max_tokens == 256
+    assert attempted[0].max_tokens == 1024
 
 
 @pytest.mark.parametrize(
     ("model_id", "api_model_id", "reasoning"),
     [
-        ("nous-deepseek-v4-pro-none", "deepseek/deepseek-v4-pro", None),
-        ("nous-deepseek-v4-pro-low", "deepseek/deepseek-v4-pro", {"enabled": True, "effort": "low", "exclude": True}),
-        ("nous-deepseek-v4-pro-high", "deepseek/deepseek-v4-pro", {"enabled": True, "effort": "high", "exclude": True}),
-        ("nous-glm-5.2", "z-ai/glm-5.2", None),
-        ("nous-muse-spark-1.1", "meta/muse-spark-1.1", None),
+        ("nous-nex-n2-mini-none", "nex-agi/nex-n2-mini", {"enabled": False}),
+        ("nous-nex-n2-mini-low", "nex-agi/nex-n2-mini", {"enabled": True, "effort": "low", "exclude": True}),
+        ("nous-nex-n2-mini-high", "nex-agi/nex-n2-mini", {"enabled": True, "effort": "high", "exclude": True}),
+        ("nous-deepseek-v4-pro-none", "deepseek/deepseek-v4-pro", {"enabled": False}),
     ],
 )
-def test_cli_llm_live_bakeoff_round1b_candidates_use_cache_distinct_reasoning_shapes(
+def test_cli_llm_live_bakeoff_round1b_candidates_use_rob_reframed_reasoning_shapes(
     tmp_path,
     monkeypatch,
     model_id,
@@ -2638,9 +2756,9 @@ def test_cli_llm_live_bakeoff_round1b_candidates_use_cache_distinct_reasoning_sh
                     "id": model_id,
                     "provider": "nous",
                     "api_model_id": api_model_id,
-                    "max_tokens": 256,
+                    "max_tokens": 1024 if model_id in {"nous-nex-n2-mini-low", "nous-nex-n2-mini-high"} else 256,
                     "seed": None,
-                    **({"reasoning": reasoning} if reasoning is not None else {}),
+                    "reasoning": reasoning,
                 }
             ]
         },
@@ -2705,9 +2823,82 @@ def test_cli_llm_live_bakeoff_round1b_candidates_use_cache_distinct_reasoning_sh
     assert len(attempted) == 1
     assert attempted[0].model_id == model_id
     assert attempted[0].provider_model_id == api_model_id
-    assert attempted[0].max_tokens == 256
+    assert attempted[0].max_tokens == (
+        1024 if model_id in {"nous-nex-n2-mini-low", "nous-nex-n2-mini-high"} else 256
+    )
     assert attempted[0].seed is None
     assert attempted[0].reasoning == reasoning
+
+
+def test_live_nous_candidates_include_probe_verified_glm_minimal_by_default():
+    rows = [
+        cli.golden.GoldenRow(
+            place_id="mt1_00000000000000000000000000",
+            area="kl",
+            name="A",
+            lat=0.0,
+            lon=0.0,
+            category="c",
+            tier=1,
+            score=0.0,
+            data_version="v1",
+            signals={"article": 0.1},
+            labeled_by="rob",
+            evidence="",
+            label="yes",
+        )
+    ]
+    root = cli._PIPELINE_ROOT / "config"
+    models = json.loads((root / "llm_models.json").read_text())["models"]
+    pricing = json.loads((root / "llm_pricing.json").read_text())["models"]
+
+    candidates = cli._live_nous_candidates(models, pricing, rows, requested_model=None)
+    by_id = {candidate[1]: candidate for candidate in candidates}
+
+    assert "nous-glm-5.2" in by_id
+    assert by_id["nous-glm-5.2"][2] == "z-ai/glm-5.2"
+    assert by_id["nous-glm-5.2"][4] == {
+        "max_tokens": 256,
+        "seed": None,
+        "reasoning": {"enabled": False},
+    }
+
+
+def test_live_nous_candidates_skip_probe_failed_muse_by_default():
+    rows = [
+        cli.golden.GoldenRow(
+            place_id="mt1_00000000000000000000000000",
+            area="kl",
+            name="A",
+            lat=0.0,
+            lon=0.0,
+            category="c",
+            tier=1,
+            score=0.0,
+            data_version="v1",
+            signals={"article": 0.1},
+            labeled_by="rob",
+            evidence="",
+            label="yes",
+        )
+    ]
+    root = cli._PIPELINE_ROOT / "config"
+    models = json.loads((root / "llm_models.json").read_text())["models"]
+    pricing = json.loads((root / "llm_pricing.json").read_text())["models"]
+
+    candidates = cli._live_nous_candidates(models, pricing, rows, requested_model=None)
+
+    assert "nous-muse-spark-1.1" not in {candidate[1] for candidate in candidates}
+    with pytest.raises(
+        ValueError,
+        match="requested live model 'nous-muse-spark-1.1' is skipped: admission-failed",
+    ):
+        cli._live_nous_candidates(
+            models,
+            pricing,
+            rows,
+            requested_model="nous-muse-spark-1.1",
+        )
 
 
 def test_live_nous_candidates_skip_admission_failed_models_by_default():

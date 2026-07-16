@@ -15,7 +15,7 @@ import sqlite3
 import sys
 from collections.abc import Sequence
 
-from . import acquire, audit, categorize, config, extract_stage, stages, store
+from . import acquire, audit, categorize, config, extract_stage, progress, stages, store
 from .eval import golden, metrics as eval_metrics, report as eval_report, rescore
 from .llm import bakeoff, cache as llm_cache, costmodel, curiosity
 from .llm.providers.fake import FakeProvider
@@ -932,6 +932,64 @@ def _non_negative_price(model_pricing: dict, key: str, *, model: str) -> float:
     return number
 
 
+async def _complete_live_batch_with_telemetry(
+    provider: object,
+    requests: Sequence[curiosity.LlmRequest],
+    *,
+    telemetry: progress.LivePhaseProgress | None,
+) -> list:
+    heartbeat_task: asyncio.Task | None = None
+    if telemetry is not None and requests:
+        interval = max(float(telemetry.heartbeat_every_seconds), 0.001)
+
+        async def heartbeat_until_done() -> None:
+            while True:
+                await asyncio.sleep(interval)
+                telemetry.tick(0.0, completed_delta=0)
+
+        heartbeat_task = asyncio.create_task(heartbeat_until_done())
+    try:
+        return await _complete_live_batch(provider, requests, telemetry=telemetry)
+    finally:
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
+
+
+async def _complete_live_batch(
+    provider: object,
+    requests: Sequence[curiosity.LlmRequest],
+    *,
+    telemetry: progress.LivePhaseProgress | None,
+) -> list:
+    acomplete = getattr(provider, "acomplete", None)
+    if callable(acomplete):
+        concurrency = getattr(provider, "concurrency", 1)
+        if not isinstance(concurrency, int) or isinstance(concurrency, bool) or concurrency <= 0:
+            concurrency = 1
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def one(index: int, req: curiosity.LlmRequest):
+            async with semaphore:
+                response = await acomplete(req)
+            if telemetry is not None:
+                telemetry.tick(float(response.cost_usd))
+            return index, response
+
+        pairs = await asyncio.gather(*(one(index, req) for index, req in enumerate(requests)))
+        ordered = [response for _, response in sorted(pairs, key=lambda item: item[0])]
+        return ordered
+
+    responses = await provider.acomplete_batch(requests)  # type: ignore[attr-defined]
+    if telemetry is not None:
+        for response in responses:
+            telemetry.tick(float(response.cost_usd))
+    return list(responses)
+
+
 async def _score_live_with_cache_async(
     *,
     cache_dir: pathlib.Path,
@@ -947,6 +1005,7 @@ async def _score_live_with_cache_async(
     model_options: bakeoff.ModelOptions,
     api_key: str,
     concurrency: int,
+    telemetry: progress.LivePhaseProgress | None = None,
 ) -> tuple[
     dict[str, float],
     list[tuple[str, float, bool, float, str]],
@@ -986,7 +1045,11 @@ async def _score_live_with_cache_async(
                 output_per_m=float(model_pricing.get("output_per_m", 0.0)),
             )
             try:
-                responses = await provider.acomplete_batch([req for _, _, _, req in batch])
+                responses = await _complete_live_batch_with_telemetry(
+                    provider,
+                    [req for _, _, _, req in batch],
+                    telemetry=telemetry,
+                )
             except Exception as exc:
                 estimated_failure_cost = _estimate_request_cost(
                     [req for _, _, _, req in batch],
@@ -1232,6 +1295,13 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
                         file=sys.stderr,
                     )
                     return 1
+                telemetry = progress.LivePhaseProgress(
+                    model_id=model_id,
+                    total=len(per_place) + len(misses) + len(injection_per_place) + len(injection_misses),
+                    cache_hits=len(per_place) + len(injection_per_place),
+                    initial_cost=sum(cost for _, _, _, cost, _ in [*per_place, *injection_per_place]),
+                )
+                telemetry.start()
                 try:
                     (
                         curiosities,
@@ -1257,11 +1327,14 @@ def _run_live_bakeoff(args, *, parsed: golden.ParseResult, config_data: dict, mo
                             model_options=model_options,
                             api_key=api_key,
                             concurrency=args.concurrency,
+                            telemetry=telemetry,
                         )
                     )
                 except LiveCandidateError as exc:
                     candidate_error = exc
                     ledger = _load_cost_ledger(cache_dir)
+                finally:
+                    telemetry.done()
         except (
             OSError,
             json.JSONDecodeError,

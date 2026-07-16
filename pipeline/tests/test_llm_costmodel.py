@@ -90,10 +90,10 @@ def test_default_round1_roster_and_pricing_bind_real_portal_ids():
         "nous-tencent-hy3-free": ("tencent/hy3:free", 16),
         "nous-meta-llama-3.1-8b-instruct": ("meta-llama/llama-3.1-8b-instruct", 16),
         "nous-hermes-4-70b": ("nousresearch/hermes-4-70b", 16),
-        "nous-nex-n2-mini": ("nex-agi/nex-n2-mini", 256),
+        "nous-nex-n2-mini-none": ("nex-agi/nex-n2-mini", 256),
+        "nous-nex-n2-mini-low": ("nex-agi/nex-n2-mini", 1024),
+        "nous-nex-n2-mini-high": ("nex-agi/nex-n2-mini", 1024),
         "nous-deepseek-v4-pro-none": ("deepseek/deepseek-v4-pro", 256),
-        "nous-deepseek-v4-pro-low": ("deepseek/deepseek-v4-pro", 256),
-        "nous-deepseek-v4-pro-high": ("deepseek/deepseek-v4-pro", 256),
         "nous-glm-5.2": ("z-ai/glm-5.2", 256),
         "nous-muse-spark-1.1": ("meta/muse-spark-1.1", 256),
     }
@@ -111,16 +111,11 @@ def test_default_round1_roster_and_pricing_bind_real_portal_ids():
     assert pricing["nous-hermes-4-70b"]["input_per_m"] == 0.05
     assert pricing["nous-hermes-4-70b"]["output_per_m"] == 0.20
     assert by_id["nous-hermes-4-70b"]["seed"] is None
-    assert by_id["nous-nex-n2-mini"]["seed"] is None
-    assert by_id["nous-nex-n2-mini"]["reasoning"] == {
-        "enabled": True,
-        "effort": "low",
-        "exclude": True,
-    }
-    assert "reasoning" not in by_id["nous-deepseek-v4-pro-none"]
+    assert by_id["nous-nex-n2-mini-none"]["seed"] is None
+    assert by_id["nous-nex-n2-mini-none"]["reasoning"] == {"enabled": False}
     for model_id, effort in {
-        "nous-deepseek-v4-pro-low": "low",
-        "nous-deepseek-v4-pro-high": "high",
+        "nous-nex-n2-mini-low": "low",
+        "nous-nex-n2-mini-high": "high",
     }.items():
         assert by_id[model_id]["seed"] is None
         assert by_id[model_id]["reasoning"] == {
@@ -128,16 +123,35 @@ def test_default_round1_roster_and_pricing_bind_real_portal_ids():
             "effort": effort,
             "exclude": True,
         }
-    for model_id in ("nous-glm-5.2", "nous-muse-spark-1.1"):
-        assert by_id[model_id]["seed"] is None
-        assert "reasoning" not in by_id[model_id]
-    for model_id in ("nous-deepseek-v4-pro-none", "nous-deepseek-v4-pro-low", "nous-deepseek-v4-pro-high"):
-        assert pricing[model_id]["input_per_m"] == 0.435
-        assert pricing[model_id]["output_per_m"] == 0.87
+    assert by_id["nous-deepseek-v4-pro-none"]["reasoning"] == {"enabled": False}
+    assert by_id["nous-glm-5.2"]["seed"] is None
+    assert by_id["nous-glm-5.2"]["reasoning"] == {"enabled": False}
+    assert "live_skip_reason" not in by_id["nous-glm-5.2"]
+    assert by_id["nous-muse-spark-1.1"]["seed"] is None
+    assert by_id["nous-muse-spark-1.1"]["live_skip_reason"].startswith("admission-failed:")
+    assert "reasoning_tokens=253/256" in by_id["nous-muse-spark-1.1"]["live_skip_reason"]
+    assert "mandatory reasoning" in by_id["nous-muse-spark-1.1"]["live_skip_reason"]
+    assert pricing["nous-nex-n2-mini-none"]["input_per_m"] == 0.025
+    assert pricing["nous-nex-n2-mini-none"]["output_per_m"] == 0.10
+    assert pricing["nous-nex-n2-mini-low"]["input_per_m"] == 0.025
+    assert pricing["nous-nex-n2-mini-low"]["output_per_m"] == 0.10
+    assert pricing["nous-nex-n2-mini-high"]["input_per_m"] == 0.025
+    assert pricing["nous-nex-n2-mini-high"]["output_per_m"] == 0.10
+    assert pricing["nous-deepseek-v4-pro-none"]["input_per_m"] == 0.435
+    assert pricing["nous-deepseek-v4-pro-none"]["output_per_m"] == 0.87
     assert pricing["nous-glm-5.2"]["input_per_m"] == 0.9408
     assert pricing["nous-glm-5.2"]["output_per_m"] == 2.9568
     assert pricing["nous-muse-spark-1.1"]["input_per_m"] == 1.25
     assert pricing["nous-muse-spark-1.1"]["output_per_m"] == 4.25
+
+
+def test_round1_roster_no_longer_contains_deepseek_effort_variants():
+    root = C.PROJECT_ROOT / "pipeline" / "config"
+    models = json.loads((root / "llm_models.json").read_text())["models"]
+    model_ids = {row["id"] for row in models}
+
+    assert "nous-deepseek-v4-pro-low" not in model_ids
+    assert "nous-deepseek-v4-pro-high" not in model_ids
 
 
 def test_default_round1_roster_entries_construct_requests_and_cache_keys():
@@ -146,26 +160,38 @@ def test_default_round1_roster_entries_construct_requests_and_cache_keys():
     expected_ids = {
         "nous-meta-llama-3.1-8b-instruct",
         "nous-hermes-4-70b",
-        "nous-nex-n2-mini",
+        "nous-nex-n2-mini-none",
+        "nous-nex-n2-mini-low",
+        "nous-nex-n2-mini-high",
         "nous-deepseek-v4-pro-none",
-        "nous-deepseek-v4-pro-low",
-        "nous-deepseek-v4-pro-high",
         "nous-glm-5.2",
-        "nous-muse-spark-1.1",
     }
+    ids = {row["id"] for row in models}
+    assert expected_ids <= ids
 
+    sample = {
+        "place_id": "mt1_00000000000000000000000000",
+        "name": "A",
+        "summary": "Historic marker",
+        "tags": ["historic"],
+    }
     for model in models:
         if model["id"] not in expected_ids:
             continue
         req = Q.curiosity_request(
-            query_id="mt1_00000000000000000000000000",
-            model_id=model["api_model_id"],
-            place={"name": "Old Windmill", "summary": "A mill", "tags": ["heritage"]},
+            query_id=sample["place_id"],
+            model_id=model["id"],
+            provider_model_id=model.get("api_model_id", model["id"]),
+            place=sample,
             max_tokens=model.get("max_tokens", Q.CURIOSITY_MAX_TOKENS),
-            provider_tags=tuple(model["provider_tags"]) if "provider_tags" in model else None,
             reasoning=model.get("reasoning"),
             seed=model.get("seed", 0),
         )
+        assert req.model_id == model["id"]
+        assert req.provider_model_id == model.get("api_model_id", model["id"])
+        assert req.max_tokens == model.get("max_tokens", Q.CURIOSITY_MAX_TOKENS)
+        assert req.reasoning == model.get("reasoning")
+        assert req.task_id == Q.CURIOSITY_TASK_ID
         rendered_prompt = req.messages[0].content
         input_hash = C.input_hash(
             task_id=req.task_id,
@@ -176,11 +202,6 @@ def test_default_round1_roster_entries_construct_requests_and_cache_keys():
 
         assert "/" not in key.split("/")[1]
         assert ":" not in key.split("/")[1]
-        assert req.model_id == model["api_model_id"]
-        assert req.max_tokens == model.get("max_tokens", Q.CURIOSITY_MAX_TOKENS)
-        assert req.provider_tags == (tuple(model["provider_tags"]) if "provider_tags" in model else None)
-        assert req.reasoning == model.get("reasoning")
-        assert req.seed == model.get("seed", 0)
 
 
 def test_estimate_cost_rejects_non_finite_pricing():
