@@ -3,6 +3,7 @@ import json
 import pytest
 
 from mt_pipeline import categorize, source_record, stages, store
+from mt_pipeline.ergonomics import fingerprint as F
 
 from helpers import A2_PLACES_DDL
 
@@ -20,6 +21,50 @@ def test_predecessor_mapping():
 def test_first_stage_runs_without_predecessor(conn):
     stages.run_stage(conn, "uk", "extract", run_id="r1")
     assert store.stage_completed(conn, "uk", "extract")
+
+
+def test_stage_fingerprint_skip_is_loud_and_force_overrides(conn, tmp_path, capsys):
+    snapshot = tmp_path / "wikidata.snapshot.json"
+    snapshot.write_text("{}")
+    allowlist = tmp_path / "wikidata_class_allowlist.json"
+    allowlist.write_text("{}")
+    tags = tmp_path / "osm_candidate_tags.json"
+    tags.write_text("{}")
+    inputs = F.FingerprintInputs(
+        region_config=type(
+            "Cfg",
+            (),
+            {"sources": {"wikidata": True, "osm": False}, "languages": ["en"]},
+        )(),
+        snapshots={"wikidata": snapshot},
+        config_paths={
+            "wikidata_class_allowlist": allowlist,
+            "osm_candidate_tags": tags,
+        },
+    )
+    stages.run_stage(conn, "uk", "extract", run_id="r1", fingerprint_inputs=inputs)
+
+    stages.run_stage(conn, "uk", "extract", run_id="r2", fingerprint_inputs=inputs)
+    err = capsys.readouterr().err
+
+    assert conn.execute(
+        "SELECT run_id FROM stage_runs WHERE region = ? AND stage = ?",
+        ("uk", "extract"),
+    ).fetchone()[0] == "r1"
+    assert "SKIP stage=extract region=uk fingerprint=" in err
+
+    stages.run_stage(
+        conn,
+        "uk",
+        "extract",
+        run_id="r2",
+        fingerprint_inputs=inputs,
+        force=True,
+    )
+    assert conn.execute(
+        "SELECT run_id FROM stage_runs WHERE region = ? AND stage = ?",
+        ("uk", "extract"),
+    ).fetchone()[0] == "r2"
 
 
 def test_skipping_immediate_predecessor_is_blocked_even_when_earlier_stage_done(conn):

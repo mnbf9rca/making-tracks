@@ -1,4 +1,5 @@
 from mt_pipeline import cli, store
+from mt_pipeline.ergonomics import fingerprint
 from mt_pipeline.eval import report as eval_report
 
 
@@ -64,7 +65,7 @@ def test_cli_maps_stage_write_failure_to_clean_error(monkeypatch, tmp_path, caps
     def fail_mark_stage_complete(*_args, **_kwargs):
         raise sqlite3.OperationalError("disk is full")
 
-    monkeypatch.setattr(store, "mark_stage_complete", fail_mark_stage_complete)
+    monkeypatch.setattr(store, "mark_stage_complete_no_commit", fail_mark_stage_complete)
 
     rc = cli.main(["--region", "uk", "extract", "--db", str(tmp_path / "w.db")])
 
@@ -180,6 +181,10 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
         extractor_options,
         status_recorder,
         only_source,
+        parallel,
+        continue_on_source_failure,
+        staging_root,
+        commit,
     ):
         captured["region"] = region.region_id
         captured["snapshots"] = snapshots
@@ -187,6 +192,10 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
         captured["registry"] = registry
         captured["extractor_options"] = extractor_options
         captured["only_source"] = only_source
+        captured["parallel"] = parallel
+        captured["continue_on_source_failure"] = continue_on_source_failure
+        captured["staging_root"] = staging_root
+        captured["commit"] = commit
         status_recorder("wikidata", {"status": "success", "count": 1})
         conn.execute("SELECT 1")
         return {"wikidata": 1}
@@ -225,6 +234,10 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
     assert captured["snapshots"]["osm"] == snapshot_dir / "osm.osm.pbf"
     assert captured["run_id"] == "real"
     assert captured["only_source"] == "wikidata"
+    assert captured["parallel"] is True
+    assert captured["continue_on_source_failure"] is False
+    assert captured["staging_root"] == snapshot_dir.parent
+    assert captured["commit"] is False
     assert captured["extractor_options"] == {
         "osm": {"index_type": "sparse_file_array,/tmp/osm.idx"}
     }
@@ -243,6 +256,164 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
             "wikipedia": {"status": "preserved"},
         },
     }
+
+
+def test_cli_extract_skips_matching_stage_fingerprint(monkeypatch, tmp_path, capsys):
+    def fail_run_extract(*_args, **_kwargs):
+        raise AssertionError("extract should be skipped before source work")
+
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fail_run_extract)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    wikidata_snapshot = snapshot_dir / "wikidata.snapshot.json"
+    wikidata_snapshot.write_text(
+        '{"_meta":{"retrieved_at":"2026-07-15T00:00:00Z"}}'
+    )
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    region = cli.config.load("malaysia")
+    snapshots = cli.acquire.snapshot_paths(snapshot_dir)
+    fp = fingerprint.stage_fingerprint(
+        conn,
+        "malaysia",
+        "extract",
+        inputs=cli._extract_fingerprint_inputs(
+            region,
+            snapshots,
+            only_source="wikidata",
+        ),
+    )
+    fingerprint.record(
+        conn,
+        "malaysia",
+        "extract",
+        fp,
+        completed_at="2026-07-15T00:00:00Z",
+    )
+    store.record_extract_run_metadata(
+        conn,
+        region="malaysia",
+        run_id="old",
+        wikidata_snapshot_date="2026-07-15T00:00:00Z",
+        source_statuses={"wikidata": {"status": "success", "count": 1}},
+    )
+    store.mark_stage_complete(
+        conn,
+        "malaysia",
+        "extract",
+        run_id="old",
+        completed_at="2026-07-15T00:00:00Z",
+    )
+    conn.close()
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(db),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--only-source",
+            "wikidata",
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "extract skipped for malaysia" in captured.out
+    assert "SKIP stage=extract region=malaysia fingerprint=" in captured.err
+    conn = store.connect(db)
+    assert store.load_extract_run_metadata(conn, region="malaysia", run_id="real") == {
+        "region": "malaysia",
+        "run_id": "real",
+        "wikidata_snapshot_date": "2026-07-15T00:00:00Z",
+        "source_statuses": {"wikidata": {"status": "success", "count": 1}},
+    }
+
+
+def test_cli_parallel_extract_rolls_back_merge_metadata_and_stage_together(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    def fake_build_registry(*_args, **_kwargs):
+        return object()
+
+    def fake_run_extract(
+        conn,
+        region,
+        _snapshots,
+        *,
+        run_id,
+        registry,
+        extractor_options,
+        status_recorder,
+        only_source,
+        parallel,
+        continue_on_source_failure,
+        staging_root,
+        commit,
+    ):
+        assert parallel is True
+        assert commit is False
+        status_recorder("wikidata", {"status": "success", "count": 1})
+        conn.execute(
+            """
+            INSERT INTO source_records
+                (region, source, source_ref, name, lat, lon, props_json, run_id)
+            VALUES (?, 'wd', 'wd:Q1', 'A', 1, 1, '{}', ?)
+            """,
+            (region.region_id, run_id),
+        )
+        return {"wikidata": 1}
+
+    def fail_mark_stage(*_args, **_kwargs):
+        import sqlite3
+
+        raise sqlite3.OperationalError("stage write failed")
+
+    monkeypatch.setattr(cli.extract_stage, "build_registry", fake_build_registry)
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fake_run_extract)
+    monkeypatch.setattr(store, "mark_stage_complete_no_commit", fail_mark_stage)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "wikidata.snapshot.json").write_text(
+        '{"_meta":{"retrieved_at":"2026-07-15T00:00:00Z"}}'
+    )
+    db = tmp_path / "w.db"
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(db),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--only-source",
+            "wikidata",
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 3
+    assert "stage write failed" in capsys.readouterr().err
+    conn = store.connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0] == 0
+    assert (
+        store.load_extract_run_metadata(conn, region="malaysia", run_id="real")
+        is None
+    )
+    assert not store.stage_completed(conn, "malaysia", "extract")
 
 
 def test_cli_eval_report_reads_labeled_tsv_and_config(monkeypatch, tmp_path, capsys):
