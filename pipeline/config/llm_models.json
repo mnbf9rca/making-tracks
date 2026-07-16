@@ -48,6 +48,48 @@
       }
     },
     {
+      "id": "nous-deepseek-v4-pro",
+      "provider": "nous",
+      "api_model_id": "deepseek/deepseek-v4-pro",
+      "tokenizer": "byte-estimate",
+      "slot": "S5",
+      "max_tokens": 256,
+      "seed": null,
+      "reasoning": {
+        "enabled": true,
+        "effort": "xhigh",
+        "exclude": true
+      }
+    },
+    {
+      "id": "nous-glm-5.2",
+      "provider": "nous",
+      "api_model_id": "z-ai/glm-5.2",
+      "tokenizer": "byte-estimate",
+      "slot": "S6",
+      "max_tokens": 256,
+      "seed": null,
+      "reasoning": {
+        "enabled": true,
+        "effort": "xhigh",
+        "exclude": true
+      }
+    },
+    {
+      "id": "nous-muse-spark-1.1",
+      "provider": "nous",
+      "api_model_id": "meta/muse-spark-1.1",
+      "tokenizer": "byte-estimate",
+      "slot": "S7",
+      "max_tokens": 256,
+      "seed": null,
+      "reasoning": {
+        "enabled": true,
+        "effort": "xhigh",
+        "exclude": true
+      }
+    },
+    {
       "id": "modal-meta-llama-3.1-8b",
       "provider": "modal",
       "tokenizer": "byte-estimate"
