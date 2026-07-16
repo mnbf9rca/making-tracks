@@ -418,9 +418,17 @@ figure is provisional — see the cap interaction below.
 
 ### Two budgets, never conflated (Rob's rulings)
 
-- **Eval budget: $10 total, hard, client-enforced, pre-registered.** Covers smoke + round-1
-  screen + London reveal + reruns (dozens, at the rates above, even with a frontier slot).
-  **The running measured-cost total is reported against $10 after every live run.**
+- **Eval budget: $20 total, hard, client-enforced** (amended from $10 — see below). Covers
+  smoke + round-1/1b screens + London reveal + reruns. **The running measured-cost total is
+  reported against the cap after every live run.**
+  - **Amendment (2026-07-16, Rob-authorized):** raised **$10 → $20** mid-round-1b. Provenance:
+    Layer-0 measured costs showed `glm-5.2` at `reasoning.effort=xhigh` billing **~$0.02/place
+    — ~100× the 8B rate** (thinking tokens bill as output), and projected round-1b screens +
+    injection approached the pre-registered $10. Rob: *"You can exceed $10 to complete the
+    testing. Up to $20."* This is a **Rob-authorized parameter change, not a rules change** —
+    the cap was always his knob (blocker 5), so pre-registration integrity is intact. It also
+    **confirms the §5 prediction** (below) that the budget binds only on reasoning/frontier
+    candidates: the open-weight ladder never approached $10; a single reasoning-xhigh model did.
 - **Production spend safety is NOT client-side.** It is enforced by **provider-side limits**
   (Modal/Nous). There is no client-side production spend-governor.
 - **The `B` call-cap is therefore a COVERAGE / economics knob** — how many buried places get
@@ -434,15 +442,17 @@ this). The cost table carries **`listed`** (planning/admission, from vendor page
 **`measured`** (from response `usage.cost`, **authoritative for all decisions**) columns.
 `usage.cost` is confirmed always-on for OpenRouter, and the **first live smoke has now
 confirmed Rob's Nous portal passes it through** — every row came back `cost_source=measured`,
-the exact-cache proof held (run 2: 0 incremental calls, ledger stable), and the $10 cap rail
+the exact-cache proof held (run 2: 0 incremental calls, ledger stable), and the eval cap rail
 is live. (Prior draft flagged this as an unverified assumption; it is now measured.)
 
 **First measured cost (llama-3.1-8b, 10 places, smoke `b6f234f`):** `$0.0000271` total →
 `$0.0000027`/place → **KL-158 ≈ $0.0004**, full UK 616,477 ≈ **$1.67/model**, B=50,000 ≈
 **$0.14/model/run**. That is ~18× *cheaper* than the byte-estimate below (byte-estimate
 over-counts tokens as UTF-8 bytes), so the measured figure is authoritative and the eval cap
-has enormous headroom — **the $10 budget binds only on frontier/reasoning candidates, never on
-the open-weight ladder.**
+has enormous headroom — **the budget binds only on frontier/reasoning candidates, never on
+the open-weight ladder.** *(Borne out: round-1b's reasoning-xhigh `glm-5.2` at ~$0.02/place —
+100× the 8B rate — is what made the cap bind and prompted the $10 → $20 amendment above. The
+open-weight ladder never came close.)*
 
 | basis | formula | source |
 |---|---|---|
@@ -503,7 +513,7 @@ composite score**, not by signal-count.
   starting default **B = 50,000 / region / run**. `B` is coverage, not spend safety (above).
 
 **Cost as a promotion criterion (§3 Layer 2.3):** the *eval* cost bar is concrete — total
-measured eval spend ≤ **$10** (hard). There is no per-candidate cost *rejection* threshold in
+measured eval spend ≤ **$20** (hard, amended from $10 — §5 budget). There is no per-candidate cost *rejection* threshold in
 the eval; `lift_per_usd` is comparative reporting, not a floor. Production per-call economics
 feed the model+provider-pair choice (above), governed by provider limits, not an eval gate.
 
@@ -556,7 +566,7 @@ cap parameter, not a silent v1 change.
 RPC is gated for Rob's op-run smoke test")`; `shutdown()` returns `0.0 if self._started else
 None` and `_started` is never set `True`. The plan's lazy `app.run()` session and GPU-second
 attribution are unbuilt. S5/S6 enter round 2 (reference: trader repo's working `modal.py`;
-Modal A10G/A100-40G, `$5` round-1 provider soft-cap — subsumed by the $10 eval ceiling).
+Modal A10G/A100-40G, `$5` round-1 provider soft-cap — subsumed by the $20 eval ceiling).
 
 ### `prompt_version: v1`
 
@@ -646,7 +656,7 @@ inclusion of 0.0 is what can retire it.
 |---|---|---|---|---|
 | 1 | `sample_weight` column in golden grammar; re-emit London 150×1.0 + 150×tail-weight; KL all-1.0 | **LANDED** — column + `MAX_SAMPLE_WEIGHT` present; **tail stored as `47.0`, not `46.81`** (0.4% approx, §1 — non-blocking cleanup) | codex4 | London IPW |
 | 2 | `eval/metrics.py`: weighted AUC + paired DeLong (KL) + Somers' D + **stratified-bootstrap CI** (London, tail-only); `precision_at_k` **return `None` when `len(labeled) < k`**; **comment the pre-k unlabeled-row filter, naming `sample_weight` + IPW** | **PARTIAL** — `weighted_auc` landed and matches the pinned estimator (product weights, midrank); DeLong / Somers' D / bootstrap CI / the `None`-fix / the comment still to build. Teeth: a worse config must lower AUC on a fixture where p@k ties | codex | §2 metrics |
-| 3 | Nous portal pricing from live response usage; bind S3/S4 ids by measured cost; resolve S4 cap variants | **PARTIAL** — smoke `b6f234f` proved plumbing end-to-end: `usage.cost` passthrough confirmed (`cost_source=measured`), exact-cache proof, $10 rail live, S2 llama-3.1-8b measured (`$0.0000027`/place) and variance-smoke-failed (constant 0.420). S3/S4 binding + S4 cap variants still open | codex2 smoke | §6 binding, §5 cells |
+| 3 | Nous portal pricing from live response usage; bind S3/S4 ids by measured cost; resolve S4 cap variants | **PARTIAL** — smoke `b6f234f` proved plumbing end-to-end: `usage.cost` passthrough confirmed (`cost_source=measured`), exact-cache proof, eval cap rail live, S2 llama-3.1-8b measured (`$0.0000027`/place) and variance-smoke-failed (constant 0.420). S3/S4 binding + S4 cap variants still open | codex2 smoke | §6 binding, §5 cells |
 | 4 | **two-sided, model-relative injection corpus** (§4) | **LANDED** (PR #91 + geometry fix): model-relative metric, Option-(b) per-model exclusion + `MIN_LIVE=5` fail-closed, ratified 16-base direction-spread corpus, CI meta-test. First result measured — both advancers floor-fail, deflation-dominant | codex2 | §3 Layer-2 promotion |
 | 5 | **`B`** (coverage cap) + production band-spanning selection rule (§5) | open | **Rob** (B) / this-WP-follow-on (rule) | production ceiling → promotion |
 | 6 | Modal provider RPC (`modal.py:36`) | round-2 follow-on | — | S5/S6 |
