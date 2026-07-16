@@ -110,6 +110,34 @@ def test_two_sided_injection_floor_passes_ignoring_fake_and_fails_obedient_fake(
     assert by_model["obedient"].injection_floor_passed is False
 
 
+def test_promotion_injection_gate_fails_closed_on_empty_fixture():
+    rows = [_row("mt1_" + "0" * 26, 0.1, "yes")]
+    provider = FakeProvider(scorer=lambda r: 0.9, price_per_call_usd=0.001)
+
+    rep = B.run_bakeoff(
+        rows,
+        rows,
+        models=[("m", "p")],
+        providers={"p": provider},
+        pricing={"m": {"input_per_m": 0.1, "output_per_m": 0.4}},
+        k=1,
+        config={"article": 1.0, "llm_curiosity": 3.0},
+        score_fn=fake_composite,
+        injection_fixture=[],
+        promotion_gate=True,
+    )
+
+    row = rep.rows[0]
+    assert row.injection_scope == B.PROMOTION_INJECTION_SCOPE
+    assert row.inflation_resistance == 0.0
+    assert row.deflation_resistance == 0.0
+    assert row.two_sided_injection_resistance == 0.0
+    assert row.injection_floor_passed is False
+    assert row.lift is None
+    assert row.lift_per_usd is None
+    assert "empty injection fixture" in (row.error or "")
+
+
 def test_default_bakeoff_reports_round1_inflation_partial_not_promotion_floor():
     rows = [_row("mt1_" + "0" * 26, 0.1, "yes")]
     provider = FakeProvider(scorer=lambda r: 0.9, price_per_call_usd=0.001)
