@@ -6,13 +6,14 @@ import json
 import pathlib
 import sqlite3
 
-WORKING_STORE_VERSION = 6
+WORKING_STORE_VERSION = 7
 SOURCE_RECORDS_TABLE = "source_records"
 STAGE_RUNS_TABLE = "stage_runs"
 EXTRACT_RUN_METADATA_TABLE = "extract_run_metadata"
 PLACES_TABLE = "places"
 PLACE_CATEGORIES_TABLE = "place_categories"
 PLACE_SCORES_TABLE = "place_scores"
+STAGE_FINGERPRINTS_TABLE = "stage_fingerprints"
 META_TABLE = "meta"
 
 _PLACE_SCORES_SCHEMA = """
@@ -26,6 +27,16 @@ CREATE TABLE IF NOT EXISTS place_scores (
 );
 CREATE INDEX IF NOT EXISTS idx_place_scores_region
     ON place_scores(region);
+"""
+
+_STAGE_FINGERPRINTS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS stage_fingerprints (
+    region       TEXT NOT NULL,
+    stage        TEXT NOT NULL,
+    fingerprint  TEXT NOT NULL,
+    completed_at TEXT NOT NULL,
+    PRIMARY KEY (region, stage)
+);
 """
 
 _SCHEMA = """
@@ -81,7 +92,7 @@ CREATE TABLE IF NOT EXISTS place_categories (
 );
 CREATE INDEX IF NOT EXISTS idx_place_categories_region
     ON place_categories(region);
-""" + _PLACE_SCORES_SCHEMA
+""" + _PLACE_SCORES_SCHEMA + _STAGE_FINGERPRINTS_SCHEMA
 
 
 class StoreVersionError(sqlite3.DatabaseError):
@@ -130,6 +141,9 @@ def _migrate(conn: sqlite3.Connection, current_version: int) -> None:
         elif current_version == 5:
             conn.executescript(_PLACE_SCORES_SCHEMA)
             current_version = 6
+        elif current_version == 6:
+            conn.executescript(_STAGE_FINGERPRINTS_SCHEMA)
+            current_version = 7
         else:
             raise StoreVersionError(
                 f"working-store schema version {current_version} "
@@ -148,6 +162,24 @@ def mark_stage_complete(
     run_id: str,
     completed_at: str,
 ) -> None:
+    mark_stage_complete_no_commit(
+        conn,
+        region,
+        stage,
+        run_id=run_id,
+        completed_at=completed_at,
+    )
+    conn.commit()
+
+
+def mark_stage_complete_no_commit(
+    conn: sqlite3.Connection,
+    region: str,
+    stage: str,
+    *,
+    run_id: str,
+    completed_at: str,
+) -> None:
     conn.execute(
         """
         INSERT INTO stage_runs (region, stage, run_id, completed_at)
@@ -158,7 +190,6 @@ def mark_stage_complete(
         """,
         (region, stage, run_id, completed_at),
     )
-    conn.commit()
 
 
 def stage_completed(conn: sqlite3.Connection, region: str, stage: str) -> bool:
@@ -170,6 +201,24 @@ def stage_completed(conn: sqlite3.Connection, region: str, stage: str) -> bool:
 
 
 def record_extract_run_metadata(
+    conn: sqlite3.Connection,
+    *,
+    region: str,
+    run_id: str,
+    wikidata_snapshot_date: str,
+    source_statuses: dict,
+) -> None:
+    record_extract_run_metadata_no_commit(
+        conn,
+        region=region,
+        run_id=run_id,
+        wikidata_snapshot_date=wikidata_snapshot_date,
+        source_statuses=source_statuses,
+    )
+    conn.commit()
+
+
+def record_extract_run_metadata_no_commit(
     conn: sqlite3.Connection,
     *,
     region: str,
@@ -193,7 +242,6 @@ def record_extract_run_metadata(
             json.dumps(source_statuses, sort_keys=True),
         ),
     )
-    conn.commit()
 
 
 def load_extract_run_metadata(
