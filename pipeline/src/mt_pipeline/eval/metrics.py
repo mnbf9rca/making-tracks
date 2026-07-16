@@ -49,8 +49,6 @@ def weighted_auc(
     for p in pos:
         for n in neg:
             pair_weight = p.sample_weight * n.sample_weight
-            if not math.isfinite(pair_weight):
-                raise ValueError("sample_weight pair product is non-finite")
             if p.score > n.score:
                 wins += pair_weight
             elif p.score == n.score:
