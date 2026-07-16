@@ -1465,6 +1465,84 @@ def test_cli_llm_live_bakeoff_reports_per_place_cache_and_precision(tmp_path, ca
     assert constructed["count"] == 1
 
 
+@pytest.mark.parametrize(
+    ("extra_args", "expected_concurrency"),
+    [
+        ([], 8),
+        (["--concurrency", "13"], 13),
+    ],
+)
+def test_cli_llm_live_bakeoff_passes_configured_concurrency_to_nous_provider(
+    tmp_path,
+    monkeypatch,
+    extra_args,
+    expected_concurrency,
+):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled, config_path, models, pricing = _write_live_bakeoff_inputs(
+        tmp_path,
+        models_payload={"models": [{"id": "nous-cheap", "provider": "nous"}]},
+        pricing_payload={
+            "models": {
+                "nous-cheap": {"provider": "nous", "input_per_m": 0.15, "output_per_m": 0.60},
+            }
+        },
+    )
+    seen_concurrency = []
+
+    class ConcurrentProvider:
+        def __init__(self, **kwargs):
+            seen_concurrency.append(kwargs["concurrency"])
+
+        async def acomplete_batch(self, reqs):
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint=req.model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.0,
+                    cost_source="derived",
+                    app_id=None,
+                )
+                for req in reqs
+            ]
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", ConcurrentProvider)
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", ())
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            *extra_args,
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    assert rc == 0
+    assert seen_concurrency == [expected_concurrency]
+
+
 def test_cli_llm_live_bakeoff_refuses_when_ledger_plus_estimate_exceeds_cap(tmp_path, capsys, monkeypatch):
     from mt_pipeline.llm.providers import nous
 
@@ -2533,18 +2611,21 @@ def test_cli_llm_live_bakeoff_s4_uses_raised_cap_and_distinct_cache_id(tmp_path,
 
 
 @pytest.mark.parametrize(
-    ("model_id", "api_model_id"),
+    ("model_id", "api_model_id", "reasoning"),
     [
-        ("nous-deepseek-v4-pro", "deepseek/deepseek-v4-pro"),
-        ("nous-glm-5.2", "z-ai/glm-5.2"),
-        ("nous-muse-spark-1.1", "meta/muse-spark-1.1"),
+        ("nous-deepseek-v4-pro-none", "deepseek/deepseek-v4-pro", None),
+        ("nous-deepseek-v4-pro-low", "deepseek/deepseek-v4-pro", {"enabled": True, "effort": "low", "exclude": True}),
+        ("nous-deepseek-v4-pro-high", "deepseek/deepseek-v4-pro", {"enabled": True, "effort": "high", "exclude": True}),
+        ("nous-glm-5.2", "z-ai/glm-5.2", None),
+        ("nous-muse-spark-1.1", "meta/muse-spark-1.1", None),
     ],
 )
-def test_cli_llm_live_bakeoff_round1b_candidates_use_roster_cache_ids_and_xhigh_reasoning(
+def test_cli_llm_live_bakeoff_round1b_candidates_use_cache_distinct_reasoning_shapes(
     tmp_path,
     monkeypatch,
     model_id,
     api_model_id,
+    reasoning,
 ):
     from mt_pipeline.llm.models import ProviderResponse
     from mt_pipeline.llm.providers import nous
@@ -2559,7 +2640,7 @@ def test_cli_llm_live_bakeoff_round1b_candidates_use_roster_cache_ids_and_xhigh_
                     "api_model_id": api_model_id,
                     "max_tokens": 256,
                     "seed": None,
-                    "reasoning": {"enabled": True, "effort": "xhigh", "exclude": True},
+                    **({"reasoning": reasoning} if reasoning is not None else {}),
                 }
             ]
         },
@@ -2626,7 +2707,7 @@ def test_cli_llm_live_bakeoff_round1b_candidates_use_roster_cache_ids_and_xhigh_
     assert attempted[0].provider_model_id == api_model_id
     assert attempted[0].max_tokens == 256
     assert attempted[0].seed is None
-    assert attempted[0].reasoning == {"enabled": True, "effort": "xhigh", "exclude": True}
+    assert attempted[0].reasoning == reasoning
 
 
 def test_live_nous_candidates_skip_admission_failed_models_by_default():

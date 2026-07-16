@@ -27,7 +27,17 @@
       "input_per_m": 0.025,
       "output_per_m": 0.10
     },
-    "nous-deepseek-v4-pro": {
+    "nous-deepseek-v4-pro-none": {
+      "provider": "nous",
+      "input_per_m": 0.435,
+      "output_per_m": 0.87
+    },
+    "nous-deepseek-v4-pro-low": {
+      "provider": "nous",
+      "input_per_m": 0.435,
+      "output_per_m": 0.87
+    },
+    "nous-deepseek-v4-pro-high": {
       "provider": "nous",
       "input_per_m": 0.435,
       "output_per_m": 0.87

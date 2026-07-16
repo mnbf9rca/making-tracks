@@ -48,16 +48,39 @@
       }
     },
     {
-      "id": "nous-deepseek-v4-pro",
+      "id": "nous-deepseek-v4-pro-none",
       "provider": "nous",
       "api_model_id": "deepseek/deepseek-v4-pro",
       "tokenizer": "byte-estimate",
       "slot": "S5",
       "max_tokens": 256,
+      "seed": null
+    },
+    {
+      "id": "nous-deepseek-v4-pro-low",
+      "provider": "nous",
+      "api_model_id": "deepseek/deepseek-v4-pro",
+      "tokenizer": "byte-estimate",
+      "slot": "S5-low",
+      "max_tokens": 256,
       "seed": null,
       "reasoning": {
         "enabled": true,
-        "effort": "xhigh",
+        "effort": "low",
+        "exclude": true
+      }
+    },
+    {
+      "id": "nous-deepseek-v4-pro-high",
+      "provider": "nous",
+      "api_model_id": "deepseek/deepseek-v4-pro",
+      "tokenizer": "byte-estimate",
+      "slot": "S5-high",
+      "max_tokens": 256,
+      "seed": null,
+      "reasoning": {
+        "enabled": true,
+        "effort": "high",
         "exclude": true
       }
     },
@@ -68,12 +91,7 @@
       "tokenizer": "byte-estimate",
       "slot": "S6",
       "max_tokens": 256,
-      "seed": null,
-      "reasoning": {
-        "enabled": true,
-        "effort": "xhigh",
-        "exclude": true
-      }
+      "seed": null
     },
     {
       "id": "nous-muse-spark-1.1",
@@ -82,12 +100,7 @@
       "tokenizer": "byte-estimate",
       "slot": "S7",
       "max_tokens": 256,
-      "seed": null,
-      "reasoning": {
-        "enabled": true,
-        "effort": "xhigh",
-        "exclude": true
-      }
+      "seed": null
     },
     {
       "id": "modal-meta-llama-3.1-8b",
