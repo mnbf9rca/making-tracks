@@ -12,6 +12,10 @@
     "open_plaques": false,
     "national_register": {"id": "malaysia_heritage", "enabled": false}
   },
+  "pageviews": {
+    "enabled": true,
+    "months": 12
+  },
   "basemap": {
     "source_pmtiles": "https://build.protomaps.com/20260714.pmtiles",
     "maxzoom": 14,

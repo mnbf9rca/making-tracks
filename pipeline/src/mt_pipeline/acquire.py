@@ -14,7 +14,7 @@ import time
 import urllib.parse
 
 from . import fetch, stages
-from .extractors import _snapshot
+from .extractors import _snapshot, pageviews
 
 DEFAULT_CONFIG = pathlib.Path(__file__).resolve().parents[2] / "config/acquire_sources.json"
 DEFAULT_ALLOWLIST = (
@@ -25,6 +25,8 @@ DEFAULT_REGISTER_CONFIG = (
 )
 USER_AGENT = "MakingTracksBot/0.1 (https://making-tracks.app; data-acquisition)"
 RETRY_STATUSES = {429, 500, 502, 503, 504}
+MAX_RETRY_AFTER_SECONDS = 300
+MAX_PAGEVIEW_TITLES = 50_000
 _QID_RE = re.compile(r"Q[0-9]+")
 _POINT_RE = re.compile(r"Point\(([-0-9.]+) ([-0-9.]+)\)")
 
@@ -131,6 +133,9 @@ def _is_retryable(exc: Exception) -> bool:
     if isinstance(exc, RetryableAcquireError):
         return exc.status in RETRY_STATUSES or exc.status is None
     if isinstance(exc, fetch.FetchError):
+        status = getattr(exc, "status", None)
+        if status is not None:
+            return status in RETRY_STATUSES
         message = str(exc)
         lower = message.lower()
         return lower.startswith("invalid json:") or "timed out" in lower or any(
@@ -162,7 +167,16 @@ def _retry_json(
         except Exception as exc:
             if attempt >= retries or not _is_retryable(exc):
                 raise AcquireError(str(exc)) from exc
-            delay = float(2**attempt)
+            retry_after = getattr(exc, "retry_after", None)
+            delay = (
+                min(float(retry_after), float(MAX_RETRY_AFTER_SECONDS))
+                if (
+                    isinstance(retry_after, int | float)
+                    and not isinstance(retry_after, bool)
+                    and retry_after > 0
+                )
+                else float(2**attempt)
+            )
             if backoff is None:
                 sleep(delay)
             else:
@@ -534,6 +548,133 @@ def acquire_wikipedia(
     )
 
 
+def _pageview_timestamp(value: str) -> str:
+    return f"{datetime.date.fromisoformat(value).strftime('%Y%m%d')}00"
+
+
+def _pageview_url(
+    endpoint: str,
+    *,
+    language: str,
+    title: str,
+    window: tuple[str, str],
+    access: str,
+    agent: str,
+    granularity: str,
+) -> str:
+    project = f"{language}.wikipedia"
+    article = urllib.parse.quote(title.replace(" ", "_"), safe="")
+    start = _pageview_timestamp(window[0])
+    end = _pageview_timestamp(window[1])
+    return (
+        f"{endpoint.rstrip('/')}/{project}/{access}/{agent}/"
+        f"{article}/{granularity}/{start}/{end}"
+    )
+
+
+def fetch_pageviews_for_title(
+    title: str,
+    window: tuple[str, str],
+    *,
+    language: str,
+    config: dict,
+    fetch_json=fetch.get_json,
+    retries: int = 6,
+    sleep=time.sleep,
+) -> dict[str, object]:
+    endpoint = config["endpoint"]
+    project = f"{language}.wikipedia"
+    access = str(config.get("access", "all-access"))
+    agent = str(config.get("agent", "user"))
+    granularity = str(config.get("granularity", "daily"))
+    data = _retry_json(
+        _pageview_url(
+            endpoint,
+            language=language,
+            title=title,
+            window=window,
+            access=access,
+            agent=agent,
+            granularity=granularity,
+        ),
+        expected_hosts=set(config["allowed_hosts"]),
+        max_bytes=int(config.get("max_bytes", fetch.MAX_RESPONSE_BYTES)),
+        fetch_json=fetch_json,
+        retries=retries,
+        sleep=sleep,
+    )
+    return pageviews.entry_from_api_response(
+        title,
+        window,
+        data,
+        project=project,
+        access=access,
+        agent=agent,
+        granularity=granularity,
+    )
+
+
+def pageview_region_options(region_config) -> dict | None:
+    raw = getattr(region_config, "raw", {}) or {}
+    options = raw.get("pageviews") if isinstance(raw, dict) else None
+    if not isinstance(options, dict) or options.get("enabled") is not True:
+        return None
+    return options
+
+
+def _load_wikipedia_snapshot(snapshot_path) -> dict:
+    try:
+        _snapshot.check_snapshot_size(snapshot_path)
+        data = json.loads(pathlib.Path(snapshot_path).read_text())
+    except _snapshot.SnapshotError as exc:
+        raise AcquireError(str(exc)) from exc
+    except (OSError, ValueError, UnicodeDecodeError, RecursionError) as exc:
+        raise AcquireError(f"invalid wikipedia snapshot: {exc}") from exc
+    if not isinstance(data, dict):
+        raise AcquireError("wikipedia snapshot must be a JSON object")
+    meta = data.get("_meta", {})
+    if not isinstance(meta, dict) or meta.get("complete") is not True:
+        raise AcquireError("wikipedia snapshot is not complete")
+    return data
+
+
+def _wikipedia_snapshot_date(snapshot_path) -> str:
+    data = _load_wikipedia_snapshot(snapshot_path)
+    meta = data.get("_meta", {})
+    retrieved_at = meta.get("retrieved_at") if isinstance(meta, dict) else None
+    if not isinstance(retrieved_at, str) or len(retrieved_at) < 10:
+        raise AcquireError("wikipedia snapshot missing _meta.retrieved_at")
+    return retrieved_at[:10]
+
+
+def pageview_window_for_wikipedia_snapshot(
+    snapshot_path,
+    region_config,
+) -> tuple[str, str] | None:
+    options = pageview_region_options(region_config)
+    if options is None:
+        return None
+    months = int(options.get("months", 12))
+    return pageviews.window_for(_wikipedia_snapshot_date(snapshot_path), months=months)
+
+
+def _wikipedia_titles(snapshot_path, *, max_titles: int = MAX_PAGEVIEW_TITLES) -> list[str]:
+    data = _load_wikipedia_snapshot(snapshot_path)
+    pages = data.get("pages", [])
+    if not isinstance(pages, list):
+        raise AcquireError("wikipedia snapshot missing pages list")
+    titles = set()
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        title = pageviews.cache_title(page.get("title"))
+        if title is not None:
+            titles.add(title)
+            if len(titles) > max_titles:
+                raise AcquireError(f"wikipedia title count exceeds {max_titles}")
+    return sorted(titles)
+
+
 def _sha256_file(path) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as stream:
@@ -777,6 +918,51 @@ def acquire_all(dest_dir, *, region_config, config_path=DEFAULT_CONFIG) -> dict[
             config=config["wikipedia"],
             tile_degrees=0.15,
         )
+        pageview_options = pageview_region_options(region_config)
+        if pageview_options is not None:
+            pageview_config = config.get("pageviews")
+            if not isinstance(pageview_config, dict):
+                raise AcquireError("pageviews acquisition enabled but config is missing")
+            window = pageview_window_for_wikipedia_snapshot(
+                paths["wikipedia"],
+                region_config,
+            )
+            assert window is not None
+            retries = int(pageview_options.get("retries", pageview_config.get("retries", 6)))
+            polite_interval = float(
+                pageview_options.get(
+                    "polite_interval_seconds",
+                    pageview_config.get("polite_interval_seconds", 0.0),
+                )
+            )
+            max_titles = int(
+                pageview_options.get(
+                    "max_titles",
+                    pageview_config.get("max_titles", MAX_PAGEVIEW_TITLES),
+                )
+            )
+            pageview_cache = dest / "pageviews"
+
+            def fetch_title(title: str, title_window: tuple[str, str]):
+                return fetch_pageviews_for_title(
+                    title,
+                    title_window,
+                    language=language,
+                    config=pageview_config,
+                    retries=retries,
+                    sleep=time.sleep,
+                )
+
+            pageviews.acquire(
+                _wikipedia_titles(paths["wikipedia"], max_titles=max_titles),
+                window,
+                pageview_cache,
+                fetch=fetch_title,
+                enabled=True,
+                sleep=time.sleep,
+                polite_interval_seconds=polite_interval,
+            )
+            paths["pageviews"] = pageview_cache
     if region_config.sources.get("osm") is True:
         paths["osm"] = acquire_osm(
             dest,

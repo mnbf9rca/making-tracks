@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from .. import source_record
+from . import pageviews
 from .wikidata import MAX_RECORDS_PER_SNAPSHOT, _load_snapshot
 
 MAX_EXTRACT_LEN = 300
@@ -18,7 +19,16 @@ class WikipediaExtractor:
     def __init__(self, languages: set[str]) -> None:
         self.languages = languages
 
-    def extract(self, region: str, snapshot_path, conn, *, run_id: str) -> int:
+    def extract(
+        self,
+        region: str,
+        snapshot_path,
+        conn,
+        *,
+        run_id: str,
+        pageview_cache_dir=None,
+        pageview_window: tuple[str, str] | None = None,
+    ) -> int:
         snapshot = _load_snapshot(snapshot_path)
         lang = str(snapshot.get("lang", ""))[:MAX_LANG_LEN]
         if lang not in self.languages:
@@ -42,6 +52,10 @@ class WikipediaExtractor:
                     "title": title,
                     "extract": str(page.get("extract", ""))[:MAX_EXTRACT_LEN],
                 }
+                if pageview_cache_dir is not None and pageview_window is not None:
+                    daily = pageviews.read(pageview_cache_dir, title, pageview_window)
+                    if daily is not None:
+                        props["pageviews"] = daily
                 qid = page.get("wikidata")
                 if (
                     isinstance(qid, str)

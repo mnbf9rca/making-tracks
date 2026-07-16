@@ -9,9 +9,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from .. import extract_stage, stages, store
+from ..extractors import pageviews
 
 SOURCE_RECORD_RECONCILE_COLS = ("source", "source_ref", "name", "lat", "lon", "props_json")
 SOURCE_RECORD_PROPS_COLS = ("source", "source_ref", "props_json")
+MAX_PAGEVIEW_FINGERPRINT_FILES = 50_000
+MAX_PAGEVIEW_FINGERPRINT_TOTAL_BYTES = 2_000_000_000
 
 _SOURCE_RECORD_RECONCILE_SQL = """
 SELECT source, source_ref, name, lat, lon, props_json
@@ -59,6 +62,8 @@ STAGE_READS = {
         "enabled_sources",
         "only_source",
         "languages",
+        "pageview_window",
+        "pageview_cache_files",
         "module_marker",
     },
     "reconcile": {
@@ -102,6 +107,8 @@ STAGE_INPUT_COMPONENTS = {
         "enabled_sources",
         "only_source",
         "languages",
+        "pageview_window",
+        "pageview_cache_files",
         "module_marker",
     },
     "reconcile": {
@@ -146,6 +153,9 @@ class FingerprintInputs:
     succeeded_sources: set[str] | None = None
     version: str | None = None
     only_source: str | None = None
+    pageview_cache_dir: str | pathlib.Path | None = None
+    pageview_cache_files: tuple[str | pathlib.Path, ...] = ()
+    pageview_window: tuple[str, str] | None = None
 
 
 def fingerprint_covers(stage: str) -> set[str]:
@@ -344,13 +354,29 @@ def _extract_components(inputs: FingerprintInputs) -> dict[str, Any]:
     }
     return {
         "snapshots": snapshots,
-        "wikidata_class_allowlist": _file_hash_from_inputs(
-            inputs, "wikidata_class_allowlist"
+        "wikidata_class_allowlist": (
+            _file_hash_from_inputs(inputs, "wikidata_class_allowlist")
+            if "wikidata" in enabled_sources
+            else ""
         ),
-        "osm_candidate_tags": _file_hash_from_inputs(inputs, "osm_candidate_tags"),
+        "osm_candidate_tags": (
+            _file_hash_from_inputs(inputs, "osm_candidate_tags")
+            if "osm" in enabled_sources
+            else ""
+        ),
         "enabled_sources": enabled_sources,
         "only_source": inputs.only_source or "",
         "languages": sorted(getattr(region_config, "languages", [])),
+        "pageview_window": (
+            list(inputs.pageview_window)
+            if "wikipedia" in enabled_sources and inputs.pageview_window is not None
+            else []
+        ),
+        "pageview_cache_files": (
+            _file_list_hash_limited(inputs.pageview_cache_files)
+            if "wikipedia" in enabled_sources
+            else ""
+        ),
         "module_marker": module_marker("extract"),
     }
 
@@ -384,6 +410,37 @@ def _file_hash(path: str | pathlib.Path) -> str:
         for chunk in iter(lambda: stream.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _file_list_hash_limited(files: tuple[str | pathlib.Path, ...]) -> str:
+    markers: list[list[Any]] = []
+    total_bytes = 0
+    for raw_path in sorted(files, key=lambda value: pathlib.Path(value).as_posix()):
+        if len(markers) >= MAX_PAGEVIEW_FINGERPRINT_FILES:
+            markers.append(["TOO_MANY_FILES", len(files)])
+            break
+        path = pathlib.Path(raw_path)
+        name = path.name
+        try:
+            if path.is_symlink():
+                markers.append(["SYMLINK", name])
+                continue
+            stat = path.stat()
+        except OSError:
+            markers.append(["MISSING", name])
+            continue
+        if not path.is_file():
+            markers.append(["NOTFILE", name])
+            continue
+        if stat.st_size > pageviews.MAX_CACHE_BYTES:
+            markers.append(["TOO_LARGE", name, stat.st_size])
+            continue
+        total_bytes += stat.st_size
+        if total_bytes > MAX_PAGEVIEW_FINGERPRINT_TOTAL_BYTES:
+            markers.append(["TOO_MANY_BYTES", total_bytes])
+            break
+        markers.append(["FILE", name, stat.st_size, _file_hash(path)])
+    return _hash_obj(markers)
 
 
 def _hash_obj(value: Any) -> str:

@@ -3,6 +3,7 @@ import dataclasses
 from mt_pipeline import cli, store
 from mt_pipeline.ergonomics import fingerprint
 from mt_pipeline.eval import report as eval_report
+from mt_pipeline.extractors import pageviews
 
 
 def test_cli_runs_a_stage(tmp_path):
@@ -291,6 +292,143 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
             "wikipedia": {"status": "preserved"},
         },
     }
+
+
+def test_cli_extract_threads_pageview_options_for_wikipedia_only(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_build_registry(*_args, **_kwargs):
+        return object()
+
+    def fake_run_extract(
+        conn,
+        region,
+        snapshots,
+        *,
+        run_id,
+        registry,
+        extractor_options,
+        status_recorder,
+        only_source,
+        parallel,
+        continue_on_source_failure,
+        staging_root,
+        commit,
+    ):
+        captured["extractor_options"] = extractor_options
+        captured["only_source"] = only_source
+        captured["parallel"] = parallel
+        status_recorder("wikipedia", {"status": "success", "count": 1})
+        conn.execute("SELECT 1")
+        return {"wikipedia": 1}
+
+    monkeypatch.setattr(cli.extract_stage, "build_registry", fake_build_registry)
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fake_run_extract)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "wikipedia.snapshot.json").write_text(
+        '{"_meta":{"complete":true,"retrieved_at":"2026-07-15T00:00:00Z"},"pages":[]}'
+    )
+    pageviews.ensure_manifest(
+        snapshot_dir / "pageviews",
+        ("2025-07-15", "2026-07-15"),
+    )
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(tmp_path / "w.db"),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--only-source",
+            "wikipedia",
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 0
+    assert captured["only_source"] == "wikipedia"
+    assert captured["parallel"] is True
+    assert captured["extractor_options"]["wikipedia"] == {
+        "pageview_cache_dir": snapshot_dir / "pageviews",
+        "pageview_window": ("2025-07-15", "2026-07-15"),
+    }
+
+
+def test_extract_fingerprint_inputs_thread_pageview_window_and_selected_cache_files(tmp_path):
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    wikipedia_snapshot = snapshot_dir / "wikipedia.snapshot.json"
+    wikipedia_snapshot.write_text(
+        '{"_meta":{"complete":true,"retrieved_at":"2026-07-15T00:00:00Z"},"pages":[{"title":"B"},{"title":"A"}]}'
+    )
+    pageviews.ensure_manifest(
+        snapshot_dir / "pageviews",
+        ("2025-07-15", "2026-07-15"),
+    )
+    region = cli.config.load("malaysia")
+
+    inputs = cli._extract_fingerprint_inputs(
+        region,
+        cli.acquire.snapshot_paths(snapshot_dir),
+        snap_dir=snapshot_dir,
+        only_source="wikipedia",
+    )
+
+    assert inputs.pageview_window == ("2025-07-15", "2026-07-15")
+    assert inputs.pageview_cache_files == (
+        pageviews._cache_path(
+            snapshot_dir / "pageviews",
+            "A",
+            ("2025-07-15", "2026-07-15"),
+        ),
+        pageviews._cache_path(
+            snapshot_dir / "pageviews",
+            "B",
+            ("2025-07-15", "2026-07-15"),
+        ),
+    )
+
+
+def test_cli_extract_rejects_mismatched_pageview_manifest(monkeypatch, tmp_path, capsys):
+    def fail_run_extract(*_args, **_kwargs):
+        raise AssertionError("extract should not start with a stale pageview manifest")
+
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fail_run_extract)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "wikipedia.snapshot.json").write_text(
+        '{"_meta":{"complete":true,"retrieved_at":"2026-07-15T00:00:00Z"},"pages":[]}'
+    )
+    pageviews.ensure_manifest(
+        snapshot_dir / "pageviews",
+        ("2025-07-14", "2026-07-14"),
+    )
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(tmp_path / "w.db"),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--only-source",
+            "wikipedia",
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 1
+    assert "pageview cache window" in capsys.readouterr().err
 
 
 def test_cli_extract_skips_matching_stage_fingerprint(monkeypatch, tmp_path, capsys):
