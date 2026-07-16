@@ -124,9 +124,13 @@ def test_default_round1_roster_and_pricing_bind_real_portal_ids():
             "exclude": True,
         }
     assert by_id["nous-deepseek-v4-pro-none"]["reasoning"] == {"enabled": False}
-    for model_id in ("nous-glm-5.2", "nous-muse-spark-1.1"):
-        assert by_id[model_id]["seed"] is None
-        assert by_id[model_id]["live_skip_reason"].startswith("admission-pending:")
+    assert by_id["nous-glm-5.2"]["seed"] is None
+    assert by_id["nous-glm-5.2"]["reasoning"] == {"enabled": False}
+    assert "live_skip_reason" not in by_id["nous-glm-5.2"]
+    assert by_id["nous-muse-spark-1.1"]["seed"] is None
+    assert by_id["nous-muse-spark-1.1"]["live_skip_reason"].startswith("admission-failed:")
+    assert "reasoning_tokens=253/256" in by_id["nous-muse-spark-1.1"]["live_skip_reason"]
+    assert "mandatory reasoning" in by_id["nous-muse-spark-1.1"]["live_skip_reason"]
     assert pricing["nous-nex-n2-mini-none"]["input_per_m"] == 0.025
     assert pricing["nous-nex-n2-mini-none"]["output_per_m"] == 0.10
     assert pricing["nous-nex-n2-mini-low"]["input_per_m"] == 0.025
@@ -160,6 +164,7 @@ def test_default_round1_roster_entries_construct_requests_and_cache_keys():
         "nous-nex-n2-mini-low",
         "nous-nex-n2-mini-high",
         "nous-deepseek-v4-pro-none",
+        "nous-glm-5.2",
     }
     ids = {row["id"] for row in models}
     assert expected_ids <= ids

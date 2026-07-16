@@ -42,3 +42,25 @@ material.
 Live cache keys now use the roster candidate id while provider calls use the concrete API
 model id. That keeps request-shape variants cache-distinct when the same provider model is
 run under different caps or reasoning settings.
+
+## S6: `z-ai/glm-5.2`
+
+Outcome: bind S6 active as a minimal disabled-reasoning candidate.
+
+The VPS one-call probe used the production minimal shape, `reasoning={"enabled": false}`,
+with a 256-token output cap. The provider honored the disabled-reasoning request:
+`reasoning_tokens=0`, `finish_reason=stop`, clean parseable curiosity JSON, and measured
+cost. `llm_models.json` therefore keeps `nous-glm-5.2` live with
+`reasoning.enabled=false`.
+
+## S7: `meta/muse-spark-1.1`
+
+Outcome: admission-failed for live round 1.
+
+The VPS one-call probe used the same production minimal shape,
+`reasoning={"enabled": false}`, with a 256-token output cap. The provider ignored the
+disable request, burned `reasoning_tokens=253/256`, returned `finish_reason=length`,
+and produced empty content. This is a mandatory-reasoning model for the snap task, not an
+economical disabled-reasoning candidate; it is also priced outside the $40-60 production
+class. The roster keeps the pricing entry for auditability, but `llm_models.json` marks it
+with `live_skip_reason` so default live runs do not spend budget on the known failing route.

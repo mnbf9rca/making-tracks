@@ -44,7 +44,10 @@ for live round 1 because six probed request shapes returned 400 `missing user ta
 The effort matrix now runs on the known-clean cheap `nex-agi/nex-n2-mini` candidate:
 cache-distinct `none`, `low`, and `high` variants, with 1024-token caps for low/high
 so reasoning has room to finish before JSON output. DeepSeek is retained as a single
-probe-verified disabled-reasoning variant (`reasoning.enabled=false`). GLM 5.2 and
-Muse Spark remain priced in the table but are marked admission-pending for live bakeoff
-until the one-call minimal-shape probes in `scripts/probe_glm_muse_minimal.py` produce
-clean parseable output.
+probe-verified disabled-reasoning variant (`reasoning.enabled=false`). GLM 5.2 is now
+bound as a probe-verified disabled-reasoning variant (`reasoning.enabled=false`):
+the VPS probe returned `reasoning_tokens=0`, `finish_reason=stop`, clean parseable
+output, and measured cost. Muse Spark remains priced in the table for auditability
+but is marked admission-failed: the same `reasoning.enabled=false` probe was ignored,
+burning `reasoning_tokens=253/256`, finishing by length with empty content, so it cannot
+run the snap task economically and is outside the $40-60 production class.

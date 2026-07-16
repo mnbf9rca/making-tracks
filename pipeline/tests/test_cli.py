@@ -2830,8 +2830,41 @@ def test_cli_llm_live_bakeoff_round1b_candidates_use_rob_reframed_reasoning_shap
     assert attempted[0].reasoning == reasoning
 
 
-@pytest.mark.parametrize("model_id", ["nous-glm-5.2", "nous-muse-spark-1.1"])
-def test_live_nous_candidates_skip_unverified_round1b_models_by_default(model_id):
+def test_live_nous_candidates_include_probe_verified_glm_minimal_by_default():
+    rows = [
+        cli.golden.GoldenRow(
+            place_id="mt1_00000000000000000000000000",
+            area="kl",
+            name="A",
+            lat=0.0,
+            lon=0.0,
+            category="c",
+            tier=1,
+            score=0.0,
+            data_version="v1",
+            signals={"article": 0.1},
+            labeled_by="rob",
+            evidence="",
+            label="yes",
+        )
+    ]
+    root = cli._PIPELINE_ROOT / "config"
+    models = json.loads((root / "llm_models.json").read_text())["models"]
+    pricing = json.loads((root / "llm_pricing.json").read_text())["models"]
+
+    candidates = cli._live_nous_candidates(models, pricing, rows, requested_model=None)
+    by_id = {candidate[1]: candidate for candidate in candidates}
+
+    assert "nous-glm-5.2" in by_id
+    assert by_id["nous-glm-5.2"][2] == "z-ai/glm-5.2"
+    assert by_id["nous-glm-5.2"][4] == {
+        "max_tokens": 256,
+        "seed": None,
+        "reasoning": {"enabled": False},
+    }
+
+
+def test_live_nous_candidates_skip_probe_failed_muse_by_default():
     rows = [
         cli.golden.GoldenRow(
             place_id="mt1_00000000000000000000000000",
@@ -2855,9 +2888,17 @@ def test_live_nous_candidates_skip_unverified_round1b_models_by_default(model_id
 
     candidates = cli._live_nous_candidates(models, pricing, rows, requested_model=None)
 
-    assert model_id not in {candidate[1] for candidate in candidates}
-    with pytest.raises(ValueError, match=f"requested live model {model_id!r} is skipped: admission-pending"):
-        cli._live_nous_candidates(models, pricing, rows, requested_model=model_id)
+    assert "nous-muse-spark-1.1" not in {candidate[1] for candidate in candidates}
+    with pytest.raises(
+        ValueError,
+        match="requested live model 'nous-muse-spark-1.1' is skipped: admission-failed",
+    ):
+        cli._live_nous_candidates(
+            models,
+            pricing,
+            rows,
+            requested_model="nous-muse-spark-1.1",
+        )
 
 
 def test_live_nous_candidates_skip_admission_failed_models_by_default():

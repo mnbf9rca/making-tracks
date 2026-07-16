@@ -93,7 +93,9 @@
       "slot": "S6",
       "max_tokens": 256,
       "seed": null,
-      "live_skip_reason": "admission-pending: minimal reasoning shape needs one-call probe before live bakeoff"
+      "reasoning": {
+        "enabled": false
+      }
     },
     {
       "id": "nous-muse-spark-1.1",
@@ -103,7 +105,7 @@
       "slot": "S7",
       "max_tokens": 256,
       "seed": null,
-      "live_skip_reason": "admission-pending: minimal reasoning shape needs one-call probe before live bakeoff"
+      "live_skip_reason": "admission-failed: VPS probe with reasoning.enabled=false burned reasoning_tokens=253/256, finish=length, empty content; mandatory reasoning model cannot run snap task economically and is priced out of the $40-60 production class"
     },
     {
       "id": "modal-meta-llama-3.1-8b",
