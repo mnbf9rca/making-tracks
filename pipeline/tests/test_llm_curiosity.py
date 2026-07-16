@@ -62,4 +62,6 @@ def test_curiosity_request_accepts_per_model_cap_and_reasoning_options():
 
     assert req.max_tokens == 128
     assert req.reasoning == {"enabled": True, "effort": "low", "exclude": True}
+    with pytest.raises(TypeError):
+        req.reasoning["new"] = 1  # type: ignore[index]
     assert req.seed is None

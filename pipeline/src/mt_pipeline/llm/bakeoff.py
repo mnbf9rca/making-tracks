@@ -720,6 +720,11 @@ def _request_options(model_options: ModelOptions) -> dict[str, object]:
         if reasoning is not None and not isinstance(reasoning, Mapping):
             raise ValueError("model reasoning must be an object")
         options["reasoning"] = dict(reasoning) if reasoning is not None else None
+    if "provider_tags" in model_options:
+        provider_tags = model_options["provider_tags"]
+        if provider_tags is not None and not isinstance(provider_tags, (list, tuple)):
+            raise ValueError("model provider_tags must be a list")
+        options["provider_tags"] = tuple(provider_tags) if provider_tags is not None else None
     if "seed" in model_options:
         seed = model_options["seed"]
         if seed is not None and (not isinstance(seed, int) or isinstance(seed, bool)):

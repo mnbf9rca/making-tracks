@@ -1905,6 +1905,368 @@ def test_cli_llm_live_promotion_injection_empty_fixture_fails_closed(tmp_path, c
     assert calls == []
 
 
+def test_cli_llm_live_bakeoff_isolates_candidate_bad_request_and_continues(tmp_path, capsys, monkeypatch):
+    import httpx
+    from openai import BadRequestError
+
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text(
+        '{"models":['
+        '{"id":"bad","provider":"nous","api_model_id":"bad-api"},'
+        '{"id":"good","provider":"nous","api_model_id":"good-api"}'
+        ']}'
+    )
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text(
+        '{"models":{'
+        '"bad":{"provider":"nous","input_per_m":0.01,"output_per_m":0.01},'
+        '"good":{"provider":"nous","input_per_m":0.02,"output_per_m":0.02}'
+        '}}'
+    )
+    attempted = []
+
+    class CandidateProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            attempted.append(reqs[0].model_id)
+            if reqs[0].model_id == "bad-api":
+                response = httpx.Response(
+                    400,
+                    request=httpx.Request("POST", "https://inference-api.nousresearch.com/v1/chat/completions"),
+                    json={"message": "Additional info: missing tags"},
+                )
+                raise BadRequestError(
+                    "Error code: 400 - {'message': 'Additional info: missing tags'}",
+                    response=response,
+                    body={"message": "Additional info: missing tags"},
+                )
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint=req.model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.00001,
+                    cost_source="derived",
+                    app_id=None,
+                )
+                for req in reqs
+            ]
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", CandidateProvider)
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", ())
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert attempted == ["bad-api", "good-api"]
+    assert "model\tbad" in out
+    assert "error\tError code: 400" in out
+    assert "model\tgood" in out
+    assert "mt1_00000000000000000000000000\tgood\t0.900000\tfalse\t0.00001000\tderived" in out
+
+
+def test_cli_llm_live_bakeoff_attempts_default_candidates_in_estimated_cost_order(tmp_path, monkeypatch):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text(
+        '{"models":['
+        '{"id":"expensive","provider":"nous","api_model_id":"expensive-api"},'
+        '{"id":"cheap","provider":"nous","api_model_id":"cheap-api"}'
+        ']}'
+    )
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text(
+        '{"models":{'
+        '"expensive":{"provider":"nous","input_per_m":1.0,"output_per_m":1.0},'
+        '"cheap":{"provider":"nous","input_per_m":0.0,"output_per_m":0.0}'
+        '}}'
+    )
+    attempted = []
+
+    class OrderingProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            attempted.append(reqs[0].model_id)
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint=req.model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.0,
+                    cost_source="derived",
+                    app_id=None,
+                )
+                for req in reqs
+            ]
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", OrderingProvider)
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", ())
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    assert rc == 0
+    assert attempted == ["cheap-api", "expensive-api"]
+
+
+def test_cli_llm_live_bakeoff_ledgers_spend_before_shutdown_failure(tmp_path, capsys, monkeypatch):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text('{"models":[{"id":"nous-cheap","provider":"nous"}]}')
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
+
+    class ShutdownFailingProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint=req.model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.00001,
+                    cost_source="derived",
+                    app_id=None,
+                )
+                for req in reqs
+            ]
+
+        async def shutdown(self):
+            raise RuntimeError("shutdown failed")
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", ShutdownFailingProvider)
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", ())
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "error\tshutdown failed" in out
+    assert "ledger_total_usd\t0.00001000" in out
+    ledger = json.loads((tmp_path / "live-cost-ledger.json").read_text())
+    assert ledger["derived_usd"] == pytest.approx(0.00001)
+    assert ledger["runs"] == 1
+
+
+def test_cli_llm_live_bakeoff_cache_write_failure_is_run_fatal(tmp_path, capsys, monkeypatch):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text(
+        '{"models":['
+        '{"id":"bad-cache","provider":"nous","api_model_id":"bad-cache-api"},'
+        '{"id":"good","provider":"nous","api_model_id":"good-api"}'
+        ']}'
+    )
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text(
+        '{"models":{'
+        '"bad-cache":{"provider":"nous","input_per_m":0.0,"output_per_m":0.0},'
+        '"good":{"provider":"nous","input_per_m":0.0,"output_per_m":0.0}'
+        '}}'
+    )
+    attempted = []
+
+    class PutFailingCache:
+        def get(self, *_args):
+            return None
+
+        def put(self, *_args):
+            raise OSError("cache write failed")
+
+    class CacheWriteProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            attempted.append(reqs[0].model_id)
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint=req.model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.00001,
+                    cost_source="derived",
+                    app_id=None,
+                )
+                for req in reqs
+            ]
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", CacheWriteProvider)
+    monkeypatch.setattr(cli, "_curiosity_cache", lambda _cache_dir: PutFailingCache())
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", ())
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert attempted == ["bad-cache-api"]
+    assert "llm bakeoff error: cache write failed" in err
+
+
 def test_cli_llm_live_bakeoff_shuts_down_provider_when_batch_raises(tmp_path, monkeypatch):
     from mt_pipeline.llm.providers import nous
 

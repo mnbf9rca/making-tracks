@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import math
+from types import MappingProxyType
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -16,12 +18,21 @@ class Message(FrozenModel):
     content: str
 
 
+def _freeze_jsonish(value: object) -> object:
+    if isinstance(value, Mapping):
+        return MappingProxyType({str(key): _freeze_jsonish(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_jsonish(item) for item in value)
+    return value
+
+
 class LlmRequest(FrozenModel):
     model_id: str
     system: str
     messages: tuple[Message, ...]
     max_tokens: int = Field(ge=1, le=4096)
-    reasoning: dict[str, object] | None = None
+    provider_tags: tuple[str, ...] | None = None
+    reasoning: object | None = None
     temperature: float = Field(ge=0.0, le=2.0)
     top_p: float = Field(gt=0.0, le=1.0)
     seed: int | None = None
@@ -35,6 +46,33 @@ class LlmRequest(FrozenModel):
         if isinstance(value, bool):
             raise ValueError("integer fields must not be bool")
         return value
+
+    @field_validator("provider_tags", mode="before")
+    @classmethod
+    def _validate_provider_tags(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("provider_tags must be a list of strings")
+        if len(value) > 16:
+            raise ValueError("provider_tags must contain at most 16 tags")
+        tags = []
+        for tag in value:
+            if not isinstance(tag, str):
+                raise ValueError("provider_tags must be strings")
+            if not tag or len(tag) > 64 or any(ord(ch) < 32 for ch in tag):
+                raise ValueError("provider_tags entries must be non-empty printable strings up to 64 chars")
+            tags.append(tag)
+        return tuple(tags)
+
+    @field_validator("reasoning", mode="before")
+    @classmethod
+    def _freeze_reasoning(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, Mapping):
+            raise ValueError("reasoning must be an object")
+        return _freeze_jsonish(value)
 
     @field_validator("temperature", "top_p", mode="before")
     @classmethod
