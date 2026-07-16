@@ -173,6 +173,34 @@ def _record_extract_metadata(conn, region, run_id: str, snap_dir, statuses: dict
     )
 
 
+def _extractor_options(
+    region,
+    snap_dir: pathlib.Path,
+    *,
+    osm_index_type: str,
+    only_source: str | None,
+) -> dict:
+    options = {"osm": {"index_type": osm_index_type}}
+    pageview_options = acquire.pageview_region_options(region)
+    if (
+        pageview_options is not None
+        and region.sources.get("wikipedia") is True
+        and only_source in {None, "wikipedia"}
+    ):
+        pageview_cache = snap_dir / "pageviews"
+        window = acquire.pageview_window_for_wikipedia_snapshot(
+            acquire.snapshot_paths(snap_dir)["wikipedia"],
+            region,
+        )
+        window = acquire.pageviews.manifest_window(pageview_cache) or window
+        if window is not None:
+            options["wikipedia"] = {
+                "pageview_cache_dir": pageview_cache,
+                "pageview_window": window,
+            }
+    return options
+
+
 def _read_text_limited(path: pathlib.Path, *, max_bytes: int) -> str:
     if path.stat().st_size > max_bytes:
         raise ValueError(f"{path} exceeds {max_bytes} byte limit")
@@ -492,7 +520,12 @@ def main(argv=None) -> int:
                     acquire.snapshot_paths(snap_dir),
                     run_id=args.run_id,
                     registry=registry,
-                    extractor_options={"osm": {"index_type": args.osm_index_type}},
+                    extractor_options=_extractor_options(
+                        region,
+                        snap_dir,
+                        osm_index_type=args.osm_index_type,
+                        only_source=args.only_source,
+                    ),
                     status_recorder=record_status,
                     only_source=args.only_source,
                 )

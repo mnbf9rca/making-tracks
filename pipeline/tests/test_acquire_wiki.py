@@ -207,6 +207,68 @@ def test_wikidata_timeouts_are_retryable(tmp_path):
     assert len(attempts) == 2
 
 
+def test_retry_json_honors_retry_after_on_rate_limit(tmp_path):
+    attempts = []
+    sleeps = []
+
+    def fetch_json(*_args, **_kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            exc = acquire.fetch.FetchError("http 429: Too Many Requests")
+            exc.status = 429
+            exc.retry_after = 7.0
+            raise exc
+        return {"results": {"bindings": []}}
+
+    acquire.acquire_wikidata(
+        tmp_path,
+        bbox=(100.0, 1.0, 101.0, 2.0),
+        class_qids=["Q33506"],
+        config={
+            "endpoint": "https://query.wikidata.org/sparql",
+            "allowed_hosts": ["query.wikidata.org"],
+        },
+        fetch_json=fetch_json,
+        sleep=sleeps.append,
+        retrieved_at="2026-07-15T00:00:00Z",
+    )
+
+    assert len(attempts) == 2
+    assert sleeps == [7.0]
+
+
+def test_retry_json_clamps_excessive_retry_after(tmp_path):
+    attempts = []
+    sleeps = []
+
+    def fetch_json(*_args, **_kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            exc = acquire.fetch.FetchError(
+                "http 429: Too Many Requests",
+                status=429,
+                retry_after=9999.0,
+            )
+            raise exc
+        return {"results": {"bindings": []}}
+
+    acquire.acquire_wikidata(
+        tmp_path,
+        bbox=(100.0, 1.0, 101.0, 2.0),
+        class_qids=["Q33506"],
+        config={
+            "endpoint": "https://query.wikidata.org/sparql",
+            "allowed_hosts": ["query.wikidata.org"],
+        },
+        fetch_json=fetch_json,
+        sleep=sleeps.append,
+        retrieved_at="2026-07-15T00:00:00Z",
+    )
+
+    assert len(attempts) == 2
+    assert sleeps == [acquire.MAX_RETRY_AFTER_SECONDS]
+
+
 def test_wikidata_truncated_json_fetch_errors_are_retryable(tmp_path):
     attempts = []
 
@@ -230,6 +292,74 @@ def test_wikidata_truncated_json_fetch_errors_are_retryable(tmp_path):
     )
 
     assert len(attempts) == 2
+
+
+def test_fetch_pageviews_for_title_uses_wikimedia_rest_and_normalizes_schema():
+    calls = []
+
+    def fetch_json(url, *, expected_hosts, max_bytes, headers):
+        calls.append((url, expected_hosts, max_bytes, headers))
+        parsed = urllib.parse.urlparse(url)
+        assert parsed.path.endswith(
+            "/metrics/pageviews/per-article/en.wikipedia/all-access/user/Big_Ben/daily/2025071400/2026071400"
+        )
+        assert expected_hosts == {"wikimedia.org"}
+        assert max_bytes == 4321
+        assert headers["User-Agent"].startswith("MakingTracksBot/")
+        return {
+            "items": [
+                {
+                    "project": "en.wikipedia",
+                    "article": "Big_Ben",
+                    "access": "all-access",
+                    "agent": "user",
+                    "granularity": "daily",
+                    "timestamp": "2025071400",
+                    "views": 5,
+                },
+                {
+                    "project": "en.wikipedia",
+                    "article": "Big_Ben",
+                    "access": "all-access",
+                    "agent": "user",
+                    "granularity": "daily",
+                    "timestamp": "2025071500",
+                    "views": "8",
+                },
+                {
+                    "project": "en.wikipedia",
+                    "article": "Big_Ben",
+                    "access": "all-access",
+                    "agent": "user",
+                    "granularity": "daily",
+                    "timestamp": "2025071600",
+                    "views": -3,
+                },
+            ]
+        }
+
+    result = acquire.fetch_pageviews_for_title(
+        "Big Ben",
+        ("2025-07-14", "2026-07-14"),
+        language="en",
+        config={
+            "endpoint": "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article",
+            "allowed_hosts": ["wikimedia.org"],
+            "max_bytes": 4321,
+            "access": "all-access",
+            "agent": "user",
+            "granularity": "daily",
+        },
+        fetch_json=fetch_json,
+        sleep=lambda _seconds: None,
+    )
+
+    assert result == {
+        "title": "Big Ben",
+        "window": ["2025-07-14", "2026-07-14"],
+        "daily": [5, 8, 0],
+    }
+    assert len(calls) == 1
 
 
 def test_acquire_all_applies_region_wikidata_tile_override(tmp_path, monkeypatch):
@@ -287,6 +417,139 @@ def test_acquire_all_applies_region_wikidata_tile_override(tmp_path, monkeypatch
         },
         "tile_degrees": 0.5,
     }
+
+
+def test_acquire_all_runs_pageviews_when_region_opts_in(tmp_path, monkeypatch):
+    config_path = tmp_path / "acquire_sources.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "wikidata": {
+                    "endpoint": "https://query.wikidata.org/sparql",
+                    "allowed_hosts": ["query.wikidata.org"],
+                },
+                "wikipedia": {
+                    "endpoint": "https://en.wikipedia.org/w/api.php",
+                    "allowed_hosts": ["en.wikipedia.org"],
+                },
+                "pageviews": {
+                    "endpoint": "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article",
+                    "allowed_hosts": ["wikimedia.org"],
+                    "max_bytes": 1234,
+                    "polite_interval_seconds": 0.5,
+                },
+                "osm": {},
+            }
+        )
+    )
+    region_config = types.SimpleNamespace(
+        region_id="malaysia",
+        bbox=(100.0, 1.0, 101.0, 2.0),
+        languages=["en"],
+        sources={"wikidata": False, "wikipedia": True, "osm": False},
+        raw={"pageviews": {"enabled": True, "months": 12}},
+    )
+    wikipedia_snapshot = tmp_path / "wikipedia.snapshot.json"
+    captured = {}
+
+    def fake_acquire_wikipedia(*_args, **_kwargs):
+        wikipedia_snapshot.write_text(
+            json.dumps(
+                {
+                    "_meta": {
+                        "complete": True,
+                        "retrieved_at": "2026-07-15T08:03:37Z",
+                    },
+                    "lang": "en",
+                    "pages": [
+                        {"title": "Beta", "pageid": 2},
+                        {"title": "Alpha", "pageid": 1},
+                        {"title": "Alpha", "pageid": 3},
+                    ],
+                }
+            )
+        )
+        return wikipedia_snapshot
+
+    def fake_acquire_pageviews(titles, window, cache_dir, **kwargs):
+        captured["titles"] = list(titles)
+        captured["window"] = window
+        captured["cache_dir"] = cache_dir
+        captured["enabled"] = kwargs["enabled"]
+        captured["polite_interval_seconds"] = kwargs["polite_interval_seconds"]
+        return 2
+
+    monkeypatch.setattr(acquire, "acquire_wikipedia", fake_acquire_wikipedia)
+    monkeypatch.setattr(acquire, "acquire_registers", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(acquire.pageviews, "acquire", fake_acquire_pageviews)
+
+    paths = acquire.acquire_all(tmp_path, region_config=region_config, config_path=config_path)
+
+    assert paths["pageviews"] == tmp_path / "pageviews"
+    assert captured == {
+        "titles": ["Alpha", "Beta"],
+        "window": ("2025-07-15", "2026-07-15"),
+        "cache_dir": tmp_path / "pageviews",
+        "enabled": True,
+        "polite_interval_seconds": 0.5,
+    }
+
+
+def test_acquire_all_skips_pageviews_when_region_opts_out(tmp_path, monkeypatch):
+    config_path = tmp_path / "acquire_sources.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "wikidata": {
+                    "endpoint": "https://query.wikidata.org/sparql",
+                    "allowed_hosts": ["query.wikidata.org"],
+                },
+                "wikipedia": {
+                    "endpoint": "https://en.wikipedia.org/w/api.php",
+                    "allowed_hosts": ["en.wikipedia.org"],
+                },
+                "pageviews": {
+                    "endpoint": "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article",
+                    "allowed_hosts": ["wikimedia.org"],
+                },
+                "osm": {},
+            }
+        )
+    )
+    region_config = types.SimpleNamespace(
+        region_id="uk",
+        bbox=(100.0, 1.0, 101.0, 2.0),
+        languages=["en"],
+        sources={"wikidata": False, "wikipedia": True, "osm": False},
+        raw={"pageviews": {"enabled": False, "months": 12}},
+    )
+    wikipedia_snapshot = tmp_path / "wikipedia.snapshot.json"
+
+    def fake_acquire_wikipedia(*_args, **_kwargs):
+        wikipedia_snapshot.write_text(
+            json.dumps(
+                {
+                    "_meta": {
+                        "complete": True,
+                        "retrieved_at": "2026-07-15T08:03:37Z",
+                    },
+                    "lang": "en",
+                    "pages": [{"title": "Alpha", "pageid": 1}],
+                }
+            )
+        )
+        return wikipedia_snapshot
+
+    def fail_pageviews(*_args, **_kwargs):
+        raise AssertionError("pageviews should not run")
+
+    monkeypatch.setattr(acquire, "acquire_wikipedia", fake_acquire_wikipedia)
+    monkeypatch.setattr(acquire, "acquire_registers", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(acquire.pageviews, "acquire", fail_pageviews)
+
+    paths = acquire.acquire_all(tmp_path, region_config=region_config, config_path=config_path)
+
+    assert "pageviews" not in paths
 
 
 def test_wikipedia_acquisition_writes_complete_snapshot(tmp_path):

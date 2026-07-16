@@ -73,6 +73,8 @@ def _find_nondeterministic_calls(path_name: str, source: str) -> list[str]:
         fn = _enclosing_func(tree, node)
         if path_name == "stages.py" and fn == "_completed_at" and name == "now":
             continue
+        if path_name == "fetch.py" and fn == "_retry_after_seconds" and name == "now":
+            continue
         if path_name == "fetch.py" and fn in {"get_json", "get_to_file"} and name == "monotonic":
             continue
         if (
