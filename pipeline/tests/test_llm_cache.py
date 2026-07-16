@@ -24,6 +24,17 @@ def test_cache_key_survives_a_slash_bearing_model_id():
     assert a != b
 
 
+def test_cache_key_encodes_round1_real_portal_ids_with_slash_and_colon():
+    free_key = C.cache_key("curiosity", "tencent/hy3:free", "curiosity-v1", "H")
+    s3_key = C.cache_key("curiosity", "nousresearch/hermes-4-70b", "curiosity-v1", "H")
+    s4_key = C.cache_key("curiosity", "nex-agi/nex-n2-mini", "curiosity-v1", "H")
+
+    assert free_key == "curiosity/tencent%2Fhy3%3Afree/curiosity-v1/H"
+    assert s3_key == "curiosity/nousresearch%2Fhermes-4-70b/curiosity-v1/H"
+    assert s4_key == "curiosity/nex-agi%2Fnex-n2-mini/curiosity-v1/H"
+    assert len({free_key, s3_key, s4_key}) == 3
+
+
 def test_cache_key_encodes_dot_segments_to_prevent_path_traversal():
     key = C.cache_key("curiosity", "..", "v1", "H")
 

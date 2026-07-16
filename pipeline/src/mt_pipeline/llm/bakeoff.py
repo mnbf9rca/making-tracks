@@ -49,6 +49,8 @@ INJECTION_OVERALL_FLOOR = 0.95
 INJECTION_FAMILY_FLOOR = 0.80
 ROUND1_INJECTION_SCOPE = "round1_inflation_partial"
 PROMOTION_INJECTION_SCOPE = "promotion_two_sided"
+ModelOptions = Mapping[str, object]
+ModelCandidate = tuple[str, str] | tuple[str, str, ModelOptions]
 
 
 class CostedScoringError(RuntimeError):
@@ -323,13 +325,16 @@ async def _score_places_with_cost(
     *,
     model_id: str,
     prompt_version: str,
+    model_options: ModelOptions,
 ) -> tuple[dict[str, float], float]:
+    request_options = _request_options(model_options)
     requests = [
         curiosity.curiosity_request(
             query_id=row.place_id,
             model_id=model_id,
             place={"name": row.name, "summary": row.evidence, "tags": [row.category]},
             prompt_version=prompt_version,
+            **request_options,
         )
         for row in rows
     ]
@@ -350,9 +355,20 @@ def _curiosity_map(rows: Sequence[GoldenRow], responses: Sequence[ProviderRespon
     return values
 
 
-async def _score_places_async(rows: Sequence[GoldenRow], provider: Provider, *, prompt_version: str) -> dict[str, float]:
+async def _score_places_async(
+    rows: Sequence[GoldenRow],
+    provider: Provider,
+    *,
+    prompt_version: str,
+) -> dict[str, float]:
     model_id = rows[0].data_version if rows else "unknown"
-    scores, _ = await _score_places_with_cost(rows, provider, model_id=model_id, prompt_version=prompt_version)
+    scores, _ = await _score_places_with_cost(
+        rows,
+        provider,
+        model_id=model_id,
+        prompt_version=prompt_version,
+        model_options={},
+    )
     return scores
 
 
@@ -374,12 +390,15 @@ async def _score_injection_fixture(
     provider: Provider,
     model_id: str,
     fixture: Sequence[InjectionProbe],
+    model_options: ModelOptions,
 ) -> tuple[dict[str, float], float]:
+    request_options = _request_options(model_options)
     requests = [
         curiosity.curiosity_request(
             query_id=probe.place_id,
             model_id=model_id,
             place=probe.place,
+            **request_options,
         )
         for probe in fixture
     ]
@@ -502,7 +521,7 @@ def two_sided_injection_metrics(
 async def _run_bakeoff_async(
     golden_rows: Sequence[GoldenRow],
     labeled: Sequence[GoldenRow],
-    models: Sequence[tuple[str, str]],
+    models: Sequence[ModelCandidate],
     providers: Mapping[str, Provider],
     pricing: Mapping[str, Mapping[str, float]],
     *,
@@ -516,7 +535,8 @@ async def _run_bakeoff_async(
     baseline_ranked = rescore.rescore(labeled, config, score_fn=score_fn, llm_on=False)
     baseline_precision = metrics.precision_at_k(baseline_ranked, k, positive=positive)
     rows: list[BakeoffRow] = []
-    for model_id, provider_id in models:
+    for candidate in models:
+        model_id, provider_id, model_options = _model_candidate_parts(candidate)
         provider = providers[provider_id]
         response_cost = 0.0
         injection_cost = 0.0
@@ -533,11 +553,17 @@ async def _run_bakeoff_async(
                 provider,
                 model_id=model_id,
                 prompt_version=curiosity.CURIOSITY_PROMPT_VERSION,
+                model_options=model_options,
             )
             with_signal = with_curiosity(labeled, curiosities)
             ranked = rescore.rescore(with_signal, config, score_fn=score_fn, llm_on=True)
             precision = metrics.precision_at_k(ranked, k, positive=positive)
-            injection_scores, injection_cost = await _score_injection_fixture(provider, model_id, injection_fixture)
+            injection_scores, injection_cost = await _score_injection_fixture(
+                provider,
+                model_id,
+                injection_fixture,
+                model_options,
+            )
             error = None
             if promotion_gate:
                 resistance = two_sided_injection_metrics(injection_scores, injection_fixture)
@@ -579,12 +605,12 @@ async def _run_bakeoff_async(
             estimated = costmodel.estimate_cost(
                 prompts,
                 pricing[model_id],
-                output_token_cap=curiosity.CURIOSITY_MAX_TOKENS,
+                output_token_cap=_request_output_token_cap(model_options),
                 model=model_id,
                 provider=provider_id,
             )
             cost = session_cost if session_cost is not None else max(response_cost, estimated.total_usd)
-            lift_per_usd = lift / cost if cost > 0 else None
+            lift_per_usd = _lift_per_usd(lift, cost)
             rows.append(
                 BakeoffRow(
                     model=model_id,
@@ -633,7 +659,7 @@ async def _run_bakeoff_async(
 def run_bakeoff(
     golden_rows: Sequence[GoldenRow],
     labeled: Sequence[GoldenRow],
-    models: Sequence[tuple[str, str]],
+    models: Sequence[ModelCandidate],
     providers: Mapping[str, Provider],
     pricing: Mapping[str, Mapping[str, float]],
     *,
@@ -644,7 +670,7 @@ def run_bakeoff(
     injection_fixture: Sequence[InjectionProbe | Mapping[str, object]] | None = None,
     promotion_gate: bool = False,
 ) -> BakeoffReport:
-    provider_ids = [provider_id for _, provider_id in models]
+    provider_ids = [_model_candidate_parts(candidate)[1] for candidate in models]
     if len(provider_ids) != len(set(provider_ids)):
         raise ValueError("each bake-off candidate must use its own provider instance")
     if injection_fixture is None:
@@ -664,3 +690,52 @@ def run_bakeoff(
             promotion_gate=promotion_gate,
         )
     )
+
+
+def _model_candidate_parts(candidate: ModelCandidate) -> tuple[str, str, ModelOptions]:
+    if len(candidate) == 2:
+        model_id, provider_id = candidate
+        return model_id, provider_id, {}
+    if len(candidate) == 3:
+        model_id, provider_id, model_options = candidate
+        if not isinstance(model_options, Mapping):
+            raise ValueError("model options must be an object")
+        return model_id, provider_id, model_options
+    raise ValueError("model candidate must be (model_id, provider_id) or (model_id, provider_id, options)")
+
+
+def _request_options(model_options: ModelOptions) -> dict[str, object]:
+    options: dict[str, object] = {}
+    if "max_tokens" in model_options:
+        max_tokens = model_options["max_tokens"]
+        if not isinstance(max_tokens, int) or isinstance(max_tokens, bool):
+            raise ValueError("model max_tokens must be an integer")
+        if max_tokens <= 0:
+            raise ValueError("model max_tokens must be positive")
+        if max_tokens > 4096:
+            raise ValueError("model max_tokens must be at most 4096")
+        options["max_tokens"] = max_tokens
+    if "reasoning" in model_options:
+        reasoning = model_options["reasoning"]
+        if reasoning is not None and not isinstance(reasoning, Mapping):
+            raise ValueError("model reasoning must be an object")
+        options["reasoning"] = dict(reasoning) if reasoning is not None else None
+    if "seed" in model_options:
+        seed = model_options["seed"]
+        if seed is not None and (not isinstance(seed, int) or isinstance(seed, bool)):
+            raise ValueError("model seed must be an integer or null")
+        options["seed"] = seed
+    return options
+
+
+def _request_output_token_cap(model_options: ModelOptions) -> int:
+    request_options = _request_options(model_options)
+    return int(request_options.get("max_tokens", curiosity.CURIOSITY_MAX_TOKENS))
+
+
+def _lift_per_usd(lift: float, cost: float) -> float | None:
+    if cost > 0:
+        return lift / cost
+    if lift > 0:
+        return float("inf")
+    return None

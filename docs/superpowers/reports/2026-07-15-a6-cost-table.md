@@ -16,12 +16,21 @@ Command:
 uv run --extra dev python -m mt_pipeline.cli llm cost --corpus ../docs/superpowers/eval/real-malaysia-20260715-golden-kl.jsonl
 ```
 
+Equivalent from the repo root:
+
+```bash
+uv run python -m mt_pipeline.cli llm cost --corpus docs/superpowers/eval/real-malaysia-20260715-golden-kl.jsonl
+```
+
 Output:
 
 ```text
 model	provider	input_tokens	output_token_cap	total_usd	token_source
 fake-curiosity-v1	fake	41511	16	0.00000000	byte-estimate
-nous-hermes-3-llama-3.1-8b	nous	41511	16	0.00774345	byte-estimate
+tencent/hy3:free	nous	41511	16	0.00000000	byte-estimate
+meta-llama/llama-3.1-8b-instruct	nous	41511	16	0.00227779	byte-estimate
+nousresearch/hermes-4-70b	nous	41511	16	0.00258115	byte-estimate
+nex-agi/nex-n2-mini	nous	41511	128	0.00306018	byte-estimate
 modal-meta-llama-3.1-8b	modal	41511	0	0.00479688	byte-estimate
 ```
 

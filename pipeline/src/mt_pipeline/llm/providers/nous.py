@@ -68,18 +68,7 @@ class NousProvider:
             raise ProviderCredentialsMissing("openai SDK is required for live NOUS calls") from exc
 
         client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
-        response: Any = await client.chat.completions.create(
-            model=req.model_id,
-            messages=[
-                {"role": "system", "content": req.system},
-                *[{"role": msg.role, "content": msg.content} for msg in req.messages],
-            ],
-            max_tokens=req.max_tokens,
-            temperature=req.temperature,
-            top_p=req.top_p,
-            seed=req.seed,
-            response_format={"type": "json_object"},
-        )
+        response: Any = await client.chat.completions.create(**self._chat_completion_kwargs(req))
         text = response.choices[0].message.content or ""
         usage = getattr(response, "usage", None)
         prompt_tokens = getattr(usage, "prompt_tokens", None)
@@ -99,6 +88,24 @@ class NousProvider:
             cost_usd=self.cost_from_usage(input_tokens=input_tokens, output_tokens=output_tokens),
             app_id=None,
         )
+
+    def _chat_completion_kwargs(self, req: LlmRequest) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "model": req.model_id,
+            "messages": [
+                {"role": "system", "content": req.system},
+                *[{"role": msg.role, "content": msg.content} for msg in req.messages],
+            ],
+            "max_tokens": req.max_tokens,
+            "temperature": req.temperature,
+            "top_p": req.top_p,
+            "response_format": {"type": "json_object"},
+        }
+        if req.seed is not None:
+            kwargs["seed"] = req.seed
+        if req.reasoning is not None:
+            kwargs["extra_body"] = {"reasoning": req.reasoning}
+        return kwargs
 
     def cost_from_usage(self, *, input_tokens: int, output_tokens: int) -> float:
         return (input_tokens * self.input_per_m + output_tokens * self.output_per_m) / 1_000_000

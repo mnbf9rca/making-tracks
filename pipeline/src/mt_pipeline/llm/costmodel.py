@@ -103,9 +103,20 @@ def build_cost_table(
             row = estimate_cost(
                 prompts,
                 pricing[model_id],
-                output_token_cap=output_token_cap,
+                output_token_cap=_model_output_token_cap(model, default=output_token_cap),
                 model=model_id,
                 provider=provider,
             )
         rows.append(row)
     return CostTable(rows=tuple(rows))
+
+
+def _model_output_token_cap(model: Mapping[str, object], *, default: int) -> int:
+    value = model.get("max_tokens", default)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError("model max_tokens must be an integer")
+    if value <= 0:
+        raise ValueError("model max_tokens must be positive")
+    if value > 4096:
+        raise ValueError("model max_tokens must be at most 4096")
+    return value

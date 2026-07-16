@@ -51,6 +51,93 @@ def test_bakeoff_lift_comes_from_a5_precision_at_k():
     assert row.lift_per_usd is not None and row.lift_per_usd > 0
 
 
+def test_zero_cost_positive_lift_sorts_ahead_of_paid_models():
+    rows = [_row("mt1_" + "0" * 26, 0.1, "yes"), _row("mt1_" + "1" * 26, 0.9, "no")]
+    good = FakeProvider(
+        scorer=lambda r: 0.9 if r.query_id.endswith("0" * 26) else 0.1,
+        price_per_call_usd=0.0,
+    )
+    paid = FakeProvider(
+        scorer=lambda r: 0.9 if r.query_id.endswith("0" * 26) else 0.1,
+        price_per_call_usd=0.001,
+    )
+
+    rep = B.run_bakeoff(
+        rows,
+        rows,
+        models=[("free", "free"), ("paid", "paid")],
+        providers={"free": good, "paid": paid},
+        pricing={
+            "free": {"input_per_m": 0.0, "output_per_m": 0.0},
+            "paid": {"input_per_m": 0.1, "output_per_m": 0.4},
+        },
+        k=1,
+        config={"article": 1.0, "llm_curiosity": 3.0},
+        score_fn=fake_composite,
+    )
+
+    assert rep.rows[0].model == "free"
+    assert rep.rows[0].lift_per_usd == float("inf")
+
+
+def test_bakeoff_passes_model_options_to_scoring_injection_and_cost_estimate():
+    rows = [_row("mt1_" + "0" * 26, 0.1, "yes")]
+    seen = []
+
+    class CapturingProvider(FakeProvider):
+        async def acomplete_batch(self, reqs):
+            seen.extend(reqs)
+            return await super().acomplete_batch(reqs)
+
+    provider = CapturingProvider(scorer=lambda r: 0.9, price_per_call_usd=0.0)
+    reasoning = {"enabled": True, "effort": "low", "exclude": True}
+
+    rep = B.run_bakeoff(
+        rows,
+        rows,
+        models=[("nex-agi/nex-n2-mini", "p", {"max_tokens": 128, "reasoning": reasoning, "seed": None})],
+        providers={"p": provider},
+        pricing={"nex-agi/nex-n2-mini": {"input_per_m": 0.0, "output_per_m": 1.0}},
+        k=1,
+        config={"article": 1.0, "llm_curiosity": 3.0},
+        score_fn=fake_composite,
+        injection_fixture=[
+            {
+                "place_id": "probe",
+                "honest": 0.9,
+                "place": {"name": "A", "summary": "B", "tags": ["historic"]},
+            }
+        ],
+    )
+
+    assert [req.max_tokens for req in seen] == [128, 128]
+    assert [req.reasoning for req in seen] == [reasoning, reasoning]
+    assert [req.seed for req in seen] == [None, None]
+    assert rep.rows[0].cost_usd == pytest.approx(0.000128)
+
+
+@pytest.mark.parametrize("max_tokens", [0, 4097])
+def test_bakeoff_invalid_model_output_cap_fails_candidate_closed(max_tokens):
+    rows = [_row("mt1_" + "0" * 26, 0.1, "yes")]
+    provider = FakeProvider(scorer=lambda r: 0.9, price_per_call_usd=0.0)
+
+    rep = B.run_bakeoff(
+        rows,
+        rows,
+        models=[("bad-cap", "p", {"max_tokens": max_tokens})],
+        providers={"p": provider},
+        pricing={"bad-cap": {"input_per_m": 0.0, "output_per_m": 1.0}},
+        k=1,
+        config={"article": 1.0, "llm_curiosity": 3.0},
+        score_fn=fake_composite,
+        injection_fixture=[],
+    )
+
+    assert rep.rows[0].error is not None
+    assert rep.rows[0].error.startswith("model max_tokens must be")
+    assert rep.rows[0].lift is None
+
+
 def test_two_sided_injection_corpus_is_real_kl_rank_scaled_and_family_resolvable():
     probes = B.TWO_SIDED_INJECTION_PROBES
     families = {}

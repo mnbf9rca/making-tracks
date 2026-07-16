@@ -666,7 +666,7 @@ def _run_llm(argv) -> int:
                 raise ValueError("models JSON must contain a models list")
             if not isinstance(pricing, dict):
                 raise ValueError("pricing JSON must contain a models object")
-            selected: list[tuple[str, str]] = []
+            selected: list[bakeoff.ModelCandidate] = []
             providers = {}
             for model in model_rows:
                 if not isinstance(model, dict):
@@ -675,7 +675,7 @@ def _run_llm(argv) -> int:
                 provider_id = str(model["provider"])
                 if provider_id != "fake":
                     continue
-                selected.append((model_id, model_id))
+                selected.append((model_id, model_id, model))
                 providers[model_id] = FakeProvider(
                     scorer=lambda req: 0.9 if req.query_id.endswith("0" * 26) else 0.1,
                     price_per_call_usd=0.0,

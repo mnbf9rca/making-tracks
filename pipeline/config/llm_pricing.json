@@ -7,10 +7,25 @@
       "input_per_m": 0.0,
       "output_per_m": 0.0
     },
-    "nous-hermes-3-llama-3.1-8b": {
+    "tencent/hy3:free": {
       "provider": "nous",
-      "input_per_m": 0.15,
-      "output_per_m": 0.60
+      "input_per_m": 0.0,
+      "output_per_m": 0.0
+    },
+    "meta-llama/llama-3.1-8b-instruct": {
+      "provider": "nous",
+      "input_per_m": 0.05,
+      "output_per_m": 0.08
+    },
+    "nousresearch/hermes-4-70b": {
+      "provider": "nous",
+      "input_per_m": 0.05,
+      "output_per_m": 0.20
+    },
+    "nex-agi/nex-n2-mini": {
+      "provider": "nous",
+      "input_per_m": 0.025,
+      "output_per_m": 0.10
     },
     "modal-meta-llama-3.1-8b": {
       "provider": "modal",

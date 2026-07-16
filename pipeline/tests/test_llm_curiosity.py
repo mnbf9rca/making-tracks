@@ -47,3 +47,19 @@ def test_curiosity_request_uses_canonical_task_and_prompt_version():
     assert req.task_id == Q.CURIOSITY_TASK_ID
     assert req.prompt_version == Q.CURIOSITY_PROMPT_VERSION
     assert req.max_tokens == Q.CURIOSITY_MAX_TOKENS
+    assert req.seed == 0
+
+
+def test_curiosity_request_accepts_per_model_cap_and_reasoning_options():
+    req = Q.curiosity_request(
+        query_id="mt1_abc",
+        model_id="nex-agi/nex-n2-mini",
+        place={"name": "A", "summary": "B", "tags": ["history"]},
+        max_tokens=128,
+        reasoning={"enabled": True, "effort": "low", "exclude": True},
+        seed=None,
+    )
+
+    assert req.max_tokens == 128
+    assert req.reasoning == {"enabled": True, "effort": "low", "exclude": True}
+    assert req.seed is None

@@ -21,6 +21,7 @@ class LlmRequest(FrozenModel):
     system: str
     messages: tuple[Message, ...]
     max_tokens: int = Field(ge=1, le=4096)
+    reasoning: dict[str, object] | None = None
     temperature: float = Field(ge=0.0, le=2.0)
     top_p: float = Field(gt=0.0, le=1.0)
     seed: int | None = None
