@@ -62,6 +62,27 @@ def _build_parser() -> argparse.ArgumentParser:
         "--version",
         help="publish version for reconcile, formatted YYYYMMDDThhmmssZ",
     )
+    parser.add_argument(
+        "--publish-version",
+        help="publish version for publish, formatted YYYYMMDDThhmmssZ",
+    )
+    parser.add_argument(
+        "--generated-at",
+        help="manifest generated_at timestamp for publish (must be supplied by the run)",
+    )
+    parser.add_argument(
+        "--scoring-config-version",
+        help="A4 scoring config version recorded in manifest score provenance",
+    )
+    parser.add_argument(
+        "--staging-dir",
+        help="local staging root for publish artifacts",
+    )
+    parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="upload staged publish artifacts to R2 after local staging",
+    )
     return parser
 
 def _normalize_argv(argv: Sequence[str] | None) -> list[str]:
@@ -272,6 +293,9 @@ def main(argv=None) -> int:
     if args.version is not None and not _VERSION_RE.fullmatch(args.version):
         print("--version must match YYYYMMDDThhmmssZ", file=sys.stderr)
         return 2
+    if args.publish_version is not None and not _VERSION_RE.fullmatch(args.publish_version):
+        print("--publish-version must match YYYYMMDDThhmmssZ", file=sys.stderr)
+        return 2
     try:
         region = config.load(args.region)
     except config.UnknownRegionError as exc:
@@ -379,6 +403,11 @@ def main(argv=None) -> int:
             args.stage,
             run_id=args.run_id,
             version=args.version,
+            publish_version=args.publish_version,
+            generated_at=args.generated_at,
+            scoring_config_version=args.scoring_config_version,
+            upload=args.upload,
+            staging_root=args.staging_dir,
         )
     except stages.StageOrderError as exc:
         print(str(exc), file=sys.stderr)

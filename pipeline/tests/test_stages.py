@@ -59,12 +59,14 @@ def test_full_order_runs(conn):
             }
         ],
     )
-    for stage in stages.STAGE_ORDER:
+    for stage in stages.STAGE_ORDER[:-1]:
         if stage == "reconcile":
             store.mark_stage_complete(conn, "uk", "reconcile", "r1", "2026-07-15T00:00:00Z")
             continue
         stages.run_stage(conn, "uk", stage, run_id="r1")
-    assert store.stage_completed(conn, "uk", "publish")
+    assert store.stage_completed(conn, "uk", "categorize")
+    with pytest.raises(stages.StageVersionError, match="publish-version"):
+        stages.run_stage(conn, "uk", "publish", run_id="r1")
 
 
 def test_score_stage_is_blocked_when_reconcile_has_no_places(conn):

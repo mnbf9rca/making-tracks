@@ -147,7 +147,19 @@ def _run_score(conn, region: str, *, run_id: str) -> None:
         raise StageOrderError(str(exc)) from exc
 
 
-def run_stage(conn, region: str, stage: str, *, run_id: str, version: str | None = None) -> None:
+def run_stage(
+    conn,
+    region: str,
+    stage: str,
+    *,
+    run_id: str,
+    version: str | None = None,
+    publish_version: str | None = None,
+    generated_at: str | None = None,
+    scoring_config_version: str | None = None,
+    upload: bool = False,
+    staging_root: str | pathlib.Path | None = None,
+) -> None:
     previous = predecessor(stage)
     if previous is not None and not store.stage_completed(conn, region, previous):
         raise StageOrderError(
@@ -163,6 +175,29 @@ def run_stage(conn, region: str, stage: str, *, run_id: str, version: str | None
         from . import categorize
 
         categorize.run(conn, region, run_id=run_id)
+    elif stage == "publish":
+        from .publish import publish_stage
+
+        effective_version = publish_version or version
+        if effective_version is None:
+            raise StageVersionError("--publish-version is required for publish")
+        if generated_at is None:
+            raise StageVersionError("--generated-at is required for publish")
+        kwargs = {}
+        if staging_root is not None:
+            kwargs["staging_root"] = staging_root
+        try:
+            publish_stage.run(
+                conn,
+                region,
+                publish_version=effective_version,
+                generated_at=generated_at,
+                scoring_config_version=scoring_config_version,
+                upload=upload,
+                **kwargs,
+            )
+        except publish_stage.PublishStageError as exc:
+            raise StageOrderError(str(exc)) from exc
     store.mark_stage_complete(
         conn,
         region,
