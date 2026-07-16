@@ -35,3 +35,9 @@ def test_region_config_rejects_non_v1_basemap_maxzoom(contracts_root):
     cfg = json.loads((contracts_root / "regions/uk.json").read_text())
     cfg["basemap"]["maxzoom"] = 15
     assert not is_valid("region-config", cfg)
+
+
+def test_region_config_rejects_pageview_windows_over_props_budget(contracts_root):
+    cfg = json.loads((contracts_root / "regions/malaysia.json").read_text())
+    cfg["pageviews"]["months"] = 13
+    assert not is_valid("region-config", cfg)

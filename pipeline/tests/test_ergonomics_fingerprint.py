@@ -1,6 +1,6 @@
 import json
 import pathlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from mt_contracts import place_id as place_id_module
 from mt_contracts import registry as registry_module
@@ -10,6 +10,7 @@ from mt_pipeline.ergonomics import fingerprint as F
 from mt_pipeline.ergonomics import merge as merge_module
 from mt_pipeline.ergonomics import staging as staging_module
 from mt_pipeline.extractors import osm as osm_module
+from mt_pipeline.extractors import pageviews
 from mt_pipeline.extractors import wikipedia as wikipedia_module
 
 
@@ -232,6 +233,166 @@ def test_extract_fingerprint_moves_on_enabled_sources_languages_and_files(tmp_pa
         F.stage_fingerprint(_conn(tmp_path / "db6"), "uk", "extract", inputs=changed_tags)
         != base
     )
+
+
+def test_extract_fingerprint_moves_on_pageview_cache_contents(tmp_path):
+    wikipedia_snapshot = tmp_path / "wikipedia.snapshot.json"
+    wikipedia_snapshot.write_text(
+        '{"_meta":{"complete":true,"retrieved_at":"2026-07-15T00:00:00Z"},"pages":[]}'
+    )
+    allowlist = tmp_path / "wikidata_class_allowlist.json"
+    allowlist.write_text('{"allow":["Q1"]}')
+    tags = tmp_path / "osm_candidate_tags.json"
+    tags.write_text('{"tags":{"historic":true}}')
+    cache = tmp_path / "pageviews"
+    cache.mkdir()
+    window = ("2025-07-15", "2026-07-15")
+    cache_file = pageviews._cache_path(cache, "A", window)
+    cache_file.write_text(
+        '{"daily":[1],"title":"A","window":["2025-07-15","2026-07-15"]}'
+    )
+    inputs = F.FingerprintInputs(
+        region_config=FakeRegionConfig(
+            region_id="malaysia",
+            sources={"wikipedia": True},
+            languages=["en"],
+        ),
+        snapshots={"wikipedia": wikipedia_snapshot},
+        config_paths={
+            "wikidata_class_allowlist": allowlist,
+            "osm_candidate_tags": tags,
+        },
+        pageview_cache_files=(cache_file,),
+        pageview_window=window,
+    )
+    base = F.stage_fingerprint(_conn(tmp_path / "db"), "malaysia", "extract", inputs=inputs)
+
+    cache_file.write_text(
+        '{"daily":[2],"title":"A","window":["2025-07-15","2026-07-15"]}'
+    )
+
+    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "malaysia", "extract", inputs=inputs) != base
+
+
+def test_extract_fingerprint_moves_on_pageview_window(tmp_path):
+    cache = tmp_path / "pageviews"
+    cache.mkdir()
+    window = ("2025-07-15", "2026-07-15")
+    cache_file = pageviews._cache_path(cache, "A", window)
+    cache_file.write_text(
+        '{"daily":[1],"title":"A","window":["2025-07-15","2026-07-15"]}'
+    )
+    inputs = _inputs(
+        tmp_path,
+        FakeRegionConfig(
+            region_id="malaysia",
+            sources={"wikipedia": True},
+            languages=["en"],
+        ),
+    )
+    inputs = replace(
+        inputs,
+        snapshots={"wikipedia": tmp_path / "wikidata.snapshot.json"},
+        pageview_cache_files=(cache_file,),
+        pageview_window=window,
+    )
+    base = F.stage_fingerprint(_conn(tmp_path / "db"), "malaysia", "extract", inputs=inputs)
+
+    changed = replace(inputs, pageview_window=("2024-07-15", "2025-07-15"))
+
+    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "malaysia", "extract", inputs=changed) != base
+
+
+def test_extract_fingerprint_ignores_unselected_source_configs_for_wikipedia_only(tmp_path):
+    cache = tmp_path / "pageviews"
+    cache.mkdir()
+    window = ("2025-07-15", "2026-07-15")
+    cache_file = pageviews._cache_path(cache, "A", window)
+    cache_file.write_text(
+        '{"daily":[1],"title":"A","window":["2025-07-15","2026-07-15"]}'
+    )
+    inputs = _inputs(
+        tmp_path,
+        FakeRegionConfig(
+            region_id="malaysia",
+            sources={"wikidata": True, "wikipedia": True, "osm": True},
+            languages=["en"],
+        ),
+    )
+    wikipedia_snapshot = tmp_path / "wikipedia.snapshot.json"
+    wikipedia_snapshot.write_text(
+        '{"_meta":{"complete":true,"retrieved_at":"2026-07-15T00:00:00Z"},"pages":[]}'
+    )
+    inputs = replace(
+        inputs,
+        snapshots={**inputs.snapshots, "wikipedia": wikipedia_snapshot},
+        only_source="wikipedia",
+        pageview_cache_files=(cache_file,),
+        pageview_window=window,
+    )
+    base = F.stage_fingerprint(_conn(tmp_path / "db"), "malaysia", "extract", inputs=inputs)
+
+    inputs.config_paths["wikidata_class_allowlist"].write_text('{"allow":["Q2"]}')
+    inputs.config_paths["osm_candidate_tags"].write_text('{"tags":{"tourism":true}}')
+
+    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "malaysia", "extract", inputs=inputs) == base
+
+
+def test_extract_fingerprint_ignores_unselected_pageview_cache_files(tmp_path):
+    cache = tmp_path / "pageviews"
+    cache.mkdir()
+    window = ("2025-07-15", "2026-07-15")
+    selected = pageviews._cache_path(cache, "A", window)
+    selected.write_text(
+        '{"daily":[1],"title":"A","window":["2025-07-15","2026-07-15"]}'
+    )
+    inputs = _inputs(
+        tmp_path,
+        FakeRegionConfig(
+            region_id="malaysia",
+            sources={"wikipedia": True},
+            languages=["en"],
+        ),
+    )
+    inputs = replace(
+        inputs,
+        snapshots={"wikipedia": tmp_path / "wikidata.snapshot.json"},
+        pageview_cache_files=(selected,),
+        pageview_window=window,
+    )
+    base = F.stage_fingerprint(_conn(tmp_path / "db"), "malaysia", "extract", inputs=inputs)
+
+    (cache / "unrelated.json").write_text('{"daily":[99]}')
+
+    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "malaysia", "extract", inputs=inputs) == base
+
+
+def test_extract_fingerprint_does_not_follow_pageview_cache_symlink(tmp_path):
+    cache = tmp_path / "pageviews"
+    cache.mkdir()
+    target = tmp_path / "target.json"
+    target.write_text('{"daily":[1]}')
+    selected = cache / "selected.json"
+    selected.symlink_to(target)
+    inputs = _inputs(
+        tmp_path,
+        FakeRegionConfig(
+            region_id="malaysia",
+            sources={"wikipedia": True},
+            languages=["en"],
+        ),
+    )
+    inputs = replace(
+        inputs,
+        snapshots={"wikipedia": tmp_path / "wikidata.snapshot.json"},
+        pageview_cache_files=(selected,),
+        pageview_window=("2025-07-15", "2026-07-15"),
+    )
+    base = F.stage_fingerprint(_conn(tmp_path / "db"), "malaysia", "extract", inputs=inputs)
+
+    target.write_text('{"daily":[2]}')
+
+    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "malaysia", "extract", inputs=inputs) == base
 
 
 def test_extract_fingerprint_moves_on_merge_bookkeeping_code_change(

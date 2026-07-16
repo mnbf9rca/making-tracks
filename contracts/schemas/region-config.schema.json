@@ -37,6 +37,19 @@
         ]
       }
     },
+    "pageviews": {
+      "description": "Optional per-region opt-in for the resumable Wikimedia pageview acquisition sweep.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "months"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "months": {"type": "integer", "minimum": 1, "maximum": 12},
+        "retries": {"type": "integer", "minimum": 0, "maximum": 12},
+        "polite_interval_seconds": {"type": "number", "minimum": 0, "maximum": 60},
+        "max_titles": {"type": "integer", "minimum": 1, "maximum": 50000}
+      }
+    },
     "basemap": {
       "type": "object",
       "additionalProperties": false,

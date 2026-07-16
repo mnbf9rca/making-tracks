@@ -277,6 +277,83 @@ def _record_extract_metadata_no_commit(
     )
 
 
+def _pageview_extract_options(
+    region,
+    snap_dir: pathlib.Path,
+    *,
+    only_source: str | None,
+) -> dict | None:
+    pageview_options = acquire.pageview_region_options(region)
+    if (
+        pageview_options is None
+        or region.sources.get("wikipedia") is not True
+        or only_source not in {None, "wikipedia"}
+    ):
+        return None
+    pageview_cache = snap_dir / "pageviews"
+    window = acquire.pageview_window_for_wikipedia_snapshot(
+        acquire.snapshot_paths(snap_dir)["wikipedia"],
+        region,
+    )
+    if window is None:
+        return None
+    cached_window = acquire.pageviews.manifest_window(pageview_cache)
+    if cached_window is not None and cached_window != window:
+        raise acquire.AcquireError(
+            "pageview cache window "
+            f"{cached_window[0]}..{cached_window[1]} does not match "
+            f"wikipedia snapshot window {window[0]}..{window[1]}"
+        )
+    return {
+        "pageview_cache_dir": pageview_cache,
+        "pageview_window": window,
+    }
+
+
+def _pageview_max_titles(region) -> int:
+    pageview_options = acquire.pageview_region_options(region) or {}
+    pageview_config = acquire.load_config().get("pageviews", {})
+    if not isinstance(pageview_config, dict):
+        pageview_config = {}
+    return int(
+        pageview_options.get(
+            "max_titles",
+            pageview_config.get("max_titles", acquire.MAX_PAGEVIEW_TITLES),
+        )
+    )
+
+
+def _pageview_cache_files(
+    wikipedia_snapshot: pathlib.Path,
+    pageview_cache: pathlib.Path,
+    window: tuple[str, str],
+    *,
+    max_titles: int,
+) -> tuple[pathlib.Path, ...]:
+    return tuple(
+        acquire.pageviews._cache_path(pageview_cache, title, window)
+        for title in acquire._wikipedia_titles(wikipedia_snapshot, max_titles=max_titles)
+    )
+
+
+def _extractor_options(
+    region,
+    snap_dir: pathlib.Path,
+    *,
+    osm_index_type: str,
+    only_source: str | None,
+) -> dict:
+    options = {"osm": {"index_type": osm_index_type}}
+    pageview_options = _pageview_extract_options(
+        region,
+        snap_dir,
+        only_source=only_source,
+    )
+    if pageview_options is not None:
+        options["wikipedia"] = pageview_options
+    return options
+
+
 def _record_skipped_extract_metadata(conn, region, run_id: str, snap_dir) -> None:
     previous = _previous_extract_metadata(conn, region)
     if previous is not None:
@@ -301,10 +378,26 @@ def _extract_fingerprint_inputs(
     region,
     snapshots: dict,
     *,
+    snap_dir: pathlib.Path | None = None,
     only_source: str | None = None,
 ) -> object:
     from .ergonomics import fingerprint
 
+    pageview_options = (
+        _pageview_extract_options(region, snap_dir, only_source=only_source)
+        if snap_dir is not None
+        else None
+    )
+    pageview_window = None
+    pageview_cache_files = ()
+    if pageview_options is not None and snap_dir is not None:
+        pageview_window = pageview_options["pageview_window"]
+        pageview_cache_files = _pageview_cache_files(
+            acquire.snapshot_paths(snap_dir)["wikipedia"],
+            pageview_options["pageview_cache_dir"],
+            pageview_window,
+            max_titles=_pageview_max_titles(region),
+        )
     return fingerprint.FingerprintInputs(
         region_config=region,
         snapshots=snapshots,
@@ -313,6 +406,13 @@ def _extract_fingerprint_inputs(
             "osm_candidate_tags": extract_stage.DEFAULT_OSM_TAG_CONFIG,
         },
         only_source=only_source,
+        pageview_cache_dir=(
+            pageview_options["pageview_cache_dir"]
+            if pageview_options is not None
+            else None
+        ),
+        pageview_cache_files=pageview_cache_files,
+        pageview_window=pageview_window,
     )
 
 
@@ -692,16 +792,32 @@ def main(argv=None) -> int:
         if args.stage == "extract" and args.snapshot_dir:
             snap_dir = pathlib.Path(args.snapshot_dir)
             snapshots = acquire.snapshot_paths(snap_dir)
+            statuses = _initial_extract_statuses(
+                region.sources, only_source=args.only_source
+            )
             _raise_on_snapshot_sidecar_without_payload(
                 region,
                 snapshots,
                 only_source=args.only_source,
             )
-            fingerprint_inputs = _extract_fingerprint_inputs(
-                region,
-                snapshots,
-                only_source=args.only_source,
-            )
+            try:
+                fingerprint_inputs = _extract_fingerprint_inputs(
+                    region,
+                    snapshots,
+                    snap_dir=snap_dir,
+                    only_source=args.only_source,
+                )
+            except acquire.AcquireError as exc:
+                _record_extract_metadata(
+                    conn,
+                    region,
+                    args.run_id,
+                    snap_dir,
+                    statuses,
+                    only_source=args.only_source,
+                )
+                print(str(exc), file=sys.stderr)
+                return 1
             from .ergonomics import fingerprint, telemetry
 
             try:
@@ -738,10 +854,6 @@ def main(argv=None) -> int:
                 acquire.DEFAULT_ALLOWLIST,
                 languages=set(region.languages),
             )
-            statuses = _initial_extract_statuses(
-                region.sources, only_source=args.only_source
-            )
-
             def record_status(source, status):
                 statuses[source] = status
 
@@ -756,7 +868,12 @@ def main(argv=None) -> int:
                     snapshots,
                     run_id=args.run_id,
                     registry=registry,
-                    extractor_options={"osm": {"index_type": args.osm_index_type}},
+                    extractor_options=_extractor_options(
+                        region,
+                        snap_dir,
+                        osm_index_type=args.osm_index_type,
+                        only_source=args.only_source,
+                    ),
                     status_recorder=record_status,
                     only_source=args.only_source,
                     parallel=args.parallel,
@@ -769,6 +886,7 @@ def main(argv=None) -> int:
                 extract_stage.UnregisteredEnabledSourceError,
                 extract_stage.DiskSpaceError,
                 SnapshotPayloadMissingError,
+                acquire.AcquireError,
             ) as exc:
                 if extract_transaction_open:
                     conn.rollback()
@@ -859,6 +977,7 @@ def main(argv=None) -> int:
         extract_stage.UnregisteredEnabledSourceError,
         extract_stage.DiskSpaceError,
         SnapshotPayloadMissingError,
+        acquire.AcquireError,
     ) as exc:
         print(str(exc), file=sys.stderr)
         return 1

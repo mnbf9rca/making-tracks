@@ -74,7 +74,7 @@ from mt_contracts.versions import SCHEMA_VERSIONS
 assert mt_contracts.available_regions() == ["malaysia", "uk"]
 cfg = mt_contracts.load_region_config("malaysia")
 assert cfg["region_id"] == "malaysia"
-assert set(cfg) == {"schema_version", "region_id", "display_name", "bbox", "languages", "sources", "basemap"}
+assert set(cfg) == {"schema_version", "region_id", "display_name", "bbox", "languages", "sources", "pageviews", "basemap"}
 assert SCHEMA_VERSIONS["region_config"] == 1
 assert load_schema("region-config")["title"] == "RegionConfig"
 assert load_schema("registry-record")["title"] == "RegistryRecord"

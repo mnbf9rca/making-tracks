@@ -1,6 +1,7 @@
 import email.message
 import io
 import json
+import urllib.error
 import urllib.request
 import urllib.response
 
@@ -46,6 +47,31 @@ def test_returns_parsed_json_within_cap(monkeypatch):
     assert fetch.get_json(
         "https://query.wikidata.org/x", expected_hosts={"query.wikidata.org"}
     ) == {"ok": 1}
+
+
+def test_http_error_carries_status_and_retry_after(monkeypatch):
+    class Opener:
+        def open(self, url, timeout=None):
+            headers = email.message.Message()
+            headers["Retry-After"] = "7"
+            raise urllib.error.HTTPError(
+                url,
+                429,
+                "Too Many Requests",
+                headers,
+                None,
+            )
+
+    monkeypatch.setattr(fetch, "_opener", lambda hosts: Opener())
+
+    with pytest.raises(fetch.FetchError) as excinfo:
+        fetch.get_json(
+            "https://query.wikidata.org/x",
+            expected_hosts={"query.wikidata.org"},
+        )
+
+    assert excinfo.value.status == 429
+    assert excinfo.value.retry_after == 7.0
 
 
 class _ClosableResponse:

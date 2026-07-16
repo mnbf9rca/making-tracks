@@ -1,3 +1,4 @@
+import json
 import pathlib
 import os
 import time
@@ -40,6 +41,45 @@ class ParallelWritingExtractor:
             run_id=run_id,
         )
         return 1
+
+
+class OptionRecordingExtractor:
+    def extract(
+        self,
+        region,
+        snapshot_path,
+        conn,
+        *,
+        run_id,
+        pageview_cache_dir,
+        pageview_window,
+    ):
+        source_record.persist(
+            conn,
+            source_record.parse(
+                region,
+                "wp",
+                "wp:123",
+                "A",
+                1.0,
+                2.0,
+                {
+                    "snapshot": str(snapshot_path),
+                    "pageview_cache_dir": str(pageview_cache_dir),
+                    "pageview_window": list(pageview_window),
+                },
+            ),
+            run_id=run_id,
+        )
+        return 1
+
+
+class OptionRecordingRegistry:
+    def registered_sources(self):
+        return {"wikipedia"}
+
+    def enabled_for(self, _sources):
+        return [("wikipedia", OptionRecordingExtractor())]
 
 
 class ParallelFakeRegistry:
@@ -174,6 +214,39 @@ def test_run_extract_passes_source_specific_options(tmp_path):
     )
 
     assert counts == {"osm": 7}
+
+
+def test_run_extract_parallel_passes_source_specific_options_to_worker(tmp_path):
+    conn = _conn(tmp_path)
+    snapshot = tmp_path / "wikipedia.snapshot.json"
+    snapshot.write_text("{}")
+    cache_dir = tmp_path / "pageviews"
+
+    counts = extract_stage.run_extract(
+        conn,
+        FakeRegionConfig(region_id="malaysia", sources={"wikipedia": True}),
+        {"wikipedia": snapshot},
+        run_id="r1",
+        registry=OptionRecordingRegistry(),
+        extractor_options={
+            "wikipedia": {
+                "pageview_cache_dir": cache_dir,
+                "pageview_window": ("2025-07-15", "2026-07-15"),
+            }
+        },
+        parallel=True,
+        staging_root=tmp_path / "staging",
+    )
+
+    assert counts == {"wikipedia": 1}
+    props = json.loads(
+        conn.execute(
+            "SELECT props_json FROM source_records WHERE source_ref = ?",
+            ("wp:123",),
+        ).fetchone()[0]
+    )
+    assert props["pageview_cache_dir"] == str(cache_dir)
+    assert props["pageview_window"] == ["2025-07-15", "2026-07-15"]
 
 
 def test_run_extract_records_disk_floor_failure(monkeypatch, tmp_path):

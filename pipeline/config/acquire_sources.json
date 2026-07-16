@@ -15,6 +15,17 @@
     "allowed_hosts": ["en.wikipedia.org"],
     "max_bytes": 33554432
   },
+  "pageviews": {
+    "endpoint": "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article",
+    "allowed_hosts": ["wikimedia.org"],
+    "access": "all-access",
+    "agent": "user",
+    "granularity": "daily",
+    "max_bytes": 33554432,
+    "max_titles": 50000,
+    "retries": 6,
+    "polite_interval_seconds": 0.1
+  },
   "osm": {
     "malaysia": {
       "url": "https://download.geofabrik.de/asia/malaysia-singapore-brunei-latest.osm.pbf",
