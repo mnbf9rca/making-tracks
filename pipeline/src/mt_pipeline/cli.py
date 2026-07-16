@@ -25,6 +25,10 @@ _SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 
 
+class SnapshotPayloadMissingError(RuntimeError):
+    pass
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mt-pipeline",
@@ -149,9 +153,42 @@ def _initial_extract_statuses(sources: dict, *, only_source: str | None = None) 
     }
 
 
-def _record_extract_metadata(conn, region, run_id: str, snap_dir, statuses: dict) -> None:
-    _record_extract_metadata_no_commit(conn, region, run_id, snap_dir, statuses)
+def _record_extract_metadata(
+    conn,
+    region,
+    run_id: str,
+    snap_dir,
+    statuses: dict,
+    *,
+    only_source: str | None = None,
+) -> None:
+    _record_extract_metadata_no_commit(
+        conn,
+        region,
+        run_id,
+        snap_dir,
+        statuses,
+        only_source=only_source,
+    )
     conn.commit()
+
+
+def _previous_extract_metadata(conn, region):
+    row = conn.execute(
+        """
+        SELECT run_id
+        FROM stage_runs
+        WHERE region = ? AND stage = 'extract'
+        """,
+        (region.region_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return store.load_extract_run_metadata(
+        conn,
+        region=region.region_id,
+        run_id=row[0],
+    )
 
 
 def _record_extract_metadata_no_commit(
@@ -160,12 +197,18 @@ def _record_extract_metadata_no_commit(
     run_id: str,
     snap_dir,
     statuses: dict,
+    *,
+    only_source: str | None = None,
 ) -> None:
     wikidata_date = ""
     if region.sources.get("wikidata") is True:
-        wikidata_date = acquire.wikidata_snapshot_retrieved_at(
-            acquire.snapshot_paths(snap_dir)["wikidata"]
-        )
+        wikidata_path = acquire.snapshot_paths(snap_dir)["wikidata"]
+        if (only_source is None or only_source == "wikidata") and wikidata_path.exists():
+            wikidata_date = acquire.wikidata_snapshot_retrieved_at(wikidata_path)
+        else:
+            previous = _previous_extract_metadata(conn, region)
+            if previous is not None:
+                wikidata_date = previous["wikidata_snapshot_date"]
     store.record_extract_run_metadata_no_commit(
         conn,
         region=region.region_id,
@@ -176,29 +219,16 @@ def _record_extract_metadata_no_commit(
 
 
 def _record_skipped_extract_metadata(conn, region, run_id: str, snap_dir) -> None:
-    row = conn.execute(
-        """
-        SELECT run_id
-        FROM stage_runs
-        WHERE region = ? AND stage = 'extract'
-        """,
-        (region.region_id,),
-    ).fetchone()
-    if row is not None:
-        previous = store.load_extract_run_metadata(
+    previous = _previous_extract_metadata(conn, region)
+    if previous is not None:
+        store.record_extract_run_metadata(
             conn,
             region=region.region_id,
-            run_id=row[0],
+            run_id=run_id,
+            wikidata_snapshot_date=previous["wikidata_snapshot_date"],
+            source_statuses=previous["source_statuses"],
         )
-        if previous is not None:
-            store.record_extract_run_metadata(
-                conn,
-                region=region.region_id,
-                run_id=run_id,
-                wikidata_snapshot_date=previous["wikidata_snapshot_date"],
-                source_statuses=previous["source_statuses"],
-            )
-            return
+        return
     _record_extract_metadata(
         conn,
         region,
@@ -225,6 +255,30 @@ def _extract_fingerprint_inputs(
         },
         only_source=only_source,
     )
+
+
+def _raise_on_snapshot_sidecar_without_payload(
+    region,
+    snapshots: dict[str, pathlib.Path],
+    *,
+    only_source: str | None = None,
+) -> None:
+    selected_sources = {
+        source
+        for source, enabled in region.sources.items()
+        if enabled is True and (only_source is None or source == only_source)
+    }
+    for source in sorted(selected_sources):
+        payload = snapshots.get(source)
+        if payload is None:
+            continue
+        payload = pathlib.Path(payload)
+        sidecar = pathlib.Path(str(payload) + ".meta.json")
+        if not payload.exists() and sidecar.exists():
+            raise SnapshotPayloadMissingError(
+                f"snapshot payload missing for {source}: {payload} "
+                f"(found {sidecar}; re-run acquire)"
+            )
 
 
 def _stage_fingerprint_inputs(conn, region, stage: str, *, run_id: str, version: str | None):
@@ -462,6 +516,11 @@ def main(argv=None) -> int:
         if args.stage == "extract" and args.snapshot_dir:
             snap_dir = pathlib.Path(args.snapshot_dir)
             snapshots = acquire.snapshot_paths(snap_dir)
+            _raise_on_snapshot_sidecar_without_payload(
+                region,
+                snapshots,
+                only_source=args.only_source,
+            )
             fingerprint_inputs = _extract_fingerprint_inputs(
                 region,
                 snapshots,
@@ -533,16 +592,31 @@ def main(argv=None) -> int:
                 extract_stage.MissingSnapshotError,
                 extract_stage.UnregisteredEnabledSourceError,
                 extract_stage.DiskSpaceError,
+                SnapshotPayloadMissingError,
             ) as exc:
                 if extract_transaction_open:
                     conn.rollback()
-                _record_extract_metadata(conn, region, args.run_id, snap_dir, statuses)
+                _record_extract_metadata(
+                    conn,
+                    region,
+                    args.run_id,
+                    snap_dir,
+                    statuses,
+                    only_source=args.only_source,
+                )
                 print(str(exc), file=sys.stderr)
                 return 1
             except Exception as exc:
                 if extract_transaction_open:
                     conn.rollback()
-                _record_extract_metadata(conn, region, args.run_id, snap_dir, statuses)
+                _record_extract_metadata(
+                    conn,
+                    region,
+                    args.run_id,
+                    snap_dir,
+                    statuses,
+                    only_source=args.only_source,
+                )
                 print(f"extract error: {exc}", file=sys.stderr)
                 return 1
             try:
@@ -552,6 +626,7 @@ def main(argv=None) -> int:
                     args.run_id,
                     snap_dir,
                     statuses,
+                    only_source=args.only_source,
                 )
                 completed_at = stages._completed_at()
                 store.mark_stage_complete_no_commit(
@@ -602,6 +677,7 @@ def main(argv=None) -> int:
         extract_stage.MissingSnapshotError,
         extract_stage.UnregisteredEnabledSourceError,
         extract_stage.DiskSpaceError,
+        SnapshotPayloadMissingError,
     ) as exc:
         print(str(exc), file=sys.stderr)
         return 1

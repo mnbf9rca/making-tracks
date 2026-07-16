@@ -337,6 +337,253 @@ def test_cli_extract_skips_matching_stage_fingerprint(monkeypatch, tmp_path, cap
     }
 
 
+def test_cli_extract_fails_early_when_snapshot_sidecar_has_no_payload(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    def fail_run_extract(*_args, **_kwargs):
+        raise AssertionError("extract should not start with a missing snapshot payload")
+
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fail_run_extract)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "osm.osm.pbf.meta.json").write_text(
+        '{"geofabrik_date":"2026-07-15","sha256":"deadbeef","size":123,"source_url":"https://download.geofabrik.de/example.osm.pbf"}'
+    )
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(tmp_path / "w.db"),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--only-source",
+            "osm",
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "snapshot payload missing" in err
+    assert "osm.osm.pbf" in err
+    assert "re-run acquire" in err
+
+
+def test_cli_full_extract_fails_early_when_selected_snapshot_sidecar_has_no_payload(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    def fail_run_extract(*_args, **_kwargs):
+        raise AssertionError("extract should not start with a missing snapshot payload")
+
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fail_run_extract)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "wikidata.snapshot.json").write_text(
+        '{"_meta":{"retrieved_at":"2026-07-15T00:00:00Z"}}'
+    )
+    (snapshot_dir / "osm.osm.pbf.meta.json").write_text(
+        '{"geofabrik_date":"2026-07-15","sha256":"deadbeef","size":123,"source_url":"https://download.geofabrik.de/example.osm.pbf"}'
+    )
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(tmp_path / "w.db"),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "snapshot payload missing for osm" in err
+    assert "re-run acquire" in err
+
+
+def test_cli_extract_ignores_sidecars_for_disabled_sources(
+    monkeypatch,
+    tmp_path,
+):
+    captured = {}
+
+    def fake_build_registry(*_args, **_kwargs):
+        return object()
+
+    def fake_run_extract(
+        _conn,
+        _region,
+        _snapshots,
+        *,
+        run_id,
+        registry,
+        extractor_options,
+        status_recorder,
+        only_source,
+        parallel,
+        continue_on_source_failure,
+        staging_root,
+        commit,
+    ):
+        captured["parallel"] = parallel
+        status_recorder("wikidata", {"status": "success", "count": 1})
+        return {"wikidata": 1}
+
+    monkeypatch.setattr(cli.extract_stage, "build_registry", fake_build_registry)
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fake_run_extract)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "wikidata.snapshot.json").write_text(
+        '{"_meta":{"retrieved_at":"2026-07-15T00:00:00Z"}}'
+    )
+    (snapshot_dir / "historic_england.snapshot.meta.json").write_text(
+        '{"sha256":"deadbeef"}'
+    )
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(tmp_path / "w.db"),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--only-source",
+            "wikidata",
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 0
+    assert captured["parallel"] is True
+
+
+def test_cli_only_source_osm_preserves_previous_wikidata_date_without_wikidata_payload(
+    monkeypatch,
+    tmp_path,
+):
+    def fake_build_registry(*_args, **_kwargs):
+        return object()
+
+    def fake_run_extract(
+        _conn,
+        _region,
+        _snapshots,
+        *,
+        run_id,
+        registry,
+        extractor_options,
+        status_recorder,
+        only_source,
+        parallel,
+        continue_on_source_failure,
+        staging_root,
+        commit,
+    ):
+        assert only_source == "osm"
+        status_recorder("osm", {"status": "success", "count": 1})
+        return {"osm": 1}
+
+    monkeypatch.setattr(cli.extract_stage, "build_registry", fake_build_registry)
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fake_run_extract)
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "osm.osm.pbf").write_bytes(b"osm")
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    store.record_extract_run_metadata(
+        conn,
+        region="malaysia",
+        run_id="old",
+        wikidata_snapshot_date="2026-07-15T00:00:00Z",
+        source_statuses={"wikidata": {"status": "success", "count": 1}},
+    )
+    store.mark_stage_complete(
+        conn,
+        "malaysia",
+        "extract",
+        run_id="old",
+        completed_at="2026-07-15T00:00:00Z",
+    )
+    conn.close()
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "extract",
+            "--db",
+            str(db),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--only-source",
+            "osm",
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 0
+    conn = store.connect(db)
+    assert store.load_extract_run_metadata(conn, region="malaysia", run_id="real")[
+        "wikidata_snapshot_date"
+    ] == "2026-07-15T00:00:00Z"
+
+
+def test_cli_extract_keeps_typed_error_for_enabled_source_without_snapshot_mapping(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    class FutureRegion:
+        region_id = "future"
+        display_name = "Future"
+        bbox = (0.0, 0.0, 1.0, 1.0)
+        languages = ("en",)
+        sources = {"national_register": True}
+
+    monkeypatch.setattr(cli.config, "load", lambda _region: FutureRegion())
+
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir()
+
+    rc = cli.main(
+        [
+            "--region",
+            "future",
+            "extract",
+            "--db",
+            str(tmp_path / "w.db"),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--run-id",
+            "real",
+        ]
+    )
+
+    assert rc == 1
+    assert "national_register" in capsys.readouterr().err
+
+
 def test_cli_parallel_extract_rolls_back_merge_metadata_and_stage_together(
     monkeypatch,
     tmp_path,
