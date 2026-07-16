@@ -86,6 +86,13 @@ def _members_from_store(conn, region: str, redirect_map: dict[str, str]) -> list
 
 def _review_items(items: list[dict]) -> list[review.ReviewItem]:
     out = []
+    standard_fields = {
+        "candidate_place_ids",
+        "cluster_refs",
+        "kind",
+        "members",
+        "reason",
+    }
     for item in items:
         kind = str(item.get("kind", "unknown"))
         out.append(
@@ -95,6 +102,11 @@ def _review_items(items: list[dict]) -> list[review.ReviewItem]:
                 cluster_refs=list(item.get("cluster_refs", [])),
                 candidate_place_ids=list(item.get("candidate_place_ids", [])),
                 members=list(item.get("members", [])),
+                payload={
+                    key: value
+                    for key, value in item.items()
+                    if key not in standard_fields
+                },
             )
         )
     return out
@@ -132,6 +144,7 @@ def _run_reconcile(conn, region: str, *, run_id: str, version: str) -> None:
         version=version,
         succeeded_sources=_succeeded_source_prefixes(region_config, metadata),
         cfg=fuzzy_config,
+        telemetry_region=region,
     )
     registry.save(result.records)
     review.write_review(review_path, _review_items(result.review))

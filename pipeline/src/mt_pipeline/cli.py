@@ -13,11 +13,15 @@ from collections.abc import Sequence
 
 from . import acquire, audit, categorize, config, extract_stage, stages, store
 from .eval import golden, report as eval_report
+from .llm import bakeoff, costmodel
+from .llm.providers.fake import FakeProvider
 
 _DEFAULT_RUN_ID = "manual"
 _COMMANDS = ("acquire", "acquire-redirects", "audit", *stages.STAGE_ORDER)
 _PIPELINE_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _DEFAULT_GOLDEN_AREAS = _PIPELINE_ROOT / "config" / "golden_areas.json"
+_DEFAULT_LLM_MODELS = _PIPELINE_ROOT / "config" / "llm_models.json"
+_DEFAULT_LLM_PRICING = _PIPELINE_ROOT / "config" / "llm_pricing.json"
 _DEFAULT_EVAL_OUT_DIR = _PIPELINE_ROOT.parent / "docs" / "superpowers" / "eval"
 _MAX_JSON_BYTES = 1_000_000
 _MAX_TSV_BYTES = 10_000_000
@@ -125,6 +129,35 @@ def _build_eval_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_llm_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="mt-pipeline llm",
+        description="Making Tracks keyless LLM tooling.",
+    )
+    subparsers = parser.add_subparsers(dest="llm_command", required=True)
+
+    cost = subparsers.add_parser("cost", help="estimate keyless curiosity prompt costs")
+    cost.add_argument("--corpus", required=True, help="JSONL corpus of places or golden rows")
+    cost.add_argument(
+        "--models",
+        default=str(_DEFAULT_LLM_MODELS),
+        help="model roster JSON",
+    )
+    cost.add_argument(
+        "--pricing",
+        default=str(_DEFAULT_LLM_PRICING),
+        help="pricing table JSON",
+    )
+
+    bakeoff_cmd = subparsers.add_parser("bakeoff", help="run keyless fake-provider bake-off")
+    bakeoff_cmd.add_argument("--labeled", required=True, help="hand-labeled golden TSV")
+    bakeoff_cmd.add_argument("--config", required=True, help="scoring JSON config")
+    bakeoff_cmd.add_argument("--models", default=str(_DEFAULT_LLM_MODELS), help="model roster JSON")
+    bakeoff_cmd.add_argument("--pricing", default=str(_DEFAULT_LLM_PRICING), help="pricing table JSON")
+    bakeoff_cmd.add_argument("--k", type=int, default=5, help="precision@k cutoff")
+    return parser
+
+
 def _snapshot_dir(args) -> pathlib.Path:
     if args.snapshot_dir:
         return pathlib.Path(args.snapshot_dir)
@@ -176,6 +209,30 @@ def _load_mapping_json(path: pathlib.Path) -> dict:
     if not isinstance(data, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return data
+
+
+def _load_llm_corpus_jsonl(path: pathlib.Path) -> list[dict[str, object]]:
+    text = _read_text_limited(path, max_bytes=_MAX_TSV_BYTES)
+    rows: list[dict[str, object]] = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            raw = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid JSONL at line {lineno}: {exc}") from exc
+        if not isinstance(raw, dict):
+            raise ValueError(f"JSONL line {lineno} must be an object")
+        name = raw.get("name", "")
+        category = raw.get("category", "")
+        evidence = raw.get("evidence", "")
+        summary = raw.get("summary", evidence)
+        signals = raw.get("signals", {})
+        tags = [category] if category else []
+        if isinstance(signals, dict):
+            tags.extend(str(key) for key, value in sorted(signals.items()) if value is not None)
+        rows.append({"name": name, "summary": summary, "tags": tags})
+    return rows
 
 
 def _load_metric_baseline(path: pathlib.Path) -> dict[str, float]:
@@ -284,10 +341,92 @@ def _run_eval(argv) -> int:
     raise AssertionError(f"unhandled eval command: {args.eval_command}")
 
 
+def _run_llm(argv) -> int:
+    args = _build_llm_parser().parse_args(argv)
+    if args.llm_command == "cost":
+        try:
+            corpus = _load_llm_corpus_jsonl(pathlib.Path(args.corpus))
+            model_data = _load_mapping_json(pathlib.Path(args.models))
+            pricing_data = _load_mapping_json(pathlib.Path(args.pricing))
+            models = model_data.get("models")
+            pricing = pricing_data.get("models")
+            if not isinstance(models, list):
+                raise ValueError("models JSON must contain a models list")
+            if not isinstance(pricing, dict):
+                raise ValueError("pricing JSON must contain a models object")
+            table = costmodel.build_cost_table(corpus, models, pricing)
+        except (OSError, json.JSONDecodeError, ValueError, KeyError, TypeError) as exc:
+            print(f"llm cost error: {exc}", file=sys.stderr)
+            return 1
+        print("model\tprovider\tinput_tokens\toutput_token_cap\ttotal_usd\ttoken_source")
+        for row in table.rows:
+            print(
+                f"{row.model}\t{row.provider}\t{row.input_tokens}\t"
+                f"{row.output_token_cap}\t{row.total_usd:.8f}\t{row.token_source}"
+            )
+        return 0
+
+    if args.llm_command == "bakeoff":
+        try:
+            labeled_text = _read_text_limited(pathlib.Path(args.labeled), max_bytes=_MAX_TSV_BYTES)
+            parsed = golden.parse_labeled_tsv(labeled_text)
+            if parsed.skipped:
+                raise ValueError(f"label parse skipped {len(parsed.skipped)} rows")
+            config_data = _load_mapping_json(pathlib.Path(args.config))
+            model_data = _load_mapping_json(pathlib.Path(args.models))
+            pricing_data = _load_mapping_json(pathlib.Path(args.pricing))
+            model_rows = model_data.get("models")
+            pricing = pricing_data.get("models")
+            if not isinstance(model_rows, list):
+                raise ValueError("models JSON must contain a models list")
+            if not isinstance(pricing, dict):
+                raise ValueError("pricing JSON must contain a models object")
+            selected: list[tuple[str, str]] = []
+            providers = {}
+            for model in model_rows:
+                if not isinstance(model, dict):
+                    raise ValueError("model roster entries must be objects")
+                model_id = str(model["id"])
+                provider_id = str(model["provider"])
+                if provider_id != "fake":
+                    continue
+                selected.append((model_id, model_id))
+                providers[model_id] = FakeProvider(
+                    scorer=lambda req: 0.9 if req.query_id.endswith("0" * 26) else 0.1,
+                    price_per_call_usd=0.0,
+                )
+            if not selected:
+                raise ValueError("keyless CLI bakeoff only supports fake providers; live bakeoff is blocked on keys")
+            report = bakeoff.run_bakeoff(
+                parsed.rows,
+                parsed.rows,
+                selected,
+                providers,
+                pricing,
+                k=args.k,
+                config=config_data,
+            )
+        except (OSError, json.JSONDecodeError, ValueError, KeyError, TypeError, RuntimeError) as exc:
+            print(f"llm bakeoff error: {exc}", file=sys.stderr)
+            return 1
+        print("model\tprovider\tprecision_at_k_llm_on\tprecision_at_k_llm_off_baseline\tlift\tcost_usd\tlift_per_usd\tinjection_resistance\terror")
+        for row in report.rows:
+            print(
+                f"{row.model}\t{row.provider}\t{row.precision_at_k_llm_on}\t"
+                f"{row.precision_at_k_llm_off_baseline}\t{row.lift}\t{row.cost_usd}\t"
+                f"{row.lift_per_usd}\t{row.injection_resistance}\t{row.error or ''}"
+            )
+        return 0
+
+    raise AssertionError(f"unhandled llm command: {args.llm_command}")
+
+
 def main(argv=None) -> int:
     argv = _normalize_argv(argv)
     if argv and argv[0] == "eval":
         return _run_eval(argv[1:])
+    if argv and argv[0] == "llm":
+        return _run_llm(argv[1:])
 
     args = _build_parser().parse_args(argv)
     if args.version is not None and not _VERSION_RE.fullmatch(args.version):

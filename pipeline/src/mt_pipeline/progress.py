@@ -51,10 +51,10 @@ class PhaseProgress:
                 file=sys.stderr,
             )
 
-    def done(self, processed: int) -> None:
+    def done(self, processed: int, *, extra: str = "") -> None:
         elapsed = time.monotonic() - self.started
         print(
             f"PHASE DONE {self.name} region={self.region} "
-            f"processed={processed}/{self.total} elapsed={elapsed:.1f}s",
+            f"processed={processed}/{self.total} elapsed={elapsed:.1f}s{extra}",
             file=sys.stderr,
         )
