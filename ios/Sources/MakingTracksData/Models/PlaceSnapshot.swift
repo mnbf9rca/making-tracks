@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-public struct PlaceSnapshot: Codable, Sendable, FetchableRecord, PersistableRecord {
+public struct PlaceSnapshot: Codable, Sendable, Equatable, FetchableRecord, PersistableRecord {
     public var placeID: String
     public var name: String
     public var lat: Double

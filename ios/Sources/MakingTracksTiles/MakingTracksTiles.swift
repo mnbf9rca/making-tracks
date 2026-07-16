@@ -571,13 +571,33 @@ public struct DecodedTile: Sendable, Equatable {
     public let missingAttributionSources: Set<String>
 }
 
-public enum PlaceDecoder {
-    private static let allowedPlaceKeys: Set<String> = [
+public enum PlaceContentGuards {
+    public static let allowedPlaceKeys: Set<String> = [
         "place_id", "name", "lat", "lon", "category", "tier", "score", "source_refs",
         "alt_names", "blurb", "image_url", "wikipedia_title",
     ]
+    public static let allowedImageHosts: Set<String> = ["upload.wikimedia.org", "commons.wikimedia.org"]
+    public static let sourceRefPattern = "^[a-z][a-z0-9_]*:[A-Za-z0-9][A-Za-z0-9._/-]*$"
+
+    public static func isSafeText(_ text: String) -> Bool {
+        text.isSafeText
+    }
+
+    public static func isSafeURLString(_ text: String) -> Bool {
+        text.isSafeURLString
+    }
+
+    public static func isAllowedImageURL(_ url: URL) -> Bool {
+        url.scheme == "https" && allowedImageHosts.contains(url.host ?? "")
+    }
+
+    public static func isValidSourceRef(_ ref: String) -> Bool {
+        ref.scalarCount <= 128 && ref.matches(sourceRefPattern)
+    }
+}
+
+public enum PlaceDecoder {
     private static let attributionRequiredSources: Set<String> = ["osm", "historic_england", "open_plaques"]
-    private static let allowedImageHosts: Set<String> = ["upload.wikimedia.org", "commons.wikimedia.org"]
 
     public static func decode(
         tileData: Data,
@@ -609,11 +629,11 @@ public enum PlaceDecoder {
     }
 
     private static func decodePlace(_ place: [String: Any]) -> DecodedPlace? {
-        guard Set(place.keys).isSubset(of: allowedPlaceKeys),
+        guard Set(place.keys).isSubset(of: PlaceContentGuards.allowedPlaceKeys),
               let placeID = place["place_id"] as? String,
               placeID.matches("^mt1_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}$"),
               let name = place["name"] as? String,
-              name.isSafeText,
+              PlaceContentGuards.isSafeText(name),
               (1...200).contains(name.scalarCount),
               let lat = place["lat"] as? Double,
               lat.isFinite,
@@ -622,7 +642,7 @@ public enum PlaceDecoder {
               lon.isFinite,
               (-180.0...180.0).contains(lon),
               let category = place["category"] as? String,
-              category.isSafeText,
+              PlaceContentGuards.isSafeText(category),
               (1...64).contains(category.scalarCount),
               let tier = place["tier"] as? Int,
               (1...4).contains(tier),
@@ -632,12 +652,12 @@ public enum PlaceDecoder {
               let sourceRefs = place["source_refs"] as? [String],
               (1...64).contains(sourceRefs.count),
               Set(sourceRefs).count == sourceRefs.count,
-              sourceRefs.allSatisfy({ $0.scalarCount <= 128 && $0.matches("^[a-z][a-z0-9_]*:[A-Za-z0-9][A-Za-z0-9._/-]*$") })
+              sourceRefs.allSatisfy(PlaceContentGuards.isValidSourceRef)
         else { return nil }
 
         if let altNames = place["alt_names"] as? [String] {
             guard altNames.count <= 8,
-                  altNames.allSatisfy({ (1...200).contains($0.scalarCount) && $0.isSafeText })
+                  altNames.allSatisfy({ (1...200).contains($0.scalarCount) && PlaceContentGuards.isSafeText($0) })
             else { return nil }
         }
         guard optionalText(place["blurb"], max: 600),
@@ -648,11 +668,11 @@ public enum PlaceDecoder {
         let imageURL: URL?
         if let rawImage = place["image_url"] as? String {
             guard rawImage.scalarCount <= 2_048,
-                  rawImage.isSafeURLString,
+                  PlaceContentGuards.isSafeURLString(rawImage),
                   let url = URL(string: rawImage),
                   url.scheme == "https"
             else { return nil }
-            if allowedImageHosts.contains(url.host ?? "") {
+            if PlaceContentGuards.isAllowedImageURL(url) {
                 imageURL = url
             } else {
                 imageURL = nil
@@ -688,7 +708,7 @@ public enum PlaceDecoder {
     private static func optionalText(_ value: Any?, max: Int) -> Bool {
         if value == nil || value is NSNull { return true }
         guard let text = value as? String else { return false }
-        return text.scalarCount <= max && text.isSafeText
+        return text.scalarCount <= max && PlaceContentGuards.isSafeText(text)
     }
 
     private static func refPrefix(_ ref: String) -> String? {
