@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from mt_contracts.registry import RegistryRecord, assert_no_supersede_cycles
 
@@ -16,9 +16,11 @@ class ReviewItem:
     cluster_refs: list[str]
     candidate_place_ids: list[str]
     members: list[str]
+    payload: dict[str, object] = field(default_factory=dict)
 
     def to_json(self) -> dict:
         return {
+            **self.payload,
             "candidate_place_ids": sorted(self.candidate_place_ids),
             "cluster_refs": sorted(self.cluster_refs),
             "kind": self.kind,
@@ -39,6 +41,7 @@ def write_review(path, items: list[ReviewItem]) -> None:
                 sorted(item.cluster_refs),
                 sorted(item.candidate_place_ids),
                 sorted(item.members),
+                json.dumps(item.payload, sort_keys=True, separators=(",", ":")),
             ),
         )
     ]
