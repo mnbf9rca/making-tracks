@@ -541,13 +541,16 @@ portal enumeration but **not** on OpenRouter; every `:free` id must be verified 
 A real ladder (free → 8B → 70B → reasoning), not five flavours of one 8B. If the portal
 cannot supply a distinct reasoning tier within budget, round 1 runs fewer slots and says so.
 
-**S4 reasoning ↔ output-cap interaction (must be resolved before binding S4).** v1 caps
-output at 16 tokens, and **reasoning tokens bill as output**. A reasoning model under a
-16-token completion cap either cannot reason (cap swallows the reasoning) or bills unbounded
-reasoning tokens. So S4 runs as **two measured variants** — (a) reasoning disabled under the
-v1 16-token cap, and (b) reasoning enabled under a raised `max_tokens` ceiling — **both
-measured**, and S4's cost basis (and its v1-cap assumption) is stated as **different from the
-capped slots**. This is a per-slot cap parameter, not a silent v1 change.
+**S4 reasoning ↔ output-cap interaction (resolved).** v1 caps output at 16 tokens, and
+**reasoning tokens bill as output** — a reasoning model under a 16-token cap either cannot
+reason (the cap swallows it) or bills unbounded reasoning tokens. **Ruling (fable): S4 runs
+reasoning-ENABLED under a raised `max_tokens` ceiling** (round-1b binds `max_tokens=256`,
+`reasoning.effort=xhigh`). The alternative — reasoning *disabled* under the 16-token cap — is
+dropped as redundant: a reasoning model with reasoning off is effectively a non-reasoning
+model, already covered by S2/S3; the real S4 question is whether *deliberation* buys ranking
+signal, which only the reasoning-enabled variant tests. S4's cost basis and its raised-cap
+(non-v1) assumption are stated as **different from the 16-token-capped slots** — a per-slot
+cap parameter, not a silent v1 change.
 
 **Round 1 is Nous-only.** `llm/providers/modal.py:36` raises `NotImplementedError("live Modal
 RPC is gated for Rob's op-run smoke test")`; `shutdown()` returns `0.0 if self._started else
