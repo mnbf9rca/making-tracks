@@ -195,7 +195,32 @@ tie-corrected SE.
 
 ## 3. Promotion rule
 
-Two layers, deliberately asymmetric: **KL-158 screens, London-300 confirms.**
+Three gates, deliberately asymmetric: **a variance smoke admits, KL-158 screens,
+London-300 confirms.**
+
+### Layer 0 — variance admission smoke (cheap, measured, added after the first live datum)
+
+Before spending a candidate's full corpus run, run it on **10 diverse places** and measure the
+**variance of its curiosity output**. **Near-zero variance = auto-fail admission** — a signal
+that is the same for every place carries no rank information and cannot beat chance, so paying
+for the corpus run is waste. This establishes "provides no signal" for ~$0.00003, and it is
+measured-not-asserted applied to admission itself.
+
+**Confound, pre-registered:** a zero-variance result is failed **for this `prompt_version`**,
+not for the model in the abstract. A constant output can indict a badly-constructed prompt as
+easily as a weak model — so if the **whole ladder (S1→S4) fails the variance smoke at v1**, the
+pre-registered conclusion is "**v1 does not elicit discrimination**" (fix the prompt → `v2`),
+**not** "no model provides signal." Only a candidate that fails variance *while a peer on the
+same v1 prompt passes* is a model failure.
+
+This gate exists because the **first live smoke measured exactly this failure**: `llama-3.1-8b`
+at `prompt_version v1` returned curiosity = **0.420 for all 10 places** (zero variance). It is
+not merely useless — it is **actively harmful under renormalize-over-present**
+(`score/composite.py`): a constant signal that is *present* re-weights the renormalized sum and
+perturbed the ranking (KL smoke p@5 `llm_on` 0.60 vs `llm_off` 0.80). So a zero-variance
+candidate must be kept out of the composite, not merely ignored — which is also why §7b sweeps
+`llm_curiosity` weight down to **0.0**. (Admission is necessary, not sufficient: passing the
+variance smoke does not imply signal, only the *possibility* of it; Layer 1 still decides.)
 
 ### Layer 1 — KL screen (selection, liberal, no error budget)
 
@@ -356,8 +381,17 @@ figure is provisional — see the cap interaction below.
 Nous is token-priced; Modal is GPU-second-priced (`llm/costmodel.py:88-111` branches on
 this). The cost table carries **`listed`** (planning/admission, from vendor pages) and
 **`measured`** (from response `usage.cost`, **authoritative for all decisions**) columns.
-`usage.cost` is confirmed always-on for OpenRouter; **whether Rob's Nous *portal* passes the
-field through is a smoke-verified assumption** (codex2) until measured.
+`usage.cost` is confirmed always-on for OpenRouter, and the **first live smoke has now
+confirmed Rob's Nous portal passes it through** — every row came back `cost_source=measured`,
+the exact-cache proof held (run 2: 0 incremental calls, ledger stable), and the $10 cap rail
+is live. (Prior draft flagged this as an unverified assumption; it is now measured.)
+
+**First measured cost (llama-3.1-8b, 10 places, smoke `b6f234f`):** `$0.0000271` total →
+`$0.0000027`/place → **KL-158 ≈ $0.0004**, full UK 616,477 ≈ **$1.67/model**, B=50,000 ≈
+**$0.14/model/run**. That is ~18× *cheaper* than the byte-estimate below (byte-estimate
+over-counts tokens as UTF-8 bytes), so the measured figure is authoritative and the eval cap
+has enormous headroom — **the $10 budget binds only on frontier/reasoning candidates, never on
+the open-weight ladder.**
 
 | basis | formula | source |
 |---|---|---|
@@ -521,6 +555,13 @@ sweep is **downstream** of the bake-off: it populates `llm_curiosity`, a re-dump
 "Does curiosity earn *any* weight" is the prior question to "which model does it best", and
 0.0 answers it.
 
+**First live evidence (smoke `b6f234f`) already points at 0.0 for the 8B.** `llama-3.1-8b` at
+v1 returned a constant 0.420 — a zero-variance signal that *lowered* KL p@5 to 0.60 (vs 0.80
+`llm_off`) purely through renormalization (Layer 0). For that candidate the sweep's honest
+answer is `llm_curiosity = 0.0`; whether a larger or reasoning-tier model produces real
+variance is exactly what the S2→S4 ladder tests. This is the pre-registered null result
+arriving as data, not argument.
+
 ### Mechanics (both, when their inputs exist)
 
 1. **KL-158 only** (London quarantined, §3 Layer 2).
@@ -551,7 +592,7 @@ inclusion of 0.0 is what can retire it.
 |---|---|---|---|---|
 | 1 | `sample_weight` column in golden grammar; re-emit London 150×1.0 + 150×tail-weight; KL all-1.0 | **LANDED** — column + `MAX_SAMPLE_WEIGHT` present; **tail stored as `47.0`, not `46.81`** (0.4% approx, §1 — non-blocking cleanup) | codex4 | London IPW |
 | 2 | `eval/metrics.py`: weighted AUC + paired DeLong (KL) + Somers' D + **stratified-bootstrap CI** (London, tail-only); `precision_at_k` **return `None` when `len(labeled) < k`**; **comment the pre-k unlabeled-row filter, naming `sample_weight` + IPW** | **PARTIAL** — `weighted_auc` landed and matches the pinned estimator (product weights, midrank); DeLong / Somers' D / bootstrap CI / the `None`-fix / the comment still to build. Teeth: a worse config must lower AUC on a fixture where p@k ties | codex | §2 metrics |
-| 3 | Nous portal pricing from live response usage; bind S3/S4 ids by measured cost; resolve S4 cap variants | open | codex2 smoke | §6 binding, §5 cells |
+| 3 | Nous portal pricing from live response usage; bind S3/S4 ids by measured cost; resolve S4 cap variants | **PARTIAL** — smoke `b6f234f` proved plumbing end-to-end: `usage.cost` passthrough confirmed (`cost_source=measured`), exact-cache proof, $10 rail live, S2 llama-3.1-8b measured (`$0.0000027`/place) and variance-smoke-failed (constant 0.420). S3/S4 binding + S4 cap variants still open | codex2 smoke | §6 binding, §5 cells |
 | 4 | **two-sided, rank-scaled injection corpus** (§4) | open — spec in §4, build to assign | assigned when §4 lands | §3 Layer-2 promotion |
 | 5 | **`B`** (coverage cap) + production band-spanning selection rule (§5) | open | **Rob** (B) / this-WP-follow-on (rule) | production ceiling → promotion |
 | 6 | Modal provider RPC (`modal.py:36`) | round-2 follow-on | — | S5/S6 |
