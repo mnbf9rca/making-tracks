@@ -6,7 +6,7 @@ import json
 import pathlib
 import re
 
-from . import config, store
+from . import config, runtime_paths, store
 from .reconcile import cluster, reconcile as reconcile_core, redirects, refs, review
 from .reconcile.registry_file import LocalRegistryStore
 
@@ -133,8 +133,12 @@ def _run_reconcile(conn, region: str, *, run_id: str, version: str) -> None:
 
     reconcile_config = _load_reconcile_config()
     fuzzy_config = cluster.FuzzyConfig(**reconcile_config["fuzzy"])
-    registry_path = pathlib.Path(reconcile_config["registry_path"].format(region=region))
-    review_path = pathlib.Path(reconcile_config["review_path"].format(region=region))
+    registry_path = runtime_paths.resolve_near_db(
+        conn, reconcile_config["registry_path"].format(region=region)
+    )
+    review_path = runtime_paths.resolve_near_db(
+        conn, reconcile_config["review_path"].format(region=region)
+    )
 
     registry = LocalRegistryStore(registry_path)
     result = reconcile_core.reconcile(
@@ -181,7 +185,10 @@ def run_stage(
     if stage == "reconcile":
         if version is None:
             raise StageVersionError("--version is required for reconcile")
-        _run_reconcile(conn, region, run_id=run_id, version=version)
+        try:
+            _run_reconcile(conn, region, run_id=run_id, version=version)
+        except runtime_paths.RuntimePathError as exc:
+            raise StageOrderError(str(exc)) from exc
     elif stage == "score":
         _run_score(conn, region, run_id=run_id)
     elif stage == "categorize":
@@ -214,6 +221,7 @@ def run_stage(
             publish_stage.basemap.BasemapMeasurementMismatch,
             publish_stage.basemap.BasemapOverBudget,
             publish_stage.basemap.PmtilesUnavailable,
+            runtime_paths.RuntimePathError,
         ) as exc:
             raise StageOrderError(str(exc)) from exc
     store.mark_stage_complete(

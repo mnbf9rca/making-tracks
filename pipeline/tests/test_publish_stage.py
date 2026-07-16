@@ -111,6 +111,338 @@ def test_publish_stage_checks_pmtiles_before_staging(conn, tmp_path, monkeypatch
     assert not (tmp_path / "stage").exists()
 
 
+def test_publish_stage_resolves_relative_registry_path_beside_db(
+    conn, tmp_path, monkeypatch
+):
+    other_cwd = tmp_path / "operator-cwd"
+    other_cwd.mkdir()
+    monkeypatch.chdir(other_cwd)
+    _seed_publish_inputs(conn)
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [
+            RegistryRecord(
+                place_id=A,
+                refs={"wd:Q100", "osm:node/100"},
+                mint_anchor="wd:Q100",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+            RegistryRecord(
+                place_id=B,
+                refs={"wd:Q200"},
+                mint_anchor="wd:Q200",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+        ]
+    )
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename="malaysia.pmtiles",
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    result = P.run(
+        conn,
+        "malaysia",
+        publish_version="20260715T120000Z",
+        generated_at="2026-07-15T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+    )
+
+    assert result.counts.total_published == 1
+
+
+def test_publish_stage_requires_registry_before_basemap_cut(conn, tmp_path, monkeypatch):
+    _seed_publish_inputs(conn)
+    called = False
+
+    def fail_cut_basemap(_region_config, _out_path):
+        nonlocal called
+        called = True
+        raise AssertionError("basemap cut should wait for registry preflight")
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fail_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    with pytest.raises(P.PublishStageError) as excinfo:
+        P.run(
+            conn,
+            "malaysia",
+            publish_version="20260715T120000Z",
+            generated_at="2026-07-15T12:00:00Z",
+            scoring_config_version="scoring-v1",
+            staging_root=tmp_path / "stage",
+        )
+
+    assert "registry" in str(excinfo.value)
+    assert str(tmp_path / "registry/malaysia.jsonl") in str(excinfo.value)
+    assert called is False
+
+
+def test_publish_stage_checks_registry_coverage_before_basemap_cut(
+    conn, tmp_path, monkeypatch
+):
+    _seed_publish_inputs(conn)
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [
+            RegistryRecord(
+                place_id=B,
+                refs={"wd:Q200"},
+                mint_anchor="wd:Q200",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            )
+        ]
+    )
+    called = False
+
+    def fail_cut_basemap(_region_config, _out_path):
+        nonlocal called
+        called = True
+        raise AssertionError("basemap cut should wait for registry coverage")
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fail_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    with pytest.raises(P.PublishStageError) as excinfo:
+        P.run(
+            conn,
+            "malaysia",
+            publish_version="20260715T120000Z",
+            generated_at="2026-07-15T12:00:00Z",
+            scoring_config_version="scoring-v1",
+            staging_root=tmp_path / "stage",
+        )
+
+    message = str(excinfo.value)
+    assert "registry" in message
+    assert str(tmp_path / "registry/malaysia.jsonl") in message
+    assert A in message
+    assert called is False
+
+
+def test_publish_stage_checks_joined_db_inputs_before_basemap_cut(
+    conn, tmp_path, monkeypatch
+):
+    store.replace_places(
+        conn,
+        region="malaysia",
+        places=[
+            {
+                "place_id": A,
+                "name": "Fort",
+                "lat": 3.10,
+                "lon": 101.70,
+                "refs": ["wd:Q100"],
+                "member_refs": ["wd:Q100"],
+                "status": "live",
+            }
+        ],
+    )
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [
+            RegistryRecord(
+                place_id=A,
+                refs={"wd:Q100"},
+                mint_anchor="wd:Q100",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            )
+        ]
+    )
+    called = False
+
+    def fail_cut_basemap(_region_config, _out_path):
+        nonlocal called
+        called = True
+        raise AssertionError("basemap cut should wait for DB preflight")
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fail_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    with pytest.raises(P.PublishStageError) as excinfo:
+        P.run(
+            conn,
+            "malaysia",
+            publish_version="20260715T120000Z",
+            generated_at="2026-07-15T12:00:00Z",
+            scoring_config_version="scoring-v1",
+            staging_root=tmp_path / "stage",
+        )
+
+    assert "place_scores" in str(excinfo.value)
+    assert called is False
+
+
+def test_publish_stage_requires_scores_for_all_live_places_before_basemap_cut(
+    conn, tmp_path, monkeypatch
+):
+    _seed_publish_inputs(conn)
+    conn.execute(
+        "DELETE FROM place_scores WHERE region = ? AND place_id = ?",
+        ("malaysia", B),
+    )
+    conn.commit()
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [
+            RegistryRecord(
+                place_id=A,
+                refs={"wd:Q100", "osm:node/100"},
+                mint_anchor="wd:Q100",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+            RegistryRecord(
+                place_id=B,
+                refs={"wd:Q200"},
+                mint_anchor="wd:Q200",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+        ]
+    )
+    called = False
+
+    def fail_cut_basemap(_region_config, _out_path):
+        nonlocal called
+        called = True
+        raise AssertionError("basemap cut should wait for DB coverage")
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fail_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    with pytest.raises(P.PublishStageError) as excinfo:
+        P.run(
+            conn,
+            "malaysia",
+            publish_version="20260715T120000Z",
+            generated_at="2026-07-15T12:00:00Z",
+            scoring_config_version="scoring-v1",
+            staging_root=tmp_path / "stage",
+        )
+
+    assert "1 live malaysia place(s) missing place_scores" in str(excinfo.value)
+    assert called is False
+
+
+def test_publish_stage_rejects_non_live_registry_for_live_db_place_before_basemap_cut(
+    conn, tmp_path, monkeypatch
+):
+    _seed_publish_inputs(conn)
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [
+            RegistryRecord(
+                place_id=A,
+                refs={"wd:Q100", "osm:node/100"},
+                mint_anchor="wd:Q100",
+                status="tombstoned",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+            RegistryRecord(
+                place_id=B,
+                refs={"wd:Q200"},
+                mint_anchor="wd:Q200",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+        ]
+    )
+    called = False
+
+    def fail_cut_basemap(_region_config, _out_path):
+        nonlocal called
+        called = True
+        raise AssertionError("basemap cut should wait for live registry preflight")
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fail_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    with pytest.raises(P.PublishStageError) as excinfo:
+        P.run(
+            conn,
+            "malaysia",
+            publish_version="20260715T120000Z",
+            generated_at="2026-07-15T12:00:00Z",
+            scoring_config_version="scoring-v1",
+            staging_root=tmp_path / "stage",
+        )
+
+    message = str(excinfo.value)
+    assert str(tmp_path / "registry/malaysia.jsonl") in message
+    assert "non-live" in message
+    assert A in message
+    assert called is False
+
+
+def test_publish_stage_requires_registry_ref_coverage_before_basemap_cut(
+    conn, tmp_path, monkeypatch
+):
+    _seed_publish_inputs(conn)
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [
+            RegistryRecord(
+                place_id=A,
+                refs={"wd:Q100"},
+                mint_anchor="wd:Q100",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+            RegistryRecord(
+                place_id=B,
+                refs={"wd:Q200"},
+                mint_anchor="wd:Q200",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+        ]
+    )
+    called = False
+
+    def fail_cut_basemap(_region_config, _out_path):
+        nonlocal called
+        called = True
+        raise AssertionError("basemap cut should wait for registry refs preflight")
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fail_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    with pytest.raises(P.PublishStageError) as excinfo:
+        P.run(
+            conn,
+            "malaysia",
+            publish_version="20260715T120000Z",
+            generated_at="2026-07-15T12:00:00Z",
+            scoring_config_version="scoring-v1",
+            staging_root=tmp_path / "stage",
+        )
+
+    message = str(excinfo.value)
+    assert str(tmp_path / "registry/malaysia.jsonl") in message
+    assert "missing refs" in message
+    assert "osm:node/100" in message
+    assert called is False
+
+
 def test_publish_stage_quarantines_malformed_member_refs_json(
     conn, tmp_path, monkeypatch
 ):
@@ -130,7 +462,15 @@ def test_publish_stage_quarantines_malformed_member_refs_json(
                 status="live",
                 first_shipped_version="20260701T000000Z",
                 last_seen_version="20260701T000000Z",
-            )
+            ),
+            RegistryRecord(
+                place_id=B,
+                refs={"wd:Q200"},
+                mint_anchor="wd:Q200",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
         ]
     )
 

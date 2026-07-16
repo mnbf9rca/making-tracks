@@ -10,7 +10,7 @@ from typing import Any
 from mt_contracts import registry as registry_contract
 from mt_contracts.tilecodec import safe_gunzip
 
-from mt_pipeline import config
+from mt_pipeline import config, runtime_paths
 from mt_pipeline.reconcile.registry_file import LocalRegistryStore
 from mt_pipeline.score import score_stage
 
@@ -50,11 +50,25 @@ def run(
     scoring_config_version = scoring_config_version or str(score_stage.load_config()["version"])
 
     region_config = config.load(region)
-    registry_store = LocalRegistryStore(_registry_path(region))
-    registry_records = registry_store.load()
+    registry_path = _registry_path(conn, region)
+    registry_store = LocalRegistryStore(registry_path)
+    registry_records = _load_registry(registry_store, region)
+    _assert_db_inputs(conn, region)
     joined = _joined_places(conn, region)
+    _assert_registry_covers_live_inputs(registry_records, joined, registry_path)
     tile_arts, counts = tiles.emit_tiles(joined, registry_records)
     shipped_places = _places_from_tiles(tile_arts)
+    shipped_ids = {place["place_id"] for place in shipped_places}
+    _assert_registry_covers_shipped(registry_records, shipped_ids, registry_path)
+    updated_registry = None
+    registry_blob = None
+    if shipped_ids:
+        updated_registry = registry_contract.mark_shipped(
+            registry_records,
+            shipped_ids,
+            publish_version,
+        )
+        registry_blob = _registry_jsonl(updated_registry)
 
     work_root = pathlib.Path(staging_root) / ".work" / region / publish_version
     work_root.mkdir(parents=True, exist_ok=True)
@@ -82,17 +96,6 @@ def run(
         manifest_obj=manifest_obj,
         basemap_path=basemap_path,
     )
-    shipped_ids = {place["place_id"] for place in shipped_places}
-    updated_registry = None
-    registry_blob = None
-    if shipped_ids:
-        updated_registry = registry_contract.mark_shipped(
-            registry_records,
-            shipped_ids,
-            publish_version,
-        )
-        registry_blob = _registry_jsonl(updated_registry)
-
     layout = json.loads(_R2_LAYOUT.read_text())
     publish_result = r2.publish_to_r2(
         staging_dir,
@@ -171,9 +174,146 @@ def _region_doc(region_config: config.RegionConfig) -> dict[str, Any]:
     return data
 
 
-def _registry_path(region: str) -> pathlib.Path:
+def _load_registry(
+    registry_store: LocalRegistryStore, region: str
+) -> list[registry_contract.RegistryRecord]:
+    path = registry_store.path
+    if not path.exists():
+        raise PublishStageError(f"publish registry missing for {region}: {path}")
+    try:
+        records = registry_store.load()
+    except ValueError as exc:
+        raise PublishStageError(
+            f"publish registry rejected for {region}: {path}: {exc}"
+        ) from exc
+    if not records:
+        raise PublishStageError(f"publish registry empty for {region}: {path}")
+    return records
+
+
+def _assert_db_inputs(conn, region: str) -> None:
+    live_places = _count(
+        conn,
+        "SELECT COUNT(*) FROM places WHERE region = ? AND status = 'live'",
+        region,
+    )
+    if live_places == 0:
+        raise PublishStageError(f"publish input has no live places for {region}")
+
+    scored_live_places = _count(
+        conn,
+        """
+        SELECT COUNT(DISTINCT p.place_id)
+        FROM places p
+        JOIN place_scores s
+          ON s.place_id = p.place_id AND s.region = p.region
+        WHERE p.region = ? AND p.status = 'live'
+        """,
+        region,
+    )
+    if scored_live_places != live_places:
+        missing = live_places - scored_live_places
+        raise PublishStageError(
+            f"publish input has {missing} live {region} place(s) missing place_scores"
+        )
+
+    categorized_live_places = _count(
+        conn,
+        """
+        SELECT COUNT(DISTINCT p.place_id)
+        FROM places p
+        JOIN place_categories c
+          ON c.place_id = p.place_id AND c.region = p.region
+        WHERE p.region = ? AND p.status = 'live'
+        """,
+        region,
+    )
+    if categorized_live_places != live_places:
+        missing = live_places - categorized_live_places
+        raise PublishStageError(
+            f"publish input has {missing} live {region} place(s) missing place_categories"
+        )
+
+
+def _assert_registry_covers_shipped(
+    registry_records: list[registry_contract.RegistryRecord],
+    shipped_ids: set[str],
+    registry_path: pathlib.Path,
+) -> None:
+    missing = shipped_ids - {record.place_id for record in registry_records}
+    if missing:
+        sample = ", ".join(sorted(missing)[:20])
+        suffix = (
+            "" if len(missing) <= 20 else f", ... (+{len(missing) - 20} more)"
+        )
+        raise PublishStageError(
+            f"publish registry {registry_path} is missing {len(missing)} shipped "
+            f"place_id(s): {sample}{suffix}"
+        )
+
+
+def _assert_registry_covers_live_inputs(
+    registry_records: list[registry_contract.RegistryRecord],
+    joined_places: list[dict[str, Any]],
+    registry_path: pathlib.Path,
+) -> None:
+    by_id = {record.place_id: record for record in registry_records}
+    missing_ids: list[str] = []
+    non_live_ids: list[str] = []
+    missing_refs: dict[str, set[str]] = {}
+    for place in joined_places:
+        place_id = str(place["place_id"])
+        record = by_id.get(place_id)
+        if record is None:
+            missing_ids.append(place_id)
+            continue
+        if record.status != "live" or record.superseded_by:
+            non_live_ids.append(place_id)
+        refs = set(place["source_refs"])
+        missing = refs - set(record.refs)
+        if missing:
+            missing_refs[place_id] = missing
+
+    if missing_ids:
+        sample = ", ".join(sorted(missing_ids)[:20])
+        suffix = (
+            ""
+            if len(missing_ids) <= 20
+            else f", ... (+{len(missing_ids) - 20} more)"
+        )
+        raise PublishStageError(
+            f"publish registry {registry_path} is missing {len(missing_ids)} live "
+            f"place_id(s): {sample}{suffix}"
+        )
+    if non_live_ids:
+        sample = ", ".join(sorted(non_live_ids)[:20])
+        suffix = (
+            ""
+            if len(non_live_ids) <= 20
+            else f", ... (+{len(non_live_ids) - 20} more)"
+        )
+        raise PublishStageError(
+            f"publish registry {registry_path} marks {len(non_live_ids)} live DB "
+            f"place_id(s) non-live/superseded: {sample}{suffix}"
+        )
+    if missing_refs:
+        place_id = sorted(missing_refs)[0]
+        refs = ", ".join(sorted(missing_refs[place_id])[:20])
+        raise PublishStageError(
+            f"publish registry {registry_path} record {place_id} missing refs from "
+            f"live DB input: {refs}"
+        )
+
+
+def _count(conn, sql: str, region: str) -> int:
+    return int(conn.execute(sql, (region,)).fetchone()[0])
+
+
+def _registry_path(conn, region: str) -> pathlib.Path:
     reconcile = json.loads(_RECONCILE_CONFIG.read_text())
-    return pathlib.Path(reconcile["registry_path"].format(region=region))
+    return runtime_paths.resolve_near_db(
+        conn, reconcile["registry_path"].format(region=region)
+    )
 
 
 def _registry_jsonl(records) -> bytes:
