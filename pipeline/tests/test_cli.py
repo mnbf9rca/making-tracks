@@ -1,3 +1,5 @@
+import dataclasses
+
 from mt_pipeline import cli, store
 from mt_pipeline.ergonomics import fingerprint
 from mt_pipeline.eval import report as eval_report
@@ -335,6 +337,37 @@ def test_cli_extract_skips_matching_stage_fingerprint(monkeypatch, tmp_path, cap
         "wikidata_snapshot_date": "2026-07-15T00:00:00Z",
         "source_statuses": {"wikidata": {"status": "success", "count": 1}},
     }
+
+
+def test_reconcile_fingerprint_inputs_intersect_successes_with_enabled_sources(
+    monkeypatch, tmp_path
+):
+    conn = store.connect(tmp_path / "w.db")
+    store.init_schema(conn)
+    store.record_extract_run_metadata(
+        conn,
+        region="uk",
+        run_id="r1",
+        wikidata_snapshot_date="2026-07-15T00:00:00Z",
+        source_statuses={
+            "osm": {"status": "success", "count": 1},
+            "wikidata": {"status": "success", "count": 1},
+        },
+    )
+    region = dataclasses.replace(
+        cli.config.load("uk"),
+        sources={**cli.config.load("uk").sources, "osm": False},
+    )
+
+    inputs = cli._stage_fingerprint_inputs(
+        conn,
+        region,
+        "reconcile",
+        run_id="r1",
+        version="20260716T000000Z",
+    )
+
+    assert inputs.succeeded_sources == {"wd"}
 
 
 def test_cli_extract_fails_early_when_snapshot_sidecar_has_no_payload(

@@ -258,13 +258,75 @@ def should_skip(conn, region: str, stage: str, fingerprint: str, *, force: bool)
 
 
 def module_marker(stage: str) -> str:
-    path = {
-        "extract": pathlib.Path(extract_stage.__file__),
-        "reconcile": pathlib.Path(stages.__file__),
-        "score": pathlib.Path(__file__).resolve().parents[1] / "score" / "score_stage.py",
-        "categorize": pathlib.Path(__file__).resolve().parents[1] / "categorize.py",
+    return _hash_obj(
+        {
+            _code_path_key(path): _file_hash(path)
+            for path in _stage_code_paths(stage)
+        }
+    )
+
+
+def _stage_code_paths(stage: str) -> tuple[pathlib.Path, ...]:
+    package_root = pathlib.Path(__file__).resolve().parents[1]
+    repo_root = _repo_root()
+    fingerprint_path = pathlib.Path(__file__).resolve()
+    paths = {
+        "extract": (
+            fingerprint_path,
+            pathlib.Path(extract_stage.__file__).resolve(),
+            package_root / "ergonomics" / "merge.py",
+            package_root / "ergonomics" / "parallel.py",
+            package_root / "ergonomics" / "staging.py",
+            package_root / "source_record.py",
+            *_py_files(package_root / "extractors"),
+            *_contract_runtime_files(repo_root),
+        ),
+        "reconcile": (
+            fingerprint_path,
+            pathlib.Path(stages.__file__).resolve(),
+            *_py_files(package_root / "reconcile"),
+            *_contract_runtime_files(repo_root),
+        ),
+        "score": (
+            fingerprint_path,
+            package_root / "source_record.py",
+            *_py_files(package_root / "score"),
+            *_contract_runtime_files(repo_root),
+        ),
+        "categorize": (
+            fingerprint_path,
+            package_root / "categorize.py",
+            package_root / "extractors" / "osm.py",
+            package_root / "source_record.py",
+            *_contract_runtime_files(repo_root),
+        ),
     }[stage]
-    return _file_hash(path)
+    return tuple(sorted({path.resolve() for path in paths}, key=_code_path_key))
+
+
+def _py_files(directory: pathlib.Path) -> tuple[pathlib.Path, ...]:
+    return tuple(sorted(directory.rglob("*.py"), key=_code_path_key))
+
+
+def _contract_runtime_files(repo_root: pathlib.Path) -> tuple[pathlib.Path, ...]:
+    contracts_root = repo_root / "contracts"
+    paths = [
+        *_py_files(contracts_root / "src" / "mt_contracts"),
+        contracts_root / "versions.json",
+        *(contracts_root / "schemas").glob("*.schema.json"),
+    ]
+    return tuple(sorted({path.resolve() for path in paths}, key=_code_path_key))
+
+
+def _code_path_key(path: pathlib.Path) -> str:
+    try:
+        return path.resolve().relative_to(_repo_root()).as_posix()
+    except ValueError:
+        return path.resolve().as_posix()
+
+
+def _repo_root() -> pathlib.Path:
+    return pathlib.Path(__file__).resolve().parents[4]
 
 
 def _extract_components(inputs: FingerprintInputs) -> dict[str, Any]:

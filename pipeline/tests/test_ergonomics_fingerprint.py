@@ -1,8 +1,16 @@
 import json
+import pathlib
 from dataclasses import dataclass
 
+from mt_contracts import place_id as place_id_module
+from mt_contracts import registry as registry_module
+from mt_contracts import text as text_module
 from mt_pipeline import source_record, store
 from mt_pipeline.ergonomics import fingerprint as F
+from mt_pipeline.ergonomics import merge as merge_module
+from mt_pipeline.ergonomics import staging as staging_module
+from mt_pipeline.extractors import osm as osm_module
+from mt_pipeline.extractors import wikipedia as wikipedia_module
 
 
 @dataclass(frozen=True)
@@ -224,6 +232,174 @@ def test_extract_fingerprint_moves_on_enabled_sources_languages_and_files(tmp_pa
         F.stage_fingerprint(_conn(tmp_path / "db6"), "uk", "extract", inputs=changed_tags)
         != base
     )
+
+
+def test_extract_fingerprint_moves_on_merge_bookkeeping_code_change(
+    monkeypatch, tmp_path
+):
+    merge_path = pathlib.Path(merge_module.__file__).resolve()
+    changed = False
+
+    def fake_file_hash(path):
+        resolved = pathlib.Path(path).resolve()
+        if resolved == merge_path and changed:
+            return "changed-merge-code"
+        return f"hash:{resolved}"
+
+    monkeypatch.setattr(F, "_file_hash", fake_file_hash)
+    conn = _conn(tmp_path / "db")
+    inputs = _inputs(tmp_path)
+    base = F.stage_fingerprint(conn, "uk", "extract", inputs=inputs)
+    F.record(conn, "uk", "extract", base, completed_at="2026-07-16T00:00:00Z")
+
+    changed = True
+    next_fp = F.stage_fingerprint(conn, "uk", "extract", inputs=inputs)
+
+    assert next_fp != base
+    assert F.should_skip(conn, "uk", "extract", next_fp, force=False) is False
+
+
+def test_extract_fingerprint_moves_on_staging_bookkeeping_code_change(
+    monkeypatch, tmp_path
+):
+    staging_path = pathlib.Path(staging_module.__file__).resolve()
+    changed = False
+
+    def fake_file_hash(path):
+        resolved = pathlib.Path(path).resolve()
+        if resolved == staging_path and changed:
+            return "changed-staging-code"
+        return f"hash:{resolved}"
+
+    monkeypatch.setattr(F, "_file_hash", fake_file_hash)
+    conn = _conn(tmp_path / "db")
+    inputs = _inputs(tmp_path)
+    base = F.stage_fingerprint(conn, "uk", "extract", inputs=inputs)
+    F.record(conn, "uk", "extract", base, completed_at="2026-07-16T00:00:00Z")
+
+    changed = True
+    next_fp = F.stage_fingerprint(conn, "uk", "extract", inputs=inputs)
+
+    assert next_fp != base
+    assert F.should_skip(conn, "uk", "extract", next_fp, force=False) is False
+
+
+def test_extract_module_marker_covers_extractor_source(monkeypatch):
+    wikipedia_path = pathlib.Path(wikipedia_module.__file__).resolve()
+    changed = False
+
+    def fake_file_hash(path):
+        resolved = pathlib.Path(path).resolve()
+        if resolved == wikipedia_path and changed:
+            return "changed-wikipedia-code"
+        return f"hash:{resolved}"
+
+    monkeypatch.setattr(F, "_file_hash", fake_file_hash)
+
+    base = F.module_marker("extract")
+    changed = True
+
+    assert F.module_marker("extract") != base
+
+
+def test_extract_module_marker_covers_contract_ref_and_text_semantics(monkeypatch):
+    contracts_root = pathlib.Path(place_id_module.__file__).resolve().parents[2]
+    for dependency in (
+        pathlib.Path(place_id_module.__file__).resolve(),
+        pathlib.Path(text_module.__file__).resolve(),
+        contracts_root / "versions.json",
+    ):
+        _assert_module_marker_moves_when_path_hash_changes(
+            monkeypatch,
+            "extract",
+            dependency,
+        )
+
+
+def test_reconcile_module_marker_covers_place_id_contract(monkeypatch):
+    _assert_module_marker_moves_when_path_hash_changes(
+        monkeypatch,
+        "reconcile",
+        pathlib.Path(place_id_module.__file__).resolve(),
+    )
+
+
+def test_reconcile_module_marker_covers_registry_contract(monkeypatch):
+    _assert_module_marker_moves_when_path_hash_changes(
+        monkeypatch,
+        "reconcile",
+        pathlib.Path(registry_module.__file__).resolve(),
+    )
+
+
+def test_reconcile_module_marker_covers_registry_schema(monkeypatch):
+    contracts_root = pathlib.Path(registry_module.__file__).resolve().parents[2]
+
+    _assert_module_marker_moves_when_path_hash_changes(
+        monkeypatch,
+        "reconcile",
+        contracts_root / "schemas" / "registry-record.schema.json",
+    )
+
+
+def test_score_module_marker_covers_source_record_limits(monkeypatch):
+    _assert_module_marker_moves_when_path_hash_changes(
+        monkeypatch,
+        "score",
+        pathlib.Path(source_record.__file__).resolve(),
+    )
+
+
+def test_categorize_module_marker_covers_osm_candidate_helper(monkeypatch):
+    _assert_module_marker_moves_when_path_hash_changes(
+        monkeypatch,
+        "categorize",
+        pathlib.Path(osm_module.__file__).resolve(),
+    )
+
+
+def test_categorize_module_marker_covers_contract_text_semantics(monkeypatch):
+    _assert_module_marker_moves_when_path_hash_changes(
+        monkeypatch,
+        "categorize",
+        pathlib.Path(text_module.__file__).resolve(),
+    )
+
+
+def test_code_marker_keys_are_repo_relative_for_contract_dependencies():
+    key = F._code_path_key(pathlib.Path(place_id_module.__file__).resolve())
+
+    assert key == "contracts/src/mt_contracts/place_id.py"
+
+
+def test_python_file_discovery_includes_nested_helpers(tmp_path):
+    root = tmp_path / "pkg"
+    root.mkdir()
+    top = root / "top.py"
+    top.write_text("")
+    nested_dir = root / "nested"
+    nested_dir.mkdir()
+    nested = nested_dir / "helper.py"
+    nested.write_text("")
+
+    assert F._py_files(root) == (nested, top)
+
+
+def _assert_module_marker_moves_when_path_hash_changes(monkeypatch, stage, changed_path):
+    changed = False
+
+    def fake_file_hash(path):
+        resolved = pathlib.Path(path).resolve()
+        if resolved == changed_path and changed:
+            return f"changed-{stage}-dependency-code"
+        return f"hash:{resolved}"
+
+    monkeypatch.setattr(F, "_file_hash", fake_file_hash)
+
+    base = F.module_marker(stage)
+    changed = True
+
+    assert F.module_marker(stage) != base
 
 
 def test_reconcile_fingerprint_moves_on_config_redirect_and_registry(tmp_path):

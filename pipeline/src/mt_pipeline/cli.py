@@ -320,11 +320,11 @@ def _stage_fingerprint_inputs(conn, region, stage: str, *, run_id: str, version:
 
     if stage == "reconcile":
         metadata = store.load_extract_run_metadata(conn, region=region.region_id, run_id=run_id)
-        succeeded = set()
-        if metadata is not None:
-            for source, status in metadata["source_statuses"].items():
-                if status.get("status") == "success" and source in stages.SOURCE_KEY_TO_PREFIX:
-                    succeeded.add(stages.SOURCE_KEY_TO_PREFIX[source])
+        succeeded = (
+            stages._succeeded_source_prefixes(region, metadata)
+            if metadata is not None
+            else set()
+        )
         return fingerprint.FingerprintInputs(
             region_config=region,
             succeeded_sources=succeeded,
