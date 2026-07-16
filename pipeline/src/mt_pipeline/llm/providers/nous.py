@@ -91,7 +91,7 @@ class NousProvider:
         )
         return ProviderResponse(
             text=text,
-            model_fingerprint=getattr(response, "system_fingerprint", None) or req.model_id,
+            model_fingerprint=getattr(response, "system_fingerprint", None) or req.provider_model_id or req.model_id,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             latency_ms=0,
@@ -102,7 +102,7 @@ class NousProvider:
 
     def _chat_completion_kwargs(self, req: LlmRequest) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
-            "model": req.model_id,
+            "model": req.provider_model_id or req.model_id,
             "messages": [
                 {"role": "system", "content": req.system},
                 *[{"role": msg.role, "content": msg.content} for msg in req.messages],

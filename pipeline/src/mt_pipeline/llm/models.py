@@ -28,6 +28,7 @@ def _freeze_jsonish(value: object) -> object:
 
 class LlmRequest(FrozenModel):
     model_id: str
+    provider_model_id: str | None = None
     system: str
     messages: tuple[Message, ...]
     max_tokens: int = Field(ge=1, le=4096)
@@ -39,6 +40,15 @@ class LlmRequest(FrozenModel):
     prompt_version: str
     task_id: str
     query_id: str
+
+    @field_validator("provider_model_id")
+    @classmethod
+    def _validate_provider_model_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value or len(value) > 256 or any(ord(ch) < 32 for ch in value):
+            raise ValueError("provider_model_id must be a non-empty printable string up to 256 chars")
+        return value
 
     @field_validator("max_tokens", "seed", mode="before")
     @classmethod

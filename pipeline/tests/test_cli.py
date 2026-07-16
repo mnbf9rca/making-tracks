@@ -1117,6 +1117,28 @@ def test_cli_llm_bakeoff_runs_keyless_fake_provider(tmp_path, capsys):
     assert "fake-curiosity-v1\t" in out
 
 
+def _write_live_bakeoff_inputs(tmp_path, *, models_payload: dict, pricing_payload: dict):
+    labeled = tmp_path / "golden.tsv"
+    labeled.write_text(
+        "\n".join(
+            [
+                "# Label the 'label' column only: yes; meh; no; blank.",
+                "# data_version: v1",
+                "place_id\tarea\tactive\tname\tlat\tlon\tcategory\ttier\tscore\tdata_version\tarticle\tllm_curiosity\tlabeled_by\tevidence\tlabel",
+                "mt1_00000000000000000000000000\tkl\ttrue\tA\t0\t0\tc\t1\t0\tv1\t0.1\t\trob\t\tyes",
+            ]
+        )
+        + "\n"
+    )
+    config_path = tmp_path / "scoring.json"
+    config_path.write_text('{"weights": {"article": 1.0, "llm_curiosity": 2.0}}')
+    models = tmp_path / "models.json"
+    models.write_text(json.dumps(models_payload))
+    pricing = tmp_path / "pricing.json"
+    pricing.write_text(json.dumps(pricing_payload))
+    return labeled, config_path, models, pricing
+
+
 def test_cli_llm_bakeoff_without_live_does_not_construct_nous_provider(tmp_path, capsys, monkeypatch):
     from mt_pipeline.llm.providers import nous
 
@@ -1265,7 +1287,8 @@ def test_cli_llm_live_bakeoff_reports_per_place_cache_and_precision(tmp_path, ca
             calls.extend(req.query_id for req in reqs)
             responses = []
             for req in reqs:
-                assert req.model_id == "Nous-API-Cheap"
+                assert req.model_id == "nous-cheap"
+                assert req.provider_model_id == "Nous-API-Cheap"
                 value = 0.9 if req.query_id.endswith("0" * 26) else 0.1
                 responses.append(
                     ProviderResponse(
@@ -1947,8 +1970,8 @@ def test_cli_llm_live_bakeoff_isolates_candidate_bad_request_and_continues(tmp_p
             pass
 
         async def acomplete_batch(self, reqs):
-            attempted.append(reqs[0].model_id)
-            if reqs[0].model_id == "bad-api":
+            attempted.append(reqs[0].provider_model_id or reqs[0].model_id)
+            if (reqs[0].provider_model_id or reqs[0].model_id) == "bad-api":
                 response = httpx.Response(
                     400,
                     request=httpx.Request("POST", "https://inference-api.nousresearch.com/v1/chat/completions"),
@@ -2004,7 +2027,7 @@ def test_cli_llm_live_bakeoff_isolates_candidate_bad_request_and_continues(tmp_p
     assert rc == 0
     assert attempted == ["bad-api", "good-api"]
     assert "model\tbad" in out
-    assert "error\tError code: 400" in out
+    assert "error\tprovider request failed: \"Error code: 400" in out
     assert "model\tgood" in out
     assert "mt1_00000000000000000000000000\tgood\t0.900000\tfalse\t0.00001000\tderived" in out
 
@@ -2048,7 +2071,7 @@ def test_cli_llm_live_bakeoff_attempts_default_candidates_in_estimated_cost_orde
             pass
 
         async def acomplete_batch(self, reqs):
-            attempted.append(reqs[0].model_id)
+            attempted.append(reqs[0].provider_model_id or reqs[0].model_id)
             return [
                 ProviderResponse(
                     text='{"curiosity": 0.9}',
@@ -2092,6 +2115,337 @@ def test_cli_llm_live_bakeoff_attempts_default_candidates_in_estimated_cost_orde
 
     assert rc == 0
     assert attempted == ["cheap-api", "expensive-api"]
+
+
+def test_cli_llm_live_bakeoff_skips_admission_failed_default_candidate(tmp_path, monkeypatch):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled, config_path, models, pricing = _write_live_bakeoff_inputs(
+        tmp_path,
+        models_payload={
+            "models": [
+                {
+                    "id": "s1",
+                    "provider": "nous",
+                    "api_model_id": "s1-api",
+                    "live_skip_reason": "admission-failed: missing user tag",
+                },
+                {"id": "s2", "provider": "nous", "api_model_id": "s2-api"},
+            ]
+        },
+        pricing_payload={
+            "models": {
+                "s1": {"provider": "nous", "input_per_m": 0.0, "output_per_m": 0.0},
+                "s2": {"provider": "nous", "input_per_m": 0.01, "output_per_m": 0.01},
+            }
+        },
+    )
+    attempted = []
+
+    class SkippingProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            attempted.extend(req.model_id for req in reqs)
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint=req.provider_model_id or req.model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.0,
+                    cost_source="derived",
+                    app_id=None,
+                )
+                for req in reqs
+            ]
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", SkippingProvider)
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", ())
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    assert rc == 0
+    assert attempted == ["s2"]
+
+
+def test_cli_llm_live_bakeoff_rejects_explicit_skipped_candidate_without_provider(tmp_path, capsys, monkeypatch):
+    from mt_pipeline.llm.providers import nous
+
+    labeled, config_path, models, pricing = _write_live_bakeoff_inputs(
+        tmp_path,
+        models_payload={
+            "models": [
+                {
+                    "id": "s1",
+                    "provider": "nous",
+                    "api_model_id": "s1-api",
+                    "live_skip_reason": "admission-failed: missing user tag",
+                }
+            ]
+        },
+        pricing_payload={
+            "models": {
+                "s1": {"provider": "nous", "input_per_m": 0.0, "output_per_m": 0.0},
+            }
+        },
+    )
+
+    class ShouldNotConstructProvider:
+        def __init__(self, **_kwargs):
+            raise AssertionError("skipped candidate should fail before provider construction")
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", ShouldNotConstructProvider)
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--model",
+            "s1",
+            "--max-places",
+            "1",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    assert rc == 1
+    assert "requested live model 's1' is skipped: admission-failed" in capsys.readouterr().err
+
+
+def test_cli_llm_live_bakeoff_s4_uses_raised_cap_and_distinct_cache_id(tmp_path, monkeypatch):
+    from mt_pipeline.llm.models import ProviderResponse
+    from mt_pipeline.llm.providers import nous
+
+    labeled, config_path, models, pricing = _write_live_bakeoff_inputs(
+        tmp_path,
+        models_payload={
+            "models": [
+                {
+                    "id": "nous-nex-n2-mini",
+                    "provider": "nous",
+                    "api_model_id": "nex-agi/nex-n2-mini",
+                    "max_tokens": 256,
+                    "seed": None,
+                    "reasoning": {"enabled": True, "effort": "low", "exclude": True},
+                }
+            ]
+        },
+        pricing_payload={
+            "models": {
+                "nous-nex-n2-mini": {"provider": "nous", "input_per_m": 0.025, "output_per_m": 0.10},
+            }
+        },
+    )
+    attempted = []
+
+    class S4Provider:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def acomplete_batch(self, reqs):
+            attempted.extend(reqs)
+            return [
+                ProviderResponse(
+                    text='{"curiosity": 0.9}',
+                    model_fingerprint=req.provider_model_id or req.model_id,
+                    input_tokens=10,
+                    output_tokens=2,
+                    latency_ms=0,
+                    cost_usd=0.0,
+                    cost_source="derived",
+                    app_id=None,
+                )
+                for req in reqs
+            ]
+
+        async def shutdown(self):
+            return None
+
+    monkeypatch.setenv("NOUS_API_KEY", "sk-test")
+    monkeypatch.setattr(nous, "NousProvider", S4Provider)
+    monkeypatch.setattr(cli.bakeoff, "INJECTION_PROBES", ())
+
+    rc = cli.main(
+        [
+            "llm",
+            "bakeoff",
+            "--live",
+            "--max-places",
+            "1",
+            "--labeled",
+            str(labeled),
+            "--config",
+            str(config_path),
+            "--models",
+            str(models),
+            "--pricing",
+            str(pricing),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    assert rc == 0
+    assert len(attempted) == 1
+    assert attempted[0].model_id == "nous-nex-n2-mini"
+    assert attempted[0].provider_model_id == "nex-agi/nex-n2-mini"
+    assert attempted[0].max_tokens == 256
+
+
+def test_live_nous_candidates_skip_admission_failed_models_by_default():
+    rows = [
+        cli.golden.GoldenRow(
+            place_id="mt1_00000000000000000000000000",
+            area="kl",
+            name="A",
+            lat=0.0,
+            lon=0.0,
+            category="c",
+            tier=1,
+            score=0.0,
+            signals={"article": 0.1},
+            label="yes",
+            data_version="v1",
+        )
+    ]
+    models = [
+        {
+            "id": "s1",
+            "provider": "nous",
+            "api_model_id": "s1-api",
+            "live_skip_reason": "admission-failed: missing user tag",
+        },
+        {"id": "s2", "provider": "nous", "api_model_id": "s2-api"},
+    ]
+    pricing = {
+        "s1": {"provider": "nous", "input_per_m": 0.0, "output_per_m": 0.0},
+        "s2": {"provider": "nous", "input_per_m": 0.01, "output_per_m": 0.01},
+    }
+
+    candidates = cli._live_nous_candidates(models, pricing, rows, requested_model=None)
+
+    assert [candidate[1] for candidate in candidates] == ["s2"]
+
+
+def test_live_nous_candidates_reject_explicit_admission_failed_model():
+    rows = [
+        cli.golden.GoldenRow(
+            place_id="mt1_00000000000000000000000000",
+            area="kl",
+            name="A",
+            lat=0.0,
+            lon=0.0,
+            category="c",
+            tier=1,
+            score=0.0,
+            signals={"article": 0.1},
+            label="yes",
+            data_version="v1",
+        )
+    ]
+    models = [
+        {
+            "id": "s1",
+            "provider": "nous",
+            "api_model_id": "s1-api",
+            "live_skip_reason": "admission-failed: missing user tag",
+        }
+    ]
+    pricing = {
+        "s1": {"provider": "nous", "input_per_m": 0.0, "output_per_m": 0.0},
+    }
+
+    with pytest.raises(ValueError, match="requested live model 's1' is skipped: admission-failed"):
+        cli._live_nous_candidates(models, pricing, rows, requested_model="s1")
+
+
+def test_estimate_request_cost_includes_system_prompt():
+    req = cli.curiosity.curiosity_request(
+        query_id="mt1_cost",
+        model_id="nous-cheap",
+        place={"name": "A", "summary": "B", "tags": ["c"]},
+        max_tokens=16,
+    )
+
+    cost = cli._estimate_request_cost(
+        [req],
+        {"provider": "nous", "input_per_m": 1.0, "output_per_m": 0.0},
+        model="nous-cheap",
+    )
+
+    assert cost == pytest.approx(cli.costmodel.count_request_tokens(req) / 1_000_000)
+    assert cost > cli.costmodel.count_tokens(req.messages[0].content) / 1_000_000
+
+
+def test_live_nous_candidates_estimate_includes_injection_probe_outputs():
+    rows = [
+        cli.golden.GoldenRow(
+            place_id="mt1_00000000000000000000000000",
+            area="kl",
+            name="A",
+            lat=0.0,
+            lon=0.0,
+            category="c",
+            tier=1,
+            score=0.0,
+            signals={"article": 0.1},
+            label="yes",
+            data_version="v1",
+        )
+    ]
+    probe = cli.bakeoff.InjectionProbe(
+        place_id="probe_1",
+        origin_place_id="mt1_00000000000000000000000000",
+        family="inflation",
+        direction="inflate",
+        field="summary",
+        honest=0.5,
+        honest_percentile=0.5,
+        place={"name": "Probe", "summary": "B", "tags": ["c"]},
+    )
+    models = [{"id": "s2", "provider": "nous", "api_model_id": "s2-api", "max_tokens": 16}]
+    pricing = {"s2": {"provider": "nous", "input_per_m": 0.0, "output_per_m": 1.0}}
+
+    candidates = cli._live_nous_candidates(models, pricing, rows, requested_model=None, injection_fixture=(probe,))
+
+    assert candidates[0][0] == pytest.approx(32 / 1_000_000)
 
 
 def test_cli_llm_live_bakeoff_ledgers_spend_before_shutdown_failure(tmp_path, capsys, monkeypatch):
@@ -2165,7 +2519,7 @@ def test_cli_llm_live_bakeoff_ledgers_spend_before_shutdown_failure(tmp_path, ca
 
     out = capsys.readouterr().out
     assert rc == 1
-    assert "error\tshutdown failed" in out
+    assert "error\tprovider shutdown failed: 'shutdown failed'" in out
     assert "ledger_total_usd\t0.00001000" in out
     ledger = json.loads((tmp_path / "live-cost-ledger.json").read_text())
     assert ledger["derived_usd"] == pytest.approx(0.00001)
@@ -2218,7 +2572,7 @@ def test_cli_llm_live_bakeoff_cache_write_failure_is_run_fatal(tmp_path, capsys,
             pass
 
         async def acomplete_batch(self, reqs):
-            attempted.append(reqs[0].model_id)
+            attempted.append(reqs[0].provider_model_id or reqs[0].model_id)
             return [
                 ProviderResponse(
                     text='{"curiosity": 0.9}',
@@ -2267,7 +2621,7 @@ def test_cli_llm_live_bakeoff_cache_write_failure_is_run_fatal(tmp_path, capsys,
     assert "llm bakeoff error: cache write failed" in err
 
 
-def test_cli_llm_live_bakeoff_shuts_down_provider_when_batch_raises(tmp_path, monkeypatch):
+def test_cli_llm_live_bakeoff_shuts_down_provider_when_batch_raises(tmp_path, capsys, monkeypatch):
     from mt_pipeline.llm.providers import nous
 
     labeled = tmp_path / "golden.tsv"
@@ -2290,6 +2644,7 @@ def test_cli_llm_live_bakeoff_shuts_down_provider_when_batch_raises(tmp_path, mo
     pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
     torn_down = {"value": False}
     attempted = []
+    tail = "TAIL_SHOULD_NOT_APPEAR"
 
     class RaisingNousProvider:
         def __init__(self, **_kwargs):
@@ -2297,7 +2652,7 @@ def test_cli_llm_live_bakeoff_shuts_down_provider_when_batch_raises(tmp_path, mo
 
         async def acomplete_batch(self, reqs):
             attempted.extend(reqs)
-            raise RuntimeError("network failed")
+            raise RuntimeError("network failed " + ("x" * 400) + tail)
 
         async def shutdown(self):
             torn_down["value"] = True
@@ -2327,12 +2682,15 @@ def test_cli_llm_live_bakeoff_shuts_down_provider_when_batch_raises(tmp_path, mo
     )
 
     assert rc == 1
+    out = capsys.readouterr().out
+    assert "error\tprovider request failed: 'network failed " in out
+    assert tail not in out
     assert torn_down["value"] is True
     ledger = json.loads((tmp_path / "live-cost-ledger.json").read_text())
     expected = cli._estimate_request_cost(
         attempted,
         {"provider": "nous", "input_per_m": 0.15, "output_per_m": 0.60},
-        model_id="nous-cheap",
+        model="nous-cheap",
     )
     assert len(attempted) == 1 + len(cli.bakeoff.INJECTION_PROBES)
     assert ledger["derived_usd"] == pytest.approx(expected)
@@ -2412,7 +2770,7 @@ def test_cli_llm_live_bakeoff_charges_full_estimate_on_batch_size_mismatch(tmp_p
     expected = cli._estimate_request_cost(
         attempted,
         {"provider": "nous", "input_per_m": 0.15, "output_per_m": 0.60},
-        model_id="nous-cheap",
+        model="nous-cheap",
     )
     ledger = json.loads((tmp_path / "live-cost-ledger.json").read_text())
     assert len(attempted) == 1 + len(cli.bakeoff.INJECTION_PROBES)
@@ -2420,7 +2778,7 @@ def test_cli_llm_live_bakeoff_charges_full_estimate_on_batch_size_mismatch(tmp_p
     assert ledger["runs"] == 1
 
 
-def test_cli_llm_live_bakeoff_shuts_down_provider_when_response_parse_fails(tmp_path, monkeypatch):
+def test_cli_llm_live_bakeoff_shuts_down_provider_when_response_parse_fails(tmp_path, capsys, monkeypatch):
     from mt_pipeline.llm.models import ProviderResponse
     from mt_pipeline.llm.providers import nous
 
@@ -2443,6 +2801,8 @@ def test_cli_llm_live_bakeoff_shuts_down_provider_when_response_parse_fails(tmp_
     pricing = tmp_path / "pricing.json"
     pricing.write_text('{"models":{"nous-cheap":{"provider":"nous","input_per_m":0.15,"output_per_m":0.60}}}')
     torn_down = {"value": False}
+    tail = "TAIL_SHOULD_NOT_APPEAR"
+    bad_text = '{"curiosity": true, "padding":"' + ("x" * 400) + tail + '"}'
 
     class BadJsonNousProvider:
         def __init__(self, **_kwargs):
@@ -2451,7 +2811,7 @@ def test_cli_llm_live_bakeoff_shuts_down_provider_when_response_parse_fails(tmp_
         async def acomplete_batch(self, _reqs):
             return [
                 ProviderResponse(
-                    text='{"curiosity": true}',
+                    text=bad_text,
                     model_fingerprint="nous-cheap",
                     input_tokens=10,
                     output_tokens=2,
@@ -2490,6 +2850,10 @@ def test_cli_llm_live_bakeoff_shuts_down_provider_when_response_parse_fails(tmp_
     )
 
     assert rc == 1
+    out = capsys.readouterr().out
+    assert "error\tinvalid curiosity result: kind=place place_id=mt1_00000000000000000000000000 response=" in out
+    assert "'{\"curiosity\": true" in out
+    assert tail not in out
     assert torn_down["value"] is True
     ledger = json.loads((tmp_path / "live-cost-ledger.json").read_text())
     assert ledger["derived_usd"] == pytest.approx(0.00001)

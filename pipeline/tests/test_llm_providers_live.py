@@ -69,6 +69,26 @@ def test_nous_request_kwargs_include_per_model_cap_and_reasoning():
     assert kwargs["extra_body"] == {"reasoning": {"enabled": True, "effort": "low", "exclude": True}}
 
 
+def test_nous_request_kwargs_uses_provider_model_id_when_present():
+    from mt_pipeline.llm.curiosity import curiosity_request
+    from mt_pipeline.llm.providers.nous import NousProvider
+
+    provider = NousProvider(api_key="sk-secret-123", concurrency=1)
+    req = curiosity_request(
+        query_id="mt1_shape",
+        model_id="nous-nex-n2-mini-cap256",
+        provider_model_id="nex-agi/nex-n2-mini",
+        place={"name": "Old Windmill", "summary": "a mill", "tags": ["heritage"]},
+        max_tokens=256,
+    )
+
+    kwargs = provider._chat_completion_kwargs(req)
+
+    assert req.model_id == "nous-nex-n2-mini-cap256"
+    assert kwargs["model"] == "nex-agi/nex-n2-mini"
+    assert kwargs["max_tokens"] == 256
+
+
 def test_nous_request_kwargs_merge_provider_tags_with_reasoning():
     from mt_pipeline.llm.models import LlmRequest, Message
     from mt_pipeline.llm.providers.nous import NousProvider
@@ -173,7 +193,7 @@ def test_nous_live_smoke(request):
     try:
         req = curiosity_request(
             query_id="mt1_smoke",
-            model_id="tencent/hy3:free",
+            model_id="meta-llama/llama-3.1-8b-instruct",
             place={"name": "Old Windmill", "summary": "a mill", "tags": ["heritage"]},
         )
         resp = asyncio.run(provider.acomplete(req))
