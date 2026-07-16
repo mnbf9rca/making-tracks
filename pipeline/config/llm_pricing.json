@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "currency": "USD",
+  "models": {
+    "fake-curiosity-v1": {
+      "provider": "fake",
+      "input_per_m": 0.0,
+      "output_per_m": 0.0
+    },
+    "nous-hermes-3-llama-3.1-8b": {
+      "provider": "nous",
+      "input_per_m": 0.15,
+      "output_per_m": 0.60
+    },
+    "modal-meta-llama-3.1-8b": {
+      "provider": "modal",
+      "input_per_m": 0.0,
+      "output_per_m": 0.0,
+      "gpu_second": 0.000253,
+      "gpu_seconds_per_1k": 120.0
+    }
+  }
+}
