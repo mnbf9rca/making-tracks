@@ -174,16 +174,18 @@ def _joined_places(conn, region: str) -> list[dict[str, Any]]:
 def _json_list(value: str, *, region: str, place_id: str) -> list[str]:
     try:
         data = json.loads(value)
-    except (ValueError, RecursionError) as exc:
+    except (ValueError, RecursionError):
         _LOGGER.warning(
-            "malformed member_refs_json region=%s place_id=%s",
+            "malformed member_refs_json (parse error) region=%s place_id=%s",
             region,
             place_id,
+            exc_info=True,
         )
         return []
     if not isinstance(data, list) or not all(isinstance(item, str) for item in data):
         _LOGGER.warning(
-            "malformed member_refs_json region=%s place_id=%s",
+            "malformed member_refs_json (not list[str], got %s) region=%s place_id=%s",
+            type(data).__name__,
             region,
             place_id,
         )
