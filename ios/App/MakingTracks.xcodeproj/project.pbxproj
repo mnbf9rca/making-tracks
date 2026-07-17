@@ -10,7 +10,6 @@
 		0297C33B171577FE15A6AC32 /* MakingTracksCoreLoopUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36873FF1289D2248F06F618 /* MakingTracksCoreLoopUITests.swift */; };
 		03DDC05F05147127FAC7FFA5 /* MapScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 344D7C929CEBD0057FA01F8C /* MapScreen.swift */; };
 		0690E2BBD5D936C280A81F6C /* WorldBasemap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E19C34E0B445601AD8B5A35 /* WorldBasemap.swift */; };
-		0E1E3951713038ABA20F8B3A /* LocationPermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A94DBAB475FA82D0A12D76F /* LocationPermission.swift */; };
 		1E88D6E14A988414962AB763 /* MapLibre in Frameworks */ = {isa = PBXBuildFile; productRef = CBADA08F3DCFE4D9F14B6043 /* MapLibre */; };
 		59C7C078ADD59064266740CA /* MakingTracksData in Frameworks */ = {isa = PBXBuildFile; productRef = 52E446EDADC05A0EB10CB788 /* MakingTracksData */; };
 		860B88DB4E847DB9B041149A /* MakingTracksMapStyle in Frameworks */ = {isa = PBXBuildFile; productRef = 1340500250A212BB86356FB9 /* MakingTracksMapStyle */; };
@@ -44,7 +43,6 @@
 		03EE350163E06CF06F16086F /* ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ios; path = ..; sourceTree = SOURCE_ROOT; };
 		1CB5F787D9335E6F6658C952 /* OSSCredits.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = OSSCredits.json; sourceTree = "<group>"; };
 		1E19C34E0B445601AD8B5A35 /* WorldBasemap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorldBasemap.swift; sourceTree = "<group>"; };
-		2A94DBAB475FA82D0A12D76F /* LocationPermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationPermission.swift; sourceTree = "<group>"; };
 		344D7C929CEBD0057FA01F8C /* MapScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapScreen.swift; sourceTree = "<group>"; };
 		549B3C04D699BA9D8D06A6D7 /* MakingTracksTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MakingTracksTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5609B54FBEF0F125C5EF2C90 /* MakingTracksUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MakingTracksUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -104,7 +102,6 @@
 		C07738BF062CB3DA2EC726F0 /* Map */ = {
 			isa = PBXGroup;
 			children = (
-				2A94DBAB475FA82D0A12D76F /* LocationPermission.swift */,
 				344D7C929CEBD0057FA01F8C /* MapScreen.swift */,
 				7DE03FCA363155B0C5A81CE1 /* MLNMapViewRepresentable.swift */,
 				1E19C34E0B445601AD8B5A35 /* WorldBasemap.swift */,
@@ -364,7 +361,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0E1E3951713038ABA20F8B3A /* LocationPermission.swift in Sources */,
 				AF3142C210A9AC6EE4DBDB9C /* LocationPermission.swift in Sources */,
 				D723B8F7C4E54215817261EA /* MLNMapViewRepresentable.swift in Sources */,
 				E205428A35137AEC62A677DE /* MakingTracksApp.swift in Sources */,

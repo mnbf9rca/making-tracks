@@ -82,6 +82,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
+        attachScreenshot(named: "locate-me-chrome")
+
         let osmAttribution = app.buttons["map.openstreetmap-attribution"]
         XCTAssertTrue(osmAttribution.waitForExistence(timeout: 5))
         osmAttribution.tap()
@@ -146,10 +148,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     private func attachScreenshot(named name: String) {
-        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+        exportScreenshot(screenshot, named: name)
+    }
+
+    private func exportScreenshot(_ screenshot: XCUIScreenshot, named name: String) {
+        guard let exportName = screenshotExportNames[name] else { return }
+        let directory = URL(fileURLWithPath: "/private/tmp/making-tracks-artifacts", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent(exportName).appendingPathExtension("png")
+        try? screenshot.pngRepresentation.write(to: fileURL)
     }
 
     @discardableResult
@@ -180,6 +192,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         return commit
     }
 
+    private let screenshotExportNames: [String: String] = [
+        "card-open": "attribution-card-sheet",
+        "locate-me-chrome": "locate-me-chrome",
+        "map-location-off": "denied-settings",
+        "credits-open-source-acknowledgements": "credits",
+    ]
 }
 
 private extension XCUIElementQuery {
