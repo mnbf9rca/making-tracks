@@ -6,7 +6,8 @@ final class PaperStyleTests: XCTestCase {
         let style = paperBasemapStyle(pmtilesURL: "pmtiles://https://tiles.making-tracks.app/malaysia/20260716T155409Z/malaysia.pmtiles")
         guard case let .object(root) = style else { return XCTFail("root not object") }
         XCTAssertEqual(root["version"], .double(8))
-        XCTAssertNil(root["glyphs"])
+        XCTAssertEqual(paperBasemapGlyphsURL, "https://tiles.making-tracks.app/global/fonts/{fontstack}/{range}.pbf")
+        XCTAssertEqual(root["glyphs"], .string(paperBasemapGlyphsURL))
         guard case let .object(sources) = root["sources"],
               case let .object(base) = sources["basemap"]
         else { return XCTFail("no basemap source") }
@@ -29,12 +30,15 @@ final class PaperStyleTests: XCTestCase {
         XCTAssertEqual(paintValue("fill-color", in: layer(id: "water", in: layers)), .string(MapTheme.definedPaper.water))
         XCTAssertEqual(paintValue("line-color", in: layer(id: "roads", in: layers)), .string(MapTheme.definedPaper.roads))
         XCTAssertEqual(paintValue("line-color", in: layer(id: "boundaries", in: layers)), .string(MapTheme.definedPaper.boundaries))
+        XCTAssertEqual(paintValue("text-color", in: layer(id: "places-label", in: layers)), .string(MapTheme.definedPaper.labels))
+        XCTAssertEqual(paintValue("text-halo-color", in: layer(id: "places-label", in: layers)), .string(MapTheme.definedPaper.labelHalo))
         XCTAssertEqual(layer(id: "earth", in: layers)?["source-layer"], .string("earth"))
         XCTAssertEqual(layer(id: "parks", in: layers)?["source-layer"], .string("landuse"))
         XCTAssertEqual(layer(id: "water", in: layers)?["source-layer"], .string("water"))
         XCTAssertEqual(layer(id: "roads", in: layers)?["source-layer"], .string("roads"))
         XCTAssertEqual(layer(id: "boundaries", in: layers)?["source-layer"], .string("boundaries"))
-        XCTAssertNil(layer(id: "places-label", in: layers))
+        XCTAssertEqual(layer(id: "places-label", in: layers)?["source-layer"], .string("places"))
+        XCTAssertEqual(layoutValue("text-font", in: layer(id: "places-label", in: layers)), .array([.string("Noto Sans Regular")]))
         XCTAssertNoThrow(try style.jsonString())
     }
 
@@ -43,6 +47,7 @@ final class PaperStyleTests: XCTestCase {
         guard case let .object(root) = style,
               case let .array(layers) = root["layers"]
         else { return XCTFail("no layers") }
+        XCTAssertNil(root["glyphs"])
         XCTAssertEqual(layerIDs(in: layers), ["background", "earth", "water", "roads", "boundaries"])
         XCTAssertEqual(paintValue("background-color", in: layer(id: "background", in: layers)), .string(MapTheme.snow.background))
         XCTAssertEqual(paintValue("fill-color", in: layer(id: "earth", in: layers)), .string(MapTheme.snow.land))
@@ -64,7 +69,11 @@ final class PaperStyleTests: XCTestCase {
                   case let .array(layers) = root["layers"]
             else { return XCTFail("invalid root for theme \(theme.id)") }
 
-            XCTAssertNil(root["glyphs"], theme.id)
+            if theme.showsLabels {
+                XCTAssertEqual(root["glyphs"], .string(paperBasemapGlyphsURL), theme.id)
+            } else {
+                XCTAssertNil(root["glyphs"], theme.id)
+            }
             XCTAssertEqual(base["type"], .string("vector"), theme.id)
             XCTAssertEqual(base["url"], .string("pmtiles://https://tiles.making-tracks.app/malaysia/current.pmtiles"), theme.id)
 
@@ -73,6 +82,9 @@ final class PaperStyleTests: XCTestCase {
                 expectedLayerIDs.append("parks")
             }
             expectedLayerIDs += ["water", "roads", "boundaries"]
+            if theme.showsLabels {
+                expectedLayerIDs.append("places-label")
+            }
             XCTAssertEqual(layerIDs(in: layers), expectedLayerIDs, theme.id)
 
             XCTAssertEqual(layer(id: "background", in: layers)?["type"], .string("background"), theme.id)
@@ -98,14 +110,29 @@ final class PaperStyleTests: XCTestCase {
                 XCTAssertNil(layer(id: "parks", in: layers), theme.id)
             }
 
-            XCTAssertNil(layer(id: "places-label", in: layers), theme.id)
+            if theme.showsLabels {
+                XCTAssertEqual(layer(id: "places-label", in: layers)?["type"], .string("symbol"), theme.id)
+                XCTAssertEqual(layer(id: "places-label", in: layers)?["source"], .string("basemap"), theme.id)
+                XCTAssertEqual(layer(id: "places-label", in: layers)?["source-layer"], .string("places"), theme.id)
+                XCTAssertEqual(layer(id: "places-label", in: layers)?["minzoom"], .double(8), theme.id)
+                XCTAssertEqual(layoutValue("text-field", in: layer(id: "places-label", in: layers)), expectedLabelTextField, theme.id)
+                XCTAssertEqual(layoutValue("text-font", in: layer(id: "places-label", in: layers)), .array([.string("Noto Sans Regular")]), theme.id)
+                XCTAssertEqual(layoutValue("text-size", in: layer(id: "places-label", in: layers)), expectedLabelTextSize, theme.id)
+                XCTAssertEqual(layoutValue("text-allow-overlap", in: layer(id: "places-label", in: layers)), .bool(false), theme.id)
+                XCTAssertEqual(layoutValue("text-ignore-placement", in: layer(id: "places-label", in: layers)), .bool(false), theme.id)
+                XCTAssertEqual(paintValue("text-color", in: layer(id: "places-label", in: layers)), .string(theme.labels), theme.id)
+                XCTAssertEqual(paintValue("text-halo-color", in: layer(id: "places-label", in: layers)), .string(theme.labelHalo), theme.id)
+                XCTAssertEqual(paintValue("text-halo-width", in: layer(id: "places-label", in: layers)), .double(1.25), theme.id)
+            } else {
+                XCTAssertNil(layer(id: "places-label", in: layers), theme.id)
+            }
             XCTAssertNoThrow(try style.jsonString(), theme.id)
         }
     }
 
     func testEveryPaletteColourIsMutedAndPinIsSaturated() {
         for theme in MapTheme.allCandidates {
-            for hex in [theme.background, theme.land, theme.parks, theme.water, theme.roads, theme.boundaries] {
+            for hex in [theme.background, theme.land, theme.parks, theme.water, theme.roads, theme.boundaries, theme.labels, theme.labelHalo] {
                 XCTAssertLessThan(saturation(hex: hex), MUTED_MAX, "basemap colour \(hex) is not muted in theme \(theme.id)")
             }
         }
@@ -139,6 +166,11 @@ final class PaperStyleTests: XCTestCase {
         return paint[key]
     }
 
+    private func layoutValue(_ key: String, in layer: [String: JSONValue]?) -> JSONValue? {
+        guard case let .object(layout)? = layer?["layout"] else { return nil }
+        return layout[key]
+    }
+
     private var expectedParksFilter: JSONValue {
         .array([
             .string("in"),
@@ -152,6 +184,24 @@ final class PaperStyleTests: XCTestCase {
                 .string("garden"),
                 .string("cemetery"),
             ])]),
+        ])
+    }
+
+    private var expectedLabelTextField: JSONValue {
+        .array([
+            .string("coalesce"),
+            .array([.string("get"), .string("name:en")]),
+            .array([.string("get"), .string("name")]),
+        ])
+    }
+
+    private var expectedLabelTextSize: JSONValue {
+        .array([
+            .string("interpolate"),
+            .array([.string("linear")]),
+            .array([.string("zoom")]),
+            .double(8), .double(10),
+            .double(14), .double(14),
         ])
     }
 }

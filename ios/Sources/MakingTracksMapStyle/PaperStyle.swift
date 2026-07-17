@@ -1,4 +1,5 @@
 public let MUTED_MAX = 0.25
+public let paperBasemapGlyphsURL = "https://tiles.making-tracks.app/global/fonts/{fontstack}/{range}.pbf"
 
 public func saturation(hex: String) -> Double {
     var string = hex
@@ -27,9 +28,12 @@ public struct MapTheme: Sendable {
     public var water: String
     public var roads: String
     public var boundaries: String
+    public var labels: String
+    public var labelHalo: String
     public var roadWidth: Double
     public var boundaryWidth: Double
     public var showsParks: Bool
+    public var showsLabels: Bool
 
     public init(
         id: String,
@@ -40,9 +44,12 @@ public struct MapTheme: Sendable {
         water: String,
         roads: String,
         boundaries: String,
+        labels: String,
+        labelHalo: String,
         roadWidth: Double,
         boundaryWidth: Double,
-        showsParks: Bool
+        showsParks: Bool,
+        showsLabels: Bool
     ) {
         self.id = id
         self.displayName = displayName
@@ -52,9 +59,12 @@ public struct MapTheme: Sendable {
         self.water = water
         self.roads = roads
         self.boundaries = boundaries
+        self.labels = labels
+        self.labelHalo = labelHalo
         self.roadWidth = roadWidth
         self.boundaryWidth = boundaryWidth
         self.showsParks = showsParks
+        self.showsLabels = showsLabels
     }
 
     public static let snow = MapTheme(
@@ -66,9 +76,12 @@ public struct MapTheme: Sendable {
         water: "#DCE3E5",
         roads: "#E3DED2",
         boundaries: "#CDC7B8",
+        labels: "#676157",
+        labelHalo: "#F4F1EA",
         roadWidth: 0.6,
         boundaryWidth: 0.5,
-        showsParks: false
+        showsParks: false,
+        showsLabels: false
     )
 
     public static let definedPaper = MapTheme(
@@ -80,9 +93,12 @@ public struct MapTheme: Sendable {
         water: "#CADCE2",
         roads: "#CEC3AD",
         boundaries: "#AFA48F",
+        labels: "#514D45",
+        labelHalo: "#F3EFE5",
         roadWidth: 0.9,
         boundaryWidth: 0.7,
-        showsParks: true
+        showsParks: true,
+        showsLabels: true
     )
 
     public static let streetContrast = MapTheme(
@@ -94,9 +110,12 @@ public struct MapTheme: Sendable {
         water: "#C3D9E3",
         roads: "#C4B7A0",
         boundaries: "#9E9482",
+        labels: "#4A473F",
+        labelHalo: "#F2EEE6",
         roadWidth: 1.15,
         boundaryWidth: 0.8,
-        showsParks: true
+        showsParks: true,
+        showsLabels: true
     )
 
     public static let verdantKL = MapTheme(
@@ -108,9 +127,12 @@ public struct MapTheme: Sendable {
         water: "#BCD6DE",
         roads: "#D0C0A5",
         boundaries: "#A79A82",
+        labels: "#47443B",
+        labelHalo: "#F1EDDF",
         roadWidth: 0.95,
         boundaryWidth: 0.75,
-        showsParks: true
+        showsParks: true,
+        showsLabels: true
     )
 
     public static let allCandidates: [MapTheme] = [.snow, .definedPaper, .streetContrast, .verdantKL]
@@ -125,7 +147,9 @@ private func layer(
     _ type: String,
     source: String? = nil,
     sourceLayer: String? = nil,
+    minzoom: Double? = nil,
     filter: JSONValue? = nil,
+    layout: [String: JSONValue] = [:],
     paint: [String: JSONValue]
 ) -> JSONValue {
     var object: [String: JSONValue] = [
@@ -133,11 +157,17 @@ private func layer(
         "type": .string(type),
         "paint": .object(paint),
     ]
+    if !layout.isEmpty {
+        object["layout"] = .object(layout)
+    }
     if let source {
         object["source"] = .string(source)
     }
     if let sourceLayer {
         object["source-layer"] = .string(sourceLayer)
+    }
+    if let minzoom {
+        object["minzoom"] = .double(minzoom)
     }
     if let filter {
         object["filter"] = filter
@@ -179,7 +209,31 @@ public func paperBasemapStyle(pmtilesURL: String, theme: MapTheme = .definedPape
         ]),
     ])
 
-    return .object([
+    if theme.showsLabels {
+        layers.append(layer("places-label", "symbol", source: "basemap", sourceLayer: "places", minzoom: 8, layout: [
+            "text-field": .array([
+                .string("coalesce"),
+                .array([.string("get"), .string("name:en")]),
+                .array([.string("get"), .string("name")]),
+            ]),
+            "text-font": .array([.string("Noto Sans Regular")]),
+            "text-size": .array([
+                .string("interpolate"),
+                .array([.string("linear")]),
+                .array([.string("zoom")]),
+                .double(8), .double(10),
+                .double(14), .double(14),
+            ]),
+            "text-allow-overlap": .bool(false),
+            "text-ignore-placement": .bool(false),
+        ], paint: [
+            "text-color": .string(theme.labels),
+            "text-halo-color": .string(theme.labelHalo),
+            "text-halo-width": .double(1.25),
+        ]))
+    }
+
+    var root: [String: JSONValue] = [
         "version": .double(8),
         "sources": .object([
             "basemap": .object([
@@ -188,5 +242,9 @@ public func paperBasemapStyle(pmtilesURL: String, theme: MapTheme = .definedPape
             ]),
         ]),
         "layers": .array(layers),
-    ])
+    ]
+    if theme.showsLabels {
+        root["glyphs"] = .string(paperBasemapGlyphsURL)
+    }
+    return .object(root)
 }
