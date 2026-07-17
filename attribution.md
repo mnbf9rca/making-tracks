@@ -18,6 +18,7 @@ App OSS acknowledgements are generated from `contracts/oss-credits.json`. The ge
 | historic_england | OGL-UK-3.0 | © Historic England 2026. Contains Historic England data licensed under the Open Government Licence v3.0. Contains Ordnance Survey data © Crown copyright and database right 2026. |
 | open_plaques | PDDL-1.0 | Plaque data from Open Plaques (openplaques.org), released under the Public Domain Dedication and License 1.0. |
 | osm | ODbL-1.0 | Map/place data © OpenStreetMap contributors, licensed under ODbL. |
+| wikipedia | CC-BY-SA-4.0 | Wikipedia content from Wikipedia contributors, licensed under CC BY-SA 4.0; additional terms may apply. |
 <!-- END GENERATED DATA SOURCES -->
 
 ### Additional Source Notes
