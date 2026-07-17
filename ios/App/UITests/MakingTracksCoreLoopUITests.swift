@@ -63,6 +63,36 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 2))
     }
 
+    func testHideRemovesFixturePinFromMapSource() {
+        let app = launch(reset: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        openFixtureCard(in: map, app: app)
+        app.buttons["place-card.close"].tap()
+        app.buttons["debug.hide-fixture"].tap()
+
+        tapFixturePin(in: map)
+        XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
+
+        openSecondFixtureCard(in: map, app: app)
+    }
+
+    func testUnhideRestoresFixturePinToMapSourceBeforeCardDismissal() {
+        let app = launch(reset: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        app.buttons["debug.hide-fixture"].tap()
+        tapFixturePin(in: map)
+        XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
+
+        app.buttons["debug.unhide-fixture"].tap()
+        openFixtureCard(in: map, app: app)
+    }
+
     func testCreditsShowBuildCommitHash() throws {
         let app = launch(reset: true)
 
@@ -180,6 +210,31 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     private func tapFixturePin(in map: XCUIElement) {
         map.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
+
+    private func openFixtureCard(in map: XCUIElement, app: XCUIApplication) {
+        openCard(named: "Ghost Sign", in: map, app: app, tap: tapFixturePin)
+    }
+
+    private func openSecondFixtureCard(in map: XCUIElement, app: XCUIApplication) {
+        openCard(named: "Art Deco Cinema", in: map, app: app, tap: tapSecondFixturePin)
+    }
+
+    private func openCard(
+        named name: String,
+        in map: XCUIElement,
+        app: XCUIApplication,
+        tap: (XCUIElement) -> Void
+    ) {
+        let title = app.staticTexts[name]
+        for _ in 0..<5 {
+            tap(map)
+            if title.waitForExistence(timeout: 1) {
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        XCTAssertTrue(title.waitForExistence(timeout: 1))
     }
 
     private func tapSecondFixturePin(in map: XCUIElement) {

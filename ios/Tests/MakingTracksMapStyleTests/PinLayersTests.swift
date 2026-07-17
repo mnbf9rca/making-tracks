@@ -96,6 +96,7 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(props["tier"], .double(2))
         XCTAssertEqual(props["visit"], .string("loved"))
         XCTAssertEqual(props["saved"], .bool(true))
+        XCTAssertEqual(props["hidden"], .bool(false))
 
         let collection = FeatureEncoding.featureCollection([feature])
         guard case let .object(root) = collection,

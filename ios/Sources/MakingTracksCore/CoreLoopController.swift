@@ -38,6 +38,11 @@ public final class CoreLoopController: Sendable {
         emit(placeID)
     }
 
+    public func setHidden(_ place: PlaceRef, _ hidden: Bool) throws {
+        try database.setHidden(place, hidden)
+        emit(place.placeID)
+    }
+
     private func emit(_ placeID: String) {
         continuation.yield([placeID])
     }

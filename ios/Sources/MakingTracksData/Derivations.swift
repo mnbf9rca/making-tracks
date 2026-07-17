@@ -25,6 +25,25 @@ extension AppDatabase {
         }
     }
 
+    public func hiddenPlaceIDs() throws -> Set<String> {
+        try dbQueue.read { db in
+            try Set(String.fetchAll(db, sql: "SELECT place_id FROM hidden_places"))
+        }
+    }
+
+    public func hidden(among placeIDs: [String]) throws -> Set<String> {
+        guard !placeIDs.isEmpty else { return [] }
+        return try dbQueue.read { db in
+            let sql = """
+                SELECT place_id FROM hidden_places
+                WHERE place_id IN (\(databaseQuestionMarks(count: placeIDs.count)))
+                """
+            return try Set(
+                String.fetchAll(db, sql: sql, arguments: StatementArguments(placeIDs))
+            )
+        }
+    }
+
     public func visitCount(placeID: String) throws -> Int {
         try dbQueue.read { db in
             try Int.fetchOne(
@@ -66,6 +85,13 @@ extension AppDatabase {
                     arguments: StatementArguments(placeIDs)
                 )
             )
+            let hidden = try Set(
+                String.fetchAll(
+                    db,
+                    sql: "SELECT place_id FROM hidden_places WHERE place_id IN (\(qmarks))",
+                    arguments: StatementArguments(placeIDs)
+                )
+            )
             let visitRows = try Row.fetchAll(
                 db,
                 sql: """
@@ -88,7 +114,8 @@ extension AppDatabase {
             for placeID in placeIDs {
                 out[placeID] = PinState(
                     saved: saved.contains(placeID),
-                    visit: visit[placeID] ?? .none
+                    visit: visit[placeID] ?? .none,
+                    hidden: hidden.contains(placeID)
                 )
             }
             return out

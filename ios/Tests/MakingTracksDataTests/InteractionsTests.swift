@@ -169,6 +169,44 @@ final class InteractionsTests: XCTestCase {
         XCTAssertNotNil(try db.snapshot(for: "p_unvisit"))
     }
 
+    func testSetHiddenIsIdempotentReversibleAndSnapshotsOnFirstInteraction() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_hidden")
+
+        try db.setHidden(place, true)
+        try db.setHidden(place, true)
+
+        XCTAssertEqual(try db.hiddenPlaceIDs(), ["p_hidden"])
+        XCTAssertEqual(try db.viewportState(["p_hidden"])["p_hidden"], PinState(saved: false, visit: .none, hidden: true))
+        XCTAssertEqual(try db.snapshot(for: "p_hidden")?.name, "Big Ben")
+
+        try db.setHidden(place, false)
+        try db.unhide(placeID: "p_hidden")
+
+        XCTAssertEqual(try db.hiddenPlaceIDs(), [])
+        XCTAssertEqual(try db.viewportState(["p_hidden"])["p_hidden"], PinState(saved: false, visit: .none, hidden: false))
+    }
+
+    func testHiddenIsOrthogonalToSavedAndVisitState() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_hidden_loved")
+        try db.addToList(place, listID: try db.wantToGoListID())
+        _ = try db.recordVisit(place, verdict: .loved)
+        try db.setHidden(place, true)
+
+        XCTAssertEqual(
+            try db.viewportState([place.placeID])[place.placeID],
+            PinState(saved: true, visit: .loved, hidden: true)
+        )
+
+        try db.setHidden(place, false)
+
+        XCTAssertEqual(
+            try db.viewportState([place.placeID])[place.placeID],
+            PinState(saved: true, visit: .loved, hidden: false)
+        )
+    }
+
     func testValidatingInitRejectsOutOfRangeAndOversize() throws {
         XCTAssertThrowsError(try PlaceRef(
             placeID: "p",

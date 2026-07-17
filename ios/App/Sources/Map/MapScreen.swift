@@ -5,6 +5,7 @@ import ImageIO
 @preconcurrency import MapLibre
 import MakingTracksCore
 import MakingTracksData
+import MakingTracksMapStyle
 import MakingTracksTiles
 
 struct ViewportSeed: Sendable {
@@ -62,6 +63,7 @@ struct MapScreen: View {
     @State private var loadState: TileLoadState = .unavailable
     @State private var viewportRequestID = 0
     @State private var stateEpoch = 0
+    @State private var currentViewport: ViewportSeed?
     @State private var fixtureVisitCount = 0
     @State private var userTrackingMode: MLNUserTrackingMode = .none
     @State private var pendingLocateMeActivation = false
@@ -101,6 +103,7 @@ struct MapScreen: View {
                 userTrackingMode: userTrackingMode,
                 onCameraIdle: { bbox, zoom in
                     Task { @MainActor in
+                        currentViewport = ViewportSeed(bbox: bbox, zoom: zoom)
                         scheduleViewportRefresh(
                             bbox: bbox,
                             zoom: zoom,
@@ -203,6 +206,23 @@ struct MapScreen: View {
                     .padding(.vertical, 5)
                     .background(.ultraThinMaterial, in: Capsule())
                     .accessibilityIdentifier("tracks.visit-count.\(Self.primaryFixturePlaceID)")
+#if DEBUG
+                HStack(spacing: 6) {
+                    Button("Hide fixture") {
+                        Task { await setPrimaryFixtureHidden(true) }
+                    }
+                    .font(.caption2)
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("debug.hide-fixture")
+
+                    Button("Unhide fixture") {
+                        Task { await setPrimaryFixtureHidden(false) }
+                    }
+                    .font(.caption2)
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("debug.unhide-fixture")
+                }
+#endif
             }
 
 #if DEBUG
@@ -257,6 +277,7 @@ struct MapScreen: View {
             LocationSettingsButton {
                 openLocationSettings()
             }
+            .frame(width: 68, height: 16)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -309,35 +330,26 @@ struct MapScreen: View {
               let coordinate = locationPermission.currentCoordinate
         else { return nil }
 
-        let userLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        return features
-            .filter { place, pinState in
-                pinState.visit == .none && !suppressedNearbyPromptPlaceIDs.contains(place.id)
-            }
-            .compactMap { (place, _) -> NearbyPromptCandidate? in
-                guard let name = nearbyPromptNames[place.id] else { return nil }
-                let placeLocation = CLLocation(latitude: place.lat, longitude: place.lon)
-                let distance = userLocation.distance(from: placeLocation)
-                guard distance <= Self.nearbyPromptDistanceMeters else { return nil }
-                return NearbyPromptCandidate(
-                    placeID: place.id,
-                    name: name,
-                    distanceMeters: distance
-                )
-            }
-            .sorted { lhs, rhs in
-                if lhs.distanceMeters == rhs.distanceMeters {
-                    return lhs.placeID < rhs.placeID
-                }
-                return lhs.distanceMeters < rhs.distanceMeters
-            }
-            .first
+        guard let candidate = NearbyPromptSelector.candidate(
+            features: features,
+            names: nearbyPromptNames,
+            userLatitude: coordinate.latitude,
+            userLongitude: coordinate.longitude,
+            maxDistanceMeters: Self.nearbyPromptDistanceMeters,
+            suppressedPlaceIDs: suppressedNearbyPromptPlaceIDs,
+            hiddenPlaceIDs: model?.hiddenIDs ?? []
+        ) else { return nil }
+        return NearbyPromptCandidate(
+            placeID: candidate.placeID,
+            name: candidate.name,
+            distanceMeters: candidate.distanceMeters
+        )
     }
 
     @ViewBuilder
     private func nearbyPromptView(for prompt: NearbyPromptCandidate) -> some View {
         HStack(alignment: .center, spacing: 10) {
-            Text("You're near \(prompt.name) — seen it?")
+            Text(verbatim: "You're near \(prompt.name) — seen it?")
                 .font(.caption2)
                 .fontWeight(.semibold)
                 .lineLimit(2)
@@ -451,6 +463,17 @@ struct MapScreen: View {
         }
     }
 
+#if DEBUG
+    @MainActor
+    private func setPrimaryFixtureHidden(_ hidden: Bool) async {
+        do {
+            try await model?.setHidden(placeID: Self.primaryFixturePlaceID, hidden: hidden)
+        } catch {
+            assertionFailure("Failed to persist fixture hidden state: \(error)")
+        }
+    }
+#endif
+
     private func openLocationSettings() {
         guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(settingsURL)
@@ -496,6 +519,7 @@ struct MapScreen: View {
             if capturedStateEpoch == stateEpoch {
                 features = next
                 nearbyPromptNames = nextNearbyPromptNames
+                currentViewport = ViewportSeed(bbox: bbox, zoom: zoom)
             }
             regionPMTilesURL = nextRegionPMTilesURL
             attribution = nextAttribution
@@ -505,6 +529,18 @@ struct MapScreen: View {
 
     private func observeChanges(from model: MapScreenModel) async {
         for await ids in model.changes {
+            if model.consumeHiddenMembershipChange(overlapping: ids) {
+                await MainActor.run { stateEpoch += 1 }
+                let viewport = await MainActor.run { currentViewport ?? startupViewport }
+                await refreshViewport(
+                    bbox: viewport.bbox,
+                    zoom: viewport.zoom,
+                    requestID: await MainActor.run { nextViewportRequestID() },
+                    stateEpoch: await MainActor.run { currentStateEpoch() }
+                )
+                await refreshFixtureVisitCount()
+                continue
+            }
             let states = await model.states(for: ids)
             await MainActor.run {
                 stateEpoch += 1
@@ -899,6 +935,9 @@ private final class MapScreenModel {
     private let coreLoop: CoreLoopController
     private var tileClients: [MapRegion: TileClient] = [:]
     private var selectedRegion: MapRegion = .malaysia
+    private var hiddenPlaceIDs: Set<String>
+    private var hiddenMembershipChangePlaceIDs: Set<String> = []
+    private var showHiddenPlaces = false
 
     var changes: AsyncStream<Set<String>> { coreLoop.changes }
 
@@ -911,6 +950,7 @@ private final class MapScreenModel {
         self.forceTileNetworkOffline = forceTileNetworkOffline
         self.fixturePlaces = Dictionary(uniqueKeysWithValues: fixturePlaces.map { ($0.placeID, $0) })
         coreLoop = CoreLoopController(database: database)
+        hiddenPlaceIDs = try database.hiddenPlaceIDs()
         if fixturePlaces.isEmpty {
             let cacheRoot = try FileManager.default.url(
                 for: .cachesDirectory,
@@ -966,23 +1006,42 @@ private final class MapScreenModel {
         if !fixturePlaces.isEmpty {
             let sortedFixtures = fixturePlaces.values.sorted { $0.placeID < $1.placeID }
             let states = await states(for: Set(sortedFixtures.map(\.placeID)))
-            return sortedFixtures.map { fixturePlace in
+            let next = sortedFixtures.map { fixturePlace in
                 let place = MapPlace(id: fixturePlace.placeID, lat: fixturePlace.lat, lon: fixturePlace.lon, tier: fixturePlace.tier)
                 return (place, states[fixturePlace.placeID] ?? PinState(saved: false, visit: .none))
             }
+            return PinFeatureFilter.discoveryFeatures(next, showHidden: showHiddenPlaces)
         }
         guard let client = await selectClient(for: bbox) else { return [] }
         let places = await client.places(inViewport: bbox, zoom: zoom)
         let ids = places.map(\.id)
         let states = await states(for: Set(ids))
-        return places.map { ($0, states[$0.id] ?? PinState(saved: false, visit: .none)) }
+        let next = places.map { ($0, states[$0.id] ?? PinState(saved: false, visit: .none)) }
+        return PinFeatureFilter.discoveryFeatures(next, showHidden: showHiddenPlaces)
     }
 
     func states(for ids: Set<String>) async -> [String: PinState] {
         let db = database
-        return await Task.detached {
+        var resolved = await Task.detached {
             (try? db.viewportState(Array(ids))) ?? [:]
         }.value
+        for id in ids {
+            var state = resolved[id] ?? PinState(saved: false, visit: .none)
+            state.hidden = hiddenPlaceIDs.contains(id)
+            resolved[id] = state
+        }
+        return resolved
+    }
+
+    var hiddenIDs: Set<String> {
+        hiddenPlaceIDs
+    }
+
+    func consumeHiddenMembershipChange(overlapping ids: Set<String>) -> Bool {
+        let changed = hiddenMembershipChangePlaceIDs.intersection(ids)
+        guard !changed.isEmpty else { return false }
+        hiddenMembershipChangePlaceIDs.subtract(changed)
+        return true
     }
 
     func visitCount(placeID: String) async -> Int {
@@ -1018,6 +1077,17 @@ private final class MapScreenModel {
 
     func setLoved(placeID: String, loved: Bool) async throws {
         try coreLoop.setLoved(placeID: placeID, loved)
+    }
+
+    func setHidden(placeID: String, hidden: Bool) async throws {
+        guard let placeRef = await actionPlaceRef(for: placeID) else { return }
+        try coreLoop.setHidden(placeRef, hidden)
+        if hidden {
+            hiddenPlaceIDs.insert(placeID)
+        } else {
+            hiddenPlaceIDs.remove(placeID)
+        }
+        hiddenMembershipChangePlaceIDs.insert(placeID)
     }
 
     private func cardSource(for placeID: String) async -> CardSource? {

@@ -82,6 +82,16 @@ final class CoreLoopControllerTests: XCTestCase {
         let unsavedChange = await changes.next()
         XCTAssertEqual(unsavedChange, ["p_loop"])
         XCTAssertEqual(try db.viewportState(["p_loop"])["p_loop"], PinState(saved: false, visit: .none))
+
+        try controller.setHidden(place, true)
+        let hiddenChange = await changes.next()
+        XCTAssertEqual(hiddenChange, ["p_loop"])
+        XCTAssertEqual(try db.viewportState(["p_loop"])["p_loop"], PinState(saved: false, visit: .none, hidden: true))
+
+        try controller.setHidden(place, false)
+        let unhiddenChange = await changes.next()
+        XCTAssertEqual(unhiddenChange, ["p_loop"])
+        XCTAssertEqual(try db.viewportState(["p_loop"])["p_loop"], PinState(saved: false, visit: .none, hidden: false))
     }
 
     func testCoreLoopCanProduceEverySavedVisitStateCell() throws {
