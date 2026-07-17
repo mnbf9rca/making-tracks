@@ -82,6 +82,8 @@ struct MapScreen: View {
 
     private var mapChrome: some View {
         VStack(alignment: .trailing, spacing: 8) {
+            visibleAttributionButton
+
             if loadState != .ok {
                 Text(verbatim: loadState.rawValue)
                     .font(.caption)
@@ -101,6 +103,22 @@ struct MapScreen: View {
 
             creditsButton
         }
+    }
+
+    private var visibleAttributionButton: some View {
+        Button {
+            showCredits = true
+        } label: {
+            Text(verbatim: "© OpenStreetMap")
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.ultraThinMaterial, in: Capsule())
+        }
+        .accessibilityLabel("OpenStreetMap attribution")
+        .accessibilityHint("Opens credits")
+        .accessibilityIdentifier("map.openstreetmap-attribution")
     }
 
     private var creditsButton: some View {
@@ -230,6 +248,7 @@ private struct CreditsView: View {
     @Environment(\.dismiss) private var dismiss
 
     private static let buildCommit = loadBuildCommit()
+    private static let ossCredits = loadOSSCredits()
 
     private static func loadBuildCommit() -> String {
         guard let url = Bundle.main.url(forResource: "BuildInfo", withExtension: "plist"),
@@ -240,21 +259,60 @@ private struct CreditsView: View {
         return commit
     }
 
+    private static func loadOSSCredits() -> [OSSCreditEntry] {
+        guard let url = Bundle.main.url(forResource: "OSSCredits", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let manifest = try? JSONDecoder().decode(OSSCreditsManifest.self, from: data)
+        else { return [] }
+        return manifest.credits
+    }
+
     var body: some View {
         NavigationStack {
             List {
-                Text(verbatim: "Build \(Self.buildCommit)")
-                    .font(.caption)
-                    .fontDesign(.monospaced)
+                Section("Build") {
+                    Text(verbatim: "Build \(Self.buildCommit)")
+                        .font(.caption)
+                        .fontDesign(.monospaced)
+                }
 
-                ForEach(Array(attribution.enumerated()), id: \.offset) { _, item in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(verbatim: item.source)
-                            .font(.headline)
-                        Text(verbatim: item.license)
-                            .font(.subheadline)
-                        Text(verbatim: item.text)
-                            .font(.body)
+                if !attribution.isEmpty {
+                    Section("Manifest attribution") {
+                        ForEach(Array(attribution.enumerated()), id: \.offset) { _, item in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(verbatim: item.source)
+                                    .font(.headline)
+                                Text(verbatim: item.license)
+                                    .font(.subheadline)
+                                Text(verbatim: item.text)
+                                    .font(.body)
+                            }
+                        }
+                    }
+                }
+
+                if !Self.ossCredits.isEmpty {
+                    Section("Open source acknowledgements") {
+                        ForEach(Self.ossCredits) { credit in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(verbatim: credit.name)
+                                    .font(.headline)
+                                Text(verbatim: credit.acknowledgement)
+                                    .font(.subheadline)
+                                Text(verbatim: "\(credit.category) | \(credit.versionOrPin)")
+                                    .font(.caption)
+                                if let licenseURL = credit.licenseURL {
+                                    Link(destination: licenseURL) {
+                                        Text(verbatim: licenseURL.absoluteString)
+                                            .font(.caption)
+                                            .textSelection(.enabled)
+                                    }
+                                }
+                                Text(verbatim: credit.noticeText)
+                                    .font(.footnote)
+                                    .textSelection(.enabled)
+                            }
+                        }
                     }
                 }
             }
@@ -263,6 +321,35 @@ private struct CreditsView: View {
                 Button("Done") { dismiss() }
             }
         }
+    }
+}
+
+private struct OSSCreditsManifest: Decodable {
+    let credits: [OSSCreditEntry]
+}
+
+private struct OSSCreditEntry: Decodable, Identifiable {
+    let acknowledgement: String
+    let category: String
+    let licenseURLString: String
+    let name: String
+    let noticeText: String
+    let versionOrPin: String
+
+    var id: String { "\(name)|\(versionOrPin)" }
+
+    var licenseURL: URL? {
+        guard let url = URL(string: licenseURLString), url.scheme == "https" else { return nil }
+        return url
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case acknowledgement
+        case category
+        case licenseURLString = "license_url"
+        case name
+        case noticeText = "notice_text"
+        case versionOrPin = "version_or_pin"
     }
 }
 

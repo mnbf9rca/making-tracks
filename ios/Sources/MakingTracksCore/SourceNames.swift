@@ -14,6 +14,8 @@ enum SourceNames {
     }
 
     private static let nameByPrefix: [String: String] = [
+        "hehle": "Historic England",
+        "plaque": "Open Plaques",
         "historic_england": "Historic England",
         "open_plaques": "Open Plaques",
         "osm": "OpenStreetMap",
