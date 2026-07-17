@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 import MakingTracksData
 
@@ -9,12 +10,21 @@ struct MakingTracksApp: App {
     private static let startupViewport = ViewportSeed.selected(argumentValue("--ui-testing-map-state"))
     private static let debugInstallOfflineRegion = argumentValue("--debug-install-offline-region")
     private static let debugForceTileNetworkOffline = arguments.contains("--debug-force-tile-network-offline")
+    private static let isLocationDeniedFixture = arguments.contains("--ui-testing-location-denied")
+
     private let database: AppDatabase = {
         try! resetUITestingDatabaseIfNeeded()
         if isFixtureMap {
             return try! AppDatabase.uiTesting()
         }
         return try! AppDatabase.live()
+    }()
+
+    private let locationManager: LocationManaging = {
+        if isLocationDeniedFixture {
+            return UITestLocationManager(authorizationStatus: .denied)
+        }
+        return CLLocationManager()
     }()
 
     var body: some Scene {
@@ -24,7 +34,8 @@ struct MakingTracksApp: App {
                 startupViewport: Self.startupViewport,
                 isFixtureMap: Self.isFixtureMap,
                 debugInstallOfflineRegion: Self.debugInstallOfflineRegion,
-                debugForceTileNetworkOffline: Self.debugForceTileNetworkOffline
+                debugForceTileNetworkOffline: Self.debugForceTileNetworkOffline,
+                locationManager: locationManager
             )
         }
     }
@@ -49,4 +60,17 @@ struct MakingTracksApp: App {
             try? FileManager.default.removeItem(at: URL(fileURLWithPath: dbURL.path + suffix))
         }
     }
+}
+
+private final class UITestLocationManager: LocationManaging {
+    weak var delegate: CLLocationManagerDelegate?
+    var authorizationStatus: CLAuthorizationStatus
+
+    init(authorizationStatus: CLAuthorizationStatus) {
+        self.authorizationStatus = authorizationStatus
+    }
+
+    func requestWhenInUseAuthorization() {}
+
+    func requestLocation() {}
 }

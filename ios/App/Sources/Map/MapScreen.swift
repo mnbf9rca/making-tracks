@@ -49,6 +49,7 @@ struct MapScreen: View {
     var debugForceTileNetworkOffline = false
 
     @State private var model: MapScreenModel?
+    @StateObject private var locationPermission: LocationPermission
     @State private var worldPMTilesURL: String? = WorldBasemap.pmtilesURL()
     @State private var features: [(MapPlace, PinState)] = []
     @State private var regionPMTilesURL: String?
@@ -60,7 +61,24 @@ struct MapScreen: View {
     @State private var viewportRequestID = 0
     @State private var stateEpoch = 0
     @State private var fixtureVisitCount = 0
+    @State private var userLocationFocusRequestID = 0
     private static let primaryFixturePlaceID = fixturePlaces[0].placeID
+
+    init(
+        database: AppDatabase,
+        startupViewport: ViewportSeed,
+        isFixtureMap: Bool = false,
+        debugInstallOfflineRegion: String? = nil,
+        debugForceTileNetworkOffline: Bool = false,
+        locationManager: LocationManaging = CLLocationManager()
+    ) {
+        self.database = database
+        self.startupViewport = startupViewport
+        self.isFixtureMap = isFixtureMap
+        self.debugInstallOfflineRegion = debugInstallOfflineRegion
+        self.debugForceTileNetworkOffline = debugForceTileNetworkOffline
+        _locationPermission = StateObject(wrappedValue: LocationPermission(manager: locationManager))
+    }
 
     var body: some View {
         ZStack {
@@ -69,6 +87,9 @@ struct MapScreen: View {
                 regionPMTilesURL: regionPMTilesURL,
                 startupViewport: startupViewport,
                 features: features,
+                showsUserLocation: locationPermission.showsUserLocation,
+                userLocationCoordinate: locationPermission.currentCoordinate,
+                userLocationFocusRequestID: userLocationFocusRequestID,
                 onCameraIdle: { bbox, zoom in
                     Task { @MainActor in
                         let requestID = nextViewportRequestID()
@@ -90,9 +111,19 @@ struct MapScreen: View {
             )
             .ignoresSafeArea()
             .overlay(alignment: .topTrailing) {
-                mapChrome
+                statusChrome
                     .padding(.top, 72)
                     .padding(.trailing, 16)
+            }
+            .overlay(alignment: .bottomLeading) {
+                attributionButton
+                    .padding(.leading, 16)
+                    .padding(.bottom, 16)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                locationChrome
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 16)
             }
         }
         .task {
@@ -125,8 +156,6 @@ struct MapScreen: View {
 
     private var mapChrome: some View {
         VStack(alignment: .trailing, spacing: 8) {
-            visibleAttributionButton
-
             if loadState != .ok {
                 Text(verbatim: loadState.rawValue)
                     .font(.caption)
@@ -154,12 +183,14 @@ struct MapScreen: View {
                     .accessibilityIdentifier("debug.offline-status")
             }
 #endif
-
-            creditsButton
         }
     }
 
-    private var visibleAttributionButton: some View {
+    private var statusChrome: some View {
+        mapChrome
+    }
+
+    private var attributionButton: some View {
         Button {
             showCredits = true
         } label: {
@@ -175,16 +206,43 @@ struct MapScreen: View {
         .accessibilityIdentifier("map.openstreetmap-attribution")
     }
 
-    private var creditsButton: some View {
+    private var locationChrome: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            if locationPermission.isLocationOff {
+                locationOffBanner
+            }
+
+            locateMeButton
+        }
+    }
+
+    private var locationOffBanner: some View {
+        HStack(spacing: 8) {
+            Text("Location is off")
+                .font(.caption2)
+                .fontWeight(.semibold)
+
+            LocationSettingsButton {
+                openLocationSettings()
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial, in: Capsule())
+    }
+
+    private var locateMeButton: some View {
         Button {
-            showCredits = true
+            handleLocateMeTap()
         } label: {
-            Image(systemName: "info.circle.fill")
+            Image(systemName: "location.fill")
                 .font(.title3)
                 .frame(width: 44, height: 44)
                 .background(.ultraThinMaterial, in: Circle())
         }
-        .accessibilityLabel("Credits")
+        .accessibilityLabel("Locate me")
+        .accessibilityHint("Centers the map on your location")
+        .accessibilityIdentifier("map.locate-me")
     }
 
     private func start() async {
@@ -226,6 +284,25 @@ struct MapScreen: View {
             stateEpoch: currentStateEpoch()
         )
         await refreshFixtureVisitCount()
+    }
+
+    @MainActor
+    private func handleLocateMeTap() {
+        switch locationPermission.authorizationStatus {
+        case .denied, .restricted:
+            openLocationSettings()
+        case .notDetermined, .authorizedAlways, .authorizedWhenInUse:
+            locationPermission.requestCurrentLocation()
+            userLocationFocusRequestID += 1
+        @unknown default:
+            locationPermission.requestCurrentLocation()
+            userLocationFocusRequestID += 1
+        }
+    }
+
+    private func openLocationSettings() {
+        guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(settingsURL)
     }
 
     @MainActor
@@ -419,6 +496,51 @@ private struct OSSCreditEntry: Decodable, Identifiable {
         case name
         case noticeText = "notice_text"
         case versionOrPin = "version_or_pin"
+    }
+}
+
+private struct LocationSettingsButton: UIViewRepresentable {
+    let action: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action)
+    }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        var configuration = UIButton.Configuration.plain()
+        configuration.image = UIImage(systemName: "gearshape.fill")
+        configuration.title = "Settings"
+        configuration.imagePadding = 4
+        configuration.contentInsets = .zero
+        configuration.baseForegroundColor = .label
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = .systemFont(ofSize: 11, weight: .semibold)
+            return outgoing
+        }
+        button.configuration = configuration
+        button.accessibilityLabel = "Settings"
+        button.accessibilityHint = "Opens location settings"
+        button.accessibilityIdentifier = "map.location-settings"
+        button.addTarget(context.coordinator, action: #selector(Coordinator.tap), for: .touchUpInside)
+        return button
+    }
+
+    func updateUIView(_ uiView: UIButton, context: Context) {
+        context.coordinator.action = action
+    }
+
+    final class Coordinator {
+        var action: () -> Void
+
+        init(action: @escaping () -> Void) {
+            self.action = action
+        }
+
+        @objc func tap() {
+            action()
+        }
     }
 }
 

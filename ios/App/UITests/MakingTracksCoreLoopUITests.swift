@@ -69,7 +69,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
-        app.buttons["Credits"].tap()
+        let osmAttribution = app.buttons["map.openstreetmap-attribution"]
+        XCTAssertTrue(osmAttribution.waitForExistence(timeout: 5))
+        osmAttribution.tap()
         let expectedBuildLabel = "Build \(try currentGitCommit())"
         XCTAssertTrue(app.staticTexts[expectedBuildLabel].waitForExistence(timeout: 5))
     }
@@ -80,6 +82,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
+        attachScreenshot(named: "locate-me-chrome")
+
         let osmAttribution = app.buttons["map.openstreetmap-attribution"]
         XCTAssertTrue(osmAttribution.waitForExistence(timeout: 5))
         osmAttribution.tap()
@@ -88,13 +92,29 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "map-openstreetmap-attribution")
     }
 
+    func testLocateMeChromeExplainsWhenLocationIsDenied() throws {
+        let app = launch(reset: true, locationDenied: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        XCTAssertTrue(app.staticTexts["Location is off"].waitForExistence(timeout: 5))
+        let locationSettings = app.buttons["map.location-settings"]
+        if !locationSettings.waitForExistence(timeout: 5) {
+            XCTAssertTrue(app.otherElements["map.location-settings"].waitForExistence(timeout: 5))
+        }
+        attachScreenshot(named: "map-location-off")
+    }
+
     func testCreditsShowOpenSourceAcknowledgements() throws {
         let app = launch(reset: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
-        app.buttons["Credits"].tap()
+        let osmAttribution = app.buttons["map.openstreetmap-attribution"]
+        XCTAssertTrue(osmAttribution.waitForExistence(timeout: 5))
+        osmAttribution.tap()
         XCTAssertTrue(app.staticTexts["GRDB.swift"].waitForExistence(timeout: 5))
 
         let mapLibreCredit = app.staticTexts["MapLibre Native iOS / maplibre-gl-native-distribution"]
@@ -102,11 +122,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "credits-open-source-acknowledgements")
     }
 
-    private func launch(reset: Bool) -> XCUIApplication {
+    private func launch(reset: Bool, locationDenied: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
         if reset {
             app.launchArguments.append("--ui-testing-reset-database")
+        }
+        if locationDenied {
+            app.launchArguments.append("--ui-testing-location-denied")
         }
         app.launch()
         return app
@@ -125,10 +148,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     private func attachScreenshot(named name: String) {
-        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+        exportScreenshot(screenshot, named: name)
+    }
+
+    private func exportScreenshot(_ screenshot: XCUIScreenshot, named name: String) {
+        guard let exportName = screenshotExportNames[name] else { return }
+        let directory = URL(fileURLWithPath: "/private/tmp/making-tracks-artifacts", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent(exportName).appendingPathExtension("png")
+        try? screenshot.pngRepresentation.write(to: fileURL)
     }
 
     @discardableResult
@@ -158,6 +191,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(commit.isEmpty)
         return commit
     }
+
+    private let screenshotExportNames: [String: String] = [
+        "card-open": "attribution-card-sheet",
+        "locate-me-chrome": "locate-me-chrome",
+        "map-location-off": "denied-settings",
+        "credits-open-source-acknowledgements": "credits",
+    ]
 }
 
 private extension XCUIElementQuery {
