@@ -7,6 +7,7 @@ import json
 import math
 import pathlib
 from importlib import resources
+from urllib.parse import urlparse
 
 from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
@@ -89,10 +90,21 @@ def _reject_noncanonical_refs(name: str, instance: dict) -> None:
                 raise ValueError("registry mint_anchor must be present in refs")
 
 
+def _reject_description_mismatches(name: str, instance: dict) -> None:
+    if name != "description-index":
+        return
+    for place in instance.get("places", []):
+        lang = str(place.get("wikipedia_lang", ""))
+        source_url = str(place.get("source_url", ""))
+        if urlparse(source_url).hostname != f"{lang}.wikipedia.org":
+            raise ValueError("description source_url host must match wikipedia_lang")
+
+
 def validate_instance(name: str, instance: dict) -> None:
     _reject_non_finite(instance)
     validator_for(name).validate(instance)
     _reject_noncanonical_refs(name, instance)
+    _reject_description_mismatches(name, instance)
 
 
 def is_valid(name: str, instance: dict) -> bool:

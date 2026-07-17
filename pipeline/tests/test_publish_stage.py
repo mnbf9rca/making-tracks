@@ -1,3 +1,4 @@
+import gzip
 import json
 
 import pytest
@@ -289,6 +290,241 @@ def test_publish_stage_emits_image_sidecars_from_shipped_wikidata_images(
         + result.image_index_bytes
         + result.thumb_bytes
     )
+
+
+def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extracts(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    source_record.persist(
+        conn,
+        source_record.parse(
+            "malaysia",
+            "wp",
+            "wp:12345",
+            "Kellie's Castle",
+            3.10,
+            101.70,
+            {
+                "lang": "ms",
+                "title": "Kellie's Castle",
+                "extract": "Kellie's Castle ialah sebuah bangunan bersejarah di Perak.",
+            },
+        ),
+        run_id="extract1",
+    )
+    source_record.persist(
+        conn,
+        source_record.parse(
+            "malaysia",
+            "wp",
+            "wp:99999",
+            "Non-retained",
+            3.10,
+            101.70,
+            {
+                "lang": "en",
+                "title": "Non-retained",
+                "extract": "This row is acquired but not retained by the shipped place.",
+            },
+        ),
+        run_id="extract1",
+    )
+    source_record.persist(
+        conn,
+        source_record.parse(
+            "malaysia",
+            "wp",
+            "wp:22222",
+            "Excluded",
+            3.11,
+            101.71,
+            {
+                "lang": "en",
+                "title": "Excluded",
+                "extract": "This place is uncategorized and should not publish.",
+            },
+        ),
+        run_id="extract1",
+    )
+    conn.execute(
+        "UPDATE places SET member_refs_json = ? WHERE place_id = ?",
+        (json.dumps(["wd:Q100", "osm:node/100", "wp:12345"], sort_keys=True), A),
+    )
+    conn.execute(
+        "UPDATE places SET member_refs_json = ? WHERE place_id = ?",
+        (json.dumps(["wd:Q200", "wp:22222"], sort_keys=True), B),
+    )
+    conn.commit()
+    _write_malaysia_registry(tmp_path)
+    registry = LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").load()
+
+    def with_extra_wp_ref(record):
+        extra_refs = {A: {"wp:12345"}, B: {"wp:22222"}}.get(record.place_id)
+        if extra_refs is None:
+            return record
+        return RegistryRecord(
+            place_id=record.place_id,
+            refs={*record.refs, *extra_refs},
+            mint_anchor=record.mint_anchor,
+            status=record.status,
+            superseded_by=record.superseded_by,
+            first_shipped_version=record.first_shipped_version,
+            last_seen_version=record.last_seen_version,
+            schema_version=record.schema_version,
+        )
+
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [with_extra_wp_ref(record) for record in registry]
+    )
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename="malaysia.pmtiles",
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    result = P.run(
+        conn,
+        "malaysia",
+        publish_version="20260717T120000Z",
+        generated_at="2026-07-17T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+    )
+
+    desc_files = sorted(result.staging_dir.glob("descriptions/10/*/*.json"))
+    assert len(desc_files) == 1
+    tile_files = sorted(result.staging_dir.glob("tiles/10/*/*.json.gz"))
+    tile_payload = json.loads(gzip.decompress(tile_files[0].read_bytes()))
+    assert "excerpt" not in tile_payload["places"][0]
+    assert "source_url" not in tile_payload["places"][0]
+    assert "wikipedia_lang" not in tile_payload["places"][0]
+    assert "descriptions" not in result.manifest
+    desc_index = json.loads(desc_files[0].read_text())
+    assert desc_index["places"][0]["place_id"] == A
+    assert desc_index["places"][0]["wikipedia_lang"] == "ms"
+    assert desc_index["places"][0]["excerpt"] == (
+        "Kellie's Castle ialah sebuah bangunan bersejarah di Perak."
+    )
+    assert desc_index["places"][0]["source_url"] == (
+        "https://ms.wikipedia.org/wiki/Kellie%27s_Castle"
+    )
+    assert [place["source_ref"] for place in desc_index["places"]] == ["wp:12345"]
+    assert desc_index["places"][0]["license_code"] == "CC-BY-SA-4.0"
+    assert desc_index["places"][0]["excerpted"] is True
+    assert result.description_index_bytes == desc_files[0].stat().st_size
+    region_entry = result.region_index["regions"][0]
+    tile_bytes = sum(int(tile["bytes"]) for tile in result.manifest["tiles"])
+    assert region_entry["bytes_without_thumbs"] == (
+        int(result.manifest["basemap"]["bytes"])
+        + tile_bytes
+        + result.description_index_bytes
+    )
+    assert any(attr["source"] == "wikipedia" for attr in result.manifest["attribution"])
+    description_ops = [
+        op for op in result.publish_result.plan.ops if op.kind == "description"
+    ]
+    assert [op.key for op in description_ops] == [
+        "malaysia/20260717T120000Z/descriptions/10/801/503.json"
+    ]
+
+
+def test_publish_stage_reports_description_sidecar_overflow_drops(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(P.descriptions, "MAX_DESCRIPTION_INDEX_BYTES", 1600, raising=False)
+    _seed_publish_inputs(conn)
+    conn.execute(
+        "UPDATE place_categories SET category = 'history' WHERE place_id = ?",
+        (B,),
+    )
+    for place_id, source_ref, tier, score in [
+        (A, "wp:10001", 1, 0.9),
+        (B, "wp:10002", 4, 0.2),
+    ]:
+        source_record.persist(
+            conn,
+            source_record.parse(
+                "malaysia",
+                "wp",
+                source_ref,
+                source_ref,
+                3.10,
+                101.70,
+                {
+                    "lang": "en",
+                    "title": source_ref,
+                    "description_extract": source_ref + " " + ("x" * 500),
+                },
+            ),
+            run_id="extract1",
+        )
+        conn.execute(
+            "UPDATE places SET member_refs_json = ? WHERE place_id = ?",
+            (json.dumps([f"wd:Q{100 if place_id == A else 200}", source_ref]), place_id),
+        )
+        conn.execute(
+            "UPDATE place_scores SET tier = ?, score = ? WHERE place_id = ?",
+            (tier, score, place_id),
+        )
+    conn.commit()
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [
+            RegistryRecord(
+                place_id=A,
+                refs={"wd:Q100", "wp:10001"},
+                mint_anchor="wd:Q100",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+            RegistryRecord(
+                place_id=B,
+                refs={"wd:Q200", "wp:10002"},
+                mint_anchor="wd:Q200",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+        ]
+    )
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename="malaysia.pmtiles",
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    result = P.run(
+        conn,
+        "malaysia",
+        publish_version="20260717T120000Z",
+        generated_at="2026-07-17T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+    )
+
+    desc_files = sorted(result.staging_dir.glob("descriptions/10/*/*.json"))
+    payload = json.loads(desc_files[0].read_text())
+    assert result.description_index_dropped == 1
+    assert [place["place_id"] for place in payload["places"]] == [A]
 
 
 def test_publish_stage_writes_region_index_after_all_current_flips(

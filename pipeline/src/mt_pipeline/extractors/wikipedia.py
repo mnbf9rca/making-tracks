@@ -9,6 +9,7 @@ from . import pageviews
 from .wikidata import MAX_RECORDS_PER_SNAPSHOT, _load_snapshot
 
 MAX_EXTRACT_LEN = 300
+DESCRIPTION_EXTRACT_LEN = source_record.DESCRIPTION_EXTRACT_MAX
 MAX_TITLE_LEN = 300
 MAX_QID_LEN = 24
 MAX_LANG_LEN = 16
@@ -47,10 +48,12 @@ class WikipediaExtractor:
                 lat = float(page["lat"])
                 lon = float(page["lon"])
                 title = str(page.get("title", ""))[:MAX_TITLE_LEN]
+                raw_extract = str(page.get("extract", ""))
                 props = {
                     "lang": lang,
                     "title": title,
-                    "extract": str(page.get("extract", ""))[:MAX_EXTRACT_LEN],
+                    "extract": raw_extract[:MAX_EXTRACT_LEN],
+                    "description_extract": raw_extract[:DESCRIPTION_EXTRACT_LEN],
                 }
                 if pageview_cache_dir is not None and pageview_window is not None:
                     daily = pageviews.read(pageview_cache_dir, title, pageview_window)

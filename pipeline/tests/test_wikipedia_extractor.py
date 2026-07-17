@@ -102,6 +102,27 @@ def test_extract_length_bounded(tmp_path):
     assert len(props["extract"]) <= wikipedia.MAX_EXTRACT_LEN
 
 
+def test_description_extract_preserves_longer_snapshot_text_for_publish(tmp_path):
+    conn = _db(tmp_path)
+    long_extract = "A complete first sentence. " + ("Second sentence continues. " * 40)
+    snap = _snap(
+        tmp_path,
+        {
+            "lang": "en",
+            "pages": [
+                {"pageid": 1, "title": "T", "lat": 1, "lon": 1, "extract": long_extract}
+            ],
+        },
+    )
+
+    wikipedia.WikipediaExtractor({"en"}).extract("uk", snap, conn, run_id="r1")
+    props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
+
+    assert len(props["extract"]) <= wikipedia.MAX_EXTRACT_LEN
+    assert props["description_extract"].startswith("A complete first sentence.")
+    assert len(props["description_extract"]) > wikipedia.MAX_EXTRACT_LEN
+
+
 def test_pageviews_are_materialized_from_cache_when_threaded(tmp_path):
     conn = _db(tmp_path)
     snap = _snap(
