@@ -770,9 +770,9 @@ def _normalize_license(value: str | None) -> tuple[str | None, str]:
     match = CC_LICENSE_RE.fullmatch(normalized)
     if match is None:
         return None, "license_unaccepted"
-    code = "CC-BY"
     if match.group("nc"):
-        code += "-NC"
+        return None, "license_nc"
+    code = "CC-BY"
     if match.group("sa"):
         code += "-SA"
     code += f"-{match.group('version')}"
@@ -796,10 +796,6 @@ def _license_display_name(code: str) -> str:
     }
     if code in fixed:
         return fixed[code]
-    if code.startswith("CC-BY-NC-SA-"):
-        return f"Creative Commons Attribution-NonCommercial-ShareAlike {code.removeprefix('CC-BY-NC-SA-')}"
-    if code.startswith("CC-BY-NC-"):
-        return f"Creative Commons Attribution-NonCommercial {code.removeprefix('CC-BY-NC-')}"
     if code.startswith("CC-BY-SA-"):
         return f"Creative Commons Attribution-ShareAlike {code.removeprefix('CC-BY-SA-')}"
     if code.startswith("CC-BY-"):
@@ -831,7 +827,7 @@ def _license_url(value: str | None, code: str) -> tuple[str | None, str]:
 def _cc_license_url_for_code(code: str) -> str | None:
     token = code.casefold().removeprefix("cc-")
     match = re.fullmatch(
-        r"(?P<kind>by(?:-nc)?(?:-sa)?)-(?P<version>1\.0|2\.0|2\.1|2\.5|3\.0|4\.0)"
+        r"(?P<kind>by(?:-sa)?)-(?P<version>1\.0|2\.0|2\.1|2\.5|3\.0|4\.0)"
         r"(?P<port>-[a-z]{2}(?:_[a-z]+)?|-igo)?",
         token,
     )

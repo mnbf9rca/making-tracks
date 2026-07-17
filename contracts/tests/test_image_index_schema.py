@@ -78,14 +78,14 @@ def test_image_index_allows_ported_sharealike_license_code():
     validate_instance("image-index", inst)
 
 
-def test_image_index_allows_ported_by_nc_sa_license_code():
+def test_image_index_rejects_noncommercial_license_code():
     inst = copy.deepcopy(VALID_INDEX)
     attr = inst["places"][0]["attribution"]
-    attr["license_code"] = "CC-BY-NC-SA-3.0-IGO"
-    attr["license_name"] = "Creative Commons Attribution-NonCommercial-ShareAlike 3.0 IGO"
-    attr["license_url"] = "https://creativecommons.org/licenses/by-nc-sa/3.0/igo/"
+    attr["license_code"] = "CC-BY-NC-SA-4.0"
+    attr["license_name"] = "Creative Commons Attribution-NonCommercial-ShareAlike 4.0"
+    attr["license_url"] = "https://creativecommons.org/licenses/by-nc-sa/4.0/"
 
-    validate_instance("image-index", inst)
+    assert not is_valid("image-index", inst)
 
 
 def test_image_index_requires_modified_true_and_https_commons_source():
