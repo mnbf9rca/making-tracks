@@ -112,13 +112,12 @@ def test_recover_commons_filename_from_upload_url():
         ("CC BY-SA 3.0", "CC-BY-SA-3.0"),
         ("CC BY-SA 4.0", "CC-BY-SA-4.0"),
         ("cc-by-sa-3.0-de", "CC-BY-SA-3.0-DE"),
-        ("CC BY-NC 4.0", "CC-BY-NC-4.0"),
-        ("cc-by-nc-3.0-es", "CC-BY-NC-3.0-ES"),
-        ("CC BY-NC-SA 4.0", "CC-BY-NC-SA-4.0"),
-        ("cc-by-nc-sa-3.0-igo", "CC-BY-NC-SA-3.0-IGO"),
+        ("cc-by-sa-3.0-igo", "CC-BY-SA-3.0-IGO"),
     ],
 )
-def test_commons_license_allowlist_includes_nc_without_nd(license_short_name, expected):
+def test_commons_license_allowlist_includes_by_and_by_sa_without_nc_or_nd(
+    license_short_name, expected
+):
     decision = images.metadata_from_commons_imageinfo(
         _imageinfo(
             license_short_name=license_short_name,
@@ -129,6 +128,24 @@ def test_commons_license_allowlist_includes_nc_without_nd(license_short_name, ex
     assert decision.accepted is True
     assert decision.metadata.attribution.license_code == expected
     assert decision.metadata.attribution.modified is True
+
+
+@pytest.mark.parametrize(
+    "license_short_name",
+    [
+        "CC BY-NC 4.0",
+        "cc-by-nc-3.0-es",
+        "CC BY-NC-SA 4.0",
+        "cc-by-nc-sa-3.0-igo",
+    ],
+)
+def test_commons_license_rejects_noncommercial_family(license_short_name):
+    decision = images.metadata_from_commons_imageinfo(
+        _imageinfo(license_short_name=license_short_name)
+    )
+
+    assert decision.accepted is False
+    assert decision.reason == "license_nc"
 
 
 def test_commons_license_uses_exact_older_by_sa_deed_url():

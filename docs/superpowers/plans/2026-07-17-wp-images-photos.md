@@ -90,22 +90,18 @@ component that **degrades, does not refuse**).
 
 ## 2. License filtering — which Commons licenses we may redistribute (D2)
 
-We **resize** (a derivative work) and redistribute in a **non-commercial** app (Rob's ruling, 2026-07-17:
-*"the app is not commercial"* — free, no ads, no payments; CC's NC test is about use directed at
-commercial advantage). That set the acceptable-license boundary:
+We **resize** (a derivative work) and redistribute. Rob's final ruling (2026-07-17, reversing the
+earlier NC acceptance): **"exclude NC so we can accept tips via IAP later"**. That sets the
+acceptable-license boundary:
 
 - **ACCEPT** (credit rendered for all — see §3): Public Domain / PD-old / PD-art, **CC0**,
-  **CC-BY** (2.0/2.5/3.0/4.0), **CC-BY-SA** (all versions), and — under the non-commercial ruling —
-  **CC-BY-NC** and **CC-BY-NC-SA**.
+  **CC-BY** (1.0/2.0/2.1/2.5/3.0/4.0, including ported/IGO deeds), and **CC-BY-SA**
+  (same versions and port/IGO handling).
 - **REJECT**: **CC-BY-ND / CC-BY-NC-ND / any -ND** (no-derivatives — resizing is a derivative →
-  forbidden regardless of the NC ruling), **GFDL-only** (impractical; accept only if *also*
-  dual-licensed CC-BY-SA), **non-free / "fair use"**, and **anything without a machine-readable
-  license, or ambiguous** (§5.5 posture: reject-on-doubt → no image).
-- **[NC eligibility is CONTINGENT — Rob's rider, recorded not relitigated].** NC images are eligible
-  *only while the app stays non-commercial.* If monetisation ever arrives, every **NC-derived thumb
-  must be purgeable MECHANICALLY** — see the purge operation in §5 and the risk note (§Risk). The
-  `license_code` field (§3/§5) is queryable precisely so the NC subset can be selected and purged.
-  ND stays rejected on the *derivative* ground, independent of commerciality.
+  forbidden), **all NC-family licenses** (**CC-BY-NC** and **CC-BY-NC-SA**, including ported/IGO
+  variants), **GFDL-only** (impractical; accept only if *also* dual-licensed CC-BY-SA), **non-free /
+  "fair use"**, and **anything without a machine-readable license, or ambiguous** (§5.5 posture:
+  reject-on-doubt → no image).
 - **[gate — resolve the derivative theory, one theory throughout]** We treat a resize + WebP re-encode
   as an **adaptation** (a derivative). This is the *same* premise that lets us reject -ND, so we must
   carry it consistently: for **CC-BY-SA** sources our thumbnail is **relicensed under the same BY-SA
@@ -120,9 +116,9 @@ commercial advantage). That set the acceptable-license boundary:
   (config-driven, earned-not-baked). Cache reject decisions. State the expected drop rate from
   missing-metadata + rejected-format files in the WP-IMG-P acceptance (it is non-trivial).
 
-**[RESOLVED — Rob ruled 2026-07-17: "the app is not commercial" → NC accepted, contingent (above).]**
-The commerciality call was Rob's, not mine ([[principles-changes-are-robs]]); recorded, not
-relitigated. The contingency + mechanical purge path (below) is the standing condition on it.
+**[RESOLVED — Rob final ruling 2026-07-17: "exclude NC so we can accept tips via IAP later".]**
+The commerciality policy call is Rob's, not mine ([[principles-changes-are-robs]]); recorded, not
+relitigated. The earlier "app is not commercial" NC-acceptance ruling is superseded.
 
 ## 3. Attribution rendering — legally load-bearing (D3)
 
@@ -292,7 +288,7 @@ thumbnail without its credit (structural). *("§N" = spec section; "§N (this do
 
 | WP | side | scope | depends on |
 |---|---|---|---|
-| **WP-IMG-P** pipeline images | **pipeline (`develop`)** | P18 filename recovery; publish-time Commons `imageinfo` fetch + **strict license filter** (incl. NC-accept); bomb-bounded **decode** + **WebP resize** (pinned, deterministic); content-addressed **blob cache** (+ cached rejects); emit `images/…` index tiles + `thumbs/…` blobs; make `bytes_with_thumbs` real; **eligibility floor** (tier ≤ 2, config) + **measure-then-commit cost report**; **NC mechanical-purge op + test** (§5); global-blob **GC**. Contracts: `image-index` schema (structured attribution) + caps + `versions.json` + fixtures | contracts (built), publisher (built) |
+| **WP-IMG-P** pipeline images | **pipeline (`develop`)** | P18 filename recovery; publish-time Commons `imageinfo` fetch + **strict license filter** (NC/ND rejected); bomb-bounded **decode** + **WebP resize** (pinned, deterministic); content-addressed **blob cache** (+ cached rejects); emit `images/…` index tiles + `thumbs/…` blobs; make `bytes_with_thumbs` real; **eligibility floor** (tier ≤ 2, config) + **measure-then-commit cost report**; **NC audit/purge op + test** (§5) remains as a defensive cleanup for pre-ruling artifacts; global-blob **GC**. Contracts: `image-index` schema (structured attribution) + caps + `versions.json` + fixtures | contracts (built), publisher (built) |
 | **WP-IMG-B** app images online | **app (`ios`)** | image-index tile decode + `place_id` join; **per-image attribution UI** (assembled, plain-text, creator-present gate); **allowlist → `tiles.making-tracks.app` (1 entry)** (4 sites + tests); retire `place.image_url` path; content-addressed **image cache**; retire `AttributionModel` | WP-IMG-P + B4 card (built) |
 | **WP-IMG-PACK** offline thumbs | **app (`ios`), folds into WP-B7** | pack includes image-index + blobs; `thumbnails_present` degrade flag; verify-on-download via `thumb_sha256`; "include images" choice; online-thumb cover-traffic per §7 | WP-IMG-B + WP-B7 |
 
@@ -301,9 +297,10 @@ offline last with WP-B7).
 
 ## Rulings (2026-07-17 — resolved, was "open flags")
 
-1. **License set / commerciality — RULED (Rob):** *"the app is not commercial"* → **NC accepted**
-   (BY-NC, BY-NC-SA), **contingent** on the app staying non-commercial, with a required **mechanical
-   NC-purge** op (§5) + §Risk note. ND stays rejected (derivative ground). §2 updated.
+1. **License set / commerciality — RULED (Rob, final):** *"exclude NC so we can accept tips via IAP
+   later"* → **all NC-family licenses rejected** (BY-NC, BY-NC-SA, including ported/IGO variants).
+   ND stays rejected (derivative ground). §2 updated; this supersedes the earlier non-commercial
+   acceptance ruling.
 2. **Image origin host — RULED (fable):** **`tiles.making-tracks.app`** — same host as tiles,
    single-origin literal, one allowlist entry. §1/§7 updated.
 3. **Eligibility floor — RULED (fable):** `tier ≤ 2` **stands as default**; WP-IMG-P runs a
@@ -311,12 +308,10 @@ offline last with WP-B7).
 
 ## Risk
 
-- **NC-eligibility is commerciality-contingent (Rob's rider).** NC-licensed thumbnails are lawful only
-  while the app is non-commercial. **Trigger:** any move to ads / payments / commercial advantage.
-  **Mitigation (must exist before NC images ship):** the `license_code` field makes the NC subset
-  queryable, and the **mechanical purge op (§5)** — index-rewrite to drop NC entries + GC the orphaned
-  blobs, with a test — removes them without a re-fetch. Recorded so the contingency can never be
-  forgotten: shipping NC images **requires** the purge op to be built and tested first.
+- **NC artifacts must not ship.** The earlier NC acceptance was reversed so future IAP tips remain
+  available. **Mitigation:** NC-family licenses are rejected at metadata classification and by the
+  `image-index` contract. The mechanical NC audit/purge op (§5) remains as a defensive cleanup for
+  pre-ruling artifacts and must be run before publishing any sweep that started under the old policy.
 
 ## Gate & acceptance (this design doc)
 
