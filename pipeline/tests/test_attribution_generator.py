@@ -164,16 +164,6 @@ def test_app_resource_filters_to_app_visible_credits_and_orders_by_name(tmp_path
         "schema_version": 1,
         "credits": [
             {
-                "name": "Pipeline Tool",
-                "category": "pipeline_build",
-                "version_or_pin": "1.0",
-                "evidence": ["pipeline/pyproject.toml"],
-                "license_spdx": "MIT",
-                "license_url": "https://example.test/license",
-                "compliance": "Credit in root attribution.",
-                "app_resource": False,
-            },
-            {
                 "name": "Zed App Dependency",
                 "category": "ios_app",
                 "version_or_pin": "2.0",
@@ -215,7 +205,7 @@ def test_app_resource_filters_to_app_visible_credits_and_orders_by_name(tmp_path
     }
 
 
-def test_registry_schema_rejects_pipeline_build_app_resource():
+def test_registry_schema_rejects_pipeline_build_entries():
     schema = json.loads(
         (REPO_ROOT / "contracts/schemas/oss-credits.schema.json").read_text()
     )
@@ -230,7 +220,34 @@ def test_registry_schema_rejects_pipeline_build_app_resource():
                 "license_spdx": "MIT",
                 "license_url": "https://example.test/license",
                 "compliance": "Credit in root attribution.",
-                "app_resource": True,
+                "app_resource": False,
+            }
+        ],
+    }
+
+    validator = jsonschema.Draft202012Validator(schema)
+    errors = list(validator.iter_errors(bad_registry))
+
+    assert errors
+
+
+def test_registry_schema_requires_every_credit_in_app_resource():
+    schema = json.loads(
+        (REPO_ROOT / "contracts/schemas/oss-credits.schema.json").read_text()
+    )
+    bad_registry = {
+        "schema_version": 1,
+        "credits": [
+            {
+                "name": "App Tool",
+                "category": "ios_app",
+                "version_or_pin": "1.0",
+                "evidence": ["ios/Package.resolved"],
+                "license_spdx": "MIT",
+                "license_url": "https://example.test/license",
+                "compliance": "Credit in app.",
+                "notice_path": "contracts/third-party-notices/AppTool-LICENSE",
+                "app_resource": False,
             }
         ],
     }
