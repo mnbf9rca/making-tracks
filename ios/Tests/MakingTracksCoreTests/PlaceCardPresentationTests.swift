@@ -17,6 +17,17 @@ final class PlaceCardPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.presentationID, firstPresentationID)
     }
 
+    func testItemKeepsStableIdentityWhilePlaceChanges() {
+        var presentation = PlaceCardPresentation()
+
+        presentation.show(placeID: "p_first")
+        let firstItem = presentation.item
+        presentation.show(placeID: "p_second")
+
+        XCTAssertEqual(firstItem?.id, presentation.item?.id)
+        XCTAssertEqual(presentation.item?.placeID, "p_second")
+    }
+
     func testDismissClearsActiveCard() {
         var presentation = PlaceCardPresentation()
 

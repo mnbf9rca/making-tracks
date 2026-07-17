@@ -22,14 +22,14 @@ struct MapScreen: View {
     private static let primaryFixturePlaceID = fixturePlaces[0].placeID
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             MLNMapViewRepresentable(
                 pmtilesURL: pmtilesURL,
                 features: features,
                 onCameraIdle: { bbox, zoom in
-                    let requestID = nextViewportRequestID()
-                    let stateEpoch = currentStateEpoch()
-                    Task {
+                    Task { @MainActor in
+                        let requestID = nextViewportRequestID()
+                        let stateEpoch = currentStateEpoch()
                         await refreshViewport(
                             bbox: bbox,
                             zoom: zoom,
@@ -48,16 +48,6 @@ struct MapScreen: View {
             .ignoresSafeArea()
 
             VStack(alignment: .trailing, spacing: 8) {
-                Button {
-                    showCredits = true
-                } label: {
-                    Image(systemName: "info.circle.fill")
-                        .font(.title3)
-                        .padding(10)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .accessibilityLabel("Credits")
-
                 if loadState != .ok {
                     Text(verbatim: loadState.rawValue)
                         .font(.caption)
@@ -75,7 +65,22 @@ struct MapScreen: View {
                         .accessibilityIdentifier("tracks.visit-count.\(Self.primaryFixturePlaceID)")
                 }
             }
-            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .padding(.top, 72)
+            .padding(.trailing, 16)
+
+            Button {
+                showCredits = true
+            } label: {
+                Image(systemName: "info.circle.fill")
+                    .font(.title3)
+                    .padding(10)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .accessibilityLabel("Credits")
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .padding(.trailing, 16)
+            .padding(.bottom, 24)
         }
         .task {
             await start()
@@ -86,19 +91,20 @@ struct MapScreen: View {
         .sheet(isPresented: $showCredits) {
             CreditsView(attribution: attribution)
         }
-        .sheet(isPresented: cardPresentationBinding) {
-            if let placeID = cardPresentation.activePlaceID {
-                PlaceCardSheet(placeID: placeID, model: model)
-                    .id(placeID)
-            }
+        .sheet(item: cardPresentationItemBinding) { presentation in
+            PlaceCardSheet(
+                placeID: presentation.placeID,
+                presentationID: presentation.id,
+                model: model
+            )
         }
     }
 
-    private var cardPresentationBinding: Binding<Bool> {
+    private var cardPresentationItemBinding: Binding<PlaceCardPresentation.Item?> {
         Binding(
-            get: { cardPresentation.isPresented },
-            set: { isPresented in
-                if !isPresented {
+            get: { cardPresentation.item },
+            set: { item in
+                if item == nil {
                     cardPresentation.dismiss()
                 }
             }
@@ -241,6 +247,7 @@ private struct CreditsView: View {
 
 private struct PlaceCardSheet: View {
     let placeID: String
+    let presentationID: Int
     let model: MapScreenModel?
 
     @State private var card: PlaceCardModel?
@@ -307,7 +314,7 @@ private struct PlaceCardSheet: View {
             }
             .padding()
         }
-        .accessibilityIdentifier("place-card.\(placeID)")
+        .accessibilityIdentifier("place-card.presentation.\(presentationID)")
         .presentationDetents([.medium])
         .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         .task(id: placeID) {

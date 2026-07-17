@@ -48,9 +48,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         tapFixturePin(in: map)
         XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["place-card.presentation.0"].waitForExistence(timeout: 5))
 
         tapSecondFixturePin(in: map)
         XCTAssertTrue(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["place-card.presentation.0"].exists)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].exists)
         attachScreenshot(named: "card-switched-to-art-deco-cinema")
 
