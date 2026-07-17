@@ -476,7 +476,8 @@ private struct PlaceCardSheet: View {
     }
 }
 
-private final class MapScreenModel: @unchecked Sendable {
+@MainActor
+private final class MapScreenModel {
     private let database: AppDatabase
     private let tileCache: TileCache?
     private let fixturePlaces: [String: PlaceRef]

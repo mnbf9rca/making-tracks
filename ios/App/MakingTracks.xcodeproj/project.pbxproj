@@ -164,6 +164,7 @@
 				47529770B9F953F91FC1C4D2 /* Resources */,
 				36B42DD5E79F00A671F4FFFF /* Frameworks */,
 				AF626E9B2096E41E8684D6C2 /* Stamp Build Git Commit */,
+				5A9C89E2B4834106A686B7F0 /* Copy World Basemap */,
 			);
 			buildRules = (
 			);
@@ -261,6 +262,27 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		5A9C89E2B4834106A686B7F0 /* Copy World Basemap */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Resources/protomaps-20260714-z0-6.pmtiles",
+			);
+			name = "Copy World Basemap";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/protomaps-20260714-z0-6.pmtiles",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\n\nsource=\"$SRCROOT/Resources/protomaps-20260714-z0-6.pmtiles\"\ntarget=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/protomaps-20260714-z0-6.pmtiles\"\nmkdir -p \"$(dirname \"$target\")\"\ncp \"$source\" \"$target\"\n";
+		};
 		65097FE8D16FEDA50D66EFBC /* Stamp UI Test Build Git Commit */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

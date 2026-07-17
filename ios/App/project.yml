@@ -29,7 +29,6 @@ targets:
       - Sources
     resources:
       - Sources/OSSCredits.json
-      - Resources
     dependencies:
       - package: MakingTracksData
         product: MakingTracksData
@@ -68,6 +67,19 @@ targets:
           </dict>
           </plist>
           PLIST
+      - name: Copy World Basemap
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(SRCROOT)/Resources/protomaps-20260714-z0-6.pmtiles
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/protomaps-20260714-z0-6.pmtiles
+        script: |
+          set -euo pipefail
+
+          source="$SRCROOT/Resources/protomaps-20260714-z0-6.pmtiles"
+          target="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/protomaps-20260714-z0-6.pmtiles"
+          mkdir -p "$(dirname "$target")"
+          cp "$source" "$target"
     info:
       path: Sources/Info.plist
       properties:

@@ -29,10 +29,18 @@ final class WorldBasemapTests: XCTestCase {
     }
 
     private func hostAppBundle() -> Bundle? {
-        Bundle.allBundles.first { bundle in
-            bundle.bundleIdentifier == "app.making-tracks.MakingTracks"
-                || bundle.bundleURL.lastPathComponent == "MakingTracks.app"
+        let candidateURLs = [
+            Bundle.main.bundleURL,
+            Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("MakingTracks.app"),
+            Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("MakingTracks.app"),
+        ]
+        for url in candidateURLs {
+            guard let bundle = Bundle(path: url.path),
+                  bundle.url(forResource: WorldBasemap.resourceName, withExtension: "pmtiles") != nil
+            else { continue }
+            return bundle
         }
+        return nil
     }
 
     private func makeTemporaryBundle(resource: Data?) throws -> Bundle {
