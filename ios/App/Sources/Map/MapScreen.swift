@@ -110,6 +110,8 @@ struct MapScreen: View {
     @State private var suppressedNearbyPromptPlaceIDs: Set<String> = []
     @State private var nearbyPromptNames: [String: String] = [:]
     @State private var debugProjectedFixturePins: [ProjectedFeatureDiagnostic] = []
+    @State private var debugMapUpdateStatus = "not-updated"
+    @State private var debugTapStatus = "not-tapped"
     private let locationManager: AppLocationManager
     private static let primaryFixturePlaceID = fixturePlaces[0].placeID
     private static let nearbyPromptDistanceMeters: CLLocationDistance = 125
@@ -132,6 +134,7 @@ struct MapScreen: View {
         self.offlineDownloadProgress = offlineDownloadProgress
         self.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
         self.locationManager = locationManager
+        _features = State(initialValue: isFixtureMap ? Self.initialFixtureFeatures() : [])
         _locationPermission = StateObject(wrappedValue: LocationPermission(manager: locationManager))
     }
 
@@ -181,6 +184,14 @@ struct MapScreen: View {
                 debugReportProjectedFeatureDiagnostics: { diagnostics in
                     guard debugExposeFixturePinDiagnostics else { return }
                     debugProjectedFixturePins = diagnostics
+                },
+                debugReportMapUpdateStatus: { status in
+                    guard debugExposeFixturePinDiagnostics else { return }
+                    debugMapUpdateStatus = status
+                },
+                debugReportTapStatus: { status in
+                    guard debugExposeFixturePinDiagnostics else { return }
+                    debugTapStatus = status
                 }
             )
             .ignoresSafeArea()
@@ -206,7 +217,7 @@ struct MapScreen: View {
 #if DEBUG
             .overlay(alignment: .topLeading) {
                 if isFixtureMap && debugExposeFixturePinDiagnostics {
-                    ZStack(alignment: .topLeading) {
+                    VStack(alignment: .leading, spacing: 2) {
                         if hasLoadedFixtureFeatures {
                             Text(verbatim: "applied")
                                 .font(.system(size: 8))
@@ -220,12 +231,15 @@ struct MapScreen: View {
                             Text(verbatim: pin.isHitTestable ? "hit" : "miss")
                                 .font(.system(size: 8))
                                 .foregroundStyle(.red)
-                                .frame(width: 28, height: 18)
-                                .position(x: CGFloat(pin.x), y: CGFloat(pin.y))
+                                .frame(width: 96, height: 18, alignment: .leading)
                                 .accessibilityIdentifier("map.fixture-pin.\(pin.placeID)")
+                                .accessibilityValue(
+                                    "x:\(pin.normalizedX.formatted(.number.precision(.fractionLength(6)))) y:\(pin.normalizedY.formatted(.number.precision(.fractionLength(6))))"
+                                )
                                 .allowsHitTesting(false)
                         }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .allowsHitTesting(false)
                 }
             }
@@ -423,6 +437,29 @@ struct MapScreen: View {
             }
 
 #if DEBUG
+            if debugExposeFixturePinDiagnostics {
+                Text(verbatim: "ready:\(isMapReady) applied:\(hasLoadedFixtureFeatures) features:\(features.count)")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.debug-readiness")
+
+                Text(verbatim: debugMapUpdateStatus)
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.debug-source-status")
+
+                Text(verbatim: debugTapStatus)
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.debug-tap-status")
+            }
+
             if let debugOfflineStatus {
                 Text(verbatim: debugOfflineStatus)
                     .font(.caption2)
@@ -891,6 +928,15 @@ struct MapScreen: View {
             """
         ),
     ]
+
+    private static func initialFixtureFeatures() -> [(MapPlace, PinState)] {
+        fixturePlaces.map { fixturePlace in
+            (
+                MapPlace(id: fixturePlace.placeID, lat: fixturePlace.lat, lon: fixturePlace.lon, tier: fixturePlace.tier),
+                PinState(saved: false, visit: .none)
+            )
+        }
+    }
 }
 
 private struct LocationMenuStatus: Sendable {

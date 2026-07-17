@@ -15,6 +15,8 @@ struct ProjectedFeatureDiagnostic: Identifiable, Equatable, Sendable {
     let placeID: String
     let x: Double
     let y: Double
+    let normalizedX: Double
+    let normalizedY: Double
     let isHitTestable: Bool
 
     var id: String { placeID }
@@ -39,6 +41,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var onFeaturesApplied: () -> Void
     var onStyleWillReload: () -> Void
     var debugReportProjectedFeatureDiagnostics: ([ProjectedFeatureDiagnostic]) -> Void = { _ in }
+    var debugReportMapUpdateStatus: (String) -> Void = { _ in }
+    var debugReportTapStatus: (String) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator {
         let coordinator = Coordinator(
@@ -51,6 +55,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             onStyleWillReload: onStyleWillReload
         )
         coordinator.debugReportProjectedFeatureDiagnostics = debugReportProjectedFeatureDiagnostics
+        coordinator.debugReportMapUpdateStatus = debugReportMapUpdateStatus
+        coordinator.debugReportTapStatus = debugReportTapStatus
         return coordinator
     }
 
@@ -92,17 +98,23 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         context.coordinator.onTapPlace = onTapPlace
         context.coordinator.onTapEmpty = onTapEmpty
         context.coordinator.debugReportProjectedFeatureDiagnostics = debugReportProjectedFeatureDiagnostics
+        context.coordinator.debugReportMapUpdateStatus = debugReportMapUpdateStatus
+        context.coordinator.debugReportTapStatus = debugReportTapStatus
         context.coordinator.pendingFeatures = features
         context.coordinator.desiredVisibleCategories = visibleCategories
         map.shouldRequestAuthorizationToUseLocationServices = false
         map.showsUserLocation = showsUserLocation
         map.userTrackingMode = userTrackingMode
 
-        if let styleReload = context.coordinator.prepareStyleReload(
+        let styleReload = context.coordinator.prepareStyleReload(
             worldPMTilesURL: worldPMTilesURL,
             regionPMTilesURL: regionPMTilesURL,
             theme: theme
-        ) {
+        )
+        context.coordinator.debugReportMapUpdateStatus(
+            "update features:\(features.count) style:\(map.style != nil) source:\(map.style?.source(withIdentifier: PinLayers.sourceID) != nil) reload:\(styleReload != nil)"
+        )
+        if let styleReload {
             context.coordinator.onStyleWillReload()
             context.coordinator.commitStyleReload(styleReload)
             map.styleURL = styleReload.url
@@ -122,6 +134,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var onFeaturesApplied: () -> Void
         var onStyleWillReload: () -> Void
         var debugReportProjectedFeatureDiagnostics: ([ProjectedFeatureDiagnostic]) -> Void = { _ in }
+        var debugReportMapUpdateStatus: (String) -> Void = { _ in }
+        var debugReportTapStatus: (String) -> Void = { _ in }
         weak var map: MLNMapView?
         var currentWorldPMTilesURL: String?
         var currentRegionPMTilesURL: String?
@@ -129,6 +143,9 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var desiredVisibleCategories: Set<String>?
         var currentVisibleCategories: Set<String>?
         var pendingFeatures: [(MapPlace, PinState)] = []
+#if DEBUG
+        private var needsProjectedDiagnosticsResample = false
+#endif
 
         struct StyleReload: Equatable {
             let url: URL
@@ -223,6 +240,13 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             reportViewport(mapView)
         }
 
+#if DEBUG
+        func mapViewDidFinishRenderingFrame(_ mapView: MLNMapView, fullyRendered: Bool) {
+            guard needsProjectedDiagnosticsResample, !pendingFeatures.isEmpty else { return }
+            reportProjectedFeatureDiagnostics(on: mapView, features: pendingFeatures)
+        }
+#endif
+
         func mapView(_ mapView: MLNMapView, regionDidChangeWith reason: MLNCameraChangeReason, animated: Bool) {
             if reason.contains(.gesturePan) || reason.contains(.gestureRotate) {
                 onUserPanned()
@@ -231,15 +255,27 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         }
 
         func updateSource(on map: MLNMapView, features: [(MapPlace, PinState)]) {
-            guard let source = map.style?.source(withIdentifier: PinLayers.sourceID) as? MLNShapeSource else { return }
+            guard let style = map.style else {
+                debugReportMapUpdateStatus("source no-style features:\(features.count)")
+                return
+            }
+            guard let source = style.source(withIdentifier: PinLayers.sourceID) as? MLNShapeSource else {
+                debugReportMapUpdateStatus("source no-pin-source features:\(features.count)")
+                return
+            }
             let collection = FeatureEncoding.featureCollection(features.map { FeatureEncoding.feature($0.0, $0.1) })
             guard let json = try? collection.jsonString(),
                   let shape = try? MLNShape(data: Data(json.utf8), encoding: String.Encoding.utf8.rawValue)
-            else { return }
+            else {
+                debugReportMapUpdateStatus("source shape-failed features:\(features.count)")
+                return
+            }
             source.shape = shape
+            debugReportMapUpdateStatus("source applied features:\(features.count)")
             if !features.isEmpty {
                 onFeaturesApplied()
 #if DEBUG
+                needsProjectedDiagnosticsResample = true
                 reportProjectedFeatureDiagnostics(on: map, features: features)
                 Task { @MainActor [weak self, weak map] in
                     guard let self, let map else { return }
@@ -267,8 +303,10 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             let point = recognizer.location(in: map)
             let hits = map.visibleFeatures(at: point, styleLayerIdentifiers: ["pins-circle", "pins-icon", "pins-bookmark", "pins-heart"])
             if let id = hits.lazy.compactMap({ $0.attribute(forKey: "place_id") as? String }).first {
+                debugReportTapStatus("tap hit \(id) at \(Int(point.x)),\(Int(point.y))")
                 onTapPlace(id)
             } else {
+                debugReportTapStatus("tap empty at \(Int(point.x)),\(Int(point.y))")
                 onTapEmpty()
             }
         }
@@ -316,9 +354,12 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                     placeID: place.id,
                     x: Double(point.x),
                     y: Double(point.y),
+                    normalizedX: Double(point.x / max(map.bounds.width, 1)),
+                    normalizedY: Double(point.y / max(map.bounds.height, 1)),
                     isHitTestable: isHitTestable
                 )
             }
+            needsProjectedDiagnosticsResample = diagnostics.contains { !$0.isHitTestable }
             debugReportProjectedFeatureDiagnostics(diagnostics)
         }
 #endif

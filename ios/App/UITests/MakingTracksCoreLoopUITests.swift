@@ -467,9 +467,15 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let marker = app.staticTexts["map.fixture-pin.\(placeID)"]
         guard marker.waitForExistence(timeout: 10),
               waitForFixturePinToBecomeHitTestable(marker),
-              tapProjectedFixtureMarker(marker, through: map)
+              tapProjectedFixtureMarker(marker, through: map, in: app)
         else { return false }
-        return app.staticTexts[title].exists
+        if app.staticTexts[title].waitForExistence(timeout: 2) {
+            return true
+        }
+        let tapStatus = app.staticTexts["map.debug-tap-status"]
+        let tap = tapStatus.exists ? tapStatus.label : "tap-status-missing"
+        XCTFail("Projected tap did not open \(title); \(tap)")
+        return false
     }
 
     private func openFixtureCard(in map: XCUIElement, app: XCUIApplication) {
@@ -506,15 +512,32 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: marker)], timeout: 10) == .completed
     }
 
-    private func tapProjectedFixtureMarker(_ marker: XCUIElement, through map: XCUIElement) -> Bool {
+    private func tapProjectedFixtureMarker(_ marker: XCUIElement, through map: XCUIElement, in app: XCUIApplication) -> Bool {
+        guard let offset = projectedOffset(from: marker) else { return false }
         let mapFrame = map.frame
-        let markerFrame = marker.frame
-        guard mapFrame.width > 0, mapFrame.height > 0 else { return false }
-        let dx = (markerFrame.midX - mapFrame.minX) / mapFrame.width
-        let dy = (markerFrame.midY - mapFrame.minY) / mapFrame.height
-        guard (0...1).contains(dx), (0...1).contains(dy) else { return false }
-        map.coordinate(withNormalizedOffset: CGVector(dx: dx, dy: dy)).tap()
+        let appFrame = app.frame
+        guard mapFrame.width > 0, mapFrame.height > 0, appFrame.width > 0, appFrame.height > 0 else { return false }
+        let appX = (mapFrame.minX + (offset.dx * mapFrame.width) - appFrame.minX) / appFrame.width
+        let appY = (mapFrame.minY + (offset.dy * mapFrame.height) - appFrame.minY) / appFrame.height
+        guard (0...1).contains(appX), (0...1).contains(appY) else { return false }
+        app.coordinate(withNormalizedOffset: CGVector(dx: appX, dy: appY)).tap()
         return true
+    }
+
+    private func projectedOffset(from marker: XCUIElement) -> CGVector? {
+        guard let value = marker.value as? String else { return nil }
+        let parts = value.split(separator: " ")
+        guard parts.count == 2,
+              let xPart = parts.first,
+              let yPart = parts.last,
+              xPart.hasPrefix("x:"),
+              yPart.hasPrefix("y:"),
+              let dx = Double(xPart.dropFirst(2)),
+              let dy = Double(yPart.dropFirst(2)),
+              (0...1).contains(dx),
+              (0...1).contains(dy)
+        else { return nil }
+        return CGVector(dx: dx, dy: dy)
     }
 
     private func tapEmptyMap(in map: XCUIElement) {
@@ -537,8 +560,18 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     @discardableResult
     private func waitForMapToFinishLoading(in app: XCUIApplication) -> Bool {
         let loading = app.otherElements["map.loading"]
+        let readiness = app.staticTexts["map.debug-readiness"]
+        let sourceStatus = app.staticTexts["map.debug-source-status"]
         let featuresApplied = app.staticTexts["map.features-applied"]
-        guard featuresApplied.waitForExistence(timeout: 10) else { return false }
+        guard readiness.waitForExistence(timeout: 10) else {
+            XCTFail("map.debug-readiness did not appear")
+            return false
+        }
+        guard featuresApplied.waitForExistence(timeout: 10) else {
+            let source = sourceStatus.exists ? sourceStatus.label : "source-status-missing"
+            XCTFail("map.features-applied did not appear; \(readiness.label); \(source)")
+            return false
+        }
         return !loading.exists || loading.waitForNonExistence(timeout: 10)
     }
 
