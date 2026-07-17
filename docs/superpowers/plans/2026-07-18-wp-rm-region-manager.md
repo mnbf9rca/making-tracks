@@ -131,6 +131,14 @@ cells → per-cell delete/dedup for free" does not exist. Reframed:]**
   store installs it as an ad-hoc pack) — real new work; or (b) the rectangle **snaps to / composes
   published sub-zone packs** (coarser). **Flag: the rectangle path is new engine work, not "rides the
   built store"; named-zone packs work on the store as-is.**
+- **Download is NOT resumable today [fable's tree-verified evidence] → incremental-persist.**
+  `downloadCurrentRegion` buffers all tiles in RAM + installs once at end (`:950-990`; kill = restart from
+  zero); the background `OfflineDownloadSession` is **dead-wired** (production = foreground ephemeral
+  `HTTPTileFetcher`). A zone pack can be large, so WP-RM-B needs the **WP-B10d incremental-persist rework**:
+  write each verified object to the content-addressed store **as it arrives** → an interrupted zone
+  download **resumes object-granular for free** via `updatePlan` skip; wire the background session; adjust
+  failed-install GC (`:1084, :1281`) to **retain in-progress objects**. (Shared with WP-B10d — one engine
+  rework serves both.)
 - **Update (Apple resize-and-redownload + auto-update):** a pack records its `publish_version`; a new
   publish → the pack's manifest sha-diffs → fetch only changed cells (reuse-by-sha). Auto-update default
   (WiFi, discretionary), user-toggleable — **and this recurring fetch carries cover-traffic (§5).**
