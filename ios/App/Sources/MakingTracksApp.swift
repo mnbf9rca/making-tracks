@@ -3,8 +3,10 @@ import MakingTracksData
 
 @main
 struct MakingTracksApp: App {
-    private static let arguments = Set(CommandLine.arguments)
+    private static let rawArguments = CommandLine.arguments
+    private static let arguments = Set(rawArguments)
     private static let isFixtureMap = arguments.contains("--ui-testing-fixture-map")
+    private static let startupViewport = ViewportSeed.selected(argumentValue("--ui-testing-map-state"))
     private let database: AppDatabase = {
         try! resetUITestingDatabaseIfNeeded()
         if isFixtureMap {
@@ -17,9 +19,17 @@ struct MakingTracksApp: App {
         WindowGroup {
             MapScreen(
                 database: database,
+                startupViewport: Self.startupViewport,
                 isFixtureMap: Self.isFixtureMap
             )
         }
+    }
+
+    private static func argumentValue(_ flag: String) -> String? {
+        guard let index = rawArguments.firstIndex(of: flag),
+              rawArguments.index(after: index) < rawArguments.endIndex
+        else { return nil }
+        return rawArguments[rawArguments.index(after: index)]
     }
 
     private static func resetUITestingDatabaseIfNeeded() throws {

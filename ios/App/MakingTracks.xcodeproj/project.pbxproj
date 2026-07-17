@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0297C33B171577FE15A6AC32 /* MakingTracksCoreLoopUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36873FF1289D2248F06F618 /* MakingTracksCoreLoopUITests.swift */; };
 		03DDC05F05147127FAC7FFA5 /* MapScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 344D7C929CEBD0057FA01F8C /* MapScreen.swift */; };
+		0690E2BBD5D936C280A81F6C /* WorldBasemap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E19C34E0B445601AD8B5A35 /* WorldBasemap.swift */; };
 		1E88D6E14A988414962AB763 /* MapLibre in Frameworks */ = {isa = PBXBuildFile; productRef = CBADA08F3DCFE4D9F14B6043 /* MapLibre */; };
 		59C7C078ADD59064266740CA /* MakingTracksData in Frameworks */ = {isa = PBXBuildFile; productRef = 52E446EDADC05A0EB10CB788 /* MakingTracksData */; };
 		860B88DB4E847DB9B041149A /* MakingTracksMapStyle in Frameworks */ = {isa = PBXBuildFile; productRef = 1340500250A212BB86356FB9 /* MakingTracksMapStyle */; };
@@ -17,9 +18,17 @@
 		D9BF447A005052495B5FAA51 /* MakingTracksTiles in Frameworks */ = {isa = PBXBuildFile; productRef = 4F393EE9E72B3705269D6DE4 /* MakingTracksTiles */; };
 		E205428A35137AEC62A677DE /* MakingTracksApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8165BC8A095352568E0849A6 /* MakingTracksApp.swift */; };
 		E2EF41206486C0C294C5E0DB /* MakingTracksCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2B6A0D373B960A9ECCDC157A /* MakingTracksCore */; };
+		FAED196EEC3399D466D1AE9E /* WorldBasemapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A925CD29D8E1456B66E9F7B /* WorldBasemapTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		6C0A84EC29FDB4DC8E4305A9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C0843F3EEC4977692D9A2334 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4D3DD48118B60CD463A44277;
+			remoteInfo = MakingTracks;
+		};
 		D59B059D2B97E1159D7E9AEA /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = C0843F3EEC4977692D9A2334 /* Project object */;
@@ -32,8 +41,11 @@
 /* Begin PBXFileReference section */
 		03EE350163E06CF06F16086F /* ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ios; path = ..; sourceTree = SOURCE_ROOT; };
 		1CB5F787D9335E6F6658C952 /* OSSCredits.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = OSSCredits.json; sourceTree = "<group>"; };
+		1E19C34E0B445601AD8B5A35 /* WorldBasemap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorldBasemap.swift; sourceTree = "<group>"; };
 		344D7C929CEBD0057FA01F8C /* MapScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapScreen.swift; sourceTree = "<group>"; };
+		549B3C04D699BA9D8D06A6D7 /* MakingTracksTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MakingTracksTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5609B54FBEF0F125C5EF2C90 /* MakingTracksUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MakingTracksUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		5A925CD29D8E1456B66E9F7B /* WorldBasemapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorldBasemapTests.swift; sourceTree = "<group>"; };
 		7406D8636B27B4FE8E1C1555 /* MakingTracks.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MakingTracks.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7DE03FCA363155B0C5A81CE1 /* MLNMapViewRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLNMapViewRepresentable.swift; sourceTree = "<group>"; };
 		8165BC8A095352568E0849A6 /* MakingTracksApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MakingTracksApp.swift; sourceTree = "<group>"; };
@@ -68,6 +80,14 @@
 			path = Sources;
 			sourceTree = "<group>";
 		};
+		147428FCFBC8BD3BB845BC82 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				5A925CD29D8E1456B66E9F7B /* WorldBasemapTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
 		701107F58BC2C1664B43E572 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
@@ -81,6 +101,7 @@
 			children = (
 				344D7C929CEBD0057FA01F8C /* MapScreen.swift */,
 				7DE03FCA363155B0C5A81CE1 /* MLNMapViewRepresentable.swift */,
+				1E19C34E0B445601AD8B5A35 /* WorldBasemap.swift */,
 			);
 			path = Map;
 			sourceTree = "<group>";
@@ -89,6 +110,7 @@
 			isa = PBXGroup;
 			children = (
 				7406D8636B27B4FE8E1C1555 /* MakingTracks.app */,
+				549B3C04D699BA9D8D06A6D7 /* MakingTracksTests.xctest */,
 				5609B54FBEF0F125C5EF2C90 /* MakingTracksUITests.xctest */,
 			);
 			name = Products;
@@ -107,6 +129,7 @@
 			children = (
 				701107F58BC2C1664B43E572 /* Packages */,
 				0D16E9A4F46D11FAC2488BEE /* Sources */,
+				147428FCFBC8BD3BB845BC82 /* Tests */,
 				DD55B2625FA9731C0E38AF9E /* UITests */,
 				C0D78174E8B927386E85ED9F /* Products */,
 			);
@@ -115,6 +138,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		1BFD9E7393FA3F0C3999C100 /* MakingTracksTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5AE7BB5A9A564CD9C88D4AA6 /* Build configuration list for PBXNativeTarget "MakingTracksTests" */;
+			buildPhases = (
+				25B716827B71358450B3A708 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				451E0AA57EC324C44B5E0419 /* PBXTargetDependency */,
+			);
+			name = MakingTracksTests;
+			packageProductDependencies = (
+			);
+			productName = MakingTracksTests;
+			productReference = 549B3C04D699BA9D8D06A6D7 /* MakingTracksTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		4D3DD48118B60CD463A44277 /* MakingTracks */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = FA3F564EA9E55D534A61C763 /* Build configuration list for PBXNativeTarget "MakingTracks" */;
@@ -168,6 +209,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					1BFD9E7393FA3F0C3999C100 = {
+						DevelopmentTeam = BU7526J4QY;
+						ProvisioningStyle = Automatic;
+					};
 					4D3DD48118B60CD463A44277 = {
 						DevelopmentTeam = BU7526J4QY;
 						ProvisioningStyle = Automatic;
@@ -198,6 +243,7 @@
 			projectRoot = "";
 			targets = (
 				4D3DD48118B60CD463A44277 /* MakingTracks */,
+				1BFD9E7393FA3F0C3999C100 /* MakingTracksTests */,
 				E6EED7581BFCC0CF462B65C5 /* MakingTracksUITests */,
 			);
 		};
@@ -270,6 +316,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		25B716827B71358450B3A708 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FAED196EEC3399D466D1AE9E /* WorldBasemapTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BE434AC1972FFDAAF8AD4004 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -277,6 +331,7 @@
 				D723B8F7C4E54215817261EA /* MLNMapViewRepresentable.swift in Sources */,
 				E205428A35137AEC62A677DE /* MakingTracksApp.swift in Sources */,
 				03DDC05F05147127FAC7FFA5 /* MapScreen.swift in Sources */,
+				0690E2BBD5D936C280A81F6C /* WorldBasemap.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -287,6 +342,11 @@
 			isa = PBXTargetDependency;
 			target = 4D3DD48118B60CD463A44277 /* MakingTracks */;
 			targetProxy = D59B059D2B97E1159D7E9AEA /* PBXContainerItemProxy */;
+		};
+		451E0AA57EC324C44B5E0419 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4D3DD48118B60CD463A44277 /* MakingTracks */;
+			targetProxy = 6C0A84EC29FDB4DC8E4305A9 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -305,6 +365,23 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		094ADFFD160DAEDAEA5E5CC5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "app.making-tracks.MakingTracksTests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MakingTracks.app/MakingTracks";
+			};
+			name = Release;
 		};
 		84CF2AF31ABFEFF5681D2B9C /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -384,6 +461,23 @@
 				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
+		};
+		95784020403CDB198A193A57 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "app.making-tracks.MakingTracksTests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MakingTracks.app/MakingTracks";
+			};
+			name = Debug;
 		};
 		9BC4288C53A424552E706602 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -494,6 +588,15 @@
 			buildConfigurations = (
 				D74EE29A96366FC5A1CE222C /* Debug */,
 				84CF2AF31ABFEFF5681D2B9C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		5AE7BB5A9A564CD9C88D4AA6 /* Build configuration list for PBXNativeTarget "MakingTracksTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				95784020403CDB198A193A57 /* Debug */,
+				094ADFFD160DAEDAEA5E5CC5 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

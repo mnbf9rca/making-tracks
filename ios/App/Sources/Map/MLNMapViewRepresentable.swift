@@ -7,7 +7,9 @@ import MakingTracksTiles
 
 @MainActor
 struct MLNMapViewRepresentable: UIViewRepresentable {
-    var pmtilesURL: String?
+    var worldPMTilesURL: String?
+    var regionPMTilesURL: String?
+    var startupViewport: ViewportSeed
     var features: [(MapPlace, PinState)]
     var onCameraIdle: (BBox, Int) -> Void
     var onTapPlace: (String) -> Void
@@ -18,12 +20,15 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> MLNMapView {
-        let map = MLNMapView(frame: .zero, styleURL: context.coordinator.styleURL(pmtilesURL: pmtilesURL))
+        let map = MLNMapView(
+            frame: .zero,
+            styleURL: context.coordinator.styleURL(worldPMTilesURL: worldPMTilesURL, regionPMTilesURL: regionPMTilesURL)
+        )
         map.accessibilityIdentifier = "map.surface"
         map.delegate = context.coordinator
         map.logoView.isHidden = true
         map.attributionButton.isHidden = true
-        map.setCenter(CLLocationCoordinate2D(latitude: 3.14, longitude: 101.69), zoomLevel: 12, animated: false)
+        map.setCenter(startupViewport.center, zoomLevel: Double(startupViewport.zoom), animated: false)
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         map.addGestureRecognizer(tap)
         context.coordinator.map = map
@@ -37,9 +42,10 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         context.coordinator.onTapEmpty = onTapEmpty
         context.coordinator.pendingFeatures = features
 
-        if context.coordinator.currentPMTilesURL != pmtilesURL {
-            context.coordinator.currentPMTilesURL = pmtilesURL
-            map.styleURL = context.coordinator.styleURL(pmtilesURL: pmtilesURL)
+        if context.coordinator.currentWorldPMTilesURL != worldPMTilesURL || context.coordinator.currentRegionPMTilesURL != regionPMTilesURL {
+            context.coordinator.currentWorldPMTilesURL = worldPMTilesURL
+            context.coordinator.currentRegionPMTilesURL = regionPMTilesURL
+            map.styleURL = context.coordinator.styleURL(worldPMTilesURL: worldPMTilesURL, regionPMTilesURL: regionPMTilesURL)
         } else {
             context.coordinator.updateSource(on: map, features: features)
         }
@@ -51,7 +57,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var onTapPlace: (String) -> Void
         var onTapEmpty: () -> Void
         weak var map: MLNMapView?
-        var currentPMTilesURL: String?
+        var currentWorldPMTilesURL: String?
+        var currentRegionPMTilesURL: String?
         var pendingFeatures: [(MapPlace, PinState)] = []
 
         init(onCameraIdle: @escaping (BBox, Int) -> Void, onTapPlace: @escaping (String) -> Void, onTapEmpty: @escaping () -> Void) {
@@ -60,16 +67,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             self.onTapEmpty = onTapEmpty
         }
 
-        func styleURL(pmtilesURL: String?) -> URL? {
-            let style: JSONValue = if let pmtilesURL {
-                paperBasemapStyle(pmtilesURL: pmtilesURL)
-            } else {
-                .object([
-                    "version": .double(8),
-                    "sources": .object([:]),
-                    "layers": .array([]),
-                ])
-            }
+        func styleURL(worldPMTilesURL: String?, regionPMTilesURL: String?) -> URL? {
+            let style = paperBasemapStyle(worldPMTilesURL: worldPMTilesURL, regionPMTilesURL: regionPMTilesURL)
             guard let json = try? style.jsonString() else { return nil }
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("making-tracks-style-\(UUID().uuidString).json")
             do {
