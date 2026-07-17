@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 
 @MainActor
@@ -48,16 +49,29 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         tapFixturePin(in: map)
         XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.scrollViews["place-card.presentation.0"].waitForExistence(timeout: 5))
+        let sheet = app.scrollViews.matching(identifierPrefix: "place-card.instance.").firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+        let sheetInstanceIdentifier = sheet.identifier
 
         tapSecondFixturePin(in: map)
         XCTAssertTrue(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.scrollViews["place-card.presentation.0"].exists)
+        XCTAssertTrue(app.scrollViews[sheetInstanceIdentifier].exists)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].exists)
         attachScreenshot(named: "card-switched-to-art-deco-cinema")
 
         tapEmptyMap(in: map)
         XCTAssertFalse(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 2))
+    }
+
+    func testCreditsShowBuildCommitHash() throws {
+        let app = launch(reset: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        app.buttons["Credits"].tap()
+        let expectedBuildLabel = "Build \(try currentGitCommit())"
+        XCTAssertTrue(app.staticTexts[expectedBuildLabel].waitForExistence(timeout: 5))
     }
 
     private func launch(reset: Bool) -> XCUIApplication {
@@ -87,5 +101,23 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    private func currentGitCommit() throws -> String {
+        let bundle = Bundle(for: Self.self)
+        let url = try XCTUnwrap(bundle.url(forResource: "BuildInfo", withExtension: "plist"))
+        let data = try Data(contentsOf: url)
+        let plist = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: data, format: nil) as? [String: String]
+        )
+        let commit = try XCTUnwrap(plist["GitCommit"])
+        XCTAssertFalse(commit.isEmpty)
+        return commit
+    }
+}
+
+private extension XCUIElementQuery {
+    func matching(identifierPrefix prefix: String) -> XCUIElementQuery {
+        matching(NSPredicate(format: "identifier BEGINSWITH %@", prefix))
     }
 }
