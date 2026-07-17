@@ -95,8 +95,11 @@ We **resize** (a derivative work) and redistribute in a **non-commercial** app (
 commercial advantage). That set the acceptable-license boundary:
 
 - **ACCEPT** (credit rendered for all — see §3): Public Domain / PD-old / PD-art, **CC0**,
-  **CC-BY** (2.0/2.5/3.0/4.0), **CC-BY-SA** (all versions), and — under the non-commercial ruling —
-  **CC-BY-NC** and **CC-BY-NC-SA**.
+  **CC-BY 1.0–4.0**, **CC-BY-SA 1.0–4.0** (ALL versions), and — under the non-commercial ruling —
+  **CC-BY-NC** and **CC-BY-NC-SA** (all versions). **[amendment 2026-07-17 — field data: a real
+  score-ordered sample rejected 12/25 SOLELY for being pre-4.0 (BY 2.5/3.0, BY-SA 2.0/3.0; zero ND).
+  Older CC versions are equally redistributable-with-attribution; the accept-allowlist MUST enumerate
+  every accepted version code, not 4.0-only.]** Per-version handling is in the SA bullet + §3.
 - **REJECT**: **CC-BY-ND / CC-BY-NC-ND / any -ND** (no-derivatives — resizing is a derivative →
   forbidden regardless of the NC ruling), **GFDL-only** (impractical; accept only if *also*
   dual-licensed CC-BY-SA), **non-free / "fair use"**, and **anything without a machine-readable
@@ -108,17 +111,31 @@ commercial advantage). That set the acceptable-license boundary:
   ND stays rejected on the *derivative* ground, independent of commerciality.
 - **[gate — resolve the derivative theory, one theory throughout]** We treat a resize + WebP re-encode
   as an **adaptation** (a derivative). This is the *same* premise that lets us reject -ND, so we must
-  carry it consistently: for **CC-BY-SA** sources our thumbnail is **relicensed under the same BY-SA
-  version**, and §3's credit must *declare that* (same-license + license URI), not merely name the
-  source's license. (CC's FAQ arguably treats a pure format/size shift as a verbatim non-adaptation,
-  under which SA would not attach and the -ND reject would be merely conservative — but we do not rely
-  on that; one theory, applied to both the reject set and the SA obligation.)
-- **License classification — STRICT, on the machine-readable code (feasibility gate).** Classify on
-  `extmetadata.License` (the short code, e.g. `cc-by-sa-4.0`, `cc0`, `pd`); **reject when that field
-  is absent or unrecognised** (Commons metadata is frequently missing/messy). `LicenseShortName` is
-  **display only**, never the classifier. Match the code against an explicit accept-allowlist
-  (config-driven, earned-not-baked). Cache reject decisions. State the expected drop rate from
-  missing-metadata + rejected-format files in the WP-IMG-P acceptance (it is non-trivial).
+  carry it consistently: for **every ShareAlike source — CC-BY-SA AND CC-BY-NC-SA** (BY-NC-SA carries an
+  identical SA clause) — our thumbnail is **relicensed under the SAME EXACT license instrument as the
+  source**, and §3's credit must *declare that* (same instrument + its exact deed URI), not merely name
+  the source's license.
+- **"Same exact instrument" means version AND jurisdiction PORT [gate — SEV-2, the ports catch].** A CC
+  "version" is not just the numeric segment: pre-4.0 licenses are **ported** to jurisdictions
+  (`cc-by-sa-3.0-de`, `cc-by-2.0-fr`, `cc-by-sa-2.1-jp`, `-igo`) — each a **distinct legal instrument**
+  (own text, own law). Ports exist **only on 1.0–3.0** — exactly the versions this amendment admits — so
+  they are the *common* pre-4.0 case, not an edge. Therefore the unit of identity is the **full ported
+  code**: the SA discharge relicenses under the source's exact ported instrument (`by-sa-3.0-de` →
+  offered `by-sa-3.0-de`, always allowed as the identical license); `license_url` reproduces the port
+  segment (`…/by-sa/3.0/de/`, §3); and the accept-allowlist matches ports (below), never a version-only
+  literal list. **BY-SA 1.0** (Unported, predates "or later") is handled by the same rule — same-1.0
+  relicensing. We never rely on version-upgrade or cross-porting to Generic. (CC's FAQ arguably treats a
+  pure format/size shift as a verbatim non-adaptation, under which SA would not attach — but we do not
+  rely on that; one theory, applied to both the reject set and the SA obligation.)
+- **License classification — STRICT, PATTERN on the machine-readable code (feasibility gate).** Classify
+  on `extmetadata.License` against a **family+version+optional-port pattern**, NOT a hardcoded literal
+  list (a literal unported list silently re-rejects the ported majority the amendment means to accept):
+  accept `^cc-by(-nc)?(-sa)?-(1\.0|2\.0|2\.1|2\.5|3\.0|4\.0)(-[a-z]{2}(_[a-z]+)?|-igo)?$` (plus `cc0`,
+  PD markers), **capturing the port** for `license_code`/`license_url`/attribution; **reject `-nd`, and
+  reject when the field is absent or the pattern does not match** (Commons metadata is frequently
+  missing/messy — reject-on-doubt). `LicenseShortName` is **display only**, never the classifier. Cache
+  reject decisions. Golden fixtures include ≥1 **ported** code per accepted family. State the expected
+  drop rate (missing-metadata + rejected-format) in the WP-IMG-P acceptance (non-trivial).
 
 **[RESOLVED — Rob ruled 2026-07-17: "the app is not commercial" → NC accepted, contingent (above).]**
 The commerciality call was Rob's, not mine ([[principles-changes-are-robs]]); recorded, not
@@ -135,10 +152,15 @@ relitigated. The contingency + mechanical purge path (below) is the standing con
     *indicating that you modified the material*; we **always** resize + re-encode, so every entry
     carries a modification notice (e.g. rendered "…— modified (resized)"). Omitting it ships every
     BY/BY-SA thumbnail in breach — a golden fixture asserts it is present on every entry.
-  - **`license_url`** — the canonical license deed URL (e.g. `https://creativecommons.org/licenses/by-sa/4.0/`);
-    **required for BY/BY-SA** (the license notice must link/where practicable), host-pinned to
-    `creativecommons.org` (or PD marker). For **BY-SA**, this + `license_code` is our declaration that
-    the thumbnail is offered under the same BY-SA version (the §2 share-alike obligation).
+  - **`license_url`** — the **EXACT-instrument** deed URL, **derived from the full `license_code`
+    including any jurisdiction port** (`by-sa-3.0-de` → `https://creativecommons.org/licenses/by-sa/3.0/de/`,
+    `by-2.5` → `…/licenses/by/2.5/`), never a hardcoded 4.0 and never dropping the port to Generic.
+    **[amendment]** With older + ported versions accepted (§2), an off-by-version *or* off-by-port URL
+    misstates the license (a distinct instrument). **Required for every -SA and -BY family**, host-pinned
+    to `creativecommons.org` (or a PD marker). For **every ShareAlike source (BY-SA and BY-NC-SA)**, this
+    exact-instrument URL + `license_code` is our declaration that the thumbnail is offered under the
+    **same exact instrument** (§2 discharge — applies to BY-NC-SA identically). A golden fixture asserts
+    `license_url` equals `license_code`'s **full version + port**, not just the numeric version.
   - **`source_url`** — the Commons **File:** page, **host-pinned** `^https://commons\.wikimedia\.org/wiki/File:…`
     and built by URL-encoding a *validated* `File:` title (never string-concatenating untrusted text).
 - **HTML-strip Commons text — SAFE_TEXT is NOT enough [gate — untrusted-data].** `extmetadata.Artist`/
@@ -205,13 +227,15 @@ relitigated. The contingency + mechanical purge path (below) is the standing con
 
 - **New `image-index` schema** (`contracts/schemas/image-index.schema.json`, `$id .../image-index/1`),
   `additionalProperties:false`, `schema_version` const 1, `min_reader_version` pattern. Each entry:
-  `{place_id, thumb_sha256 (hex64), bytes (0..cap), creator (≤256), license_code (≤64, enum-checked
-  against the accept-allowlist), license_name (≤64, display), license_url (https, host-pinned
-  creativecommons.org or PD marker, ≤256), source_url (host-pinned `^https://commons\.wikimedia\.org/wiki/File:`,
-  ≤2048), modified (bool, must be true)}`. Array cap mirrors the tile `places` cap. New caps in
-  `caps.py`. Bump `versions.json` (`image_index:1`). Golden fixtures (valid + invalid: **off-host
-  source_url**, source_url with injected `?`/`#`/`..`, off-host license_url, **BY-without-creator**,
-  `modified:false`, HTML-in-creator, oversize, control chars, bad sha).
+  `{place_id, thumb_sha256 (hex64), bytes (0..cap), creator (≤256), license_code (≤64, the FULL ported
+  code e.g. `cc-by-sa-3.0-de`, pattern-checked per §2), license_name (≤64, display), license_url (https,
+  host-pinned creativecommons.org or PD marker, ≤256, **port segment included**), source_url (host-pinned
+  `^https://commons\.wikimedia\.org/wiki/File:`, ≤2048), modified (bool, must be true)}`. Array cap
+  mirrors the tile `places` cap. New caps in `caps.py`. Bump `versions.json` (`image_index:1`). Golden
+  fixtures (valid — incl. **≥1 ported code per family** (`by-sa-3.0-de`) + a **BY-NC-SA** entry — and
+  invalid: **off-host source_url**, source_url with injected `?`/`#`/`..`, off-host license_url,
+  **license_url version/port ≠ license_code**, **BY-without-creator**, `modified:false`, HTML-in-creator,
+  oversize, control chars, bad sha).
 - **Publisher — corrected against `r2.py` [gate — the described path was wrong].** The upload path is
   **NOT** the generic "atomic written-last" and it **hard-filters kinds**: `publish_prepared_to_r2`
   (`r2.py:270-283`) keeps only `{tile,basemap,manifest}` as content, then uploads
@@ -346,5 +370,15 @@ offline last with WP-B7).
 - **The unifying architecture (sidecar + content-addressed blobs) SURVIVED** — it avoids the
   refuse-gate, degrades cleanly, and the schema/versioning is sound; the survivors were refinements to
   the legal model, the untrusted-data handling, and the (mis-described) publisher path, not the design.
+- **License-versions amendment (2026-07-17, gated separately — 2 legal/feasibility critics + verify;
+  raised 6, 4 survived, all folded).** After WP-IMG-P field data (a real sample rejected 12/25 *solely*
+  for being pre-4.0), the accept-set expanded to **CC-BY/BY-SA/BY-NC/BY-NC-SA 1.0–4.0**. The gate caught:
+  - **Jurisdiction PORTS (SEV-2):** pre-4.0 licenses are ported (`by-sa-3.0-de`) = distinct instruments;
+    a version-only allowlist/URL would misstate the license AND silently re-reject the ported majority
+    the amendment meant to recover. Fixed: full ported code is the identity unit — **pattern** classify
+    (`^cc-by(-nc)?(-sa)?-<ver>(-<port>)?$`), port carried into `license_code`/`license_url`/discharge.
+  - **BY-NC-SA share-alike (SEV-3):** it's a ShareAlike license too; the discharge/declaration now covers
+    **BY-NC-SA identically** to BY-SA (same-exact-instrument relicense).
+  - **BY-SA 1.0** (Unported, not upgrade-compatible) handled by the same same-exact-instrument rule.
 - PR → `develop`, `sourcery-review` only, report `docs/images-design`. No self-merge; fable reviews;
   `main` is Rob's.
