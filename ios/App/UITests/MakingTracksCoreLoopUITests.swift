@@ -74,6 +74,34 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts[expectedBuildLabel].waitForExistence(timeout: 5))
     }
 
+    func testMapShowsOpenStreetMapAttribution() {
+        let app = launch(reset: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        let osmAttribution = app.buttons["map.openstreetmap-attribution"]
+        XCTAssertTrue(osmAttribution.waitForExistence(timeout: 5))
+        osmAttribution.tap()
+
+        XCTAssertTrue(app.staticTexts["Credits"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "map-openstreetmap-attribution")
+    }
+
+    func testCreditsShowOpenSourceAcknowledgements() throws {
+        let app = launch(reset: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        app.buttons["Credits"].tap()
+        XCTAssertTrue(app.staticTexts["GRDB.swift"].waitForExistence(timeout: 5))
+
+        let mapLibreCredit = app.staticTexts["MapLibre Native iOS / maplibre-gl-native-distribution"]
+        XCTAssertTrue(scrollToExistence(of: mapLibreCredit, in: app))
+        attachScreenshot(named: "credits-open-source-acknowledgements")
+    }
+
     private func launch(reset: Bool) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
@@ -101,6 +129,22 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    @discardableResult
+    private func scrollToExistence(of element: XCUIElement, in app: XCUIApplication) -> Bool {
+        if element.waitForExistence(timeout: 2) {
+            return true
+        }
+
+        for _ in 0..<5 {
+            app.swipeUp()
+            if element.waitForExistence(timeout: 1) {
+                return true
+            }
+        }
+
+        return element.exists
     }
 
     private func currentGitCommit() throws -> String {

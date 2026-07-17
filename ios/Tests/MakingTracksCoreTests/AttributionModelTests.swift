@@ -21,14 +21,14 @@ final class AttributionModelTests: XCTestCase {
 
         XCTAssertEqual(
             model.sourceNames(for: [
-                "Historic England:1",
                 "colonless",
                 "evil:payload",
+                "hehle:1",
+                "plaque:2",
                 "wd:Q42",
                 "wp:Big_Ben",
                 "osm:node/1",
-                "open_plaques:123",
-                "historic_england:abc",
+                "not-a-source-ref",
             ]),
             ["Historic England", "Open Plaques", "OpenStreetMap", "Wikidata", "Wikipedia"]
         )
