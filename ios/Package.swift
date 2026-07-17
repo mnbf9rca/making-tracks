@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .library(name: "MakingTracksData", targets: ["MakingTracksData"]),
         .library(name: "MakingTracksTiles", targets: ["MakingTracksTiles"]),
+        .library(name: "MakingTracksMapStyle", targets: ["MakingTracksMapStyle"]),
         .library(name: "MakingTracksCore", targets: ["MakingTracksCore"]),
     ],
     dependencies: [
@@ -25,6 +26,11 @@ let package = Package(
             linkerSettings: [.linkedLibrary("z")]
         ),
         .target(
+            name: "MakingTracksMapStyle",
+            dependencies: ["MakingTracksData"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .target(
             name: "MakingTracksCore",
             dependencies: ["MakingTracksData", "MakingTracksTiles"],
             swiftSettings: [.swiftLanguageMode(.v6)]
@@ -37,6 +43,11 @@ let package = Package(
         .testTarget(
             name: "MakingTracksTilesTests",
             dependencies: ["MakingTracksTiles"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "MakingTracksMapStyleTests",
+            dependencies: ["MakingTracksMapStyle", "MakingTracksData"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
