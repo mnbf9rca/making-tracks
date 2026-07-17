@@ -201,6 +201,121 @@ def test_upload_path_locks_uploads_content_manifest_current_then_private_registr
     assert client.deleted == [("making-tracks-state", "uk/publish.lock", '"lock-etag"')]
 
 
+def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tmp_path):
+    layout = _layout()
+    uk_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
+    sub_root = tmp_path / "stage" / "uk_london" / "20260715T120000Z"
+    for root, region in [(uk_root, "uk"), (sub_root, "uk_london")]:
+        (root / "tiles/10/1").mkdir(parents=True)
+        (root / "tiles/10/1/2.json.gz").write_bytes(f"tile:{region}".encode())
+        (root / f"{region}.pmtiles").write_bytes(f"basemap:{region}".encode())
+        (root / "manifest.json").write_text("{}")
+    region_index = tmp_path / "stage" / "regions.json"
+    region_index.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "min_reader_version": 1,
+                "generated_at": "2026-07-15T12:00:00Z",
+                "regions": [
+                    {
+                        "id": "uk",
+                        "display_name": "United Kingdom",
+                        "parent": None,
+                        "bbox": [-8.65, 49.84, 1.77, 60.86],
+                        "publish_version": "20260715T120000Z",
+                        "basemap_bytes": 7,
+                        "tile_count": 1,
+                        "bytes_without_thumbs": 11,
+                        "bytes_with_thumbs": 11,
+                    },
+                    {
+                        "id": "uk_london",
+                        "display_name": "London",
+                        "parent": "uk",
+                        "bbox": [-0.5, 51.2, 0.3, 51.8],
+                        "publish_version": "20260715T120000Z",
+                        "basemap_bytes": 7,
+                        "tile_count": 1,
+                        "bytes_without_thumbs": 11,
+                        "bytes_with_thumbs": 11,
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+    )
+
+    existing_index = {
+        "schema_version": 1,
+        "min_reader_version": 1,
+        "generated_at": "2026-07-14T12:00:00Z",
+        "regions": [
+            {
+                "id": "malaysia",
+                "display_name": "Malaysia",
+                "parent": None,
+                "bbox": [99.64, 0.85, 119.27, 7.36],
+                "publish_version": "20260714T120000Z",
+                "basemap_bytes": 7,
+                "tile_count": 1,
+                "bytes_without_thumbs": 11,
+                "bytes_with_thumbs": 11,
+            }
+        ],
+    }
+
+    class MissingCurrentsClient:
+        def __init__(self):
+            self.puts = []
+            self.deleted = []
+
+        def get_object(self, *, Bucket, Key):
+            if Key == "regions.json":
+                return {"Body": BytesIO(json.dumps(existing_index).encode("utf-8"))}
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            body = Body.read() if hasattr(Body, "read") else Body
+            self.puts.append((Bucket, Key, body, IfNoneMatch))
+            return {"ETag": f'"etag-{len(self.puts)}"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            self.deleted.append((Bucket, Key, IfMatch))
+
+    plans = [
+        R.publish_to_r2(uk_root, layout, upload=False, registry_blob=b"registry\n").plan,
+        R.publish_to_r2(sub_root, layout, upload=False).plan,
+    ]
+    client = MissingCurrentsClient()
+
+    result = R.publish_prepared_to_r2(plans, region_index, layout, client=client)
+
+    keys = [key for _bucket, key, _body, if_none_match in client.puts if if_none_match is None]
+    assert keys == [
+        "uk/20260715T120000Z/tiles/10/1/2.json.gz",
+        "uk/20260715T120000Z/uk.pmtiles",
+        "uk/20260715T120000Z/manifest.json",
+        "uk_london/20260715T120000Z/tiles/10/1/2.json.gz",
+        "uk_london/20260715T120000Z/uk_london.pmtiles",
+        "uk_london/20260715T120000Z/manifest.json",
+        "uk/current.json",
+        "uk_london/current.json",
+        "regions.json",
+        "registry/uk.jsonl",
+    ]
+    merged_index = json.loads(client.puts[-2][2])
+    assert [entry["id"] for entry in merged_index["regions"]] == [
+        "malaysia",
+        "uk",
+        "uk_london",
+    ]
+    assert result.region_index_result.dry_run is False
+
+
 def test_default_client_uses_committed_r2_s3_endpoint_contract(monkeypatch):
     calls = []
 

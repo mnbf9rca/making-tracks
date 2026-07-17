@@ -12,6 +12,7 @@ from mt_pipeline.reconcile.registry_file import LocalRegistryStore
 
 A = "mt1_" + "0" * 26
 B = "mt1_" + "1" * 26
+C = "mt1_" + "2" * 26
 
 
 def test_publish_stage_builds_local_staging_and_marks_shipped(
@@ -138,6 +139,184 @@ def test_publish_stage_manifest_includes_osm_attribution_for_basemap_without_osm
 
     manifest = json.loads((result.staging_dir / "manifest.json").read_text())
     assert [attr["source"] for attr in manifest["attribution"]] == ["osm"]
+
+
+def test_publish_stage_emits_bbox_subregion_shard_without_subregion_registry(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    _seed_publish_input_outside_central_subregion(conn)
+    _write_malaysia_registry(tmp_path)
+    _use_test_subregion_config(monkeypatch)
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(f"basemap:{out_path.name}".encode("utf-8"))
+        return basemap.BasemapArtifact(
+            filename=out_path.name,
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=out_path.stat().st_size,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    result = P.run(
+        conn,
+        "malaysia",
+        publish_version="20260717T120000Z",
+        generated_at="2026-07-17T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+    )
+
+    assert result.counts.total_published == 2
+    assert len(result.subregion_results) == 1
+    sub = result.subregion_results[0]
+    assert sub.manifest["region"] == "malaysia_central"
+    assert sub.counts.total_published == 1
+    assert sub.manifest["basemap"]["bbox"] == [101.6, 3.0, 101.8, 3.2]
+    assert sub.staging_dir == tmp_path / "stage/malaysia_central/20260717T120000Z"
+
+    parent_registry_ops = [
+        op for op in result.publish_result.plan.ops if op.kind == "registry"
+    ]
+    subregion_registry_ops = [
+        op for op in sub.publish_result.plan.ops if op.kind == "registry"
+    ]
+    assert [op.key for op in parent_registry_ops] == ["registry/malaysia.jsonl"]
+    assert subregion_registry_ops == []
+
+    index = json.loads((tmp_path / "stage/regions.json").read_text())
+    assert [entry["id"] for entry in index["regions"]] == [
+        "malaysia",
+        "malaysia_central",
+    ]
+    assert index["regions"][1]["parent"] == "malaysia"
+    assert index["regions"][1]["display_name"] == "Central Malaysia"
+    assert index["regions"][1]["publish_version"] == "20260717T120000Z"
+    assert index["regions"][1]["tile_count"] == len(sub.manifest["tiles"])
+    assert isinstance(index["regions"][1]["bytes_without_thumbs"], int)
+    assert (
+        index["regions"][1]["bytes_with_thumbs"]
+        == index["regions"][1]["bytes_without_thumbs"]
+    )
+
+
+def test_publish_stage_writes_region_index_after_all_current_flips(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    _seed_publish_input_outside_central_subregion(conn)
+    _write_malaysia_registry(tmp_path)
+    _use_test_subregion_config(monkeypatch)
+    order = []
+    real_publish_to_r2 = P.r2.publish_to_r2
+    real_publish_region_index = P.r2.publish_region_index
+
+    def spy_publish_to_r2(staging_dir, layout, **kwargs):
+        result = real_publish_to_r2(staging_dir, layout, **kwargs)
+        order.extend(op.key for op in result.plan.ops if op.kind == "current")
+        return result
+
+    def spy_publish_region_index(region_index_path, layout, **kwargs):
+        result = real_publish_region_index(region_index_path, layout, **kwargs)
+        order.append(result.plan.ops[-1].key)
+        return result
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename=out_path.name,
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.r2, "publish_to_r2", spy_publish_to_r2)
+    monkeypatch.setattr(P.r2, "publish_region_index", spy_publish_region_index)
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    result = P.run(
+        conn,
+        "malaysia",
+        publish_version="20260717T120000Z",
+        generated_at="2026-07-17T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+    )
+
+    assert order == [
+        "malaysia/current.json",
+        "malaysia_central/current.json",
+        "regions.json",
+    ]
+    assert result.region_index_publish_result.plan.ops[-1].kind == "region_index"
+
+
+def test_publish_stage_upload_builds_all_targets_before_any_upload(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    _seed_publish_input_outside_central_subregion(conn)
+    _write_malaysia_registry(tmp_path)
+    _use_test_subregion_config(monkeypatch)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+    monkeypatch.setattr(P.r2, "_import_module", lambda name: object())
+    monkeypatch.setenv("R2_S3_ENDPOINT", "https://example.r2.cloudflarestorage.com")
+    monkeypatch.setenv("R2_ACCESS_KEY_ID", "access")
+    monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "secret")
+    calls = []
+
+    def fake_cut_basemap(region_config, out_path):
+        if out_path.name == "malaysia_central.pmtiles":
+            raise RuntimeError("subregion basemap failed")
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename=out_path.name,
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    def fail_upload(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("upload should wait for every target to stage")
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.r2, "publish_prepared_to_r2", fail_upload)
+
+    with pytest.raises(RuntimeError, match="subregion basemap failed"):
+        P.run(
+            conn,
+            "malaysia",
+            publish_version="20260717T120000Z",
+            generated_at="2026-07-17T12:00:00Z",
+            scoring_config_version="scoring-v1",
+            upload=True,
+            staging_root=tmp_path / "stage",
+        )
+
+    assert calls == []
+
+
+def test_subregion_bbox_filter_keeps_invalid_coordinates_for_tile_quarantine():
+    places = [
+        {"place_id": A, "lat": 3.1, "lon": 101.7},
+        {"place_id": B, "lat": 5.0, "lon": 110.0},
+        {"place_id": C, "lat": "not-a-number", "lon": 101.7},
+    ]
+
+    filtered = P._filter_places_to_bbox(places, (101.6, 3.0, 101.8, 3.2))
+
+    assert [place["place_id"] for place in filtered] == [A, C]
 
 
 def test_publish_stage_emits_phase_heartbeats_for_slow_publish_steps(
@@ -781,6 +960,133 @@ def _run_with_member_refs_json(
         scoring_config_version="scoring-v1",
         staging_root=tmp_path / "stage",
     )
+
+
+def _write_malaysia_registry(tmp_path):
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [
+            RegistryRecord(
+                place_id=A,
+                refs={"wd:Q100", "osm:node/100"},
+                mint_anchor="wd:Q100",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+            RegistryRecord(
+                place_id=B,
+                refs={"wd:Q200"},
+                mint_anchor="wd:Q200",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+            RegistryRecord(
+                place_id=C,
+                refs={"wd:Q300"},
+                mint_anchor="wd:Q300",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+        ]
+    )
+
+
+def _use_test_subregion_config(monkeypatch):
+    monkeypatch.setattr(
+        P.config,
+        "load",
+        lambda region: P.config.RegionConfig.from_dict(
+            {
+                "schema_version": 1,
+                "region_id": region,
+                "display_name": "Malaysia",
+                "bbox": [99.64, 0.85, 119.27, 7.36],
+                "languages": ["en"],
+                "sources": {"wikidata": True, "osm": True},
+                "basemap": {
+                    "source_pmtiles": "https://build.protomaps.com/20260714.pmtiles",
+                    "maxzoom": 14,
+                    "pack_granularity": "subregion",
+                    "size_budget_bytes": 500000000,
+                    "measured_archive_bytes": 223155574,
+                    "subregions": [
+                        {
+                            "id": "central",
+                            "display_name": "Central Malaysia",
+                            "bbox": [101.6, 3.0, 101.8, 3.2],
+                            "measured_archive_bytes": 12345,
+                        }
+                    ],
+                },
+            }
+        ),
+    )
+
+
+def _seed_publish_input_outside_central_subregion(conn):
+    source_record.persist(
+        conn,
+        source_record.parse(
+            "malaysia",
+            "wd",
+            "wd:Q300",
+            "Outside",
+            5.0,
+            110.0,
+            {"classes": ["Q839954"]},
+        ),
+        run_id="extract1",
+    )
+    store.replace_places(
+        conn,
+        region="malaysia",
+        places=[
+            {
+                "place_id": A,
+                "name": "Fort",
+                "lat": 3.10,
+                "lon": 101.70,
+                "refs": ["wd:Q100"],
+                "member_refs": ["wd:Q100", "osm:node/100"],
+                "status": "live",
+            },
+            {
+                "place_id": B,
+                "name": "Residue",
+                "lat": 3.11,
+                "lon": 101.71,
+                "refs": ["wd:Q200"],
+                "member_refs": ["wd:Q200"],
+                "status": "live",
+            },
+            {
+                "place_id": C,
+                "name": "Outside",
+                "lat": 5.0,
+                "lon": 110.0,
+                "refs": ["wd:Q300"],
+                "member_refs": ["wd:Q300"],
+                "status": "live",
+            },
+        ],
+    )
+    conn.execute(
+        """
+        INSERT INTO place_scores (place_id, region, score, tier, signals_json, run_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (C, "malaysia", 0.8, 2, "{}", "score1"),
+    )
+    conn.execute(
+        """
+        INSERT INTO place_categories (place_id, region, category, run_id)
+        VALUES (?, ?, ?, ?)
+        """,
+        (C, "malaysia", "history", "cat1"),
+    )
+    conn.commit()
 
 
 def _seed_publish_inputs(conn):
