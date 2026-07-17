@@ -316,6 +316,100 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
     assert result.region_index_result.dry_run is False
 
 
+def test_region_index_dry_run_with_client_previews_merged_upload_body(tmp_path):
+    layout = _layout()
+    region_index = tmp_path / "stage" / "regions.json"
+    region_index.parent.mkdir()
+    region_index.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "min_reader_version": 1,
+                "generated_at": "2026-07-15T12:00:00Z",
+                "regions": [
+                    {
+                        "id": "uk",
+                        "display_name": "United Kingdom",
+                        "parent": None,
+                        "bbox": [-8.65, 49.84, 1.77, 60.86],
+                        "publish_version": "20260715T120000Z",
+                        "basemap_bytes": 7,
+                        "tile_count": 1,
+                        "bytes_without_thumbs": 11,
+                        "bytes_with_thumbs": 11,
+                    }
+                ],
+            }
+        )
+    )
+    existing_index = {
+        "schema_version": 1,
+        "min_reader_version": 1,
+        "generated_at": "2026-07-14T12:00:00Z",
+        "regions": [
+            {
+                "id": "malaysia",
+                "display_name": "Malaysia",
+                "parent": None,
+                "bbox": [99.64, 0.85, 119.27, 7.36],
+                "publish_version": "20260714T120000Z",
+                "basemap_bytes": 7,
+                "tile_count": 1,
+                "bytes_without_thumbs": 11,
+                "bytes_with_thumbs": 11,
+            }
+        ],
+    }
+
+    class RegionIndexClient:
+        def get_object(self, *, Bucket, Key):
+            assert (Bucket, Key) == ("making-tracks-tiles", "regions.json")
+            return {"Body": BytesIO(json.dumps(existing_index).encode("utf-8"))}
+
+    result = R.publish_region_index(
+        region_index, layout, client=RegionIndexClient(), upload=False
+    )
+
+    assert result.dry_run is True
+    assert result.plan.ops[0].source_path is None
+    merged = json.loads(result.plan.ops[0].body)
+    assert [entry["id"] for entry in merged["regions"]] == ["malaysia", "uk"]
+
+
+def test_region_index_offline_dry_run_plan_serializes_the_planned_body(tmp_path):
+    layout = _layout()
+    region_index = tmp_path / "stage" / "regions.json"
+    region_index.parent.mkdir()
+    region_index.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "min_reader_version": 1,
+                "generated_at": "2026-07-15T12:00:00Z",
+                "regions": [
+                    {
+                        "id": "uk",
+                        "display_name": "United Kingdom",
+                        "parent": None,
+                        "bbox": [-8.65, 49.84, 1.77, 60.86],
+                        "publish_version": "20260715T120000Z",
+                        "basemap_bytes": 7,
+                        "tile_count": 1,
+                        "bytes_without_thumbs": 11,
+                        "bytes_with_thumbs": 11,
+                    }
+                ],
+            }
+        )
+    )
+
+    result = R.publish_region_index(region_index, layout, upload=False)
+
+    assert result.dry_run is True
+    assert result.plan.ops[0].source_path is None
+    assert json.loads(result.plan.ops[0].body)["regions"][0]["id"] == "uk"
+
+
 def test_default_client_uses_committed_r2_s3_endpoint_contract(monkeypatch):
     calls = []
 
