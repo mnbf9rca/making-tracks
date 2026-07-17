@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .library(name: "MakingTracksData", targets: ["MakingTracksData"]),
         .library(name: "MakingTracksTiles", targets: ["MakingTracksTiles"]),
+        .library(name: "MakingTracksMapStyle", targets: ["MakingTracksMapStyle"]),
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
@@ -23,6 +24,11 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)],
             linkerSettings: [.linkedLibrary("z")]
         ),
+        .target(
+            name: "MakingTracksMapStyle",
+            dependencies: ["MakingTracksData"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
         .testTarget(
             name: "MakingTracksDataTests",
             dependencies: ["MakingTracksData"],
@@ -31,6 +37,11 @@ let package = Package(
         .testTarget(
             name: "MakingTracksTilesTests",
             dependencies: ["MakingTracksTiles"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "MakingTracksMapStyleTests",
+            dependencies: ["MakingTracksMapStyle", "MakingTracksData"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
     ]
