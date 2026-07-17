@@ -28,14 +28,16 @@ final class PinLayersTests: XCTestCase {
     func testPinSubstrateIsShapeSourcePlusStyleLayersNotAnnotations() {
         let layers = PinLayers.pinLayers()
         let circle = layer(id: "pins-circle", in: layers)
+        let icon = layer(id: "pins-icon", in: layers)
         let bookmark = layer(id: "pins-bookmark", in: layers)
         let heart = layer(id: "pins-heart", in: layers)
 
         XCTAssertEqual(circle?["type"], .string("circle"), "circle pin layer")
+        XCTAssertEqual(icon?["type"], .string("symbol"), "category icon symbol layer")
         XCTAssertEqual(bookmark?["type"], .string("symbol"), "bookmark badge symbol layer")
         XCTAssertEqual(heart?["type"], .string("symbol"), "heart badge symbol layer")
-        XCTAssertEqual(layers.count, 3, "circle pin layer + bookmark/heart badges only")
-        for layer in [circle, bookmark, heart] {
+        XCTAssertEqual(layers.count, 4, "circle + category icon + bookmark/heart badges")
+        for layer in [circle, icon, bookmark, heart] {
             XCTAssertEqual(layer?["source"], .string(PinLayers.sourceID))
         }
         XCTAssertNotEqual(PinLayers.bookmarkOffset, PinLayers.heartOffset, "badges would collide at one anchor")
@@ -50,12 +52,55 @@ final class PinLayersTests: XCTestCase {
 
         XCTAssertEqual(bookmark?["filter"], PinLayers.bookmarkFilter())
         XCTAssertEqual(heart?["filter"], PinLayers.heartFilter())
+        XCTAssertEqual(layoutValue("icon-image", in: icon), PinLayers.categoryIconExpression())
+        XCTAssertEqual(layoutValue("icon-allow-overlap", in: icon), .bool(true))
+        XCTAssertEqual(layoutValue("icon-ignore-placement", in: icon), .bool(true))
+        XCTAssertEqual(layoutValue("icon-size", in: icon), .double(PinLayers.categoryIconScale))
         XCTAssertEqual(layoutValue("icon-image", in: bookmark), .string("badge-bookmark"))
         XCTAssertEqual(layoutValue("icon-image", in: heart), .string("badge-heart"))
         XCTAssertEqual(layoutValue("icon-allow-overlap", in: bookmark), .bool(true))
         XCTAssertEqual(layoutValue("icon-allow-overlap", in: heart), .bool(true))
         XCTAssertEqual(layoutValue("icon-offset", in: bookmark), PinLayers.bookmarkOffset)
         XCTAssertEqual(layoutValue("icon-offset", in: heart), PinLayers.heartOffset)
+    }
+
+    func testCategoryIconExpressionMapsKnownCategoriesAndFallsBackForUnknowns() {
+        for (category, iconName) in PinLayers.categoryIconNames {
+            let props = ["category": JSONValue.string(category)]
+            XCTAssertEqual(Expression.evaluate(PinLayers.categoryIconExpression(), props), .string(iconName))
+        }
+
+        XCTAssertEqual(
+            Expression.evaluate(PinLayers.categoryIconExpression(), ["category": .string("future_category")]),
+            .string(PinLayers.fallbackCategoryIconName)
+        )
+        XCTAssertEqual(
+            Expression.evaluate(PinLayers.categoryIconExpression(), [:]),
+            .string(PinLayers.fallbackCategoryIconName)
+        )
+    }
+
+    func testEveryEmittedCategoryIconHasARegisteredSymbolImage() {
+        var emittedIconNames = Set(PinLayers.categoryIconNames.values)
+        emittedIconNames.insert(PinLayers.fallbackCategoryIconName)
+
+        XCTAssertEqual(emittedIconNames, Set(PinLayers.categorySymbolNames.keys))
+    }
+
+    func testCategoryVisibilityFilterIsDeterministicAndOpenStringSafe() {
+        XCTAssertNil(PinLayers.categoryVisibilityFilter(visibleCategories: nil))
+        XCTAssertEqual(
+            PinLayers.categoryVisibilityFilter(visibleCategories: ["museum", "artwork"]),
+            .array([
+                .string("in"),
+                .array([.string("get"), .string("category")]),
+                .array([.string("literal"), .array([.string("artwork"), .string("museum")])]),
+            ])
+        )
+        XCTAssertEqual(
+            PinLayers.categoryVisibilityFilter(visibleCategories: []),
+            .array([.string("=="), .bool(true), .bool(false)])
+        )
     }
 
     func testFoundationObjectBridgePreservesRecursiveShapeAndBooleanNSNumber() {
@@ -80,7 +125,7 @@ final class PinLayersTests: XCTestCase {
 
     func testFeatureIsGeoJSONPointWithLonLatOrder() {
         let feature = FeatureEncoding.feature(
-            MapPlace(id: "mt1_x", lat: 3.14, lon: 101.69, tier: 2),
+            MapPlace(id: "mt1_x", lat: 3.14, lon: 101.69, tier: 2, category: "museum"),
             PinState(saved: true, visit: .loved)
         )
         guard case let .object(feat) = feature,
@@ -94,6 +139,7 @@ final class PinLayersTests: XCTestCase {
         guard case let .object(props) = feat["properties"] else { return XCTFail("props") }
         XCTAssertEqual(props["place_id"], .string("mt1_x"))
         XCTAssertEqual(props["tier"], .double(2))
+        XCTAssertEqual(props["category"], .string("museum"))
         XCTAssertEqual(props["visit"], .string("loved"))
         XCTAssertEqual(props["saved"], .bool(true))
         XCTAssertEqual(props["hidden"], .bool(false))

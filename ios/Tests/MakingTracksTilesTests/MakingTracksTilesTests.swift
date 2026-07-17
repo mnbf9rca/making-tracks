@@ -188,6 +188,7 @@ final class MakingTracksTilesTests: XCTestCase {
         let decoded = try PlaceDecoder.decode(tileData: jsonData(tile), expected: TileCoordinate(z: 10, x: 511, y: 340), attributionSources: ["wd"])
 
         XCTAssertEqual(decoded.places.map(\.mapPlace.id), ["mt1_00000000000000000000000000", "mt1_00000000000000000000000001"])
+        XCTAssertEqual(decoded.places.first?.mapPlace.category, "historic_building")
         XCTAssertNil(decoded.places.last?.imageURL)
         XCTAssertEqual(decoded.places.last?.sourceRefs, ["osm:node/5", "wd:Q42"])
         XCTAssertFalse(decoded.places.last?.placeRef.rawJSON.contains("https://example.com/file.jpg") ?? true)
@@ -221,6 +222,7 @@ final class MakingTracksTilesTests: XCTestCase {
 
         XCTAssertEqual(decoded.places.map(\.mapPlace.id), ["mt1_3MBHTKMAFVPJWMQRF79PW6J0TW"])
         XCTAssertEqual(decoded.places.first?.mapPlace.tier, 4)
+        XCTAssertEqual(decoded.places.first?.mapPlace.category, "historic_building")
         XCTAssertEqual(decoded.missingAttributionSources, [])
     }
 
@@ -1023,7 +1025,7 @@ private func validPlace(_ overrides: [String: Any] = [:]) -> [String: Any] {
         "name": "Big Ben",
         "lat": 51.5007,
         "lon": -0.1246,
-        "category": "architecture",
+        "category": "historic_building",
         "tier": 1,
         "score": 0.9,
         "source_refs": ["wd:Q42"],

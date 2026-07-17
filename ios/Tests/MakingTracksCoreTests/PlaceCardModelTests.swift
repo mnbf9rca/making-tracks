@@ -7,13 +7,13 @@ final class PlaceCardModelTests: XCTestCase {
     func testSnapshotPathDropsUnsafeTextAndUsesSafeSnapshotFallbacks() throws {
         let snapshot = makeSnapshot(
             name: "Safe fallback",
-            category: "history",
+            category: "attraction",
             snapshotJSON: jsonString([
                 "place_id": "mt1_00000000000000000000000000",
                 "name": "safe\u{202E}evil",
                 "lat": 51.5,
                 "lon": -0.12,
-                "category": "history",
+                "category": "attraction",
                 "tier": 2,
                 "score": 0.72,
                 "source_refs": ["wd:Q42"],
@@ -23,7 +23,7 @@ final class PlaceCardModelTests: XCTestCase {
         let model = PlaceCardModel.from(snapshot: snapshot, pinState: PinState(saved: false, visit: .none))
 
         XCTAssertEqual(model?.name, "Safe fallback")
-        XCTAssertEqual(model?.category, "history")
+        XCTAssertEqual(model?.category, "attraction")
     }
 
     func testSnapshotPathRepinsImageHostAndKeepsMarkdownBlurbInertForVerbatimRendering() throws {
@@ -32,7 +32,7 @@ final class PlaceCardModelTests: XCTestCase {
             "name": "Clock",
             "lat": 51.5,
             "lon": -0.12,
-            "category": "architecture",
+            "category": "historic_building",
             "tier": 1,
             "score": 0.9,
             "source_refs": ["wd:Q42"],
@@ -53,7 +53,7 @@ final class PlaceCardModelTests: XCTestCase {
             "name": "Clock",
             "lat": 51.5,
             "lon": -0.12,
-            "category": "architecture",
+            "category": "historic_building",
             "tier": 1,
             "score": 0.9,
             "source_refs": [
@@ -128,7 +128,7 @@ final class PlaceCardModelTests: XCTestCase {
                 "name": "Safe name",
                 "lat": 51.5,
                 "lon": -0.12,
-                "category": "architecture",
+                "category": "historic_building",
                 "tier": 1,
                 "score": 0.9,
                 "source_refs": ["wd:Q42"],
@@ -146,7 +146,7 @@ final class PlaceCardModelTests: XCTestCase {
 
 private func makeSnapshot(
     name: String = "Clock",
-    category: String = "architecture",
+    category: String = "historic_building",
     snapshotJSON: String
 ) -> PlaceSnapshot {
     PlaceSnapshot(

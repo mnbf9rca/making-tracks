@@ -101,6 +101,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
             map = mapView
             registerBadgeImages(in: style)
+            registerCategoryImages(in: style)
 
             if style.source(withIdentifier: PinLayers.sourceID) == nil {
                 style.addSource(MLNShapeSource(identifier: PinLayers.sourceID, shape: nil, options: nil))
@@ -113,6 +114,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             circle.circleRadius = NSExpression(forConstantValue: 6)
             style.addLayer(circle)
 
+            addCategoryIcon(source: source, style: style)
             addBadge(id: "pins-bookmark", icon: "badge-bookmark", filter: PinLayers.bookmarkFilter(), offset: PinLayers.bookmarkOffset, source: source, style: style)
             addBadge(id: "pins-heart", icon: "badge-heart", filter: PinLayers.heartFilter(), offset: PinLayers.heartOffset, source: source, style: style)
             updateSource(on: mapView, features: pendingFeatures)
@@ -138,8 +140,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
             guard let map else { return }
             let point = recognizer.location(in: map)
-            let hits = map.visibleFeatures(at: point, styleLayerIdentifiers: ["pins-circle", "pins-bookmark", "pins-heart"])
-            if let id = hits.first?.attribute(forKey: "place_id") as? String {
+            let hits = map.visibleFeatures(at: point, styleLayerIdentifiers: ["pins-circle", "pins-icon", "pins-bookmark", "pins-heart"])
+            if let id = hits.lazy.compactMap({ $0.attribute(forKey: "place_id") as? String }).first {
                 onTapPlace(id)
             } else {
                 onTapEmpty()
@@ -155,6 +157,16 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                 maxLat: max(bounds.sw.latitude, bounds.ne.latitude)
             )
             onCameraIdle(bbox, Int(map.zoomLevel.rounded()))
+        }
+
+        private func addCategoryIcon(source: MLNShapeSource, style: MLNStyle) {
+            let layer = MLNSymbolStyleLayer(identifier: "pins-icon", source: source)
+            layer.iconImageName = NSExpression(mglJSONObject: PinLayers.categoryIconExpression().foundationObject)
+            layer.iconAllowsOverlap = NSExpression(forConstantValue: true)
+            layer.iconIgnoresPlacement = NSExpression(forConstantValue: true)
+            layer.iconScale = NSExpression(forConstantValue: PinLayers.categoryIconScale)
+            layer.iconOpacity = NSExpression(mglJSONObject: PinLayers.fadeOpacityExpression().foundationObject)
+            style.addLayer(layer)
         }
 
         private func addBadge(id: String, icon: String, filter: JSONValue, offset: JSONValue, source: MLNShapeSource, style: MLNStyle) {
@@ -177,6 +189,16 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             }
             if let heart = UIImage(systemName: "heart.fill") {
                 style.setImage(heart, forName: "badge-heart")
+            }
+        }
+
+        private func registerCategoryImages(in style: MLNStyle) {
+            let configuration = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+            for (iconName, symbolName) in PinLayers.categorySymbolNames {
+                guard let image = UIImage(systemName: symbolName, withConfiguration: configuration)?
+                    .withTintColor(.white, renderingMode: .alwaysOriginal)
+                else { continue }
+                style.setImage(image, forName: iconName)
             }
         }
     }

@@ -131,6 +131,8 @@ extension AppDatabase {
     }
 
     public func unhide(placeID: String) throws {
+    // Data-layer helper for tests and non-live maintenance only. Live UI flows must
+    // route through CoreLoopController.setHidden so observers receive invalidation.
         try dbQueue.write { db in
             try db.execute(
                 sql: "DELETE FROM hidden_places WHERE place_id = ?",
