@@ -6,68 +6,81 @@ This privacy policy governs how we design and build the app. If a feature can't 
 
 ## Core principles
 
-These principles override everything.
+1. Your saved activity stays on your device. Nothing you save leaves unless you choose to share it.
+2. Accounts are not required to use the app unless you choose to. For example, sharing a list privately requires an account, but using the app for yourself does not.
+3. No analytics SDKs. No advertising identifiers. No third-party trackers.
+4. We never sell your data or give it to another company. (Sharing a list, below, is you choosing to send one list to people you pick.)
+5. Everything beyond the basic app is off until you turn it on, one feature at a time.
+6. We do not track where users are. The app builds a trail of where you've been, but that trail is private to you.
+7. Every feature takes only the data it needs to work.
+8. Where something can see you, we say so. We never call a thing "anonymous" when it isn't.
+9. The app is open source. You can read exactly what it does: https://github.com/mnbf9rca/making-tracks
 
-- Your saved activity stays on your device. Nothing you save leaves unless you choose to share it.
-- Accounts are not required to use the app unless you choose to. For example, sharing a list privately requires an account, but using the app for yourself does not.
-- No analytics SDKs. No advertising identifiers. No third-party trackers.
-- We never sell your data or give it to another company. (Sharing a list, below, is you choosing to send one list to people you pick.)
-- Everything beyond the basic app is off until you turn it on, one feature at a time.
-- We do not track where users are. The app builds a trail of where you've been, but that trail is private to you.
-- Every feature takes only the data it needs to work.
-- Where something can see you, we say so. We never call a thing "anonymous" when it isn't.
-- The app is open source. You can read exactly what it does: https://github.com/mnbf9rca/making-tracks
+## What we collect about you
 
-## What we store about you
+Your visits, saves, and lists live in a database on your phone, and that database never leaves your phone except if you share a list (see below).
 
-Right now, nothing. Your visits, saves, and lists live in a database on your phone. We have no copy. There is no account and no server that holds your activity.
+## Backups and device sync
 
-If you use Apple's iCloud device backup, your backup includes this data, like your other apps'.
-That is between you and Apple, under your Apple account. We never see it.
+If you use Apple's iCloud device backup, your backup includes this data just like your other apps, but we cannot see it.
+
+When we add sync, it uses Apple's iCloud under your Apple account. The contents stay private to you. We cannot see them.
 
 ## How we minimise data collection when you use our services
 
-To use the app you download a **bundle** — the map and the places for an area — onto your phone. After that, exploring that area needs nothing from us. (Until bundles ship, the app streams the map from our servers as you look around instead.)
+Data about places is created by our servers for everyone, and packaged in to "bundles" which cover a small geographic area. Your phone downloads bundles to use the app. A bundle contains:
+- a map of the area
+- the places in that area, including their names, descriptions, and photos
+- other data about the area or the places.
 
 When your phone talks to our servers (hosted on Cloudflare) — to download a bundle, or to stream the map in the meantime — this is what happens:
 
-- Cloudflare sees your device's internet (IP) address and the time. Like any website you visit. This is not anonymous.
-- A bundle covers a whole city or country. Downloading one says nothing about which places you go to. (While streaming, the app only ever asks for large areas, never your exact spot — so we still can't see which place you're looking at.)
-- We keep no record of which person downloaded or fetched what.
-- We do count how many times each bundle is downloaded, to see which areas need more work. We can't tell who downloaded which one.
-- In future, when an area can be downloaded in smaller pieces, we plan to hide which one you actually want — for example by quietly fetching a few others at the same time. We're still working out how, and we don't have it yet.
+- Cloudflare sees your device's internet (IP) address and the time, like any website you visit. This is not anonymous but we don't log it. Cloudflare may log it.
+- A bundle covers a geographical area, which could be part of a city or town, whole city or country. Just because you download a bundle, it doesn't mean you've visited that area.
+- We have no way to keep any records of which person or device downloaded or fetched what.
+- We do count how many **times** each **bundle** is downloaded, to see which areas need more work. We can't tell who downloaded which one.
 
-## As the app grows
+We recognise that this can still leak some data - in future, we will make bundles even smaller so that an area can be downloaded in smaller pieces. You will be able to choose to tell the app to hide which one you actually want — for example by quietly fetching a few others at the same time. We're still working out how, and we don't have it yet.
 
-Each of these is opt-in and off until you use it. None of them changes the rules above.
+## Sharing lists, reporting problems, and optional usage statistics
 
-**Sharing a list.** You'll be able to share a list — private (only people you invite) or a public link — and choose whether they can view, add (but not remove), or fully edit.
+### Sharing a list
+
+You'll be able to share a list — private (only people you invite) or a public link — and choose whether they can view, add (but not remove), or fully edit.
 
 - Only the list you share leaves your phone, only to the people you choose.
 - Your other lists, your visits, and your map history stay on your phone.
 - Sharing *public* lists does not require an account, but if you do not use an account and you uninstall the app on your phone, you may not be able to edit or delete the list after you share it. This is because we would have no way to know it was *your* list.
 
-**An account** (only because private sharing needs to identify you and your recipients):
+### Creating an account
+
+Because private sharing needs to identify you and your recipients, we offer an account system. You can create an account with your email address or Apple ID. We do not require an account to use the app for yourself:
 
 - It will store: the way to identify you for sharing, and the lists you chose to share.
-- It will not store: your visits, your map, your history, or anything you didn't share.
+- It will **not** store: your visits, your map, your history, or anything you didn't share.
 - It is never used to track what you do. You never need it to use the app for yourself.
 
-**Reporting a problem with a place.** You'll be able to flag a place (gone, wrong, and so on).
+### Reporting a problem with a place
 
-- A report contains nothing about you. We can't tell who sent one — not even your internet address.
+You can flag problems with a place (gone, wrong, and so on).
+
+- A report contains nothing about you. We can't tell who sent one. The request comes to our servers over the internet, but we don't log the IP address with the request.
 - They are advisory only, reviewed by a person before anything changes on the map.
 - One person or script can't change the map. It takes multiple independent reports and a human.
 
-**Optional usage statistics.** The app may offer to send aggregate counts (e.g. "some people saved this place") to help good places surface.
+### Optional place statistics
+
+The app may offer to let you share when you saved or loved a place. This is optional, but helps good places surface.
 
 - Off unless you turn it on. Offered once, in plain language.
 - No identifiers. Dates only, never times.
-- Events sent separately at random delays, routed so even we never see your IP.
-- A count is only reported once enough people share it that no one stands out.
-- We'll keep looking for ways to make this even harder to trace back to you. We don't have those yet.
+- Events sent separately at random delays. The request comes to our servers over the internet, but we don't log the IP address with the request.
+- A count (e.g. "10 people love this place") is only shown in the app once enough people share it that no one stands out.
+- We'll keep looking for ways to make this even harder to trace back to you.
 
-**Syncing across your devices.** When we add sync, it uses Apple's iCloud under your Apple account. The contents stay private to you. We never see them.
+
+
+**Syncing across your devices.** 
 
 ## Where place information comes from
 
