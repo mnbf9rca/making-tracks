@@ -112,6 +112,7 @@ def test_recover_commons_filename_from_upload_url():
         ("CC BY-SA 3.0", "CC-BY-SA-3.0"),
         ("CC BY-SA 4.0", "CC-BY-SA-4.0"),
         ("cc-by-sa-3.0-de", "CC-BY-SA-3.0-DE"),
+        ("cc-by-sa-3.0-igo", "CC-BY-SA-3.0-IGO"),
     ],
 )
 def test_commons_license_allowlist_includes_by_and_by_sa_without_nc_or_nd(
