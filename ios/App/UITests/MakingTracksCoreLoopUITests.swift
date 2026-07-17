@@ -88,6 +88,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "map-openstreetmap-attribution")
     }
 
+    func testLocateMeChromeExplainsWhenLocationIsDenied() throws {
+        let app = launch(reset: true, locationDenied: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        XCTAssertTrue(app.staticTexts["Location is off"].waitForExistence(timeout: 5))
+        let locationSettings = app.buttons["map.location-settings"]
+        if !locationSettings.waitForExistence(timeout: 5) {
+            XCTAssertTrue(app.otherElements["map.location-settings"].waitForExistence(timeout: 5))
+        }
+        attachScreenshot(named: "map-location-off")
+    }
+
     func testCreditsShowOpenSourceAcknowledgements() throws {
         let app = launch(reset: true)
 
@@ -102,11 +116,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "credits-open-source-acknowledgements")
     }
 
-    private func launch(reset: Bool) -> XCUIApplication {
+    private func launch(reset: Bool, locationDenied: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
         if reset {
             app.launchArguments.append("--ui-testing-reset-database")
+        }
+        if locationDenied {
+            app.launchArguments.append("--ui-testing-location-denied")
         }
         app.launch()
         return app
@@ -158,6 +175,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(commit.isEmpty)
         return commit
     }
+
 }
 
 private extension XCUIElementQuery {

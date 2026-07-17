@@ -11,6 +11,9 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var regionPMTilesURL: String?
     var startupViewport: ViewportSeed
     var features: [(MapPlace, PinState)]
+    var showsUserLocation: Bool
+    var userLocationCoordinate: CLLocationCoordinate2D?
+    var userLocationFocusRequestID: Int
     var onCameraIdle: (BBox, Int) -> Void
     var onTapPlace: (String) -> Void
     var onTapEmpty: () -> Void
@@ -28,6 +31,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         map.delegate = context.coordinator
         map.logoView.isHidden = true
         map.attributionButton.isHidden = true
+        map.showsUserLocation = showsUserLocation
         map.setCenter(startupViewport.center, zoomLevel: Double(startupViewport.zoom), animated: false)
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         map.addGestureRecognizer(tap)
@@ -41,6 +45,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         context.coordinator.onTapPlace = onTapPlace
         context.coordinator.onTapEmpty = onTapEmpty
         context.coordinator.pendingFeatures = features
+        map.showsUserLocation = showsUserLocation
 
         if context.coordinator.currentWorldPMTilesURL != worldPMTilesURL || context.coordinator.currentRegionPMTilesURL != regionPMTilesURL {
             context.coordinator.currentWorldPMTilesURL = worldPMTilesURL
@@ -48,6 +53,18 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             map.styleURL = context.coordinator.styleURL(worldPMTilesURL: worldPMTilesURL, regionPMTilesURL: regionPMTilesURL)
         } else {
             context.coordinator.updateSource(on: map, features: features)
+        }
+
+        if userLocationFocusRequestID != context.coordinator.lastUserLocationFocusRequestID {
+            context.coordinator.lastUserLocationFocusRequestID = userLocationFocusRequestID
+            context.coordinator.pendingUserLocationFocusRequestID = userLocationCoordinate == nil ? userLocationFocusRequestID : nil
+        }
+
+        if showsUserLocation,
+           let userLocationCoordinate,
+           context.coordinator.pendingUserLocationFocusRequestID == userLocationFocusRequestID {
+            context.coordinator.pendingUserLocationFocusRequestID = nil
+            map.setCenter(userLocationCoordinate, zoomLevel: map.zoomLevel, animated: true)
         }
     }
 
@@ -60,6 +77,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var currentWorldPMTilesURL: String?
         var currentRegionPMTilesURL: String?
         var pendingFeatures: [(MapPlace, PinState)] = []
+        var lastUserLocationFocusRequestID = 0
+        var pendingUserLocationFocusRequestID: Int?
 
         init(onCameraIdle: @escaping (BBox, Int) -> Void, onTapPlace: @escaping (String) -> Void, onTapEmpty: @escaping () -> Void) {
             self.onCameraIdle = onCameraIdle
