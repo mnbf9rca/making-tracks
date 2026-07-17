@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0297C33B171577FE15A6AC32 /* MakingTracksCoreLoopUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36873FF1289D2248F06F618 /* MakingTracksCoreLoopUITests.swift */; };
 		03DDC05F05147127FAC7FFA5 /* MapScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 344D7C929CEBD0057FA01F8C /* MapScreen.swift */; };
 		1E88D6E14A988414962AB763 /* MapLibre in Frameworks */ = {isa = PBXBuildFile; productRef = CBADA08F3DCFE4D9F14B6043 /* MapLibre */; };
 		59C7C078ADD59064266740CA /* MakingTracksData in Frameworks */ = {isa = PBXBuildFile; productRef = 52E446EDADC05A0EB10CB788 /* MakingTracksData */; };
@@ -17,13 +18,25 @@
 		E2EF41206486C0C294C5E0DB /* MakingTracksCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2B6A0D373B960A9ECCDC157A /* MakingTracksCore */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		D59B059D2B97E1159D7E9AEA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C0843F3EEC4977692D9A2334 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4D3DD48118B60CD463A44277;
+			remoteInfo = MakingTracks;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		03EE350163E06CF06F16086F /* ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ios; path = ..; sourceTree = SOURCE_ROOT; };
 		344D7C929CEBD0057FA01F8C /* MapScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapScreen.swift; sourceTree = "<group>"; };
+		5609B54FBEF0F125C5EF2C90 /* MakingTracksUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MakingTracksUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7406D8636B27B4FE8E1C1555 /* MakingTracks.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MakingTracks.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7DE03FCA363155B0C5A81CE1 /* MLNMapViewRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLNMapViewRepresentable.swift; sourceTree = "<group>"; };
 		8165BC8A095352568E0849A6 /* MakingTracksApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MakingTracksApp.swift; sourceTree = "<group>"; };
 		B3982196AEEBAE17B1F5D899 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		E36873FF1289D2248F06F618 /* MakingTracksCoreLoopUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MakingTracksCoreLoopUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -73,8 +86,17 @@
 			isa = PBXGroup;
 			children = (
 				7406D8636B27B4FE8E1C1555 /* MakingTracks.app */,
+				5609B54FBEF0F125C5EF2C90 /* MakingTracksUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		DD55B2625FA9731C0E38AF9E /* UITests */ = {
+			isa = PBXGroup;
+			children = (
+				E36873FF1289D2248F06F618 /* MakingTracksCoreLoopUITests.swift */,
+			);
+			path = UITests;
 			sourceTree = "<group>";
 		};
 		F640166C52AD77CDA4EFCA17 = {
@@ -82,6 +104,7 @@
 			children = (
 				701107F58BC2C1664B43E572 /* Packages */,
 				0D16E9A4F46D11FAC2488BEE /* Sources */,
+				DD55B2625FA9731C0E38AF9E /* UITests */,
 				C0D78174E8B927386E85ED9F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -112,6 +135,24 @@
 			productReference = 7406D8636B27B4FE8E1C1555 /* MakingTracks.app */;
 			productType = "com.apple.product-type.application";
 		};
+		E6EED7581BFCC0CF462B65C5 /* MakingTracksUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0C8D5E63A482D6EAE218D31E /* Build configuration list for PBXNativeTarget "MakingTracksUITests" */;
+			buildPhases = (
+				211CAF45B1A9C5C0FD53A48C /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				325279502450BFCDF155DFE4 /* PBXTargetDependency */,
+			);
+			name = MakingTracksUITests;
+			packageProductDependencies = (
+			);
+			productName = MakingTracksUITests;
+			productReference = 5609B54FBEF0F125C5EF2C90 /* MakingTracksUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -121,6 +162,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					E6EED7581BFCC0CF462B65C5 = {
+						TestTargetID = 4D3DD48118B60CD463A44277;
+					};
 				};
 			};
 			buildConfigurationList = D1A7EEF3BB2190FD80AB0AFC /* Build configuration list for PBXProject "MakingTracks" */;
@@ -142,11 +186,20 @@
 			projectRoot = "";
 			targets = (
 				4D3DD48118B60CD463A44277 /* MakingTracks */,
+				E6EED7581BFCC0CF462B65C5 /* MakingTracksUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
+		211CAF45B1A9C5C0FD53A48C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0297C33B171577FE15A6AC32 /* MakingTracksCoreLoopUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BE434AC1972FFDAAF8AD4004 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -158,6 +211,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		325279502450BFCDF155DFE4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4D3DD48118B60CD463A44277 /* MakingTracks */;
+			targetProxy = D59B059D2B97E1159D7E9AEA /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		087203F2AF4C87F6DDCB7F4B /* Debug */ = {
@@ -174,6 +235,23 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		84CF2AF31ABFEFF5681D2B9C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "app.making-tracks.MakingTracksUITests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = MakingTracks;
+			};
+			name = Release;
 		};
 		8744E357DBFE0E7B0CEFAD76 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -313,9 +391,35 @@
 			};
 			name = Release;
 		};
+		D74EE29A96366FC5A1CE222C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "app.making-tracks.MakingTracksUITests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = MakingTracks;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		0C8D5E63A482D6EAE218D31E /* Build configuration list for PBXNativeTarget "MakingTracksUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D74EE29A96366FC5A1CE222C /* Debug */,
+				84CF2AF31ABFEFF5681D2B9C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		D1A7EEF3BB2190FD80AB0AFC /* Build configuration list for PBXProject "MakingTracks" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

@@ -1,0 +1,63 @@
+import XCTest
+
+@MainActor
+final class MakingTracksCoreLoopUITests: XCTestCase {
+    private let placeID = "mt1_00000000000000000000000000"
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+    }
+
+    func testCardTogglesPersistAndRestyleMapPin() {
+        let app = launch(reset: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        tapFixturePin(in: map)
+        XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "card-open")
+
+        app.buttons["place-card.save"].tap()
+        app.buttons["place-card.visited"].tap()
+        XCTAssertTrue(app.buttons["place-card.loved"].waitForExistence(timeout: 5))
+        app.buttons["place-card.loved"].tap()
+        app.buttons["place-card.close"].tap()
+
+        XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
+        attachScreenshot(named: "map-after-visited-fade")
+
+        app.terminate()
+
+        let relaunched = launch(reset: false)
+        let relaunchedMap = relaunched.otherElements["map.surface"]
+        XCTAssertTrue(relaunchedMap.waitForExistence(timeout: 10))
+        XCTAssertEqual(relaunched.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
+        tapFixturePin(in: relaunchedMap)
+        XCTAssertTrue(relaunched.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
+        XCTAssertEqual(relaunched.buttons["place-card.save"].label, "Saved")
+        XCTAssertTrue(relaunched.buttons["place-card.loved"].waitForExistence(timeout: 5))
+        XCTAssertEqual(relaunched.buttons["place-card.loved"].label, "Loved")
+    }
+
+    private func launch(reset: Bool) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-fixture-map"]
+        if reset {
+            app.launchArguments.append("--ui-testing-reset-database")
+        }
+        app.launch()
+        return app
+    }
+
+    private func tapFixturePin(in map: XCUIElement) {
+        map.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
+
+    private func attachScreenshot(named name: String) {
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+}

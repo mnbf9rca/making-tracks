@@ -18,6 +18,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
 
     func makeUIView(context: Context) -> MLNMapView {
         let map = MLNMapView(frame: .zero, styleURL: context.coordinator.styleURL(pmtilesURL: pmtilesURL))
+        map.accessibilityIdentifier = "map.surface"
         map.delegate = context.coordinator
         map.logoView.isHidden = true
         map.attributionButton.isHidden = true
