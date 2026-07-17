@@ -50,6 +50,11 @@ taxonomy over the category model that also serves #162's future layers.
   nothing destroyed — the P3/§3.1 ethos). Mirrors the `visits`/`list_items` write pattern
   (`Interactions.swift`); a new `setHidden(_:)/unhide(_:)` on `AppDatabase` + a `CoreLoopController`
   method + a `MapScreenModel.setHidden` routed from the card, exactly like Save/Visited.
+  - **Downgrade consequence [doc note].** The migration is *additive and forward-safe*, but shipping `v2`
+    means a **v1-only older build (or a downgrade) fails closed** on the now-`v2` DB via the existing
+    `databaseFromNewerAppVersion` guard (`Migrations.swift:76`) — the DB won't open on a build predating
+    `v2`. Expected and correct (never silently misread), but a user-visible consequence the "additive,
+    safe" framing should state, not a defect.
 - **In-memory: an exact `Set<String>` of hidden `place_id`s** (fable's ruling, which I concur with):
   hydrated once from `hidden_places` at launch, updated **incrementally** on hide/unhide. Worst case
   (~54k catalog IDs, absurd) is a few MB and O(1) membership; realistic sets are tens–hundreds.
@@ -84,15 +89,16 @@ taxonomy over the category model that also serves #162's future layers.
   and render hidden pins with **one distinct "hidden" treatment** (e.g. desaturated + a small "hidden"
   glyph) that **overrides** the save×visit appearance — so the user can see what's hidden and tap → unhide.
   Rendering precedence: **hidden (show mode) > category icon > save×visit matrix.**
-- **Cross-feature interaction — the nearby-prompt ALREADY EXISTS; WP-HIDE patches it directly [gate —
-  corrected against the tree].** The foreground nearby-prompt is **built** on `origin/ios`
-  (`nearbyPromptCandidate`, `MapScreen.swift:306-334`, "You're near X — seen it?") — it is **not** a
-  future WP. It must skip hidden places (you hid it; don't nudge "seen it?"). Since `nearbyPromptCandidate`
-  already iterates `features`, and §2 removes hidden pins from `features`, the exclusion **falls out for
-  free once the filter lands** — but WP-HIDE must **verify** the prompt derives from the filtered
-  `features` (not a separate unfiltered place source) and add a direct hidden-`Set` guard if not. *(Also
-  a correction to the location design #155, which mis-described the nearby-prompt as to-be-built — it is
-  built; noting for that PR.)*
+- **Cross-feature — the nearby-prompt needs an UNCONDITIONAL hidden-`Set` guard, NOT one derived from the
+  features filter [gate — fable, the show-hidden hole].** The foreground nearby-prompt is **built** on
+  `origin/ios` (`nearbyPromptCandidate`, `MapScreen.swift:306-334`, "You're near X — seen it?") — not a
+  future WP. It must skip hidden places (you hid it; don't nudge "seen it?"). **Do NOT rely on §2's
+  features filter for this:** in **show-hidden mode the filter is OFF**, so hidden places re-enter
+  `features`, and `nearbyPromptCandidate` (which gates only on `visit == .none` + the transient dismiss
+  set) would then nudge for a place the user explicitly hid. WP-HIDE must add a **direct
+  `hidden.contains(place.id)` guard inside `nearbyPromptCandidate`, independent of the show-hidden
+  toggle.** *(Also corrects location design #155, which mis-described the nearby-prompt as to-be-built —
+  it is built; noting for that PR.)*
 
 ## 3. Manage-hidden surface + undo (#167, D3)
 
@@ -201,7 +207,8 @@ layer toggles) — the icon fallback makes the app forward-compatible meanwhile.
     tree (`:511` is a pure `.map`, can't add/remove features); without it the pin wouldn't vanish/return
     (§2). The substantive one.
   - **The nearby-prompt already EXISTS** (`nearbyPromptCandidate` `:306-334`) — WP-HIDE patches it, not a
-    future WP; the exclusion falls out of the `features` filter (§2). (Also corrects location design #155.)
+    future WP, with an **unconditional** hidden-`Set` guard (fable's fallback-review fold: the §2 filter
+    is OFF in show-hidden mode, so it can't be relied on) (§2). (Also corrects location design #155.)
   - **Filter on `@MainActor` in `features(in:)`**, not the off-main `viewportState` — Swift 6 clarity (§2).
   - **Icon layer needs `icon-allow-overlap`/`icon-ignore-placement` + explicit glyph sizing** for the r6
     pin, or glyphs are collision-culled / oversized (§5).
