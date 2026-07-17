@@ -3,7 +3,8 @@
 **Status:** design (opus). Adversarial-gate → PR to `develop`, `sourcery-review`. Pipeline parts →
 `develop`, app parts → `ios`. Thread `p2p/fable__opus`. Builds on: region-index (WP-P, shipped), the
 BUILT offline pack store (WP-B7), #131 cover-traffic rulings, and the selection-UX research
-(`offline-selection-research.md`). Rob's rulings folded (hybrid selection; extracted hierarchy).
+(`docs/research/2026-07-17-offline-selection-ux.md`, committed with this PR). Rob's rulings folded
+(hybrid selection; extracted hierarchy).
 
 ## Why
 
@@ -54,8 +55,11 @@ nudges.
   levels form the tree, e.g. UK `{2: country, 4: region, 6: county}`, Malaysia `{2: country, 4: state}`.
   This is the ONLY human-authored input — a handful of lines per country.
 - **The pipeline materialises the catalog:** for each admin relation at a declared level → **rasterise
-  its polygon to the z10 cell-set** (rule: **a cell is in the zone iff its centre is inside the polygon**
-  — one deterministic rule, so boundary cells belong to exactly one zone; state it so it is testable).
+  its polygon to the z10 cell-set** (rule: **a cell is in the zone iff it INTERSECTS the polygon**
+  [gate — not centre-in-polygon: centre-in loses up to ~half a boundary cell of in-zone territory
+  offline-dark, and the uniqueness it would buy is **not** load-bearing because overlap is **free via
+  content-addressed dedup**; intersects covers the boundary, dedup makes the shared cells cost nothing.
+  A boundary cell simply belongs to *both* adjacent zones' cell-sets — fine]. Deterministic + testable.
   → **the zone IS its cell-set**; **parent = the smallest higher-declared-level zone whose polygon
   CONTAINS this zone's polygon** (strict admin containment by area-majority; **tie-break: the parent with
   the greatest area overlap, then the lower `zone_id`** — so a child straddling two parents resolves
@@ -81,6 +85,11 @@ nudges.
   `name` plain-text length-capped, cell coords bounded `0..1023`. Written-last/atomic like the
   region-index. (Confirm cell-set encoding with WP-P/codex — a bitmap over the region's tile grid is
   compact and O(1)-testable.)
+- **`zone_id` is DERIVED from the OSM relation id + STABLE across republish [gate — it keys packs,
+  updates, AND the §5 decoy cohort; an unstable id breaks all three].** `zone_id = osm_r<relation_id>`
+  (e.g. `osm_r65606`) — survives re-publish (the OSM relation id is durable), fits `^[a-z][a-z0-9_]{0,63}$`.
+  Fallback to the zone's `wikidata` QID (`wd_q...`) where a relation id is known to churn. Never derive it
+  from name/bbox/cell-set (those change).
 - **Hierarchy is DATA** (parent pointers) — adding/removing zones is a pipeline re-publish, **no app
   release**. New countries add a `zone_levels` config block.
 
@@ -130,7 +139,15 @@ cells → per-cell delete/dedup for free" does not exist. Reframed:]**
   **synthetic-manifest install** (the client assembles a manifest from the catalog's per-cell shas + the
   store installs it as an ad-hoc pack) — real new work; or (b) the rectangle **snaps to / composes
   published sub-zone packs** (coarser). **Flag: the rectangle path is new engine work, not "rides the
-  built store"; named-zone packs work on the store as-is.**
+  built store".**
+- **BLOCKER [gate — installing a zone pack does NOT make it RENDER].** "Named-zone packs work on the store
+  as-is" is true only for *install/GC*; **rendering is single-region today** — `MapScreen.selectedRegion`
+  drives **one** `TileClient(region:)` pinned to a **country** id, so an installed `london` pack is
+  **invisible** to `TileClient("uk")` (it renders nothing). Downloading a zone must feed the map. **New
+  named WP (WP-RM-B3): viewport→installed-pack resolution across N packs** — the map, for a viewport,
+  resolves tiles from **any installed pack covering it** (not one pinned region), reconciled with
+  `MapRegion`/the catalog. This is a real app-architecture change and is on the critical path (a zone pack
+  is useless until the map reads it).
 - **Incremental-persist is MANDATORY [Rob requirement, not a suggestion].** RAM-buffering the whole pack
   is **unacceptable** ("how big is this going to get" — the device was **jetsam-killed today** at far
   smaller working sets). `downloadCurrentRegion` today buffers all tiles in RAM + installs at end
@@ -179,9 +196,12 @@ it with a COVER-TRAFFIC REQUIREMENT. This section is reframed in those terms.]**
 
 **A pack bundles the WHOLE offline experience [Rob ruling: "a bundle must contain EVERYTHING needed for
 that region offline. Perhaps let users choose not to download images. But everything else."]:**
-**MANDATORY** in every pack = **place tiles + basemap + description sidecars + image-index sidecars**;
-**OPTIONAL** = **image thumbs** (the one user-declinable component — the "include images" toggle,
-aligning with B10/WP-IMG-B2). See the **Offline completeness invariant (§7)** for the full runtime-asset
+**MANDATORY** in every pack = **place tiles + basemap + description sidecars**; **OPTIONAL** = the
+**"include images" component = image-index sidecars + thumbs together** [gate — reconciliation: the
+relayed ruling put image-index in MANDATORY, but an image-index entry is **useless offline without its
+thumb** (and the card cost model bundles image-index in `bytes_with_thumbs`), so a without-images pack
+carries **neither** — image-index rides *with* thumbs as the one declinable unit, not "everything else."
+**Flagged to fable** as a refinement of the mandatory/optional split]. See the **Offline completeness invariant (§7)** for the full runtime-asset
 audit (glyphs, world tier, sprites).
 
 **[gate correction — where the sha-list lives]:** the tile `manifest.json` is **frozen**
@@ -208,7 +228,12 @@ means **manifest (tiles/basemap) + pack-descriptor (everything else)**; `updateP
     to cover-traffic uniformly.
   - **(b) Per-cell content-addressed basemap objects (RECOMMENDED).** Cut the basemap into per-z10-cell
     objects (`objects/basemap/{sha}`), content-addressed on the **same grid as place tiles** → basemap
-    deltas become the **identical free hash-diff**: an unchanged basemap cell = same sha = skipped. This
+    deltas become the **identical free hash-diff**: an unchanged basemap cell = same sha = skipped.
+    **[gate — the z7–9 mid-zoom gap]:** z0–6 is app-bundled (world tier), z≥10 fits the cell grid, but
+    **z7–9 (mid-zoom) has no home** — it can't ride z10 cells and isn't in the world tier. Assign it:
+    ship z7–9 as **a small shared per-region object** (content-addressed, one per region, delta-free like
+    a cell) fetched with the first pack of that region — or extend the app-bundled base to z0–8 if the
+    size is trivial. Pin z7–9's home before claiming the basemap deltas end-to-end. This
     **unifies the store** (basemap cells are objects like tile cells → the incremental-persist + resume +
     dedup + cover-traffic cohort all apply uniformly), and directly delivers Rob's "no GB every time."
     **Cost / the key feasibility fork:** MapLibre renders a **single `pmtiles://` source**, so per-cell
@@ -225,11 +250,11 @@ means **manifest (tiles/basemap) + pack-descriptor (everything else)**; `updateP
   they **inherit the sha-diff**: an unchanged photo = same sha = skipped; only new/changed thumbs fetch.
   Bundle them in the pack (the WP-IMG-B2 pack extension) and they delta like place tiles.
 - **Description sidecars — delta needs per-tile SHA entries.** The `descriptions/10/{x}/{y}.json` sidecars
-  (codex4 #173) are per-tile files, not content-addressed blobs — so to delta them, the pack **manifest
-  must carry a per-sidecar `{sha, bytes}` entry** exactly like it does for place tiles, so an unchanged
-  description tile is sha-skipped and only changed ones re-download. **State this as a manifest
-  requirement** (the description-index files join the manifest's sha-listed content set, alongside the
-  place tiles). Same for the image-index sidecars.
+  (codex4 #173, MERGED) are per-tile files, not content-addressed blobs — so to delta them, the
+  **pack-descriptor must carry a per-sidecar `{sha, bytes}` entry** (the way `manifest.tiles[]` carries
+  per-tile shas for place tiles), so an unchanged description tile is sha-skipped and only changed ones
+  re-download. **State this as a pack-descriptor requirement** (the description-index files join the
+  descriptor's sha-listed content set). Same for the image-index sidecars.
 - **Net:** every pack content type (tiles/basemap-cells in the manifest; thumbs/description+image-index
   sidecars in the **pack-descriptor**) is a **sha-listed object** → the whole pack deltas uniformly via
   `updatePlan` sha-skip, streams to disk incrementally, and shares one cover-traffic cohort. No content
@@ -268,13 +293,16 @@ completeness component → the test goes red.
 | WP | side | scope | depends on |
 |---|---|---|---|
 | **WP-RM-P** zone extraction + catalog | **pipeline (`develop`)** | OSM `boundary=administrative` sub-extractor (polygon/name/translations/QID/admin_level); region-config `zone_levels` map; polygon→z10 cell-set rasteriser; catalog materialiser (parent, size-from-cells, dedup-aware); the prune-list gate; `zone-catalog` schema | region-index (shipped); OSM extractor (built); Rob-gated instances |
-| **WP-RM-B** region-manager UX | **app (`ios`)** | named-hierarchy browser (install a zone = install its **pack**, size up front); grid coverage feedback + **per-ZONE** update/delete (whole-pack, §4); consumes `OfflineRegionStore` (pack unit) + the catalog | WP-RM-P; the built pack store; WP-IMG-B2 |
+| **WP-RM-B3** multi-pack RENDERING (BLOCKER, critical path) | **app (`ios`)** | **viewport→installed-pack resolution across N packs**: the map resolves a viewport's tiles from **any installed pack covering it**, not one pinned `selectedRegion`/`TileClient(region:)`; `MapRegion`/catalog reconciliation. **A zone pack is useless until this ships** | B3 (built); the built store |
+| **WP-RM-B** region-manager UX | **app (`ios`)** | named-hierarchy browser (install a zone = install its **pack**, size up front); grid coverage feedback + **per-ZONE** update/delete (whole-pack, §4); consumes `OfflineRegionStore` (pack unit) + the catalog | WP-RM-P; **WP-RM-B3**; the built pack store; WP-IMG-B2 |
 | **WP-RM-B2** custom-rectangle path | **app + pipeline** | drag-rectangle→cells + confirm (size + decoy cost + halo); **needs a store extension** (synthetic-manifest cell-set install) OR composes published sub-zone packs — **new engine work, not free on the built store** | WP-RM-B; a store extension |
-| **WP-RM-CT** cover-traffic | **app (`ios`)** | apply #131: decoy budget scales with mosaic distinctiveness; named = minimal; the fetch layer's decoy wrapper (WP-B7/fetch-model) | WP-RM-B; #131 rulings; Rob's decoy numbers |
+| **WP-RM-CT** cover-traffic | **app (`ios`)** | apply #131 in RATIFIED terms (intersection-resistant cohort, budget scales with distinctiveness); the fetch layer's decoy wrapper (WP-B7/fetch-model) | WP-RM-B; #131 rulings; Rob's decoy numbers |
 
 **Seam to B10:** B10's first-run "region pick" is the **entry point** into this catalog (pick a
-top-level zone → offer its pack); WP-RM owns the full manager, B10 owns the first-run moment. (Resolves
-the B10 open flag.)
+top-level zone → offer its pack). **B10 persists `chosenRegion` → the startup seed; WP-RM inherits/
+migrates that `chosenRegion`** (the region manager's persisted selection supersedes B10's; the handshake
+is `chosenRegion` — one persisted key both write). WP-RM owns the full manager, B10 owns the first-run
+moment.
 
 ## Open flags (fable/Rob)
 
