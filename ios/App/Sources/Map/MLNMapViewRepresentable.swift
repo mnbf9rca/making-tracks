@@ -11,9 +11,10 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var features: [(MapPlace, PinState)]
     var onCameraIdle: (BBox, Int) -> Void
     var onTapPlace: (String) -> Void
+    var onTapEmpty: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onCameraIdle: onCameraIdle, onTapPlace: onTapPlace)
+        Coordinator(onCameraIdle: onCameraIdle, onTapPlace: onTapPlace, onTapEmpty: onTapEmpty)
     }
 
     func makeUIView(context: Context) -> MLNMapView {
@@ -33,6 +34,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     func updateUIView(_ map: MLNMapView, context: Context) {
         context.coordinator.onCameraIdle = onCameraIdle
         context.coordinator.onTapPlace = onTapPlace
+        context.coordinator.onTapEmpty = onTapEmpty
         context.coordinator.pendingFeatures = features
 
         if context.coordinator.currentPMTilesURL != pmtilesURL {
@@ -47,13 +49,15 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     final class Coordinator: NSObject, @preconcurrency MLNMapViewDelegate {
         var onCameraIdle: (BBox, Int) -> Void
         var onTapPlace: (String) -> Void
+        var onTapEmpty: () -> Void
         weak var map: MLNMapView?
         var currentPMTilesURL: String?
         var pendingFeatures: [(MapPlace, PinState)] = []
 
-        init(onCameraIdle: @escaping (BBox, Int) -> Void, onTapPlace: @escaping (String) -> Void) {
+        init(onCameraIdle: @escaping (BBox, Int) -> Void, onTapPlace: @escaping (String) -> Void, onTapEmpty: @escaping () -> Void) {
             self.onCameraIdle = onCameraIdle
             self.onTapPlace = onTapPlace
+            self.onTapEmpty = onTapEmpty
         }
 
         func styleURL(pmtilesURL: String?) -> URL? {
@@ -116,6 +120,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             let hits = map.visibleFeatures(at: point, styleLayerIdentifiers: ["pins-circle", "pins-bookmark", "pins-heart"])
             if let id = hits.first?.attribute(forKey: "place_id") as? String {
                 onTapPlace(id)
+            } else {
+                onTapEmpty()
             }
         }
 
