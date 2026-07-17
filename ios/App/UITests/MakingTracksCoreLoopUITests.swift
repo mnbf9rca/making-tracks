@@ -122,12 +122,35 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "map-openstreetmap-attribution")
     }
 
+    func testPlaceCardStacksActionsAtAccessibilityTextSize() {
+        let app = launch(reset: true, accessibilityTextSize: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        tapFixturePin(in: map)
+        XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
+
+        let saveButton = app.buttons["place-card.save"]
+        let visitedButton = app.buttons["place-card.visited"]
+        XCTAssertTrue(saveButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(visitedButton.waitForExistence(timeout: 5))
+        attachScreenshot(named: "place-card-a11y")
+        XCTAssertGreaterThan(visitedButton.frame.minY, saveButton.frame.minY)
+
+        visitedButton.tap()
+        let lovedButton = app.buttons["place-card.loved"]
+        XCTAssertTrue(lovedButton.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(lovedButton.frame.minY, visitedButton.frame.minY)
+    }
+
     func testLocateMeChromeExplainsWhenLocationIsDenied() throws {
         let app = launch(reset: true, locationDenied: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
+        XCTAssertEqual(app.buttons["map.locate-me"].label, "Locate me")
         XCTAssertTrue(app.staticTexts["Location is off"].waitForExistence(timeout: 5))
         let locationSettings = app.buttons["map.location-settings"]
         if !locationSettings.waitForExistence(timeout: 5) {
@@ -162,8 +185,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
     }
 
-    func testCreditsShowOpenSourceAcknowledgements() throws {
-        let app = launch(reset: true)
+    func testCreditsStayGroupedAtAccessibilityTextSize() throws {
+        let app = launch(reset: true, accessibilityTextSize: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
@@ -171,11 +194,25 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let osmAttribution = app.buttons["map.openstreetmap-attribution"]
         XCTAssertTrue(osmAttribution.waitForExistence(timeout: 5))
         osmAttribution.tap()
-        XCTAssertTrue(app.staticTexts["GRDB.swift"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Build"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Open source acknowledgements"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Build \(try currentGitCommit())"].waitForExistence(timeout: 5))
+        let grdbCredit = element(identifier: "credits.oss.GRDB.swift|7.11.1", in: app)
+        XCTAssertTrue(scrollToExistence(of: grdbCredit, in: app))
 
-        let mapLibreCredit = app.staticTexts["MapLibre Native iOS / maplibre-gl-native-distribution"]
+        let mapLibreCredit = element(
+            identifier: "credits.oss.MapLibre Native iOS / maplibre-gl-native-distribution|6.27.0",
+            in: app
+        )
         XCTAssertTrue(scrollToExistence(of: mapLibreCredit, in: app))
-        attachScreenshot(named: "credits-open-source-acknowledgements")
+        let mapLibreLicense = element(
+            identifier: "credits.oss.MapLibre Native iOS / maplibre-gl-native-distribution|6.27.0.license",
+            in: app
+        )
+        XCTAssertTrue(scrollToExistence(of: mapLibreLicense, in: app))
+        XCTAssertEqual(mapLibreLicense.elementType, .button)
+        XCTAssertTrue(mapLibreLicense.isEnabled)
+        attachScreenshot(named: "credits-a11y")
     }
 
     private func launch(
@@ -183,7 +220,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         locationDenied: Bool = false,
         simulatedLocationAuthorization: Bool = false,
         simulatedLatitude: Double? = nil,
-        simulatedLongitude: Double? = nil
+        simulatedLongitude: Double? = nil,
+        accessibilityTextSize: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
@@ -203,6 +241,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         if let simulatedLongitude {
             app.launchArguments.append("--ui-testing-location-longitude")
             app.launchArguments.append(String(simulatedLongitude))
+        }
+        if accessibilityTextSize {
+            app.launchArguments.append("-UIPreferredContentSizeCategoryName")
+            app.launchArguments.append("UICTContentSizeCategoryAccessibilityXXXL")
         }
         app.launch()
         return app
@@ -255,6 +297,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     private func exportScreenshot(_ screenshot: XCUIScreenshot, named name: String) {
+        guard ProcessInfo.processInfo.environment["MAKING_TRACKS_EXPORT_UI_TEST_SCREENSHOTS"] == "1" else { return }
         guard let exportName = screenshotExportNames[name] else { return }
         let directory = URL(fileURLWithPath: "/private/tmp/making-tracks-artifacts", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -269,13 +312,27 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
 
         for _ in 0..<5 {
-            app.swipeUp()
+            scrollTarget(in: app).swipeUp()
             if element.waitForExistence(timeout: 1) {
                 return true
             }
         }
 
         return element.exists
+    }
+
+    private func scrollTarget(in app: XCUIApplication) -> XCUIElement {
+        let scrollView = app.scrollViews.firstMatch
+        if scrollView.exists {
+            return scrollView
+        }
+        return app
+    }
+
+    private func element(identifier: String, in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", identifier))
+            .firstMatch
     }
 
     private func currentGitCommit() throws -> String {
@@ -295,7 +352,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "nearby-prompt": "nearby-prompt",
         "locate-me-chrome": "locate-me-chrome",
         "map-location-off": "denied-settings",
-        "credits-open-source-acknowledgements": "credits",
+        "place-card-a11y": "place-card-a11y",
+        "credits-a11y": "credits-a11y",
     ]
 }
 

@@ -29,6 +29,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             styleURL: context.coordinator.styleURL(worldPMTilesURL: worldPMTilesURL, regionPMTilesURL: regionPMTilesURL)
         )
         map.accessibilityIdentifier = "map.surface"
+        map.accessibilityLabel = "Map"
+        map.accessibilityHint = "Shows places and your location"
         map.delegate = context.coordinator
         map.locationManager = locationManager
         map.shouldRequestAuthorizationToUseLocationServices = false
