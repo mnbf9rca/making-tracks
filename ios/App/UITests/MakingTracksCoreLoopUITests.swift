@@ -69,7 +69,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
-        app.buttons["Credits"].tap()
+        let osmAttribution = app.buttons["map.openstreetmap-attribution"]
+        XCTAssertTrue(osmAttribution.waitForExistence(timeout: 5))
+        osmAttribution.tap()
         let expectedBuildLabel = "Build \(try currentGitCommit())"
         XCTAssertTrue(app.staticTexts[expectedBuildLabel].waitForExistence(timeout: 5))
     }
@@ -108,7 +110,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
-        app.buttons["Credits"].tap()
+        let osmAttribution = app.buttons["map.openstreetmap-attribution"]
+        XCTAssertTrue(osmAttribution.waitForExistence(timeout: 5))
+        osmAttribution.tap()
         XCTAssertTrue(app.staticTexts["GRDB.swift"].waitForExistence(timeout: 5))
 
         let mapLibreCredit = app.staticTexts["MapLibre Native iOS / maplibre-gl-native-distribution"]
