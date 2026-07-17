@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.making-tracks.app/image-index/1",
+  "title": "ImageIndex",
+  "description": "Per z10 image sidecar. Image records are optional sidecars keyed by place_id; tile place payloads remain unchanged.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "min_reader_version", "z", "x", "y", "places"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "min_reader_version": {"type": "integer", "minimum": 1, "maximum": 999},
+    "z": {"type": "integer", "const": 10},
+    "x": {"type": "integer", "minimum": 0, "maximum": 1023},
+    "y": {"type": "integer", "minimum": 0, "maximum": 1023},
+    "places": {
+      "type": "array",
+      "maxItems": 4000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["place_id", "thumb_sha256", "bytes", "width", "height", "attribution"],
+        "properties": {
+          "place_id": {"type": "string", "pattern": "^mt1_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}$"},
+          "thumb_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
+          "width": {"type": "integer", "minimum": 1, "maximum": 4096},
+          "height": {"type": "integer", "minimum": 1, "maximum": 4096},
+          "attribution": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "creator",
+              "license_code",
+              "license_name",
+              "license_url",
+              "source_url",
+              "modified"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "license_code": {
+                      "pattern": "^CC-BY(-NC)?(-SA)?-(1\\.0|2\\.0|2\\.1|2\\.5|3\\.0|4\\.0)(-[A-Z]{2}(_[A-Z]+)?|-IGO)?$"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "creator": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u200b\\u200c\\u200d\\u2028\\u2029\\u202a-\\u202e\\u2060\\u2066-\\u2069\\ufeff]*$"
+                    }
+                  }
+                }
+              }
+            ],
+            "properties": {
+              "creator": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u200b\\u200c\\u200d\\u2028\\u2029\\u202a-\\u202e\\u2060\\u2066-\\u2069\\ufeff]*$"
+                  },
+                  {"type": "null"}
+                ]
+              },
+              "license_code": {
+                "type": "string",
+                "anyOf": [
+                  {"enum": ["PD", "CC0-1.0"]},
+                  {
+                    "pattern": "^CC-BY(-NC)?(-SA)?-(1\\.0|2\\.0|2\\.1|2\\.5|3\\.0|4\\.0)(-[A-Z]{2}(_[A-Z]+)?|-IGO)?$"
+                  }
+                ]
+              },
+              "license_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u200b\\u200c\\u200d\\u2028\\u2029\\u202a-\\u202e\\u2060\\u2066-\\u2069\\ufeff]*$"
+              },
+              "license_url": {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^https://(creativecommons\\.org/(licenses/(by|by-nc|by-sa|by-nc-sa)/(1\\.0|2\\.0|2\\.1|2\\.5|3\\.0|4\\.0)(/([a-z]{2}(_[a-z]+)?|igo))?/?|publicdomain/zero/1\\.0/?)|commons\\.wikimedia\\.org/wiki/Commons:Copyright_tags/General_public_domain)$"
+              },
+              "source_url": {
+                "type": "string",
+                "maxLength": 1024,
+                "pattern": "^https://commons\\.wikimedia\\.org/wiki/File:(?!.*(?:\\.\\.|[?#/]))[^\\u0000-\\u001f\\u007f-\\u009f\\s]+$"
+              },
+              "modified": {"type": "boolean", "const": true}
+            }
+          }
+        }
+      }
+    }
+  }
+}

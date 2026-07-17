@@ -161,6 +161,43 @@ def test_cli_publish_upload_missing_r2_env_is_clean_error(tmp_path, capsys, monk
     assert "Traceback" not in err
 
 
+def test_cli_publish_passes_image_candidate_limit(tmp_path, monkeypatch):
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    store.mark_stage_complete(
+        conn, "malaysia", "categorize", "cat1", "2026-07-15T00:00:00Z"
+    )
+    conn.close()
+    calls = []
+
+    def fake_run_stage(*args, **kwargs):
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr(cli.stages, "run_stage", fake_run_stage)
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia",
+            "publish",
+            "--db",
+            str(db),
+            "--run-id",
+            "real-malaysia-20260715",
+            "--publish-version",
+            "20260716T000000Z",
+            "--generated-at",
+            "2026-07-16T00:00:00Z",
+            "--image-candidate-limit",
+            "1000",
+        ]
+    )
+
+    assert rc == 0
+    assert calls[0][1]["image_candidate_limit"] == 1000
+
+
 def test_cli_reconcile_requires_version(tmp_path, capsys):
     db = tmp_path / "w.db"
     conn = store.connect(db)

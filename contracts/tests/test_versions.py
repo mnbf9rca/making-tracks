@@ -14,6 +14,7 @@ REQUIRED_KEYS = {
     "place",
     "tile",
     "manifest",
+    "image_index",
     "region_index",
     "region_config",
     "registry_record",

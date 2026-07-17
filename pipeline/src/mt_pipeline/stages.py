@@ -178,6 +178,7 @@ def run_stage(
     scoring_config_version: str | None = None,
     upload: bool = False,
     staging_root: str | pathlib.Path | None = None,
+    image_candidate_limit: int | None = None,
     fingerprint_inputs=None,
     force: bool = False,
 ) -> None:
@@ -239,6 +240,7 @@ def run_stage(
                 generated_at=generated_at,
                 scoring_config_version=scoring_config_version,
                 upload=upload,
+                image_candidate_limit=image_candidate_limit,
                 **kwargs,
             )
         except (

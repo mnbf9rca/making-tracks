@@ -16,7 +16,7 @@ from mt_pipeline import config, progress, runtime_paths
 from mt_pipeline.reconcile.registry_file import LocalRegistryStore
 from mt_pipeline.score import score_stage
 
-from . import attribution, basemap, manifest, r2, staging, tiles
+from . import attribution, basemap, images, manifest, r2, staging, tiles
 
 _PIPELINE_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _A1D_SOURCES = _PIPELINE_ROOT / "config" / "a1d_sources.json"
@@ -38,6 +38,8 @@ class PublishedTargetResult:
     manifest: dict[str, Any]
     counts: tiles.PublishCounts
     publish_result: r2.PublishResult
+    image_index_bytes: int = 0
+    thumb_bytes: int = 0
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,7 @@ def run(
     scoring_config_version: str | None = None,
     upload: bool = False,
     staging_root: str | pathlib.Path = _DEFAULT_STAGING_ROOT,
+    image_candidate_limit: int | None = None,
 ) -> PublishStageResult:
     r2.validate_path_components(region, publish_version)
     basemap.require_pmtiles()
@@ -77,6 +80,21 @@ def run(
     shipped_places = _places_from_tiles(tile_arts)
     shipped_ids = {place["place_id"] for place in shipped_places}
     _assert_registry_covers_shipped(registry_records, shipped_ids, registry_path)
+    shipped_by_id = {str(place["place_id"]): place for place in shipped_places}
+    image_candidates = images.candidates_from_source_records(conn, region, shipped_places)
+    image_candidate_rows = [
+        (shipped_by_id[candidate.place_id], candidate)
+        for candidate in image_candidates
+        if candidate.place_id in shipped_by_id
+    ]
+    place_images = images.build_place_images(
+        images.select_image_candidates(
+            image_candidate_rows,
+            limit=image_candidate_limit,
+        ),
+        cache_dir=pathlib.Path(staging_root) / ".image-cache",
+    )
+    place_images_by_id = {item.place_id: item for item in place_images}
     updated_registry = None
     registry_blob = None
     if shipped_ids:
@@ -103,6 +121,7 @@ def run(
         scoring_config_version=scoring_config_version,
         staging_root=pathlib.Path(staging_root),
         registry_blob=registry_blob,
+        place_images_by_id=place_images_by_id,
     )
     target_results.append(parent_result)
 
@@ -125,6 +144,7 @@ def run(
             scoring_config_version=scoring_config_version,
             staging_root=pathlib.Path(staging_root),
             registry_blob=None,
+            place_images_by_id=place_images_by_id,
             subregion=subregion,
         )
         subregion_results.append(sub_result)
@@ -175,6 +195,8 @@ def run(
         manifest=parent_result.manifest,
         counts=parent_result.counts,
         publish_result=parent_result.publish_result,
+        image_index_bytes=parent_result.image_index_bytes,
+        thumb_bytes=parent_result.thumb_bytes,
         subregion_results=tuple(subregion_results),
         region_index=region_index_obj,
         region_index_path=region_index_path,
@@ -273,6 +295,7 @@ def _publish_target(
     scoring_config_version: str,
     staging_root: pathlib.Path,
     registry_blob: bytes | None,
+    place_images_by_id: dict[str, images.PlaceImage],
     subregion: config.SubregionConfig | None = None,
 ) -> PublishedTargetResult:
     work_root = pathlib.Path(staging_root) / ".work" / target_region / publish_version
@@ -288,6 +311,12 @@ def _publish_target(
         basemap_path,
     )
     shipped_places = _places_from_tiles(tile_arts)
+    shipped_place_images = [
+        place_images_by_id[str(place["place_id"])]
+        for place in shipped_places
+        if str(place["place_id"]) in place_images_by_id
+    ]
+    image_index_arts, thumb_arts = images.emit_image_artifacts(shipped_place_images)
     manifest_obj = manifest.assemble_manifest(
         region=target_region,
         publish_version=publish_version,
@@ -307,6 +336,8 @@ def _publish_target(
         target_region,
         publish_version,
         tile_arts=tile_arts,
+        image_index_arts=image_index_arts,
+        thumb_arts=thumb_arts,
         manifest_obj=manifest_obj,
         basemap_path=basemap_path,
     )
@@ -321,6 +352,8 @@ def _publish_target(
         manifest=manifest_obj,
         counts=counts,
         publish_result=publish_result,
+        image_index_bytes=sum(art.byte_len for art in image_index_arts),
+        thumb_bytes=sum(art.byte_len for art in thumb_arts),
     )
 
 
@@ -386,6 +419,9 @@ def _region_index(
         tile_bytes = sum(int(tile["bytes"]) for tile in manifest_obj["tiles"])
         basemap_bytes = int(manifest_obj["basemap"]["bytes"])
         bytes_without_thumbs = basemap_bytes + tile_bytes
+        bytes_with_thumbs = (
+            bytes_without_thumbs + target.image_index_bytes + target.thumb_bytes
+        )
         entries.append(
             {
                 "id": region,
@@ -396,7 +432,7 @@ def _region_index(
                 "basemap_bytes": basemap_bytes,
                 "tile_count": len(manifest_obj["tiles"]),
                 "bytes_without_thumbs": bytes_without_thumbs,
-                "bytes_with_thumbs": bytes_without_thumbs,
+                "bytes_with_thumbs": bytes_with_thumbs,
             }
         )
     return {
