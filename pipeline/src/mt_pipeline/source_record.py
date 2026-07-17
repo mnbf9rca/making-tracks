@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import mt_contracts
 
 NAME_MAX = 300
+DESCRIPTION_EXTRACT_MAX = 2_000
 RAW_TEXT_MAX = 20_000
 SOURCE_REF_MAX = 128
 PROPS_JSON_MAX = 65_536
@@ -31,12 +32,13 @@ class SourceRecord:
     props: dict
 
 
-def _clean_text(value, *, field: str) -> str:
+def _clean_text(value, *, field: str, max_chars: int = NAME_MAX) -> str:
     if not isinstance(value, str):
         raise SourceRecordError(f"{field} must be a string")
     if len(value) > RAW_TEXT_MAX:
         raise SourceRecordError(f"{field} exceeds raw length cap")
-    return mt_contracts.strip_unsafe_text(value).strip()[:NAME_MAX]
+    normalized = " ".join(value.split())
+    return mt_contracts.strip_unsafe_text(normalized).strip()[:max_chars]
 
 
 def _spend_props_budget(budget: list[int], count: int = 1) -> None:
@@ -45,7 +47,19 @@ def _spend_props_budget(budget: list[int], count: int = 1) -> None:
         raise SourceRecordError("props too large")
 
 
-def _clean_props(node, depth: int = 0, budget: list[int] | None = None):
+def _props_text_cap(key: str | None) -> int:
+    if key == "description_extract":
+        return DESCRIPTION_EXTRACT_MAX
+    return NAME_MAX
+
+
+def _clean_props(
+    node,
+    depth: int = 0,
+    budget: list[int] | None = None,
+    *,
+    key: str | None = None,
+):
     if budget is None:
         budget = [PROPS_MAX_ITEMS]
     if depth > PROPS_MAX_DEPTH:
@@ -63,15 +77,15 @@ def _clean_props(node, depth: int = 0, budget: list[int] | None = None):
                 raise SourceRecordError("props key empty after cleaning")
             if clean_key in out:
                 raise SourceRecordError(f"duplicate props key after cleaning: {clean_key!r}")
-            out[clean_key] = _clean_props(value, depth + 1, budget)
+            out[clean_key] = _clean_props(value, depth + 1, budget, key=clean_key)
         return out
     if isinstance(node, list):
         if len(node) > PROPS_MAX_ITEMS:
             raise SourceRecordError("props list too long")
         _spend_props_budget(budget, len(node))
-        return [_clean_props(value, depth + 1, budget) for value in node]
+        return [_clean_props(value, depth + 1, budget, key=key) for value in node]
     if isinstance(node, str):
-        return _clean_text(node, field="props value")
+        return _clean_text(node, field="props value", max_chars=_props_text_cap(key))
     if node is None or isinstance(node, bool):
         return node
     if isinstance(node, int):

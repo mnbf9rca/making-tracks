@@ -129,6 +129,24 @@ def test_props_string_values_are_cleaned(monkeypatch):
     assert record.props["nested"]["t"] == "cd"
 
 
+def test_props_string_values_normalize_whitespace_before_stripping_unsafe_text():
+    record = _ok(props={"extract": "First paragraph.\nSecond paragraph."})
+
+    assert record.props["extract"] == "First paragraph. Second paragraph."
+
+
+def test_description_extract_uses_longer_publish_text_cap_without_expanding_extract():
+    record = _ok(
+        props={
+            "extract": "x" * 5000,
+            "description_extract": "First sentence. " + ("y" * 1200),
+        }
+    )
+
+    assert len(record.props["extract"]) == sr.NAME_MAX
+    assert len(record.props["description_extract"]) > sr.NAME_MAX
+
+
 def test_props_keys_and_list_strings_are_cleaned(monkeypatch):
     import mt_contracts
 

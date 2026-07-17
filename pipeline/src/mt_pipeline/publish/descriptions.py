@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
@@ -25,6 +26,7 @@ WIKIPEDIA_LICENSE_NAME = "Creative Commons Attribution-ShareAlike 4.0"
 WIKIPEDIA_LICENSE_URL = "https://creativecommons.org/licenses/by-sa/4.0/"
 _LANG_RE = re.compile(r"[a-z][a-z0-9-]{1,15}")
 _SENTENCE_END_RE = re.compile(r"[.!?](?:[\"')\]]+)?(?:\s|$)")
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,8 @@ class PlaceDescription:
     place_id: str
     lat: float
     lon: float
+    tier: int
+    score: float
     wikipedia_lang: str
     wikipedia_title: str
     excerpt: str
@@ -51,6 +55,12 @@ class DescriptionIndexArtifact:
     json_bytes: bytes
     sha256: str
     byte_len: int
+
+
+@dataclass(frozen=True)
+class DescriptionEmitResult:
+    artifacts: list[DescriptionIndexArtifact]
+    dropped_count: int
 
 
 def descriptions_from_source_records(
@@ -102,11 +112,21 @@ def source_rows_from_db(conn, region: str) -> list[dict[str, Any]]:
 def emit_description_artifacts(
     descriptions: Iterable[PlaceDescription],
 ) -> list[DescriptionIndexArtifact]:
+    return emit_description_result(descriptions).artifacts
+
+
+def emit_description_result(
+    descriptions: Iterable[PlaceDescription],
+    *,
+    region: str | None = None,
+) -> DescriptionEmitResult:
     grouped = partition.partition_places(
         {
             "place_id": desc.place_id,
             "lat": desc.lat,
             "lon": desc.lon,
+            "tier": desc.tier,
+            "score": desc.score,
             "wikipedia_lang": desc.wikipedia_lang,
             "wikipedia_title": desc.wikipedia_title,
             "excerpt": desc.excerpt,
@@ -121,14 +141,32 @@ def emit_description_artifacts(
         for desc in descriptions
     )
     artifacts: list[DescriptionIndexArtifact] = []
+    dropped_count = 0
     for (x, y), tile_records in grouped.items():
-        payload = _description_index_payload(x, y, tile_records)
+        kept_records = _description_priority_order(tile_records)
+        payload = _description_index_payload(x, y, _description_payload_order(kept_records))
         data = _json_bytes(payload)
         while len(data) > MAX_DESCRIPTION_INDEX_BYTES and payload["places"]:
-            payload["places"].pop()
-            validate_instance("description-index", payload)
+            kept_records.pop()
+            dropped_count += 1
+            payload = _description_index_payload(
+                x, y, _description_payload_order(kept_records)
+            )
             data = _json_bytes(payload)
         if len(data) > MAX_DESCRIPTION_INDEX_BYTES:
+            continue
+        if len(kept_records) != len(tile_records):
+            _LOGGER.warning(
+                "description sidecar trimmed",
+                extra={
+                    "region": region,
+                    "tile_x": x,
+                    "tile_y": y,
+                    "dropped": len(tile_records) - len(kept_records),
+                    "kept": len(kept_records),
+                },
+            )
+        if not payload["places"]:
             continue
         artifacts.append(
             DescriptionIndexArtifact(
@@ -139,7 +177,26 @@ def emit_description_artifacts(
                 byte_len=len(data),
             )
         )
-    return artifacts
+    return DescriptionEmitResult(artifacts=artifacts, dropped_count=dropped_count)
+
+
+def _description_priority_order(
+    records: Iterable[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    return sorted(
+        records,
+        key=lambda record: (
+            int(record["tier"]),
+            -float(record["score"]),
+            str(record["place_id"]),
+        ),
+    )
+
+
+def _description_payload_order(
+    records: Iterable[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    return sorted(records, key=lambda record: str(record["place_id"]))
 
 
 def _description_index_payload(
@@ -155,7 +212,7 @@ def _description_index_payload(
             {
                 key: value
                 for key, value in asdict(_record_to_description(record)).items()
-                if key not in {"lat", "lon"}
+                if key not in {"lat", "lon", "tier", "score"}
             }
             for record in tile_records
         ],
@@ -175,6 +232,8 @@ def _record_to_description(record: Mapping[str, Any]) -> PlaceDescription:
         place_id=str(record["place_id"]),
         lat=float(record["lat"]),
         lon=float(record["lon"]),
+        tier=int(record["tier"]),
+        score=float(record["score"]),
         wikipedia_lang=str(record["wikipedia_lang"]),
         wikipedia_title=str(record["wikipedia_title"]),
         excerpt=str(record["excerpt"]),
@@ -195,7 +254,7 @@ def _description_from_props(
 ) -> PlaceDescription | None:
     lang = _sanitize_lang(props.get("lang"))
     title = _safe_single_line(props.get("title"), max_chars=TITLE_MAX_CHARS)
-    excerpt = _excerpt(props.get("extract"))
+    excerpt = _excerpt(props.get("description_extract") or props.get("extract"))
     if lang is None or title is None or excerpt is None:
         return None
     source_url = _source_url(lang, title)
@@ -210,6 +269,8 @@ def _description_from_props(
         place_id=str(place["place_id"]),
         lat=lat,
         lon=lon,
+        tier=int(place["tier"]),
+        score=float(place["score"]),
         wikipedia_lang=lang,
         wikipedia_title=title,
         excerpt=excerpt,
@@ -234,10 +295,14 @@ def _retained_wikipedia_refs(place: Mapping[str, Any]) -> list[str]:
 def _safe_single_line(value: Any, *, max_chars: int) -> str | None:
     if not isinstance(value, str):
         return None
-    text = " ".join(strip_unsafe_text(value).split())
+    text = _strip_markup_markers(strip_unsafe_text(" ".join(value.split())))
     if not text:
         return None
     return text[:max_chars]
+
+
+def _strip_markup_markers(value: str) -> str:
+    return value.replace("<", "").replace(">", "")
 
 
 def _sanitize_lang(value: Any) -> str | None:

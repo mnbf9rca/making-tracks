@@ -40,6 +40,7 @@ class PublishedTargetResult:
     publish_result: r2.PublishResult
     image_index_bytes: int = 0
     description_index_bytes: int = 0
+    description_index_dropped: int = 0
     thumb_bytes: int = 0
 
 
@@ -201,6 +202,7 @@ def run(
         publish_result=parent_result.publish_result,
         image_index_bytes=parent_result.image_index_bytes,
         description_index_bytes=parent_result.description_index_bytes,
+        description_index_dropped=parent_result.description_index_dropped,
         thumb_bytes=parent_result.thumb_bytes,
         subregion_results=tuple(subregion_results),
         region_index=region_index_obj,
@@ -327,7 +329,11 @@ def _publish_target(
         shipped_places,
         source_description_rows,
     )
-    description_index_arts = descriptions.emit_description_artifacts(place_descriptions)
+    description_result = descriptions.emit_description_result(
+        place_descriptions,
+        region=target_region,
+    )
+    description_index_arts = description_result.artifacts
     manifest_obj = manifest.assemble_manifest(
         region=target_region,
         publish_version=publish_version,
@@ -366,6 +372,7 @@ def _publish_target(
         publish_result=publish_result,
         image_index_bytes=sum(art.byte_len for art in image_index_arts),
         description_index_bytes=sum(art.byte_len for art in description_index_arts),
+        description_index_dropped=description_result.dropped_count,
         thumb_bytes=sum(art.byte_len for art in thumb_arts),
     )
 

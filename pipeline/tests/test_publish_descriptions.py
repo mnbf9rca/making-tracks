@@ -21,6 +21,8 @@ def _desc(place_id, *, lat=3.1, lon=101.7, source_ref="wp:1", excerpt="Extract."
         place_id=place_id,
         lat=lat,
         lon=lon,
+        tier=2,
+        score=0.5,
         wikipedia_lang="en",
         wikipedia_title=f"Title {source_ref.removeprefix('wp:')}",
         excerpt=excerpt,
@@ -82,6 +84,29 @@ def test_description_excerpt_prefers_sentence_boundary_under_500_chars():
     assert descriptions[0].excerpt.endswith(".")
 
 
+def test_description_excerpt_prefers_preserved_description_extract_over_capped_extract():
+    first = "A" * 320 + "."
+    second = "B" * 120 + "."
+    third = "C" * 120 + "."
+    rows = [
+        {
+            "source_ref": "wp:1",
+            "props": {
+                "lang": "en",
+                "title": "Long",
+                "extract": first[:300],
+                "description_extract": f"{first} {second} {third}",
+            },
+        }
+    ]
+
+    descriptions = D.descriptions_from_source_records([_place(["wp:1"])], rows)
+
+    assert descriptions[0].excerpt == f"{first} {second}"
+    assert len(descriptions[0].excerpt) > 300
+    assert descriptions[0].excerpt.endswith(".")
+
+
 def test_description_extraction_sanitizes_control_chars_and_skips_empty_results():
     rows = [
         {
@@ -100,6 +125,24 @@ def test_description_extraction_sanitizes_control_chars_and_skips_empty_results(
     )
 
     assert [desc.excerpt for desc in descriptions] == ["AB"]
+
+
+def test_description_extraction_normalizes_paragraphs_and_strips_markup_markers():
+    rows = [
+        {
+            "source_ref": "wp:1",
+            "props": {
+                "lang": "en",
+                "title": "Unsafe <Title>",
+                "description_extract": "First paragraph.\nSecond <b>paragraph</b>.",
+            },
+        }
+    ]
+
+    descriptions = D.descriptions_from_source_records([_place(["wp:1"])], rows)
+
+    assert descriptions[0].wikipedia_title == "Unsafe Title"
+    assert descriptions[0].excerpt == "First paragraph. Second bparagraph/b."
 
 
 def test_description_extraction_uses_first_valid_retained_wikipedia_ref():
@@ -159,6 +202,26 @@ def test_emit_description_artifacts_enforces_utf8_byte_cap(monkeypatch):
     payload = json.loads(artifacts[0].json_bytes)
     assert [place["place_id"] for place in payload["places"]] == ["mt1_" + "0" * 26]
     assert payload["places"][0]["excerpt"] == "é" * 500
+
+
+def test_emit_description_result_trims_by_tier_score_and_reports_drops(monkeypatch, caplog):
+    monkeypatch.setattr(D, "MAX_DESCRIPTION_INDEX_BYTES", 1600, raising=False)
+    low = _desc(
+        "mt1_" + "0" * 26,
+        source_ref="wp:1",
+        excerpt="L" * 500,
+    )
+    high = D.PlaceDescription(
+        **{**low.__dict__, "place_id": "mt1_" + "1" * 26, "tier": 1, "score": 0.99, "source_ref": "wp:2"}
+    )
+
+    caplog.set_level("WARNING")
+    result = D.emit_description_result([low, high], region="uk")
+
+    assert result.dropped_count == 1
+    payload = json.loads(result.artifacts[0].json_bytes)
+    assert [place["place_id"] for place in payload["places"]] == ["mt1_" + "1" * 26]
+    assert "description sidecar trimmed" in caplog.text
 
 
 def test_emit_description_artifacts_is_deterministic_by_tile_and_place_order():

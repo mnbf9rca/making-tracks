@@ -57,6 +57,14 @@ def test_description_index_rejects_control_chars_and_oversize_excerpt():
     inst["places"][0]["excerpt"] = "x" * 501
     assert not is_valid("description-index", inst)
 
+    inst = copy.deepcopy(VALID_INDEX)
+    inst["places"][0]["excerpt"] = "A <b>bold</b> place."
+    assert not is_valid("description-index", inst)
+
+    inst = copy.deepcopy(VALID_INDEX)
+    inst["places"][0]["wikipedia_title"] = "Unsafe <Title>"
+    assert not is_valid("description-index", inst)
+
 
 def test_description_index_requires_language_specific_wikipedia_source_url():
     inst = copy.deepcopy(VALID_INDEX)

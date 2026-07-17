@@ -438,6 +438,95 @@ def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extract
     ]
 
 
+def test_publish_stage_reports_description_sidecar_overflow_drops(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(P.descriptions, "MAX_DESCRIPTION_INDEX_BYTES", 1600, raising=False)
+    _seed_publish_inputs(conn)
+    conn.execute(
+        "UPDATE place_categories SET category = 'history' WHERE place_id = ?",
+        (B,),
+    )
+    for place_id, source_ref, tier, score in [
+        (A, "wp:10001", 1, 0.9),
+        (B, "wp:10002", 4, 0.2),
+    ]:
+        source_record.persist(
+            conn,
+            source_record.parse(
+                "malaysia",
+                "wp",
+                source_ref,
+                source_ref,
+                3.10,
+                101.70,
+                {
+                    "lang": "en",
+                    "title": source_ref,
+                    "description_extract": source_ref + " " + ("x" * 500),
+                },
+            ),
+            run_id="extract1",
+        )
+        conn.execute(
+            "UPDATE places SET member_refs_json = ? WHERE place_id = ?",
+            (json.dumps([f"wd:Q{100 if place_id == A else 200}", source_ref]), place_id),
+        )
+        conn.execute(
+            "UPDATE place_scores SET tier = ?, score = ? WHERE place_id = ?",
+            (tier, score, place_id),
+        )
+    conn.commit()
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [
+            RegistryRecord(
+                place_id=A,
+                refs={"wd:Q100", "wp:10001"},
+                mint_anchor="wd:Q100",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+            RegistryRecord(
+                place_id=B,
+                refs={"wd:Q200", "wp:10002"},
+                mint_anchor="wd:Q200",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+        ]
+    )
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename="malaysia.pmtiles",
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    result = P.run(
+        conn,
+        "malaysia",
+        publish_version="20260717T120000Z",
+        generated_at="2026-07-17T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+    )
+
+    desc_files = sorted(result.staging_dir.glob("descriptions/10/*/*.json"))
+    payload = json.loads(desc_files[0].read_text())
+    assert result.description_index_dropped == 1
+    assert [place["place_id"] for place in payload["places"]] == [A]
+
+
 def test_publish_stage_writes_region_index_after_all_current_flips(
     conn, tmp_path, monkeypatch
 ):
