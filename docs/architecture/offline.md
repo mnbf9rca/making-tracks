@@ -24,7 +24,7 @@ of the designs.
 | **Category icons** | **App-shipped** | SF Symbols via `style.setImage`; no remote sprite, no sprite URL. |
 | **Glyphs / fonts** | **⚠ runtime-fetched today → must become app-shipped/bundle-once** | Labels render from `tiles.making-tracks.app/global/fonts/{fontstack}/{range}.pbf` (`PaperStyle.swift:2`). **Offline this breaks region labels.** Glyphs are GLOBAL (one Noto Sans stack) → **bundle ONCE app-side**, NOT per-pack. Cover the labelled scripts (incl. Malaysia Jawi/Arabic). *Open work.* |
 | **Place tiles (z10)** | **Bundled (mandatory)** | `objects/tiles/{sha}.json.gz`, content-addressed. |
-| **Basemap (region)** | **Bundled (mandatory)** | Per-pack; delta strategy → per-cell content-addressed objects (§3, pending #177 ratify). |
+| **Basemap (region)** | **Bundled (mandatory)** | Per-pack; delta strategy → per-cell content-addressed objects (§3; ratified #177, build pending WP-RM-P). |
 | **Description sidecars** | **Bundled (mandatory)** ⚠ *target* | `descriptions/10/{x}/{y}.json` (codex4 #173). **Not in the shipped pack yet** — the app reads no `descriptions/` (pending the pack-descriptor build, WP-RM-P). |
 | **Image-index sidecars** | **Bundled (OPTIONAL — part of "include images")** ⚠ *target* | `images/10/{x}/{y}.json` (#158). Rides *with* thumbs (an image-index entry is useless offline without its thumb) — a without-images pack carries neither. **Not in the shipped pack yet** (WP-IMG-B2). |
 | **Image thumbs** | **Bundled (OPTIONAL)** ⚠ *target* | `thumbs/{sha[:2]}/{sha}.webp`, content-addressed; the "include images" toggle (WP-IMG-B2). **Not in the shipped pack yet.** |
@@ -42,7 +42,7 @@ of the designs.
   (`schema_version const 1`, `additionalProperties:false`) → it lists only **tiles + basemap**; **all other
   content (thumbs / description + image-index sidecars / search index) is listed in the versioned
   PACK-DESCRIPTOR file** (sidecars cannot ride the manifest — region-model §6). **⚠ The pack-descriptor is
-  designed, not built** — it exists in no schema, publisher, or consumer today (pending #177 ratify → the
+  designed, not built** — it exists in no schema, publisher, or consumer today (ratified #177; build pending WP-RM-P → the
   WP-RM-P emitter + app-side reader); until then only the manifest's tiles+basemap deltas. Once built,
   refresh runs `updatePlan` **sha-skip** over both → an unchanged object (same sha) is not re-downloaded
   (**free delta**).
