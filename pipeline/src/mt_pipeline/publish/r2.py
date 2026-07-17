@@ -20,7 +20,16 @@ from mt_contracts.region_index import validate_region_index
 _REGION_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _PUBLISH_VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 _PRIVATE_KINDS = {"registry", "cache", "feedback", "lock"}
-_PUBLIC_KINDS = {"tile", "image", "thumb", "basemap", "manifest", "current", "region_index"}
+_PUBLIC_KINDS = {
+    "tile",
+    "image",
+    "description",
+    "thumb",
+    "basemap",
+    "manifest",
+    "current",
+    "region_index",
+}
 _R2_UPLOAD_ENV_VARS = ("R2_S3_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY")
 
 
@@ -99,6 +108,7 @@ class PublishPlan:
         *,
         basemap: bool,
         image_index_arts: Iterable[Any] = (),
+        description_index_arts: Iterable[Any] = (),
         thumb_arts: Iterable[Any] = (),
         registry_blob: Any | None = None,
         cache_blob: Any | None = None,
@@ -125,6 +135,15 @@ class PublishPlan:
                     bucket=public,
                     key=f"{region}/{publish_version}/images/10/{image.x}/{image.y}.json",
                     body=getattr(image, "json_bytes", None),
+                )
+            )
+        for desc in sorted(description_index_arts, key=lambda art: (art.x, art.y)):
+            ops.append(
+                PublishOp(
+                    kind="description",
+                    bucket=public,
+                    key=f"{region}/{publish_version}/descriptions/10/{desc.x}/{desc.y}.json",
+                    body=getattr(desc, "json_bytes", None),
                 )
             )
         for tile in sorted(tile_arts, key=lambda art: (art.x, art.y)):
@@ -295,7 +314,7 @@ def publish_prepared_to_r2(
             op
             for plan in plan_list
             for op in plan.ops
-            if op.kind in {"image", "tile", "basemap", "manifest"}
+            if op.kind in {"image", "description", "tile", "basemap", "manifest"}
         ]
         current_ops = [
             op for plan in plan_list for op in plan.ops if op.kind == "current"
@@ -433,12 +452,13 @@ def _plan_from_staging(
     region = staging.parent.name
     publish_version = staging.name
     validate_path_components(region, publish_version)
-    thumb_ops, image_ops, tile_ops, basemap_op, manifest_op = _ops_from_staging(
+    thumb_ops, image_ops, description_ops, tile_ops, basemap_op, manifest_op = _ops_from_staging(
         staging, layout, region, publish_version
     )
     ops = [
         *thumb_ops,
         *image_ops,
+        *description_ops,
         *tile_ops,
         basemap_op,
         manifest_op,
@@ -544,7 +564,14 @@ def _current_op(layout: Mapping[str, Any], region: str, publish_version: str) ->
 
 def _ops_from_staging(
     staging: Path, layout: Mapping[str, Any], region: str, publish_version: str
-) -> tuple[list[PublishOp], list[PublishOp], list[PublishOp], PublishOp, PublishOp]:
+) -> tuple[
+    list[PublishOp],
+    list[PublishOp],
+    list[PublishOp],
+    list[PublishOp],
+    PublishOp,
+    PublishOp,
+]:
     public = str(layout["public_bucket"])
     staging_root = staging.parent.parent
     thumb_ops = [
@@ -565,6 +592,15 @@ def _ops_from_staging(
         )
         for path in sorted((staging / "images/10").glob("*/*.json"))
     ]
+    description_ops = [
+        PublishOp(
+            kind="description",
+            bucket=public,
+            key=f"{region}/{publish_version}/descriptions/10/{path.parent.name}/{path.stem}.json",
+            source_path=path,
+        )
+        for path in sorted((staging / "descriptions/10").glob("*/*.json"))
+    ]
     tile_ops = [
         PublishOp(
             kind="tile",
@@ -579,6 +615,7 @@ def _ops_from_staging(
     return (
         thumb_ops,
         image_ops,
+        description_ops,
         tile_ops,
         PublishOp(kind="basemap", bucket=public, key=f"{region}/{publish_version}/{region}.pmtiles", source_path=basemap),
         PublishOp(kind="manifest", bucket=public, key=f"{region}/{publish_version}/manifest.json", source_path=manifest),

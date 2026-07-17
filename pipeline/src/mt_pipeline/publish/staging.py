@@ -17,6 +17,7 @@ def build_staging(
     *,
     tile_arts,
     image_index_arts=(),
+    description_index_arts=(),
     thumb_arts=(),
     manifest_obj: dict[str, Any],
     basemap_path: Path,
@@ -31,6 +32,10 @@ def build_staging(
         image_path = version_root / "images" / "10" / str(art.x) / f"{art.y}.json"
         image_path.parent.mkdir(parents=True, exist_ok=True)
         image_path.write_bytes(art.json_bytes)
+    for art in description_index_arts:
+        desc_path = version_root / "descriptions" / "10" / str(art.x) / f"{art.y}.json"
+        desc_path.parent.mkdir(parents=True, exist_ok=True)
+        desc_path.write_bytes(art.json_bytes)
     for art in thumb_arts:
         thumb_path = Path(root) / "thumbs" / art.sha256[:2] / f"{art.sha256}.webp"
         thumb_path.parent.mkdir(parents=True, exist_ok=True)

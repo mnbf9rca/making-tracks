@@ -7,6 +7,7 @@ import pytest
 
 from mt_pipeline.publish import r2 as R
 from mt_pipeline.publish import images as I
+from mt_pipeline.publish import descriptions as D
 from mt_pipeline.publish import staging as S
 from mt_pipeline.publish.tiles import TileArtifact
 
@@ -47,6 +48,18 @@ def _image_arts():
 
 def _thumb_arts():
     return [I.ThumbArtifact(sha256="a" * 64, webp_bytes=b"thumb", byte_len=5)]
+
+
+def _description_arts():
+    return [
+        D.DescriptionIndexArtifact(
+            x=1,
+            y=2,
+            json_bytes=b'{"schema_version":1,"z":10,"x":1,"y":2,"places":[]}',
+            sha256="2" * 64,
+            byte_len=53,
+        )
+    ]
 
 
 def _real_thumb_bytes():
@@ -111,6 +124,29 @@ def test_build_staging_writes_image_indexes_and_global_thumb_blobs(tmp_path):
     assert (tmp_path / "stage/thumbs/aa" / f"{'a' * 64}.webp").read_bytes() == b"thumb"
 
 
+def test_build_staging_writes_description_indexes(tmp_path):
+    basemap = tmp_path / "uk.pmtiles"
+    basemap.write_bytes(b"basemap")
+
+    root = S.build_staging(
+        tmp_path / "stage",
+        "uk",
+        "20260715T120000Z",
+        tile_arts=_arts(),
+        description_index_arts=_description_arts(),
+        manifest_obj={
+            "schema_version": 1,
+            "publish_version": "20260715T120000Z",
+            "region": "uk",
+        },
+        basemap_path=basemap,
+    )
+
+    assert (
+        root / "descriptions/10/1/2.json"
+    ).read_bytes() == _description_arts()[0].json_bytes
+
+
 def test_manifest_is_the_last_region_content_op_after_images_then_current_flip():
     plan = R.PublishPlan.for_version(
         _layout(),
@@ -119,11 +155,13 @@ def test_manifest_is_the_last_region_content_op_after_images_then_current_flip()
         _arts(),
         basemap=True,
         image_index_arts=_image_arts(),
+        description_index_arts=_description_arts(),
         thumb_arts=_thumb_arts(),
     )
     assert [op.kind for op in plan.ops] == [
         "thumb",
         "image",
+        "description",
         "tile",
         "basemap",
         "manifest",

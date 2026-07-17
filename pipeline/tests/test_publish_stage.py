@@ -291,6 +291,97 @@ def test_publish_stage_emits_image_sidecars_from_shipped_wikidata_images(
     )
 
 
+def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extracts(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    source_record.persist(
+        conn,
+        source_record.parse(
+            "malaysia",
+            "wp",
+            "wp:12345",
+            "Kellie's Castle",
+            3.10,
+            101.70,
+            {
+                "lang": "ms",
+                "title": "Kellie's Castle",
+                "extract": "Kellie's Castle ialah sebuah bangunan bersejarah di Perak.",
+            },
+        ),
+        run_id="extract1",
+    )
+    conn.execute(
+        "UPDATE places SET member_refs_json = ? WHERE place_id = ?",
+        (json.dumps(["wd:Q100", "osm:node/100", "wp:12345"], sort_keys=True), A),
+    )
+    conn.commit()
+    _write_malaysia_registry(tmp_path)
+    registry = LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").load()
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [
+            (
+                record
+                if record.place_id != A
+                else RegistryRecord(
+                    place_id=record.place_id,
+                    refs={*record.refs, "wp:12345"},
+                    mint_anchor=record.mint_anchor,
+                    status=record.status,
+                    superseded_by=record.superseded_by,
+                    first_shipped_version=record.first_shipped_version,
+                    last_seen_version=record.last_seen_version,
+                    schema_version=record.schema_version,
+                )
+            )
+            for record in registry
+        ]
+    )
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename="malaysia.pmtiles",
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    result = P.run(
+        conn,
+        "malaysia",
+        publish_version="20260717T120000Z",
+        generated_at="2026-07-17T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+    )
+
+    desc_files = sorted(result.staging_dir.glob("descriptions/10/*/*.json"))
+    assert len(desc_files) == 1
+    desc_index = json.loads(desc_files[0].read_text())
+    assert desc_index["places"][0]["place_id"] == A
+    assert desc_index["places"][0]["excerpt"] == (
+        "Kellie's Castle ialah sebuah bangunan bersejarah di Perak."
+    )
+    assert desc_index["places"][0]["source_url"] == (
+        "https://ms.wikipedia.org/wiki/Kellie%27s_Castle"
+    )
+    assert desc_index["places"][0]["license_code"] == "CC-BY-SA-4.0"
+    assert any(attr["source"] == "wikipedia" for attr in result.manifest["attribution"])
+    description_ops = [
+        op for op in result.publish_result.plan.ops if op.kind == "description"
+    ]
+    assert [op.key for op in description_ops] == [
+        "malaysia/20260717T120000Z/descriptions/10/801/503.json"
+    ]
+
+
 def test_publish_stage_writes_region_index_after_all_current_flips(
     conn, tmp_path, monkeypatch
 ):

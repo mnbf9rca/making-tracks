@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.making-tracks.app/description-index/1",
+  "title": "DescriptionIndex",
+  "description": "Per z10 Wikipedia-derived text sidecar keyed by place_id. Optional enrichment: place tiles remain unchanged and old readers degrade to description-less cards.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "min_reader_version", "z", "x", "y", "places"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "min_reader_version": {"type": "integer", "minimum": 1},
+    "z": {"type": "integer", "const": 10},
+    "x": {"type": "integer", "minimum": 0, "maximum": 1023},
+    "y": {"type": "integer", "minimum": 0, "maximum": 1023},
+    "places": {
+      "type": "array",
+      "maxItems": 4000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "place_id",
+          "wikipedia_title",
+          "excerpt",
+          "source_ref",
+          "source_url",
+          "license_code",
+          "license_name",
+          "license_url",
+          "modified"
+        ],
+        "properties": {
+          "place_id": {"type": "string", "pattern": "^mt1_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}$"},
+          "wikipedia_title": {"type": "string", "minLength": 1, "maxLength": 300, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u200b\\u200c\\u200d\\u2028\\u2029\\u202a-\\u202e\\u2060\\u2066-\\u2069\\ufeff]*$"},
+          "excerpt": {"type": "string", "minLength": 1, "maxLength": 500, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u200b\\u200c\\u200d\\u2028\\u2029\\u202a-\\u202e\\u2060\\u2066-\\u2069\\ufeff]*$"},
+          "source_ref": {"type": "string", "maxLength": 128, "pattern": "^wp:[0-9]+$"},
+          "source_url": {"type": "string", "maxLength": 512, "pattern": "^https://[a-z][a-z0-9-]{0,15}\\.wikipedia\\.org/wiki/[^\\u0000-\\u001f\\u007f-\\u009f\\s?#]+$"},
+          "license_code": {"type": "string", "const": "CC-BY-SA-4.0"},
+          "license_name": {"type": "string", "const": "Creative Commons Attribution-ShareAlike 4.0"},
+          "license_url": {"type": "string", "const": "https://creativecommons.org/licenses/by-sa/4.0/"},
+          "modified": {"type": "boolean", "const": true}
+        }
+      }
+    }
+  }
+}
