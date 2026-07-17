@@ -177,10 +177,12 @@ it with a COVER-TRAFFIC REQUIREMENT. This section is reframed in those terms.]**
 
 ## 6. Delta updates (D6) — Rob REQUIREMENT: no "GB every time"
 
-**A pack bundles the WHOLE offline experience, not just tiles [Rob ruling: "the bundles are also wiki
-updates, photos etc."]:** a zone pack contains **place tiles + basemap + image thumbs + description
-sidecars** (the WP-IMG-B2 photos-in-bundle is a **privacy.md commitment**, and descriptions too). **Each
-must be DELTA-capable** — state the mechanism per content type:
+**A pack bundles the WHOLE offline experience [Rob ruling: "a bundle must contain EVERYTHING needed for
+that region offline. Perhaps let users choose not to download images. But everything else."]:**
+**MANDATORY** in every pack = **place tiles + basemap + description sidecars + image-index sidecars**;
+**OPTIONAL** = **image thumbs** (the one user-declinable component — the "include images" toggle,
+aligning with B10/WP-IMG-B2). See the **Offline completeness invariant (§7)** for the full runtime-asset
+audit (glyphs, world tier, sprites). **Each content type must be DELTA-capable** — the mechanism per type:
 
 - **Place tiles — delta FREE (protect it).** Cells are content-addressed `objects/tiles/{sha}`;
   an unchanged cell is the **same sha → skipped** by `updatePlan` on any refresh. **State this as a
@@ -223,6 +225,34 @@ must be DELTA-capable** — state the mechanism per content type:
 - **Net:** every pack content type (tiles / basemap-cells / thumbs / description+image-index sidecars) is
   a **sha-listed object in the manifest** → the whole pack deltas uniformly via `updatePlan` sha-skip,
   streams to disk incrementally, and shares one cover-traffic cohort. No content type re-downloads whole.
+
+## 7. Offline completeness INVARIANT (D7) — Rob requirement
+
+**The invariant (→ an acceptance test in every build WP):** *a fresh install + ONE downloaded bundle +
+airplane mode = a fully working region* — map + **labels** + place cards + **blurbs** + (if opted) photos,
+with **zero** network. If anything the map needs at runtime is not in the bundle or app-shipped, offline
+is broken. Audit of the completeness set:
+
+- **Place tiles, basemap(-cells), description + image-index sidecars** — in the pack, mandatory (§6).
+- **Image thumbs** — in the pack, the one optional component (§6).
+- **GLYPHS / fonts [gate — the hidden runtime leak].** Map labels are rendered from glyph PBFs **fetched
+  at runtime** from `tiles.making-tracks.app/global/fonts/{fontstack}/{range}.pbf` (`PaperStyle.swift:2`)
+  — so **offline, region labels break** unless glyphs are local. Glyphs are **GLOBAL** (one Noto Sans
+  fontstack, not per-region), so the right answer is **bundle-ONCE, app-side** (ship the glyph PBFs in the
+  app binary, or a one-time global asset download cached globally) — **NOT per-pack** (which would
+  duplicate a global asset in every bundle). **New work: an offline-glyph story** (app-ship or
+  global-once); flag the multi-language glyph range for Malaysia (Jawi/Arabic) so the shipped set covers
+  the labelled scripts.
+- **World basemap z0–6** — already **app-bundled** (region-model §2); state it (the offline world tier is
+  present without a pack).
+- **Sprites / category icons** — **SF Symbols, app-side** (WP-ICONS) — no remote sprite → offline-fine.
+  State it (no sprite URL in the style).
+- **The place card's image/description attribution + links** — the credit text is in the sidecars (in the
+  pack); the outbound *links* (Wikipedia/CC) simply don't open offline — acceptable (the credit renders).
+
+**Acceptance test (build WPs):** install → download one bundle (with images) → airplane mode → the region
+renders with labels, pins with category icons, cards with photos + blurbs + attribution. Neuter any one
+completeness component → the test goes red.
 
 ## Build-WP decomposition
 
