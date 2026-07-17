@@ -7,6 +7,8 @@ struct MakingTracksApp: App {
     private static let arguments = Set(rawArguments)
     private static let isFixtureMap = arguments.contains("--ui-testing-fixture-map")
     private static let startupViewport = ViewportSeed.selected(argumentValue("--ui-testing-map-state"))
+    private static let debugInstallOfflineRegion = argumentValue("--debug-install-offline-region")
+    private static let debugForceTileNetworkOffline = arguments.contains("--debug-force-tile-network-offline")
     private let database: AppDatabase = {
         try! resetUITestingDatabaseIfNeeded()
         if isFixtureMap {
@@ -20,7 +22,9 @@ struct MakingTracksApp: App {
             MapScreen(
                 database: database,
                 startupViewport: Self.startupViewport,
-                isFixtureMap: Self.isFixtureMap
+                isFixtureMap: Self.isFixtureMap,
+                debugInstallOfflineRegion: Self.debugInstallOfflineRegion,
+                debugForceTileNetworkOffline: Self.debugForceTileNetworkOffline
             )
         }
     }

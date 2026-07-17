@@ -45,12 +45,15 @@ struct MapScreen: View {
     let database: AppDatabase
     let startupViewport: ViewportSeed
     var isFixtureMap = false
+    var debugInstallOfflineRegion: String?
+    var debugForceTileNetworkOffline = false
 
     @State private var model: MapScreenModel?
     @State private var worldPMTilesURL: String? = WorldBasemap.pmtilesURL()
     @State private var features: [(MapPlace, PinState)] = []
     @State private var regionPMTilesURL: String?
     @State private var attribution: [Attribution] = []
+    @State private var debugOfflineStatus: String?
     @State private var cardPresentation = PlaceCardPresentation()
     @State private var showCredits = false
     @State private var loadState: TileLoadState = .unavailable
@@ -141,6 +144,17 @@ struct MapScreen: View {
                     .accessibilityIdentifier("tracks.visit-count.\(Self.primaryFixturePlaceID)")
             }
 
+#if DEBUG
+            if let debugOfflineStatus {
+                Text(verbatim: debugOfflineStatus)
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("debug.offline-status")
+            }
+#endif
+
             creditsButton
         }
     }
@@ -175,8 +189,27 @@ struct MapScreen: View {
 
     private func start() async {
         if model == nil {
-            model = try? MapScreenModel(database: database, fixturePlaces: isFixtureMap ? Self.fixturePlaces : [])
+            model = try? MapScreenModel(
+                database: database,
+                fixturePlaces: isFixtureMap ? Self.fixturePlaces : [],
+                forceTileNetworkOffline: debugForceTileNetworkOffline
+            )
         }
+#if DEBUG
+        if let debugInstallOfflineRegion, let model {
+            await MainActor.run {
+                debugOfflineStatus = "Installing \(debugInstallOfflineRegion)"
+            }
+            let status = await model.installDebugOfflineRegion(debugInstallOfflineRegion)
+            await MainActor.run {
+                debugOfflineStatus = status
+            }
+        } else if debugForceTileNetworkOffline {
+            await MainActor.run {
+                debugOfflineStatus = "Network disabled"
+            }
+        }
+#endif
         await model?.refreshManifest()
         let nextRegionPMTilesURL = await model?.pmtilesURL
         let nextAttribution = await model?.attribution ?? []
@@ -567,6 +600,8 @@ private struct PlaceCardSheet: View {
 private final class MapScreenModel {
     private let database: AppDatabase
     private let tileCache: TileCache?
+    private let offlineStore: OfflineRegionStore?
+    private let forceTileNetworkOffline: Bool
     private let fixturePlaces: [String: PlaceRef]
     private let coreLoop: CoreLoopController
     private var tileClients: [MapRegion: TileClient] = [:]
@@ -574,8 +609,13 @@ private final class MapScreenModel {
 
     var changes: AsyncStream<Set<String>> { coreLoop.changes }
 
-    init(database: AppDatabase, fixturePlaces: [PlaceRef] = []) throws {
+    init(
+        database: AppDatabase,
+        fixturePlaces: [PlaceRef] = [],
+        forceTileNetworkOffline: Bool = false
+    ) throws {
         self.database = database
+        self.forceTileNetworkOffline = forceTileNetworkOffline
         self.fixturePlaces = Dictionary(uniqueKeysWithValues: fixturePlaces.map { ($0.placeID, $0) })
         coreLoop = CoreLoopController(database: database)
         if fixturePlaces.isEmpty {
@@ -586,10 +626,43 @@ private final class MapScreenModel {
                 create: true
             ).appendingPathComponent("MakingTracks/Tiles", isDirectory: true)
             tileCache = try TileCache(directory: cacheRoot)
+            offlineStore = try? OfflineRegionStore.documentsStore()
         } else {
             tileCache = nil
+            offlineStore = nil
         }
     }
+
+#if DEBUG
+    func installDebugOfflineRegion(_ region: String) async -> String {
+        guard fixturePlaces.isEmpty,
+              let offlineStore,
+              Self.isValidRegion(region)
+        else { return "Offline install unavailable" }
+        do {
+            let documents = try FileManager.default.url(
+                for: .documentDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )
+            let downloader = OfflineRegionDownloader(
+                region: region,
+                fetcher: HTTPTileFetcher(),
+                store: offlineStore,
+                availableBytes: { StorageHeadroom.availableBytes(at: documents) }
+            )
+            let result = try await downloader.downloadCurrentRegion()
+            return "Installed \(result.publish.publishVersion)"
+        } catch {
+            return "Install failed: \(String(describing: error))"
+        }
+    }
+
+    private static func isValidRegion(_ value: String) -> Bool {
+        value.range(of: "^[a-z][a-z0-9_]{0,63}$", options: .regularExpression) == value.startIndex..<value.endIndex
+    }
+#endif
 
     func refreshManifest() async {
         guard let client = tileClient(for: selectedRegion) else { return }
@@ -672,7 +745,7 @@ private final class MapScreenModel {
             }
             return .tile(fixturePlace)
         }
-        guard let tileClient = try? tileClient(for: selectedRegion) else { return nil }
+        guard let tileClient = tileClient(for: selectedRegion) else { return nil }
         return await PlaceResolver(tile: tileClient, snapshots: database).source(for: placeID)
     }
 
@@ -728,10 +801,28 @@ private final class MapScreenModel {
         if let cached = tileClients[region] {
             return cached
         }
-        guard let client = try? TileClient(region: region.rawValue, fetcher: HTTPTileFetcher(), cache: tileCache) else {
+#if DEBUG
+        let fetcher: TileFetching = forceTileNetworkOffline ? OfflineProofFetcher() : HTTPTileFetcher()
+#else
+        let fetcher: TileFetching = HTTPTileFetcher()
+#endif
+        guard let client = try? TileClient(
+            region: region.rawValue,
+            fetcher: fetcher,
+            cache: tileCache,
+            offlineStore: offlineStore
+        ) else {
             return nil
         }
         tileClients[region] = client
         return client
     }
 }
+
+#if DEBUG
+private struct OfflineProofFetcher: TileFetching {
+    func fetch(_ url: URL) async throws -> Data {
+        throw URLError(.notConnectedToInternet)
+    }
+}
+#endif
