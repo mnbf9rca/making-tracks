@@ -11,6 +11,15 @@ enum PinCategoryImageRegistry {
         .union([PinLayers.fallbackCategoryIconName, PinLayers.hiddenIconName])
 }
 
+struct ProjectedFeatureDiagnostic: Identifiable, Equatable, Sendable {
+    let placeID: String
+    let x: Double
+    let y: Double
+    let isHitTestable: Bool
+
+    var id: String { placeID }
+}
+
 @MainActor
 struct MLNMapViewRepresentable: UIViewRepresentable {
     var worldPMTilesURL: String?
@@ -26,9 +35,23 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var onUserPanned: () -> Void
     var onTapPlace: (String) -> Void
     var onTapEmpty: () -> Void
+    var onMapReady: () -> Void
+    var onFeaturesApplied: () -> Void
+    var onStyleWillReload: () -> Void
+    var debugReportProjectedFeatureDiagnostics: ([ProjectedFeatureDiagnostic]) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onCameraIdle: onCameraIdle, onUserPanned: onUserPanned, onTapPlace: onTapPlace, onTapEmpty: onTapEmpty)
+        let coordinator = Coordinator(
+            onCameraIdle: onCameraIdle,
+            onUserPanned: onUserPanned,
+            onTapPlace: onTapPlace,
+            onTapEmpty: onTapEmpty,
+            onMapReady: onMapReady,
+            onFeaturesApplied: onFeaturesApplied,
+            onStyleWillReload: onStyleWillReload
+        )
+        coordinator.debugReportProjectedFeatureDiagnostics = debugReportProjectedFeatureDiagnostics
+        return coordinator
     }
 
     func makeUIView(context: Context) -> MLNMapView {
@@ -68,6 +91,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         context.coordinator.onUserPanned = onUserPanned
         context.coordinator.onTapPlace = onTapPlace
         context.coordinator.onTapEmpty = onTapEmpty
+        context.coordinator.debugReportProjectedFeatureDiagnostics = debugReportProjectedFeatureDiagnostics
         context.coordinator.pendingFeatures = features
         context.coordinator.desiredVisibleCategories = visibleCategories
         map.shouldRequestAuthorizationToUseLocationServices = false
@@ -79,6 +103,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             regionPMTilesURL: regionPMTilesURL,
             theme: theme
         ) {
+            context.coordinator.onStyleWillReload()
             context.coordinator.commitStyleReload(styleReload)
             map.styleURL = styleReload.url
         } else {
@@ -93,6 +118,10 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var onUserPanned: () -> Void
         var onTapPlace: (String) -> Void
         var onTapEmpty: () -> Void
+        var onMapReady: () -> Void
+        var onFeaturesApplied: () -> Void
+        var onStyleWillReload: () -> Void
+        var debugReportProjectedFeatureDiagnostics: ([ProjectedFeatureDiagnostic]) -> Void = { _ in }
         weak var map: MLNMapView?
         var currentWorldPMTilesURL: String?
         var currentRegionPMTilesURL: String?
@@ -112,12 +141,18 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             onCameraIdle: @escaping (BBox, Int) -> Void,
             onUserPanned: @escaping () -> Void,
             onTapPlace: @escaping (String) -> Void,
-            onTapEmpty: @escaping () -> Void
+            onTapEmpty: @escaping () -> Void,
+            onMapReady: @escaping () -> Void,
+            onFeaturesApplied: @escaping () -> Void,
+            onStyleWillReload: @escaping () -> Void
         ) {
             self.onCameraIdle = onCameraIdle
             self.onUserPanned = onUserPanned
             self.onTapPlace = onTapPlace
             self.onTapEmpty = onTapEmpty
+            self.onMapReady = onMapReady
+            self.onFeaturesApplied = onFeaturesApplied
+            self.onStyleWillReload = onStyleWillReload
         }
 
         func prepareStyleReload(
@@ -166,6 +201,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             map = mapView
             registerBadgeImages(in: style)
             registerCategoryImages(in: style)
+            onMapReady()
 
             if style.source(withIdentifier: PinLayers.sourceID) == nil {
                 style.addSource(MLNShapeSource(identifier: PinLayers.sourceID, shape: nil, options: nil))
@@ -201,6 +237,16 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                   let shape = try? MLNShape(data: Data(json.utf8), encoding: String.Encoding.utf8.rawValue)
             else { return }
             source.shape = shape
+            if !features.isEmpty {
+                onFeaturesApplied()
+#if DEBUG
+                reportProjectedFeatureDiagnostics(on: map, features: features)
+                Task { @MainActor [weak self, weak map] in
+                    guard let self, let map else { return }
+                    self.reportProjectedFeatureDiagnostics(on: map, features: features)
+                }
+#endif
+            }
         }
 
         func updateLayerFilters(on map: MLNMapView, visibleCategories: Set<String>?) {
@@ -256,6 +302,26 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                 symbol.predicate = predicate
             }
         }
+
+#if DEBUG
+        private func reportProjectedFeatureDiagnostics(on map: MLNMapView, features: [(MapPlace, PinState)]) {
+            let diagnostics = features.map { place, _ in
+                let coordinate = CLLocationCoordinate2D(latitude: place.lat, longitude: place.lon)
+                let point = map.convert(coordinate, toPointTo: map)
+                let hits = map.visibleFeatures(at: point, styleLayerIdentifiers: ["pins-circle", "pins-icon", "pins-bookmark", "pins-heart"])
+                let isHitTestable = hits.contains { feature in
+                    (feature.attribute(forKey: "place_id") as? String) == place.id
+                }
+                return ProjectedFeatureDiagnostic(
+                    placeID: place.id,
+                    x: Double(point.x),
+                    y: Double(point.y),
+                    isHitTestable: isHitTestable
+                )
+            }
+            debugReportProjectedFeatureDiagnostics(diagnostics)
+        }
+#endif
 
         private func addBadge(id: String, icon: String, filter: JSONValue, offset: JSONValue, source: MLNShapeSource, style: MLNStyle) {
             let layer = MLNSymbolStyleLayer(identifier: id, source: source)

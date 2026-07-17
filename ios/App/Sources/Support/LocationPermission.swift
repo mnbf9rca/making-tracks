@@ -66,12 +66,6 @@ extension LocationPermission: CLLocationManagerDelegate {
         }
     }
 
-    nonisolated func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
-        Task { @MainActor in
-            applyAuthorizationStatus(status)
-        }
-    }
-
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         let coordinate = locations.last?.coordinate
         Task { @MainActor in

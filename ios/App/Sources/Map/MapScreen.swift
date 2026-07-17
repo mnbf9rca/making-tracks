@@ -78,6 +78,7 @@ struct MapScreen: View {
     var debugInstallOfflineRegion: String?
     var debugForceTileNetworkOffline = false
     var offlineDownloadProgress: OfflineDownloadProgress?
+    var debugExposeFixturePinDiagnostics = false
 
     @State private var model: MapScreenModel?
     @StateObject private var locationPermission: LocationPermission
@@ -94,6 +95,8 @@ struct MapScreen: View {
     @State private var layerVisibility = MapLayerVisibility()
     @State private var appliedShowHiddenPlaces = false
     @State private var loadState: TileLoadState = .unavailable
+    @State private var isMapReady = false
+    @State private var hasLoadedFixtureFeatures = false
     @State private var viewportRequestID = 0
     @State private var stateEpoch = 0
     @State private var currentViewport: ViewportSeed?
@@ -106,6 +109,7 @@ struct MapScreen: View {
     private let viewportRefreshDebouncer = ViewportRefreshDebouncer()
     @State private var suppressedNearbyPromptPlaceIDs: Set<String> = []
     @State private var nearbyPromptNames: [String: String] = [:]
+    @State private var debugProjectedFixturePins: [ProjectedFeatureDiagnostic] = []
     private let locationManager: AppLocationManager
     private static let primaryFixturePlaceID = fixturePlaces[0].placeID
     private static let nearbyPromptDistanceMeters: CLLocationDistance = 125
@@ -117,6 +121,7 @@ struct MapScreen: View {
         debugInstallOfflineRegion: String? = nil,
         debugForceTileNetworkOffline: Bool = false,
         offlineDownloadProgress: OfflineDownloadProgress? = nil,
+        debugExposeFixturePinDiagnostics: Bool = false,
         locationManager: AppLocationManager = AppLocationManager()
     ) {
         self.database = database
@@ -125,6 +130,7 @@ struct MapScreen: View {
         self.debugInstallOfflineRegion = debugInstallOfflineRegion
         self.debugForceTileNetworkOffline = debugForceTileNetworkOffline
         self.offlineDownloadProgress = offlineDownloadProgress
+        self.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
         self.locationManager = locationManager
         _locationPermission = StateObject(wrappedValue: LocationPermission(manager: locationManager))
     }
@@ -160,6 +166,21 @@ struct MapScreen: View {
                 },
                 onTapEmpty: {
                     cardPresentation.dismiss()
+                },
+                onMapReady: {
+                    isMapReady = true
+                },
+                onFeaturesApplied: {
+                    hasLoadedFixtureFeatures = true
+                },
+                onStyleWillReload: {
+                    isMapReady = false
+                    hasLoadedFixtureFeatures = false
+                    debugProjectedFixturePins = []
+                },
+                debugReportProjectedFeatureDiagnostics: { diagnostics in
+                    guard debugExposeFixturePinDiagnostics else { return }
+                    debugProjectedFixturePins = diagnostics
                 }
             )
             .ignoresSafeArea()
@@ -168,6 +189,47 @@ struct MapScreen: View {
                     .padding(.top, 72)
                     .padding(.leading, 16)
             }
+            .overlay {
+                if !isMapReady || (isFixtureMap && !hasLoadedFixtureFeatures) {
+                    ZStack {
+                        Color.black.opacity(0.04)
+                            .ignoresSafeArea()
+                        ProgressView()
+                            .padding(14)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("map.loading")
+                }
+            }
+#if DEBUG
+            .overlay(alignment: .topLeading) {
+                if isFixtureMap && debugExposeFixturePinDiagnostics {
+                    ZStack(alignment: .topLeading) {
+                        if hasLoadedFixtureFeatures {
+                            Text(verbatim: "applied")
+                                .font(.system(size: 8))
+                                .foregroundStyle(.red)
+                                .frame(width: 44, height: 18)
+                                .accessibilityIdentifier("map.features-applied")
+                                .allowsHitTesting(false)
+                        }
+
+                        ForEach(debugProjectedFixturePins) { pin in
+                            Text(verbatim: pin.isHitTestable ? "hit" : "miss")
+                                .font(.system(size: 8))
+                                .foregroundStyle(.red)
+                                .frame(width: 28, height: 18)
+                                .position(x: CGFloat(pin.x), y: CGFloat(pin.y))
+                                .accessibilityIdentifier("map.fixture-pin.\(pin.placeID)")
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .allowsHitTesting(false)
+                }
+            }
+#endif
             .overlay(alignment: .topTrailing) {
                 statusChrome
                     .padding(.top, 72)

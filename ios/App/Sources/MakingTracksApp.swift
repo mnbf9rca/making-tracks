@@ -13,6 +13,11 @@ struct MakingTracksApp: App {
     private static let debugForceTileNetworkOffline = arguments.contains("--debug-force-tile-network-offline")
     private static let isLocationDeniedFixture = arguments.contains("--ui-testing-location-denied")
     private static let isLocationAuthorizedFixture = arguments.contains("--ui-testing-location-authorized")
+#if DEBUG
+    private static let debugExposeFixturePinDiagnostics = arguments.contains("--ui-testing-pin-diagnostics")
+#else
+    private static let debugExposeFixturePinDiagnostics = false
+#endif
     private static let simulatedLatitude = argumentValue("--ui-testing-location-latitude").flatMap(Double.init)
     private static let simulatedLongitude = argumentValue("--ui-testing-location-longitude").flatMap(Double.init)
     private static let uiTestingOfflineProgress = argumentValue("--ui-testing-offline-progress").flatMap(Double.init)
@@ -60,6 +65,7 @@ struct MakingTracksApp: App {
                 debugInstallOfflineRegion: Self.debugInstallOfflineRegion,
                 debugForceTileNetworkOffline: Self.debugForceTileNetworkOffline,
                 offlineDownloadProgress: Self.offlineDownloadProgress,
+                debugExposeFixturePinDiagnostics: Self.debugExposeFixturePinDiagnostics,
                 locationManager: locationManager
             )
         }
