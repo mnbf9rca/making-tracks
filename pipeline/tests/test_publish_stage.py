@@ -1,3 +1,4 @@
+import gzip
 import json
 
 import pytest
@@ -313,31 +314,69 @@ def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extract
         ),
         run_id="extract1",
     )
+    source_record.persist(
+        conn,
+        source_record.parse(
+            "malaysia",
+            "wp",
+            "wp:99999",
+            "Non-retained",
+            3.10,
+            101.70,
+            {
+                "lang": "en",
+                "title": "Non-retained",
+                "extract": "This row is acquired but not retained by the shipped place.",
+            },
+        ),
+        run_id="extract1",
+    )
+    source_record.persist(
+        conn,
+        source_record.parse(
+            "malaysia",
+            "wp",
+            "wp:22222",
+            "Excluded",
+            3.11,
+            101.71,
+            {
+                "lang": "en",
+                "title": "Excluded",
+                "extract": "This place is uncategorized and should not publish.",
+            },
+        ),
+        run_id="extract1",
+    )
     conn.execute(
         "UPDATE places SET member_refs_json = ? WHERE place_id = ?",
         (json.dumps(["wd:Q100", "osm:node/100", "wp:12345"], sort_keys=True), A),
     )
+    conn.execute(
+        "UPDATE places SET member_refs_json = ? WHERE place_id = ?",
+        (json.dumps(["wd:Q200", "wp:22222"], sort_keys=True), B),
+    )
     conn.commit()
     _write_malaysia_registry(tmp_path)
     registry = LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").load()
+
+    def with_extra_wp_ref(record):
+        extra_refs = {A: {"wp:12345"}, B: {"wp:22222"}}.get(record.place_id)
+        if extra_refs is None:
+            return record
+        return RegistryRecord(
+            place_id=record.place_id,
+            refs={*record.refs, *extra_refs},
+            mint_anchor=record.mint_anchor,
+            status=record.status,
+            superseded_by=record.superseded_by,
+            first_shipped_version=record.first_shipped_version,
+            last_seen_version=record.last_seen_version,
+            schema_version=record.schema_version,
+        )
+
     LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
-        [
-            (
-                record
-                if record.place_id != A
-                else RegistryRecord(
-                    place_id=record.place_id,
-                    refs={*record.refs, "wp:12345"},
-                    mint_anchor=record.mint_anchor,
-                    status=record.status,
-                    superseded_by=record.superseded_by,
-                    first_shipped_version=record.first_shipped_version,
-                    last_seen_version=record.last_seen_version,
-                    schema_version=record.schema_version,
-                )
-            )
-            for record in registry
-        ]
+        [with_extra_wp_ref(record) for record in registry]
     )
 
     def fake_cut_basemap(region_config, out_path):
@@ -364,6 +403,12 @@ def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extract
 
     desc_files = sorted(result.staging_dir.glob("descriptions/10/*/*.json"))
     assert len(desc_files) == 1
+    tile_files = sorted(result.staging_dir.glob("tiles/10/*/*.json.gz"))
+    tile_payload = json.loads(gzip.decompress(tile_files[0].read_bytes()))
+    assert "excerpt" not in tile_payload["places"][0]
+    assert "source_url" not in tile_payload["places"][0]
+    assert "wikipedia_lang" not in tile_payload["places"][0]
+    assert "descriptions" not in result.manifest
     desc_index = json.loads(desc_files[0].read_text())
     assert desc_index["places"][0]["place_id"] == A
     assert desc_index["places"][0]["wikipedia_lang"] == "ms"
@@ -373,7 +418,17 @@ def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extract
     assert desc_index["places"][0]["source_url"] == (
         "https://ms.wikipedia.org/wiki/Kellie%27s_Castle"
     )
+    assert [place["source_ref"] for place in desc_index["places"]] == ["wp:12345"]
     assert desc_index["places"][0]["license_code"] == "CC-BY-SA-4.0"
+    assert desc_index["places"][0]["excerpted"] is True
+    assert result.description_index_bytes == desc_files[0].stat().st_size
+    region_entry = result.region_index["regions"][0]
+    tile_bytes = sum(int(tile["bytes"]) for tile in result.manifest["tiles"])
+    assert region_entry["bytes_without_thumbs"] == (
+        int(result.manifest["basemap"]["bytes"])
+        + tile_bytes
+        + result.description_index_bytes
+    )
     assert any(attr["source"] == "wikipedia" for attr in result.manifest["attribution"])
     description_ops = [
         op for op in result.publish_result.plan.ops if op.kind == "description"

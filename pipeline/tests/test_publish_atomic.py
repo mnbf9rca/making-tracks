@@ -183,7 +183,15 @@ def test_all_private_kind_ops_target_the_private_bucket_and_layout_is_distinct()
     for op in plan.ops:
         if op.kind in ("registry", "cache", "feedback"):
             assert op.bucket == layout["private_bucket"]
-        if op.kind in ("tile", "image", "thumb", "basemap", "manifest", "current"):
+        if op.kind in (
+            "tile",
+            "image",
+            "description",
+            "thumb",
+            "basemap",
+            "manifest",
+            "current",
+        ):
             assert op.bucket == layout["public_bucket"]
 
     bad = {**layout, "private_bucket": layout["public_bucket"]}
@@ -248,8 +256,10 @@ def test_upload_path_locks_uploads_content_manifest_current_then_private_registr
     version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
     (version_root / "tiles/10/1").mkdir(parents=True)
     (version_root / "images/10/1").mkdir(parents=True)
+    (version_root / "descriptions/10/1").mkdir(parents=True)
     (version_root / "tiles/10/1/2.json.gz").write_bytes(b"tile")
     (version_root / "images/10/1/2.json").write_bytes(b"image")
+    (version_root / "descriptions/10/1/2.json").write_bytes(b"description")
     (version_root / "uk.pmtiles").write_bytes(b"basemap")
     (version_root / "manifest.json").write_text("{}")
     (tmp_path / f"stage/thumbs/{thumb_sha[:2]}").mkdir(parents=True)
@@ -292,6 +302,7 @@ def test_upload_path_locks_uploads_content_manifest_current_then_private_registr
     assert keys[1:] == [
         f"thumbs/{thumb_sha[:2]}/{thumb_sha}.webp",
         "uk/20260715T120000Z/images/10/1/2.json",
+        "uk/20260715T120000Z/descriptions/10/1/2.json",
         "uk/20260715T120000Z/tiles/10/1/2.json.gz",
         "uk/20260715T120000Z/uk.pmtiles",
         "uk/20260715T120000Z/manifest.json",
@@ -310,8 +321,12 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
     for root, region in [(uk_root, "uk"), (sub_root, "uk_london")]:
         (root / "tiles/10/1").mkdir(parents=True)
         (root / "images/10/1").mkdir(parents=True)
+        (root / "descriptions/10/1").mkdir(parents=True)
         (root / "tiles/10/1/2.json.gz").write_bytes(f"tile:{region}".encode())
         (root / "images/10/1/2.json").write_bytes(f"image:{region}".encode())
+        (root / "descriptions/10/1/2.json").write_bytes(
+            f"description:{region}".encode()
+        )
         (root / f"{region}.pmtiles").write_bytes(f"basemap:{region}".encode())
         (root / "manifest.json").write_text("{}")
     (tmp_path / f"stage/thumbs/{thumb_sha[:2]}").mkdir(parents=True)
@@ -403,10 +418,12 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
     keys = [key for _bucket, key, _body, if_none_match in client.puts if if_none_match is None]
     assert keys == [
         "uk/20260715T120000Z/images/10/1/2.json",
+        "uk/20260715T120000Z/descriptions/10/1/2.json",
         "uk/20260715T120000Z/tiles/10/1/2.json.gz",
         "uk/20260715T120000Z/uk.pmtiles",
         "uk/20260715T120000Z/manifest.json",
         "uk_london/20260715T120000Z/images/10/1/2.json",
+        "uk_london/20260715T120000Z/descriptions/10/1/2.json",
         "uk_london/20260715T120000Z/tiles/10/1/2.json.gz",
         "uk_london/20260715T120000Z/uk_london.pmtiles",
         "uk_london/20260715T120000Z/manifest.json",

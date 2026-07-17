@@ -200,6 +200,7 @@ def run(
         counts=parent_result.counts,
         publish_result=parent_result.publish_result,
         image_index_bytes=parent_result.image_index_bytes,
+        description_index_bytes=parent_result.description_index_bytes,
         thumb_bytes=parent_result.thumb_bytes,
         subregion_results=tuple(subregion_results),
         region_index=region_index_obj,

@@ -16,6 +16,27 @@ def _place(member_refs):
     }
 
 
+def _desc(place_id, *, lat=3.1, lon=101.7, source_ref="wp:1", excerpt="Extract."):
+    return D.PlaceDescription(
+        place_id=place_id,
+        lat=lat,
+        lon=lon,
+        wikipedia_lang="en",
+        wikipedia_title=f"Title {source_ref.removeprefix('wp:')}",
+        excerpt=excerpt,
+        source_ref=source_ref,
+        source_url=(
+            "https://en.wikipedia.org/wiki/"
+            f"Title_{source_ref.removeprefix('wp:')}"
+        ),
+        license_code="CC-BY-SA-4.0",
+        license_name="Creative Commons Attribution-ShareAlike 4.0",
+        license_url="https://creativecommons.org/licenses/by-sa/4.0/",
+        modified=True,
+        excerpted=True,
+    )
+
+
 def test_descriptions_use_snapshot_extract_and_non_english_source_url():
     rows = [
         {
@@ -40,6 +61,7 @@ def test_descriptions_use_snapshot_extract_and_non_english_source_url():
     assert desc.source_url == "https://ms.wikipedia.org/wiki/Kellie%27s_Castle"
     assert desc.license_code == "CC-BY-SA-4.0"
     assert desc.modified is True
+    assert desc.excerpted is True
 
 
 def test_description_excerpt_prefers_sentence_boundary_under_500_chars():
@@ -80,21 +102,31 @@ def test_description_extraction_sanitizes_control_chars_and_skips_empty_results(
     assert [desc.excerpt for desc in descriptions] == ["AB"]
 
 
+def test_description_extraction_uses_first_valid_retained_wikipedia_ref():
+    rows = [
+        {
+            "source_ref": "wp:1",
+            "props": {"lang": "x", "title": "Invalid", "extract": "Bad lang."},
+        },
+        {
+            "source_ref": "wp:2",
+            "props": {"lang": "en", "title": "Valid", "extract": "Valid extract."},
+        },
+    ]
+
+    descriptions = D.descriptions_from_source_records([_place(["wp:1", "wp:2"])], rows)
+
+    assert len(descriptions) == 1
+    assert descriptions[0].source_ref == "wp:2"
+    assert descriptions[0].excerpt == "Valid extract."
+
+
 def test_emit_description_artifacts_validates_schema_and_keeps_tile_coordinates():
     descriptions = [
-        D.PlaceDescription(
-            place_id="mt1_" + "0" * 26,
-            lat=3.1,
-            lon=101.7,
-            wikipedia_lang="en",
-            wikipedia_title="Kellie's Castle",
-            excerpt="Kellie's Castle is an unfinished mansion.",
+        _desc(
+            "mt1_" + "0" * 26,
             source_ref="wp:12345",
-            source_url="https://en.wikipedia.org/wiki/Kellie%27s_Castle",
-            license_code="CC-BY-SA-4.0",
-            license_name="Creative Commons Attribution-ShareAlike 4.0",
-            license_url="https://creativecommons.org/licenses/by-sa/4.0/",
-            modified=True,
+            excerpt="Kellie's Castle is an unfinished mansion.",
         )
     ]
 
@@ -106,3 +138,43 @@ def test_emit_description_artifacts_validates_schema_and_keeps_tile_coordinates(
     assert payload["places"][0]["place_id"] == "mt1_" + "0" * 26
     assert payload["places"][0]["wikipedia_lang"] == "en"
     assert payload["places"][0]["source_ref"] == "wp:12345"
+    assert payload["places"][0]["excerpted"] is True
+
+
+def test_emit_description_artifacts_enforces_utf8_byte_cap(monkeypatch):
+    monkeypatch.setattr(D, "MAX_DESCRIPTION_INDEX_BYTES", 1600, raising=False)
+    descriptions = [
+        _desc(
+            place_id="mt1_" + str(i) * 26,
+            excerpt="é" * 500,
+            source_ref=f"wp:{i + 1}",
+        )
+        for i in range(2)
+    ]
+
+    artifacts = D.emit_description_artifacts(descriptions)
+
+    assert len(artifacts) == 1
+    assert artifacts[0].byte_len <= 1600
+    payload = json.loads(artifacts[0].json_bytes)
+    assert [place["place_id"] for place in payload["places"]] == ["mt1_" + "0" * 26]
+    assert payload["places"][0]["excerpt"] == "é" * 500
+
+
+def test_emit_description_artifacts_is_deterministic_by_tile_and_place_order():
+    descriptions = [
+        _desc("mt1_" + "3" * 26, lat=51.5, lon=-0.1, source_ref="wp:3"),
+        _desc("mt1_" + "2" * 26, lat=3.1, lon=101.7, source_ref="wp:2"),
+        _desc("mt1_" + "1" * 26, lat=3.1, lon=101.7, source_ref="wp:1"),
+    ]
+
+    first = D.emit_description_artifacts(descriptions)
+    second = D.emit_description_artifacts(reversed(descriptions))
+
+    assert [(art.x, art.y) for art in first] == sorted((art.x, art.y) for art in first)
+    assert [art.json_bytes for art in first] == [art.json_bytes for art in second]
+    grouped_place_ids = [
+        [place["place_id"] for place in json.loads(art.json_bytes)["places"]]
+        for art in first
+    ]
+    assert grouped_place_ids == [sorted(place_ids) for place_ids in grouped_place_ids]

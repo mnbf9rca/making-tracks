@@ -21,6 +21,7 @@ VALID_INDEX = {
             "license_name": "Creative Commons Attribution-ShareAlike 4.0",
             "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
             "modified": True,
+            "excerpted": True,
         }
     ],
 }
@@ -34,6 +35,16 @@ def test_description_index_requires_modified_true_for_excerpted_wikipedia_text()
     inst = copy.deepcopy(VALID_INDEX)
     inst["places"][0]["modified"] = False
 
+    assert not is_valid("description-index", inst)
+
+
+def test_description_index_requires_excerpted_true_for_excerpted_wikipedia_text():
+    inst = copy.deepcopy(VALID_INDEX)
+    del inst["places"][0]["excerpted"]
+    assert not is_valid("description-index", inst)
+
+    inst = copy.deepcopy(VALID_INDEX)
+    inst["places"][0]["excerpted"] = False
     assert not is_valid("description-index", inst)
 
 
@@ -54,6 +65,17 @@ def test_description_index_requires_language_specific_wikipedia_source_url():
 
     inst = copy.deepcopy(VALID_INDEX)
     inst["places"][0]["source_url"] = "https://en.wikipedia.org/wiki/Bad?x=1"
+    assert not is_valid("description-index", inst)
+
+    inst = copy.deepcopy(VALID_INDEX)
+    inst["places"][0]["source_url"] = "https://x.wikipedia.org/wiki/Bad"
+    assert not is_valid("description-index", inst)
+
+
+def test_description_index_requires_source_url_host_to_match_wikipedia_lang():
+    inst = copy.deepcopy(VALID_INDEX)
+    inst["places"][0]["source_url"] = "https://en.wikipedia.org/wiki/Kellie%27s_Castle"
+
     assert not is_valid("description-index", inst)
 
 

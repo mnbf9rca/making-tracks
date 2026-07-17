@@ -16,7 +16,11 @@ def test_schema_literals_match_caps_via_map():
             node = node[key]
         assert node[keyword] == getattr(caps, const_name), (schema, path, keyword)
     mapped = set(caps.CAPS_SCHEMA_MAP.values())
-    code_only_caps = {"CAPS_VERSION", "MAX_TILE_UNCOMPRESSED_BYTES"}
+    code_only_caps = {
+        "CAPS_VERSION",
+        "MAX_DESCRIPTION_INDEX_BYTES",
+        "MAX_TILE_UNCOMPRESSED_BYTES",
+    }
     for name in dir(caps):
         if not name.isupper() or name in code_only_caps:
             continue

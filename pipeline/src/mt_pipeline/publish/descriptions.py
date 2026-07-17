@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import quote
 
 from mt_contracts import strip_unsafe_text
+from mt_contracts.caps import MAX_DESCRIPTION_INDEX_BYTES
 from mt_contracts.validation import validate_instance
 
 from . import partition
@@ -22,7 +23,7 @@ SOURCE_URL_MAX_CHARS = 512
 WIKIPEDIA_LICENSE_CODE = "CC-BY-SA-4.0"
 WIKIPEDIA_LICENSE_NAME = "Creative Commons Attribution-ShareAlike 4.0"
 WIKIPEDIA_LICENSE_URL = "https://creativecommons.org/licenses/by-sa/4.0/"
-_LANG_RE = re.compile(r"[a-z][a-z0-9-]{0,15}")
+_LANG_RE = re.compile(r"[a-z][a-z0-9-]{1,15}")
 _SENTENCE_END_RE = re.compile(r"[.!?](?:[\"')\]]+)?(?:\s|$)")
 
 
@@ -40,6 +41,7 @@ class PlaceDescription:
     license_name: str
     license_url: str
     modified: bool
+    excerpted: bool
 
 
 @dataclass(frozen=True)
@@ -62,25 +64,17 @@ def descriptions_from_source_records(
     }
     out: list[PlaceDescription] = []
     for place in sorted(places, key=lambda item: str(item["place_id"])):
-        source_ref = next(
-            (
-                str(ref)
-                for ref in place.get("source_refs", ())
-                if isinstance(ref, str) and ref.startswith("wp:")
-            ),
-            None,
-        )
-        if source_ref is None:
-            continue
-        row = rows_by_ref.get(source_ref)
-        if row is None:
-            continue
-        props = row.get("props")
-        if not isinstance(props, Mapping):
-            continue
-        desc = _description_from_props(place, source_ref, props)
-        if desc is not None:
-            out.append(desc)
+        for source_ref in _retained_wikipedia_refs(place):
+            row = rows_by_ref.get(source_ref)
+            if row is None:
+                continue
+            props = row.get("props")
+            if not isinstance(props, Mapping):
+                continue
+            desc = _description_from_props(place, source_ref, props)
+            if desc is not None:
+                out.append(desc)
+                break
     return out
 
 
@@ -122,28 +116,20 @@ def emit_description_artifacts(
             "license_name": desc.license_name,
             "license_url": desc.license_url,
             "modified": desc.modified,
+            "excerpted": desc.excerpted,
         }
         for desc in descriptions
     )
     artifacts: list[DescriptionIndexArtifact] = []
     for (x, y), tile_records in grouped.items():
-        payload = {
-            "schema_version": 1,
-            "min_reader_version": 1,
-            "z": 10,
-            "x": x,
-            "y": y,
-            "places": [
-                {
-                    key: value
-                    for key, value in asdict(_record_to_description(record)).items()
-                    if key not in {"lat", "lon"}
-                }
-                for record in tile_records
-            ],
-        }
-        validate_instance("description-index", payload)
-        data = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        payload = _description_index_payload(x, y, tile_records)
+        data = _json_bytes(payload)
+        while len(data) > MAX_DESCRIPTION_INDEX_BYTES and payload["places"]:
+            payload["places"].pop()
+            validate_instance("description-index", payload)
+            data = _json_bytes(payload)
+        if len(data) > MAX_DESCRIPTION_INDEX_BYTES:
+            continue
         artifacts.append(
             DescriptionIndexArtifact(
                 x=x,
@@ -154,6 +140,34 @@ def emit_description_artifacts(
             )
         )
     return artifacts
+
+
+def _description_index_payload(
+    x: int, y: int, tile_records: Iterable[Mapping[str, Any]]
+) -> dict[str, Any]:
+    payload = {
+        "schema_version": 1,
+        "min_reader_version": 1,
+        "z": 10,
+        "x": x,
+        "y": y,
+        "places": [
+            {
+                key: value
+                for key, value in asdict(_record_to_description(record)).items()
+                if key not in {"lat", "lon"}
+            }
+            for record in tile_records
+        ],
+    }
+    validate_instance("description-index", payload)
+    return payload
+
+
+def _json_bytes(payload: Mapping[str, Any]) -> bytes:
+    return json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
 
 
 def _record_to_description(record: Mapping[str, Any]) -> PlaceDescription:
@@ -170,6 +184,7 @@ def _record_to_description(record: Mapping[str, Any]) -> PlaceDescription:
         license_name=str(record["license_name"]),
         license_url=str(record["license_url"]),
         modified=bool(record["modified"]),
+        excerpted=bool(record["excerpted"]),
     )
 
 
@@ -204,7 +219,16 @@ def _description_from_props(
         license_name=WIKIPEDIA_LICENSE_NAME,
         license_url=WIKIPEDIA_LICENSE_URL,
         modified=True,
+        excerpted=True,
     )
+
+
+def _retained_wikipedia_refs(place: Mapping[str, Any]) -> list[str]:
+    return [
+        str(ref)
+        for ref in place.get("source_refs", ())
+        if isinstance(ref, str) and ref.startswith("wp:")
+    ]
 
 
 def _safe_single_line(value: Any, *, max_chars: int) -> str | None:
