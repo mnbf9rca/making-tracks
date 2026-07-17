@@ -469,6 +469,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
               waitForFixturePinToBecomeHitTestable(marker),
               tapProjectedFixtureMarker(marker, through: map, in: app)
         else { return false }
+        waitForTapStatusToChange(in: app)
         if app.staticTexts[title].waitForExistence(timeout: 2) {
             return true
         }
@@ -510,6 +511,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     private func waitForFixturePinToBecomeHitTestable(_ marker: XCUIElement) -> Bool {
         let predicate = NSPredicate(format: "label == %@", "hit")
         return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: marker)], timeout: 10) == .completed
+    }
+
+    @discardableResult
+    private func waitForTapStatusToChange(in app: XCUIApplication) -> Bool {
+        let tapStatus = app.staticTexts["map.debug-tap-status"]
+        guard tapStatus.waitForExistence(timeout: 2) else { return false }
+        let predicate = NSPredicate(format: "label != %@", "not-tapped")
+        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: tapStatus)], timeout: 3) == .completed
     }
 
     private func tapProjectedFixtureMarker(_ marker: XCUIElement, through map: XCUIElement, in app: XCUIApplication) -> Bool {

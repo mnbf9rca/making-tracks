@@ -237,9 +237,8 @@ struct MapScreen: View {
                                     "x:\(pin.normalizedX.formatted(.number.precision(.fractionLength(6)))) y:\(pin.normalizedY.formatted(.number.precision(.fractionLength(6))))"
                                 )
                                 .allowsHitTesting(false)
-                        }
+                            }
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .allowsHitTesting(false)
                 }
             }
