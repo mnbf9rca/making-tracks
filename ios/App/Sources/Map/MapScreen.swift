@@ -622,58 +622,106 @@ private struct CreditsView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section("Build") {
-                    Text(verbatim: "Build \(Self.buildCommit)")
-                        .font(.caption)
-                        .fontDesign(.monospaced)
-                }
-
-                if !attribution.isEmpty {
-                    Section("Manifest attribution") {
-                        ForEach(Array(attribution.enumerated()), id: \.offset) { _, item in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(verbatim: item.source)
-                                    .font(.headline)
-                                Text(verbatim: item.license)
-                                    .font(.subheadline)
-                                Text(verbatim: item.text)
-                                    .font(.body)
-                            }
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Build")
+                            .font(.headline)
+                            .accessibilityAddTraits(.isHeader)
+                        Text(verbatim: "Build \(Self.buildCommit)")
+                            .font(.caption)
+                            .fontDesign(.monospaced)
                     }
-                }
 
-                if !Self.ossCredits.isEmpty {
-                    Section("Open source acknowledgements") {
-                        ForEach(Self.ossCredits) { credit in
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(verbatim: credit.name)
-                                    .font(.headline)
-                                Text(verbatim: credit.acknowledgement)
-                                    .font(.subheadline)
-                                Text(verbatim: "\(credit.category) | \(credit.versionOrPin)")
-                                    .font(.caption)
-                                if let licenseURL = credit.licenseURL {
-                                    Link(destination: licenseURL) {
-                                        Text(verbatim: licenseURL.absoluteString)
-                                            .font(.caption)
-                                            .textSelection(.enabled)
-                                    }
+                    if !attribution.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Manifest attribution")
+                                .font(.headline)
+                                .accessibilityAddTraits(.isHeader)
+                            VStack(alignment: .leading, spacing: 12) {
+                                ForEach(Array(attribution.enumerated()), id: \.offset) { _, item in
+                                    CreditEntryView(
+                                        title: item.source,
+                                        subtitle: item.license,
+                                        text: item.text
+                                    )
                                 }
-                                Text(verbatim: credit.noticeText)
-                                    .font(.footnote)
-                                    .textSelection(.enabled)
+                            }
+                        }
+                    }
+
+                    if !Self.ossCredits.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Open source acknowledgements")
+                                .font(.headline)
+                                .accessibilityAddTraits(.isHeader)
+                            VStack(alignment: .leading, spacing: 20) {
+                                ForEach(Self.ossCredits) { credit in
+                                    OpenSourceCreditView(credit: credit)
+                                }
                             }
                         }
                     }
                 }
+                .padding()
             }
             .navigationTitle("Credits")
             .toolbar {
                 Button("Done") { dismiss() }
             }
         }
+    }
+}
+
+private struct CreditEntryView: View {
+    let title: String
+    let subtitle: String
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(verbatim: title)
+                .font(.headline)
+            Text(verbatim: subtitle)
+                .font(.subheadline)
+            Text(verbatim: text)
+                .font(.body)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("credits.manifest.\(title)")
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct OpenSourceCreditView: View {
+    let credit: OSSCreditEntry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(verbatim: credit.name)
+                    .font(.headline)
+                Text(verbatim: credit.acknowledgement)
+                    .font(.subheadline)
+                Text(verbatim: "\(credit.category) | \(credit.versionOrPin)")
+                    .font(.caption)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("credits.oss.\(credit.id)")
+            if let licenseURL = credit.licenseURL {
+                Link(destination: licenseURL) {
+                    Text("License")
+                        .font(.caption)
+                }
+                .accessibilityLabel("License for \(credit.name)")
+                .accessibilityValue(licenseURL.absoluteString)
+                .accessibilityIdentifier("credits.oss.\(credit.id).license")
+            }
+            Text(verbatim: credit.noticeText)
+                .font(.footnote)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -723,10 +771,12 @@ private struct LocationSettingsButton: UIViewRepresentable {
         configuration.baseForegroundColor = .label
         configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
             var outgoing = incoming
-            outgoing.font = .systemFont(ofSize: 11, weight: .semibold)
+            let baseFont = UIFont.systemFont(ofSize: 11, weight: .semibold)
+            outgoing.font = UIFontMetrics(forTextStyle: .caption2).scaledFont(for: baseFont)
             return outgoing
         }
         button.configuration = configuration
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
         button.accessibilityLabel = "Settings"
         button.accessibilityHint = "Opens location settings"
         button.accessibilityIdentifier = "map.location-settings"
@@ -761,6 +811,7 @@ private struct PlaceCardSheet: View {
     @State private var isLoading = true
     @State private var actionError: String?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private static let maxDecodedImagePixels = 16_000_000
 
@@ -784,6 +835,7 @@ private struct PlaceCardSheet: View {
                             .resizable()
                             .scaledToFit()
                             .frame(maxHeight: 180)
+                            .accessibilityHidden(true)
                     }
                     if let blurb = card.blurb {
                         Text(verbatim: blurb)
@@ -821,8 +873,8 @@ private struct PlaceCardSheet: View {
             .padding()
         }
         .accessibilityIdentifier("place-card.instance.\(sheetInstanceID)")
-        .presentationDetents([.medium])
-        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium])
+        .presentationBackgroundInteraction(.enabled(upThrough: dynamicTypeSize.isAccessibilitySize ? .large : .medium))
         .task(id: placeID) {
             await loadCard()
         }
@@ -830,25 +882,49 @@ private struct PlaceCardSheet: View {
 
     @ViewBuilder
     private func actionButtons(_ card: PlaceCardModel) -> some View {
-        HStack(spacing: 10) {
-            Button(card.pinState.saved ? "Saved" : "Save") {
-                Task { await setSaved(!card.pinState.saved) }
-            }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("place-card.save")
-
-            Button(card.pinState.visit == .none ? "Visited" : "Unvisit") {
-                Task { await setVisited(card.pinState.visit == .none) }
-            }
-            .buttonStyle(.borderedProminent)
-            .accessibilityIdentifier("place-card.visited")
-
-            if card.pinState.visit != .none {
-                Button(card.pinState.visit == .loved ? "Loved" : "Love") {
-                    Task { await setLoved(card.pinState.visit != .loved) }
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 8) {
+                Button(card.pinState.saved ? "Saved" : "Save") {
+                    Task { await setSaved(!card.pinState.saved) }
                 }
                 .buttonStyle(.bordered)
-                .accessibilityIdentifier("place-card.loved")
+                .accessibilityIdentifier("place-card.save")
+
+                Button(card.pinState.visit == .none ? "Visited" : "Unvisit") {
+                    Task { await setVisited(card.pinState.visit == .none) }
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("place-card.visited")
+
+                if card.pinState.visit != .none {
+                    Button(card.pinState.visit == .loved ? "Loved" : "Love") {
+                        Task { await setLoved(card.pinState.visit != .loved) }
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("place-card.loved")
+                }
+            }
+        } else {
+            HStack(spacing: 10) {
+                Button(card.pinState.saved ? "Saved" : "Save") {
+                    Task { await setSaved(!card.pinState.saved) }
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("place-card.save")
+
+                Button(card.pinState.visit == .none ? "Visited" : "Unvisit") {
+                    Task { await setVisited(card.pinState.visit == .none) }
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("place-card.visited")
+
+                if card.pinState.visit != .none {
+                    Button(card.pinState.visit == .loved ? "Loved" : "Love") {
+                        Task { await setLoved(card.pinState.visit != .loved) }
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("place-card.loved")
+                }
             }
         }
     }
