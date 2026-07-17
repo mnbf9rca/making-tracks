@@ -1,4 +1,5 @@
 import SwiftUI
+import MakingTracksCore
 import MakingTracksData
 import MakingTracksTiles
 
@@ -54,7 +55,7 @@ struct MapScreen: View {
             CreditsView(attribution: attribution)
         }
         .sheet(item: selectedBinding) { place in
-            PlaceholderPlaceCard(placeID: place.id)
+            PlaceCardSheet(placeID: place.id, model: model)
         }
     }
 
@@ -135,19 +136,54 @@ private struct CreditsView: View {
     }
 }
 
-private struct PlaceholderPlaceCard: View {
+private struct PlaceCardSheet: View {
     let placeID: String
+    let model: MapScreenModel?
+    @State private var card: PlaceCardModel?
+    @State private var isLoading = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(verbatim: "Place")
-                .font(.headline)
-            Text(verbatim: placeID)
-                .font(.footnote)
-                .textSelection(.enabled)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                if let card {
+                    Text(verbatim: card.name)
+                        .font(.headline)
+                    Text(verbatim: card.category)
+                        .font(.subheadline)
+                    if let blurb = card.blurb {
+                        Text(verbatim: blurb)
+                            .font(.body)
+                    }
+                    if !card.altNames.isEmpty {
+                        Text(verbatim: card.altNames.joined(separator: ", "))
+                            .font(.footnote)
+                    }
+                    if !card.sourceNames.isEmpty {
+                        Text(verbatim: card.sourceNames.joined(separator: " / "))
+                            .font(.caption)
+                    }
+                    Text(verbatim: card.placeID)
+                        .font(.caption2)
+                        .textSelection(.enabled)
+                } else if isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, alignment: .center)
+                } else {
+                    Text(verbatim: "Place unavailable")
+                        .font(.headline)
+                    Text(verbatim: placeID)
+                        .font(.caption2)
+                        .textSelection(.enabled)
+                }
+            }
+            .padding()
         }
-        .padding()
         .presentationDetents([.medium])
+        .task(id: placeID) {
+            isLoading = true
+            card = await model?.cardModel(for: placeID)
+            isLoading = false
+        }
     }
 }
 
@@ -178,6 +214,24 @@ private final class MapScreenModel: Sendable {
             (try? db.viewportState(ids)) ?? [:]
         }.value
         return places.map { ($0, states[$0.id] ?? PinState(saved: false, visit: .none)) }
+    }
+
+    func cardModel(for placeID: String) async -> PlaceCardModel? {
+        let resolver = PlaceResolver(tile: tileClient, snapshots: database)
+        let source = await resolver.source(for: placeID)
+        let db = database
+        let pinState = await Task.detached {
+            (try? db.viewportState([placeID])[placeID]) ?? PinState(saved: false, visit: .none)
+        }.value
+
+        switch source {
+        case let .tile(placeRef):
+            return PlaceCardModel.from(placeRef: placeRef, pinState: pinState)
+        case let .snapshot(_, snapshot):
+            return PlaceCardModel.from(snapshot: snapshot, pinState: pinState)
+        case .unavailable:
+            return nil
+        }
     }
 
     var pmtilesURL: String? {

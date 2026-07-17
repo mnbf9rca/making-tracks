@@ -47,6 +47,15 @@ extension AppDatabase {
         }
     }
 
+    public func deleteVisits(placeID: String) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "DELETE FROM visits WHERE place_id = ?",
+                arguments: [placeID]
+            )
+        }
+    }
+
     public func addToList(_ place: PlaceRef, listID: Int64) throws {
         try dbQueue.write { db in
             try snapshotIfNeeded(place, db)
@@ -63,6 +72,59 @@ extension AppDatabase {
                     error.extendedResultCode == .SQLITE_CONSTRAINT_UNIQUE {
                 // Idempotent save: only an existing (list_id, place_id) row is ignored.
             }
+        }
+    }
+
+    public func removeFromList(placeID: String, listID: Int64) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "DELETE FROM list_items WHERE list_id = ? AND place_id = ?",
+                arguments: [listID, placeID]
+            )
+        }
+    }
+
+    public func setLoved(placeID: String, _ loved: Bool) throws {
+        try dbQueue.write { db in
+            if loved {
+                try db.execute(
+                    sql: """
+                        UPDATE visits
+                        SET verdict = ?
+                        WHERE id = (
+                            SELECT id FROM visits
+                            WHERE place_id = ?
+                            ORDER BY visited_at DESC, id DESC
+                            LIMIT 1
+                        )
+                        """,
+                    arguments: [Verdict.loved.rawValue, placeID]
+                )
+            } else {
+                try db.execute(
+                    sql: "UPDATE visits SET verdict = NULL WHERE place_id = ?",
+                    arguments: [placeID]
+                )
+            }
+        }
+    }
+
+    public func wantToGoListID() throws -> Int64 {
+        try dbQueue.read { db in
+            guard let id = try Int64.fetchOne(
+                db,
+                sql: "SELECT id FROM lists WHERE is_system = 1 AND name = ? ORDER BY id LIMIT 1",
+                arguments: ["Want to go"]
+            ) else {
+                throw AppDatabaseError.unreadableDatabase
+            }
+            return id
+        }
+    }
+
+    public func snapshot(for placeID: String) throws -> PlaceSnapshot? {
+        try dbQueue.read { db in
+            try PlaceSnapshot.fetchOne(db, key: placeID)
         }
     }
 }

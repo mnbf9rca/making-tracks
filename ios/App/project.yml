@@ -26,6 +26,8 @@ targets:
         product: MakingTracksTiles
       - package: MakingTracksData
         product: MakingTracksMapStyle
+      - package: MakingTracksData
+        product: MakingTracksCore
       - package: MapLibre
         product: MapLibre
     info:
