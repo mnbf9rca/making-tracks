@@ -20,6 +20,7 @@
         "additionalProperties": false,
         "required": [
           "place_id",
+          "wikipedia_lang",
           "wikipedia_title",
           "excerpt",
           "source_ref",
@@ -31,6 +32,7 @@
         ],
         "properties": {
           "place_id": {"type": "string", "pattern": "^mt1_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}$"},
+          "wikipedia_lang": {"type": "string", "minLength": 2, "maxLength": 16, "pattern": "^[a-z][a-z0-9-]{1,15}$"},
           "wikipedia_title": {"type": "string", "minLength": 1, "maxLength": 300, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u200b\\u200c\\u200d\\u2028\\u2029\\u202a-\\u202e\\u2060\\u2066-\\u2069\\ufeff]*$"},
           "excerpt": {"type": "string", "minLength": 1, "maxLength": 500, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u200b\\u200c\\u200d\\u2028\\u2029\\u202a-\\u202e\\u2060\\u2066-\\u2069\\ufeff]*$"},
           "source_ref": {"type": "string", "maxLength": 128, "pattern": "^wp:[0-9]+$"},

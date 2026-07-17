@@ -33,6 +33,7 @@ def test_descriptions_use_snapshot_extract_and_non_english_source_url():
     assert len(descriptions) == 1
     desc = descriptions[0]
     assert desc.place_id == "mt1_" + "0" * 26
+    assert desc.wikipedia_lang == "ms"
     assert desc.wikipedia_title == "Kellie's Castle"
     assert desc.excerpt == "Kellie's Castle ialah sebuah bangunan bersejarah di Perak."
     assert desc.source_ref == "wp:12345"
@@ -85,6 +86,7 @@ def test_emit_description_artifacts_validates_schema_and_keeps_tile_coordinates(
             place_id="mt1_" + "0" * 26,
             lat=3.1,
             lon=101.7,
+            wikipedia_lang="en",
             wikipedia_title="Kellie's Castle",
             excerpt="Kellie's Castle is an unfinished mansion.",
             source_ref="wp:12345",
@@ -102,4 +104,5 @@ def test_emit_description_artifacts_validates_schema_and_keeps_tile_coordinates(
     payload = json.loads(artifacts[0].json_bytes)
     assert payload["schema_version"] == 1
     assert payload["places"][0]["place_id"] == "mt1_" + "0" * 26
+    assert payload["places"][0]["wikipedia_lang"] == "en"
     assert payload["places"][0]["source_ref"] == "wp:12345"

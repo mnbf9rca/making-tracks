@@ -366,6 +366,7 @@ def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extract
     assert len(desc_files) == 1
     desc_index = json.loads(desc_files[0].read_text())
     assert desc_index["places"][0]["place_id"] == A
+    assert desc_index["places"][0]["wikipedia_lang"] == "ms"
     assert desc_index["places"][0]["excerpt"] == (
         "Kellie's Castle ialah sebuah bangunan bersejarah di Perak."
     )

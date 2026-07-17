@@ -12,6 +12,7 @@ CATEGORY_MAX = 64
 BLURB_MAX = 600
 IMAGE_URL_MAX = 2048
 WIKIPEDIA_TITLE_MAX = 300
+WIKIPEDIA_LANG_MAX = 16
 DESCRIPTION_EXCERPT_MAX = 500
 REF_MAX = 128
 SOURCE_REFS_MAX = 64
@@ -74,6 +75,7 @@ CAPS_SCHEMA_MAP = {
     ("manifest", ("properties", "attribution", "items", "properties", "text"), "maxLength"): "ATTRIBUTION_TEXT_MAX",
     ("description-index", ("properties", "z"), "const"): "TILE_ZOOM",
     ("description-index", ("properties", "places"), "maxItems"): "MAX_PLACES_PER_TILE",
+    ("description-index", ("properties", "places", "items", "properties", "wikipedia_lang"), "maxLength"): "WIKIPEDIA_LANG_MAX",
     ("description-index", ("properties", "places", "items", "properties", "wikipedia_title"), "maxLength"): "WIKIPEDIA_TITLE_MAX",
     ("description-index", ("properties", "places", "items", "properties", "excerpt"), "maxLength"): "DESCRIPTION_EXCERPT_MAX",
     ("description-index", ("properties", "places", "items", "properties", "source_ref"), "maxLength"): "REF_MAX",

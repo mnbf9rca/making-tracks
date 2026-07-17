@@ -31,6 +31,7 @@ class PlaceDescription:
     place_id: str
     lat: float
     lon: float
+    wikipedia_lang: str
     wikipedia_title: str
     excerpt: str
     source_ref: str
@@ -112,6 +113,7 @@ def emit_description_artifacts(
             "place_id": desc.place_id,
             "lat": desc.lat,
             "lon": desc.lon,
+            "wikipedia_lang": desc.wikipedia_lang,
             "wikipedia_title": desc.wikipedia_title,
             "excerpt": desc.excerpt,
             "source_ref": desc.source_ref,
@@ -159,6 +161,7 @@ def _record_to_description(record: Mapping[str, Any]) -> PlaceDescription:
         place_id=str(record["place_id"]),
         lat=float(record["lat"]),
         lon=float(record["lon"]),
+        wikipedia_lang=str(record["wikipedia_lang"]),
         wikipedia_title=str(record["wikipedia_title"]),
         excerpt=str(record["excerpt"]),
         source_ref=str(record["source_ref"]),
@@ -192,6 +195,7 @@ def _description_from_props(
         place_id=str(place["place_id"]),
         lat=lat,
         lon=lon,
+        wikipedia_lang=lang,
         wikipedia_title=title,
         excerpt=excerpt,
         source_ref=source_ref,

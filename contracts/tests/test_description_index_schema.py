@@ -12,6 +12,7 @@ VALID_INDEX = {
     "places": [
         {
             "place_id": "mt1_00000000000000000000000001",
+            "wikipedia_lang": "ms",
             "wikipedia_title": "Kellie's Castle",
             "excerpt": "Kellie's Castle is an unfinished mansion in Batu Gajah, Perak.",
             "source_ref": "wp:12345",
@@ -53,6 +54,16 @@ def test_description_index_requires_language_specific_wikipedia_source_url():
 
     inst = copy.deepcopy(VALID_INDEX)
     inst["places"][0]["source_url"] = "https://en.wikipedia.org/wiki/Bad?x=1"
+    assert not is_valid("description-index", inst)
+
+
+def test_description_index_requires_explicit_language_code():
+    inst = copy.deepcopy(VALID_INDEX)
+    del inst["places"][0]["wikipedia_lang"]
+    assert not is_valid("description-index", inst)
+
+    inst = copy.deepcopy(VALID_INDEX)
+    inst["places"][0]["wikipedia_lang"] = "EN"
     assert not is_valid("description-index", inst)
 
 
