@@ -393,7 +393,7 @@ def test_a1d_sources_config_carries_ogl_attribution():
     # The plan-carried licensing requirement lives in config DATA (A7 consumes it), not on the extractor.
     cfg = json.loads((pathlib.Path(__file__).parents[1] / "config/a1d_sources.json").read_text())
     assert "Open Government Licence" in cfg["historic_england"]["attribution"]      # OGL, spelled out
-    assert cfg["historic_england"]["license"] == "OGL-3.0"
+    assert cfg["historic_england"]["license"] == "OGL-UK-3.0"
     assert cfg["open_plaques"]["license"] == "CC0-1.0"
 ```
 
@@ -414,7 +414,7 @@ Add to `pipeline/pyproject.toml` `dependencies`: `"ijson>=3.2"`. Then `uv sync`.
     "url": "https://services.historicengland.org.uk/nhle/national-heritage-list-for-england.geojson",
     "allowed_hosts": ["services.historicengland.org.uk", "historicengland.org.uk"],
     "snapshot_date": null,
-    "license": "OGL-3.0",
+    "license": "OGL-UK-3.0",
     "attribution": "Contains Historic England data licensed under the Open Government Licence v3.0."
   },
   "open_plaques": {

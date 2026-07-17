@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://making-tracks.app/schemas/oss-credits.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "credits"],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "credits": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "category",
+          "version_or_pin",
+          "evidence",
+          "license_spdx",
+          "license_url",
+          "compliance",
+          "app_resource"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "category": {
+            "enum": ["ios_app", "mirrored_asset", "pipeline_build"]
+          },
+          "version_or_pin": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "license_spdx": {
+            "type": "string",
+            "minLength": 1
+          },
+          "license_url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://[^\\s/]+\\.[^\\s]+$"
+          },
+          "compliance": {
+            "type": "string",
+            "minLength": 1
+          },
+          "notice_path": {
+            "type": "string",
+            "pattern": "^contracts/third-party-notices/[^/]+$"
+          },
+          "app_resource": {
+            "type": "boolean"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "category": {
+                  "const": "pipeline_build"
+                }
+              },
+              "required": ["category"]
+            },
+            "then": {
+              "properties": {
+                "app_resource": {
+                  "const": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "app_resource": {
+                  "const": true
+                }
+              },
+              "required": ["app_resource"]
+            },
+            "then": {
+              "properties": {
+                "category": {
+                  "enum": ["ios_app", "mirrored_asset"]
+                }
+              },
+              "required": ["notice_path"]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

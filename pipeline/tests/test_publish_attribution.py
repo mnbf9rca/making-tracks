@@ -27,7 +27,7 @@ def test_HE_OGL_ships_verbatim_when_an_HE_place_is_present():
         for attr in A.attribution_for(used, A1D)
         if attr["source"] == "historic_england"
     ][0]
-    assert he["license"] == "OGL-3.0"
+    assert he["license"] == "OGL-UK-3.0"
     assert he["text"] == A1D["historic_england"]["attribution"]
     assert "Open Government Licence" in he["text"]
 
@@ -40,6 +40,17 @@ def test_OSM_is_ODbL_and_ships_attribution():
     osm = [attr for attr in out if attr["source"] == "osm"][0]
     assert osm["license"] == "ODbL-1.0"
     assert osm["text"] == A1D["osm"]["attribution"]
+
+
+def test_basemap_forces_osm_attribution_even_without_osm_place_refs():
+    out = A.attribution_for(
+        A.sources_used([{"place_id": _pid("A"), "source_refs": ["wd:Q1"]}]),
+        A1D,
+        includes_osm_basemap=True,
+    )
+
+    assert [attr["source"] for attr in out] == ["osm"]
+    assert out[0]["license"] == "ODbL-1.0"
 
 
 def test_cc0_only_region_needs_no_attribution():
