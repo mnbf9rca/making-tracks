@@ -40,15 +40,16 @@ When your phone talks to our servers (hosted on Cloudflare) — to download a bu
 - We have no way to keep any records of which person or device downloaded or fetched what.
 - We do count how many **times** each **bundle** is downloaded, to see which areas need more work. We can't tell who downloaded which one.
 
-We recognise that this can still leak some data - in future, we will make bundles even smaller so that an area can be downloaded in smaller pieces. You will be able to choose to tell the app to hide which one you actually want — for example by quietly fetching a few others at the same time. We're still working out how, and we don't have it yet.
+We recognise that this can still leak some information. For example, it's theoretically possible to track which devices are visiting which areas, but this is very hard - users get different IP addresses, and we don't send any identifier with the request. But in future we will make bundles even smaller so that an area can be downloaded in smaller pieces. You will be able to choose to tell the app to hide which one you actually want — for example by quietly fetching a few others at the same time. We're still working out how, and we don't have it yet.
 
 ## Sharing lists, reporting problems, and optional usage statistics
 
 ### Sharing a list
 
-You'll be able to share a list — private (only people you invite) or a public link — and choose whether they can view, add (but not remove), or fully edit.
+You can share a list as either *private* (only people you invite) or a *public* link. You can choose whether others can view, add (but not remove), or fully edit.
 
-- Only the list you share leaves your phone, only to the people you choose.
+- Only the list you share leaves your phone, only to the people you choose (named individuals or a public link).
+- Your list does NOT say whether you've visited any of the places, or what you loved. It only contains the places themselves, and any notes you added to the list.
 - Your other lists, your visits, and your map history stay on your phone.
 - Sharing *public* lists does not require an account, but if you do not use an account and you uninstall the app on your phone, you may not be able to edit or delete the list after you share it. This is because we would have no way to know it was *your* list.
 
@@ -64,7 +65,7 @@ Because private sharing needs to identify you and your recipients, we offer an a
 
 You can flag problems with a place (gone, wrong, and so on).
 
-- A report contains nothing about you. We can't tell who sent one. The request comes to our servers over the internet, but we don't log the IP address with the request.
+- A report contains nothing about you. We can't tell who sent one. The report comes to our servers over the internet which means Cloudflare can see your IP, but we do not link it back to you or your device.
 - They are advisory only, reviewed by a person before anything changes on the map.
 - One person or script can't change the map. It takes multiple independent reports and a human.
 
@@ -74,13 +75,9 @@ The app may offer to let you share when you saved or loved a place. This is opti
 
 - Off unless you turn it on. Offered once, in plain language.
 - No identifiers. Dates only, never times.
-- Events sent separately at random delays. The request comes to our servers over the internet, but we don't log the IP address with the request.
+- Events sent separately at random delays. The statistics come to our servers over the internet which means Cloudflare can see your IP, but we do not link it back to you or your device.
 - A count (e.g. "10 people love this place") is only shown in the app once enough people share it that no one stands out.
 - We'll keep looking for ways to make this even harder to trace back to you.
-
-
-
-**Syncing across your devices.** 
 
 ## Where place information comes from
 
