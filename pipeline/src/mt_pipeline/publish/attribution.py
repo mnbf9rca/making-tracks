@@ -27,8 +27,14 @@ def sources_used(places: Iterable[Mapping[str, Any]]) -> set[str]:
 
 
 def attribution_for(
-    sources: set[str], a1d_sources: Mapping[str, Mapping[str, Any]]
+    sources: set[str],
+    a1d_sources: Mapping[str, Mapping[str, Any]],
+    *,
+    includes_osm_basemap: bool = False,
 ) -> list[dict[str, str]]:
+    if includes_osm_basemap:
+        sources = set(sources)
+        sources.add("osm")
     out = []
     for source in sorted(sources):
         meta = a1d_sources.get(source, {})

@@ -93,6 +93,7 @@ def run(
         attribution=attribution.attribution_for(
             attribution.sources_used(shipped_places),
             source_meta,
+            includes_osm_basemap=True,
         ),
     )
     staging_dir = staging.build_staging(
