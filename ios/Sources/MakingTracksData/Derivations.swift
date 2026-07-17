@@ -25,6 +25,16 @@ extension AppDatabase {
         }
     }
 
+    public func visitCount(placeID: String) throws -> Int {
+        try dbQueue.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM visits WHERE place_id = ?",
+                arguments: [placeID]
+            ) ?? 0
+        }
+    }
+
     public func listProgress(listID: Int64) throws -> (visited: Int, total: Int) {
         try dbQueue.read { db in
             let total = try Int.fetchOne(
