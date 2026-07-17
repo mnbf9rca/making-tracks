@@ -11,15 +11,16 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var regionPMTilesURL: String?
     var startupViewport: ViewportSeed
     var features: [(MapPlace, PinState)]
+    var locationManager: AppLocationManager
     var showsUserLocation: Bool
-    var userLocationCoordinate: CLLocationCoordinate2D?
-    var userLocationFocusRequestID: Int
+    var userTrackingMode: MLNUserTrackingMode
     var onCameraIdle: (BBox, Int) -> Void
+    var onUserPanned: () -> Void
     var onTapPlace: (String) -> Void
     var onTapEmpty: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onCameraIdle: onCameraIdle, onTapPlace: onTapPlace, onTapEmpty: onTapEmpty)
+        Coordinator(onCameraIdle: onCameraIdle, onUserPanned: onUserPanned, onTapPlace: onTapPlace, onTapEmpty: onTapEmpty)
     }
 
     func makeUIView(context: Context) -> MLNMapView {
@@ -29,9 +30,12 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         )
         map.accessibilityIdentifier = "map.surface"
         map.delegate = context.coordinator
+        map.locationManager = locationManager
+        map.shouldRequestAuthorizationToUseLocationServices = false
         map.logoView.isHidden = true
         map.attributionButton.isHidden = true
         map.showsUserLocation = showsUserLocation
+        map.userTrackingMode = userTrackingMode
         map.setCenter(startupViewport.center, zoomLevel: Double(startupViewport.zoom), animated: false)
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         map.addGestureRecognizer(tap)
@@ -42,10 +46,13 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
 
     func updateUIView(_ map: MLNMapView, context: Context) {
         context.coordinator.onCameraIdle = onCameraIdle
+        context.coordinator.onUserPanned = onUserPanned
         context.coordinator.onTapPlace = onTapPlace
         context.coordinator.onTapEmpty = onTapEmpty
         context.coordinator.pendingFeatures = features
+        map.shouldRequestAuthorizationToUseLocationServices = false
         map.showsUserLocation = showsUserLocation
+        map.userTrackingMode = userTrackingMode
 
         if context.coordinator.currentWorldPMTilesURL != worldPMTilesURL || context.coordinator.currentRegionPMTilesURL != regionPMTilesURL {
             context.coordinator.currentWorldPMTilesURL = worldPMTilesURL
@@ -54,34 +61,27 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         } else {
             context.coordinator.updateSource(on: map, features: features)
         }
-
-        if userLocationFocusRequestID != context.coordinator.lastUserLocationFocusRequestID {
-            context.coordinator.lastUserLocationFocusRequestID = userLocationFocusRequestID
-            context.coordinator.pendingUserLocationFocusRequestID = userLocationCoordinate == nil ? userLocationFocusRequestID : nil
-        }
-
-        if showsUserLocation,
-           let userLocationCoordinate,
-           context.coordinator.pendingUserLocationFocusRequestID == userLocationFocusRequestID {
-            context.coordinator.pendingUserLocationFocusRequestID = nil
-            map.setCenter(userLocationCoordinate, zoomLevel: map.zoomLevel, animated: true)
-        }
     }
 
     @MainActor
     final class Coordinator: NSObject, @preconcurrency MLNMapViewDelegate {
         var onCameraIdle: (BBox, Int) -> Void
+        var onUserPanned: () -> Void
         var onTapPlace: (String) -> Void
         var onTapEmpty: () -> Void
         weak var map: MLNMapView?
         var currentWorldPMTilesURL: String?
         var currentRegionPMTilesURL: String?
         var pendingFeatures: [(MapPlace, PinState)] = []
-        var lastUserLocationFocusRequestID = 0
-        var pendingUserLocationFocusRequestID: Int?
 
-        init(onCameraIdle: @escaping (BBox, Int) -> Void, onTapPlace: @escaping (String) -> Void, onTapEmpty: @escaping () -> Void) {
+        init(
+            onCameraIdle: @escaping (BBox, Int) -> Void,
+            onUserPanned: @escaping () -> Void,
+            onTapPlace: @escaping (String) -> Void,
+            onTapEmpty: @escaping () -> Void
+        ) {
             self.onCameraIdle = onCameraIdle
+            self.onUserPanned = onUserPanned
             self.onTapPlace = onTapPlace
             self.onTapEmpty = onTapEmpty
         }
@@ -119,7 +119,10 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             reportViewport(mapView)
         }
 
-        func mapView(_ mapView: MLNMapView, regionDidChangeAnimated animated: Bool) {
+        func mapView(_ mapView: MLNMapView, regionDidChangeWith reason: MLNCameraChangeReason, animated: Bool) {
+            if reason.contains(.gesturePan) || reason.contains(.gestureRotate) {
+                onUserPanned()
+            }
             reportViewport(mapView)
         }
 
