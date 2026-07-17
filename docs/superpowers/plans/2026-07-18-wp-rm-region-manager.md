@@ -125,7 +125,12 @@ cells → per-cell delete/dedup for free" does not exist. Reframed:]**
   one `objects/tiles/{sha}` object referenced by both packs' manifests — the store's existing per-pack
   reference-count keeps it while any installed pack needs it. So dedup/GC **do** fall out of the built
   store — but the **unit is the pack, not the cell**.
-- **Delete + GC are PER-ZONE (per-pack), NOT per-cell.** Deleting a zone = `delete(region: zone_id)`; the
+- **Download PROGRESS surface [gate — a requirement, not just GC bookkeeping].** A zone/pack download must
+  show a **user-facing progress UI** (per-zone %/bytes, cancel/pause) driven by **WP-B10d's progress
+  stream** (the same incremental-persist engine) — "in-progress objects" is GC/resume language, distinct
+  from this UX. WP-RM-B owns the surface.
+- **Delete + GC are PER-ZONE (per-pack) in v1, NOT per-cell [Open flag 4 — the research recommends
+  per-cell; per-zone now, per-cell later via WP-RM-B2].** Deleting a zone = `delete(region: zone_id)`; the
   store's mark-and-sweep GC reclaims objects no remaining installed pack references. **The grid feedback
   (§3c) shows per-ZONE ownership + per-ZONE delete** — not per-cell delete (correct §3c: the grid
   visualises which zones are installed, coloured by pack).
@@ -255,10 +260,15 @@ means **manifest (tiles/basemap) + pack-descriptor (everything else)**; `updateP
   per-tile shas for place tiles), so an unchanged description tile is sha-skipped and only changed ones
   re-download. **State this as a pack-descriptor requirement** (the description-index files join the
   descriptor's sha-listed content set). Same for the image-index sidecars.
-- **Net:** every pack content type (tiles/basemap-cells in the manifest; thumbs/description+image-index
-  sidecars in the **pack-descriptor**) is a **sha-listed object** → the whole pack deltas uniformly via
-  `updatePlan` sha-skip, streams to disk incrementally, and shares one cover-traffic cohort. No content
-  type re-downloads whole.
+- **Net:** every pack content type is a **sha-listed object** — but mind the listing home [gate — N1]:
+  the frozen `manifest` (`const 1`, `additionalProperties:false`) holds only **z10 place tiles**
+  (`manifest.tiles[]`) + the **single** legacy `manifest.basemap` object. **The N per-cell basemap
+  objects + the z7–9 per-region object + all sidecars (thumbs/description/image-index/search) therefore
+  ride the versioned PACK-DESCRIPTOR, NOT the manifest** (per-cell basemap cannot fit the manifest's one
+  basemap slot). *(Alternative: a `manifest` v2 with a `min_reader_version` bump to carry basemap-cells —
+  heavier; recommend the pack-descriptor.)* With that, the whole pack deltas uniformly via `updatePlan`
+  sha-skip, streams to disk incrementally, and shares one cover-traffic cohort. No content type
+  re-downloads whole.
 
 ## 7. Offline completeness INVARIANT (D7) — Rob requirement
 
@@ -267,8 +277,11 @@ airplane mode = a fully working region* — map + **labels** + place cards + **b
 with **zero** network. If anything the map needs at runtime is not in the bundle or app-shipped, offline
 is broken. Audit of the completeness set:
 
-- **Place tiles, basemap(-cells), description + image-index sidecars** — in the pack, mandatory (§6).
-- **Image thumbs** — in the pack, the one optional component (§6).
+- **Place tiles, basemap(-cells), description sidecars** — in the pack, **mandatory** (§6).
+- **Image-index sidecars + image thumbs** — the **optional "include images" unit** (§6, N2 fix — the
+  image-index rides *with* thumbs, not mandatory). **Without-images acceptance branch:** a without-images
+  pack renders the full map + cards with **blurbs + attribution, no photos** — the invariant holds sans
+  photos (which are the one declinable component).
 - **GLYPHS / fonts [gate — the hidden runtime leak].** Map labels are rendered from glyph PBFs **fetched
   at runtime** from `tiles.making-tracks.app/global/fonts/{fontstack}/{range}.pbf` (`PaperStyle.swift:2`)
   — so **offline, region labels break** unless glyphs are local. Glyphs are **GLOBAL** (one Noto Sans
@@ -284,9 +297,14 @@ is broken. Audit of the completeness set:
 - **The place card's image/description attribution + links** — the credit text is in the sidecars (in the
   pack); the outbound *links* (Wikipedia/CC) simply don't open offline — acceptable (the credit renders).
 
-**Acceptance test (build WPs):** install → download one bundle (with images) → airplane mode → the region
-renders with labels, pins with category icons, cards with photos + blurbs + attribution. Neuter any one
-completeness component → the test goes red.
+**Acceptance test (build WPs), BOTH branches:**
+- **With images:** install → download one bundle *with images* → airplane mode → the region renders with
+  labels, pins with category icons, cards with **photos + blurbs + attribution**.
+- **Without images:** download the *same bundle without images* → airplane mode → the region renders with
+  labels, pins, cards with **blurbs + attribution, NO photos** (and no orphan image-index / no online
+  image fetch attempt).
+Neuter any one *mandatory* completeness component → the test goes red; dropping the *optional* images
+must NOT break the without-images branch.
 
 ## Build-WP decomposition
 
@@ -294,7 +312,7 @@ completeness component → the test goes red.
 |---|---|---|---|
 | **WP-RM-P** zone extraction + catalog | **pipeline (`develop`)** | OSM `boundary=administrative` sub-extractor (polygon/name/translations/QID/admin_level); region-config `zone_levels` map; polygon→z10 cell-set rasteriser; catalog materialiser (parent, size-from-cells, dedup-aware); the prune-list gate; `zone-catalog` schema | region-index (shipped); OSM extractor (built); Rob-gated instances |
 | **WP-RM-B3** multi-pack RENDERING (BLOCKER, critical path) | **app (`ios`)** | **viewport→installed-pack resolution across N packs**: the map resolves a viewport's tiles from **any installed pack covering it**, not one pinned `selectedRegion`/`TileClient(region:)`; `MapRegion`/catalog reconciliation. **A zone pack is useless until this ships** | B3 (built); the built store |
-| **WP-RM-B** region-manager UX | **app (`ios`)** | named-hierarchy browser (install a zone = install its **pack**, size up front); grid coverage feedback + **per-ZONE** update/delete (whole-pack, §4); consumes `OfflineRegionStore` (pack unit) + the catalog | WP-RM-P; **WP-RM-B3**; the built pack store; WP-IMG-B2 |
+| **WP-RM-B** region-manager UX | **app (`ios`)** | named-hierarchy browser (install a zone = install its **pack**, size up front); a **download-progress surface** (inherits WP-B10d's progress stream — per-zone %/bytes, cancel/pause); grid coverage feedback + **per-ZONE** update/delete (whole-pack, §4; per-cell is an Open flag); consumes `OfflineRegionStore` (pack unit) + the catalog. **NOT user-shippable before WP-RM-CT** (a sub-country download without cover-traffic is a privacy regression — CT is in B's release gate) | WP-RM-P; **WP-RM-B3**; **WP-B10d** (progress/incremental-persist); **WP-RM-CT** (release gate); the built store; WP-IMG-B2 |
 | **WP-RM-B2** custom-rectangle path | **app + pipeline** | drag-rectangle→cells + confirm (size + decoy cost + halo); **needs a store extension** (synthetic-manifest cell-set install) OR composes published sub-zone packs — **new engine work, not free on the built store** | WP-RM-B; a store extension |
 | **WP-RM-CT** cover-traffic | **app (`ios`)** | apply #131 in RATIFIED terms (intersection-resistant cohort, budget scales with distinctiveness); the fetch layer's decoy wrapper (WP-B7/fetch-model) | WP-RM-B; #131 rulings; Rob's decoy numbers |
 
@@ -311,6 +329,12 @@ moment.
 2. **Catalog: extend `region-index` vs a sibling `zone-catalog`** — recommend a **sibling** (region-index
    stays the lightweight "what regions exist"; zone-catalog carries the heavy cell-sets), confirm.
 3. **Decoy budget numbers (#131)** — Rob-gated; WP-RM applies the mechanism.
+4. **Per-ZONE vs per-CELL update/delete [gate — genuine tension].** The built store deletes/updates a
+   whole **pack (zone)**, so v1 is **per-zone**; but the selection-UX research
+   (`docs/research/2026-07-17-offline-selection-ux.md`) recommends **per-cell** update/delete (grid as a
+   coverage-manager). **Recommended default: per-zone now; per-cell later via the WP-RM-B2
+   synthetic-manifest path** (a rectangle/cell-set installed as an ad-hoc pack is then per-cell-deletable).
+   **Logged on the WP-RM issue body for Rob's morning.** Confirm.
 
 ## Gate & acceptance
 
