@@ -20,12 +20,10 @@ APP_CATEGORIES = {"ios_app", "mirrored_asset"}
 CATEGORY_TITLES = {
     "ios_app": "iOS App OSS",
     "mirrored_asset": "Mirrored Assets",
-    "pipeline_build": "Pipeline / Build OSS",
 }
 CATEGORY_ORDER = {
     "ios_app": 0,
     "mirrored_asset": 1,
-    "pipeline_build": 2,
 }
 
 

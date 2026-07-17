@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import pathlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from mt_contracts import registry as registry_contract
@@ -32,11 +33,19 @@ class PublishStageError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class PublishStageResult:
+class PublishedTargetResult:
     staging_dir: pathlib.Path
     manifest: dict[str, Any]
     counts: tiles.PublishCounts
     publish_result: r2.PublishResult
+
+
+@dataclass(frozen=True)
+class PublishStageResult(PublishedTargetResult):
+    subregion_results: tuple[PublishedTargetResult, ...] = ()
+    region_index: dict[str, Any] | None = None
+    region_index_path: pathlib.Path | None = None
+    region_index_publish_result: r2.PublishResult | None = None
 
 
 def run(
@@ -56,6 +65,7 @@ def run(
         r2.require_upload_environment()
     scoring_config_version = scoring_config_version or str(score_stage.load_config()["version"])
 
+    config.assert_global_region_ids()
     region_config = config.load(region)
     registry_path = _registry_path(conn, region)
     registry_store = LocalRegistryStore(registry_path)
@@ -77,50 +87,98 @@ def run(
         )
         registry_blob = _registry_jsonl(updated_registry)
 
-    work_root = pathlib.Path(staging_root) / ".work" / region / publish_version
-    work_root.mkdir(parents=True, exist_ok=True)
-    basemap_path = work_root / f"{region}.pmtiles"
-    basemap_art = basemap.cut_basemap(_region_doc(region_config), basemap_path)
     source_meta = json.loads(_A1D_SOURCES.read_text())
-    manifest_obj = manifest.assemble_manifest(
-        region=region,
+    layout = json.loads(_R2_LAYOUT.read_text())
+    target_results: list[PublishedTargetResult] = []
+    parent_result = _publish_target(
+        region_config=region_config,
+        target_region=region,
+        bbox=region_config.bbox,
+        tile_arts=tile_arts,
+        counts=counts,
+        source_meta=source_meta,
+        layout=layout,
         publish_version=publish_version,
         generated_at=generated_at,
-        tiles=tile_arts,
-        counts=counts,
-        basemap=basemap_art,
         scoring_config_version=scoring_config_version,
-        attribution=attribution.attribution_for(
-            attribution.sources_used(shipped_places),
-            source_meta,
-            includes_osm_basemap=True,
-        ),
-    )
-    staging_dir = staging.build_staging(
-        pathlib.Path(staging_root),
-        region,
-        publish_version,
-        tile_arts=tile_arts,
-        manifest_obj=manifest_obj,
-        basemap_path=basemap_path,
-    )
-    layout = json.loads(_R2_LAYOUT.read_text())
-    publish_result = r2.publish_to_r2(
-        staging_dir,
-        layout,
-        upload=upload,
+        staging_root=pathlib.Path(staging_root),
         registry_blob=registry_blob,
     )
+    target_results.append(parent_result)
 
-    if shipped_ids and upload and not publish_result.dry_run:
+    subregion_results: list[PublishedTargetResult] = []
+    for subregion in region_config.subregions:
+        sub_joined = _filter_places_to_bbox(joined, subregion.bbox)
+        sub_tile_arts, sub_counts = tiles.emit_tiles(
+            sub_joined, registry_records, region=subregion.region_id
+        )
+        sub_result = _publish_target(
+            region_config=region_config,
+            target_region=subregion.region_id,
+            bbox=subregion.bbox,
+            tile_arts=sub_tile_arts,
+            counts=sub_counts,
+            source_meta=source_meta,
+            layout=layout,
+            publish_version=publish_version,
+            generated_at=generated_at,
+            scoring_config_version=scoring_config_version,
+            staging_root=pathlib.Path(staging_root),
+            registry_blob=None,
+            subregion=subregion,
+        )
+        subregion_results.append(sub_result)
+        target_results.append(sub_result)
+
+    region_index_obj = _region_index(
+        generated_at=generated_at,
+        targets=target_results,
+        display_names={
+            region: region_config.display_name,
+            **{
+                subregion.region_id: subregion.display_name
+                for subregion in region_config.subregions
+            },
+        },
+        parents={
+            subregion.region_id: region for subregion in region_config.subregions
+        },
+    )
+    region_index_path = staging.write_region_index(
+        pathlib.Path(staging_root), region_index_obj
+    )
+    region_index_publish_result = r2.publish_region_index(region_index_path, layout)
+
+    if upload:
+        prepared = r2.publish_prepared_to_r2(
+            [target.publish_result.plan for target in target_results],
+            region_index_path,
+            layout,
+        )
+        parent_result = replace(
+            parent_result, publish_result=prepared.target_results[0]
+        )
+        subregion_results = [
+            replace(result, publish_result=prepared_result)
+            for result, prepared_result in zip(
+                subregion_results, prepared.target_results[1:], strict=True
+            )
+        ]
+        region_index_publish_result = prepared.region_index_result
+
+    if shipped_ids and upload and not parent_result.publish_result.dry_run:
         assert updated_registry is not None
         registry_store.save(updated_registry)
 
     return PublishStageResult(
-        staging_dir=staging_dir,
-        manifest=manifest_obj,
-        counts=counts,
-        publish_result=publish_result,
+        staging_dir=parent_result.staging_dir,
+        manifest=parent_result.manifest,
+        counts=parent_result.counts,
+        publish_result=parent_result.publish_result,
+        subregion_results=tuple(subregion_results),
+        region_index=region_index_obj,
+        region_index_path=region_index_path,
+        region_index_publish_result=region_index_publish_result,
     )
 
 
@@ -201,13 +259,152 @@ def _places_from_tiles(tile_arts) -> list[dict[str, Any]]:
     return out
 
 
-def _region_doc(region_config: config.RegionConfig) -> dict[str, Any]:
+def _publish_target(
+    *,
+    region_config: config.RegionConfig,
+    target_region: str,
+    bbox: tuple,
+    tile_arts: list[tiles.TileArtifact],
+    counts: tiles.PublishCounts,
+    source_meta: dict[str, Any],
+    layout: dict[str, Any],
+    publish_version: str,
+    generated_at: str,
+    scoring_config_version: str,
+    staging_root: pathlib.Path,
+    registry_blob: bytes | None,
+    subregion: config.SubregionConfig | None = None,
+) -> PublishedTargetResult:
+    work_root = pathlib.Path(staging_root) / ".work" / target_region / publish_version
+    work_root.mkdir(parents=True, exist_ok=True)
+    basemap_path = work_root / f"{target_region}.pmtiles"
+    basemap_art = basemap.cut_basemap(
+        _region_doc(
+            region_config,
+            target_region=target_region,
+            bbox=bbox,
+            subregion=subregion,
+        ),
+        basemap_path,
+    )
+    shipped_places = _places_from_tiles(tile_arts)
+    manifest_obj = manifest.assemble_manifest(
+        region=target_region,
+        publish_version=publish_version,
+        generated_at=generated_at,
+        tiles=tile_arts,
+        counts=counts,
+        basemap=basemap_art,
+        scoring_config_version=scoring_config_version,
+        attribution=attribution.attribution_for(
+            attribution.sources_used(shipped_places),
+            source_meta,
+            includes_osm_basemap=True,
+        ),
+    )
+    staging_dir = staging.build_staging(
+        staging_root,
+        target_region,
+        publish_version,
+        tile_arts=tile_arts,
+        manifest_obj=manifest_obj,
+        basemap_path=basemap_path,
+    )
+    publish_result = r2.publish_to_r2(
+        staging_dir,
+        layout,
+        upload=False,
+        registry_blob=registry_blob,
+    )
+    return PublishedTargetResult(
+        staging_dir=staging_dir,
+        manifest=manifest_obj,
+        counts=counts,
+        publish_result=publish_result,
+    )
+
+
+def _region_doc(
+    region_config: config.RegionConfig,
+    *,
+    target_region: str | None = None,
+    bbox: tuple | None = None,
+    subregion: config.SubregionConfig | None = None,
+) -> dict[str, Any]:
     data = dict(region_config.raw)
-    data["region"] = region_config.region_id
+    data["region"] = target_region or region_config.region_id
     basemap_cfg = dict(data["basemap"])
-    basemap_cfg["bbox"] = list(region_config.bbox)
+    basemap_cfg["bbox"] = list(bbox or region_config.bbox)
+    if subregion is not None:
+        if subregion.size_budget_bytes is not None:
+            basemap_cfg["size_budget_bytes"] = subregion.size_budget_bytes
+        if subregion.measured_archive_bytes is not None:
+            basemap_cfg["measured_archive_bytes"] = subregion.measured_archive_bytes
     data["basemap"] = basemap_cfg
     return data
+
+
+def _filter_places_to_bbox(
+    places: list[dict[str, Any]], bbox: tuple
+) -> list[dict[str, Any]]:
+    west, south, east, north = [float(value) for value in bbox]
+    return [
+        place
+        for place in places
+        if _place_in_bbox(place, west, south, east, north)
+    ]
+
+
+def _place_in_bbox(
+    place: dict[str, Any],
+    west: float,
+    south: float,
+    east: float,
+    north: float,
+) -> bool:
+    try:
+        lat = float(place["lat"])
+        lon = float(place["lon"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    if not math.isfinite(lat) or not math.isfinite(lon):
+        return False
+    return west <= lon <= east and south <= lat <= north
+
+
+def _region_index(
+    *,
+    generated_at: str,
+    targets: list[PublishedTargetResult],
+    display_names: dict[str, str],
+    parents: dict[str, str],
+) -> dict[str, Any]:
+    entries = []
+    for target in targets:
+        manifest_obj = target.manifest
+        region = str(manifest_obj["region"])
+        tile_bytes = sum(int(tile["bytes"]) for tile in manifest_obj["tiles"])
+        basemap_bytes = int(manifest_obj["basemap"]["bytes"])
+        bytes_without_thumbs = basemap_bytes + tile_bytes
+        entries.append(
+            {
+                "id": region,
+                "display_name": display_names[region],
+                "parent": parents.get(region),
+                "bbox": list(manifest_obj["basemap"]["bbox"]),
+                "publish_version": manifest_obj["publish_version"],
+                "basemap_bytes": basemap_bytes,
+                "tile_count": len(manifest_obj["tiles"]),
+                "bytes_without_thumbs": bytes_without_thumbs,
+                "bytes_with_thumbs": bytes_without_thumbs,
+            }
+        )
+    return {
+        "schema_version": 1,
+        "min_reader_version": 1,
+        "generated_at": generated_at,
+        "regions": entries,
+    }
 
 
 def _load_registry(

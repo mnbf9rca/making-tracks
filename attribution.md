@@ -1,12 +1,12 @@
 # Attribution and OSS Licenses
 
-Maintenance rule: update the structured source first, then run `uv run --package making-tracks-pipeline --extra dev python scripts/generate_attribution.py`. Data-source runtime credits come from `pipeline/config/a1d_sources.json` plus `pipeline/src/mt_pipeline/publish/attribution.py`; OSS, mirrored-asset, and build-tool credits come from `contracts/oss-credits.json`.
+Maintenance rule: update the structured source first, then run `uv run --package making-tracks-pipeline --extra dev python scripts/generate_attribution.py`. Data-source runtime credits come from `pipeline/config/a1d_sources.json` plus `pipeline/src/mt_pipeline/publish/attribution.py`; iOS OSS and mirrored-asset credits come from `contracts/oss-credits.json`.
 
 This file is attribution and licensing only. Privacy policy, App Privacy label, Cloudflare/IP disclosures, and user-data posture belong in root `privacy.md` when that lands, not here.
 
 Runtime data credits: the iOS Credits screen renders `manifest.attribution` verbatim. The publisher derives that array in `pipeline/src/mt_pipeline/publish/attribution.py` from place `source_refs`, the shipped OSM-derived basemap, and `pipeline/config/a1d_sources.json`, then writes it through `pipeline/src/mt_pipeline/publish/manifest.py`. Do not hand-edit app data credits separately.
 
-App OSS acknowledgements and build-tool credits are generated from `contracts/oss-credits.json`. The generated app resource is `ios/App/Sources/OSSCredits.json`; UI wiring is intentionally a follow-up on the iOS branch.
+App OSS acknowledgements are generated from `contracts/oss-credits.json`. The generated app resource is `ios/App/Sources/OSSCredits.json`; UI wiring is intentionally a follow-up on the iOS branch.
 
 ## Data Sources
 
@@ -18,6 +18,7 @@ App OSS acknowledgements and build-tool credits are generated from `contracts/os
 | historic_england | OGL-UK-3.0 | © Historic England 2026. Contains Historic England data licensed under the Open Government Licence v3.0. Contains Ordnance Survey data © Crown copyright and database right 2026. |
 | open_plaques | PDDL-1.0 | Plaque data from Open Plaques (openplaques.org), released under the Public Domain Dedication and License 1.0. |
 | osm | ODbL-1.0 | Map/place data © OpenStreetMap contributors, licensed under ODbL. |
+| wikipedia | CC-BY-SA-4.0 | Wikipedia content from Wikipedia contributors, licensed under CC BY-SA 4.0; additional terms may apply. |
 <!-- END GENERATED DATA SOURCES -->
 
 ### Additional Source Notes
@@ -46,21 +47,9 @@ App OSS acknowledgements and build-tool credits are generated from `contracts/os
 | Name | Version / pin | Evidence | License | Compliance |
 |---|---|---|---|---|
 | Noto Sans glyph PBF mirror | protomaps/basemaps-assets commit 028c18f713baecad011301ff7a69acc39bcc2ae7; Noto Sans Regular | `contracts/third-party-notices/Noto-Sans-UPSTREAM.txt`<br>`contracts/third-party-notices/Noto-Sans-OFL.txt`<br>`https://tiles.making-tracks.app/global/fonts/UPSTREAM.txt`<br>`https://tiles.making-tracks.app/global/fonts/OFL.txt` | [OFL-1.1](https://openfontlicense.org/) | Mirror OFL.txt and UPSTREAM.txt beside the glyphs. Any mirror source/version change must update this registry and the deployed files. |
-
-### Pipeline / Build OSS
-
-| Name | Version / pin | Evidence | License | Compliance |
-|---|---|---|---|---|
-| boto3 | pipeline/pyproject.toml dependency boto3>=1.34 | `pipeline/pyproject.toml` | [Apache-2.0](https://github.com/boto/boto3/blob/develop/LICENSE) | Direct runtime dependency for R2/S3 publishing. |
-| go-pmtiles / pmtiles CLI | v1.31.1 | `pipeline/src/mt_pipeline/publish/basemap.py` | [BSD-3-Clause](https://github.com/protomaps/go-pmtiles/blob/main/LICENSE) | Credit in root attribution; keep version and checksum pin in the pipeline. |
-| hatchling | build backend in contracts/pyproject.toml and pipeline/pyproject.toml | `contracts/pyproject.toml`<br>`pipeline/pyproject.toml` | [MIT](https://hatch.pypa.io/latest/) | Build backend for workspace packages. |
-| ijson | pipeline/pyproject.toml dependency ijson>=3.2 | `pipeline/pyproject.toml` | [BSD-3-Clause AND ISC](https://pypi.org/project/ijson/) | Direct runtime dependency for bounded JSON parsing. |
-| jsonschema | contracts/pyproject.toml dependency jsonschema>=4.21 | `contracts/pyproject.toml` | [MIT](https://github.com/python-jsonschema/jsonschema/blob/main/COPYING) | Direct runtime dependency for contract validation. |
-| openai-python | pipeline/pyproject.toml dependency openai>=1.0 | `pipeline/pyproject.toml` | [Apache-2.0](https://github.com/openai/openai-python/blob/main/LICENSE) | Direct runtime dependency for optional LLM providers. |
-| pydantic | pipeline/pyproject.toml dependency pydantic>=2.0 | `pipeline/pyproject.toml` | [MIT](https://github.com/pydantic/pydantic/blob/main/LICENSE) | Direct runtime dependency for validation and modeling. |
-| pyosmium / osmium | pipeline/pyproject.toml dependency osmium>=4.0 | `pipeline/pyproject.toml` | [BSD-2-Clause](https://osmcode.org/pyosmium/) | Direct runtime dependency for OSM extraction. |
-| referencing | contracts/pyproject.toml dependency referencing>=0.34 | `contracts/pyproject.toml` | [MIT](https://pypi.org/project/referencing/) | Direct runtime dependency used by JSON Schema validation. |
 <!-- END GENERATED OSS CREDITS -->
+
+Build/pipeline tooling is declared in the `pyproject.toml` files and is not distributed with the app.
 
 ## Project License
 

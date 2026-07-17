@@ -1,0 +1,17 @@
+name: main-source-guard
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  source-branch-check:
+    name: "main accepts only develop/ios"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify head branch
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          case "$HEAD_REF" in
+            develop|ios) echo "OK: promotion from $HEAD_REF" ;;
+            *) echo "BLOCKED: main only accepts promotions from develop or ios (got: $HEAD_REF)"; exit 1 ;;
+          esac

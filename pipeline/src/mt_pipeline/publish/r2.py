@@ -13,11 +13,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from mt_contracts.region_index import validate_region_index
+
 
 _REGION_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _PUBLISH_VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 _PRIVATE_KINDS = {"registry", "cache", "feedback", "lock"}
-_PUBLIC_KINDS = {"tile", "basemap", "manifest", "current"}
+_PUBLIC_KINDS = {"tile", "basemap", "manifest", "current", "region_index"}
 _R2_UPLOAD_ENV_VARS = ("R2_S3_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY")
 
 
@@ -71,6 +73,12 @@ class PublishResult:
     plan: "PublishPlan"
     uploaded: int = 0
     dry_run: bool = True
+
+
+@dataclass(frozen=True)
+class PreparedPublishResult:
+    target_results: tuple[PublishResult, ...]
+    region_index_result: PublishResult
 
 
 @dataclass(frozen=True)
@@ -201,23 +209,7 @@ def publish_to_r2(
     region = staging.parent.name
     publish_version = staging.name
     validate_path_components(region, publish_version)
-    tile_ops, basemap_op, manifest_op = _ops_from_staging(staging, layout, region, publish_version)
-    ops = [*tile_ops, basemap_op, manifest_op, _current_op(layout, region, publish_version)]
-    if registry_blob is not None:
-        ops.append(
-            PublishOp(
-                kind="registry",
-                bucket=str(layout["private_bucket"]),
-                key=f"{layout.get('private_prefixes', {}).get('registry', 'registry/')}{region}.jsonl",
-                body=registry_blob,
-            )
-        )
-    plan = PublishPlan(
-        layout=layout,
-        region=region,
-        publish_version=publish_version,
-        ops=tuple(ops),
-    )
+    plan = _plan_from_staging(staging, layout, registry_blob=registry_blob)
     _validate_layout(layout)
     plan._assert_bucket_invariants()
     if not upload:
@@ -233,22 +225,251 @@ def publish_to_r2(
     uploaded = 0
     try:
         for op in plan.ops:
-            if op.body is not None:
-                client.put_object(Bucket=op.bucket, Key=op.key, Body=op.body)
-            else:
-                if op.source_path is None:
-                    raise ValueError(f"publish op {op.kind!r} has no body or source_path")
-                with op.source_path.open("rb") as body:
-                    client.put_object(Bucket=op.bucket, Key=op.key, Body=body)
+            _upload_op(client, op)
             uploaded += 1
     finally:
         _release_lock(client, layout, lock_key, lock_etag)
     return PublishResult(plan=plan, uploaded=uploaded, dry_run=False)
 
 
+def publish_prepared_to_r2(
+    plans: Iterable[PublishPlan],
+    region_index_path: Path,
+    layout: Mapping[str, Any],
+    *,
+    client=None,
+) -> PreparedPublishResult:
+    plan_list = list(plans)
+    if not plan_list:
+        raise ValueError("prepared publish requires at least one target plan")
+    _validate_layout(layout)
+    for plan in plan_list:
+        plan._assert_bucket_invariants()
+    if client is None:
+        client = _default_client()
+
+    for plan in plan_list:
+        _assert_not_live(client, layout, plan.region, plan.publish_version)
+        _assert_prefix_absent(client, layout, plan.region, plan.publish_version)
+
+    max_publish_version = max(plan.publish_version for plan in plan_list)
+    lock_keys = [
+        (plan.region, plan.publish_version, f"{plan.region}/publish.lock")
+        for plan in plan_list
+    ]
+    lock_keys.append(("regions", max_publish_version, "regions/publish.lock"))
+    acquired: list[tuple[str, str | None]] = []
+    try:
+        for lock_region, lock_version, lock_key in sorted(lock_keys):
+            etag = _acquire_lock(client, layout, lock_region, lock_version, lock_key)
+            acquired.append((lock_key, etag))
+
+        region_index_op = _region_index_op_for_upload(
+            client, layout, region_index_path
+        )
+        public_content = [
+            op
+            for plan in plan_list
+            for op in plan.ops
+            if op.kind in {"tile", "basemap", "manifest"}
+        ]
+        current_ops = [
+            op for plan in plan_list for op in plan.ops if op.kind == "current"
+        ]
+        private_ops = [
+            op for plan in plan_list for op in plan.ops if op.kind in _PRIVATE_KINDS
+        ]
+        for op in [*public_content, *current_ops, region_index_op, *private_ops]:
+            _upload_op(client, op)
+    finally:
+        for lock_key, etag in reversed(acquired):
+            _release_lock(client, layout, lock_key, etag)
+
+    return PreparedPublishResult(
+        target_results=tuple(
+            PublishResult(plan=plan, uploaded=len(plan.ops), dry_run=False)
+            for plan in plan_list
+        ),
+        region_index_result=PublishResult(
+            plan=PublishPlan(
+                layout=layout,
+                region="regions",
+                publish_version=max_publish_version,
+                ops=(
+                    PublishOp(
+                        kind="region_index",
+                        bucket=str(layout["public_bucket"]),
+                        key="regions.json",
+                        body=region_index_op.body,
+                    ),
+                ),
+            ),
+            uploaded=1,
+            dry_run=False,
+        ),
+    )
+
+
+def publish_region_index(
+    region_index_path: Path,
+    layout: Mapping[str, Any],
+    *,
+    client=None,
+    upload: bool = False,
+) -> PublishResult:
+    region_index_path = Path(region_index_path)
+    index_obj = _load_region_index(region_index_path)
+    publish_version = max(
+        str(entry["publish_version"]) for entry in index_obj["regions"]
+    )
+    _validate_layout(layout)
+    if not upload:
+        op = (
+            _region_index_op_for_upload(client, layout, region_index_path)
+            if client is not None
+            else _region_index_op_from_file(layout, region_index_path)
+        )
+        plan = PublishPlan(
+            layout=layout,
+            region="regions",
+            publish_version=publish_version,
+            ops=(op,),
+        )
+        plan._assert_bucket_invariants()
+        return PublishResult(plan=plan, dry_run=True)
+    if client is None:
+        client = _default_client()
+    lock_key = "regions/publish.lock"
+    lock_etag = _acquire_lock(client, layout, "regions", publish_version, lock_key)
+    try:
+        op = _region_index_op_for_upload(client, layout, region_index_path)
+        _upload_op(client, op)
+    finally:
+        _release_lock(client, layout, lock_key, lock_etag)
+    merged_plan = PublishPlan(
+        layout=layout,
+        region="regions",
+        publish_version=publish_version,
+        ops=(op,),
+    )
+    return PublishResult(plan=merged_plan, uploaded=1, dry_run=False)
+
+
+def _load_region_index(region_index_path: Path) -> dict[str, Any]:
+    index_obj = json.loads(Path(region_index_path).read_text(encoding="utf-8"))
+    validate_region_index(index_obj)
+    return index_obj
+
+
 def _validate_layout(layout: Mapping[str, Any]) -> None:
     if layout["public_bucket"] == layout["private_bucket"]:
         raise LayoutInvalid("public_bucket and private_bucket must be distinct")
+
+
+def _upload_op(client, op: PublishOp) -> None:
+    if op.body is not None:
+        client.put_object(Bucket=op.bucket, Key=op.key, Body=op.body)
+        return
+    if op.source_path is None:
+        raise ValueError(f"publish op {op.kind!r} has no body or source_path")
+    with op.source_path.open("rb") as body:
+        client.put_object(Bucket=op.bucket, Key=op.key, Body=body)
+
+
+def _plan_from_staging(
+    staging: Path,
+    layout: Mapping[str, Any],
+    *,
+    registry_blob: bytes | None = None,
+) -> PublishPlan:
+    staging = Path(staging)
+    region = staging.parent.name
+    publish_version = staging.name
+    validate_path_components(region, publish_version)
+    tile_ops, basemap_op, manifest_op = _ops_from_staging(
+        staging, layout, region, publish_version
+    )
+    ops = [
+        *tile_ops,
+        basemap_op,
+        manifest_op,
+        _current_op(layout, region, publish_version),
+    ]
+    if registry_blob is not None:
+        ops.append(
+            PublishOp(
+                kind="registry",
+                bucket=str(layout["private_bucket"]),
+                key=(
+                    f"{layout.get('private_prefixes', {}).get('registry', 'registry/')}"
+                    f"{region}.jsonl"
+                ),
+                body=registry_blob,
+            )
+        )
+    plan = PublishPlan(
+        layout=layout,
+        region=region,
+        publish_version=publish_version,
+        ops=tuple(ops),
+    )
+    plan._assert_bucket_invariants()
+    return plan
+
+
+def _region_index_op_for_upload(
+    client,
+    layout: Mapping[str, Any],
+    region_index_path: Path,
+) -> PublishOp:
+    new_index = _load_region_index(region_index_path)
+    try:
+        obj = client.get_object(Bucket=layout["public_bucket"], Key="regions.json")
+    except FileNotFoundError:
+        merged = new_index
+    except Exception as exc:
+        if not _is_missing_key(exc):
+            raise CurrentPointerUnavailable("could not read existing region index") from exc
+        merged = new_index
+    else:
+        existing = json.loads(obj["Body"].read())
+        validate_region_index(existing)
+        merged = _merge_region_indexes(existing, new_index)
+    validate_region_index(merged)
+    return PublishOp(
+        kind="region_index",
+        bucket=str(layout["public_bucket"]),
+        key="regions.json",
+        body=_json_bytes(merged),
+    )
+
+
+def _region_index_op_from_file(
+    layout: Mapping[str, Any], region_index_path: Path
+) -> PublishOp:
+    return PublishOp(
+        kind="region_index",
+        bucket=str(layout["public_bucket"]),
+        key="regions.json",
+        body=_json_bytes(_load_region_index(region_index_path)),
+    )
+
+
+def _merge_region_indexes(
+    existing: Mapping[str, Any], new_index: Mapping[str, Any]
+) -> dict[str, Any]:
+    by_id = {str(entry["id"]): dict(entry) for entry in existing.get("regions", [])}
+    for entry in new_index["regions"]:
+        by_id[str(entry["id"])] = dict(entry)
+    return {
+        "schema_version": int(new_index["schema_version"]),
+        "min_reader_version": max(
+            int(existing["min_reader_version"]),
+            int(new_index["min_reader_version"]),
+        ),
+        "generated_at": new_index["generated_at"],
+        "regions": [by_id[region_id] for region_id in sorted(by_id)],
+    }
 
 
 def _json_bytes(obj: Any) -> bytes:

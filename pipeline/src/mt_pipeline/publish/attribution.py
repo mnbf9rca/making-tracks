@@ -11,7 +11,7 @@ PREFIX_TO_SOURCE_KEY = {
     "plaque": "open_plaques",
     "osm": "osm",
     "wd": "wikidata",
-    "wp": "wikidata",
+    "wp": "wikipedia",
 }
 
 
