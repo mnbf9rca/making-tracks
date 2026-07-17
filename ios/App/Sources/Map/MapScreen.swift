@@ -13,12 +13,13 @@ struct MapScreen: View {
     @State private var features: [(MapPlace, PinState)] = []
     @State private var pmtilesURL: String?
     @State private var attribution: [Attribution] = []
-    @State private var selectedPlaceID: String?
+    @State private var cardPresentation = PlaceCardPresentation()
     @State private var showCredits = false
     @State private var loadState: TileLoadState = .unavailable
     @State private var viewportRequestID = 0
     @State private var stateEpoch = 0
     @State private var fixtureVisitCount = 0
+    private static let primaryFixturePlaceID = fixturePlaces[0].placeID
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -38,7 +39,10 @@ struct MapScreen: View {
                     }
                 },
                 onTapPlace: { placeID in
-                    selectedPlaceID = placeID
+                    cardPresentation.show(placeID: placeID)
+                },
+                onTapEmpty: {
+                    cardPresentation.dismiss()
                 }
             )
             .ignoresSafeArea()
@@ -68,7 +72,7 @@ struct MapScreen: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
                         .background(.ultraThinMaterial, in: Capsule())
-                        .accessibilityIdentifier("tracks.visit-count.\(Self.fixturePlace.placeID)")
+                        .accessibilityIdentifier("tracks.visit-count.\(Self.primaryFixturePlaceID)")
                 }
             }
             .padding()
@@ -82,15 +86,22 @@ struct MapScreen: View {
         .sheet(isPresented: $showCredits) {
             CreditsView(attribution: attribution)
         }
-        .sheet(item: selectedBinding) { place in
-            PlaceCardSheet(placeID: place.id, model: model)
+        .sheet(isPresented: cardPresentationBinding) {
+            if let placeID = cardPresentation.activePlaceID {
+                PlaceCardSheet(placeID: placeID, model: model)
+                    .id(placeID)
+            }
         }
     }
 
-    private var selectedBinding: Binding<SelectedPlace?> {
+    private var cardPresentationBinding: Binding<Bool> {
         Binding(
-            get: { selectedPlaceID.map(SelectedPlace.init(id:)) },
-            set: { selectedPlaceID = $0?.id }
+            get: { cardPresentation.isPresented },
+            set: { isPresented in
+                if !isPresented {
+                    cardPresentation.dismiss()
+                }
+            }
         )
     }
 
@@ -99,7 +110,7 @@ struct MapScreen: View {
             model = try? MapScreenModel(
                 database: database,
                 region: "malaysia",
-                fixturePlace: isFixtureMap ? Self.fixturePlace : nil
+                fixturePlaces: isFixtureMap ? Self.fixturePlaces : []
             )
         }
         await model?.refreshManifest()
@@ -168,29 +179,40 @@ struct MapScreen: View {
 
     private func refreshFixtureVisitCount() async {
         guard isFixtureMap, let model else { return }
-        let count = await model.visitCount(placeID: Self.fixturePlace.placeID)
+        let count = await model.visitCount(placeID: Self.primaryFixturePlaceID)
         await MainActor.run {
             fixtureVisitCount = count
         }
     }
 
-    private static let fixturePlace = try! PlaceRef(
-        placeID: "mt1_00000000000000000000000000",
-        name: "Ghost Sign",
-        lat: 3.14,
-        lon: 101.69,
-        category: "history",
-        tier: 3,
-        schemaVersion: 1,
-        fetchedAt: Date(timeIntervalSince1970: 0),
-        rawJSON: """
-        {"category":"history","lat":3.14,"lon":101.69,"name":"Ghost Sign","place_id":"mt1_00000000000000000000000000","score":0.5,"source_refs":["osm:node/1"],"tier":3}
-        """
-    )
-}
-
-private struct SelectedPlace: Identifiable {
-    let id: String
+    private static let fixturePlaces = [
+        try! PlaceRef(
+            placeID: "mt1_00000000000000000000000000",
+            name: "Ghost Sign",
+            lat: 3.14,
+            lon: 101.69,
+            category: "history",
+            tier: 3,
+            schemaVersion: 1,
+            fetchedAt: Date(timeIntervalSince1970: 0),
+            rawJSON: """
+            {"category":"history","lat":3.14,"lon":101.69,"name":"Ghost Sign","place_id":"mt1_00000000000000000000000000","score":0.5,"source_refs":["osm:node/1"],"tier":3}
+            """
+        ),
+        try! PlaceRef(
+            placeID: "mt1_00000000000000000000000001",
+            name: "Art Deco Cinema",
+            lat: 3.16,
+            lon: 101.702,
+            category: "architecture",
+            tier: 3,
+            schemaVersion: 1,
+            fetchedAt: Date(timeIntervalSince1970: 0),
+            rawJSON: """
+            {"category":"architecture","lat":3.16,"lon":101.702,"name":"Art Deco Cinema","place_id":"mt1_00000000000000000000000001","score":0.5,"source_refs":["osm:node/2"],"tier":3}
+            """
+        ),
+    ]
 }
 
 private struct CreditsView: View {
@@ -287,6 +309,7 @@ private struct PlaceCardSheet: View {
         }
         .accessibilityIdentifier("place-card.\(placeID)")
         .presentationDetents([.medium])
+        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         .task(id: placeID) {
             await loadCard()
         }
@@ -319,6 +342,9 @@ private struct PlaceCardSheet: View {
 
     private func loadCard() async {
         await MainActor.run {
+            card = nil
+            image = nil
+            actionError = nil
             isLoading = true
         }
         let nextCard = await model?.cardModel(for: placeID)
@@ -389,16 +415,16 @@ private struct PlaceCardSheet: View {
 private final class MapScreenModel: Sendable {
     private let database: AppDatabase
     private let tileClient: TileClient?
-    private let fixturePlace: PlaceRef?
+    private let fixturePlaces: [String: PlaceRef]
     private let coreLoop: CoreLoopController
 
     var changes: AsyncStream<Set<String>> { coreLoop.changes }
 
-    init(database: AppDatabase, region: String, fixturePlace: PlaceRef? = nil) throws {
+    init(database: AppDatabase, region: String, fixturePlaces: [PlaceRef] = []) throws {
         self.database = database
-        self.fixturePlace = fixturePlace
+        self.fixturePlaces = Dictionary(uniqueKeysWithValues: fixturePlaces.map { ($0.placeID, $0) })
         coreLoop = CoreLoopController(database: database)
-        if fixturePlace == nil {
+        if fixturePlaces.isEmpty {
             let cacheRoot = try FileManager.default.url(
                 for: .cachesDirectory,
                 in: .userDomainMask,
@@ -416,10 +442,13 @@ private final class MapScreenModel: Sendable {
     }
 
     func features(in bbox: BBox, zoom: Int) async -> [(MapPlace, PinState)] {
-        if let fixturePlace {
-            let states = await states(for: [fixturePlace.placeID])
-            let place = MapPlace(id: fixturePlace.placeID, lat: fixturePlace.lat, lon: fixturePlace.lon, tier: fixturePlace.tier)
-            return [(place, states[fixturePlace.placeID] ?? PinState(saved: false, visit: .none))]
+        if !fixturePlaces.isEmpty {
+            let sortedFixtures = fixturePlaces.values.sorted { $0.placeID < $1.placeID }
+            let states = await states(for: Set(sortedFixtures.map(\.placeID)))
+            return sortedFixtures.map { fixturePlace in
+                let place = MapPlace(id: fixturePlace.placeID, lat: fixturePlace.lat, lon: fixturePlace.lon, tier: fixturePlace.tier)
+                return (place, states[fixturePlace.placeID] ?? PinState(saved: false, visit: .none))
+            }
         }
         guard let tileClient else { return [] }
         let places = await tileClient.places(inViewport: bbox, zoom: zoom)
@@ -471,7 +500,7 @@ private final class MapScreenModel: Sendable {
     }
 
     private func cardSource(for placeID: String) async -> CardSource? {
-        if let fixturePlace, fixturePlace.placeID == placeID {
+        if let fixturePlace = fixturePlaces[placeID] {
             if let snapshot = try? database.snapshot(for: placeID),
                let placeRef = try? PlaceRef(
                 placeID: snapshot.placeID,

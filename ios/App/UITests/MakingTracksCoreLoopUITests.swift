@@ -40,6 +40,24 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(relaunched.buttons["place-card.loved"].label, "Loved")
     }
 
+    func testTappingAnotherPinSwitchesOpenCard() {
+        let app = launch(reset: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        tapFixturePin(in: map)
+        XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
+
+        tapSecondFixturePin(in: map)
+        XCTAssertTrue(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Ghost Sign"].exists)
+        attachScreenshot(named: "card-switched-to-art-deco-cinema")
+
+        tapEmptyMap(in: map)
+        XCTAssertFalse(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 2))
+    }
+
     private func launch(reset: Bool) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
@@ -52,6 +70,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     private func tapFixturePin(in map: XCUIElement) {
         map.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
+
+    private func tapSecondFixturePin(in map: XCUIElement) {
+        map.coordinate(withNormalizedOffset: CGVector(dx: 0.67, dy: 0.37)).tap()
+    }
+
+    private func tapEmptyMap(in map: XCUIElement) {
+        map.coordinate(withNormalizedOffset: CGVector(dx: 0.20, dy: 0.30)).tap()
     }
 
     private func attachScreenshot(named name: String) {
