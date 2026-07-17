@@ -100,34 +100,53 @@ taxonomy over the category model that also serves #162's future layers.
   toggle.** *(Also corrects location design #155, which mis-described the nearby-prompt as to-be-built —
   it is built; noting for that PR.)*
 
-## 3. Manage-hidden surface + undo (#167, D3)
+## 3. Visibility management — the map Layers control + rapid-triage undo (#167, D3) — RULED by Rob
 
-- **Immediate undo:** hiding from the card dismisses the card and the pin vanishes; surface a transient
-  **"Hidden — Undo"** affordance (snackbar/toast) that reverses instantly (delete the just-inserted row).
-  This is the low-friction reversal for the common "oops" case.
-- **Show-hidden toggle:** a map control (sibling to the §17 "Fresh snow / My tracks" toggle) that flips
-  §2's show-hidden mode. When on, hidden pins appear (marked); tap → card → **Unhide** action (the card's
-  action row shows Unhide instead of Hide when the place is hidden).
-- **Manage-hidden screen:** a list of hidden places (from `hidden_places`, `hidden_at` DESC), each with
-  unhide, plus bulk "unhide all". This is **list-shaped** and naturally lives with **B5 Lists** when that
-  UI is built; until then it can be a standalone "Hidden" screen reached from settings/the toggle. (No
-  lists UI exists yet — greenfield either way.)
+**Rob ruled (2026-07-17):** hide is a **TRIAGE tool** — *"let users whittle down an overwhelming display
+of icons: not interested, next"* — and visibility management is **a single map Layers control, NOT a
+standalone Hidden screen** (*"it's a layer toggle on the map… we should be able to toggle museums or
+whatever"*).
 
-## 4. Hide scope — map-only (recommended; the one open fork) (#167, D4)
+- **Rapid-triage hide [Q1 intent].** The Hide action is optimised for **fast, repeatable** sequential
+  triage, not a buried menu: **one tap** on the card's Hide → the pin vanishes and the **card advances to
+  the next nearby/selected place or closes** (so "not interested, next" is a single gesture) → a transient
+  **"Hidden — Undo"** toast reverses instantly (delete the just-inserted row). Hide sits in the card's
+  primary action row (peer to Save/Visited), never behind an overflow menu.
+- **The map Layers control [Q2 ruling] — replaces the standalone manage screen.** A single map control
+  (sibling to the §17 "Fresh snow / My tracks" toggle) with two kinds of rows:
+  - **(a) Per-category visibility toggles** — museums, plaques, etc. **Rides the `category` threading that
+    WP-ICONS already adds** (§5), and is the **#162 seam made user-facing**. Implemented as a **MapLibre
+    style-layer `filter` on the `category` feature property** — a *visual* filter (pins stay in the GeoJSON
+    source, just hidden), so it needs **no new state on the pin and no source rebuild**, only a filter
+    update. New categories (#162) appear as new toggle rows automatically (the fallback icon already
+    covers unknown categories).
+  - **(b) The show-hidden toggle** — a **peer row** in the same control. On → §2's show-hidden mode (hidden
+    pins re-enter with the distinct treatment); tap a hidden pin → card → **Unhide** (the action row shows
+    Unhide when the place is hidden) → or the undo toast. **No separate Hidden list screen, no bulk
+    unhide** (Rob's ruling) — unhide is per-place via the card in show-hidden mode.
+- **Category-visibility vs hide are DIFFERENT mechanisms [the key distinction].** A category toggle is a
+  transient **view declutter** (a style-layer filter, pins stay in the source); **hide** is an explicit
+  per-place **dismissal** (removed from `features`/the source, §2, + the `hidden_places` row). This is why
+  the **nearby-prompt guard stays hidden-only** (§2, next): because category toggles are a style-layer
+  visual filter, the toggled-off pins **remain in `features`**, so `nearbyPromptCandidate` is **naturally
+  unaffected by category toggles** — and it **should** be (a category toggle is "declutter my view," not
+  "I'm not interested in this place"; being nudged toward a notable nearby museum you filtered out is
+  intended serendipity, distinct from a hidden place). **I concur with Rob's "category toggles do not
+  affect the nearby prompt"** — the style-layer-filter implementation makes it fall out for free; only the
+  explicit hidden-`Set` guard gates the prompt.
 
-- **Recommendation: hide = a MAP-DISCOVERY exclusion, NOT a delete.** A hidden place still exists in the
-  catalog, still belongs to any **list** it was saved to (lists render their members), and is still
-  **findable via search**. Opening a hidden place from search or a list shows its card with **Unhide** —
-  so you can reverse from anywhere you meet it. This parallels the "Fresh snow" map filter and keeps
-  hide ≠ delete. Search results for a hidden place may mark it "hidden" so the state is legible.
+## 4. Hide scope — MAP-ONLY, RULED by Rob (#167, D4)
+
+- **RULED map-only [Q1 confirmed]:** hide = a MAP-DISCOVERY exclusion, **NOT a delete**. A hidden place
+  still exists in the catalog, still belongs to any **list** it was saved to (lists render their members),
+  and is still **findable via search** — search shows it **marked hidden with an Unhide** (per fable's
+  cross-feature note; §B9 search will honour this). Opening a hidden place from search or a list shows its
+  card with **Unhide**, so you can reverse from anywhere you meet it. This parallels the "Fresh snow" map
+  filter and keeps hide ≠ delete — and it fits the **triage** intent (§3): whittle the *map* down, without
+  losing anything.
 - **`saved` + `hidden` precedence:** hide affects the **map**; save affects **list membership**. A place
   you saved then hid is absent from the discovery map but still in your saved list (you explicitly saved
-  it) — both the list and the manage-hidden screen show it; the card offers Unhide. Defined, not an error.
-- **[OPEN — fable/Rob confirm]** This is a product-scope fork (map-only vs also suppress from
-  search/lists). It is **not privacy-adjacent** (hide is local + explicit), so I designed the map-only
-  default rather than block — but flag it: if Rob wants hide to also hide from search/lists, that's a
-  scope expansion (and raises "how do I ever re-find it to unhide?" → the manage screen becomes the only
-  path). Recommend map-only.
+  it); the card offers Unhide. Defined, not an error.
 
 ## 5. Icon system — per-category pins (#166, D5)
 
@@ -181,18 +200,23 @@ taxonomy over the category model that also serves #162's future layers.
 | WP | side | scope | depends on |
 |---|---|---|---|
 | **WP-HIDE** hide state + filter | **app (`ios`)** | `v2` migration `hidden_places`; `setHidden/unhide` writes; in-memory hidden `Set` (hydrate + incremental); `viewportState`/features exclusion (off) + `PinState.hidden` (show mode); card Hide/Unhide action; nearby-prompt exclusion hook | B4 card (built), #151 (built) |
-| **WP-HIDE-UX** manage + undo | **app (`ios`)** | show-hidden map toggle + distinct hidden pin treatment; "Hidden — Undo" toast; manage-hidden screen (unhide, bulk) — aligns with B5 Lists | WP-HIDE |
-| **WP-ICONS** per-category icons | **app (`ios`)** | thread `category` → `MapPlace` → `FeatureEncoding`; `pins-icon` symbol layer + category→SF-Symbol `match` + **fallback**; keep circle/fade/badges | B2 map (built) |
+| **WP-HIDE-UX** Layers control + triage undo | **app (`ios`)** | the map **Layers control** (§3): **(b)** show-hidden toggle row + distinct hidden pin treatment + card Unhide; rapid-triage Hide (card advances/closes) + **"Hidden — Undo" toast**. **NO standalone Hidden screen, no bulk unhide** (Rob's ruling). *(Per-category toggle ROWS render here but the category style-layer filter itself is WP-ICONS.)* | WP-HIDE, WP-ICONS |
+| **WP-ICONS** per-category icons + visibility filter | **app (`ios`)** | thread `category` → `MapPlace` → `FeatureEncoding`; `pins-icon` symbol layer + category→SF-Symbol `match` + **fallback**; keep circle/fade/badges; **the per-category MapLibre style-layer `filter`** that the Layers control's toggle rows drive (visual filter, pins stay in the source) | B2 map (built) |
 
-**Not built (recorded):** #162 layers (taxonomy cap raise + version field + OSM type categories + app
-layer toggles) — the icon fallback makes the app forward-compatible meanwhile.
+**Category-visibility feature — WP boundary (Rob's fold):** the **mechanism** (the `category` style-layer
+`filter`) lands in **WP-ICONS** (it rides the same category threading); the **UI rows** (the toggle list)
+land in **WP-HIDE-UX** (the Layers control), alongside the show-hidden row. Clean split: WP-ICONS owns the
+render+filter substrate, WP-HIDE-UX owns the control surface.
 
-## Open questions (fable/Rob)
+**Not built (recorded):** full **#162** (taxonomy cap raise + version field + OSM type categories in the
+pipeline) — but the per-category *toggle UI* is now shipped by this design (the #162 seam made
+user-facing), and the icon fallback keeps the app forward-compatible when the pipeline adds categories.
 
-1. **Hide scope (§4)** — map-only (recommended) vs also suppress from search/lists. Not privacy-adjacent;
-   designed map-only, flag for confirmation.
-2. **Manage-hidden home** — standalone "Hidden" screen now, or fold into B5 Lists when built? (Recommend
-   standalone until B5.)
+## Resolved questions (Rob ruled 2026-07-17)
+
+1. **Hide scope (§4)** — **RULED map-only** (hide ≠ delete; still in lists/search with Unhide). Triage intent.
+2. **Manage-hidden home** — **RULED: no standalone screen.** Visibility lives in the map **Layers control**
+   (per-category toggles + show-hidden row, §3); unhide via the card in show-hidden mode + undo toast.
 
 ## Gate & acceptance
 
