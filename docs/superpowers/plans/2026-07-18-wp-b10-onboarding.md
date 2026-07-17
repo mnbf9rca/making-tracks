@@ -135,10 +135,16 @@ A short, skippable, paged flow (each step **Skip**-able; a progress dots indicat
     `bytesFetched / bytesToFetch`, `@MainActor`) that **only advances while the app is frontmost**;
     **large packs risk memory pressure + interruption**. State this limit in the offer copy ("keep the
     app open while downloading").
-  - **The real WiFi-preferred BACKGROUND download (survives backgrounding, streams to disk not RAM) is
-    UNBUILT engine work** — a rework of `OfflineRegionDownloader` onto the background `URLSession` +
-    incremental disk writes. **Scope it explicitly as WP-B10d, not a "hook"** (or defer to a WP-B7
-    follow-up). Don't claim background download until it's built.
+  - **The real WiFi-preferred BACKGROUND download is UNBUILT engine work** — scope it as WP-B10d, not a
+    "hook". **The rework (fable's tree-verified evidence):** downloads are **not resumable** today
+    (`downloadCurrentRegion` buffers ALL tiles in RAM, installs once at end, `:950-990`; kill = restart
+    from zero); the `OfflineDownloadSession` background config exists but is **dead-wired** (production
+    uses the foreground ephemeral `HTTPTileFetcher`). Fix = **incremental-persist:** write each
+    **verified** object to the content-addressed store **as it arrives** → an interrupted download
+    **resumes object-granular for FREE** via the existing `updatePlan` skip (no byte-range resume needed);
+    plus **wire the background `URLSession`** + the progress stream. **Adjust failed-install GC** (`:1084,
+    :1281`) to **retain in-progress objects** (else the resume set is GC'd). Don't claim background/
+    resumable download until this is built.
 
 ## 6. About + Settings anchor (D6)
 
