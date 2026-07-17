@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 import UIKit
 import ImageIO
@@ -5,13 +6,50 @@ import MakingTracksCore
 import MakingTracksData
 import MakingTracksTiles
 
+struct ViewportSeed: Sendable {
+    let bbox: BBox
+    let zoom: Int
+
+    var center: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: bbox.center.lat, longitude: bbox.center.lon)
+    }
+
+    static let kl = ViewportSeed(
+        bbox: BBox(minLon: 101.64, minLat: 3.09, maxLon: 101.74, maxLat: 3.19),
+        zoom: 12
+    )
+
+    static let ocean = ViewportSeed(
+        bbox: BBox(minLon: -170, minLat: -10, maxLon: -150, maxLat: 10),
+        zoom: 4
+    )
+
+    static let uk = ViewportSeed(
+        bbox: BBox(minLon: -8.5, minLat: 49.5, maxLon: 2.5, maxLat: 59.5),
+        zoom: 6
+    )
+
+    static func selected(_ value: String?) -> ViewportSeed {
+        switch value {
+        case "ocean":
+            return .ocean
+        case "uk":
+            return .uk
+        default:
+            return .kl
+        }
+    }
+}
+
 struct MapScreen: View {
     let database: AppDatabase
+    let startupViewport: ViewportSeed
     var isFixtureMap = false
 
     @State private var model: MapScreenModel?
+    @State private var worldPMTilesURL: String? = WorldBasemap.pmtilesURL()
     @State private var features: [(MapPlace, PinState)] = []
-    @State private var pmtilesURL: String?
+    @State private var regionPMTilesURL: String?
     @State private var attribution: [Attribution] = []
     @State private var cardPresentation = PlaceCardPresentation()
     @State private var showCredits = false
@@ -24,7 +62,9 @@ struct MapScreen: View {
     var body: some View {
         ZStack {
             MLNMapViewRepresentable(
-                pmtilesURL: pmtilesURL,
+                worldPMTilesURL: worldPMTilesURL,
+                regionPMTilesURL: regionPMTilesURL,
+                startupViewport: startupViewport,
                 features: features,
                 onCameraIdle: { bbox, zoom in
                     Task { @MainActor in
@@ -135,24 +175,20 @@ struct MapScreen: View {
 
     private func start() async {
         if model == nil {
-            model = try? MapScreenModel(
-                database: database,
-                region: "malaysia",
-                fixturePlaces: isFixtureMap ? Self.fixturePlaces : []
-            )
+            model = try? MapScreenModel(database: database, fixturePlaces: isFixtureMap ? Self.fixturePlaces : [])
         }
         await model?.refreshManifest()
-        let nextPMTilesURL = await model?.pmtilesURL
+        let nextRegionPMTilesURL = await model?.pmtilesURL
         let nextAttribution = await model?.attribution ?? []
         let nextLoadState = await model?.loadState ?? .unavailable
         await MainActor.run {
-            pmtilesURL = nextPMTilesURL
+            regionPMTilesURL = nextRegionPMTilesURL
             attribution = nextAttribution
             loadState = nextLoadState
         }
         await refreshViewport(
-            bbox: BBox(minLon: 101.64, minLat: 3.09, maxLon: 101.74, maxLat: 3.19),
-            zoom: 12,
+            bbox: startupViewport.bbox,
+            zoom: startupViewport.zoom,
             requestID: nextViewportRequestID(),
             stateEpoch: currentStateEpoch()
         )
@@ -178,7 +214,7 @@ struct MapScreen: View {
     ) async {
         guard let model else { return }
         let next = await model.features(in: bbox, zoom: zoom)
-        let nextPMTilesURL = await model.pmtilesURL
+        let nextRegionPMTilesURL = await model.pmtilesURL
         let nextAttribution = await model.attribution
         let nextLoadState = await model.loadState
         await MainActor.run {
@@ -186,7 +222,7 @@ struct MapScreen: View {
             if capturedStateEpoch == stateEpoch {
                 features = next
             }
-            pmtilesURL = nextPMTilesURL
+            regionPMTilesURL = nextRegionPMTilesURL
             attribution = nextAttribution
             loadState = nextLoadState
         }
@@ -527,15 +563,18 @@ private struct PlaceCardSheet: View {
     }
 }
 
-private final class MapScreenModel: Sendable {
+@MainActor
+private final class MapScreenModel {
     private let database: AppDatabase
-    private let tileClient: TileClient?
+    private let tileCache: TileCache?
     private let fixturePlaces: [String: PlaceRef]
     private let coreLoop: CoreLoopController
+    private var tileClients: [MapRegion: TileClient] = [:]
+    private var selectedRegion: MapRegion = .malaysia
 
     var changes: AsyncStream<Set<String>> { coreLoop.changes }
 
-    init(database: AppDatabase, region: String, fixturePlaces: [PlaceRef] = []) throws {
+    init(database: AppDatabase, fixturePlaces: [PlaceRef] = []) throws {
         self.database = database
         self.fixturePlaces = Dictionary(uniqueKeysWithValues: fixturePlaces.map { ($0.placeID, $0) })
         coreLoop = CoreLoopController(database: database)
@@ -546,14 +585,15 @@ private final class MapScreenModel: Sendable {
                 appropriateFor: nil,
                 create: true
             ).appendingPathComponent("MakingTracks/Tiles", isDirectory: true)
-            tileClient = try TileClient(region: region, fetcher: HTTPTileFetcher(), cache: TileCache(directory: cacheRoot))
+            tileCache = try TileCache(directory: cacheRoot)
         } else {
-            tileClient = nil
+            tileCache = nil
         }
     }
 
     func refreshManifest() async {
-        try? await tileClient?.refreshPin()
+        guard let client = tileClient(for: selectedRegion) else { return }
+        try? await client.refreshPin()
     }
 
     func features(in bbox: BBox, zoom: Int) async -> [(MapPlace, PinState)] {
@@ -565,8 +605,8 @@ private final class MapScreenModel: Sendable {
                 return (place, states[fixturePlace.placeID] ?? PinState(saved: false, visit: .none))
             }
         }
-        guard let tileClient else { return [] }
-        let places = await tileClient.places(inViewport: bbox, zoom: zoom)
+        guard let client = await selectClient(for: bbox) else { return [] }
+        let places = await client.places(inViewport: bbox, zoom: zoom)
         let ids = places.map(\.id)
         let states = await states(for: Set(ids))
         return places.map { ($0, states[$0.id] ?? PinState(saved: false, visit: .none)) }
@@ -632,7 +672,7 @@ private final class MapScreenModel: Sendable {
             }
             return .tile(fixturePlace)
         }
-        guard let tileClient else { return nil }
+        guard let tileClient = try? tileClient(for: selectedRegion) else { return nil }
         return await PlaceResolver(tile: tileClient, snapshots: database).source(for: placeID)
     }
 
@@ -648,9 +688,9 @@ private final class MapScreenModel: Sendable {
 
     var pmtilesURL: String? {
         get async {
-            guard let tileClient,
-                  let url = await tileClient.basemapURL,
-                  await tileClient.basemapIntegrity != nil
+            guard let client = tileClient(for: selectedRegion),
+                  let url = await client.basemapURL,
+                  await client.basemapIntegrity != nil
             else { return nil }
             return "pmtiles://\(url.absoluteString)"
         }
@@ -658,14 +698,40 @@ private final class MapScreenModel: Sendable {
 
     var attribution: [Attribution] {
         get async {
-            guard let tileClient else {
+            guard let client = tileClient(for: selectedRegion) else {
                 return [Attribution(source: "osm", license: "ODbL-1.0", text: "OSM credit")]
             }
-            return await tileClient.attribution
+            return await client.attribution
         }
     }
 
     var loadState: TileLoadState {
-        get async { await tileClient?.loadState ?? .ok }
+        get async {
+            guard let client = tileClient(for: selectedRegion) else { return .ok }
+            return await client.loadState
+        }
+    }
+
+    private func selectClient(for bbox: BBox) async -> TileClient? {
+        let nextRegion = MapRegion.select(for: bbox, current: selectedRegion)
+        let changed = nextRegion != selectedRegion
+        selectedRegion = nextRegion
+        guard let client = tileClient(for: nextRegion) else { return nil }
+        if changed {
+            try? await client.refreshPin()
+        }
+        return client
+    }
+
+    private func tileClient(for region: MapRegion) -> TileClient? {
+        guard let tileCache else { return nil }
+        if let cached = tileClients[region] {
+            return cached
+        }
+        guard let client = try? TileClient(region: region.rawValue, fetcher: HTTPTileFetcher(), cache: tileCache) else {
+            return nil
+        }
+        tileClients[region] = client
+        return client
     }
 }

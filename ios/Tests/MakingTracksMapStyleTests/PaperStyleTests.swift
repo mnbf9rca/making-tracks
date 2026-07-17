@@ -9,10 +9,10 @@ final class PaperStyleTests: XCTestCase {
         XCTAssertEqual(paperBasemapGlyphsURL, "https://tiles.making-tracks.app/global/fonts/{fontstack}/{range}.pbf")
         XCTAssertEqual(root["glyphs"], .string(paperBasemapGlyphsURL))
         guard case let .object(sources) = root["sources"],
-              case let .object(base) = sources["basemap"]
-        else { return XCTFail("no basemap source") }
-        XCTAssertEqual(base["type"], .string("vector"))
-        if case let .string(url) = base["url"] {
+              case let .object(world) = sources["world"]
+        else { return XCTFail("no world source") }
+        XCTAssertEqual(world["type"], .string("vector"))
+        if case let .string(url) = world["url"] {
             XCTAssertTrue(url.hasPrefix("pmtiles://"))
         } else {
             XCTFail("url")
@@ -25,20 +25,20 @@ final class PaperStyleTests: XCTestCase {
             return false
         })
         XCTAssertEqual(paintValue("background-color", in: layer(id: "background", in: layers)), .string(MapTheme.definedPaper.background))
-        XCTAssertEqual(paintValue("fill-color", in: layer(id: "earth", in: layers)), .string(MapTheme.definedPaper.land))
-        XCTAssertEqual(paintValue("fill-color", in: layer(id: "parks", in: layers)), .string(MapTheme.definedPaper.parks))
-        XCTAssertEqual(paintValue("fill-color", in: layer(id: "water", in: layers)), .string(MapTheme.definedPaper.water))
-        XCTAssertEqual(paintValue("line-color", in: layer(id: "roads", in: layers)), .string(MapTheme.definedPaper.roads))
-        XCTAssertEqual(paintValue("line-color", in: layer(id: "boundaries", in: layers)), .string(MapTheme.definedPaper.boundaries))
-        XCTAssertEqual(paintValue("text-color", in: layer(id: "places-label", in: layers)), .string(MapTheme.definedPaper.labels))
-        XCTAssertEqual(paintValue("text-halo-color", in: layer(id: "places-label", in: layers)), .string(MapTheme.definedPaper.labelHalo))
-        XCTAssertEqual(layer(id: "earth", in: layers)?["source-layer"], .string("earth"))
-        XCTAssertEqual(layer(id: "parks", in: layers)?["source-layer"], .string("landuse"))
-        XCTAssertEqual(layer(id: "water", in: layers)?["source-layer"], .string("water"))
-        XCTAssertEqual(layer(id: "roads", in: layers)?["source-layer"], .string("roads"))
-        XCTAssertEqual(layer(id: "boundaries", in: layers)?["source-layer"], .string("boundaries"))
-        XCTAssertEqual(layer(id: "places-label", in: layers)?["source-layer"], .string("places"))
-        XCTAssertEqual(layoutValue("text-font", in: layer(id: "places-label", in: layers)), .array([.string("Noto Sans Regular")]))
+        XCTAssertEqual(paintValue("fill-color", in: layer(id: "world-earth", in: layers)), .string(MapTheme.definedPaper.land))
+        XCTAssertEqual(paintValue("fill-color", in: layer(id: "world-parks", in: layers)), .string(MapTheme.definedPaper.parks))
+        XCTAssertEqual(paintValue("fill-color", in: layer(id: "world-water", in: layers)), .string(MapTheme.definedPaper.water))
+        XCTAssertEqual(paintValue("line-color", in: layer(id: "world-roads", in: layers)), .string(MapTheme.definedPaper.roads))
+        XCTAssertEqual(paintValue("line-color", in: layer(id: "world-boundaries", in: layers)), .string(MapTheme.definedPaper.boundaries))
+        XCTAssertEqual(paintValue("text-color", in: layer(id: "world-places-label", in: layers)), .string(MapTheme.definedPaper.labels))
+        XCTAssertEqual(paintValue("text-halo-color", in: layer(id: "world-places-label", in: layers)), .string(MapTheme.definedPaper.labelHalo))
+        XCTAssertEqual(layer(id: "world-earth", in: layers)?["source-layer"], .string("earth"))
+        XCTAssertEqual(layer(id: "world-parks", in: layers)?["source-layer"], .string("landuse"))
+        XCTAssertEqual(layer(id: "world-water", in: layers)?["source-layer"], .string("water"))
+        XCTAssertEqual(layer(id: "world-roads", in: layers)?["source-layer"], .string("roads"))
+        XCTAssertEqual(layer(id: "world-boundaries", in: layers)?["source-layer"], .string("boundaries"))
+        XCTAssertEqual(layer(id: "world-places-label", in: layers)?["source-layer"], .string("places"))
+        XCTAssertEqual(layoutValue("text-font", in: layer(id: "world-places-label", in: layers)), .array([.string("Noto Sans Regular")]))
         XCTAssertNoThrow(try style.jsonString())
     }
 
@@ -48,16 +48,16 @@ final class PaperStyleTests: XCTestCase {
               case let .array(layers) = root["layers"]
         else { return XCTFail("no layers") }
         XCTAssertNil(root["glyphs"])
-        XCTAssertEqual(layerIDs(in: layers), ["background", "earth", "water", "roads", "boundaries"])
+        XCTAssertEqual(layerIDs(in: layers), ["background", "world-earth", "world-water", "world-roads", "world-boundaries"])
         XCTAssertEqual(paintValue("background-color", in: layer(id: "background", in: layers)), .string(MapTheme.snow.background))
-        XCTAssertEqual(paintValue("fill-color", in: layer(id: "earth", in: layers)), .string(MapTheme.snow.land))
-        XCTAssertEqual(paintValue("fill-color", in: layer(id: "water", in: layers)), .string(MapTheme.snow.water))
-        XCTAssertEqual(paintValue("line-color", in: layer(id: "roads", in: layers)), .string(MapTheme.snow.roads))
-        XCTAssertEqual(paintValue("line-width", in: layer(id: "roads", in: layers)), .double(MapTheme.snow.roadWidth))
-        XCTAssertEqual(paintValue("line-color", in: layer(id: "boundaries", in: layers)), .string(MapTheme.snow.boundaries))
-        XCTAssertEqual(paintValue("line-width", in: layer(id: "boundaries", in: layers)), .double(MapTheme.snow.boundaryWidth))
-        XCTAssertNil(layer(id: "parks", in: layers))
-        XCTAssertNil(layer(id: "places-label", in: layers))
+        XCTAssertEqual(paintValue("fill-color", in: layer(id: "world-earth", in: layers)), .string(MapTheme.snow.land))
+        XCTAssertEqual(paintValue("fill-color", in: layer(id: "world-water", in: layers)), .string(MapTheme.snow.water))
+        XCTAssertEqual(paintValue("line-color", in: layer(id: "world-roads", in: layers)), .string(MapTheme.snow.roads))
+        XCTAssertEqual(paintValue("line-width", in: layer(id: "world-roads", in: layers)), .double(MapTheme.snow.roadWidth))
+        XCTAssertEqual(paintValue("line-color", in: layer(id: "world-boundaries", in: layers)), .string(MapTheme.snow.boundaries))
+        XCTAssertEqual(paintValue("line-width", in: layer(id: "world-boundaries", in: layers)), .double(MapTheme.snow.boundaryWidth))
+        XCTAssertNil(layer(id: "world-parks", in: layers))
+        XCTAssertNil(layer(id: "world-places-label", in: layers))
     }
 
     func testEveryThemeEmitsExpectedLayerStructure() throws {
@@ -65,7 +65,7 @@ final class PaperStyleTests: XCTestCase {
             let style = paperBasemapStyle(pmtilesURL: "pmtiles://https://tiles.making-tracks.app/malaysia/current.pmtiles", theme: theme)
             guard case let .object(root) = style,
                   case let .object(sources) = root["sources"],
-                  case let .object(base) = sources["basemap"],
+                  case let .object(world) = sources["world"],
                   case let .array(layers) = root["layers"]
             else { return XCTFail("invalid root for theme \(theme.id)") }
 
@@ -74,16 +74,16 @@ final class PaperStyleTests: XCTestCase {
             } else {
                 XCTAssertNil(root["glyphs"], theme.id)
             }
-            XCTAssertEqual(base["type"], .string("vector"), theme.id)
-            XCTAssertEqual(base["url"], .string("pmtiles://https://tiles.making-tracks.app/malaysia/current.pmtiles"), theme.id)
+            XCTAssertEqual(world["type"], .string("vector"), theme.id)
+            XCTAssertEqual(world["url"], .string("pmtiles://https://tiles.making-tracks.app/malaysia/current.pmtiles"), theme.id)
 
-            var expectedLayerIDs = ["background", "earth"]
+            var expectedLayerIDs = ["background", "world-earth"]
             if theme.showsParks {
-                expectedLayerIDs.append("parks")
+                expectedLayerIDs.append("world-parks")
             }
-            expectedLayerIDs += ["water", "roads", "boundaries"]
+            expectedLayerIDs += ["world-water", "world-roads", "world-boundaries"]
             if theme.showsLabels {
-                expectedLayerIDs.append("places-label")
+                expectedLayerIDs.append("world-places-label")
             }
             XCTAssertEqual(layerIDs(in: layers), expectedLayerIDs, theme.id)
 
@@ -91,43 +91,71 @@ final class PaperStyleTests: XCTestCase {
             XCTAssertNil(layer(id: "background", in: layers)?["source"], theme.id)
             XCTAssertNil(layer(id: "background", in: layers)?["source-layer"], theme.id)
 
-            XCTAssertEqual(layer(id: "earth", in: layers)?["source"], .string("basemap"), theme.id)
-            XCTAssertEqual(layer(id: "earth", in: layers)?["source-layer"], .string("earth"), theme.id)
-            XCTAssertEqual(layer(id: "water", in: layers)?["source"], .string("basemap"), theme.id)
-            XCTAssertEqual(layer(id: "water", in: layers)?["source-layer"], .string("water"), theme.id)
-            XCTAssertEqual(layer(id: "roads", in: layers)?["source"], .string("basemap"), theme.id)
-            XCTAssertEqual(layer(id: "roads", in: layers)?["source-layer"], .string("roads"), theme.id)
-            XCTAssertEqual(layer(id: "boundaries", in: layers)?["source"], .string("basemap"), theme.id)
-            XCTAssertEqual(layer(id: "boundaries", in: layers)?["source-layer"], .string("boundaries"), theme.id)
-            XCTAssertEqual(paintValue("line-width", in: layer(id: "roads", in: layers)), .double(theme.roadWidth), theme.id)
-            XCTAssertEqual(paintValue("line-width", in: layer(id: "boundaries", in: layers)), .double(theme.boundaryWidth), theme.id)
+            XCTAssertEqual(layer(id: "world-earth", in: layers)?["source"], .string("world"), theme.id)
+            XCTAssertEqual(layer(id: "world-earth", in: layers)?["source-layer"], .string("earth"), theme.id)
+            XCTAssertEqual(layer(id: "world-water", in: layers)?["source"], .string("world"), theme.id)
+            XCTAssertEqual(layer(id: "world-water", in: layers)?["source-layer"], .string("water"), theme.id)
+            XCTAssertEqual(layer(id: "world-roads", in: layers)?["source"], .string("world"), theme.id)
+            XCTAssertEqual(layer(id: "world-roads", in: layers)?["source-layer"], .string("roads"), theme.id)
+            XCTAssertEqual(layer(id: "world-boundaries", in: layers)?["source"], .string("world"), theme.id)
+            XCTAssertEqual(layer(id: "world-boundaries", in: layers)?["source-layer"], .string("boundaries"), theme.id)
+            XCTAssertEqual(paintValue("line-width", in: layer(id: "world-roads", in: layers)), .double(theme.roadWidth), theme.id)
+            XCTAssertEqual(paintValue("line-width", in: layer(id: "world-boundaries", in: layers)), .double(theme.boundaryWidth), theme.id)
 
             if theme.showsParks {
-                XCTAssertEqual(layer(id: "parks", in: layers)?["source"], .string("basemap"), theme.id)
-                XCTAssertEqual(layer(id: "parks", in: layers)?["source-layer"], .string("landuse"), theme.id)
-                XCTAssertEqual(layer(id: "parks", in: layers)?["filter"], expectedParksFilter, theme.id)
+                XCTAssertEqual(layer(id: "world-parks", in: layers)?["source"], .string("world"), theme.id)
+                XCTAssertEqual(layer(id: "world-parks", in: layers)?["source-layer"], .string("landuse"), theme.id)
+                XCTAssertEqual(layer(id: "world-parks", in: layers)?["filter"], expectedParksFilter, theme.id)
             } else {
-                XCTAssertNil(layer(id: "parks", in: layers), theme.id)
+                XCTAssertNil(layer(id: "world-parks", in: layers), theme.id)
             }
 
             if theme.showsLabels {
-                XCTAssertEqual(layer(id: "places-label", in: layers)?["type"], .string("symbol"), theme.id)
-                XCTAssertEqual(layer(id: "places-label", in: layers)?["source"], .string("basemap"), theme.id)
-                XCTAssertEqual(layer(id: "places-label", in: layers)?["source-layer"], .string("places"), theme.id)
-                XCTAssertEqual(layer(id: "places-label", in: layers)?["minzoom"], .double(8), theme.id)
-                XCTAssertEqual(layoutValue("text-field", in: layer(id: "places-label", in: layers)), expectedLabelTextField, theme.id)
-                XCTAssertEqual(layoutValue("text-font", in: layer(id: "places-label", in: layers)), .array([.string("Noto Sans Regular")]), theme.id)
-                XCTAssertEqual(layoutValue("text-size", in: layer(id: "places-label", in: layers)), expectedLabelTextSize, theme.id)
-                XCTAssertEqual(layoutValue("text-allow-overlap", in: layer(id: "places-label", in: layers)), .bool(false), theme.id)
-                XCTAssertEqual(layoutValue("text-ignore-placement", in: layer(id: "places-label", in: layers)), .bool(false), theme.id)
-                XCTAssertEqual(paintValue("text-color", in: layer(id: "places-label", in: layers)), .string(theme.labels), theme.id)
-                XCTAssertEqual(paintValue("text-halo-color", in: layer(id: "places-label", in: layers)), .string(theme.labelHalo), theme.id)
-                XCTAssertEqual(paintValue("text-halo-width", in: layer(id: "places-label", in: layers)), .double(1.25), theme.id)
+                XCTAssertEqual(layer(id: "world-places-label", in: layers)?["type"], .string("symbol"), theme.id)
+                XCTAssertEqual(layer(id: "world-places-label", in: layers)?["source"], .string("world"), theme.id)
+                XCTAssertEqual(layer(id: "world-places-label", in: layers)?["source-layer"], .string("places"), theme.id)
+                XCTAssertEqual(layer(id: "world-places-label", in: layers)?["minzoom"], .double(8), theme.id)
+                XCTAssertEqual(layoutValue("text-field", in: layer(id: "world-places-label", in: layers)), expectedLabelTextField, theme.id)
+                XCTAssertEqual(layoutValue("text-font", in: layer(id: "world-places-label", in: layers)), .array([.string("Noto Sans Regular")]), theme.id)
+                XCTAssertEqual(layoutValue("text-size", in: layer(id: "world-places-label", in: layers)), expectedLabelTextSize, theme.id)
+                XCTAssertEqual(layoutValue("text-allow-overlap", in: layer(id: "world-places-label", in: layers)), .bool(false), theme.id)
+                XCTAssertEqual(layoutValue("text-ignore-placement", in: layer(id: "world-places-label", in: layers)), .bool(false), theme.id)
+                XCTAssertEqual(paintValue("text-color", in: layer(id: "world-places-label", in: layers)), .string(theme.labels), theme.id)
+                XCTAssertEqual(paintValue("text-halo-color", in: layer(id: "world-places-label", in: layers)), .string(theme.labelHalo), theme.id)
+                XCTAssertEqual(paintValue("text-halo-width", in: layer(id: "world-places-label", in: layers)), .double(1.25), theme.id)
             } else {
-                XCTAssertNil(layer(id: "places-label", in: layers), theme.id)
+                XCTAssertNil(layer(id: "world-places-label", in: layers), theme.id)
             }
             XCTAssertNoThrow(try style.jsonString(), theme.id)
         }
+    }
+
+    func testStackedWorldAndRegionSourcesUseTheSameThemeTokens() throws {
+        let style = paperBasemapStyle(
+            worldPMTilesURL: "pmtiles://https://tiles.making-tracks.app/global/protomaps-20260714-z0-6.pmtiles",
+            regionPMTilesURL: "pmtiles://https://tiles.making-tracks.app/malaysia/20260716T155409Z/malaysia.pmtiles"
+        )
+        guard case let .object(root) = style,
+              case let .object(sources) = root["sources"],
+              case let .object(world) = sources["world"],
+              case let .object(region) = sources["region"],
+              case let .array(layers) = root["layers"]
+        else { return XCTFail("stacked style shape") }
+
+        XCTAssertEqual(world["type"], .string("vector"))
+        XCTAssertEqual(region["type"], .string("vector"))
+        for id in [
+            "background",
+            "world-earth", "world-parks", "world-water", "world-roads", "world-boundaries", "world-places-label",
+            "region-earth", "region-parks", "region-water", "region-roads", "region-boundaries", "region-places-label",
+        ] {
+            XCTAssertNotNil(layer(id: id, in: layers), id)
+        }
+        XCTAssertEqual(paintValue("fill-color", in: layer(id: "region-earth", in: layers)), .string(MapTheme.definedPaper.land))
+        XCTAssertEqual(paintValue("fill-color", in: layer(id: "region-parks", in: layers)), .string(MapTheme.definedPaper.parks))
+        XCTAssertEqual(paintValue("fill-color", in: layer(id: "region-water", in: layers)), .string(MapTheme.definedPaper.water))
+        XCTAssertEqual(paintValue("line-color", in: layer(id: "region-roads", in: layers)), .string(MapTheme.definedPaper.roads))
+        XCTAssertEqual(paintValue("line-color", in: layer(id: "region-boundaries", in: layers)), .string(MapTheme.definedPaper.boundaries))
     }
 
     func testEveryPaletteColourIsMutedAndPinIsSaturated() {

@@ -142,6 +142,34 @@ public struct MapTheme: Sendable {
     }
 }
 
+private struct PaperPalette: Sendable {
+    var background: String
+    var land: String
+    var parks: String
+    var water: String
+    var roads: String
+    var boundaries: String
+    var labels: String
+    var labelHalo: String
+
+    init(theme: MapTheme) {
+        self.background = theme.background
+        self.land = theme.land
+        self.parks = theme.parks
+        self.water = theme.water
+        self.roads = theme.roads
+        self.boundaries = theme.boundaries
+        self.labels = theme.labels
+        self.labelHalo = theme.labelHalo
+    }
+}
+
+private extension MapTheme {
+    var paperPalette: PaperPalette {
+        PaperPalette(theme: self)
+    }
+}
+
 private func layer(
     _ id: String,
     _ type: String,
@@ -175,72 +203,113 @@ private func layer(
     return .object(object)
 }
 
-public func paperBasemapStyle(pmtilesURL: String, theme: MapTheme = .definedPaper) -> JSONValue {
+private func parksFilter() -> JSONValue {
+    .array([
+        .string("in"),
+        .array([.string("get"), .string("kind")]),
+        .array([.string("literal"), .array([
+            .string("park"),
+            .string("nature_reserve"),
+            .string("forest"),
+            .string("wood"),
+            .string("grass"),
+            .string("garden"),
+            .string("cemetery"),
+        ])]),
+    ])
+}
+
+private func labelTextField() -> JSONValue {
+    .array([
+        .string("coalesce"),
+        .array([.string("get"), .string("name:en")]),
+        .array([.string("get"), .string("name")]),
+    ])
+}
+
+private func labelTextSize() -> JSONValue {
+    .array([
+        .string("interpolate"),
+        .array([.string("linear")]),
+        .array([.string("zoom")]),
+        .double(8), .double(10),
+        .double(14), .double(14),
+    ])
+}
+
+private func basemapLayers(sourceID: String, prefix: String, theme: MapTheme) -> [JSONValue] {
+    let palette = theme.paperPalette
     var layers: [JSONValue] = [
-        layer("background", "background", paint: ["background-color": .string(theme.background)]),
-        layer("earth", "fill", source: "basemap", sourceLayer: "earth", paint: ["fill-color": .string(theme.land)]),
+        layer("\(prefix)-earth", "fill", source: sourceID, sourceLayer: "earth", paint: ["fill-color": .string(palette.land)]),
     ]
 
     if theme.showsParks {
-        layers.append(layer("parks", "fill", source: "basemap", sourceLayer: "landuse", filter: .array([
-            .string("in"),
-            .array([.string("get"), .string("kind")]),
-            .array([.string("literal"), .array([
-                .string("park"),
-                .string("nature_reserve"),
-                .string("forest"),
-                .string("wood"),
-                .string("grass"),
-                .string("garden"),
-                .string("cemetery"),
-            ])]),
-        ]), paint: ["fill-color": .string(theme.parks)]))
+        layers.append(layer("\(prefix)-parks", "fill", source: sourceID, sourceLayer: "landuse", filter: parksFilter(), paint: [
+            "fill-color": .string(palette.parks),
+        ]))
     }
 
     layers.append(contentsOf: [
-        layer("water", "fill", source: "basemap", sourceLayer: "water", paint: ["fill-color": .string(theme.water)]),
-        layer("roads", "line", source: "basemap", sourceLayer: "roads", paint: [
-            "line-color": .string(theme.roads),
+        layer("\(prefix)-water", "fill", source: sourceID, sourceLayer: "water", paint: ["fill-color": .string(palette.water)]),
+        layer("\(prefix)-roads", "line", source: sourceID, sourceLayer: "roads", paint: [
+            "line-color": .string(palette.roads),
             "line-width": .double(theme.roadWidth),
         ]),
-        layer("boundaries", "line", source: "basemap", sourceLayer: "boundaries", paint: [
-            "line-color": .string(theme.boundaries),
+        layer("\(prefix)-boundaries", "line", source: sourceID, sourceLayer: "boundaries", paint: [
+            "line-color": .string(palette.boundaries),
             "line-width": .double(theme.boundaryWidth),
         ]),
     ])
 
     if theme.showsLabels {
-        layers.append(layer("places-label", "symbol", source: "basemap", sourceLayer: "places", minzoom: 8, layout: [
-            "text-field": .array([
-                .string("coalesce"),
-                .array([.string("get"), .string("name:en")]),
-                .array([.string("get"), .string("name")]),
-            ]),
+        layers.append(layer("\(prefix)-places-label", "symbol", source: sourceID, sourceLayer: "places", minzoom: 8, layout: [
+            "text-field": labelTextField(),
             "text-font": .array([.string("Noto Sans Regular")]),
-            "text-size": .array([
-                .string("interpolate"),
-                .array([.string("linear")]),
-                .array([.string("zoom")]),
-                .double(8), .double(10),
-                .double(14), .double(14),
-            ]),
+            "text-size": labelTextSize(),
             "text-allow-overlap": .bool(false),
             "text-ignore-placement": .bool(false),
         ], paint: [
-            "text-color": .string(theme.labels),
-            "text-halo-color": .string(theme.labelHalo),
+            "text-color": .string(palette.labels),
+            "text-halo-color": .string(palette.labelHalo),
             "text-halo-width": .double(1.25),
         ]))
     }
 
+    return layers
+}
+
+public func paperBasemapStyle(pmtilesURL: String, theme: MapTheme = .definedPaper) -> JSONValue {
+    paperBasemapStyle(worldPMTilesURL: pmtilesURL, regionPMTilesURL: nil, theme: theme)
+}
+
+public func paperBasemapStyle(worldPMTilesURL: String?, regionPMTilesURL: String?, theme: MapTheme = .definedPaper) -> JSONValue {
+    var sources: [String: JSONValue] = [:]
+    if let worldPMTilesURL {
+        sources["world"] = .object([
+            "type": .string("vector"),
+            "url": .string(worldPMTilesURL),
+        ])
+    }
+    if let regionPMTilesURL {
+        sources["region"] = .object([
+            "type": .string("vector"),
+            "url": .string(regionPMTilesURL),
+        ])
+    }
+
+    var layers: [JSONValue] = [
+        layer("background", "background", paint: ["background-color": .string(theme.background)]),
+    ]
+    if worldPMTilesURL != nil {
+        layers.append(contentsOf: basemapLayers(sourceID: "world", prefix: "world", theme: theme))
+    }
+    if regionPMTilesURL != nil {
+        layers.append(contentsOf: basemapLayers(sourceID: "region", prefix: "region", theme: theme))
+    }
+
     var root: [String: JSONValue] = [
         "version": .double(8),
-        "sources": .object([
-            "basemap": .object([
-                "type": .string("vector"),
-                "url": .string(pmtilesURL),
-            ]),
-        ]),
+        "sources": .object(sources),
         "layers": .array(layers),
     ]
     if theme.showsLabels {
