@@ -41,3 +41,17 @@ def test_region_config_rejects_pageview_windows_over_props_budget(contracts_root
     cfg = json.loads((contracts_root / "regions/malaysia.json").read_text())
     cfg["pageviews"]["months"] = 13
     assert not is_valid("region-config", cfg)
+
+
+def test_region_config_accepts_zone_level_and_prune_list_contract(contracts_root):
+    cfg = json.loads((contracts_root / "regions/uk.json").read_text())
+    cfg["zone_levels"] = {"2": "country", "4": "region", "6": "county"}
+    cfg["zone_allowlist"] = ["osm_r100", "wd_q145"]
+    validate_instance("region-config", cfg)
+
+
+def test_region_config_rejects_name_derived_zone_allowlist_ids(contracts_root):
+    cfg = json.loads((contracts_root / "regions/uk.json").read_text())
+    cfg["zone_levels"] = {"2": "country"}
+    cfg["zone_allowlist"] = ["South East England"]
+    assert not is_valid("region-config", cfg)

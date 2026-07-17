@@ -54,6 +54,8 @@ def test_region_config_accessors_load_valid_configs():
         "languages",
         "sources",
         "pageviews",
+        "zone_levels",
+        "zone_allowlist",
         "basemap",
     }
 

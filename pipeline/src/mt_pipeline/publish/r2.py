@@ -27,6 +27,9 @@ _PUBLIC_KINDS = {
     "description",
     "thumb",
     "basemap",
+    "zone_catalog",
+    "zone_catalog_proposal",
+    "pack_descriptor",
     "manifest",
     "current",
     "region_index",
@@ -169,6 +172,13 @@ class PublishPlan:
             )
         ops.append(
             PublishOp(
+                kind="pack_descriptor",
+                bucket=public,
+                key=f"{region}/{publish_version}/pack-descriptor.json",
+            )
+        )
+        ops.append(
+            PublishOp(
                 kind="manifest",
                 bucket=public,
                 key=f"{region}/{publish_version}/manifest.json",
@@ -268,7 +278,9 @@ def publish_to_r2(
     lock_etag = _acquire_lock(client, layout, region, publish_version, lock_key)
     uploaded = 0
     try:
-        for op in plan.ops:
+        _assert_not_live(client, layout, region, publish_version)
+        _assert_prefix_absent(client, layout, region, publish_version)
+        for op in _ordered_ops_for_visibility(plan.ops):
             _upload_op(client, op)
             uploaded += 1
     finally:
@@ -308,6 +320,10 @@ def publish_prepared_to_r2(
             etag = _acquire_lock(client, layout, lock_region, lock_version, lock_key)
             acquired.append((lock_key, etag))
 
+        for plan in plan_list:
+            _assert_not_live(client, layout, plan.region, plan.publish_version)
+            _assert_prefix_absent(client, layout, plan.region, plan.publish_version)
+
         region_index_op = _region_index_op_for_upload(
             client, layout, region_index_path
         )
@@ -318,7 +334,17 @@ def publish_prepared_to_r2(
             op
             for plan in plan_list
             for op in plan.ops
-            if op.kind in {"image", "description", "tile", "basemap", "manifest"}
+            if op.kind
+            in {
+                "image",
+                "description",
+                "tile",
+                "basemap",
+                "zone_catalog_proposal",
+                "zone_catalog",
+                "pack_descriptor",
+                "manifest",
+            }
         ]
         current_ops = [
             op for plan in plan_list for op in plan.ops if op.kind == "current"
@@ -326,7 +352,7 @@ def publish_prepared_to_r2(
         private_ops = [
             op for plan in plan_list for op in plan.ops if op.kind in _PRIVATE_KINDS
         ]
-        for op in [*thumb_content, *public_content, *current_ops, region_index_op, *private_ops]:
+        for op in [*thumb_content, *public_content, *private_ops, *current_ops, region_index_op]:
             _upload_op(client, op)
     finally:
         for lock_key, etag in reversed(acquired):
@@ -417,15 +443,56 @@ def _upload_op(client, op: PublishOp) -> None:
     if op.kind == "thumb":
         body = _op_body_bytes(op)
         _validate_thumb_body(op.key, body)
-        client.put_object(Bucket=op.bucket, Key=op.key, Body=body, IfNoneMatch="*")
+        try:
+            client.put_object(Bucket=op.bucket, Key=op.key, Body=body, IfNoneMatch="*")
+        except Exception as exc:
+            if _is_precondition_failed(exc):
+                return
+            raise
         return
     if op.body is not None:
-        client.put_object(Bucket=op.bucket, Key=op.key, Body=op.body)
+        client.put_object(
+            Bucket=op.bucket,
+            Key=op.key,
+            Body=op.body,
+            **_immutable_write_kwargs(op),
+        )
         return
     if op.source_path is None:
         raise ValueError(f"publish op {op.kind!r} has no body or source_path")
     with op.source_path.open("rb") as body:
-        client.put_object(Bucket=op.bucket, Key=op.key, Body=body)
+        client.put_object(
+            Bucket=op.bucket,
+            Key=op.key,
+            Body=body,
+            **_immutable_write_kwargs(op),
+        )
+
+
+def _immutable_write_kwargs(op: PublishOp) -> dict[str, str]:
+    return {"IfNoneMatch": "*"} if _is_immutable_public_object(op) else {}
+
+
+def _is_immutable_public_object(op: PublishOp) -> bool:
+    return op.kind in {
+        "image",
+        "description",
+        "tile",
+        "basemap",
+        "zone_catalog_proposal",
+        "zone_catalog",
+        "pack_descriptor",
+        "manifest",
+    }
+
+
+def _ordered_ops_for_visibility(ops: Iterable[PublishOp]) -> list[PublishOp]:
+    private_ops = [op for op in ops if op.kind in _PRIVATE_KINDS]
+    current_ops = [op for op in ops if op.kind == "current"]
+    public_ops = [
+        op for op in ops if op.kind not in _PRIVATE_KINDS and op.kind != "current"
+    ]
+    return [*public_ops, *private_ops, *current_ops]
 
 
 def _op_body_bytes(op: PublishOp) -> bytes:
@@ -456,7 +523,16 @@ def _plan_from_staging(
     region = staging.parent.name
     publish_version = staging.name
     validate_path_components(region, publish_version)
-    thumb_ops, image_ops, description_ops, tile_ops, basemap_op, manifest_op = _ops_from_staging(
+    (
+        thumb_ops,
+        image_ops,
+        description_ops,
+        tile_ops,
+        basemap_op,
+        zone_catalog_ops,
+        pack_descriptor_op,
+        manifest_op,
+    ) = _ops_from_staging(
         staging, layout, region, publish_version
     )
     ops = [
@@ -465,6 +541,8 @@ def _plan_from_staging(
         *description_ops,
         *tile_ops,
         basemap_op,
+        *zone_catalog_ops,
+        pack_descriptor_op,
         manifest_op,
         _current_op(layout, region, publish_version),
     ]
@@ -574,6 +652,8 @@ def _ops_from_staging(
     list[PublishOp],
     list[PublishOp],
     PublishOp,
+    list[PublishOp],
+    PublishOp,
     PublishOp,
 ]:
     public = str(layout["public_bucket"])
@@ -620,6 +700,28 @@ def _ops_from_staging(
         for path in sorted((staging / "tiles/10").glob("*/*.json.gz"))
     ]
     basemap = staging / f"{region}.pmtiles"
+    zone_catalog_ops = []
+    proposal = staging / "zone-catalog.proposal.json"
+    if proposal.exists():
+        zone_catalog_ops.append(
+            PublishOp(
+                kind="zone_catalog_proposal",
+                bucket=public,
+                key=f"{region}/{publish_version}/zone-catalog.proposal.json",
+                source_path=proposal,
+            )
+        )
+    catalog = staging / "zone-catalog.json"
+    if catalog.exists():
+        zone_catalog_ops.append(
+            PublishOp(
+                kind="zone_catalog",
+                bucket=public,
+                key=f"{region}/{publish_version}/zone-catalog.json",
+                source_path=catalog,
+            )
+        )
+    pack_descriptor = staging / "pack-descriptor.json"
     manifest = staging / "manifest.json"
     return (
         thumb_ops,
@@ -627,6 +729,8 @@ def _ops_from_staging(
         description_ops,
         tile_ops,
         PublishOp(kind="basemap", bucket=public, key=f"{region}/{publish_version}/{region}.pmtiles", source_path=basemap),
+        zone_catalog_ops,
+        PublishOp(kind="pack_descriptor", bucket=public, key=f"{region}/{publish_version}/pack-descriptor.json", source_path=pack_descriptor),
         PublishOp(kind="manifest", bucket=public, key=f"{region}/{publish_version}/manifest.json", source_path=manifest),
     )
 

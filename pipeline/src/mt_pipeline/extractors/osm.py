@@ -10,6 +10,9 @@ import re
 
 import osmium
 
+import mt_contracts
+
+from .. import store
 from .. import source_record
 
 MAX_TAGS_PER_FEATURE = 200
@@ -18,7 +21,13 @@ MAX_TAG_VAL_LEN = 300
 MAX_NAME_LEN = 300
 MAX_QID_LEN = 24
 MAX_CANDIDATE_RECORDS = 5_000_000
+MAX_BOUNDARY_RECORDS = 50_000
+MAX_BOUNDARY_TRANSLATIONS = 32
+MAX_BOUNDARY_RINGS = 256
+MAX_BOUNDARY_POINTS = 200_000
+MAX_BOUNDARY_GEOMETRY_BYTES = 8 * 1024 * 1024
 MAX_SIDECAR_BYTES = 64 * 1024
+_LANG_RE = re.compile(r"^[a-z]{2,3}$")
 
 _log = logging.getLogger(__name__)
 
@@ -33,6 +42,14 @@ class OsmParseError(Exception):
 
 class TooManyCandidatesError(Exception):
     """Candidate count exceeded the extractor's bounded-memory ceiling."""
+
+
+class TooManyBoundariesError(Exception):
+    """Boundary count exceeded the extractor's bounded-memory ceiling."""
+
+
+class BoundaryGeometryTooLargeError(ValueError):
+    """Boundary geometry exceeded per-feature safety limits."""
 
 
 def load_tag_config(path) -> dict:
@@ -183,6 +200,112 @@ class _CandidateHandler(osmium.SimpleHandler):
             )
 
 
+def _clean_text(value, *, max_len: int = MAX_NAME_LEN) -> str:
+    return mt_contracts.strip_unsafe_text(" ".join(str(value).split())).strip()[:max_len]
+
+
+def _ring_coordinates(ring) -> list[list[float]]:
+    coords = [[float(node.lon), float(node.lat)] for node in ring]
+    if len(coords) < 4:
+        return []
+    if coords[0] != coords[-1]:
+        coords.append(coords[0])
+    return coords
+
+
+class _BoundaryHandler(osmium.SimpleHandler):
+    def __init__(self, zone_levels: dict[int, str]) -> None:
+        super().__init__()
+        self.zone_levels = zone_levels
+        self.rows: dict[str, dict] = {}
+        self.dropped = 0
+
+    def area(self, area) -> None:
+        try:
+            if area.from_way():
+                return
+            props = _bounded_props(area)
+            if props.get("boundary") != "administrative":
+                return
+            try:
+                admin_level = int(props.get("admin_level", ""))
+            except ValueError:
+                return
+            level_name = self.zone_levels.get(admin_level)
+            if level_name is None:
+                return
+            relation_id = int(area.orig_id())
+            zone_id = f"osm_r{relation_id}"
+            name = _clean_text(props.get("name", ""))
+            if not name:
+                return
+            polygons = []
+            xs: list[float] = []
+            ys: list[float] = []
+            ring_count = 0
+            point_count = 0
+            for ring in area.outer_rings():
+                coords = _ring_coordinates(ring)
+                if not coords:
+                    continue
+                ring_count += 1
+                point_count += len(coords)
+                polygon = [coords]
+                for inner in area.inner_rings(ring):
+                    inner_coords = _ring_coordinates(inner)
+                    if inner_coords:
+                        ring_count += 1
+                        point_count += len(inner_coords)
+                        polygon.append(inner_coords)
+                    if ring_count > MAX_BOUNDARY_RINGS or point_count > MAX_BOUNDARY_POINTS:
+                        raise BoundaryGeometryTooLargeError("boundary geometry exceeds ring/point caps")
+                polygons.append(polygon)
+                xs.extend(point[0] for point in coords)
+                ys.extend(point[1] for point in coords)
+                if ring_count > MAX_BOUNDARY_RINGS or point_count > MAX_BOUNDARY_POINTS:
+                    raise BoundaryGeometryTooLargeError("boundary geometry exceeds ring/point caps")
+            if not polygons:
+                return
+            geometry = {"type": "MultiPolygon", "coordinates": polygons}
+            if len(json.dumps(geometry, separators=(",", ":"))) > MAX_BOUNDARY_GEOMETRY_BYTES:
+                raise BoundaryGeometryTooLargeError("boundary geometry exceeds serialized byte cap")
+            if len(self.rows) >= MAX_BOUNDARY_RECORDS:
+                raise TooManyBoundariesError(f"exceeded {MAX_BOUNDARY_RECORDS} boundaries")
+            translations = {}
+            for key, value in sorted(props.items()):
+                lang = key.removeprefix("name:")
+                clean = _clean_text(value)
+                if (
+                    key.startswith("name:")
+                    and _LANG_RE.fullmatch(lang)
+                    and clean
+                    and len(translations) < MAX_BOUNDARY_TRANSLATIONS
+                ):
+                    translations[lang] = clean
+            wikidata = props.get("wikidata")
+            self.rows[zone_id] = {
+                "zone_id": zone_id,
+                "osm_relation_id": relation_id,
+                "admin_level": admin_level,
+                "level_name": level_name,
+                "name": name,
+                "name_translations": translations,
+                "wikidata": wikidata if _validate_qid(wikidata) else None,
+                "bbox": [min(xs), min(ys), max(xs), max(ys)],
+                "geometry": geometry,
+            }
+        except TooManyBoundariesError:
+            raise
+        except Exception as exc:
+            self.dropped += 1
+            _log.debug(
+                "skipped boundary area %s: %s: %s",
+                getattr(area, "id", "?"),
+                type(exc).__name__,
+                exc,
+            )
+
+
 class OsmExtractor:
     def __init__(self, tag_config: dict) -> None:
         self.tag_config = tag_config
@@ -195,8 +318,33 @@ class OsmExtractor:
         *,
         run_id: str,
         index_type: str = "flex_mem",
+        zone_levels: dict[int, str] | None = None,
     ) -> int:
         verify_provenance(snapshot_path)
+        if zone_levels:
+            boundary_handler = _BoundaryHandler(zone_levels)
+            try:
+                boundary_handler.apply_file(str(snapshot_path), locations=True, idx=index_type)
+            except TooManyBoundariesError:
+                raise
+            except (ValueError, RuntimeError) as exc:
+                raise OsmParseError(
+                    f"pyosmium could not parse boundaries from {snapshot_path}: {exc}"
+                ) from exc
+            store.replace_zone_boundaries(
+                conn,
+                region=region,
+                rows=[
+                    {**row, "run_id": run_id}
+                    for _zone_id, row in sorted(boundary_handler.rows.items())
+                ],
+            )
+            if boundary_handler.dropped:
+                _log.warning(
+                    "osm boundary extract %s: skipped %d malformed boundary area(s)",
+                    snapshot_path,
+                    boundary_handler.dropped,
+                )
         handler = _CandidateHandler(self.tag_config)
         try:
             handler.apply_file(str(snapshot_path), locations=True, idx=index_type)

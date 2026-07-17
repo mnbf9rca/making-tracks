@@ -385,6 +385,8 @@ def _extractor_options(
     only_source: str | None,
 ) -> dict:
     options = {"osm": {"index_type": osm_index_type}}
+    if getattr(region, "zone_levels", None):
+        options["osm"]["zone_levels"] = dict(region.zone_levels)
     pageview_options = _pageview_extract_options(
         region,
         snap_dir,

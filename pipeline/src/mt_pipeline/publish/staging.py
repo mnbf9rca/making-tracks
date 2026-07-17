@@ -9,7 +9,7 @@ from typing import Any
 
 from mt_contracts.caps import DESCRIPTION_TILE_ZOOM
 
-from . import r2
+from . import pack_descriptor, r2
 
 
 def build_staging(
@@ -26,6 +26,8 @@ def build_staging(
 ) -> Path:
     r2.validate_path_components(region, publish_version)
     version_root = Path(root) / region / publish_version
+    if version_root.exists():
+        shutil.rmtree(version_root)
     for art in tile_arts:
         tile_path = version_root / "tiles" / "10" / str(art.x) / f"{art.y}.json.gz"
         tile_path.parent.mkdir(parents=True, exist_ok=True)
@@ -50,6 +52,10 @@ def build_staging(
         thumb_path.write_bytes(art.webp_bytes)
     version_root.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(basemap_path, version_root / f"{region}.pmtiles")
+    pack_descriptor.write_pack_descriptor(
+        version_root,
+        generated_at=str(manifest_obj.get("generated_at", "1970-01-01T00:00:00Z")),
+    )
     (version_root / "manifest.json").write_text(
         json.dumps(manifest_obj, sort_keys=True, separators=(",", ":")),
         encoding="utf-8",
@@ -65,3 +71,25 @@ def write_region_index(root: Path, region_index_obj: dict[str, Any]) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def write_zone_catalogs(
+    version_root: Path,
+    *,
+    proposal_obj: dict[str, Any],
+    pruned_obj: dict[str, Any] | None,
+) -> tuple[Path, Path | None]:
+    version_root = Path(version_root)
+    proposal_path = version_root / "zone-catalog.proposal.json"
+    proposal_path.write_text(
+        json.dumps(proposal_obj, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    pruned_path = None
+    if pruned_obj is not None:
+        pruned_path = version_root / "zone-catalog.json"
+        pruned_path.write_text(
+            json.dumps(pruned_obj, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+    return proposal_path, pruned_path

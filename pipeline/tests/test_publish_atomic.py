@@ -67,6 +67,23 @@ def _real_thumb_bytes():
     return hashlib.sha256(body).hexdigest(), body
 
 
+def _write_min_pack_descriptor(version_root):
+    (version_root / "pack-descriptor.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "min_reader_version": 1,
+                "region": version_root.parent.name,
+                "publish_version": version_root.name,
+                "generated_at": "2026-07-15T12:00:00Z",
+                "objects": [],
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+
+
 def test_unsafe_region_or_version_is_refused_before_any_path_is_built():
     for region, version in [
         ("../../mt-state", "20260715T120000Z"),
@@ -99,6 +116,25 @@ def test_build_staging_writes_the_public_r2_shape(tmp_path):
     assert (root / "tiles/10/1/2.json.gz").read_bytes() == b"tile"
     assert (root / "uk.pmtiles").read_bytes() == b"basemap"
     assert json.loads((root / "manifest.json").read_text()) == manifest
+
+
+def test_build_staging_replaces_stale_version_directory(tmp_path):
+    basemap = tmp_path / "uk.pmtiles"
+    basemap.write_bytes(b"basemap")
+    stale = tmp_path / "stage/uk/20260715T120000Z/zone-catalog.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("{}")
+
+    root = S.build_staging(
+        tmp_path / "stage",
+        "uk",
+        "20260715T120000Z",
+        tile_arts=_arts(),
+        manifest_obj={"schema_version": 1, "publish_version": "20260715T120000Z", "region": "uk"},
+        basemap_path=basemap,
+    )
+
+    assert not (root / "zone-catalog.json").exists()
 
 
 def test_build_staging_writes_image_indexes_and_global_thumb_blobs(tmp_path):
@@ -145,6 +181,10 @@ def test_build_staging_writes_description_indexes(tmp_path):
     assert (
         root / "descriptions/10/1/2.json"
     ).read_bytes() == _description_arts()[0].json_bytes
+    descriptor = json.loads((root / "pack-descriptor.json").read_text())
+    assert descriptor["schema_version"] == 1
+    assert descriptor["objects"][0]["kind"] == "description_index"
+    assert descriptor["objects"][0]["path"] == "descriptions/10/1/2.json"
 
 
 def test_manifest_is_the_last_region_content_op_after_images_then_current_flip():
@@ -164,6 +204,7 @@ def test_manifest_is_the_last_region_content_op_after_images_then_current_flip()
         "description",
         "tile",
         "basemap",
+        "pack_descriptor",
         "manifest",
         "current",
     ]
@@ -233,14 +274,25 @@ def test_existing_version_prefix_is_refused_even_with_a_ledger(tmp_path):
     (version_root / "tiles/10/1").mkdir(parents=True)
     (version_root / "tiles/10/1/2.json.gz").write_bytes(b"tile")
     (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    _write_min_pack_descriptor(version_root)
     (version_root / "manifest.json").write_text("{}")
 
     class ExistingPrefixClient:
+        def __init__(self):
+            self.deleted = []
+
         def get_object(self, *, Bucket, Key):
             raise FileNotFoundError(Key)
 
         def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
             return {"KeyCount": 1, "Contents": [{"Key": Prefix + "manifest.json"}]}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            assert Key == "uk/publish.lock"
+            return {"ETag": '"lock-etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            self.deleted.append((Bucket, Key, IfMatch))
 
     with pytest.raises(R.ExistingVersionPrefix):
         R.publish_to_r2(
@@ -251,7 +303,7 @@ def test_existing_version_prefix_is_refused_even_with_a_ledger(tmp_path):
         )
 
 
-def test_upload_path_locks_uploads_content_manifest_current_then_private_registry(tmp_path):
+def test_upload_path_locks_uploads_content_manifest_private_registry_then_current(tmp_path):
     thumb_sha, thumb_body = _real_thumb_bytes()
     version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
     (version_root / "tiles/10/1").mkdir(parents=True)
@@ -261,6 +313,7 @@ def test_upload_path_locks_uploads_content_manifest_current_then_private_registr
     (version_root / "images/10/1/2.json").write_bytes(b"image")
     (version_root / "descriptions/10/1/2.json").write_bytes(b"description")
     (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    _write_min_pack_descriptor(version_root)
     (version_root / "manifest.json").write_text("{}")
     (tmp_path / f"stage/thumbs/{thumb_sha[:2]}").mkdir(parents=True)
     (tmp_path / f"stage/thumbs/{thumb_sha[:2]}" / f"{thumb_sha}.webp").write_bytes(thumb_body)
@@ -305,11 +358,53 @@ def test_upload_path_locks_uploads_content_manifest_current_then_private_registr
         "uk/20260715T120000Z/descriptions/10/1/2.json",
         "uk/20260715T120000Z/tiles/10/1/2.json.gz",
         "uk/20260715T120000Z/uk.pmtiles",
+        "uk/20260715T120000Z/pack-descriptor.json",
         "uk/20260715T120000Z/manifest.json",
-        "uk/current.json",
         "registry/uk.jsonl",
+        "uk/current.json",
     ]
     assert client.puts[0][2] == "*"
+    assert [
+        if_none_match
+        for _bucket, key, if_none_match in client.puts
+        if key.startswith("uk/20260715T120000Z/") or key.startswith("thumbs/")
+    ] == ["*"] * 7
+    assert client.deleted == [("making-tracks-state", "uk/publish.lock", '"lock-etag"')]
+
+
+def test_upload_rechecks_existing_prefix_after_lock(tmp_path):
+    version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
+    (version_root / "tiles/10/1").mkdir(parents=True)
+    (version_root / "tiles/10/1/2.json.gz").write_bytes(b"tile")
+    (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    _write_min_pack_descriptor(version_root)
+    (version_root / "manifest.json").write_text("{}")
+
+    class RacingPrefixClient:
+        def __init__(self):
+            self.list_calls = 0
+            self.deleted = []
+
+        def get_object(self, *, Bucket, Key):
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            self.list_calls += 1
+            if self.list_calls == 1:
+                return {"KeyCount": 0}
+            return {"KeyCount": 1, "Contents": [{"Key": Prefix + "manifest.json"}]}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            assert Key == "uk/publish.lock"
+            return {"ETag": '"lock-etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            self.deleted.append((Bucket, Key, IfMatch))
+
+    client = RacingPrefixClient()
+    with pytest.raises(R.ExistingVersionPrefix):
+        R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+    assert client.list_calls == 2
     assert client.deleted == [("making-tracks-state", "uk/publish.lock", '"lock-etag"')]
 
 
@@ -328,6 +423,36 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
             f"description:{region}".encode()
         )
         (root / f"{region}.pmtiles").write_bytes(f"basemap:{region}".encode())
+        if region == "uk":
+            (root / "zone-catalog.proposal.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "min_reader_version": 1,
+                        "region": "uk",
+                        "publish_version": "20260715T120000Z",
+                        "generated_at": "2026-07-15T12:00:00Z",
+                        "tile_z": 10,
+                        "zones": [],
+                    },
+                    sort_keys=True,
+                )
+            )
+            (root / "zone-catalog.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "min_reader_version": 1,
+                        "region": "uk",
+                        "publish_version": "20260715T120000Z",
+                        "generated_at": "2026-07-15T12:00:00Z",
+                        "tile_z": 10,
+                        "zones": [],
+                    },
+                    sort_keys=True,
+                )
+            )
+        _write_min_pack_descriptor(root)
         (root / "manifest.json").write_text("{}")
     (tmp_path / f"stage/thumbs/{thumb_sha[:2]}").mkdir(parents=True)
     (tmp_path / f"stage/thumbs/{thumb_sha[:2]}" / f"{thumb_sha}.webp").write_bytes(thumb_body)
@@ -415,24 +540,41 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
 
     result = R.publish_prepared_to_r2(plans, region_index, layout, client=client)
 
-    keys = [key for _bucket, key, _body, if_none_match in client.puts if if_none_match is None]
+    keys = [
+        key
+        for _bucket, key, _body, _if_none_match in client.puts
+        if not key.endswith("/publish.lock")
+    ]
     assert keys == [
+        f"thumbs/{thumb_sha[:2]}/{thumb_sha}.webp",
         "uk/20260715T120000Z/images/10/1/2.json",
         "uk/20260715T120000Z/descriptions/10/1/2.json",
         "uk/20260715T120000Z/tiles/10/1/2.json.gz",
         "uk/20260715T120000Z/uk.pmtiles",
+        "uk/20260715T120000Z/zone-catalog.proposal.json",
+        "uk/20260715T120000Z/zone-catalog.json",
+        "uk/20260715T120000Z/pack-descriptor.json",
         "uk/20260715T120000Z/manifest.json",
         "uk_london/20260715T120000Z/images/10/1/2.json",
         "uk_london/20260715T120000Z/descriptions/10/1/2.json",
         "uk_london/20260715T120000Z/tiles/10/1/2.json.gz",
         "uk_london/20260715T120000Z/uk_london.pmtiles",
+        "uk_london/20260715T120000Z/pack-descriptor.json",
         "uk_london/20260715T120000Z/manifest.json",
+        "registry/uk.jsonl",
         "uk/current.json",
         "uk_london/current.json",
         "regions.json",
-        "registry/uk.jsonl",
     ]
-    merged_index = json.loads(client.puts[-2][2])
+    immutable_if_none_match = [
+        if_none_match
+        for _bucket, key, _body, if_none_match in client.puts
+        if key.startswith("thumbs/")
+        or "/20260715T120000Z/" in key
+    ]
+    assert immutable_if_none_match == ["*"] * 15
+    merged_body = next(body for _bucket, key, body, _if_none_match in client.puts if key == "regions.json")
+    merged_index = json.loads(merged_body)
     assert [entry["id"] for entry in merged_index["regions"]] == [
         "malaysia",
         "uk",
@@ -572,6 +714,27 @@ def test_thumb_uploads_are_hash_verified_and_write_if_absent(tmp_path):
         R._upload_op(client, bad)
 
 
+def test_existing_content_addressed_thumb_is_treated_as_uploaded(tmp_path):
+    thumb_sha, thumb_body = _real_thumb_bytes()
+    thumb_path = tmp_path / "thumb.webp"
+    thumb_path.write_bytes(thumb_body)
+    op = R.PublishOp(
+        kind="thumb",
+        bucket="making-tracks-tiles",
+        key=f"thumbs/{thumb_sha[:2]}/{thumb_sha}.webp",
+        source_path=thumb_path,
+    )
+
+    class PreconditionFailed(Exception):
+        response = {"Error": {"Code": "PreconditionFailed"}}
+
+    class Client:
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            raise PreconditionFailed()
+
+    R._upload_op(Client(), op)
+
+
 def test_default_client_uses_committed_r2_s3_endpoint_contract(monkeypatch):
     calls = []
 
@@ -665,6 +828,7 @@ def test_live_current_and_unavailable_current_are_fail_closed(tmp_path):
     version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
     (version_root / "tiles/10").mkdir(parents=True)
     (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    _write_min_pack_descriptor(version_root)
     (version_root / "manifest.json").write_text("{}")
 
     class LiveCurrentClient:
@@ -686,6 +850,7 @@ def test_upload_recovers_a_stale_publish_lock(tmp_path):
     version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
     (version_root / "tiles/10").mkdir(parents=True)
     (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    _write_min_pack_descriptor(version_root)
     (version_root / "manifest.json").write_text("{}")
 
     class PreconditionFailed(Exception):
@@ -727,6 +892,7 @@ def test_stale_lock_delete_is_conditional_on_the_stale_object(tmp_path):
     version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
     (version_root / "tiles/10").mkdir(parents=True)
     (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    _write_min_pack_descriptor(version_root)
     (version_root / "manifest.json").write_text("{}")
 
     class PreconditionFailed(Exception):
@@ -768,6 +934,7 @@ def test_stale_lock_retry_race_reports_lock_unavailable(tmp_path):
     version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
     (version_root / "tiles/10").mkdir(parents=True)
     (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    _write_min_pack_descriptor(version_root)
     (version_root / "manifest.json").write_text("{}")
 
     class PreconditionFailed(Exception):
@@ -807,6 +974,7 @@ def test_file_body_is_closed_when_upload_fails(tmp_path):
     (version_root / "tiles/10/1").mkdir(parents=True)
     (version_root / "tiles/10/1/2.json.gz").write_bytes(b"tile")
     (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    _write_min_pack_descriptor(version_root)
     (version_root / "manifest.json").write_text("{}")
 
     class FailingUploadClient:

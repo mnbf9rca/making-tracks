@@ -6,6 +6,7 @@ import functools
 import json
 import math
 import pathlib
+import re
 from importlib import resources
 from urllib.parse import urlparse
 
@@ -15,6 +16,14 @@ from referencing import Registry, Resource
 from .place_id import assert_canonical_ref
 
 _ROOT_SCHEMA_DIR = pathlib.Path(__file__).resolve().parents[2] / "schemas"
+_PACK_PATHS = {
+    "basemap_cell": (re.compile(r"^basemap/10/[0-9]{1,4}/[0-9]{1,4}\.pmtiles$"), False),
+    "basemap_midzoom": (re.compile(r"^basemap/midzoom/[A-Za-z0-9._/-]+\.pmtiles$"), False),
+    "description_index": (re.compile(r"^descriptions/10/[0-9]{1,4}/[0-9]{1,4}\.json$"), False),
+    "image_index": (re.compile(r"^images/10/[0-9]{1,4}/[0-9]{1,4}\.json$"), True),
+    "image_thumb": (re.compile(r"^thumbs/[0-9a-f]{2}/[0-9a-f]{64}\.webp$"), True),
+    "search_index": (re.compile(r"^search/[A-Za-z0-9._/-]+\.json$"), False),
+}
 
 
 def _package_schema_dir():
@@ -100,11 +109,77 @@ def _reject_description_mismatches(name: str, instance: dict) -> None:
             raise ValueError("description source_url host must match wikipedia_lang")
 
 
+def _reject_zone_catalog_mismatches(name: str, instance: dict) -> None:
+    if name != "zone-catalog":
+        return
+    seen: set[str] = set()
+    by_id: dict[str, dict] = {}
+    for zone in instance.get("zones", []):
+        zone_id = str(zone.get("zone_id", ""))
+        if zone_id in seen:
+            raise ValueError(f"duplicate zone_id: {zone_id}")
+        seen.add(zone_id)
+        by_id[zone_id] = zone
+    for zone in instance.get("zones", []):
+        zone_id = str(zone.get("zone_id", ""))
+        parent = zone.get("parent")
+        if parent is not None:
+            if parent == zone_id:
+                raise ValueError("zone parent cannot reference itself")
+            if parent not in seen:
+                raise ValueError(f"zone parent not present in catalog: {parent}")
+            if int(by_id[str(parent)]["admin_level"]) >= int(zone["admin_level"]):
+                raise ValueError("zone parent admin_level must be smaller than child")
+        cell_set = zone.get("cell_set", {})
+        count = 0
+        for item in cell_set.get("ranges", []):
+            x, y_start, y_end = (int(item[0]), int(item[1]), int(item[2]))
+            if y_start > y_end:
+                raise ValueError(f"zone cell range is reversed for x={x}")
+            count += y_end - y_start + 1
+        if count != int(cell_set.get("cell_count", -1)):
+            raise ValueError("zone cell_count does not match ranges")
+    for zone_id in by_id:
+        visited: set[str] = set()
+        current = zone_id
+        while by_id[current].get("parent") is not None:
+            parent = str(by_id[current]["parent"])
+            if parent in visited:
+                raise ValueError("zone parent cycle")
+            visited.add(parent)
+            current = parent
+
+
+def _reject_pack_descriptor_mismatches(name: str, instance: dict) -> None:
+    if name != "pack-descriptor":
+        return
+    seen: set[tuple[str, str]] = set()
+    for obj in instance.get("objects", []):
+        kind = str(obj.get("kind", ""))
+        path = str(obj.get("path", ""))
+        key = (kind, path)
+        if key in seen:
+            raise ValueError(f"duplicate pack object: {kind} {path}")
+        seen.add(key)
+        pattern, optional = _PACK_PATHS[kind]
+        if pattern.fullmatch(path) is None:
+            raise ValueError(f"pack object path does not match kind {kind}: {path}")
+        if bool(obj.get("optional")) is not optional:
+            raise ValueError(f"pack object optional flag does not match kind {kind}")
+        if kind == "image_thumb":
+            sha = str(obj.get("sha256", ""))
+            expected = f"thumbs/{sha[:2]}/{sha}.webp"
+            if path != expected:
+                raise ValueError("thumbnail path must match sha256")
+
+
 def validate_instance(name: str, instance: dict) -> None:
     _reject_non_finite(instance)
     validator_for(name).validate(instance)
     _reject_noncanonical_refs(name, instance)
     _reject_description_mismatches(name, instance)
+    _reject_zone_catalog_mismatches(name, instance)
+    _reject_pack_descriptor_mismatches(name, instance)
 
 
 def is_valid(name: str, instance: dict) -> bool:

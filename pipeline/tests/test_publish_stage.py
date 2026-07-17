@@ -1,4 +1,5 @@
 import gzip
+import hashlib
 import json
 
 import pytest
@@ -85,6 +86,120 @@ def test_publish_stage_builds_local_staging_and_marks_shipped(
     assert shipped[A].first_shipped_version == "20260701T000000Z"
     assert shipped[A].last_seen_version == "20260701T000000Z"
     assert shipped[B].last_seen_version == "20260701T000000Z"
+
+
+def test_publish_stage_emits_zone_catalog_proposal_and_pruned_catalog(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    _seed_zone_boundary(conn)
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [
+            RegistryRecord(
+                place_id=A,
+                refs={"wd:Q100", "osm:node/100"},
+                mint_anchor="wd:Q100",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+            RegistryRecord(
+                place_id=B,
+                refs={"wd:Q200"},
+                mint_anchor="wd:Q200",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+        ]
+    )
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename="malaysia.pmtiles",
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+    monkeypatch.setattr(P.config, "load", lambda _region: _zone_catalog_region_config())
+
+    result = P.run(
+        conn,
+        "malaysia",
+        publish_version="20260715T120000Z",
+        generated_at="2026-07-15T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+    )
+
+    proposal = json.loads((result.staging_dir / "zone-catalog.proposal.json").read_text())
+    pruned = json.loads((result.staging_dir / "zone-catalog.json").read_text())
+    assert [zone["zone_id"] for zone in proposal["zones"]] == ["osm_r100"]
+    assert [zone["zone_id"] for zone in pruned["zones"]] == ["osm_r100"]
+    assert pruned["zones"][0]["bytes_without_thumbs"] > 0
+    assert "zone_catalog" in {op.kind for op in result.publish_result.plan.ops}
+
+
+def test_publish_stage_with_empty_zone_allowlist_writes_proposal_only(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    _seed_zone_boundary(conn)
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [
+            RegistryRecord(
+                place_id=A,
+                refs={"wd:Q100", "osm:node/100"},
+                mint_anchor="wd:Q100",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+            RegistryRecord(
+                place_id=B,
+                refs={"wd:Q200"},
+                mint_anchor="wd:Q200",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+        ]
+    )
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename="malaysia.pmtiles",
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    cfg = _zone_catalog_region_config(zone_allowlist=())
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+    monkeypatch.setattr(P.config, "load", lambda _region: cfg)
+
+    result = P.run(
+        conn,
+        "malaysia",
+        publish_version="20260715T120000Z",
+        generated_at="2026-07-15T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+    )
+
+    assert (result.staging_dir / "zone-catalog.proposal.json").exists()
+    assert not (result.staging_dir / "zone-catalog.json").exists()
+    assert "zone_catalog" not in {op.kind for op in result.publish_result.plan.ops}
 
 
 def test_publish_stage_manifest_includes_osm_attribution_for_basemap_without_osm_places(
@@ -247,7 +362,7 @@ def test_publish_stage_emits_image_sidecars_from_shipped_wikidata_images(
                 place_id=A,
                 lat=3.10,
                 lon=101.70,
-                thumb_sha256="a" * 64,
+                thumb_sha256=hashlib.sha256(b"thumb").hexdigest(),
                 thumb_bytes=b"thumb",
                 width=320,
                 height=240,
@@ -283,7 +398,8 @@ def test_publish_stage_emits_image_sidecars_from_shipped_wikidata_images(
     image_index = json.loads(image_files[0].read_text())
     assert image_index["places"][0]["place_id"] == A
     assert image_index["places"][0]["attribution"]["license_code"] == "CC-BY-4.0"
-    assert (tmp_path / "stage/thumbs/aa" / f"{'a' * 64}.webp").read_bytes() == b"thumb"
+    thumb_sha = hashlib.sha256(b"thumb").hexdigest()
+    assert (tmp_path / "stage/thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp").read_bytes() == b"thumb"
     region_entry = result.region_index["regions"][0]
     assert region_entry["bytes_with_thumbs"] == (
         region_entry["bytes_without_thumbs"]
@@ -1346,6 +1462,60 @@ def _use_test_subregion_config(monkeypatch):
             }
         ),
     )
+
+
+def _zone_catalog_region_config(zone_allowlist=("osm_r100",)):
+    return P.config.RegionConfig.from_dict(
+        {
+            "schema_version": 1,
+            "region_id": "malaysia",
+            "display_name": "Malaysia",
+            "bbox": [99.64, 0.85, 119.27, 7.36],
+            "languages": ["en"],
+            "sources": {"wikidata": True, "osm": True},
+            "zone_levels": {"4": "state"},
+            "zone_allowlist": list(zone_allowlist),
+            "basemap": {
+                "source_pmtiles": "https://build.protomaps.com/20260714.pmtiles",
+                "maxzoom": 14,
+                "pack_granularity": "country",
+                "size_budget_bytes": 500000000,
+                "measured_archive_bytes": 223155574,
+            },
+        }
+    )
+
+
+def _seed_zone_boundary(conn):
+    ring = [
+        [101.6, 3.0],
+        [101.8, 3.0],
+        [101.8, 3.2],
+        [101.6, 3.2],
+        [101.6, 3.0],
+    ]
+    conn.execute(
+        """
+        INSERT INTO zone_boundaries
+            (region, zone_id, osm_relation_id, admin_level, level_name, name,
+             name_translations_json, wikidata, bbox_json, geometry_json, run_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "malaysia",
+            "osm_r100",
+            100,
+            4,
+            "state",
+            "Test State",
+            "{}",
+            "Q123",
+            json.dumps([101.6, 3.0, 101.8, 3.2]),
+            json.dumps({"type": "MultiPolygon", "coordinates": [[ring]]}),
+            "extract1",
+        ),
+    )
+    conn.commit()
 
 
 def _seed_publish_input_outside_central_subregion(conn):
