@@ -8,8 +8,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Verify head branch
+        env:
+          HEAD_REF: ${{ github.head_ref }}
         run: |
-          case "${{ github.head_ref }}" in
-            develop|ios) echo "OK: promotion from ${{ github.head_ref }}" ;;
-            *) echo "BLOCKED: main only accepts promotions from develop or ios (got: ${{ github.head_ref }})"; exit 1 ;;
+          case "$HEAD_REF" in
+            develop|ios) echo "OK: promotion from $HEAD_REF" ;;
+            *) echo "BLOCKED: main only accepts promotions from develop or ios (got: $HEAD_REF)"; exit 1 ;;
           esac
