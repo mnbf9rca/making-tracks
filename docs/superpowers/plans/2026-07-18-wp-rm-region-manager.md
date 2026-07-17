@@ -131,14 +131,15 @@ cells → per-cell delete/dedup for free" does not exist. Reframed:]**
   store installs it as an ad-hoc pack) — real new work; or (b) the rectangle **snaps to / composes
   published sub-zone packs** (coarser). **Flag: the rectangle path is new engine work, not "rides the
   built store"; named-zone packs work on the store as-is.**
-- **Download is NOT resumable today [fable's tree-verified evidence] → incremental-persist.**
-  `downloadCurrentRegion` buffers all tiles in RAM + installs once at end (`:950-990`; kill = restart from
-  zero); the background `OfflineDownloadSession` is **dead-wired** (production = foreground ephemeral
-  `HTTPTileFetcher`). A zone pack can be large, so WP-RM-B needs the **WP-B10d incremental-persist rework**:
-  write each verified object to the content-addressed store **as it arrives** → an interrupted zone
-  download **resumes object-granular for free** via `updatePlan` skip; wire the background session; adjust
-  failed-install GC (`:1084, :1281`) to **retain in-progress objects**. (Shared with WP-B10d — one engine
-  rework serves both.)
+- **Incremental-persist is MANDATORY [Rob requirement, not a suggestion].** RAM-buffering the whole pack
+  is **unacceptable** ("how big is this going to get" — the device was **jetsam-killed today** at far
+  smaller working sets). `downloadCurrentRegion` today buffers all tiles in RAM + installs at end
+  (`:950-990`; kill = restart from zero); the background `OfflineDownloadSession` is **dead-wired**
+  (production = foreground ephemeral `HTTPTileFetcher`). Required rework (shared WP-B10d engine): **stream
+  each verified object to the content-addressed store on arrival → CONSTANT memory bound regardless of
+  pack size**; an interrupted download then **resumes object-granular for free** via `updatePlan` sha-skip;
+  **wire the background `URLSession`**; and **adjust failed-install GC (`:1084, :1281`) to RETAIN
+  in-progress objects** (else the resume set is reclaimed). One rework serves WP-B10d + WP-RM.
 - **Update (Apple resize-and-redownload + auto-update):** a pack records its `publish_version`; a new
   publish → the pack's manifest sha-diffs → fetch only changed cells (reuse-by-sha). Auto-update default
   (WiFi, discretionary), user-toggleable — **and this recurring fetch carries cover-traffic (§5).**
@@ -173,6 +174,38 @@ it with a COVER-TRAFFIC REQUIREMENT. This section is reframed in those terms.]**
 - **The confirm sheet surfaces the cost honestly** (a specific selection costs more decoy traffic; the
   1-cell halo is free padding). **Do NOT assert "named = the privacy-preferred default" unconditionally**
   — it holds for large named zones, not small ones.
+
+## 6. Delta updates (D6) — Rob REQUIREMENT: no "GB every time"
+
+- **Place tiles already delta for FREE — protect it.** Cells are content-addressed `objects/tiles/{sha}`;
+  an unchanged cell is the **same sha → skipped** by `updatePlan` on any refresh. **State this as a
+  protected invariant:** a re-publish never re-downloads unchanged place cells. (This is exactly the
+  content-addressing delta Rob wants preserved — call it out so no future change breaks it.)
+- **The GAP is the MONOLITHIC basemap `pmtiles`** — one whole-file archive per pack; today **any refresh
+  re-downloads the entire GB** (Rob's "GB every time" fear). A basemap delta strategy is required. Two
+  options, argued:
+  - **(a) Range-based partial `pmtiles` sync.** `pmtiles` is a single archive addressed by internal byte
+    ranges (natively HTTP-range-friendly). On update, diff the new vs old archive directory → fetch only
+    changed byte ranges. **Verdict: fragile** — a re-cut basemap typically **reshuffles tile order/offsets**
+    (pmtiles isn't append-only), so ranges don't align and the "diff" degrades to a near-full re-download
+    unless the pipeline emits **byte-stable, deterministically-ordered** archives (a strong new pipeline
+    constraint). It's also a **separate CDN/decoy pattern** (range requests vs whole-object GETs) — harder
+    to cover-traffic uniformly.
+  - **(b) Per-cell content-addressed basemap objects (RECOMMENDED).** Cut the basemap into per-z10-cell
+    objects (`objects/basemap/{sha}`), content-addressed on the **same grid as place tiles** → basemap
+    deltas become the **identical free hash-diff**: an unchanged basemap cell = same sha = skipped. This
+    **unifies the store** (basemap cells are objects like tile cells → the incremental-persist + resume +
+    dedup + cover-traffic cohort all apply uniformly), and directly delivers Rob's "no GB every time."
+    **Cost / the key feasibility fork:** MapLibre renders a **single `pmtiles://` source**, so per-cell
+    objects mean the app must **render the basemap from the per-cell object grid** (a local tile source,
+    or reassemble) instead of one pmtiles file — a **pipeline cut + an app basemap-source change**
+    (flag as the load-bearing feasibility question for WP-RM-P/G). **CDN/cover-traffic:** per-cell basemap
+    objects are whole-object content-addressed GETs → **the same decoy cohort as place cells** (no new
+    channel, uniform), which (a) is not.
+  - **Recommendation: (b)** — it makes the basemap delta *free* on the content-addressing already in place,
+    unifies the store + cover-traffic, and is the honest answer to "GB every time"; (a) only helps under a
+    byte-stable-pmtiles constraint and fragments the CDN/decoy story. Confirm the app basemap-source change
+    is acceptable (or basemap-as-many-small-pmtiles as a middle path).
 
 ## Build-WP decomposition
 
