@@ -229,7 +229,9 @@ private struct CreditsView: View {
     let attribution: [Attribution]
     @Environment(\.dismiss) private var dismiss
 
-    private var buildCommit: String {
+    private static let buildCommit = loadBuildCommit()
+
+    private static func loadBuildCommit() -> String {
         guard let url = Bundle.main.url(forResource: "BuildInfo", withExtension: "plist"),
               let data = try? Data(contentsOf: url),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: String],
@@ -241,7 +243,7 @@ private struct CreditsView: View {
     var body: some View {
         NavigationStack {
             List {
-                Text(verbatim: "Build \(buildCommit)")
+                Text(verbatim: "Build \(Self.buildCommit)")
                     .font(.caption)
                     .fontDesign(.monospaced)
 
