@@ -338,6 +338,134 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertTrue(newPresent)
     }
 
+    func testTileClientKeepsOnlyCurrentViewportPlaceRefsInMemory() async throws {
+        let londonID = "mt1_00000000000000000000000000"
+        let unusedLondonID = "mt1_00000000000000000000000002"
+        let klID = "mt1_00000000000000000000000001"
+        let londonTile = try gzipJSON(tileObject(places: [
+            validPlace(["place_id": londonID]),
+            validPlace([
+                "place_id": unusedLondonID,
+                "name": "Unused London Place",
+                "lat": 51.501,
+                "lon": -0.125,
+            ]),
+        ]))
+        let klTile = try gzipJSON(tileObject(
+            places: [validPlace([
+                "place_id": klID,
+                "name": "KL Tower",
+                "lat": 3.1528,
+                "lon": 101.7037,
+            ])],
+            x: 801,
+            y: 503
+        ))
+        let londonSHA = sha256(londonTile)
+        let klSHA = sha256(klTile)
+        var manifest = manifestObject(tileSHA: londonSHA, tileBytes: londonTile.count, attributionSources: [])
+        manifest["tiles"] = [
+            ["x": 511, "y": 340, "sha256": londonSHA, "bytes": londonTile.count],
+            ["x": 801, "y": 503, "sha256": klSHA, "bytes": klTile.count],
+        ]
+        manifest["counts"] = ["total": 3, "by_tier": [3, 0, 0, 0]]
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": jsonData(manifest),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/511/340.json.gz": londonTile,
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/801/503.json.gz": klTile,
+        ])
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache())
+
+        try await client.refreshPin()
+        let london = await client.places(
+            inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51),
+            zoom: 16
+        )
+        let londonPresent = await client.isPresentInCurrentTiles(londonID)
+        let selectedLondonRef = await client.placeRef(for: londonID)
+        XCTAssertEqual(london.map(\.id), [londonID, unusedLondonID])
+        XCTAssertTrue(londonPresent)
+        XCTAssertNotNil(selectedLondonRef)
+
+        let kl = await client.places(
+            inViewport: BBox(minLon: 101.68, minLat: 3.13, maxLon: 101.70, maxLat: 3.15),
+            zoom: 16
+        )
+        let oldPresent = await client.isPresentInCurrentTiles(londonID)
+        let unusedOldPresent = await client.isPresentInCurrentTiles(unusedLondonID)
+        let oldRef = await client.placeRef(for: londonID)
+        let unusedOldRef = await client.placeRef(for: unusedLondonID)
+        let currentPresent = await client.isPresentInCurrentTiles(klID)
+        let currentRef = await client.placeRef(for: klID)
+        XCTAssertEqual(kl.map(\.id), [klID])
+        XCTAssertFalse(oldPresent)
+        XCTAssertFalse(unusedOldPresent)
+        XCTAssertNotNil(oldRef)
+        XCTAssertNil(unusedOldRef)
+        XCTAssertTrue(currentPresent)
+        XCTAssertNotNil(currentRef)
+    }
+
+    func testTileClientBoundsRecentlyRequestedPlaceRefs() async throws {
+        let selectedIDs = (0..<129).map { String(format: "mt1_%026d", $0) }
+        let londonTile = try gzipJSON(tileObject(places: selectedIDs.enumerated().map { index, placeID in
+            validPlace([
+                "place_id": placeID,
+                "name": "Selected Place \(index)",
+                "lat": 51.49 + Double(index) * 0.00001,
+                "lon": -0.13 + Double(index) * 0.00001,
+            ])
+        }))
+        let klID = "mt1_00000000000000000000000129"
+        let klTile = try gzipJSON(tileObject(
+            places: [validPlace([
+                "place_id": klID,
+                "name": "KL Tower",
+                "lat": 3.1528,
+                "lon": 101.7037,
+            ])],
+            x: 801,
+            y: 503
+        ))
+        let londonSHA = sha256(londonTile)
+        let klSHA = sha256(klTile)
+        var manifest = manifestObject(tileSHA: londonSHA, tileBytes: londonTile.count, attributionSources: [])
+        manifest["tiles"] = [
+            ["x": 511, "y": 340, "sha256": londonSHA, "bytes": londonTile.count],
+            ["x": 801, "y": 503, "sha256": klSHA, "bytes": klTile.count],
+        ]
+        manifest["counts"] = ["total": 130, "by_tier": [130, 0, 0, 0]]
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": jsonData(manifest),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/511/340.json.gz": londonTile,
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/801/503.json.gz": klTile,
+        ])
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache())
+
+        try await client.refreshPin()
+        _ = await client.places(
+            inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51),
+            zoom: 16
+        )
+        for placeID in selectedIDs {
+            let selectedRef = await client.placeRef(for: placeID)
+            XCTAssertNotNil(selectedRef)
+        }
+        _ = await client.places(
+            inViewport: BBox(minLon: 101.68, minLat: 3.13, maxLon: 101.70, maxLat: 3.15),
+            zoom: 16
+        )
+        let oldestRef = await client.placeRef(for: selectedIDs[0])
+        let nextRef = await client.placeRef(for: selectedIDs[1])
+        let newestRef = await client.placeRef(for: selectedIDs[128])
+
+        XCTAssertNil(oldestRef)
+        XCTAssertNotNil(nextRef)
+        XCTAssertNotNil(newestRef)
+    }
+
     func testTileCacheEvictsLeastRecentlyUsedTileBlobsOnly() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("MakingTracksTilesTests-\(UUID().uuidString)", isDirectory: true)

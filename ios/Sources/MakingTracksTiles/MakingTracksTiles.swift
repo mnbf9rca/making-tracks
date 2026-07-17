@@ -895,12 +895,17 @@ public enum TileFetchConcurrency {
 }
 
 public actor TileClient {
+    // Tunable: enough refs for open/recent card actions after panning, still a hard memory bound.
+    private static let recentPlaceRefLimit = 128
+
     private let region: String
     private let fetcher: TileFetching
     private let cache: TileCache
     private var pin: PinnedPublish?
     private var state: TileLoadState = .unavailable
     private var loadedPlaces: [String: DecodedPlace] = [:]
+    private var recentPlaceRefs: [String: PlaceRef] = [:]
+    private var recentPlaceRefOrder: [String] = []
     private var viewportGeneration = 0
 
     public init(region: String, fetcher: TileFetching, cache: TileCache) {
@@ -915,7 +920,7 @@ public actor TileClient {
         pin = result.publish
         state = result.state
         if oldPublishVersion != result.publish?.publishVersion {
-            loadedPlaces.removeAll()
+            clearLoadedPlaceRefs()
         }
         if let pin {
             cache.purgeNonPinned(region: region, pinnedPublishVersion: pin.publishVersion)
@@ -934,6 +939,7 @@ public actor TileClient {
             pin.manifest.tiles.contains { $0.x == coordinate.x && $0.y == coordinate.y }
         }).sorted(by: { ($0.x, $0.y) < ($1.x, $1.y) })
         var output: [MapPlace] = []
+        var viewportPlaces: [String: DecodedPlace] = [:]
         let attributionSources = Set(pin.manifest.attribution.map(\.source))
         var usedCache = false
         var trustedTile = false
@@ -973,13 +979,13 @@ public actor TileClient {
                     if !decoded.missingAttributionSources.isEmpty {
                         cache.evictPublish(region: region, publishVersion: pin.publishVersion)
                         self.pin = nil
-                        loadedPlaces.removeAll()
+                        clearLoadedPlaceRefs()
                         state = .manifestInvalid
                         group.cancelAll()
                         return
                     }
                     for place in decoded.places {
-                        loadedPlaces[place.mapPlace.id] = place
+                        viewportPlaces[place.mapPlace.id] = place
                         output.append(place.mapPlace)
                     }
                 case .missing:
@@ -1005,6 +1011,7 @@ public actor TileClient {
         }
         guard generation == viewportGeneration else { return [] }
         if state == .manifestInvalid { return [] }
+        loadedPlaces = viewportPlaces
         if usedCache {
             state = .stale
         } else if trustedTile, state != .updateAvailable {
@@ -1020,7 +1027,27 @@ public actor TileClient {
     }
 
     public func placeRef(for placeID: String) async -> PlaceRef? {
-        loadedPlaces[placeID]?.placeRef
+        if let placeRef = loadedPlaces[placeID]?.placeRef {
+            rememberRecentPlaceRef(placeRef)
+            return placeRef
+        }
+        return recentPlaceRefs[placeID]
+    }
+
+    private func rememberRecentPlaceRef(_ placeRef: PlaceRef) {
+        recentPlaceRefs[placeRef.placeID] = placeRef
+        recentPlaceRefOrder.removeAll { $0 == placeRef.placeID }
+        recentPlaceRefOrder.append(placeRef.placeID)
+        while recentPlaceRefOrder.count > Self.recentPlaceRefLimit {
+            let evicted = recentPlaceRefOrder.removeFirst()
+            recentPlaceRefs[evicted] = nil
+        }
+    }
+
+    private func clearLoadedPlaceRefs() {
+        loadedPlaces.removeAll()
+        recentPlaceRefs.removeAll()
+        recentPlaceRefOrder.removeAll()
     }
 
     public var attribution: [Attribution] {
