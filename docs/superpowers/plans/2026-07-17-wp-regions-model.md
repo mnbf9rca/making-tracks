@@ -206,9 +206,11 @@ launch, never on a schedule.**
   download-first UX, not streaming-first. (Reflected in the privacy policy, `privacy.md`.)
 - **Bundle size is a PRIVACY PARAMETER, not just a cost knob.** Rob's point: bundles can be *small*.
   Small bundles change the cover-traffic economics — a handful of small decoy bundles is cheap, where
-  decoy country-packs are not — and reshape the granularity story. So the §4 cover-traffic ruling is
-  feasible *if* the sub-region bundles are small; the WP-B7/WP-P design owns picking bundle sizes that
-  make the decoys affordable (a tunable, earned-not-baked).
+  decoy country-packs are not. **But small is NOT monotonically "more private"** — a small on-demand
+  fetch is also *sharper* (finer location) and *more frequent*. **§7 quantifies this and resolves it:**
+  small bundles are the *index/composition* unit; the online fetch policy prefers *chunky prefetch*;
+  the privacy win is chunky prefetch + spread-consistent decoys, not "make bundles tiny." Bundle
+  sizing is a WP-B7/WP-P tunable, earned-not-baked.
 - **NEW INFRA REQUIREMENT (WP-P / infra): aggregate, user-unlinked bundle-download counts.** The
   policy commits that "we count how many times each bundle is downloaded, to see which areas need
   work — but can't tell who downloaded which." That requires an aggregate count per bundle with **no
@@ -264,12 +266,151 @@ this doc owns pack-size/format only**).
   online-thumb path inherits §4's open privacy question; bundled-in-pack thumbs are zero-fetch and
   fine. The B4 image allowlist could later collapse to our one origin (a #129/B4 follow-up).
 
+## 7. Unified fetch model — one index, one bundle unit, mode picks granularity (Rob design input, 2026-07-17)
+
+**Rob's input (verbatim):** *"pulls data in realtime? i suppose that's possible too — probably good —
+you can choose to make it offline. but instead of 'per viewpoint' it should be very small bundles
+perhaps — everything you need? or it has an index."*
+
+**The unification.** Collapse "streaming" and "offline pack" into ONE mechanism: an **index** lists
+**bundles**; a **fetch policy** driven by mode picks which bundles to fetch and how far ahead; a
+**decoy wrapper** wraps every fetch uniformly. There is no separate "streaming" concept — **online
+mode** is just the fetch policy that pulls the small covering bundle(s) for the current view on
+demand; **offline mode** is the policy that pulls aggregate (city/country) bundles ahead of time.
+Today's structure is already most of the way there — this is an evolution of the fetch layer, not a
+rebuild.
+
+**Today's artifacts are special cases (grounded against the tree):**
+
+| today | unified model |
+|---|---|
+| `regions.json` region-index (§5) | THE index — generalizes from regions to bundles at all granularities |
+| z10 place tile (wire key `{region}/{pv}/tiles/10/{x}/{y}.json.gz`) | the finest **places-bundle** (immutable per-`publish_version` URL — **not** hash-keyed on the wire; see the content-addressing note below) |
+| region pmtiles (bbox, maxzoom 14) | a coarse **basemap-bundle** |
+| world z0–6 pmtiles (§2) | the coarsest **basemap-bundle** |
+| B7 whole-file pack {manifest+tiles+basemap} | the offline fetch policy = "fetch every bundle covering area X, ahead of time" |
+| B3 per-viewport `TileCache` fetch | the online fetch policy = "fetch the covering bundle(s) for the current view, on demand" |
+
+Bundles are **typed and independently versioned** — a places-bundle bumps per `publish_version`; a
+basemap-bundle rarely bumps. **Do NOT merge types into one monolithic per-area blob** — that forces a
+basemap re-download on every place update and throws away §3's sha-diff partial-update win.
+"Everything you need for area X" = the *covering set across types* the index resolves, fetched
+independently, immutable per version, cacheable. *(Grounding correction, post-gate: today's wire
+artifacts are **publish_version-addressed, not content-addressed** — `r2.py` keys tiles at
+`{region}/{pv}/tiles/10/{x}/{y}.json.gz` and the basemap at `{region}/{pv}/{region}.pmtiles`, with no
+hash on the wire; the `-{sha}` suffix is only B3's LOCAL `TileCache` filename, under a pv-scoped path
+that `purgeNonPinned` deletes. True content-addressing is the §4 to-be-built sha-keyed local pack
+store, not a property of today's fetch layer.)*
+
+**Two real wrinkles — flagged, owned by WP-B7/WP-G, NOT hand-waved:**
+1. **Basemap online fetch is pmtiles range-requests, not whole-bundle GETs.** MapLibre streams a
+   region pmtiles by HTTP range into its internal z/x/y index (grounded fact: unverified,
+   MapLibre-parsed). That is *already* a per-viewport fetch at fine granularity, and it does not
+   decompose into discrete bundle GETs the decoy wrapper can treat like place-bundles. Options for
+   WP-B7/WP-G: (a) pre-cut area basemap-bundles (district pmtiles) listed in the index, so the online
+   basemap path is whole-bundle GETs too; (b) keep range-streaming and decoy at the range level.
+   **Unresolved — a design question, not solved here.** The clean uniform story holds today for PLACE
+   data and for WHOLE-FILE prefetch; the online basemap is the awkward edge.
+2. **Bundle granularity is the whole privacy story — quantified next.**
+
+### The privacy quantification — "how small is too small"
+
+**The trap: bundle ≠ privacy.** An on-demand fetch of a bundle covering area *A*, made while the user
+looks inside *A*, over their real IP, at time *t*, reveals to Cloudflare *"user ∈ A at t."* The
+sequence over a session is a **movement trace at resolution A**. If *A* ≈ viewport this is **exactly
+today's per-viewport streaming exposure** — renaming tile→bundle buys nothing. The win comes not from
+the bundle unit but from two independent levers, both named by fable:
+
+**Lever 1 — prefetch chunkiness (cuts the NUMBER of exposure events).** Fetch bundles much *larger*
+than the viewport. Moving *within* a fetched bundle produces **zero new fetches → zero new
+exposure.** Exposure events over a session ≈ (area explored) / A, so coarser A → fewer events →
+weaker trace. At A = country this is precisely §9's existing win ("download the country, then zero
+per-viewport fetches"): the CDN sees one bulk-download event ("has UK") plus a launch-frequency
+update-poll — **not** "no trace at all" (the update-poll on `current.json` is the §4 recurring channel,
+mitigated to launch-only, present at every granularity including country; the exposure ≈ area/A model
+covers only movement-driven fetches, not this orthogonal poll). **Offline packs are just the coarsest
+point on this continuum** — which is what unifies them with streaming. Chunkiness is *free* (fewer
+requests = cheaper) and is the primary lever.
+
+**Lever 2 — decoys (cut the PRECISION of each event).** Fetch the real bundle alongside (k−1) decoys
+so the CDN sees k GETs and can't tell which is real → location ambiguous over the union of k areas.
+Cost = k× bandwidth (cheap only when bundles are small — see below). **The governing rule: a decoy is
+cover only if it is indistinguishable from the real fetch on EVERY axis the CDN observes.** That is far
+more than "fetch a few others" — WP-B7 must close all of these, or the decoys are theatre *(post-gate:
+the earlier draft named only spread + intersection and framed them as the complete set — itself the
+one-horn overclaim that broke the withdrawn k-anonymity floor; the real obligation is indistinguishability
+across all observable axes)*:
+   - **Spatial spread.** Adjacent decoys still localize you to a region; decoys must be drawn across
+     the anonymity area being claimed (national spread for national ambiguity).
+   - **Timing and order.** The k GETs must be simultaneous / order-randomized and decoupled from the
+     pan event. Otherwise the real bundle is simply the one fetched *when the user moved* — fired first
+     for fast render, decoys trailing as padding — and on-demand real fetches stay re-identifiable by
+     their correlation with movement at time *t*, spatial spread notwithstanding.
+   - **Size, count, and composition.** A chunky real covering-set (many bundles / large bytes) hidden
+     among token single-bundle decoys is separable by request-count and response byte-length alone.
+     Decoys must match the real fetch's request count, byte-length class, and composition — chunky real
+     prefetch needs equally chunky decoy sets, not tokens.
+   - **Must reach the CDN.** A decoy is cover only on a fetch that actually travels to the edge (IP +
+     object + time logged). A bundle already in the device's local store generates NO request, so a
+     "recycled" local decoy is invisible cover — the cover channel must bypass/revalidate to the edge,
+     or be a steady background hum. (This is why cover traffic and cache efficiency pull against each
+     other; see the economics note below.)
+   - **Intersection vs cross-session linkage — an OPEN tradeoff, not a solved obligation.** If each
+     fetch draws *fresh random* decoys, a longitudinal attacker intersects candidate sets across fetches
+     and recovers the real trace (the real bundle is in every set; decoys vary). Making the cohort
+     **sticky** defeats that — **but a stable cohort recurring from one IP is itself a cross-session
+     quasi-identifier, and a cohort spread *around* the real area leaks that area.** So stickiness is not
+     a clean fix: the cohort must be derived **independently of the user's real location** (a
+     population-shared cohort, not a home-centred spread), and residual cross-session linkability is one
+     of the parameters Rob ratifies (below), not something this mechanism closes on its own.
+
+**Both levers are required below city scale:** chunkiness defends the event-*count*/timing channel,
+decoys defend each event's *precision*; neither alone suffices — and decoys defend precision only if
+every axis above holds.
+
+**Refining "bundle size as a privacy parameter" (corrects the §4 addendum's shorthand).** Small
+bundles have **two opposing effects**: they make decoys *affordable* (bandwidth) but each fetch
+*sharper* (finer location) and *more frequent* (more events). So small is **not** monotonically "more
+private." Resolution:
+   - **Small bundles are the INDEX / COMPOSITION unit** — fine-grained availability so any area can be
+     assembled — **not necessarily the online FETCH size.**
+   - **The online fetch policy prefers CHUNKY prefetch** (pull a coarse covering set), using decoys
+     only for the residual fine-grained on-demand fetches.
+   - The privacy win = **chunky prefetch + decoys indistinguishable on all Lever-2 axes**, *not* "make
+     bundles tiny."
+
+**The floor is Rob's to set (see [[principles-changes-are-robs]]).** This section quantifies the
+*shape* of the tradeoff and names the obligations; it does **not** set the numbers. The **minimum
+online fetch granularity**, the **decoy count k**, and the **decoy spread/consistency policy** are
+P15/§9 parameters — surfaced for Rob's ratification in the PRINCIPLES amendment (they define what
+"unlinkable at scale S" concretely means), not baked here. Recommended *shape* for that ratification:
+above a coarse-area threshold the chunk is its own anonymity set (no decoys); below it, decoys
+mandatory and indistinguishable on all Lever-2 axes (spread, timing/order, size/count, edge-reaching,
+location-independent cohort); **never** an on-demand fetch at viewport granularity without decoys.
+
+**CDN / cost economics.** More granular = more requests (each a CDN GET + cache-key + a timing/IP
+event); tiny bundles = request explosion, per-request overhead, and *more* exposure events; decoys
+multiply request count by k. Chunky prefetch REDUCES requests — it wins on cost AND privacy at once.
+Cache keys **should become** content-addressed (bundle_id + sha, immutable, cache-forever) — a §4
+to-be-built TARGET, **not** today's wire model (today's R2 objects are pv-keyed, so identical bytes get
+a fresh URL each pv). **Caveat that ties to Lever 2's "must reach the CDN":** a decoy served from the
+local cache-forever store sends no request and so provides **zero** cover — cover traffic and cache
+efficiency pull in opposite directions, and WP-B7 owns reconciling them (decoys revalidate/bypass to
+the edge, or run as a background hum). Do not conflate a warm local cache with working cover.
+
+**Verdict: fold in — it doesn't break anything real.** The index+bundle model is a clean
+generalization; today's tiles/manifest/basemap/pack are special cases; the partial-update and
+separate-cadence wins survive because bundles stay typed. The one genuinely open piece is the
+online-basemap range-streaming edge (wrinkle 1), handed to WP-B7/WP-G. The privacy analysis is honest
+about the trap (bundle ≠ privacy) and pins the two obligations decoys must meet.
+
 ## Constraints & compliance
 
 Frozen contracts (`place_id` never region-dependent — §1; manifest/index/pack-descriptor
 versioning, newer-than-understood degradation); determinism; §5.5 untrusted-data on **all**
-downloaded artifacts incl. the new index (§5); §9/P15 privacy — **with the sub-region-download
-tradeoff an OPEN §9/P15 amendment for Rob (§4)**; constants earned-not-baked (global maxzoom
+downloaded artifacts incl. the new index (§5); §9/P15 privacy — **§4 design RULED (cover-traffic, not
+a k-anonymity floor); the argued §9/P15 PRINCIPLES edit is a separate Rob-gated PR**; the fetch model
+unified under index+bundles (§7); constants earned-not-baked (global maxzoom
 [measured], any size threshold — documented tunables). *(Section-citation note: "§N" without
 "spec" refers to THIS doc; spec sections are named "spec §N" to avoid the spec-§6-is-error-
 handling collision.)*
@@ -280,7 +421,7 @@ handling collision.)*
 |---|---|---|---|---|
 | **WP-G** global basemap | **app (`ios`)** | add the world low-zoom source + its under-layers in `PaperStyle`; **repoint the hardcoded `region`/camera to a single configurable default (NOT a picker — selection is WP-RM)**; fix blank-on-pan. **Precondition: a live UK publish exists on R2** (else blocked on an A7 UK run) | codex3's world-pmtiles measurement (in flight); a live UK publish | **URGENT — ship first** |
 | **WP-P** sub-region publishing + index | **pipeline (`develop`)** | consume `subregions[]` → publish-time bbox shard (decoupled: query country, filter bbox, emit sub id, **do not write the country registry**); id uniqueness assert; emit the versioned+atomic region-index; contracts: region-index schema + pack-descriptor schema (§6) + the A7 supersede | pipeline (built) | after WP-G |
-| **WP-B7** offline download + lifecycle | **app (`ios`)** | Documents store (`isExcludedFromBackup`), whole-file pmtiles + bulk sha-verified tiles, resumable background `URLSession`, **content-addressed local store + cross-pv sha-reuse before purge + retain-old-until-complete** (§4), the durable world tier for offline (§2) | **B3** (built) + **WP-P** | after WP-P |
+| **WP-B7** offline download + lifecycle + fetch model | **app (`ios`)** | Documents store (`isExcludedFromBackup`), whole-file pmtiles + bulk sha-verified tiles, resumable background `URLSession`, **content-addressed local store + cross-pv sha-reuse before purge + retain-old-until-complete** (§4), the durable world tier for offline (§2); **the unified index+bundle fetch layer (§7): mode-driven fetch policy (chunky online prefetch / aggregate offline), the decoy wrapper meeting ALL Lever-2 obligations (spatial spread, timing/order, size/count/composition parity, must-reach-CDN, location-independent cohort), and a call on wrinkle-1 (online-basemap range-streaming)** | **B3** (built) + **WP-P** | after WP-P |
 | **WP-RM** region-manager UX | **app (`ios`)** | manager screen (installed + available, progress, delete/update), region selection, accessibility (measurable) | **WP-B7** | after WP-B7 (own WP for reviewability) |
 
 **B10 Onboarding** (later) hooks region-pick → download offer — **must reflect Rob's §4 privacy
@@ -297,6 +438,21 @@ budget for.
   framing, WP-G scope/precondition, dedup precedence, measurable accessibility. **The escalated
   sub-region-download privacy question is now RULED by Rob (§4): sub-regions ship WITH cover-traffic;
   the answer is a cover-traffic requirement, not a k-anonymity floor.**
+- **Second gate (§7 unified fetch model, 2026-07-17): 3 critics (privacy-threat / coherence-arch /
+  principles-fidelity) → verify.** Raised 9, **2 survived adversarial verification**, both folded, plus
+  3 verify-withdrawn findings folded anyway because they exposed real defects in the §7 prose:
+  (1, survived) the decoy obligations were framed as a closed set of two — the one-horn overclaim that
+  broke the k-anonymity floor — so Lever 2 is **reframed around the governing rule** (a decoy is cover
+  only if indistinguishable on every observable axis) with five obligations: spatial spread, timing/order,
+  size/count/composition, must-reach-CDN, and the intersection-vs-cross-session-linkage tradeoff;
+  (2, survived) "already content-addressed / today's model" was a **false tree-grounding** — corrected
+  (today's wire is pv-addressed, `r2.py:106/115`; content-addressing is the §4 to-be-built target);
+  (3–5, folded) the warm-cache-recycling line self-contradicted the "must-reach-CDN" cover requirement,
+  the "no trace at all" for country packs ignored the §4 update-poll beacon, and sticky cohorts are
+  themselves a cross-session fingerprint. The unifying model itself **survived** — it's a clean
+  generalization, today's artifacts are special cases, typed bundles preserve the partial-update/cadence
+  wins. Open piece handed to WP-B7/WP-G: wrinkle-1 (online-basemap range-streaming).
 - PR → `develop` (docs rule), `sourcery-review` only, report on `wp/regions-design`. No self-merge;
   fable's independent review; `main` is Rob's. **The privacy §4 is RULED (2026-07-17): cover-traffic
-  + bundle-first + user-unlinked download-counts; see the §4 addendum.**
+  + bundle-first + user-unlinked download-counts; see the §4 addendum. The argued §9/PRINCIPLES edit is
+  a separate Rob-gated PR (`docs-privacy-principles-amend`).**
