@@ -66,20 +66,27 @@ Lists entry, B10's About surface, WP-RM's Offline-maps entry + active-download p
 ## 2. Routing seam + the download-progress deep-link (D2)
 
 - **A single in-app navigation intent — NOT a URL scheme** (there is no external-deep-link requirement;
-  a URL scheme would be unused surface). Define:
+  a URL scheme would be unused surface). The contract **separates "is the menu open" from "where deep-linked
+  to"** — a single optional can't express *open-at-root* (the chip's primary action) distinctly from a
+  destination:
   ```
   enum MenuDestination { case lists, offlineMaps, settings, about }   // + later: offlineMaps(regionID?)
-  @Observable final class AppShellModel { var openMenuTo: MenuDestination? = nil }  // nil = menu closed
+  @Observable final class AppShellModel {
+    var isMenuPresented = false          // the hub sheet is up
+    var deepLinkPath: MenuDestination? = nil   // nil = root list; non-nil = seed the NavigationStack
+  }
   ```
-  The chip sets `openMenuTo = .about`-agnostic (opens to the root list); a deep-link sets a specific case;
-  the hub presents when non-nil and seeds its `NavigationStack` path to that destination.
+  **The chip** sets `isMenuPresented = true` with `deepLinkPath = nil` → the hub opens at its **root list**.
+  **A deep-link** (the progress chip) sets `isMenuPresented = true, deepLinkPath = .offlineMaps` → the hub
+  opens with its `NavigationStack` **seeded to that destination**. `deepLinkPath` is consumed (reset to
+  `nil`) once applied, so back-navigation to the root works normally. B5/WP-RM build against this contract.
 - **The download-progress chip is an on-map overlay that appears ONLY during an active download**, and
-  **tapping it sets `openMenuTo = .offlineMaps`** (the deep-link contract). The chip's **presence + percent
-  is driven by a progress publisher this WP CONSUMES but does not build** — WP-RM-B / WP-B10d owns the
-  actual `AsyncStream`/`@Published` progress (today `downloadCurrentRegion()` has none). WP-SHELL defines
-  the chip UI + the `openMenuTo` contract against an **injected progress source that is `nil` when idle**;
-  the chip renders nothing until that source is wired. *(So the chip is buildable + testable here with a
-  stub publisher; the real data lands with WP-RM-B/B10d.)*
+  **tapping it sets `isMenuPresented = true, deepLinkPath = .offlineMaps`** (the deep-link contract). The
+  chip's **presence + percent is driven by a progress publisher this WP CONSUMES but does not build** —
+  WP-RM-B / WP-B10d owns the actual `AsyncStream`/`@Published` progress (today `downloadCurrentRegion()`
+  has none). WP-SHELL defines the chip UI + the deep-link contract against an **injected progress source
+  that is `nil` when idle**; the chip renders nothing until that source is wired. *(So the chip is
+  buildable + testable here with a stub publisher; the real data lands with WP-RM-B/B10d.)*
 - **The Lists and Offline-maps ROWS are entry points into a seam B5 / WP-RM fill.** WP-SHELL owns the row
   + the route; **B5 (#182) plugs its Lists sheet content, WP-RM (#177) plugs the region-manager content**
   into `.lists` / `.offlineMaps`. Until each lands, its row shows a **"coming soon" disabled state** (not a
@@ -89,13 +96,26 @@ Lists entry, B10's About surface, WP-RM's Offline-maps entry + active-download p
 
 - **Attribution on the map becomes INERT text.** Replace `attributionButton` (the `Button` → `showCredits`)
   with **non-interactive `Text`** ("© OpenStreetMap", same `.ultraThinMaterial` capsule, VoiceOver static),
-  **no tap target**. ODbL compliance = attribution **visible + legible**; interactivity is not required.
-  Remove the `.sheet(isPresented: $showCredits)` from `MapScreen`.
+  **no tap target**. Remove the `.sheet(isPresented: $showCredits)` from `MapScreen`.
+- **ODbL compliance is a LOAD-BEARING coupling: inert-on-the-map is legal ONLY because About carries the
+  reachable attribution + license [gate — bind it].** OSMF guidance: the on-map credit may be inert text,
+  **but the origin + license must remain reachable** from the app. So the inert flip and the About
+  attribution section are **one change, not two** — the inert `Text` must **never ship without About's
+  live `[Attribution]` + license reachable**. Belt-and-braces: the migrated credit entry adds an
+  **`openstreetmap.org/copyright` link** (the canonical ODbL origin). Bound in acceptance below.
 - **`CreditsView`'s three sections MOVE into About** (`About` = a hub destination). About renders **Privacy
   (plain language) · Credits/Attribution · Build hash · OSS licenses**: the **Build / Manifest-attribution /
   OSS** sections migrate verbatim from `CreditsView` (still consuming the **live** `[Attribution]` from
-  `MapScreenModel`, not a snapshot — pass it into the hub). `CreditsView` is deleted from `MapScreen.swift`;
-  its subviews (`CreditEntryView`, `OpenSourceCreditView`, the `OSSCredits.json` loader) move with About.
+  `MapScreenModel`, not a snapshot — pass it into the hub; add the `.../copyright` link to the OSM entry).
+  `CreditsView` is deleted from `MapScreen.swift`; its subviews (`CreditEntryView`, `OpenSourceCreditView`,
+  the `OSSCredits.json` loader) move with About.
+- **This supersedes B10's WP-B10e About/Settings anchor [gate — reconcile the collision].** WP-B10e (#174)
+  reaches About via *"the attribution chip → About, generalised"* and **depends on `CreditsView`** — which
+  this WP **deletes** and replaces with the menu chip → About hub. So **WP-SHELL's menu chip is the sole
+  About/Settings anchor; WP-B10e's anchor mechanism is superseded** (B10e no longer builds an entry path —
+  it plugs *content* into the hub). The **rows B10 plugs into About**: **Replay onboarding** (at minimum)
+  and **App version** (alongside the migrated build hash), plus the privacy copy below. B10e's dependency
+  flips from "generalise the attribution chip" to "plug rows into WP-SHELL's About."
 - **Privacy plain-language is B10 overlap [seam].** #176 About wants "privacy in plain language"; B10
   (#174) owns that copy (and its privacy claims were gated — no overclaiming "no one can see where you
   look"). WP-SHELL builds the About **container + a privacy row**; the **plain-language content is B10's**
@@ -125,20 +145,24 @@ Lists entry, B10's About surface, WP-RM's Offline-maps entry + active-download p
      unchanged — `onStyleWillReload` then fires as its normal post-reload re-apply hook.
 - **Location status: READ-only display** — reuse `LocationPermission.isLocationOff` + the existing
   `openLocationSettings()` (→ system Settings) as the action. No new permission logic.
-- **Storage: READ-only display** — surface `StorageHeadroom` (headroom math exists) + installed-pack size
-  from `OfflineRegionStore`. **Management actions (delete packs) belong to WP-RM's region manager**, not
-  here — Settings shows the number, Offline-maps does the managing.
+- **Storage: READ-only display** — surface `StorageHeadroom` (headroom math exists). **Installed-pack size
+  is NEW build work, not a free read [gate]:** `OfflineRegionStore` has **no size/enumeration API** today,
+  so WP-SHELL-b **builds a size accessor** (sum on-disk bytes of installed packs). Note **WP-RM's pack-unit
+  rework touches the same store** — coordinate the accessor with it (a shared `installedPacks()`/size API
+  serves both). **Management actions (delete packs) belong to WP-RM's region manager**, not here — Settings
+  shows the number, Offline-maps does the managing.
 
 ## Build-WP decomposition
 
 | WP | side | scope | depends on |
 |---|---|---|---|
-| **WP-SHELL-a** menu + About + inert attribution | **app (`ios`)** | the `.topLeading` menu chip; the hub sheet (self-contained `NavigationStack`, four rows); the `AppShellModel`/`MenuDestination` routing seam; **inert attribution** (`attributionButton` → `Text`, drop `showCredits`); **About** (migrate `CreditsView`'s Build/attribution/OSS out of `MapScreen.swift` + a privacy row seam); the **download-progress chip + `openMenuTo=.offlineMaps` deep-link** against a stub progress source; Lists/Offline rows as disabled-until-plugged entry points; a11y (#163) | B4/card (unaffected); **live `[Attribution]` from `MapScreenModel`** |
-| **WP-SHELL-b** Settings | **app (`ios`)** | the Settings hub destination: **theme picker** (`MapTheme.allCandidates` → `@AppStorage`; **add `theme` to `MLNMapViewRepresentable` → thread through `styleURL()` → `paperBasemapStyle(theme:)`; add `currentTheme` to the Coordinator + `currentTheme != theme` to the `needsStyleReload` gate** so a theme-only change repaints — `onStyleWillReload` is the post-reload re-apply hook, NOT the trigger, §4); location-status read (`LocationPermission` + `openLocationSettings`); storage read (`StorageHeadroom` + `OfflineRegionStore` size) | WP-SHELL-a (the hub); **`wp-ios-polish` (the reload gate lives there)** |
+| **WP-SHELL-a** menu + About + inert attribution | **app (`ios`)** | the `.topLeading` menu chip; the hub sheet (self-contained `NavigationStack`, four rows); the `AppShellModel` routing seam (`isMenuPresented` + `deepLinkPath`); **inert attribution** (`attributionButton` → `Text`, drop `showCredits`) **+ its ODbL coupling** (never ships without About's reachable attribution/license, §3); **About** (migrate `CreditsView`'s Build/attribution/OSS out of `MapScreen.swift`, add the `.../copyright` link + privacy/replay-onboarding/version row seams — **supersedes WP-B10e's anchor**); the **download-progress chip + `deepLinkPath=.offlineMaps` deep-link** against a stub progress source; Lists/Offline rows as disabled-until-plugged entry points; a11y (#163) | B4/card (unaffected); **live `[Attribution]` from `MapScreenModel`** |
+| **WP-SHELL-b** Settings | **app (`ios`)** | the Settings hub destination: **theme picker** (`MapTheme.allCandidates` → `@AppStorage`; **add `theme` to `MLNMapViewRepresentable` → thread through `styleURL()` → `paperBasemapStyle(theme:)`; add `currentTheme` to the Coordinator + `currentTheme != theme` to the `needsStyleReload` gate** so a theme-only change repaints — `onStyleWillReload` is the post-reload re-apply hook, NOT the trigger, §4); location-status read (`LocationPermission` + `openLocationSettings`); storage read (`StorageHeadroom` + a **NEW `OfflineRegionStore` size accessor**, §4 — coordinate with WP-RM's pack-unit store rework) | WP-SHELL-a (the hub); **`wp-ios-polish`/#181 (the reload gate lives there — in structural rework; expect churn, confirm sequencing when #181 lands)** |
 
 **Consumed seams (NOT built here):** B5 (#182) plugs Lists into `.lists`; WP-RM (#177) plugs the region
 manager into `.offlineMaps`; **WP-RM-B / WP-B10d** provides the real download-progress publisher the chip
-consumes; **B10 (#174)** provides the About privacy plain-language copy.
+consumes; **B10 (#174 / WP-B10e)** plugs About rows (privacy plain-language copy, replay-onboarding,
+version) — its own About/Settings *anchor* mechanism is **superseded** by this WP's menu chip (§3).
 
 ## Open flags (fable/Rob)
 
@@ -163,6 +187,19 @@ consumes; **B10 (#174)** provides the About privacy plain-language copy.
   `.definedPaper` matches the current hardcode; style JSON is local). The rest held — IA fidelity, the
   `CreditsView` migration keeping live attribution, the routing seam, the progress-chip stub, ODbL
   inert-attribution, and the B10 privacy-copy seam all survived verification.
+- **fable fallback review (2 medium + 2 minor, all folded):**
+  - **Routing contract was unbuildable** (medium) — `openMenuTo: MenuDestination?` couldn't express
+    open-at-root vs a destination (the `.about-agnostic` garble was the symptom); split into
+    `isMenuPresented` + `deepLinkPath` (§2).
+  - **WP-B10e anchor collision** (medium) — B10e reaches About via "attribution chip → About, generalised"
+    and depends on `CreditsView`, which this WP deletes; explicitly **superseded B10e's anchor** (menu chip
+    is the sole About/Settings anchor; B10e plugs rows: replay-onboarding + version) (§3).
+  - **ODbL coupling** (minor) — inert-on-map is legal only because About carries reachable
+    attribution/license; stated the coupling, bound it in acceptance, added an `openstreetmap.org/copyright`
+    link (§3).
+  - **Storage size overstated** (minor) — `OfflineRegionStore` has no size API; WP-SHELL-b builds the size
+    accessor, coordinated with WP-RM's store rework (§4). Plus: the reload gate lives on **#181** (in
+    structural rework — dependency declared, expect churn).
 - **Remaining acceptance dimensions:** IA-fidelity (one chip, one menu, sheets-over-map, no tab bar,
   attribution inert-but-visible — ODbL); feasibility (the migration keeps live attribution; the theme
   picker actually repaints per the corrected wiring; the routing seam presents + deep-links; the progress
@@ -170,8 +207,10 @@ consumes; **B10 (#174)** provides the About privacy plain-language copy.
   fill, not dead ends; Settings shows storage, Offline-maps manages it); privacy (About copy doesn't
   overclaim — B10 gate); a11y (chip + hub + rows Dynamic Type/VoiceOver — #163).
 - **Acceptance:** the map shows one menu chip + inert attribution; the chip opens a single menu sheet with
-  Lists/Offline/Settings/About; About carries the migrated credits (build/attribution/OSS) with attribution
-  live; Settings' theme picker changes the basemap and persists; a simulated active download shows a chip
-  that deep-links to Offline maps; no surface uses push-navigation or a tab bar.
+  Lists/Offline/Settings/About; About carries the migrated credits (build/attribution/OSS + the
+  `.../copyright` link) with attribution live; **the inert-attribution flip and About's reachable
+  attribution/license ship together — the inert `Text` never ships without reachable About attribution
+  (ODbL binding)**; Settings' theme picker changes the basemap and persists; a simulated active download
+  shows a chip that deep-links to Offline maps; no surface uses push-navigation or a tab bar.
 - PR → `develop`, `sourcery-review` only, report `p2p/fable__opus`. No self-merge; fable reviews; `main`
   is Rob's.
