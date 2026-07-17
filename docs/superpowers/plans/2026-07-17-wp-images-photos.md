@@ -74,9 +74,10 @@ component that **degrades, does not refuse**).
   truth for a place's photo + its legally-required credit.
 - **Thumbnail blobs are content-addressed and global:** `thumbs/{sha[0:2]}/{sha}.webp` at the public
   bucket root — **immutable, cache-forever, deduped across places, publish-versions, and regions.**
-  The online URL is `{base}/thumbs/{sha[0:2]}/{sha}.webp`; the app derives it from `thumb_sha256`.
-  (This sidesteps the pv-churn the region §7 gate flagged for tiles: image bytes are truly
-  content-addressed from day one.)
+  The online URL is `https://tiles.making-tracks.app/thumbs/{sha[0:2]}/{sha}.webp` (**same host as
+  tiles** — fable's ruling: single-origin stays literal, one allowlist entry); the app derives it from
+  `thumb_sha256`. (This sidesteps the pv-churn the region §7 gate flagged for tiles: image bytes are
+  truly content-addressed from day one.)
 - **Base tile/manifest are UNCHANGED.** `place.image_url` stays null/unused (the pipeline still never
   sets it; the image-index supersedes it — left in the schema, not churned). `manifest.min_reader_version`
   does **not** bump for images. Old/incapable readers simply ignore the image-index → **image-less
@@ -89,15 +90,22 @@ component that **degrades, does not refuse**).
 
 ## 2. License filtering — which Commons licenses we may redistribute (D2)
 
-We **resize** (a derivative work) and **redistribute commercially** (App Store; bundled in packs).
-That set the acceptable-license boundary:
+We **resize** (a derivative work) and redistribute in a **non-commercial** app (Rob's ruling, 2026-07-17:
+*"the app is not commercial"* — free, no ads, no payments; CC's NC test is about use directed at
+commercial advantage). That set the acceptable-license boundary:
 
 - **ACCEPT** (credit rendered for all — see §3): Public Domain / PD-old / PD-art, **CC0**,
-  **CC-BY** (2.0/2.5/3.0/4.0), **CC-BY-SA** (all versions).
-- **REJECT**: **CC-BY-ND / any -ND** (no-derivatives — resizing is a derivative → forbidden), **any
-  -NC** (non-commercial — App-Store distribution is commercial), **GFDL-only** (impractical; accept
-  only if *also* dual-licensed CC-BY-SA), **non-free / "fair use"**, and **anything without a
-  machine-readable license, or ambiguous** (§5.5 posture: reject-on-doubt → no image).
+  **CC-BY** (2.0/2.5/3.0/4.0), **CC-BY-SA** (all versions), and — under the non-commercial ruling —
+  **CC-BY-NC** and **CC-BY-NC-SA**.
+- **REJECT**: **CC-BY-ND / CC-BY-NC-ND / any -ND** (no-derivatives — resizing is a derivative →
+  forbidden regardless of the NC ruling), **GFDL-only** (impractical; accept only if *also*
+  dual-licensed CC-BY-SA), **non-free / "fair use"**, and **anything without a machine-readable
+  license, or ambiguous** (§5.5 posture: reject-on-doubt → no image).
+- **[NC eligibility is CONTINGENT — Rob's rider, recorded not relitigated].** NC images are eligible
+  *only while the app stays non-commercial.* If monetisation ever arrives, every **NC-derived thumb
+  must be purgeable MECHANICALLY** — see the purge operation in §5 and the risk note (§Risk). The
+  `license_code` field (§3/§5) is queryable precisely so the NC subset can be selected and purged.
+  ND stays rejected on the *derivative* ground, independent of commerciality.
 - **[gate — resolve the derivative theory, one theory throughout]** We treat a resize + WebP re-encode
   as an **adaptation** (a derivative). This is the *same* premise that lets us reject -ND, so we must
   carry it consistently: for **CC-BY-SA** sources our thumbnail is **relicensed under the same BY-SA
@@ -112,11 +120,9 @@ That set the acceptable-license boundary:
   (config-driven, earned-not-baked). Cache reject decisions. State the expected drop rate from
   missing-metadata + rejected-format files in the WP-IMG-P acceptance (it is non-trivial).
 
-**[ESCALATION — flag, do not decide]** The reject-NC rule assumes the app is (or may become)
-**commercial**. App-Store distribution is generally "commercial" under CC, and a paid/monetised
-future would settle it — but this is a legal-policy call, not mine. Proposed default: **reject NC**
-(conservative, safe). Rob/fable confirm before build. (Per [[principles-changes-are-robs]]: I propose
-the conservative set + surface the assumption; I do not set the policy.)
+**[RESOLVED — Rob ruled 2026-07-17: "the app is not commercial" → NC accepted, contingent (above).]**
+The commerciality call was Rob's, not mine ([[principles-changes-are-robs]]); recorded, not
+relitigated. The contingency + mechanical purge path (below) is the standing condition on it.
 
 ## 3. Attribution rendering — legally load-bearing (D3)
 
@@ -182,9 +188,14 @@ the conservative set + surface the assumption; I do not set the policy.)
   rejects means a **material fraction of places get no thumb** — state the measured drop rate in
   WP-IMG-P acceptance rather than assuming near-100% coverage.
 - **Cost / tiering — a NEW eligibility floor gate:** fetching for 600k places is the cost driver, so
-  **thumbnails ship for the best places first** — an eligibility floor `tier ≤ 2` (score ≥ 0.65),
-  config-driven (earned-not-baked), matching `select_tile_places`' `(tier, -score)` ranking. The floor
-  can lower over successive sweeps as cost allows; the cache makes each lowering incremental.
+  **thumbnails ship for the best places first** — an eligibility floor `tier ≤ 2` (score ≥ 0.65,
+  fable's ruling: stands as the default), config-driven (earned-not-baked), matching
+  `select_tile_places`' `(tier, -score)` ranking. The floor can lower over successive sweeps as cost
+  allows; the cache makes each lowering incremental.
+- **Measure-then-commit (fable's ruling — WP-G precedent):** WP-IMG-P must run a **bounded first sweep
+  and emit a measured cost report** (images fetched / rejected-by-reason / bytes / API time / est. full
+  extrapolation) **before** committing to the full `tier ≤ 2` run. No blind full-sweep; measure, report,
+  then commit.
 - **P18 → filename recovery (build note):** the pipeline captures a *resolved* P18 URL, not the
   `File:` title the `imageinfo` API needs. Recover the filename from the upload-URL path (last
   segment) or capture the raw P18 value at extraction. Flag: verify against a real P18 value before
@@ -219,6 +230,14 @@ the conservative set + surface the assumption; I do not set the policy.)
   delete unreferenced blobs) reclaims orphans. Until GC runs, orphans are cheap and harmless. WP-IMG-P /
   WP-P own the GC pass; deleting a region deletes its `images/…` index tiles (its `{region}` prefix),
   never blobs directly.
+- **NC mechanical-purge operation [Rob's contingency rider — required, testable].** Because
+  `license_code` is a queryable field on every image-index entry, a **documented, tested purge op**
+  exists: (1) select every entry whose `license_code` is an NC variant; (2) rewrite each affected
+  `images/…` index tile to drop those entries (+ recompute `bytes_with_thumbs`); (3) reference-count GC
+  removes the now-orphaned `thumbs/{sha}` blobs. This composes the existing index-rewrite + GC — no new
+  primitive. It is the standing condition on NC eligibility (§2): if the app ever becomes commercial,
+  run the purge. WP-IMG-P ships it with a test (seed NC + non-NC, purge, assert NC blobs+entries gone,
+  non-NC intact).
 - **`region-index`**: make `bytes_with_thumbs` **real** (`basemap + tiles + image-index + thumb
   blobs`); fix `publish_stage.py:399` + the equality tests.
 - **`place.schema` `image_url`**: unchanged, left unused (superseded by the image-index; not churned).
@@ -246,10 +265,10 @@ the conservative set + surface the assumption; I do not set the policy.)
 
 ## 7. App wiring (D7) — `ios`, folds into the image build WP
 
-- **Allowlist collapses to our origin.** `PlaceContentGuards.allowedImageHosts` → the single R2 image
-  origin (e.g. `tiles.making-tracks.app`, or an `images.` subdomain — pin at build). Update the **4
-  call sites** + the hardcoded test hosts. Image URLs now come from the image-index (our origin), not
-  `place.image_url`.
+- **Allowlist collapses to one origin — `tiles.making-tracks.app`** (fable's ruling: same host as
+  tiles; single-origin literal, **one** allowlist entry). `PlaceContentGuards.allowedImageHosts` →
+  `{"tiles.making-tracks.app"}`. Update the **4 call sites** + the hardcoded Wikimedia test hosts.
+  Image URLs now come from the image-index (our origin), not `place.image_url`.
 - **Card gets images from the image-index join, not `place.image_url`:** load the parallel image-index
   tile → join by `place_id` → `{thumb_sha256 → our URL, creator, license_name, license_url, modified}` →
   `ImageLoader.fetch` (allowlist = our origin) → render image **+ assembled credit** (creator · license ·
@@ -273,20 +292,31 @@ thumbnail without its credit (structural). *("§N" = spec section; "§N (this do
 
 | WP | side | scope | depends on |
 |---|---|---|---|
-| **WP-IMG-P** pipeline images | **pipeline (`develop`)** | P18 filename recovery; publish-time Commons `imageinfo` fetch + **license filter**; **WebP resize** (pinned, deterministic); content-addressed **blob cache** (+ cached rejects); emit `images/…` index tiles + `thumbs/…` blobs; make `bytes_with_thumbs` real; **eligibility floor** (tier ≤ 2, config). Contracts: `image-index` schema + caps + `versions.json` + fixtures | contracts (built), publisher (built) |
-| **WP-IMG-B** app images online | **app (`ios`)** | image-index tile decode + `place_id` join; **per-image attribution UI** on the card (the legal gate); **allowlist → our origin** (4 sites + tests); content-addressed **image cache**; retire `AttributionModel` | WP-IMG-P + B4 card (built) |
+| **WP-IMG-P** pipeline images | **pipeline (`develop`)** | P18 filename recovery; publish-time Commons `imageinfo` fetch + **strict license filter** (incl. NC-accept); bomb-bounded **decode** + **WebP resize** (pinned, deterministic); content-addressed **blob cache** (+ cached rejects); emit `images/…` index tiles + `thumbs/…` blobs; make `bytes_with_thumbs` real; **eligibility floor** (tier ≤ 2, config) + **measure-then-commit cost report**; **NC mechanical-purge op + test** (§5); global-blob **GC**. Contracts: `image-index` schema (structured attribution) + caps + `versions.json` + fixtures | contracts (built), publisher (built) |
+| **WP-IMG-B** app images online | **app (`ios`)** | image-index tile decode + `place_id` join; **per-image attribution UI** (assembled, plain-text, creator-present gate); **allowlist → `tiles.making-tracks.app` (1 entry)** (4 sites + tests); retire `place.image_url` path; content-addressed **image cache**; retire `AttributionModel` | WP-IMG-P + B4 card (built) |
 | **WP-IMG-PACK** offline thumbs | **app (`ios`), folds into WP-B7** | pack includes image-index + blobs; `thumbnails_present` degrade flag; verify-on-download via `thumb_sha256`; "include images" choice; online-thumb cover-traffic per §7 | WP-IMG-B + WP-B7 |
 
 Order: **WP-IMG-P → WP-IMG-B → WP-IMG-PACK** (pipeline produces the artifacts; app consumes online;
 offline last with WP-B7).
 
-## Open flags (for fable/Rob before build)
+## Rulings (2026-07-17 — resolved, was "open flags")
 
-1. **License set / commercial assumption (§2)** — confirm reject-NC (App-Store = commercial). The one
-   policy call I won't make.
-2. **Image origin host** — `tiles.making-tracks.app` vs an `images.` subdomain (affects the app
-   allowlist collapse + CDN config).
-3. **Initial eligibility floor** — `tier ≤ 2` proposed; confirm the first-sweep cost appetite.
+1. **License set / commerciality — RULED (Rob):** *"the app is not commercial"* → **NC accepted**
+   (BY-NC, BY-NC-SA), **contingent** on the app staying non-commercial, with a required **mechanical
+   NC-purge** op (§5) + §Risk note. ND stays rejected (derivative ground). §2 updated.
+2. **Image origin host — RULED (fable):** **`tiles.making-tracks.app`** — same host as tiles,
+   single-origin literal, one allowlist entry. §1/§7 updated.
+3. **Eligibility floor — RULED (fable):** `tier ≤ 2` **stands as default**; WP-IMG-P runs a
+   **measure-then-commit** bounded first sweep + cost report before the full run (§4).
+
+## Risk
+
+- **NC-eligibility is commerciality-contingent (Rob's rider).** NC-licensed thumbnails are lawful only
+  while the app is non-commercial. **Trigger:** any move to ads / payments / commercial advantage.
+  **Mitigation (must exist before NC images ship):** the `license_code` field makes the NC subset
+  queryable, and the **mechanical purge op (§5)** — index-rewrite to drop NC entries + GC the orphaned
+  blobs, with a test — removes them without a re-fetch. Recorded so the contingency can never be
+  forgotten: shipping NC images **requires** the purge op to be built and tested first.
 
 ## Gate & acceptance (this design doc)
 
