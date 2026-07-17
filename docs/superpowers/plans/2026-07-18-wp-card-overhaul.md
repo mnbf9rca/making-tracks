@@ -29,8 +29,13 @@ card-layout, action-row, list-membership, and a11y sections are the #171 expansi
   schema forces a **non-null** creator **only** when `license_code` matches `^CC-BY(-SA)?-…` — so for
   **PD / CC0-1.0** (also in the accept set) `creator: null` is **valid and emitted** (`images.py:552-556`).
   So "requires all six values" is wrong: PD/CC0 photos legitimately carry a null creator and need no
-  attribution author. The app must handle both the **license set** `{PD, CC0-1.0, CC-BY 1.0–4.0,
-  CC-BY-SA 1.0–4.0}` (NC/ND excluded) and a **null creator**. **The pipeline emits `min_reader_version: 1`** (`images.py:600`) —
+  attribution author. The app must handle both a **null creator** and the **FULL shipped license space —
+  pin to the schema regex, not a narrow literal set** (fable review): `license_code` ∈ PD (`General
+  public domain`), `CC0-1.0`, and `^CC-BY(-SA)?-(1\.0|2\.0|2\.1|2\.5|3\.0|4\.0)(-[A-Z]{2}(_[A-Z]+)?|-IGO)?$`
+  — i.e. **ported (`-DE`, `-FR`…) and `-IGO` variants ARE valid and emitted**; a narrow `{…1.0–4.0}`
+  literal drops legitimate ported/IGO images. The `license_url` likewise includes the port segment (and
+  the PD deed for `General_public_domain`); the app re-validates against the schema pattern, not a
+  hand-list. **The pipeline emits `min_reader_version: 1`** (`images.py:600`) —
   the app reader is at **2** (`VersionGate.readerVersion`), so it gates in **cleanly, no reader bump.**
   Thumbs: `thumbs/{sha[:2]}/{sha}.webp` at the public root (`images.py:411`), content-addressed, global.
   The sidecar is **OPTIONAL** ("tile place payloads remain unchanged") → tiles without images degrade.
@@ -60,7 +65,7 @@ card-layout, action-row, list-membership, and a11y sections are the #171 expansi
     consumption is entirely greenfield** (grep-confirmed).
 - **Blurb (Phase 2):** **not published today** — publish emits only `{place_id, name, lat, lon, category,
   tier, score, source_refs}` (`publish_stage.py:234-249`). The **Wikipedia plaintext extract IS captured**
-  (`extractors/wikipedia.py:53`, `explaintext=1` → plaintext, cap 300) into `source_records.props_json`,
+  (captured `extractors/wikipedia.py:53`; `explaintext=1` at `acquire.py:445` → plaintext, cap 300) into `source_records.props_json`,
   but feeds **scoring only** — never a published place. The app **already renders `blurb`**
   (`PlaceCardModel.blurb` + `Text(verbatim:)`), so its render path is a ready template. **Wikipedia
   attribution plumbing already shipped (#157):** `a1d_sources.json` `wikipedia: CC-BY-SA-4.0`,
@@ -136,11 +141,14 @@ management is B5; **sharing is out of scope until accounts exist** (privacy.md).
 
 ## 0.6 Offline graceful degradation
 
-The card works fully offline: **name / type / description / list-membership** come from the tile + local DB
-(always offline-available). The **photo** comes from the bundled pack thumb (§6) if downloaded, else is
-**omitted** offline (never a spinner-forever / broken frame). Attribution renders whenever its photo/text
-renders and is absent when the component is (nothing uncredited, nothing orphaned). Every place has a
-usable card offline.
+The card works offline: **name / type / list-membership** come from the tile + local DB (always
+offline-available). The **photo** comes from the bundled pack thumb (§6) if downloaded, else **omitted**
+offline (never a spinner-forever / broken frame). **The DESCRIPTION is a sidecar (§7), so offline it
+needs the descriptions sidecar bundled in the pack — a pack extension parallel to thumbs
+(WP-IMG-B2-adjacent), NOT automatic** (corrects the earlier "always offline" overclaim): without that
+extension, offline cards show name/type/photo but no description. Attribution renders whenever its
+photo/text renders and is absent when the component is (nothing uncredited, nothing orphaned). Every
+place still has a usable card offline (description is the one component gated on the pack extension).
 
 ---
 
@@ -236,48 +244,51 @@ usable card offline.
 
 # THE BLURB COMPONENT (§7–§8) — Wikipedia text (separately commissionable)
 
-## 7. Publish the Wikipedia extract as a blurb (D7 — pipeline)
+## 7. The description is a SIDECAR, NOT a tile field (D7) — CORRECTED (fable review)
 
-- **The data exists, plaintext, ready.** Lift the captured Wikipedia `extract`
-  (`source_records.props_json`, `explaintext=1`, ≤300 chars) onto the published place as `blurb` — read
-  it in `_joined_places`/`tiles.py` (or a `blurb` column), SAFE_TEXT-guarded + ≤600 (`BLURB_MAX`), exactly
-  like the other place strings. The app **already renders `blurb`** (`Text(verbatim:)`) — so publishing it
-  is the only step to get text on cards.
-- **Content-safety note:** the extract is **plaintext today** (no HTML), so SAFE_TEXT suffices. **If a
-  future blurb source is HTML or LLM-generated**, the pinned blurb **content-safety screen** (A6, not
-  built) must run **before** publish — SAFE_TEXT does not strip markup. Record this as a precondition on
-  any non-plaintext blurb source.
+**[MAJOR fix — inlining the blurb on the tile breaks deployed readers].** My first draft published the
+blurb + `wikipedia_lang` **inline on the place tile**. That is wrong: `place.schema` is
+`additionalProperties:false` and the **shipped app HARD-DROPS a place carrying an unknown key**
+(`allowedPlaceKeys` `MakingTracksTiles.swift:578-581`, guard-continue `:622`, `strictPlaceObject`
+`PlaceCardModel.swift:86-92`). Publishing those fields **before** an app update would make **every
+Wikipedia-provenance place vanish** for existing readers. The description must be a **separate sidecar**,
+exactly like the image-index — additive, old-readers-no-op.
 
-## 8. CC BY-SA **text** attribution — per-place, the compliance surface (D8)
+- **Consume the descriptions SIDECAR (codex4's PR #173, contract CONFIRMED on `wp/wiki-descriptions`):**
+  `{region}/{publish_version}/descriptions/10/{x}/{y}.json` — `description-index` v1
+  (`contracts/schemas/description-index.schema.json`; publisher `pipeline/…/publish/descriptions.py`),
+  parallel to `images/`, `schema_version: 1`, `min_reader_version: 1` (gates in cleanly at reader 2), z/x/y,
+  and a **`places` array** (same name as the tile — **NOT `entries`**). Each record:
+  `{place_id, wikipedia_lang, wikipedia_title, excerpt (sanitized one-line, ≤500 char, sentence-boundary),
+  source_ref (wp:<pageid>), source_url (prebuilt/prevalidated), license_code: CC-BY-SA-4.0, license_name:
+  "Creative Commons Attribution-ShareAlike 4.0", license_url, modified: true}`. Additive, old-readers-no-op
+  (the image-index pattern). Re-derived from snapshot extracts (fixes the earlier mid-sentence `str[:300]`).
+- **App:** fetch the descriptions sidecar in parallel with the tile (like the image-index, §1), join by
+  `place_id`, render the excerpt as the card **Description** (§0.1). Absent sidecar / entry → the card
+  omits the description block (degrade). The tile place payload is **unchanged** — no new tile field.
+- **Content-safety:** the excerpt is plaintext (Wikipedia `explaintext`); a future HTML/LLM description
+  source needs the A6 content-safety screen **before** publish (SAFE_TEXT does not strip markup) —
+  codex4's pipeline concern, noted.
+
+## 8. CC BY-SA **text** attribution — carried by the sidecar, rendered by the app (D8)
 
 - **Source-level Wikipedia credit already ships (#157)** — a `wp:*` `source_ref` emits the manifest
-  `wikipedia` / CC-BY-SA-4.0 line + bumps `min_reader_version` to 2. That is the **floor**, not the bar.
-- **CC BY-SA text reuse needs PER-PLACE attribution [gate — licensing, argue-don't-diverge].** Crediting
-  "Wikipedia content" generally does not attribute the **specific** article the blurb came from. The
-  rigorous bar (WMF ToU / BY-SA): a **link to the source article** (which carries author history) + the
-  CC BY-SA notice, shown **with the text**. So Phase 2 must **publish per-place Wikipedia provenance** —
-  the `wikipedia_title` field **AND the source LANGUAGE** → the app renders **"From Wikipedia: <title>"**
-  linking to `https://<lang>.wikipedia.org/wiki/<title>` beneath the blurb, plus the versioned linked
-  license.
-- **[gate — the article link needs a published LANGUAGE].** The extractor is **multi-language**
-  (`extractors/wikipedia.py` gates on `props['lang']`; region-config allows up to 16 languages), but
-  `place.schema` carries only `wikipedia_title` — **no language**. A hardcoded `en.wikipedia.org` link
-  would 404 / mis-attribute a `ms`/other-language blurb, defeating the per-place BY-SA link. **WP-BLURB-P
-  must publish a `wikipedia_lang`** (a new nullable place field, from `props['lang']`); the app builds the
-  URL from it. **Until `wikipedia_lang` is published, render NO article link** (fall back to the
-  source-level manifest credit) — never a wrong-language link.
-- **[gate — the text license must be VERSIONED + LINKED, matching §3].** Render **"CC BY-SA 4.0"** (the
-  pinned Wikipedia version, `a1d_sources.json`) linking to `https://creativecommons.org/licenses/by-sa/4.0/`
-  — not a bare unversioned "CC BY-SA". BY-SA requires identifying the license by URI; this matches the
-  image path's mandated license link (§3). Plain-text + validated link only.
-- **Share-alike-for-text [flag — confirm, don't assume].** A ≤300-char factual intro may be de-minimis,
-  but the safe posture (matching the image ND/BY-SA rigor) is: **attribute per-place + note CC BY-SA**;
-  whether our blurb *text* must itself be *offered* under BY-SA (as image thumbnails are) is a licensing
-  call I **flag for Rob/fable**, recommending the conservative "attribute + BY-SA-noted, link to article"
-  and **not** claiming the text is relicensed unless required. (This is the text analog of the image SA
-  discharge; surfaced, not decided in a plan.)
-- **App:** render the blurb (exists) + a **Wikipedia attribution line** (article link + CC BY-SA), plain-
-  text/link only, same discipline as §3. Small addition to the card.
+  `wikipedia` / CC-BY-SA-4.0 line + `min_reader_version ≥ 2`. That is the **floor**; the sidecar carries
+  the **per-place** bar.
+- **The sidecar carries the per-place provenance — the app does NOT construct URLs.** Each entry ships a
+  **pre-validated, language-aware `source_url`** (host-pinned to `<lang>.wikipedia.org`, built + validated
+  in the pipeline from `wikipedia_lang` + title) — so the app **renders it verbatim** and never
+  string-builds a URL from a raw title (which risked the wrong-language/404 defect the earlier draft
+  had). Plus `license_code = CC-BY-SA-4.0` and its deed URL.
+- **App render (with the text):** the card shows **"From Wikipedia" → the sidecar's `source_url`** +
+  **"CC BY-SA 4.0" → the deed** (`https://creativecommons.org/licenses/by-sa/4.0/`), plain-text +
+  **validated link only** (re-check the `source_url` is https + `*.wikipedia.org` before opening; the
+  deed is `creativecommons.org`). Same discipline as the image attribution (§3), positioned small at the
+  card bottom (§0.1).
+- **Share-alike-for-text [flag — confirm, don't assume].** A short factual excerpt may be de-minimis, but
+  the safe posture is **attribute per-place + note CC BY-SA 4.0 + link the article** (author history) and
+  the deed; whether our excerpt *text* must itself be *offered* under BY-SA is a licensing call I **flag
+  for Rob/fable** (recommend the conservative attribute+link, not relicense). Surfaced, not decided.
 
 ---
 
@@ -285,11 +296,11 @@ usable card offline.
 
 | WP | side | scope | depends on |
 |---|---|---|---|
-| **WP-CARD** card layout/hierarchy | **app (`ios`)** | the §0 overhaul: typographic hierarchy (name/type/**description/photo**/list-membership/action-row/small-attribution — Rob's order); **type row** (#166 icon+label); **list-membership chips** (read `list_items`, **exclude the system Save list**; empty until B5); **a11y** (Dynamic Type reflow, VoiceOver, WCAG AA — #163); **offline degradation** (photo omitted, rest present). Container hosting the photo/blurb/action components | B4 card (built); WP-ICONS (type icon); #167 action row |
+| **WP-CARD** card layout/hierarchy | **app (`ios`)** | the §0 overhaul: typographic hierarchy (name/type/**description/photo**/list-membership/action-row/small-attribution — Rob's order); **type row** (#166 icon+label); **list-membership chips** (read `list_items`, **exclude the system Save list**; empty until B5); **a11y** (Dynamic Type reflow, VoiceOver, WCAG AA — #163); **offline degradation** (photo omitted, rest present). Container hosting the photo/blurb/action components. **Hide action ships FEATURE-GATED (no-op/hidden) until WP-HIDE lands** (`hidden_places`+`setHidden` don't exist on `ios` yet — codex2 building); WP-CARD does **not** block on it | B4 card (built); WP-ICONS (type icon); WP-HIDE (Hide action, feature-gated meanwhile) |
 | **WP-IMG-B1** photos online | **app (`ios`)** | image-index sidecar fetch+decode (reuse `HTTPTileFetcher`, `VersionGate`); thumb URL + **sha256 verify** + decode-bomb + width/height; `PlaceCardModel` image fields; **mandatory attribution UI** (small-at-bottom, plain-text, validated links, drop-if-invalid); bounded thumb cache | #158 (shipped); WP-CARD |
 | **WP-IMG-B2** offline thumbs | **app (`ios`)** | extend `OfflineRegionStore`/`Downloader`: `objects/thumbs/{sha}.webp` + image-index in the pack, sha-verify + GC + headroom; **"include images"** size toggle (`bytesWithThumbnails`) | WP-IMG-B1; the built pack store |
-| **WP-BLURB-P** publish blurb + provenance | **pipeline (`develop`)** | lift Wikipedia `extract` → `blurb`; publish `wikipedia_title` **+ `wikipedia_lang`** (from `props['lang']`, for the article URL); SAFE_TEXT + cap; content-safety precondition for non-plaintext sources | pipeline (built); #157 attribution (shipped) |
-| **WP-BLURB-B** blurb attribution UI | **app (`ios`)** | render the per-place Wikipedia credit — article link `https://<lang>.wikipedia.org/wiki/<title>` (only if `wikipedia_lang` present) + **"CC BY-SA 4.0" linked to the deed** — with the existing blurb render | WP-BLURB-P (incl. `wikipedia_lang`) |
+| **~~WP-BLURB-P~~ (descriptions sidecar)** | **pipeline (`develop`)** | **codex4's PR #173** — `description-index` sidecar (`descriptions/10/{x}/{y}.json`, `places[]`, per-record excerpt + `wikipedia_lang`/`_title` + prevalidated `source_url` + CC-BY-SA-4.0). **Not opus scope — this design CONSUMES it** | — (codex4, PR #173) |
+| **WP-BLURB-B** description + attribution UI | **app (`ios`)** | fetch the descriptions sidecar (parallel to tiles, like image-index); render the `excerpt` as the card description + the Wikipedia credit — **`source_url` VERBATIM** (no app URL construction) + **"CC BY-SA 4.0" → deed** | WP-CARD; **codex4's description-index sidecar (#173)** |
 
 ## Open flags (fable/Rob)
 
@@ -315,5 +326,13 @@ usable card offline.
   - **"Advance to next"** implied a nonexistent card deck → corrected to "the card closes" (§0.3).
   The photo/blurb architecture + the card hierarchy survived; folds were compliance precision + the
   Save/membership reconciliation.
+- **fable fallback review (folded before merge):** **MAJOR** — the blurb must NOT inline on the tile
+  (`additionalProperties:false` + the app hard-drops unknown-key places → every provenance place would
+  vanish for old readers); rewrote §7/§8 to **consume codex4's `description-index` sidecar (#173,
+  contract confirmed on `wp/wiki-descriptions`)** — app uses the prevalidated `source_url` verbatim, no
+  URL construction. MOD — §3 license accept-set pinned to the **schema regex** (ported/`-IGO` variants +
+  the PD deed), not a narrow literal. §0.6 — description-offline is **conditional** on a pack extension
+  (WP-IMG-B2-adjacent), not automatic. MINOR — WP-CARD's **Hide is feature-gated until WP-HIDE lands**
+  (doesn't block). Miscite fixed (`explaintext=1` is `acquire.py:445`).
 - PR → `develop`, `sourcery-review` only, report `p2p/fable__opus`. No self-merge; fable reviews; `main`
   is Rob's.
