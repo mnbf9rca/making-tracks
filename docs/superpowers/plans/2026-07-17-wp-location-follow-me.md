@@ -164,10 +164,20 @@ option is **off the table** (it would have needed an argued §3.4/P5/P6 amendmen
 snow is marked by the **deliberate** loop, and location *serves* that loop — it never writes it.
 
 **The in-scope snow mechanic — the foreground nearby-prompt loop (spec §3.4 / B8):**
+- **[correction, 2026-07-18 — the nearby-prompt is ALREADY BUILT, not to-be-built].** `nearbyPromptCandidate`
+  exists on `origin/ios` (`MapScreen.swift:306-334`, *"You're near X — seen it?"*, 125 m radius, with a
+  transient dismiss set) but is **not yet fed by a real location fix** (no locate-me/follow yet). So this
+  design **wires the located loop into the EXISTING prompt** — it does not build the prompt. (The earlier
+  draft mis-called it "to-be-built / B8's"; surfaced by the #167/#166 review.) A builder must patch the
+  existing component, not create a new one — and add the hidden-exclusion guard below.
 - Follow-me shows where you are → as you move, the app compares your fix against the **already-loaded
   viewport places** (spec §5.4: an in-memory scan, no spatial query, no new storage) → when you're near
-  an un-seen place it offers a **foreground prompt** *"You're near X — seen it?"* → **one tap** marks it
-  seen (spec §3.4, unchanged) → that pin fades. This is "moving marks the snow," done deliberately.
+  an un-seen place the existing prompt offers *"You're near X — seen it?"* → **one tap** marks it seen
+  (spec §3.4, unchanged) → that pin fades. This is "moving marks the snow," done deliberately.
+- **Must skip HIDDEN places (#167 cross-feature).** `nearbyPromptCandidate` needs an **unconditional
+  `hidden.contains(place.id)` guard** (from the hide design, #168) so it never nudges "seen it?" for a
+  place the user explicitly hid — independent of the show-hidden toggle (in show-hidden mode the hidden
+  pins re-enter `features`, so the prompt can't rely on the map filter).
 - **Foreground-only, v1** (spec §3.4): no background nudges (that's a v2 always-on-location decision).
   The prompt is a gentle, dismissible surface — never a nag; declining is free and silent (P5).
 - **"Fresh snow / My tracks" toggle** (spec §17/§3.2) renders trodden vs untrodden: your "trail" is the
@@ -186,7 +196,7 @@ design ships the *located loop that feeds visits*, not the Tracks screen.
 |---|---|---|---|
 | **WP-LOC-B** follow-me + location UX | **app (`ios`)** | follow-me `MLNUserTrackingMode` state machine (+ compass heading, pan-breaks-follow); `scenePhase` battery/backgrounding gating; out-of-coverage located state; startup-camera precedence (coordinate WP-G). **Consumes** the shared permission component (below), does not re-own the manager | codex bare locate-me + permission helper; WP-G (configurable default) |
 | **WP-LOC-PERM** permission-flow component | **app (`ios`)** | the reusable authorization component (status observer, request, Settings deep-link, published stream) — **codex is building it on `wp/map-chrome-2`**; this design owns its contract so the locate button **and** onboarding (B10) share one owner | (codex in-flight) |
-| **nearby-prompt loop** | **app (`ios`), folds into B8** | foreground "You're near X — seen it?" over the loaded viewport places (§3.4/B8) fed by the located loop; one-tap seen unchanged. The "Fresh snow / My tracks" toggle stays B8's | WP-LOC-B; B4 one-tap (built) |
+| **nearby-prompt loop** | **app (`ios`)** | **wire the located loop into the ALREADY-BUILT `nearbyPromptCandidate`** (`MapScreen.swift:306-334`) — feed it a real fix (today it has none); **add the unconditional hidden-place guard** (#167/#168); one-tap seen unchanged. (The "Fresh snow / My tracks" toggle stays B8's — that's separate from the built prompt) | WP-LOC-B; the built prompt; B4 one-tap (built) |
 
 **Deferred (recorded, not built here):** **B6 Tracks** = derived chronological view over `visits`
 timestamps (Rob pre-affirmed) — its own work package later.
