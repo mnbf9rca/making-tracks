@@ -107,7 +107,7 @@ the human category label. Pure presentation — `category` is already on the pla
 ## 0.3 Action row — Save / Seen / Hide, with rapid triage (#167)
 
 The primary row carries the full triad: **Save** (= membership in the **"Want to go"** system list —
-`CoreLoopController.setSaved` add/removes it there; **Save IS a list op, not a separate concept** —
+`CoreLoopController.setSaved` adds/removes it there; **Save IS a list op, not a separate concept** —
 important for §0.4), **Seen** (one-tap visit + optional loved heart), **Hide** (rapid triage — one tap →
 **the card closes/dismisses** → "Hidden — Undo" toast, per the #167 ruling; there is no card deck, so
 triage is hide → close → tap the next pin → hide). All one-tap, reversible, no confirmation (spec §3.4).
@@ -285,7 +285,7 @@ exactly like the image-index — additive, old-readers-no-op.
   **validated link only** (re-check the `source_url` is https + `*.wikipedia.org` before opening; the
   deed is `creativecommons.org`). Same discipline as the image attribution (§3), positioned small at the
   card bottom (§0.1).
-- **Share-alike-for-text [flag — confirm, don't assume].** A short factual excerpt may be de-minimis, but
+- **Share-alike-for-text [flag — confirm, don't assume].** A short factual excerpt may be de minimis, but
   the safe posture is **attribute per-place + note CC BY-SA 4.0 + link the article** (author history) and
   the deed; whether our excerpt *text* must itself be *offered* under BY-SA is a licensing call I **flag
   for Rob/fable** (recommend the conservative attribute+link, not relicense). Surfaced, not decided.
