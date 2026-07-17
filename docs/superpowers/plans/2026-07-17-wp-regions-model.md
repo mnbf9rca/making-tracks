@@ -143,7 +143,7 @@ whole-file basemap pmtiles (+ optional thumbs, §6)}**:
   **storage-headroom check**. Once installed, point the style at the **local pmtiles path**.
 - **§5.5:** every downloaded artifact checksum-verified + size-capped like streaming.
 
-## 4. Lifecycle + privacy (D4) — with an OPEN decision for Rob
+## 4. Lifecycle + privacy (D4) — privacy RULED by Rob (2026-07-17)
 
 ### Lifecycle (mechanics)
 - **List** installed regions (name, on-disk size with/without thumbs, `publish_version`, status).
@@ -185,21 +185,35 @@ identifying headers/query params [gate]**; the background-`URLSession` identifie
 WiFi-preferred rides a **more** stable/geolocated IP — it compounds the leak (a cost of the
 bandwidth choice, noted).
 
-**OPEN DECISION — ESCALATED TO ROB (via fable):** Rob explicitly wants sub-region downloads
-("London, not 1.5GB UK"). That is a genuine **product-vs-principle tension**: the size/convenience
-win carries a privacy cost the current principles do not sanction. Options for Rob to rule on:
-1. **Accept the tradeoff, informed** — ship sub-region downloads, amend §9/P15 to state the
-   finer-signal cost honestly, frame it to the user in onboarding as a convenience-vs-privacy
-   choice (NOT as "a privacy feature"), and mitigate the *recurring* channel (below).
-2. **Keep packs coarse** — offer only nation-scale sub-regions (England/Scotland/Wales — still
-   large anonymity sets, closer to §9's blob) and NOT metros; smaller than 1.5 GB UK, weaker on
-   Rob's exact London ask.
-3. **Mitigate the channel** — route pack + update fetches through the same relay §9 mandates for
-   stats (heavy for large files), or minimize the recurring signal: **check for updates only on
-   user action / app launch, never on a schedule**, and coarsen/batch. (This mitigates SEV-2
-   regardless of 1/2.)
-This doc does **not** pick; §9/P15 is amended by Rob. Until then the privacy section is
-**pending**, and B10 onboarding must NOT inherit a "metro pack = privacy feature" claim.
+**RULED BY ROB (2026-07-17, via the privacy.md rulings — resolves this escalation):** sub-region
+downloads **proceed, WITH cover-traffic.** Smaller downloads are shipped *together with* a mechanism
+that hides which one you actually want — e.g. the app fetches a few other bundles at the same time,
+so the CDN can't tell the real target from the decoys. This directly mitigates the sequenced-metro-GET
+movement trace (the SEV-1/SEV-2 leak) rather than accepting it. **The mechanism's feasibility is
+owned by the design (WP-B7), not this policy:** decoy *full-bundle* fetches are bandwidth-prohibitive
+at 1.5 GB scale — but see the bundle-size addendum below (small bundles make cover-traffic cheap).
+The privacy floor question is thereby **closed**: the answer is not a k-anonymity floor but a
+cover-traffic requirement. B10 onboarding may frame smaller downloads honestly (they come with the
+hiding mechanism); it still must not call a bare metro download "a privacy feature" absent the decoys.
+Recurring channel (SEV-2): keep the mitigation — **check for updates only on user action / app
+launch, never on a schedule.**
+
+### Addendum — Rob's product rulings (2026-07-17)
+
+- **BUNDLE-FIRST is the product direction.** Downloading a bundle (map + places for an area) is how
+  Making Tracks is meant to work; **streaming per-viewport tiles is the interim/fallback until
+  bundles ship**, described honestly as such. This flips the model's default: WP-G/B7 build toward
+  download-first UX, not streaming-first. (Reflected in the privacy policy, `privacy.md`.)
+- **Bundle size is a PRIVACY PARAMETER, not just a cost knob.** Rob's point: bundles can be *small*.
+  Small bundles change the cover-traffic economics — a handful of small decoy bundles is cheap, where
+  decoy country-packs are not — and reshape the granularity story. So the §4 cover-traffic ruling is
+  feasible *if* the sub-region bundles are small; the WP-B7/WP-P design owns picking bundle sizes that
+  make the decoys affordable (a tunable, earned-not-baked).
+- **NEW INFRA REQUIREMENT (WP-P / infra): aggregate, user-unlinked bundle-download counts.** The
+  policy commits that "we count how many times each bundle is downloaded, to see which areas need
+  work — but can't tell who downloaded which." That requires an aggregate count per bundle with **no
+  per-user linkage** (Cloudflare aggregate analytics, never our own per-request IP logs). This is a
+  new pipeline/infra deliverable that must exist and must be provably user-unlinked.
 
 ## 5. Region index + region-manager UX (D5)
 
@@ -280,7 +294,9 @@ budget for.
   the WP split) **survived**; folded: the corrected id-safety rationale, publish decoupling,
   offline-durable world tier, partial-update content-addressing, the index untrusted+atomic
   posture, the thumbnail feature-flag/attribution resolution, the integrity-not-authenticity
-  framing, WP-G scope/precondition, dedup precedence, measurable accessibility. **Escalated (not
-  fixable in a plan): the sub-region-download privacy floor is a §9/P15 amendment for Rob (§4).**
+  framing, WP-G scope/precondition, dedup precedence, measurable accessibility. **The escalated
+  sub-region-download privacy question is now RULED by Rob (§4): sub-regions ship WITH cover-traffic;
+  the answer is a cover-traffic requirement, not a k-anonymity floor.**
 - PR → `develop` (docs rule), `sourcery-review` only, report on `wp/regions-design`. No self-merge;
-  fable's independent review; `main` is Rob's. **The privacy §4 is marked PENDING Rob's ruling.**
+  fable's independent review; `main` is Rob's. **The privacy §4 is RULED (2026-07-17): cover-traffic
+  + bundle-first + user-unlinked download-counts; see the §4 addendum.**
