@@ -182,7 +182,15 @@ that region offline. Perhaps let users choose not to download images. But everyt
 **MANDATORY** in every pack = **place tiles + basemap + description sidecars + image-index sidecars**;
 **OPTIONAL** = **image thumbs** (the one user-declinable component — the "include images" toggle,
 aligning with B10/WP-IMG-B2). See the **Offline completeness invariant (§7)** for the full runtime-asset
-audit (glyphs, world tier, sprites). **Each content type must be DELTA-capable** — the mechanism per type:
+audit (glyphs, world tier, sprites).
+
+**[gate correction — where the sha-list lives]:** the tile `manifest.json` is **frozen**
+(`schema_version const 1`, `additionalProperties:false`) and **cannot carry new content types** — only
+tiles + basemap ride the manifest. **All the added content (thumbs / description + image-index sidecars /
+search index) is `{filename, sha256, bytes, schema_version}`-listed in the versioned PACK-DESCRIPTOR
+file** (the new schema #131 §6 mandates — sidecars "cannot ride the manifest"). So "sha-listed" below
+means **manifest (tiles/basemap) + pack-descriptor (everything else)**; `updatePlan` sha-skips over both.
+**Each content type must be DELTA-capable** — the mechanism per type:
 
 - **Place tiles — delta FREE (protect it).** Cells are content-addressed `objects/tiles/{sha}`;
   an unchanged cell is the **same sha → skipped** by `updatePlan` on any refresh. **State this as a
@@ -222,9 +230,10 @@ audit (glyphs, world tier, sprites). **Each content type must be DELTA-capable**
   description tile is sha-skipped and only changed ones re-download. **State this as a manifest
   requirement** (the description-index files join the manifest's sha-listed content set, alongside the
   place tiles). Same for the image-index sidecars.
-- **Net:** every pack content type (tiles / basemap-cells / thumbs / description+image-index sidecars) is
-  a **sha-listed object in the manifest** → the whole pack deltas uniformly via `updatePlan` sha-skip,
-  streams to disk incrementally, and shares one cover-traffic cohort. No content type re-downloads whole.
+- **Net:** every pack content type (tiles/basemap-cells in the manifest; thumbs/description+image-index
+  sidecars in the **pack-descriptor**) is a **sha-listed object** → the whole pack deltas uniformly via
+  `updatePlan` sha-skip, streams to disk incrementally, and shares one cover-traffic cohort. No content
+  type re-downloads whole.
 
 ## 7. Offline completeness INVARIANT (D7) — Rob requirement
 
