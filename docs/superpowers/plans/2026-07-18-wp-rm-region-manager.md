@@ -177,7 +177,12 @@ it with a COVER-TRAFFIC REQUIREMENT. This section is reframed in those terms.]**
 
 ## 6. Delta updates (D6) — Rob REQUIREMENT: no "GB every time"
 
-- **Place tiles already delta for FREE — protect it.** Cells are content-addressed `objects/tiles/{sha}`;
+**A pack bundles the WHOLE offline experience, not just tiles [Rob ruling: "the bundles are also wiki
+updates, photos etc."]:** a zone pack contains **place tiles + basemap + image thumbs + description
+sidecars** (the WP-IMG-B2 photos-in-bundle is a **privacy.md commitment**, and descriptions too). **Each
+must be DELTA-capable** — state the mechanism per content type:
+
+- **Place tiles — delta FREE (protect it).** Cells are content-addressed `objects/tiles/{sha}`;
   an unchanged cell is the **same sha → skipped** by `updatePlan` on any refresh. **State this as a
   protected invariant:** a re-publish never re-downloads unchanged place cells. (This is exactly the
   content-addressing delta Rob wants preserved — call it out so no future change breaks it.)
@@ -206,6 +211,18 @@ it with a COVER-TRAFFIC REQUIREMENT. This section is reframed in those terms.]**
     unifies the store + cover-traffic, and is the honest answer to "GB every time"; (a) only helps under a
     byte-stable-pmtiles constraint and fragments the CDN/decoy story. Confirm the app basemap-source change
     is acceptable (or basemap-as-many-small-pmtiles as a middle path).
+- **Image thumbs — delta FREE.** Thumbs are already content-addressed `thumbs/{sha}.webp` (WP-IMG-B2), so
+  they **inherit the sha-diff**: an unchanged photo = same sha = skipped; only new/changed thumbs fetch.
+  Bundle them in the pack (the WP-IMG-B2 pack extension) and they delta like place tiles.
+- **Description sidecars — delta needs per-tile SHA entries.** The `descriptions/10/{x}/{y}.json` sidecars
+  (codex4 #173) are per-tile files, not content-addressed blobs — so to delta them, the pack **manifest
+  must carry a per-sidecar `{sha, bytes}` entry** exactly like it does for place tiles, so an unchanged
+  description tile is sha-skipped and only changed ones re-download. **State this as a manifest
+  requirement** (the description-index files join the manifest's sha-listed content set, alongside the
+  place tiles). Same for the image-index sidecars.
+- **Net:** every pack content type (tiles / basemap-cells / thumbs / description+image-index sidecars) is
+  a **sha-listed object in the manifest** → the whole pack deltas uniformly via `updatePlan` sha-skip,
+  streams to disk incrementally, and shares one cover-traffic cohort. No content type re-downloads whole.
 
 ## Build-WP decomposition
 
