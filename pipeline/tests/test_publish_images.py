@@ -543,6 +543,61 @@ def test_build_place_images_does_not_cache_batch_fetch_exception(tmp_path, monke
     assert not (tmp_path / "rejects" / f"{candidate.place_id}.json").exists()
 
 
+def test_build_place_images_records_missing_metadata_payload_as_cacheable_reject(
+    tmp_path, monkeypatch
+):
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+    )
+    metadata_calls = []
+
+    def fake_imageinfo(filenames):
+        metadata_calls.append(list(filenames))
+        return {}
+
+    monkeypatch.setattr(images, "fetch_commons_imageinfo_batch", fake_imageinfo)
+
+    assert images.build_place_images([candidate], cache_dir=tmp_path) == []
+    assert metadata_calls == [["Fort.jpg"]]
+    reject = json.loads(
+        (tmp_path / "rejects" / f"{candidate.place_id}.json").read_text()
+    )
+    assert reject == {"image_url": candidate.image_url, "reason": "metadata_missing"}
+
+    monkeypatch.setattr(
+        images,
+        "fetch_commons_imageinfo_batch",
+        lambda _filenames: pytest.fail("cacheable reject should not be refetched"),
+    )
+
+    assert images.build_place_images([candidate], cache_dir=tmp_path) == []
+
+
+def test_build_place_images_records_invalid_metadata_payload_as_cacheable_reject(
+    tmp_path, monkeypatch
+):
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+    )
+    monkeypatch.setattr(
+        images,
+        "fetch_commons_imageinfo_batch",
+        lambda filenames: {filename: [] for filename in filenames},
+    )
+
+    assert images.build_place_images([candidate], cache_dir=tmp_path) == []
+    reject = json.loads(
+        (tmp_path / "rejects" / f"{candidate.place_id}.json").read_text()
+    )
+    assert reject == {"image_url": candidate.image_url, "reason": "metadata_invalid"}
+
+
 def test_build_place_images_records_rejects_without_downloading(tmp_path, monkeypatch):
     candidate = images.ImageCandidate(
         place_id="mt1_00000000000000000000000001",

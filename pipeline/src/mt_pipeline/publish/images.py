@@ -378,12 +378,12 @@ def build_place_images(
         reject_path = reject_dir / f"{candidate.place_id}.json"
         payload = imageinfo_by_filename.get(filename)
         if payload is None:
-            _write_reject(reject_path, candidate, "metadata_fetch_failed")
+            _write_reject(reject_path, candidate, "metadata_missing")
             continue
         try:
             decision = metadata_from_commons_imageinfo(payload)
         except Exception:
-            _write_reject(reject_path, candidate, "metadata_fetch_failed")
+            _write_reject(reject_path, candidate, "metadata_invalid")
             continue
         if not decision.accepted or decision.metadata is None:
             _write_reject(reject_path, candidate, decision.reason or "metadata_rejected")
