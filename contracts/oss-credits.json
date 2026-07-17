@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "credits": [
+    {
+      "name": "MapLibre Native iOS / maplibre-gl-native-distribution",
+      "category": "ios_app",
+      "version_or_pin": "6.27.0",
+      "evidence": [
+        "ios/App/project.yml",
+        "ios/Package.resolved",
+        "contracts/third-party-notices/MapLibre-Native-LICENSE.md"
+      ],
+      "license_spdx": "BSD-2-Clause",
+      "license_url": "https://github.com/maplibre/maplibre-native/blob/main/LICENSE.md",
+      "compliance": "Include in app OSS credits. Keep package license notice available with app acknowledgements.",
+      "notice_path": "contracts/third-party-notices/MapLibre-Native-LICENSE.md",
+      "app_resource": true
+    },
+    {
+      "name": "GRDB.swift",
+      "category": "ios_app",
+      "version_or_pin": "7.11.1",
+      "evidence": [
+        "ios/Package.swift",
+        "ios/Package.resolved",
+        "contracts/third-party-notices/GRDB.swift-LICENSE"
+      ],
+      "license_spdx": "MIT",
+      "license_url": "https://github.com/groue/GRDB.swift/blob/master/LICENSE",
+      "compliance": "Include in app OSS credits. Keep copyright/license notice available with app acknowledgements.",
+      "notice_path": "contracts/third-party-notices/GRDB.swift-LICENSE",
+      "app_resource": true
+    },
+    {
+      "name": "Noto Sans glyph PBF mirror",
+      "category": "mirrored_asset",
+      "version_or_pin": "protomaps/basemaps-assets commit 028c18f713baecad011301ff7a69acc39bcc2ae7; Noto Sans Regular",
+      "evidence": [
+        "contracts/third-party-notices/Noto-Sans-UPSTREAM.txt",
+        "contracts/third-party-notices/Noto-Sans-OFL.txt",
+        "https://tiles.making-tracks.app/global/fonts/UPSTREAM.txt",
+        "https://tiles.making-tracks.app/global/fonts/OFL.txt"
+      ],
+      "license_spdx": "OFL-1.1",
+      "license_url": "https://openfontlicense.org/",
+      "compliance": "Mirror OFL.txt and UPSTREAM.txt beside the glyphs. Any mirror source/version change must update this registry and the deployed files.",
+      "notice_path": "contracts/third-party-notices/Noto-Sans-OFL.txt",
+      "app_resource": true
+    },
+    {
+      "name": "go-pmtiles / pmtiles CLI",
+      "category": "pipeline_build",
+      "version_or_pin": "v1.31.1",
+      "evidence": ["pipeline/src/mt_pipeline/publish/basemap.py"],
+      "license_spdx": "BSD-3-Clause",
+      "license_url": "https://github.com/protomaps/go-pmtiles/blob/main/LICENSE",
+      "compliance": "Credit in root attribution; keep version and checksum pin in the pipeline.",
+      "app_resource": false
+    },
+    {
+      "name": "boto3",
+      "category": "pipeline_build",
+      "version_or_pin": "pipeline/pyproject.toml dependency boto3>=1.34",
+      "evidence": ["pipeline/pyproject.toml"],
+      "license_spdx": "Apache-2.0",
+      "license_url": "https://github.com/boto/boto3/blob/develop/LICENSE",
+      "compliance": "Direct runtime dependency for R2/S3 publishing.",
+      "app_resource": false
+    },
+    {
+      "name": "hatchling",
+      "category": "pipeline_build",
+      "version_or_pin": "build backend in contracts/pyproject.toml and pipeline/pyproject.toml",
+      "evidence": ["contracts/pyproject.toml", "pipeline/pyproject.toml"],
+      "license_spdx": "MIT",
+      "license_url": "https://hatch.pypa.io/latest/",
+      "compliance": "Build backend for workspace packages.",
+      "app_resource": false
+    },
+    {
+      "name": "ijson",
+      "category": "pipeline_build",
+      "version_or_pin": "pipeline/pyproject.toml dependency ijson>=3.2",
+      "evidence": ["pipeline/pyproject.toml"],
+      "license_spdx": "BSD-3-Clause AND ISC",
+      "license_url": "https://pypi.org/project/ijson/",
+      "compliance": "Direct runtime dependency for bounded JSON parsing.",
+      "app_resource": false
+    },
+    {
+      "name": "jsonschema",
+      "category": "pipeline_build",
+      "version_or_pin": "contracts/pyproject.toml dependency jsonschema>=4.21",
+      "evidence": ["contracts/pyproject.toml"],
+      "license_spdx": "MIT",
+      "license_url": "https://github.com/python-jsonschema/jsonschema/blob/main/COPYING",
+      "compliance": "Direct runtime dependency for contract validation.",
+      "app_resource": false
+    },
+    {
+      "name": "openai-python",
+      "category": "pipeline_build",
+      "version_or_pin": "pipeline/pyproject.toml dependency openai>=1.0",
+      "evidence": ["pipeline/pyproject.toml"],
+      "license_spdx": "Apache-2.0",
+      "license_url": "https://github.com/openai/openai-python/blob/main/LICENSE",
+      "compliance": "Direct runtime dependency for optional LLM providers.",
+      "app_resource": false
+    },
+    {
+      "name": "pydantic",
+      "category": "pipeline_build",
+      "version_or_pin": "pipeline/pyproject.toml dependency pydantic>=2.0",
+      "evidence": ["pipeline/pyproject.toml"],
+      "license_spdx": "MIT",
+      "license_url": "https://github.com/pydantic/pydantic/blob/main/LICENSE",
+      "compliance": "Direct runtime dependency for validation and modeling.",
+      "app_resource": false
+    },
+    {
+      "name": "pyosmium / osmium",
+      "category": "pipeline_build",
+      "version_or_pin": "pipeline/pyproject.toml dependency osmium>=4.0",
+      "evidence": ["pipeline/pyproject.toml"],
+      "license_spdx": "BSD-2-Clause",
+      "license_url": "https://osmcode.org/pyosmium/",
+      "compliance": "Direct runtime dependency for OSM extraction.",
+      "app_resource": false
+    },
+    {
+      "name": "referencing",
+      "category": "pipeline_build",
+      "version_or_pin": "contracts/pyproject.toml dependency referencing>=0.34",
+      "evidence": ["contracts/pyproject.toml"],
+      "license_spdx": "MIT",
+      "license_url": "https://pypi.org/project/referencing/",
+      "compliance": "Direct runtime dependency used by JSON Schema validation.",
+      "app_resource": false
+    }
+  ]
+}

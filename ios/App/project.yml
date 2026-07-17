@@ -27,6 +27,8 @@ targets:
     platform: iOS
     sources:
       - Sources
+    resources:
+      - Sources/OSSCredits.json
     dependencies:
       - package: MakingTracksData
         product: MakingTracksData

@@ -126,7 +126,7 @@ def test_HE_OGL_ships_verbatim_when_an_HE_place_is_present():
     used = A.sources_used(places)
     assert used == {"historic_england", "wikidata"}                  # prefix map derives the a1d keys
     he = [a for a in A.attribution_for(used, A1D) if a["source"] == "historic_england"][0]
-    assert he["license"] == "OGL-3.0" and he["text"] == A1D["historic_england"]["attribution"]  # verbatim
+    assert he["license"] == "OGL-UK-3.0" and he["text"] == A1D["historic_england"]["attribution"]  # verbatim
     assert "Open Government Licence" in he["text"]
 
 def test_OSM_is_ODbL_and_ships_attribution():                        # OSM is NOT public-domain (ODbL)
@@ -259,7 +259,7 @@ def test_attribution_bumps_min_reader_version(sample_tiles, sample_basemap):
     man = M.assemble_manifest(region="uk", publish_version="20260715T120000Z", generated_at="2026-07-15T12:00:00Z",
                               tiles=sample_tiles, counts=sample_counts, basemap=sample_basemap,
                               scoring_config_version="scoring-v1",
-                              attribution=[{"source":"historic_england","license":"OGL-3.0","text":"Contains HE data..."}])
+                              attribution=[{"source":"historic_england","license":"OGL-UK-3.0","text":"Contains HE data..."}])
     assert man["min_reader_version"] == 2                                         # HE OGL must be rendered -> reader >=2
 
 def test_manifest_rejects_an_oversize_tile(sample_tiles, sample_basemap):
