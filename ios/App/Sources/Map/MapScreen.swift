@@ -96,6 +96,8 @@ struct MapScreen: View {
     @State private var appliedShowHiddenPlaces = false
     @State private var loadState: TileLoadState = .unavailable
     @State private var isMapReady = false
+    @State private var didMapLoadFail = false
+    @State private var mapLoadAttemptID = 0
     @State private var hasLoadedFixtureFeatures = false
     @State private var viewportRequestID = 0
     @State private var stateEpoch = 0
@@ -150,6 +152,7 @@ struct MapScreen: View {
                 locationManager: locationManager,
                 showsUserLocation: showsUserLocation,
                 userTrackingMode: userTrackingMode,
+                debugExposeFixturePinDiagnostics: debugExposeFixturePinDiagnostics,
                 onCameraIdle: { bbox, zoom in
                     Task { @MainActor in
                         currentViewport = ViewportSeed(bbox: bbox, zoom: zoom)
@@ -162,36 +165,67 @@ struct MapScreen: View {
                     }
                 },
                 onUserPanned: {
-                    userTrackingMode = .none
+                    Task { @MainActor in
+                        userTrackingMode = .none
+                    }
                 },
                 onTapPlace: { placeID in
-                    cardPresentation.show(placeID: placeID)
+                    Task { @MainActor in
+                        cardPresentation.show(placeID: placeID)
+                    }
                 },
                 onTapEmpty: {
-                    cardPresentation.dismiss()
+                    Task { @MainActor in
+                        cardPresentation.dismiss()
+                    }
                 },
                 onMapReady: {
-                    isMapReady = true
+                    Task { @MainActor in
+                        guard !isMapReady || didMapLoadFail else { return }
+                        isMapReady = true
+                        didMapLoadFail = false
+                    }
                 },
                 onFeaturesApplied: {
-                    hasLoadedFixtureFeatures = true
+                    Task { @MainActor in
+                        guard !hasLoadedFixtureFeatures else { return }
+                        hasLoadedFixtureFeatures = true
+                    }
                 },
                 onStyleWillReload: {
-                    isMapReady = false
-                    hasLoadedFixtureFeatures = false
-                    debugProjectedFixturePins = []
+                    Task { @MainActor in
+                        isMapReady = false
+                        didMapLoadFail = false
+                        hasLoadedFixtureFeatures = false
+                        debugProjectedFixturePins = []
+                        mapLoadAttemptID += 1
+                    }
+                },
+                onMapLoadFailed: {
+                    Task { @MainActor in
+                        didMapLoadFail = true
+                    }
                 },
                 debugReportProjectedFeatureDiagnostics: { diagnostics in
                     guard debugExposeFixturePinDiagnostics else { return }
-                    debugProjectedFixturePins = diagnostics
+                    Task { @MainActor in
+                        guard debugProjectedFixturePins != diagnostics else { return }
+                        debugProjectedFixturePins = diagnostics
+                    }
                 },
                 debugReportMapUpdateStatus: { status in
                     guard debugExposeFixturePinDiagnostics else { return }
-                    debugMapUpdateStatus = status
+                    Task { @MainActor in
+                        guard debugMapUpdateStatus != status else { return }
+                        debugMapUpdateStatus = status
+                    }
                 },
                 debugReportTapStatus: { status in
                     guard debugExposeFixturePinDiagnostics else { return }
-                    debugTapStatus = status
+                    Task { @MainActor in
+                        guard debugTapStatus != status else { return }
+                        debugTapStatus = status
+                    }
                 }
             )
             .ignoresSafeArea()
@@ -201,7 +235,25 @@ struct MapScreen: View {
                     .padding(.leading, 16)
             }
             .overlay {
-                if !isMapReady || (isFixtureMap && !hasLoadedFixtureFeatures) {
+                if didMapLoadFail {
+                    ZStack {
+                        Color.black.opacity(0.04)
+                            .ignoresSafeArea()
+                        VStack(spacing: 8) {
+                            Image(systemName: "map")
+                                .font(.title3)
+                            Text("Map unavailable")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                        }
+                        .padding(14)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("map.unavailable")
+                    .transition(.opacity)
+                } else if isMapLoading {
                     ZStack {
                         Color.black.opacity(0.04)
                             .ignoresSafeArea()
@@ -212,8 +264,11 @@ struct MapScreen: View {
                     .allowsHitTesting(false)
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("map.loading")
+                    .transition(.opacity)
                 }
             }
+            .animation(.easeInOut(duration: 0.2), value: isMapLoading)
+            .animation(.easeInOut(duration: 0.2), value: didMapLoadFail)
 #if DEBUG
             .overlay(alignment: .topLeading) {
                 if isFixtureMap && debugExposeFixturePinDiagnostics {
@@ -296,6 +351,16 @@ struct MapScreen: View {
                 userTrackingMode: &userTrackingMode,
                 pendingLocateMeActivation: &pendingLocateMeActivation
             )
+        }
+        .task(id: mapLoadAttemptID) {
+            guard isMapLoading else { return }
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                if isMapLoading {
+                    didMapLoadFail = true
+                }
+            }
         }
         .task {
             await start()
@@ -391,6 +456,11 @@ struct MapScreen: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(.regularMaterial, in: Capsule())
+    }
+
+    private var isMapLoading: Bool {
+        guard !didMapLoadFail else { return false }
+        return !isMapReady || (isFixtureMap && !hasLoadedFixtureFeatures)
     }
 
     private var mapChrome: some View {

@@ -11,17 +11,21 @@ struct MakingTracksApp: App {
     private static let startupViewport = ViewportSeed.selected(argumentValue("--ui-testing-map-state"))
     private static let debugInstallOfflineRegion = argumentValue("--debug-install-offline-region")
     private static let debugForceTileNetworkOffline = arguments.contains("--debug-force-tile-network-offline")
+#if DEBUG
     private static let isLocationDeniedFixture = arguments.contains("--ui-testing-location-denied")
     private static let isLocationAuthorizedFixture = arguments.contains("--ui-testing-location-authorized")
-#if DEBUG
     private static let debugExposeFixturePinDiagnostics = arguments.contains("--ui-testing-pin-diagnostics")
-#else
-    private static let debugExposeFixturePinDiagnostics = false
-#endif
     private static let simulatedLatitude = argumentValue("--ui-testing-location-latitude").flatMap(Double.init)
     private static let simulatedLongitude = argumentValue("--ui-testing-location-longitude").flatMap(Double.init)
     private static let uiTestingOfflineProgress = argumentValue("--ui-testing-offline-progress").flatMap(Double.init)
     private static let primaryFixturePlaceID = "mt1_00000000000000000000000000"
+#else
+    private static let isLocationDeniedFixture = false
+    private static let isLocationAuthorizedFixture = false
+    private static let debugExposeFixturePinDiagnostics = false
+    private static let simulatedLatitude: Double? = nil
+    private static let simulatedLongitude: Double? = nil
+#endif
 
     init() {
         Self.resetUITestingThemeIfNeeded()

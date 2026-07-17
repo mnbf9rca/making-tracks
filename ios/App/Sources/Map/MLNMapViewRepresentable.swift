@@ -33,6 +33,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var locationManager: AppLocationManager
     var showsUserLocation: Bool
     var userTrackingMode: MLNUserTrackingMode
+    var debugExposeFixturePinDiagnostics = false
     var onCameraIdle: (BBox, Int) -> Void
     var onUserPanned: () -> Void
     var onTapPlace: (String) -> Void
@@ -40,6 +41,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var onMapReady: () -> Void
     var onFeaturesApplied: () -> Void
     var onStyleWillReload: () -> Void
+    var onMapLoadFailed: () -> Void
     var debugReportProjectedFeatureDiagnostics: ([ProjectedFeatureDiagnostic]) -> Void = { _ in }
     var debugReportMapUpdateStatus: (String) -> Void = { _ in }
     var debugReportTapStatus: (String) -> Void = { _ in }
@@ -52,8 +54,10 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             onTapEmpty: onTapEmpty,
             onMapReady: onMapReady,
             onFeaturesApplied: onFeaturesApplied,
-            onStyleWillReload: onStyleWillReload
+            onStyleWillReload: onStyleWillReload,
+            onMapLoadFailed: onMapLoadFailed
         )
+        coordinator.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
         coordinator.debugReportProjectedFeatureDiagnostics = debugReportProjectedFeatureDiagnostics
         coordinator.debugReportMapUpdateStatus = debugReportMapUpdateStatus
         coordinator.debugReportTapStatus = debugReportTapStatus
@@ -97,6 +101,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         context.coordinator.onUserPanned = onUserPanned
         context.coordinator.onTapPlace = onTapPlace
         context.coordinator.onTapEmpty = onTapEmpty
+        context.coordinator.onMapLoadFailed = onMapLoadFailed
+        context.coordinator.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
         context.coordinator.debugReportProjectedFeatureDiagnostics = debugReportProjectedFeatureDiagnostics
         context.coordinator.debugReportMapUpdateStatus = debugReportMapUpdateStatus
         context.coordinator.debugReportTapStatus = debugReportTapStatus
@@ -133,6 +139,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var onMapReady: () -> Void
         var onFeaturesApplied: () -> Void
         var onStyleWillReload: () -> Void
+        var onMapLoadFailed: () -> Void
+        var debugExposeFixturePinDiagnostics = false
         var debugReportProjectedFeatureDiagnostics: ([ProjectedFeatureDiagnostic]) -> Void = { _ in }
         var debugReportMapUpdateStatus: (String) -> Void = { _ in }
         var debugReportTapStatus: (String) -> Void = { _ in }
@@ -144,7 +152,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var currentVisibleCategories: Set<String>?
         var pendingFeatures: [(MapPlace, PinState)] = []
 #if DEBUG
-        private var needsProjectedDiagnosticsResample = false
+        private var needsProjectedDiagnosticsRenderSample = false
 #endif
 
         struct StyleReload: Equatable {
@@ -161,7 +169,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             onTapEmpty: @escaping () -> Void,
             onMapReady: @escaping () -> Void,
             onFeaturesApplied: @escaping () -> Void,
-            onStyleWillReload: @escaping () -> Void
+            onStyleWillReload: @escaping () -> Void,
+            onMapLoadFailed: @escaping () -> Void
         ) {
             self.onCameraIdle = onCameraIdle
             self.onUserPanned = onUserPanned
@@ -170,6 +179,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             self.onMapReady = onMapReady
             self.onFeaturesApplied = onFeaturesApplied
             self.onStyleWillReload = onStyleWillReload
+            self.onMapLoadFailed = onMapLoadFailed
         }
 
         func prepareStyleReload(
@@ -240,9 +250,17 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             reportViewport(mapView)
         }
 
+        func mapViewDidFailLoadingMap(_ mapView: MLNMapView, withError error: Error) {
+            onMapLoadFailed()
+        }
+
 #if DEBUG
         func mapViewDidFinishRenderingFrame(_ mapView: MLNMapView, fullyRendered: Bool) {
-            guard needsProjectedDiagnosticsResample, !pendingFeatures.isEmpty else { return }
+            guard debugExposeFixturePinDiagnostics,
+                  needsProjectedDiagnosticsRenderSample,
+                  !pendingFeatures.isEmpty
+            else { return }
+            needsProjectedDiagnosticsRenderSample = false
             reportProjectedFeatureDiagnostics(on: mapView, features: pendingFeatures)
         }
 #endif
@@ -275,11 +293,13 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             if !features.isEmpty {
                 onFeaturesApplied()
 #if DEBUG
-                needsProjectedDiagnosticsResample = true
-                reportProjectedFeatureDiagnostics(on: map, features: features)
-                Task { @MainActor [weak self, weak map] in
-                    guard let self, let map else { return }
-                    self.reportProjectedFeatureDiagnostics(on: map, features: features)
+                if debugExposeFixturePinDiagnostics {
+                    needsProjectedDiagnosticsRenderSample = true
+                    reportProjectedFeatureDiagnostics(on: map, features: features)
+                    Task { @MainActor [weak self, weak map] in
+                        guard let self, let map else { return }
+                        self.reportProjectedFeatureDiagnostics(on: map, features: features)
+                    }
                 }
 #endif
             }
@@ -359,7 +379,6 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                     isHitTestable: isHitTestable
                 )
             }
-            needsProjectedDiagnosticsResample = diagnostics.contains { !$0.isHitTestable }
             debugReportProjectedFeatureDiagnostics(diagnostics)
         }
 #endif

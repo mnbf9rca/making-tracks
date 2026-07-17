@@ -6,6 +6,16 @@ import XCTest
 
 @MainActor
 final class LocationSessionPoliciesTests: XCTestCase {
+    func testLocationPermissionUsesSimulationAwareAuthorizationOnModernCallback() async {
+        let manager = AppLocationManager(simulatedAuthorizationStatus: .denied)
+        let permission = LocationPermission(manager: manager)
+
+        permission.locationManagerDidChangeAuthorization(CLLocationManager())
+        await Task.yield()
+
+        XCTAssertEqual(permission.authorizationStatus, .denied)
+    }
+
     func testShowsUserLocationRequiresAuthorizedStatusAndActiveTrackingMode() {
         XCTAssertFalse(LocationSessionPolicies.shouldShowUserLocation(authorizationStatus: .authorizedWhenInUse, userTrackingMode: .none))
         XCTAssertFalse(LocationSessionPolicies.shouldShowUserLocation(authorizationStatus: .notDetermined, userTrackingMode: .follow))
