@@ -13,6 +13,7 @@ from mt_pipeline.reconcile.registry_file import LocalRegistryStore
 A = "mt1_" + "0" * 26
 B = "mt1_" + "1" * 26
 C = "mt1_" + "2" * 26
+D = "mt1_" + "3" * 26
 
 
 def test_publish_stage_builds_local_staging_and_marks_shipped(
@@ -307,16 +308,17 @@ def test_publish_stage_upload_builds_all_targets_before_any_upload(
     assert calls == []
 
 
-def test_subregion_bbox_filter_keeps_invalid_coordinates_for_tile_quarantine():
+def test_subregion_bbox_filter_excludes_invalid_coordinates():
     places = [
         {"place_id": A, "lat": 3.1, "lon": 101.7},
         {"place_id": B, "lat": 5.0, "lon": 110.0},
         {"place_id": C, "lat": "not-a-number", "lon": 101.7},
+        {"place_id": D, "lat": 3.1, "lon": float("nan")},
     ]
 
     filtered = P._filter_places_to_bbox(places, (101.6, 3.0, 101.8, 3.2))
 
-    assert [place["place_id"] for place in filtered] == [A, C]
+    assert [place["place_id"] for place in filtered] == [A]
 
 
 def test_publish_stage_emits_phase_heartbeats_for_slow_publish_steps(

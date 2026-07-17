@@ -351,11 +351,11 @@ def _filter_places_to_bbox(
     return [
         place
         for place in places
-        if _place_in_bbox_or_invalid(place, west, south, east, north)
+        if _place_in_bbox(place, west, south, east, north)
     ]
 
 
-def _place_in_bbox_or_invalid(
+def _place_in_bbox(
     place: dict[str, Any],
     west: float,
     south: float,
@@ -366,9 +366,9 @@ def _place_in_bbox_or_invalid(
         lat = float(place["lat"])
         lon = float(place["lon"])
     except (KeyError, TypeError, ValueError):
-        return True
+        return False
     if not math.isfinite(lat) or not math.isfinite(lon):
-        return True
+        return False
     return west <= lon <= east and south <= lat <= north
 
 

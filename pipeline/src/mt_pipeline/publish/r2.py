@@ -318,27 +318,24 @@ def publish_region_index(
     upload: bool = False,
 ) -> PublishResult:
     region_index_path = Path(region_index_path)
-    index_obj = json.loads(region_index_path.read_text(encoding="utf-8"))
-    validate_region_index(index_obj)
+    index_obj = _load_region_index(region_index_path)
     publish_version = max(
         str(entry["publish_version"]) for entry in index_obj["regions"]
     )
-    plan = PublishPlan(
-        layout=layout,
-        region="regions",
-        publish_version=publish_version,
-        ops=(
-            PublishOp(
-                kind="region_index",
-                bucket=str(layout["public_bucket"]),
-                key="regions.json",
-                source_path=region_index_path,
-            ),
-        ),
-    )
     _validate_layout(layout)
-    plan._assert_bucket_invariants()
     if not upload:
+        op = (
+            _region_index_op_for_upload(client, layout, region_index_path)
+            if client is not None
+            else _region_index_op_from_file(layout, region_index_path)
+        )
+        plan = PublishPlan(
+            layout=layout,
+            region="regions",
+            publish_version=publish_version,
+            ops=(op,),
+        )
+        plan._assert_bucket_invariants()
         return PublishResult(plan=plan, dry_run=True)
     if client is None:
         client = _default_client()
@@ -356,6 +353,12 @@ def publish_region_index(
         ops=(op,),
     )
     return PublishResult(plan=merged_plan, uploaded=1, dry_run=False)
+
+
+def _load_region_index(region_index_path: Path) -> dict[str, Any]:
+    index_obj = json.loads(Path(region_index_path).read_text(encoding="utf-8"))
+    validate_region_index(index_obj)
+    return index_obj
 
 
 def _validate_layout(layout: Mapping[str, Any]) -> None:
@@ -419,8 +422,7 @@ def _region_index_op_for_upload(
     layout: Mapping[str, Any],
     region_index_path: Path,
 ) -> PublishOp:
-    new_index = json.loads(Path(region_index_path).read_text(encoding="utf-8"))
-    validate_region_index(new_index)
+    new_index = _load_region_index(region_index_path)
     try:
         obj = client.get_object(Bucket=layout["public_bucket"], Key="regions.json")
     except FileNotFoundError:
@@ -439,6 +441,17 @@ def _region_index_op_for_upload(
         bucket=str(layout["public_bucket"]),
         key="regions.json",
         body=_json_bytes(merged),
+    )
+
+
+def _region_index_op_from_file(
+    layout: Mapping[str, Any], region_index_path: Path
+) -> PublishOp:
+    return PublishOp(
+        kind="region_index",
+        bucket=str(layout["public_bucket"]),
+        key="regions.json",
+        body=_json_bytes(_load_region_index(region_index_path)),
     )
 
 
