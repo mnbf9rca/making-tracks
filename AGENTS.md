@@ -37,9 +37,15 @@ Work packages (spec §8) are designed one at a time (design agent) and built one
 
 Branch discipline: feature branches (`wp-<id>-plan` / `wp-<id>-impl`) are cut from `develop` and PR back to `develop` — a PR is the only path onto `develop`; never push to it directly. `main` is human-gated — only Rob promotes `develop` to `main`. No agent self-merges its own PR; the design lead (fable) reviews, and merges happen only with human-sanctioned authority (overnight, PRs queue for Rob's morning review).
 
+Push early, push often: an unpushed branch is invisible — indistinguishable from a dead agent — and unmergeable. Push a WIP commit within minutes of starting; force-with-lease later rather than staying local.
+
+Promotions to `main` are merge commits (ruleset-enforced); squash is for feature PRs into `develop`/`ios` only.
+
 iOS branch: app work (anything under `ios/`) branches from a freshly-fetched `ios` and PRs into `ios`, not `develop` — same gates. The long-lived `ios` branch lives in the main repo checkout as Rob's Xcode surface: never touch that working tree or switch its branch; Rob pulls when he chooses. fable merges `ios` ↔ `develop` at milestones. Pipeline/contracts/docs work targets `develop` as before.
 
 Ground in the current tree: branch from a freshly-fetched `develop`, and re-ground a long-lived doc — its `file:line` citations and its "not built yet" claims — against `develop` before the PR; with several agents merging, the tree moves under you. Where a brief and the code disagree, the code is authoritative — reconcile or flag it, never design around the discrepancy. Run any merge, push, or resolve as its own step *after* reading the gate or CI result — never chain an irreversible action past a check in a single command.
+
+Blocked ≠ done reporting: a `gh`/connector 403 in an agent harness is a sandbox denial, not expired auth. Escalate the exact command in your harness or relay the exact operation (base/head/title/labels) to fable as an action request; never report blocked and wait. Relays confirm back: whoever unblocks an agent (PR opened for it, command run) confirms on the agent's thread — an agent that does not know it has been unblocked is still effectively blocked.
 
 Issue-closing discipline: GitHub's `closes #N` keywords only fire on merges to the DEFAULT branch (`main`) — our PRs merge to `develop`, so they never auto-close anything. When a WP's implementation PR merges, the merger closes the issue explicitly (`gh issue close N --comment ...`) and ticks the tracker (#25) checkbox; never report an issue as closed without verifying its actual state (`gh issue view N`).
 
