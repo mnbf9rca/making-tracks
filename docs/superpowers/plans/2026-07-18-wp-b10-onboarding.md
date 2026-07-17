@@ -22,17 +22,19 @@ app boots **straight into `MapScreen`** with no onboarding and a black first fra
   reconcile).
 - **Location-permission component is BUILT** (`LocationPermission.swift`, both branches):
   `@Published authorizationStatus`, `currentCoordinate`, `isLocationOff` (**the declined-state signal**),
-  `requestWhenInUseIfNeeded()` (one-shot priming), `requestCurrentLocation()`; `wp-map-chrome-2` makes it
-  injectable via `LocationManaging`. Settings deep-link = `MapScreen.openLocationSettings()`. **Locate-me
-  button already exists.** B10's permission step **consumes** this — builds no new manager.
+  `requestWhenInUseIfNeeded()` (one-shot priming), `requestCurrentLocation()`. *(Correction: the
+  `LocationManaging` injection protocol was **removed in #164** — injection is now the concrete
+  `AppLocationManager`, `MapScreen.swift:81`.)* Settings deep-link = `MapScreen.openLocationSettings()`.
+  **Locate-me button already exists.** B10's permission step **consumes** this — builds no new manager.
 - **Offline download engine is BUILT, UI is not.** `OfflineRegionDownloader.downloadCurrentRegion()`,
   `OfflineRegionStore.updatePlan(for:) → {tilesToFetch, bytesToFetch, …}`, `StorageHeadroom.hasHeadroom(…)`
   (512 MB reserve), background discretionary `OfflineDownloadSession`. **No download UI** (only a DEBUG
   launch-arg path). **`downloadCurrentRegion()` has NO incremental progress callback** — B10 must add one
   (only the up-front `bytesToFetch` is known).
 - **Region selection: no picker.** `ViewportSeed` (default `.kl`) is the startup camera; `MapRegion
-  {malaysia, uk}`; `selectedRegion` hardcoded `.malaysia`. A first-run pick sets the seed + region + kicks
-  the downloader. **The full region manager is WP-RM (gated by Rob's open region-selection-UX ruling) —
+  {malaysia, uk}`; `selectedRegion` **auto-derives from the viewport** (`MapScreen.swift:1152-1154`) — not
+  hardcoded. So a first-run pick only needs to **persist the startup seed** (`chosenRegion` → seed); the
+  region then follows the seeded viewport. It kicks the downloader for that region. **The full region manager is WP-RM (gated by Rob's open region-selection-UX ruling) —
   B10 designs the first-run pick as a seam, not the manager.**
 - **Update-required logic exists, UI doesn't.** `VersionGate.reader` → `TileLoadState.updateRequired`
   (`minReaderVersion > readerVersion` + no cache), surfaced only as a tiny text chip. B10 §5.6 builds the
@@ -43,19 +45,31 @@ app boots **straight into `MapScreen`** with no onboarding and a black first fra
 
 ## 1. First-run detection + the flag (D1)
 
-- A single persisted **`hasCompletedOnboarding`** boolean (`@AppStorage`/`UserDefaults` — a UI flag, not
-  user data, so not GRDB). First launch (`false`) → onboarding; thereafter → straight to the map. The
-  flag flips only when the user **finishes or explicitly skips to the end** (so a mid-flow kill re-shows
-  it). "Replay onboarding" + the About page are reachable later from Settings (§6).
+- A persisted **`hasCompletedOnboarding`** boolean (`@AppStorage`/`UserDefaults` — a UI flag, not user
+  data, so not GRDB). First launch (`false`) → onboarding; thereafter → straight to the map. The flag
+  flips only when the user **finishes or explicitly skips to the end** (so a mid-flow kill re-shows it).
+- **[gate — SUBSTANTIVE: the region pick must SURVIVE RELAUNCH].** Today `startupViewport` is a per-launch
+  constant defaulting to `.kl` (`MakingTracksApp.swift:10`) and `selectedRegion` **auto-derives from the
+  viewport** (`MapScreen.swift:1152-1154`) — **nothing persists the choice**, so a UK user's second cold
+  start re-seeds to KL. So B10 also persists a **second value: `chosenRegion`** (`@AppStorage`) →
+  `MakingTracksApp` seeds `startupViewport` from it on every launch (not the hardcoded `.kl`). **WP-RM
+  inherits/migrates `chosenRegion`** (the region manager's persisted selection supersedes it) — this is
+  the load-bearing part of the B10↔WP-RM seam. "Replay onboarding" + the About page are reachable later
+  from Settings (§6).
 
 ## 2. Kill the cold-start black screen — a launch placeholder (D2, EVERY cold start, not just first-run)
 
 - A **launch overlay** in the `ZStack` above the map: the **paper/muted background** (the basemap's own
   palette, so it reads as "map loading," not a foreign splash) + the app name + a subtle indicator, shown
-  while the style is not yet loaded, dismissed on **`didFinishLoadingStyle`** (with a timeout fallback so
-  a stalled style still reveals the map). This covers the black window on **every** launch — it is
-  distinct from the first-run flow (which sits *in front of* the map on first launch only). Reuse
-  `TileLoadState`/the delegate's style-loaded signal; no new load machinery.
+  while the style is not yet loaded. **[gate — dismiss on the map-READINESS signal, NOT `TileLoadState`].**
+  `TileLoadState` is manifest/**network** state — keying the overlay on it holds it hostage to the network
+  and masks offline-with-cache startup. **Consume codex's `onMapReady` closure** (being added on
+  `wp-ios-polish`: `MLNMapViewRepresentable.onMapReady`, fired from `mapView(_:didFinishLoading:)` after
+  the style loads — confirmed on thread) — do **not** invent a parallel signal. Dismiss on `onMapReady`
+  (the basemap can paint; pins may trail — don't wait for `onFeaturesApplied`), with a **B10-owned timeout
+  fallback** (no style-failure callback exists yet; optionally pin a small additive `onMapLoadFailed`).
+  This covers the black window on **every** launch — distinct from the first-run flow (which sits *in
+  front of* the map on first launch only).
 
 ## 3. The first-run flow (D3)
 
@@ -64,11 +78,17 @@ A short, skippable, paged flow (each step **Skip**-able; a progress dots indicat
 1. **Welcome** — the promise + the metaphor teased: "Interesting places around you — the map is *fresh
    snow*; exploring marks it."
 2. **Where places come from / About (Rob's ask)** — open data (Wikipedia, OpenStreetMap, heritage
-   registers), credited; the app is **open source**; **privacy-first** (nothing leaves your device unless
-   you choose). This screen *is* the About page (§6 anchors it in Settings too).
+   registers), credited; the app is **open source**; privacy framing **[gate — use privacy.md's scoped
+   wording, not an ungated overclaim]:** *"Nothing **you save** leaves your device unless you choose to
+   share it"* (privacy.md:9's exact qualifier — my draft dropped "you save," which is false: viewport
+   tile requests + IP go to Cloudflare, place-card image URLs + IP to Wikimedia today, and a launch
+   `current.json` ping). Do **not** say "nothing leaves your device" unqualified. Acceptance check: the
+   About copy must match a privacy.md commitment verbatim (not paraphrase off the qualifier). This screen
+   *is* the About page (§6 anchors it in Settings too).
 3. **Region pick** — **UK or Malaysia** (the two v1 regions from `MapRegion`); sets `ViewportSeed` +
    `selectedRegion`. **Seam to WP-RM** — a minimal two-choice pick now; the full region manager +
-   Rob's region-selection UX is WP-RM. If the user's location is known and in-coverage, pre-select it.
+   Rob's region-selection UX is WP-RM. *(Pre-select-from-location is a **dead branch on true first run** —
+   permission priming is step 5, so location isn't known yet; mark it **replay-only**, or drop it.)*
 4. **Offline pack offer — privacy-framed, HONESTLY (spec §9; onboarding steers to a pack)** — [gate —
    the copy must not overclaim]:
    - **Today's honest copy** (before WP-IMG-B2): *"Download <region> (~<`bytesToFetch`>) so the **map**
@@ -84,8 +104,9 @@ A short, skippable, paged flow (each step **Skip**-able; a progress dots indicat
      pack image-bundling → the strong privacy claim must go red.**
    - Shows the size (from `updatePlan`) + a `StorageHeadroom` check. **Skippable** → online-first
      (works immediately; honestly weaker on the tile channel).
-5. **Location priming — in context** — "Show your position to find places near you?" → 
-   `requestWhenInUseIfNeeded()` (consumes `LocationPermission`). **Skippable**; **declined-state handled**
+5. **Location priming — in context** — "Show your position to find places near you?" →
+   `requestWhenInUseIfNeeded()` **fired ONLY on the affirmative tap** (never on the step's appearance — no
+   cold iOS prompt) (consumes `LocationPermission`). **Skippable**; **declined-state handled**
    (`isLocationOff` → the app is fully usable; a Settings deep-link is offered later, never nagged). Never
    the raw iOS prompt cold — always the in-context explainer first.
 6. **Snow-metaphor intro** — teach **"Fresh snow / My tracks"**: seen places fade as you visit them
@@ -126,11 +147,23 @@ A short, skippable, paged flow (each step **Skip**-able; a progress dots indicat
   when off, and (when C1 ships) the **stats opt-in** toggle. Reachable from the map (the attribution chip
   → About, generalised). Keeps the card/map uncluttered while giving the About page a home.
 
+## 7. Accessibility (D7 — measurable, #163) [gate — was absent]
+
+The onboarding flow is a11y-dense (paged flow, progress dots, size strings, toggles, the blocking
+update-required sheet) — acceptance criteria, applied to **WP-B10a** (flow) and **WP-B10c** (surfaces):
+- **Dynamic Type:** every step's text uses semantic fonts and **reflows** at accessibility sizes (no
+  truncated copy; the Skip/Next controls stay reachable; the pack-size string wraps).
+- **VoiceOver:** each step is a focusable screen with a label; **Skip/Next/affirmative** buttons carry
+  labels; progress dots announce "step N of M"; the pack-size + storage strings are announced; the
+  update-required sheet is announced as an alert with its App-Store action labelled.
+- **Never gate a step behind a gesture** a switch-control/VoiceOver user can't perform; the named/tap
+  paths are the accessible primary routes.
+
 ## Build-WP decomposition
 
 | WP | side | scope | depends on |
 |---|---|---|---|
-| **WP-B10a** onboarding flow | **app (`ios`)** | first-run flag; the paged flow (welcome / about-open-data / region-pick seam / pack-offer / location-prime / metaphor); Skip on each; consumes `LocationPermission` + the downloader | B4 (built), packs (built), `LocationPermission` (built) |
+| **WP-B10a** onboarding flow | **app (`ios`)** | first-run flag **+ persisted `chosenRegion`→seed** (§1); the paged flow (welcome / about-open-data-scoped-copy / region-pick seam / pack-offer / location-prime-on-tap / metaphor); Skip + **a11y** (§7); consumes `LocationPermission`. **Pack-offer progress depends on WP-B10d's stream** — else a **fire-and-forget** download with a determinate spinner from `updatePlan.bytesToFetch` | B4 (built), `LocationPermission` (built), **WP-B10d** (progress) |
 | **WP-B10b** cold-start placeholder | **app (`ios`)** | the launch overlay (paper bg + indicator) dismissed on `didFinishLoadingStyle` + timeout — **every** cold start | map (built) |
 | **WP-B10c** update-required + empty-region surfaces | **app (`ios`)** | blocking update-required sheet + App Store link; unsupported-region state | `VersionGate`/`TileLoadState` (built) |
 | **WP-B10d** download progress + background rework | **app (`ios`)** | v1: a foreground progress stream (§5, frontmost-only, memory caveat); **the real WiFi-preferred background download (survives backgrounding, streams to disk) is an engine rework** — not a hook | the built downloader (needs background rework) |
