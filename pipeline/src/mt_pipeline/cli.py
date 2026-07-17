@@ -127,6 +127,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="local staging root for publish artifacts",
     )
     parser.add_argument(
+        "--image-candidate-limit",
+        type=int,
+        help="for publish, cap image candidates after score-ordered image-candidate selection",
+    )
+    parser.add_argument(
         "--upload",
         action="store_true",
         help="upload staged publish artifacts to R2 after local staging",
@@ -1895,6 +1900,7 @@ def main(argv=None) -> int:
             scoring_config_version=args.scoring_config_version,
             upload=args.upload,
             staging_root=args.staging_dir,
+            image_candidate_limit=args.image_candidate_limit,
             fingerprint_inputs=fingerprint_inputs,
             force=args.force,
         )

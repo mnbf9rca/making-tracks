@@ -125,6 +125,7 @@ def get_to_file(
     max_bytes: int = MAX_RESPONSE_BYTES,
     timeout: int = 30,
     deadline: int = 120,
+    headers: dict[str, str] | None = None,
 ) -> int:
     if not _validate_target(url, expected_hosts):
         raise FetchError(f"invalid target: {url!r}")
@@ -133,7 +134,8 @@ def get_to_file(
     dest_path = pathlib.Path(dest)
     tmp_path = dest_path.with_name(f".{dest_path.name}.tmp")
     try:
-        with _opener(expected_hosts).open(url, timeout=timeout) as resp:
+        request = urllib.request.Request(url, headers=headers or {})
+        with _opener(expected_hosts).open(request, timeout=timeout) as resp:
             headers = getattr(resp, "headers", None)
             if headers is not None and headers.get("Content-Encoding"):
                 raise FetchError(
@@ -156,6 +158,17 @@ def get_to_file(
     except FetchError:
         tmp_path.unlink(missing_ok=True)
         raise
+    except urllib.error.HTTPError as exc:
+        tmp_path.unlink(missing_ok=True)
+        retry_after = None
+        header_value = exc.headers.get("Retry-After") if exc.headers is not None else None
+        if header_value is not None:
+            retry_after = _retry_after_seconds(header_value)
+        raise FetchError(
+            f"http {exc.code}: {exc.reason}",
+            status=exc.code,
+            retry_after=retry_after,
+        ) from exc
     except Exception as exc:
         tmp_path.unlink(missing_ok=True)
         raise FetchError(str(exc)) from exc

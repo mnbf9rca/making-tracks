@@ -6,6 +6,7 @@ import json
 import os
 import re
 import time
+import hashlib
 from importlib import import_module as _import_module
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -19,7 +20,7 @@ from mt_contracts.region_index import validate_region_index
 _REGION_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _PUBLISH_VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 _PRIVATE_KINDS = {"registry", "cache", "feedback", "lock"}
-_PUBLIC_KINDS = {"tile", "basemap", "manifest", "current", "region_index"}
+_PUBLIC_KINDS = {"tile", "image", "thumb", "basemap", "manifest", "current", "region_index"}
 _R2_UPLOAD_ENV_VARS = ("R2_S3_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY")
 
 
@@ -97,6 +98,8 @@ class PublishPlan:
         tile_arts: Iterable[Any],
         *,
         basemap: bool,
+        image_index_arts: Iterable[Any] = (),
+        thumb_arts: Iterable[Any] = (),
         registry_blob: Any | None = None,
         cache_blob: Any | None = None,
         feedback_blob: Any | None = None,
@@ -106,6 +109,24 @@ class PublishPlan:
         public = str(layout["public_bucket"])
         private = str(layout["private_bucket"])
         ops: list[PublishOp] = []
+        for thumb in sorted(thumb_arts, key=lambda art: art.sha256):
+            ops.append(
+                PublishOp(
+                    kind="thumb",
+                    bucket=public,
+                    key=f"thumbs/{thumb.sha256[:2]}/{thumb.sha256}.webp",
+                    body=getattr(thumb, "webp_bytes", None),
+                )
+            )
+        for image in sorted(image_index_arts, key=lambda art: (art.x, art.y)):
+            ops.append(
+                PublishOp(
+                    kind="image",
+                    bucket=public,
+                    key=f"{region}/{publish_version}/images/10/{image.x}/{image.y}.json",
+                    body=getattr(image, "json_bytes", None),
+                )
+            )
         for tile in sorted(tile_arts, key=lambda art: (art.x, art.y)):
             ops.append(
                 PublishOp(
@@ -267,11 +288,14 @@ def publish_prepared_to_r2(
         region_index_op = _region_index_op_for_upload(
             client, layout, region_index_path
         )
+        thumb_content = _dedupe_ops_by_bucket_key(
+            op for plan in plan_list for op in plan.ops if op.kind == "thumb"
+        )
         public_content = [
             op
             for plan in plan_list
             for op in plan.ops
-            if op.kind in {"tile", "basemap", "manifest"}
+            if op.kind in {"image", "tile", "basemap", "manifest"}
         ]
         current_ops = [
             op for plan in plan_list for op in plan.ops if op.kind == "current"
@@ -279,7 +303,7 @@ def publish_prepared_to_r2(
         private_ops = [
             op for plan in plan_list for op in plan.ops if op.kind in _PRIVATE_KINDS
         ]
-        for op in [*public_content, *current_ops, region_index_op, *private_ops]:
+        for op in [*thumb_content, *public_content, *current_ops, region_index_op, *private_ops]:
             _upload_op(client, op)
     finally:
         for lock_key, etag in reversed(acquired):
@@ -367,6 +391,11 @@ def _validate_layout(layout: Mapping[str, Any]) -> None:
 
 
 def _upload_op(client, op: PublishOp) -> None:
+    if op.kind == "thumb":
+        body = _op_body_bytes(op)
+        _validate_thumb_body(op.key, body)
+        client.put_object(Bucket=op.bucket, Key=op.key, Body=body, IfNoneMatch="*")
+        return
     if op.body is not None:
         client.put_object(Bucket=op.bucket, Key=op.key, Body=op.body)
         return
@@ -374,6 +403,24 @@ def _upload_op(client, op: PublishOp) -> None:
         raise ValueError(f"publish op {op.kind!r} has no body or source_path")
     with op.source_path.open("rb") as body:
         client.put_object(Bucket=op.bucket, Key=op.key, Body=body)
+
+
+def _op_body_bytes(op: PublishOp) -> bytes:
+    if op.body is not None:
+        return op.body
+    if op.source_path is None:
+        raise ValueError(f"publish op {op.kind!r} has no body or source_path")
+    return op.source_path.read_bytes()
+
+
+def _validate_thumb_body(key: str, body: bytes) -> None:
+    match = re.fullmatch(r"thumbs/([0-9a-f]{2})/([0-9a-f]{64})\.webp", key)
+    if match is None:
+        raise ValueError(f"invalid thumb key: {key!r}")
+    prefix, expected = match.groups()
+    actual = hashlib.sha256(body).hexdigest()
+    if prefix != expected[:2] or actual != expected:
+        raise ValueError("thumb content hash mismatch")
 
 
 def _plan_from_staging(
@@ -386,10 +433,12 @@ def _plan_from_staging(
     region = staging.parent.name
     publish_version = staging.name
     validate_path_components(region, publish_version)
-    tile_ops, basemap_op, manifest_op = _ops_from_staging(
+    thumb_ops, image_ops, tile_ops, basemap_op, manifest_op = _ops_from_staging(
         staging, layout, region, publish_version
     )
     ops = [
+        *thumb_ops,
+        *image_ops,
         *tile_ops,
         basemap_op,
         manifest_op,
@@ -495,8 +544,27 @@ def _current_op(layout: Mapping[str, Any], region: str, publish_version: str) ->
 
 def _ops_from_staging(
     staging: Path, layout: Mapping[str, Any], region: str, publish_version: str
-) -> tuple[list[PublishOp], PublishOp, PublishOp]:
+) -> tuple[list[PublishOp], list[PublishOp], list[PublishOp], PublishOp, PublishOp]:
     public = str(layout["public_bucket"])
+    staging_root = staging.parent.parent
+    thumb_ops = [
+        PublishOp(
+            kind="thumb",
+            bucket=public,
+            key=f"thumbs/{path.parent.name}/{path.name}",
+            source_path=path,
+        )
+        for path in sorted((staging_root / "thumbs").glob("*/*.webp"))
+    ]
+    image_ops = [
+        PublishOp(
+            kind="image",
+            bucket=public,
+            key=f"{region}/{publish_version}/images/10/{path.parent.name}/{path.stem}.json",
+            source_path=path,
+        )
+        for path in sorted((staging / "images/10").glob("*/*.json"))
+    ]
     tile_ops = [
         PublishOp(
             kind="tile",
@@ -509,10 +577,19 @@ def _ops_from_staging(
     basemap = staging / f"{region}.pmtiles"
     manifest = staging / "manifest.json"
     return (
+        thumb_ops,
+        image_ops,
         tile_ops,
         PublishOp(kind="basemap", bucket=public, key=f"{region}/{publish_version}/{region}.pmtiles", source_path=basemap),
         PublishOp(kind="manifest", bucket=public, key=f"{region}/{publish_version}/manifest.json", source_path=manifest),
     )
+
+
+def _dedupe_ops_by_bucket_key(ops: Iterable[PublishOp]) -> list[PublishOp]:
+    by_key: dict[tuple[str, str], PublishOp] = {}
+    for op in ops:
+        by_key.setdefault((op.bucket, op.key), op)
+    return [by_key[key] for key in sorted(by_key)]
 
 
 def require_boto3() -> None:

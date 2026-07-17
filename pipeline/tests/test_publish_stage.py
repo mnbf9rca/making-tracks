@@ -206,6 +206,91 @@ def test_publish_stage_emits_bbox_subregion_shard_without_subregion_registry(
     )
 
 
+def test_publish_stage_emits_image_sidecars_from_shipped_wikidata_images(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    conn.execute(
+        "UPDATE source_records SET props_json = ? WHERE source_ref = ?",
+        (
+            json.dumps(
+                {
+                    "classes": ["Q839954"],
+                    "image": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+                },
+                sort_keys=True,
+            ),
+            "wd:Q100",
+        ),
+    )
+    conn.commit()
+    _write_malaysia_registry(tmp_path)
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename="malaysia.pmtiles",
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    seen_candidates = []
+
+    def fake_build_place_images(candidates, *, cache_dir):
+        seen_candidates.extend(candidates)
+        return [
+            P.images.PlaceImage(
+                place_id=A,
+                lat=3.10,
+                lon=101.70,
+                thumb_sha256="a" * 64,
+                thumb_bytes=b"thumb",
+                width=320,
+                height=240,
+                attribution=P.images.ImageAttribution(
+                    creator="Jane Example",
+                    license_code="CC-BY-4.0",
+                    license_name="Creative Commons Attribution 4.0",
+                    license_url="https://creativecommons.org/licenses/by/4.0/",
+                    source_url="https://commons.wikimedia.org/wiki/File:Fort.jpg",
+                    modified=True,
+                ),
+            )
+        ]
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+    monkeypatch.setattr(P.images, "build_place_images", fake_build_place_images)
+
+    result = P.run(
+        conn,
+        "malaysia",
+        publish_version="20260717T120000Z",
+        generated_at="2026-07-17T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+    )
+
+    assert [(candidate.place_id, candidate.image_url) for candidate in seen_candidates] == [
+        (A, "https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg")
+    ]
+    image_files = sorted(result.staging_dir.glob("images/10/*/*.json"))
+    assert len(image_files) == 1
+    image_index = json.loads(image_files[0].read_text())
+    assert image_index["places"][0]["place_id"] == A
+    assert image_index["places"][0]["attribution"]["license_code"] == "CC-BY-4.0"
+    assert (tmp_path / "stage/thumbs/aa" / f"{'a' * 64}.webp").read_bytes() == b"thumb"
+    region_entry = result.region_index["regions"][0]
+    assert region_entry["bytes_with_thumbs"] == (
+        region_entry["bytes_without_thumbs"]
+        + result.image_index_bytes
+        + result.thumb_bytes
+    )
+
+
 def test_publish_stage_writes_region_index_after_all_current_flips(
     conn, tmp_path, monkeypatch
 ):

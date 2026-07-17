@@ -1,10 +1,12 @@
 import json
 import pathlib
+import hashlib
 from io import BytesIO
 
 import pytest
 
 from mt_pipeline.publish import r2 as R
+from mt_pipeline.publish import images as I
 from mt_pipeline.publish import staging as S
 from mt_pipeline.publish.tiles import TileArtifact
 
@@ -29,6 +31,27 @@ def _arts():
     return [
         TileArtifact(x=1, y=2, gz_bytes=b"tile", sha256="0" * 64, byte_len=4)
     ]
+
+
+def _image_arts():
+    return [
+        I.ImageIndexArtifact(
+            x=1,
+            y=2,
+            json_bytes=b'{"schema_version":1,"z":10,"x":1,"y":2,"places":[]}',
+            sha256="1" * 64,
+            byte_len=53,
+        )
+    ]
+
+
+def _thumb_arts():
+    return [I.ThumbArtifact(sha256="a" * 64, webp_bytes=b"thumb", byte_len=5)]
+
+
+def _real_thumb_bytes():
+    body = b"thumb"
+    return hashlib.sha256(body).hexdigest(), body
 
 
 def test_unsafe_region_or_version_is_refused_before_any_path_is_built():
@@ -65,14 +88,47 @@ def test_build_staging_writes_the_public_r2_shape(tmp_path):
     assert json.loads((root / "manifest.json").read_text()) == manifest
 
 
-def test_manifest_is_the_LAST_content_op_then_current_flip():
-    plan = R.PublishPlan.for_version(
-        _layout(), "uk", "20260715T120000Z", _arts(), basemap=True
+def test_build_staging_writes_image_indexes_and_global_thumb_blobs(tmp_path):
+    basemap = tmp_path / "uk.pmtiles"
+    basemap.write_bytes(b"basemap")
+
+    root = S.build_staging(
+        tmp_path / "stage",
+        "uk",
+        "20260715T120000Z",
+        tile_arts=_arts(),
+        image_index_arts=_image_arts(),
+        thumb_arts=_thumb_arts(),
+        manifest_obj={
+            "schema_version": 1,
+            "publish_version": "20260715T120000Z",
+            "region": "uk",
+        },
+        basemap_path=basemap,
     )
-    manifest_index = plan.manifest_index()
-    assert all(op.kind in ("tile", "basemap") for op in plan.ops[:manifest_index])
-    assert plan.ops[manifest_index].kind == "manifest"
-    assert plan.ops[manifest_index + 1].kind == "current"
+
+    assert (root / "images/10/1/2.json").read_bytes() == _image_arts()[0].json_bytes
+    assert (tmp_path / "stage/thumbs/aa" / f"{'a' * 64}.webp").read_bytes() == b"thumb"
+
+
+def test_manifest_is_the_last_region_content_op_after_images_then_current_flip():
+    plan = R.PublishPlan.for_version(
+        _layout(),
+        "uk",
+        "20260715T120000Z",
+        _arts(),
+        basemap=True,
+        image_index_arts=_image_arts(),
+        thumb_arts=_thumb_arts(),
+    )
+    assert [op.kind for op in plan.ops] == [
+        "thumb",
+        "image",
+        "tile",
+        "basemap",
+        "manifest",
+        "current",
+    ]
 
 
 def test_all_private_kind_ops_target_the_private_bucket_and_layout_is_distinct():
@@ -89,7 +145,7 @@ def test_all_private_kind_ops_target_the_private_bucket_and_layout_is_distinct()
     for op in plan.ops:
         if op.kind in ("registry", "cache", "feedback"):
             assert op.bucket == layout["private_bucket"]
-        if op.kind in ("tile", "basemap", "manifest", "current"):
+        if op.kind in ("tile", "image", "thumb", "basemap", "manifest", "current"):
             assert op.bucket == layout["public_bucket"]
 
     bad = {**layout, "private_bucket": layout["public_bucket"]}
@@ -150,11 +206,16 @@ def test_existing_version_prefix_is_refused_even_with_a_ledger(tmp_path):
 
 
 def test_upload_path_locks_uploads_content_manifest_current_then_private_registry(tmp_path):
+    thumb_sha, thumb_body = _real_thumb_bytes()
     version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
     (version_root / "tiles/10/1").mkdir(parents=True)
+    (version_root / "images/10/1").mkdir(parents=True)
     (version_root / "tiles/10/1/2.json.gz").write_bytes(b"tile")
+    (version_root / "images/10/1/2.json").write_bytes(b"image")
     (version_root / "uk.pmtiles").write_bytes(b"basemap")
     (version_root / "manifest.json").write_text("{}")
+    (tmp_path / f"stage/thumbs/{thumb_sha[:2]}").mkdir(parents=True)
+    (tmp_path / f"stage/thumbs/{thumb_sha[:2]}" / f"{thumb_sha}.webp").write_bytes(thumb_body)
 
     class MissingCurrentUploadClient:
         def __init__(self):
@@ -191,6 +252,8 @@ def test_upload_path_locks_uploads_content_manifest_current_then_private_registr
     keys = [key for _bucket, key, _if_none_match in client.puts]
     assert keys[0] == "uk/publish.lock"
     assert keys[1:] == [
+        f"thumbs/{thumb_sha[:2]}/{thumb_sha}.webp",
+        "uk/20260715T120000Z/images/10/1/2.json",
         "uk/20260715T120000Z/tiles/10/1/2.json.gz",
         "uk/20260715T120000Z/uk.pmtiles",
         "uk/20260715T120000Z/manifest.json",
@@ -202,14 +265,19 @@ def test_upload_path_locks_uploads_content_manifest_current_then_private_registr
 
 
 def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tmp_path):
+    thumb_sha, thumb_body = _real_thumb_bytes()
     layout = _layout()
     uk_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
     sub_root = tmp_path / "stage" / "uk_london" / "20260715T120000Z"
     for root, region in [(uk_root, "uk"), (sub_root, "uk_london")]:
         (root / "tiles/10/1").mkdir(parents=True)
+        (root / "images/10/1").mkdir(parents=True)
         (root / "tiles/10/1/2.json.gz").write_bytes(f"tile:{region}".encode())
+        (root / "images/10/1/2.json").write_bytes(f"image:{region}".encode())
         (root / f"{region}.pmtiles").write_bytes(f"basemap:{region}".encode())
         (root / "manifest.json").write_text("{}")
+    (tmp_path / f"stage/thumbs/{thumb_sha[:2]}").mkdir(parents=True)
+    (tmp_path / f"stage/thumbs/{thumb_sha[:2]}" / f"{thumb_sha}.webp").write_bytes(thumb_body)
     region_index = tmp_path / "stage" / "regions.json"
     region_index.write_text(
         json.dumps(
@@ -296,9 +364,11 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
 
     keys = [key for _bucket, key, _body, if_none_match in client.puts if if_none_match is None]
     assert keys == [
+        "uk/20260715T120000Z/images/10/1/2.json",
         "uk/20260715T120000Z/tiles/10/1/2.json.gz",
         "uk/20260715T120000Z/uk.pmtiles",
         "uk/20260715T120000Z/manifest.json",
+        "uk_london/20260715T120000Z/images/10/1/2.json",
         "uk_london/20260715T120000Z/tiles/10/1/2.json.gz",
         "uk_london/20260715T120000Z/uk_london.pmtiles",
         "uk_london/20260715T120000Z/manifest.json",
@@ -408,6 +478,43 @@ def test_region_index_offline_dry_run_plan_serializes_the_planned_body(tmp_path)
     assert result.dry_run is True
     assert result.plan.ops[0].source_path is None
     assert json.loads(result.plan.ops[0].body)["regions"][0]["id"] == "uk"
+
+
+def test_thumb_uploads_are_hash_verified_and_write_if_absent(tmp_path):
+    thumb_sha, thumb_body = _real_thumb_bytes()
+    thumb_path = tmp_path / "thumb.webp"
+    thumb_path.write_bytes(thumb_body)
+    op = R.PublishOp(
+        kind="thumb",
+        bucket="making-tracks-tiles",
+        key=f"thumbs/{thumb_sha[:2]}/{thumb_sha}.webp",
+        source_path=thumb_path,
+    )
+
+    class Client:
+        def __init__(self):
+            self.puts = []
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            self.puts.append((Bucket, Key, Body, IfNoneMatch))
+
+    client = Client()
+    R._upload_op(client, op)
+
+    assert client.puts == [
+        ("making-tracks-tiles", f"thumbs/{thumb_sha[:2]}/{thumb_sha}.webp", thumb_body, "*")
+    ]
+
+    bad_path = tmp_path / "bad.webp"
+    bad_path.write_bytes(b"not-that-thumb")
+    bad = R.PublishOp(
+        kind="thumb",
+        bucket="making-tracks-tiles",
+        key=f"thumbs/{thumb_sha[:2]}/{thumb_sha}.webp",
+        source_path=bad_path,
+    )
+    with pytest.raises(ValueError, match="thumb content hash mismatch"):
+        R._upload_op(client, bad)
 
 
 def test_default_client_uses_committed_r2_s3_endpoint_contract(monkeypatch):
