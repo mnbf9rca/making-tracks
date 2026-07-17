@@ -22,14 +22,14 @@ struct MapScreen: View {
     private static let primaryFixturePlaceID = fixturePlaces[0].placeID
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             MLNMapViewRepresentable(
                 pmtilesURL: pmtilesURL,
                 features: features,
                 onCameraIdle: { bbox, zoom in
-                    let requestID = nextViewportRequestID()
-                    let stateEpoch = currentStateEpoch()
-                    Task {
+                    Task { @MainActor in
+                        let requestID = nextViewportRequestID()
+                        let stateEpoch = currentStateEpoch()
                         await refreshViewport(
                             bbox: bbox,
                             zoom: zoom,
@@ -46,36 +46,11 @@ struct MapScreen: View {
                 }
             )
             .ignoresSafeArea()
-
-            VStack(alignment: .trailing, spacing: 8) {
-                Button {
-                    showCredits = true
-                } label: {
-                    Image(systemName: "info.circle.fill")
-                        .font(.title3)
-                        .padding(10)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .accessibilityLabel("Credits")
-
-                if loadState != .ok {
-                    Text(verbatim: loadState.rawValue)
-                        .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(.ultraThinMaterial, in: Capsule())
-                }
-
-                if isFixtureMap {
-                    Text(verbatim: "Tracks visits: \(fixtureVisitCount)")
-                        .font(.caption2)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .accessibilityIdentifier("tracks.visit-count.\(Self.primaryFixturePlaceID)")
-                }
+            .overlay(alignment: .topTrailing) {
+                mapChrome
+                    .padding(.top, 72)
+                    .padding(.trailing, 16)
             }
-            .padding()
         }
         .task {
             await start()
@@ -86,23 +61,58 @@ struct MapScreen: View {
         .sheet(isPresented: $showCredits) {
             CreditsView(attribution: attribution)
         }
-        .sheet(isPresented: cardPresentationBinding) {
-            if let placeID = cardPresentation.activePlaceID {
-                PlaceCardSheet(placeID: placeID, model: model)
-                    .id(placeID)
-            }
+        .sheet(item: cardPresentationItemBinding) { presentation in
+            PlaceCardSheet(
+                placeID: presentation.placeID,
+                model: model
+            )
         }
     }
 
-    private var cardPresentationBinding: Binding<Bool> {
+    private var cardPresentationItemBinding: Binding<PlaceCardPresentation.Item?> {
         Binding(
-            get: { cardPresentation.isPresented },
-            set: { isPresented in
-                if !isPresented {
+            get: { cardPresentation.item },
+            set: { item in
+                if item == nil {
                     cardPresentation.dismiss()
                 }
             }
         )
+    }
+
+    private var mapChrome: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            if loadState != .ok {
+                Text(verbatim: loadState.rawValue)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+            }
+
+            if isFixtureMap {
+                Text(verbatim: "Tracks visits: \(fixtureVisitCount)")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("tracks.visit-count.\(Self.primaryFixturePlaceID)")
+            }
+
+            creditsButton
+        }
+    }
+
+    private var creditsButton: some View {
+        Button {
+            showCredits = true
+        } label: {
+            Image(systemName: "info.circle.fill")
+                .font(.title3)
+                .frame(width: 44, height: 44)
+                .background(.ultraThinMaterial, in: Circle())
+        }
+        .accessibilityLabel("Credits")
     }
 
     private func start() async {
@@ -219,16 +229,33 @@ private struct CreditsView: View {
     let attribution: [Attribution]
     @Environment(\.dismiss) private var dismiss
 
+    private static let buildCommit = loadBuildCommit()
+
+    private static func loadBuildCommit() -> String {
+        guard let url = Bundle.main.url(forResource: "BuildInfo", withExtension: "plist"),
+              let data = try? Data(contentsOf: url),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: String],
+              let commit = plist["GitCommit"]
+        else { return "unknown" }
+        return commit
+    }
+
     var body: some View {
         NavigationStack {
-            List(Array(attribution.enumerated()), id: \.offset) { _, item in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(verbatim: item.source)
-                        .font(.headline)
-                    Text(verbatim: item.license)
-                        .font(.subheadline)
-                    Text(verbatim: item.text)
-                        .font(.body)
+            List {
+                Text(verbatim: "Build \(Self.buildCommit)")
+                    .font(.caption)
+                    .fontDesign(.monospaced)
+
+                ForEach(Array(attribution.enumerated()), id: \.offset) { _, item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(verbatim: item.source)
+                            .font(.headline)
+                        Text(verbatim: item.license)
+                            .font(.subheadline)
+                        Text(verbatim: item.text)
+                            .font(.body)
+                    }
                 }
             }
             .navigationTitle("Credits")
@@ -243,6 +270,7 @@ private struct PlaceCardSheet: View {
     let placeID: String
     let model: MapScreenModel?
 
+    @State private var sheetInstanceID = UUID().uuidString
     @State private var card: PlaceCardModel?
     @State private var image: UIImage?
     @State private var isLoading = true
@@ -307,7 +335,7 @@ private struct PlaceCardSheet: View {
             }
             .padding()
         }
-        .accessibilityIdentifier("place-card.\(placeID)")
+        .accessibilityIdentifier("place-card.instance.\(sheetInstanceID)")
         .presentationDetents([.medium])
         .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         .task(id: placeID) {

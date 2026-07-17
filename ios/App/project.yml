@@ -38,6 +38,33 @@ targets:
         product: MakingTracksCore
       - package: MapLibre
         product: MapLibre
+    postBuildScripts:
+      - name: Stamp Build Git Commit
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          # The first path is the checkout/worktree .git entry. The second path
+          # is the common Git directory for the repo's required agent worktrees.
+          - $(SRCROOT)/../../.git
+          - $(SRCROOT)/../../../../.git
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/BuildInfo.plist
+        script: |
+          set -euo pipefail
+
+          commit="$(git -C "$SRCROOT/../.." rev-parse --short HEAD)"
+          plist="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/BuildInfo.plist"
+          mkdir -p "$(dirname "$plist")"
+
+          cat > "$plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>GitCommit</key>
+            <string>$commit</string>
+          </dict>
+          </plist>
+          PLIST
     info:
       path: Sources/Info.plist
       properties:
@@ -64,3 +91,28 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: app.making-tracks.MakingTracksUITests
         TEST_TARGET_NAME: MakingTracks
+    postBuildScripts:
+      - name: Stamp UI Test Build Git Commit
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(SRCROOT)/../../.git
+          - $(SRCROOT)/../../../../.git
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/BuildInfo.plist
+        script: |
+          set -euo pipefail
+
+          commit="$(git -C "$SRCROOT/../.." rev-parse --short HEAD)"
+          plist="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/BuildInfo.plist"
+          mkdir -p "$(dirname "$plist")"
+
+          cat > "$plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>GitCommit</key>
+            <string>$commit</string>
+          </dict>
+          </plist>
+          PLIST

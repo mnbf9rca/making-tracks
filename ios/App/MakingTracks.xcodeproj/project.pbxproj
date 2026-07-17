@@ -118,6 +118,7 @@
 			buildPhases = (
 				BE434AC1972FFDAAF8AD4004 /* Sources */,
 				36B42DD5E79F00A671F4FFFF /* Frameworks */,
+				AF626E9B2096E41E8684D6C2 /* Stamp Build Git Commit */,
 			);
 			buildRules = (
 			);
@@ -140,6 +141,7 @@
 			buildConfigurationList = 0C8D5E63A482D6EAE218D31E /* Build configuration list for PBXNativeTarget "MakingTracksUITests" */;
 			buildPhases = (
 				211CAF45B1A9C5C0FD53A48C /* Sources */,
+				65097FE8D16FEDA50D66EFBC /* Stamp UI Test Build Git Commit */,
 			);
 			buildRules = (
 			);
@@ -196,6 +198,53 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		65097FE8D16FEDA50D66EFBC /* Stamp UI Test Build Git Commit */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../../.git",
+				"$(SRCROOT)/../../../../.git",
+			);
+			name = "Stamp UI Test Build Git Commit";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/BuildInfo.plist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\n\ncommit=\"$(git -C \"$SRCROOT/../..\" rev-parse --short HEAD)\"\nplist=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/BuildInfo.plist\"\nmkdir -p \"$(dirname \"$plist\")\"\n\ncat > \"$plist\" <<PLIST\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n  <key>GitCommit</key>\n  <string>$commit</string>\n</dict>\n</plist>\nPLIST\n";
+		};
+		AF626E9B2096E41E8684D6C2 /* Stamp Build Git Commit */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../../.git",
+				"$(SRCROOT)/../../../../.git",
+			);
+			name = "Stamp Build Git Commit";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/BuildInfo.plist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\n\ncommit=\"$(git -C \"$SRCROOT/../..\" rev-parse --short HEAD)\"\nplist=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/BuildInfo.plist\"\nmkdir -p \"$(dirname \"$plist\")\"\n\ncat > \"$plist\" <<PLIST\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n  <key>GitCommit</key>\n  <string>$commit</string>\n</dict>\n</plist>\nPLIST\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		211CAF45B1A9C5C0FD53A48C /* Sources */ = {
