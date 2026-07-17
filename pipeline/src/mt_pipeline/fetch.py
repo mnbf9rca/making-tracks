@@ -136,10 +136,10 @@ def get_to_file(
     try:
         request = urllib.request.Request(url, headers=headers or {})
         with _opener(expected_hosts).open(request, timeout=timeout) as resp:
-            headers = getattr(resp, "headers", None)
-            if headers is not None and headers.get("Content-Encoding"):
+            response_headers = getattr(resp, "headers", None)
+            if response_headers is not None and response_headers.get("Content-Encoding"):
                 raise FetchError(
-                    f"unexpected Content-Encoding {headers.get('Content-Encoding')!r}"
+                    f"unexpected Content-Encoding {response_headers.get('Content-Encoding')!r}"
                 )
 
             start = time.monotonic()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import html
 import hashlib
 import json
@@ -46,6 +47,7 @@ WIKIMEDIA_MAX_RETRY_AFTER_SECONDS = 300.0
 COMMONS_METADATA_BATCH_SIZE = 50
 WIKIMEDIA_RETRY_ATTEMPTS = 4
 IMAGE_WORKER_TIMEOUT_SECONDS = 30
+TRANSIENT_REJECT_REASONS = frozenset({"metadata_fetch_failed", "download_failed"})
 
 
 @dataclass(frozen=True)
@@ -368,12 +370,9 @@ def build_place_images(
     if not candidate_files:
         return out
 
-    try:
-        imageinfo_by_filename = fetch_commons_imageinfo_batch(
-            [filename for _candidate, filename in candidate_files]
-        )
-    except Exception:
-        imageinfo_by_filename = {}
+    imageinfo_by_filename = fetch_commons_imageinfo_batch(
+        [filename for _candidate, filename in candidate_files]
+    )
 
     for candidate, filename in candidate_files:
         reject_path = reject_dir / f"{candidate.place_id}.json"
@@ -435,7 +434,6 @@ def transcode_to_webp_thumb(path) -> ThumbTranscode:
         timeout=IMAGE_WORKER_TIMEOUT_SECONDS,
     )
     payload = json.loads(result.stdout.decode("utf-8"))
-    import base64
 
     return ThumbTranscode(
         webp_bytes=base64.b64decode(payload["webp_b64"]),
@@ -463,7 +461,12 @@ def _cached_reject_matches(path: pathlib.Path, candidate: ImageCandidate) -> boo
         payload = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return False
-    return payload.get("image_url") == candidate.image_url and isinstance(payload.get("reason"), str)
+    reason = payload.get("reason")
+    return (
+        payload.get("image_url") == candidate.image_url
+        and isinstance(reason, str)
+        and reason not in TRANSIENT_REJECT_REASONS
+    )
 
 
 def _write_accepted(path: pathlib.Path, candidate: ImageCandidate, place_image: PlaceImage) -> None:
@@ -617,7 +620,7 @@ def emit_image_artifacts(
                 x=x,
                 y=y,
                 json_bytes=data,
-                sha256=__import__("hashlib").sha256(data).hexdigest(),
+                sha256=hashlib.sha256(data).hexdigest(),
                 byte_len=len(data),
             )
         )

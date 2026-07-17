@@ -485,6 +485,64 @@ def test_build_place_images_reuses_cached_reject(tmp_path, monkeypatch):
     assert images.build_place_images([candidate], cache_dir=tmp_path) == []
 
 
+def test_build_place_images_retries_cached_transient_reject(tmp_path, monkeypatch):
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+    )
+    reject_dir = tmp_path / "rejects"
+    reject_dir.mkdir()
+    (reject_dir / f"{candidate.place_id}.json").write_text(
+        json.dumps({"image_url": candidate.image_url, "reason": "metadata_fetch_failed"})
+    )
+    metadata_calls = []
+
+    def fake_imageinfo(filenames):
+        metadata_calls.append(list(filenames))
+        return {
+            filename: _imageinfo(license_short_name="CC BY 4.0")
+            for filename in filenames
+        }
+
+    monkeypatch.setattr(images, "fetch_commons_imageinfo_batch", fake_imageinfo)
+    monkeypatch.setattr(
+        images.fetch,
+        "get_to_file",
+        lambda _url, dest, **_kwargs: Path(dest).write_bytes(b"raw-image"),
+    )
+    monkeypatch.setattr(
+        images,
+        "transcode_to_webp_thumb",
+        lambda _path: images.ThumbTranscode(webp_bytes=b"webp", width=320, height=240),
+    )
+
+    out = images.build_place_images([candidate], cache_dir=tmp_path)
+
+    assert [place_image.place_id for place_image in out] == [candidate.place_id]
+    assert metadata_calls == [["Fort.jpg"]]
+
+
+def test_build_place_images_does_not_cache_batch_fetch_exception(tmp_path, monkeypatch):
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+    )
+
+    def raise_transient(_filenames):
+        raise images.fetch.FetchError("temporary commons outage")
+
+    monkeypatch.setattr(images, "fetch_commons_imageinfo_batch", raise_transient)
+
+    with pytest.raises(images.fetch.FetchError, match="temporary commons outage"):
+        images.build_place_images([candidate], cache_dir=tmp_path)
+
+    assert not (tmp_path / "rejects" / f"{candidate.place_id}.json").exists()
+
+
 def test_build_place_images_records_rejects_without_downloading(tmp_path, monkeypatch):
     candidate = images.ImageCandidate(
         place_id="mt1_00000000000000000000000001",
