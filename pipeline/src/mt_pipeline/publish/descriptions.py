@@ -12,7 +12,7 @@ from typing import Any
 from urllib.parse import quote
 
 from mt_contracts import strip_unsafe_text
-from mt_contracts.caps import MAX_DESCRIPTION_INDEX_BYTES
+from mt_contracts.caps import DESCRIPTION_TILE_ZOOM, MAX_DESCRIPTION_INDEX_BYTES
 from mt_contracts.validation import validate_instance
 
 from . import partition
@@ -205,7 +205,7 @@ def _description_index_payload(
     payload = {
         "schema_version": 1,
         "min_reader_version": 1,
-        "z": 10,
+        "z": DESCRIPTION_TILE_ZOOM,
         "x": x,
         "y": y,
         "places": [

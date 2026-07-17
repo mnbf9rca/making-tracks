@@ -27,6 +27,7 @@ SOURCE_PMTILES_URL_MAX = 2048
 SUBREGIONS_MAX = 256
 
 TILE_ZOOM = 10
+DESCRIPTION_TILE_ZOOM = TILE_ZOOM
 BASEMAP_MAXZOOM = 14
 MAX_PLACES_PER_TILE = 4000
 MAX_TILE_UNCOMPRESSED_BYTES = 8 * 1024 * 1024
@@ -74,7 +75,7 @@ CAPS_SCHEMA_MAP = {
     ("manifest", ("properties", "attribution", "items", "properties", "source"), "maxLength"): "ATTRIBUTION_SOURCE_MAX",
     ("manifest", ("properties", "attribution", "items", "properties", "license"), "maxLength"): "ATTRIBUTION_LICENSE_MAX",
     ("manifest", ("properties", "attribution", "items", "properties", "text"), "maxLength"): "ATTRIBUTION_TEXT_MAX",
-    ("description-index", ("properties", "z"), "const"): "TILE_ZOOM",
+    ("description-index", ("properties", "z"), "const"): "DESCRIPTION_TILE_ZOOM",
     ("description-index", ("properties", "places"), "maxItems"): "MAX_PLACES_PER_TILE",
     ("description-index", ("properties", "places", "items", "properties", "wikipedia_lang"), "maxLength"): "WIKIPEDIA_LANG_MAX",
     ("description-index", ("properties", "places", "items", "properties", "wikipedia_title"), "maxLength"): "WIKIPEDIA_TITLE_MAX",

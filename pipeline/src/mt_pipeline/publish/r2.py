@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from mt_contracts.caps import DESCRIPTION_TILE_ZOOM
 from mt_contracts.region_index import validate_region_index
 
 
@@ -142,7 +143,10 @@ class PublishPlan:
                 PublishOp(
                     kind="description",
                     bucket=public,
-                    key=f"{region}/{publish_version}/descriptions/10/{desc.x}/{desc.y}.json",
+                    key=(
+                        f"{region}/{publish_version}/descriptions/"
+                        f"{DESCRIPTION_TILE_ZOOM}/{desc.x}/{desc.y}.json"
+                    ),
                     body=getattr(desc, "json_bytes", None),
                 )
             )
@@ -596,10 +600,15 @@ def _ops_from_staging(
         PublishOp(
             kind="description",
             bucket=public,
-            key=f"{region}/{publish_version}/descriptions/10/{path.parent.name}/{path.stem}.json",
+            key=(
+                f"{region}/{publish_version}/descriptions/"
+                f"{DESCRIPTION_TILE_ZOOM}/{path.parent.name}/{path.stem}.json"
+            ),
             source_path=path,
         )
-        for path in sorted((staging / "descriptions/10").glob("*/*.json"))
+        for path in sorted(
+            (staging / "descriptions" / str(DESCRIPTION_TILE_ZOOM)).glob("*/*.json")
+        )
     ]
     tile_ops = [
         PublishOp(

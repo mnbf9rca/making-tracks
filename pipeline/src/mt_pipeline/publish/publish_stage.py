@@ -438,6 +438,9 @@ def _region_index(
         region = str(manifest_obj["region"])
         tile_bytes = sum(int(tile["bytes"]) for tile in manifest_obj["tiles"])
         basemap_bytes = int(manifest_obj["basemap"]["bytes"])
+        # Region-pack bytes without thumbnails include core map payloads plus
+        # description text sidecars. Image indexes stay with thumbnail payloads
+        # because they are only useful when thumbnails are present.
         bytes_without_thumbs = basemap_bytes + tile_bytes + target.description_index_bytes
         bytes_with_thumbs = (
             bytes_without_thumbs + target.image_index_bytes + target.thumb_bytes
