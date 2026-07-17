@@ -1,0 +1,19 @@
+name: Attribution
+
+on:
+  pull_request:
+  push:
+    branches:
+      - develop
+      - "attribution-*"
+
+jobs:
+  generated-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Check generated attribution artifacts
+        run: uv run --package making-tracks-pipeline --extra dev python scripts/generate_attribution.py --check

@@ -68,7 +68,7 @@ def test_attribution_bumps_min_reader_version():
         attribution=[
             {
                 "source": "historic_england",
-                "license": "OGL-3.0",
+                "license": "OGL-UK-3.0",
                 "text": "Contains HE data...",
             }
         ],

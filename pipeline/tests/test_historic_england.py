@@ -70,7 +70,10 @@ def test_a1d_sources_config_carries_ogl_attribution():
     )
 
     assert "Open Government Licence" in cfg["historic_england"]["attribution"]
-    assert cfg["historic_england"]["license"] == "OGL-3.0"
+    assert "© Historic England 2026" in cfg["historic_england"]["attribution"]
+    assert "Contains Ordnance Survey data" in cfg["historic_england"]["attribution"]
+    assert "Crown copyright and database right 2026" in cfg["historic_england"]["attribution"]
+    assert cfg["historic_england"]["license"] == "OGL-UK-3.0"
     assert "outSR=4326" in cfg["historic_england"]["url"]
     assert cfg["historic_england"]["max_bytes"] > 167_768_010
     assert cfg["open_plaques"]["license"] == "PDDL-1.0"

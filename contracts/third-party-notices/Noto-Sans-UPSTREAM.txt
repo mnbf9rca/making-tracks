@@ -1,0 +1,5 @@
+Making Tracks mirrored basemap font glyphs
+upstream: https://github.com/protomaps/basemaps-assets
+commit: 028c18f713baecad011301ff7a69acc39bcc2ae7
+license: SIL Open Font License, see Noto-Sans-OFL.txt
+stacks: Noto Sans Regular

@@ -84,6 +84,62 @@ def test_publish_stage_builds_local_staging_and_marks_shipped(
     assert shipped[B].last_seen_version == "20260701T000000Z"
 
 
+def test_publish_stage_manifest_includes_osm_attribution_for_basemap_without_osm_places(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    conn.execute(
+        "UPDATE places SET member_refs_json = ? WHERE place_id = ?",
+        (json.dumps(["wd:Q100"], sort_keys=True), A),
+    )
+    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+        [
+            RegistryRecord(
+                place_id=A,
+                refs={"wd:Q100"},
+                mint_anchor="wd:Q100",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+            RegistryRecord(
+                place_id=B,
+                refs={"wd:Q200"},
+                mint_anchor="wd:Q200",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+        ]
+    )
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename="malaysia.pmtiles",
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    result = P.run(
+        conn,
+        "malaysia",
+        publish_version="20260715T120000Z",
+        generated_at="2026-07-15T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+    )
+
+    manifest = json.loads((result.staging_dir / "manifest.json").read_text())
+    assert [attr["source"] for attr in manifest["attribution"]] == ["osm"]
+
+
 def test_publish_stage_emits_phase_heartbeats_for_slow_publish_steps(
     conn, tmp_path, monkeypatch, capsys
 ):
