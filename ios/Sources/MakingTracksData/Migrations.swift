@@ -55,6 +55,13 @@ extension AppDatabase {
             )
         }
 
+        register("v2") { db in
+            try db.create(table: "hidden_places") { t in
+                t.column("place_id", .text).primaryKey()
+                t.column("hidden_at", .datetime).notNull()
+            }
+        }
+
         return (migrator, identifiers)
     }
 

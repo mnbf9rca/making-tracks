@@ -16,6 +16,7 @@ public enum FeatureEncoding {
         [
             "visit": .string(visitTag(state.visit)),
             "saved": .bool(state.saved),
+            "hidden": .bool(state.hidden),
         ]
     }
 

@@ -109,6 +109,36 @@ extension AppDatabase {
         }
     }
 
+    public func setHidden(_ place: PlaceRef, _ hidden: Bool) throws {
+        try dbQueue.write { db in
+            if hidden {
+                try snapshotIfNeeded(place, db)
+                try db.execute(
+                    sql: """
+                        INSERT INTO hidden_places (place_id, hidden_at)
+                        VALUES (?, ?)
+                        ON CONFLICT(place_id) DO NOTHING
+                        """,
+                    arguments: [place.placeID, now()]
+                )
+            } else {
+                try db.execute(
+                    sql: "DELETE FROM hidden_places WHERE place_id = ?",
+                    arguments: [place.placeID]
+                )
+            }
+        }
+    }
+
+    public func unhide(placeID: String) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "DELETE FROM hidden_places WHERE place_id = ?",
+                arguments: [placeID]
+            )
+        }
+    }
+
     public func wantToGoListID() throws -> Int64 {
         try dbQueue.read { db in
             guard let id = try Int64.fetchOne(
