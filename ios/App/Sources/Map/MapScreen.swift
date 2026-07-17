@@ -2,6 +2,7 @@ import CoreLocation
 import SwiftUI
 import UIKit
 import ImageIO
+@preconcurrency import MapLibre
 import MakingTracksCore
 import MakingTracksData
 import MakingTracksTiles
@@ -50,6 +51,7 @@ struct MapScreen: View {
 
     @State private var model: MapScreenModel?
     @StateObject private var locationPermission: LocationPermission
+    @Environment(\.scenePhase) private var scenePhase
     @State private var worldPMTilesURL: String? = WorldBasemap.pmtilesURL()
     @State private var features: [(MapPlace, PinState)] = []
     @State private var regionPMTilesURL: String?
@@ -61,8 +63,13 @@ struct MapScreen: View {
     @State private var viewportRequestID = 0
     @State private var stateEpoch = 0
     @State private var fixtureVisitCount = 0
-    @State private var userLocationFocusRequestID = 0
+    @State private var userTrackingMode: MLNUserTrackingMode = .none
+    @State private var viewportRefreshTask: Task<Void, Never>?
+    @State private var suppressedNearbyPromptPlaceIDs: Set<String> = []
+    @State private var nearbyPromptNames: [String: String] = [:]
+    private let locationManager: AppLocationManager
     private static let primaryFixturePlaceID = fixturePlaces[0].placeID
+    private static let nearbyPromptDistanceMeters: CLLocationDistance = 125
 
     init(
         database: AppDatabase,
@@ -70,13 +77,14 @@ struct MapScreen: View {
         isFixtureMap: Bool = false,
         debugInstallOfflineRegion: String? = nil,
         debugForceTileNetworkOffline: Bool = false,
-        locationManager: LocationManaging = CLLocationManager()
+        locationManager: AppLocationManager = AppLocationManager()
     ) {
         self.database = database
         self.startupViewport = startupViewport
         self.isFixtureMap = isFixtureMap
         self.debugInstallOfflineRegion = debugInstallOfflineRegion
         self.debugForceTileNetworkOffline = debugForceTileNetworkOffline
+        self.locationManager = locationManager
         _locationPermission = StateObject(wrappedValue: LocationPermission(manager: locationManager))
     }
 
@@ -87,20 +95,21 @@ struct MapScreen: View {
                 regionPMTilesURL: regionPMTilesURL,
                 startupViewport: startupViewport,
                 features: features,
+                locationManager: locationManager,
                 showsUserLocation: locationPermission.showsUserLocation,
-                userLocationCoordinate: locationPermission.currentCoordinate,
-                userLocationFocusRequestID: userLocationFocusRequestID,
+                userTrackingMode: userTrackingMode,
                 onCameraIdle: { bbox, zoom in
                     Task { @MainActor in
-                        let requestID = nextViewportRequestID()
-                        let stateEpoch = currentStateEpoch()
-                        await refreshViewport(
+                        scheduleViewportRefresh(
                             bbox: bbox,
                             zoom: zoom,
-                            requestID: requestID,
-                            stateEpoch: stateEpoch
+                            requestID: nextViewportRequestID(),
+                            stateEpoch: currentStateEpoch()
                         )
                     }
+                },
+                onUserPanned: {
+                    userTrackingMode = .none
                 },
                 onTapPlace: { placeID in
                     cardPresentation.show(placeID: placeID)
@@ -125,6 +134,19 @@ struct MapScreen: View {
                     .padding(.trailing, 16)
                     .padding(.bottom, 16)
             }
+            .overlay(alignment: .bottom) {
+                if let prompt = nearbyPromptCandidate {
+                    nearbyPromptView(for: prompt)
+                        .padding(.bottom, 88)
+                        .padding(.horizontal, 16)
+                }
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase != .active else { return }
+            userTrackingMode = .none
+            locationManager.stopUpdatingLocation()
+            locationManager.stopUpdatingHeading()
         }
         .task {
             await start()
@@ -235,14 +257,106 @@ struct MapScreen: View {
         Button {
             handleLocateMeTap()
         } label: {
-            Image(systemName: "location.fill")
+            Image(systemName: locateMeButtonSystemName)
                 .font(.title3)
                 .frame(width: 44, height: 44)
                 .background(.ultraThinMaterial, in: Circle())
         }
-        .accessibilityLabel("Locate me")
+        .accessibilityLabel(locateMeButtonAccessibilityLabel)
         .accessibilityHint("Centers the map on your location")
         .accessibilityIdentifier("map.locate-me")
+    }
+
+    private var locateMeButtonSystemName: String {
+        switch userTrackingMode {
+        case .none:
+            return "location"
+        case .follow:
+            return "location.fill"
+        case .followWithHeading:
+            return "location.north.line"
+        default:
+            return "location"
+        }
+    }
+
+    private var locateMeButtonAccessibilityLabel: String {
+        switch userTrackingMode {
+        case .none:
+            return "Locate me"
+        case .follow:
+            return "Follow me"
+        case .followWithHeading:
+            return "Follow me with heading"
+        default:
+            return "Locate me"
+        }
+    }
+
+    private var nearbyPromptCandidate: NearbyPromptCandidate? {
+        guard locationPermission.showsUserLocation,
+              userTrackingMode != .none,
+              let coordinate = locationPermission.currentCoordinate
+        else { return nil }
+
+        let userLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        return features
+            .filter { place, pinState in
+                pinState.visit == .none && !suppressedNearbyPromptPlaceIDs.contains(place.id)
+            }
+            .compactMap { (place, _) -> NearbyPromptCandidate? in
+                guard let name = nearbyPromptNames[place.id] else { return nil }
+                let placeLocation = CLLocation(latitude: place.lat, longitude: place.lon)
+                let distance = userLocation.distance(from: placeLocation)
+                guard distance <= Self.nearbyPromptDistanceMeters else { return nil }
+                return NearbyPromptCandidate(
+                    placeID: place.id,
+                    name: name,
+                    distanceMeters: distance
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.distanceMeters == rhs.distanceMeters {
+                    return lhs.placeID < rhs.placeID
+                }
+                return lhs.distanceMeters < rhs.distanceMeters
+            }
+            .first
+    }
+
+    @ViewBuilder
+    private func nearbyPromptView(for prompt: NearbyPromptCandidate) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Text("You're near \(prompt.name) — seen it?")
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 8)
+
+            Button("Seen it") {
+                handleNearbyPromptSeen(prompt)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("map.nearby-prompt.seen")
+
+            Button {
+                suppressedNearbyPromptPlaceIDs.insert(prompt.placeID)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2)
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Dismiss nearby prompt")
+            .accessibilityIdentifier("map.nearby-prompt.dismiss")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("map.nearby-prompt")
     }
 
     private func start() async {
@@ -293,10 +407,47 @@ struct MapScreen: View {
             openLocationSettings()
         case .notDetermined, .authorizedAlways, .authorizedWhenInUse:
             locationPermission.requestCurrentLocation()
-            userLocationFocusRequestID += 1
+            switch userTrackingMode {
+            case .none:
+                userTrackingMode = .follow
+            case .follow:
+                userTrackingMode = .followWithHeading
+            case .followWithHeading:
+                userTrackingMode = .none
+            default:
+                userTrackingMode = .none
+            }
         @unknown default:
             locationPermission.requestCurrentLocation()
-            userLocationFocusRequestID += 1
+            userTrackingMode = .follow
+        }
+    }
+
+    @MainActor
+    private func scheduleViewportRefresh(
+        bbox: BBox,
+        zoom: Int,
+        requestID: Int,
+        stateEpoch capturedStateEpoch: Int
+    ) {
+        viewportRefreshTask?.cancel()
+        viewportRefreshTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            await refreshViewport(
+                bbox: bbox,
+                zoom: zoom,
+                requestID: requestID,
+                stateEpoch: capturedStateEpoch
+            )
+        }
+    }
+
+    @MainActor
+    private func handleNearbyPromptSeen(_ prompt: NearbyPromptCandidate) {
+        suppressedNearbyPromptPlaceIDs.insert(prompt.placeID)
+        Task { @MainActor in
+            try? await model?.setVisited(placeID: prompt.placeID, visited: true)
         }
     }
 
@@ -327,10 +478,17 @@ struct MapScreen: View {
         let nextRegionPMTilesURL = await model.pmtilesURL
         let nextAttribution = await model.attribution
         let nextLoadState = await model.loadState
+        var nextNearbyPromptNames: [String: String] = [:]
+        for (place, _) in next {
+            if let card = await model.cardModel(for: place.id) {
+                nextNearbyPromptNames[place.id] = card.name
+            }
+        }
         await MainActor.run {
             guard requestID == viewportRequestID else { return }
             if capturedStateEpoch == stateEpoch {
                 features = next
+                nearbyPromptNames = nextNearbyPromptNames
             }
             regionPMTilesURL = nextRegionPMTilesURL
             attribution = nextAttribution
@@ -357,6 +515,12 @@ struct MapScreen: View {
         await MainActor.run {
             fixtureVisitCount = count
         }
+    }
+
+    private struct NearbyPromptCandidate {
+        let placeID: String
+        let name: String
+        let distanceMeters: CLLocationDistance
     }
 
     private static let fixturePlaces = [

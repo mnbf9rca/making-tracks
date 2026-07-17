@@ -11,6 +11,9 @@ struct MakingTracksApp: App {
     private static let debugInstallOfflineRegion = argumentValue("--debug-install-offline-region")
     private static let debugForceTileNetworkOffline = arguments.contains("--debug-force-tile-network-offline")
     private static let isLocationDeniedFixture = arguments.contains("--ui-testing-location-denied")
+    private static let isLocationAuthorizedFixture = arguments.contains("--ui-testing-location-authorized")
+    private static let simulatedLatitude = argumentValue("--ui-testing-location-latitude").flatMap(Double.init)
+    private static let simulatedLongitude = argumentValue("--ui-testing-location-longitude").flatMap(Double.init)
 
     private let database: AppDatabase = {
         try! resetUITestingDatabaseIfNeeded()
@@ -20,11 +23,19 @@ struct MakingTracksApp: App {
         return try! AppDatabase.live()
     }()
 
-    private let locationManager: LocationManaging = {
+    private let locationManager: AppLocationManager = {
         if isLocationDeniedFixture {
-            return UITestLocationManager(authorizationStatus: .denied)
+            return AppLocationManager(simulatedAuthorizationStatus: .denied)
         }
-        return CLLocationManager()
+        if isLocationAuthorizedFixture,
+           let simulatedLatitude,
+           let simulatedLongitude {
+            return AppLocationManager(
+                simulatedAuthorizationStatus: .authorizedWhenInUse,
+                simulatedLocation: CLLocationCoordinate2D(latitude: simulatedLatitude, longitude: simulatedLongitude)
+            )
+        }
+        return AppLocationManager()
     }()
 
     var body: some Scene {
@@ -60,17 +71,4 @@ struct MakingTracksApp: App {
             try? FileManager.default.removeItem(at: URL(fileURLWithPath: dbURL.path + suffix))
         }
     }
-}
-
-private final class UITestLocationManager: LocationManaging {
-    weak var delegate: CLLocationManagerDelegate?
-    var authorizationStatus: CLAuthorizationStatus
-
-    init(authorizationStatus: CLAuthorizationStatus) {
-        self.authorizationStatus = authorizationStatus
-    }
-
-    func requestWhenInUseAuthorization() {}
-
-    func requestLocation() {}
 }

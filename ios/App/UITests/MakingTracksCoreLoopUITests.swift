@@ -106,6 +106,32 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "map-location-off")
     }
 
+    func testLocateMeShowsNearbyPromptForFixturePlace() {
+        let app = launch(
+            reset: true,
+            simulatedLocationAuthorization: true,
+            simulatedLatitude: 3.1402,
+            simulatedLongitude: 101.6902
+        )
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        app.buttons["map.locate-me"].tap()
+
+        let nearbyPrompt = app.otherElements["map.nearby-prompt"]
+        XCTAssertTrue(nearbyPrompt.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["You're near Ghost Sign — seen it?"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "nearby-prompt")
+
+        let seenButton = app.buttons["map.nearby-prompt.seen"]
+        XCTAssertTrue(seenButton.waitForExistence(timeout: 5))
+        seenButton.tap()
+
+        XCTAssertFalse(nearbyPrompt.waitForExistence(timeout: 2))
+        XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
+    }
+
     func testCreditsShowOpenSourceAcknowledgements() throws {
         let app = launch(reset: true)
 
@@ -122,7 +148,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "credits-open-source-acknowledgements")
     }
 
-    private func launch(reset: Bool, locationDenied: Bool = false) -> XCUIApplication {
+    private func launch(
+        reset: Bool,
+        locationDenied: Bool = false,
+        simulatedLocationAuthorization: Bool = false,
+        simulatedLatitude: Double? = nil,
+        simulatedLongitude: Double? = nil
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
         if reset {
@@ -130,6 +162,17 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         if locationDenied {
             app.launchArguments.append("--ui-testing-location-denied")
+        }
+        if simulatedLocationAuthorization {
+            app.launchArguments.append("--ui-testing-location-authorized")
+        }
+        if let simulatedLatitude {
+            app.launchArguments.append("--ui-testing-location-latitude")
+            app.launchArguments.append(String(simulatedLatitude))
+        }
+        if let simulatedLongitude {
+            app.launchArguments.append("--ui-testing-location-longitude")
+            app.launchArguments.append(String(simulatedLongitude))
         }
         app.launch()
         return app
@@ -194,6 +237,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     private let screenshotExportNames: [String: String] = [
         "card-open": "attribution-card-sheet",
+        "nearby-prompt": "nearby-prompt",
         "locate-me-chrome": "locate-me-chrome",
         "map-location-off": "denied-settings",
         "credits-open-source-acknowledgements": "credits",

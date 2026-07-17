@@ -6,15 +6,15 @@ final class LocationPermission: NSObject, ObservableObject {
     @Published private(set) var authorizationStatus: CLAuthorizationStatus
     @Published private(set) var currentCoordinate: CLLocationCoordinate2D?
 
-    private let manager: LocationManaging
+    private let manager: AppLocationManager
     private var didRequestAuthorization = false
     private var wantsCurrentLocation = false
 
-    init(manager: LocationManaging = CLLocationManager()) {
+    init(manager: AppLocationManager = AppLocationManager()) {
         self.manager = manager
         self.authorizationStatus = manager.authorizationStatus
         super.init()
-        self.manager.delegate = self
+        self.manager.permissionDelegate = self
     }
 
     var showsUserLocation: Bool {
@@ -96,13 +96,3 @@ private extension LocationPermission {
         }
     }
 }
-
-protocol LocationManaging: AnyObject {
-    var authorizationStatus: CLAuthorizationStatus { get }
-    var delegate: CLLocationManagerDelegate? { get set }
-
-    func requestWhenInUseAuthorization()
-    func requestLocation()
-}
-
-extension CLLocationManager: LocationManaging {}
