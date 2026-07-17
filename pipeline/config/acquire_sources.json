@@ -1,0 +1,45 @@
+{
+  "_header": "BOOTSTRAP acquisition endpoints. Ops may update URLs without code changes.",
+  "wikidata": {
+    "endpoint": "https://query.wikidata.org/sparql",
+    "allowed_hosts": ["query.wikidata.org"],
+    "max_bytes": 33554432,
+    "region_overrides": {
+      "uk": {
+        "tile_degrees": 0.5
+      }
+    }
+  },
+  "wikipedia": {
+    "endpoint": "https://en.wikipedia.org/w/api.php",
+    "allowed_hosts": ["en.wikipedia.org"],
+    "max_bytes": 33554432
+  },
+  "pageviews": {
+    "endpoint": "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article",
+    "allowed_hosts": ["wikimedia.org"],
+    "access": "all-access",
+    "agent": "user",
+    "granularity": "daily",
+    "max_bytes": 33554432,
+    "max_titles": 50000,
+    "retries": 6,
+    "polite_interval_seconds": 0.1
+  },
+  "osm": {
+    "malaysia": {
+      "url": "https://download.geofabrik.de/asia/malaysia-singapore-brunei-latest.osm.pbf",
+      "md5_url": "https://download.geofabrik.de/asia/malaysia-singapore-brunei-latest.osm.pbf.md5",
+      "allowed_hosts": ["download.geofabrik.de"],
+      "geofabrik_date": null,
+      "max_bytes": 1500000000
+    },
+    "uk": {
+      "url": "https://download.geofabrik.de/europe/united-kingdom-latest.osm.pbf",
+      "md5_url": "https://download.geofabrik.de/europe/united-kingdom-latest.osm.pbf.md5",
+      "allowed_hosts": ["download.geofabrik.de"],
+      "geofabrik_date": null,
+      "max_bytes": 5000000000
+    }
+  }
+}

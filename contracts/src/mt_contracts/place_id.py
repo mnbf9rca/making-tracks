@@ -1,0 +1,104 @@
+"""place_id: the immutable place identity contract."""
+
+from __future__ import annotations
+
+import hashlib
+import re
+from collections.abc import Iterable
+
+from .versions import SCHEMA_VERSIONS
+
+_ID_SCHEME_VERSION = SCHEMA_VERSIONS["id_scheme"]
+KNOWN_ID_SCHEMES = frozenset({1})
+assert _ID_SCHEME_VERSION in KNOWN_ID_SCHEMES, "current mint scheme must be known"
+PLACE_ID_PREFIX = f"mt{_ID_SCHEME_VERSION}_"
+
+_CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+_BODY_LEN = 26
+
+
+def _build_place_id_re(schemes: frozenset[int]) -> re.Pattern[str]:
+    alt = "|".join(str(v) for v in sorted(schemes))
+    return re.compile(rf"^mt(?:{alt})_[{_CROCKFORD}]{{{_BODY_LEN}}}$")
+
+
+PLACE_ID_RE = _build_place_id_re(KNOWN_ID_SCHEMES)
+
+_SOURCE_PRIORITY = {"wd": 0, "osm": 1, "hehle": 2, "plaque": 3, "wp": 4}
+_OSM_TYPE_RANK = {"node": 0, "way": 1, "relation": 2}
+
+_SOURCE_IDENT_GRAMMAR = {
+    "wd": r"Q[0-9]+",
+    "osm": r"(?:node|way|relation)/[0-9]+",
+    "hehle": r"[0-9]+",
+    "plaque": r"openplaques/[0-9]+",
+    "wp": r"[0-9]+",
+}
+_GENERIC_REF_GRAMMAR = r"[a-z][a-z0-9_]*:[A-Za-z0-9][A-Za-z0-9._/-]*"
+_GENERIC_REF_RE = re.compile(f"^{_GENERIC_REF_GRAMMAR}$")
+MINT_KEY_RE = re.compile(
+    "^(?:" + "|".join(f"{src}:{grammar}" for src, grammar in _SOURCE_IDENT_GRAMMAR.items()) + ")$"
+)
+
+
+def canonical_ref(source: str, ident: str) -> str:
+    ref = f"{source}:{ident}"
+    assert_canonical_ref(ref)
+    return ref
+
+
+def is_canonical_ref(ref: str) -> bool:
+    if not _GENERIC_REF_RE.fullmatch(ref):
+        return False
+    source, _, ident = ref.partition(":")
+    grammar = _SOURCE_IDENT_GRAMMAR.get(source)
+    return grammar is None or bool(re.fullmatch(grammar, ident))
+
+
+def assert_canonical_ref(ref: str) -> None:
+    if not is_canonical_ref(ref):
+        raise ValueError(f"non-canonical ref: {ref!r}")
+
+
+def assert_canonical_mint_key(mint_key: str) -> None:
+    if not MINT_KEY_RE.fullmatch(mint_key):
+        raise ValueError(f"non-canonical mint_key: {mint_key!r}")
+
+
+def _anchor_sort_key(ref: str):
+    source, _, ident = ref.partition(":")
+    priority = _SOURCE_PRIORITY.get(source, 99)
+    if source == "osm":
+        osm_type, _, num = ident.partition("/")
+        num_key = int(num) if num.isdigit() else float("inf")
+        return (priority, _OSM_TYPE_RANK.get(osm_type, 9), num_key, ref)
+    if source == "wd":
+        num_key = int(ident[1:]) if ident[1:].isdigit() else float("inf")
+        return (priority, 0, num_key, ref)
+    return (priority, 0, float("inf"), ref)
+
+
+def select_mint_anchor(refs: Iterable[str]) -> str:
+    refs = list(refs)
+    if not refs:
+        raise ValueError("cannot select a mint anchor from an empty ref set")
+    return min(refs, key=_anchor_sort_key)
+
+
+def _crockford(data: bytes, n_chars: int) -> str:
+    value = int.from_bytes(data, "big")
+    out = []
+    for _ in range(n_chars):
+        out.append(_CROCKFORD[value & 0x1F])
+        value >>= 5
+    return "".join(reversed(out))
+
+
+def mint_place_id(mint_key: str) -> str:
+    assert_canonical_mint_key(mint_key)
+    digest = hashlib.sha256(mint_key.encode("ascii")).digest()
+    return PLACE_ID_PREFIX + _crockford(digest[-16:], _BODY_LEN)
+
+
+def is_valid_place_id(value: str) -> bool:
+    return bool(PLACE_ID_RE.fullmatch(value))

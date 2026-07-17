@@ -1,0 +1,1 @@
+Authoritative cross-track contracts for Making Tracks. See `CONTRACTS.md`. Machine source of truth: `schemas/`, `versions.json`, `regions/`, `basemap-budget.json`, and `src/mt_contracts/`. Run `pip install -e '.[dev]' && pytest` to validate the whole contract.

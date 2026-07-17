@@ -64,7 +64,7 @@ No confirmation, fully reversible. "One tap" means one tap *in the place card/ca
 
 Nobody can know the ranking at design time; "interesting" is a taste function that must be measured, not asserted. The design deliverable is **machinery to iterate cheaply** plus a defensible first guess.
 
-**Recall (candidate set).** Union of: Wikipedia-geotagged articles (**English-only for now**; language is a per-region config option in the extractor so Malay and others can be enabled later without structural change); Wikidata items with coordinates whose class (P31) passes a curated allowlist; OSM features with candidate tags (`historic=*`, `tourism=attraction|artwork|viewpoint`, `memorial=*`, …); regional heritage registers (Historic England for UK; for Malaysia, a source feasibility check is part of WP-A1 — the national heritage register is included only if machine-readable, and nothing depends on it); Open Plaques. The decisive unglamorous work is the Wikidata class allowlist/blocklist — excluding parishes, companies, events, admin boundaries.
+**Recall (candidate set).** Union of: Wikipedia-geotagged articles (**English-only for now**; language is a per-region config option in the extractor so Malay and others can be enabled later without structural change); Wikidata items with coordinates whose class (P31) passes a curated allowlist; OSM features with candidate tags (`historic=*`, `tourism=attraction|artwork|viewpoint`, `memorial=*`, …); regional heritage registers (Historic England for UK; for Malaysia, a source feasibility check is a separate small spike under WP-A1d — the national heritage register is included only if machine-readable, and nothing depends on it); Open Plaques. The decisive unglamorous work is the Wikidata class allowlist/blocklist — excluding parishes, companies, events, admin boundaries.
 
 **Precision (the score).** A composite computed per place in the pipeline:
 
@@ -145,7 +145,7 @@ Plain CLI, region-parameterised (`uk`, `malaysia`), SQLite as working store betw
 ```sql
 visits          (id, place_id, visited_at, verdict NULL, created_at)
 lists           (id, name, is_system, created_at)      -- ships with 'Want to go'
-list_items      (list_id, place_id, added_at, PRIMARY KEY (list_id, place_id))
+list_items      (list_id REFERENCES lists ON DELETE CASCADE, place_id, added_at, PRIMARY KEY (list_id, place_id))
 place_snapshots (place_id, name, lat, lon, category, tier, snapshot_json, fetched_at)
 
 CREATE INDEX idx_visits_place ON visits(place_id);

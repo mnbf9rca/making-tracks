@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "currency": "USD",
+  "models": {
+    "fake-curiosity-v1": {
+      "provider": "fake",
+      "input_per_m": 0.0,
+      "output_per_m": 0.0
+    },
+    "nous-tencent-hy3-free": {
+      "provider": "nous",
+      "input_per_m": 0.0,
+      "output_per_m": 0.0
+    },
+    "nous-meta-llama-3.1-8b-instruct": {
+      "provider": "nous",
+      "input_per_m": 0.05,
+      "output_per_m": 0.08
+    },
+    "nous-hermes-4-70b": {
+      "provider": "nous",
+      "input_per_m": 0.05,
+      "output_per_m": 0.20
+    },
+    "nous-nex-n2-mini-none": {
+      "provider": "nous",
+      "input_per_m": 0.025,
+      "output_per_m": 0.10
+    },
+    "nous-nex-n2-mini-low": {
+      "provider": "nous",
+      "input_per_m": 0.025,
+      "output_per_m": 0.10
+    },
+    "nous-nex-n2-mini-high": {
+      "provider": "nous",
+      "input_per_m": 0.025,
+      "output_per_m": 0.10
+    },
+    "nous-deepseek-v4-pro-none": {
+      "provider": "nous",
+      "input_per_m": 0.435,
+      "output_per_m": 0.87
+    },
+    "nous-glm-5.2": {
+      "provider": "nous",
+      "input_per_m": 0.9408,
+      "output_per_m": 2.9568
+    },
+    "nous-muse-spark-1.1": {
+      "provider": "nous",
+      "input_per_m": 1.25,
+      "output_per_m": 4.25
+    },
+    "modal-meta-llama-3.1-8b": {
+      "provider": "modal",
+      "input_per_m": 0.0,
+      "output_per_m": 0.0,
+      "gpu_second": 0.000253,
+      "gpu_seconds_per_1k": 120.0
+    }
+  }
+}

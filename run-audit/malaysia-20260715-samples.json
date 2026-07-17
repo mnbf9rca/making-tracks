@@ -1,0 +1,61 @@
+[
+  {
+    "lat": 1.395305555,
+    "lon": 103.625277777,
+    "name": "X Park Sunway Iskandar",
+    "props": {
+      "matched_p31": "Q570116",
+      "p31": "Q2416723",
+      "p31s": [
+        "Q2416723"
+      ]
+    },
+    "source": "wd",
+    "source_ref": "wd:Q100147510"
+  },
+  {
+    "lat": 1.3281,
+    "lon": 103.8471,
+    "name": "Sun Yat Sen Memorial Hall (Singapore)",
+    "props": {
+      "matched_p31": "Q4989906",
+      "p31": "Q136484019",
+      "p31s": [
+        "Q136484019",
+        "Q3950"
+      ]
+    },
+    "source": "wd",
+    "source_ref": "wd:Q10123616"
+  },
+  {
+    "lat": 6.136021,
+    "lon": 100.371764,
+    "name": "Darul Aman Stadium",
+    "props": {
+      "wikidata": "Q5225771"
+    },
+    "source": "wp",
+    "source_ref": "wp:10006953"
+  },
+  {
+    "lat": 1.3554,
+    "lon": 103.9398,
+    "name": "Masjid Darul Ghufran",
+    "props": {
+      "wikidata": "Q4262113"
+    },
+    "source": "wp",
+    "source_ref": "wp:10009609"
+  },
+  {
+    "lat": 1.9963228,
+    "lon": 109.6469936,
+    "name": "Mount Kuwai",
+    "props": {
+      "tourism": "attraction"
+    },
+    "source": "osm",
+    "source_ref": "osm:node/10000151417"
+  }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "mint_key": "wd:Q42",
+    "place_id": "mt1_1Q831BXYQ8GP7ZXKVQZH87G0R5"
+  },
+  {
+    "mint_key": "osm:node/9",
+    "place_id": "mt1_3M2432K5GF3ZMWBQGTXV4VSYY3"
+  },
+  {
+    "mint_key": "osm:way/456",
+    "place_id": "mt1_65HZT2JBN7RQDWJT7A5B23TD16"
+  },
+  {
+    "mint_key": "hehle:1234567",
+    "place_id": "mt1_0V2SX8GR1EJSRW7FGBW06E64C4"
+  },
+  {
+    "mint_key": "plaque:openplaques/9876",
+    "place_id": "mt1_71TWYPX9FM12XK5WG3RPHPEJ3J"
+  },
+  {
+    "mint_key": "wp:12345",
+    "place_id": "mt1_5FAJ9QTWS33BNY38TA4QZJX3FY"
+  }
+]

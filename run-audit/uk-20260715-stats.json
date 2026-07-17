@@ -1,0 +1,156 @@
+{
+  "commands": [
+    "mt-pipeline --region uk acquire --data-dir .mt-data",
+    "mt-pipeline --region uk extract --db .mt-data/uk/work.db --snapshot-dir .mt-data/uk --osm-index-type sparse_file_array,.mt-data/uk/osm-node-locations.idx --run-id real-uk-20260715",
+    "mt-pipeline --region uk extract --db .mt-data/uk/work.db --snapshot-dir .mt-data/uk --only-source historic_england --run-id real-uk-20260715-he-rerun",
+    "mt-pipeline --region uk extract --db .mt-data/uk/work.db --snapshot-dir .mt-data/uk --only-source open_plaques --run-id real-uk-20260715-open-plaques-rerun",
+    "mt-pipeline --region uk acquire-redirects --db .mt-data/uk/work.db --snapshot-dir .mt-data/uk"
+  ],
+  "counts_by_source": {
+    "hehle": 379678,
+    "osm": 59868,
+    "plaque": 17371,
+    "wd": 145603,
+    "wp": 21604
+  },
+  "db": ".mt-data/uk/work.db",
+  "db_bytes": 150343680,
+  "dropped_or_rejected": {
+    "open_plaques_skipped": 1153,
+    "osm_source_record_rejected": 65509
+  },
+  "extract_run_metadata": [
+    {
+      "run_id": "real-uk-20260715",
+      "source_statuses": {
+        "historic_england": {
+          "error": "SnapshotParseError: .mt-data/uk/historic_england.snapshot is not a GeoJSON FeatureCollection",
+          "status": "failure"
+        },
+        "open_plaques": {
+          "status": "not_run"
+        },
+        "osm": {
+          "count": 59868,
+          "status": "success"
+        },
+        "wikidata": {
+          "count": 145603,
+          "status": "success"
+        },
+        "wikipedia": {
+          "count": 21604,
+          "status": "success"
+        }
+      },
+      "wikidata_snapshot_date": "2026-07-15T10:05:40Z"
+    },
+    {
+      "run_id": "real-uk-20260715-he-rerun",
+      "source_statuses": {
+        "historic_england": {
+          "count": 379678,
+          "status": "success"
+        },
+        "open_plaques": {
+          "status": "preserved"
+        },
+        "osm": {
+          "status": "preserved"
+        },
+        "wikidata": {
+          "status": "preserved"
+        },
+        "wikipedia": {
+          "status": "preserved"
+        }
+      },
+      "wikidata_snapshot_date": "2026-07-15T10:05:40Z"
+    },
+    {
+      "run_id": "real-uk-20260715-open-plaques-rerun",
+      "source_statuses": {
+        "historic_england": {
+          "status": "preserved"
+        },
+        "open_plaques": {
+          "count": 17371,
+          "status": "success"
+        },
+        "osm": {
+          "status": "preserved"
+        },
+        "wikidata": {
+          "status": "preserved"
+        },
+        "wikipedia": {
+          "status": "preserved"
+        }
+      },
+      "wikidata_snapshot_date": "2026-07-15T10:05:40Z"
+    }
+  ],
+  "region": "uk",
+  "snapshots": {
+    "historic_england": {
+      "bytes": 167768023,
+      "path": ".mt-data/uk/historic_england.snapshot",
+      "sidecar": {
+        "sha256": "61aa610746655a355dbaf9e18d4ca6dd759a3df09910cb112b3c8d8543473ece",
+        "size": 167768023,
+        "snapshot_date": null,
+        "source_url": "https://opendata-historicengland.hub.arcgis.com/api/download/v1/items/767f279327a24845bf47dfe5eae9862b/geojson?layers=0&outSR=4326"
+      }
+    },
+    "open_plaques": {
+      "bytes": 34414477,
+      "path": ".mt-data/uk/open_plaques.snapshot",
+      "sidecar": {
+        "sha256": "68430723d59b2da922aa4372c3015bc4d53dca5d3a788332b30d49c34c2da080",
+        "size": 34414477,
+        "snapshot_date": "2025-12-15",
+        "source_url": "https://openplaques.s3.eu-west-2.amazonaws.com/open-plaques-United-Kingdom-2025-12-15.json"
+      }
+    },
+    "osm": {
+      "bytes": 2229099958,
+      "index_bytes": 7734303936,
+      "path": ".mt-data/uk/osm.osm.pbf",
+      "sidecar": {
+        "geofabrik_date": "2026-07-15",
+        "sha256": "c7f4399b664eb1ddec5cfb7cbfb3e7076dcb4fffe6cba2e38f76a08c9600c80f",
+        "size": 2229099958,
+        "source_url": "https://download.geofabrik.de/europe/united-kingdom-latest.osm.pbf"
+      }
+    },
+    "wikidata": {
+      "bytes": 134568023,
+      "path": ".mt-data/uk/wikidata.snapshot.json",
+      "raw_rows": 146001,
+      "retrieved_at": "2026-07-15T10:05:40Z",
+      "segments": 483
+    },
+    "wikidata_redirects": {
+      "bytes": 4988613,
+      "path": ".mt-data/uk/wikidata_redirects.snapshot.json",
+      "redirect_count": 52,
+      "retrieved_at": "2026-07-15T18:03:16Z",
+      "segments": 1706,
+      "wikidata_retrieved_at": "2026-07-15T10:05:40Z"
+    },
+    "wikipedia": {
+      "bytes": 37674097,
+      "path": ".mt-data/uk/wikipedia.snapshot.json",
+      "raw_pages": 108004,
+      "retrieved_at": "2026-07-15T12:38:56Z",
+      "segments": 5180
+    }
+  },
+  "total_records": 624124,
+  "wall_time_notes": {
+    "extract": "initial full extract banked wd/wp/osm, then failed loud at HE on ArcGIS ExportingData status JSON; HE rerun took about 61s via --only-source; Open Plaques rerun took about 30s via --only-source",
+    "osm_index_reuse_check": "scoped OSM extract against copied DB .mt-data/uk/work-idx-reuse-check.db succeeded with count 59,868 and 65,509 source-record rejects in 4,802s using sparse_file_array,.mt-data/uk/osm-node-locations.idx; real work.db remained unchanged; index file was accepted but extended from 3,875,540,576 bytes to 7,734,303,936 bytes",
+    "redirects": "UK redirect-map acquisition took about 10m30s on VPS",
+    "vps_cache_policy": "OSM PBF, sparse_file_array index, DB, snapshots, and redirect map retained on VPS"
+  }
+}
