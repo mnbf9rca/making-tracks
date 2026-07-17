@@ -50,7 +50,6 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         context.coordinator.onTapPlace = onTapPlace
         context.coordinator.onTapEmpty = onTapEmpty
         context.coordinator.pendingFeatures = features
-        map.locationManager = locationManager
         map.shouldRequestAuthorizationToUseLocationServices = false
         map.showsUserLocation = showsUserLocation
         map.userTrackingMode = userTrackingMode

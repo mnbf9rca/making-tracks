@@ -64,7 +64,8 @@ struct MapScreen: View {
     @State private var stateEpoch = 0
     @State private var fixtureVisitCount = 0
     @State private var userTrackingMode: MLNUserTrackingMode = .none
-    @State private var viewportRefreshTask: Task<Void, Never>?
+    @State private var pendingLocateMeActivation = false
+    private let viewportRefreshDebouncer = ViewportRefreshDebouncer()
     @State private var suppressedNearbyPromptPlaceIDs: Set<String> = []
     @State private var nearbyPromptNames: [String: String] = [:]
     private let locationManager: AppLocationManager
@@ -96,7 +97,7 @@ struct MapScreen: View {
                 startupViewport: startupViewport,
                 features: features,
                 locationManager: locationManager,
-                showsUserLocation: locationPermission.showsUserLocation,
+                showsUserLocation: showsUserLocation,
                 userTrackingMode: userTrackingMode,
                 onCameraIdle: { bbox, zoom in
                     Task { @MainActor in
@@ -143,10 +144,19 @@ struct MapScreen: View {
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
-            guard newPhase != .active else { return }
-            userTrackingMode = .none
-            locationManager.stopUpdatingLocation()
-            locationManager.stopUpdatingHeading()
+            LocationSessionPolicies.handleScenePhaseChange(
+                newPhase,
+                userTrackingMode: &userTrackingMode,
+                stopUpdatingLocation: { locationManager.stopUpdatingLocation() },
+                stopUpdatingHeading: { locationManager.stopUpdatingHeading() }
+            )
+        }
+        .onChange(of: locationPermission.authorizationStatus) { _, newStatus in
+            LocationSessionPolicies.handleAuthorizationStatusChange(
+                newStatus,
+                userTrackingMode: &userTrackingMode,
+                pendingLocateMeActivation: &pendingLocateMeActivation
+            )
         }
         .task {
             await start()
@@ -294,7 +304,7 @@ struct MapScreen: View {
     }
 
     private var nearbyPromptCandidate: NearbyPromptCandidate? {
-        guard locationPermission.showsUserLocation,
+        guard showsUserLocation,
               userTrackingMode != .none,
               let coordinate = locationPermission.currentCoordinate
         else { return nil }
@@ -402,25 +412,13 @@ struct MapScreen: View {
 
     @MainActor
     private func handleLocateMeTap() {
-        switch locationPermission.authorizationStatus {
-        case .denied, .restricted:
-            openLocationSettings()
-        case .notDetermined, .authorizedAlways, .authorizedWhenInUse:
-            locationPermission.requestCurrentLocation()
-            switch userTrackingMode {
-            case .none:
-                userTrackingMode = .follow
-            case .follow:
-                userTrackingMode = .followWithHeading
-            case .followWithHeading:
-                userTrackingMode = .none
-            default:
-                userTrackingMode = .none
-            }
-        @unknown default:
-            locationPermission.requestCurrentLocation()
-            userTrackingMode = .follow
-        }
+        LocationSessionPolicies.handleLocateMeTap(
+            authorizationStatus: locationPermission.authorizationStatus,
+            userTrackingMode: &userTrackingMode,
+            requestCurrentLocation: { locationPermission.requestCurrentLocation() },
+            openSettings: { openLocationSettings() },
+            deferFollowUntilAuthorized: { pendingLocateMeActivation = true }
+        )
     }
 
     @MainActor
@@ -430,10 +428,7 @@ struct MapScreen: View {
         requestID: Int,
         stateEpoch capturedStateEpoch: Int
     ) {
-        viewportRefreshTask?.cancel()
-        viewportRefreshTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            guard !Task.isCancelled else { return }
+        viewportRefreshDebouncer.schedule { [bbox, zoom, requestID, capturedStateEpoch] in
             await refreshViewport(
                 bbox: bbox,
                 zoom: zoom,
@@ -447,7 +442,12 @@ struct MapScreen: View {
     private func handleNearbyPromptSeen(_ prompt: NearbyPromptCandidate) {
         suppressedNearbyPromptPlaceIDs.insert(prompt.placeID)
         Task { @MainActor in
-            try? await model?.setVisited(placeID: prompt.placeID, visited: true)
+            do {
+                try await model?.setVisited(placeID: prompt.placeID, visited: true)
+            } catch {
+                suppressedNearbyPromptPlaceIDs.remove(prompt.placeID)
+                assertionFailure("Failed to persist nearby prompt seen state: \(error)")
+            }
         }
     }
 
@@ -465,6 +465,13 @@ struct MapScreen: View {
     @MainActor
     private func currentStateEpoch() -> Int {
         stateEpoch
+    }
+
+    private var showsUserLocation: Bool {
+        LocationSessionPolicies.shouldShowUserLocation(
+            authorizationStatus: locationPermission.authorizationStatus,
+            userTrackingMode: userTrackingMode
+        )
     }
 
     private func refreshViewport(
