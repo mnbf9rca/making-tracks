@@ -484,16 +484,372 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertNil(reopened.tile(region: "uk", publishVersion: "20260716T155409Z", coordinate: coord2, sha256: String(repeating: "2", count: 64)))
         XCTAssertNotNil(reopened.tile(region: "uk", publishVersion: "20260716T155409Z", coordinate: coord3, sha256: String(repeating: "3", count: 64)))
     }
+
+    func testRegionIndexRejectsUnsafeIDsBeforeFetchPathComposition() throws {
+        var object = regionIndexObject()
+        object["regions"] = [
+            regionIndexEntry(["id": "../uk"]),
+        ]
+
+        XCTAssertThrowsError(try RegionIndex.decode(jsonData(object))) {
+            XCTAssertEqual($0 as? TileError, .invalidRegionIndex)
+        }
+    }
+
+    func testRegionIndexRejectsHostileShapesAndFutureReaders() throws {
+        var duplicate = regionIndexObject()
+        duplicate["regions"] = [regionIndexEntry(), regionIndexEntry()]
+        var unknownKey = regionIndexObject()
+        unknownKey["extra"] = true
+        var badParent = regionIndexObject()
+        badParent["regions"] = [regionIndexEntry(["parent": "missing"])]
+        var badBBox = regionIndexObject()
+        badBBox["regions"] = [regionIndexEntry(["bbox": [1.0, 49.84, -8.65, 60.86]])]
+        var badNumbers = regionIndexObject()
+        badNumbers["regions"] = [regionIndexEntry(["bytes_with_thumbnails": 1_000_000])]
+        var unsafeText = regionIndexObject()
+        unsafeText["regions"] = [regionIndexEntry(["display_name": "United\u{202E}Kingdom"])]
+        var futureReader = regionIndexObject()
+        futureReader["min_reader_version"] = VersionGate.readerVersion + 1
+
+        for object in [duplicate, unknownKey, badParent, badBBox, badNumbers, unsafeText, futureReader] {
+            XCTAssertThrowsError(try RegionIndex.decode(jsonData(object))) {
+                XCTAssertEqual($0 as? TileError, .invalidRegionIndex)
+            }
+        }
+        XCTAssertThrowsError(try RegionIndex.decode(Data(repeating: 0x20, count: RegionIndex.maxBytes + 1))) {
+            XCTAssertEqual($0 as? TileError, .invalidRegionIndex)
+        }
+    }
+
+    func testRegionIndexAcceptsPublishVersionsAndBoundedFootprints() throws {
+        let index = try RegionIndex.decode(jsonData(regionIndexObject()))
+
+        XCTAssertEqual(index.regions.map(\.id), ["uk"])
+        XCTAssertEqual(index.regions.first?.publishVersion, "20260716T155409Z")
+        XCTAssertEqual(index.regions.first?.bbox, BBox(minLon: -8.65, minLat: 49.84, maxLon: 1.77, maxLat: 60.86))
+        XCTAssertEqual(index.regions.first?.bytesWithThumbnails, 2_500_000)
+    }
+
+    func testOfflinePackInstallRejectsTileShaMismatchWithoutInstallingPack() throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let goodTile = try gzipJSON(tileObject(places: [validPlace()]))
+        var badTile = goodTile
+        badTile[10] ^= 0xff
+        let basemap = Data("basemap".utf8)
+        let publish = cachedPublish(
+            "20260716T155409Z",
+            tileSHA: sha256(goodTile),
+            tileBytes: goodTile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+
+        XCTAssertThrowsError(try store.install(publish: publish, tiles: [TileCoordinate(z: 10, x: 511, y: 340): badTile], basemap: basemap)) {
+            XCTAssertEqual($0 as? TileError, .checksumMismatch)
+        }
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: sha256(goodTile)).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineBasemapObjectURL(root: root, sha: sha256(basemap)).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("tmp").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineCurrentPackURL(root: root, region: "uk").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.packURL(region: "uk", publishVersion: "20260716T155409Z").path))
+    }
+
+    func testOfflinePackInstallRejectsBasemapShaMismatchWithoutInstallingPack() throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let basemap = Data("basemap".utf8)
+        let publish = cachedPublish(
+            "20260716T155409Z",
+            tileSHA: sha256(tile),
+            tileBytes: tile.count,
+            basemapSHA: String(repeating: "9", count: 64),
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+
+        XCTAssertThrowsError(try store.install(publish: publish, tiles: [TileCoordinate(z: 10, x: 511, y: 340): tile], basemap: basemap)) {
+            XCTAssertEqual($0 as? TileError, .checksumMismatch)
+        }
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineCurrentPackURL(root: root, region: "uk").path))
+    }
+
+    func testOfflinePackPlanReusesUnchangedTileShaAcrossPublishVersions() throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let tileSHA = sha256(tile)
+        let newTile = try gzipJSON(tileObject(places: [validPlace(["place_id": "mt1_00000000000000000000000001"])], x: 512))
+        let newTileSHA = sha256(newTile)
+        let basemap = Data("basemap".utf8)
+        let basemapSHA = sha256(basemap)
+        let installed = cachedPublish(
+            "20260716T155409Z",
+            tileSHA: tileSHA,
+            tileBytes: tile.count,
+            basemapSHA: basemapSHA,
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+        try store.install(publish: installed, tiles: [TileCoordinate(z: 10, x: 511, y: 340): tile], basemap: basemap)
+
+        var targetObject = manifestObject(
+            publishVersion: "20260717T000000Z",
+            tileSHA: tileSHA,
+            tileBytes: tile.count,
+            basemapSHA: basemapSHA,
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+        targetObject["tiles"] = [
+            ["x": 511, "y": 340, "sha256": tileSHA, "bytes": tile.count],
+            ["x": 512, "y": 340, "sha256": newTileSHA, "bytes": newTile.count],
+        ]
+        targetObject["counts"] = ["total": 2, "by_tier": [2, 0, 0, 0]]
+        let targetManifest = try Manifest.decode(jsonData(targetObject))
+        let target = PinnedPublish(region: "uk", publishVersion: "20260717T000000Z", manifest: targetManifest)
+
+        let plan = try store.updatePlan(for: target)
+
+        XCTAssertEqual(plan.reusedTileCount, 1)
+        XCTAssertEqual(plan.tilesToFetch, [OfflineTileFetch(coordinate: TileCoordinate(z: 10, x: 512, y: 340), sha256: newTileSHA, bytes: newTile.count)])
+        XCTAssertFalse(plan.basemapNeedsFetch)
+
+        try store.install(publish: target, tiles: [TileCoordinate(z: 10, x: 512, y: 340): newTile], basemap: nil)
+        XCTAssertEqual(try store.installedPublish(region: "uk")?.publishVersion, "20260717T000000Z")
+        XCTAssertNotNil(store.tile(region: "uk", publishVersion: "20260717T000000Z", coordinate: TileCoordinate(z: 10, x: 511, y: 340), sha256: tileSHA))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.packURL(region: "uk", publishVersion: "20260716T155409Z").path))
+    }
+
+    func testOfflinePackDirectoryIsExcludedFromBackupAndDeleteRemovesRegion() throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let basemap = Data("basemap".utf8)
+        let publish = cachedPublish(
+            "20260716T155409Z",
+            tileSHA: sha256(tile),
+            tileBytes: tile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+
+        try store.install(publish: publish, tiles: [TileCoordinate(z: 10, x: 511, y: 340): tile], basemap: basemap)
+        let pack = store.packURL(region: "uk", publishVersion: "20260716T155409Z")
+        let values = try pack.resourceValues(forKeys: Set<URLResourceKey>([.isExcludedFromBackupKey]))
+        XCTAssertEqual(values.isExcludedFromBackup, true)
+
+        try store.delete(region: "uk")
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.regionURL(region: "uk").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: sha256(tile)).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineBasemapObjectURL(root: root, sha: sha256(basemap)).path))
+    }
+
+    func testOfflinePackInstallReplacesCorruptExistingObjectsByHash() throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let basemap = Data("basemap".utf8)
+        let tileSHA = sha256(tile)
+        let basemapSHA = sha256(basemap)
+        try FileManager.default.createDirectory(at: offlineTileObjectURL(root: root, sha: tileSHA).deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: offlineBasemapObjectURL(root: root, sha: basemapSHA).deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("corrupt".utf8).write(to: offlineTileObjectURL(root: root, sha: tileSHA))
+        try Data("corrupt".utf8).write(to: offlineBasemapObjectURL(root: root, sha: basemapSHA))
+        let publish = cachedPublish(
+            "20260716T155409Z",
+            tileSHA: tileSHA,
+            tileBytes: tile.count,
+            basemapSHA: basemapSHA,
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+
+        try store.install(publish: publish, tiles: [TileCoordinate(z: 10, x: 511, y: 340): tile], basemap: basemap)
+
+        XCTAssertEqual(try Data(contentsOf: offlineTileObjectURL(root: root, sha: tileSHA)), tile)
+        XCTAssertEqual(try Data(contentsOf: offlineBasemapObjectURL(root: root, sha: basemapSHA)), basemap)
+    }
+
+    func testBackgroundDownloadConfigurationIsWifiPreferredAndRelaunchable() {
+        let configuration = OfflineDownloadSession.configuration(identifier: "app.making-tracks.tests.offline")
+
+        XCTAssertEqual(configuration.identifier, "app.making-tracks.tests.offline")
+        XCTAssertTrue(configuration.sessionSendsLaunchEvents)
+        XCTAssertTrue(configuration.waitsForConnectivity)
+        XCTAssertFalse(configuration.allowsExpensiveNetworkAccess)
+        XCTAssertFalse(configuration.allowsConstrainedNetworkAccess)
+        XCTAssertNil(configuration.httpAdditionalHeaders)
+    }
+
+    func testTileClientPrefersInstalledPackForTilesAndBasemap() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace(["source_refs": ["osm:node/5"]])]))
+        let basemap = Data("basemap".utf8)
+        let publish = cachedPublish(
+            "20260716T155409Z",
+            tileSHA: sha256(tile),
+            tileBytes: tile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count,
+            attributionSources: ["osm"]
+        )
+        try store.install(publish: publish, tiles: [TileCoordinate(z: 10, x: 511, y: 340): tile], basemap: basemap)
+        let remoteTile = try gzipJSON(tileObject(places: [validPlace(["place_id": "mt1_00000000000000000000000001", "source_refs": ["osm:node/6"]])]))
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": manifestData(
+                tileSHA: sha256(tile),
+                tileBytes: tile.count,
+                basemapSHA: sha256(basemap),
+                basemapBytes: basemap.count,
+                attributionSources: ["osm"]
+            ),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/511/340.json.gz": remoteTile,
+        ])
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache(), offlineStore: store)
+
+        try await client.refreshPin()
+        let places = await client.places(inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51), zoom: 16)
+        let url = await client.basemapURL
+        let state = await client.loadState
+
+        XCTAssertEqual(places.map(\.id), ["mt1_00000000000000000000000000"])
+        XCTAssertEqual(state, .ok)
+        XCTAssertEqual(url?.isFileURL, true)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(url)), basemap)
+        XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/511/340.json.gz"))
+    }
+
+    func testTileClientPreservesUpdateAvailableForInstalledPackAfterCurrentFlipAndOfflineRefresh() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let basemap = Data("basemap".utf8)
+        let tileSHA = sha256(tile)
+        let basemapSHA = sha256(basemap)
+        try store.install(
+            publish: cachedPublish("20260716T155409Z", tileSHA: tileSHA, tileBytes: tile.count, basemapSHA: basemapSHA, basemapBytes: basemap.count, attributionSources: []),
+            tiles: [TileCoordinate(z: 10, x: 511, y: 340): tile],
+            basemap: basemap
+        )
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": manifestData(
+                publishVersion: "20260717T000000Z",
+                tileSHA: tileSHA,
+                tileBytes: tile.count,
+                basemapSHA: basemapSHA,
+                basemapBytes: basemap.count,
+                attributionSources: []
+            ),
+        ])
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache(), offlineStore: store)
+
+        try await client.refreshPin()
+        let updateState = await client.loadState
+        XCTAssertEqual(updateState, .updateAvailable)
+        fetcher.routes.removeAll()
+        try await client.refreshPin()
+
+        let offlineUpdateState = await client.loadState
+        XCTAssertEqual(offlineUpdateState, .updateAvailable)
+        let places = await client.places(inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51), zoom: 16)
+        XCTAssertEqual(places.map(\.id), ["mt1_00000000000000000000000000"])
+    }
+
+    func testOfflineDownloaderFetchesOnlyChangedObjectsAndInstallsTargetPublish() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let oldTile = try gzipJSON(tileObject(places: [validPlace()]))
+        let oldSHA = sha256(oldTile)
+        let newTile = try gzipJSON(tileObject(places: [validPlace(["place_id": "mt1_00000000000000000000000001"])], x: 512))
+        let newSHA = sha256(newTile)
+        let basemap = Data("basemap".utf8)
+        let basemapSHA = sha256(basemap)
+        try store.install(
+            publish: cachedPublish("20260716T155409Z", tileSHA: oldSHA, tileBytes: oldTile.count, basemapSHA: basemapSHA, basemapBytes: basemap.count, attributionSources: []),
+            tiles: [TileCoordinate(z: 10, x: 511, y: 340): oldTile],
+            basemap: basemap
+        )
+        var targetObject = manifestObject(
+            publishVersion: "20260717T000000Z",
+            tileSHA: oldSHA,
+            tileBytes: oldTile.count,
+            basemapSHA: basemapSHA,
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+        targetObject["tiles"] = [
+            ["x": 511, "y": 340, "sha256": oldSHA, "bytes": oldTile.count],
+            ["x": 512, "y": 340, "sha256": newSHA, "bytes": newTile.count],
+        ]
+        targetObject["counts"] = ["total": 2, "by_tier": [2, 0, 0, 0]]
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/512/340.json.gz": newTile,
+        ])
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 10_000_000_000 })
+
+        let result = try await downloader.downloadCurrentRegion()
+
+        XCTAssertEqual(result.publish.publishVersion, "20260717T000000Z")
+        XCTAssertEqual(result.fetchedTileCount, 1)
+        XCTAssertEqual(result.reusedTileCount, 1)
+        XCTAssertEqual(try store.installedPublish(region: "uk")?.publishVersion, "20260717T000000Z")
+        XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz"))
+        XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles"))
+    }
+
+    func testOfflineDownloaderRejectsInsufficientStorageBeforeBlobFetch() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let basemap = Data("basemap".utf8)
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": manifestData(
+                tileSHA: sha256(tile),
+                tileBytes: tile.count,
+                basemapSHA: sha256(basemap),
+                basemapBytes: basemap.count,
+                attributionSources: []
+            ),
+        ])
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 1 })
+
+        do {
+            _ = try await downloader.downloadCurrentRegion()
+            XCTFail("download unexpectedly succeeded without storage headroom")
+        } catch TileError.insufficientStorage {
+        } catch {
+            XCTFail("expected insufficientStorage, got \(error)")
+        }
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+        XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/511/340.json.gz"))
+        XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/uk/20260716T155409Z/uk.pmtiles"))
+    }
 }
 
 private final class StubFetcher: TileFetching, @unchecked Sendable {
     var routes: [String: Data]
+    private(set) var requestedURLs: [String] = []
 
     init(routes: [String: Data]) {
         self.routes = routes
     }
 
     func fetch(_ url: URL) async throws -> Data {
+        requestedURLs.append(url.absoluteString)
         guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
         return data
     }
@@ -537,8 +893,39 @@ private func temporaryCache(maxBytes: Int = 1024 * 1024) throws -> TileCache {
     return try TileCache(directory: url, maxBytes: maxBytes)
 }
 
-private func cachedPublish(_ publishVersion: String, tileSHA: String = String(repeating: "0", count: 64), tileBytes: Int = 100, attributionSources: [String]) -> PinnedPublish {
-    let manifest = try! Manifest.decode(manifestData(publishVersion: publishVersion, tileSHA: tileSHA, tileBytes: tileBytes, attributionSources: attributionSources))
+private func temporaryOfflineRoot() -> URL {
+    FileManager.default.temporaryDirectory
+        .appendingPathComponent("MakingTracksOfflineRegionTests-\(UUID().uuidString)", isDirectory: true)
+}
+
+private func offlineTileObjectURL(root: URL, sha: String) -> URL {
+    root.appendingPathComponent("objects/tiles/\(sha).json.gz")
+}
+
+private func offlineBasemapObjectURL(root: URL, sha: String) -> URL {
+    root.appendingPathComponent("objects/basemaps/\(sha).pmtiles")
+}
+
+private func offlineCurrentPackURL(root: URL, region: String) -> URL {
+    root.appendingPathComponent("regions/\(region)/current-pack.json")
+}
+
+private func cachedPublish(
+    _ publishVersion: String,
+    tileSHA: String = String(repeating: "0", count: 64),
+    tileBytes: Int = 100,
+    basemapSHA: String = String(repeating: "1", count: 64),
+    basemapBytes: Int = 1234,
+    attributionSources: [String]
+) -> PinnedPublish {
+    let manifest = try! Manifest.decode(manifestData(
+        publishVersion: publishVersion,
+        tileSHA: tileSHA,
+        tileBytes: tileBytes,
+        basemapSHA: basemapSHA,
+        basemapBytes: basemapBytes,
+        attributionSources: attributionSources
+    ))
     return PinnedPublish(region: "uk", publishVersion: publishVersion, manifest: manifest)
 }
 
@@ -548,6 +935,8 @@ private func manifestData(
     minReaderVersion: Int = 2,
     tileSHA: String = String(repeating: "0", count: 64),
     tileBytes: Int = 100,
+    basemapSHA: String = String(repeating: "1", count: 64),
+    basemapBytes: Int = 1234,
     attributionSources: [String]
 ) -> Data {
     jsonData(manifestObject(
@@ -556,6 +945,8 @@ private func manifestData(
         minReaderVersion: minReaderVersion,
         tileSHA: tileSHA,
         tileBytes: tileBytes,
+        basemapSHA: basemapSHA,
+        basemapBytes: basemapBytes,
         attributionSources: attributionSources
     ))
 }
@@ -566,6 +957,8 @@ private func manifestObject(
     minReaderVersion: Int = 2,
     tileSHA: String = String(repeating: "0", count: 64),
     tileBytes: Int = 100,
+    basemapSHA: String = String(repeating: "1", count: 64),
+    basemapBytes: Int = 1234,
     attributionSources: [String]
 ) -> [String: Any] {
     var object: [String: Any] = [
@@ -576,7 +969,7 @@ private func manifestObject(
         "tile_z": 10,
         "tiles": [["x": 511, "y": 340, "sha256": tileSHA, "bytes": tileBytes]],
         "counts": ["total": 1, "by_tier": [1, 0, 0, 0]],
-        "basemap": ["filename": "uk.pmtiles", "maxzoom": 14, "sha256": String(repeating: "1", count: 64), "bytes": 1234, "bbox": [-8.65, 49.84, 1.77, 60.86]],
+        "basemap": ["filename": "uk.pmtiles", "maxzoom": 14, "sha256": basemapSHA, "bytes": basemapBytes, "bbox": [-8.65, 49.84, 1.77, 60.86]],
         "provenance": [["task_id": "score", "model": "heuristic", "prompt_version": "score-v1"]],
     ]
     if !attributionSources.isEmpty {
@@ -587,6 +980,33 @@ private func manifestObject(
         object["attribution"] = []
     }
     return object
+}
+
+private func regionIndexObject() -> [String: Any] {
+    [
+        "schema_version": 1,
+        "min_reader_version": 2,
+        "generated_at": "2026-07-17T10:00:00Z",
+        "regions": [regionIndexEntry()],
+    ]
+}
+
+private func regionIndexEntry(_ overrides: [String: Any] = [:]) -> [String: Any] {
+    var entry: [String: Any] = [
+        "id": "uk",
+        "display_name": "United Kingdom",
+        "parent": NSNull(),
+        "bbox": [-8.65, 49.84, 1.77, 60.86],
+        "publish_version": "20260716T155409Z",
+        "basemap_bytes": 1_500_000,
+        "tile_count": 184,
+        "bytes_without_thumbnails": 2_000_000,
+        "bytes_with_thumbnails": 2_500_000,
+    ]
+    for (key, value) in overrides {
+        entry[key] = value
+    }
+    return entry
 }
 
 private let liveTile489310Base64 = """

@@ -567,6 +567,7 @@ private struct PlaceCardSheet: View {
 private final class MapScreenModel {
     private let database: AppDatabase
     private let tileCache: TileCache?
+    private let offlineStore: OfflineRegionStore?
     private let fixturePlaces: [String: PlaceRef]
     private let coreLoop: CoreLoopController
     private var tileClients: [MapRegion: TileClient] = [:]
@@ -586,8 +587,10 @@ private final class MapScreenModel {
                 create: true
             ).appendingPathComponent("MakingTracks/Tiles", isDirectory: true)
             tileCache = try TileCache(directory: cacheRoot)
+            offlineStore = try? OfflineRegionStore.documentsStore()
         } else {
             tileCache = nil
+            offlineStore = nil
         }
     }
 
@@ -728,7 +731,12 @@ private final class MapScreenModel {
         if let cached = tileClients[region] {
             return cached
         }
-        guard let client = try? TileClient(region: region.rawValue, fetcher: HTTPTileFetcher(), cache: tileCache) else {
+        guard let client = try? TileClient(
+            region: region.rawValue,
+            fetcher: HTTPTileFetcher(),
+            cache: tileCache,
+            offlineStore: offlineStore
+        ) else {
             return nil
         }
         tileClients[region] = client
