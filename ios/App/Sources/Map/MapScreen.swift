@@ -191,7 +191,7 @@ struct OfflineRegionCatalogRow: Identifiable, Sendable, Equatable {
         case .updateAvailable:
             "Update available"
         case let .downloading(progress):
-            progress.isWaitingForConnectivity ? "Waiting for Wi-Fi" : "Downloading \(progress.percentComplete)%"
+            progress.isWaitingForConnectivity ? progress.statusText : "Downloading \(progress.percentComplete)%"
         case let .paused(progress):
             "Paused at \(progress.percentComplete)%"
         case .quarantined:
@@ -1161,7 +1161,7 @@ struct MapScreen: View {
                 } label: {
                     Label(
                         offlineDownloadProgress.isWaitingForConnectivity
-                            ? "Offline maps Waiting for Wi-Fi"
+                            ? "Offline maps \(offlineDownloadProgress.statusText)"
                             : "Offline maps \(offlineDownloadProgress.percentComplete)%",
                         systemImage: "arrow.down.circle"
                     )
@@ -3402,23 +3402,27 @@ private final class MapScreenModel {
                 identifier: backgroundIdentifier,
                 allowsCellularDownloads: allowsCellularDownloads
             )
-            let downloader = OfflineRegionDownloader(
-                region: region,
-                metadataFetcher: HTTPTileFetcher.offlineForeground(
-                    allowsCellularDownloads: allowsCellularDownloads
-                ),
-                objectFetcher: HTTPTileFetcher.offlineBackground(
-                    identifier: backgroundIdentifier,
-                    allowsCellularDownloads: allowsCellularDownloads
-                ),
-                store: offlineStore,
-                availableBytes: { StorageHeadroom.availableBytes(at: documents) }
-            )
-            let result = try await downloader.downloadCurrentRegion(
-                resumingPausedDownload: resumingPausedDownload,
-                control: control,
-                progress: progress
-            )
+            let result = try await OfflineDownloadSession.withBackgroundSessionUse(
+                identifier: backgroundIdentifier
+            ) {
+                let downloader = OfflineRegionDownloader(
+                    region: region,
+                    metadataFetcher: HTTPTileFetcher.offlineForeground(
+                        allowsCellularDownloads: allowsCellularDownloads
+                    ),
+                    objectFetcher: HTTPTileFetcher.offlineBackground(
+                        identifier: backgroundIdentifier,
+                        allowsCellularDownloads: allowsCellularDownloads
+                    ),
+                    store: offlineStore,
+                    availableBytes: { StorageHeadroom.availableBytes(at: documents) }
+                )
+                return try await downloader.downloadCurrentRegion(
+                    resumingPausedDownload: resumingPausedDownload,
+                    control: control,
+                    progress: progress
+                )
+            }
             MakingTracksLog.install.info("offline install completed region=\(region, privacy: .private(mask: .hash)) version=\(result.publish.publishVersion, privacy: .public) bytes=\(result.fetchedBytes, privacy: .public)")
             return "Installed \(result.publish.publishVersion)"
         } catch TileError.downloadPaused {

@@ -1112,6 +1112,38 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(recorder.events.last?.isWaitingForConnectivity, false)
     }
 
+    func testOfflineDownloaderClearsConnectivityWaitingWhenTransferReceivesBytes() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let basemap = Data("basemap".utf8)
+        let tileSHA = sha256(tile)
+        let basemapSHA = sha256(basemap)
+        let manifest = manifestObject(
+            publishVersion: "20260717T000000Z",
+            tileSHA: tileSHA,
+            tileBytes: tile.count,
+            basemapSHA: basemapSHA,
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+        let fetcher = ConnectivityWaitingFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(manifest),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz": tile,
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles": basemap,
+        ])
+        let recorder = ProgressRecorder()
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 10_000_000_000 })
+
+        _ = try await downloader.downloadCurrentRegion { progress in
+            recorder.append(progress)
+        }
+
+        let transition = recorder.events.map(\.isWaitingForConnectivity)
+        XCTAssertEqual(Array(transition.prefix(4)), [true, false, true, false])
+    }
+
     func testOfflineBackgroundFetcherUsesBackgroundConfigurationIdentifier() {
         let fetcher = HTTPTileFetcher.offlineBackground(identifier: "app.making-tracks.tests.offline")
 
@@ -1214,6 +1246,43 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertFalse(wifiOnly.allowsCellularDownloadsForTesting)
         XCTAssertTrue(cellularAllowed.allowsCellularDownloadsForTesting)
         XCTAssertEqual(cellularAllowed.configurationIdentifier, identifier)
+    }
+
+    func testBackgroundPolicyPrepareDoesNotInvalidateLeasedSessionBetweenObjectTasks() async {
+        let identifier = "app.making-tracks.tests.offline.\(UUID().uuidString)"
+        defer { OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: identifier) }
+
+        await OfflineDownloadSession.prepareBackgroundSessionForPolicyChange(
+            identifier: identifier,
+            allowsCellularDownloads: true
+        )
+        await OfflineDownloadSession.withBackgroundSessionUse(identifier: identifier) {
+            let cellularAllowed = HTTPTileFetcher.offlineBackground(
+                identifier: identifier,
+                allowsCellularDownloads: true
+            )
+            await OfflineDownloadSession.prepareBackgroundSessionForPolicyChange(
+                identifier: identifier,
+                allowsCellularDownloads: false
+            )
+            let stillCellularAllowed = HTTPTileFetcher.offlineBackground(
+                identifier: identifier,
+                allowsCellularDownloads: false
+            )
+
+            XCTAssertTrue(cellularAllowed.sharesSession(with: stillCellularAllowed))
+            XCTAssertTrue(stillCellularAllowed.allowsCellularDownloadsForTesting)
+        }
+
+        await OfflineDownloadSession.prepareBackgroundSessionForPolicyChange(
+            identifier: identifier,
+            allowsCellularDownloads: false
+        )
+        let wifiOnly = HTTPTileFetcher.offlineBackground(
+            identifier: identifier,
+            allowsCellularDownloads: false
+        )
+        XCTAssertFalse(wifiOnly.allowsCellularDownloadsForTesting)
     }
 
     func testBackgroundDownloadStagerMovesDelegateTempFileToOwnedPath() throws {
@@ -1618,6 +1687,52 @@ final class MakingTracksTilesTests: XCTestCase {
         let data = try Data(contentsOf: fileURL)
 
         XCTAssertEqual(String(data: data, encoding: .utf8), "offline body")
+    }
+
+    func testOfflineFetcherFetchReportsConnectivityAvailableWhenDataArrives() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RedirectURLProtocol.self]
+        let fetcher = HTTPTileFetcher(configuration: configuration)
+        let availability = CallbackCounter()
+        RedirectURLProtocol.reset()
+        RedirectURLProtocol.mode = .status(200, location: nil)
+        RedirectURLProtocol.responseBody = Data("metadata".utf8)
+        defer { RedirectURLProtocol.reset() }
+
+        let data = try await fetcher.fetch(
+            URL(string: "https://tiles.making-tracks.app/uk/current.json")!,
+            connectivityWaiting: nil,
+            connectivityAvailable: {
+                availability.increment()
+            }
+        )
+
+        XCTAssertEqual(String(data: data, encoding: .utf8), "metadata")
+        XCTAssertEqual(availability.count, 1)
+    }
+
+    func testOfflineFetcherDownloadReportsConnectivityAvailableWhenBytesAreWritten() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RedirectURLProtocol.self]
+        let fetcher = HTTPTileFetcher(configuration: configuration)
+        let availability = CallbackCounter()
+        RedirectURLProtocol.reset()
+        RedirectURLProtocol.mode = .status(200, location: nil)
+        RedirectURLProtocol.responseBody = Data("offline body".utf8)
+        defer { RedirectURLProtocol.reset() }
+
+        let fileURL = try await fetcher.download(
+            URL(string: "https://tiles.making-tracks.app/uk/current.json")!,
+            connectivityWaiting: nil,
+            connectivityAvailable: {
+                availability.increment()
+            }
+        )
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let data = try Data(contentsOf: fileURL)
+
+        XCTAssertEqual(String(data: data, encoding: .utf8), "offline body")
+        XCTAssertEqual(availability.count, 1)
     }
 
     func testOfflineFetcherDownloadTaskPathRejectsRedirectCallbacks() async throws {
@@ -4049,7 +4164,16 @@ private final class ConnectivityWaitingFetcher: ConnectivityWaitingOfflineRegion
     }
 
     func fetch(_ url: URL, connectivityWaiting: (@Sendable () -> Void)?) async throws -> Data {
+        try await fetch(url, connectivityWaiting: connectivityWaiting, connectivityAvailable: nil)
+    }
+
+    func fetch(
+        _ url: URL,
+        connectivityWaiting: (@Sendable () -> Void)?,
+        connectivityAvailable: (@Sendable () -> Void)?
+    ) async throws -> Data {
         connectivityWaiting?()
+        connectivityAvailable?()
         return try await fetch(url)
     }
 
@@ -4062,7 +4186,16 @@ private final class ConnectivityWaitingFetcher: ConnectivityWaitingOfflineRegion
     }
 
     func download(_ url: URL, connectivityWaiting: (@Sendable () -> Void)?) async throws -> URL {
+        try await download(url, connectivityWaiting: connectivityWaiting, connectivityAvailable: nil)
+    }
+
+    func download(
+        _ url: URL,
+        connectivityWaiting: (@Sendable () -> Void)?,
+        connectivityAvailable: (@Sendable () -> Void)?
+    ) async throws -> URL {
         connectivityWaiting?()
+        connectivityAvailable?()
         return try await download(url)
     }
 }
@@ -4109,6 +4242,21 @@ private final class ProgressRecorder: @unchecked Sendable {
     func append(_ event: OfflineRegionDownloadProgress) {
         lock.withLock {
             recorded.append(event)
+        }
+    }
+}
+
+private final class CallbackCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    var count: Int {
+        lock.withLock { value }
+    }
+
+    func increment() {
+        lock.withLock {
+            value += 1
         }
     }
 }

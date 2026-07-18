@@ -204,6 +204,7 @@ struct MakingTracksRootView: View {
         }
         downloadState = .downloading(plan, fetchedBytes: 0, isWaitingForConnectivity: false)
         MakingTracksLog.startup.info("onboarding download started region=\(region.rawValue, privacy: .private(mask: .hash)) bytes=\(plan.bytesToFetch, privacy: .public)")
+        let downloadAllowsCellular = allowsCellularDownloads
         Task {
             do {
                 let documents = try FileManager.default.url(
@@ -215,28 +216,32 @@ struct MakingTracksRootView: View {
                 let backgroundIdentifier = OfflineDownloadSession.backgroundIdentifier(region: region.mapRegion.rawValue)
                 await OfflineDownloadSession.prepareBackgroundSessionForPolicyChange(
                     identifier: backgroundIdentifier,
-                    allowsCellularDownloads: allowsCellularDownloads
+                    allowsCellularDownloads: downloadAllowsCellular
                 )
-                let downloader = OfflineRegionDownloader(
-                    region: region.mapRegion.rawValue,
-                    metadataFetcher: HTTPTileFetcher.offlineForeground(
-                        allowsCellularDownloads: allowsCellularDownloads
-                    ),
-                    objectFetcher: HTTPTileFetcher.offlineBackground(
-                        identifier: backgroundIdentifier,
-                        allowsCellularDownloads: allowsCellularDownloads
-                    ),
-                    store: try .documentsStore(),
-                    availableBytes: { StorageHeadroom.availableBytes(at: documents) }
-                )
-                let result = try await downloader.downloadCurrentRegion { progress in
-                    Task { @MainActor in
-                        guard downloadState.isDownloading else { return }
-                        downloadState = .downloading(
-                            plan,
-                            fetchedBytes: progress.completedBytes,
-                            isWaitingForConnectivity: progress.isWaitingForConnectivity
-                        )
+                let result = try await OfflineDownloadSession.withBackgroundSessionUse(
+                    identifier: backgroundIdentifier
+                ) {
+                    let downloader = OfflineRegionDownloader(
+                        region: region.mapRegion.rawValue,
+                        metadataFetcher: HTTPTileFetcher.offlineForeground(
+                            allowsCellularDownloads: downloadAllowsCellular
+                        ),
+                        objectFetcher: HTTPTileFetcher.offlineBackground(
+                            identifier: backgroundIdentifier,
+                            allowsCellularDownloads: downloadAllowsCellular
+                        ),
+                        store: try .documentsStore(),
+                        availableBytes: { StorageHeadroom.availableBytes(at: documents) }
+                    )
+                    return try await downloader.downloadCurrentRegion { progress in
+                        Task { @MainActor in
+                            guard downloadState.isDownloading else { return }
+                            downloadState = .downloading(
+                                plan,
+                                fetchedBytes: progress.completedBytes,
+                                isWaitingForConnectivity: progress.isWaitingForConnectivity
+                            )
+                        }
                     }
                 }
                 await MainActor.run {
