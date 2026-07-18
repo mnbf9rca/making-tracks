@@ -63,6 +63,77 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 2))
     }
 
+    func testPlaceCardOverhaulRendersHierarchyAndHideAction() {
+        let app = launch(reset: true, seedUserList: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        openFixtureCard(in: map, app: app)
+
+        let title = element(identifier: "place-card.title", in: app)
+        let typeLabel = element(identifier: "place-card.type.label", in: app)
+        let description = element(identifier: "place-card.description", in: app)
+        let photo = element(identifier: "place-card.photo", in: app)
+        let chips = element(identifier: "place-card.list-chips", in: app)
+        let attribution = element(identifier: "place-card.attribution", in: app)
+
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertEqual(title.label, "Ghost Sign")
+        XCTAssertEqual(typeLabel.label, "Attraction")
+        XCTAssertEqual(
+            description.label,
+            "A hand-painted sign still visible above the old shopfront."
+        )
+
+        XCTAssertTrue(photo.waitForExistence(timeout: 5))
+        XCTAssertEqual(photo.label, "Photo of Ghost Sign")
+
+        let saveButton = app.buttons["place-card.save"]
+        let seenButton = app.buttons["place-card.visited"]
+        let hideButton = app.buttons["place-card.hide"]
+        XCTAssertTrue(saveButton.exists)
+        XCTAssertTrue(seenButton.exists)
+        XCTAssertTrue(hideButton.exists)
+        XCTAssertTrue(chips.waitForExistence(timeout: 5))
+        XCTAssertTrue(chips.label.contains("Date night"))
+
+        XCTAssertTrue(scrollToExistence(of: attribution, in: app))
+        XCTAssertTrue(attribution.label.contains("Fixture photo"))
+
+        assertVerticallyOrdered([
+            ("title", title),
+            ("type", typeLabel),
+            ("description", description),
+            ("photo", photo),
+            ("chips", chips),
+            ("actions", saveButton),
+            ("attribution", attribution),
+        ])
+
+        hideButton.tap()
+        XCTAssertTrue(app.staticTexts["Hidden — Undo"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
+
+        tapFixturePin(in: map)
+        XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
+    }
+
+    func testHiddenToastAutoDismissesWithoutUnhidingPlace() {
+        let app = launch(reset: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        openFixtureCard(in: map, app: app)
+        app.buttons["place-card.hide"].tap()
+        XCTAssertTrue(app.staticTexts["Hidden — Undo"].waitForExistence(timeout: 5))
+
+        XCTAssertTrue(waitForNonExistence(of: app.staticTexts["Hidden — Undo"], timeout: 7))
+        tapFixturePin(in: map)
+        XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
+    }
+
     func testHideRemovesFixturePinFromMapSource() {
         let app = launch(reset: true)
 
@@ -221,7 +292,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         simulatedLocationAuthorization: Bool = false,
         simulatedLatitude: Double? = nil,
         simulatedLongitude: Double? = nil,
-        accessibilityTextSize: Bool = false
+        accessibilityTextSize: Bool = false,
+        seedUserList: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
@@ -245,6 +317,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         if accessibilityTextSize {
             app.launchArguments.append("-UIPreferredContentSizeCategoryName")
             app.launchArguments.append("UICTContentSizeCategoryAccessibilityXXXL")
+        }
+        if seedUserList {
+            app.launchArguments.append("--ui-testing-seed-user-list")
         }
         app.launch()
         return app
@@ -333,6 +408,28 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == %@", identifier))
             .firstMatch
+    }
+
+    private func waitForNonExistence(of element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let predicate = NSPredicate(format: "exists == false")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func assertVerticallyOrdered(
+        _ orderedElements: [(name: String, element: XCUIElement)],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        for (previous, current) in zip(orderedElements, orderedElements.dropFirst()) {
+            XCTAssertLessThan(
+                previous.element.frame.minY,
+                current.element.frame.minY,
+                "\(previous.name) should appear above \(current.name)",
+                file: file,
+                line: line
+            )
+        }
     }
 
     private func currentGitCommit() throws -> String {

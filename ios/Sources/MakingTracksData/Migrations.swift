@@ -51,7 +51,7 @@ extension AppDatabase {
 
             try db.execute(
                 sql: "INSERT INTO lists (name, is_system, created_at) VALUES (?, ?, ?)",
-                arguments: ["Want to go", true, now()]
+                arguments: [AppDatabase.wantToGoListName, true, now()]
             )
         }
 

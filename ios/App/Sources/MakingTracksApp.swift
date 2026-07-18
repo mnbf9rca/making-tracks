@@ -7,6 +7,7 @@ struct MakingTracksApp: App {
     private static let rawArguments = CommandLine.arguments
     private static let arguments = Set(rawArguments)
     private static let isFixtureMap = arguments.contains("--ui-testing-fixture-map")
+    private static let seedFixtureUserList = arguments.contains("--ui-testing-seed-user-list")
     private static let startupViewport = ViewportSeed.selected(argumentValue("--ui-testing-map-state"))
     private static let debugInstallOfflineRegion = argumentValue("--debug-install-offline-region")
     private static let debugForceTileNetworkOffline = arguments.contains("--debug-force-tile-network-offline")
@@ -14,11 +15,18 @@ struct MakingTracksApp: App {
     private static let isLocationAuthorizedFixture = arguments.contains("--ui-testing-location-authorized")
     private static let simulatedLatitude = argumentValue("--ui-testing-location-latitude").flatMap(Double.init)
     private static let simulatedLongitude = argumentValue("--ui-testing-location-longitude").flatMap(Double.init)
+    private static let primaryFixturePlaceID = "mt1_00000000000000000000000000"
 
     private let database: AppDatabase = {
         try! resetUITestingDatabaseIfNeeded()
         if isFixtureMap {
-            return try! AppDatabase.uiTesting()
+            let database = try! AppDatabase.uiTesting()
+#if DEBUG
+            if seedFixtureUserList {
+                try! database.seedUITestingUserList(named: "Date night", containingPlaceID: Self.primaryFixturePlaceID)
+            }
+#endif
+            return database
         }
         return try! AppDatabase.live()
     }()

@@ -4,6 +4,8 @@ import GRDB
 /// The on-device user-data store. `Sendable`: a `DatabaseQueue` serializes all
 /// access, and `now` is a Sendable clock injected for deterministic tests.
 public final class AppDatabase: Sendable {
+    public static let wantToGoListName = "Want to go"
+
     let dbQueue: DatabaseQueue
     let now: @Sendable () -> Date
 

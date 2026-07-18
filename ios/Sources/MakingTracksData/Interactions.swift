@@ -146,7 +146,7 @@ extension AppDatabase {
             guard let id = try Int64.fetchOne(
                 db,
                 sql: "SELECT id FROM lists WHERE is_system = 1 AND name = ? ORDER BY id LIMIT 1",
-                arguments: ["Want to go"]
+                arguments: [Self.wantToGoListName]
             ) else {
                 throw AppDatabaseError.unreadableDatabase
             }
@@ -159,4 +159,34 @@ extension AppDatabase {
             try PlaceSnapshot.fetchOne(db, key: placeID)
         }
     }
+
+#if DEBUG
+    public func seedUITestingUserList(named name: String, containingPlaceID placeID: String) throws {
+        try dbQueue.write { db in
+            let timestamp = now()
+            let listID: Int64
+            if let existingID = try Int64.fetchOne(
+                db,
+                sql: "SELECT id FROM lists WHERE is_system = 0 AND name = ? ORDER BY id LIMIT 1",
+                arguments: [name]
+            ) {
+                listID = existingID
+            } else {
+                try db.execute(
+                    sql: "INSERT INTO lists (name, is_system, created_at) VALUES (?, ?, ?)",
+                    arguments: [name, false, timestamp]
+                )
+                listID = db.lastInsertedRowID
+            }
+
+            try db.execute(
+                sql: """
+                    INSERT OR IGNORE INTO list_items (list_id, place_id, added_at)
+                    VALUES (?, ?, ?)
+                    """,
+                arguments: [listID, placeID, timestamp]
+            )
+        }
+    }
+#endif
 }

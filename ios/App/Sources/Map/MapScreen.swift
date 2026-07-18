@@ -1,7 +1,6 @@
 import CoreLocation
 import SwiftUI
 import UIKit
-import ImageIO
 @preconcurrency import MapLibre
 import MakingTracksCore
 import MakingTracksData
@@ -67,6 +66,9 @@ struct MapScreen: View {
     @State private var fixtureVisitCount = 0
     @State private var userTrackingMode: MLNUserTrackingMode = .none
     @State private var pendingLocateMeActivation = false
+    @State private var hiddenToast: HiddenToast?
+    @State private var hiddenToastDismissTask: Task<Void, Never>?
+    @State private var nextHiddenToastID = 0
     private let viewportRefreshDebouncer = ViewportRefreshDebouncer()
     @State private var suppressedNearbyPromptPlaceIDs: Set<String> = []
     @State private var nearbyPromptNames: [String: String] = [:]
@@ -145,6 +147,13 @@ struct MapScreen: View {
                         .padding(.horizontal, 16)
                 }
             }
+            .overlay(alignment: .bottom) {
+                if let hiddenToast {
+                    hiddenToastView(for: hiddenToast)
+                        .padding(.bottom, 24)
+                        .padding(.horizontal, 16)
+                }
+            }
         }
         .onChange(of: scenePhase) { _, newPhase in
             LocationSessionPolicies.handleScenePhaseChange(
@@ -173,8 +182,14 @@ struct MapScreen: View {
         .sheet(item: cardPresentationItemBinding) { presentation in
             PlaceCardSheet(
                 placeID: presentation.placeID,
-                model: model
+                model: model,
+                onHide: { placeID, name in
+                    showHiddenToast(placeID: placeID, name: name)
+                }
             )
+        }
+        .onDisappear {
+            cancelHiddenToastDismissTask()
         }
     }
 
@@ -187,6 +202,59 @@ struct MapScreen: View {
                 }
             }
         )
+    }
+
+    private func showHiddenToast(placeID: String, name: String) {
+        nextHiddenToastID += 1
+        let toast = HiddenToast(id: nextHiddenToastID, placeID: placeID, name: name)
+        hiddenToast = toast
+        UIAccessibility.post(notification: .announcement, argument: "\(name) hidden. Undo available.")
+        cancelHiddenToastDismissTask()
+        hiddenToastDismissTask = Task {
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                if hiddenToast == toast {
+                    hiddenToast = nil
+                    hiddenToastDismissTask = nil
+                }
+            }
+        }
+    }
+
+    private func undoHiddenToast() async {
+        guard let toast = hiddenToast, let model else { return }
+        do {
+            try await model.setHidden(placeID: toast.placeID, hidden: false)
+            await MainActor.run {
+                guard hiddenToast == toast else { return }
+                cancelHiddenToastDismissTask()
+                self.hiddenToast = nil
+                UIAccessibility.post(notification: .announcement, argument: "\(toast.name) restored.")
+            }
+        } catch {
+            return
+        }
+    }
+
+    private func cancelHiddenToastDismissTask() {
+        hiddenToastDismissTask?.cancel()
+        hiddenToastDismissTask = nil
+    }
+
+    private func hiddenToastView(for _: HiddenToast) -> some View {
+        HStack(spacing: 10) {
+            Text(verbatim: "Hidden — Undo")
+                .font(.callout.weight(.medium))
+            Button("Undo") {
+                Task { await undoHiddenToast() }
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("place-card.hide.undo")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.regularMaterial, in: Capsule())
     }
 
     private var mapChrome: some View {
@@ -572,6 +640,12 @@ struct MapScreen: View {
         let distanceMeters: CLLocationDistance
     }
 
+    private struct HiddenToast: Equatable {
+        let id: Int
+        let placeID: String
+        let name: String
+    }
+
     private static let fixturePlaces = [
         try! PlaceRef(
             placeID: "mt1_00000000000000000000000000",
@@ -583,7 +657,7 @@ struct MapScreen: View {
             schemaVersion: 1,
             fetchedAt: Date(timeIntervalSince1970: 0),
             rawJSON: """
-            {"category":"attraction","lat":3.14,"lon":101.69,"name":"Ghost Sign","place_id":"mt1_00000000000000000000000000","score":0.5,"source_refs":["osm:node/1"],"tier":3}
+            {"blurb":"A hand-painted sign still visible above the old shopfront.","category":"attraction","lat":3.14,"lon":101.69,"name":"Ghost Sign","place_id":"mt1_00000000000000000000000000","score":0.5,"source_refs":["osm:node/1"],"tier":3}
             """
         ),
         try! PlaceRef(
@@ -596,7 +670,7 @@ struct MapScreen: View {
             schemaVersion: 1,
             fetchedAt: Date(timeIntervalSince1970: 0),
             rawJSON: """
-            {"category":"historic_building","lat":3.16,"lon":101.702,"name":"Art Deco Cinema","place_id":"mt1_00000000000000000000000001","score":0.5,"source_refs":["osm:node/2"],"tier":3}
+            {"blurb":"A restored neighborhood cinema with stepped plasterwork and neon trim.","category":"historic_building","lat":3.16,"lon":101.702,"name":"Art Deco Cinema","place_id":"mt1_00000000000000000000000001","score":0.5,"source_refs":["osm:node/2"],"tier":3}
             """
         ),
     ]
@@ -807,23 +881,72 @@ private struct LocationSettingsButton: UIViewRepresentable {
     }
 }
 
+private struct FlowLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = rows(in: proposal.width ?? .greatestFiniteMagnitude, subviews: subviews)
+        return CGSize(width: rows.width, height: rows.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+        let maxWidth = proposal.width ?? bounds.width
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + size.width > bounds.minX + maxWidth {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+
+    private func rows(in maxWidth: CGFloat, subviews: Subviews) -> CGSize {
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+        var rowWidth: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if rowWidth > 0, rowWidth + spacing + size.width > maxWidth {
+                width = max(width, rowWidth)
+                height += rowHeight + spacing
+                rowWidth = 0
+                rowHeight = 0
+            }
+            rowWidth = rowWidth == 0 ? size.width : rowWidth + spacing + size.width
+            rowHeight = max(rowHeight, size.height)
+        }
+
+        width = max(width, rowWidth)
+        height += rowHeight
+        return CGSize(width: width, height: height)
+    }
+}
+
 private struct PlaceCardSheet: View {
     let placeID: String
     let model: MapScreenModel?
+    let onHide: (String, String) -> Void
 
     @State private var sheetInstanceID = UUID().uuidString
     @State private var card: PlaceCardModel?
-    @State private var image: UIImage?
     @State private var isLoading = true
     @State private var actionError: String?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    private static let maxDecodedImagePixels = 16_000_000
-
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 16) {
                 if let card {
                     HStack {
                         Spacer()
@@ -833,20 +956,19 @@ private struct PlaceCardSheet: View {
                         .accessibilityIdentifier("place-card.close")
                     }
                     Text(verbatim: card.name)
-                        .font(.headline)
-                    Text(verbatim: card.category)
-                        .font(.subheadline)
-                    if let image {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxHeight: 180)
-                            .accessibilityHidden(true)
-                    }
+                        .font(.title2.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("place-card.title")
+                    typeRow(card)
                     if let blurb = card.blurb {
                         Text(verbatim: blurb)
                             .font(.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("place-card.description")
                     }
+                    photoSlot(card)
+                    listChips(card.listNames)
                     if let actionError {
                         Text(verbatim: actionError)
                             .font(.caption)
@@ -854,17 +976,7 @@ private struct PlaceCardSheet: View {
                             .accessibilityIdentifier("place-card.action-error")
                     }
                     actionButtons(card)
-                    if !card.altNames.isEmpty {
-                        Text(verbatim: card.altNames.joined(separator: ", "))
-                            .font(.footnote)
-                    }
-                    if !card.sourceNames.isEmpty {
-                        Text(verbatim: card.sourceNames.joined(separator: " / "))
-                            .font(.caption)
-                    }
-                    Text(verbatim: card.placeID)
-                        .font(.caption2)
-                        .textSelection(.enabled)
+                    attributionText(card)
                 } else if isLoading {
                     ProgressView()
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -887,74 +999,136 @@ private struct PlaceCardSheet: View {
     }
 
     @ViewBuilder
+    private func typeRow(_ card: PlaceCardModel) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: categorySymbolName(for: card.category))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(verbatim: categoryLabel(card.category))
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("place-card.type.label")
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func photoSlot(_ card: PlaceCardModel) -> some View {
+        if let photo = card.photo {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(.thinMaterial)
+                Image(systemName: "photo")
+                    .font(.system(size: 42, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 180)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(photo.accessibilityLabel)
+            .accessibilityIdentifier("place-card.photo")
+        }
+    }
+
+    @ViewBuilder
+    private func listChips(_ names: [String]) -> some View {
+        if !names.isEmpty {
+            FlowLayout(spacing: 8) {
+                ForEach(names, id: \.self) { name in
+                    Text(verbatim: name)
+                        .font(.caption.weight(.medium))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.thinMaterial, in: Capsule())
+                }
+            }
+            .accessibilityIdentifier("place-card.list-chips")
+        }
+    }
+
+    @ViewBuilder
+    private func attributionText(_ card: PlaceCardModel) -> some View {
+        let parts = attributionParts(card)
+        if !parts.isEmpty {
+            Text(verbatim: parts.joined(separator: " / "))
+                .font(.caption2)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("place-card.attribution")
+        }
+    }
+
+    @ViewBuilder
     private func actionButtons(_ card: PlaceCardModel) -> some View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 8) {
-                Button(card.pinState.saved ? "Saved" : "Save") {
-                    Task { await setSaved(!card.pinState.saved) }
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("place-card.save")
-
-                Button(card.pinState.visit == .none ? "Visited" : "Unvisit") {
-                    Task { await setVisited(card.pinState.visit == .none) }
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("place-card.visited")
-
+                saveButton(card)
+                seenButton(card)
                 if card.pinState.visit != .none {
-                    Button(card.pinState.visit == .loved ? "Loved" : "Love") {
-                        Task { await setLoved(card.pinState.visit != .loved) }
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("place-card.loved")
+                    loveButton(card)
                 }
+                hideButton(card)
             }
         } else {
             HStack(spacing: 10) {
-                Button(card.pinState.saved ? "Saved" : "Save") {
-                    Task { await setSaved(!card.pinState.saved) }
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("place-card.save")
-
-                Button(card.pinState.visit == .none ? "Visited" : "Unvisit") {
-                    Task { await setVisited(card.pinState.visit == .none) }
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("place-card.visited")
-
+                saveButton(card)
+                seenButton(card)
                 if card.pinState.visit != .none {
-                    Button(card.pinState.visit == .loved ? "Loved" : "Love") {
-                        Task { await setLoved(card.pinState.visit != .loved) }
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("place-card.loved")
+                    loveButton(card)
                 }
+                hideButton(card)
             }
         }
+    }
+
+    private func saveButton(_ card: PlaceCardModel) -> some View {
+        Button(card.pinState.saved ? "Saved" : "Save") {
+            Task { await setSaved(!card.pinState.saved) }
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier("place-card.save")
+        .accessibilityValue(card.pinState.saved ? "Saved" : "Not saved")
+    }
+
+    private func seenButton(_ card: PlaceCardModel) -> some View {
+        Button(card.pinState.visit == .none ? "Seen" : "Unsee") {
+            Task { await setVisited(card.pinState.visit == .none) }
+        }
+        .buttonStyle(.borderedProminent)
+        .accessibilityIdentifier("place-card.visited")
+        .accessibilityValue(card.pinState.visit == .none ? "Not seen" : "Seen")
+    }
+
+    private func loveButton(_ card: PlaceCardModel) -> some View {
+        Button(card.pinState.visit == .loved ? "Loved" : "Love") {
+            Task { await setLoved(card.pinState.visit != .loved) }
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier("place-card.loved")
+        .accessibilityValue(card.pinState.visit == .loved ? "Loved" : "Not loved")
+    }
+
+    private func hideButton(_ card: PlaceCardModel) -> some View {
+        Button("Hide", role: .destructive) {
+            Task { await setHidden(card) }
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier("place-card.hide")
+        .accessibilityValue("Not hidden")
     }
 
     private func loadCard() async {
         await MainActor.run {
             card = nil
-            image = nil
             actionError = nil
             isLoading = true
         }
         let nextCard = await model?.cardModel(for: placeID)
         await MainActor.run {
             card = nextCard
-            image = nil
             isLoading = false
-        }
-        guard let imageURL = nextCard?.imageURL,
-              let data = await ImageLoader().fetch(imageURL),
-              Self.isSafeDecodedImage(data),
-              let nextImage = UIImage(data: data)
-        else { return }
-        await MainActor.run {
-            image = nextImage
         }
     }
 
@@ -983,6 +1157,24 @@ private struct PlaceCardSheet: View {
         }
     }
 
+    private func setHidden(_ card: PlaceCardModel) async {
+        await MainActor.run {
+            actionError = nil
+        }
+        do {
+            try await model?.setHidden(placeID: placeID, hidden: true)
+            await MainActor.run {
+                self.card = nil
+                dismiss()
+                onHide(placeID, card.name)
+            }
+        } catch {
+            await MainActor.run {
+                actionError = "Could not save that change."
+            }
+        }
+    }
+
     private func performAction(_ action: () async throws -> Void) async {
         do {
             try await action()
@@ -995,16 +1187,35 @@ private struct PlaceCardSheet: View {
         }
     }
 
-    private static func isSafeDecodedImage(_ data: Data) -> Bool {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let width = properties[kCGImagePropertyPixelWidth] as? Int,
-              let height = properties[kCGImagePropertyPixelHeight] as? Int,
-              width > 0,
-              height > 0
-        else { return false }
-        return width <= maxDecodedImagePixels / height
+    private func categoryLabel(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .split(separator: " ")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
     }
+
+    private func categorySymbolName(for raw: String) -> String {
+        let iconName = PinLayers.categoryIconNames[raw.lowercased()] ?? PinLayers.fallbackCategoryIconName
+        return PinLayers.categorySymbolNames[iconName] ?? "mappin"
+    }
+
+    private func attributionParts(_ card: PlaceCardModel) -> [String] {
+        var parts: [String] = []
+        if let photo = card.photo {
+            parts.append(photo.attribution)
+        }
+        if !card.sourceNames.isEmpty {
+            parts.append(card.sourceNames.joined(separator: " / "))
+        }
+        return parts
+    }
+
+}
+
+private enum MapScreenActionError: Error {
+    case placeUnavailable
 }
 
 @MainActor
@@ -1139,23 +1350,42 @@ private final class MapScreenModel {
         let pinState = await states(for: [placeID])[placeID] ?? PinState(saved: false, visit: .none)
         guard let source = await cardSource(for: placeID) else { return nil }
 
+        let base: PlaceCardModel?
         switch source {
         case let .tile(placeRef):
-            return PlaceCardModel.from(placeRef: placeRef, pinState: pinState)
+            base = PlaceCardModel.from(placeRef: placeRef, pinState: pinState)
         case let .snapshot(_, snapshot):
-            return PlaceCardModel.from(snapshot: snapshot, pinState: pinState)
+            base = PlaceCardModel.from(snapshot: snapshot, pinState: pinState)
         case .unavailable:
             return nil
         }
+        guard let base else { return nil }
+        let lists = await userListNames(containing: placeID)
+        return base.enriching(photo: fixturePhoto(for: placeID, name: base.name), listNames: lists)
+    }
+
+    private func userListNames(containing placeID: String) async -> [String] {
+        let db = database
+        return await Task.detached {
+            (try? db.userListNames(containing: placeID)) ?? []
+        }.value
+    }
+
+    private func fixturePhoto(for placeID: String, name: String) -> PlaceCardPhoto? {
+        guard fixturePlaces[placeID] != nil else { return nil }
+        return PlaceCardPhoto(
+            accessibilityLabel: "Photo of \(name)",
+            attribution: "Fixture photo"
+        )
     }
 
     func setSaved(placeID: String, saved: Bool) async throws {
-        guard let placeRef = await actionPlaceRef(for: placeID) else { return }
+        guard let placeRef = await actionPlaceRef(for: placeID) else { throw MapScreenActionError.placeUnavailable }
         try coreLoop.setSaved(placeRef, saved)
     }
 
     func setVisited(placeID: String, visited: Bool) async throws {
-        guard let placeRef = await actionPlaceRef(for: placeID) else { return }
+        guard let placeRef = await actionPlaceRef(for: placeID) else { throw MapScreenActionError.placeUnavailable }
         try coreLoop.setVisited(placeRef, visited)
     }
 
@@ -1164,7 +1394,7 @@ private final class MapScreenModel {
     }
 
     func setHidden(placeID: String, hidden: Bool) async throws {
-        guard let placeRef = await actionPlaceRef(for: placeID) else { return }
+        guard let placeRef = await actionPlaceRef(for: placeID) else { throw MapScreenActionError.placeUnavailable }
         let rollback = hiddenTracker.beginSetHidden(placeID: placeID, hidden: hidden)
         do {
             try coreLoop.setHidden(placeRef, hidden)
@@ -1253,14 +1483,12 @@ private final class MapScreenModel {
 #else
         let fetcher: TileFetching = HTTPTileFetcher()
 #endif
-        guard let client = try? TileClient(
+        let client = TileClient(
             region: region.rawValue,
             fetcher: fetcher,
             cache: tileCache,
             offlineStore: offlineStore
-        ) else {
-            return nil
-        }
+        )
         tileClients[region] = client
         return client
     }

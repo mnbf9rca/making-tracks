@@ -10,9 +10,32 @@ public struct PlaceCardModel: Sendable, Equatable {
     public let category: String
     public let blurb: String?
     public let altNames: [String]
-    public let imageURL: URL?
+    public let photo: PlaceCardPhoto?
+    public let listNames: [String]
     public let sourceNames: [String]
     public let pinState: PinState
+
+    public init(
+        placeID: String,
+        name: String,
+        category: String,
+        blurb: String?,
+        altNames: [String],
+        photo: PlaceCardPhoto?,
+        listNames: [String],
+        sourceNames: [String],
+        pinState: PinState
+    ) {
+        self.placeID = placeID
+        self.name = name
+        self.category = category
+        self.blurb = blurb
+        self.altNames = altNames
+        self.photo = photo
+        self.listNames = listNames
+        self.sourceNames = sourceNames
+        self.pinState = pinState
+    }
 
     public static func from(placeRef: PlaceRef, pinState: PinState) -> PlaceCardModel? {
         decode(
@@ -69,7 +92,22 @@ public struct PlaceCardModel: Sendable, Equatable {
             category: safeCategory,
             blurb: blurb,
             altNames: altNames,
-            imageURL: imageURL(from: object["image_url"]),
+            photo: nil,
+            listNames: [],
+            sourceNames: sourceNames,
+            pinState: pinState
+        )
+    }
+
+    public func enriching(photo: PlaceCardPhoto? = nil, listNames: [String]? = nil) -> PlaceCardModel {
+        PlaceCardModel(
+            placeID: placeID,
+            name: name,
+            category: category,
+            blurb: blurb,
+            altNames: altNames,
+            photo: photo ?? self.photo,
+            listNames: listNames ?? self.listNames,
             sourceNames: sourceNames,
             pinState: pinState
         )
@@ -96,16 +134,16 @@ public struct PlaceCardModel: Sendable, Equatable {
         return values.compactMap { safeText($0, max: maxScalars) }
     }
 
-    private static func imageURL(from value: Any?) -> URL? {
-        guard let raw = value as? String,
-              raw.unicodeScalars.count <= 2_048,
-              PlaceContentGuards.isSafeURLString(raw),
-              let url = URL(string: raw),
-              PlaceContentGuards.isAllowedImageURL(url)
-        else { return nil }
-        return url
-    }
+}
 
+public struct PlaceCardPhoto: Sendable, Equatable {
+    public let accessibilityLabel: String
+    public let attribution: String
+
+    public init(accessibilityLabel: String, attribution: String) {
+        self.accessibilityLabel = accessibilityLabel
+        self.attribution = attribution
+    }
 }
 
 private struct Fallback {
