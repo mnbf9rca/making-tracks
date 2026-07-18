@@ -45,6 +45,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let app = launch(reset: true, resetOnboarding: true)
 
         XCTAssertTrue(app.staticTexts["Interesting places around you"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.otherElements["map.surface"].exists)
+        XCTAssertFalse(app.otherElements["map.loading"].exists)
         XCTAssertTrue(app.staticTexts["onboarding.progress"].waitForExistence(timeout: 5))
         app.buttons["onboarding.next"].tap()
 

@@ -106,6 +106,7 @@ public enum TileError: Error, Equatable {
     case httpStatus(Int)
     case downloadPaused
     case downloadCancelled
+    case downloadAlreadyInProgress
 }
 
 public final class HTTPTileFetcher: OfflineRegionFetching, @unchecked Sendable {
@@ -1571,6 +1572,10 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
         progress: (@Sendable (OfflineRegionDownloadProgress) -> Void)? = nil
     ) async throws -> OfflineRegionDownloadResult {
         guard region.matches("^[a-z][a-z0-9_]{0,63}$") else { throw TileError.invalidOfflinePack }
+        try store.acquireDownloadLease(region: region)
+        defer {
+            store.releaseDownloadLease(region: region)
+        }
         let currentData = try await metadataFetcher.fetch(try trustedURL("\(region)/current.json"))
         let publishVersion = try ManifestClient.decodeCurrent(currentData)
         let manifestData = try await metadataFetcher.fetch(try trustedURL("\(region)/\(publishVersion)/manifest.json"))
@@ -1592,12 +1597,21 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             var completedBytes = totalBytes - plan.bytesToFetch
             for item in plan.tilesToFetch {
                 try control.checkpoint()
-                let fileURL = try await downloadObject(
-                    try trustedURL("\(region)/\(publishVersion)/tiles/10/\(item.coordinate.x)/\(item.coordinate.y).json.gz"),
-                    control: control
-                )
-                defer { try? FileManager.default.removeItem(at: fileURL) }
-                try store.stageDownloadedTileObject(fileURL, sha256: item.sha256, bytes: item.bytes)
+                try ensureHeadroomForSmallObject(bytes: item.bytes)
+                let fileURL: URL
+                do {
+                    fileURL = try await downloadObject(
+                        try trustedURL("\(region)/\(publishVersion)/tiles/10/\(item.coordinate.x)/\(item.coordinate.y).json.gz"),
+                        control: control
+                    )
+                    defer { try? FileManager.default.removeItem(at: fileURL) }
+                    try store.stageDownloadedTileObject(fileURL, sha256: item.sha256, bytes: item.bytes)
+                } catch {
+                    if isOutOfSpace(error) {
+                        throw TileError.downloadPaused
+                    }
+                    throw error
+                }
                 completedObjectCount += 1
                 completedBytes += item.bytes
                 progress?(OfflineRegionDownloadProgress(
@@ -1611,12 +1625,21 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             }
             if plan.basemapNeedsFetch {
                 try control.checkpoint()
-                let fileURL = try await downloadObject(
-                    try trustedURL("\(region)/\(publishVersion)/\(manifest.basemap.filename)"),
-                    control: control
-                )
-                defer { try? FileManager.default.removeItem(at: fileURL) }
-                try store.stageDownloadedBasemapObject(fileURL, sha256: manifest.basemap.sha256, bytes: manifest.basemap.bytes)
+                try ensureHeadroomForLargeObject(bytes: manifest.basemap.bytes)
+                let fileURL: URL
+                do {
+                    fileURL = try await downloadObject(
+                        try trustedURL("\(region)/\(publishVersion)/\(manifest.basemap.filename)"),
+                        control: control
+                    )
+                    defer { try? FileManager.default.removeItem(at: fileURL) }
+                    try store.stageDownloadedBasemapObject(fileURL, sha256: manifest.basemap.sha256, bytes: manifest.basemap.bytes)
+                } catch {
+                    if isOutOfSpace(error) {
+                        throw TileError.downloadPaused
+                    }
+                    throw error
+                }
                 completedObjectCount += 1
                 completedBytes += manifest.basemap.bytes
                 progress?(OfflineRegionDownloadProgress(
@@ -1640,6 +1663,22 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             reusedTileCount: plan.reusedTileCount,
             fetchedBytes: plan.bytesToFetch
         )
+    }
+
+    private func ensureHeadroomForSmallObject(bytes: Int) throws {
+        guard bytes >= 0 else { throw TileError.invalidOfflinePack }
+        let peakBytes = bytes.multipliedReportingOverflow(by: 2)
+        guard !peakBytes.overflow else { throw TileError.invalidOfflinePack }
+        guard StorageHeadroom.hasHeadroom(requiredBytes: peakBytes.partialValue, availableBytes: availableBytes()) else {
+            throw TileError.downloadPaused
+        }
+    }
+
+    private func ensureHeadroomForLargeObject(bytes: Int) throws {
+        guard bytes >= 0 else { throw TileError.invalidOfflinePack }
+        guard StorageHeadroom.hasHeadroom(requiredBytes: bytes, availableBytes: availableBytes()) else {
+            throw TileError.downloadPaused
+        }
     }
 
     private func downloadObject(_ url: URL, control: OfflineRegionDownloadControl) async throws -> URL {
@@ -1675,6 +1714,43 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
     }
 }
 
+private func isOutOfSpace(_ error: Error) -> Bool {
+    let nsError = error as NSError
+    if nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileWriteOutOfSpaceError {
+        return true
+    }
+    if nsError.domain == NSPOSIXErrorDomain && nsError.code == Int(ENOSPC) {
+        return true
+    }
+    if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
+        return isOutOfSpace(underlying)
+    }
+    return false
+}
+
+private final class OfflineRegionStoreRootState: @unchecked Sendable {
+    let lock = NSLock()
+    var activeDownloadRegions = Set<String>()
+    var liveTemporaryObjectNames = Set<String>()
+}
+
+private enum OfflineRegionStoreRootStates {
+    private static let registryLock = NSLock()
+    nonisolated(unsafe) private static var states: [String: OfflineRegionStoreRootState] = [:]
+
+    static func state(for root: URL) -> OfflineRegionStoreRootState {
+        let key = root.standardizedFileURL.path
+        return registryLock.withLock {
+            if let state = states[key] {
+                return state
+            }
+            let state = OfflineRegionStoreRootState()
+            states[key] = state
+            return state
+        }
+    }
+}
+
 public final class OfflineRegionStore: @unchecked Sendable {
     static let maxInstalledPackCount = 256
     static let maxCurrentPackBytes = 4 * 1024
@@ -1683,14 +1759,22 @@ public final class OfflineRegionStore: @unchecked Sendable {
 
     private let root: URL
     private let fm = FileManager.default
-    private let lock = NSLock()
+    private let rootState: OfflineRegionStoreRootState
     private var validatedPackIndexes: [String: OfflinePackIndex] = [:]
     private var lastPackQuarantinesSnapshot: [OfflinePackQuarantine] = []
 
     public init(root: URL) throws {
         self.root = root
+        self.rootState = OfflineRegionStoreRootStates.state(for: root)
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try excludeFromBackup(root)
+    }
+
+    public func performDeferredMaintenance() throws {
+        try withLock {
+            try recoverInterruptedInstallsLocked()
+            try garbageCollectObjects()
+        }
     }
 
     public static func documentsStore() throws -> OfflineRegionStore {
@@ -1711,8 +1795,31 @@ public final class OfflineRegionStore: @unchecked Sendable {
             try fm.createDirectory(at: inProgressURL(region: publish.region, publishVersion: publish.publishVersion), withIntermediateDirectories: true)
             try JSONEncoder().encode(packIndex(for: publish))
                 .write(to: inProgressURL(region: publish.region, publishVersion: publish.publishVersion).appendingPathComponent("pack-index.json"), options: .atomic)
+            try garbageCollectObjects()
         }
     }
+
+    func acquireDownloadLease(region: String) throws {
+        try withLock {
+            guard isValidRegion(region) else { throw TileError.invalidOfflinePack }
+            guard !rootState.activeDownloadRegions.contains(region) else { throw TileError.downloadAlreadyInProgress }
+            rootState.activeDownloadRegions.insert(region)
+        }
+    }
+
+    func releaseDownloadLease(region: String) {
+        _ = withLock {
+            rootState.activeDownloadRegions.remove(region)
+        }
+    }
+
+#if DEBUG
+    func withRegisteredLiveTemporaryObjectForTesting(_ url: URL, _ body: () throws -> Void) rethrows {
+        registerLiveTemporaryObject(url)
+        defer { unregisterLiveTemporaryObject(url) }
+        try body()
+    }
+#endif
 
     func stageDownloadedTileObject(_ fileURL: URL, sha256: String, bytes: Int) throws {
         try withLock {
@@ -1724,16 +1831,21 @@ public final class OfflineRegionStore: @unchecked Sendable {
     }
 
     func stageDownloadedBasemapObject(_ fileURL: URL, sha256: String, bytes: Int) throws {
-        let prepared = try prepareVerifiedBasemapObject(from: fileURL, sha256: sha256, bytes: bytes)
-        do {
-            try withLock {
-                try movePreparedBasemapObject(prepared, sha256: sha256, bytes: bytes)
-            }
-        } catch {
+        let prepared = basemapObjectTemporaryURL()
+        registerLiveTemporaryObject(prepared)
+        defer {
+            unregisterLiveTemporaryObject(prepared)
             if fm.fileExists(atPath: prepared.path) {
                 try? fm.removeItem(at: prepared)
             }
-            throw error
+        }
+        try prepareVerifiedBasemapObject(from: fileURL, to: prepared, sha256: sha256, bytes: bytes)
+        try withLock {
+            do {
+                try movePreparedBasemapObject(prepared, sha256: sha256, bytes: bytes)
+            } catch {
+                throw error
+            }
         }
     }
 
@@ -2262,6 +2374,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
     public func discardInProgressDownloads(region: String) throws {
         try withLock {
             guard isValidRegion(region) else { throw TileError.invalidOfflinePack }
+            guard !rootState.activeDownloadRegions.contains(region) else { throw TileError.downloadAlreadyInProgress }
             let inProgressRegion = root.appendingPathComponent("in-progress").appendingPathComponent(region, isDirectory: true)
             if fm.fileExists(atPath: inProgressRegion.path) {
                 try fm.removeItem(at: inProgressRegion)
@@ -2272,6 +2385,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
 
     private func deleteLocked(region: String) throws {
         guard isValidRegion(region) else { throw TileError.invalidOfflinePack }
+        guard !rootState.activeDownloadRegions.contains(region) else { throw TileError.downloadAlreadyInProgress }
         let packs = root.appendingPathComponent("packs").appendingPathComponent(region)
         if fm.fileExists(atPath: packs.path) {
             try fm.removeItem(at: packs)
@@ -2333,8 +2447,21 @@ public final class OfflineRegionStore: @unchecked Sendable {
             try fm.removeItem(at: url)
         }
         try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try data.write(to: url, options: .atomic)
-        try verifyExistingTileObject(sha256: sha256, bytes: bytes)
+        let temp = url.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).json.gz.tmp")
+        do {
+            if fm.fileExists(atPath: temp.path) {
+                try fm.removeItem(at: temp)
+            }
+            try data.write(to: temp, options: .atomic)
+            try verifyTileObject(temp, sha256: sha256, bytes: bytes)
+            try fm.moveItem(at: temp, to: url)
+            try verifyExistingTileObject(sha256: sha256, bytes: bytes)
+        } catch {
+            if fm.fileExists(atPath: temp.path) {
+                try? fm.removeItem(at: temp)
+            }
+            throw error
+        }
     }
 
     private func writeVerifiedBasemapObject(_ data: Data, sha256: String, bytes: Int) throws {
@@ -2354,23 +2481,42 @@ public final class OfflineRegionStore: @unchecked Sendable {
         try movePreparedBasemapObject(temp, sha256: sha256, bytes: bytes)
     }
 
+    private func basemapObjectTemporaryURL() -> URL {
+        basemapObjectsURL.appendingPathComponent(".\(UUID().uuidString).pmtiles.tmp")
+    }
+
     private func prepareVerifiedBasemapObject(from fileURL: URL, sha256: String, bytes: Int) throws -> URL {
+        let temp = basemapObjectTemporaryURL()
+        try prepareVerifiedBasemapObject(from: fileURL, to: temp, sha256: sha256, bytes: bytes)
+        return temp
+    }
+
+    private func prepareVerifiedBasemapObject(from fileURL: URL, to temp: URL, sha256: String, bytes: Int) throws {
         try verifyFileObject(fileURL, sha256: sha256, bytes: bytes)
-        let url = basemapObjectURL(sha256: sha256)
-        try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let temp = url.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).pmtiles.tmp")
+        try fm.createDirectory(at: temp.deletingLastPathComponent(), withIntermediateDirectories: true)
         do {
             if fm.fileExists(atPath: temp.path) {
                 try fm.removeItem(at: temp)
             }
             try fm.moveItem(at: fileURL, to: temp)
             try verifyFileObject(temp, sha256: sha256, bytes: bytes)
-            return temp
         } catch {
             if fm.fileExists(atPath: temp.path) {
                 try? fm.removeItem(at: temp)
             }
             throw error
+        }
+    }
+
+    private func registerLiveTemporaryObject(_ url: URL) {
+        _ = withLock {
+            rootState.liveTemporaryObjectNames.insert(url.lastPathComponent)
+        }
+    }
+
+    private func unregisterLiveTemporaryObject(_ url: URL) {
+        _ = withLock {
+            rootState.liveTemporaryObjectNames.remove(url.lastPathComponent)
         }
     }
 
@@ -2390,7 +2536,11 @@ public final class OfflineRegionStore: @unchecked Sendable {
     }
 
     private func verifyExistingTileObject(sha256: String, bytes: Int) throws {
-        let data = try Data(contentsOf: tileObjectURL(sha256: sha256))
+        try verifyTileObject(tileObjectURL(sha256: sha256), sha256: sha256, bytes: bytes)
+    }
+
+    private func verifyTileObject(_ url: URL, sha256: String, bytes: Int) throws {
+        let data = try Data(contentsOf: url)
         _ = try TileCodec.decode(gzipped: data, expectedSHA256: sha256, expectedBytes: bytes)
     }
 
@@ -2458,25 +2608,109 @@ public final class OfflineRegionStore: @unchecked Sendable {
     }
 
     private func garbageCollectObjects() throws {
-        let references = try referencedObjects()
+        try sweepTemporaryInstallDirectories()
+        try sweepTemporaryObjectFiles(in: tileObjectsURL)
+        try sweepTemporaryObjectFiles(in: basemapObjectsURL)
+        guard let references = try referencedObjectsForDeletion() else { return }
         try removeUnreferencedObjects(in: tileObjectsURL, keeping: references.tileSHAs, extension: "gz")
         try removeUnreferencedObjects(in: basemapObjectsURL, keeping: references.basemapSHAs, extension: "pmtiles")
     }
 
+    private func referencedObjectsForDeletion() throws -> (tileSHAs: Set<String>, basemapSHAs: Set<String>)? {
+        do {
+            return try referencedObjects()
+        } catch {
+            return nil
+        }
+    }
+
+    private func recoverInterruptedInstallsLocked() throws {
+        let tmpRoot = root.appendingPathComponent("tmp", isDirectory: true)
+        guard let children = try? fm.contentsOfDirectory(at: tmpRoot, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
+        for child in children where child.lastPathComponent.hasSuffix("-backup") {
+            let values = try child.resourceValues(forKeys: [.isDirectoryKey])
+            guard values.isDirectory == true else { continue }
+            guard let publish = try? JSONDecoder().decode(
+                PinnedPublish.self,
+                from: boundedData(contentsOf: child.appendingPathComponent("manifest-snapshot.json"), maxBytes: Self.maxOfflineManifestSnapshotBytes)
+            ) else {
+                continue
+            }
+            guard isValidRegion(publish.region),
+                  isValidPublishVersion(publish.publishVersion),
+                  (try? installedCurrentPackLocked(region: publish.region))?.publishVersion == publish.publishVersion
+            else {
+                try? fm.removeItem(at: child)
+                continue
+            }
+            let final = packURL(region: publish.region, publishVersion: publish.publishVersion)
+            if fm.fileExists(atPath: final.path) {
+                try? fm.removeItem(at: child)
+            } else {
+                try fm.createDirectory(at: final.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fm.moveItem(at: child, to: final)
+                try excludeFromBackup(final)
+            }
+            try removeNonCurrentPackDirectoriesLocked(region: publish.region, currentPublishVersion: publish.publishVersion)
+        }
+    }
+
+    private func removeNonCurrentPackDirectoriesLocked(region: String, currentPublishVersion: String) throws {
+        let packsRoot = root.appendingPathComponent("packs").appendingPathComponent(region, isDirectory: true)
+        guard let children = try? fm.contentsOfDirectory(at: packsRoot, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
+        for child in children where child.lastPathComponent != currentPublishVersion {
+            let values = try child.resourceValues(forKeys: [.isDirectoryKey])
+            guard values.isDirectory == true else { continue }
+            try? fm.removeItem(at: child)
+        }
+    }
+
+    private func sweepTemporaryInstallDirectories() throws {
+        let tmpRoot = root.appendingPathComponent("tmp", isDirectory: true)
+        guard let children = try? fm.contentsOfDirectory(at: tmpRoot, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
+        for child in children {
+            guard !child.lastPathComponent.hasSuffix("-backup") else { continue }
+            let values = try child.resourceValues(forKeys: [.isDirectoryKey])
+            guard values.isDirectory == true else { continue }
+            try? fm.removeItem(at: child)
+        }
+    }
+
+    private func sweepTemporaryObjectFiles(in directory: URL) throws {
+        guard let children = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey], options: []) else { return }
+        let liveTemporaryObjectNames = rootState.liveTemporaryObjectNames
+        for child in children where Self.shouldSweepTemporaryObjectFile(
+            named: child.lastPathComponent,
+            liveTemporaryObjectNames: liveTemporaryObjectNames
+        ) {
+            let values = try child.resourceValues(forKeys: [.isRegularFileKey])
+            if values.isRegularFile == true {
+                try? fm.removeItem(at: child)
+            }
+        }
+    }
+
+    static func shouldSweepTemporaryObjectFile(named name: String, liveTemporaryObjectNames: Set<String>) -> Bool {
+        name.hasPrefix(".") && name.hasSuffix(".tmp") && !liveTemporaryObjectNames.contains(name)
+    }
+
     private func referencedObjects() throws -> (tileSHAs: Set<String>, basemapSHAs: Set<String>) {
-        let packsRoot = root.appendingPathComponent("packs")
-        guard let enumerator = fm.enumerator(at: packsRoot, includingPropertiesForKeys: [.isRegularFileKey]) else {
+        let regionsRoot = root.appendingPathComponent("regions", isDirectory: true)
+        guard fm.fileExists(atPath: regionsRoot.path) else {
             return try referencedInProgressObjects(tileSHAs: [], basemapSHAs: [])
         }
+        let regions = try fm.contentsOfDirectory(at: regionsRoot, includingPropertiesForKeys: [.isDirectoryKey])
         var tileSHAs = Set<String>()
         var basemapSHAs = Set<String>()
-        for case let url as URL in enumerator where url.lastPathComponent == "pack-index.json" {
-            let index = try JSONDecoder().decode(
-                OfflinePackIndex.self,
-                from: try boundedData(contentsOf: url, maxBytes: Self.maxOfflinePackIndexBytes)
-            )
-            tileSHAs.formUnion(index.tileSHAs.values)
-            basemapSHAs.insert(index.basemapSHA)
+        for regionURL in regions {
+            let values = try regionURL.resourceValues(forKeys: [.isDirectoryKey])
+            guard values.isDirectory == true else { continue }
+            let region = regionURL.lastPathComponent
+            guard isValidRegion(region) else { continue }
+            guard let current = try installedCurrentPackLocked(region: region) else { continue }
+            let publish = try publishSnapshotLocked(region: region, publishVersion: current.publishVersion)
+            tileSHAs.formUnion(publish.manifest.tiles.map(\.sha256))
+            basemapSHAs.insert(publish.manifest.basemap.sha256)
         }
         return try referencedInProgressObjects(tileSHAs: tileSHAs, basemapSHAs: basemapSHAs)
     }
@@ -2577,8 +2811,8 @@ public final class OfflineRegionStore: @unchecked Sendable {
     }
 
     private func withLock<T>(_ body: () throws -> T) rethrows -> T {
-        lock.lock()
-        defer { lock.unlock() }
+        rootState.lock.lock()
+        defer { rootState.lock.unlock() }
         return try body()
     }
 
@@ -2841,9 +3075,26 @@ public actor TileClient {
         }
     }
 
-    public func places(inViewport bbox: BBox, zoom: Int) async -> [MapPlace] {
+    public func loadLocalPin() {
+        guard pin == nil else { return }
+        let cached = try? cache.lastVerifiedPublish(region: region)
+        let installed = try? offlineStore?.installedPublish(region: region)
+        let result = ManifestPinResult(
+            publish: cached,
+            state: cached == nil ? .unavailable : .stale
+        )
+        let resolved = resolvePin(remote: result, installed: installed)
+        pin = resolved.publish
+        state = resolved.state
+    }
+
+    public func places(inViewport bbox: BBox, zoom: Int, allowManifestRefresh: Bool = true) async -> [MapPlace] {
         if pin == nil {
-            try? await refreshPin()
+            if allowManifestRefresh {
+                try? await refreshPin()
+            } else {
+                loadLocalPin()
+            }
         }
         let coveredCoordinates = Set(TileCoverage.tiles(for: bbox))
         let offlineResolution: OfflinePackResolution

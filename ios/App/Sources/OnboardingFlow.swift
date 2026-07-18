@@ -43,6 +43,18 @@ struct MakingTracksRootView: View {
     }
 
     var body: some View {
+        if shouldShowFirstRunOnboarding {
+            onboardingFlow(isReplay: false)
+        } else {
+            mapScreen
+        }
+    }
+
+    private var shouldShowFirstRunOnboarding: Bool {
+        !hasCompletedOnboarding && !isReplayingOnboarding
+    }
+
+    private var mapScreen: some View {
         MapScreen(
             database: database,
             startupViewport: OnboardingStorage.startupViewport(
@@ -62,36 +74,40 @@ struct MakingTracksRootView: View {
                 isReplayingOnboarding = true
             }
         )
-        .fullScreenCover(isPresented: onboardingPresented) {
-            OnboardingFlow(
-                isReplay: isReplayingOnboarding,
-                initialSelectedRegion: OnboardingFlowState.initialSelectedRegion(
-                    isReplay: isReplayingOnboarding,
-                    chosenRegionRawValue: chosenRegionRawValue
-                ),
-                locationPermission: locationPermission,
-                downloadState: downloadState,
-                showsUITestingDiagnostics: isFixtureMap,
-                prepareDownload: { region in
-                    prepareOfflineDownload(for: region)
-                },
-                startDownload: { region in
-                    startOfflineDownload(for: region)
-                },
-                complete: { region in
-                    completeOnboarding(region: region)
-                }
-            )
+        .fullScreenCover(isPresented: replayOnboardingPresented) {
+            onboardingFlow(isReplay: true)
         }
     }
 
-    private var onboardingPresented: Binding<Bool> {
+    private var replayOnboardingPresented: Binding<Bool> {
         Binding(
-            get: { !hasCompletedOnboarding || isReplayingOnboarding },
+            get: { isReplayingOnboarding },
             set: { presented in
                 if !presented, isReplayingOnboarding {
                     isReplayingOnboarding = false
                 }
+            }
+        )
+    }
+
+    private func onboardingFlow(isReplay: Bool) -> some View {
+        OnboardingFlow(
+            isReplay: isReplay,
+            initialSelectedRegion: OnboardingFlowState.initialSelectedRegion(
+                isReplay: isReplay,
+                chosenRegionRawValue: chosenRegionRawValue
+            ),
+            locationPermission: locationPermission,
+            downloadState: downloadState,
+            showsUITestingDiagnostics: isFixtureMap,
+            prepareDownload: { region in
+                prepareOfflineDownload(for: region)
+            },
+            startDownload: { region in
+                startOfflineDownload(for: region)
+            },
+            complete: { region in
+                completeOnboarding(region: region)
             }
         )
     }
