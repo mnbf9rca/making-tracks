@@ -37,6 +37,8 @@ class RegionConfig:
     bbox: tuple
     languages: tuple
     sources: dict
+    zone_levels: dict[int, str]
+    zone_allowlist: tuple[str, ...]
     basemap: dict
     subregions: tuple[SubregionConfig, ...]
     raw: dict
@@ -48,12 +50,15 @@ class RegionConfig:
             raise ConfigError(f"region config missing fields: {missing}")
         bbox = _validate_bbox(data["bbox"], label=data["region_id"])
         subregions = _subregions_from_basemap(data["region_id"], data["basemap"])
+        zone_levels = _zone_levels(data.get("zone_levels", {}))
         return cls(
             region_id=data["region_id"],
             display_name=data["display_name"],
             bbox=bbox,
             languages=tuple(data["languages"]),
             sources=data["sources"],
+            zone_levels=zone_levels,
+            zone_allowlist=tuple(data.get("zone_allowlist", ())),
             basemap=data["basemap"],
             subregions=subregions,
             raw=data,
@@ -93,6 +98,19 @@ def _subregions_from_basemap(
 
 def _default_subregion_display_name(short_id: str) -> str:
     return short_id.replace("_", " ").title()
+
+
+def _zone_levels(raw) -> dict[int, str]:
+    levels: dict[int, str] = {}
+    names: set[str] = set()
+    for key, value in sorted(dict(raw).items(), key=lambda item: int(item[0])):
+        level = int(key)
+        name = str(value)
+        if name in names:
+            raise ConfigError(f"duplicate zone level name: {name}")
+        names.add(name)
+        levels[level] = name
+    return levels
 
 
 def _validate_bbox(values, *, label: str) -> tuple[float, float, float, float]:

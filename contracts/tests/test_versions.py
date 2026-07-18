@@ -15,9 +15,12 @@ REQUIRED_KEYS = {
     "tile",
     "manifest",
     "image_index",
+    "description_index",
+    "pack_descriptor",
     "region_index",
     "region_config",
     "registry_record",
+    "zone_catalog",
     "id_scheme",
 }
 

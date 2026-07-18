@@ -6,7 +6,7 @@ import json
 import pathlib
 import sqlite3
 
-WORKING_STORE_VERSION = 7
+WORKING_STORE_VERSION = 8
 SOURCE_RECORDS_TABLE = "source_records"
 STAGE_RUNS_TABLE = "stage_runs"
 EXTRACT_RUN_METADATA_TABLE = "extract_run_metadata"
@@ -14,6 +14,7 @@ PLACES_TABLE = "places"
 PLACE_CATEGORIES_TABLE = "place_categories"
 PLACE_SCORES_TABLE = "place_scores"
 STAGE_FINGERPRINTS_TABLE = "stage_fingerprints"
+ZONE_BOUNDARIES_TABLE = "zone_boundaries"
 META_TABLE = "meta"
 
 _PLACE_SCORES_SCHEMA = """
@@ -37,6 +38,25 @@ CREATE TABLE IF NOT EXISTS stage_fingerprints (
     completed_at TEXT NOT NULL,
     PRIMARY KEY (region, stage)
 );
+"""
+
+_ZONE_BOUNDARIES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS zone_boundaries (
+    region                 TEXT NOT NULL,
+    zone_id                TEXT NOT NULL,
+    osm_relation_id        INTEGER NOT NULL,
+    admin_level            INTEGER NOT NULL,
+    level_name             TEXT NOT NULL,
+    name                   TEXT NOT NULL,
+    name_translations_json TEXT NOT NULL,
+    wikidata               TEXT,
+    bbox_json              TEXT NOT NULL,
+    geometry_json          TEXT NOT NULL,
+    run_id                 TEXT NOT NULL,
+    PRIMARY KEY (region, zone_id)
+);
+CREATE INDEX IF NOT EXISTS idx_zone_boundaries_region_level
+    ON zone_boundaries(region, admin_level);
 """
 
 _SCHEMA = """
@@ -92,7 +112,7 @@ CREATE TABLE IF NOT EXISTS place_categories (
 );
 CREATE INDEX IF NOT EXISTS idx_place_categories_region
     ON place_categories(region);
-""" + _PLACE_SCORES_SCHEMA + _STAGE_FINGERPRINTS_SCHEMA
+""" + _PLACE_SCORES_SCHEMA + _STAGE_FINGERPRINTS_SCHEMA + _ZONE_BOUNDARIES_SCHEMA
 
 
 class StoreVersionError(sqlite3.DatabaseError):
@@ -144,6 +164,9 @@ def _migrate(conn: sqlite3.Connection, current_version: int) -> None:
         elif current_version == 6:
             conn.executescript(_STAGE_FINGERPRINTS_SCHEMA)
             current_version = 7
+        elif current_version == 7:
+            conn.executescript(_ZONE_BOUNDARIES_SCHEMA)
+            current_version = 8
         else:
             raise StoreVersionError(
                 f"working-store schema version {current_version} "
@@ -152,6 +175,50 @@ def _migrate(conn: sqlite3.Connection, current_version: int) -> None:
         conn.execute(
             "UPDATE meta SET schema_version = ? WHERE id = 1",
             (current_version,),
+        )
+
+
+def replace_zone_boundaries(
+    conn: sqlite3.Connection,
+    *,
+    region: str,
+    rows: list[dict],
+) -> None:
+    with conn:
+        conn.execute("DELETE FROM zone_boundaries WHERE region = ?", (region,))
+        conn.executemany(
+            """
+            INSERT INTO zone_boundaries
+                (region, zone_id, osm_relation_id, admin_level, level_name, name,
+                 name_translations_json, wikidata, bbox_json, geometry_json, run_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    region,
+                    row["zone_id"],
+                    row["osm_relation_id"],
+                    row["admin_level"],
+                    row["level_name"],
+                    row["name"],
+                    json.dumps(
+                        row["name_translations"],
+                        sort_keys=True,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
+                    row.get("wikidata"),
+                    json.dumps(row["bbox"], separators=(",", ":")),
+                    json.dumps(
+                        row["geometry"],
+                        sort_keys=True,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
+                    row["run_id"],
+                )
+                for row in rows
+            ],
         )
 
 

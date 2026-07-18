@@ -415,7 +415,10 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
     assert captured["staging_root"] == snapshot_dir.parent
     assert captured["commit"] is False
     assert captured["extractor_options"] == {
-        "osm": {"index_type": "sparse_file_array,/tmp/osm.idx"}
+        "osm": {
+            "index_type": "sparse_file_array,/tmp/osm.idx",
+            "zone_levels": {2: "country", 4: "state"},
+        }
     }
     conn = store.connect(db)
     assert store.stage_completed(conn, "malaysia", "extract")

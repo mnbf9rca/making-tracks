@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.making-tracks.app/zone-catalog/1",
+  "title": "ZoneCatalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "min_reader_version", "region", "publish_version", "generated_at", "tile_z", "zones"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "min_reader_version": {"type": "integer", "minimum": 1, "maximum": 1},
+    "region": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 64},
+    "publish_version": {"type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z$"},
+    "generated_at": {"type": "string", "maxLength": 64, "pattern": "^[0-9TZ:._+-]+$"},
+    "tile_z": {"type": "integer", "const": 10},
+    "zones": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["zone_id", "parent", "admin_level", "level_name", "name", "name_translations", "bbox", "cell_set", "bytes_without_thumbs", "bytes_with_thumbs", "publish_version", "version"],
+        "properties": {
+          "zone_id": {"type": "string", "pattern": "^(osm_r[0-9]{1,18}|wd_q[0-9]{1,18})$", "maxLength": 64},
+          "parent": {
+            "oneOf": [
+              {"type": "null"},
+              {"type": "string", "pattern": "^(osm_r[0-9]{1,18}|wd_q[0-9]{1,18})$", "maxLength": 64}
+            ]
+          },
+          "admin_level": {"type": "integer", "minimum": 1, "maximum": 12},
+          "level_name": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"},
+          "name": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u200b\\u200c\\u200d\\u2028\\u2029\\u202a-\\u202e\\u2060\\u2066-\\u2069\\ufeff]*$"},
+          "name_translations": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {"pattern": "^[a-z]{2,3}$"},
+            "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u200b\\u200c\\u200d\\u2028\\u2029\\u202a-\\u202e\\u2060\\u2066-\\u2069\\ufeff]*$"}
+          },
+          "wikidata": {
+            "oneOf": [
+              {"type": "null"},
+              {"type": "string", "pattern": "^Q[0-9]{1,18}$", "maxLength": 24}
+            ]
+          },
+          "bbox": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "prefixItems": [
+              {"type": "number", "minimum": -180, "maximum": 180},
+              {"type": "number", "minimum": -90, "maximum": 90},
+              {"type": "number", "minimum": -180, "maximum": 180},
+              {"type": "number", "minimum": -90, "maximum": 90}
+            ]
+          },
+          "cell_set": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["encoding", "ranges", "cell_count"],
+            "properties": {
+              "encoding": {"type": "string", "const": "ranges"},
+              "ranges": {
+                "type": "array",
+                "maxItems": 4096,
+                "items": {
+                  "type": "array",
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "prefixItems": [
+                    {"type": "integer", "minimum": 0, "maximum": 1023},
+                    {"type": "integer", "minimum": 0, "maximum": 1023},
+                    {"type": "integer", "minimum": 0, "maximum": 1023}
+                  ]
+                }
+              },
+              "cell_count": {"type": "integer", "minimum": 1, "maximum": 1048576}
+            }
+          },
+          "bytes_without_thumbs": {"type": "integer", "minimum": 0, "maximum": 3221225472},
+          "bytes_with_thumbs": {"type": "integer", "minimum": 0, "maximum": 3221225472},
+          "publish_version": {"type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z$"},
+          "version": {"type": "integer", "minimum": 1}
+        }
+      }
+    }
+  }
+}

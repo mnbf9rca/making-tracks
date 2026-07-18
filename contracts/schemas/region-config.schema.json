@@ -60,6 +60,19 @@
         "max_titles": {"type": "integer", "minimum": 1, "maximum": 50000}
       }
     },
+    "zone_levels": {
+      "description": "Per-country OSM admin_level to zone-level map. This is the only human-authored zone hierarchy input.",
+      "type": "object",
+      "maxProperties": 12,
+      "propertyNames": {"pattern": "^(?:[1-9]|1[0-2])$"},
+      "additionalProperties": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"}
+    },
+    "zone_allowlist": {
+      "description": "Rob-gated production prune list. Empty or absent means emit only proposal artifacts, not shipped zones.",
+      "type": "array",
+      "maxItems": 4096,
+      "items": {"type": "string", "pattern": "^(osm_r[0-9]{1,18}|wd_q[0-9]{1,18})$", "maxLength": 64}
+    },
     "basemap": {
       "type": "object",
       "additionalProperties": false,

@@ -16,7 +16,7 @@ from mt_pipeline import config, progress, runtime_paths
 from mt_pipeline.reconcile.registry_file import LocalRegistryStore
 from mt_pipeline.score import score_stage
 
-from . import attribution, basemap, descriptions, images, manifest, r2, staging, tiles
+from . import attribution, basemap, descriptions, images, manifest, r2, staging, tiles, zone_catalog
 
 _PIPELINE_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _A1D_SOURCES = _PIPELINE_ROOT / "config" / "a1d_sources.json"
@@ -126,6 +126,7 @@ def run(
         registry_blob=registry_blob,
         place_images_by_id=place_images_by_id,
         source_description_rows=source_description_rows,
+        conn=conn,
     )
     target_results.append(parent_result)
 
@@ -305,6 +306,7 @@ def _publish_target(
     place_images_by_id: dict[str, images.PlaceImage],
     source_description_rows: list[dict[str, Any]],
     subregion: config.SubregionConfig | None = None,
+    conn=None,
 ) -> PublishedTargetResult:
     work_root = pathlib.Path(staging_root) / ".work" / target_region / publish_version
     work_root.mkdir(parents=True, exist_ok=True)
@@ -359,6 +361,23 @@ def _publish_target(
         manifest_obj=manifest_obj,
         basemap_path=basemap_path,
     )
+    if conn is not None and subregion is None and region_config.zone_levels:
+        proposal_catalog, pruned_catalog = zone_catalog.materialize_catalogs(
+            conn,
+            region_config,
+            publish_version=publish_version,
+            generated_at=generated_at,
+            cell_sizes=_zone_cell_sizes(
+                tile_arts,
+                description_index_arts,
+                image_index_arts,
+            ),
+        )
+        staging.write_zone_catalogs(
+            staging_dir,
+            proposal_obj=proposal_catalog,
+            pruned_obj=pruned_catalog if region_config.zone_allowlist else None,
+        )
     publish_result = r2.publish_to_r2(
         staging_dir,
         layout,
@@ -375,6 +394,38 @@ def _publish_target(
         description_index_dropped=description_result.dropped_count,
         thumb_bytes=sum(art.byte_len for art in thumb_arts),
     )
+
+
+def _zone_cell_sizes(
+    tile_arts,
+    description_index_arts,
+    image_index_arts,
+) -> dict[tuple[int, int], zone_catalog.CellSize]:
+    without: dict[tuple[int, int], int] = {}
+    with_thumbs: dict[tuple[int, int], int] = {}
+    for art in tile_arts:
+        key = (int(art.x), int(art.y))
+        without[key] = without.get(key, 0) + int(art.byte_len)
+        with_thumbs[key] = with_thumbs.get(key, 0) + int(art.byte_len)
+    for art in description_index_arts:
+        key = (int(art.x), int(art.y))
+        without[key] = without.get(key, 0) + int(art.byte_len)
+        with_thumbs[key] = with_thumbs.get(key, 0) + int(art.byte_len)
+    for art in image_index_arts:
+        key = (int(art.x), int(art.y))
+        with_thumbs[key] = with_thumbs.get(key, 0) + int(art.byte_len)
+        seen_thumb_shas: set[str] = set()
+        for place in json.loads(art.json_bytes).get("places", []):
+            if isinstance(place, dict) and place.get("thumb_sha256") not in seen_thumb_shas:
+                seen_thumb_shas.add(str(place.get("thumb_sha256")))
+                with_thumbs[key] += int(place.get("bytes", 0))
+    return {
+        key: zone_catalog.CellSize(
+            bytes_without_thumbs=without.get(key, 0),
+            bytes_with_thumbs=with_thumbs.get(key, without.get(key, 0)),
+        )
+        for key in sorted(set(without) | set(with_thumbs))
+    }
 
 
 def _region_doc(

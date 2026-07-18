@@ -16,6 +16,11 @@
     "enabled": true,
     "months": 12
   },
+  "zone_levels": {
+    "2": "country",
+    "4": "state"
+  },
+  "zone_allowlist": [],
   "basemap": {
     "source_pmtiles": "https://build.protomaps.com/20260714.pmtiles",
     "maxzoom": 14,
