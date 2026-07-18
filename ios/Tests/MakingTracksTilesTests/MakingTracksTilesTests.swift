@@ -1296,6 +1296,123 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(try store.installedPublishes(intersecting: londonEastViewport).map(\.region), ["uk_london"])
     }
 
+    func testOfflineStoreSummarizesInstalledPackSizesWithDeduplicatedTotal() throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let ukTile = try gzipJSON(tileObject(places: [validPlace()], x: 511, y: 340))
+        let londonTile = try gzipJSON(tileObject(places: [validPlace()], x: 512, y: 340))
+        let sharedBasemap = Data("shared-basemap".utf8)
+
+        try store.install(
+            publish: cachedPublish(
+                "20260716T155409Z",
+                region: "uk",
+                tileX: 511,
+                tileY: 340,
+                tileSHA: sha256(ukTile),
+                tileBytes: ukTile.count,
+                basemapSHA: sha256(sharedBasemap),
+                basemapBytes: sharedBasemap.count,
+                attributionSources: []
+            ),
+            tiles: [TileCoordinate(z: 10, x: 511, y: 340): ukTile],
+            basemap: sharedBasemap
+        )
+        try store.install(
+            publish: cachedPublish(
+                "20260716T155409Z",
+                region: "uk_london",
+                tileX: 512,
+                tileY: 340,
+                tileSHA: sha256(londonTile),
+                tileBytes: londonTile.count,
+                basemapSHA: sha256(sharedBasemap),
+                basemapBytes: sharedBasemap.count,
+                basemapBBox: [-0.2, 51.45, 0.1, 51.6],
+                attributionSources: []
+            ),
+            tiles: [TileCoordinate(z: 10, x: 512, y: 340): londonTile],
+            basemap: nil
+        )
+
+        let summary = try store.installedPackStorageSummary()
+
+        XCTAssertEqual(summary.packs.map(\.region), ["uk", "uk_london"])
+        XCTAssertEqual(summary.packs.map(\.publishVersion), ["20260716T155409Z", "20260716T155409Z"])
+        XCTAssertEqual(summary.packs.map(\.tileCount), [1, 1])
+        XCTAssertEqual(summary.packs.map(\.tileBytes), [ukTile.count, londonTile.count])
+        XCTAssertEqual(summary.packs.map(\.basemapBytes), [sharedBasemap.count, sharedBasemap.count])
+        XCTAssertEqual(summary.packs.map(\.referencedBytes), [
+            ukTile.count + sharedBasemap.count,
+            londonTile.count + sharedBasemap.count,
+        ])
+        XCTAssertEqual(summary.failedRegions, [])
+        XCTAssertEqual(summary.totalBytes, ukTile.count + londonTile.count + sharedBasemap.count)
+    }
+
+    func testOfflineStoreFlagsCorruptStorageRegionAndReportsOtherPacks() throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let ukTile = try gzipJSON(tileObject(places: [validPlace()], x: 511, y: 340))
+        let londonTile = try gzipJSON(tileObject(places: [validPlace()], x: 512, y: 340))
+        let sharedBasemap = Data("shared-basemap".utf8)
+
+        try store.install(
+            publish: cachedPublish(
+                "20260716T155409Z",
+                region: "uk",
+                tileX: 511,
+                tileY: 340,
+                tileSHA: sha256(ukTile),
+                tileBytes: ukTile.count,
+                basemapSHA: sha256(sharedBasemap),
+                basemapBytes: sharedBasemap.count,
+                attributionSources: []
+            ),
+            tiles: [TileCoordinate(z: 10, x: 511, y: 340): ukTile],
+            basemap: sharedBasemap
+        )
+        try store.install(
+            publish: cachedPublish(
+                "20260716T155409Z",
+                region: "uk_london",
+                tileX: 512,
+                tileY: 340,
+                tileSHA: sha256(londonTile),
+                tileBytes: londonTile.count,
+                basemapSHA: sha256(sharedBasemap),
+                basemapBytes: sharedBasemap.count,
+                basemapBBox: [-0.2, 51.45, 0.1, 51.6],
+                attributionSources: []
+            ),
+            tiles: [TileCoordinate(z: 10, x: 512, y: 340): londonTile],
+            basemap: nil
+        )
+        try Data("truncated".utf8).write(to: offlineTileObjectURL(root: root, sha: sha256(londonTile)))
+
+        let summary = try store.installedPackStorageSummary()
+
+        XCTAssertEqual(summary.packs.map(\.region), ["uk"])
+        XCTAssertEqual(summary.failedRegions, ["uk_london"])
+        XCTAssertEqual(summary.totalBytes, ukTile.count + sharedBasemap.count)
+    }
+
+    func testOfflineStoreBoundsInstalledPackStorageSummaryByDirectoryCount() throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        for index in 0...OfflineRegionStore.maxInstalledPackCount {
+            let id = "r\(index)"
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent("regions/\(id)", isDirectory: true),
+                withIntermediateDirectories: true
+            )
+        }
+
+        XCTAssertThrowsError(try store.installedPackStorageSummary()) { error in
+            XCTAssertEqual(error as? TileError, .invalidOfflinePack)
+        }
+    }
+
     func testOfflineStoreQuarantinesCorruptSiblingPackDuringInstalledTileResolution() throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)

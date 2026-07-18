@@ -112,6 +112,35 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(progress.percentComplete, 25)
     }
 
+    func testStorageMenuStatusUsesStableRowsAndByteFormatting() {
+        let status = StorageMenuStatus.ready(
+            totalBytes: 2_097_152,
+            regions: [
+                StorageMenuRegion(region: "uk_london", publishVersion: "20260716T155409Z", bytes: 1_572_864, tileCount: 12),
+                StorageMenuRegion(region: "uk", publishVersion: "20260716T155409Z", bytes: 524_288, tileCount: 4),
+            ]
+        )
+
+        XCTAssertEqual(status.totalBytesText, "2.1 MB")
+        XCTAssertEqual(status.regions.map(\.region), ["uk", "uk_london"])
+        XCTAssertEqual(status.regions.map(\.title), ["uk", "uk_london"])
+        XCTAssertEqual(status.regions.map(\.detail), [
+            "20260716T155409Z · 4 tiles",
+            "20260716T155409Z · 12 tiles",
+        ])
+        XCTAssertEqual(status.regions.map(\.bytesText), ["524 KB", "1.6 MB"])
+        XCTAssertEqual(status.failedRegions, [])
+    }
+
+    func testStorageMenuStatusTreatsEmptyStoreAsReady() {
+        let status = StorageMenuStatus.ready(from: OfflinePackStorageSummary(packs: [], failedRegions: [], totalBytes: 0))
+
+        XCTAssertEqual(status.kind, .ready)
+        XCTAssertEqual(status.totalBytesText, "Zero KB")
+        XCTAssertEqual(status.regions, [])
+        XCTAssertEqual(status.failedRegions, [])
+    }
+
     @MainActor
     func testCoordinatorGeneratesThemeSpecificStyleJSON() throws {
         let coordinator = makeCoordinator()

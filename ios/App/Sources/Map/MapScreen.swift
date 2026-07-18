@@ -140,6 +140,7 @@ struct MapScreen: View {
     @State private var liveOfflineDownloadProgress: OfflineDownloadProgress?
     @State private var liveOfflineDownloadProgressID: UUID?
     @State private var appShell = AppShellModel()
+    @State private var storageMenuStatus = StorageMenuStatus.loading
     @State private var cardPresentation = PlaceCardPresentation()
     @State private var showLayers = false
     @State private var layerVisibility = MapLayerVisibility()
@@ -390,6 +391,7 @@ struct MapScreen: View {
                 attribution: attribution,
                 selectedThemeID: $selectedThemeID,
                 locationStatus: locationMenuStatus,
+                storageStatus: storageMenuStatus,
                 openLocationSettings: openLocationSettings,
                 replayOnboarding: onReplayOnboarding
             )
@@ -421,9 +423,14 @@ struct MapScreen: View {
         }
         .task {
             await start()
+            Task { await refreshStorageMenuStatus() }
             if let model {
                 await observeChanges(from: model)
             }
+        }
+        .onChange(of: appShell.isMenuPresented) { _, isPresented in
+            guard isPresented else { return }
+            Task { await refreshStorageMenuStatus() }
         }
         .onChange(of: layerVisibility) { _, visibility in
             Task { @MainActor in
@@ -678,6 +685,15 @@ struct MapScreen: View {
             label: locationPermission.isLocationOff ? "Location off" : "Location available",
             canOpenSettings: locationPermission.isLocationOff
         )
+    }
+
+    private func refreshStorageMenuStatus() async {
+        guard let model else {
+            storageMenuStatus = .unavailable
+            return
+        }
+        storageMenuStatus = .loading
+        storageMenuStatus = await model.storageMenuStatus()
     }
 
     private var layersButton: some View {
@@ -1101,11 +1117,75 @@ private struct LocationMenuStatus: Sendable {
     let canOpenSettings: Bool
 }
 
+struct StorageMenuRegion: Identifiable, Equatable, Sendable {
+    let region: String
+    let publishVersion: String
+    let bytes: Int
+    let tileCount: Int
+
+    var id: String { region }
+    var title: String { region }
+    var bytesText: String { StorageMenuStatus.formatBytes(bytes) }
+
+    var detail: String {
+        "\(publishVersion) · \(tileCount) \(tileCount == 1 ? "tile" : "tiles")"
+    }
+}
+
+struct StorageMenuStatus: Equatable, Sendable {
+    enum Kind: Equatable, Sendable {
+        case loading
+        case unavailable
+        case ready
+    }
+
+    let kind: Kind
+    let totalBytes: Int
+    let regions: [StorageMenuRegion]
+    let failedRegions: [String]
+
+    static let loading = StorageMenuStatus(kind: .loading, totalBytes: 0, regions: [], failedRegions: [])
+    static let unavailable = StorageMenuStatus(kind: .unavailable, totalBytes: 0, regions: [], failedRegions: [])
+
+    static func ready(totalBytes: Int, regions: [StorageMenuRegion], failedRegions: [String] = []) -> StorageMenuStatus {
+        StorageMenuStatus(
+            kind: .ready,
+            totalBytes: max(totalBytes, 0),
+            regions: regions.sorted { $0.region < $1.region },
+            failedRegions: failedRegions.sorted()
+        )
+    }
+
+    static func ready(from summary: OfflinePackStorageSummary) -> StorageMenuStatus {
+        ready(
+            totalBytes: summary.totalBytes,
+            regions: summary.packs.map {
+                StorageMenuRegion(
+                    region: $0.region,
+                    publishVersion: $0.publishVersion,
+                    bytes: $0.referencedBytes,
+                    tileCount: $0.tileCount
+                )
+            },
+            failedRegions: summary.failedRegions
+        )
+    }
+
+    var totalBytesText: String {
+        Self.formatBytes(totalBytes)
+    }
+
+    static func formatBytes(_ bytes: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(max(bytes, 0)), countStyle: .file)
+    }
+}
+
 private struct AppMenuSheet: View {
     @Bindable var shell: AppShellModel
     let attribution: [Attribution]
     @Binding var selectedThemeID: String
     let locationStatus: LocationMenuStatus
+    let storageStatus: StorageMenuStatus
     let openLocationSettings: () -> Void
     let replayOnboarding: @MainActor () -> Void
 
@@ -1143,6 +1223,7 @@ private struct AppMenuSheet: View {
             destinationWithDone(SettingsView(
                 selectedThemeID: $selectedThemeID,
                 locationStatus: locationStatus,
+                storageStatus: storageStatus,
                 openLocationSettings: openLocationSettings,
                 replayOnboarding: replayOnboardingAndDismiss
             ))
@@ -1253,6 +1334,7 @@ private struct OfflineMapsPlaceholderView: View {
 private struct SettingsView: View {
     @Binding var selectedThemeID: String
     let locationStatus: LocationMenuStatus
+    let storageStatus: StorageMenuStatus
     let openLocationSettings: () -> Void
     let replayOnboarding: @MainActor () -> Void
 
@@ -1296,9 +1378,50 @@ private struct SettingsView: View {
             }
 
             Section("Storage") {
-                Label("Storage details coming soon", systemImage: "internaldrive")
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("settings.storage.stub")
+                switch storageStatus.kind {
+                case .loading:
+                    Label("Checking installed maps", systemImage: "internaldrive")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("settings.storage.loading")
+                case .unavailable:
+                    Label("Storage unavailable", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("settings.storage.unavailable")
+                case .ready:
+                    LabeledContent("Installed maps", value: storageStatus.totalBytesText)
+                        .accessibilityIdentifier("settings.storage.total")
+                    if storageStatus.regions.isEmpty {
+                        Label("No offline regions installed", systemImage: "internaldrive")
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("settings.storage.empty")
+                    } else {
+                        ForEach(storageStatus.regions) { region in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(region.title)
+                                    Spacer()
+                                    Text(region.bytesText)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Text(region.detail)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("settings.storage.region.\(region.region)")
+                        }
+                    }
+                    ForEach(storageStatus.failedRegions, id: \.self) { region in
+                        HStack {
+                            Text(region)
+                            Spacer()
+                            Text("Unavailable")
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("settings.storage.failed-region.\(region)")
+                    }
+                }
             }
 
             Section("Onboarding") {
@@ -2042,6 +2165,17 @@ private final class MapScreenModel {
     func refreshManifest() async {
         guard let client = tileClient(for: selectedRegion) else { return }
         try? await client.refreshPin()
+    }
+
+    func storageMenuStatus() async -> StorageMenuStatus {
+        guard let offlineStore else { return .unavailable }
+        return await Task.detached {
+            do {
+                return .ready(from: try offlineStore.installedPackStorageSummary())
+            } catch {
+                return .unavailable
+            }
+        }.value
     }
 
     func features(in bbox: BBox, zoom: Int) async -> [(MapPlace, PinState)] {
