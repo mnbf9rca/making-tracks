@@ -45,6 +45,8 @@ iOS branch: app work (anything under `ios/`) branches from a freshly-fetched `io
 
 Ground in the current tree: branch from a freshly-fetched `develop`, and re-ground a long-lived doc — its `file:line` citations and its "not built yet" claims — against `develop` before the PR; with several agents merging, the tree moves under you. Where a brief and the code disagree, the code is authoritative — reconcile or flag it, never design around the discrepancy. Run any merge, push, or resolve as its own step *after* reading the gate or CI result — never chain an irreversible action past a check in a single command.
 
+Plan-language law (design docs): **a design doc contains NO unowned deferrals.** "Plan to fix X", "to be addressed later", "TODO", and any bare gesture at future work are banned — they hide dependencies and let designed-but-unbuilt behavior read as current. Every deferred item must be exactly one of: (a) a **scoped fix in this doc**; (b) a **named WP row** in the decomposition with an owner and its dependency; or (c) an **explicit Open Flag addressed to Rob**. Likewise, never state target/aspirational behavior in the present tense — mark it *target* with its owning WP, and mark what exists today against the tree. (Tonight's reviews repeatedly caught unbuilt behavior stated as current and vague deferrals hiding real dependencies; this law is the standing fix.)
+
 Blocked ≠ done reporting: a `gh`/connector 403 in an agent harness is a sandbox denial, not expired auth. Escalate the exact command in your harness or relay the exact operation (base/head/title/labels) to fable as an action request; never report blocked and wait. Relays confirm back: whoever unblocks an agent (PR opened for it, command run) confirms on the agent's thread — an agent that does not know it has been unblocked is still effectively blocked.
 
 Issue-closing discipline: GitHub's `closes #N` keywords only fire on merges to the DEFAULT branch (`main`) — our PRs merge to `develop`, so they never auto-close anything. When a WP's implementation PR merges, the merger closes the issue explicitly (`gh issue close N --comment ...`) and ticks the tracker (#25) checkbox; never report an issue as closed without verifying its actual state (`gh issue view N`).
@@ -53,7 +55,7 @@ Worktree discipline: **one git worktree per agent, always.** Never work in the r
 
 ## iOS Simulator runbook (agents)
 
-Host-only package tests do not use the simulator. For `/ios` Swift package work that is covered by host tests, run `cd ios && swift test` on the macOS host. These tests never touch CoreSimulator and must not take the simulator lock.
+Host-only package tests do not use the simulator. For `/ios` Swift package work that is covered by host tests, run `cd ios && swift test` on the macOS host. These tests never touch CoreSimulator and must not take the fleet lock.
 
 Simulator-backed `xcodebuild` runs are shared-machine resources and must use one designated simulator plus a file lock. The designated simulator is:
 
@@ -63,12 +65,12 @@ Simulator-backed `xcodebuild` runs are shared-machine resources and must use one
 - UDID: `C4A64D49-24A2-4429-B6E2-AD9A14142A99`
 - Creation command: `xcrun simctl create agent-ios-tests "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-26-2`
 
-Every simulator test run must hold `flock` on `/tmp/agent-ios-sim.lock` around the whole boot-and-test sequence. If `flock` is not available in `PATH`, stop and install/provide it; do not run simulator tests unlocked. As of 2026-07-16, this host does not expose `flock` in the default agent `PATH`, so `[XCODE/SIM]` work must provision it first. Two runs against one simulator collide in `testmanagerd` and app install state. Boot with `xcrun simctl bootstatus "$UDID" -b`; this is idempotent and blocking. Do not use `simctl boot` in agent scripts.
+Every `xcodebuild` invocation — **build OR test** — must hold `flock` on `/private/tmp/making-tracks-ios-tests.lock` around the whole boot-and-run sequence. This is **one fleet-wide lock**: it serializes all simulator-backed work across every agent (a Release-configuration build contends for the same simulator/`testmanagerd`/derived-data state as a test run, so builds take the lock too — not just tests). `swift test` (host package tests, no simulator) does not take it. If `flock` is not available in `PATH`, stop and install/provide it; do not run simulator-backed work unlocked. As of 2026-07-16, this host does not expose `flock` in the default agent `PATH`, so `[XCODE/SIM]` work must provision it first. Two runs against one simulator collide in `testmanagerd` and app install state. Boot with `xcrun simctl bootstatus "$UDID" -b`; this is idempotent and blocking. Do not use `simctl boot` in agent scripts.
 
 Use exactly one destination, by UDID, and disable parallel/concurrent destination testing:
 
 ```bash
-flock /tmp/agent-ios-sim.lock sh -ec '
+flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
   UDID=C4A64D49-24A2-4429-B6E2-AD9A14142A99
   xcrun simctl bootstatus "$UDID" -b
   xcodebuild \
@@ -108,10 +110,10 @@ Parallel testing and multi-destination runs are the normal paths that spawn simu
 xcrun simctl --set testing list
 ```
 
-Weekly simulator cleanup for agents also takes the simulator lock, so cleanup cannot race an active simulator test:
+Weekly simulator cleanup for agents also takes the fleet lock, so cleanup cannot race an active simulator run:
 
 ```bash
-flock /tmp/agent-ios-sim.lock sh -ec '
+flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
   xcrun simctl --set testing delete all
   xcrun simctl delete unavailable
   find ~/Library/Developer/Xcode/DerivedData -mindepth 1 -maxdepth 1 -type d -mtime +14 \
@@ -121,6 +123,22 @@ flock /tmp/agent-ios-sim.lock sh -ec '
 ```
 
 Never put `simctl delete all` or `simctl shutdown all` in shared scripts. Those commands destroy or disrupt other agents' and Rob's simulators. One simulator plus `flock` is the policy; add a simulator pool only if lock waits become a measured bottleneck.
+
+## Finishing a branch (the pre-PR checklist)
+
+Before opening any PR, run this ordered sequence verbatim. It consolidates the laws detailed elsewhere in this file; follow it top to bottom, and do each irreversible step (push, PR, merge) as its own action after reading the prior check's result.
+
+1. **Re-ground on a fresh target.** `git fetch origin <target>` (`<target>` = `develop`, or `ios` for app work), then verify you are not on a stale base: `git merge-base --is-ancestor origin/<target> HEAD` must succeed. If it fails, the target moved under you — merge/rebase the fresh target in as its own step and re-run your gates. Re-ground any long-lived doc's `file:line` and "not built yet" claims against the fresh tree.
+2. **Adversarial gate** (Review gates §1). Run the critic pass; cross-examine findings; fix survivors. For every fix, prove **teeth** — neutering the fix turns a test red. Record the accounting (**raised / survived / fixed**) for the PR description.
+3. **Full test gate under THE fleet lock** (iOS Simulator runbook). Serialize the whole suite under `flock /private/tmp/making-tracks-ios-tests.lock`; capture the actual pass/fail **counts** (not adjectives).
+4. **Release-configuration build** for iOS app-target work (Review gates §3, #192), also under the fleet lock — Debug + `swift test` do not exercise Release.
+5. **Zero-warning build.** Warnings-as-errors applies; a clean build introduces **no new warnings** (they fail Release, and a warning is a defect that hasn't been triggered yet).
+6. **Stale-base diff review.** `git diff --stat origin/<target>..HEAD` (two-dot) shows **only your additions** — if it lists deletions or edits to other agents' merged work, your base is stale and you are about to clobber it; stop and re-ground (step 1).
+7. **Artifact cleanup** (Disk hygiene). Delete `.xcresult` bundles after extracting counts; one reusable derived-data dir. Leave no litter on the shared disk.
+8. **Push BEFORE requesting review.** An unpushed branch is invisible and unmergeable; a review request against unpushed work is a no-op. Push, confirm the remote branch exists, then proceed.
+9. **Open the PR** into `<target>` with the labels applied immediately: `sourcery-review` (always) + the **track** label + the **wp** label, and **cross-link the issue(s)** the PR delivers in the body.
+10. **Process every review comment** via `pr-tools:process-review` (Review gates §4). Nothing merges with an unresolved thread, and the automated review's absence is not cleanliness — wait for it to post.
+11. **After merge, the MERGER (fable) closes delivered issues explicitly** and ticks the #25 tracker — `closes #N` never auto-fires off `develop`/`ios` (only merges to the default branch `main` trigger it; the line-50 issue-closing rule). Never report an issue closed without `gh issue view N`.
 
 ## Review gates (mandatory before declaring anything complete)
 
