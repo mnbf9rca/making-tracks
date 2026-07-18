@@ -404,6 +404,42 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["menu.done"].tap()
     }
 
+    func testMapHomeChromeHitTargetsAndThemeScreenshots() {
+        let app = launch(reset: true, resetTheme: true, forceDarkAppearance: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapTheme("defined-paper", in: app))
+
+        let menuButton = app.buttons["map.menu"]
+        let layersButton = app.buttons["map.layers"]
+        XCTAssertTrue(menuButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(layersButton.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(menuButton.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(menuButton.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(layersButton.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(layersButton.frame.height, 44)
+        attachScreenshot(named: "map-home-chrome-defined-paper")
+
+        for themeID in ["snow", "street-contrast", "verdant-kl"] {
+            selectMapTheme(themeID, in: app)
+            attachScreenshot(named: "map-home-chrome-\(themeID)")
+        }
+
+        openLayers(in: app)
+        let historicBuildings = app.switches["map.layers.category.historic_building"]
+        XCTAssertTrue(historicBuildings.waitForExistence(timeout: 5))
+        tapSwitch(historicBuildings, expectedValue: "0")
+        app.buttons["map.layers.done"].tap()
+        XCTAssertEqual(layersButton.value as? String, "Custom")
+
+        selectMapTheme("snow", in: app)
+
+        XCTAssertTrue(map.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForMapTheme("snow", in: app))
+        attachScreenshot(named: "map-home-chrome-snow-filtered")
+    }
+
     func testPlaceCardStacksActionsAtAccessibilityTextSize() {
         let app = launch(reset: true, accessibilityTextSize: true)
 
@@ -509,7 +545,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         offlineProgress: Double? = nil,
         resetTheme: Bool = false,
         pinDiagnostics: Bool = false,
-        resetOnboarding: Bool = false
+        resetOnboarding: Bool = false,
+        forceDarkAppearance: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
@@ -540,6 +577,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             app.launchArguments.append("-UIPreferredContentSizeCategoryName")
             app.launchArguments.append("UICTContentSizeCategoryAccessibilityXXXL")
         }
+        if forceDarkAppearance {
+            app.launchArguments.append("-AppleInterfaceStyle")
+            app.launchArguments.append("Dark")
+        }
         if seedUserList {
             app.launchArguments.append("--ui-testing-seed-user-list")
         }
@@ -557,6 +598,32 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         app.launch()
         return app
+    }
+
+    private func selectMapTheme(_ themeID: String, in app: XCUIApplication) {
+        openAppMenu(in: app)
+        app.buttons["menu.row.settings"].tap()
+        XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
+        let themeButton = app.buttons["settings.theme.\(themeID)"]
+        XCTAssertTrue(themeButton.waitForExistence(timeout: 5))
+        themeButton.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        XCTAssertEqual(themeButton.value as? String, "Selected")
+        app.buttons["menu.done"].tap()
+        XCTAssertTrue(waitForNonExistence(of: app.staticTexts["Settings"], timeout: 5))
+        XCTAssertTrue(waitForMapTheme(themeID, in: app))
+    }
+
+    private func waitForMapTheme(_ themeID: String, in app: XCUIApplication) -> Bool {
+        let loadedTheme = app.staticTexts["map.loaded-theme"]
+        let predicate = NSPredicate(format: "exists == true AND label == %@", "Loaded theme: \(themeID)")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: loadedTheme)
+        let result = XCTWaiter.wait(for: [expectation], timeout: 10)
+        if result != .completed {
+            XCTFail("Expected loaded theme \(themeID), got \(loadedTheme.exists ? loadedTheme.label : "missing loaded theme")")
+            return false
+        }
+        let loading = app.otherElements["map.loading"]
+        return !loading.exists || loading.waitForNonExistence(timeout: 10)
     }
 
     private func completeOnboardingSelectingUK(in app: XCUIApplication) {
@@ -823,6 +890,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "card-open": "attribution-card-sheet",
         "nearby-prompt": "nearby-prompt",
         "locate-me-chrome": "locate-me-chrome",
+        "map-home-chrome-defined-paper": "map-home-chrome-defined-paper",
+        "map-home-chrome-snow": "map-home-chrome-snow",
+        "map-home-chrome-street-contrast": "map-home-chrome-street-contrast",
+        "map-home-chrome-verdant-kl": "map-home-chrome-verdant-kl",
+        "map-home-chrome-snow-filtered": "map-home-chrome-snow-filtered",
         "map-location-off": "denied-settings",
         "place-card-a11y": "place-card-a11y",
         "credits-a11y": "credits-a11y",

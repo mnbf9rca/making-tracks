@@ -5,6 +5,15 @@ import MakingTracksTiles
 @testable import MakingTracks
 
 final class AppShellTests: XCTestCase {
+    func testMapHomeChromeUsesFilterGlyphAndChiplessMenuSpec() {
+        XCTAssertEqual(MapHomeChromeSpec.layersSymbolName(isActive: false), "line.3.horizontal.decrease.circle")
+        XCTAssertEqual(MapHomeChromeSpec.layersSymbolName(isActive: true), "line.3.horizontal.decrease.circle.fill")
+        XCTAssertEqual(MapHomeChromeSpec.menuSymbolName, "line.3.horizontal")
+        XCTAssertGreaterThanOrEqual(MapHomeChromeSpec.menuGlyphPointSize, 28)
+        XCTAssertGreaterThanOrEqual(MapHomeChromeSpec.hitTargetSide, 44)
+        XCTAssertGreaterThan(MapHomeChromeSpec.glyphHaloRadius, 0)
+    }
+
     func testAppShellModelSeparatesMenuPresentationFromDeepLinkRouting() {
         let shell = AppShellModel()
 
@@ -735,7 +744,7 @@ final class AppShellTests: XCTestCase {
             onUserPanned: {},
             onTapPlace: { _ in },
             onTapEmpty: {},
-            onMapReady: {},
+            onMapReady: { _ in },
             onFeaturesApplied: {},
             onStyleWillReload: {},
             onMapLoadFailed: {}
