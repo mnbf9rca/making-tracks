@@ -35,23 +35,36 @@ struct MakingTracksApp: App {
 #endif
 
     init() {
+        let fixture = Self.isFixtureMap
+        MakingTracksLog.startup.info("app init started fixture=\(fixture, privacy: .public)")
         Self.resetUITestingThemeIfNeeded()
         Self.resetUITestingOnboardingIfNeeded()
         Self.completeUITestingOnboardingIfNeeded()
+        MakingTracksLog.startup.info("app init finished fixture=\(fixture, privacy: .public)")
     }
 
     private let database: AppDatabase = {
-        try! resetUITestingDatabaseIfNeeded()
-        if isFixtureMap {
-            let database = try! AppDatabase.uiTesting()
+        let fixture = isFixtureMap
+        MakingTracksLog.startup.info("store init started fixture=\(fixture, privacy: .public)")
+        do {
+            try resetUITestingDatabaseIfNeeded()
+            if isFixtureMap {
+                let database = try AppDatabase.uiTesting()
 #if DEBUG
-            if seedFixtureUserList {
-                try! database.seedUITestingUserList(named: "Date night", containingPlaceID: Self.primaryFixturePlaceID)
-            }
+                if seedFixtureUserList {
+                    try database.seedUITestingUserList(named: "Date night", containingPlaceID: Self.primaryFixturePlaceID)
+                }
 #endif
+                MakingTracksLog.startup.info("store init finished fixture=true")
+                return database
+            }
+            let database = try AppDatabase.live()
+            MakingTracksLog.startup.info("store init finished fixture=false")
             return database
+        } catch {
+            MakingTracksLog.startup.error("store init failed fixture=\(fixture, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            fatalError("Making Tracks database unavailable")
         }
-        return try! AppDatabase.live()
     }()
 
     private let locationManager: AppLocationManager = {
@@ -140,6 +153,7 @@ final class MakingTracksAppDelegate: NSObject, UIApplicationDelegate {
         handleEventsForBackgroundURLSession identifier: String,
         completionHandler: @escaping () -> Void
     ) {
+        MakingTracksLog.downloads.info("app background events received identifier=\(identifier, privacy: .private(mask: .hash))")
         OfflineDownloadSession.handleEvents(for: identifier, completionHandler: completionHandler)
     }
 }
