@@ -115,6 +115,108 @@ struct OfflineDownloadProgress: Sendable {
     }
 }
 
+struct MapBlockingSurface: Equatable {
+    let title: String
+    let message: String
+    let primaryActionTitle: String
+    let appStoreURL: URL
+
+    static func resolve(loadState: TileLoadState) -> MapBlockingSurface? {
+        guard loadState == .updateRequired else { return nil }
+        return MapBlockingSurface(
+            title: "Update required",
+            message: "This version is too old to read the latest map. Please update Making Tracks in the App Store.",
+            primaryActionTitle: "Open App Store",
+            appStoreURL: URL(string: "https://apps.apple.com/search?term=Making%20Tracks")!
+        )
+    }
+}
+
+enum MapEmptyRegionSurface: Equatable {
+    case unsupportedRegion
+    case mapDataUnavailable
+    case noPlaces
+
+    static func resolve(
+        features: [(MapPlace, PinState)],
+        loadState: TileLoadState,
+        viewport: ViewportSeed,
+        isFixtureMap: Bool,
+        isViewportLoading: Bool = false
+    ) -> MapEmptyRegionSurface? {
+        guard !isFixtureMap, !isViewportLoading, features.isEmpty else { return nil }
+        if MapRegion.supportedRegion(for: viewport.bbox) == nil {
+            return .unsupportedRegion
+        }
+        switch loadState {
+        case .unavailable:
+            return .mapDataUnavailable
+        case .ok, .stale, .updateAvailable, .offline:
+            return .noPlaces
+        case .updateRequired, .manifestInvalid:
+            return nil
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .unsupportedRegion:
+            return "No map for your area yet"
+        case .mapDataUnavailable:
+            return "Map data unavailable"
+        case .noPlaces:
+            return "No places here yet"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .unsupportedRegion:
+            return "Making Tracks v1 covers the UK and Malaysia."
+        case .mapDataUnavailable:
+            return "The world map is still available. Check your connection or download a region for offline browsing."
+        case .noPlaces:
+            return "Try another part of the UK or Malaysia."
+        }
+    }
+
+    var primaryActionTitle: String? {
+        switch self {
+        case .mapDataUnavailable:
+            return "Offline maps"
+        case .unsupportedRegion, .noPlaces:
+            return nil
+        }
+    }
+}
+
+extension AppShellModel {
+    func openOfflineMapsDeepLink() {
+        deepLinkPath = .offlineMaps
+        isMenuPresented = true
+    }
+}
+
+struct ViewportRefreshTracker: Equatable {
+    private(set) var latestRequestID = 0
+    private(set) var inFlightRequestID: Int?
+
+    var isLoading: Bool {
+        inFlightRequestID != nil
+    }
+
+    mutating func nextRequestID() -> Int {
+        latestRequestID += 1
+        inFlightRequestID = latestRequestID
+        return latestRequestID
+    }
+
+    mutating func complete(requestID: Int) {
+        guard requestID == latestRequestID else { return }
+        inFlightRequestID = nil
+    }
+}
+
 struct MapScreen: View {
     static let themeStorageKey = "map.theme.id"
 
@@ -150,7 +252,7 @@ struct MapScreen: View {
     @State private var didMapLoadFail = false
     @State private var mapLoadAttemptID = 0
     @State private var hasLoadedFixtureFeatures = false
-    @State private var viewportRequestID = 0
+    @State private var viewportRefreshTracker = ViewportRefreshTracker()
     @State private var stateEpoch = 0
     @State private var currentViewport: ViewportSeed?
     @State private var fixtureVisitCount = 0
@@ -324,6 +426,17 @@ struct MapScreen: View {
                     .transition(.opacity)
                 }
             }
+            .overlay {
+                if let surface = emptyRegionSurface, isMapReady, !didMapLoadFail, !isMapLoading, !isViewportLoading {
+                    MapEmptyRegionSurfaceView(surface: surface) {
+                        appShell.openOfflineMapsDeepLink()
+                    }
+                    .allowsHitTesting(surface.primaryActionTitle != nil)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 32)
+                    .transition(.opacity)
+                }
+            }
             .animation(.easeInOut(duration: 0.2), value: isMapLoading)
             .animation(.easeInOut(duration: 0.2), value: didMapLoadFail)
 #if DEBUG
@@ -395,6 +508,12 @@ struct MapScreen: View {
                 openLocationSettings: openLocationSettings,
                 replayOnboarding: onReplayOnboarding
             )
+        }
+        .fullScreenCover(isPresented: updateRequiredPresentationBinding) {
+            if let surface = updateRequiredSurface {
+                UpdateRequiredBlockingView(surface: surface)
+                    .interactiveDismissDisabled(true)
+            }
         }
         .onChange(of: scenePhase) { _, newPhase in
             LocationSessionPolicies.handleScenePhaseChange(
@@ -525,6 +644,31 @@ struct MapScreen: View {
     private var isMapLoading: Bool {
         guard !didMapLoadFail else { return false }
         return !isMapReady || (isFixtureMap && !hasLoadedFixtureFeatures)
+    }
+
+    private var isViewportLoading: Bool {
+        viewportRefreshTracker.isLoading
+    }
+
+    private var updateRequiredSurface: MapBlockingSurface? {
+        MapBlockingSurface.resolve(loadState: loadState)
+    }
+
+    private var updateRequiredPresentationBinding: Binding<Bool> {
+        Binding(
+            get: { updateRequiredSurface != nil },
+            set: { _ in }
+        )
+    }
+
+    private var emptyRegionSurface: MapEmptyRegionSurface? {
+        MapEmptyRegionSurface.resolve(
+            features: features,
+            loadState: loadState,
+            viewport: currentViewport ?? startupViewport,
+            isFixtureMap: isFixtureMap,
+            isViewportLoading: isViewportLoading
+        )
     }
 
     private var mapChrome: some View {
@@ -949,8 +1093,7 @@ struct MapScreen: View {
 
     @MainActor
     private func nextViewportRequestID() -> Int {
-        viewportRequestID += 1
-        return viewportRequestID
+        viewportRefreshTracker.nextRequestID()
     }
 
     @MainActor
@@ -983,7 +1126,8 @@ struct MapScreen: View {
             }
         }
         await MainActor.run {
-            guard requestID == viewportRequestID else { return }
+            guard requestID == viewportRefreshTracker.latestRequestID else { return }
+            viewportRefreshTracker.complete(requestID: requestID)
             if capturedStateEpoch == stateEpoch {
                 features = next
                 nearbyPromptNames = nextNearbyPromptNames
@@ -1177,6 +1321,118 @@ struct StorageMenuStatus: Equatable, Sendable {
 
     static func formatBytes(_ bytes: Int) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(max(bytes, 0)), countStyle: .file)
+    }
+}
+
+private struct UpdateRequiredBlockingView: View {
+    let surface: MapBlockingSurface
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 18) {
+                    Image(systemName: "arrow.down.app")
+                        .font(.system(size: 44, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
+
+                    VStack(spacing: 8) {
+                        Text(surface.title)
+                            .font(.title.weight(.bold))
+                            .multilineTextAlignment(.center)
+                        Text(surface.message)
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    Button {
+                        openURL(surface.appStoreURL)
+                    } label: {
+                        Label(surface.primaryActionTitle, systemImage: "arrow.up.forward.app")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .accessibilityIdentifier("map.update-required.app-store")
+                }
+                .frame(maxWidth: 420)
+                .padding(.horizontal, 28)
+                .padding(.vertical, 48)
+                .frame(maxWidth: .infinity, minHeight: 520)
+            }
+            .navigationTitle("Update required")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+        .accessibilityIdentifier("map.update-required")
+    }
+}
+
+private struct MapEmptyRegionSurfaceView: View {
+    let surface: MapEmptyRegionSurface
+    let openOfflineMaps: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: surface.systemImage)
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
+
+            VStack(spacing: 5) {
+                Text(surface.title)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                Text(surface.message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            if let primaryActionTitle = surface.primaryActionTitle {
+                Button {
+                    openOfflineMaps()
+                } label: {
+                    Label(primaryActionTitle, systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .accessibilityIdentifier("map.empty-region.offline-maps")
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        .frame(maxWidth: 360)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(surface.accessibilityIdentifier)
+    }
+}
+
+private extension MapEmptyRegionSurface {
+    var systemImage: String {
+        switch self {
+        case .unsupportedRegion:
+            return "map"
+        case .mapDataUnavailable:
+            return "wifi.slash"
+        case .noPlaces:
+            return "mappin.slash"
+        }
+    }
+
+    var accessibilityIdentifier: String {
+        switch self {
+        case .unsupportedRegion:
+            return "map.empty-region.unsupported"
+        case .mapDataUnavailable:
+            return "map.empty-region.data-unavailable"
+        case .noPlaces:
+            return "map.empty-region.no-places"
+        }
     }
 }
 

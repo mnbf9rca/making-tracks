@@ -1,4 +1,5 @@
 import XCTest
+import MakingTracksData
 import MakingTracksMapStyle
 import MakingTracksTiles
 @testable import MakingTracks
@@ -17,6 +18,127 @@ final class AppShellTests: XCTestCase {
         shell.deepLinkPath = .offlineMaps
         XCTAssertTrue(shell.isMenuPresented)
         XCTAssertEqual(shell.deepLinkPath, .offlineMaps)
+    }
+
+    func testAppShellModelCanRouteOfflineMapsDeepLink() {
+        let shell = AppShellModel()
+
+        shell.openOfflineMapsDeepLink()
+
+        XCTAssertTrue(shell.isMenuPresented)
+        XCTAssertEqual(shell.deepLinkPath, .offlineMaps)
+    }
+
+    func testUpdateRequiredSurfaceBlocksOnlyFreshTooOldReaderState() throws {
+        let surface = try XCTUnwrap(MapBlockingSurface.resolve(loadState: .updateRequired))
+
+        XCTAssertEqual(surface.title, "Update required")
+        XCTAssertTrue(surface.message.contains("too old to read the latest map"))
+        XCTAssertEqual(surface.primaryActionTitle, "Open App Store")
+        XCTAssertEqual(surface.appStoreURL.scheme, "https")
+        XCTAssertEqual(surface.appStoreURL.host, "apps.apple.com")
+
+        let nonBlockingStates: [TileLoadState] = [.ok, .stale, .updateAvailable, .offline, .manifestInvalid, .unavailable]
+        for loadState in nonBlockingStates {
+            XCTAssertNil(MapBlockingSurface.resolve(loadState: loadState), "\(loadState) must not block the app")
+        }
+    }
+
+    func testEmptyRegionSurfaceDistinguishesUnsupportedUnavailableAndGenuineEmpty() {
+        let ocean = ViewportSeed.ocean
+        let london = ViewportSeed(
+            bbox: BBox(minLon: -0.13, minLat: 51.48, maxLon: -0.11, maxLat: 51.50),
+            zoom: 12
+        )
+        let wideSupported = ViewportSeed(
+            bbox: BBox(minLon: -8.65, minLat: 0.85, maxLon: 119.27, maxLat: 60.86),
+            zoom: 1
+        )
+        let place = MapPlace(id: "mt1_test", lat: 51.49, lon: -0.12, tier: 1, category: "history")
+
+        XCTAssertEqual(
+            MapEmptyRegionSurface.resolve(features: [], loadState: .ok, viewport: ocean, isFixtureMap: false),
+            .unsupportedRegion
+        )
+        XCTAssertEqual(
+            MapEmptyRegionSurface.resolve(features: [], loadState: .unavailable, viewport: ocean, isFixtureMap: false),
+            .unsupportedRegion
+        )
+        XCTAssertEqual(
+            MapEmptyRegionSurface.resolve(features: [], loadState: .unavailable, viewport: london, isFixtureMap: false),
+            .mapDataUnavailable
+        )
+        XCTAssertEqual(
+            MapEmptyRegionSurface.resolve(features: [], loadState: .ok, viewport: london, isFixtureMap: false),
+            .noPlaces
+        )
+        XCTAssertEqual(
+            MapEmptyRegionSurface.resolve(features: [], loadState: .ok, viewport: wideSupported, isFixtureMap: false),
+            .noPlaces
+        )
+        XCTAssertNil(MapEmptyRegionSurface.resolve(
+            features: [],
+            loadState: .ok,
+            viewport: london,
+            isFixtureMap: false,
+            isViewportLoading: true
+        ))
+        XCTAssertNil(MapEmptyRegionSurface.resolve(
+            features: [],
+            loadState: .manifestInvalid,
+            viewport: london,
+            isFixtureMap: false
+        ))
+        XCTAssertNil(MapEmptyRegionSurface.resolve(
+            features: [(place, PinState(saved: false, visit: .none))],
+            loadState: .unavailable,
+            viewport: london,
+            isFixtureMap: false
+        ))
+        XCTAssertNil(MapEmptyRegionSurface.resolve(features: [], loadState: .ok, viewport: london, isFixtureMap: true))
+    }
+
+    func testMapDataUnavailableSurfaceUsesNeutralCopyAndOfflineMapsAffordance() throws {
+        let surface = MapEmptyRegionSurface.mapDataUnavailable
+
+        XCTAssertEqual(surface.title, "Map data unavailable")
+        XCTAssertTrue(surface.message.contains("Check your connection"))
+        XCTAssertEqual(surface.primaryActionTitle, "Offline maps")
+        XCTAssertNil(MapEmptyRegionSurface.unsupportedRegion.primaryActionTitle)
+        XCTAssertNil(MapEmptyRegionSurface.noPlaces.primaryActionTitle)
+    }
+
+    func testViewportRefreshTrackerSuppressesEmptySurfaceUntilLatestRefreshCompletes() {
+        var tracker = ViewportRefreshTracker()
+        let london = ViewportSeed(
+            bbox: BBox(minLon: -0.13, minLat: 51.48, maxLon: -0.11, maxLat: 51.50),
+            zoom: 12
+        )
+
+        let firstRequestID = tracker.nextRequestID()
+        let secondRequestID = tracker.nextRequestID()
+
+        XCTAssertTrue(tracker.isLoading)
+        XCTAssertNil(MapEmptyRegionSurface.resolve(
+            features: [],
+            loadState: .ok,
+            viewport: london,
+            isFixtureMap: false,
+            isViewportLoading: tracker.isLoading
+        ))
+
+        tracker.complete(requestID: firstRequestID)
+        XCTAssertTrue(tracker.isLoading)
+
+        tracker.complete(requestID: secondRequestID)
+        XCTAssertFalse(tracker.isLoading)
+        XCTAssertEqual(MapEmptyRegionSurface.resolve(
+            features: [],
+            loadState: .ok,
+            viewport: london,
+            isFixtureMap: false,
+            isViewportLoading: tracker.isLoading
+        ), .noPlaces)
     }
 
     @MainActor

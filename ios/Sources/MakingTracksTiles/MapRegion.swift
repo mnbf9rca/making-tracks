@@ -38,6 +38,10 @@ public enum MapRegion: String, CaseIterable, Sendable, Equatable {
                 < distanceSquared($1.viewportBBox.center, viewport.center)
         }) ?? .malaysia
     }
+
+    public static func supportedRegion(for viewport: BBox) -> MapRegion? {
+        allCases.first { $0.viewportBBox.intersects(viewport) }
+    }
 }
 
 public extension BBox {
