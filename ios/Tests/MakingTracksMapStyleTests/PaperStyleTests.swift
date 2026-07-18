@@ -48,10 +48,14 @@ final class PaperStyleTests: XCTestCase {
               case let .array(layers) = root["layers"]
         else { return XCTFail("no layers") }
         XCTAssertNil(root["glyphs"])
-        XCTAssertEqual(layerIDs(in: layers), ["background", "world-earth", "world-water", "world-roads", "world-boundaries"])
+        XCTAssertEqual(layerIDs(in: layers), ["background", "world-earth", "world-water", "world-waterways", "world-roads", "world-boundaries"])
         XCTAssertEqual(paintValue("background-color", in: layer(id: "background", in: layers)), .string(MapTheme.snow.background))
         XCTAssertEqual(paintValue("fill-color", in: layer(id: "world-earth", in: layers)), .string(MapTheme.snow.land))
         XCTAssertEqual(paintValue("fill-color", in: layer(id: "world-water", in: layers)), .string(MapTheme.snow.water))
+        XCTAssertEqual(layer(id: "world-water", in: layers)?["filter"], expectedWaterFillFilter)
+        XCTAssertEqual(paintValue("line-color", in: layer(id: "world-waterways", in: layers)), .string(MapTheme.snow.water))
+        XCTAssertEqual(paintValue("line-width", in: layer(id: "world-waterways", in: layers)), .double(0.8))
+        XCTAssertEqual(layer(id: "world-waterways", in: layers)?["filter"], expectedWaterwayLineFilter)
         XCTAssertEqual(paintValue("line-color", in: layer(id: "world-roads", in: layers)), .string(MapTheme.snow.roads))
         XCTAssertEqual(paintValue("line-width", in: layer(id: "world-roads", in: layers)), .double(MapTheme.snow.roadWidth))
         XCTAssertEqual(paintValue("line-color", in: layer(id: "world-boundaries", in: layers)), .string(MapTheme.snow.boundaries))
@@ -81,7 +85,7 @@ final class PaperStyleTests: XCTestCase {
             if theme.showsParks {
                 expectedLayerIDs.append("world-parks")
             }
-            expectedLayerIDs += ["world-water", "world-roads", "world-boundaries"]
+            expectedLayerIDs += ["world-water", "world-waterways", "world-roads", "world-boundaries"]
             if theme.showsLabels {
                 expectedLayerIDs.append("world-places-label")
             }
@@ -95,6 +99,13 @@ final class PaperStyleTests: XCTestCase {
             XCTAssertEqual(layer(id: "world-earth", in: layers)?["source-layer"], .string("earth"), theme.id)
             XCTAssertEqual(layer(id: "world-water", in: layers)?["source"], .string("world"), theme.id)
             XCTAssertEqual(layer(id: "world-water", in: layers)?["source-layer"], .string("water"), theme.id)
+            XCTAssertEqual(layer(id: "world-water", in: layers)?["filter"], expectedWaterFillFilter, theme.id)
+            XCTAssertEqual(layer(id: "world-waterways", in: layers)?["type"], .string("line"), theme.id)
+            XCTAssertEqual(layer(id: "world-waterways", in: layers)?["source"], .string("world"), theme.id)
+            XCTAssertEqual(layer(id: "world-waterways", in: layers)?["source-layer"], .string("water"), theme.id)
+            XCTAssertEqual(layer(id: "world-waterways", in: layers)?["filter"], expectedWaterwayLineFilter, theme.id)
+            XCTAssertEqual(paintValue("line-color", in: layer(id: "world-waterways", in: layers)), .string(theme.water), theme.id)
+            XCTAssertEqual(paintValue("line-width", in: layer(id: "world-waterways", in: layers)), .double(0.8), theme.id)
             XCTAssertEqual(layer(id: "world-roads", in: layers)?["source"], .string("world"), theme.id)
             XCTAssertEqual(layer(id: "world-roads", in: layers)?["source-layer"], .string("roads"), theme.id)
             XCTAssertEqual(layer(id: "world-boundaries", in: layers)?["source"], .string("world"), theme.id)
@@ -146,14 +157,17 @@ final class PaperStyleTests: XCTestCase {
         XCTAssertEqual(region["type"], .string("vector"))
         for id in [
             "background",
-            "world-earth", "world-parks", "world-water", "world-roads", "world-boundaries", "world-places-label",
-            "region-earth", "region-parks", "region-water", "region-roads", "region-boundaries", "region-places-label",
+            "world-earth", "world-parks", "world-water", "world-waterways", "world-roads", "world-boundaries", "world-places-label",
+            "region-earth", "region-parks", "region-water", "region-waterways", "region-roads", "region-boundaries", "region-places-label",
         ] {
             XCTAssertNotNil(layer(id: id, in: layers), id)
         }
         XCTAssertEqual(paintValue("fill-color", in: layer(id: "region-earth", in: layers)), .string(MapTheme.definedPaper.land))
         XCTAssertEqual(paintValue("fill-color", in: layer(id: "region-parks", in: layers)), .string(MapTheme.definedPaper.parks))
         XCTAssertEqual(paintValue("fill-color", in: layer(id: "region-water", in: layers)), .string(MapTheme.definedPaper.water))
+        XCTAssertEqual(layer(id: "region-water", in: layers)?["filter"], expectedWaterFillFilter)
+        XCTAssertEqual(layer(id: "region-waterways", in: layers)?["filter"], expectedWaterwayLineFilter)
+        XCTAssertEqual(paintValue("line-color", in: layer(id: "region-waterways", in: layers)), .string(MapTheme.definedPaper.water))
         XCTAssertEqual(paintValue("line-color", in: layer(id: "region-roads", in: layers)), .string(MapTheme.definedPaper.roads))
         XCTAssertEqual(paintValue("line-color", in: layer(id: "region-boundaries", in: layers)), .string(MapTheme.definedPaper.boundaries))
     }
@@ -212,6 +226,57 @@ final class PaperStyleTests: XCTestCase {
                 .string("garden"),
                 .string("cemetery"),
             ])]),
+        ])
+    }
+
+    private var expectedWaterFillFilter: JSONValue {
+        .array([
+            .string("=="),
+            .array([.string("geometry-type")]),
+            .string("Polygon"),
+        ])
+    }
+
+    private var expectedWaterwayLineFilter: JSONValue {
+        .array([
+            .string("all"),
+            .array([
+                .string("=="),
+                .array([.string("geometry-type")]),
+                .string("LineString"),
+            ]),
+            .array([
+                .string("any"),
+                .array([
+                    .string("in"),
+                    .array([.string("get"), .string("kind")]),
+                    .array([.string("literal"), expectedWaterwayKinds]),
+                ]),
+                .array([
+                    .string("in"),
+                    .array([.string("get"), .string("kind_detail")]),
+                    .array([.string("literal"), expectedWaterwayKinds]),
+                ]),
+            ]),
+            .array([
+                .string("<="),
+                .array([
+                    .string("case"),
+                    .array([.string("has"), .string("min_zoom")]),
+                    .array([.string("to-number"), .array([.string("get"), .string("min_zoom")])]),
+                    .double(14),
+                ]),
+                .array([.string("zoom")]),
+            ]),
+        ])
+    }
+
+    private var expectedWaterwayKinds: JSONValue {
+        .array([
+            .string("river"),
+            .string("stream"),
+            .string("canal"),
+            .string("drain"),
         ])
     }
 
