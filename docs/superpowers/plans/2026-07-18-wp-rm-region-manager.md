@@ -160,10 +160,9 @@ cells → per-cell delete/dedup for free" does not exist. Reframed:]**
   bound; an interrupted download **resumes object-granular** via `updatePlan` sha-skip; and GC **RETAINS
   in-progress objects** (`referencedInProgressObjects`). *(Earlier revisions of this bullet described the
   RAM-buffer as current and this as "required rework" — corrected on the #193 merge; the full safety audit
-  is §8.)* **Still open:** the background `OfflineDownloadSession` is **dead-wired** (production = foreground
-  ephemeral `HTTPTileFetcher`, to preserve single-origin redirect pinning) → **#197 wires session
-  recreation + handler delivery** (§8 INV-10a); **full task adoption** after relaunch (§8 INV-10b) and the
-  INV-1/5/6/7/8/9 engine-hardening gaps are owned by the proposed **WP-DL-SAFETY**.
+  is §8.)* **#197 now wires background object transfer + session recreation/handler delivery** (§8
+  INV-10a; manifest/current metadata stay foreground); **full task adoption** after relaunch (§8 INV-10b)
+  and the INV-1/5/6/7/8/9 engine-hardening gaps are owned by the proposed **WP-DL-SAFETY**.
 - **Update (Apple resize-and-redownload + auto-update):** a pack records its `publish_version`; a new
   publish → the pack's manifest sha-diffs → fetch only changed cells (reuse-by-sha). Auto-update default
   (WiFi, discretionary), user-toggleable — **and this recurring fetch carries cover-traffic (§5).**
@@ -433,13 +432,10 @@ audit contradicted the commission's framing it is marked **[framing correction]*
   Open flag 6). **Test:** pause mid-download; assert the surfaced status is exactly "paused" and the last
   `fractionComplete` = real staged/total, never advancing while paused.
 - **INV-10 Relaunch task adoption — ▷ TARGET, SPLIT owner [#197 does NOT close this alone].** *After app
-  death, a background URLSession's in-flight work is re-adopted on relaunch and completes.* **Not wired
-  today:** `OfflineDownloadSession.backgroundConfiguration` exists (L1032) but carries the standing comment
-  that it is "*not wired into offline object fetches yet*" (background sessions follow redirects without the
-  delegate, conflicting with single-origin pinning); the live path uses foreground/ephemeral sessions
-  (`offlineForeground()` L119). The invariant has **two halves with different owners** (per the
-  plan-language law — #197 must not be recorded as closing more than its author claims):
-  - **(a) session recreation + handler delivery → #197 (OPEN).** Its diff adds
+  death, a background URLSession's in-flight work is re-adopted on relaunch and completes.* The invariant
+  has **two halves with different owners** (per the plan-language law — #197 must not be recorded as
+  closing more than its author claims):
+  - **(a) session recreation + handler delivery → #197 (MERGED).** Its diff adds
     `offlineBackground(identifier:)`, an `OfflineDownloadSessionEventRegistry`, the app-delegate
     `handleEventsForBackgroundURLSession`, and post-redirect origin re-validation (`validateDownloadedFile`)
     — i.e. a relaunched app re-creates the session by identifier and delivers its completion events. **#197's
@@ -457,7 +453,7 @@ audit contradicted the commission's framing it is marked **[framing correction]*
 the markers above: 2 ✅, 6 ◐, 1 ❌, 1 ▷ — the ◐/❌ are hardening + resumability gaps, not data-loss-on-happy-
 path); the gaps cluster into a few owners — §6/**WP-RM-P** (INV-4 per-cell basemap *pipeline cut*) + **WP-RM-G** (INV-4 *app* basemap-source
 render), both from the already-ratified §6b, reframed here as *safety*; **#197** (INV-10**(a)** session
-recreation + handler delivery, already open); and a **NEW WP-DL-SAFETY** (engine hardening: INV-1 tile
+recreation + handler delivery, merged); and a **NEW WP-DL-SAFETY** (engine hardening: INV-1 tile
 verify-then-rename, INV-5 GC + orphan-dir sweep incl. launch-time GC, INV-6 backup-window recovery, INV-7
 per-object headroom + ENOSPC→pause, INV-8 engine single-flight + delete precedence, INV-9 engine status if
 first-class, INV-10**(b)** full task adoption after relaunch). See Open flag 5 (commission WP-DL-SAFETY)
