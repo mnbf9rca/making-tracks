@@ -5,6 +5,7 @@ final class AppLocationManager: NSObject, MLNLocationManager {
     private let locationManager: CLLocationManager
     private let simulatedAuthorizationStatus: CLAuthorizationStatus?
     private let simulatedLocation: CLLocationCoordinate2D?
+    private(set) var whenInUseAuthorizationRequestCount = 0
 
     weak var permissionDelegate: CLLocationManagerDelegate?
     weak var delegate: MLNLocationManagerDelegate?
@@ -30,6 +31,7 @@ final class AppLocationManager: NSObject, MLNLocationManager {
     }
 
     func requestWhenInUseAuthorization() {
+        whenInUseAuthorizationRequestCount += 1
         guard simulatedAuthorizationStatus == nil else { return }
         locationManager.requestWhenInUseAuthorization()
     }

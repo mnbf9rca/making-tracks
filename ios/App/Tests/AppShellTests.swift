@@ -33,6 +33,57 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(OfflineDownloadProgress(fractionComplete: 1.25).percentComplete, 100)
     }
 
+    func testOnboardingStorageUsesFoldedDesignKeys() {
+        XCTAssertEqual(OnboardingStorage.hasCompletedOnboardingKey, "hasCompletedOnboarding")
+        XCTAssertEqual(OnboardingStorage.chosenRegionKey, "chosenRegion")
+    }
+
+    func testChosenRegionDrivesStartupSeedUnlessUITestArgumentOverrides() {
+        XCTAssertEqual(OnboardingRegionChoice.uk.startupViewport, .uk)
+        XCTAssertEqual(OnboardingRegionChoice.malaysia.startupViewport, .kl)
+        XCTAssertEqual(
+            OnboardingStorage.startupViewport(argumentSeed: nil, chosenRegionRawValue: "uk"),
+            .uk
+        )
+        XCTAssertEqual(
+            OnboardingStorage.startupViewport(argumentSeed: nil, chosenRegionRawValue: "malaysia"),
+            .kl
+        )
+        XCTAssertEqual(
+            OnboardingStorage.startupViewport(argumentSeed: "ocean", chosenRegionRawValue: "uk"),
+            .ocean
+        )
+    }
+
+    func testOnboardingCopyMatchesPrivacyPolicyQualifierAndDoesNotExposeImageToggle() {
+        XCTAssertEqual(
+            OnboardingCopy.savedActivityPrivacy,
+            "Nothing you save leaves unless you choose to share it."
+        )
+        XCTAssertFalse(OnboardingCopy.offlinePackOffer.contains("no one can see where you look"))
+        XCTAssertFalse(OnboardingCopy.offlinePackOffer.localizedCaseInsensitiveContains("images"))
+    }
+
+    func testReplayPreselectsExistingRegionButTrueFirstRunDoesNot() {
+        XCTAssertNil(OnboardingFlowState.initialSelectedRegion(isReplay: false, chosenRegionRawValue: "uk"))
+        XCTAssertEqual(OnboardingFlowState.initialSelectedRegion(isReplay: true, chosenRegionRawValue: "uk"), .uk)
+        XCTAssertEqual(OnboardingFlowState.initialSelectedRegion(isReplay: true, chosenRegionRawValue: "malaysia"), .malaysia)
+        XCTAssertNil(OnboardingFlowState.initialSelectedRegion(isReplay: true, chosenRegionRawValue: "not-a-region"))
+    }
+
+    @MainActor
+    func testLocationPermissionRequestIsOneShotAndExplicit() {
+        let manager = AppLocationManager(simulatedAuthorizationStatus: .notDetermined)
+        let permission = LocationPermission(manager: manager)
+
+        XCTAssertEqual(manager.whenInUseAuthorizationRequestCount, 0)
+
+        permission.requestWhenInUseIfNeeded()
+        permission.requestWhenInUseIfNeeded()
+
+        XCTAssertEqual(manager.whenInUseAuthorizationRequestCount, 1)
+    }
+
     @MainActor
     func testCoordinatorGeneratesThemeSpecificStyleJSON() throws {
         let coordinator = makeCoordinator()

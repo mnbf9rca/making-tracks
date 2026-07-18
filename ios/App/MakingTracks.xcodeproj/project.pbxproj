@@ -13,6 +13,7 @@
 		0A2C680593F94D059C240D5C /* AppShellTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F84893D5D6748C5934F22B2 /* AppShellTests.swift */; };
 		12180A7BEBB27840E1614C1A /* LocationSessionPolicies.swift in Sources */ = {isa = PBXBuildFile; fileRef = E67D53581962B4787D079BCA /* LocationSessionPolicies.swift */; };
 		1477E9C0802B5ACD26327A43 /* AppLocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B6E6A8728A3BBF7FBCF25B9 /* AppLocationManager.swift */; };
+		221C756E4B861DCA620486E1 /* OnboardingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9CC04950E92D7325463A797 /* OnboardingFlow.swift */; };
 		1E88D6E14A988414962AB763 /* MapLibre in Frameworks */ = {isa = PBXBuildFile; productRef = CBADA08F3DCFE4D9F14B6043 /* MapLibre */; };
 		59C7C078ADD59064266740CA /* MakingTracksData in Frameworks */ = {isa = PBXBuildFile; productRef = 52E446EDADC05A0EB10CB788 /* MakingTracksData */; };
 		64A1E7F7EC974E18939E76A0 /* HiddenMembershipTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A0C31D4D48E4E49B093A101 /* HiddenMembershipTracker.swift */; };
@@ -65,6 +66,7 @@
 		8165BC8A095352568E0849A6 /* MakingTracksApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MakingTracksApp.swift; sourceTree = "<group>"; };
 		8A0C31D4D48E4E49B093A101 /* HiddenMembershipTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiddenMembershipTracker.swift; sourceTree = "<group>"; };
 		B85E30D5635849FF984B528A /* PinCategorySymbolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinCategorySymbolTests.swift; sourceTree = "<group>"; };
+		B9CC04950E92D7325463A797 /* OnboardingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlow.swift; sourceTree = "<group>"; };
 		B3982196AEEBAE17B1F5D899 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		DAE9D3362250413D9EFE67A5 /* MapLayerVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapLayerVisibility.swift; sourceTree = "<group>"; };
 		DDF309F41553406AB77EF7B3 /* HiddenMembershipTrackerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiddenMembershipTrackerTests.swift; sourceTree = "<group>"; };
@@ -94,6 +96,7 @@
 			children = (
 				B3982196AEEBAE17B1F5D899 /* Info.plist */,
 				8165BC8A095352568E0849A6 /* MakingTracksApp.swift */,
+				B9CC04950E92D7325463A797 /* OnboardingFlow.swift */,
 				1CB5F787D9335E6F6658C952 /* OSSCredits.json */,
 				C07738BF062CB3DA2EC726F0 /* Map */,
 				D4ADE12C00B68366CBA521B4 /* Support */,
@@ -400,6 +403,7 @@
 				7593227AD868445A8B5C2593 /* MapLayerVisibility.swift in Sources */,
 				D723B8F7C4E54215817261EA /* MLNMapViewRepresentable.swift in Sources */,
 				E205428A35137AEC62A677DE /* MakingTracksApp.swift in Sources */,
+				221C756E4B861DCA620486E1 /* OnboardingFlow.swift in Sources */,
 				03DDC05F05147127FAC7FFA5 /* MapScreen.swift in Sources */,
 				0690E2BBD5D936C280A81F6C /* WorldBasemap.swift in Sources */,
 			);

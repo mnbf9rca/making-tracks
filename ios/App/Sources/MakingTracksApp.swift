@@ -8,7 +8,7 @@ struct MakingTracksApp: App {
     private static let arguments = Set(rawArguments)
     private static let isFixtureMap = arguments.contains("--ui-testing-fixture-map")
     private static let seedFixtureUserList = arguments.contains("--ui-testing-seed-user-list")
-    private static let startupViewport = ViewportSeed.selected(argumentValue("--ui-testing-map-state"))
+    private static let startupViewportArgument = argumentValue("--ui-testing-map-state")
     private static let debugInstallOfflineRegion = argumentValue("--debug-install-offline-region")
     private static let debugForceTileNetworkOffline = arguments.contains("--debug-force-tile-network-offline")
 #if DEBUG
@@ -30,6 +30,8 @@ struct MakingTracksApp: App {
 
     init() {
         Self.resetUITestingThemeIfNeeded()
+        Self.resetUITestingOnboardingIfNeeded()
+        Self.completeUITestingOnboardingIfNeeded()
     }
 
     private let database: AppDatabase = {
@@ -63,9 +65,9 @@ struct MakingTracksApp: App {
 
     var body: some Scene {
         WindowGroup {
-            MapScreen(
+            MakingTracksRootView(
                 database: database,
-                startupViewport: Self.startupViewport,
+                startupViewportArgument: Self.startupViewportArgument,
                 isFixtureMap: Self.isFixtureMap,
                 debugInstallOfflineRegion: Self.debugInstallOfflineRegion,
                 debugForceTileNetworkOffline: Self.debugForceTileNetworkOffline,
@@ -105,5 +107,19 @@ struct MakingTracksApp: App {
     private static func resetUITestingThemeIfNeeded() {
         guard isFixtureMap, arguments.contains("--ui-testing-reset-theme") else { return }
         UserDefaults.standard.removeObject(forKey: MapScreen.themeStorageKey)
+    }
+
+    private static func resetUITestingOnboardingIfNeeded() {
+        guard isFixtureMap, arguments.contains("--ui-testing-reset-onboarding") else { return }
+        UserDefaults.standard.removeObject(forKey: OnboardingStorage.hasCompletedOnboardingKey)
+        UserDefaults.standard.removeObject(forKey: OnboardingStorage.chosenRegionKey)
+    }
+
+    private static func completeUITestingOnboardingIfNeeded() {
+        guard isFixtureMap, arguments.contains("--ui-testing-complete-onboarding") else { return }
+        UserDefaults.standard.set(true, forKey: OnboardingStorage.hasCompletedOnboardingKey)
+        if UserDefaults.standard.string(forKey: OnboardingStorage.chosenRegionKey) == nil {
+            UserDefaults.standard.set(OnboardingRegionChoice.malaysia.rawValue, forKey: OnboardingStorage.chosenRegionKey)
+        }
     }
 }

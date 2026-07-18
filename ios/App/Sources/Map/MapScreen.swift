@@ -8,7 +8,7 @@ import MakingTracksData
 import MakingTracksMapStyle
 import MakingTracksTiles
 
-struct ViewportSeed: Sendable {
+struct ViewportSeed: Sendable, Equatable {
     let bbox: BBox
     let zoom: Int
 
@@ -79,6 +79,7 @@ struct MapScreen: View {
     var debugForceTileNetworkOffline = false
     var offlineDownloadProgress: OfflineDownloadProgress?
     var debugExposeFixturePinDiagnostics = false
+    var onReplayOnboarding: @MainActor () -> Void = {}
 
     @State private var model: MapScreenModel?
     @StateObject private var locationPermission: LocationPermission
@@ -126,7 +127,9 @@ struct MapScreen: View {
         debugForceTileNetworkOffline: Bool = false,
         offlineDownloadProgress: OfflineDownloadProgress? = nil,
         debugExposeFixturePinDiagnostics: Bool = false,
-        locationManager: AppLocationManager = AppLocationManager()
+        locationManager: AppLocationManager = AppLocationManager(),
+        locationPermission: LocationPermission? = nil,
+        onReplayOnboarding: @escaping @MainActor () -> Void = {}
     ) {
         self.database = database
         self.startupViewport = startupViewport
@@ -135,9 +138,10 @@ struct MapScreen: View {
         self.debugForceTileNetworkOffline = debugForceTileNetworkOffline
         self.offlineDownloadProgress = offlineDownloadProgress
         self.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
+        self.onReplayOnboarding = onReplayOnboarding
         self.locationManager = locationManager
         _features = State(initialValue: isFixtureMap ? Self.initialFixtureFeatures() : [])
-        _locationPermission = StateObject(wrappedValue: LocationPermission(manager: locationManager))
+        _locationPermission = StateObject(wrappedValue: locationPermission ?? LocationPermission(manager: locationManager))
     }
 
     var body: some View {
@@ -334,7 +338,8 @@ struct MapScreen: View {
                 attribution: attribution,
                 selectedThemeID: $selectedThemeID,
                 locationStatus: locationMenuStatus,
-                openLocationSettings: openLocationSettings
+                openLocationSettings: openLocationSettings,
+                replayOnboarding: onReplayOnboarding
             )
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -1025,6 +1030,7 @@ private struct AppMenuSheet: View {
     @Binding var selectedThemeID: String
     let locationStatus: LocationMenuStatus
     let openLocationSettings: () -> Void
+    let replayOnboarding: @MainActor () -> Void
 
     @State private var path: [MenuDestination] = []
     @Environment(\.dismiss) private var dismiss
@@ -1060,7 +1066,8 @@ private struct AppMenuSheet: View {
             destinationWithDone(SettingsView(
                 selectedThemeID: $selectedThemeID,
                 locationStatus: locationStatus,
-                openLocationSettings: openLocationSettings
+                openLocationSettings: openLocationSettings,
+                replayOnboarding: replayOnboarding
             ))
         case .about:
             destinationWithDone(AboutView(attribution: attribution))
@@ -1165,6 +1172,7 @@ private struct SettingsView: View {
     @Binding var selectedThemeID: String
     let locationStatus: LocationMenuStatus
     let openLocationSettings: () -> Void
+    let replayOnboarding: @MainActor () -> Void
 
     var body: some View {
         List {
@@ -1210,6 +1218,11 @@ private struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("settings.storage.stub")
             }
+
+            Section("Onboarding") {
+                Button("Replay onboarding", action: replayOnboarding)
+                    .accessibilityIdentifier("settings.replay-onboarding")
+            }
         }
         .navigationTitle("Settings")
     }
@@ -1242,6 +1255,15 @@ private struct AboutView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Open data")
+                        .font(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Places come from open data including Wikipedia, OpenStreetMap, and heritage registers.")
+                    Text(OnboardingCopy.savedActivityPrivacy)
+                        .accessibilityIdentifier("about.privacy-saved-activity")
+                }
+
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Build")
                         .font(.headline)
