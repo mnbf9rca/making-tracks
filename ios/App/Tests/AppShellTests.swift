@@ -319,6 +319,80 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(kl?.statusLabel, "Quarantined pack")
     }
 
+    func testOfflineRegionRowsSurfacePausedProgressSeparatelyFromActiveProgress() {
+        let catalog = OfflineRegionCatalog.debugFixture
+        let paused = OfflineDownloadProgress(
+            region: "uk_london",
+            publishVersion: "20260718T000000Z",
+            completedBytes: 50,
+            totalBytes: 100,
+            fractionComplete: 0.5
+        )
+
+        let rows = catalog.rows(
+            installed: [
+                "uk": "20260718T000000Z",
+                "uk_london": "20260717T000000Z",
+            ],
+            activeProgress: nil,
+            pausedProgress: paused,
+            quarantines: []
+        )
+        let london = rows.first { $0.zone.id == "uk_london" }
+
+        XCTAssertEqual(london?.state, .paused(paused))
+        XCTAssertEqual(london?.statusLabel, "Paused at 50%")
+    }
+
+    @MainActor
+    func testOfflineDownloadSessionDeletePreservesUnrelatedActiveDownload() {
+        let session = OfflineRegionDownloadSession()
+        let progress = OfflineDownloadProgress(region: "uk", fractionComplete: 0.42)
+        let downloadID = UUID()
+        let task = Task<Void, Never> {}
+        defer { task.cancel() }
+
+        session.begin(region: "uk", control: OfflineRegionDownloadControl(), downloadID: downloadID)
+        session.attach(task: task)
+        session.update(progress)
+        session.noteDeleted(region: "malaysia")
+
+        XCTAssertEqual(session.liveProgress, progress)
+        XCTAssertNil(session.pausedProgress)
+        XCTAssertNotNil(session.activeControl)
+        XCTAssertNotNil(session.activeTask)
+        XCTAssertEqual(session.activeDownloadID, downloadID)
+    }
+
+    @MainActor
+    func testOfflineDownloadSessionPauseClearsChipProgressButKeepsResumableProgress() {
+        let session = OfflineRegionDownloadSession()
+        let progress = OfflineDownloadProgress(region: "uk", fractionComplete: 0.42)
+
+        session.begin(region: "uk", control: OfflineRegionDownloadControl(), downloadID: UUID())
+        session.update(progress)
+        session.pause(region: "uk")
+
+        XCTAssertNil(session.liveProgress)
+        XCTAssertNil(session.chromeProgress)
+        XCTAssertEqual(session.pausedProgress, progress)
+        XCTAssertEqual(session.rowProgress, progress)
+        XCTAssertNil(session.activeControl)
+        XCTAssertNil(session.activeTask)
+    }
+
+    @MainActor
+    func testOfflineDownloadSessionRequiresPausedRegionToResumeOrCancelBeforeStartingAnotherRegion() {
+        let session = OfflineRegionDownloadSession()
+
+        session.begin(region: "uk", control: OfflineRegionDownloadControl(), downloadID: UUID())
+        session.update(OfflineDownloadProgress(region: "uk", fractionComplete: 0.42))
+        session.pause(region: "uk")
+
+        XCTAssertTrue(session.canBegin(region: "uk"))
+        XCTAssertFalse(session.canBegin(region: "malaysia"))
+    }
+
     @MainActor
     func testCoordinatorGeneratesThemeSpecificStyleJSON() throws {
         let coordinator = makeCoordinator()
