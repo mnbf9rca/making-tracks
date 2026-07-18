@@ -577,6 +577,13 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
+    func testOfflineDownloadSessionUsesPersistedPausedRowRegionForCancelAfterRelaunch() {
+        let session = OfflineRegionDownloadSession()
+
+        XCTAssertEqual(session.regionForCancel(fallbackRegion: "uk_london"), "uk_london")
+    }
+
+    @MainActor
     func testCoordinatorGeneratesThemeSpecificStyleJSON() throws {
         let coordinator = makeCoordinator()
 

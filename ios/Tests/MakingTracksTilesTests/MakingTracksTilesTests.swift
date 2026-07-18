@@ -1240,6 +1240,165 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: stagingErrorURL.path))
     }
 
+    func testCompletedAttachFailsWhenDelegateAlreadyDeliveredAndStoreIsEmpty() async throws {
+        let identifier = "app.making-tracks.tests.offline.completed-empty-\(UUID().uuidString)"
+        let requestURL = URL(string: "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles")!
+        let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
+        let session = URLSession(configuration: configuration)
+        defer {
+            session.invalidateAndCancel()
+            OfflineDownloadSession.removeCompletedDownloadsForTesting(identifier: identifier)
+        }
+        let delegate = RedirectDelegate()
+        let task = syntheticCompletedDownloadTask(request: URLRequest(url: requestURL), on: session)
+        defer { task.cancel() }
+        let result = LockedAsyncResult<URL>()
+
+        let attachTask = Task {
+            do {
+                result.store(.success(try await delegate.attach(to: task, request: URLRequest(url: requestURL), on: session)))
+            } catch {
+                result.store(.failure(error))
+            }
+        }
+        defer { attachTask.cancel() }
+
+        for _ in 0..<20 where result.load() == nil {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        switch result.load() {
+        case .failure(TileError.invalidBackgroundFetch):
+            break
+        case .failure(let error):
+            XCTFail("expected invalidBackgroundFetch, got \(error)")
+        case .success(let url):
+            XCTFail("completed attach unexpectedly returned \(url)")
+        case nil:
+            XCTFail("completed attach hung after delegate terminal delivery with no staged file")
+        }
+    }
+
+    func testCompletedAttachWaitsForPendingDelegateDeliveryWhenAdoptionMarkerRemains() async throws {
+        let identifier = "app.making-tracks.tests.offline.completed-pending-\(UUID().uuidString)"
+        let requestURL = URL(string: "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles")!
+        let body = Data("delegate basemap".utf8)
+        let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
+        let session = URLSession(configuration: configuration)
+        defer {
+            session.invalidateAndCancel()
+            OfflineDownloadSession.removeCompletedDownloadsForTesting(identifier: identifier)
+        }
+        let response = HTTPURLResponse(url: requestURL, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        let delegate = RedirectDelegate()
+        let task = syntheticCompletedDownloadTask(
+            request: URLRequest(url: requestURL),
+            on: session,
+            response: response
+        )
+        defer { task.cancel() }
+        delegate.markAdoptedForTesting(taskIdentifier: task.taskIdentifier, url: requestURL)
+        let result = LockedAsyncResult<URL>()
+
+        let attachTask = Task {
+            do {
+                result.store(.success(try await delegate.attach(to: task, request: URLRequest(url: requestURL), on: session)))
+            } catch {
+                result.store(.failure(error))
+            }
+        }
+        defer { attachTask.cancel() }
+
+        try await Task.sleep(nanoseconds: 10_000_000)
+        XCTAssertNil(result.load())
+
+        delegate.urlSession(session, downloadTask: task, didFinishDownloadingTo: try stagedObjectFile(body))
+        delegate.urlSession(session, task: task, didCompleteWithError: nil)
+
+        for _ in 0..<20 where result.load() == nil {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        switch result.load() {
+        case .success(let url):
+            defer { try? FileManager.default.removeItem(at: url) }
+            XCTAssertEqual(try Data(contentsOf: url), body)
+        case .failure(let error):
+            XCTFail("expected delegated completion success, got \(error)")
+        case nil:
+            XCTFail("completed attach did not resume after pending delegate delivery")
+        }
+    }
+
+    func testCompletedAttachDoesNotWaitOnStaleMarkerAfterTerminalDelivery() async throws {
+        let identifier = "app.making-tracks.tests.offline.completed-stale-\(UUID().uuidString)"
+        let requestURL = URL(string: "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles")!
+        let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
+        let session = URLSession(configuration: configuration)
+        defer {
+            session.invalidateAndCancel()
+            OfflineDownloadSession.removeCompletedDownloadsForTesting(identifier: identifier)
+        }
+        let delegate = RedirectDelegate()
+        let task = syntheticCompletedDownloadTask(request: URLRequest(url: requestURL), on: session)
+        defer { task.cancel() }
+
+        delegate.urlSession(session, task: task, didCompleteWithError: nil)
+        delegate.markAdoptedForTesting(taskIdentifier: task.taskIdentifier, url: requestURL)
+        let result = LockedAsyncResult<URL>()
+
+        let attachTask = Task {
+            do {
+                result.store(.success(try await delegate.attach(to: task, request: URLRequest(url: requestURL), on: session)))
+            } catch {
+                result.store(.failure(error))
+            }
+        }
+        defer { attachTask.cancel() }
+
+        for _ in 0..<20 where result.load() == nil {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        switch result.load() {
+        case .failure(TileError.invalidBackgroundFetch):
+            break
+        case .failure(let error):
+            XCTFail("expected invalidBackgroundFetch, got \(error)")
+        case .success(let url):
+            XCTFail("completed attach unexpectedly returned \(url)")
+        case nil:
+            XCTFail("completed attach waited on a stale adoption marker after terminal delivery")
+        }
+    }
+
+    func testCompletedAttachConsumesStoredCompletedDownload() async throws {
+        let identifier = "app.making-tracks.tests.offline.completed-stored-\(UUID().uuidString)"
+        let requestURL = URL(string: "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles")!
+        let body = Data("stored basemap".utf8)
+        try OfflineDownloadSession.stageCompletedDownloadForTesting(
+            identifier: identifier,
+            url: requestURL,
+            fileURL: stagedObjectFile(body),
+            response: HTTPURLResponse(url: requestURL, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        )
+        let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
+        let session = URLSession(configuration: configuration)
+        defer {
+            session.invalidateAndCancel()
+            OfflineDownloadSession.removeCompletedDownloadsForTesting(identifier: identifier)
+        }
+        let delegate = RedirectDelegate()
+        let task = syntheticCompletedDownloadTask(request: URLRequest(url: requestURL), on: session)
+        defer { task.cancel() }
+
+        let fileURL = try await delegate.attach(to: task, request: URLRequest(url: requestURL), on: session)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        XCTAssertEqual(try Data(contentsOf: fileURL), body)
+        XCTAssertNil(OfflineDownloadSession.consumeCompletedDownload(identifier: identifier, url: requestURL))
+    }
+
     func testCompletedBackgroundDownloadStoreRejectsHTTPFailures() throws {
         let identifier = "app.making-tracks.tests.offline.completed-failure"
         let url = URL(string: "https://tiles.making-tracks.app/uk/current.json")!
@@ -2958,7 +3117,7 @@ final class MakingTracksTilesTests: XCTestCase {
         ])
         let resumedDownloader = OfflineRegionDownloader(region: "uk", fetcher: resumed, store: relaunched, availableBytes: { 10_000_000_000 })
 
-        _ = try await resumedDownloader.downloadCurrentRegion()
+        _ = try await resumedDownloader.downloadCurrentRegion(resumingPausedDownload: true)
 
         XCTAssertFalse(resumed.requestedURLs.contains("https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz"))
         XCTAssertEqual(try relaunched.installedPublish(region: "uk")?.publishVersion, "20260717T000000Z")
@@ -3219,6 +3378,80 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: tileSHA).path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
         XCTAssertNil(try store.installedPublish(region: "uk"))
+    }
+
+    func testOfflineDownloaderPauseSurvivesRelaunchUntilUserResume() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let firstTile = try gzipJSON(tileObject(places: [validPlace()]))
+        let firstSHA = sha256(firstTile)
+        let secondTile = try gzipJSON(tileObject(places: [validPlace(["place_id": "mt1_00000000000000000000000001"])], x: 512))
+        let secondSHA = sha256(secondTile)
+        let basemap = Data("basemap".utf8)
+        let targetObject = twoTileManifestObject(
+            firstSHA: firstSHA,
+            firstBytes: firstTile.count,
+            secondSHA: secondSHA,
+            secondBytes: secondTile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count
+        )
+        let control = OfflineRegionDownloadControl()
+        let first = OfflineRegionDownloader(
+            region: "uk",
+            fetcher: StubFetcher(routes: [
+                "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+                "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+                "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz": firstTile,
+                "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/512/340.json.gz": secondTile,
+                "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles": basemap,
+            ]),
+            store: store,
+            availableBytes: { 10_000_000_000 }
+        )
+        do {
+            _ = try await first.downloadCurrentRegion(control: control) { event in
+                if event.completedObjectCount == 1 {
+                    control.pause()
+                }
+            }
+            XCTFail("download unexpectedly succeeded after pause")
+        } catch TileError.downloadPaused {
+        } catch {
+            XCTFail("expected downloadPaused, got \(error)")
+        }
+        XCTAssertEqual(try Data(contentsOf: offlineTileObjectURL(root: root, sha: firstSHA)), firstTile)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+
+        let relaunchedStore = try OfflineRegionStore(root: root)
+        XCTAssertEqual(try relaunchedStore.pendingDownloadRegions(), [])
+        let replayFetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260718T000000Z"]),
+        ])
+        let replay = OfflineRegionDownloader(region: "uk", fetcher: replayFetcher, store: relaunchedStore, availableBytes: { 10_000_000_000 })
+
+        do {
+            _ = try await replay.downloadCurrentRegion()
+            XCTFail("relaunch replay unexpectedly resumed paused download")
+        } catch TileError.downloadPaused {
+        } catch {
+            XCTFail("expected persisted downloadPaused, got \(error)")
+        }
+        XCTAssertEqual(replayFetcher.requestedURLs, [])
+
+        let resumedFetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/512/340.json.gz": secondTile,
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles": basemap,
+        ])
+        let resumed = OfflineRegionDownloader(region: "uk", fetcher: resumedFetcher, store: relaunchedStore, availableBytes: { 10_000_000_000 })
+
+        _ = try await resumed.downloadCurrentRegion(resumingPausedDownload: true)
+
+        XCTAssertFalse(resumedFetcher.requestedURLs.contains("https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz"))
+        XCTAssertEqual(try relaunchedStore.installedPublish(region: "uk")?.publishVersion, "20260717T000000Z")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
     }
 
     func testOfflineDownloaderPauseCancelsHTTPDownloadTaskAndRetainsInProgressRoot() async throws {
@@ -4120,4 +4353,34 @@ private func gzipData(_ data: Data) throws -> Data {
 
 private func sha256(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+}
+
+private func syntheticCompletedDownloadTask(
+    request: URLRequest,
+    on session: URLSession,
+    response: URLResponse? = nil
+) -> URLSessionDownloadTask {
+    let task = session.downloadTask(with: request)
+    task.setValue(URLSessionTask.State.completed.rawValue, forKey: "state")
+    if let response {
+        task.setValue(response, forKey: "response")
+    }
+    return task
+}
+
+private final class LockedAsyncResult<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: Result<Value, Error>?
+
+    func store(_ result: Result<Value, Error>) {
+        lock.withLock {
+            self.result = result
+        }
+    }
+
+    func load() -> Result<Value, Error>? {
+        lock.withLock {
+            result
+        }
+    }
 }

@@ -95,6 +95,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         installed: [String: String],
         activeProgress: OfflineDownloadProgress?,
         pausedProgress: OfflineDownloadProgress? = nil,
+        pausedRegions: Set<String> = [],
         quarantines: [OfflinePackQuarantine]
     ) -> [OfflineRegionCatalogRow] {
         let quarantineByRegion = quarantines.reduce(into: [String: OfflinePackQuarantine]()) { byRegion, quarantine in
@@ -107,6 +108,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
                 installed: installed,
                 activeProgress: activeProgress,
                 pausedProgress: pausedProgress,
+                pausedRegions: pausedRegions,
                 quarantines: quarantineByRegion
             )
         }
@@ -118,6 +120,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         installed: [String: String],
         activeProgress: OfflineDownloadProgress?,
         pausedProgress: OfflineDownloadProgress?,
+        pausedRegions: Set<String>,
         quarantines: [String: OfflinePackQuarantine]
     ) -> [OfflineRegionCatalogRow] {
         let state: OfflineRegionCatalogRow.State
@@ -127,6 +130,8 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             state = .downloading(activeProgress!)
         } else if pausedProgress?.region == zone.id {
             state = .paused(pausedProgress!)
+        } else if pausedRegions.contains(zone.id) {
+            state = .paused(OfflineDownloadProgress(region: zone.id, fractionComplete: 0))
         } else if let installedVersion = installed[zone.id] {
             if installedVersion == zone.publishVersion {
                 state = .installed(publishVersion: installedVersion)
@@ -147,6 +152,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
                 installed: installed,
                 activeProgress: activeProgress,
                 pausedProgress: pausedProgress,
+                pausedRegions: pausedRegions,
                 quarantines: quarantines
             )
         }
@@ -426,6 +432,10 @@ final class OfflineRegionDownloadSession {
 
     var hasActiveDownload: Bool {
         activeControl != nil || activeTask != nil || liveProgress != nil
+    }
+
+    func regionForCancel(fallbackRegion: String? = nil) -> String? {
+        pausedProgress?.region ?? liveProgress?.region ?? fallbackRegion
     }
 
     func canBegin(region: String) -> Bool {
@@ -2062,6 +2072,7 @@ private struct OfflineMapsView: View {
 
     private let catalog = OfflineRegionCatalog.debugFixture
     @State private var installed: [String: String] = [:]
+    @State private var pausedRegions: Set<String> = []
     @State private var quarantines: [OfflinePackQuarantine] = []
     @State private var storageStatus: StorageMenuStatus
     @State private var statusMessage: String?
@@ -2095,6 +2106,7 @@ private struct OfflineMapsView: View {
             installed: installed,
             activeProgress: activeProgress,
             pausedProgress: pausedProgress,
+            pausedRegions: pausedRegions,
             quarantines: quarantines
         )
     }
@@ -2257,10 +2269,10 @@ private struct OfflineMapsView: View {
         case .paused:
             HStack(spacing: 8) {
                 iconButton("Resume", systemImage: "play.circle") {
-                    startDownload(row.zone.id)
+                    startDownload(row.zone.id, resumingPausedDownload: true)
                 }
                 iconButton("Cancel", systemImage: "xmark.circle", role: .destructive) {
-                    Task { await cancelDownload() }
+                    Task { await cancelDownload(region: row.zone.id) }
                 }
             }
         }
@@ -2281,7 +2293,7 @@ private struct OfflineMapsView: View {
         .accessibilityLabel(label)
     }
 
-    private func startDownload(_ region: String) {
+    private func startDownload(_ region: String, resumingPausedDownload: Bool = false) {
         guard let model else {
             statusMessage = "Offline downloads unavailable"
             MakingTracksLog.downloads.error("ui download unavailable region=\(region, privacy: .private(mask: .hash))")
@@ -2298,7 +2310,11 @@ private struct OfflineMapsView: View {
         statusMessage = nil
         MakingTracksLog.downloads.info("ui download started region=\(region, privacy: .private(mask: .hash))")
         let task = Task {
-            let message = await model.installOfflineRegion(region, control: control) { progress in
+            let message = await model.installOfflineRegion(
+                region,
+                control: control,
+                resumingPausedDownload: resumingPausedDownload
+            ) { progress in
                 Task { @MainActor in
                     guard downloadSession.activeDownloadID == downloadID else { return }
                     downloadSession.update(OfflineDownloadProgress(progress))
@@ -2324,13 +2340,14 @@ private struct OfflineMapsView: View {
         downloadSession.attach(task: task)
     }
 
-    private func cancelDownload() async {
+    private func cancelDownload(region persistedPausedRegion: String? = nil) async {
         guard downloadSession.activeControl != nil
             || downloadSession.activeTask != nil
             || downloadSession.liveProgress != nil
             || downloadSession.pausedProgress != nil
+            || persistedPausedRegion != nil
         else { return }
-        let regionToDiscard = downloadSession.pausedProgress?.region ?? downloadSession.liveProgress?.region
+        let regionToDiscard = downloadSession.regionForCancel(fallbackRegion: persistedPausedRegion)
         MakingTracksLog.downloads.info("ui cancel requested region=\(regionToDiscard ?? "unknown", privacy: .private(mask: .hash))")
         downloadSession.activeControl?.cancel()
         downloadSession.activeTask?.cancel()
@@ -2364,12 +2381,14 @@ private struct OfflineMapsView: View {
     private func refresh() async {
         guard let model else {
             installed = [:]
+            pausedRegions = []
             quarantines = []
             storageStatus = .unavailable
             MakingTracksLog.startup.info("offline rows state=unavailable")
             return
         }
         installed = await model.installedOfflinePublishVersions(for: catalog)
+        pausedRegions = await model.pausedOfflineDownloadRegions(for: catalog)
         quarantines = model.offlinePackQuarantines()
         storageStatus = await model.storageMenuStatus()
         let installedCount = installed.count
@@ -3290,6 +3309,7 @@ private final class MapScreenModel {
     func installOfflineRegion(
         _ region: String,
         control: OfflineRegionDownloadControl,
+        resumingPausedDownload: Bool = false,
         progress: @escaping @Sendable (OfflineRegionDownloadProgress) -> Void
     ) async -> String {
         guard fixturePlaces.isEmpty,
@@ -3316,7 +3336,11 @@ private final class MapScreenModel {
                 store: offlineStore,
                 availableBytes: { StorageHeadroom.availableBytes(at: documents) }
             )
-            let result = try await downloader.downloadCurrentRegion(control: control, progress: progress)
+            let result = try await downloader.downloadCurrentRegion(
+                resumingPausedDownload: resumingPausedDownload,
+                control: control,
+                progress: progress
+            )
             MakingTracksLog.install.info("offline install completed region=\(region, privacy: .private(mask: .hash)) version=\(result.publish.publishVersion, privacy: .public) bytes=\(result.fetchedBytes, privacy: .public)")
             return "Installed \(result.publish.publishVersion)"
         } catch TileError.downloadPaused {
@@ -3341,6 +3365,15 @@ private final class MapScreenModel {
                 installed[regionID] = publish.publishVersion
             }
             return installed
+        }.value
+    }
+
+    func pausedOfflineDownloadRegions(for catalog: OfflineRegionCatalog) async -> Set<String> {
+        guard let offlineStore else { return [] }
+        let validRegionIDs = Set(catalog.zones.map(\.id))
+        return await Task.detached {
+            let paused = (try? offlineStore.pausedPendingDownloadRegions()) ?? []
+            return Set(paused.filter { validRegionIDs.contains($0) })
         }.value
     }
 
