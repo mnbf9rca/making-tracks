@@ -8,7 +8,7 @@ import MakingTracksData
 import MakingTracksMapStyle
 import MakingTracksTiles
 
-struct ViewportSeed: Sendable {
+struct ViewportSeed: Sendable, Equatable {
     let bbox: BBox
     let zoom: Int
 
@@ -41,6 +41,26 @@ struct ViewportSeed: Sendable {
             return .kl
         }
     }
+
+#if DEBUG
+    var fixtureRegionLabel: String {
+        if self == .uk {
+            return "UK"
+        }
+        if self == .kl {
+            return "Malaysia"
+        }
+        if self == .ocean {
+            return "Ocean"
+        }
+        return "Custom"
+    }
+#endif
+}
+
+struct ViewportCameraRequest: Sendable, Equatable {
+    let id: Int
+    let viewport: ViewportSeed
 }
 
 enum MenuDestination: Hashable {
@@ -79,6 +99,8 @@ struct MapScreen: View {
     var debugForceTileNetworkOffline = false
     var offlineDownloadProgress: OfflineDownloadProgress?
     var debugExposeFixturePinDiagnostics = false
+    var onReplayOnboarding: @MainActor () -> Void = {}
+    var cameraRequest: ViewportCameraRequest?
 
     @State private var model: MapScreenModel?
     @StateObject private var locationPermission: LocationPermission
@@ -126,7 +148,10 @@ struct MapScreen: View {
         debugForceTileNetworkOffline: Bool = false,
         offlineDownloadProgress: OfflineDownloadProgress? = nil,
         debugExposeFixturePinDiagnostics: Bool = false,
-        locationManager: AppLocationManager = AppLocationManager()
+        locationManager: AppLocationManager = AppLocationManager(),
+        locationPermission: LocationPermission? = nil,
+        cameraRequest: ViewportCameraRequest? = nil,
+        onReplayOnboarding: @escaping @MainActor () -> Void = {}
     ) {
         self.database = database
         self.startupViewport = startupViewport
@@ -135,9 +160,11 @@ struct MapScreen: View {
         self.debugForceTileNetworkOffline = debugForceTileNetworkOffline
         self.offlineDownloadProgress = offlineDownloadProgress
         self.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
+        self.onReplayOnboarding = onReplayOnboarding
+        self.cameraRequest = cameraRequest
         self.locationManager = locationManager
         _features = State(initialValue: isFixtureMap ? Self.initialFixtureFeatures() : [])
-        _locationPermission = StateObject(wrappedValue: LocationPermission(manager: locationManager))
+        _locationPermission = StateObject(wrappedValue: locationPermission ?? LocationPermission(manager: locationManager))
     }
 
     var body: some View {
@@ -153,6 +180,7 @@ struct MapScreen: View {
                 showsUserLocation: showsUserLocation,
                 userTrackingMode: userTrackingMode,
                 debugExposeFixturePinDiagnostics: debugExposeFixturePinDiagnostics,
+                cameraRequest: cameraRequest,
                 onCameraIdle: { bbox, zoom in
                     Task { @MainActor in
                         currentViewport = ViewportSeed(bbox: bbox, zoom: zoom)
@@ -334,7 +362,8 @@ struct MapScreen: View {
                 attribution: attribution,
                 selectedThemeID: $selectedThemeID,
                 locationStatus: locationMenuStatus,
-                openLocationSettings: openLocationSettings
+                openLocationSettings: openLocationSettings,
+                replayOnboarding: onReplayOnboarding
             )
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -474,6 +503,15 @@ struct MapScreen: View {
             }
 
             if isFixtureMap {
+#if DEBUG
+                Text(verbatim: "Startup region: \(startupViewport.fixtureRegionLabel)")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.startup-region")
+#endif
+
                 Text(verbatim: "Tracks visits: \(fixtureVisitCount)")
                     .font(.caption2)
                     .padding(.horizontal, 8)
@@ -1025,6 +1063,7 @@ private struct AppMenuSheet: View {
     @Binding var selectedThemeID: String
     let locationStatus: LocationMenuStatus
     let openLocationSettings: () -> Void
+    let replayOnboarding: @MainActor () -> Void
 
     @State private var path: [MenuDestination] = []
     @Environment(\.dismiss) private var dismiss
@@ -1060,7 +1099,8 @@ private struct AppMenuSheet: View {
             destinationWithDone(SettingsView(
                 selectedThemeID: $selectedThemeID,
                 locationStatus: locationStatus,
-                openLocationSettings: openLocationSettings
+                openLocationSettings: openLocationSettings,
+                replayOnboarding: replayOnboardingAndDismiss
             ))
         case .about:
             destinationWithDone(AboutView(attribution: attribution))
@@ -1083,6 +1123,11 @@ private struct AppMenuSheet: View {
         }
         path = [destination]
         shell.deepLinkPath = nil
+    }
+
+    private func replayOnboardingAndDismiss() {
+        dismiss()
+        replayOnboarding()
     }
 }
 
@@ -1165,6 +1210,7 @@ private struct SettingsView: View {
     @Binding var selectedThemeID: String
     let locationStatus: LocationMenuStatus
     let openLocationSettings: () -> Void
+    let replayOnboarding: @MainActor () -> Void
 
     var body: some View {
         List {
@@ -1210,6 +1256,11 @@ private struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("settings.storage.stub")
             }
+
+            Section("Onboarding") {
+                Button("Replay onboarding", action: replayOnboarding)
+                    .accessibilityIdentifier("settings.replay-onboarding")
+            }
         }
         .navigationTitle("Settings")
     }
@@ -1242,6 +1293,15 @@ private struct AboutView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Open data")
+                        .font(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Places come from open data including Wikipedia, OpenStreetMap, and heritage registers.")
+                    Text(OnboardingCopy.savedActivityPrivacy)
+                        .accessibilityIdentifier("about.privacy-saved-activity")
+                }
+
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Build")
                         .font(.headline)

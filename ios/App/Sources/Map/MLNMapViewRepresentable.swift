@@ -34,6 +34,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var showsUserLocation: Bool
     var userTrackingMode: MLNUserTrackingMode
     var debugExposeFixturePinDiagnostics = false
+    var cameraRequest: ViewportCameraRequest?
     var onCameraIdle: (BBox, Int) -> Void
     var onUserPanned: () -> Void
     var onTapPlace: (String) -> Void
@@ -85,6 +86,9 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         map.showsUserLocation = showsUserLocation
         map.userTrackingMode = userTrackingMode
         map.setCenter(startupViewport.center, zoomLevel: Double(startupViewport.zoom), animated: false)
+        if let cameraRequest {
+            context.coordinator.markCameraRequestApplied(cameraRequest.id)
+        }
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         map.addGestureRecognizer(tap)
         context.coordinator.map = map
@@ -111,6 +115,10 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         map.shouldRequestAuthorizationToUseLocationServices = false
         map.showsUserLocation = showsUserLocation
         map.userTrackingMode = userTrackingMode
+        if let cameraRequest,
+           context.coordinator.consumeCameraRequest(cameraRequest.id) {
+            map.setCenter(cameraRequest.viewport.center, zoomLevel: Double(cameraRequest.viewport.zoom), animated: true)
+        }
 
         let styleReload = context.coordinator.prepareStyleReload(
             worldPMTilesURL: worldPMTilesURL,
@@ -154,6 +162,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
 #if DEBUG
         private var needsProjectedDiagnosticsRenderSample = false
 #endif
+        private var lastAppliedCameraRequestID: Int?
 
         struct StyleReload: Equatable {
             let url: URL
@@ -206,6 +215,16 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             currentWorldPMTilesURL = reload.worldPMTilesURL
             currentRegionPMTilesURL = reload.regionPMTilesURL
             currentThemeID = reload.themeID
+        }
+
+        func markCameraRequestApplied(_ id: Int) {
+            lastAppliedCameraRequestID = id
+        }
+
+        func consumeCameraRequest(_ id: Int) -> Bool {
+            guard lastAppliedCameraRequestID != id else { return false }
+            lastAppliedCameraRequestID = id
+            return true
         }
 
         func styleURL(worldPMTilesURL: String?, regionPMTilesURL: String?, theme: MapTheme) -> URL? {

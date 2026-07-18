@@ -8,10 +8,11 @@ struct MakingTracksApp: App {
     private static let arguments = Set(rawArguments)
     private static let isFixtureMap = arguments.contains("--ui-testing-fixture-map")
     private static let seedFixtureUserList = arguments.contains("--ui-testing-seed-user-list")
-    private static let startupViewport = ViewportSeed.selected(argumentValue("--ui-testing-map-state"))
+    private static let startupViewportArgument = argumentValue("--ui-testing-map-state")
     private static let debugInstallOfflineRegion = argumentValue("--debug-install-offline-region")
     private static let debugForceTileNetworkOffline = arguments.contains("--debug-force-tile-network-offline")
 #if DEBUG
+    private static let isLocationNotDeterminedFixture = arguments.contains("--ui-testing-location-not-determined")
     private static let isLocationDeniedFixture = arguments.contains("--ui-testing-location-denied")
     private static let isLocationAuthorizedFixture = arguments.contains("--ui-testing-location-authorized")
     private static let debugExposeFixturePinDiagnostics = arguments.contains("--ui-testing-pin-diagnostics")
@@ -20,6 +21,7 @@ struct MakingTracksApp: App {
     private static let uiTestingOfflineProgress = argumentValue("--ui-testing-offline-progress").flatMap(Double.init)
     private static let primaryFixturePlaceID = "mt1_00000000000000000000000000"
 #else
+    private static let isLocationNotDeterminedFixture = false
     private static let isLocationDeniedFixture = false
     private static let isLocationAuthorizedFixture = false
     private static let debugExposeFixturePinDiagnostics = false
@@ -30,6 +32,8 @@ struct MakingTracksApp: App {
 
     init() {
         Self.resetUITestingThemeIfNeeded()
+        Self.resetUITestingOnboardingIfNeeded()
+        Self.completeUITestingOnboardingIfNeeded()
     }
 
     private let database: AppDatabase = {
@@ -47,6 +51,9 @@ struct MakingTracksApp: App {
     }()
 
     private let locationManager: AppLocationManager = {
+        if isLocationNotDeterminedFixture {
+            return AppLocationManager(simulatedAuthorizationStatus: .notDetermined)
+        }
         if isLocationDeniedFixture {
             return AppLocationManager(simulatedAuthorizationStatus: .denied)
         }
@@ -63,9 +70,9 @@ struct MakingTracksApp: App {
 
     var body: some Scene {
         WindowGroup {
-            MapScreen(
+            MakingTracksRootView(
                 database: database,
-                startupViewport: Self.startupViewport,
+                startupViewportArgument: Self.startupViewportArgument,
                 isFixtureMap: Self.isFixtureMap,
                 debugInstallOfflineRegion: Self.debugInstallOfflineRegion,
                 debugForceTileNetworkOffline: Self.debugForceTileNetworkOffline,
@@ -105,5 +112,20 @@ struct MakingTracksApp: App {
     private static func resetUITestingThemeIfNeeded() {
         guard isFixtureMap, arguments.contains("--ui-testing-reset-theme") else { return }
         UserDefaults.standard.removeObject(forKey: MapScreen.themeStorageKey)
+    }
+
+    private static func resetUITestingOnboardingIfNeeded() {
+        guard isFixtureMap, arguments.contains("--ui-testing-reset-onboarding") else { return }
+        UserDefaults.standard.removeObject(forKey: OnboardingStorage.hasCompletedOnboardingKey)
+        UserDefaults.standard.removeObject(forKey: OnboardingStorage.chosenRegionKey)
+    }
+
+    private static func completeUITestingOnboardingIfNeeded() {
+        guard isFixtureMap, arguments.contains("--ui-testing-complete-onboarding") else { return }
+        UserDefaults.standard.set(true, forKey: OnboardingStorage.hasCompletedOnboardingKey)
+        if arguments.contains("--ui-testing-reset-database")
+            || UserDefaults.standard.string(forKey: OnboardingStorage.chosenRegionKey) == nil {
+            UserDefaults.standard.set(OnboardingRegionChoice.malaysia.rawValue, forKey: OnboardingStorage.chosenRegionKey)
+        }
     }
 }

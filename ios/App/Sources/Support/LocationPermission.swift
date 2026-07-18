@@ -5,6 +5,7 @@ import SwiftUI
 final class LocationPermission: NSObject, ObservableObject {
     @Published private(set) var authorizationStatus: CLAuthorizationStatus
     @Published private(set) var currentCoordinate: CLLocationCoordinate2D?
+    @Published private(set) var authorizationRequestCount: Int
 
     private let manager: AppLocationManager
     private var didRequestAuthorization = false
@@ -13,6 +14,7 @@ final class LocationPermission: NSObject, ObservableObject {
     init(manager: AppLocationManager = AppLocationManager()) {
         self.manager = manager
         self.authorizationStatus = manager.authorizationStatus
+        self.authorizationRequestCount = manager.whenInUseAuthorizationRequestCount
         super.init()
         self.manager.permissionDelegate = self
     }
@@ -43,6 +45,7 @@ final class LocationPermission: NSObject, ObservableObject {
         guard authorizationStatus == .notDetermined, !didRequestAuthorization else { return }
         didRequestAuthorization = true
         manager.requestWhenInUseAuthorization()
+        authorizationRequestCount = manager.whenInUseAuthorizationRequestCount
     }
 
     func requestCurrentLocation() {
