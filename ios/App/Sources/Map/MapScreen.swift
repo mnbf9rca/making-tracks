@@ -230,6 +230,21 @@ struct ViewportSeed: Sendable, Equatable {
         zoom: 12
     )
 
+    static let penang = ViewportSeed(
+        bbox: BBox(minLon: 100.282, minLat: 5.440, maxLon: 100.306, maxLat: 5.464),
+        zoom: 14
+    )
+
+    static let penangMid = ViewportSeed(
+        bbox: BBox(minLon: 100.276, minLat: 5.434, maxLon: 100.312, maxLat: 5.470),
+        zoom: 13
+    )
+
+    static let penangWide = ViewportSeed(
+        bbox: BBox(minLon: 100.264, minLat: 5.422, maxLon: 100.324, maxLat: 5.482),
+        zoom: 12
+    )
+
     static let ocean = ViewportSeed(
         bbox: BBox(minLon: -170, minLat: -10, maxLon: -150, maxLat: 10),
         zoom: 4
@@ -244,6 +259,12 @@ struct ViewportSeed: Sendable, Equatable {
         switch value {
         case "ocean":
             return .ocean
+        case "penang":
+            return .penang
+        case "penang-mid":
+            return .penangMid
+        case "penang-wide":
+            return .penangWide
         case "uk":
             return .uk
         default:
@@ -258,6 +279,9 @@ struct ViewportSeed: Sendable, Equatable {
         }
         if self == .kl {
             return "Malaysia"
+        }
+        if self == .penang {
+            return "Penang"
         }
         if self == .ocean {
             return "Ocean"

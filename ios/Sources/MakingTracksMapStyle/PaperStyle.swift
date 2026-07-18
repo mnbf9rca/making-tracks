@@ -1,6 +1,11 @@
 public let MUTED_MAX = 0.25
 public let paperBasemapGlyphsURL = "https://tiles.making-tracks.app/global/fonts/{fontstack}/{range}.pbf"
 
+// Tunable style constants: keep waterways readable without competing with roads,
+// and avoid rendering unbounded source lines when older tiles omit min_zoom.
+private let waterwayLineWidth = 0.8
+private let waterwayDefaultMinZoom = 14.0
+
 public func saturation(hex: String) -> Double {
     var string = hex
     if string.hasPrefix("#") {
@@ -219,6 +224,57 @@ private func parksFilter() -> JSONValue {
     ])
 }
 
+private func waterFillFilter() -> JSONValue {
+    .array([
+        .string("=="),
+        .array([.string("geometry-type")]),
+        .string("Polygon"),
+    ])
+}
+
+private func waterwayLineFilter() -> JSONValue {
+    .array([
+        .string("all"),
+        .array([
+            .string("=="),
+            .array([.string("geometry-type")]),
+            .string("LineString"),
+        ]),
+        .array([
+            .string("any"),
+            .array([
+                .string("in"),
+                .array([.string("get"), .string("kind")]),
+                .array([.string("literal"), waterwayKinds()]),
+            ]),
+            .array([
+                .string("in"),
+                .array([.string("get"), .string("kind_detail")]),
+                .array([.string("literal"), waterwayKinds()]),
+            ]),
+        ]),
+        .array([
+            .string("<="),
+            .array([
+                .string("case"),
+                .array([.string("has"), .string("min_zoom")]),
+                .array([.string("to-number"), .array([.string("get"), .string("min_zoom")])]),
+                .double(waterwayDefaultMinZoom),
+            ]),
+            .array([.string("zoom")]),
+        ]),
+    ])
+}
+
+private func waterwayKinds() -> JSONValue {
+    .array([
+        .string("river"),
+        .string("stream"),
+        .string("canal"),
+        .string("drain"),
+    ])
+}
+
 private func labelTextField() -> JSONValue {
     .array([
         .string("coalesce"),
@@ -250,7 +306,11 @@ private func basemapLayers(sourceID: String, prefix: String, theme: MapTheme) ->
     }
 
     layers.append(contentsOf: [
-        layer("\(prefix)-water", "fill", source: sourceID, sourceLayer: "water", paint: ["fill-color": .string(palette.water)]),
+        layer("\(prefix)-water", "fill", source: sourceID, sourceLayer: "water", filter: waterFillFilter(), paint: ["fill-color": .string(palette.water)]),
+        layer("\(prefix)-waterways", "line", source: sourceID, sourceLayer: "water", filter: waterwayLineFilter(), paint: [
+            "line-color": .string(palette.water),
+            "line-width": .double(waterwayLineWidth),
+        ]),
         layer("\(prefix)-roads", "line", source: sourceID, sourceLayer: "roads", paint: [
             "line-color": .string(palette.roads),
             "line-width": .double(theme.roadWidth),

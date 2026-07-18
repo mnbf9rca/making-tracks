@@ -187,6 +187,24 @@ final class AppShellTests: XCTestCase {
             OnboardingStorage.startupViewport(argumentSeed: "ocean", chosenRegionRawValue: "uk"),
             .ocean
         )
+        XCTAssertEqual(
+            OnboardingStorage.startupViewport(argumentSeed: "penang", chosenRegionRawValue: "uk"),
+            .penang
+        )
+        XCTAssertEqual(
+            OnboardingStorage.startupViewport(argumentSeed: "penang-wide", chosenRegionRawValue: "uk"),
+            .penangWide
+        )
+        XCTAssertEqual(
+            OnboardingStorage.startupViewport(argumentSeed: "penang-mid", chosenRegionRawValue: "uk"),
+            .penangMid
+        )
+        XCTAssertEqual(ViewportSeed.penang.bbox, BBox(minLon: 100.282, minLat: 5.440, maxLon: 100.306, maxLat: 5.464))
+        XCTAssertEqual(ViewportSeed.penang.zoom, 14)
+        XCTAssertEqual(ViewportSeed.penangWide.bbox, BBox(minLon: 100.264, minLat: 5.422, maxLon: 100.324, maxLat: 5.482))
+        XCTAssertEqual(ViewportSeed.penangWide.zoom, 12)
+        XCTAssertEqual(ViewportSeed.penangMid.bbox, BBox(minLon: 100.276, minLat: 5.434, maxLon: 100.312, maxLat: 5.470))
+        XCTAssertEqual(ViewportSeed.penangMid.zoom, 13)
     }
 
     func testOnboardingCopyMatchesPrivacyPolicyQualifierAndDoesNotExposeImageToggle() {
