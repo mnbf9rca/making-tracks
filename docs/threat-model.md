@@ -1,148 +1,179 @@
 # Threat Model — Making Tracks
 
-**What this is for.** Making Tracks is a tourist discovery-map app: open public data, map tiles served
-from a CDN, all user data on the device, no accounts required, no third-party SDKs. This document says —
-bluntly — **what we defend against and what we deliberately do not**, so security and privacy engineering
-stays proportionate. Its most important section is [§4 Out of scope](#4-out-of-scope-the-part-that-does-the-work):
-most wasted security effort on an app like this comes from defending against attackers who have already
-won. If a proposed defence isn't answering a threat named here, it's overreach — see the calibration tests
-(§5) and the review rule (§6).
+Making Tracks is a travel discovery-map app: the place data and maps come from open public sources and are
+served from a CDN; everything a user does stays on their device; no account is required (one is optionally
+available for sharing); and the app carries no third-party analytics, advertising, or tracking code. This
+document says what the app defends against and what it does not, so security and privacy work stays
+proportionate.
 
-Register: this is an engineering calibration doc, not a user-facing policy. The user-facing commitments are
-in [`privacy.md`](../privacy.md); this explains the adversary model those commitments assume.
+The exclusions (§4) are the important part. Most wasted security effort on an app like this goes into
+defending against an attacker who has already broken the device or the operating system — at which point
+nothing the app does can help. If a proposed defence does not answer a threat listed here, it does not
+belong in the app. The calibration tests (§5) and the review rule (§6) are how we hold that line.
 
-## 1. Assets, ranked
+This is an engineering document, not the user-facing policy. The promises to users are in
+[`privacy.md`](../privacy.md); this describes the attackers those promises assume.
 
-1. **The user's location-interest pattern — the crown jewel.** Where a user looks on the map, what they
-   download, and what they save or hide. Taken together this reveals where someone is, is going, or cares
-   about. `privacy.md` commits that this stays on the device and that we "do not track where users are."
-   Everything below is ranked against protecting *this*.
-2. **Delivery integrity** — that the bytes a device renders are the bytes we published (no in-transit
-   tampering). **Solved by design:** every **tile and basemap object** is content-addressed and SHA-verified
-   against the manifest on download (`TileCodec.decode`, the
-   [download safety contract](superpowers/plans/2026-07-18-wp-rm-region-manager.md) §8); a tampered object
-   fails verification and is dropped. (The `current.json` / `manifest.json` trust root that *carries* those
-   hashes is TLS-fetched and schema-validated, not itself content-addressed.) **This is publication
-   integrity, NOT content safety** — SHA proves an object equals what we published, it says nothing about
-   whether that content is *safe to render*. Safety of the content itself is a separate, in-scope adversary
-   (§2, hostile upstream content) — don't conflate the two.
-3. **Service availability and cost** — the CDN bill and staying up. Open buckets invite scraping and
-   cost-inflation (#142, anti-abuse auth, deferred). A real but ordinary operational concern, not a
-   user-privacy one.
+## The model at a glance
 
-## 2. In-scope adversaries (defend against these)
+```mermaid
+flowchart TB
+    subgraph device["📱 The user's device — iOS sandbox"]
+        ud["Visits, saved and hidden places,<br/>lists, and what they look at on the map"]
+    end
+    subgraph cdn["☁️ Our CDN (Cloudflare)"]
+        obj["Published bundles: map tiles,<br/>basemap, place data, photos"]
+    end
+    subgraph up["🌍 Upstream open data"]
+        src["OpenStreetMap, Wikipedia"]
+    end
 
-- **The passive network observer** (shared Wi-Fi, ISP, coffee-shop router). **TLS suffices** — standard
-  HTTPS through the platform trust store already denies them request contents. We do **not** add more here
-  (see §5, pinning).
-- **Ourselves and the CDN vantage point — the interesting one.** We host on Cloudflare, which sees a
-  device's IP and request timing. **Current posture: documented-and-accepted.** `privacy.md` is explicit
-  that this is *not* anonymous, that we don't log it (Cloudflare may), and that a device downloading a
-  bundle does not reveal a visit. This is the one first-party observer we take seriously *by design* rather
-  than trust — but the engineered mitigation is **committed, not yet built**: **cover traffic** (decoy
-  fetches so the pattern of what a device downloads doesn't reveal where the user cares about) is the
-  intended control. `privacy.md` says of it plainly: *"We're still working out how, and we don't have it
-  yet,"* framed as a user-choosable future ("you will be able to choose to… hide which one you actually
-  want"). It is grounded in the region-model design (#131, which raises the movement-trace problem) and
-  specified in the **proposed** PRINCIPLES cover-traffic amendment (P15, still Rob-gated); the decoy budget
-  numbers are Rob's to set. Target behaviour, owned by the fetch-layer WP — not a shipped defense today.
-- **Hostile / poisoned upstream content — the app's most likely attack, and already defended.** Our data
-  comes from crowd-editable open sources (OSM, Wikipedia). A vandalized or malformed entry — a hostile
-  place name, an attacker-chosen image URL, an oversized blurb — is ingested, published, and **SHA-verifies
-  cleanly because it *is* what we published** (asset 2 proves delivery, not safety). The adversary is an
-  ordinary public-database vandal (anyone with a browser — the *lowest*-sophistication attacker, squarely
-  in register). This is **already solved by the untrusted-data posture** (PRINCIPLES §10; spec §5.5;
-  `privacy.md`: *"a bad entry in a public database can't harm your phone"*): defensive decoding with size
-  and length caps, `SAFE_TEXT` stripping, an https-only host allowlist for image URLs, source strings
-  rendered as **inert plain text** (never HTML/attributed), and never interpolated unescaped into SQL,
-  shell, or LLM prompts. **This is the citable home for every untrusted-data / content-validation review
-  finding** (§6) — it does not need to name a network adversary.
-- **Third-party SDK data brokers — designed out entirely.** **INVARIANT: the app ships zero third-party
-  analytics, advertising, or tracking SDKs** (`privacy.md` principle 3). Dependencies are functional only
-  (GRDB for the local database; MapLibre for rendering). This is the single most effective privacy control
-  a consumer app has, and it is a standing invariant: **adding any data-collecting third-party SDK is a
-  privacy regression that requires a `privacy.md` amendment, not a code review.**
+    src -->|"we ingest, check, and publish"| obj
+    ud -->|"HTTPS: request a bundle"| obj
+    obj -->|"bundle returned;<br/>each object checked against its expected hash"| ud
 
-## 3. Trust boundaries (one sketch, no ceremony)
+    net(["Network observer<br/>Wi-Fi / ISP"]) -.->|"stopped by TLS"| ud
+    self(["Us / the CDN<br/>sees IP + timing"]) -.->|"planned: cover traffic"| obj
+    vand(["Content vandal<br/>edits OSM / Wikipedia"]) -.->|"defused: size caps,<br/>plain-text rendering"| src
 
-Device (iOS sandbox: the user's data at rest, all reads/writes) → HTTPS → CDN (`tiles.making-tracks.app`,
-sees IP + timing) → our published static objects (a TLS-fetched, schema-validated `manifest` whose listed
-tile/basemap objects are SHA-verified on the device). User data never crosses the first arrow outward
-except the explicit, user-initiated flows `privacy.md` already enumerates (share a list, report a place,
-opt-in stats). There is no server-side store of user *activity* to attack, because there isn't one (the
-optional accounts system, when built, stores only sharing identity + shared lists — never visits or map
-history, per `privacy.md`).
+    oos["OUT OF SCOPE: nation-state · seized/unlocked device ·<br/>jailbroken or compromised OS · our own infra turning hostile · enterprise MITM"]
 
-## 4. Out of scope (the part that does the work)
+    classDef out fill:#eee,stroke:#999,color:#555,stroke-dasharray:4 3;
+    class oos out;
+```
 
-These are **deliberate, engineered exclusions** — good engineering, not negligence. Each is out of scope
-because the defence would sit *above a trust boundary the attacker has already crossed*, or because it asks
-app code to solve a problem app code cannot. A review finding that assumes one of these is **overreach**
-(§6).
+## 1. What we protect, in order
 
-- **Compromised, jailbroken, or rooted device / malicious OS.** Out of scope. Once the platform sandbox is
-  broken, any app-layer control can be bypassed — defending here is security theatre. *"The sandboxing on
-  an iPhone is sufficient isolation"*: we rely on the OS security model and do not duplicate it. (This is
-  why on-device file-protection class is a **non-issue** — see §5.)
-- **Forensic physical device seizure / extraction.** Out of scope. We store no account credentials and no
-  server-linkable identity at rest; on-device data gets standard OS file protection, and we make **no
-  claim** to resist a determined forensic adversary with the unlocked device in hand.
-- **Nation-state / targeted advanced adversary.** Out of scope, emphatically. A consumer map app cannot and
-  does not claim to withstand an adversary with unlimited resources. *Defending a tourist's map browsing
-  against a nation-state is a category error* — a user with that threat model should follow platform-level
-  guidance, not rely on us. This is the anti-pattern this whole document exists to stop.
-- **Our own infrastructure turning hostile.** Out of scope **as an app-code concern** — this is **ops
-  hygiene**, not something the app defends against. Securing the CDN, the pipeline, and the deploy path is
-  operational discipline (§7), not a control we build into the client.
-- **Enterprise-MITM / custom-root-CA interception.** Out of scope. A device that has been made to trust an
-  attacker's root CA is already administratively controlled; TLS cannot be expected to defend a device
-  configured against its own user.
+1. **Where the user's interest lies.** What they look at on the map, what they download, and what they save
+   or hide. Together this shows where someone is, is going, or cares about — the most sensitive thing the
+   app touches. `privacy.md` promises this stays on the device and that we do not track where users are.
+   Everything else is ranked against protecting it.
+2. **Delivery integrity** — that the bytes a device renders are the bytes we published, with nothing
+   changed in transit. This is handled: each tile and basemap object is named by its hash, and on download
+   its content is checked against the expected hash listed in the manifest (`TileCodec.decode`, the
+   [download safety contract](superpowers/plans/2026-07-18-wp-rm-region-manager.md) §8); an object that does
+   not match is rejected. (The `manifest` that carries those hashes is fetched over TLS and schema-checked,
+   not itself hash-addressed.) This proves an object is *what we published* — it does not prove the content
+   is *safe to show*. Whether the content itself is safe is a separate in-scope threat (§2, hostile upstream
+   content); the two are not the same thing.
+3. **Staying up and staying affordable** — the CDN bill and availability. Open buckets invite scraping and
+   cost-inflation (#142, anti-abuse auth, deferred). A normal operational concern, not a privacy one.
 
-## 5. Calibration tests (apply these mechanically)
+## 2. Attackers we defend against
 
-Before proposing or accepting a security/privacy control, screen it:
+- **A network observer** on shared Wi-Fi, an ISP, or a café router. TLS handles this: standard HTTPS
+  through the device's trust store hides the request contents. We add nothing further here (§5 explains why
+  we do not pin certificates).
+- **Us, and the CDN itself.** We host on Cloudflare, which sees a device's IP address and the timing of its
+  requests. `privacy.md` states plainly that this is not anonymous, that we do not log it (Cloudflare may),
+  and that downloading a bundle does not reveal a visit. This is the one first-party watcher we plan around
+  rather than simply trust. The mitigation — **cover traffic**, where the app quietly fetches a few extra
+  areas so the pattern of downloads does not reveal the real one — is committed but not built yet.
+  `privacy.md` says of it: *"We're still working out how, and we don't have it yet,"* and describes it as
+  something the user will be able to choose. It follows the region-model design (#131) and a proposed
+  amendment to the principles (P15) that is still under review; the size of the decoy budget is a policy
+  question, not settled here. It is a planned control, not a shipped one.
+- **A content vandal** editing the open sources we draw from. Our data comes from crowd-editable places
+  (OpenStreetMap, Wikipedia). A bad edit — a hostile place name, a malicious image URL, an oversized
+  description — is ingested and published, and it passes the hash check because it *is* what we published
+  (delivery integrity, §1, proves delivery, not safety). This is the app's most likely attack, and it is
+  already handled by the way we treat all source data as untrusted (PRINCIPLES §10; spec §5.5;
+  `privacy.md`: *"a bad entry in a public database can't harm your phone"*): source text is decoded
+  defensively with size and length limits, stripped with `SAFE_TEXT`, image URLs checked against an
+  https-only host allowlist, and every source string shown as plain text — never as HTML, never built
+  straight into a database query, a shell command, or a prompt. **Any review finding about handling
+  untrusted content belongs here** (§6); it does not need to name a network attacker.
+- **Data brokers via third-party code.** The app ships **no third-party analytics, advertising, or tracking
+  code, and makes no third-party network calls of its own** — this is a fixed rule (`privacy.md` principle
+  3), and it is the single most effective privacy measure a consumer app can take. This is not the same as
+  "no third-party code at all": the app does use third-party *libraries* for its core function (currently
+  GRDB for the on-device database and MapLibre for drawing the map — current examples, not a fixed list),
+  each pinned to a reviewed version. The rule is about behaviour, not authorship: adding anything that
+  collects or sends usage data is a privacy change that needs a `privacy.md` amendment, not just a code
+  review.
 
-1. **Trust-boundary test.** Does it only help *after* an attacker has crossed a boundary they'd have to
-   cross to reach it (the sandbox, the OS, the user's unlocked device)? If yes → moot, reject.
-2. **Register test.** Is the adversary in our realistic register (§2: network snoop, us/the CDN,
-   **hostile upstream content**, opportunistic abuser, would-be SDK) or an out-of-register one (§4:
-   nation-state, forensic seizure, broken OS)? Defend the former; document-and-accept the latter.
-3. **Cost/fragility test.** Does the control add more operational failure risk than the attack risk it
-   removes? If yes → reject (this is why cert pinning is out — below).
+## 3. Trust boundaries
 
-**Worked examples (2026-07-18 review decisions, retro-classified):**
+The diagram above is the whole picture. In words: the user's data lives inside the iOS sandbox on their
+device. It leaves only over HTTPS, and only through the specific user-initiated actions `privacy.md`
+already lists (share a list, report a place, opt-in place statistics). The device fetches published bundles
+from the CDN and checks each object against its expected hash. There is no server that stores what a user
+does, because we never built one — the optional accounts system, when it exists, holds only a sharing
+identity and the lists a user chose to share, never their visits or map history.
 
-- **TLS certificate pinning — REJECTED, correctly.** Fails the cost/fragility test: Google, Apple, OWASP,
-  and Cloudflare all discourage pinning for apps of this profile (certs rotate, pinning causes outages, and
-  it's trivially bypassed on a compromised device — the only device where it'd matter, which is already out
-  of scope §4). The platform's Certificate Transparency + short-lived certs cover the residual risk.
-- **Post-redirect origin re-check — KEPT.** Cheap and proportionate: background downloads can follow
-  redirects without the delegate, so re-validating that a completed download's final origin is still
-  `tiles.making-tracks.app` (#197's `validateDownloadedFile`) closes a real in-register gap at near-zero
-  cost. In scope, small, kept.
-- **On-device `.none` file-protection class — NON-ISSUE.** The only adversary it would help against
-  (someone extracting files from the device) is out of scope §4, and the crown-jewel data is not
-  server-linkable identity. Not worth engineering; not a finding.
+## 4. What is out of scope
 
-## 6. Enforcement
+These are chosen exclusions, and choosing them is good engineering. Each is excluded because the defence
+would only matter *after* an attacker has already crossed a boundary they would have to cross to reach it,
+or because it asks the app to solve something the app cannot. A review finding that assumes one of these is
+overreach (§6).
 
-Every security or privacy review finding must **cite a specific in-scope vector from this document**, or
-**explicitly propose an amendment to this model**. A finding that cites no vector — or that assumes an
-out-of-scope adversary (§4) — is **rejected as overreach**. This rule is mirrored in `AGENTS.md`'s review
-gates (the §5.5 security-posture hook).
+- **A jailbroken, rooted, or otherwise compromised device or OS.** Once the platform sandbox is broken, any
+  defence the app adds can be walked around. The iPhone sandbox is sufficient isolation; we rely on the OS
+  security model rather than rebuild it. (This is why the on-device file-protection class is not worth
+  worrying about — see §5.)
+- **A seized, unlocked device and forensic extraction.** We store no account credentials and nothing at
+  rest that ties data to a real identity; on-device data has the standard OS file protection, and we do not
+  claim to withstand someone with the unlocked device in their hands.
+- **A nation-state or well-resourced targeted attacker.** A consumer map app cannot claim to hold off an
+  attacker with unlimited resources, and it should not pretend to. Trying to defend a tourist's map
+  browsing against that attacker is the mistake this document exists to prevent; a user who genuinely faces
+  it needs platform-level protection, not us.
+- **Enterprise MITM / a custom root CA.** A device that has been configured to trust an attacker's
+  certificate authority is already under someone else's administrative control; TLS is not expected to
+  defend a device set up against its own user.
 
-**Untrusted-data / content-validation findings have a standing home.** A finding about defensive parsing,
-size/length caps, `SAFE_TEXT`, plain-text rendering, URL allowlisting, or unescaped interpolation cites the
-**hostile-upstream-content vector (§2)** — equivalently the untrusted-data posture (spec §5.5, PRINCIPLES
-§10). It does **not** need to name a network-style adversary, and it is never "overreach": this is the
-app's most in-register threat and a ratified non-negotiable. The overreach rule targets defenses against
-*out-of-scope* adversaries (§4), not the everyday hygiene of handling hostile content we ourselves publish.
+**Our own infrastructure** is a real risk, and it is *identified rather than ignored* — it is simply not
+something the app's code can defend, so it is handled operationally (§7), not in the client.
 
-The model is not frozen: if a genuine new vector appears, the right move is to argue it into §2/§4 here (Rob
-ratifies, like `privacy.md`), not to smuggle it in as a one-off review comment.
+## 5. How to tell a real control from overreach
+
+Before proposing or accepting a security or privacy control, screen it against three questions:
+
+1. **Has the attacker already won?** Would the control only help *after* an attacker crossed a boundary
+   they would have to cross to reach it (the sandbox, the OS, the unlocked device)? If so, it is pointless
+   — reject it.
+2. **Is the attacker one we defend against?** Is it someone from §2 (network observer, us/the CDN, a
+   content vandal, a would-be tracker), or someone from §4 (nation-state, seized device, broken OS)?
+   Defend against the first list; document and accept the risk from the second.
+3. **Does it cost more than it saves?** Would the control add more operational failure than the attack risk
+   it removes? If so, reject it — this is exactly why we do not pin certificates.
+
+**Recent decisions, as worked examples:**
+
+- **Certificate pinning — not done, on purpose.** It fails the third test. Google, Apple, OWASP, and
+  Cloudflare all advise against pinning for an app like this: certificates rotate, pinning causes outages,
+  and it is easily bypassed on a compromised device — the only device where it would matter, which is
+  already out of scope (§4). Certificate Transparency and short-lived certificates, provided by the
+  platform, cover the residual risk.
+- **Re-checking the origin after a redirect — kept.** Cheap and worthwhile: a background download can
+  follow redirects without the app seeing them, so we re-check that a finished download's final origin is
+  still `tiles.making-tracks.app` and that its content matches the object's expected hash (#197's
+  `validateDownloadedFile`). Small, in scope, kept.
+- **The on-device `.none` file-protection class — not an issue.** The only attacker it would help against
+  is someone extracting files from the device, which is out of scope (§4), and the sensitive data is not
+  tied to a real identity anyway. Not worth building; not a valid finding.
+
+## 6. Using this document in review
+
+Every security or privacy review finding must **name a specific in-scope attacker from this document**, or
+**propose a change to the model**. A finding that names none — or that assumes an out-of-scope attacker
+(§4) — is set aside as overreach. The same rule lives in `AGENTS.md`'s review gates (the §5.5
+security-posture hook).
+
+Findings about handling untrusted content — defensive parsing, size limits, `SAFE_TEXT`, plain-text
+rendering, URL allowlists, avoiding unescaped queries — name the **content-vandal attacker (§2)**,
+equivalently the untrusted-data posture (spec §5.5, PRINCIPLES §10). They never need a network attacker and
+are never overreach: this is the app's most likely threat. The overreach rule is aimed at defences against
+out-of-scope *attackers* (§4), not at the everyday handling of hostile content we publish.
+
+The model is not fixed. If a genuine new attacker appears, the right move is to argue it into §2 or §4 here
+— changes to this document are ratified the same way `privacy.md` is — not to slip it in as a one-off
+review comment.
 
 ## 7. Pipeline and infrastructure
 
-Out of scope for bespoke modelling (Rob ruling): the pipeline and any VPS/CDN follow **industry best
-practice** — secrets via `op` (never on disk), least privilege, timely patching. This is ops hygiene, held
-to standard operational discipline, not a threat surface this app-facing model enumerates.
+The risk to the pipeline and hosting is identified, and it is handled by standard operational procedure
+rather than by anything in the app: strong credential management (ephemeral credentials where possible),
+best-practice host configuration, signed commits, secrets kept out of files (via `op`), least privilege,
+and timely patching. This is operational discipline, not an attack surface the app's code models.
