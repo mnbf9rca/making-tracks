@@ -1243,6 +1243,7 @@ private struct AboutView: View {
                     Text(verbatim: "Build \(Self.buildCommit)")
                         .font(.caption)
                         .fontDesign(.monospaced)
+                        .accessibilityIdentifier("credits.build-commit")
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -1565,6 +1566,9 @@ private struct PlaceCardSheet: View {
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("place-card.title")
                     typeRow(card)
+                    if dynamicTypeSize.isAccessibilitySize {
+                        actionButtons(card)
+                    }
                     if let blurb = card.blurb {
                         Text(verbatim: blurb)
                             .font(.body)
@@ -1579,7 +1583,9 @@ private struct PlaceCardSheet: View {
                             .foregroundStyle(.red)
                             .accessibilityIdentifier("place-card.action-error")
                     }
-                    actionButtons(card)
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        actionButtons(card)
+                    }
                     attributionText(card)
                 } else if isLoading {
                     ProgressView()

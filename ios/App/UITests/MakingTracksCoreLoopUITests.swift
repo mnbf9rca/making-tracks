@@ -312,14 +312,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         let saveButton = app.buttons["place-card.save"]
         let visitedButton = app.buttons["place-card.visited"]
-        XCTAssertTrue(saveButton.waitForExistence(timeout: 5))
-        XCTAssertTrue(visitedButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(scrollToExistence(of: saveButton, in: app))
+        XCTAssertTrue(scrollToExistence(of: visitedButton, in: app))
         attachScreenshot(named: "place-card-a11y")
         XCTAssertGreaterThan(visitedButton.frame.minY, saveButton.frame.minY)
 
         visitedButton.tap()
         let lovedButton = app.buttons["place-card.loved"]
-        XCTAssertTrue(lovedButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(scrollToExistence(of: lovedButton, in: app))
         XCTAssertGreaterThan(lovedButton.frame.minY, visitedButton.frame.minY)
     }
 
@@ -375,7 +375,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["About"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Build"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Open source acknowledgements"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Build \(try currentGitCommit())"].waitForExistence(timeout: 5))
+        XCTAssertEqual(try buildCommitLabel(in: app), "Build \(try currentGitCommit())")
         let grdbCredit = element(identifier: "credits.oss.GRDB.swift|7.11.1", in: app)
         XCTAssertTrue(scrollToExistence(of: grdbCredit, in: app))
 
@@ -659,6 +659,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 line: line
             )
         }
+    }
+
+    private func buildCommitLabel(in app: XCUIApplication) throws -> String {
+        let element = app.staticTexts["credits.build-commit"]
+        XCTAssertTrue(element.waitForExistence(timeout: 5))
+        return element.label
     }
 
     private func currentGitCommit() throws -> String {
