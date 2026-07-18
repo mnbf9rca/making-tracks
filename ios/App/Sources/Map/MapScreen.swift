@@ -2076,6 +2076,7 @@ private struct AppMenuRootView: View {
             } label: {
                 menuRow(title: "Lists", subtitle: "Saved places and collections", systemImage: "list.bullet")
             }
+            .buttonStyle(.plain)
             .accessibilityIdentifier("menu.row.lists")
 
             Button {
@@ -2083,6 +2084,7 @@ private struct AppMenuRootView: View {
             } label: {
                 menuRow(title: "Offline maps", subtitle: "Download regions for later", systemImage: "arrow.down.circle")
             }
+            .buttonStyle(.plain)
             .accessibilityIdentifier("menu.row.offline-maps")
 
             Button {
@@ -2090,6 +2092,7 @@ private struct AppMenuRootView: View {
             } label: {
                 menuRow(title: "Settings", subtitle: "Map theme, location, and storage", systemImage: "gearshape")
             }
+            .buttonStyle(.plain)
             .accessibilityIdentifier("menu.row.settings")
 
             Button {
@@ -2097,6 +2100,7 @@ private struct AppMenuRootView: View {
             } label: {
                 menuRow(title: "About", subtitle: "Credits, attribution, and build info", systemImage: "info.circle")
             }
+            .buttonStyle(.plain)
             .accessibilityIdentifier("menu.row.about")
         }
     }
@@ -2115,7 +2119,9 @@ private struct AppMenuRootView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(minHeight: 44, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
+        .foregroundStyle(.primary)
     }
 }
 
@@ -2526,27 +2532,32 @@ private struct SettingsView: View {
     var body: some View {
         List {
             Section("Map theme") {
-                Text(MapTheme.named(selectedThemeID).displayName)
-                    .accessibilityIdentifier("settings.theme.selected")
                 ForEach(MapTheme.allCandidates, id: \.id) { theme in
+                    let isSelected = MapTheme.named(selectedThemeID).id == theme.id
                     Button {
                         selectedThemeID = theme.id
                     } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(verbatim: theme.displayName)
+                                    .foregroundStyle(.primary)
                                 Text(verbatim: theme.id)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
-                            if MapTheme.named(selectedThemeID).id == theme.id {
+                            if isSelected {
                                 Image(systemName: "checkmark")
                                     .font(.headline)
-                                    .accessibilityLabel("Selected")
+                                    .foregroundStyle(Color.accentColor)
+                                    .accessibilityHidden(true)
                             }
                         }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityValue(isSelected ? "Selected" : "Not selected")
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                     .accessibilityIdentifier("settings.theme.\(theme.id)")
                 }
             }
@@ -2622,7 +2633,12 @@ private struct SettingsView: View {
             }
 
             Section("Onboarding") {
-                Button("Replay onboarding", action: replayOnboarding)
+                Button(action: replayOnboarding) {
+                    Text("Replay onboarding")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier("settings.replay-onboarding")
             }
         }

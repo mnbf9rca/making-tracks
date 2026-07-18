@@ -92,9 +92,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openAppMenu(in: app)
         app.buttons["menu.row.settings"].tap()
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
-        let replayOnboarding = app.buttons["settings.replay-onboarding"]
-        XCTAssertTrue(scrollToExistence(of: replayOnboarding, in: app))
-        replayOnboarding.tap()
+        let replayOnboardingButton = app.buttons["settings.replay-onboarding"]
+        XCTAssertTrue(scrollToExistence(of: replayOnboardingButton, in: app))
+        replayOnboardingButton.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
 
         XCTAssertTrue(app.staticTexts["Interesting places around you"].waitForExistence(timeout: 5))
         app.buttons["onboarding.next"].tap()
@@ -392,11 +392,15 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openAppMenu(in: app)
         app.buttons["menu.row.settings"].tap()
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["settings.theme.selected"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["settings.theme.selected"].label, "Defined Paper")
+        XCTAssertFalse(app.staticTexts["settings.theme.selected"].exists)
+        XCTAssertTrue(app.buttons["settings.theme.defined-paper"].exists)
+        XCTAssertEqual(app.buttons["settings.theme.defined-paper"].value as? String, "Selected")
+        XCTAssertEqual(app.buttons["settings.theme.snow"].value as? String, "Not selected")
 
-        app.buttons["settings.theme.snow"].tap()
-        XCTAssertEqual(app.staticTexts["settings.theme.selected"].label, "Snow")
+        let snowThemeButton = app.buttons["settings.theme.snow"]
+        snowThemeButton.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        XCTAssertEqual(snowThemeButton.value as? String, "Selected")
+        XCTAssertEqual(app.buttons["settings.theme.defined-paper"].value as? String, "Not selected")
         app.buttons["menu.done"].tap()
     }
 
