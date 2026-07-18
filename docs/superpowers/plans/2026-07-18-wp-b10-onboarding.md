@@ -28,12 +28,13 @@ app boots **straight into `MapScreen`** with no onboarding and a black first fra
   **Locate-me button already exists.** B10's permission step **consumes** this — builds no new manager.
 - **Offline download engine is BUILT, UI is not.** `OfflineRegionDownloader.downloadCurrentRegion()`,
   `OfflineRegionStore.updatePlan(for:) → {tilesToFetch, bytesToFetch, …}`, `StorageHeadroom.hasHeadroom(…)`
-  (512 MB reserve), background discretionary `OfflineDownloadSession`. **WP-B10d2 (#191) wires pack
-  object fetches through the background session;** manifest/current metadata fetches stay foreground.
-  Completed verified objects are staged content-addressed and reused by `updatePlan` on a later attempt.
-  **No download UI** (only a DEBUG launch-arg path). `downloadCurrentRegion(progress:)` exposes live
-  object-level progress while a caller is attached; progress reattachment after background relaunch is
-  still unbuilt.
+  (512 MB reserve), background discretionary `OfflineDownloadSession`. **WP-B10d2 (#197) routes pack
+  object fetches through a delegate-backed background session** while the app is alive/backgrounded;
+  manifest/current metadata fetches stay foreground. Completed verified objects are staged
+  content-addressed and reused by `updatePlan` on a later attempt. **No download UI** (only a DEBUG
+  launch-arg path). `downloadCurrentRegion(progress:)` exposes live object-level progress while a caller
+  is attached; process-death task-state adoption and progress reattachment after relaunch are still
+  unbuilt.
 - **Region selection: no picker.** `ViewportSeed` (default `.kl`) is the startup camera; `MapRegion
   {malaysia, uk}`; `selectedRegion` **auto-derives from the viewport** (`MapScreen.swift:1152-1154`) — not
   hardcoded. So a first-run pick only needs to **persist the startup seed** (`chosenRegion` → seed); the
@@ -134,15 +135,19 @@ A short, skippable, paged flow (each step **Skip**-able; a progress dots indicat
   verifies them, stages completed objects to the content-addressed store before final install, and reports
   completed-object byte/object progress while a caller is attached. `updatePlan` sha-skips those staged
   objects on a later attempt, so completed objects are not re-downloaded.
-- **WP-B10d2 (#191) wires the object fetch path to the background `URLSession`** (`sessionSendsLaunchEvents`,
-  WiFi-preferred/discretionary), while keeping manifest/current metadata on the foreground fetch path.
-  Background object transfers cannot rely only on the synchronous redirect callback boundary, so the
-  object fetcher also verifies the **final response URL origin after completion**; if the final URL is
-  missing or is not `tiles.making-tracks.app`, the downloaded temporary file is discarded and the object
-  fails closed.
-- **Remaining engine work:** full process-death adoption of completed background tasks, pack completion
-  after relaunch, progress-stream reattachment, and partial-object/system-task recovery semantics. Until
-  that lands, UI copy should still avoid promising unattended completion after termination.
+- **WP-B10d2 (#197) routes the object fetch path through a delegate-backed background `URLSession`**
+  (`sessionSendsLaunchEvents`, WiFi-preferred/discretionary), while keeping manifest/current metadata on
+  the foreground fetch path. Background object transfers cannot use the async convenience APIs; delegate
+  delivery synchronously moves the system temporary download to an app-owned temp file before the delegate
+  callback returns. The object fetcher also verifies the **final response URL origin after completion**; if
+  the final URL is missing or is not `tiles.making-tracks.app`, the downloaded temporary file is discarded
+  and the object fails closed.
+- **Relaunch boundary:** the app recreates the background session for UIKit `handleEventsForBackgroundURLSession`
+  callbacks and fires the UIKit completion handler after `urlSessionDidFinishEvents`. It does **not** yet
+  adopt orphaned task state into the pack engine after process death.
+- **Remaining engine work:** full process-death task-state adoption, pack completion after relaunch,
+  progress-stream reattachment, and partial-object/system-task recovery semantics. Until that lands, UI
+  copy must not promise unattended completion after termination.
 
 ## 6. About + Settings anchor (D6)
 
@@ -170,7 +175,7 @@ update-required sheet) — acceptance criteria, applied to **WP-B10a** (flow) an
 | **WP-B10a** onboarding flow | **app (`ios`)** | first-run flag **+ persisted `chosenRegion`→seed** (§1); the paged flow (welcome / about-open-data-scoped-copy / region-pick seam / pack-offer / location-prime-on-tap / metaphor); Skip + **a11y** (§7); consumes `LocationPermission`. **Pack-offer progress depends on WP-B10d's stream** — else a **fire-and-forget** download with a determinate spinner from `updatePlan.bytesToFetch` | B4 (built), `LocationPermission` (built), **WP-B10d** (progress) |
 | **WP-B10b** cold-start placeholder | **app (`ios`)** | the launch overlay (paper bg + indicator) dismissed on `didFinishLoadingStyle` + timeout — **every** cold start | map (built) |
 | **WP-B10c** update-required + empty-region surfaces | **app (`ios`)** | blocking update-required sheet + App Store link; unsupported-region state | `VersionGate`/`TileLoadState` (built) |
-| **WP-B10d** download progress + background rework | **app (`ios`)** | v1: live object-level progress (§5); **WP-B10d2 (#191) wires pack objects through background `URLSession`; process-death adoption, pack completion after relaunch, progress reattachment, and partial-object recovery remain engine work** | the built downloader |
+| **WP-B10d** download progress + background rework | **app (`ios`)** | v1: live object-level progress (§5); **WP-B10d2 (#197) routes pack objects through delegate-backed background `URLSession`; process-death adoption, pack completion after relaunch, progress reattachment, and partial-object recovery remain engine work** | the built downloader |
 | **WP-B10e** About/Settings anchor | **app (`ios`)** | About page (open-data story + OSS) + replay-onboarding + settings-deeplink; stats toggle when C1 ships | `CreditsView` (built) |
 
 ## Open flags (fable/Rob)
@@ -194,9 +199,10 @@ update-required sheet) — acceptance criteria, applied to **WP-B10a** (flow) an
   - **"Needs nothing from our servers" ignored the launch `current.json` poll** → scoped to the map
     drawing offline, with the launch manifest/version check noted as the exception (§3.4).
   - **`downloadCurrentRegion` was not the full background/resume story I implied** → completed-object
-    staging and live progress exist; WP-B10d2 (#191) wires pack object fetches through background
-    `URLSession`, while process-death adoption, pack completion after relaunch, progress reattachment, and
-    partial-object recovery remain engine work (§5, WP-B10d).
+    staging and live progress exist; WP-B10d2 (#197) routes pack object fetches through delegate-backed
+    background `URLSession`, while process-death adoption, pack completion after relaunch, progress
+    reattachment, and partial-object recovery remain engine work (§5, WP-B10d). Do not claim unattended
+    completion after termination until that adoption is built and tested.
   The flow/placeholder/permission/update-state architecture survived; folds were honesty about what the
   offline pack does *today* vs after WP-IMG-B2.
 - PR → `develop`, `sourcery-review` only, report `p2p/fable__opus`. No self-merge; fable reviews; `main`

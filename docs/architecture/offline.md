@@ -73,12 +73,14 @@ of the designs.
   **⚠ Known sweep GAPS (WP-RM §8 INV-5, unowned → WP-DL-SAFETY):** crash-stranded `*.pmtiles.tmp` and
   `root/tmp/*` install dirs are never swept, and GC never runs at plain launch — orphans linger.
 - **Background `URLSession`** (WiFi-preferred, discretionary) — **BUILT for object transfer (#197,
-  WP-B10d2 / #191 ruling)**. Pack object fetches now use the delegate-backed background configuration
-  (`sessionSendsLaunchEvents`), recreate the session for UIKit `handleEventsForBackgroundURLSession`, and
-  deliver stored handlers; manifest/current metadata fetches remain foreground. This is the **INV-10a**
-  split in WP-RM §8. **Full task adoption** (task-state re-adoption, pack completion after app death,
-  progress reattachment, partial-object/system-task recovery) remains the **INV-10b** residual owned by
-  **WP-DL-SAFETY**. Neither is WP-B10d (which shipped the foreground incremental engine above).
+  WP-B10d2 / #191 ruling)** while the app is alive/backgrounded. Pack object fetches now use the
+  delegate-backed background configuration (`sessionSendsLaunchEvents`), recreate the identifier session
+  for UIKit `handleEventsForBackgroundURLSession`, and deliver stored handlers after
+  `urlSessionDidFinishEvents`; manifest/current metadata fetches remain foreground. This is the
+  **INV-10a** split in WP-RM §8. **Full task adoption** (task-state re-adoption, pack completion after app
+  death, progress reattachment, partial-object/system-task recovery) remains the **INV-10b** residual owned
+  by **WP-DL-SAFETY**. Do not claim unattended completion after termination until INV-10b is built and
+  tested. Neither is WP-B10d (which shipped the foreground incremental engine above).
 - **Download safety contract:** the full set of download-safety invariants (atomicity, resume,
   idempotence, chunking bound, GC soundness, crash-window consistency, disk/ENOSPC safety, concurrency,
   honest progress, relaunch adoption) — each with a today-vs-target marker, `file:line`/PR evidence, an
@@ -100,8 +102,9 @@ of the designs.
   device); no third-party geocoder.
 - **Redirect/origin enforcement:** first-party tile/object URLs are accepted only for
   `https://tiles.making-tracks.app`. Foreground transfers keep the synchronous redirect veto; background
-  pack object transfers add the WP-B10d2 (#191) post-hoc check of the final response URL before staging
-  bytes. A missing or off-origin final URL discards the temporary file and fails the object closed.
+  pack object transfers add the WP-B10d2 (#197) post-hoc check of the final response URL before accepting
+  the delegate-staged bytes. A missing or off-origin final URL discards the temporary file and fails the
+  object closed.
 
 ## 6. Cover-traffic invariant (→ #131)
 
