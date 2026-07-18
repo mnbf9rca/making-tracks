@@ -74,14 +74,17 @@ of the designs.
   `root/tmp/*` install dirs are never swept, and GC never runs at plain launch — orphans linger.
 - **Background `URLSession`** (WiFi-preferred, discretionary) — the config exists but is still
   **dead-wired** (production uses a foreground ephemeral fetcher, to keep single-origin redirect pinning).
-  Wiring it + **relaunch task adoption after app death** is the target — **owned by #197 (OPEN)**, not
-  WP-B10d (WP-B10d shipped the foreground incremental engine above). See WP-RM §8 INV-10.
+  The target splits: **#197 (OPEN)** wires session recreation + handler delivery on relaunch; **full task
+  adoption** (task-state re-adoption, pack completion after app death, progress reattachment) is the
+  residual #197 disclaims → **WP-DL-SAFETY**. Neither is WP-B10d (which shipped the foreground incremental
+  engine above). See WP-RM §8 INV-10.
 - **Download safety contract:** the full set of download-safety invariants (atomicity, resume,
   idempotence, chunking bound, GC soundness, crash-window consistency, disk/ENOSPC safety, concurrency,
   honest progress, relaunch adoption) — each with a today-vs-target marker, `file:line`/PR evidence, an
   owning WP, and its acceptance test — lives in **[[WP-RM §8 download safety contract]]**. Today most are
-  satisfied by #193; the open gaps are INV-4 (basemap chunking → WP-RM-P pipeline cut + WP-RM-G app render), INV-10 (background adoption →
-  #197), and the INV-1/5/6/7/8/9 engine-hardening cluster (→ the proposed **WP-DL-SAFETY**).
+  satisfied by #193; the open gaps are INV-4 (basemap chunking → WP-RM-P pipeline cut + WP-RM-G app render),
+  INV-10 (background adoption → #197 for session recreation, WP-DL-SAFETY for full task adoption), and the
+  INV-1/5/6/7/8/9 engine-hardening cluster (→ the proposed **WP-DL-SAFETY**).
 - **Compression:** place tiles are app-level gzip at rest and on device, **sha over gzipped bytes** (no
   `Content-Encoding` — transport auto-decompress would break checksums); pmtiles internally compressed;
   thumbs are webp.
@@ -110,7 +113,7 @@ of the designs.
 | Completeness invariant; packs/zones; delta strategy | WP-RM (`2026-07-18-wp-rm-region-manager.md`, PR #177, MERGED) |
 | **Offline download engine + content-addressed pack store** | **PR #149 (MERGED)** + region-model §3/§5 (`2026-07-17-wp-regions-model.md`, #131) |
 | **Incremental download engine (file-backed staging, resume, pause/cancel, GC)** | **WP-B10d, PR #193 (MERGED)** |
-| **Download SAFETY contract (10 invariants: atomicity/resume/idempotence/chunking/GC/crash-window/disk/concurrency/progress/relaunch)** | **WP-RM §8** (`2026-07-18-wp-rm-region-manager.md`); gaps → WP-RM-P + WP-RM-G (INV-4), #197 (INV-10, OPEN), WP-DL-SAFETY (INV-1/5/6/7/8/9, proposed) |
+| **Download SAFETY contract (10 invariants: atomicity/resume/idempotence/chunking/GC/crash-window/disk/concurrency/progress/relaunch)** | **WP-RM §8** (`2026-07-18-wp-rm-region-manager.md`); gaps → WP-RM-P + WP-RM-G (INV-4), #197 (INV-10a session recreation, OPEN), WP-DL-SAFETY (INV-1/5/6/7/8/9 + INV-10b task adoption, proposed) |
 | **Image-index schema + thumbs path/content-addressing (contract owner)** | **WP-IMG-P (`2026-07-17-wp-images-photos.md`, #158, MERGED)** |
 | Photos card layout / attribution UI (consumer); offline-thumb bundling | WP-CARD (`2026-07-18-wp-card-overhaul.md`, #172) + WP-IMG-B2 |
 | Description sidecars | codex4 description-index (PR #173) |

@@ -365,27 +365,40 @@ audit contradicted the commission's framing it is marked **[framing correction]*
   (L2116, filter L2162), so it **never sweeps: (1)** crash-stranded `objects/basemaps/*.pmtiles.tmp` (the
   #193 residual — confirmed), **(2)** `root/tmp/{uuid}` install temp/backup dirs (L1432, cleaned only on
   the in-line success/error paths, never by GC), and GC **(3) never runs at plain app launch** (only on
-  install-success / discard / delete), so a *killed* download's orphans linger until the next such op.
-  **Gap/owner:** add a launch-time + `beginDownload` sweep of `*.pmtiles.tmp` and `root/tmp/*` →
-  **WP-DL-SAFETY**. **Test:** drop a `deadbeef.pmtiles.tmp` + a `root/tmp/{uuid}` dir, trigger GC, assert
-  both gone (fails today); positive control — an in-progress pack-index's tile sha survives GC (passes).
-- **INV-6 Crash-window consistency — ✅ satisfied for reader consistency (single-writer).** *The store is
-  consistent at every instant, incl. mid-install and mid-GC.* Install writes+verifies all objects first
-  (L1438), builds a temp pack dir, renames `temp→final`, and **only then flips the `current-pack.json`
-  pointer** (L1461); readers resolve exclusively through `installedCurrentPackLocked` (L1765), so a
-  half-moved pack is invisible; a thrown error restores the backup (L1472). All mutations + GC run under one
-  `NSLock` (L2233), GC **inside** the install lock (L1467). **Residual (→ INV-5's orphan sweep):** a crash
-  *between* `temp→final` and the pointer write leaves a well-formed but unreferenced pack dir (harmless —
-  invisible, objects retained — but uncollected); `NSLock` is in-process only (fine on single-instance iOS;
-  would break under an app-extension writer). **Owner:** WP-DL-SAFETY (orphan-dir sweep). **Test:** fault
-  after `temp→final` but before the pointer write; assert `installedPublish` still returns the *previous*
-  version and the store reads.
+  install-success, install-FAILURE, discard, and delete), so a *killed* download's orphans linger until the
+  next such op. **Gap/owner:** add a launch-time + `beginDownload` sweep of `*.pmtiles.tmp` and `root/tmp/*`
+  → **WP-DL-SAFETY**. **Test:** drop a **dot-prefixed `.{uuid}.pmtiles.tmp`** (the real strays are HIDDEN
+  files — a fixture that isn't dot-prefixed would be swept by a `skipsHiddenFiles` enumerator and give a
+  false pass while every real stray survives) + a `root/tmp/{uuid}` dir, trigger GC, assert both gone (fails
+  today); positive control — an in-progress pack-index's tile sha survives GC (passes).
+- **INV-6 Crash-window consistency — ◐ no corruption + readers fail safe, but a same-version-reinstall
+  crash can silently LOSE a pack [scoped].** *The store never serves an inconsistent pack; readers fail
+  safe.* Install writes+verifies all objects first (L1438), builds a temp pack dir, renames `temp→final`,
+  and **only then flips the `current-pack.json` pointer** (L1461); readers resolve exclusively through
+  `installedCurrentPackLocked` (L1765), so a half-moved pack is invisible; a thrown error restores the
+  backup (L1472). All mutations + GC run under one `NSLock` (L2233), GC **inside** the install lock (L1467).
+  So **no corruption and readers always fail safe** — but two real crash windows keep this off ✅:
+  - **Same-version reinstall backup window [gate].** A reinstall does `moveItem(final→backup)` **BEFORE**
+    `moveItem(temp→final)`; a crash *between* the two moves strands the previously-installed pack in
+    `root/tmp/{uuid}-backup` with `current-pack.json` left **dangling** → readers fail safe (no corruption)
+    but the **pack is silently lost** (must be re-downloaded). Not just an uncollected orphan — a
+    functional regression on crash.
+  - **Pointer-write window.** A crash *between* `temp→final` and the pointer write leaves a well-formed but
+    unreferenced pack dir (invisible, objects retained, uncollected).
+  `NSLock` is in-process only (fine on single-instance iOS; would break under an app-extension writer).
+  **Owner:** WP-DL-SAFETY — recover the backup on next launch (re-point or restore) + the orphan-dir sweep
+  (INV-5). **Test:** (i) fault after `temp→final` but before the pointer write → assert `installedPublish`
+  returns the *previous* version and the store reads; (ii) fault **between `final→backup` and `temp→final`**
+  → assert the pack is recoverable on relaunch (not silently lost — fails today).
 - **INV-7 Disk safety — ◐ partial: no corruption on ENOSPC, but a raw error not a graceful pause.**
   *Headroom checked incl. transient peaks; ENOSPC mid-download → resumable pause, never corruption.*
   Headroom is checked **once** before `beginDownload` (`hasHeadroom(requiredBytes: plan.bytesToFetch…)`
-  L1248, static 512 MiB reserve L1011) — **not per-object, and it does not model the 2× staging peak**
-  (URLSession temp + the `.atomic` write both hold a copy; `stageDownloadedTileObject` also reads the whole
-  file into memory L1386). On **ENOSPC mid-write** the atomic write throws `NSFileWriteOutOfSpaceError`
+  L1248, static 512 MiB reserve L1011) — **one-shot, not re-checked per object.** The transient peak is
+  bounded but real: a **tile** (≤1 MiB) is held twice mid-stage (URLSession temp + the `.atomic` write, and
+  `stageDownloadedTileObject` reads the whole file into memory L1386), so the peak is ~2× *per small object*;
+  the **basemap** stages by same-volume **rename** (`.pmtiles.tmp`→final, no second full copy), so its peak
+  is ~1×, not 2×. The one-shot check models neither the small-object 2× nor concurrent staging.
+  On **ENOSPC mid-write** the atomic write throws `NSFileWriteOutOfSpaceError`
   (all-or-nothing → **no partial/corrupt object**), which is not `downloadCancelled` → rethrown without
   discard → the marker + staged objects survive → **resumable**. So: no corruption ✅, but it surfaces as an
   opaque throw, not a "paused" state, and there is no transient-peak accounting. **Gap/owner:** per-object
@@ -402,8 +415,9 @@ audit contradicted the commission's framing it is marked **[framing correction]*
   `deleteLocked` (L1927) removes the in-progress marker then GCs, so a concurrent download's staged objects
   can be swept and its later `install` fails verification; #196 adds `discardInProgressDownloads(region:)`
   for *cooperative* cleanup, not mutual exclusion. **(The commission asked to cite #196/#197 "review
-  findings" as the enforcement tests — there are NONE: both PRs have 0 review comments, labels never
-  applied. The guards are the PRs' own code + tests, not review threads.)** **Gap/owner:** push a per-region
+  findings" as the enforcement tests — there are **zero inline review threads**: sourcery ran but was
+  rate-limited with no findings, so the enforcement is the PRs' own code + tests, not review threads.)**
+  **Gap/owner:** push a per-region
   single-flight lease + a defined delete-vs-download precedence **into the engine** (not MapScreen) →
   **WP-DL-SAFETY**, with **#196** as the natural UI consumer. **Test:** (i) start two downloaders for one
   region → the second is rejected/coalesced; (ii) `delete` while k objects are staged → defined outcome
@@ -418,25 +432,35 @@ audit contradicted the commission's framing it is marked **[framing correction]*
   progress" must be an **engine** guarantee, expose a paused/running status → **WP-DL-SAFETY** (scope call,
   Open flag 6). **Test:** pause mid-download; assert the surfaced status is exactly "paused" and the last
   `fractionComplete` = real staged/total, never advancing while paused.
-- **INV-10 Relaunch task adoption — ▷ TARGET, owned by #197 [confirmed].** *After app death, a background
-  URLSession's completions are re-adopted on relaunch.* **Not wired today:**
-  `OfflineDownloadSession.backgroundConfiguration` exists (L1032) but carries the standing comment that it
-  is "*not wired into offline object fetches yet*" (background sessions follow redirects without the
+- **INV-10 Relaunch task adoption — ▷ TARGET, SPLIT owner [#197 does NOT close this alone].** *After app
+  death, a background URLSession's in-flight work is re-adopted on relaunch and completes.* **Not wired
+  today:** `OfflineDownloadSession.backgroundConfiguration` exists (L1032) but carries the standing comment
+  that it is "*not wired into offline object fetches yet*" (background sessions follow redirects without the
   delegate, conflicting with single-origin pinning); the live path uses foreground/ephemeral sessions
-  (`offlineForeground()` L119). No `handleEventsForBackgroundURLSession`, no launch-event registry in merged
-  code. **Owner: #197 (OPEN)** — its diff removes the comment, adds `offlineBackground(identifier:)`, an
-  `OfflineDownloadSessionEventRegistry`, the app-delegate `handleEventsForBackgroundURLSession`, and
-  post-redirect origin re-validation (`validateDownloadedFile`). **Test:** enqueue a background download,
-  terminate, relaunch; assert the handler fires, the session is re-created by identifier, the completed file
-  re-passes origin pinning, and the object lands verified.
+  (`offlineForeground()` L119). The invariant has **two halves with different owners** (per the
+  plan-language law — #197 must not be recorded as closing more than its author claims):
+  - **(a) session recreation + handler delivery → #197 (OPEN).** Its diff adds
+    `offlineBackground(identifier:)`, an `OfflineDownloadSessionEventRegistry`, the app-delegate
+    `handleEventsForBackgroundURLSession`, and post-redirect origin re-validation (`validateDownloadedFile`)
+    — i.e. a relaunched app re-creates the session by identifier and delivers its completion events. **#197's
+    own record explicitly DISCLAIMS the rest** (no `getAllTasks`/task-state re-adoption path in the diff).
+  - **(b) full task adoption → WP-DL-SAFETY (or a named #197 successor).** The residual #197 disclaims:
+    **re-adopting in-flight task state, completing a *pack* after relaunch, reattaching progress, and partial
+    recovery of a mid-flight object.** This has no owner in #197 → assigned to WP-DL-SAFETY (residual list).
+  **Test (a, #197):** enqueue a background download, terminate, relaunch; assert `handleEventsForBackground
+  URLSession` fires, the session is re-created by identifier, and a **completed** file re-passes origin
+  pinning and lands verified. **Test (b, WP-DL-SAFETY):** terminate with a task mid-flight; assert the pack
+  resumes/completes and progress reattaches on relaunch (fails until (b) is built — do NOT assert this
+  against #197).
 
 **What this contract adds to the build queue:** most invariants are ✅ today; the gaps cluster into a few
 owners — §6/**WP-RM-P** (INV-4 per-cell basemap *pipeline cut*) + **WP-RM-G** (INV-4 *app* basemap-source
-render), both from the already-ratified §6b, reframed here as *safety*; **#197** (INV-10 background
-adoption, already open); and a **NEW WP-DL-SAFETY** (engine hardening: INV-1
-tile verify-then-rename, INV-5/6 GC + orphan-dir sweep incl. launch-time GC, INV-7 per-object headroom +
-ENOSPC→pause, INV-8 engine single-flight + delete precedence, INV-9 engine status if first-class). See Open
-flag 5 (commission WP-DL-SAFETY) and flag 6 (INV-8/9 engine-vs-UI scope).
+render), both from the already-ratified §6b, reframed here as *safety*; **#197** (INV-10**(a)** session
+recreation + handler delivery, already open); and a **NEW WP-DL-SAFETY** (engine hardening: INV-1 tile
+verify-then-rename, INV-5 GC + orphan-dir sweep incl. launch-time GC, INV-6 backup-window recovery, INV-7
+per-object headroom + ENOSPC→pause, INV-8 engine single-flight + delete precedence, INV-9 engine status if
+first-class, INV-10**(b)** full task adoption after relaunch). See Open flag 5 (commission WP-DL-SAFETY)
+and flag 6 (INV-8/9 engine-vs-UI scope).
 
 ## Build-WP decomposition
 
@@ -448,7 +472,7 @@ flag 5 (commission WP-DL-SAFETY) and flag 6 (INV-8/9 engine-vs-UI scope).
 | **WP-RM-B** region-manager UX | **app (`ios`)** | named-hierarchy browser (install a zone = install its **pack**, size up front); a **download-progress surface** (inherits WP-B10d's progress stream — per-zone %/bytes, cancel/pause); grid coverage feedback + **per-ZONE** update/delete (whole-pack, §4; per-cell is an Open flag); consumes `OfflineRegionStore` (pack unit) + the catalog. **NOT user-shippable before WP-RM-CT** (a sub-country download without cover-traffic is a privacy regression — CT is in B's release gate) | WP-RM-P; **WP-RM-B3**; **WP-B10d** (progress/incremental-persist); **WP-RM-CT** (release gate); the built store; WP-IMG-B2 |
 | **WP-RM-B2** custom-rectangle path | **app + pipeline** | drag-rectangle→cells + confirm (size + decoy cost + halo); **needs a store extension** (synthetic-manifest cell-set install) OR composes published sub-zone packs — **new engine work, not free on the built store** | WP-RM-B; a store extension |
 | **WP-RM-CT** cover-traffic | **app (`ios`)** | apply #131 in RATIFIED terms (intersection-resistant cohort, budget scales with distinctiveness); the fetch layer's decoy wrapper (WP-B7/fetch-model) | WP-RM-B; #131 rulings; Rob's decoy numbers |
-| **WP-DL-SAFETY** engine hardening (§8) | **app (`ios`)** | close the download-safety gaps §8 names: **INV-1** tile verify-then-rename (mirror the basemap); **INV-5/6** GC + orphan-dir sweep (`*.pmtiles.tmp`, `root/tmp/*`) **incl. launch-time GC**; **INV-7** per-object headroom (2× staging peak) + ENOSPC→resumable-pause; **INV-8** engine per-region single-flight lease + delete-vs-download precedence; **INV-9** engine paused/running status (if made first-class, flag 6). Each ships with the §8 acceptance test (neuter → red) | the #193 engine (merged); #196 (UI consumer of INV-8/9); **Rob commission (flag 5)** |
+| **WP-DL-SAFETY** engine hardening (§8) | **app (`ios`)** | close the download-safety gaps §8 names: **INV-1** tile verify-then-rename (mirror the basemap); **INV-5** GC + orphan-dir sweep (`.{uuid}.pmtiles.tmp`, `root/tmp/*`) **incl. launch-time GC**; **INV-6** same-version-reinstall **backup-window recovery** (re-point/restore a `{uuid}-backup` pack orphaned by a crash between `final→backup` and `temp→final`, else the pack is silently lost); **INV-7** per-object headroom (small-object 2× peak + concurrent staging) + ENOSPC→resumable-pause; **INV-8** engine per-region single-flight lease + delete-vs-download precedence; **INV-9** engine paused/running status (if made first-class, flag 6); **INV-10(b)** full background-task adoption after relaunch (task-state re-adoption, pack completion, progress reattachment, partial recovery — the residual #197 disclaims). Each ships with the §8 acceptance test (neuter → red) | the #193 engine (merged); **#197** (INV-10(a) session recreation); #196 (UI consumer of INV-8/9); **Rob commission (flag 5)** |
 
 **Seam to B10:** B10's first-run "region pick" is the **entry point** into this catalog (pick a
 top-level zone → offer its pack). **B10 persists `chosenRegion` → the startup seed; WP-RM inherits/
