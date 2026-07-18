@@ -229,7 +229,7 @@ public final class HTTPTileFetcher: OfflineRegionFetching, @unchecked Sendable {
     }
 }
 
-private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDownloadDelegate, @unchecked Sendable {
+final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDownloadDelegate, @unchecked Sendable {
     private struct DownloadState {
         let continuation: CheckedContinuation<URL, Error>
         var stagedURL: URL?
@@ -254,6 +254,16 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
             }
         }
 
+        func setAdopted(_ task: URLSessionTask, shouldCancel: Bool) {
+            let shouldCancel = lock.withLock {
+                self.task = task
+                return cancelled || shouldCancel
+            }
+            if shouldCancel {
+                cancel()
+            }
+        }
+
         func cancel() {
             let task = lock.withLock {
                 cancelled = true
@@ -265,8 +275,18 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
 
     private let lock = NSLock()
     private var downloads: [Int: DownloadState] = [:]
+    private var adoptedBackgroundTasks: [Int: URL] = [:]
+    private var deliveredBackgroundTasks: Set<Int> = []
 
     func download(_ request: URLRequest, on session: URLSession) async throws -> URL {
+        if let identifier = session.configuration.identifier,
+           let url = request.url,
+           let completedURL = OfflineBackgroundCompletedDownloadStore.shared.consume(identifier: identifier, url: url) {
+            return completedURL
+        }
+        if let task = await existingDownloadTask(for: request, on: session) {
+            return try await attach(to: task, request: request, on: session)
+        }
         let cancellation = CancellationBox()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -285,6 +305,102 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
                     )
                 }
                 cancellation.setAndResume(task, shouldCancel: Task.isCancelled)
+            }
+        } onCancel: {
+            cancellation.cancel()
+        }
+    }
+
+    func adoptExistingTasks(on session: URLSession) {
+        session.getAllTasks { [weak self] tasks in
+            guard let self else { return }
+            let adopted = tasks.compactMap { task -> (Int, URL)? in
+                guard task is URLSessionDownloadTask,
+                      let url = Self.requestURL(for: task),
+                      (try? HTTPTileFetcher.validateOrigin(url)) != nil
+                else { return nil }
+                return (task.taskIdentifier, url)
+            }
+            guard !adopted.isEmpty else { return }
+            self.lock.withLock {
+                for (identifier, url) in adopted {
+                    self.markAdoptedIfUndelivered(taskIdentifier: identifier, url: url)
+                }
+            }
+        }
+    }
+
+    private func existingDownloadTask(for request: URLRequest, on session: URLSession) async -> URLSessionDownloadTask? {
+        guard let requestURL = request.url else { return nil }
+        return await withCheckedContinuation { continuation in
+            session.getAllTasks { [weak self] tasks in
+                let downloadTask = tasks.compactMap { $0 as? URLSessionDownloadTask }
+                    .first {
+                        Self.requestURL(for: $0) == requestURL && self?.isUntracked(taskIdentifier: $0.taskIdentifier) == true
+                    }
+                if let downloadTask {
+                    self?.lock.withLock {
+                        self?.markAdoptedIfUndelivered(taskIdentifier: downloadTask.taskIdentifier, url: requestURL)
+                    }
+                }
+                continuation.resume(returning: downloadTask)
+            }
+        }
+    }
+
+    private func isUntracked(taskIdentifier: Int) -> Bool {
+        lock.withLock {
+            downloads[taskIdentifier] == nil
+        }
+    }
+
+    private func markAdoptedIfUndelivered(taskIdentifier: Int, url: URL) {
+        guard !deliveredBackgroundTasks.contains(taskIdentifier) else { return }
+        adoptedBackgroundTasks[taskIdentifier] = url
+    }
+
+    func markAdoptedForTesting(taskIdentifier: Int, url: URL) {
+        lock.withLock {
+            markAdoptedIfUndelivered(taskIdentifier: taskIdentifier, url: url)
+        }
+    }
+
+    func attach(to task: URLSessionDownloadTask, request: URLRequest, on session: URLSession) async throws -> URL {
+        let cancellation = CancellationBox()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.withLock {
+                    downloads[task.taskIdentifier] = DownloadState(
+                        continuation: continuation,
+                        stagedURL: nil,
+                        response: nil,
+                        stagingError: nil
+                    )
+                }
+                if task.state == .completed {
+                    let completedURL = session.configuration.identifier
+                        .flatMap { identifier in request.url.flatMap { OfflineBackgroundCompletedDownloadStore.shared.consume(identifier: identifier, url: $0) } }
+                    if let completedURL {
+                        let state = lock.withLock {
+                            adoptedBackgroundTasks.removeValue(forKey: task.taskIdentifier)
+                            deliveredBackgroundTasks.remove(task.taskIdentifier)
+                            return downloads.removeValue(forKey: task.taskIdentifier)
+                        }
+                        state?.continuation.resume(returning: completedURL)
+                    } else {
+                        let state = lock.withLock {
+                            guard adoptedBackgroundTasks[task.taskIdentifier] == nil else {
+                                return nil as DownloadState?
+                            }
+                            deliveredBackgroundTasks.remove(task.taskIdentifier)
+                            return downloads.removeValue(forKey: task.taskIdentifier)
+                        }
+                        state?.continuation.resume(throwing: TileError.invalidBackgroundFetch)
+                    }
+                    cancellation.setAdopted(task, shouldCancel: Task.isCancelled)
+                    return
+                }
+                cancellation.setAdopted(task, shouldCancel: Task.isCancelled)
             }
         } onCancel: {
             cancellation.cancel()
@@ -317,11 +433,41 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
-        let isTracked = lock.withLock {
-            downloads[downloadTask.taskIdentifier] != nil
+        let (isTracked, adoptionURL) = lock.withLock {
+            if downloads[downloadTask.taskIdentifier] != nil {
+                return (true, nil as URL?)
+            }
+            if let url = adoptedBackgroundTasks[downloadTask.taskIdentifier] {
+                return (false, url)
+            }
+            return (false, Self.requestURL(for: downloadTask))
         }
-        guard isTracked else { return }
+        guard !isTracked else {
+            stageTrackedDownload(downloadTask: downloadTask, location: location)
+            return
+        }
+        if let adoptionURL, let identifier = session.configuration.identifier {
+            do {
+                try OfflineBackgroundCompletedDownloadStore.shared.stage(
+                    identifier: identifier,
+                    url: adoptionURL,
+                    fileURL: location,
+                    response: downloadTask.response
+                )
+                MakingTracksLog.downloads.debug("task adopted task=\(downloadTask.taskIdentifier, privacy: .public)")
+            } catch {
+                MakingTracksLog.downloads.error("task adoption dropped task=\(downloadTask.taskIdentifier, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            }
+            _ = lock.withLock {
+                adoptedBackgroundTasks.removeValue(forKey: downloadTask.taskIdentifier)
+            }
+            return
+        }
 
+        stageTrackedDownload(downloadTask: downloadTask, location: location)
+    }
+
+    private func stageTrackedDownload(downloadTask: URLSessionDownloadTask, location: URL) {
         let result: Result<URL, Error>
         do {
             let staged = try BackgroundDownloadFileStager.stage(location)
@@ -356,7 +502,21 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
         didCompleteWithError error: Error?
     ) {
         guard let state = lock.withLock({ downloads.removeValue(forKey: task.taskIdentifier) }) else {
+            if task is URLSessionDownloadTask {
+                lock.withLock {
+                    _ = deliveredBackgroundTasks.insert(task.taskIdentifier)
+                }
+            }
+            if error != nil,
+               let identifier = session.configuration.identifier,
+               let url = lock.withLock({ adoptedBackgroundTasks.removeValue(forKey: task.taskIdentifier) }) ?? Self.requestURL(for: task) {
+                OfflineBackgroundCompletedDownloadStore.shared.remove(identifier: identifier, url: url)
+            }
             return
+        }
+        lock.withLock {
+            adoptedBackgroundTasks.removeValue(forKey: task.taskIdentifier)
+            deliveredBackgroundTasks.remove(task.taskIdentifier)
         }
         do {
             let fileURL = try BackgroundDownloadCompletion.validate(
@@ -393,6 +553,10 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
         }
         MakingTracksLog.downloads.info("session downloads cancelled count=\(states.count, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
     }
+
+    private static func requestURL(for task: URLSessionTask) -> URL? {
+        task.originalRequest?.url ?? task.currentRequest?.url ?? task.response?.url
+    }
 }
 
 enum BackgroundDownloadFileStager {
@@ -401,6 +565,311 @@ enum BackgroundDownloadFileStager {
             .appendingPathComponent("MakingTracksBackgroundDownload-\(UUID().uuidString)")
         try FileManager.default.moveItem(at: location, to: stagedURL)
         return stagedURL
+    }
+}
+
+private struct BackgroundCompletedDownloadIndex: Codable {
+    var schemaVersion = 1
+    var entries: [BackgroundCompletedDownloadRecord] = []
+}
+
+private struct BackgroundCompletedDownloadRecord: Codable, Equatable {
+    let identifier: String
+    let requestURLString: String
+    let stagedFileName: String
+}
+
+private final class OfflineBackgroundCompletedDownloadStore: @unchecked Sendable {
+    static let shared = OfflineBackgroundCompletedDownloadStore()
+    static let maxIndexBytes = 1024 * 1024
+    static let maxStoredDownloadBytes = 4 * 1024 * 1024 * 1024
+
+    private let fm = FileManager.default
+    private let lock = NSLock()
+
+    func stage(identifier: String, url: URL, fileURL: URL, response: URLResponse?) throws {
+        try HTTPTileFetcher.validateOrigin(url)
+        try validateIdentifier(identifier)
+        _ = try BackgroundDownloadCompletion.validate(
+            stagedURL: fileURL,
+            response: response,
+            taskError: nil,
+            stagingError: nil
+        )
+        let directory = try storeDirectory()
+        let stagedFileName = "\(UUID().uuidString).download"
+        let stagedURL = directory.appendingPathComponent(stagedFileName)
+        do {
+            if fm.fileExists(atPath: stagedURL.path) {
+                try fm.removeItem(at: stagedURL)
+            }
+            try fm.moveItem(at: fileURL, to: stagedURL)
+            try excludeFromBackup(stagedURL)
+            try setBackgroundFileProtection(stagedURL)
+            try lock.withLock {
+                var index = try readIndexLocked()
+                removeRecordLocked(identifier: identifier, url: url, from: &index)
+                index.entries.append(BackgroundCompletedDownloadRecord(
+                    identifier: identifier,
+                    requestURLString: url.absoluteString,
+                    stagedFileName: stagedFileName
+                ))
+                try pruneLocked(index: &index, maxBytes: Self.maxStoredDownloadBytes)
+                guard index.entries.contains(where: { $0.stagedFileName == stagedFileName }) else {
+                    throw TileError.insufficientStorage
+                }
+                guard index.entries.count <= 1024 else { throw TileError.invalidOfflinePack }
+                try writeIndexLocked(index)
+            }
+        } catch {
+            if fm.fileExists(atPath: stagedURL.path) {
+                try? fm.removeItem(at: stagedURL)
+            }
+            throw error
+        }
+    }
+
+    func consume(identifier: String, url: URL) -> URL? {
+        guard (try? HTTPTileFetcher.validateOrigin(url)) != nil,
+              (try? validateIdentifier(identifier)) != nil
+        else { return nil }
+        return lock.withLock {
+            do {
+                var index = try readIndexLocked()
+                try sweepOrphansLocked(index: &index)
+                guard let entryIndex = index.entries.firstIndex(where: {
+                    $0.identifier == identifier && $0.requestURLString == url.absoluteString
+                }) else { return nil }
+                let entry = index.entries.remove(at: entryIndex)
+                let fileURL = try storeDirectory().appendingPathComponent(entry.stagedFileName)
+                try writeIndexLocked(index)
+                guard fm.fileExists(atPath: fileURL.path) else { return nil }
+                return fileURL
+            } catch {
+                return nil
+            }
+        }
+    }
+
+    func restoreConsumed(identifier: String, url: URL, fileURL: URL) {
+        guard (try? HTTPTileFetcher.validateOrigin(url)) != nil,
+              (try? validateIdentifier(identifier)) != nil
+        else { return }
+        lock.withLock {
+            do {
+                let directory = try storeDirectory()
+                guard fileURL.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL,
+                      fm.fileExists(atPath: fileURL.path)
+                else { return }
+                let record = BackgroundCompletedDownloadRecord(
+                    identifier: identifier,
+                    requestURLString: url.absoluteString,
+                    stagedFileName: fileURL.lastPathComponent
+                )
+                guard isValidRecord(record) else { return }
+                var index = try readIndexLocked()
+                removeRecordLocked(identifier: identifier, url: url, from: &index)
+                index.entries.append(record)
+                guard index.entries.count <= 1024 else { throw TileError.invalidOfflinePack }
+                try writeIndexLocked(index)
+            } catch {
+                return
+            }
+        }
+    }
+
+    func performMaintenance(maxBytes: Int = OfflineBackgroundCompletedDownloadStore.maxStoredDownloadBytes) throws {
+        try lock.withLock {
+            var index = try readIndexLocked()
+            try pruneLocked(index: &index, maxBytes: maxBytes)
+            try writeIndexLocked(index)
+        }
+    }
+
+    func remove(identifier: String, url: URL) {
+        guard (try? validateIdentifier(identifier)) != nil else { return }
+        lock.withLock {
+            do {
+                var index = try readIndexLocked()
+                removeRecordLocked(identifier: identifier, url: url, from: &index)
+                try writeIndexLocked(index)
+            } catch {
+                return
+            }
+        }
+    }
+
+    func removeAll(identifier: String) {
+        guard (try? validateIdentifier(identifier)) != nil else { return }
+        lock.withLock {
+            do {
+                var index = try readIndexLocked()
+                for entry in index.entries where entry.identifier == identifier {
+                    try? fm.removeItem(at: try storeDirectory().appendingPathComponent(entry.stagedFileName))
+                }
+                index.entries.removeAll { $0.identifier == identifier }
+                try writeIndexLocked(index)
+            } catch {
+                return
+            }
+        }
+    }
+
+    func removeAll(region: String) {
+        removeAll(identifier: OfflineDownloadSession.backgroundIdentifier(region: region))
+    }
+
+    private func removeRecordLocked(identifier: String, url: URL, from index: inout BackgroundCompletedDownloadIndex) {
+        let removed = index.entries.filter { $0.identifier == identifier && $0.requestURLString == url.absoluteString }
+        let directory = try? storeDirectory()
+        for entry in removed {
+            if let directory {
+                try? fm.removeItem(at: directory.appendingPathComponent(entry.stagedFileName))
+            }
+        }
+        index.entries.removeAll { $0.identifier == identifier && $0.requestURLString == url.absoluteString }
+    }
+
+    private func pruneLocked(index: inout BackgroundCompletedDownloadIndex, maxBytes: Int) throws {
+        guard maxBytes >= 0 else { throw TileError.invalidOfflinePack }
+        try sweepOrphansLocked(index: &index)
+        while try storedBytesLocked(index.entries) > maxBytes, let first = index.entries.first {
+            try? fm.removeItem(at: try storeDirectory().appendingPathComponent(first.stagedFileName))
+            index.entries.removeFirst()
+        }
+    }
+
+    private func sweepOrphansLocked(index: inout BackgroundCompletedDownloadIndex) throws {
+        let directory = try storeDirectory()
+        index.entries.removeAll { entry in
+            !fm.fileExists(atPath: directory.appendingPathComponent(entry.stagedFileName).path)
+        }
+        let referenced = Set(index.entries.map(\.stagedFileName))
+        guard let children = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey]) else { return }
+        for child in children where child.lastPathComponent.hasSuffix(".download") && !referenced.contains(child.lastPathComponent) {
+            let values = try child.resourceValues(forKeys: [.isRegularFileKey])
+            if values.isRegularFile == true {
+                try? fm.removeItem(at: child)
+            }
+        }
+    }
+
+    private func storedBytesLocked(_ entries: [BackgroundCompletedDownloadRecord]) throws -> Int {
+        let directory = try storeDirectory()
+        return try entries.reduce(0) { total, entry in
+            let url = directory.appendingPathComponent(entry.stagedFileName)
+            let size = (try url.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0
+            let (sum, overflow) = total.addingReportingOverflow(size)
+            guard !overflow else { throw TileError.invalidOfflinePack }
+            return sum
+        }
+    }
+
+    private func readIndexLocked() throws -> BackgroundCompletedDownloadIndex {
+        let url = try indexURL()
+        guard fm.fileExists(atPath: url.path) else { return BackgroundCompletedDownloadIndex() }
+        do {
+            let index = try JSONDecoder().decode(
+                BackgroundCompletedDownloadIndex.self,
+                from: try boundedData(contentsOf: url, maxBytes: Self.maxIndexBytes)
+            )
+            guard index.schemaVersion == 1,
+                  index.entries.count <= 1024,
+                  index.entries.allSatisfy({ isValidRecord($0) })
+            else { throw TileError.invalidOfflinePack }
+            return index
+        } catch {
+            try? resetStoreLocked()
+            return BackgroundCompletedDownloadIndex()
+        }
+    }
+
+    private func writeIndexLocked(_ index: BackgroundCompletedDownloadIndex) throws {
+        let url = try indexURL()
+        try JSONEncoder().encode(index).write(to: url, options: .atomic)
+        try excludeFromBackup(url)
+        try setBackgroundFileProtection(url)
+    }
+
+    private func indexURL() throws -> URL {
+        try storeDirectory().appendingPathComponent("completed-downloads-v1.json")
+    }
+
+    private func storeDirectory() throws -> URL {
+        let base = try fm.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let directory = base.appendingPathComponent("MakingTracks/BackgroundDownloads", isDirectory: true)
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        try excludeFromBackup(directory)
+        try setBackgroundFileProtection(directory)
+        return directory
+    }
+
+    private func validateIdentifier(_ identifier: String) throws {
+        guard (1...128).contains(identifier.utf8.count),
+              identifier.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil
+        else { throw TileError.invalidOfflinePack }
+    }
+
+    private func isValidRecord(_ record: BackgroundCompletedDownloadRecord) -> Bool {
+        guard (try? validateIdentifier(record.identifier)) != nil,
+              record.stagedFileName.range(of: #"^[A-Fa-f0-9-]{36}\.download$"#, options: .regularExpression) != nil,
+              let url = URL(string: record.requestURLString),
+              (try? HTTPTileFetcher.validateOrigin(url)) != nil
+        else { return false }
+        return true
+    }
+
+    private func excludeFromBackup(_ url: URL) throws {
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var mutableURL = url
+        try mutableURL.setResourceValues(values)
+    }
+
+    private func setBackgroundFileProtection(_ url: URL) throws {
+        try (url as NSURL).setResourceValue(URLFileProtection.none, forKey: .fileProtectionKey)
+    }
+
+    private func resetStoreLocked() throws {
+        let directory = try storeDirectory()
+        guard let children = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey]) else { return }
+        for child in children where child.lastPathComponent.hasSuffix(".download") || child.lastPathComponent == "completed-downloads-v1.json" {
+            try? fm.removeItem(at: child)
+        }
+    }
+
+    private func boundedData(contentsOf url: URL, maxBytes: Int) throws -> Data {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let data = try handle.read(upToCount: maxBytes + 1) ?? Data()
+        guard data.count <= maxBytes else { throw TileError.invalidOfflinePack }
+        return data
+    }
+
+    func replaceIndexForTesting(_ data: Data) throws {
+        try lock.withLock {
+            let url = try indexURL()
+            try data.write(to: url, options: .atomic)
+        }
+    }
+
+    func createDownloadFileForTesting(named name: String, data: Data) throws {
+        try lock.withLock {
+            let url = try storeDirectory().appendingPathComponent(name)
+            try data.write(to: url, options: .atomic)
+        }
+    }
+
+    func hasDownloadFileForTesting(named name: String) -> Bool {
+        lock.withLock {
+            guard let url = try? storeDirectory().appendingPathComponent(name) else { return false }
+            return fm.fileExists(atPath: url.path)
+        }
     }
 }
 
@@ -1286,6 +1755,8 @@ public enum StorageHeadroom {
 }
 
 public enum OfflineDownloadSession {
+    /// Stable per-region background identifier. Do not include mutable policy
+    /// such as cellular settings; completed-download adoption is keyed by it.
     public static func backgroundIdentifier(region: String) -> String {
         "app.making-tracks.offline.\(region)"
     }
@@ -1327,10 +1798,11 @@ public enum OfflineDownloadSession {
             for: identifier,
             completionHandler: completionHandler
         )
-        _ = OfflineBackgroundSessionRegistry.shared.session(
+        let box = OfflineBackgroundSessionRegistry.shared.session(
             identifier: identifier,
             configuration: backgroundConfiguration(identifier: identifier)
         )
+        box.delegate.adoptExistingTasks(on: box.session)
     }
 
     static func finishEvents(for identifier: String?) {
@@ -1345,6 +1817,52 @@ public enum OfflineDownloadSession {
 
     static func invalidateBackgroundSessionForTesting(identifier: String) {
         OfflineBackgroundSessionRegistry.shared.invalidate(identifier: identifier)
+    }
+
+    static func consumeCompletedDownload(identifier: String, url: URL) -> URL? {
+        OfflineBackgroundCompletedDownloadStore.shared.consume(identifier: identifier, url: url)
+    }
+
+    static func restoreConsumedCompletedDownload(identifier: String, url: URL, fileURL: URL) {
+        OfflineBackgroundCompletedDownloadStore.shared.restoreConsumed(identifier: identifier, url: url, fileURL: fileURL)
+    }
+
+    static func stageCompletedDownloadForTesting(
+        identifier: String,
+        url: URL,
+        fileURL: URL,
+        response: URLResponse?
+    ) throws {
+        try OfflineBackgroundCompletedDownloadStore.shared.stage(
+            identifier: identifier,
+            url: url,
+            fileURL: fileURL,
+            response: response
+        )
+    }
+
+    static func removeCompletedDownloadsForTesting(identifier: String) {
+        OfflineBackgroundCompletedDownloadStore.shared.removeAll(identifier: identifier)
+    }
+
+    static func performCompletedDownloadMaintenanceForTesting(maxBytes: Int) throws {
+        try OfflineBackgroundCompletedDownloadStore.shared.performMaintenance(maxBytes: maxBytes)
+    }
+
+    static var completedDownloadStoreMaxBytesForTesting: Int {
+        OfflineBackgroundCompletedDownloadStore.maxStoredDownloadBytes
+    }
+
+    static func replaceCompletedDownloadsIndexForTesting(_ data: Data) throws {
+        try OfflineBackgroundCompletedDownloadStore.shared.replaceIndexForTesting(data)
+    }
+
+    static func createCompletedDownloadFileForTesting(named name: String, data: Data) throws {
+        try OfflineBackgroundCompletedDownloadStore.shared.createDownloadFileForTesting(named: name, data: data)
+    }
+
+    static func hasCompletedDownloadFileForTesting(named name: String) -> Bool {
+        OfflineBackgroundCompletedDownloadStore.shared.hasDownloadFileForTesting(named: name)
     }
 }
 
@@ -1588,6 +2106,16 @@ private final class OfflineRegionDownloadInterruptionLatch: @unchecked Sendable 
 }
 
 public final class OfflineRegionDownloader: @unchecked Sendable {
+    private struct TargetPublish {
+        let publish: PinnedPublish
+        let source: Source
+
+        enum Source: Equatable {
+            case pending
+            case current
+        }
+    }
+
     private let region: String
     private let metadataFetcher: TileFetching
     private let objectFetcher: OfflineRegionFetching
@@ -1622,6 +2150,7 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
     }
 
     public func downloadCurrentRegion(
+        resumingPausedDownload: Bool = false,
         control: OfflineRegionDownloadControl = OfflineRegionDownloadControl(),
         progress: (@Sendable (OfflineRegionDownloadProgress) -> Void)? = nil
     ) async throws -> OfflineRegionDownloadResult {
@@ -1642,24 +2171,47 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             store.releaseDownloadLease(region: region)
             MakingTracksLog.downloads.debug("region download lease released region=\(regionID, privacy: .private(mask: .hash))")
         }
-        let publishVersion: String
-        let manifest: Manifest
-        do {
-            let currentData = try await metadataFetcher.fetch(try trustedURL("\(region)/current.json"))
-            publishVersion = try ManifestClient.decodeCurrent(currentData)
-            MakingTracksLog.downloads.info("region current pinned region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public)")
-            let manifestData = try await metadataFetcher.fetch(try trustedURL("\(region)/\(publishVersion)/manifest.json"))
-            manifest = try Manifest.decode(manifestData)
-            let manifestBytes = manifest.tiles.reduce(0) { $0 + $1.bytes } + manifest.basemap.bytes
-            MakingTracksLog.downloads.info("region manifest loaded region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) objects=\(manifest.tiles.count + 1, privacy: .public) bytes=\(manifestBytes, privacy: .public)")
-        } catch {
-            MakingTracksLog.downloads.error("region metadata failed region=\(regionID, privacy: .private(mask: .hash)) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
-            throw error
+        var allowPendingPublish = true
+        var didAbandonPendingPublish = false
+        while true {
+            let target: TargetPublish
+            do {
+                target = try await targetPublish(
+                    allowPending: allowPendingPublish,
+                    resumingPausedDownload: resumingPausedDownload
+                )
+            } catch {
+                MakingTracksLog.downloads.error("region metadata failed region=\(regionID, privacy: .private(mask: .hash)) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+                throw error
+            }
+            do {
+                return try await download(
+                    target: target,
+                    startedAt: startedAt,
+                    control: control,
+                    progress: progress
+                )
+            } catch let error where target.source == .pending && !didAbandonPendingPublish && isMissingManifestObject(error) {
+                didAbandonPendingPublish = true
+                allowPendingPublish = false
+                MakingTracksLog.downloads.info("region pending download abandoned region=\(regionID, privacy: .private(mask: .hash)) version=\(target.publish.publishVersion, privacy: .public) reason=object-404")
+                try store.discardDownload(region: region, publishVersion: target.publish.publishVersion)
+                continue
+            }
         }
-        guard manifest.region == region, manifest.publishVersion == publishVersion else {
-            throw TileError.invalidManifest
-        }
-        let publish = PinnedPublish(region: region, publishVersion: publishVersion, manifest: manifest)
+    }
+
+    private func download(
+        target: TargetPublish,
+        startedAt: Date,
+        control: OfflineRegionDownloadControl,
+        progress: (@Sendable (OfflineRegionDownloadProgress) -> Void)?
+    ) async throws -> OfflineRegionDownloadResult {
+        let publish: PinnedPublish
+        publish = target.publish
+        let regionID = region
+        let publishVersion = publish.publishVersion
+        let manifest = publish.manifest
         let plan = try store.updatePlan(for: publish)
         let fetchObjectCount = plan.tilesToFetch.count + (plan.basemapNeedsFetch ? 1 : 0)
         let reusedObjectCount = plan.reusedTileCount + (plan.basemapNeedsFetch ? 0 : 1)
@@ -1746,6 +2298,7 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             throw TileError.downloadCancelled
         } catch TileError.downloadPaused {
             MakingTracksLog.downloads.info("region download paused region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public)")
+            try? store.markDownloadPaused(region: region, publishVersion: publishVersion)
             throw TileError.downloadPaused
         } catch {
             MakingTracksLog.downloads.error("region download failed region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
@@ -1758,6 +2311,34 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             fetchedTileCount: plan.tilesToFetch.count,
             reusedTileCount: plan.reusedTileCount,
             fetchedBytes: plan.bytesToFetch
+        )
+    }
+
+    private func targetPublish(allowPending: Bool, resumingPausedDownload: Bool) async throws -> TargetPublish {
+        let regionID = region
+        if allowPending {
+            if !resumingPausedDownload, try store.hasPausedPendingDownload(region: region) {
+                MakingTracksLog.downloads.info("region pending download skipped region=\(regionID, privacy: .private(mask: .hash)) reason=paused")
+                throw TileError.downloadPaused
+            }
+            if let pending = try store.pendingDownload(region: region, includePaused: resumingPausedDownload) {
+                MakingTracksLog.downloads.info("region pending download resumed region=\(regionID, privacy: .private(mask: .hash)) version=\(pending.publishVersion, privacy: .public)")
+                return TargetPublish(publish: pending, source: .pending)
+            }
+        }
+        let currentData = try await metadataFetcher.fetch(try trustedURL("\(region)/current.json"))
+        let publishVersion = try ManifestClient.decodeCurrent(currentData)
+        MakingTracksLog.downloads.info("region current pinned region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public)")
+        let manifestData = try await metadataFetcher.fetch(try trustedURL("\(region)/\(publishVersion)/manifest.json"))
+        let manifest = try Manifest.decode(manifestData)
+        guard manifest.region == region, manifest.publishVersion == publishVersion else {
+            throw TileError.invalidManifest
+        }
+        let manifestBytes = manifest.tiles.reduce(0) { $0 + $1.bytes } + manifest.basemap.bytes
+        MakingTracksLog.downloads.info("region manifest loaded region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) objects=\(manifest.tiles.count + 1, privacy: .public) bytes=\(manifestBytes, privacy: .public)")
+        return TargetPublish(
+            publish: PinnedPublish(region: region, publishVersion: publishVersion, manifest: manifest),
+            source: .current
         )
     }
 
@@ -1779,6 +2360,21 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
 
     private func downloadObject(_ url: URL, control: OfflineRegionDownloadControl) async throws -> URL {
         try control.checkpoint()
+        let backgroundIdentifier = OfflineDownloadSession.backgroundIdentifier(region: region)
+        if let completedURL = OfflineDownloadSession.consumeCompletedDownload(identifier: backgroundIdentifier, url: url) {
+            do {
+                try control.checkpoint()
+            } catch {
+                OfflineDownloadSession.restoreConsumedCompletedDownload(
+                    identifier: backgroundIdentifier,
+                    url: url,
+                    fileURL: completedURL
+                )
+                throw error
+            }
+            MakingTracksLog.downloads.info("object completed download adopted host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
+            return completedURL
+        }
         MakingTracksLog.downloads.debug("object task spawning host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
         let downloadTask = Task {
             try await objectFetcher.download(url)
@@ -1825,6 +2421,13 @@ private func isOutOfSpace(_ error: Error) -> Bool {
     }
     if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
         return isOutOfSpace(underlying)
+    }
+    return false
+}
+
+private func isMissingManifestObject(_ error: Error) -> Bool {
+    if case TileError.httpStatus(404) = error {
+        return true
     }
     return false
 }
@@ -1879,6 +2482,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
                 try recoverInterruptedInstallsLocked()
                 try garbageCollectObjects()
             }
+            try OfflineBackgroundCompletedDownloadStore.shared.performMaintenance()
             MakingTracksLog.gc.info("deferred maintenance finished")
         } catch {
             MakingTracksLog.gc.error("deferred maintenance failed reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
@@ -1902,9 +2506,16 @@ public final class OfflineRegionStore: @unchecked Sendable {
         try withLock {
             try validatePublish(publish)
             try removeSupersededInProgressDownloads(region: publish.region, keeping: publish.publishVersion)
-            try fm.createDirectory(at: inProgressURL(region: publish.region, publishVersion: publish.publishVersion), withIntermediateDirectories: true)
+            let inProgress = inProgressURL(region: publish.region, publishVersion: publish.publishVersion)
+            try fm.createDirectory(at: inProgress, withIntermediateDirectories: true)
+            try JSONEncoder().encode(publish)
+                .write(to: inProgress.appendingPathComponent("manifest-snapshot.json"), options: .atomic)
             try JSONEncoder().encode(packIndex(for: publish))
-                .write(to: inProgressURL(region: publish.region, publishVersion: publish.publishVersion).appendingPathComponent("pack-index.json"), options: .atomic)
+                .write(to: inProgress.appendingPathComponent("pack-index.json"), options: .atomic)
+            let pausedURL = pausedDownloadURL(region: publish.region, publishVersion: publish.publishVersion)
+            if fm.fileExists(atPath: pausedURL.path) {
+                try fm.removeItem(at: pausedURL)
+            }
             MakingTracksLog.downloads.info("download marker written region=\(publish.region, privacy: .private(mask: .hash)) version=\(publish.publishVersion, privacy: .public) objects=\(publish.manifest.tiles.count + 1, privacy: .public)")
             try garbageCollectObjects()
         }
@@ -1966,9 +2577,46 @@ public final class OfflineRegionStore: @unchecked Sendable {
 
     func discardDownload(region: String, publishVersion: String) throws {
         try withLock {
+            OfflineBackgroundCompletedDownloadStore.shared.removeAll(region: region)
             try removeInProgressDownload(region: region, publishVersion: publishVersion)
             try garbageCollectObjects()
             MakingTracksLog.downloads.info("download discarded region=\(region, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public)")
+        }
+    }
+
+    func pendingDownload(region: String, includePaused: Bool = false) throws -> PinnedPublish? {
+        try withLock {
+            try pendingDownloadLocked(region: region, includePaused: includePaused)
+        }
+    }
+
+    func hasPausedPendingDownload(region: String) throws -> Bool {
+        try withLock {
+            try pausedPendingDownloadLocked(region: region) != nil
+        }
+    }
+
+    public func pausedPendingDownloadRegions() throws -> [String] {
+        try withLock {
+            let inProgressRoot = root.appendingPathComponent("in-progress", isDirectory: true)
+            guard let regionURLs = try? fm.contentsOfDirectory(at: inProgressRoot, includingPropertiesForKeys: [.isDirectoryKey]) else { return [] }
+            return try regionURLs.compactMap { regionURL -> String? in
+                let values = try regionURL.resourceValues(forKeys: [.isDirectoryKey])
+                guard values.isDirectory == true else { return nil }
+                let region = regionURL.lastPathComponent
+                guard isValidRegion(region), (try? pausedPendingDownloadLocked(region: region)) != nil else { return nil }
+                return region
+            }.sorted()
+        }
+    }
+
+    func markDownloadPaused(region: String, publishVersion: String) throws {
+        try withLock {
+            guard isValidRegion(region), isValidPublishVersion(publishVersion) else { throw TileError.invalidOfflinePack }
+            let inProgress = inProgressURL(region: region, publishVersion: publishVersion)
+            guard fm.fileExists(atPath: inProgress.path) else { return }
+            try Data("paused\n".utf8).write(to: pausedDownloadURL(region: region, publishVersion: publishVersion), options: .atomic)
+            MakingTracksLog.downloads.info("download pause marker written region=\(region, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public)")
         }
     }
 
@@ -2104,6 +2752,20 @@ public final class OfflineRegionStore: @unchecked Sendable {
             try installedPackStorageSnapshotLocked()
         }
         return try installedPackStorageSummary(from: snapshot)
+    }
+
+    public func pendingDownloadRegions() throws -> [String] {
+        try withLock {
+            let inProgressRoot = root.appendingPathComponent("in-progress", isDirectory: true)
+            guard let regionURLs = try? fm.contentsOfDirectory(at: inProgressRoot, includingPropertiesForKeys: [.isDirectoryKey]) else { return [] }
+            return try regionURLs.compactMap { regionURL -> String? in
+                let values = try regionURL.resourceValues(forKeys: [.isDirectoryKey])
+                guard values.isDirectory == true else { return nil }
+                let region = regionURL.lastPathComponent
+                guard isValidRegion(region), (try? pendingDownloadLocked(region: region)) != nil else { return nil }
+                return region
+            }.sorted()
+        }
     }
 
     private func installedPublishesLocked(intersecting viewport: BBox) throws -> [PinnedPublish] {
@@ -2347,6 +3009,69 @@ public final class OfflineRegionStore: @unchecked Sendable {
         return current
     }
 
+    private func pendingDownloadLocked(region: String, includePaused: Bool = false) throws -> PinnedPublish? {
+        guard isValidRegion(region) else { throw TileError.invalidOfflinePack }
+        let regionRoot = root.appendingPathComponent("in-progress").appendingPathComponent(region, isDirectory: true)
+        guard let children = try? fm.contentsOfDirectory(at: regionRoot, includingPropertiesForKeys: [.isDirectoryKey]) else { return nil }
+        guard children.count <= Self.maxInstalledPackCount else { throw TileError.invalidOfflinePack }
+        for child in children.sorted(by: { $0.lastPathComponent > $1.lastPathComponent }) {
+            let values = try child.resourceValues(forKeys: [.isDirectoryKey])
+            guard values.isDirectory == true else { continue }
+            let publishVersion = child.lastPathComponent
+            guard isValidPublishVersion(publishVersion) else { continue }
+            let manifestURL = child.appendingPathComponent("manifest-snapshot.json")
+            guard fm.fileExists(atPath: manifestURL.path) else { continue }
+            do {
+                guard includePaused || !isDownloadPaused(child) else { continue }
+                let publish = try JSONDecoder().decode(
+                    PinnedPublish.self,
+                    from: try boundedData(contentsOf: manifestURL, maxBytes: Self.maxOfflineManifestSnapshotBytes)
+                )
+                let strictManifest = try Manifest.decode(try JSONEncoder().encode(publish.manifest))
+                guard publish.region == region,
+                      publish.publishVersion == publishVersion,
+                      strictManifest.region == region,
+                      strictManifest.publishVersion == publishVersion
+                else { continue }
+                return PinnedPublish(region: publish.region, publishVersion: publish.publishVersion, manifest: strictManifest)
+            } catch {
+                continue
+            }
+        }
+        return nil
+    }
+
+    private func pausedPendingDownloadLocked(region: String) throws -> PinnedPublish? {
+        guard isValidRegion(region) else { throw TileError.invalidOfflinePack }
+        let regionRoot = root.appendingPathComponent("in-progress").appendingPathComponent(region, isDirectory: true)
+        guard let children = try? fm.contentsOfDirectory(at: regionRoot, includingPropertiesForKeys: [.isDirectoryKey]) else { return nil }
+        guard children.count <= Self.maxInstalledPackCount else { throw TileError.invalidOfflinePack }
+        for child in children.sorted(by: { $0.lastPathComponent > $1.lastPathComponent }) {
+            let values = try child.resourceValues(forKeys: [.isDirectoryKey])
+            guard values.isDirectory == true, isDownloadPaused(child) else { continue }
+            let publishVersion = child.lastPathComponent
+            guard isValidPublishVersion(publishVersion) else { continue }
+            let manifestURL = child.appendingPathComponent("manifest-snapshot.json")
+            guard fm.fileExists(atPath: manifestURL.path) else { continue }
+            do {
+                let publish = try JSONDecoder().decode(
+                    PinnedPublish.self,
+                    from: try boundedData(contentsOf: manifestURL, maxBytes: Self.maxOfflineManifestSnapshotBytes)
+                )
+                let strictManifest = try Manifest.decode(try JSONEncoder().encode(publish.manifest))
+                guard publish.region == region,
+                      publish.publishVersion == publishVersion,
+                      strictManifest.region == region,
+                      strictManifest.publishVersion == publishVersion
+                else { continue }
+                return PinnedPublish(region: publish.region, publishVersion: publish.publishVersion, manifest: strictManifest)
+            } catch {
+                continue
+            }
+        }
+        return nil
+    }
+
     private func offlinePackIndexLocked(region: String, publishVersion: String) throws -> OfflinePackIndex {
         let cacheKey = packIndexCacheKey(region: region, publishVersion: publishVersion)
         if let cached = validatedPackIndexes[cacheKey] {
@@ -2514,6 +3239,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
             if fm.fileExists(atPath: inProgressRegion.path) {
                 try fm.removeItem(at: inProgressRegion)
             }
+            OfflineBackgroundCompletedDownloadStore.shared.removeAll(region: region)
             try garbageCollectObjects()
             MakingTracksLog.downloads.info("in-progress discard finished region=\(region, privacy: .private(mask: .hash))")
         }
@@ -2538,6 +3264,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
         if fm.fileExists(atPath: inProgressRegion.path) {
             try fm.removeItem(at: inProgressRegion)
         }
+        OfflineBackgroundCompletedDownloadStore.shared.removeAll(region: region)
         validatedPackIndexes = validatedPackIndexes.filter { key, _ in
             !key.hasPrefix("\(region)/")
         }
@@ -2563,6 +3290,14 @@ public final class OfflineRegionStore: @unchecked Sendable {
 
     private func inProgressURL(region: String, publishVersion: String) -> URL {
         root.appendingPathComponent("in-progress").appendingPathComponent(region).appendingPathComponent(publishVersion, isDirectory: true)
+    }
+
+    private func pausedDownloadURL(region: String, publishVersion: String) -> URL {
+        inProgressURL(region: region, publishVersion: publishVersion).appendingPathComponent("paused")
+    }
+
+    private func isDownloadPaused(_ inProgressURL: URL) -> Bool {
+        fm.fileExists(atPath: inProgressURL.appendingPathComponent("paused").path)
     }
 
     private var tileObjectsURL: URL {

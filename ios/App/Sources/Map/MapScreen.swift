@@ -95,6 +95,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         installed: [String: String],
         activeProgress: OfflineDownloadProgress?,
         pausedProgress: OfflineDownloadProgress? = nil,
+        pausedRegions: Set<String> = [],
         quarantines: [OfflinePackQuarantine]
     ) -> [OfflineRegionCatalogRow] {
         let quarantineByRegion = quarantines.reduce(into: [String: OfflinePackQuarantine]()) { byRegion, quarantine in
@@ -107,6 +108,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
                 installed: installed,
                 activeProgress: activeProgress,
                 pausedProgress: pausedProgress,
+                pausedRegions: pausedRegions,
                 quarantines: quarantineByRegion
             )
         }
@@ -118,6 +120,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         installed: [String: String],
         activeProgress: OfflineDownloadProgress?,
         pausedProgress: OfflineDownloadProgress?,
+        pausedRegions: Set<String>,
         quarantines: [String: OfflinePackQuarantine]
     ) -> [OfflineRegionCatalogRow] {
         let state: OfflineRegionCatalogRow.State
@@ -127,6 +130,8 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             state = .downloading(activeProgress!)
         } else if pausedProgress?.region == zone.id {
             state = .paused(pausedProgress!)
+        } else if pausedRegions.contains(zone.id) {
+            state = .paused(OfflineDownloadProgress(region: zone.id, fractionComplete: 0))
         } else if let installedVersion = installed[zone.id] {
             if installedVersion == zone.publishVersion {
                 state = .installed(publishVersion: installedVersion)
@@ -147,6 +152,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
                 installed: installed,
                 activeProgress: activeProgress,
                 pausedProgress: pausedProgress,
+                pausedRegions: pausedRegions,
                 quarantines: quarantines
             )
         }
@@ -191,6 +197,11 @@ struct OfflineRegionCatalogRow: Identifiable, Sendable, Equatable {
         case .quarantined:
             "Quarantined pack"
         }
+    }
+
+    var cancelRegion: String? {
+        guard case .paused = state else { return nil }
+        return zone.id
     }
 }
 
@@ -424,10 +435,31 @@ final class OfflineRegionDownloadSession {
         pausedProgress?.region
     }
 
+    var hasActiveDownload: Bool {
+        activeControl != nil || activeTask != nil || liveProgress != nil
+    }
+
+    func regionForCancel(fallbackRegion: String? = nil) -> String? {
+        fallbackRegion ?? pausedProgress?.region ?? liveProgress?.region
+    }
+
+    func isSessionRegion(_ region: String) -> Bool {
+        pausedProgress?.region == region || liveProgress?.region == region
+    }
+
+    func shouldClearSessionForCancel(fallbackRegion: String? = nil) -> Bool {
+        guard let region = regionForCancel(fallbackRegion: fallbackRegion) else { return true }
+        return isSessionRegion(region)
+    }
+
     func canBegin(region: String) -> Bool {
-        guard let pausedRegion else { return true }
-        let allowed = pausedRegion == region
-        MakingTracksLog.downloads.info("ui begin checked region=\(region, privacy: .private(mask: .hash)) pausedRegion=\(pausedRegion, privacy: .private(mask: .hash)) allowed=\(allowed, privacy: .public)")
+        if let pausedRegion {
+            let allowed = pausedRegion == region
+            MakingTracksLog.downloads.info("ui begin checked region=\(region, privacy: .private(mask: .hash)) pausedRegion=\(pausedRegion, privacy: .private(mask: .hash)) allowed=\(allowed, privacy: .public)")
+            return allowed
+        }
+        let allowed = !hasActiveDownload
+        MakingTracksLog.downloads.info("ui begin checked region=\(region, privacy: .private(mask: .hash)) activeDownload=\(!allowed, privacy: .public) allowed=\(allowed, privacy: .public)")
         return allowed
     }
 
@@ -450,6 +482,28 @@ final class OfflineRegionDownloadSession {
     func update(_ progress: OfflineDownloadProgress) {
         liveProgress = progress
         MakingTracksLog.downloads.debug("ui progress updated region=\(progress.region ?? "unknown", privacy: .private(mask: .hash)) version=\(progress.publishVersion ?? "unknown", privacy: .public) percent=\(progress.percentComplete, privacy: .public) bytes=\(progress.completedBytes ?? -1, privacy: .public) total=\(progress.totalBytes ?? -1, privacy: .public)")
+    }
+
+    func beginDeferredReplay(
+        region: String,
+        control: OfflineRegionDownloadControl,
+        downloadID: UUID
+    ) -> Bool {
+        guard activeDownloadID == nil || activeDownloadID == downloadID else { return false }
+        if activeDownloadID == nil {
+            begin(region: region, control: control, downloadID: downloadID)
+        }
+        return true
+    }
+
+    func updateDeferredReplay(progress: OfflineDownloadProgress, downloadID: UUID) {
+        guard activeDownloadID == downloadID else { return }
+        update(progress)
+    }
+
+    func pauseDeferredReplay(region: String, downloadID: UUID) {
+        guard activeDownloadID == downloadID else { return }
+        pause(region: region)
     }
 
     func pause(region: String) {
@@ -643,6 +697,7 @@ struct MapScreen: View {
                         ) {
                             schedulePostFirstRenderManifestRefresh()
                         }
+                        scheduleDeferredOfflineMaintenanceIfReady()
                     }
                 },
                 debugReportProjectedFeatureDiagnostics: { diagnostics in
@@ -826,6 +881,7 @@ struct MapScreen: View {
                     didMapLoadFail = true
                     let attempt = mapLoadAttemptID
                     MakingTracksLog.startup.error("overlay transition surface=map state=timeout attempt=\(attempt, privacy: .public)")
+                    scheduleDeferredOfflineMaintenanceIfReady()
                 }
             }
         }
@@ -1149,9 +1205,14 @@ struct MapScreen: View {
 
     @MainActor
     private func scheduleDeferredOfflineMaintenanceIfReady() {
-        guard isMapReady,
-              !didScheduleDeferredOfflineMaintenance,
-              UIApplication.shared.isProtectedDataAvailable
+        guard MapDeferredOfflineMaintenancePolicy.allowsDeferredMaintenance(
+            isMapReady: isMapReady,
+            didMapLoadFail: didMapLoadFail,
+            didScheduleMaintenance: didScheduleDeferredOfflineMaintenance,
+            isProtectedDataAvailable: UIApplication.shared.isProtectedDataAvailable,
+            hasPausedDownload: offlineDownloadSession.pausedRegion != nil,
+            hasActiveDownload: offlineDownloadSession.hasActiveDownload
+        )
         else { return }
         didScheduleDeferredOfflineMaintenance = true
         MakingTracksLog.gc.info("deferred maintenance scheduled")
@@ -1163,12 +1224,50 @@ struct MapScreen: View {
                 MakingTracksLog.gc.info("deferred maintenance deferred reason=protected-data")
                 return
             }
-            let didPerformMaintenance = await model?.performDeferredOfflineMaintenance() ?? true
+            guard offlineDownloadSession.pausedRegion == nil else {
+                didScheduleDeferredOfflineMaintenance = false
+                MakingTracksLog.gc.info("deferred maintenance deferred reason=paused-download")
+                return
+            }
+            guard !offlineDownloadSession.hasActiveDownload else {
+                didScheduleDeferredOfflineMaintenance = false
+                MakingTracksLog.gc.info("deferred maintenance deferred reason=active-download")
+                return
+            }
+            let replayControl = OfflineRegionDownloadControl()
+            let replayDownloadID = UUID()
+            let didPerformMaintenance = await model?.performDeferredOfflineMaintenance(
+                control: replayControl,
+                onReplayRegionStart: { region in
+                    offlineDownloadSession.beginDeferredReplay(
+                        region: region,
+                        control: replayControl,
+                        downloadID: replayDownloadID
+                    )
+                },
+                onReplayRegionPause: { region in
+                    offlineDownloadSession.pauseDeferredReplay(region: region, downloadID: replayDownloadID)
+                }
+            ) { progress in
+                offlineDownloadSession.updateDeferredReplay(
+                    progress: OfflineDownloadProgress(progress),
+                    downloadID: replayDownloadID
+                )
+            } ?? true
             if !didPerformMaintenance || !UIApplication.shared.isProtectedDataAvailable {
+                if !didPerformMaintenance {
+                    replayControl.cancel()
+                    if offlineDownloadSession.activeDownloadID == replayDownloadID {
+                        offlineDownloadSession.clear()
+                    }
+                }
                 didScheduleDeferredOfflineMaintenance = false
                 let reason = didPerformMaintenance ? "protected-data" : "failed"
                 MakingTracksLog.gc.info("deferred maintenance retry scheduled reason=\(reason, privacy: .public)")
                 return
+            }
+            if offlineDownloadSession.activeDownloadID == replayDownloadID {
+                offlineDownloadSession.clear()
             }
             await refreshStorageMenuStatus()
             MakingTracksLog.gc.info("deferred maintenance storage refreshed")
@@ -1991,6 +2090,7 @@ private struct OfflineMapsView: View {
 
     private let catalog = OfflineRegionCatalog.debugFixture
     @State private var installed: [String: String] = [:]
+    @State private var pausedRegions: Set<String> = []
     @State private var quarantines: [OfflinePackQuarantine] = []
     @State private var storageStatus: StorageMenuStatus
     @State private var statusMessage: String?
@@ -2024,6 +2124,7 @@ private struct OfflineMapsView: View {
             installed: installed,
             activeProgress: activeProgress,
             pausedProgress: pausedProgress,
+            pausedRegions: pausedRegions,
             quarantines: quarantines
         )
     }
@@ -2186,10 +2287,10 @@ private struct OfflineMapsView: View {
         case .paused:
             HStack(spacing: 8) {
                 iconButton("Resume", systemImage: "play.circle") {
-                    startDownload(row.zone.id)
+                    startDownload(row.zone.id, resumingPausedDownload: true)
                 }
                 iconButton("Cancel", systemImage: "xmark.circle", role: .destructive) {
-                    Task { await cancelDownload() }
+                    Task { await cancelDownload(region: row.cancelRegion) }
                 }
             }
         }
@@ -2210,7 +2311,7 @@ private struct OfflineMapsView: View {
         .accessibilityLabel(label)
     }
 
-    private func startDownload(_ region: String) {
+    private func startDownload(_ region: String, resumingPausedDownload: Bool = false) {
         guard let model else {
             statusMessage = "Offline downloads unavailable"
             MakingTracksLog.downloads.error("ui download unavailable region=\(region, privacy: .private(mask: .hash))")
@@ -2227,7 +2328,11 @@ private struct OfflineMapsView: View {
         statusMessage = nil
         MakingTracksLog.downloads.info("ui download started region=\(region, privacy: .private(mask: .hash))")
         let task = Task {
-            let message = await model.installOfflineRegion(region, control: control) { progress in
+            let message = await model.installOfflineRegion(
+                region,
+                control: control,
+                resumingPausedDownload: resumingPausedDownload
+            ) { progress in
                 Task { @MainActor in
                     guard downloadSession.activeDownloadID == downloadID else { return }
                     downloadSession.update(OfflineDownloadProgress(progress))
@@ -2253,17 +2358,20 @@ private struct OfflineMapsView: View {
         downloadSession.attach(task: task)
     }
 
-    private func cancelDownload() async {
+    private func cancelDownload(region persistedPausedRegion: String? = nil) async {
         guard downloadSession.activeControl != nil
             || downloadSession.activeTask != nil
             || downloadSession.liveProgress != nil
             || downloadSession.pausedProgress != nil
+            || persistedPausedRegion != nil
         else { return }
-        let regionToDiscard = downloadSession.pausedProgress?.region ?? downloadSession.liveProgress?.region
+        let regionToDiscard = downloadSession.regionForCancel(fallbackRegion: persistedPausedRegion)
         MakingTracksLog.downloads.info("ui cancel requested region=\(regionToDiscard ?? "unknown", privacy: .private(mask: .hash))")
-        downloadSession.activeControl?.cancel()
-        downloadSession.activeTask?.cancel()
-        downloadSession.clear()
+        if downloadSession.shouldClearSessionForCancel(fallbackRegion: persistedPausedRegion) {
+            downloadSession.activeControl?.cancel()
+            downloadSession.activeTask?.cancel()
+            downloadSession.clear()
+        }
         if let regionToDiscard, let model {
             statusMessage = await model.discardOfflineRegionDownload(regionToDiscard)
             await refresh()
@@ -2293,12 +2401,14 @@ private struct OfflineMapsView: View {
     private func refresh() async {
         guard let model else {
             installed = [:]
+            pausedRegions = []
             quarantines = []
             storageStatus = .unavailable
             MakingTracksLog.startup.info("offline rows state=unavailable")
             return
         }
         installed = await model.installedOfflinePublishVersions(for: catalog)
+        pausedRegions = await model.pausedOfflineDownloadRegions(for: catalog)
         quarantines = model.offlinePackQuarantines()
         storageStatus = await model.storageMenuStatus()
         let installedCount = installed.count
@@ -3112,6 +3222,23 @@ enum MapManifestRefreshPolicy {
     }
 }
 
+enum MapDeferredOfflineMaintenancePolicy {
+    static func allowsDeferredMaintenance(
+        isMapReady: Bool,
+        didMapLoadFail: Bool,
+        didScheduleMaintenance: Bool,
+        isProtectedDataAvailable: Bool,
+        hasPausedDownload: Bool,
+        hasActiveDownload: Bool
+    ) -> Bool {
+        (isMapReady || didMapLoadFail)
+            && !didScheduleMaintenance
+            && isProtectedDataAvailable
+            && !hasPausedDownload
+            && !hasActiveDownload
+    }
+}
+
 enum MapThemeColor {
     static func color(hex: String) -> Color {
         Color(uiColor: uiColor(hex: hex))
@@ -3202,6 +3329,7 @@ private final class MapScreenModel {
     func installOfflineRegion(
         _ region: String,
         control: OfflineRegionDownloadControl,
+        resumingPausedDownload: Bool = false,
         progress: @escaping @Sendable (OfflineRegionDownloadProgress) -> Void
     ) async -> String {
         guard fixturePlaces.isEmpty,
@@ -3228,7 +3356,11 @@ private final class MapScreenModel {
                 store: offlineStore,
                 availableBytes: { StorageHeadroom.availableBytes(at: documents) }
             )
-            let result = try await downloader.downloadCurrentRegion(control: control, progress: progress)
+            let result = try await downloader.downloadCurrentRegion(
+                resumingPausedDownload: resumingPausedDownload,
+                control: control,
+                progress: progress
+            )
             MakingTracksLog.install.info("offline install completed region=\(region, privacy: .private(mask: .hash)) version=\(result.publish.publishVersion, privacy: .public) bytes=\(result.fetchedBytes, privacy: .public)")
             return "Installed \(result.publish.publishVersion)"
         } catch TileError.downloadPaused {
@@ -3253,6 +3385,15 @@ private final class MapScreenModel {
                 installed[regionID] = publish.publishVersion
             }
             return installed
+        }.value
+    }
+
+    func pausedOfflineDownloadRegions(for catalog: OfflineRegionCatalog) async -> Set<String> {
+        guard let offlineStore else { return [] }
+        let validRegionIDs = Set(catalog.zones.map(\.id))
+        return await Task.detached {
+            let paused = (try? offlineStore.pausedPendingDownloadRegions()) ?? []
+            return Set(paused.filter { validRegionIDs.contains($0) })
         }.value
     }
 
@@ -3300,12 +3441,64 @@ private final class MapScreenModel {
     }
 #endif
 
-    func performDeferredOfflineMaintenance() async -> Bool {
+    func performDeferredOfflineMaintenance(
+        control: OfflineRegionDownloadControl = OfflineRegionDownloadControl(),
+        onReplayRegionStart: (@MainActor @Sendable (String) -> Bool)? = nil,
+        onReplayRegionPause: (@MainActor @Sendable (String) -> Void)? = nil,
+        progress: (@MainActor @Sendable (OfflineRegionDownloadProgress) -> Void)? = nil
+    ) async -> Bool {
         guard let offlineStore else { return true }
         return await Task.detached {
+            var didResumePendingDownloads = true
+            let pendingRegions = (try? offlineStore.pendingDownloadRegions()) ?? []
+            for region in pendingRegions {
+                do {
+                    if let onReplayRegionStart {
+                        let didAcquireReplayOwnership = await MainActor.run {
+                            onReplayRegionStart(region)
+                        }
+                        guard didAcquireReplayOwnership else {
+                            control.cancel()
+                            didResumePendingDownloads = false
+                            continue
+                        }
+                    }
+                    let documents = try FileManager.default.url(
+                        for: .documentDirectory,
+                        in: .userDomainMask,
+                        appropriateFor: nil,
+                        create: true
+                    )
+                    let downloader = OfflineRegionDownloader(
+                        region: region,
+                        metadataFetcher: HTTPTileFetcher.offlineForeground(),
+                        objectFetcher: HTTPTileFetcher.offlineBackground(
+                            identifier: OfflineDownloadSession.backgroundIdentifier(region: region)
+                        ),
+                        store: offlineStore,
+                        availableBytes: { StorageHeadroom.availableBytes(at: documents) }
+                    )
+                    _ = try await downloader.downloadCurrentRegion(control: control) { event in
+                        if let progress {
+                            Task { @MainActor in
+                                progress(event)
+                            }
+                        }
+                    }
+                } catch TileError.downloadPaused {
+                    if let onReplayRegionPause {
+                        await MainActor.run {
+                            onReplayRegionPause(region)
+                        }
+                    }
+                    return false
+                } catch {
+                    didResumePendingDownloads = false
+                }
+            }
             do {
                 try offlineStore.performDeferredMaintenance()
-                return true
+                return didResumePendingDownloads
             } catch {
                 return false
             }
