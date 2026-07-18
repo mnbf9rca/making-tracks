@@ -4,9 +4,14 @@ public enum PinLayers {
     public static let pinColor = "#E4572E"
     public static let hiddenPinColor = "#767B82"
     public static let sourceID = "pins"
-    public static let bookmarkOffset: JSONValue = .array([.double(8), .double(-8)])
-    public static let heartOffset: JSONValue = .array([.double(-8), .double(-8)])
-    public static let categoryIconScale = 0.62
+    public static let baseBadgeOffset = 8.0
+    public static let bookmarkOffset: JSONValue = .array([.double(baseBadgeOffset), .double(-baseBadgeOffset)])
+    public static let heartOffset: JSONValue = .array([.double(-baseBadgeOffset), .double(-baseBadgeOffset)])
+    // Tuned from device-representative fixture screenshots so category glyphs stay legible.
+    public static let baseCircleRadius = 6.5
+    public static let baseCategoryIconScale = 0.72
+    public static let categorySymbolPointSize = 17.0
+    public static let categoryIconScale = PinSize().categoryIconScale
     public static let fallbackCategoryID = "__other__"
     public static let fallbackCategoryIconName = "pin-category-uncategorized"
     public static let hiddenIconName = "pin-hidden"
@@ -115,7 +120,7 @@ public enum PinLayers {
         return .array([.string("all")] + activeFilters)
     }
 
-    public static func pinLayers() -> [JSONValue] {
+    public static func pinLayers(pinSize: PinSize = PinSize()) -> [JSONValue] {
         [
             .object([
                 "id": .string("pins-circle"),
@@ -124,7 +129,7 @@ public enum PinLayers {
                 "paint": .object([
                     "circle-color": pinColorExpression(),
                     "circle-opacity": fadeOpacityExpression(),
-                    "circle-radius": .double(6),
+                    "circle-radius": .double(pinSize.circleRadius),
                 ]),
             ]),
             .object([
@@ -138,7 +143,7 @@ public enum PinLayers {
                     "icon-image": categoryIconExpression(),
                     "icon-allow-overlap": .bool(true),
                     "icon-ignore-placement": .bool(true),
-                    "icon-size": .double(categoryIconScale),
+                    "icon-size": .double(pinSize.categoryIconScale),
                 ]),
             ]),
             .object([
@@ -149,7 +154,7 @@ public enum PinLayers {
                 "layout": .object([
                     "icon-image": .string("badge-bookmark"),
                     "icon-allow-overlap": .bool(true),
-                    "icon-offset": bookmarkOffset,
+                    "icon-offset": pinSize.bookmarkOffset,
                 ]),
             ]),
             .object([
@@ -160,7 +165,7 @@ public enum PinLayers {
                 "layout": .object([
                     "icon-image": .string("badge-heart"),
                     "icon-allow-overlap": .bool(true),
-                    "icon-offset": heartOffset,
+                    "icon-offset": pinSize.heartOffset,
                 ]),
             ]),
         ]

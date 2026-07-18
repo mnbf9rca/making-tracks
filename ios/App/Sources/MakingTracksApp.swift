@@ -13,6 +13,8 @@ struct MakingTracksApp: App {
     private static let isFixtureMap = arguments.contains("--ui-testing-fixture-map")
     private static let seedFixtureUserList = arguments.contains("--ui-testing-seed-user-list")
     private static let startupViewportArgument = argumentValue("--ui-testing-map-state")
+    private static let uiTestingThemeID = argumentValue("--ui-testing-theme")
+    private static let uiTestingPinSizeMultiplier = argumentValue("--ui-testing-pin-size-multiplier").flatMap(Double.init)
     private static let debugInstallOfflineRegion = argumentValue("--debug-install-offline-region")
     private static let debugForceTileNetworkOffline = arguments.contains("--debug-force-tile-network-offline")
 #if DEBUG
@@ -38,6 +40,9 @@ struct MakingTracksApp: App {
         let fixture = Self.isFixtureMap
         MakingTracksLog.startup.info("app init started fixture=\(fixture, privacy: .public)")
         Self.resetUITestingThemeIfNeeded()
+        Self.resetUITestingPinSizeIfNeeded()
+        Self.applyUITestingThemeIfNeeded()
+        Self.applyUITestingPinSizeIfNeeded()
         Self.resetUITestingOnboardingIfNeeded()
         Self.completeUITestingOnboardingIfNeeded()
         MakingTracksLog.startup.info("app init finished fixture=\(fixture, privacy: .public)")
@@ -129,6 +134,21 @@ struct MakingTracksApp: App {
     private static func resetUITestingThemeIfNeeded() {
         guard isFixtureMap, arguments.contains("--ui-testing-reset-theme") else { return }
         UserDefaults.standard.removeObject(forKey: MapScreen.themeStorageKey)
+    }
+
+    private static func resetUITestingPinSizeIfNeeded() {
+        guard isFixtureMap, arguments.contains("--ui-testing-reset-pin-size") else { return }
+        UserDefaults.standard.removeObject(forKey: MapScreen.pinSizeMultiplierStorageKey)
+    }
+
+    private static func applyUITestingThemeIfNeeded() {
+        guard isFixtureMap, let uiTestingThemeID else { return }
+        UserDefaults.standard.set(uiTestingThemeID, forKey: MapScreen.themeStorageKey)
+    }
+
+    private static func applyUITestingPinSizeIfNeeded() {
+        guard isFixtureMap, let uiTestingPinSizeMultiplier else { return }
+        UserDefaults.standard.set(uiTestingPinSizeMultiplier, forKey: MapScreen.pinSizeMultiplierStorageKey)
     }
 
     private static func resetUITestingOnboardingIfNeeded() {
