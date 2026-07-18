@@ -25,6 +25,7 @@ struct MakingTracksApp: App {
     private static let debugExposeFixturePinDiagnostics = false
     private static let simulatedLatitude: Double? = nil
     private static let simulatedLongitude: Double? = nil
+    private static let uiTestingOfflineProgress: Double? = nil
 #endif
 
     init() {
