@@ -5,8 +5,8 @@
   "image_index": 1,
   "description_index": 1,
   "pack_descriptor": 1,
-  "region_index": 1,
-  "zone_catalog": 1,
+  "region_index": 2,
+  "zone_catalog": 2,
   "region_config": 1,
   "registry_record": 1,
   "id_scheme": 1

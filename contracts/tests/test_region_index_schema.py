@@ -2,11 +2,12 @@ import pytest
 
 from mt_contracts import region_index
 from mt_contracts.validation import is_valid, validate_instance
+from mt_contracts.versions import SCHEMA_VERSIONS
 
 
 def _valid_index():
     return {
-        "schema_version": 1,
+        "schema_version": SCHEMA_VERSIONS["region_index"],
         "min_reader_version": 1,
         "generated_at": "2026-07-17T12:00:00Z",
         "regions": [
@@ -34,6 +35,25 @@ def _valid_index():
             },
         ],
     }
+
+
+def test_region_index_contract_allows_measured_uk_pack_with_thumbs_over_3gib():
+    inst = _valid_index()
+    inst["regions"][0]["bytes_with_thumbs"] = 3_578_585_075
+    validate_instance("region-index", inst)
+
+
+def test_region_index_schema_version_matches_registry():
+    inst = _valid_index()
+    assert inst["schema_version"] == SCHEMA_VERSIONS["region_index"]
+    inst["schema_version"] = SCHEMA_VERSIONS["region_index"] - 1
+    assert not is_valid("region-index", inst)
+
+
+def test_region_index_contract_rejects_aggregate_pack_sizes_over_8gib():
+    inst = _valid_index()
+    inst["regions"][0]["bytes_with_thumbs"] = 8_589_934_593
+    assert not is_valid("region-index", inst)
 
 
 def test_region_index_contract_validates_parent_and_subregion_entries():

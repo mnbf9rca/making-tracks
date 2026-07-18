@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 from mt_contracts.caps import DESCRIPTION_TILE_ZOOM
 from mt_contracts.region_index import validate_region_index
+from mt_contracts.versions import SCHEMA_VERSIONS
 
 
 _REGION_RE = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -584,7 +585,7 @@ def _region_index_op_for_upload(
         merged = new_index
     else:
         existing = json.loads(obj["Body"].read())
-        validate_region_index(existing)
+        existing = _validate_existing_region_index_for_merge(existing)
         merged = _merge_region_indexes(existing, new_index)
     validate_region_index(merged)
     return PublishOp(
@@ -621,6 +622,19 @@ def _merge_region_indexes(
         "generated_at": new_index["generated_at"],
         "regions": [by_id[region_id] for region_id in sorted(by_id)],
     }
+
+
+def _validate_existing_region_index_for_merge(existing: Mapping[str, Any]) -> dict[str, Any]:
+    current_version = SCHEMA_VERSIONS["region_index"]
+    if int(existing.get("schema_version", 0)) == current_version:
+        normalised = dict(existing)
+    elif int(existing.get("schema_version", 0)) == 1:
+        normalised = dict(existing)
+        normalised["schema_version"] = current_version
+    else:
+        normalised = dict(existing)
+    validate_region_index(normalised)
+    return normalised
 
 
 def _json_bytes(obj: Any) -> bytes:
