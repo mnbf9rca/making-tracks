@@ -133,7 +133,8 @@ cells → per-cell delete/dedup for free" does not exist. Reframed:]**
   per-cell; per-zone now, per-cell later via WP-RM-B2].** Deleting a zone = `delete(region: zone_id)`; the
   store's mark-and-sweep GC reclaims objects no remaining installed pack references. **The grid feedback
   (§3c) shows per-ZONE ownership + per-ZONE delete** — not per-cell delete (correct §3c: the grid
-  visualises which zones are installed, coloured by pack).
+  visualises which zones are installed, coloured by pack). **Rob ruling (2026-07-18): v1 update/delete
+  granularity is per-pack/per-zone; per-cell update/delete remains the WP-RM-B2 future path.**
 - **Basemap [gate — no per-zone slice exists].** There is one atomic basemap per pack today. Either
   (a) a zone-pack **reuses its parent region/subregion basemap** (no new basemap fetched; the size UX
   must reflect that the basemap is shared/already-present), or (b) add **per-zone basemap slicing** to the
@@ -471,7 +472,7 @@ moment.
    (`docs/research/2026-07-17-offline-selection-ux.md`) recommends **per-cell** update/delete (grid as a
    coverage-manager). **Recommended default: per-zone now; per-cell later via the WP-RM-B2
    synthetic-manifest path** (a rectangle/cell-set installed as an ad-hoc pack is then per-cell-deletable).
-   **Logged on the WP-RM issue body for Rob's morning.** Confirm.
+   **Resolved by Rob (2026-07-18): per-pack/per-zone is v1; per-cell is WP-RM-B2.**
 5. **WP-DL-SAFETY follow-on [§8].** #202 closes the commissioned engine hardening cluster for
    INV-1/5/6/7/8. The remaining safety follow-on is **INV-10b** full task adoption after relaunch; keep it
    as a named target and do not let #197's session-recreation work be recorded as closing it.
