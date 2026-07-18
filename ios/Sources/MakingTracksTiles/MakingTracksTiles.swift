@@ -1036,15 +1036,20 @@ public struct OfflineRegionDownloadProgress: Sendable, Equatable {
 }
 
 public final class OfflineRegionDownloadControl: @unchecked Sendable {
-    private enum State {
+    fileprivate enum State: Equatable {
         case running
+        case paused
+        case cancelled
+    }
+
+    fileprivate enum Interruption: Sendable {
         case paused
         case cancelled
     }
 
     private let lock = NSLock()
     private var state: State = .running
-    private var interruptionHandlers: [UUID: @Sendable () -> Void] = [:]
+    private var interruptionHandlers: [UUID: @Sendable (Interruption) -> Void] = [:]
 
     public init() {}
 
@@ -1074,17 +1079,22 @@ public final class OfflineRegionDownloadControl: @unchecked Sendable {
         }
     }
 
-    fileprivate func registerInterruptionHandler(_ handler: @escaping @Sendable () -> Void) -> UUID {
+    fileprivate func registerInterruptionHandler(_ handler: @escaping @Sendable (Interruption) -> Void) -> UUID {
         let id = UUID()
-        let shouldInterrupt = lock.withLock {
-            if state == .running {
+        let immediateInterruption = lock.withLock {
+            switch state {
+            case .running:
                 interruptionHandlers[id] = handler
-                return false
+                return nil as Interruption?
+            case .paused:
+                interruptionHandlers[id] = handler
+                return .paused
+            case .cancelled:
+                return .cancelled
             }
-            return true
         }
-        if shouldInterrupt {
-            handler()
+        if let immediateInterruption {
+            handler(immediateInterruption)
         }
         return id
     }
@@ -1096,14 +1106,55 @@ public final class OfflineRegionDownloadControl: @unchecked Sendable {
     }
 
     private func interrupt(with next: State) {
-        let handlers = lock.withLock {
+        let (interruption, handlers) = lock.withLock {
             state = next
             let handlers = Array(interruptionHandlers.values)
-            interruptionHandlers.removeAll()
-            return handlers
+            if next == .cancelled {
+                interruptionHandlers.removeAll()
+            }
+            return (next.interruption, handlers)
         }
         for handler in handlers {
-            handler()
+            handler(interruption)
+        }
+    }
+}
+
+private extension OfflineRegionDownloadControl.State {
+    var interruption: OfflineRegionDownloadControl.Interruption {
+        switch self {
+        case .running:
+            preconditionFailure("running is not an interruption")
+        case .paused:
+            return .paused
+        case .cancelled:
+            return .cancelled
+        }
+    }
+}
+
+private final class OfflineRegionDownloadInterruptionLatch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var interruption: OfflineRegionDownloadControl.Interruption?
+
+    func record(_ next: OfflineRegionDownloadControl.Interruption) {
+        lock.withLock {
+            if next == .cancelled || interruption == nil {
+                interruption = next
+            }
+        }
+    }
+
+    func error() -> TileError? {
+        lock.withLock {
+            switch interruption {
+            case .paused:
+                return .downloadPaused
+            case .cancelled:
+                return .downloadCancelled
+            case nil:
+                return nil
+            }
         }
     }
 }
@@ -1146,9 +1197,10 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
         try store.beginDownload(publish: publish)
 
         do {
-            let totalObjectCount = plan.tilesToFetch.count + (plan.basemapNeedsFetch ? 1 : 0)
-            var completedObjectCount = 0
-            var completedBytes = 0
+            let totalObjectCount = manifest.tiles.count + 1
+            var completedObjectCount = plan.reusedTileCount + (plan.basemapNeedsFetch ? 0 : 1)
+            let totalBytes = manifest.tiles.reduce(0) { $0 + $1.bytes } + manifest.basemap.bytes
+            var completedBytes = totalBytes - plan.bytesToFetch
             for item in plan.tilesToFetch {
                 try control.checkpoint()
                 let fileURL = try await downloadObject(
@@ -1163,7 +1215,7 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
                     region: region,
                     publishVersion: publishVersion,
                     completedBytes: completedBytes,
-                    totalBytes: plan.bytesToFetch,
+                    totalBytes: totalBytes,
                     completedObjectCount: completedObjectCount,
                     totalObjectCount: totalObjectCount
                 ))
@@ -1182,7 +1234,7 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
                     region: region,
                     publishVersion: publishVersion,
                     completedBytes: completedBytes,
-                    totalBytes: plan.bytesToFetch,
+                    totalBytes: totalBytes,
                     completedObjectCount: completedObjectCount,
                     totalObjectCount: totalObjectCount
                 ))
@@ -1206,7 +1258,9 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
         let downloadTask = Task {
             try await fetcher.download(url)
         }
-        let handlerID = control.registerInterruptionHandler {
+        let interruptionLatch = OfflineRegionDownloadInterruptionLatch()
+        let handlerID = control.registerInterruptionHandler { interruption in
+            interruptionLatch.record(interruption)
             downloadTask.cancel()
         }
         defer {
@@ -1217,8 +1271,15 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             try control.checkpoint()
             return fileURL
         } catch is CancellationError {
-            try control.checkpoint()
+            if let error = interruptionLatch.error() {
+                throw error
+            }
             throw TileError.downloadCancelled
+        } catch let error as URLError where error.code == .cancelled {
+            if let error = interruptionLatch.error() {
+                throw error
+            }
+            throw error
         } catch {
             throw error
         }
@@ -1257,6 +1318,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
     func beginDownload(publish: PinnedPublish) throws {
         try withLock {
             try validatePublish(publish)
+            try removeSupersededInProgressDownloads(region: publish.region, keeping: publish.publishVersion)
             try fm.createDirectory(at: inProgressURL(region: publish.region, publishVersion: publish.publishVersion), withIntermediateDirectories: true)
             try JSONEncoder().encode(packIndex(for: publish))
                 .write(to: inProgressURL(region: publish.region, publishVersion: publish.publishVersion).appendingPathComponent("pack-index.json"), options: .atomic)
@@ -1273,8 +1335,16 @@ public final class OfflineRegionStore: @unchecked Sendable {
     }
 
     func stageDownloadedBasemapObject(_ fileURL: URL, sha256: String, bytes: Int) throws {
-        try withLock {
-            try writeVerifiedBasemapObject(from: fileURL, sha256: sha256, bytes: bytes)
+        let prepared = try prepareVerifiedBasemapObject(from: fileURL, sha256: sha256, bytes: bytes)
+        do {
+            try withLock {
+                try movePreparedBasemapObject(prepared, sha256: sha256, bytes: bytes)
+            }
+        } catch {
+            if fm.fileExists(atPath: prepared.path) {
+                try? fm.removeItem(at: prepared)
+            }
+            throw error
         }
     }
 
@@ -1340,6 +1410,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
             if fm.fileExists(atPath: backup.path) {
                 try fm.removeItem(at: backup)
             }
+            try? garbageCollectObjects()
         } catch {
             if fm.fileExists(atPath: temp.path) {
                 try? fm.removeItem(at: temp)
@@ -1731,6 +1802,14 @@ public final class OfflineRegionStore: @unchecked Sendable {
         try garbageCollectObjects()
     }
 
+    private func removeSupersededInProgressDownloads(region: String, keeping publishVersion: String) throws {
+        let inProgressRegion = root.appendingPathComponent("in-progress").appendingPathComponent(region, isDirectory: true)
+        guard let children = try? fm.contentsOfDirectory(at: inProgressRegion, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
+        for child in children where child.lastPathComponent != publishVersion {
+            try fm.removeItem(at: child)
+        }
+    }
+
     func packURL(region: String, publishVersion: String) -> URL {
         root.appendingPathComponent("packs").appendingPathComponent(region).appendingPathComponent(publishVersion, isDirectory: true)
     }
@@ -1782,28 +1861,44 @@ public final class OfflineRegionStore: @unchecked Sendable {
     }
 
     private func writeVerifiedBasemapObject(from fileURL: URL, sha256: String, bytes: Int) throws {
-        let url = basemapObjectURL(sha256: sha256)
         if (try? verifyExistingBasemapObject(sha256: sha256, bytes: bytes)) != nil { return }
+        let temp = try prepareVerifiedBasemapObject(from: fileURL, sha256: sha256, bytes: bytes)
+        try movePreparedBasemapObject(temp, sha256: sha256, bytes: bytes)
+    }
+
+    private func prepareVerifiedBasemapObject(from fileURL: URL, sha256: String, bytes: Int) throws -> URL {
         try verifyFileObject(fileURL, sha256: sha256, bytes: bytes)
+        let url = basemapObjectURL(sha256: sha256)
         try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let temp = url.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).pmtiles.tmp")
         do {
             if fm.fileExists(atPath: temp.path) {
                 try fm.removeItem(at: temp)
             }
-            try fm.copyItem(at: fileURL, to: temp)
+            try fm.moveItem(at: fileURL, to: temp)
             try verifyFileObject(temp, sha256: sha256, bytes: bytes)
-            if fm.fileExists(atPath: url.path) {
-                try fm.removeItem(at: url)
-            }
-            try fm.moveItem(at: temp, to: url)
-            try verifyExistingBasemapObject(sha256: sha256, bytes: bytes)
+            return temp
         } catch {
             if fm.fileExists(atPath: temp.path) {
                 try? fm.removeItem(at: temp)
             }
             throw error
         }
+    }
+
+    private func movePreparedBasemapObject(_ temp: URL, sha256: String, bytes: Int) throws {
+        let url = basemapObjectURL(sha256: sha256)
+        if (try? verifyExistingBasemapObject(sha256: sha256, bytes: bytes)) != nil {
+            if fm.fileExists(atPath: temp.path) {
+                try fm.removeItem(at: temp)
+            }
+            return
+        }
+        if fm.fileExists(atPath: url.path) {
+            try fm.removeItem(at: url)
+        }
+        try fm.moveItem(at: temp, to: url)
+        try verifyExistingBasemapObject(sha256: sha256, bytes: bytes)
     }
 
     private func verifyExistingTileObject(sha256: String, bytes: Int) throws {
