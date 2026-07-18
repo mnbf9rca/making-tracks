@@ -70,8 +70,10 @@ of the designs.
   `.pmtiles` (the chunking-bound gap, §3 / WP-RM §8 INV-4); the fix is the per-cell basemap (§3).
 - **GC retains in-progress objects — BUILT (#193).** Mark-and-sweep protects both installed
   (`referencedObjects`) and **live in-progress** (`referencedInProgressObjects`) objects before sweeping.
-  **⚠ Known sweep GAPS (WP-RM §8 INV-5, unowned → WP-DL-SAFETY):** crash-stranded `*.pmtiles.tmp` and
-  `root/tmp/*` install dirs are never swept, and GC never runs at plain launch — orphans linger.
+  **WP-DL-SAFETY (#202) closes the orphan sweep gaps:** hidden `*.tmp` object files and abandoned
+  `root/tmp/*` install dirs are swept by deferred maintenance and at `beginDownload`; final object GC is
+  fail-closed if installed/current metadata cannot be trusted, and live basemap prepare temps are registered
+  so a concurrent sweep skips them while hash verification stays outside the store lock.
 - **Background `URLSession`** (WiFi-preferred, discretionary) — **BUILT for object transfer (#197,
   WP-B10d2 / #191 ruling)** while the app is alive/backgrounded. Pack object fetches now use the
   delegate-backed background configuration (`sessionSendsLaunchEvents`), recreate the identifier session
@@ -84,10 +86,11 @@ of the designs.
 - **Download safety contract:** the full set of download-safety invariants (atomicity, resume,
   idempotence, chunking bound, GC soundness, crash-window consistency, disk/ENOSPC safety, concurrency,
   honest progress, relaunch adoption) — each with a today-vs-target marker, `file:line`/PR evidence, an
-  owning WP, and its acceptance test — lives in **[[WP-RM §8 download safety contract]]**. The engine is
-  **mostly sound — no corruption paths** (by the §8 markers: 2 satisfied, 6 partial, 1 violated, 1 target); the open gaps are INV-4 (basemap chunking → WP-RM-P pipeline cut + WP-RM-G app render),
-  INV-10a is satisfied by #197 while INV-10b remains with WP-DL-SAFETY, and the INV-1/5/6/7/8/9
-  engine-hardening cluster remains with the proposed **WP-DL-SAFETY**.
+  owning WP, and its acceptance test — lives in **[[WP-RM §8 download safety contract]]**. After
+  WP-DL-SAFETY (#202), the remaining open gaps are **INV-4** (basemap chunking → WP-RM-P pipeline cut +
+  WP-RM-G app render) and **INV-10b** (full background-task adoption after relaunch). INV-10a is satisfied
+  by #197; INV-1/5/6/7/8 are satisfied by #202's engine hardening. INV-9 remains the #196 UI contract unless
+  a future non-UI caller needs engine-level paused/running state.
 - **Compression:** place tiles are app-level gzip at rest and on device, **sha over gzipped bytes** (no
   `Content-Encoding` — transport auto-decompress would break checksums); pmtiles internally compressed;
   thumbs are WebP.
@@ -122,7 +125,7 @@ of the designs.
 | **Offline download engine + content-addressed pack store** | **PR #149 (MERGED)** + region-model §3/§5 (`2026-07-17-wp-regions-model.md`, #131) |
 | **Incremental download engine (file-backed staging, resume, pause/cancel, GC)** | **WP-B10d, PR #193 (MERGED)** |
 | **Background object-transfer wiring + final-response origin verification** | **WP-B10d2, PR #197 (MERGED; closes #191)** |
-| **Download SAFETY contract (10 invariants: atomicity/resume/idempotence/chunking/GC/crash-window/disk/concurrency/progress/relaunch)** | **WP-RM §8** (`2026-07-18-wp-rm-region-manager.md`); gaps → WP-RM-P + WP-RM-G (INV-4), WP-DL-SAFETY (INV-1/5/6/7/8/9 + INV-10b task adoption, proposed); INV-10a session recreation/object-transfer handoff satisfied by #197 |
+| **Download SAFETY contract (10 invariants: atomicity/resume/idempotence/chunking/GC/crash-window/disk/concurrency/progress/relaunch)** | **WP-RM §8** (`2026-07-18-wp-rm-region-manager.md`); WP-DL-SAFETY (#202) satisfies INV-1/5/6/7/8; gaps → WP-RM-P + WP-RM-G (INV-4), INV-10b full task adoption (deferred); INV-10a session recreation/object-transfer handoff satisfied by #197; INV-9 remains the #196 UI contract unless promoted to engine scope |
 | **Image-index schema + thumbs path/content-addressing (contract owner)** | **WP-IMG-P (`2026-07-17-wp-images-photos.md`, #158, MERGED)** |
 | Photos card layout / attribution UI (consumer); offline-thumb bundling | WP-CARD (`2026-07-18-wp-card-overhaul.md`, #172) + WP-IMG-B2 |
 | Description sidecars | codex4 description-index (PR #173) |
