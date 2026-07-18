@@ -1100,7 +1100,7 @@ private struct AppMenuSheet: View {
                 selectedThemeID: $selectedThemeID,
                 locationStatus: locationStatus,
                 openLocationSettings: openLocationSettings,
-                replayOnboarding: replayOnboarding
+                replayOnboarding: replayOnboardingAndDismiss
             ))
         case .about:
             destinationWithDone(AboutView(attribution: attribution))
@@ -1123,6 +1123,11 @@ private struct AppMenuSheet: View {
         }
         path = [destination]
         shell.deepLinkPath = nil
+    }
+
+    private func replayOnboardingAndDismiss() {
+        dismiss()
+        replayOnboarding()
     }
 }
 

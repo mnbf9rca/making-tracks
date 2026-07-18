@@ -123,7 +123,8 @@ struct MakingTracksApp: App {
     private static func completeUITestingOnboardingIfNeeded() {
         guard isFixtureMap, arguments.contains("--ui-testing-complete-onboarding") else { return }
         UserDefaults.standard.set(true, forKey: OnboardingStorage.hasCompletedOnboardingKey)
-        if UserDefaults.standard.string(forKey: OnboardingStorage.chosenRegionKey) == nil {
+        if arguments.contains("--ui-testing-reset-database")
+            || UserDefaults.standard.string(forKey: OnboardingStorage.chosenRegionKey) == nil {
             UserDefaults.standard.set(OnboardingRegionChoice.malaysia.rawValue, forKey: OnboardingStorage.chosenRegionKey)
         }
     }
