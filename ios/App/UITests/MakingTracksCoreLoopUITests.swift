@@ -171,18 +171,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     func testUnhideRestoresFixturePinToMapSourceBeforeCardDismissal() {
-        let app = launch(reset: true)
+        let app = launch(reset: true, pinDiagnostics: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
 
         app.buttons["debug.hide-fixture"].tap()
         XCTAssertTrue(waitForFixtureHidden(true, in: app))
-        tapFixturePin(in: map)
-        XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
+        XCTAssertTrue(waitForSourceFeatureCount(1, in: app))
+        XCTAssertTrue(waitForNonExistence(of: app.staticTexts["map.fixture-pin.\(placeID)"], timeout: 5))
 
         app.buttons["debug.unhide-fixture"].tap()
         XCTAssertTrue(waitForFixtureHidden(false, in: app))
+        XCTAssertTrue(waitForSourceFeatureCount(2, in: app))
         openFixtureCard(in: map, app: app)
     }
 
@@ -582,6 +584,18 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             return false
         }
         return !loading.exists || loading.waitForNonExistence(timeout: 10)
+    }
+
+    private func waitForSourceFeatureCount(_ count: Int, in app: XCUIApplication) -> Bool {
+        let sourceStatus = app.staticTexts["map.debug-source-status"]
+        let predicate = NSPredicate(format: "label == %@", "source applied features:\(count)")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: sourceStatus)
+        let result = XCTWaiter.wait(for: [expectation], timeout: 10)
+        if result != .completed {
+            XCTFail("Expected source applied features:\(count), got \(sourceStatus.exists ? sourceStatus.label : "missing source status")")
+            return false
+        }
+        return true
     }
 
     private func attachScreenshot(named name: String) {
