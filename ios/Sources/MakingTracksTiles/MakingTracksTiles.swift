@@ -1264,7 +1264,7 @@ public enum OfflineDownloadSession {
 
     public static func backgroundConfiguration(identifier: String) -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
-        configuration.isDiscretionary = true
+        configuration.isDiscretionary = false
         configuration.sessionSendsLaunchEvents = true
         configuration.waitsForConnectivity = true
         configuration.allowsExpensiveNetworkAccess = false
