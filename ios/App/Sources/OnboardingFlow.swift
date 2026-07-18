@@ -17,6 +17,8 @@ struct MakingTracksRootView: View {
     @StateObject private var locationPermission: LocationPermission
     @State private var isReplayingOnboarding = false
     @State private var downloadState: OnboardingDownloadState = .idle
+    @State private var cameraRequestID = 0
+    @State private var cameraRequest: ViewportCameraRequest?
 
     init(
         database: AppDatabase,
@@ -50,7 +52,9 @@ struct MakingTracksRootView: View {
             offlineDownloadProgress: offlineDownloadProgress,
             locationManager: locationManager,
             locationPermission: locationPermission,
+            cameraRequest: cameraRequest,
             onReplayOnboarding: {
+                downloadState = .idle
                 isReplayingOnboarding = true
             }
         )
@@ -63,6 +67,10 @@ struct MakingTracksRootView: View {
                 ),
                 locationPermission: locationPermission,
                 downloadState: downloadState,
+                showsUITestingDiagnostics: isFixtureMap,
+                prepareDownload: { region in
+                    prepareOfflineDownload(for: region)
+                },
                 startDownload: { region in
                     startOfflineDownload(for: region)
                 },
@@ -88,17 +96,71 @@ struct MakingTracksRootView: View {
     private func completeOnboarding(region: OnboardingRegionChoice?) {
         let resolvedRegion = region ?? OnboardingRegionChoice(rawValue: chosenRegionRawValue) ?? .malaysia
         chosenRegionRawValue = resolvedRegion.rawValue
+        cameraRequestID += 1
+        cameraRequest = ViewportCameraRequest(id: cameraRequestID, viewport: resolvedRegion.startupViewport)
         hasCompletedOnboarding = true
         isReplayingOnboarding = false
     }
 
     @MainActor
-    private func startOfflineDownload(for region: OnboardingRegionChoice) {
+    private func prepareOfflineDownload(for region: OnboardingRegionChoice) {
+        switch downloadState {
+        case let .planning(activeRegion) where activeRegion == region:
+            return
+        case let .ready(plan) where plan.region == region:
+            return
+        case let .storageFull(plan) where plan.region == region:
+            return
+        case let .complete(plan) where plan.region == region:
+            return
+        case let .downloading(plan, _) where plan.region == region:
+            return
+        default:
+            break
+        }
         guard !isFixtureMap else {
-            downloadState = .complete
+            downloadState = .ready(OnboardingDownloadPlan.fixture(region: region))
             return
         }
-        downloadState = .downloading
+        downloadState = .planning(region)
+        Task {
+            do {
+                let plan = try await makeOfflinePlan(for: region)
+                await MainActor.run {
+                    guard downloadState.region == region else { return }
+                    downloadState = plan.hasHeadroom ? .ready(plan) : .storageFull(plan)
+                }
+            } catch {
+                await MainActor.run {
+                    guard downloadState.region == region else { return }
+                    downloadState = .failed(region)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func startOfflineDownload(for region: OnboardingRegionChoice) {
+        guard !downloadState.isDownloading else { return }
+        let plan: OnboardingDownloadPlan
+        switch downloadState {
+        case let .ready(readyPlan) where readyPlan.region == region:
+            plan = readyPlan
+        case let .complete(completePlan) where completePlan.region == region:
+            return
+        default:
+            prepareOfflineDownload(for: region)
+            return
+        }
+        guard plan.hasHeadroom else {
+            downloadState = .storageFull(plan)
+            return
+        }
+        guard !isFixtureMap else {
+            downloadState = .complete(plan)
+            return
+        }
+        downloadState = .downloading(plan, fetchedBytes: 0)
         Task {
             do {
                 let documents = try FileManager.default.url(
@@ -113,16 +175,47 @@ struct MakingTracksRootView: View {
                     store: try .documentsStore(),
                     availableBytes: { StorageHeadroom.availableBytes(at: documents) }
                 )
-                _ = try await downloader.downloadCurrentRegion()
+                let result = try await downloader.downloadCurrentRegion()
                 await MainActor.run {
-                    downloadState = .complete
+                    guard downloadState.isDownloading else { return }
+                    downloadState = .complete(plan.withFetchedBytes(result.fetchedBytes))
                 }
             } catch {
                 await MainActor.run {
-                    downloadState = .failed
+                    guard downloadState.isDownloading else { return }
+                    downloadState = .failed(region)
                 }
             }
         }
+    }
+
+    private func makeOfflinePlan(for region: OnboardingRegionChoice) async throws -> OnboardingDownloadPlan {
+        let documents = try FileManager.default.url(
+            for: .documentDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let cacheRoot = try FileManager.default.url(
+            for: .cachesDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ).appendingPathComponent("MakingTracks/OnboardingManifest", isDirectory: true)
+        let cache = try TileCache(directory: cacheRoot)
+        let client = ManifestClient(region: region.mapRegion.rawValue, fetcher: HTTPTileFetcher(), cache: cache)
+        let result = await client.refresh()
+        guard let publish = result.publish else { throw OnboardingDownloadError.planUnavailable }
+        let store = try OfflineRegionStore.documentsStore()
+        let updatePlan = try store.updatePlan(for: publish)
+        let availableBytes = StorageHeadroom.availableBytes(at: documents)
+        return OnboardingDownloadPlan(
+            region: region,
+            bytesToFetch: updatePlan.bytesToFetch,
+            availableBytes: availableBytes,
+            hasHeadroom: StorageHeadroom.hasHeadroom(requiredBytes: updatePlan.bytesToFetch, availableBytes: availableBytes),
+            fetchedBytes: 0
+        )
     }
 }
 
@@ -177,11 +270,79 @@ enum OnboardingCopy {
     static let offlinePackOffer = "Download this region so the map works with no connection. Keep the app open while downloading."
 }
 
+struct OnboardingDownloadPlan: Equatable {
+    let region: OnboardingRegionChoice
+    let bytesToFetch: Int
+    let availableBytes: Int64?
+    let hasHeadroom: Bool
+    let fetchedBytes: Int
+
+    var formattedSize: String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytesToFetch), countStyle: .file)
+    }
+
+    var formattedFetchedBytes: String {
+        ByteCountFormatter.string(fromByteCount: Int64(min(fetchedBytes, bytesToFetch)), countStyle: .file)
+    }
+
+    var progressFraction: Double {
+        guard bytesToFetch > 0 else { return 1 }
+        return min(max(Double(fetchedBytes) / Double(bytesToFetch), 0), 1)
+    }
+
+    var storageFullMessage: String {
+        if let availableBytes {
+            let available = ByteCountFormatter.string(fromByteCount: availableBytes, countStyle: .file)
+            return "Not enough storage. This pack needs \(formattedSize), with 512 MB kept free. Available: \(available)."
+        }
+        return "Storage could not be checked. Free up space and try again."
+    }
+
+    func withFetchedBytes(_ fetchedBytes: Int) -> OnboardingDownloadPlan {
+        OnboardingDownloadPlan(
+            region: region,
+            bytesToFetch: bytesToFetch,
+            availableBytes: availableBytes,
+            hasHeadroom: hasHeadroom,
+            fetchedBytes: fetchedBytes
+        )
+    }
+
+    static func fixture(region: OnboardingRegionChoice) -> OnboardingDownloadPlan {
+        OnboardingDownloadPlan(region: region, bytesToFetch: 0, availableBytes: nil, hasHeadroom: true, fetchedBytes: 0)
+    }
+}
+
 enum OnboardingDownloadState: Equatable {
     case idle
-    case downloading
-    case complete
-    case failed
+    case planning(OnboardingRegionChoice)
+    case ready(OnboardingDownloadPlan)
+    case storageFull(OnboardingDownloadPlan)
+    case downloading(OnboardingDownloadPlan, fetchedBytes: Int)
+    case complete(OnboardingDownloadPlan)
+    case failed(OnboardingRegionChoice)
+
+    var region: OnboardingRegionChoice? {
+        switch self {
+        case .idle:
+            return nil
+        case let .planning(region), let .failed(region):
+            return region
+        case let .ready(plan), let .storageFull(plan), let .complete(plan):
+            return plan.region
+        case let .downloading(plan, _):
+            return plan.region
+        }
+    }
+
+    var isDownloading: Bool {
+        if case .downloading = self { return true }
+        return false
+    }
+}
+
+enum OnboardingDownloadError: Error {
+    case planUnavailable
 }
 
 enum OnboardingFlowState {
@@ -203,12 +364,15 @@ private enum OnboardingStep: Int, CaseIterable {
 struct OnboardingFlow: View {
     let isReplay: Bool
     @ObservedObject var locationPermission: LocationPermission
+    let showsUITestingDiagnostics: Bool
+    let prepareDownload: (OnboardingRegionChoice) -> Void
     let startDownload: (OnboardingRegionChoice) -> Void
     let complete: (OnboardingRegionChoice?) -> Void
 
     @State private var selectedRegion: OnboardingRegionChoice?
     @State private var step: OnboardingStep = .welcome
     @State private var didRequestLocation = false
+    @AccessibilityFocusState private var isProgressFocused: Bool
     private let downloadState: OnboardingDownloadState
 
     init(
@@ -216,12 +380,16 @@ struct OnboardingFlow: View {
         initialSelectedRegion: OnboardingRegionChoice?,
         locationPermission: LocationPermission,
         downloadState: OnboardingDownloadState,
+        showsUITestingDiagnostics: Bool = false,
+        prepareDownload: @escaping (OnboardingRegionChoice) -> Void,
         startDownload: @escaping (OnboardingRegionChoice) -> Void,
         complete: @escaping (OnboardingRegionChoice?) -> Void
     ) {
         self.isReplay = isReplay
         self.locationPermission = locationPermission
         self.downloadState = downloadState
+        self.showsUITestingDiagnostics = showsUITestingDiagnostics
+        self.prepareDownload = prepareDownload
         self.startDownload = startDownload
         self.complete = complete
         _selectedRegion = State(initialValue: initialSelectedRegion)
@@ -231,8 +399,10 @@ struct OnboardingFlow: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 22) {
                 progressText
-                content
-                Spacer(minLength: 0)
+                ScrollView {
+                    content
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 controls
             }
             .padding(24)
@@ -256,6 +426,7 @@ struct OnboardingFlow: View {
             .foregroundStyle(.secondary)
             .accessibilityLabel("Step \(step.rawValue + 1) of \(OnboardingStep.allCases.count)")
             .accessibilityIdentifier("onboarding.progress")
+            .accessibilityFocused($isProgressFocused)
     }
 
     @ViewBuilder
@@ -295,21 +466,16 @@ struct OnboardingFlow: View {
                     title: "Download \(selectedRegionTitle)",
                     body: OnboardingCopy.offlinePackOffer.replacingOccurrences(of: "this region", with: selectedRegionTitle)
                 )
-                if downloadState == .downloading {
-                    ProgressView()
-                        .accessibilityIdentifier("onboarding.download.progress")
-                } else if downloadState == .complete {
-                    Label("Download ready", systemImage: "checkmark.circle")
-                        .accessibilityIdentifier("onboarding.download.complete")
-                } else if downloadState == .failed {
-                    Label("Download failed. You can keep using the map online.", systemImage: "exclamationmark.triangle")
-                        .accessibilityIdentifier("onboarding.download.failed")
-                }
-                Button("Download \(selectedRegionTitle)") {
+                downloadStatus
+                Button(downloadButtonTitle) {
                     startDownload(selectedRegion ?? .malaysia)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
+                .disabled(!canStartDownload)
                 .accessibilityIdentifier("onboarding.download")
+            }
+            .task(id: selectedRegion ?? .malaysia) {
+                prepareDownload(selectedRegion ?? .malaysia)
             }
         case .location:
             VStack(alignment: .leading, spacing: 14) {
@@ -330,17 +496,83 @@ struct OnboardingFlow: View {
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("onboarding.location-requested")
                 }
+                locationRequestCountDiagnostic
             }
         case .snow:
-            onboardingSection(
-                title: "Fresh snow",
-                body: "Seen places fade as your tracks build up. Faded means progress, not loss."
-            )
+            VStack(alignment: .leading, spacing: 14) {
+                onboardingSection(
+                    title: "Fresh snow",
+                    body: "Seen places fade as your tracks build up. Faded means progress, not loss."
+                )
+                locationRequestCountDiagnostic
+            }
         }
     }
 
     private var selectedRegionTitle: String {
         (selectedRegion ?? .malaysia).title
+    }
+
+    @ViewBuilder
+    private var locationRequestCountDiagnostic: some View {
+        if showsUITestingDiagnostics {
+            Text(verbatim: "Location requests: \(locationPermission.authorizationRequestCount)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("onboarding.location-request-count")
+        }
+    }
+
+    @ViewBuilder
+    private var downloadStatus: some View {
+        switch downloadState {
+        case .idle:
+            Text("Checking download size...")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("onboarding.download.size")
+        case .planning:
+            ProgressView("Checking download size")
+                .accessibilityIdentifier("onboarding.download.planning")
+        case let .ready(plan):
+            Label("Download size: \(plan.formattedSize)", systemImage: "internaldrive")
+                .accessibilityIdentifier("onboarding.download.size")
+        case let .storageFull(plan):
+            Label(plan.storageFullMessage, systemImage: "externaldrive.badge.exclamationmark")
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("onboarding.download.storage-full")
+        case let .downloading(plan, fetchedBytes):
+            let activePlan = plan.withFetchedBytes(fetchedBytes)
+            VStack(alignment: .leading, spacing: 8) {
+                ProgressView(value: activePlan.progressFraction)
+                    .accessibilityLabel("Download progress")
+                    .accessibilityValue("\(activePlan.formattedFetchedBytes) of \(activePlan.formattedSize)")
+                    .accessibilityIdentifier("onboarding.download.progress")
+                Text("\(activePlan.formattedFetchedBytes) of \(activePlan.formattedSize)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("onboarding.download.progress-text")
+            }
+        case let .complete(plan):
+            Label("Download ready: \(plan.formattedSize)", systemImage: "checkmark.circle")
+                .accessibilityIdentifier("onboarding.download.complete")
+        case .failed:
+            Label("Download failed. You can keep using the map online.", systemImage: "exclamationmark.triangle")
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("onboarding.download.failed")
+        }
+    }
+
+    private var canStartDownload: Bool {
+        guard case let .ready(plan) = downloadState else { return false }
+        return plan.region == (selectedRegion ?? .malaysia) && plan.hasHeadroom
+    }
+
+    private var downloadButtonTitle: String {
+        if downloadState.isDownloading {
+            return "Downloading \(selectedRegionTitle)"
+        }
+        return "Download \(selectedRegionTitle)"
     }
 
     private func onboardingSection(title: String, body: String) -> some View {
@@ -414,6 +646,7 @@ struct OnboardingFlow: View {
             }
             .buttonStyle(.borderedProminent)
             .frame(maxWidth: .infinity)
+            .disabled(step == .region && selectedRegion == nil)
             .accessibilityIdentifier("onboarding.next")
         }
     }
@@ -424,5 +657,6 @@ struct OnboardingFlow: View {
             return
         }
         step = nextRaw
+        isProgressFocused = true
     }
 }

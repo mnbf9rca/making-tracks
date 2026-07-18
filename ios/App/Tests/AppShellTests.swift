@@ -77,11 +77,22 @@ final class AppShellTests: XCTestCase {
         let permission = LocationPermission(manager: manager)
 
         XCTAssertEqual(manager.whenInUseAuthorizationRequestCount, 0)
+        XCTAssertEqual(permission.authorizationRequestCount, 0)
 
         permission.requestWhenInUseIfNeeded()
         permission.requestWhenInUseIfNeeded()
 
         XCTAssertEqual(manager.whenInUseAuthorizationRequestCount, 1)
+        XCTAssertEqual(permission.authorizationRequestCount, 1)
+    }
+
+    @MainActor
+    func testMapCameraRequestIsConsumedOnce() {
+        let coordinator = makeCoordinator()
+
+        XCTAssertTrue(coordinator.consumeCameraRequest(1))
+        XCTAssertFalse(coordinator.consumeCameraRequest(1))
+        XCTAssertTrue(coordinator.consumeCameraRequest(2))
     }
 
     @MainActor

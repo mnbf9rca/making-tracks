@@ -41,6 +41,26 @@ struct ViewportSeed: Sendable, Equatable {
             return .kl
         }
     }
+
+#if DEBUG
+    var fixtureRegionLabel: String {
+        if self == .uk {
+            return "UK"
+        }
+        if self == .kl {
+            return "Malaysia"
+        }
+        if self == .ocean {
+            return "Ocean"
+        }
+        return "Custom"
+    }
+#endif
+}
+
+struct ViewportCameraRequest: Sendable, Equatable {
+    let id: Int
+    let viewport: ViewportSeed
 }
 
 enum MenuDestination: Hashable {
@@ -80,6 +100,7 @@ struct MapScreen: View {
     var offlineDownloadProgress: OfflineDownloadProgress?
     var debugExposeFixturePinDiagnostics = false
     var onReplayOnboarding: @MainActor () -> Void = {}
+    var cameraRequest: ViewportCameraRequest?
 
     @State private var model: MapScreenModel?
     @StateObject private var locationPermission: LocationPermission
@@ -129,6 +150,7 @@ struct MapScreen: View {
         debugExposeFixturePinDiagnostics: Bool = false,
         locationManager: AppLocationManager = AppLocationManager(),
         locationPermission: LocationPermission? = nil,
+        cameraRequest: ViewportCameraRequest? = nil,
         onReplayOnboarding: @escaping @MainActor () -> Void = {}
     ) {
         self.database = database
@@ -139,6 +161,7 @@ struct MapScreen: View {
         self.offlineDownloadProgress = offlineDownloadProgress
         self.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
         self.onReplayOnboarding = onReplayOnboarding
+        self.cameraRequest = cameraRequest
         self.locationManager = locationManager
         _features = State(initialValue: isFixtureMap ? Self.initialFixtureFeatures() : [])
         _locationPermission = StateObject(wrappedValue: locationPermission ?? LocationPermission(manager: locationManager))
@@ -157,6 +180,7 @@ struct MapScreen: View {
                 showsUserLocation: showsUserLocation,
                 userTrackingMode: userTrackingMode,
                 debugExposeFixturePinDiagnostics: debugExposeFixturePinDiagnostics,
+                cameraRequest: cameraRequest,
                 onCameraIdle: { bbox, zoom in
                     Task { @MainActor in
                         currentViewport = ViewportSeed(bbox: bbox, zoom: zoom)
@@ -479,6 +503,15 @@ struct MapScreen: View {
             }
 
             if isFixtureMap {
+#if DEBUG
+                Text(verbatim: "Startup region: \(startupViewport.fixtureRegionLabel)")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.startup-region")
+#endif
+
                 Text(verbatim: "Tracks visits: \(fixtureVisitCount)")
                     .font(.caption2)
                     .padding(.horizontal, 8)

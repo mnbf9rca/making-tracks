@@ -12,6 +12,7 @@ struct MakingTracksApp: App {
     private static let debugInstallOfflineRegion = argumentValue("--debug-install-offline-region")
     private static let debugForceTileNetworkOffline = arguments.contains("--debug-force-tile-network-offline")
 #if DEBUG
+    private static let isLocationNotDeterminedFixture = arguments.contains("--ui-testing-location-not-determined")
     private static let isLocationDeniedFixture = arguments.contains("--ui-testing-location-denied")
     private static let isLocationAuthorizedFixture = arguments.contains("--ui-testing-location-authorized")
     private static let debugExposeFixturePinDiagnostics = arguments.contains("--ui-testing-pin-diagnostics")
@@ -20,6 +21,7 @@ struct MakingTracksApp: App {
     private static let uiTestingOfflineProgress = argumentValue("--ui-testing-offline-progress").flatMap(Double.init)
     private static let primaryFixturePlaceID = "mt1_00000000000000000000000000"
 #else
+    private static let isLocationNotDeterminedFixture = false
     private static let isLocationDeniedFixture = false
     private static let isLocationAuthorizedFixture = false
     private static let debugExposeFixturePinDiagnostics = false
@@ -49,6 +51,9 @@ struct MakingTracksApp: App {
     }()
 
     private let locationManager: AppLocationManager = {
+        if isLocationNotDeterminedFixture {
+            return AppLocationManager(simulatedAuthorizationStatus: .notDetermined)
+        }
         if isLocationDeniedFixture {
             return AppLocationManager(simulatedAuthorizationStatus: .denied)
         }

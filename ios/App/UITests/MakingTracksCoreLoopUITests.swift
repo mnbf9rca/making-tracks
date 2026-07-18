@@ -55,10 +55,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Choose your first region"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["onboarding.region.uk"].value as? String, "Not selected")
+        XCTAssertFalse(app.buttons["onboarding.next"].isEnabled)
         app.buttons["onboarding.region.uk"].tap()
         app.buttons["onboarding.next"].tap()
 
         XCTAssertTrue(app.staticTexts["Download UK"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element(identifier: "onboarding.download.size", in: app).waitForExistence(timeout: 5))
         XCTAssertFalse(app.switches["onboarding.include-images"].exists)
         app.buttons["onboarding.next"].tap()
 
@@ -70,12 +72,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["onboarding.finish"].tap()
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["map.startup-region"].label, "Startup region: UK")
         XCTAssertFalse(app.staticTexts["Interesting places around you"].exists)
 
         app.terminate()
 
         let relaunched = launch(reset: false)
         XCTAssertTrue(relaunched.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertEqual(relaunched.staticTexts["map.startup-region"].label, "Startup region: UK")
         XCTAssertFalse(relaunched.staticTexts["Interesting places around you"].exists)
     }
 
@@ -94,6 +98,40 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Choose your first region"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["onboarding.region.uk"].value as? String, "Selected")
+    }
+
+    func testOnboardingRequestsLocationOnlyOnAffirmativeTap() {
+        let app = launch(reset: true, locationNotDetermined: true, resetOnboarding: true)
+
+        app.buttons["onboarding.next"].tap()
+        app.buttons["onboarding.next"].tap()
+        app.buttons["onboarding.region.malaysia"].tap()
+        app.buttons["onboarding.next"].tap()
+        XCTAssertTrue(app.staticTexts["Download Malaysia"].waitForExistence(timeout: 5))
+        app.buttons["onboarding.next"].tap()
+
+        XCTAssertTrue(app.staticTexts["Show your position?"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["onboarding.location-request-count"].label, "Location requests: 0")
+        app.buttons["onboarding.location.allow"].tap()
+
+        XCTAssertTrue(app.staticTexts["Fresh snow"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["onboarding.location-request-count"].label, "Location requests: 1")
+    }
+
+    func testOnboardingControlsRemainReachableAtAccessibilityTextSize() {
+        let app = launch(reset: true, accessibilityTextSize: true, resetOnboarding: true)
+
+        XCTAssertTrue(app.buttons["onboarding.next"].waitForExistence(timeout: 5))
+        app.buttons["onboarding.next"].tap()
+        XCTAssertTrue(app.buttons["onboarding.next"].waitForExistence(timeout: 5))
+        app.buttons["onboarding.next"].tap()
+        XCTAssertTrue(app.buttons["onboarding.region.uk"].waitForExistence(timeout: 5))
+        app.buttons["onboarding.region.uk"].tap()
+        XCTAssertTrue(app.buttons["onboarding.next"].isEnabled)
+        app.buttons["onboarding.next"].tap()
+        XCTAssertTrue(app.buttons["onboarding.next"].waitForExistence(timeout: 5))
+        app.buttons["onboarding.next"].tap()
+        XCTAssertTrue(app.buttons["onboarding.location.skip"].waitForExistence(timeout: 5))
     }
 
     func testTappingAnotherPinSwitchesOpenCard() throws {
@@ -453,6 +491,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     private func launch(
         reset: Bool,
+        locationNotDetermined: Bool = false,
         locationDenied: Bool = false,
         simulatedLocationAuthorization: Bool = false,
         simulatedLatitude: Double? = nil,
@@ -471,6 +510,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         if reset {
             app.launchArguments.append("--ui-testing-reset-database")
+        }
+        if locationNotDetermined {
+            app.launchArguments.append("--ui-testing-location-not-determined")
         }
         if locationDenied {
             app.launchArguments.append("--ui-testing-location-denied")
