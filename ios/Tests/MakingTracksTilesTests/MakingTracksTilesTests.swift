@@ -752,9 +752,18 @@ final class MakingTracksTilesTests: XCTestCase {
 
     func testOfflineBackgroundFetcherDownloadStartsWithoutAsyncConvenienceAPI() async throws {
         let identifier = "app.making-tracks.tests.offline.\(UUID().uuidString)"
-        let fetcher = HTTPTileFetcher.offlineBackground(
-            identifier: identifier
-        )
+        let configuration = OfflineDownloadSession.backgroundConfiguration(identifier: identifier)
+        configuration.timeoutIntervalForRequest = 1
+        configuration.timeoutIntervalForResource = 1
+        configuration.connectionProxyDictionary = [
+            "HTTPEnable": true,
+            "HTTPProxy": "192.0.2.1",
+            "HTTPPort": 9,
+            "HTTPSEnable": true,
+            "HTTPSProxy": "192.0.2.1",
+            "HTTPSPort": 9,
+        ]
+        let fetcher = HTTPTileFetcher(configuration: configuration)
         defer { OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: identifier) }
         let task = Task {
             try await fetcher.download(URL(string: "https://tiles.making-tracks.app/uk/current.json")!)

@@ -290,6 +290,11 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
+        let isTracked = lock.withLock {
+            downloads[downloadTask.taskIdentifier] != nil
+        }
+        guard isTracked else { return }
+
         let result: Result<URL, Error>
         do {
             result = .success(try BackgroundDownloadFileStager.stage(location))
@@ -298,7 +303,12 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
         }
 
         lock.withLock {
-            guard var state = downloads[downloadTask.taskIdentifier] else { return }
+            guard var state = downloads[downloadTask.taskIdentifier] else {
+                if case let .success(url) = result {
+                    try? FileManager.default.removeItem(at: url)
+                }
+                return
+            }
             switch result {
             case let .success(url):
                 state.stagedURL = url
