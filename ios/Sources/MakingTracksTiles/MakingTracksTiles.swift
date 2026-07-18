@@ -933,6 +933,12 @@ public struct OfflinePackQuarantine: Sendable, Equatable {
     public let region: String
     public let publishVersion: String?
     public let coordinates: Set<TileCoordinate>
+
+    public init(region: String, publishVersion: String?, coordinates: Set<TileCoordinate>) {
+        self.region = region
+        self.publishVersion = publishVersion
+        self.coordinates = coordinates
+    }
 }
 
 public struct OfflinePackResolution: Sendable, Equatable {
@@ -1921,6 +1927,17 @@ public final class OfflineRegionStore: @unchecked Sendable {
     public func delete(region: String) throws {
         try withLock {
             try deleteLocked(region: region)
+        }
+    }
+
+    public func discardInProgressDownloads(region: String) throws {
+        try withLock {
+            guard isValidRegion(region) else { throw TileError.invalidOfflinePack }
+            let inProgressRegion = root.appendingPathComponent("in-progress").appendingPathComponent(region, isDirectory: true)
+            if fm.fileExists(atPath: inProgressRegion.path) {
+                try fm.removeItem(at: inProgressRegion)
+            }
+            try garbageCollectObjects()
         }
     }
 

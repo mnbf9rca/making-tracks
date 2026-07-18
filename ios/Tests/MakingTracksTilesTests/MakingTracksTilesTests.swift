@@ -656,6 +656,39 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: offlineBasemapObjectURL(root: root, sha: sha256(basemap)).path))
     }
 
+    func testDiscardInProgressDownloadsPreservesInstalledPack() throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let tileSHA = sha256(tile)
+        let basemap = Data("basemap".utf8)
+        let basemapSHA = sha256(basemap)
+        let publish = cachedPublish(
+            "20260716T155409Z",
+            tileSHA: tileSHA,
+            tileBytes: tile.count,
+            basemapSHA: basemapSHA,
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+        try store.install(publish: publish, tiles: [TileCoordinate(z: 10, x: 511, y: 340): tile], basemap: basemap)
+        let inProgressIndex = offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z")
+        try FileManager.default.createDirectory(at: inProgressIndex.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: inProgressIndex)
+        let abandonedObject = Data("abandoned".utf8)
+        let abandonedSHA = sha256(abandonedObject)
+        try FileManager.default.createDirectory(at: offlineTileObjectURL(root: root, sha: abandonedSHA).deletingLastPathComponent(), withIntermediateDirectories: true)
+        try abandonedObject.write(to: offlineTileObjectURL(root: root, sha: abandonedSHA))
+
+        try store.discardInProgressDownloads(region: "uk")
+
+        XCTAssertEqual(try store.installedPublish(region: "uk")?.publishVersion, "20260716T155409Z")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: inProgressIndex.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: tileSHA).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineBasemapObjectURL(root: root, sha: basemapSHA).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: abandonedSHA).path))
+    }
+
     func testOfflinePackInstallReplacesCorruptExistingObjectsByHash() throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)
