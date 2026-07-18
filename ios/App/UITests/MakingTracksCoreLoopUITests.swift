@@ -134,6 +134,22 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
     }
 
+    func testHiddenToastUndoRestoresHiddenPlace() {
+        let app = launch(reset: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        openFixtureCard(in: map, app: app)
+        app.buttons["place-card.hide"].tap()
+        XCTAssertTrue(app.staticTexts["Hidden — Undo"].waitForExistence(timeout: 5))
+
+        app.buttons["place-card.hide.undo"].tap()
+        XCTAssertFalse(app.staticTexts["Hidden — Undo"].waitForExistence(timeout: 2))
+
+        openFixtureCard(in: map, app: app)
+    }
+
     func testHideRemovesFixturePinFromMapSource() {
         let app = launch(reset: true)
 
@@ -164,6 +180,59 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         app.buttons["debug.unhide-fixture"].tap()
         XCTAssertTrue(waitForFixtureHidden(false, in: app))
+        openFixtureCard(in: map, app: app)
+    }
+
+    func testLayersCanHideCategoryPins() {
+        let app = launch(reset: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        openLayers(in: app)
+        let historicBuildings = app.switches["map.layers.category.historic_building"]
+        XCTAssertTrue(historicBuildings.waitForExistence(timeout: 5))
+        tapSwitch(historicBuildings, expectedValue: "0")
+        app.buttons["map.layers.done"].tap()
+
+        tapSecondFixturePin(in: map)
+        XCTAssertFalse(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 2))
+
+        openLayers(in: app)
+        XCTAssertTrue(historicBuildings.waitForExistence(timeout: 5))
+        tapSwitch(historicBuildings, expectedValue: "1")
+        app.buttons["map.layers.done"].tap()
+
+        openSecondFixtureCard(in: map, app: app)
+        app.buttons["place-card.close"].tap()
+
+        openFixtureCard(in: map, app: app)
+    }
+
+    func testShowHiddenModeExposesUnhideAffordanceWithoutNormalHideOwnership() {
+        let app = launch(reset: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        app.buttons["debug.hide-fixture"].tap()
+        XCTAssertTrue(waitForFixtureHidden(true, in: app))
+        tapFixturePin(in: map)
+        XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
+
+        openLayers(in: app)
+        let showHidden = app.switches["map.layers.show-hidden"]
+        XCTAssertTrue(showHidden.waitForExistence(timeout: 5))
+        tapSwitch(showHidden, expectedValue: "1")
+        app.buttons["map.layers.done"].tap()
+
+        openFixtureCard(in: map, app: app)
+        XCTAssertTrue(app.buttons["place-card.unhide"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["place-card.hide"].exists)
+
+        app.buttons["place-card.unhide"].tap()
+        XCTAssertFalse(app.buttons["place-card.unhide"].waitForExistence(timeout: 2))
+        app.buttons["place-card.close"].tap()
         openFixtureCard(in: map, app: app)
     }
 
@@ -412,6 +481,19 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     private func tapEmptyMap(in map: XCUIElement) {
         map.coordinate(withNormalizedOffset: CGVector(dx: 0.20, dy: 0.30)).tap()
+    }
+
+    private func openLayers(in app: XCUIApplication) {
+        let layers = app.buttons["map.layers"]
+        XCTAssertTrue(layers.waitForExistence(timeout: 5))
+        layers.tap()
+        XCTAssertTrue(app.navigationBars["Layers"].waitForExistence(timeout: 5))
+    }
+
+    private func tapSwitch(_ switchElement: XCUIElement, expectedValue: String) {
+        switchElement.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        expectation(for: NSPredicate(format: "value == %@", expectedValue), evaluatedWith: switchElement)
+        waitForExpectations(timeout: 5)
     }
 
     private func attachScreenshot(named name: String) {

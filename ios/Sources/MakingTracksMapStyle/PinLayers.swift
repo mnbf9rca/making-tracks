@@ -6,6 +6,7 @@ public enum PinLayers {
     public static let bookmarkOffset: JSONValue = .array([.double(8), .double(-8)])
     public static let heartOffset: JSONValue = .array([.double(-8), .double(-8)])
     public static let categoryIconScale = 0.62
+    public static let fallbackCategoryID = "__other__"
     public static let fallbackCategoryIconName = "pin-category-uncategorized"
     public static let categoryIconNames: [String: String] = [
         "religious": "pin-category-religious",
@@ -66,11 +67,20 @@ public enum PinLayers {
         guard !visibleCategories.isEmpty else {
             return .array([.string("=="), .bool(true), .bool(false)])
         }
-        return .array([
-            .string("in"),
-            .array([.string("get"), .string("category")]),
-            .array([.string("literal"), .array(visibleCategories.sorted().map(JSONValue.string))]),
-        ])
+        let category = JSONValue.array([.string("get"), .string("category")])
+        let knownCategories = JSONValue.array([.string("literal"), .array(categoryIconNames.keys.sorted().map(JSONValue.string))])
+        let visibleKnownCategories = JSONValue.array([.string("literal"), .array(visibleCategories.subtracting([fallbackCategoryID]).sorted().map(JSONValue.string))])
+        let knownCategoryFilter: JSONValue = .array([.string("in"), category, visibleKnownCategories])
+        guard visibleCategories.contains(fallbackCategoryID) else { return knownCategoryFilter }
+        let fallbackFilter: JSONValue = .array([.string("!"), .array([.string("in"), category, knownCategories])])
+        return .array([.string("any"), knownCategoryFilter, fallbackFilter])
+    }
+
+    public static func combinedFilter(_ filters: [JSONValue?]) -> JSONValue? {
+        let activeFilters = filters.compactMap { $0 }
+        guard !activeFilters.isEmpty else { return nil }
+        guard activeFilters.count > 1 else { return activeFilters[0] }
+        return .array([.string("all")] + activeFilters)
     }
 
     public static func pinLayers() -> [JSONValue] {

@@ -90,6 +90,8 @@ struct MapScreen: View {
     @State private var debugOfflineStatus: String?
     @State private var appShell = AppShellModel()
     @State private var cardPresentation = PlaceCardPresentation()
+    @State private var showLayers = false
+    @State private var layerVisibility = MapLayerVisibility()
     @State private var loadState: TileLoadState = .unavailable
     @State private var viewportRequestID = 0
     @State private var stateEpoch = 0
@@ -134,6 +136,7 @@ struct MapScreen: View {
                 theme: selectedTheme,
                 startupViewport: startupViewport,
                 features: features,
+                visibleCategories: layerVisibility.visibleCategories,
                 locationManager: locationManager,
                 showsUserLocation: showsUserLocation,
                 userTrackingMode: userTrackingMode,
@@ -224,13 +227,25 @@ struct MapScreen: View {
                 await observeChanges(from: model)
             }
         }
+        .onChange(of: layerVisibility) { _, visibility in
+            Task { @MainActor in
+                await applyLayerVisibility(visibility)
+            }
+        }
+        .sheet(isPresented: $showLayers) {
+            LayersSheet(
+                visibility: $layerVisibility
+            )
+                .presentationDetents([.medium, .large])
+        }
         .sheet(item: cardPresentationItemBinding) { presentation in
             PlaceCardSheet(
                 placeID: presentation.placeID,
                 model: model,
                 onHide: { placeID, name in
                     showHiddenToast(placeID: placeID, name: name)
-                }
+                },
+                showHiddenMode: layerVisibility.showHiddenPlaces
             )
         }
         .onDisappear {
@@ -403,6 +418,8 @@ struct MapScreen: View {
                 }
                 .accessibilityIdentifier("map.download-progress")
             }
+
+            layersButton
         }
     }
 
@@ -422,6 +439,22 @@ struct MapScreen: View {
             label: locationPermission.isLocationOff ? "Location off" : "Location available",
             canOpenSettings: locationPermission.isLocationOff
         )
+    }
+
+    private var layersButton: some View {
+        Button {
+            showLayers = true
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+                .font(.title3)
+                .foregroundStyle(layerVisibility.isDefault ? AnyShapeStyle(.primary) : AnyShapeStyle(Color.white))
+                .frame(width: 44, height: 44)
+                .background(layerVisibility.isDefault ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.accentColor), in: Circle())
+        }
+        .accessibilityLabel("Layers")
+        .accessibilityHint("Shows map layer controls")
+        .accessibilityValue(layerVisibility.isDefault ? "Default" : "Custom")
+        .accessibilityIdentifier("map.layers")
     }
 
     private var locationChrome: some View {
@@ -693,6 +726,18 @@ struct MapScreen: View {
         }
     }
 
+    @MainActor
+    private func refreshCurrentViewport() async {
+        stateEpoch += 1
+        let viewport = currentViewport ?? startupViewport
+        await refreshViewport(
+            bbox: viewport.bbox,
+            zoom: viewport.zoom,
+            requestID: nextViewportRequestID(),
+            stateEpoch: currentStateEpoch()
+        )
+    }
+
     private func observeChanges(from model: MapScreenModel) async {
         for await ids in model.changes {
             if model.consumeHiddenMembershipChange(overlapping: ids) {
@@ -730,6 +775,15 @@ struct MapScreen: View {
         await MainActor.run {
             fixtureVisitCount = count
         }
+    }
+
+    @MainActor
+    private func applyLayerVisibility(_ visibility: MapLayerVisibility) async {
+        model?.setLayerVisibility(
+            showHidden: visibility.showHiddenPlaces,
+            visibleCategories: visibility.visibleCategories
+        )
+        await refreshCurrentViewport()
     }
 
     private struct NearbyPromptCandidate {
@@ -1238,10 +1292,74 @@ private struct FlowLayout: Layout {
     }
 }
 
+private struct LayersSheet: View {
+    @Binding var visibility: MapLayerVisibility
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Toggle(
+                        "Include hidden places",
+                        isOn: Binding(
+                            get: { visibility.showHiddenPlaces },
+                            set: { visible in
+                                var next = visibility
+                                next.showHiddenPlaces = visible
+                                visibility = next
+                            }
+                        )
+                    )
+                        .accessibilityIdentifier("map.layers.show-hidden")
+                }
+
+                Section("Categories") {
+                    ForEach(visibility.categories) { category in
+                        Toggle(
+                            isOn: Binding(
+                                get: { visibility.isCategoryVisible(category.id) },
+                                set: { visible in
+                                    var next = visibility
+                                    next.setCategory(category.id, visible: visible)
+                                    visibility = next
+                                }
+                            )
+                        ) {
+                            Label {
+                                Text(verbatim: category.title)
+                            } icon: {
+                                Image(systemName: PinLayers.categorySymbolNames[category.iconName] ?? "mappin")
+                            }
+                        }
+                        .accessibilityIdentifier("map.layers.category.\(category.id)")
+                    }
+                    Button("Show all categories") {
+                        var next = visibility
+                        next.showAllCategories()
+                        visibility = next
+                    }
+                    .accessibilityIdentifier("map.layers.show-all-categories")
+                }
+            }
+            .navigationTitle("Layers")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .accessibilityIdentifier("map.layers.done")
+                }
+            }
+        }
+    }
+}
+
 private struct PlaceCardSheet: View {
     let placeID: String
     let model: MapScreenModel?
     let onHide: (String, String) -> Void
+    let showHiddenMode: Bool
 
     @State private var sheetInstanceID = UUID().uuidString
     @State private var card: PlaceCardModel?
@@ -1375,7 +1493,13 @@ private struct PlaceCardSheet: View {
                 if card.pinState.visit != .none {
                     loveButton(card)
                 }
-                hideButton(card)
+                if card.pinState.hidden {
+                    if showHiddenMode {
+                        unhideButton()
+                    }
+                } else {
+                    hideButton(card)
+                }
             }
         } else {
             HStack(spacing: 10) {
@@ -1384,7 +1508,13 @@ private struct PlaceCardSheet: View {
                 if card.pinState.visit != .none {
                     loveButton(card)
                 }
-                hideButton(card)
+                if card.pinState.hidden {
+                    if showHiddenMode {
+                        unhideButton()
+                    }
+                } else {
+                    hideButton(card)
+                }
             }
         }
     }
@@ -1423,6 +1553,15 @@ private struct PlaceCardSheet: View {
         .buttonStyle(.bordered)
         .accessibilityIdentifier("place-card.hide")
         .accessibilityValue("Not hidden")
+    }
+
+    private func unhideButton() -> some View {
+        Button("Unhide") {
+            Task { await setHidden(false) }
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier("place-card.unhide")
+        .accessibilityValue("Hidden")
     }
 
     private func loadCard() async {
@@ -1481,6 +1620,12 @@ private struct PlaceCardSheet: View {
         }
     }
 
+    private func setHidden(_ hidden: Bool) async {
+        await performAction {
+            try await model?.setHidden(placeID: placeID, hidden: hidden)
+        }
+    }
+
     private func performAction(_ action: () async throws -> Void) async {
         do {
             try await action()
@@ -1536,6 +1681,7 @@ private final class MapScreenModel {
     private var selectedRegion: MapRegion = .malaysia
     private var hiddenTracker: HiddenMembershipTracker
     private var showHiddenPlaces = false
+    private var visibleCategories: Set<String>?
 
     var changes: AsyncStream<Set<String>> { coreLoop.changes }
 
@@ -1614,14 +1760,19 @@ private final class MapScreenModel {
                 )
                 return (place, states[fixturePlace.placeID] ?? PinState(saved: false, visit: .none))
             }
-            return PinFeatureFilter.discoveryFeatures(next, showHidden: showHiddenPlaces)
+            return PinFeatureFilter.discoveryFeatures(next, showHidden: showHiddenPlaces, visibleCategories: visibleCategories)
         }
         guard let client = await selectClient(for: bbox) else { return [] }
         let places = await client.places(inViewport: bbox, zoom: zoom)
         let ids = places.map(\.id)
         let states = await states(for: Set(ids))
         let next = places.map { ($0, states[$0.id] ?? PinState(saved: false, visit: .none)) }
-        return PinFeatureFilter.discoveryFeatures(next, showHidden: showHiddenPlaces)
+        return PinFeatureFilter.discoveryFeatures(next, showHidden: showHiddenPlaces, visibleCategories: visibleCategories)
+    }
+
+    func setLayerVisibility(showHidden: Bool, visibleCategories: Set<String>?) {
+        showHiddenPlaces = showHidden
+        self.visibleCategories = visibleCategories
     }
 
     func states(for ids: Set<String>) async -> [String: PinState] {

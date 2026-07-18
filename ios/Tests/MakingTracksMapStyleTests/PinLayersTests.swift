@@ -89,17 +89,35 @@ final class PinLayersTests: XCTestCase {
 
     func testCategoryVisibilityFilterIsDeterministicAndOpenStringSafe() {
         XCTAssertNil(PinLayers.categoryVisibilityFilter(visibleCategories: nil))
-        XCTAssertEqual(
-            PinLayers.categoryVisibilityFilter(visibleCategories: ["museum", "artwork"]),
-            .array([
-                .string("in"),
-                .array([.string("get"), .string("category")]),
-                .array([.string("literal"), .array([.string("artwork"), .string("museum")])]),
-            ])
+        let museumAndOtherFilter = PinLayers.categoryVisibilityFilter(
+            visibleCategories: ["museum", PinLayers.fallbackCategoryID]
         )
+        XCTAssertEqual(Expression.evaluate(museumAndOtherFilter!, ["category": .string("museum")]), .bool(true))
+        XCTAssertEqual(Expression.evaluate(museumAndOtherFilter!, ["category": .string("future_category")]), .bool(true))
+        XCTAssertEqual(Expression.evaluate(museumAndOtherFilter!, ["category": .string("artwork")]), .bool(false))
+
+        let museumOnlyFilter = PinLayers.categoryVisibilityFilter(visibleCategories: ["museum"])
+        XCTAssertEqual(Expression.evaluate(museumOnlyFilter!, ["category": .string("museum")]), .bool(true))
+        XCTAssertEqual(Expression.evaluate(museumOnlyFilter!, ["category": .string("future_category")]), .bool(false))
+
         XCTAssertEqual(
             PinLayers.categoryVisibilityFilter(visibleCategories: []),
             .array([.string("=="), .bool(true), .bool(false)])
+        )
+    }
+
+    func testCombinesCategoryFilterWithBadgeFilters() {
+        let categoryFilter = PinLayers.categoryVisibilityFilter(visibleCategories: ["museum"])
+
+        XCTAssertNil(PinLayers.combinedFilter([nil, nil]))
+        XCTAssertEqual(PinLayers.combinedFilter([categoryFilter]), categoryFilter)
+        XCTAssertEqual(
+            PinLayers.combinedFilter([categoryFilter, PinLayers.bookmarkFilter()]),
+            .array([
+                .string("all"),
+                categoryFilter!,
+                PinLayers.bookmarkFilter(),
+            ])
         )
     }
 

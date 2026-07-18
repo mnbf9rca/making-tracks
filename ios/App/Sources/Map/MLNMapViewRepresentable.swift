@@ -18,6 +18,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var theme: MapTheme
     var startupViewport: ViewportSeed
     var features: [(MapPlace, PinState)]
+    var visibleCategories: Set<String>?
     var locationManager: AppLocationManager
     var showsUserLocation: Bool
     var userTrackingMode: MLNUserTrackingMode
@@ -58,6 +59,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             context.coordinator.commitStyleReload(initialStyleReload)
         }
         context.coordinator.pendingFeatures = features
+        context.coordinator.desiredVisibleCategories = visibleCategories
         return map
     }
 
@@ -67,6 +69,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         context.coordinator.onTapPlace = onTapPlace
         context.coordinator.onTapEmpty = onTapEmpty
         context.coordinator.pendingFeatures = features
+        context.coordinator.desiredVisibleCategories = visibleCategories
         map.shouldRequestAuthorizationToUseLocationServices = false
         map.showsUserLocation = showsUserLocation
         map.userTrackingMode = userTrackingMode
@@ -79,6 +82,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             context.coordinator.commitStyleReload(styleReload)
             map.styleURL = styleReload.url
         } else {
+            context.coordinator.updateLayerFilters(on: map, visibleCategories: visibleCategories)
             context.coordinator.updateSource(on: map, features: features)
         }
     }
@@ -93,6 +97,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var currentWorldPMTilesURL: String?
         var currentRegionPMTilesURL: String?
         var currentThemeID: String?
+        var desiredVisibleCategories: Set<String>?
+        var currentVisibleCategories: Set<String>?
         var pendingFeatures: [(MapPlace, PinState)] = []
 
         struct StyleReload: Equatable {
@@ -175,6 +181,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             addCategoryIcon(source: source, style: style)
             addBadge(id: "pins-bookmark", icon: "badge-bookmark", filter: PinLayers.bookmarkFilter(), offset: PinLayers.bookmarkOffset, source: source, style: style)
             addBadge(id: "pins-heart", icon: "badge-heart", filter: PinLayers.heartFilter(), offset: PinLayers.heartOffset, source: source, style: style)
+            currentVisibleCategories = nil
+            updateLayerFilters(on: mapView, visibleCategories: desiredVisibleCategories)
             updateSource(on: mapView, features: pendingFeatures)
             reportViewport(mapView)
         }
@@ -193,6 +201,19 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                   let shape = try? MLNShape(data: Data(json.utf8), encoding: String.Encoding.utf8.rawValue)
             else { return }
             source.shape = shape
+        }
+
+        func updateLayerFilters(on map: MLNMapView, visibleCategories: Set<String>?) {
+            guard currentVisibleCategories != visibleCategories,
+                  let style = map.style
+            else { return }
+            currentVisibleCategories = visibleCategories
+
+            let categoryFilter = PinLayers.categoryVisibilityFilter(visibleCategories: visibleCategories)
+            setPredicate(PinLayers.combinedFilter([categoryFilter]), on: "pins-circle", in: style)
+            setPredicate(PinLayers.combinedFilter([categoryFilter]), on: "pins-icon", in: style)
+            setPredicate(PinLayers.combinedFilter([categoryFilter, PinLayers.bookmarkFilter()]), on: "pins-bookmark", in: style)
+            setPredicate(PinLayers.combinedFilter([categoryFilter, PinLayers.heartFilter()]), on: "pins-heart", in: style)
         }
 
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
@@ -225,6 +246,15 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             layer.iconScale = NSExpression(forConstantValue: PinLayers.categoryIconScale)
             layer.iconOpacity = NSExpression(mglJSONObject: PinLayers.fadeOpacityExpression().foundationObject)
             style.addLayer(layer)
+        }
+
+        private func setPredicate(_ filter: JSONValue?, on layerID: String, in style: MLNStyle) {
+            let predicate = filter.map { NSPredicate(mglJSONObject: $0.foundationObject) }
+            if let circle = style.layer(withIdentifier: layerID) as? MLNCircleStyleLayer {
+                circle.predicate = predicate
+            } else if let symbol = style.layer(withIdentifier: layerID) as? MLNSymbolStyleLayer {
+                symbol.predicate = predicate
+            }
         }
 
         private func addBadge(id: String, icon: String, filter: JSONValue, offset: JSONValue, source: MLNShapeSource, style: MLNStyle) {
