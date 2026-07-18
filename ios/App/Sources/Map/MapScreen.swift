@@ -643,6 +643,7 @@ struct MapScreen: View {
                         ) {
                             schedulePostFirstRenderManifestRefresh()
                         }
+                        scheduleDeferredOfflineMaintenanceIfReady()
                     }
                 },
                 debugReportProjectedFeatureDiagnostics: { diagnostics in
@@ -826,6 +827,7 @@ struct MapScreen: View {
                     didMapLoadFail = true
                     let attempt = mapLoadAttemptID
                     MakingTracksLog.startup.error("overlay transition surface=map state=timeout attempt=\(attempt, privacy: .public)")
+                    scheduleDeferredOfflineMaintenanceIfReady()
                 }
             }
         }
@@ -1149,9 +1151,12 @@ struct MapScreen: View {
 
     @MainActor
     private func scheduleDeferredOfflineMaintenanceIfReady() {
-        guard isMapReady,
-              !didScheduleDeferredOfflineMaintenance,
-              UIApplication.shared.isProtectedDataAvailable
+        guard MapDeferredOfflineMaintenancePolicy.allowsDeferredMaintenance(
+            isMapReady: isMapReady,
+            didMapLoadFail: didMapLoadFail,
+            didScheduleMaintenance: didScheduleDeferredOfflineMaintenance,
+            isProtectedDataAvailable: UIApplication.shared.isProtectedDataAvailable
+        )
         else { return }
         didScheduleDeferredOfflineMaintenance = true
         MakingTracksLog.gc.info("deferred maintenance scheduled")
@@ -1163,13 +1168,16 @@ struct MapScreen: View {
                 MakingTracksLog.gc.info("deferred maintenance deferred reason=protected-data")
                 return
             }
-            let didPerformMaintenance = await model?.performDeferredOfflineMaintenance() ?? true
+            let didPerformMaintenance = await model?.performDeferredOfflineMaintenance { progress in
+                offlineDownloadSession.update(OfflineDownloadProgress(progress))
+            } ?? true
             if !didPerformMaintenance || !UIApplication.shared.isProtectedDataAvailable {
                 didScheduleDeferredOfflineMaintenance = false
                 let reason = didPerformMaintenance ? "protected-data" : "failed"
                 MakingTracksLog.gc.info("deferred maintenance retry scheduled reason=\(reason, privacy: .public)")
                 return
             }
+            offlineDownloadSession.clear()
             await refreshStorageMenuStatus()
             MakingTracksLog.gc.info("deferred maintenance storage refreshed")
         }
@@ -3112,6 +3120,17 @@ enum MapManifestRefreshPolicy {
     }
 }
 
+enum MapDeferredOfflineMaintenancePolicy {
+    static func allowsDeferredMaintenance(
+        isMapReady: Bool,
+        didMapLoadFail: Bool,
+        didScheduleMaintenance: Bool,
+        isProtectedDataAvailable: Bool
+    ) -> Bool {
+        (isMapReady || didMapLoadFail) && !didScheduleMaintenance && isProtectedDataAvailable
+    }
+}
+
 enum MapThemeColor {
     static func color(hex: String) -> Color {
         Color(uiColor: uiColor(hex: hex))
@@ -3300,12 +3319,44 @@ private final class MapScreenModel {
     }
 #endif
 
-    func performDeferredOfflineMaintenance() async -> Bool {
+    func performDeferredOfflineMaintenance(
+        progress: (@MainActor @Sendable (OfflineRegionDownloadProgress) -> Void)? = nil
+    ) async -> Bool {
         guard let offlineStore else { return true }
         return await Task.detached {
+            var didResumePendingDownloads = true
+            let pendingRegions = (try? offlineStore.pendingDownloadRegions()) ?? []
+            for region in pendingRegions {
+                do {
+                    let documents = try FileManager.default.url(
+                        for: .documentDirectory,
+                        in: .userDomainMask,
+                        appropriateFor: nil,
+                        create: true
+                    )
+                    let downloader = OfflineRegionDownloader(
+                        region: region,
+                        metadataFetcher: HTTPTileFetcher.offlineForeground(),
+                        objectFetcher: HTTPTileFetcher.offlineBackground(
+                            identifier: OfflineDownloadSession.backgroundIdentifier(region: region)
+                        ),
+                        store: offlineStore,
+                        availableBytes: { StorageHeadroom.availableBytes(at: documents) }
+                    )
+                    _ = try await downloader.downloadCurrentRegion { event in
+                        if let progress {
+                            Task { @MainActor in
+                                progress(event)
+                            }
+                        }
+                    }
+                } catch {
+                    didResumePendingDownloads = false
+                }
+            }
             do {
                 try offlineStore.performDeferredMaintenance()
-                return true
+                return didResumePendingDownloads
             } catch {
                 return false
             }

@@ -251,6 +251,39 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(MapManifestRefreshPolicy.mapLoadFailureAllowsManifestRefresh(afterPostFirstRenderRefreshCompleted: true))
     }
 
+    func testDeferredOfflineMaintenanceCanRunAfterMapLoadFailureWhenProtectedDataIsAvailable() {
+        XCTAssertTrue(MapDeferredOfflineMaintenancePolicy.allowsDeferredMaintenance(
+            isMapReady: false,
+            didMapLoadFail: true,
+            didScheduleMaintenance: false,
+            isProtectedDataAvailable: true
+        ))
+        XCTAssertTrue(MapDeferredOfflineMaintenancePolicy.allowsDeferredMaintenance(
+            isMapReady: true,
+            didMapLoadFail: false,
+            didScheduleMaintenance: false,
+            isProtectedDataAvailable: true
+        ))
+        XCTAssertFalse(MapDeferredOfflineMaintenancePolicy.allowsDeferredMaintenance(
+            isMapReady: false,
+            didMapLoadFail: false,
+            didScheduleMaintenance: false,
+            isProtectedDataAvailable: true
+        ))
+        XCTAssertFalse(MapDeferredOfflineMaintenancePolicy.allowsDeferredMaintenance(
+            isMapReady: false,
+            didMapLoadFail: true,
+            didScheduleMaintenance: true,
+            isProtectedDataAvailable: true
+        ))
+        XCTAssertFalse(MapDeferredOfflineMaintenancePolicy.allowsDeferredMaintenance(
+            isMapReady: false,
+            didMapLoadFail: true,
+            didScheduleMaintenance: false,
+            isProtectedDataAvailable: false
+        ))
+    }
+
     func testMapLoadingPlaceholderUsesOpaqueDefinedPaperBackground() {
         let color = MapThemeColor.uiColor(hex: MapTheme.definedPaper.background)
         var red: CGFloat = 0
