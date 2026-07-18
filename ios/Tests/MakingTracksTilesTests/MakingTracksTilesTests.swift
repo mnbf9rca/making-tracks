@@ -722,6 +722,7 @@ final class MakingTracksTilesTests: XCTestCase {
 
         XCTAssertEqual(configuration.identifier, "app.making-tracks.tests.offline")
         XCTAssertTrue(configuration.sessionSendsLaunchEvents)
+        XCTAssertFalse(configuration.isDiscretionary)
         XCTAssertTrue(configuration.waitsForConnectivity)
         XCTAssertFalse(configuration.allowsExpensiveNetworkAccess)
         XCTAssertFalse(configuration.allowsConstrainedNetworkAccess)
