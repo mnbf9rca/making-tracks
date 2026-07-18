@@ -61,6 +61,24 @@ extension AppDatabase {
         }
     }
 
+    public func userListNames(containing placeID: String) throws -> [String] {
+        try dbQueue.read { db in
+            try String.fetchAll(
+                db,
+                sql: """
+                    SELECT DISTINCT l.name
+                    FROM lists l
+                    JOIN list_items li ON li.list_id = l.id
+                    WHERE li.place_id = ?
+                    AND l.is_system = 0
+                    ORDER BY l.name COLLATE NOCASE
+                    LIMIT 8
+                    """,
+                arguments: [placeID]
+            )
+        }
+    }
+
     public func viewportState(_ placeIDs: [String]) throws -> [String: PinState] {
         guard !placeIDs.isEmpty else { return [:] }
         return try dbQueue.read { db in
@@ -68,8 +86,15 @@ extension AppDatabase {
             let saved = try Set(
                 String.fetchAll(
                     db,
-                    sql: "SELECT DISTINCT place_id FROM list_items WHERE place_id IN (\(qmarks))",
-                    arguments: StatementArguments(placeIDs)
+                    sql: """
+                        SELECT DISTINCT li.place_id
+                        FROM list_items li
+                        JOIN lists l ON l.id = li.list_id
+                        WHERE li.place_id IN (\(qmarks))
+                        AND l.is_system = 1
+                        AND l.name = ?
+                        """,
+                    arguments: StatementArguments(placeIDs + ["Want to go"])
                 )
             )
             let hidden = try Set(

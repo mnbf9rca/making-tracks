@@ -26,7 +26,7 @@ final class PlaceCardModelTests: XCTestCase {
         XCTAssertEqual(model?.category, "attraction")
     }
 
-    func testSnapshotPathRepinsImageHostAndKeepsMarkdownBlurbInertForVerbatimRendering() throws {
+    func testSnapshotPathIgnoresLegacyImageURLAndKeepsMarkdownBlurbInertForVerbatimRendering() throws {
         let snapshot = makeSnapshot(snapshotJSON: jsonString([
             "place_id": "mt1_00000000000000000000000000",
             "name": "Clock",
@@ -42,7 +42,7 @@ final class PlaceCardModelTests: XCTestCase {
 
         let model = PlaceCardModel.from(snapshot: snapshot, pinState: PinState(saved: true, visit: .visited))
 
-        XCTAssertEqual(model?.imageURL, nil)
+        XCTAssertNil(model?.photo)
         XCTAssertEqual(model?.blurb, "[tap me](https://evil.example) %@")
         XCTAssertEqual(model?.pinState, PinState(saved: true, visit: .visited))
     }
@@ -88,7 +88,7 @@ final class PlaceCardModelTests: XCTestCase {
         XCTAssertEqual(model?.name, "Snapshot name")
         XCTAssertEqual(model?.category, "oddity")
         XCTAssertEqual(model?.sourceNames, [])
-        XCTAssertNil(model?.imageURL)
+        XCTAssertNil(model?.photo)
         XCTAssertEqual(model?.pinState, PinState(saved: false, visit: .loved))
     }
 
@@ -115,7 +115,7 @@ final class PlaceCardModelTests: XCTestCase {
         XCTAssertEqual(model?.name, "Snapshot name")
         XCTAssertEqual(model?.category, "snapshot-category")
         XCTAssertNil(model?.blurb)
-        XCTAssertNil(model?.imageURL)
+        XCTAssertNil(model?.photo)
         XCTAssertEqual(model?.sourceNames, [])
     }
 

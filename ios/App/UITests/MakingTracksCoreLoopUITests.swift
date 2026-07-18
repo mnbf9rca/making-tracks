@@ -63,6 +63,49 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 2))
     }
 
+    func testPlaceCardOverhaulRendersHierarchyAndHideAction() {
+        let app = launch(reset: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        openFixtureCard(in: map, app: app)
+
+        XCTAssertTrue(element(identifier: "place-card.title", in: app).waitForExistence(timeout: 5))
+        XCTAssertEqual(element(identifier: "place-card.title", in: app).label, "Ghost Sign")
+        XCTAssertEqual(element(identifier: "place-card.type.label", in: app).label, "History")
+        XCTAssertEqual(
+            element(identifier: "place-card.description", in: app).label,
+            "A hand-painted sign still visible above the old shopfront."
+        )
+
+        let photo = element(identifier: "place-card.photo", in: app)
+        XCTAssertTrue(photo.waitForExistence(timeout: 5))
+        XCTAssertEqual(photo.label, "Photo of Ghost Sign")
+
+        let attribution = element(identifier: "place-card.attribution", in: app)
+        XCTAssertTrue(scrollToExistence(of: attribution, in: app))
+        XCTAssertTrue(attribution.label.contains("Fixture photo"))
+        XCTAssertFalse(element(identifier: "place-card.debug-place-id", in: app).exists)
+
+        let saveButton = app.buttons["place-card.save"]
+        let seenButton = app.buttons["place-card.visited"]
+        let hideButton = app.buttons["place-card.hide"]
+        XCTAssertTrue(saveButton.exists)
+        XCTAssertTrue(seenButton.exists)
+        XCTAssertTrue(hideButton.exists)
+
+        hideButton.tap()
+        XCTAssertTrue(app.staticTexts["Hidden — Undo"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
+
+        tapFixturePin(in: map)
+        XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
+
+        app.buttons["place-card.hide.undo"].tap()
+        openFixtureCard(in: map, app: app)
+    }
+
     func testHideRemovesFixturePinFromMapSource() {
         let app = launch(reset: true)
 

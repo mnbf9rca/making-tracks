@@ -59,4 +59,47 @@ final class PinStateTests: XCTestCase {
         XCTAssertEqual(state["pA"], PinState(saved: false, visit: .loved))
         XCTAssertEqual(state["pB"], PinState(saved: false, visit: .loved))
     }
+
+    func testSavedStateOnlyReflectsWantToGoSystemListMembership() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        try db.dbQueue.write { d in
+            try d.execute(
+                sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (2, 'Date night', 0, 0)"
+            )
+            try d.execute(
+                sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (1, 'p_want', 0)"
+            )
+            try d.execute(
+                sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (2, 'p_user_list_only', 0)"
+            )
+        }
+
+        let state = try db.viewportState(["p_want", "p_user_list_only"])
+
+        XCTAssertEqual(state["p_want"], PinState(saved: true, visit: .none))
+        XCTAssertEqual(state["p_user_list_only"], PinState(saved: false, visit: .none))
+    }
+
+    func testUserListNamesExcludeSystemListAndDeduplicateNames() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        try db.dbQueue.write { d in
+            try d.execute(
+                sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (2, 'Date night', 0, 0)"
+            )
+            try d.execute(
+                sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (3, 'Date night', 0, 0)"
+            )
+            try d.execute(
+                sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (4, 'Architecture', 0, 0)"
+            )
+            for listID in [1, 2, 3, 4] {
+                try d.execute(
+                    sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (?, 'p_listed', 0)",
+                    arguments: [listID]
+                )
+            }
+        }
+
+        XCTAssertEqual(try db.userListNames(containing: "p_listed"), ["Architecture", "Date night"])
+    }
 }
