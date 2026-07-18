@@ -23,29 +23,37 @@ flowchart TB
     end
     subgraph cdn["☁️ Our CDN (Cloudflare)"]
         obj["Published bundles: map tiles,<br/>basemap, place data, photos"]
+        van["👁 Vantage: we / Cloudflare<br/>see IP + request timing"]
     end
     subgraph up["🌍 Upstream open data"]
         src["OpenStreetMap, Wikipedia"]
     end
-    subgraph share["🔗 Sharing service — planned, optional account"]
+    subgraph svc["🔗 Our service — planned, optional account"]
         sh["Shared lists"]
+        rep["Report a place"]
     end
 
-    src -->|"we ingest, check, and publish"| obj
-    ud -->|"HTTPS: request a bundle"| obj
-    obj -->|"bundle returned;<br/>each object checked against its expected hash"| ud
-    ud -.->|"PLANNED, user-initiated:<br/>list contents + notes only —<br/>never visits or loved places"| sh
+    src -->|"ingest: checked, capped, hashed"| obj
+    ud -->|"HTTPS request<br/>(planned: cover traffic hides which area)"| obj
+    obj -->|"bundle returned; each object checked against<br/>its hash; source text shown as plain text"| ud
+    ud -.->|"planned, user-initiated: list + notes<br/>(+ account identity if private);<br/>never visits or loved"| sh
+    sh -.->|"recipients pull shared lists"| ud
+    ud -.->|"planned: report a problem<br/>(advisory, human-reviewed)"| rep
 
-    net(["Network observer<br/>Wi-Fi / ISP"]) -.->|"stopped by TLS"| ud
-    self(["Us / the CDN<br/>sees IP + timing"]) -.->|"planned: cover traffic"| obj
-    vand(["Content vandal<br/>edits OSM / Wikipedia"]) -.->|"defused technically:<br/>size caps, plain-text render"| src
+    net(["Network observer — Wi-Fi / ISP"])
+    net -.->|"reads traffic; sees only TLS"| ud
+    net -.-> obj
+    vand(["Content vandal — edits open data;<br/>content itself not moderated"]) -.-> src
+    sharer(["Malicious sharer —<br/>hostile list names / notes"]) -.->|"same plain-text + caps rules"| sh
 
     oos["OUT OF SCOPE: nation-state · seized/unlocked device ·<br/>jailbroken or compromised OS · our own infra turning hostile · enterprise MITM"]
 
     classDef out fill:#eee,stroke:#999,color:#555,stroke-dasharray:4 3;
     classDef planned fill:#f5f5ff,stroke:#88a,color:#446,stroke-dasharray:4 3;
+    classDef vantage fill:#fff5f5,stroke:#a88,color:#644;
     class oos out;
-    class share,sh planned;
+    class svc,sh,rep planned;
+    class van vantage;
 ```
 
 ## 1. What we protect, in order
@@ -90,6 +98,11 @@ flowchart TB
   straight into a database query, a shell command, or a prompt. **Any review finding about handling
   untrusted content belongs here** (§6); it does not need to name a network attacker.
 
+  There is a **second source** of hostile content once sharing ships: the names and notes in a shared list
+  come from another user, who may be a stranger. This is treated exactly like upstream content — the same
+  plain-text rendering, size and length caps, and no markup or script execution — so a shared list is not a
+  new class of risk, just another input held to the same rules.
+
   To be clear about the limit: we defend against the **technical** consequences of a bad edit — safe
   plain-text rendering, no markup or script execution, length caps, hash-verified delivery. We do **not**
   promise to catch offensive or illegal *content itself*; there is no content-moderation system. A
@@ -112,8 +125,10 @@ device. It leaves only over HTTPS, and only through the specific user-initiated 
 already lists (share a list, report a place, opt-in place statistics). The device fetches published bundles
 from the CDN and checks each object against its expected hash. The one outbound flow of a user's own data
 is sharing a list (shown as *planned* in the diagram): with an optional account, a user can send a list —
-its places and any notes they added — to people they choose. Even then, what travels is only that list and
-its notes; a shared list never carries whether the user visited or loved a place. There is no server that
+its places and any notes they added — to people they choose. A *private* share also involves the user's
+account identity, since it has to identify the user and the recipients; a *public*-link share does not.
+Either way, what travels is only that list and its notes; a shared list never carries whether the user
+visited or loved a place. There is no server that
 stores what a user does, because we never built one — the optional accounts system, when it exists, holds
 only a sharing identity and the lists a user chose to share, never their visits or map history.
 
