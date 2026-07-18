@@ -92,7 +92,7 @@ def test_publish_stage_emits_zone_catalog_proposal_and_pruned_catalog(
     conn, tmp_path, monkeypatch
 ):
     monkeypatch.chdir(tmp_path)
-    _seed_publish_inputs(conn)
+    _seed_publish_inputs(conn, seed_zone_boundaries=False)
     _seed_zone_boundary(conn)
     LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
         [
@@ -150,7 +150,7 @@ def test_publish_stage_with_empty_zone_allowlist_writes_proposal_only(
     conn, tmp_path, monkeypatch
 ):
     monkeypatch.chdir(tmp_path)
-    _seed_publish_inputs(conn)
+    _seed_publish_inputs(conn, seed_zone_boundaries=False)
     _seed_zone_boundary(conn)
     LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
         [
@@ -200,6 +200,37 @@ def test_publish_stage_with_empty_zone_allowlist_writes_proposal_only(
     assert (result.staging_dir / "zone-catalog.proposal.json").exists()
     assert not (result.staging_dir / "zone-catalog.json").exists()
     assert "zone_catalog" not in {op.kind for op in result.publish_result.plan.ops}
+
+
+def test_publish_stage_fails_when_configured_zone_levels_have_no_boundaries(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn, seed_zone_boundaries=False)
+    _write_malaysia_registry(tmp_path)
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename="malaysia.pmtiles",
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    with pytest.raises(P.zone_catalog.ZoneCatalogError, match="configured zone level 2"):
+        P.run(
+            conn,
+            "malaysia",
+            publish_version="20260715T120000Z",
+            generated_at="2026-07-15T12:00:00Z",
+            scoring_config_version="scoring-v1",
+            staging_root=tmp_path / "stage",
+        )
 
 
 def test_publish_stage_manifest_includes_osm_attribution_for_basemap_without_osm_places(
@@ -1582,7 +1613,62 @@ def _seed_publish_input_outside_central_subregion(conn):
     conn.commit()
 
 
-def _seed_publish_inputs(conn):
+def _seed_default_zone_boundaries(conn):
+    rows = [
+        (
+            "osm_r1",
+            1,
+            2,
+            "country",
+            "Malaysia",
+            [99.64, 0.85, 119.27, 0.85, 119.27, 7.36, 99.64, 7.36, 99.64, 0.85],
+        ),
+        (
+            "osm_r2",
+            2,
+            4,
+            "state",
+            "Selangor",
+            [101.0, 2.8, 102.0, 2.8, 102.0, 3.8, 101.0, 3.8, 101.0, 2.8],
+        ),
+    ]
+    for zone_id, relation_id, admin_level, level_name, name, flat_ring in rows:
+        ring = [
+            [flat_ring[index], flat_ring[index + 1]]
+            for index in range(0, len(flat_ring), 2)
+        ]
+        conn.execute(
+            """
+            INSERT INTO zone_boundaries
+                (region, zone_id, osm_relation_id, admin_level, level_name, name,
+                 name_translations_json, wikidata, bbox_json, geometry_json, run_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "malaysia",
+                zone_id,
+                relation_id,
+                admin_level,
+                level_name,
+                name,
+                "{}",
+                None,
+                json.dumps(
+                    [
+                        min(point[0] for point in ring),
+                        min(point[1] for point in ring),
+                        max(point[0] for point in ring),
+                        max(point[1] for point in ring),
+                    ]
+                ),
+                json.dumps({"type": "MultiPolygon", "coordinates": [[ring]]}),
+                "extract1",
+            ),
+        )
+    conn.commit()
+
+
+def _seed_publish_inputs(conn, *, seed_zone_boundaries=True):
     for source, source_ref, props in [
         ("wd", "wd:Q100", {"classes": ["Q839954"]}),
         ("osm", "osm:node/100", {"tags": {"historic": "fort"}}),
@@ -1635,3 +1721,5 @@ def _seed_publish_inputs(conn):
         [(A, "malaysia", "history", "cat1"), (B, "malaysia", "uncategorized", "cat1")],
     )
     conn.commit()
+    if seed_zone_boundaries:
+        _seed_default_zone_boundaries(conn)

@@ -27,6 +27,28 @@ def _cfg():
     )
 
 
+def _cfg_with_regions():
+    return config.RegionConfig.from_dict(
+        {
+            "schema_version": 1,
+            "region_id": "uk",
+            "display_name": "United Kingdom",
+            "bbox": [-1.0, -1.0, 3.0, 3.0],
+            "languages": ["en"],
+            "sources": {"osm": True},
+            "zone_levels": {"2": "country", "4": "region", "6": "county"},
+            "zone_allowlist": ["osm_r3"],
+            "basemap": {
+                "source_pmtiles": "https://example.test/base.pmtiles",
+                "maxzoom": 14,
+                "pack_granularity": "country",
+                "size_budget_bytes": 100000,
+                "measured_archive_bytes": 50000,
+            },
+        }
+    )
+
+
 def _insert_boundary(conn, *, relation_id, admin_level, level_name, name, ring):
     xs = [point[0] for point in ring]
     ys = [point[1] for point in ring]
@@ -87,6 +109,13 @@ def test_cells_for_polygon_excludes_cells_wholly_inside_hole():
     ]
 
     assert (x, y) not in zone_catalog.cells_for_multipolygon([[outer, hole]])
+
+
+def test_point_in_multipolygon_treats_boundary_points_as_inside():
+    polygon = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0], [0.0, 0.0]]
+
+    assert zone_catalog._point_in_multipolygon((1.0, 0.5), [[polygon]])
+    assert zone_catalog._point_in_multipolygon((0.5, 1.0), [[polygon]])
 
 
 def test_zone_cell_sizes_include_referenced_thumbnail_bytes():
@@ -189,6 +218,182 @@ def test_materialize_catalog_does_not_parent_disjoint_polygons_sharing_cell(tmp_
 
     zones = {zone["zone_id"]: zone for zone in full["zones"]}
     assert zones["osm_r2"]["parent"] is None
+
+
+def test_materialize_catalog_prefers_deepest_containing_parent_on_shared_boundary(tmp_path):
+    conn = store.connect(tmp_path / "work.db")
+    store.init_schema(conn)
+    country = [[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0], [0.0, 0.0]]
+    region = [[0.0, 0.0], [1.0, 0.0], [1.0, 3.0], [0.0, 3.0], [0.0, 0.0]]
+    child = [
+        [0.0, 0.0],
+        [1.0, 0.0],
+        [1.2, 0.8],
+        [1.2, 1.2],
+        [0.0, 1.2],
+        [0.0, 0.0],
+    ]
+    _insert_boundary(
+        conn,
+        relation_id=1,
+        admin_level=2,
+        level_name="country",
+        name="Country",
+        ring=country,
+    )
+    _insert_boundary(
+        conn,
+        relation_id=2,
+        admin_level=4,
+        level_name="region",
+        name="Region",
+        ring=region,
+    )
+    _insert_boundary(
+        conn,
+        relation_id=3,
+        admin_level=6,
+        level_name="county",
+        name="Coastal Child",
+        ring=child,
+    )
+
+    full, _pruned = zone_catalog.materialize_catalogs(
+        conn,
+        _cfg_with_regions(),
+        publish_version="20260718T090000Z",
+        generated_at="2026-07-18T09:00:00Z",
+        cell_sizes={},
+    )
+
+    zones = {zone["zone_id"]: zone for zone in full["zones"]}
+    assert zones["osm_r3"]["parent"] == "osm_r2"
+
+
+def test_materialize_catalog_rejects_adjacent_parent_with_only_shared_boundary(
+    tmp_path,
+):
+    conn = store.connect(tmp_path / "work.db")
+    store.init_schema(conn)
+    country = [[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0], [0.0, 0.0]]
+    adjacent_region = [[0.0, 0.0], [1.0, 0.0], [1.0, 3.0], [0.0, 3.0], [0.0, 0.0]]
+    child = [[1.0, 0.0]]
+    child.extend([[1.0, index / 100.0] for index in range(1, 101)])
+    child.extend([[1.4, 1.0], [1.4, 0.0], [1.0, 0.0]])
+    _insert_boundary(
+        conn,
+        relation_id=1,
+        admin_level=2,
+        level_name="country",
+        name="Country",
+        ring=country,
+    )
+    _insert_boundary(
+        conn,
+        relation_id=2,
+        admin_level=4,
+        level_name="region",
+        name="Adjacent Region",
+        ring=adjacent_region,
+    )
+    _insert_boundary(
+        conn,
+        relation_id=3,
+        admin_level=6,
+        level_name="county",
+        name="Border County",
+        ring=child,
+    )
+
+    full, _pruned = zone_catalog.materialize_catalogs(
+        conn,
+        _cfg_with_regions(),
+        publish_version="20260718T090000Z",
+        generated_at="2026-07-18T09:00:00Z",
+        cell_sizes={},
+    )
+
+    zones = {zone["zone_id"]: zone for zone in full["zones"]}
+    assert zones["osm_r3"]["parent"] == "osm_r1"
+
+
+def test_materialize_catalog_fails_when_configured_level_produces_no_zones(tmp_path):
+    conn = store.connect(tmp_path / "work.db")
+    store.init_schema(conn)
+    _insert_boundary(
+        conn,
+        relation_id=2,
+        admin_level=6,
+        level_name="county",
+        name="County",
+        ring=[[0.0, 0.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5], [0.0, 0.0]],
+    )
+
+    try:
+        zone_catalog.materialize_catalogs(
+            conn,
+            _cfg(),
+            publish_version="20260718T090000Z",
+            generated_at="2026-07-18T09:00:00Z",
+            cell_sizes={},
+        )
+    except zone_catalog.ZoneCatalogError as exc:
+        assert "configured zone level 2" in str(exc)
+    else:
+        raise AssertionError("missing configured zone level should fail")
+
+
+def test_materialize_catalog_fails_when_allowlist_zone_is_missing(tmp_path):
+    conn = store.connect(tmp_path / "work.db")
+    store.init_schema(conn)
+    _insert_boundary(
+        conn,
+        relation_id=1,
+        admin_level=2,
+        level_name="country",
+        name="Country",
+        ring=[[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0], [-1.0, -1.0]],
+    )
+    _insert_boundary(
+        conn,
+        relation_id=2,
+        admin_level=6,
+        level_name="county",
+        name="County",
+        ring=[[0.0, 0.0], [0.2, 0.0], [0.2, 0.2], [0.0, 0.2], [0.0, 0.0]],
+    )
+    cfg = config.RegionConfig.from_dict(
+        {
+            "schema_version": 1,
+            "region_id": "uk",
+            "display_name": "United Kingdom",
+            "bbox": [-1.0, -1.0, 1.0, 1.0],
+            "languages": ["en"],
+            "sources": {"osm": True},
+            "zone_levels": {"2": "country", "6": "county"},
+            "zone_allowlist": ["osm_r999"],
+            "basemap": {
+                "source_pmtiles": "https://example.test/base.pmtiles",
+                "maxzoom": 14,
+                "pack_granularity": "country",
+                "size_budget_bytes": 100000,
+                "measured_archive_bytes": 50000,
+            },
+        }
+    )
+
+    try:
+        zone_catalog.materialize_catalogs(
+            conn,
+            cfg,
+            publish_version="20260718T090000Z",
+            generated_at="2026-07-18T09:00:00Z",
+            cell_sizes={},
+        )
+    except zone_catalog.ZoneCatalogError as exc:
+        assert "zone_allowlist entries not present" in str(exc)
+    else:
+        raise AssertionError("missing allowlist zone should fail")
 
 
 def test_materialize_catalog_assigns_parent_and_sizes_from_actual_cells(tmp_path):

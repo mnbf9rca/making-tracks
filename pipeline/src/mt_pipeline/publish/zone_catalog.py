@@ -11,6 +11,10 @@ from mt_contracts import caps
 from mt_contracts.validation import validate_instance
 
 
+class ZoneCatalogError(RuntimeError):
+    """The extracted zone catalog cannot satisfy the configured publish contract."""
+
+
 @dataclass(frozen=True)
 class CellSize:
     bytes_without_thumbs: int
@@ -124,6 +128,31 @@ def _point_in_polygon(point: tuple[float, float], ring: list) -> bool:
     return inside
 
 
+def _point_on_ring_boundary(point: tuple[float, float], ring: list) -> bool:
+    x, y = point
+    for start, end in zip(ring, ring[1:], strict=False):
+        if _point_on_segment(
+            (x, y),
+            (float(start[0]), float(start[1])),
+            (float(end[0]), float(end[1])),
+        ):
+            return True
+    return False
+
+
+def _point_on_segment(point, start, end) -> bool:
+    px, py = point
+    ax, ay = start
+    bx, by = end
+    cross = (py - ay) * (bx - ax) - (px - ax) * (by - ay)
+    if abs(cross) > 1e-12:
+        return False
+    return (
+        min(ax, bx) - 1e-12 <= px <= max(ax, bx) + 1e-12
+        and min(ay, by) - 1e-12 <= py <= max(ay, by) + 1e-12
+    )
+
+
 def _segments_intersect(a, b, c, d) -> bool:
     def orient(p, q, r):
         return (q[1] - p[1]) * (r[0] - q[0]) - (q[0] - p[0]) * (r[1] - q[1])
@@ -157,6 +186,8 @@ def materialize_catalogs(
     cell_sizes: Mapping[tuple[int, int], CellSize],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     zones = _zone_entries(conn, region_config, publish_version, cell_sizes)
+    _assert_configured_levels_present(zones, region_config.zone_levels)
+    _assert_allowlist_present(zones, set(region_config.zone_allowlist))
     full = _catalog(region_config.region_id, publish_version, generated_at, zones)
     allow = set(region_config.zone_allowlist)
     pruned_zones = _pruned_with_parents(zones, allow)
@@ -247,13 +278,15 @@ def _parents(items: list[dict]) -> dict[str, str]:
             containment = _multipolygon_containment_ratio(
                 child["geometry"], parent["geometry"]
             )
-            if containment >= 0.5:
+            if containment >= 0.5 and _multipolygon_has_strict_containment_sample(
+                child["geometry"], parent["geometry"]
+            ):
                 candidates.append((parent, containment))
         if candidates:
             candidates.sort(
                 key=lambda item: (
-                    -item[1],
                     -item[0]["admin_level"],
+                    -item[1],
                     item[0]["zone_id"],
                 )
             )
@@ -261,29 +294,91 @@ def _parents(items: list[dict]) -> dict[str, str]:
     return out
 
 
+def _assert_configured_levels_present(zones: list[dict], zone_levels: Mapping[int, str]) -> None:
+    present = {int(zone["admin_level"]) for zone in zones}
+    missing = [level for level in sorted(zone_levels) if level not in present]
+    if missing:
+        level = missing[0]
+        raise ZoneCatalogError(
+            f"configured zone level {level} ({zone_levels[level]}) produced no zones"
+        )
+
+
+def _assert_allowlist_present(zones: list[dict], allowlist: set[str]) -> None:
+    if not allowlist:
+        return
+    present = {str(zone["zone_id"]) for zone in zones}
+    missing = sorted(allowlist - present)
+    if missing:
+        raise ZoneCatalogError(
+            "zone_allowlist entries not present in extracted catalog: "
+            + ", ".join(missing[:20])
+        )
+
+
 def _multipolygon_containment_ratio(child: list, parent: list) -> float:
-    samples = []
-    for polygon in child:
-        if not polygon or not polygon[0]:
-            continue
-        ring = polygon[0]
-        samples.extend((float(point[0]), float(point[1])) for point in ring[:-1])
-        xs = [float(point[0]) for point in ring]
-        ys = [float(point[1]) for point in ring]
-        samples.append(((min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0))
+    samples = _multipolygon_samples(child)
     if not samples:
         return 0.0
     contained = sum(1 for point in samples if _point_in_multipolygon(point, parent))
     return contained / len(samples)
 
 
+def _multipolygon_has_strict_containment_sample(child: list, parent: list) -> bool:
+    return any(
+        _point_strictly_in_multipolygon(point, parent)
+        for point in _multipolygon_samples(child)
+    )
+
+
+def _multipolygon_samples(multipolygon: list) -> list[tuple[float, float]]:
+    samples = []
+    for polygon in multipolygon:
+        if not polygon or not polygon[0]:
+            continue
+        ring = polygon[0]
+        samples.extend((float(point[0]), float(point[1])) for point in ring[:-1])
+        samples.extend(
+            (
+                (float(start[0]) + float(end[0])) / 2.0,
+                (float(start[1]) + float(end[1])) / 2.0,
+            )
+            for start, end in zip(ring, ring[1:], strict=False)
+        )
+        xs = [float(point[0]) for point in ring]
+        ys = [float(point[1]) for point in ring]
+        samples.append(((min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0))
+    return samples
+
+
 def _point_in_multipolygon(point: tuple[float, float], multipolygon: list) -> bool:
     for polygon in multipolygon:
         if not polygon or not polygon[0]:
             continue
-        if _point_in_polygon(point, polygon[0]) and not any(
-            _point_in_polygon(point, hole) for hole in polygon[1:]
-        ):
+        inside_outer = _point_on_ring_boundary(point, polygon[0]) or _point_in_polygon(
+            point, polygon[0]
+        )
+        inside_hole = any(
+            _point_on_ring_boundary(point, hole) or _point_in_polygon(point, hole)
+            for hole in polygon[1:]
+        )
+        if inside_outer and not inside_hole:
+            return True
+    return False
+
+
+def _point_strictly_in_multipolygon(point: tuple[float, float], multipolygon: list) -> bool:
+    for polygon in multipolygon:
+        if not polygon or not polygon[0]:
+            continue
+        inside_outer = _point_in_polygon(point, polygon[0]) and not _point_on_ring_boundary(
+            point, polygon[0]
+        )
+        inside_hole = any(
+            _point_on_ring_boundary(point, hole) or _point_in_polygon(point, hole)
+            for hole in polygon[1:]
+        )
+        if inside_outer and not inside_hole:
             return True
     return False
 

@@ -20,12 +20,17 @@ MAX_TAG_KEY_LEN = 100
 MAX_TAG_VAL_LEN = 300
 MAX_NAME_LEN = 300
 MAX_QID_LEN = 24
+MAX_BOUNDARY_NAME_LEN = 160
 MAX_CANDIDATE_RECORDS = 5_000_000
 MAX_BOUNDARY_RECORDS = 50_000
 MAX_BOUNDARY_TRANSLATIONS = 32
 MAX_BOUNDARY_RINGS = 256
 MAX_BOUNDARY_POINTS = 200_000
 MAX_BOUNDARY_GEOMETRY_BYTES = 8 * 1024 * 1024
+# z10 cells are roughly 0.35 degrees wide at the equator; these tolerances stay
+# well below the cell size because zone geometry is used for z10 rasterisation.
+BOUNDARY_SIMPLIFY_TOLERANCE_DEGREES = 0.0025
+BOUNDARY_SIMPLIFY_MAX_TOLERANCE_DEGREES = 0.04
 MAX_SIDECAR_BYTES = 64 * 1024
 _LANG_RE = re.compile(r"^[a-z]{2,3}$")
 
@@ -210,7 +215,124 @@ def _ring_coordinates(ring) -> list[list[float]]:
         return []
     if coords[0] != coords[-1]:
         coords.append(coords[0])
-    return coords
+    return _simplify_boundary_ring(coords)
+
+
+def _simplify_boundary_ring(ring: list[list[float]]) -> list[list[float]]:
+    if len(ring) < 4:
+        return []
+    tolerance = BOUNDARY_SIMPLIFY_TOLERANCE_DEGREES
+    simplified = ring
+    while len(simplified) > MAX_BOUNDARY_POINTS:
+        simplified = _simplify_boundary_ring_at_tolerance(simplified, tolerance)
+        if len(simplified) <= MAX_BOUNDARY_POINTS:
+            break
+        if tolerance >= BOUNDARY_SIMPLIFY_MAX_TOLERANCE_DEGREES:
+            break
+        tolerance = min(tolerance * 2.0, BOUNDARY_SIMPLIFY_MAX_TOLERANCE_DEGREES)
+    if len(simplified) < 3:
+        return []
+    out = [list(point) for point in simplified]
+    if out[0] != out[-1]:
+        out.append(out[0])
+    return out
+
+
+def _simplify_boundary_polygons(polygons: list[list[list[list[float]]]]) -> list:
+    current = [
+        [[list(point) for point in ring] for ring in polygon]
+        for polygon in polygons
+    ]
+    if not _boundary_geometry_too_large(current):
+        return current
+    tolerance = BOUNDARY_SIMPLIFY_TOLERANCE_DEGREES
+    while True:
+        current = [
+            [
+                simplified
+                for ring in polygon
+                if (simplified := _simplify_boundary_ring_at_tolerance(ring, tolerance))
+            ]
+            for polygon in current
+        ]
+        current = [polygon for polygon in current if polygon and polygon[0]]
+        if not current or not _boundary_geometry_too_large(current):
+            return current
+        if tolerance >= BOUNDARY_SIMPLIFY_MAX_TOLERANCE_DEGREES:
+            return current
+        tolerance = min(tolerance * 2.0, BOUNDARY_SIMPLIFY_MAX_TOLERANCE_DEGREES)
+
+
+def _boundary_geometry_too_large(polygons: list) -> bool:
+    return (
+        _boundary_point_count(polygons) > MAX_BOUNDARY_POINTS
+        or _boundary_geometry_bytes(polygons) > MAX_BOUNDARY_GEOMETRY_BYTES
+    )
+
+
+def _boundary_point_count(polygons: list) -> int:
+    return sum(len(ring) for polygon in polygons for ring in polygon)
+
+
+def _boundary_geometry_bytes(polygons: list) -> int:
+    geometry = {"type": "MultiPolygon", "coordinates": polygons}
+    return len(json.dumps(geometry, separators=(",", ":")))
+
+
+def _simplify_boundary_ring_at_tolerance(
+    ring: list[list[float]], tolerance: float
+) -> list[list[float]]:
+    if len(ring) < 4:
+        return []
+    closed = ring[0] == ring[-1]
+    points = ring[:-1] if closed else ring
+    simplified = _douglas_peucker(points, tolerance)
+    if len(simplified) < 3:
+        return []
+    out = [list(point) for point in simplified]
+    if out[0] != out[-1]:
+        out.append(out[0])
+    return out
+
+
+def _douglas_peucker(points: list[list[float]], tolerance: float) -> list[list[float]]:
+    if len(points) <= 2:
+        return points
+    keep = {0, len(points) - 1}
+    stack = [(0, len(points) - 1)]
+    tolerance_sq = tolerance * tolerance
+    while stack:
+        start, end = stack.pop()
+        if end <= start + 1:
+            continue
+        a = points[start]
+        b = points[end]
+        max_distance = -1.0
+        max_index = None
+        for index in range(start + 1, end):
+            distance = _point_line_distance_sq(points[index], a, b)
+            if distance > max_distance:
+                max_distance = distance
+                max_index = index
+        if max_index is not None and max_distance > tolerance_sq:
+            keep.add(max_index)
+            stack.append((start, max_index))
+            stack.append((max_index, end))
+    return [points[index] for index in sorted(keep)]
+
+
+def _point_line_distance_sq(point, start, end) -> float:
+    px, py = float(point[0]), float(point[1])
+    ax, ay = float(start[0]), float(start[1])
+    bx, by = float(end[0]), float(end[1])
+    dx = bx - ax
+    dy = by - ay
+    if dx == 0.0 and dy == 0.0:
+        return (px - ax) ** 2 + (py - ay) ** 2
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+    cx = ax + t * dx
+    cy = ay + t * dy
+    return (px - cx) ** 2 + (py - cy) ** 2
 
 
 class _BoundaryHandler(osmium.SimpleHandler):
@@ -236,7 +358,7 @@ class _BoundaryHandler(osmium.SimpleHandler):
                 return
             relation_id = int(area.orig_id())
             zone_id = f"osm_r{relation_id}"
-            name = _clean_text(props.get("name", ""))
+            name = _clean_text(props.get("name", ""), max_len=MAX_BOUNDARY_NAME_LEN)
             if not name:
                 return
             polygons = []
@@ -249,32 +371,36 @@ class _BoundaryHandler(osmium.SimpleHandler):
                 if not coords:
                     continue
                 ring_count += 1
-                point_count += len(coords)
                 polygon = [coords]
                 for inner in area.inner_rings(ring):
                     inner_coords = _ring_coordinates(inner)
                     if inner_coords:
                         ring_count += 1
-                        point_count += len(inner_coords)
                         polygon.append(inner_coords)
-                    if ring_count > MAX_BOUNDARY_RINGS or point_count > MAX_BOUNDARY_POINTS:
-                        raise BoundaryGeometryTooLargeError("boundary geometry exceeds ring/point caps")
+                    if ring_count > MAX_BOUNDARY_RINGS:
+                        raise BoundaryGeometryTooLargeError("boundary geometry exceeds ring cap")
                 polygons.append(polygon)
                 xs.extend(point[0] for point in coords)
                 ys.extend(point[1] for point in coords)
-                if ring_count > MAX_BOUNDARY_RINGS or point_count > MAX_BOUNDARY_POINTS:
-                    raise BoundaryGeometryTooLargeError("boundary geometry exceeds ring/point caps")
+                if ring_count > MAX_BOUNDARY_RINGS:
+                    raise BoundaryGeometryTooLargeError("boundary geometry exceeds ring cap")
             if not polygons:
                 return
+            polygons = _simplify_boundary_polygons(polygons)
+            if not polygons:
+                return
+            point_count = _boundary_point_count(polygons)
+            if point_count > MAX_BOUNDARY_POINTS:
+                raise BoundaryGeometryTooLargeError("boundary geometry exceeds point cap")
             geometry = {"type": "MultiPolygon", "coordinates": polygons}
-            if len(json.dumps(geometry, separators=(",", ":"))) > MAX_BOUNDARY_GEOMETRY_BYTES:
+            if _boundary_geometry_bytes(polygons) > MAX_BOUNDARY_GEOMETRY_BYTES:
                 raise BoundaryGeometryTooLargeError("boundary geometry exceeds serialized byte cap")
             if len(self.rows) >= MAX_BOUNDARY_RECORDS:
                 raise TooManyBoundariesError(f"exceeded {MAX_BOUNDARY_RECORDS} boundaries")
             translations = {}
             for key, value in sorted(props.items()):
                 lang = key.removeprefix("name:")
-                clean = _clean_text(value)
+                clean = _clean_text(value, max_len=MAX_BOUNDARY_NAME_LEN)
                 if (
                     key.startswith("name:")
                     and _LANG_RE.fullmatch(lang)
