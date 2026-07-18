@@ -59,18 +59,29 @@ of the designs.
 
 ## 4. Download engine rules
 
-- **Incremental-persist is MANDATORY** — stream each **verified** object to the content-addressed store
-  **as it arrives** → **constant memory bound** regardless of pack size. (RAM-buffering the whole pack is
-  unacceptable — the device was jetsam-killed at far smaller working sets.) **⚠ NOT built today:** the
-  shipped `OfflineRegionDownloader` RAM-buffers the whole pack and installs all-or-nothing — it **violates
-  this mandatory rule** and is the open engine work below (WP-B10d). This row is the target, not current.
-- **Resume is free** *(target, not built)*: once incremental-persist lands, an interrupted download
-  resumes **object-granular** via `updatePlan` sha-skip. **Today there is no resume** — an interrupted
-  download restarts from zero (a consequence of the RAM-buffer above). *Open engine work (WP-B10d).*
-- **GC must RETAIN in-progress objects** (failed-install GC currently removes orphans — adjust, or the
-  resume set is reclaimed).
-- **Background `URLSession`** (WiFi-preferred, discretionary) — the config exists but is **dead-wired**
-  today (production uses a foreground ephemeral fetcher); it must be wired. *Open engine work (WP-B10d).*
+- **Incremental-persist — BUILT (#193, WP-B10d).** Each object is fetched, verified, and streamed to the
+  content-addressed store **as it arrives** (`writeVerifiedTileObject` / `prepareVerifiedBasemapObject`),
+  so memory is bounded per-object, not per-pack — the RAM-buffer-the-whole-pack / all-or-nothing behavior
+  is **gone**. (This was the jetsam-kill fix; earlier revisions of this doc marked it unbuilt — corrected
+  on the #193 merge.)
+- **Resume — BUILT (#193), object-granular.** An interrupted download resumes via `updatePlan` sha-skip
+  over what is already in-store; only explicit **cancel** discards (**pause ≠ cancel**). **Sub-object
+  resume is NOT built** — a half-streamed *basemap* restarts from zero because it is one monolithic
+  `.pmtiles` (the chunking-bound gap, §3 / WP-RM §8 INV-4); the fix is the per-cell basemap (§3).
+- **GC retains in-progress objects — BUILT (#193).** Mark-and-sweep protects both installed
+  (`referencedObjects`) and **live in-progress** (`referencedInProgressObjects`) objects before sweeping.
+  **⚠ Known sweep GAPS (WP-RM §8 INV-5, unowned → WP-DL-SAFETY):** crash-stranded `*.pmtiles.tmp` and
+  `root/tmp/*` install dirs are never swept, and GC never runs at plain launch — orphans linger.
+- **Background `URLSession`** (WiFi-preferred, discretionary) — the config exists but is still
+  **dead-wired** (production uses a foreground ephemeral fetcher, to keep single-origin redirect pinning).
+  Wiring it + **relaunch task adoption after app death** is the target — **owned by #197 (OPEN)**, not
+  WP-B10d (WP-B10d shipped the foreground incremental engine above). See WP-RM §8 INV-10.
+- **Download safety contract:** the full set of download-safety invariants (atomicity, resume,
+  idempotence, chunking bound, GC soundness, crash-window consistency, disk/ENOSPC safety, concurrency,
+  honest progress, relaunch adoption) — each with a today-vs-target marker, `file:line`/PR evidence, an
+  owning WP, and its acceptance test — lives in **[[WP-RM §8 download safety contract]]**. Today most are
+  satisfied by #193; the open gaps are INV-4 (basemap chunking → WP-RM-P pipeline cut + WP-RM-G app render), INV-10 (background adoption →
+  #197), and the INV-1/5/6/7/8/9 engine-hardening cluster (→ the proposed **WP-DL-SAFETY**).
 - **Compression:** place tiles are app-level gzip at rest and on device, **sha over gzipped bytes** (no
   `Content-Encoding` — transport auto-decompress would break checksums); pmtiles internally compressed;
   thumbs are webp.
@@ -98,6 +109,8 @@ of the designs.
 |---|---|
 | Completeness invariant; packs/zones; delta strategy | WP-RM (`2026-07-18-wp-rm-region-manager.md`, PR #177, MERGED) |
 | **Offline download engine + content-addressed pack store** | **PR #149 (MERGED)** + region-model §3/§5 (`2026-07-17-wp-regions-model.md`, #131) |
+| **Incremental download engine (file-backed staging, resume, pause/cancel, GC)** | **WP-B10d, PR #193 (MERGED)** |
+| **Download SAFETY contract (10 invariants: atomicity/resume/idempotence/chunking/GC/crash-window/disk/concurrency/progress/relaunch)** | **WP-RM §8** (`2026-07-18-wp-rm-region-manager.md`); gaps → WP-RM-P + WP-RM-G (INV-4), #197 (INV-10, OPEN), WP-DL-SAFETY (INV-1/5/6/7/8/9, proposed) |
 | **Image-index schema + thumbs path/content-addressing (contract owner)** | **WP-IMG-P (`2026-07-17-wp-images-photos.md`, #158, MERGED)** |
 | Photos card layout / attribution UI (consumer); offline-thumb bundling | WP-CARD (`2026-07-18-wp-card-overhaul.md`, #172) + WP-IMG-B2 |
 | Description sidecars | codex4 description-index (PR #173) |
