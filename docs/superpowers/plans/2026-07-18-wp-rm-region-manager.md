@@ -153,15 +153,17 @@ cells → per-cell delete/dedup for free" does not exist. Reframed:]**
   resolves tiles from **any installed pack covering it** (not one pinned region), reconciled with
   `MapRegion`/the catalog. This is a real app-architecture change and is on the critical path (a zone pack
   is useless until the map reads it).
-- **Incremental-persist is MANDATORY [Rob requirement, not a suggestion].** RAM-buffering the whole pack
-  is **unacceptable** ("how big is this going to get" — the device was **jetsam-killed today** at far
-  smaller working sets). `downloadCurrentRegion` today buffers all tiles in RAM + installs at end
-  (`:950-990`; kill = restart from zero); the background `OfflineDownloadSession` is **dead-wired**
-  (production = foreground ephemeral `HTTPTileFetcher`). Required rework (shared WP-B10d engine): **stream
-  each verified object to the content-addressed store on arrival → CONSTANT memory bound regardless of
-  pack size**; an interrupted download then **resumes object-granular for free** via `updatePlan` sha-skip;
-  **wire the background `URLSession`**; and **adjust failed-install GC (`:1084, :1281`) to RETAIN
-  in-progress objects** (else the resume set is reclaimed). One rework serves WP-B10d + WP-RM.
+- **Incremental-persist — BUILT (#193, WP-B10d) [was a Rob requirement; now merged].** RAM-buffering the
+  whole pack was **unacceptable** (the device was **jetsam-killed** at far smaller working sets), and #193
+  fixed it: `downloadCurrentRegion` now **streams each verified object to the content-addressed store on
+  arrival** (`stageDownloadedTileObject`/`stageDownloadedBasemapObject` → `install`) → constant memory
+  bound; an interrupted download **resumes object-granular** via `updatePlan` sha-skip; and GC **RETAINS
+  in-progress objects** (`referencedInProgressObjects`). *(Earlier revisions of this bullet described the
+  RAM-buffer as current and this as "required rework" — corrected on the #193 merge; the full safety audit
+  is §8.)* **Still open:** the background `OfflineDownloadSession` is **dead-wired** (production = foreground
+  ephemeral `HTTPTileFetcher`, to preserve single-origin redirect pinning) → **#197 wires session
+  recreation + handler delivery** (§8 INV-10a); **full task adoption** after relaunch (§8 INV-10b) and the
+  INV-1/5/6/7/8/9 engine-hardening gaps are owned by the proposed **WP-DL-SAFETY**.
 - **Update (Apple resize-and-redownload + auto-update):** a pack records its `publish_version`; a new
   publish → the pack's manifest sha-diffs → fetch only changed cells (reuse-by-sha). Auto-update default
   (WiFi, discretionary), user-toggleable — **and this recurring fetch carries cover-traffic (§5).**
@@ -243,8 +245,9 @@ means **manifest (tiles/basemap) + pack-descriptor (everything else)**; `updateP
     dedup + cover-traffic cohort all apply uniformly), and directly delivers Rob's "no GB every time."
     **Cost / the key feasibility fork:** MapLibre renders a **single `pmtiles://` source**, so per-cell
     objects mean the app must **render the basemap from the per-cell object grid** (a local tile source,
-    or reassemble) instead of one pmtiles file — a **pipeline cut + an app basemap-source change**
-    (flag as the load-bearing feasibility question for WP-RM-P/G). **CDN/cover-traffic:** per-cell basemap
+    or reassemble) instead of one pmtiles file — this splits into a **pipeline cut (WP-RM-P)** and an
+    **app basemap-source render change (WP-RM-G)**, the latter being the load-bearing MapLibre feasibility
+    fork (single-`pmtiles://`-source → per-cell-object grid). **CDN/cover-traffic:** per-cell basemap
     objects are whole-object content-addressed GETs → **the same decoy cohort as place cells** (no new
     channel, uniform), which (a) is not.
   - **Recommendation: (b)** — it makes the basemap delta *free* on the content-addressing already in place,
@@ -306,15 +309,171 @@ is broken. Audit of the completeness set:
 Neuter any one *mandatory* completeness component → the test goes red; dropping the *optional* images
 must NOT break the without-images branch.
 
+## 8. Download safety contract (D8) — Rob commission: one testable contract
+
+The offline-download safety conditions, scattered across #193 (WP-B10d engine) / #190 / #177 / the open
+#196 / #197, stated **once** as ten invariants with a today-vs-target marker, evidence, an owning WP for
+each gap, and the acceptance test that pins it. **Audited against merged `origin/ios`
+`Sources/MakingTracksTiles/MakingTracksTiles.swift`** (post-#193/#190) — not against summaries; where the
+audit contradicted the commission's framing it is marked **[framing correction]**. Status legend:
+✅ satisfied · ◐ partial · ❌ violated · ▷ target (unbuilt, owned).
+
+- **INV-1 Object atomicity — ◐ effectively satisfied, ASYMMETRIC [framing correction].** *An object is
+  verified-in-store or absent; no readable partials.* Objects are content-addressed by **expected** sha
+  (`tileObjectURL` L1975, `basemapObjectURL` L1979). **Basemap = true verify-then-rename**
+  (`prepareVerifiedBasemapObject` L2011 hashes a `.pmtiles.tmp`, `movePreparedBasemapObject` L2031 renames
+  only on pass). **Tiles = write-to-final-THEN-verify** (`writeVerifiedTileObject` L1983 does
+  `data.write(.atomic)` to the *final* path, then verifies; a sha mismatch throws but **leaves the
+  mis-sha'd file at its final name**). It is safe only because **every consumer re-verifies sha**
+  (`loadTile`→`TileCodec.decode` L2830; `install`/`updatePlan` re-verify L1428/L1869) and the bad object
+  self-heals on retry — not because the write was atomic-correct. **Gap/owner:** mirror the basemap's
+  verify-then-rename for tiles → **WP-DL-SAFETY** (low severity). **Test:** stage a tile whose bytes match
+  but sha does not; assert the stage throws **and** `objects/tiles/{sha}.json.gz` does not exist after
+  (fails today).
+- **INV-2 Resume across every interruption class — ✅ satisfied (object-granular).** *Pause/crash/kill/
+  net-drop/background/power-loss all degrade to object-granular resume; only explicit cancel discards.*
+  Resume is driven by what is already in-store: `updatePlanLocked` (L1860) skips present objects and fetches
+  only the rest; fetched objects live in the shared content-addressed `objects/` tree and survive process
+  death; the `in-progress/{region}/{pv}/pack-index.json` marker (`beginDownload` L1372) keeps them
+  GC-referenced. **Pause** throws `downloadPaused` (L1124) and is *not* caught as cancel (L1298) → intact;
+  **cancel** → `discardDownload` (L1405) removes the marker + GCs. **The one non-guarantee is SUB-object
+  resume** (a half-streamed basemap restarts from zero) — that is INV-4, not a resume-logic defect.
+  **Test:** stage N of M tiles, rebuild the downloader, assert `reusedTileCount == N` and only `M−N`
+  fetches; pause → marker present + re-run completes; cancel → marker gone.
+- **INV-3 Idempotence via content-addressing — ✅ satisfied.** *Re-running identical content is a no-op.*
+  Sha-addressed names (L1975/L1979) + skip-if-present at every layer (`updatePlanLocked` L1868;
+  `writeVerified*` early-return L1985/L2006; `movePreparedBasemapObject` no-op L2033). **Test:** run
+  `downloadCurrentRegion` twice against one manifest with a call-counting fetcher; assert **zero** fetches
+  on the second run.
+- **INV-4 Chunking bound — ❌ VIOLATED by the basemap; the per-cell strategy (§6) is the SAFETY fix, not
+  just a delta optimisation.** *No single UNRESUMABLE transfer unit above a small threshold.* Tiles satisfy
+  it naturally (≤1 MiB, L358). The **basemap is one monolithic `.pmtiles`** fetched by a single
+  `session.download(for:)` (L143/L1279) with **`Basemap.validate` permitting ~3 GB** (L384) and **no resume
+  data captured** on interruption → a drop at 99% restarts the entire multi-GB transfer. **This is the same
+  object §6 reframes for *delta*; state it here as a SAFETY requirement too** — an unresumable multi-GB unit
+  is a safety defect independent of bandwidth. **Gap/owner:** §6 option (b) **per-cell content-addressed
+  basemap objects** (z10 grid, each ≤ the tile bound) — the **pipeline cut → WP-RM-P** (+ the z7–9 shared
+  mid-zoom object) and the **app render change → WP-RM-G** (the MapLibre single-`pmtiles://`-source →
+  per-cell-grid fork, §6b). **Test:** with a basemap object >
+  threshold and a fetcher failing at 50%, assert the retry does not re-transfer the fetched bytes (fails
+  today); post-fix, assert the basemap plans as N per-cell objects each ≤ the tile bound.
+- **INV-5 GC soundness — ◐ partial; MORE gaps than the one known [framing correction].** *Never collects
+  installed- or live-in-progress-referenced objects; always eventually collects abandoned staging.* The
+  **mark** side is sound: `referencedObjects` (L2120, all installed `pack-index.json`) ∪
+  `referencedInProgressObjects` (L2138, all live in-progress) are protected before the sweep. The **sweep**
+  is too narrow — it cleans only `objects/tiles/*.gz` and `objects/basemaps/*.pmtiles` by exact extension
+  (L2116, filter L2162), so it **never sweeps: (1)** crash-stranded `objects/basemaps/*.pmtiles.tmp` (the
+  #193 residual — confirmed), **(2)** `root/tmp/{uuid}` install temp/backup dirs (L1432, cleaned only on
+  the in-line success/error paths, never by GC), and GC **(3) never runs at plain app launch** (only on
+  install-success, install-FAILURE, discard, and delete), so a *killed* download's orphans linger until the
+  next such op. **Gap/owner:** add a launch-time + `beginDownload` sweep of `*.pmtiles.tmp` and `root/tmp/*`
+  → **WP-DL-SAFETY**. **Test:** drop a **dot-prefixed `.{uuid}.pmtiles.tmp`** (the real strays are HIDDEN
+  files — a fixture that isn't dot-prefixed would be swept by a `skipsHiddenFiles` enumerator and give a
+  false pass while every real stray survives) + a `root/tmp/{uuid}` dir, trigger GC, assert both gone (fails
+  today); positive control — an in-progress pack-index's tile sha survives GC (passes).
+- **INV-6 Crash-window consistency — ◐ no corruption + readers fail safe, but a same-version-reinstall
+  crash can silently LOSE a pack [scoped].** *The store never serves an inconsistent pack; readers fail
+  safe.* Install writes+verifies all objects first (L1438), builds a temp pack dir, renames `temp→final`,
+  and **only then flips the `current-pack.json` pointer** (L1461); readers resolve exclusively through
+  `installedCurrentPackLocked` (L1765), so a half-moved pack is invisible; a thrown error restores the
+  backup (L1472). All mutations + GC run under one `NSLock` (L2233), GC **inside** the install lock (L1467).
+  So **no corruption and readers always fail safe** — but two real crash windows keep this off ✅:
+  - **Same-version reinstall backup window [gate].** A reinstall does `moveItem(final→backup)` **BEFORE**
+    `moveItem(temp→final)`; a crash *between* the two moves strands the previously-installed pack in
+    `root/tmp/{uuid}-backup` with `current-pack.json` left **dangling** → readers fail safe (no corruption)
+    but the **pack is silently lost** (must be re-downloaded). Not just an uncollected orphan — a
+    functional regression on crash.
+  - **Pointer-write window.** A crash *between* `temp→final` and the pointer write leaves a well-formed but
+    unreferenced pack dir (invisible, objects retained, uncollected).
+  `NSLock` is in-process only (fine on single-instance iOS; would break under an app-extension writer).
+  **Owner:** WP-DL-SAFETY — recover the backup on next launch (re-point or restore) + the orphan-dir sweep
+  (INV-5). **Test:** (i) fault after `temp→final` but before the pointer write → assert `installedPublish`
+  returns the *previous* version and the store reads; (ii) fault **between `final→backup` and `temp→final`**
+  → assert the pack is recoverable on relaunch (not silently lost — fails today).
+- **INV-7 Disk safety — ◐ partial: no corruption on ENOSPC, but a raw error not a graceful pause.**
+  *Headroom checked incl. transient peaks; ENOSPC mid-download → resumable pause, never corruption.*
+  Headroom is checked **once** before `beginDownload` (`hasHeadroom(requiredBytes: plan.bytesToFetch…)`
+  L1248, static 512 MiB reserve L1011) — **one-shot, not re-checked per object.** The transient peak is
+  bounded but real: a **tile** (≤1 MiB) is held twice mid-stage (URLSession temp + the `.atomic` write, and
+  `stageDownloadedTileObject` reads the whole file into memory L1386), so the peak is ~2× *per small object*;
+  the **basemap** stages by same-volume **rename** (`.pmtiles.tmp`→final, no second full copy), so its peak
+  is ~1×, not 2×. The one-shot check models neither the small-object 2× nor concurrent staging.
+  On **ENOSPC mid-write** the atomic write throws `NSFileWriteOutOfSpaceError`
+  (all-or-nothing → **no partial/corrupt object**), which is not `downloadCancelled` → rethrown without
+  discard → the marker + staged objects survive → **resumable**. So: no corruption ✅, but it surfaces as an
+  opaque throw, not a "paused" state, and there is no transient-peak accounting. **Gap/owner:** per-object
+  headroom re-check for the 2× peak + map ENOSPC → resumable pause → **WP-DL-SAFETY** (the per-cell basemap,
+  §6/WP-RM-P, also shrinks the peak). **Test:** inject an ENOSPC writer at object k; assert (i) no
+  partial/corrupt object at its final path, (ii) marker survives, (iii) a re-run with space resumes reusing
+  0..k−1.
+- **INV-8 Concurrency — ◐ partial; enforcement is UI-ONLY today [framing correction — no review threads
+  exist to cite].** *Parallel regions isolated; double-start of the same region impossible;
+  delete-during-download defined.* **Different regions:** isolated (separate markers; shared objects written
+  under the lock, idempotent). **Same-region double-start:** **no ENGINE guard** — `downloadCurrentRegion`
+  (L1234) has no single-flight; the *only* guard is the **OPEN #196** UI (`startDownload` tracks one
+  `activeDownloadID` in MapScreen), i.e. per-view, not engine-wide. **Delete-during-download:** **racy** —
+  `deleteLocked` (L1927) removes the in-progress marker then GCs, so a concurrent download's staged objects
+  can be swept and its later `install` fails verification; #196 adds `discardInProgressDownloads(region:)`
+  for *cooperative* cleanup, not mutual exclusion. **(The commission asked to cite #196/#197 "review
+  findings" as the enforcement tests — there are **zero inline review threads**: sourcery ran but was
+  rate-limited with no findings, so the enforcement is the PRs' own code + tests, not review threads.)**
+  **Gap/owner:** push a per-region
+  single-flight lease + a defined delete-vs-download precedence **into the engine** (not MapScreen) →
+  **WP-DL-SAFETY**, with **#196** as the natural UI consumer. **Test:** (i) start two downloaders for one
+  region → the second is rejected/coalesced; (ii) `delete` while k objects are staged → defined outcome
+  (clean download failure OR delete refused) and the store never references a GC'd object.
+- **INV-9 Honest progress — ◐ satisfied only in the OPEN #196 UI; the engine has no status [framing
+  correction].** *A paused download reports "paused", never "downloading"/fabricated progress.* The engine's
+  `OfflineRegionDownloadProgress` (L1062) carries bytes/objects/fraction **but no status field** — pause is
+  an out-of-band throw. **#196** reconstructs honest status in MapScreen (`downloadPaused` → a distinct
+  `pausedRegion` state + `.paused` row, diff L441/L503), and no value is fabricated (`fractionComplete`
+  clamps to real staged bytes L1086). So paused ≠ "downloading" **once #196 lands** — but it is UI wiring
+  atop an engine that models pause as an error. **Gap/owner:** #196 owns the UI contract today; if "honest
+  progress" must be an **engine** guarantee, expose a paused/running status → **WP-DL-SAFETY** (scope call,
+  Open flag 6). **Test:** pause mid-download; assert the surfaced status is exactly "paused" and the last
+  `fractionComplete` = real staged/total, never advancing while paused.
+- **INV-10 Relaunch task adoption — ▷ TARGET, SPLIT owner [#197 does NOT close this alone].** *After app
+  death, a background URLSession's in-flight work is re-adopted on relaunch and completes.* **Not wired
+  today:** `OfflineDownloadSession.backgroundConfiguration` exists (L1032) but carries the standing comment
+  that it is "*not wired into offline object fetches yet*" (background sessions follow redirects without the
+  delegate, conflicting with single-origin pinning); the live path uses foreground/ephemeral sessions
+  (`offlineForeground()` L119). The invariant has **two halves with different owners** (per the
+  plan-language law — #197 must not be recorded as closing more than its author claims):
+  - **(a) session recreation + handler delivery → #197 (OPEN).** Its diff adds
+    `offlineBackground(identifier:)`, an `OfflineDownloadSessionEventRegistry`, the app-delegate
+    `handleEventsForBackgroundURLSession`, and post-redirect origin re-validation (`validateDownloadedFile`)
+    — i.e. a relaunched app re-creates the session by identifier and delivers its completion events. **#197's
+    own record explicitly DISCLAIMS the rest** (no `getAllTasks`/task-state re-adoption path in the diff).
+  - **(b) full task adoption → WP-DL-SAFETY (or a named #197 successor).** The residual #197 disclaims:
+    **re-adopting in-flight task state, completing a *pack* after relaunch, reattaching progress, and partial
+    recovery of a mid-flight object.** This has no owner in #197 → assigned to WP-DL-SAFETY (residual list).
+  **Test (a, #197):** enqueue a background download, terminate, relaunch; assert `handleEventsForBackground
+  URLSession` fires, the session is re-created by identifier, and a **completed** file re-passes origin
+  pinning and lands verified. **Test (b, WP-DL-SAFETY):** terminate with a task mid-flight; assert the pack
+  resumes/completes and progress reattaches on relaunch (fails until (b) is built — do NOT assert this
+  against #197).
+
+**What this contract adds to the build queue:** the engine is **mostly sound — no corruption paths** (by
+the markers above: 2 ✅, 6 ◐, 1 ❌, 1 ▷ — the ◐/❌ are hardening + resumability gaps, not data-loss-on-happy-
+path); the gaps cluster into a few owners — §6/**WP-RM-P** (INV-4 per-cell basemap *pipeline cut*) + **WP-RM-G** (INV-4 *app* basemap-source
+render), both from the already-ratified §6b, reframed here as *safety*; **#197** (INV-10**(a)** session
+recreation + handler delivery, already open); and a **NEW WP-DL-SAFETY** (engine hardening: INV-1 tile
+verify-then-rename, INV-5 GC + orphan-dir sweep incl. launch-time GC, INV-6 backup-window recovery, INV-7
+per-object headroom + ENOSPC→pause, INV-8 engine single-flight + delete precedence, INV-9 engine status if
+first-class, INV-10**(b)** full task adoption after relaunch). See Open flag 5 (commission WP-DL-SAFETY)
+and flag 6 (INV-8/9 engine-vs-UI scope).
+
 ## Build-WP decomposition
 
 | WP | side | scope | depends on |
 |---|---|---|---|
-| **WP-RM-P** zone extraction + catalog | **pipeline (`develop`)** | OSM `boundary=administrative` sub-extractor (polygon/name/translations/QID/admin_level); region-config `zone_levels` map; polygon→z10 cell-set rasteriser; catalog materialiser (parent, size-from-cells, dedup-aware); the prune-list gate; `zone-catalog` schema | region-index (shipped); OSM extractor (built); Rob-gated instances |
+| **WP-RM-P** zone extraction + catalog + basemap cut | **pipeline (`develop`)** | OSM `boundary=administrative` sub-extractor (polygon/name/translations/QID/admin_level); region-config `zone_levels` map; polygon→z10 cell-set rasteriser; catalog materialiser (parent, size-from-cells, dedup-aware); the prune-list gate; `zone-catalog` schema; **per-z10-cell content-addressed basemap object cutting (§6b) + the z7–9 shared per-region basemap object** (the pipeline half of the INV-4 chunking fix) | region-index (shipped); OSM extractor (built); Rob-gated instances |
+| **WP-RM-G** per-cell basemap RENDER (app half of §6b/INV-4) | **app (`ios`)** | render the basemap from the **per-cell content-addressed object grid** instead of a single `pmtiles://` source (the load-bearing MapLibre feasibility fork, §6b) — the app half of the INV-4 chunking-bound safety fix; consumes WP-RM-P's cut basemap objects | **WP-RM-P** (basemap cut); WP-RM-B3 (pack resolution); the built store |
 | **WP-RM-B3** multi-pack RENDERING (BLOCKER, critical path) | **app (`ios`)** | **viewport→installed-pack resolution across N packs**: the map resolves a viewport's tiles from **any installed pack covering it**, not one pinned `selectedRegion`/`TileClient(region:)`; `MapRegion`/catalog reconciliation. **A zone pack is useless until this ships** | B3 (built); the built store |
 | **WP-RM-B** region-manager UX | **app (`ios`)** | named-hierarchy browser (install a zone = install its **pack**, size up front); a **download-progress surface** (inherits WP-B10d's progress stream — per-zone %/bytes, cancel/pause); grid coverage feedback + **per-ZONE** update/delete (whole-pack, §4; per-cell is an Open flag); consumes `OfflineRegionStore` (pack unit) + the catalog. **NOT user-shippable before WP-RM-CT** (a sub-country download without cover-traffic is a privacy regression — CT is in B's release gate) | WP-RM-P; **WP-RM-B3**; **WP-B10d** (progress/incremental-persist); **WP-RM-CT** (release gate); the built store; WP-IMG-B2 |
 | **WP-RM-B2** custom-rectangle path | **app + pipeline** | drag-rectangle→cells + confirm (size + decoy cost + halo); **needs a store extension** (synthetic-manifest cell-set install) OR composes published sub-zone packs — **new engine work, not free on the built store** | WP-RM-B; a store extension |
 | **WP-RM-CT** cover-traffic | **app (`ios`)** | apply #131 in RATIFIED terms (intersection-resistant cohort, budget scales with distinctiveness); the fetch layer's decoy wrapper (WP-B7/fetch-model) | WP-RM-B; #131 rulings; Rob's decoy numbers |
+| **WP-DL-SAFETY** engine hardening (§8) | **app (`ios`)** | close the download-safety gaps §8 names: **INV-1** tile verify-then-rename (mirror the basemap); **INV-5** GC + orphan-dir sweep (`.{uuid}.pmtiles.tmp`, `root/tmp/*`) **incl. launch-time GC**; **INV-6** same-version-reinstall **backup-window recovery** (re-point/restore a `{uuid}-backup` pack orphaned by a crash between `final→backup` and `temp→final`, else the pack is silently lost); **INV-7** per-object headroom (small-object 2× peak + concurrent staging) + ENOSPC→resumable-pause; **INV-8** engine per-region single-flight lease + delete-vs-download precedence; **INV-9** engine paused/running status (if made first-class, flag 6); **INV-10(b)** full background-task adoption after relaunch (task-state re-adoption, pack completion, progress reattachment, partial recovery — the residual #197 disclaims). Each ships with the §8 acceptance test (neuter → red) | the #193 engine (merged); **#197** (INV-10(a) session recreation); #196 (UI consumer of INV-8/9); **Rob commission (flag 5)** |
 
 **Seam to B10:** B10's first-run "region pick" is the **entry point** into this catalog (pick a
 top-level zone → offer its pack). **B10 persists `chosenRegion` → the startup seed; WP-RM inherits/
@@ -335,6 +494,17 @@ moment.
    coverage-manager). **Recommended default: per-zone now; per-cell later via the WP-RM-B2
    synthetic-manifest path** (a rectangle/cell-set installed as an ad-hoc pack is then per-cell-deletable).
    **Logged on the WP-RM issue body for Rob's morning.** Confirm.
+5. **Commission WP-DL-SAFETY [§8].** The download-safety audit found the engine mostly sound but with a
+   real cluster of hardening gaps (INV-1/5/6/7/8/9 + INV-10b full task adoption) that today have **no
+   owner** — per the plan-language
+   law they must become a named WP, so §8 defines **WP-DL-SAFETY**. It needs commissioning (it is not part
+   of any merged/queued WP). None is a data-corruption bug today (INV-6 holds, ENOSPC doesn't corrupt), but
+   INV-5 (stranded temp files) and INV-8 (delete-during-download race) are the sharpest. Confirm the WP +
+   its priority.
+6. **INV-8/INV-9 engine-vs-UI scope [§8].** The same-region single-flight guard (INV-8) and paused-status
+   honesty (INV-9) live in the **UI (#196)** today. Recommend pushing **INV-8 into the engine** (a
+   per-view guard doesn't prevent two agents/paths racing the same region) and leaving **INV-9 as the #196
+   UI contract** unless a non-UI caller needs engine-level status. Confirm the split.
 
 ## Gate & acceptance
 
@@ -357,5 +527,14 @@ moment.
     deterministic cell-in-polygon rule + parent-containment tie-break.
   The extracted-not-authored catalog + hybrid selection UX survived; the folds were the privacy reframe,
   the pack-unit correction, and the config reconciliation.
+- **§8 download-safety-contract addition (2026-07-18, Rob commission) — gate: 2 critics + verify, 4 raised,
+  3 survived, all folded.** Survivors: (1) this doc's own §4 still described #193's merged incremental-
+  persist as pending "required rework" (present-tense-unbuilt = plan-language-law violation) — corrected to
+  BUILT; (2) INV-4's per-cell basemap fix routed to a phantom "WP-RM-P/G" with the app-render half unowned
+  (WP-RM-P is pipeline-only) — added a real **WP-RM-G** row (app basemap-source render) and split INV-4's
+  owner into pipeline (WP-RM-P) + app (WP-RM-G); (3) WP-RM-P's scope cell omitted the basemap-object
+  cutting the invariant routes to it — added it. The 10-invariant contract was independently
+  code-audited against merged `origin/ios` first; the gate then caught the doc-internal ownership/staleness
+  defects the audit didn't cover.
 - PR → `develop`, `sourcery-review` only, report `p2p/fable__opus`. No self-merge; fable reviews; `main`
   is Rob's.

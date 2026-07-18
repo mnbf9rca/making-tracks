@@ -35,6 +35,8 @@ All secrets via 1Password: `op run --env-file=.env.tpl -- <command>` (masking st
 
 Work packages (spec §8) are designed one at a time (design agent) and built one at a time (build agent) on feature branches. Keep to your package's scope; if you discover a cross-package contract problem, surface it in your report rather than unilaterally changing the contract. Commit messages: imperative, plain, no attribution boilerplate.
 
+Never invoke **interactive git**: always `git commit -m` (never a bare `commit`), `git commit --amend --no-edit`, and never `rebase -i`. Rob's environment has `EDITOR`/`VISUAL` set to VS Code `--wait`, so any git command that opens an editor **pops a window at the human and hangs the agent** until he closes it (three worktrees popped `COMMIT_EDITMSG` in Rob's VS Code this morning). Export `GIT_EDITOR=true` defensively so any accidental editor-open returns immediately instead of blocking.
+
 Branch discipline: feature branches (`wp-<id>-plan` / `wp-<id>-impl`) are cut from `develop` and PR back to `develop` — a PR is the only path onto `develop`; never push to it directly. `main` is human-gated — only Rob promotes `develop` to `main`. No agent self-merges its own PR; the design lead (fable) reviews, and merges happen only with human-sanctioned authority (overnight, PRs queue for Rob's morning review).
 
 Push early, push often: an unpushed branch is invisible — indistinguishable from a dead agent — and unmergeable. Push a WIP commit within minutes of starting; force-with-lease later rather than staying local.
