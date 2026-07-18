@@ -242,18 +242,24 @@ public final class HTTPTileFetcher: ConnectivityWaitingOfflineRegionFetching, @u
         return fileURL
     }
 
-    func sharesSession(with other: HTTPTileFetcher) -> Bool {
+#if DEBUG
+    public func sharesSession(with other: HTTPTileFetcher) -> Bool {
         session === other.session
     }
 
-    var allowsCellularDownloadsForTesting: Bool {
+    public var allowsCellularDownloadsForTesting: Bool {
         session.configuration.allowsExpensiveNetworkAccess
             && session.configuration.allowsConstrainedNetworkAccess
+    }
+
+    public func downloadTaskForTesting(_ url: URL) -> URLSessionDownloadTask {
+        session.downloadTask(with: URLRequest(url: url))
     }
 
     func finishBackgroundEventsForTesting() {
         delegate.urlSessionDidFinishEvents(forBackgroundURLSession: session)
     }
+#endif
 
     public static func validateOrigin(_ url: URL) throws {
         guard url.scheme == "https",
@@ -711,6 +717,7 @@ final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDe
             if task is URLSessionDownloadTask {
                 lock.withLock {
                     _ = deliveredBackgroundTasks.insert(task.taskIdentifier)
+                    _ = adoptedBackgroundTasks.removeValue(forKey: task.taskIdentifier)
                 }
             }
             if error != nil,
@@ -746,6 +753,7 @@ final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDe
     }
 
     func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
+        OfflineDownloadSession.finishEvents(for: session.configuration.identifier)
         let continuations = lock.withLock {
             isInvalidated = true
             let continuations = invalidationContinuations
@@ -778,7 +786,35 @@ final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDe
 
     func hasTrackedTasks() -> Bool {
         lock.withLock {
-            !dataTasks.isEmpty || !downloads.isEmpty
+            !dataTasks.isEmpty || !downloads.isEmpty || !adoptedBackgroundTasks.isEmpty
+        }
+    }
+
+    func hasTrackedOrAdoptableTasks(on session: URLSession) async -> Bool {
+        if hasTrackedTasks() {
+            return true
+        }
+        return await withCheckedContinuation { continuation in
+            session.getAllTasks { [weak self] tasks in
+                guard let self else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                let adoptableDownloads = tasks.compactMap { task -> (Int, URL)? in
+                    guard task is URLSessionDownloadTask,
+                          let url = Self.requestURL(for: task),
+                          (try? HTTPTileFetcher.validateOrigin(url)) != nil
+                    else { return nil }
+                    return (task.taskIdentifier, url)
+                }
+                let hasTrackedTasks = self.lock.withLock {
+                    for (taskIdentifier, url) in adoptableDownloads where self.downloads[taskIdentifier] == nil {
+                        self.markAdoptedIfUndelivered(taskIdentifier: taskIdentifier, url: url)
+                    }
+                    return !self.dataTasks.isEmpty || !self.downloads.isEmpty || !self.adoptedBackgroundTasks.isEmpty
+                }
+                continuation.resume(returning: hasTrackedTasks)
+            }
         }
     }
 
@@ -2090,9 +2126,15 @@ public enum OfflineDownloadSession {
         OfflineBackgroundSessionRegistry.shared.hasSession(identifier: identifier)
     }
 
+#if DEBUG
+    public static func invalidateBackgroundSessionForTesting(identifier: String) {
+        OfflineBackgroundSessionRegistry.shared.invalidate(identifier: identifier)
+    }
+#else
     static func invalidateBackgroundSessionForTesting(identifier: String) {
         OfflineBackgroundSessionRegistry.shared.invalidate(identifier: identifier)
     }
+#endif
 
     static func consumeCompletedDownload(identifier: String, url: URL) -> URL? {
         OfflineBackgroundCompletedDownloadStore.shared.consume(identifier: identifier, url: url)
@@ -2174,16 +2216,33 @@ private final class OfflineBackgroundSessionRegistry: @unchecked Sendable {
     }
 
     func prepareForPolicyChange(identifier: String, allowsCellularDownloads: Bool) async {
-        let stale = lock.withLock {
+        let candidate = lock.withLock {
             guard let existing = sessions[identifier],
                   existing.allowsCellularDownloads != allowsCellularDownloads
             else { return nil as OfflineBackgroundSessionBox? }
-            guard activeUses[identifier, default: 0] == 0,
-                  !existing.delegate.hasTrackedTasks()
-            else {
+            guard activeUses[identifier, default: 0] == 0 else {
                 MakingTracksLog.downloads.info("session reused session=background reason=active-tasks-kept-policy identifier=\(identifier, privacy: .private(mask: .hash))")
                 return nil
             }
+            guard !OfflineDownloadSessionEventRegistry.shared.hasPendingEvents(for: identifier) else {
+                MakingTracksLog.downloads.info("session reused session=background reason=pending-events-kept-policy identifier=\(identifier, privacy: .private(mask: .hash))")
+                return nil
+            }
+            return existing
+        }
+        guard let candidate else { return }
+        guard await !candidate.delegate.hasTrackedOrAdoptableTasks(on: candidate.session) else {
+            MakingTracksLog.downloads.info("session reused session=background reason=active-tasks-kept-policy identifier=\(identifier, privacy: .private(mask: .hash))")
+            return
+        }
+        let stale = lock.withLock {
+            guard let existing = sessions[identifier],
+                  existing.session === candidate.session,
+                  existing.allowsCellularDownloads != allowsCellularDownloads,
+                  activeUses[identifier, default: 0] == 0,
+                  !OfflineDownloadSessionEventRegistry.shared.hasPendingEvents(for: identifier),
+                  !existing.delegate.hasTrackedTasks()
+            else { return nil as OfflineBackgroundSessionBox? }
             sessions.removeValue(forKey: identifier)
             return existing
         }
@@ -2247,6 +2306,12 @@ private final class OfflineDownloadSessionEventRegistry: @unchecked Sendable {
         MakingTracksLog.downloads.debug("session event handler firing identifier=\(identifier, privacy: .private(mask: .hash))")
         DispatchQueue.main.async {
             completionHandler()
+        }
+    }
+
+    func hasPendingEvents(for identifier: String) -> Bool {
+        lock.withLock {
+            completionHandlers[identifier] != nil
         }
     }
 }
@@ -2696,7 +2761,7 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             try trustedURL("\(region)/current.json"),
             connectivityWaiting: {
                 progress?(OfflineRegionDownloadProgress(
-                    region: region,
+                    region: regionID,
                     publishVersion: "",
                     completedBytes: 0,
                     totalBytes: 0,
@@ -2707,7 +2772,7 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             },
             connectivityAvailable: {
                 progress?(OfflineRegionDownloadProgress(
-                    region: region,
+                    region: regionID,
                     publishVersion: "",
                     completedBytes: 0,
                     totalBytes: 0,
@@ -2723,7 +2788,7 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             try trustedURL("\(region)/\(publishVersion)/manifest.json"),
             connectivityWaiting: {
                 progress?(OfflineRegionDownloadProgress(
-                    region: region,
+                    region: regionID,
                     publishVersion: publishVersion,
                     completedBytes: 0,
                     totalBytes: 0,
@@ -2734,7 +2799,7 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             },
             connectivityAvailable: {
                 progress?(OfflineRegionDownloadProgress(
-                    region: region,
+                    region: regionID,
                     publishVersion: publishVersion,
                     completedBytes: 0,
                     totalBytes: 0,

@@ -272,6 +272,38 @@ enum OfflineDownloadSettings {
     static let defaultAllowsCellularDownloads = false
 }
 
+struct DeferredOfflineMaintenanceDownloadRoute {
+    let backgroundIdentifier: String
+    private let allowsCellularDownloads: Bool
+#if DEBUG
+    var metadataAllowsCellularDownloadsForTesting: Bool {
+        metadataFetcher().allowsCellularDownloadsForTesting
+    }
+
+    var objectAllowsCellularDownloadsForTesting: Bool {
+        objectFetcher().allowsCellularDownloadsForTesting
+    }
+#endif
+
+    init(region: String, allowsCellularDownloads: Bool) {
+        backgroundIdentifier = OfflineDownloadSession.backgroundIdentifier(region: region)
+        self.allowsCellularDownloads = allowsCellularDownloads
+    }
+
+    func metadataFetcher() -> HTTPTileFetcher {
+        HTTPTileFetcher.offlineForeground(
+            allowsCellularDownloads: allowsCellularDownloads
+        )
+    }
+
+    func objectFetcher() -> HTTPTileFetcher {
+        HTTPTileFetcher.offlineBackground(
+            identifier: backgroundIdentifier,
+            allowsCellularDownloads: allowsCellularDownloads
+        )
+    }
+}
+
 @Observable
 final class AppShellModel {
     var isMenuPresented = false
@@ -3532,22 +3564,29 @@ private final class MapScreenModel {
                         appropriateFor: nil,
                         create: true
                     )
-                    let downloader = OfflineRegionDownloader(
+                    let route = DeferredOfflineMaintenanceDownloadRoute(
                         region: region,
-                        metadataFetcher: HTTPTileFetcher.offlineForeground(
-                            allowsCellularDownloads: allowsCellularDownloads
-                        ),
-                        objectFetcher: HTTPTileFetcher.offlineBackground(
-                            identifier: OfflineDownloadSession.backgroundIdentifier(region: region),
-                            allowsCellularDownloads: allowsCellularDownloads
-                        ),
-                        store: offlineStore,
-                        availableBytes: { StorageHeadroom.availableBytes(at: documents) }
+                        allowsCellularDownloads: allowsCellularDownloads
                     )
-                    _ = try await downloader.downloadCurrentRegion(control: control) { event in
-                        if let progress {
-                            Task { @MainActor in
-                                progress(event)
+                    await OfflineDownloadSession.prepareBackgroundSessionForPolicyChange(
+                        identifier: route.backgroundIdentifier,
+                        allowsCellularDownloads: allowsCellularDownloads
+                    )
+                    _ = try await OfflineDownloadSession.withBackgroundSessionUse(
+                        identifier: route.backgroundIdentifier
+                    ) {
+                        let downloader = OfflineRegionDownloader(
+                            region: region,
+                            metadataFetcher: route.metadataFetcher(),
+                            objectFetcher: route.objectFetcher(),
+                            store: offlineStore,
+                            availableBytes: { StorageHeadroom.availableBytes(at: documents) }
+                        )
+                        return try await downloader.downloadCurrentRegion(control: control) { event in
+                            if let progress {
+                                Task { @MainActor in
+                                    progress(event)
+                                }
                             }
                         }
                     }

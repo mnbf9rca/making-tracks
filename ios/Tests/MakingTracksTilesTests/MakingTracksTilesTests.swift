@@ -1285,6 +1285,70 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertFalse(wifiOnly.allowsCellularDownloadsForTesting)
     }
 
+    func testBackgroundPolicyPrepareDoesNotInvalidateSessionWithAdoptableSystemTask() async {
+        let identifier = "app.making-tracks.tests.offline.\(UUID().uuidString)"
+        defer { OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: identifier) }
+        let wifiOnly = HTTPTileFetcher.offlineBackground(
+            identifier: identifier,
+            allowsCellularDownloads: false
+        )
+        let task = wifiOnly.downloadTaskForTesting(
+            URL(string: "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles")!
+        )
+        defer { task.cancel() }
+
+        await OfflineDownloadSession.prepareBackgroundSessionForPolicyChange(
+            identifier: identifier,
+            allowsCellularDownloads: true
+        )
+        let stillWifiOnly = HTTPTileFetcher.offlineBackground(
+            identifier: identifier,
+            allowsCellularDownloads: true
+        )
+
+        XCTAssertTrue(wifiOnly.sharesSession(with: stillWifiOnly))
+        XCTAssertFalse(stillWifiOnly.allowsCellularDownloadsForTesting)
+    }
+
+    func testBackgroundPolicyPrepareDoesNotInvalidateSessionWithPendingEventsHandler() async throws {
+        let identifier = "app.making-tracks.tests.offline.\(UUID().uuidString)"
+        let wifiOnly = HTTPTileFetcher.offlineBackground(
+            identifier: identifier,
+            allowsCellularDownloads: false
+        )
+        let counter = CallbackCounter()
+        OfflineDownloadSession.handleEvents(for: identifier) {
+            counter.increment()
+        }
+        defer {
+            OfflineDownloadSession.finishEvents(for: identifier)
+            OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: identifier)
+        }
+
+        await OfflineDownloadSession.prepareBackgroundSessionForPolicyChange(
+            identifier: identifier,
+            allowsCellularDownloads: true
+        )
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let stillWifiOnly = HTTPTileFetcher.offlineBackground(
+            identifier: identifier,
+            allowsCellularDownloads: true
+        )
+
+        XCTAssertTrue(wifiOnly.sharesSession(with: stillWifiOnly))
+        XCTAssertFalse(stillWifiOnly.allowsCellularDownloadsForTesting)
+        XCTAssertEqual(counter.count, 0)
+    }
+
+    func testDelegateTreatsAdoptedBackgroundTaskAsTrackedForPolicyIdleness() {
+        let delegate = RedirectDelegate()
+        let requestURL = URL(string: "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles")!
+
+        delegate.markAdoptedForTesting(taskIdentifier: 42, url: requestURL)
+
+        XCTAssertTrue(delegate.hasTrackedTasks())
+    }
+
     func testBackgroundDownloadStagerMovesDelegateTempFileToOwnedPath() throws {
         let root = temporaryOfflineRoot()
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -1518,6 +1582,22 @@ final class MakingTracksTilesTests: XCTestCase {
         }
     }
 
+    func testUntrackedCompletedBackgroundTaskClearsAdoptionMarkerForPolicyIdleness() {
+        let identifier = "app.making-tracks.tests.offline.completed-marker-\(UUID().uuidString)"
+        let requestURL = URL(string: "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles")!
+        let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let delegate = RedirectDelegate()
+        let task = syntheticCompletedDownloadTask(request: URLRequest(url: requestURL), on: session)
+        defer { task.cancel() }
+
+        delegate.markAdoptedForTesting(taskIdentifier: task.taskIdentifier, url: requestURL)
+        delegate.urlSession(session, task: task, didCompleteWithError: nil)
+
+        XCTAssertFalse(delegate.hasTrackedTasks())
+    }
+
     func testCompletedAttachConsumesStoredCompletedDownload() async throws {
         let identifier = "app.making-tracks.tests.offline.completed-stored-\(UUID().uuidString)"
         let requestURL = URL(string: "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles")!
@@ -1669,6 +1749,19 @@ final class MakingTracksTilesTests: XCTestCase {
         }
 
         fetcher.finishBackgroundEventsForTesting()
+
+        wait(for: [expectation], timeout: 2)
+    }
+
+    func testBackgroundSessionInvalidationFinishesStoredEvents() {
+        let identifier = "app.making-tracks.tests.offline.\(UUID().uuidString)"
+        _ = HTTPTileFetcher.offlineBackground(identifier: identifier)
+        let expectation = expectation(description: "completion called")
+        OfflineDownloadSession.handleEvents(for: identifier) {
+            expectation.fulfill()
+        }
+
+        OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: identifier)
 
         wait(for: [expectation], timeout: 2)
     }

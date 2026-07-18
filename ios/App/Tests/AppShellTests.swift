@@ -633,6 +633,20 @@ final class AppShellTests: XCTestCase {
         XCTAssertTrue(session.isSessionRegion("uk"))
     }
 
+    func testDeferredOfflineMaintenanceRouteCarriesCellularPolicyIntoReplayFetchers() {
+        let route = DeferredOfflineMaintenanceDownloadRoute(
+            region: "uk",
+            allowsCellularDownloads: true
+        )
+        defer {
+            OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: route.backgroundIdentifier)
+        }
+
+        XCTAssertEqual(route.backgroundIdentifier, OfflineDownloadSession.backgroundIdentifier(region: "uk"))
+        XCTAssertTrue(route.metadataAllowsCellularDownloadsForTesting)
+        XCTAssertTrue(route.objectAllowsCellularDownloadsForTesting)
+    }
+
     func testPausedOfflineRegionCatalogRowCarriesRowRegionForCancelAction() {
         let zone = OfflineRegionCatalogZone(
             id: "uk_london",
