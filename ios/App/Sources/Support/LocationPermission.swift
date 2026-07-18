@@ -60,15 +60,8 @@ final class LocationPermission: NSObject, ObservableObject {
 
 extension LocationPermission: CLLocationManagerDelegate {
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        let status = manager.authorizationStatus
         Task { @MainActor in
-            applyAuthorizationStatus(status)
-        }
-    }
-
-    nonisolated func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
-        Task { @MainActor in
-            applyAuthorizationStatus(status)
+            applyAuthorizationStatus(self.manager.authorizationStatus)
         }
     }
 

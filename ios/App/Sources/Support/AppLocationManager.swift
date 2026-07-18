@@ -123,12 +123,6 @@ final class AppLocationManager: NSObject, MLNLocationManager {
 extension AppLocationManager: CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         permissionDelegate?.locationManagerDidChangeAuthorization?(locationManager)
-        permissionDelegate?.locationManager?(locationManager, didChangeAuthorization: authorizationStatus)
-    }
-
-    func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
-        permissionDelegate?.locationManagerDidChangeAuthorization?(locationManager)
-        permissionDelegate?.locationManager?(locationManager, didChangeAuthorization: status)
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {

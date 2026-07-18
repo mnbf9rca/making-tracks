@@ -18,6 +18,7 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(shell.deepLinkPath, .offlineMaps)
     }
 
+    @MainActor
     func testThemeStorageUsesStableKeyAndDefinedPaperDefault() {
         XCTAssertEqual(MapScreen.themeStorageKey, "map.theme.id")
         XCTAssertEqual(MapTheme.named(nil).id, MapTheme.definedPaper.id)
@@ -34,12 +35,7 @@ final class AppShellTests: XCTestCase {
 
     @MainActor
     func testCoordinatorGeneratesThemeSpecificStyleJSON() throws {
-        let coordinator = MLNMapViewRepresentable.Coordinator(
-            onCameraIdle: { _, _ in },
-            onUserPanned: {},
-            onTapPlace: { _ in },
-            onTapEmpty: {}
-        )
+        let coordinator = makeCoordinator()
 
         let definedPaperURL = try XCTUnwrap(coordinator.styleURL(
             worldPMTilesURL: "pmtiles://world.pmtiles",
@@ -61,12 +57,7 @@ final class AppShellTests: XCTestCase {
 
     @MainActor
     func testCoordinatorReloadPlanIncludesThemeAndCommitsOnlyAfterURLExists() throws {
-        let coordinator = MLNMapViewRepresentable.Coordinator(
-            onCameraIdle: { _, _ in },
-            onUserPanned: {},
-            onTapPlace: { _ in },
-            onTapEmpty: {}
-        )
+        let coordinator = makeCoordinator()
         coordinator.currentWorldPMTilesURL = "pmtiles://world.pmtiles"
         coordinator.currentRegionPMTilesURL = nil
         coordinator.currentThemeID = MapTheme.definedPaper.id
@@ -96,5 +87,19 @@ final class AppShellTests: XCTestCase {
             theme: .snow,
             makeStyleURL: { _, _, _ in url }
         ))
+    }
+
+    @MainActor
+    private func makeCoordinator() -> MLNMapViewRepresentable.Coordinator {
+        MLNMapViewRepresentable.Coordinator(
+            onCameraIdle: { _, _ in },
+            onUserPanned: {},
+            onTapPlace: { _ in },
+            onTapEmpty: {},
+            onMapReady: {},
+            onFeaturesApplied: {},
+            onStyleWillReload: {},
+            onMapLoadFailed: {}
+        )
     }
 }

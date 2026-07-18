@@ -78,6 +78,7 @@ struct MapScreen: View {
     var debugInstallOfflineRegion: String?
     var debugForceTileNetworkOffline = false
     var offlineDownloadProgress: OfflineDownloadProgress?
+    var debugExposeFixturePinDiagnostics = false
 
     @State private var model: MapScreenModel?
     @StateObject private var locationPermission: LocationPermission
@@ -94,6 +95,10 @@ struct MapScreen: View {
     @State private var layerVisibility = MapLayerVisibility()
     @State private var appliedShowHiddenPlaces = false
     @State private var loadState: TileLoadState = .unavailable
+    @State private var isMapReady = false
+    @State private var didMapLoadFail = false
+    @State private var mapLoadAttemptID = 0
+    @State private var hasLoadedFixtureFeatures = false
     @State private var viewportRequestID = 0
     @State private var stateEpoch = 0
     @State private var currentViewport: ViewportSeed?
@@ -106,6 +111,9 @@ struct MapScreen: View {
     private let viewportRefreshDebouncer = ViewportRefreshDebouncer()
     @State private var suppressedNearbyPromptPlaceIDs: Set<String> = []
     @State private var nearbyPromptNames: [String: String] = [:]
+    @State private var debugProjectedFixturePins: [ProjectedFeatureDiagnostic] = []
+    @State private var debugMapUpdateStatus = "not-updated"
+    @State private var debugTapStatus = "not-tapped"
     private let locationManager: AppLocationManager
     private static let primaryFixturePlaceID = fixturePlaces[0].placeID
     private static let nearbyPromptDistanceMeters: CLLocationDistance = 125
@@ -117,6 +125,7 @@ struct MapScreen: View {
         debugInstallOfflineRegion: String? = nil,
         debugForceTileNetworkOffline: Bool = false,
         offlineDownloadProgress: OfflineDownloadProgress? = nil,
+        debugExposeFixturePinDiagnostics: Bool = false,
         locationManager: AppLocationManager = AppLocationManager()
     ) {
         self.database = database
@@ -125,7 +134,9 @@ struct MapScreen: View {
         self.debugInstallOfflineRegion = debugInstallOfflineRegion
         self.debugForceTileNetworkOffline = debugForceTileNetworkOffline
         self.offlineDownloadProgress = offlineDownloadProgress
+        self.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
         self.locationManager = locationManager
+        _features = State(initialValue: isFixtureMap ? Self.initialFixtureFeatures() : [])
         _locationPermission = StateObject(wrappedValue: LocationPermission(manager: locationManager))
     }
 
@@ -141,6 +152,7 @@ struct MapScreen: View {
                 locationManager: locationManager,
                 showsUserLocation: showsUserLocation,
                 userTrackingMode: userTrackingMode,
+                debugExposeFixturePinDiagnostics: debugExposeFixturePinDiagnostics,
                 onCameraIdle: { bbox, zoom in
                     Task { @MainActor in
                         currentViewport = ViewportSeed(bbox: bbox, zoom: zoom)
@@ -153,13 +165,67 @@ struct MapScreen: View {
                     }
                 },
                 onUserPanned: {
-                    userTrackingMode = .none
+                    Task { @MainActor in
+                        userTrackingMode = .none
+                    }
                 },
                 onTapPlace: { placeID in
-                    cardPresentation.show(placeID: placeID)
+                    Task { @MainActor in
+                        cardPresentation.show(placeID: placeID)
+                    }
                 },
                 onTapEmpty: {
-                    cardPresentation.dismiss()
+                    Task { @MainActor in
+                        cardPresentation.dismiss()
+                    }
+                },
+                onMapReady: {
+                    Task { @MainActor in
+                        guard !isMapReady || didMapLoadFail else { return }
+                        isMapReady = true
+                        didMapLoadFail = false
+                    }
+                },
+                onFeaturesApplied: {
+                    Task { @MainActor in
+                        guard !hasLoadedFixtureFeatures else { return }
+                        hasLoadedFixtureFeatures = true
+                    }
+                },
+                onStyleWillReload: {
+                    Task { @MainActor in
+                        isMapReady = false
+                        didMapLoadFail = false
+                        hasLoadedFixtureFeatures = false
+                        debugProjectedFixturePins = []
+                        mapLoadAttemptID += 1
+                    }
+                },
+                onMapLoadFailed: {
+                    Task { @MainActor in
+                        didMapLoadFail = true
+                    }
+                },
+                debugReportProjectedFeatureDiagnostics: { diagnostics in
+                    guard debugExposeFixturePinDiagnostics else { return }
+                    Task { @MainActor in
+                        guard debugProjectedFixturePins != diagnostics else { return }
+                        debugProjectedFixturePins = diagnostics
+                    }
+                },
+                debugReportMapUpdateStatus: { status in
+                    guard debugExposeFixturePinDiagnostics else { return }
+                    Task { @MainActor in
+                        guard debugMapUpdateStatus != status else { return }
+                        debugMapUpdateStatus = status
+                    }
+                },
+                debugReportTapStatus: { status in
+                    guard debugExposeFixturePinDiagnostics else { return }
+                    Task { @MainActor in
+                        guard debugTapStatus != status else { return }
+                        debugTapStatus = status
+                    }
                 }
             )
             .ignoresSafeArea()
@@ -168,6 +234,70 @@ struct MapScreen: View {
                     .padding(.top, 72)
                     .padding(.leading, 16)
             }
+            .overlay {
+                if didMapLoadFail {
+                    ZStack {
+                        Color.black.opacity(0.04)
+                            .ignoresSafeArea()
+                        VStack(spacing: 8) {
+                            Image(systemName: "map")
+                                .font(.title3)
+                            Text("Map unavailable")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                        }
+                        .padding(14)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("map.unavailable")
+                    .transition(.opacity)
+                } else if isMapLoading {
+                    ZStack {
+                        Color.black.opacity(0.04)
+                            .ignoresSafeArea()
+                        ProgressView()
+                            .padding(14)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("map.loading")
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: isMapLoading)
+            .animation(.easeInOut(duration: 0.2), value: didMapLoadFail)
+#if DEBUG
+            .overlay(alignment: .topLeading) {
+                if isFixtureMap && debugExposeFixturePinDiagnostics {
+                    VStack(alignment: .leading, spacing: 2) {
+                        if hasLoadedFixtureFeatures {
+                            Text(verbatim: "applied")
+                                .font(.system(size: 8))
+                                .foregroundStyle(.red)
+                                .frame(width: 44, height: 18)
+                                .accessibilityIdentifier("map.features-applied")
+                                .allowsHitTesting(false)
+                        }
+
+                        ForEach(debugProjectedFixturePins) { pin in
+                            Text(verbatim: pin.isHitTestable ? "hit" : "miss")
+                                .font(.system(size: 8))
+                                .foregroundStyle(.red)
+                                .frame(width: 96, height: 18, alignment: .leading)
+                                .accessibilityIdentifier("map.fixture-pin.\(pin.placeID)")
+                                .accessibilityValue(
+                                    "x:\(pin.normalizedX.formatted(.number.precision(.fractionLength(6)))) y:\(pin.normalizedY.formatted(.number.precision(.fractionLength(6))))"
+                                )
+                                .allowsHitTesting(false)
+                            }
+                    }
+                    .allowsHitTesting(false)
+                }
+            }
+#endif
             .overlay(alignment: .topTrailing) {
                 statusChrome
                     .padding(.top, 72)
@@ -221,6 +351,16 @@ struct MapScreen: View {
                 userTrackingMode: &userTrackingMode,
                 pendingLocateMeActivation: &pendingLocateMeActivation
             )
+        }
+        .task(id: mapLoadAttemptID) {
+            guard isMapLoading else { return }
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                if isMapLoading {
+                    didMapLoadFail = true
+                }
+            }
         }
         .task {
             await start()
@@ -318,6 +458,11 @@ struct MapScreen: View {
         .background(.regularMaterial, in: Capsule())
     }
 
+    private var isMapLoading: Bool {
+        guard !didMapLoadFail else { return false }
+        return !isMapReady || (isFixtureMap && !hasLoadedFixtureFeatures)
+    }
+
     private var mapChrome: some View {
         VStack(alignment: .trailing, spacing: 8) {
             if loadState != .ok {
@@ -361,6 +506,29 @@ struct MapScreen: View {
             }
 
 #if DEBUG
+            if debugExposeFixturePinDiagnostics {
+                Text(verbatim: "ready:\(isMapReady) applied:\(hasLoadedFixtureFeatures) features:\(features.count)")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.debug-readiness")
+
+                Text(verbatim: debugMapUpdateStatus)
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.debug-source-status")
+
+                Text(verbatim: debugTapStatus)
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.debug-tap-status")
+            }
+
             if let debugOfflineStatus {
                 Text(verbatim: debugOfflineStatus)
                     .font(.caption2)
@@ -829,6 +997,21 @@ struct MapScreen: View {
             """
         ),
     ]
+
+    private static func initialFixtureFeatures() -> [(MapPlace, PinState)] {
+        fixturePlaces.map { fixturePlace in
+            (
+                MapPlace(
+                    id: fixturePlace.placeID,
+                    lat: fixturePlace.lat,
+                    lon: fixturePlace.lon,
+                    tier: fixturePlace.tier,
+                    category: fixturePlace.category
+                ),
+                PinState(saved: false, visit: .none)
+            )
+        }
+    }
 }
 
 private struct LocationMenuStatus: Sendable {
@@ -1066,6 +1249,7 @@ private struct AboutView: View {
                     Text(verbatim: "Build \(Self.buildCommit)")
                         .font(.caption)
                         .fontDesign(.monospaced)
+                        .accessibilityIdentifier("credits.build-commit")
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -1388,6 +1572,9 @@ private struct PlaceCardSheet: View {
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("place-card.title")
                     typeRow(card)
+                    if dynamicTypeSize.isAccessibilitySize {
+                        actionButtons(card)
+                    }
                     if let blurb = card.blurb {
                         Text(verbatim: blurb)
                             .font(.body)
@@ -1402,7 +1589,9 @@ private struct PlaceCardSheet: View {
                             .foregroundStyle(.red)
                             .accessibilityIdentifier("place-card.action-error")
                     }
-                    actionButtons(card)
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        actionButtons(card)
+                    }
                     attributionText(card)
                 } else if isLoading {
                     ProgressView()

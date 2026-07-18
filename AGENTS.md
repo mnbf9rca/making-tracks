@@ -76,6 +76,7 @@ flock /tmp/agent-ios-sim.lock sh -ec '
 ```
 
 Current repo state: `/ios` is a Swift package, so use `swift test` there. When a B-track work package creates the app `.xcodeproj` or `.xcworkspace`, replace `<project-or-workspace-args>` and `<scheme>` with that package's real `xcodebuild` arguments; do not invent paths in shared docs.
+Closing sequence: the app target must build zero-warning, with warnings treated as errors in `ios/App/project.yml`.
 
 Parallel testing and multi-destination runs are the normal paths that spawn simulator clones. The single-destination command above, with `-parallel-testing-enabled NO` and `-disable-concurrent-destination-testing`, is the required defense against clone creation. If a run leaks clones, they hide in XCTest's separate device set; inspect it with:
 
