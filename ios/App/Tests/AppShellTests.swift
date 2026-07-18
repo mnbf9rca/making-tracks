@@ -1,5 +1,6 @@
 import XCTest
 import MakingTracksMapStyle
+import MakingTracksTiles
 @testable import MakingTracks
 
 final class AppShellTests: XCTestCase {
@@ -93,6 +94,22 @@ final class AppShellTests: XCTestCase {
         XCTAssertTrue(coordinator.consumeCameraRequest(1))
         XCTAssertFalse(coordinator.consumeCameraRequest(1))
         XCTAssertTrue(coordinator.consumeCameraRequest(2))
+    }
+
+    func testOfflineDownloadProgressCarriesDownloaderBytes() {
+        let progress = OfflineDownloadProgress(OfflineRegionDownloadProgress(
+            region: "uk",
+            publishVersion: "20260717T000000Z",
+            completedBytes: 25,
+            totalBytes: 100,
+            completedObjectCount: 1,
+            totalObjectCount: 4
+        ))
+
+        XCTAssertEqual(progress.region, "uk")
+        XCTAssertEqual(progress.completedBytes, 25)
+        XCTAssertEqual(progress.totalBytes, 100)
+        XCTAssertEqual(progress.percentComplete, 25)
     }
 
     @MainActor
