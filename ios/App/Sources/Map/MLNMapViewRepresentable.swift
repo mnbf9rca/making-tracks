@@ -5,6 +5,12 @@ import MakingTracksData
 import MakingTracksMapStyle
 import MakingTracksTiles
 
+enum PinCategoryImageRegistry {
+    static let categorySymbolNames = PinLayers.categorySymbolNames
+    static let requiredIconNames = Set(PinLayers.categoryIconNames.values)
+        .union([PinLayers.fallbackCategoryIconName])
+}
+
 @MainActor
 struct MLNMapViewRepresentable: UIViewRepresentable {
     var worldPMTilesURL: String?
@@ -194,10 +200,13 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
 
         private func registerCategoryImages(in style: MLNStyle) {
             let configuration = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
-            for (iconName, symbolName) in PinLayers.categorySymbolNames {
+            for (iconName, symbolName) in PinCategoryImageRegistry.categorySymbolNames {
                 guard let image = UIImage(systemName: symbolName, withConfiguration: configuration)?
                     .withTintColor(.white, renderingMode: .alwaysOriginal)
-                else { continue }
+                else {
+                    assertionFailure("Missing SF Symbol '\(symbolName)' for category icon '\(iconName)'")
+                    continue
+                }
                 style.setImage(image, forName: iconName)
             }
         }

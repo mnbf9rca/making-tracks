@@ -941,8 +941,7 @@ private final class MapScreenModel {
     private let coreLoop: CoreLoopController
     private var tileClients: [MapRegion: TileClient] = [:]
     private var selectedRegion: MapRegion = .malaysia
-    private var hiddenPlaceIDs: Set<String>
-    private var hiddenMembershipChangePlaceIDs: Set<String> = []
+    private var hiddenTracker: HiddenMembershipTracker
     private var showHiddenPlaces = false
 
     var changes: AsyncStream<Set<String>> { coreLoop.changes }
@@ -956,7 +955,7 @@ private final class MapScreenModel {
         self.forceTileNetworkOffline = forceTileNetworkOffline
         self.fixturePlaces = Dictionary(uniqueKeysWithValues: fixturePlaces.map { ($0.placeID, $0) })
         coreLoop = CoreLoopController(database: database)
-        hiddenPlaceIDs = try database.hiddenPlaceIDs()
+        hiddenTracker = HiddenMembershipTracker(hiddenPlaceIDs: try database.hiddenPlaceIDs())
         if fixturePlaces.isEmpty {
             let cacheRoot = try FileManager.default.url(
                 for: .cachesDirectory,
@@ -1039,21 +1038,18 @@ private final class MapScreenModel {
         }.value
         for id in ids {
             var state = resolved[id] ?? PinState(saved: false, visit: .none)
-            state.hidden = hiddenPlaceIDs.contains(id)
+            state.hidden = hiddenTracker.hiddenIDs.contains(id)
             resolved[id] = state
         }
         return resolved
     }
 
     var hiddenIDs: Set<String> {
-        hiddenPlaceIDs
+        hiddenTracker.hiddenIDs
     }
 
     func consumeHiddenMembershipChange(overlapping ids: Set<String>) -> Bool {
-        let changed = hiddenMembershipChangePlaceIDs.intersection(ids)
-        guard !changed.isEmpty else { return false }
-        hiddenMembershipChangePlaceIDs.subtract(changed)
-        return true
+        hiddenTracker.consumeHiddenMembershipChange(overlapping: ids)
     }
 
     func visitCount(placeID: String) async -> Int {
@@ -1093,22 +1089,11 @@ private final class MapScreenModel {
 
     func setHidden(placeID: String, hidden: Bool) async throws {
         guard let placeRef = await actionPlaceRef(for: placeID) else { return }
-        let wasHidden = hiddenPlaceIDs.contains(placeID)
-        if hidden {
-            hiddenPlaceIDs.insert(placeID)
-        } else {
-            hiddenPlaceIDs.remove(placeID)
-        }
-        hiddenMembershipChangePlaceIDs.insert(placeID)
+        let rollback = hiddenTracker.beginSetHidden(placeID: placeID, hidden: hidden)
         do {
             try coreLoop.setHidden(placeRef, hidden)
         } catch {
-            if wasHidden {
-                hiddenPlaceIDs.insert(placeID)
-            } else {
-                hiddenPlaceIDs.remove(placeID)
-            }
-            hiddenMembershipChangePlaceIDs.remove(placeID)
+            hiddenTracker.rollback(rollback)
             throw error
         }
     }
