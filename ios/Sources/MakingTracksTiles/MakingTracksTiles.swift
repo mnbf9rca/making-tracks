@@ -953,6 +953,60 @@ public struct OfflineRegionUpdatePlan: Sendable, Equatable {
     public let bytesToFetch: Int
 }
 
+public struct InstalledOfflinePackStorage: Sendable, Equatable {
+    public let region: String
+    public let publishVersion: String
+    public let tileCount: Int
+    public let tileBytes: Int
+    public let basemapBytes: Int
+    public let referencedBytes: Int
+
+    public init(
+        region: String,
+        publishVersion: String,
+        tileCount: Int,
+        tileBytes: Int,
+        basemapBytes: Int,
+        referencedBytes: Int
+    ) {
+        self.region = region
+        self.publishVersion = publishVersion
+        self.tileCount = tileCount
+        self.tileBytes = tileBytes
+        self.basemapBytes = basemapBytes
+        self.referencedBytes = referencedBytes
+    }
+}
+
+public struct OfflinePackStorageSummary: Sendable, Equatable {
+    public let packs: [InstalledOfflinePackStorage]
+    public let failedRegions: [String]
+    public let totalBytes: Int
+
+    public init(packs: [InstalledOfflinePackStorage], failedRegions: [String] = [], totalBytes: Int) {
+        self.packs = packs
+        self.failedRegions = failedRegions
+        self.totalBytes = totalBytes
+    }
+}
+
+private struct OfflinePackStorageObjectSnapshot: Sendable, Equatable {
+    let sha256: String
+    let bytes: Int
+}
+
+private struct OfflinePackStoragePackSnapshot: Sendable, Equatable {
+    let region: String
+    let publishVersion: String
+    let tiles: [OfflinePackStorageObjectSnapshot]
+    let basemap: OfflinePackStorageObjectSnapshot
+}
+
+private struct OfflinePackStorageSnapshot: Sendable, Equatable {
+    let packs: [OfflinePackStoragePackSnapshot]
+    let failedRegions: [String]
+}
+
 public enum StorageHeadroom {
     public static let defaultReserveBytes: Int64 = 512 * 1024 * 1024
 
@@ -1476,6 +1530,13 @@ public final class OfflineRegionStore: @unchecked Sendable {
         }
     }
 
+    public func installedPackStorageSummary() throws -> OfflinePackStorageSummary {
+        let snapshot = try withLock {
+            try installedPackStorageSnapshotLocked()
+        }
+        return try installedPackStorageSummary(from: snapshot)
+    }
+
     private func installedPublishesLocked(intersecting viewport: BBox) throws -> [PinnedPublish] {
         let resolution = try installedTileResolutionLocked(intersecting: viewport)
         lastPackQuarantinesSnapshot = resolution.quarantinedPacks
@@ -1484,16 +1545,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
     }
 
     private func installedTileResolutionLocked(intersecting viewport: BBox) throws -> OfflinePackResolution {
-        let regionsRoot = root.appendingPathComponent("regions", isDirectory: true)
-        guard fm.fileExists(atPath: regionsRoot.path) else {
-            return OfflinePackResolution(tiles: [], quarantinedPacks: [])
-        }
-        let children = try fm.contentsOfDirectory(at: regionsRoot, includingPropertiesForKeys: [.isDirectoryKey])
-        let directories = try children.compactMap { child -> URL? in
-            let values = try child.resourceValues(forKeys: [.isDirectoryKey])
-            return values.isDirectory == true ? child : nil
-        }
-        guard directories.count <= Self.maxInstalledPackCount else { throw TileError.invalidOfflinePack }
+        let directories = try installedRegionDirectoriesLocked()
         let viewportCoordinates = Set(TileCoverage.tiles(for: viewport))
         var tiles: [InstalledPackTile] = []
         var quarantines: [OfflinePackQuarantine] = []
@@ -1542,6 +1594,96 @@ public final class OfflineRegionStore: @unchecked Sendable {
             }
         }
         return OfflinePackResolution(tiles: tiles, quarantinedPacks: quarantines)
+    }
+
+    private func installedPackStorageSummary(from snapshot: OfflinePackStorageSnapshot) throws -> OfflinePackStorageSummary {
+        var packs: [InstalledOfflinePackStorage] = []
+        var failedRegions = Set(snapshot.failedRegions)
+        var tileBytesBySHA: [String: Int] = [:]
+        var basemapBytesBySHA: [String: Int] = [:]
+        for pack in snapshot.packs {
+            do {
+                var tileBytes = 0
+                for tile in pack.tiles {
+                    let bytes = try verifiedObjectSize(
+                        url: tileObjectURL(sha256: tile.sha256),
+                        expectedBytes: tile.bytes
+                    )
+                    tileBytes = try checkedAdd(tileBytes, bytes)
+                    tileBytesBySHA[tile.sha256] = bytes
+                }
+                let basemapBytes = try verifiedObjectSize(
+                    url: basemapObjectURL(sha256: pack.basemap.sha256),
+                    expectedBytes: pack.basemap.bytes
+                )
+                basemapBytesBySHA[pack.basemap.sha256] = basemapBytes
+                packs.append(InstalledOfflinePackStorage(
+                    region: pack.region,
+                    publishVersion: pack.publishVersion,
+                    tileCount: pack.tiles.count,
+                    tileBytes: tileBytes,
+                    basemapBytes: basemapBytes,
+                    referencedBytes: try checkedAdd(tileBytes, basemapBytes)
+                ))
+            } catch {
+                failedRegions.insert(pack.region)
+            }
+        }
+        let totalTileBytes = try checkedSum(tileBytesBySHA.values)
+        let totalBasemapBytes = try checkedSum(basemapBytesBySHA.values)
+        return OfflinePackStorageSummary(
+            packs: packs.sorted { $0.region < $1.region },
+            failedRegions: failedRegions.sorted(),
+            totalBytes: try checkedAdd(totalTileBytes, totalBasemapBytes)
+        )
+    }
+
+    private func installedPackStorageSnapshotLocked() throws -> OfflinePackStorageSnapshot {
+        var packs: [OfflinePackStoragePackSnapshot] = []
+        var failedRegions: [String] = []
+        for child in try installedRegionDirectoriesLocked().sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let region = child.lastPathComponent
+            guard isValidRegion(region) else { continue }
+            let current: OfflineCurrentPack?
+            do {
+                current = try installedCurrentPackLocked(region: region)
+            } catch {
+                failedRegions.append(region)
+                continue
+            }
+            guard let current else { continue }
+            let packIndex: OfflinePackIndex
+            do {
+                packIndex = try offlinePackIndexLocked(region: region, publishVersion: current.publishVersion)
+            } catch {
+                failedRegions.append(region)
+                continue
+            }
+            packs.append(OfflinePackStoragePackSnapshot(
+                region: region,
+                publishVersion: current.publishVersion,
+                tiles: packIndex.tiles.values.map {
+                    OfflinePackStorageObjectSnapshot(sha256: $0.sha256, bytes: $0.bytes)
+                },
+                basemap: OfflinePackStorageObjectSnapshot(
+                    sha256: packIndex.basemapSHA,
+                    bytes: packIndex.basemapBytes
+                )
+            ))
+        }
+        return OfflinePackStorageSnapshot(packs: packs, failedRegions: failedRegions)
+    }
+
+    private func installedRegionDirectoriesLocked() throws -> [URL] {
+        let regionsRoot = root.appendingPathComponent("regions", isDirectory: true)
+        guard fm.fileExists(atPath: regionsRoot.path) else { return [] }
+        let children = try fm.contentsOfDirectory(at: regionsRoot, includingPropertiesForKeys: [.isDirectoryKey])
+        let directories = try children.compactMap { child -> URL? in
+            let values = try child.resourceValues(forKeys: [.isDirectoryKey])
+            return values.isDirectory == true ? child : nil
+        }
+        guard directories.count <= Self.maxInstalledPackCount else { throw TileError.invalidOfflinePack }
+        return directories
     }
 
     private func installedPublishLocked(region: String) throws -> PinnedPublish? {
@@ -1940,6 +2082,33 @@ public final class OfflineRegionStore: @unchecked Sendable {
             hasher.update(data: chunk)
         }
         return (hasher.finalize().map { String(format: "%02x", $0) }.joined(), byteCount)
+    }
+
+    private func verifiedObjectSize(url: URL, expectedBytes: Int) throws -> Int {
+        guard expectedBytes >= 0 else { throw TileError.invalidOfflinePack }
+        do {
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard values.isRegularFile == true, values.fileSize == expectedBytes else {
+                throw TileError.invalidOfflinePack
+            }
+            return expectedBytes
+        } catch let error as TileError {
+            throw error
+        } catch {
+            throw TileError.invalidOfflinePack
+        }
+    }
+
+    private func checkedSum<S: Sequence>(_ values: S) throws -> Int where S.Element == Int {
+        try values.reduce(0) { total, value in
+            try checkedAdd(total, value)
+        }
+    }
+
+    private func checkedAdd(_ lhs: Int, _ rhs: Int) throws -> Int {
+        let (sum, overflow) = lhs.addingReportingOverflow(rhs)
+        guard !overflow else { throw TileError.invalidOfflinePack }
+        return sum
     }
 
     private func garbageCollectObjects() throws {
