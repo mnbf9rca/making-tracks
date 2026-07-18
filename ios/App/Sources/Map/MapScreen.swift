@@ -3004,7 +3004,10 @@ private final class MapScreenModel {
             )
             let downloader = OfflineRegionDownloader(
                 region: region,
-                fetcher: HTTPTileFetcher.offlineForeground(),
+                metadataFetcher: HTTPTileFetcher.offlineForeground(),
+                objectFetcher: HTTPTileFetcher.offlineBackground(
+                    identifier: OfflineDownloadSession.backgroundIdentifier(region: region)
+                ),
                 store: offlineStore,
                 availableBytes: { StorageHeadroom.availableBytes(at: documents) }
             )
