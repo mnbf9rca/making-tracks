@@ -1406,6 +1406,7 @@ struct MapScreen: View {
     }
 
     private var mapBareGlyphStyle: AnyShapeStyle {
+        // Current map themes are light paper palettes; revisit this if a dark basemap theme lands.
         AnyShapeStyle(Color.black)
     }
 
