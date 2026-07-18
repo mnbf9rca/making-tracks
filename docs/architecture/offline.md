@@ -90,7 +90,7 @@ of the designs.
   engine-hardening cluster remains with the proposed **WP-DL-SAFETY**.
 - **Compression:** place tiles are app-level gzip at rest and on device, **sha over gzipped bytes** (no
   `Content-Encoding` — transport auto-decompress would break checksums); pmtiles internally compressed;
-  thumbs are webp.
+  thumbs are WebP.
 
 ## 5. Single-origin invariant
 
