@@ -28,9 +28,12 @@ app boots **straight into `MapScreen`** with no onboarding and a black first fra
   **Locate-me button already exists.** B10's permission step **consumes** this — builds no new manager.
 - **Offline download engine is BUILT, UI is not.** `OfflineRegionDownloader.downloadCurrentRegion()`,
   `OfflineRegionStore.updatePlan(for:) → {tilesToFetch, bytesToFetch, …}`, `StorageHeadroom.hasHeadroom(…)`
-  (512 MB reserve), background discretionary `OfflineDownloadSession`. **No download UI** (only a DEBUG
-  launch-arg path). **`downloadCurrentRegion()` has NO incremental progress callback** — B10 must add one
-  (only the up-front `bytesToFetch` is known).
+  (512 MB reserve), background discretionary `OfflineDownloadSession`. **WP-B10d2 (#191) wires pack
+  object fetches through the background session;** manifest/current metadata fetches stay foreground.
+  Completed verified objects are staged content-addressed and reused by `updatePlan` on a later attempt.
+  **No download UI** (only a DEBUG launch-arg path). `downloadCurrentRegion(progress:)` exposes live
+  object-level progress while a caller is attached; progress reattachment after background relaunch is
+  still unbuilt.
 - **Region selection: no picker.** `ViewportSeed` (default `.kl`) is the startup camera; `MapRegion
   {malaysia, uk}`; `selectedRegion` **auto-derives from the viewport** (`MapScreen.swift:1152-1154`) — not
   hardcoded. So a first-run pick only needs to **persist the startup seed** (`chosenRegion` → seed); the
@@ -127,24 +130,19 @@ A short, skippable, paged flow (each step **Skip**-able; a progress dots indicat
 
 ## 5. Download progress + the foreground/background reality (D5) [gate — not a "small add"]
 
-- **`downloadCurrentRegion()` is FOREGROUND, in-memory, all-or-nothing today** — it fetches every tile
-  serially and accumulates them in a `[TileCoordinate: Data]` dict in RAM, installing at the end. It is
-  **not** the "discretionary background session" my §3.4 draft implied (that config exists but this path
-  doesn't use it). Consequences B10 must state honestly, not paper over:
-  - **v1 (minimum): foreground download** — a progress bar (add an `AsyncStream`/closure:
-    `bytesFetched / bytesToFetch`, `@MainActor`) that **only advances while the app is frontmost**;
-    **large packs risk memory pressure + interruption**. State this limit in the offer copy ("keep the
-    app open while downloading").
-  - **The real WiFi-preferred BACKGROUND download is UNBUILT engine work** — scope it as WP-B10d, not a
-    "hook". **The rework (fable's tree-verified evidence):** downloads are **not resumable** today
-    (`downloadCurrentRegion` buffers ALL tiles in RAM, installs once at end, `:950-990`; kill = restart
-    from zero); the `OfflineDownloadSession` background config exists but is **dead-wired** (production
-    uses the foreground ephemeral `HTTPTileFetcher`). Fix = **incremental-persist:** write each
-    **verified** object to the content-addressed store **as it arrives** → an interrupted download
-    **resumes object-granular for FREE** via the existing `updatePlan` skip (no byte-range resume needed);
-    plus **wire the background `URLSession`** + the progress stream. **Adjust failed-install GC** (`:1084,
-    :1281`) to **retain in-progress objects** (else the resume set is GC'd). Don't claim background/
-    resumable download until this is built.
+- **`downloadCurrentRegion()` has object-level staging/progress today** — it fetches pack objects,
+  verifies them, stages completed objects to the content-addressed store before final install, and reports
+  completed-object byte/object progress while a caller is attached. `updatePlan` sha-skips those staged
+  objects on a later attempt, so completed objects are not re-downloaded.
+- **WP-B10d2 (#191) wires the object fetch path to the background `URLSession`** (`sessionSendsLaunchEvents`,
+  WiFi-preferred/discretionary), while keeping manifest/current metadata on the foreground fetch path.
+  Background object transfers cannot rely only on the synchronous redirect callback boundary, so the
+  object fetcher also verifies the **final response URL origin after completion**; if the final URL is
+  missing or is not `tiles.making-tracks.app`, the downloaded temporary file is discarded and the object
+  fails closed.
+- **Remaining engine work:** full process-death adoption of completed background tasks, pack completion
+  after relaunch, progress-stream reattachment, and partial-object/system-task recovery semantics. Until
+  that lands, UI copy should still avoid promising unattended completion after termination.
 
 ## 6. About + Settings anchor (D6)
 
@@ -172,7 +170,7 @@ update-required sheet) — acceptance criteria, applied to **WP-B10a** (flow) an
 | **WP-B10a** onboarding flow | **app (`ios`)** | first-run flag **+ persisted `chosenRegion`→seed** (§1); the paged flow (welcome / about-open-data-scoped-copy / region-pick seam / pack-offer / location-prime-on-tap / metaphor); Skip + **a11y** (§7); consumes `LocationPermission`. **Pack-offer progress depends on WP-B10d's stream** — else a **fire-and-forget** download with a determinate spinner from `updatePlan.bytesToFetch` | B4 (built), `LocationPermission` (built), **WP-B10d** (progress) |
 | **WP-B10b** cold-start placeholder | **app (`ios`)** | the launch overlay (paper bg + indicator) dismissed on `didFinishLoadingStyle` + timeout — **every** cold start | map (built) |
 | **WP-B10c** update-required + empty-region surfaces | **app (`ios`)** | blocking update-required sheet + App Store link; unsupported-region state | `VersionGate`/`TileLoadState` (built) |
-| **WP-B10d** download progress + background rework | **app (`ios`)** | v1: a foreground progress stream (§5, frontmost-only, memory caveat); **the real WiFi-preferred background download (survives backgrounding, streams to disk) is an engine rework** — not a hook | the built downloader (needs background rework) |
+| **WP-B10d** download progress + background rework | **app (`ios`)** | v1: live object-level progress (§5); **WP-B10d2 (#191) wires pack objects through background `URLSession`; process-death adoption, pack completion after relaunch, progress reattachment, and partial-object recovery remain engine work** | the built downloader |
 | **WP-B10e** About/Settings anchor | **app (`ios`)** | About page (open-data story + OSS) + replay-onboarding + settings-deeplink; stats toggle when C1 ships | `CreditsView` (built) |
 
 ## Open flags (fable/Rob)
@@ -195,9 +193,10 @@ update-required sheet) — acceptance criteria, applied to **WP-B10a** (flow) an
     test: neuter image-bundling → the claim goes red (§3.4).
   - **"Needs nothing from our servers" ignored the launch `current.json` poll** → scoped to the map
     drawing offline, with the launch manifest/version check noted as the exception (§3.4).
-  - **`downloadCurrentRegion` is foreground/in-memory/all-or-nothing**, not the background session I
-    implied → v1 is a foreground progress bar (frontmost-only, memory caveat); the real background
-    download is scoped as engine rework, not a "hook" (§5, WP-B10d).
+  - **`downloadCurrentRegion` was not the full background/resume story I implied** → completed-object
+    staging and live progress exist; WP-B10d2 (#191) wires pack object fetches through background
+    `URLSession`, while process-death adoption, pack completion after relaunch, progress reattachment, and
+    partial-object recovery remain engine work (§5, WP-B10d).
   The flow/placeholder/permission/update-state architecture survived; folds were honesty about what the
   offline pack does *today* vs after WP-IMG-B2.
 - PR → `develop`, `sourcery-review` only, report `p2p/fable__opus`. No self-merge; fable reviews; `main`

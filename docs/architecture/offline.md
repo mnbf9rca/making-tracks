@@ -72,19 +72,20 @@ of the designs.
   (`referencedObjects`) and **live in-progress** (`referencedInProgressObjects`) objects before sweeping.
   **⚠ Known sweep GAPS (WP-RM §8 INV-5, unowned → WP-DL-SAFETY):** crash-stranded `*.pmtiles.tmp` and
   `root/tmp/*` install dirs are never swept, and GC never runs at plain launch — orphans linger.
-- **Background `URLSession`** (WiFi-preferred, discretionary) — the config exists but is still
-  **dead-wired** (production uses a foreground ephemeral fetcher, to keep single-origin redirect pinning).
-  The target splits: **#197 (OPEN)** wires session recreation + handler delivery on relaunch; **full task
-  adoption** (task-state re-adoption, pack completion after app death, progress reattachment) is the
-  residual #197 disclaims → **WP-DL-SAFETY**. Neither is WP-B10d (which shipped the foreground incremental
-  engine above). See WP-RM §8 INV-10.
+- **Background `URLSession`** (WiFi-preferred, discretionary) — **BUILT for object transfer (#197,
+  WP-B10d2 / #191 ruling)**. Pack object fetches now use the delegate-backed background configuration
+  (`sessionSendsLaunchEvents`), recreate the session for UIKit `handleEventsForBackgroundURLSession`, and
+  deliver stored handlers; manifest/current metadata fetches remain foreground. This is the **INV-10a**
+  split in WP-RM §8. **Full task adoption** (task-state re-adoption, pack completion after app death,
+  progress reattachment, partial-object/system-task recovery) remains the **INV-10b** residual owned by
+  **WP-DL-SAFETY**. Neither is WP-B10d (which shipped the foreground incremental engine above).
 - **Download safety contract:** the full set of download-safety invariants (atomicity, resume,
   idempotence, chunking bound, GC soundness, crash-window consistency, disk/ENOSPC safety, concurrency,
   honest progress, relaunch adoption) — each with a today-vs-target marker, `file:line`/PR evidence, an
   owning WP, and its acceptance test — lives in **[[WP-RM §8 download safety contract]]**. The engine is
   **mostly sound — no corruption paths** (by the §8 markers: 2 satisfied, 6 partial, 1 violated, 1 target); the open gaps are INV-4 (basemap chunking → WP-RM-P pipeline cut + WP-RM-G app render),
-  INV-10 (background adoption → #197 for session recreation, WP-DL-SAFETY for full task adoption), and the
-  INV-1/5/6/7/8/9 engine-hardening cluster (→ the proposed **WP-DL-SAFETY**).
+  INV-10a is satisfied by #197 while INV-10b remains with WP-DL-SAFETY, and the INV-1/5/6/7/8/9
+  engine-hardening cluster remains with the proposed **WP-DL-SAFETY**.
 - **Compression:** place tiles are app-level gzip at rest and on device, **sha over gzipped bytes** (no
   `Content-Encoding` — transport auto-decompress would break checksums); pmtiles internally compressed;
   thumbs are webp.
@@ -97,6 +98,10 @@ of the designs.
   {upload,commons}.wikimedia.org`, `MakingTracksTiles.swift:582`); single-origin thumbs are unbuilt.
   **Single-origin holds only after WP-IMG-B/B2 lands.** Search is **local** (queries never leave the
   device); no third-party geocoder.
+- **Redirect/origin enforcement:** first-party tile/object URLs are accepted only for
+  `https://tiles.making-tracks.app`. Foreground transfers keep the synchronous redirect veto; background
+  pack object transfers add the WP-B10d2 (#191) post-hoc check of the final response URL before staging
+  bytes. A missing or off-origin final URL discards the temporary file and fails the object closed.
 
 ## 6. Cover-traffic invariant (→ #131)
 
@@ -113,7 +118,8 @@ of the designs.
 | Completeness invariant; packs/zones; delta strategy | WP-RM (`2026-07-18-wp-rm-region-manager.md`, PR #177, MERGED) |
 | **Offline download engine + content-addressed pack store** | **PR #149 (MERGED)** + region-model §3/§5 (`2026-07-17-wp-regions-model.md`, #131) |
 | **Incremental download engine (file-backed staging, resume, pause/cancel, GC)** | **WP-B10d, PR #193 (MERGED)** |
-| **Download SAFETY contract (10 invariants: atomicity/resume/idempotence/chunking/GC/crash-window/disk/concurrency/progress/relaunch)** | **WP-RM §8** (`2026-07-18-wp-rm-region-manager.md`); gaps → WP-RM-P + WP-RM-G (INV-4), #197 (INV-10a session recreation, OPEN), WP-DL-SAFETY (INV-1/5/6/7/8/9 + INV-10b task adoption, proposed) |
+| **Background object-transfer wiring + final-response origin verification** | **WP-B10d2, PR #197 (MERGED; closes #191)** |
+| **Download SAFETY contract (10 invariants: atomicity/resume/idempotence/chunking/GC/crash-window/disk/concurrency/progress/relaunch)** | **WP-RM §8** (`2026-07-18-wp-rm-region-manager.md`); gaps → WP-RM-P + WP-RM-G (INV-4), WP-DL-SAFETY (INV-1/5/6/7/8/9 + INV-10b task adoption, proposed); INV-10a session recreation/object-transfer handoff satisfied by #197 |
 | **Image-index schema + thumbs path/content-addressing (contract owner)** | **WP-IMG-P (`2026-07-17-wp-images-photos.md`, #158, MERGED)** |
 | Photos card layout / attribution UI (consumer); offline-thumb bundling | WP-CARD (`2026-07-18-wp-card-overhaul.md`, #172) + WP-IMG-B2 |
 | Description sidecars | codex4 description-index (PR #173) |
