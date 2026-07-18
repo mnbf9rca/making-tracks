@@ -100,7 +100,7 @@ of the designs.
   {upload,commons}.wikimedia.org`, `MakingTracksTiles.swift:582`); single-origin thumbs are unbuilt.
   **Single-origin holds only after WP-IMG-B/B2 lands.** Search is **local** (queries never leave the
   device); no third-party geocoder.
-- **Redirect/origin enforcement:** first-party tile/object URLs are accepted only for
+- **Redirect/origin enforcement (#191 ruling):** first-party tile/object URLs are accepted only for
   `https://tiles.making-tracks.app`. Foreground transfers keep the synchronous redirect veto; background
   pack object transfers add the WP-B10d2 (#197) post-hoc check of the final response URL before accepting
   the delegate-staged bytes. A missing or off-origin final URL discards the temporary file and fails the
