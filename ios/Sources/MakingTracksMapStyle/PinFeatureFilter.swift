@@ -5,7 +5,8 @@ public enum PinFeatureFilter {
         _ features: [(MapPlace, PinState)],
         showHidden: Bool
     ) -> [(MapPlace, PinState)] {
-        guard !showHidden else { return features }
-        return features.filter { !$0.1.hidden }
+        features.filter { _, state in
+            showHidden || !state.hidden
+        }
     }
 }

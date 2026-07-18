@@ -43,7 +43,7 @@ final class PinLayersTests: XCTestCase {
         XCTAssertNotEqual(PinLayers.bookmarkOffset, PinLayers.heartOffset, "badges would collide at one anchor")
 
         if case let .object(paint)? = circle?["paint"] {
-            XCTAssertEqual(paint["circle-color"], .string(PinLayers.pinColor))
+            XCTAssertEqual(paint["circle-color"], PinLayers.pinColorExpression())
             XCTAssertEqual(paint["circle-opacity"], PinLayers.fadeOpacityExpression())
             XCTAssertEqual(paint["circle-radius"], .double(6))
         } else {
@@ -80,26 +80,81 @@ final class PinLayersTests: XCTestCase {
         )
     }
 
+    func testHiddenPinsUseDistinctVisualsAndSuppressBadges() {
+        let hiddenLovedSaved = FeatureEncoding.featureProperties(
+            PinState(saved: true, visit: .loved, hidden: true)
+        ).merging(["category": .string("museum")]) { _, new in new }
+        let visibleLovedSaved = FeatureEncoding.featureProperties(
+            PinState(saved: true, visit: .loved, hidden: false)
+        ).merging(["category": .string("museum")]) { _, new in new }
+
+        XCTAssertEqual(
+            Expression.evaluate(PinLayers.pinColorExpression(), hiddenLovedSaved),
+            .string(PinLayers.hiddenPinColor)
+        )
+        XCTAssertEqual(
+            Expression.evaluate(PinLayers.pinColorExpression(), visibleLovedSaved),
+            .string(PinLayers.pinColor)
+        )
+        XCTAssertEqual(
+            Expression.evaluate(PinLayers.categoryIconExpression(), hiddenLovedSaved),
+            .string(PinLayers.hiddenIconName)
+        )
+        XCTAssertEqual(
+            Expression.evaluate(PinLayers.categoryIconExpression(), visibleLovedSaved),
+            .string(PinLayers.categoryIconNames["museum"]!)
+        )
+        XCTAssertEqual(Expression.evaluate(PinLayers.fadeOpacityExpression(), hiddenLovedSaved), .double(FULL_OPACITY))
+        XCTAssertEqual(Expression.evaluate(PinLayers.bookmarkFilter(), hiddenLovedSaved), .bool(false))
+        XCTAssertEqual(Expression.evaluate(PinLayers.heartFilter(), hiddenLovedSaved), .bool(false))
+        XCTAssertEqual(Expression.evaluate(PinLayers.bookmarkFilter(), visibleLovedSaved), .bool(true))
+        XCTAssertEqual(Expression.evaluate(PinLayers.heartFilter(), visibleLovedSaved), .bool(true))
+    }
+
     func testEveryEmittedCategoryIconHasARegisteredSymbolImage() {
         var emittedIconNames = Set(PinLayers.categoryIconNames.values)
         emittedIconNames.insert(PinLayers.fallbackCategoryIconName)
+        emittedIconNames.insert(PinLayers.hiddenIconName)
 
         XCTAssertEqual(emittedIconNames, Set(PinLayers.categorySymbolNames.keys))
     }
 
     func testCategoryVisibilityFilterIsDeterministicAndOpenStringSafe() {
         XCTAssertNil(PinLayers.categoryVisibilityFilter(visibleCategories: nil))
+        let museumAndOtherFilter = PinLayers.categoryVisibilityFilter(
+            visibleCategories: ["museum", PinLayers.fallbackCategoryID]
+        )
+        XCTAssertEqual(Expression.evaluate(museumAndOtherFilter!, ["category": .string("museum")]), .bool(true))
+        XCTAssertEqual(Expression.evaluate(museumAndOtherFilter!, ["category": .string("future_category")]), .bool(true))
+        XCTAssertEqual(Expression.evaluate(museumAndOtherFilter!, ["category": .string("artwork")]), .bool(false))
+
+        let museumOnlyFilter = PinLayers.categoryVisibilityFilter(visibleCategories: ["museum"])
+        XCTAssertEqual(Expression.evaluate(museumOnlyFilter!, ["category": .string("museum")]), .bool(true))
+        XCTAssertEqual(Expression.evaluate(museumOnlyFilter!, ["category": .string("future_category")]), .bool(false))
+        XCTAssertEqual(Expression.evaluate(museumOnlyFilter!, ["category": .string("artwork"), "hidden": .bool(true)]), .bool(true))
+
         XCTAssertEqual(
-            PinLayers.categoryVisibilityFilter(visibleCategories: ["museum", "artwork"]),
-            .array([
-                .string("in"),
-                .array([.string("get"), .string("category")]),
-                .array([.string("literal"), .array([.string("artwork"), .string("museum")])]),
-            ])
+            Expression.evaluate(PinLayers.categoryVisibilityFilter(visibleCategories: [])!, ["category": .string("museum")]),
+            .bool(false)
         )
         XCTAssertEqual(
-            PinLayers.categoryVisibilityFilter(visibleCategories: []),
-            .array([.string("=="), .bool(true), .bool(false)])
+            Expression.evaluate(PinLayers.categoryVisibilityFilter(visibleCategories: [])!, ["category": .string("museum"), "hidden": .bool(true)]),
+            .bool(true)
+        )
+    }
+
+    func testCombinesCategoryFilterWithBadgeFilters() {
+        let categoryFilter = PinLayers.categoryVisibilityFilter(visibleCategories: ["museum"])
+
+        XCTAssertNil(PinLayers.combinedFilter([nil, nil]))
+        XCTAssertEqual(PinLayers.combinedFilter([categoryFilter]), categoryFilter)
+        XCTAssertEqual(
+            PinLayers.combinedFilter([categoryFilter, PinLayers.bookmarkFilter()]),
+            .array([
+                .string("all"),
+                categoryFilter!,
+                PinLayers.bookmarkFilter(),
+            ])
         )
     }
 
