@@ -94,7 +94,7 @@ extension AppDatabase {
                         AND l.is_system = 1
                         AND l.name = ?
                         """,
-                    arguments: StatementArguments(placeIDs + ["Want to go"])
+                    arguments: StatementArguments(placeIDs + [Self.wantToGoListName])
                 )
             )
             let hidden = try Set(

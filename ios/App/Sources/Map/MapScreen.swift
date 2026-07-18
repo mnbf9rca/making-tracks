@@ -67,6 +67,8 @@ struct MapScreen: View {
     @State private var userTrackingMode: MLNUserTrackingMode = .none
     @State private var pendingLocateMeActivation = false
     @State private var hiddenToast: HiddenToast?
+    @State private var hiddenToastDismissTask: Task<Void, Never>?
+    @State private var nextHiddenToastID = 0
     private let viewportRefreshDebouncer = ViewportRefreshDebouncer()
     @State private var suppressedNearbyPromptPlaceIDs: Set<String> = []
     @State private var nearbyPromptNames: [String: String] = [:]
@@ -186,6 +188,9 @@ struct MapScreen: View {
                 }
             )
         }
+        .onDisappear {
+            cancelHiddenToastDismissTask()
+        }
     }
 
     private var cardPresentationItemBinding: Binding<PlaceCardPresentation.Item?> {
@@ -200,19 +205,41 @@ struct MapScreen: View {
     }
 
     private func showHiddenToast(placeID: String, name: String) {
-        hiddenToast = HiddenToast(placeID: placeID, name: name)
+        nextHiddenToastID += 1
+        let toast = HiddenToast(id: nextHiddenToastID, placeID: placeID, name: name)
+        hiddenToast = toast
+        UIAccessibility.post(notification: .announcement, argument: "\(name) hidden. Undo available.")
+        cancelHiddenToastDismissTask()
+        hiddenToastDismissTask = Task {
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                if hiddenToast == toast {
+                    hiddenToast = nil
+                    hiddenToastDismissTask = nil
+                }
+            }
+        }
     }
 
     private func undoHiddenToast() async {
-        guard let hiddenToast, let model else { return }
+        guard let toast = hiddenToast, let model else { return }
         do {
-            try await model.setHidden(placeID: hiddenToast.placeID, hidden: false)
+            try await model.setHidden(placeID: toast.placeID, hidden: false)
             await MainActor.run {
+                guard hiddenToast == toast else { return }
+                cancelHiddenToastDismissTask()
                 self.hiddenToast = nil
+                UIAccessibility.post(notification: .announcement, argument: "\(toast.name) restored.")
             }
         } catch {
             return
         }
+    }
+
+    private func cancelHiddenToastDismissTask() {
+        hiddenToastDismissTask?.cancel()
+        hiddenToastDismissTask = nil
     }
 
     private func hiddenToastView(for _: HiddenToast) -> some View {
@@ -614,6 +641,7 @@ struct MapScreen: View {
     }
 
     private struct HiddenToast: Equatable {
+        let id: Int
         let placeID: String
         let name: String
     }
