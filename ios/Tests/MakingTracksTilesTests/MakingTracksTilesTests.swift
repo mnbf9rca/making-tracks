@@ -1277,6 +1277,33 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertFalse(OfflineDownloadSession.hasCompletedDownloadFileForTesting(named: orphanName))
     }
 
+    func testCompletedBackgroundDownloadStoreCapAllowsLargestManifestBasemap() {
+        XCTAssertGreaterThanOrEqual(
+            OfflineDownloadSession.completedDownloadStoreMaxBytesForTesting,
+            3_221_225_472
+        )
+    }
+
+    func testCompletedBackgroundDownloadStoreCanRestoreConsumedEntry() throws {
+        let identifier = OfflineDownloadSession.backgroundIdentifier(region: "uk")
+        let url = URL(string: "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles")!
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        try OfflineDownloadSession.stageCompletedDownloadForTesting(
+            identifier: identifier,
+            url: url,
+            fileURL: stagedObjectFile(Data("basemap".utf8)),
+            response: response
+        )
+        defer { OfflineDownloadSession.removeCompletedDownloadsForTesting(identifier: identifier) }
+        let consumedURL = try XCTUnwrap(OfflineDownloadSession.consumeCompletedDownload(identifier: identifier, url: url))
+
+        OfflineDownloadSession.restoreConsumedCompletedDownload(identifier: identifier, url: url, fileURL: consumedURL)
+
+        let restoredURL = try XCTUnwrap(OfflineDownloadSession.consumeCompletedDownload(identifier: identifier, url: url))
+        XCTAssertEqual(restoredURL, consumedURL)
+        try? FileManager.default.removeItem(at: restoredURL)
+    }
+
     func testBackgroundSessionFinishEventsCallCompletionOnMainThread() {
         let identifier = "app.making-tracks.tests.offline.\(UUID().uuidString)"
         defer { OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: identifier) }
@@ -2630,6 +2657,60 @@ final class MakingTracksTilesTests: XCTestCase {
         OfflineDownloadSession.removeCompletedDownloadsForTesting(identifier: identifier)
     }
 
+    func testOfflineDownloaderCanPauseAfterAdoptingCompletedBackgroundObject() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let basemap = Data("basemap".utf8)
+        let targetObject = manifestObject(
+            publishVersion: "20260717T000000Z",
+            tileSHA: sha256(tile),
+            tileBytes: tile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+        let identifier = OfflineDownloadSession.backgroundIdentifier(region: "uk")
+        let tileURLString = "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz"
+        let tileURL = URL(string: tileURLString)!
+        try OfflineDownloadSession.stageCompletedDownloadForTesting(
+            identifier: identifier,
+            url: tileURL,
+            fileURL: stagedObjectFile(tile),
+            response: HTTPURLResponse(url: tileURL, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        )
+        defer { OfflineDownloadSession.removeCompletedDownloadsForTesting(identifier: identifier) }
+        let objectFetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles": basemap,
+        ])
+        let control = OfflineRegionDownloadControl()
+        let downloader = OfflineRegionDownloader(
+            region: "uk",
+            metadataFetcher: StubFetcher(routes: [
+                "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+                "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+            ]),
+            objectFetcher: objectFetcher,
+            store: store,
+            availableBytes: { 10_000_000_000 }
+        )
+
+        do {
+            _ = try await downloader.downloadCurrentRegion(control: control) { progress in
+                if progress.completedObjectCount == 1 {
+                    control.pause()
+                }
+            }
+            XCTFail("download unexpectedly continued after adopted-object progress pause")
+        } catch TileError.downloadPaused {
+        } catch {
+            XCTFail("expected downloadPaused, got \(error)")
+        }
+
+        XCTAssertFalse(objectFetcher.requestedURLs.contains("https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles"))
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+    }
+
     func testOfflineDownloaderEmitsPerRegionByteProgressAndCanPause() async throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)
@@ -3330,6 +3411,126 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(try store.installedPublish(region: "uk")?.publishVersion, "20260717T000000Z")
     }
 
+    func testOfflineDownloaderAbandonsPendingPublishOnObject404AndRepinsCurrent() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let oldTile = try gzipJSON(tileObject(places: [validPlace()]))
+        let oldBasemap = Data("old-basemap".utf8)
+        let oldPublish = cachedPublish(
+            "20260717T000000Z",
+            tileSHA: sha256(oldTile),
+            tileBytes: oldTile.count,
+            basemapSHA: sha256(oldBasemap),
+            basemapBytes: oldBasemap.count,
+            attributionSources: []
+        )
+        try store.beginDownload(publish: oldPublish)
+        let newTile = try gzipJSON(tileObject(places: [validPlace(["place_id": "mt1_00000000000000000000000001"])], x: 512))
+        let newBasemap = Data("new-basemap".utf8)
+        let newManifest = manifestObject(
+            publishVersion: "20260718T000000Z",
+            tileX: 512,
+            tileY: 340,
+            tileSHA: sha256(newTile),
+            tileBytes: newTile.count,
+            basemapSHA: sha256(newBasemap),
+            basemapBytes: newBasemap.count,
+            attributionSources: []
+        )
+        let oldTileURL = "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz"
+        let completedURL = URL(string: "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/512/340.json.gz")!
+        let identifier = OfflineDownloadSession.backgroundIdentifier(region: "uk")
+        try OfflineDownloadSession.stageCompletedDownloadForTesting(
+            identifier: identifier,
+            url: completedURL,
+            fileURL: stagedObjectFile(Data("stale completed".utf8)),
+            response: HTTPURLResponse(url: completedURL, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        )
+        defer { OfflineDownloadSession.removeCompletedDownloadsForTesting(identifier: identifier) }
+        let metadataFetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260718T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260718T000000Z/manifest.json": jsonData(newManifest),
+        ])
+        let objectFetcher = FailingDownloadFetcher(
+            routes: [
+                "https://tiles.making-tracks.app/uk/20260718T000000Z/tiles/10/512/340.json.gz": newTile,
+                "https://tiles.making-tracks.app/uk/20260718T000000Z/uk.pmtiles": newBasemap,
+            ],
+            failURL: oldTileURL,
+            error: TileError.httpStatus(404)
+        )
+        let downloader = OfflineRegionDownloader(
+            region: "uk",
+            metadataFetcher: metadataFetcher,
+            objectFetcher: objectFetcher,
+            store: store,
+            availableBytes: { 10_000_000_000 }
+        )
+
+        let result = try await downloader.downloadCurrentRegion()
+
+        XCTAssertEqual(result.publish.publishVersion, "20260718T000000Z")
+        XCTAssertEqual(try store.installedPublish(region: "uk")?.publishVersion, "20260718T000000Z")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+        XCTAssertEqual(metadataFetcher.requestedURLs, [
+            "https://tiles.making-tracks.app/uk/current.json",
+            "https://tiles.making-tracks.app/uk/20260718T000000Z/manifest.json",
+        ])
+        XCTAssertEqual(objectFetcher.requestedURLs, [
+            oldTileURL,
+            "https://tiles.making-tracks.app/uk/20260718T000000Z/tiles/10/512/340.json.gz",
+            "https://tiles.making-tracks.app/uk/20260718T000000Z/uk.pmtiles",
+        ])
+        XCTAssertNil(OfflineDownloadSession.consumeCompletedDownload(identifier: identifier, url: completedURL))
+    }
+
+    func testOfflineStoreDeletePurgesCompletedBackgroundDownloadsForRegion() throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let identifier = OfflineDownloadSession.backgroundIdentifier(region: "uk")
+        let url = URL(string: "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz")!
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        try OfflineDownloadSession.stageCompletedDownloadForTesting(
+            identifier: identifier,
+            url: url,
+            fileURL: stagedObjectFile(Data("downloaded".utf8)),
+            response: response
+        )
+        defer { OfflineDownloadSession.removeCompletedDownloadsForTesting(identifier: identifier) }
+
+        try store.delete(region: "uk")
+
+        XCTAssertNil(OfflineDownloadSession.consumeCompletedDownload(identifier: identifier, url: url))
+    }
+
+    func testCompletedBackgroundDownloadMaintenanceSweepsOrphansAndEvictsOldestFiles() throws {
+        let identifier = OfflineDownloadSession.backgroundIdentifier(region: "uk")
+        let firstURL = URL(string: "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz")!
+        let secondURL = URL(string: "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/512/340.json.gz")!
+        let response = HTTPURLResponse(url: firstURL, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        try OfflineDownloadSession.stageCompletedDownloadForTesting(
+            identifier: identifier,
+            url: firstURL,
+            fileURL: stagedObjectFile(Data("first".utf8)),
+            response: response
+        )
+        try OfflineDownloadSession.stageCompletedDownloadForTesting(
+            identifier: identifier,
+            url: secondURL,
+            fileURL: stagedObjectFile(Data("second".utf8)),
+            response: HTTPURLResponse(url: secondURL, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        )
+        let orphanName = "123E4567-E89B-12D3-A456-426614174000.download"
+        try OfflineDownloadSession.createCompletedDownloadFileForTesting(named: orphanName, data: Data("orphan".utf8))
+        defer { OfflineDownloadSession.removeCompletedDownloadsForTesting(identifier: identifier) }
+
+        try OfflineDownloadSession.performCompletedDownloadMaintenanceForTesting(maxBytes: 6)
+
+        XCTAssertNil(OfflineDownloadSession.consumeCompletedDownload(identifier: identifier, url: firstURL))
+        XCTAssertNotNil(OfflineDownloadSession.consumeCompletedDownload(identifier: identifier, url: secondURL))
+        XCTAssertFalse(OfflineDownloadSession.hasCompletedDownloadFileForTesting(named: orphanName))
+    }
+
     func testOfflineStoreBasemapStagingMovesDownloadedFileIntoObjectStore() throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)
@@ -3544,10 +3745,11 @@ private final class FailingDownloadFetcher: OfflineRegionFetching, @unchecked Se
     }
 
     func download(_ url: URL) async throws -> URL {
+        requestedURLs.append(url.absoluteString)
         if url.absoluteString == failURL {
             throw error
         }
-        let data = try await fetch(url)
+        guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("MakingTracksFailingDownload-\(UUID().uuidString)")
         try data.write(to: fileURL, options: .atomic)

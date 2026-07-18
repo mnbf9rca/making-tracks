@@ -243,6 +243,92 @@ final class AppShellTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testDeferredReplaySessionRegistersActiveControlBeforeProgressAppears() {
+        let session = OfflineRegionDownloadSession()
+        let control = OfflineRegionDownloadControl()
+        let downloadID = UUID()
+        let progress = OfflineDownloadProgress(region: "uk", publishVersion: "20260717T000000Z", completedBytes: 25, totalBytes: 100, fractionComplete: 0.25)
+
+        XCTAssertTrue(session.beginDeferredReplay(region: "uk", control: control, downloadID: downloadID))
+
+        XCTAssertTrue(session.activeControl === control)
+        XCTAssertEqual(session.activeDownloadID, downloadID)
+        XCTAssertEqual(session.liveProgress?.region, "uk")
+        XCTAssertEqual(session.liveProgress?.completedBytes, 0)
+        XCTAssertNil(session.pausedProgress)
+
+        session.updateDeferredReplay(progress: progress, downloadID: downloadID)
+
+        XCTAssertEqual(session.liveProgress?.region, "uk")
+        XCTAssertEqual(session.liveProgress?.completedBytes, 25)
+        XCTAssertNil(session.pausedProgress)
+    }
+
+    @MainActor
+    func testDeferredReplaySessionRefusesToStealActiveUserDownload() {
+        let session = OfflineRegionDownloadSession()
+        let userControl = OfflineRegionDownloadControl()
+        let userDownloadID = UUID()
+        session.begin(region: "uk", control: userControl, downloadID: userDownloadID)
+
+        let replayControl = OfflineRegionDownloadControl()
+
+        XCTAssertFalse(session.beginDeferredReplay(region: "uk", control: replayControl, downloadID: UUID()))
+        XCTAssertTrue(session.activeControl === userControl)
+        XCTAssertEqual(session.activeDownloadID, userDownloadID)
+    }
+
+    @MainActor
+    func testDeferredReplayPausePreservesResumableProgress() {
+        let session = OfflineRegionDownloadSession()
+        let control = OfflineRegionDownloadControl()
+        let downloadID = UUID()
+        let progress = OfflineDownloadProgress(region: "uk", publishVersion: "20260717T000000Z", completedBytes: 25, totalBytes: 100, fractionComplete: 0.25)
+
+        XCTAssertTrue(session.beginDeferredReplay(region: "uk", control: control, downloadID: downloadID))
+        session.updateDeferredReplay(progress: progress, downloadID: downloadID)
+        session.pauseDeferredReplay(region: "uk", downloadID: downloadID)
+
+        XCTAssertNil(session.liveProgress)
+        XCTAssertNil(session.chromeProgress)
+        XCTAssertEqual(session.pausedProgress, progress)
+        XCTAssertEqual(session.rowProgress, progress)
+        XCTAssertNil(session.activeControl)
+        XCTAssertNil(session.activeTask)
+    }
+
+    @MainActor
+    func testDeferredReplayPauseIgnoresStaleReplayID() {
+        let session = OfflineRegionDownloadSession()
+        let userControl = OfflineRegionDownloadControl()
+        let userDownloadID = UUID()
+        let progress = OfflineDownloadProgress(region: "uk", fractionComplete: 0.42)
+        session.begin(region: "uk", control: userControl, downloadID: userDownloadID)
+        session.update(progress)
+
+        session.pauseDeferredReplay(region: "uk", downloadID: UUID())
+
+        XCTAssertEqual(session.liveProgress, progress)
+        XCTAssertNil(session.pausedProgress)
+        XCTAssertTrue(session.activeControl === userControl)
+        XCTAssertEqual(session.activeDownloadID, userDownloadID)
+    }
+
+    @MainActor
+    func testPausedDeferredReplayBlocksAnotherDeferredReplayRegion() {
+        let session = OfflineRegionDownloadSession()
+        let downloadID = UUID()
+        XCTAssertTrue(session.beginDeferredReplay(region: "uk", control: OfflineRegionDownloadControl(), downloadID: downloadID))
+        session.updateDeferredReplay(
+            progress: OfflineDownloadProgress(region: "uk", fractionComplete: 0.42),
+            downloadID: downloadID
+        )
+        session.pauseDeferredReplay(region: "uk", downloadID: downloadID)
+
+        XCTAssertFalse(session.canBegin(region: "malaysia"))
+    }
+
     func testStartupAndEarlyCameraIdleSuppressManifestRefreshUntilPostFirstRenderRefreshCompletes() {
         XCTAssertFalse(MapManifestRefreshPolicy.startupAllowsManifestRefresh)
         XCTAssertFalse(MapManifestRefreshPolicy.cameraIdleAllowsManifestRefresh(afterPostFirstRenderRefreshCompleted: false))
@@ -256,31 +342,57 @@ final class AppShellTests: XCTestCase {
             isMapReady: false,
             didMapLoadFail: true,
             didScheduleMaintenance: false,
-            isProtectedDataAvailable: true
+            isProtectedDataAvailable: true,
+            hasPausedDownload: false,
+            hasActiveDownload: false
         ))
         XCTAssertTrue(MapDeferredOfflineMaintenancePolicy.allowsDeferredMaintenance(
             isMapReady: true,
             didMapLoadFail: false,
             didScheduleMaintenance: false,
-            isProtectedDataAvailable: true
+            isProtectedDataAvailable: true,
+            hasPausedDownload: false,
+            hasActiveDownload: false
         ))
         XCTAssertFalse(MapDeferredOfflineMaintenancePolicy.allowsDeferredMaintenance(
             isMapReady: false,
             didMapLoadFail: false,
             didScheduleMaintenance: false,
-            isProtectedDataAvailable: true
+            isProtectedDataAvailable: true,
+            hasPausedDownload: false,
+            hasActiveDownload: false
         ))
         XCTAssertFalse(MapDeferredOfflineMaintenancePolicy.allowsDeferredMaintenance(
             isMapReady: false,
             didMapLoadFail: true,
             didScheduleMaintenance: true,
-            isProtectedDataAvailable: true
+            isProtectedDataAvailable: true,
+            hasPausedDownload: false,
+            hasActiveDownload: false
         ))
         XCTAssertFalse(MapDeferredOfflineMaintenancePolicy.allowsDeferredMaintenance(
             isMapReady: false,
             didMapLoadFail: true,
             didScheduleMaintenance: false,
-            isProtectedDataAvailable: false
+            isProtectedDataAvailable: false,
+            hasPausedDownload: false,
+            hasActiveDownload: false
+        ))
+        XCTAssertFalse(MapDeferredOfflineMaintenancePolicy.allowsDeferredMaintenance(
+            isMapReady: true,
+            didMapLoadFail: false,
+            didScheduleMaintenance: false,
+            isProtectedDataAvailable: true,
+            hasPausedDownload: true,
+            hasActiveDownload: false
+        ))
+        XCTAssertFalse(MapDeferredOfflineMaintenancePolicy.allowsDeferredMaintenance(
+            isMapReady: true,
+            didMapLoadFail: false,
+            didScheduleMaintenance: false,
+            isProtectedDataAvailable: true,
+            hasPausedDownload: false,
+            hasActiveDownload: true
         ))
     }
 
