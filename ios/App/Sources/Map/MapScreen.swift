@@ -1001,7 +1001,13 @@ struct MapScreen: View {
     private static func initialFixtureFeatures() -> [(MapPlace, PinState)] {
         fixturePlaces.map { fixturePlace in
             (
-                MapPlace(id: fixturePlace.placeID, lat: fixturePlace.lat, lon: fixturePlace.lon, tier: fixturePlace.tier),
+                MapPlace(
+                    id: fixturePlace.placeID,
+                    lat: fixturePlace.lat,
+                    lon: fixturePlace.lon,
+                    tier: fixturePlace.tier,
+                    category: fixturePlace.category
+                ),
                 PinState(saved: false, visit: .none)
             )
         }
