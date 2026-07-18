@@ -344,6 +344,39 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertTrue(newPresent)
     }
 
+    func testTileClientCanLoadInitialViewportFromLocalPinWithoutManifestRefresh() async throws {
+        let cache = try temporaryCache()
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let sha = sha256(tile)
+        try cache.recordVerifiedPublish(
+            region: "uk",
+            publish: cachedPublish("20260715T000000Z", tileSHA: sha, tileBytes: tile.count, attributionSources: [])
+        )
+        try cache.storeTile(
+            region: "uk",
+            publishVersion: "20260715T000000Z",
+            coordinate: TileCoordinate(z: 10, x: 511, y: 340),
+            sha256: sha,
+            data: tile
+        )
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+        ])
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: cache)
+
+        let places = await client.places(
+            inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51),
+            zoom: 16,
+            allowManifestRefresh: false
+        )
+        let state = await client.loadState
+
+        XCTAssertEqual(places.map(\.id), ["mt1_00000000000000000000000000"])
+        XCTAssertEqual(state, .stale)
+        XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/uk/current.json"))
+        XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/uk/20260715T000000Z/manifest.json"))
+    }
+
     func testTileClientKeepsOnlyCurrentViewportPlaceRefsInMemory() async throws {
         let londonID = "mt1_00000000000000000000000000"
         let unusedLondonID = "mt1_00000000000000000000000002"
@@ -731,7 +764,7 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: sha256(goodTile)).path))
     }
 
-    func testOfflineStoreLaunchSweepsHiddenBasemapTempsAndRootTmpDirs() throws {
+    func testOfflineStoreDeferredMaintenanceSweepsHiddenBasemapTempsAndRootTmpDirs() throws {
         let root = temporaryOfflineRoot()
         let hiddenBasemapTemp = root.appendingPathComponent("objects/basemaps/.\(UUID().uuidString).pmtiles.tmp")
         let hiddenTileTemp = root.appendingPathComponent("objects/tiles/.\(UUID().uuidString).json.gz.tmp")
@@ -743,14 +776,20 @@ final class MakingTracksTilesTests: XCTestCase {
         try FileManager.default.createDirectory(at: installTemp, withIntermediateDirectories: true)
         try Data("stranded".utf8).write(to: installTemp.appendingPathComponent("pack-index.json"))
 
-        _ = try OfflineRegionStore(root: root)
+        let store = try OfflineRegionStore(root: root)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: hiddenBasemapTemp.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: hiddenTileTemp.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: installTemp.path))
+
+        try store.performDeferredMaintenance()
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: hiddenBasemapTemp.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: hiddenTileTemp.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: installTemp.path))
     }
 
-    func testOfflineStoreLaunchRecoversSameVersionReinstallBackupWindow() throws {
+    func testOfflineStoreDeferredMaintenanceRecoversSameVersionReinstallBackupWindow() throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)
         let tile = try gzipJSON(tileObject(places: [validPlace()]))
@@ -771,12 +810,18 @@ final class MakingTracksTilesTests: XCTestCase {
 
         let relaunched = try OfflineRegionStore(root: root)
 
+        XCTAssertThrowsError(try relaunched.installedPublish(region: "uk"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: final.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backup.path))
+
+        try relaunched.performDeferredMaintenance()
+
         XCTAssertEqual(try relaunched.installedPublish(region: "uk")?.publishVersion, "20260716T155409Z")
         XCTAssertTrue(FileManager.default.fileExists(atPath: final.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: backup.path))
     }
 
-    func testOfflineStoreLaunchDoesNotRecoverBackupWhenCurrentPointsElsewhere() throws {
+    func testOfflineStoreDeferredMaintenanceDoesNotRecoverBackupWhenCurrentPointsElsewhere() throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)
         let oldTile = try gzipJSON(tileObject(places: [validPlace()]))
@@ -812,10 +857,11 @@ final class MakingTracksTilesTests: XCTestCase {
         try FileManager.default.moveItem(at: oldFinal, to: backup)
 
         let relaunched = try OfflineRegionStore(root: root)
+        try relaunched.performDeferredMaintenance()
 
         XCTAssertEqual(try relaunched.installedPublish(region: "uk")?.publishVersion, "20260717T000000Z")
         XCTAssertFalse(FileManager.default.fileExists(atPath: oldFinal.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: backup.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backup.path))
     }
 
     func testOfflineStoreLaunchSkipsCorruptCurrentPackIndexAndStillOpens() throws {
@@ -839,6 +885,89 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(resolution.quarantinedPacks.map(\.region), ["uk"])
         XCTAssertTrue(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: tileSHA).path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: offlineBasemapObjectURL(root: root, sha: basemapSHA).path))
+    }
+
+    func testOfflineStoreDeferredMaintenanceSkipsFinalObjectGCWhenCurrentMetadataCannotBeRead() throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let basemap = Data("basemap".utf8)
+        let tileSHA = sha256(tile)
+        let basemapSHA = sha256(basemap)
+        let unreferencedTileSHA = String(repeating: "a", count: 64)
+        let unreferencedBasemapSHA = String(repeating: "b", count: 64)
+        let hiddenTileTemp = root.appendingPathComponent("objects/tiles/.\(UUID().uuidString).json.gz.tmp")
+        try store.install(
+            publish: cachedPublish("20260716T155409Z", tileSHA: tileSHA, tileBytes: tile.count, basemapSHA: basemapSHA, basemapBytes: basemap.count, attributionSources: []),
+            tiles: [TileCoordinate(z: 10, x: 511, y: 340): tile],
+            basemap: basemap
+        )
+        let unreferencedTile = offlineTileObjectURL(root: root, sha: unreferencedTileSHA)
+        let unreferencedBasemap = offlineBasemapObjectURL(root: root, sha: unreferencedBasemapSHA)
+        try Data("unreferenced tile".utf8).write(to: unreferencedTile)
+        try Data("unreferenced basemap".utf8).write(to: unreferencedBasemap)
+        try FileManager.default.createDirectory(at: hiddenTileTemp.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("stranded".utf8).write(to: hiddenTileTemp)
+        try Data("{".utf8).write(to: offlineCurrentPackURL(root: root, region: "uk"))
+
+        let relaunched = try OfflineRegionStore(root: root)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: hiddenTileTemp.path))
+
+        try relaunched.performDeferredMaintenance()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: tileSHA).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineBasemapObjectURL(root: root, sha: basemapSHA).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unreferencedTile.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unreferencedBasemap.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: hiddenTileTemp.path))
+    }
+
+    func testOfflineStoreDeferredMaintenanceSkipsFinalObjectGCWhenManifestSnapshotCannotBeRead() throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let basemap = Data("basemap".utf8)
+        let tileSHA = sha256(tile)
+        let basemapSHA = sha256(basemap)
+        let unreferencedTileSHA = String(repeating: "c", count: 64)
+        let unreferencedBasemapSHA = String(repeating: "d", count: 64)
+        let hiddenTileTemp = root.appendingPathComponent("objects/tiles/.\(UUID().uuidString).json.gz.tmp")
+        try store.install(
+            publish: cachedPublish("20260716T155409Z", tileSHA: tileSHA, tileBytes: tile.count, basemapSHA: basemapSHA, basemapBytes: basemap.count, attributionSources: []),
+            tiles: [TileCoordinate(z: 10, x: 511, y: 340): tile],
+            basemap: basemap
+        )
+        let unreferencedTile = offlineTileObjectURL(root: root, sha: unreferencedTileSHA)
+        let unreferencedBasemap = offlineBasemapObjectURL(root: root, sha: unreferencedBasemapSHA)
+        try Data("unreferenced tile".utf8).write(to: unreferencedTile)
+        try Data("unreferenced basemap".utf8).write(to: unreferencedBasemap)
+        try FileManager.default.createDirectory(at: hiddenTileTemp.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("stranded".utf8).write(to: hiddenTileTemp)
+        try Data("{".utf8).write(
+            to: root.appendingPathComponent("packs/uk/20260716T155409Z/manifest-snapshot.json")
+        )
+
+        let relaunched = try OfflineRegionStore(root: root)
+        try relaunched.performDeferredMaintenance()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: tileSHA).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineBasemapObjectURL(root: root, sha: basemapSHA).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unreferencedTile.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unreferencedBasemap.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: hiddenTileTemp.path))
+    }
+
+    func testOfflineStoreDeferredMaintenanceKeepsUndecodableBackupDirectory() throws {
+        let root = temporaryOfflineRoot()
+        let backup = offlineInstallBackupURL(root: root)
+        try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
+        try Data("{".utf8).write(to: backup.appendingPathComponent("manifest-snapshot.json"))
+
+        let store = try OfflineRegionStore(root: root)
+        try store.performDeferredMaintenance()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backup.path))
     }
 
     func testOfflineDownloaderBeginDownloadSweepsNewStrandedTemps() async throws {
@@ -2452,6 +2581,48 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertNil(try store.installedPublish(region: "uk"))
     }
 
+    func testOfflineDownloaderMapsURLSessionUnderlyingENOSPCToResumablePause() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let basemap = Data("basemap".utf8)
+        let targetObject = manifestObject(
+            publishVersion: "20260717T000000Z",
+            tileSHA: sha256(tile),
+            tileBytes: tile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+        let posixOutOfSpace = NSError(domain: NSPOSIXErrorDomain, code: Int(ENOSPC))
+        let underlying = NSError(
+            domain: NSCocoaErrorDomain,
+            code: NSFileWriteUnknownError,
+            userInfo: [NSUnderlyingErrorKey: posixOutOfSpace]
+        )
+        let urlSessionError = NSError(
+            domain: NSURLErrorDomain,
+            code: URLError.cannotWriteToFile.rawValue,
+            userInfo: [NSUnderlyingErrorKey: underlying]
+        )
+        let fetcher = OutOfSpaceDownloadFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+        ], error: urlSessionError)
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 10_000_000_000 })
+
+        do {
+            _ = try await downloader.downloadCurrentRegion()
+            XCTFail("download unexpectedly succeeded after URLSession ENOSPC")
+        } catch TileError.downloadPaused {
+        } catch {
+            XCTFail("expected downloadPaused, got \(error)")
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+    }
+
     func testOfflineDownloaderRejectsSameRegionDoubleStartInEngine() async throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)
@@ -3089,9 +3260,11 @@ private final class SlowDownloadFetcher: OfflineRegionFetching, @unchecked Senda
 
 private final class OutOfSpaceDownloadFetcher: OfflineRegionFetching, @unchecked Sendable {
     private let routes: [String: Data]
+    private let error: Error
 
-    init(routes: [String: Data]) {
+    init(routes: [String: Data], error: Error = NSError(domain: NSCocoaErrorDomain, code: NSFileWriteOutOfSpaceError)) {
         self.routes = routes
+        self.error = error
     }
 
     func fetch(_ url: URL) async throws -> Data {
@@ -3100,7 +3273,7 @@ private final class OutOfSpaceDownloadFetcher: OfflineRegionFetching, @unchecked
     }
 
     func download(_ url: URL) async throws -> URL {
-        throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteOutOfSpaceError)
+        throw error
     }
 }
 

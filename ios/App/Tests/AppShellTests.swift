@@ -234,6 +234,42 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(progress.percentComplete, 25)
     }
 
+    func testOfflineDownloadCancelTreatsActiveLeaseAsCancellationSuccess() {
+        XCTAssertEqual(
+            offlineDownloadCancelMessage {
+                throw TileError.downloadAlreadyInProgress
+            },
+            "Download cancelled"
+        )
+    }
+
+    func testStartupAndEarlyCameraIdleSuppressManifestRefreshUntilPostFirstRenderRefreshCompletes() {
+        XCTAssertFalse(MapManifestRefreshPolicy.startupAllowsManifestRefresh)
+        XCTAssertFalse(MapManifestRefreshPolicy.cameraIdleAllowsManifestRefresh(afterPostFirstRenderRefreshCompleted: false))
+        XCTAssertTrue(MapManifestRefreshPolicy.cameraIdleAllowsManifestRefresh(afterPostFirstRenderRefreshCompleted: true))
+    }
+
+    func testMapLoadingPlaceholderUsesOpaqueDefinedPaperBackground() {
+        let color = MapThemeColor.uiColor(hex: MapTheme.definedPaper.background)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+
+        XCTAssertTrue(color.getRed(&red, green: &green, blue: &blue, alpha: &alpha))
+        XCTAssertEqual(Int(round(red * 255)), 0xF3)
+        XCTAssertEqual(Int(round(green * 255)), 0xEF)
+        XCTAssertEqual(Int(round(blue * 255)), 0xE5)
+        XCTAssertEqual(alpha, 1)
+
+        let fallback = MapThemeColor.uiColor(hex: "not-a-color")
+        XCTAssertTrue(fallback.getRed(&red, green: &green, blue: &blue, alpha: &alpha))
+        XCTAssertEqual(Int(round(red * 255)), 0xF3)
+        XCTAssertEqual(Int(round(green * 255)), 0xEF)
+        XCTAssertEqual(Int(round(blue * 255)), 0xE5)
+        XCTAssertEqual(alpha, 1)
+    }
+
     func testStorageMenuStatusUsesStableRowsAndByteFormatting() {
         let status = StorageMenuStatus.ready(
             totalBytes: 2_097_152,

@@ -505,6 +505,9 @@ struct MapScreen: View {
     @State private var isMapReady = false
     @State private var didMapLoadFail = false
     @State private var mapLoadAttemptID = 0
+    @State private var didSchedulePostFirstRenderManifestRefresh = false
+    @State private var didCompletePostFirstRenderManifestRefresh = false
+    @State private var didScheduleDeferredOfflineMaintenance = false
     @State private var hasLoadedFixtureFeatures = false
     @State private var viewportRefreshTracker = ViewportRefreshTracker()
     @State private var stateEpoch = 0
@@ -573,7 +576,10 @@ struct MapScreen: View {
                             bbox: bbox,
                             zoom: zoom,
                             requestID: nextViewportRequestID(),
-                            stateEpoch: currentStateEpoch()
+                            stateEpoch: currentStateEpoch(),
+                            allowManifestRefresh: MapManifestRefreshPolicy.cameraIdleAllowsManifestRefresh(
+                                afterPostFirstRenderRefreshCompleted: didCompletePostFirstRenderManifestRefresh
+                            )
                         )
                     }
                 },
@@ -597,6 +603,8 @@ struct MapScreen: View {
                         guard !isMapReady || didMapLoadFail else { return }
                         isMapReady = true
                         didMapLoadFail = false
+                        schedulePostFirstRenderManifestRefresh()
+                        scheduleDeferredOfflineMaintenanceIfReady()
                     }
                 },
                 onFeaturesApplied: {
@@ -650,7 +658,7 @@ struct MapScreen: View {
             .overlay {
                 if didMapLoadFail {
                     ZStack {
-                        Color.black.opacity(0.04)
+                        MapThemeColor.color(hex: selectedTheme.background)
                             .ignoresSafeArea()
                         VStack(spacing: 8) {
                             Image(systemName: "map")
@@ -668,7 +676,7 @@ struct MapScreen: View {
                     .transition(.opacity)
                 } else if isMapLoading {
                     ZStack {
-                        Color.black.opacity(0.04)
+                        MapThemeColor.color(hex: selectedTheme.background)
                             .ignoresSafeArea()
                         ProgressView()
                             .padding(14)
@@ -787,6 +795,9 @@ struct MapScreen: View {
                 userTrackingMode: &userTrackingMode,
                 pendingLocateMeActivation: &pendingLocateMeActivation
             )
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
+            scheduleDeferredOfflineMaintenanceIfReady()
         }
         .task(id: mapLoadAttemptID) {
             guard isMapLoading else { return }
@@ -1099,6 +1110,53 @@ struct MapScreen: View {
     }
 
     @MainActor
+    private func schedulePostFirstRenderManifestRefresh() {
+        guard !didSchedulePostFirstRenderManifestRefresh else { return }
+        didSchedulePostFirstRenderManifestRefresh = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            await refreshManifestAndMapState()
+        }
+    }
+
+    @MainActor
+    private func scheduleDeferredOfflineMaintenanceIfReady() {
+        guard isMapReady,
+              !didScheduleDeferredOfflineMaintenance,
+              UIApplication.shared.isProtectedDataAvailable
+        else { return }
+        didScheduleDeferredOfflineMaintenance = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            guard UIApplication.shared.isProtectedDataAvailable else {
+                didScheduleDeferredOfflineMaintenance = false
+                return
+            }
+            let didPerformMaintenance = await model?.performDeferredOfflineMaintenance() ?? true
+            if !didPerformMaintenance || !UIApplication.shared.isProtectedDataAvailable {
+                didScheduleDeferredOfflineMaintenance = false
+                return
+            }
+            await refreshStorageMenuStatus()
+        }
+    }
+
+    @MainActor
+    private func refreshManifestAndMapState() async {
+        await model?.refreshManifest()
+        let nextRegionPMTilesURL = await model?.pmtilesURL
+        let nextAttribution = await model?.attribution ?? []
+        let nextLoadState = await model?.loadState ?? .unavailable
+        regionPMTilesURL = nextRegionPMTilesURL
+        attribution = nextAttribution
+        loadState = nextLoadState
+        didCompletePostFirstRenderManifestRefresh = true
+        await refreshCurrentViewport()
+    }
+
+    @MainActor
     private func refreshAfterOfflineMapsChanged() async {
         await model?.refreshManifest()
         await refreshCurrentViewport()
@@ -1281,20 +1339,12 @@ struct MapScreen: View {
             }
         }
 #endif
-        await model?.refreshManifest()
-        let nextRegionPMTilesURL = await model?.pmtilesURL
-        let nextAttribution = await model?.attribution ?? []
-        let nextLoadState = await model?.loadState ?? .unavailable
-        await MainActor.run {
-            regionPMTilesURL = nextRegionPMTilesURL
-            attribution = nextAttribution
-            loadState = nextLoadState
-        }
         await refreshViewport(
             bbox: startupViewport.bbox,
             zoom: startupViewport.zoom,
             requestID: nextViewportRequestID(),
-            stateEpoch: currentStateEpoch()
+            stateEpoch: currentStateEpoch(),
+            allowManifestRefresh: MapManifestRefreshPolicy.startupAllowsManifestRefresh
         )
         await refreshFixtureVisitCount()
     }
@@ -1315,14 +1365,16 @@ struct MapScreen: View {
         bbox: BBox,
         zoom: Int,
         requestID: Int,
-        stateEpoch capturedStateEpoch: Int
+        stateEpoch capturedStateEpoch: Int,
+        allowManifestRefresh: Bool = true
     ) {
-        viewportRefreshDebouncer.schedule { [bbox, zoom, requestID, capturedStateEpoch] in
+        viewportRefreshDebouncer.schedule { [bbox, zoom, requestID, capturedStateEpoch, allowManifestRefresh] in
             await refreshViewport(
                 bbox: bbox,
                 zoom: zoom,
                 requestID: requestID,
-                stateEpoch: capturedStateEpoch
+                stateEpoch: capturedStateEpoch,
+                allowManifestRefresh: allowManifestRefresh
             )
         }
     }
@@ -1377,10 +1429,11 @@ struct MapScreen: View {
         bbox: BBox,
         zoom: Int,
         requestID: Int,
-        stateEpoch capturedStateEpoch: Int
+        stateEpoch capturedStateEpoch: Int,
+        allowManifestRefresh: Bool = true
     ) async {
         guard let model else { return }
-        let next = await model.features(in: bbox, zoom: zoom)
+        let next = await model.features(in: bbox, zoom: zoom, allowManifestRefresh: allowManifestRefresh)
         let nextRegionPMTilesURL = await model.pmtilesURL
         let nextAttribution = await model.attribution
         let nextLoadState = await model.loadState
@@ -2938,6 +2991,49 @@ private enum MapScreenActionError: Error {
     case placeUnavailable
 }
 
+enum MapManifestRefreshPolicy {
+    static let startupAllowsManifestRefresh = false
+
+    static func cameraIdleAllowsManifestRefresh(afterPostFirstRenderRefreshCompleted completed: Bool) -> Bool {
+        completed
+    }
+}
+
+enum MapThemeColor {
+    static func color(hex: String) -> Color {
+        Color(uiColor: uiColor(hex: hex))
+    }
+
+    static func uiColor(hex: String) -> UIColor {
+        let trimmed = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
+        guard value.count == 6, let rgb = Int(value, radix: 16) else {
+            return UIColor(red: 0.953, green: 0.937, blue: 0.898, alpha: 1)
+        }
+        let red = CGFloat((rgb >> 16) & 0xff) / 255
+        let green = CGFloat((rgb >> 8) & 0xff) / 255
+        let blue = CGFloat(rgb & 0xff) / 255
+        return UIColor(red: red, green: green, blue: blue, alpha: 1)
+    }
+}
+
+func offlineDownloadCancelMessage(discarding discard: () throws -> Void) -> String {
+    do {
+        try discard()
+        return "Download cancelled"
+    } catch {
+        return offlineDownloadCancelMessage(for: error)
+    }
+}
+
+func offlineDownloadCancelMessage(for error: Error) -> String {
+    if let tileError = error as? TileError,
+       tileError == .downloadAlreadyInProgress {
+        return "Download cancelled"
+    }
+    return "Cancel failed: \(String(describing: error))"
+}
+
 @MainActor
 private final class MapScreenModel {
     private let database: AppDatabase
@@ -3058,11 +3154,8 @@ private final class MapScreenModel {
             return "Download cancelled"
         }
         return await Task.detached {
-            do {
+            offlineDownloadCancelMessage {
                 try offlineStore.discardInProgressDownloads(region: region)
-                return "Download cancelled"
-            } catch {
-                return "Cancel failed: \(String(describing: error))"
             }
         }.value
     }
@@ -3071,6 +3164,18 @@ private final class MapScreenModel {
         value.range(of: "^[a-z][a-z0-9_]{0,63}$", options: .regularExpression) == value.startIndex..<value.endIndex
     }
 #endif
+
+    func performDeferredOfflineMaintenance() async -> Bool {
+        guard let offlineStore else { return true }
+        return await Task.detached {
+            do {
+                try offlineStore.performDeferredMaintenance()
+                return true
+            } catch {
+                return false
+            }
+        }.value
+    }
 
     func refreshManifest() async {
         guard let client = tileClient(for: selectedRegion) else { return }
@@ -3088,7 +3193,7 @@ private final class MapScreenModel {
         }.value
     }
 
-    func features(in bbox: BBox, zoom: Int) async -> [(MapPlace, PinState)] {
+    func features(in bbox: BBox, zoom: Int, allowManifestRefresh: Bool = true) async -> [(MapPlace, PinState)] {
         if !fixturePlaces.isEmpty {
             let sortedFixtures = fixturePlaces.values.sorted { $0.placeID < $1.placeID }
             let states = await states(for: Set(sortedFixtures.map(\.placeID)))
@@ -3104,8 +3209,8 @@ private final class MapScreenModel {
             }
             return PinFeatureFilter.discoveryFeatures(next, showHidden: showHiddenPlaces)
         }
-        guard let client = await selectClient(for: bbox) else { return [] }
-        let places = await client.places(inViewport: bbox, zoom: zoom)
+        guard let client = await selectClient(for: bbox, allowManifestRefresh: allowManifestRefresh) else { return [] }
+        let places = await client.places(inViewport: bbox, zoom: zoom, allowManifestRefresh: allowManifestRefresh)
         let ids = places.map(\.id)
         let states = await states(for: Set(ids))
         let next = places.map { ($0, states[$0.id] ?? PinState(saved: false, visit: .none)) }
@@ -3260,13 +3365,17 @@ private final class MapScreenModel {
         }
     }
 
-    private func selectClient(for bbox: BBox) async -> TileClient? {
+    private func selectClient(for bbox: BBox, allowManifestRefresh: Bool = true) async -> TileClient? {
         let nextRegion = MapRegion.select(for: bbox, current: selectedRegion)
         let changed = nextRegion != selectedRegion
         selectedRegion = nextRegion
         guard let client = tileClient(for: nextRegion) else { return nil }
         if changed {
-            try? await client.refreshPin()
+            if allowManifestRefresh {
+                try? await client.refreshPin()
+            } else {
+                await client.loadLocalPin()
+            }
         }
         return client
     }

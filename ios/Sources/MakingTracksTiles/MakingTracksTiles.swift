@@ -1716,7 +1716,16 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
 
 private func isOutOfSpace(_ error: Error) -> Bool {
     let nsError = error as NSError
-    return nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileWriteOutOfSpaceError
+    if nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileWriteOutOfSpaceError {
+        return true
+    }
+    if nsError.domain == NSPOSIXErrorDomain && nsError.code == Int(ENOSPC) {
+        return true
+    }
+    if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
+        return isOutOfSpace(underlying)
+    }
+    return false
 }
 
 private final class OfflineRegionStoreRootState: @unchecked Sendable {
@@ -1758,6 +1767,9 @@ public final class OfflineRegionStore: @unchecked Sendable {
         self.rootState = OfflineRegionStoreRootStates.state(for: root)
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try excludeFromBackup(root)
+    }
+
+    public func performDeferredMaintenance() throws {
         try withLock {
             try recoverInterruptedInstallsLocked()
             try garbageCollectObjects()
@@ -2563,12 +2575,20 @@ public final class OfflineRegionStore: @unchecked Sendable {
     }
 
     private func garbageCollectObjects() throws {
-        let references = try referencedObjects()
         try sweepTemporaryInstallDirectories()
         try sweepTemporaryObjectFiles(in: tileObjectsURL)
         try sweepTemporaryObjectFiles(in: basemapObjectsURL)
+        guard let references = try referencedObjectsForDeletion() else { return }
         try removeUnreferencedObjects(in: tileObjectsURL, keeping: references.tileSHAs, extension: "gz")
         try removeUnreferencedObjects(in: basemapObjectsURL, keeping: references.basemapSHAs, extension: "pmtiles")
+    }
+
+    private func referencedObjectsForDeletion() throws -> (tileSHAs: Set<String>, basemapSHAs: Set<String>)? {
+        do {
+            return try referencedObjects()
+        } catch {
+            return nil
+        }
     }
 
     private func recoverInterruptedInstallsLocked() throws {
@@ -2615,6 +2635,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
         let tmpRoot = root.appendingPathComponent("tmp", isDirectory: true)
         guard let children = try? fm.contentsOfDirectory(at: tmpRoot, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
         for child in children {
+            guard !child.lastPathComponent.hasSuffix("-backup") else { continue }
             let values = try child.resourceValues(forKeys: [.isDirectoryKey])
             guard values.isDirectory == true else { continue }
             try? fm.removeItem(at: child)
@@ -2633,19 +2654,19 @@ public final class OfflineRegionStore: @unchecked Sendable {
 
     private func referencedObjects() throws -> (tileSHAs: Set<String>, basemapSHAs: Set<String>) {
         let regionsRoot = root.appendingPathComponent("regions", isDirectory: true)
-        guard let regions = try? fm.contentsOfDirectory(at: regionsRoot, includingPropertiesForKeys: [.isDirectoryKey]) else {
+        guard fm.fileExists(atPath: regionsRoot.path) else {
             return try referencedInProgressObjects(tileSHAs: [], basemapSHAs: [])
         }
+        let regions = try fm.contentsOfDirectory(at: regionsRoot, includingPropertiesForKeys: [.isDirectoryKey])
         var tileSHAs = Set<String>()
         var basemapSHAs = Set<String>()
         for regionURL in regions {
             let values = try regionURL.resourceValues(forKeys: [.isDirectoryKey])
             guard values.isDirectory == true else { continue }
             let region = regionURL.lastPathComponent
-            guard isValidRegion(region),
-                  let current = try? installedCurrentPackLocked(region: region)
-            else { continue }
-            guard let publish = try? publishSnapshotLocked(region: region, publishVersion: current.publishVersion) else { continue }
+            guard isValidRegion(region) else { continue }
+            guard let current = try installedCurrentPackLocked(region: region) else { continue }
+            let publish = try publishSnapshotLocked(region: region, publishVersion: current.publishVersion)
             tileSHAs.formUnion(publish.manifest.tiles.map(\.sha256))
             basemapSHAs.insert(publish.manifest.basemap.sha256)
         }
@@ -3012,9 +3033,26 @@ public actor TileClient {
         }
     }
 
-    public func places(inViewport bbox: BBox, zoom: Int) async -> [MapPlace] {
+    public func loadLocalPin() {
+        guard pin == nil else { return }
+        let cached = try? cache.lastVerifiedPublish(region: region)
+        let installed = try? offlineStore?.installedPublish(region: region)
+        let result = ManifestPinResult(
+            publish: cached,
+            state: cached == nil ? .unavailable : .stale
+        )
+        let resolved = resolvePin(remote: result, installed: installed)
+        pin = resolved.publish
+        state = resolved.state
+    }
+
+    public func places(inViewport bbox: BBox, zoom: Int, allowManifestRefresh: Bool = true) async -> [MapPlace] {
         if pin == nil {
-            try? await refreshPin()
+            if allowManifestRefresh {
+                try? await refreshPin()
+            } else {
+                loadLocalPin()
+            }
         }
         let coveredCoordinates = Set(TileCoverage.tiles(for: bbox))
         let offlineResolution: OfflinePackResolution
