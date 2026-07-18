@@ -1731,6 +1731,7 @@ private func isOutOfSpace(_ error: Error) -> Bool {
 private final class OfflineRegionStoreRootState: @unchecked Sendable {
     let lock = NSLock()
     var activeDownloadRegions = Set<String>()
+    var liveTemporaryObjectNames = Set<String>()
 }
 
 private enum OfflineRegionStoreRootStates {
@@ -1812,6 +1813,14 @@ public final class OfflineRegionStore: @unchecked Sendable {
         }
     }
 
+#if DEBUG
+    func withRegisteredLiveTemporaryObjectForTesting(_ url: URL, _ body: () throws -> Void) rethrows {
+        registerLiveTemporaryObject(url)
+        defer { unregisterLiveTemporaryObject(url) }
+        try body()
+    }
+#endif
+
     func stageDownloadedTileObject(_ fileURL: URL, sha256: String, bytes: Int) throws {
         try withLock {
             guard bytes <= TileCodec.maxCompressedBytes else { throw TileError.byteCountMismatch }
@@ -1822,14 +1831,19 @@ public final class OfflineRegionStore: @unchecked Sendable {
     }
 
     func stageDownloadedBasemapObject(_ fileURL: URL, sha256: String, bytes: Int) throws {
+        let prepared = basemapObjectTemporaryURL()
+        registerLiveTemporaryObject(prepared)
+        defer {
+            unregisterLiveTemporaryObject(prepared)
+            if fm.fileExists(atPath: prepared.path) {
+                try? fm.removeItem(at: prepared)
+            }
+        }
+        try prepareVerifiedBasemapObject(from: fileURL, to: prepared, sha256: sha256, bytes: bytes)
         try withLock {
-            let prepared = try prepareVerifiedBasemapObject(from: fileURL, sha256: sha256, bytes: bytes)
             do {
                 try movePreparedBasemapObject(prepared, sha256: sha256, bytes: bytes)
             } catch {
-                if fm.fileExists(atPath: prepared.path) {
-                    try? fm.removeItem(at: prepared)
-                }
                 throw error
             }
         }
@@ -2467,23 +2481,42 @@ public final class OfflineRegionStore: @unchecked Sendable {
         try movePreparedBasemapObject(temp, sha256: sha256, bytes: bytes)
     }
 
+    private func basemapObjectTemporaryURL() -> URL {
+        basemapObjectsURL.appendingPathComponent(".\(UUID().uuidString).pmtiles.tmp")
+    }
+
     private func prepareVerifiedBasemapObject(from fileURL: URL, sha256: String, bytes: Int) throws -> URL {
+        let temp = basemapObjectTemporaryURL()
+        try prepareVerifiedBasemapObject(from: fileURL, to: temp, sha256: sha256, bytes: bytes)
+        return temp
+    }
+
+    private func prepareVerifiedBasemapObject(from fileURL: URL, to temp: URL, sha256: String, bytes: Int) throws {
         try verifyFileObject(fileURL, sha256: sha256, bytes: bytes)
-        let url = basemapObjectURL(sha256: sha256)
-        try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let temp = url.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).pmtiles.tmp")
+        try fm.createDirectory(at: temp.deletingLastPathComponent(), withIntermediateDirectories: true)
         do {
             if fm.fileExists(atPath: temp.path) {
                 try fm.removeItem(at: temp)
             }
             try fm.moveItem(at: fileURL, to: temp)
             try verifyFileObject(temp, sha256: sha256, bytes: bytes)
-            return temp
         } catch {
             if fm.fileExists(atPath: temp.path) {
                 try? fm.removeItem(at: temp)
             }
             throw error
+        }
+    }
+
+    private func registerLiveTemporaryObject(_ url: URL) {
+        _ = withLock {
+            rootState.liveTemporaryObjectNames.insert(url.lastPathComponent)
+        }
+    }
+
+    private func unregisterLiveTemporaryObject(_ url: URL) {
+        _ = withLock {
+            rootState.liveTemporaryObjectNames.remove(url.lastPathComponent)
         }
     }
 
@@ -2607,6 +2640,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
                   isValidPublishVersion(publish.publishVersion),
                   (try? installedCurrentPackLocked(region: publish.region))?.publishVersion == publish.publishVersion
             else {
+                try? fm.removeItem(at: child)
                 continue
             }
             let final = packURL(region: publish.region, publishVersion: publish.publishVersion)
@@ -2644,12 +2678,20 @@ public final class OfflineRegionStore: @unchecked Sendable {
 
     private func sweepTemporaryObjectFiles(in directory: URL) throws {
         guard let children = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey], options: []) else { return }
-        for child in children where child.lastPathComponent.hasPrefix(".") && child.pathExtension == "tmp" {
+        let liveTemporaryObjectNames = rootState.liveTemporaryObjectNames
+        for child in children where Self.shouldSweepTemporaryObjectFile(
+            named: child.lastPathComponent,
+            liveTemporaryObjectNames: liveTemporaryObjectNames
+        ) {
             let values = try child.resourceValues(forKeys: [.isRegularFileKey])
             if values.isRegularFile == true {
                 try? fm.removeItem(at: child)
             }
         }
+    }
+
+    static func shouldSweepTemporaryObjectFile(named name: String, liveTemporaryObjectNames: Set<String>) -> Bool {
+        name.hasPrefix(".") && name.hasSuffix(".tmp") && !liveTemporaryObjectNames.contains(name)
     }
 
     private func referencedObjects() throws -> (tileSHAs: Set<String>, basemapSHAs: Set<String>) {

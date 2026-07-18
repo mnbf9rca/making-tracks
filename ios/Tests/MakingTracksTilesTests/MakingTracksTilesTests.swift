@@ -789,6 +789,23 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: installTemp.path))
     }
 
+    func testOfflineStoreDeferredMaintenanceKeepsRegisteredLiveBasemapTemp() throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let liveTemp = root.appendingPathComponent("objects/basemaps/.\(UUID().uuidString).pmtiles.tmp")
+        let strandedTemp = root.appendingPathComponent("objects/basemaps/.\(UUID().uuidString).pmtiles.tmp")
+        try FileManager.default.createDirectory(at: liveTemp.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("live".utf8).write(to: liveTemp)
+        try Data("stranded".utf8).write(to: strandedTemp)
+
+        try store.withRegisteredLiveTemporaryObjectForTesting(liveTemp) {
+            try store.performDeferredMaintenance()
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: liveTemp.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: strandedTemp.path))
+    }
+
     func testOfflineStoreDeferredMaintenanceRecoversSameVersionReinstallBackupWindow() throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)
@@ -821,7 +838,7 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: backup.path))
     }
 
-    func testOfflineStoreDeferredMaintenanceDoesNotRecoverBackupWhenCurrentPointsElsewhere() throws {
+    func testOfflineStoreDeferredMaintenanceDeletesStaleDecodableBackupWhenCurrentPointsElsewhere() throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)
         let oldTile = try gzipJSON(tileObject(places: [validPlace()]))
@@ -861,7 +878,7 @@ final class MakingTracksTilesTests: XCTestCase {
 
         XCTAssertEqual(try relaunched.installedPublish(region: "uk")?.publishVersion, "20260717T000000Z")
         XCTAssertFalse(FileManager.default.fileExists(atPath: oldFinal.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: backup.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backup.path))
     }
 
     func testOfflineStoreLaunchSkipsCorruptCurrentPackIndexAndStillOpens() throws {
@@ -995,13 +1012,18 @@ final class MakingTracksTilesTests: XCTestCase {
         let fetcher = StubFetcher(routes: [
             "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
             "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
-            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz": tile,
-            "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles": basemap,
         ])
         let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 10_000_000_000 })
 
-        _ = try await downloader.downloadCurrentRegion()
+        do {
+            _ = try await downloader.downloadCurrentRegion()
+            XCTFail("download unexpectedly succeeded without object routes")
+        } catch let error as URLError where error.code == .notConnectedToInternet {
+        } catch {
+            XCTFail("expected object fetch failure, got \(error)")
+        }
 
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: hiddenBasemapTemp.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: hiddenTileTemp.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: installTemp.path))
@@ -2623,6 +2645,62 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertNil(try store.installedPublish(region: "uk"))
     }
 
+    func testOfflineDownloaderResumesAfterENOSPCByReusingPreviouslyStoredObjects() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let firstTile = try gzipJSON(tileObject(places: [validPlace()]))
+        let firstSHA = sha256(firstTile)
+        let secondTile = try gzipJSON(tileObject(places: [validPlace(["place_id": "mt1_00000000000000000000000001"])], x: 512))
+        let secondSHA = sha256(secondTile)
+        let basemap = Data("basemap".utf8)
+        let secondTileURL = "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/512/340.json.gz"
+        let targetObject = twoTileManifestObject(
+            firstSHA: firstSHA,
+            firstBytes: firstTile.count,
+            secondSHA: secondSHA,
+            secondBytes: secondTile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count
+        )
+        let fetcher = FailingDownloadFetcher(
+            routes: [
+                "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+                "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+                "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz": firstTile,
+                secondTileURL: secondTile,
+            ],
+            failURL: secondTileURL,
+            error: NSError(domain: NSCocoaErrorDomain, code: NSFileWriteOutOfSpaceError)
+        )
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 10_000_000_000 })
+
+        do {
+            _ = try await downloader.downloadCurrentRegion()
+            XCTFail("download unexpectedly succeeded after ENOSPC on the second object")
+        } catch TileError.downloadPaused {
+        } catch {
+            XCTFail("expected downloadPaused, got \(error)")
+        }
+
+        XCTAssertEqual(try Data(contentsOf: offlineTileObjectURL(root: root, sha: firstSHA)), firstTile)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+
+        let relaunched = try OfflineRegionStore(root: root)
+        let resumed = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/512/340.json.gz": secondTile,
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles": basemap,
+        ])
+        let resumedDownloader = OfflineRegionDownloader(region: "uk", fetcher: resumed, store: relaunched, availableBytes: { 10_000_000_000 })
+
+        _ = try await resumedDownloader.downloadCurrentRegion()
+
+        XCTAssertFalse(resumed.requestedURLs.contains("https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz"))
+        XCTAssertEqual(try relaunched.installedPublish(region: "uk")?.publishVersion, "20260717T000000Z")
+    }
+
     func testOfflineDownloaderRejectsSameRegionDoubleStartInEngine() async throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)
@@ -3274,6 +3352,36 @@ private final class OutOfSpaceDownloadFetcher: OfflineRegionFetching, @unchecked
 
     func download(_ url: URL) async throws -> URL {
         throw error
+    }
+}
+
+private final class FailingDownloadFetcher: OfflineRegionFetching, @unchecked Sendable {
+    private let routes: [String: Data]
+    private let failURL: String
+    private let error: Error
+    private(set) var requestedURLs: [String] = []
+
+    init(routes: [String: Data], failURL: String, error: Error) {
+        self.routes = routes
+        self.failURL = failURL
+        self.error = error
+    }
+
+    func fetch(_ url: URL) async throws -> Data {
+        requestedURLs.append(url.absoluteString)
+        guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
+        return data
+    }
+
+    func download(_ url: URL) async throws -> URL {
+        if url.absoluteString == failURL {
+            throw error
+        }
+        let data = try await fetch(url)
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MakingTracksFailingDownload-\(UUID().uuidString)")
+        try data.write(to: fileURL, options: .atomic)
+        return fileURL
     }
 }
 

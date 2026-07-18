@@ -625,6 +625,11 @@ struct MapScreen: View {
                 onMapLoadFailed: {
                     Task { @MainActor in
                         didMapLoadFail = true
+                        if MapManifestRefreshPolicy.mapLoadFailureAllowsManifestRefresh(
+                            afterPostFirstRenderRefreshCompleted: didCompletePostFirstRenderManifestRefresh
+                        ) {
+                            schedulePostFirstRenderManifestRefresh()
+                        }
                     }
                 },
                 debugReportProjectedFeatureDiagnostics: { diagnostics in
@@ -2996,6 +3001,10 @@ enum MapManifestRefreshPolicy {
 
     static func cameraIdleAllowsManifestRefresh(afterPostFirstRenderRefreshCompleted completed: Bool) -> Bool {
         completed
+    }
+
+    static func mapLoadFailureAllowsManifestRefresh(afterPostFirstRenderRefreshCompleted completed: Bool) -> Bool {
+        !completed
     }
 }
 

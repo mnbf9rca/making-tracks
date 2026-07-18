@@ -247,6 +247,8 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(MapManifestRefreshPolicy.startupAllowsManifestRefresh)
         XCTAssertFalse(MapManifestRefreshPolicy.cameraIdleAllowsManifestRefresh(afterPostFirstRenderRefreshCompleted: false))
         XCTAssertTrue(MapManifestRefreshPolicy.cameraIdleAllowsManifestRefresh(afterPostFirstRenderRefreshCompleted: true))
+        XCTAssertTrue(MapManifestRefreshPolicy.mapLoadFailureAllowsManifestRefresh(afterPostFirstRenderRefreshCompleted: false))
+        XCTAssertFalse(MapManifestRefreshPolicy.mapLoadFailureAllowsManifestRefresh(afterPostFirstRenderRefreshCompleted: true))
     }
 
     func testMapLoadingPlaceholderUsesOpaqueDefinedPaperBackground() {
