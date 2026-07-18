@@ -111,6 +111,7 @@ public final class HTTPTileFetcher: OfflineRegionFetching, @unchecked Sendable {
     public static let trustedHost = "tiles.making-tracks.app"
     private let delegate: RedirectDelegate
     private let session: URLSession
+    let configurationIdentifier: String?
 
     public convenience init() {
         self.init(configuration: .ephemeral)
@@ -120,8 +121,13 @@ public final class HTTPTileFetcher: OfflineRegionFetching, @unchecked Sendable {
         HTTPTileFetcher(configuration: OfflineDownloadSession.foregroundConfiguration())
     }
 
+    public static func offlineBackground(identifier: String) -> HTTPTileFetcher {
+        HTTPTileFetcher(configuration: OfflineDownloadSession.backgroundConfiguration(identifier: identifier))
+    }
+
     init(configuration: URLSessionConfiguration) {
         delegate = RedirectDelegate()
+        configurationIdentifier = configuration.identifier
         session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
     }
 
@@ -141,17 +147,15 @@ public final class HTTPTileFetcher: OfflineRegionFetching, @unchecked Sendable {
         try Self.validateOrigin(url)
         let request = URLRequest(url: url)
         let (fileURL, response) = try await session.download(for: request)
-        guard let http = response as? HTTPURLResponse,
-              (200...299).contains(http.statusCode)
-        else {
-            try? FileManager.default.removeItem(at: fileURL)
-            throw TileError.httpStatus((response as? HTTPURLResponse)?.statusCode ?? -1)
-        }
+        try Self.validateDownloadedFile(fileURL, response: response)
         return fileURL
     }
 
     public static func validateOrigin(_ url: URL) throws {
-        guard url.scheme == "https", url.host == trustedHost else {
+        guard url.scheme == "https",
+              url.host == trustedHost,
+              url.port == nil || url.port == 443
+        else {
             throw TileError.untrustedHost
         }
     }
@@ -159,6 +163,25 @@ public final class HTTPTileFetcher: OfflineRegionFetching, @unchecked Sendable {
     public static func validateRedirect(from: URL, to: URL) throws {
         try validateOrigin(from)
         try validateOrigin(to)
+    }
+
+    static func validateDownloadedFile(_ fileURL: URL, response: URLResponse) throws {
+        guard let http = response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode)
+        else {
+            try? FileManager.default.removeItem(at: fileURL)
+            throw TileError.httpStatus((response as? HTTPURLResponse)?.statusCode ?? -1)
+        }
+        guard let finalURL = response.url else {
+            try? FileManager.default.removeItem(at: fileURL)
+            throw TileError.untrustedHost
+        }
+        do {
+            try validateOrigin(finalURL)
+        } catch {
+            try? FileManager.default.removeItem(at: fileURL)
+            throw error
+        }
     }
 }
 
@@ -180,6 +203,10 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, @uncheck
         } catch {
             completionHandler(nil)
         }
+    }
+
+    func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        OfflineDownloadSession.finishEvents(for: session.configuration.identifier)
     }
 }
 
@@ -1028,6 +1055,10 @@ public enum StorageHeadroom {
 }
 
 public enum OfflineDownloadSession {
+    public static func backgroundIdentifier(region: String) -> String {
+        "app.making-tracks.offline.\(region)"
+    }
+
     public static func foregroundConfiguration() -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.waitsForConnectivity = true
@@ -1036,9 +1067,6 @@ public enum OfflineDownloadSession {
     }
 
     public static func backgroundConfiguration(identifier: String) -> URLSessionConfiguration {
-        // Intentionally configured but not wired into offline object fetches yet:
-        // background URLSession follows redirects without calling the delegate, which
-        // conflicts with the single-origin redirect pinning required for tile data.
         let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
         configuration.isDiscretionary = true
         configuration.sessionSendsLaunchEvents = true
@@ -1055,6 +1083,44 @@ public enum OfflineDownloadSession {
         configuration.httpShouldSetCookies = false
         configuration.urlCredentialStorage = nil
         configuration.urlCache = nil
+    }
+
+    public static func handleEvents(
+        for identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        OfflineDownloadSessionEventRegistry.shared.handleEvents(
+            for: identifier,
+            completionHandler: completionHandler
+        )
+    }
+
+    static func finishEvents(for identifier: String?) {
+        guard let identifier else { return }
+        OfflineDownloadSessionEventRegistry.shared.finishEvents(for: identifier)
+    }
+}
+
+private final class OfflineDownloadSessionEventRegistry: @unchecked Sendable {
+    static let shared = OfflineDownloadSessionEventRegistry()
+
+    private let lock = NSLock()
+    private var completionHandlers: [String: () -> Void] = [:]
+
+    func handleEvents(for identifier: String, completionHandler: @escaping () -> Void) {
+        lock.withLock {
+            completionHandlers[identifier] = completionHandler
+        }
+    }
+
+    func finishEvents(for identifier: String) {
+        let completionHandler = lock.withLock {
+            completionHandlers.removeValue(forKey: identifier)
+        }
+        guard let completionHandler else { return }
+        DispatchQueue.main.async {
+            completionHandler()
+        }
     }
 }
 
@@ -1221,7 +1287,8 @@ private final class OfflineRegionDownloadInterruptionLatch: @unchecked Sendable 
 
 public final class OfflineRegionDownloader: @unchecked Sendable {
     private let region: String
-    private let fetcher: OfflineRegionFetching
+    private let metadataFetcher: TileFetching
+    private let objectFetcher: OfflineRegionFetching
     private let store: OfflineRegionStore
     private let availableBytes: @Sendable () -> Int64?
 
@@ -1232,7 +1299,22 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
         availableBytes: @escaping @Sendable () -> Int64?
     ) {
         self.region = region
-        self.fetcher = fetcher
+        metadataFetcher = fetcher
+        objectFetcher = fetcher
+        self.store = store
+        self.availableBytes = availableBytes
+    }
+
+    public init(
+        region: String,
+        metadataFetcher: TileFetching,
+        objectFetcher: OfflineRegionFetching,
+        store: OfflineRegionStore,
+        availableBytes: @escaping @Sendable () -> Int64?
+    ) {
+        self.region = region
+        self.metadataFetcher = metadataFetcher
+        self.objectFetcher = objectFetcher
         self.store = store
         self.availableBytes = availableBytes
     }
@@ -1242,9 +1324,9 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
         progress: (@Sendable (OfflineRegionDownloadProgress) -> Void)? = nil
     ) async throws -> OfflineRegionDownloadResult {
         guard region.matches("^[a-z][a-z0-9_]{0,63}$") else { throw TileError.invalidOfflinePack }
-        let currentData = try await fetcher.fetch(try trustedURL("\(region)/current.json"))
+        let currentData = try await metadataFetcher.fetch(try trustedURL("\(region)/current.json"))
         let publishVersion = try ManifestClient.decodeCurrent(currentData)
-        let manifestData = try await fetcher.fetch(try trustedURL("\(region)/\(publishVersion)/manifest.json"))
+        let manifestData = try await metadataFetcher.fetch(try trustedURL("\(region)/\(publishVersion)/manifest.json"))
         let manifest = try Manifest.decode(manifestData)
         guard manifest.region == region, manifest.publishVersion == publishVersion else {
             throw TileError.invalidManifest
@@ -1316,7 +1398,7 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
     private func downloadObject(_ url: URL, control: OfflineRegionDownloadControl) async throws -> URL {
         try control.checkpoint()
         let downloadTask = Task {
-            try await fetcher.download(url)
+            try await objectFetcher.download(url)
         }
         let interruptionLatch = OfflineRegionDownloadInterruptionLatch()
         let handlerID = control.registerInterruptionHandler { interruption in

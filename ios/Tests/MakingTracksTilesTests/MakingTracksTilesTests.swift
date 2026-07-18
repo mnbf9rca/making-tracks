@@ -17,7 +17,9 @@ final class MakingTracksTilesTests: XCTestCase {
     func testHTTPFetcherRejectsWrongHostsAndCrossHostRedirects() async throws {
         XCTAssertThrowsError(try HTTPTileFetcher.validateOrigin(URL(string: "https://evil.example/uk/current.json")!))
         XCTAssertThrowsError(try HTTPTileFetcher.validateOrigin(URL(string: "http://tiles.making-tracks.app/uk/current.json")!))
+        XCTAssertThrowsError(try HTTPTileFetcher.validateOrigin(URL(string: "https://tiles.making-tracks.app:8443/uk/current.json")!))
         XCTAssertNoThrow(try HTTPTileFetcher.validateOrigin(URL(string: "https://tiles.making-tracks.app/uk/current.json")!))
+        XCTAssertNoThrow(try HTTPTileFetcher.validateOrigin(URL(string: "https://tiles.making-tracks.app:443/uk/current.json")!))
         XCTAssertThrowsError(
             try HTTPTileFetcher.validateRedirect(
                 from: URL(string: "https://tiles.making-tracks.app/uk/current.json")!,
@@ -715,7 +717,7 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: offlineBasemapObjectURL(root: root, sha: basemapSHA)), basemap)
     }
 
-    func testBackgroundDownloadConfigurationIsWifiPreferredAndRelaunchable() {
+    func testBackgroundDownloadConfigurationIsWifiPreferredAndSendsLaunchEvents() {
         let configuration = OfflineDownloadSession.backgroundConfiguration(identifier: "app.making-tracks.tests.offline")
 
         XCTAssertEqual(configuration.identifier, "app.making-tracks.tests.offline")
@@ -740,6 +742,24 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertFalse(configuration.httpShouldSetCookies)
         XCTAssertNil(configuration.urlCredentialStorage)
         XCTAssertNil(configuration.urlCache)
+    }
+
+    func testOfflineBackgroundFetcherUsesBackgroundConfigurationIdentifier() {
+        let fetcher = HTTPTileFetcher.offlineBackground(identifier: "app.making-tracks.tests.offline")
+
+        XCTAssertEqual(fetcher.configurationIdentifier, "app.making-tracks.tests.offline")
+    }
+
+    func testBackgroundSessionFinishEventsCallCompletionOnMainThread() {
+        let expectation = expectation(description: "completion called")
+        OfflineDownloadSession.handleEvents(for: "app.making-tracks.tests.offline") {
+            XCTAssertTrue(Thread.isMainThread)
+            expectation.fulfill()
+        }
+
+        OfflineDownloadSession.finishEvents(for: "app.making-tracks.tests.offline")
+
+        wait(for: [expectation], timeout: 2)
     }
 
     func testOfflineFetcherDownloadTaskPathReturnsResponseBody() async throws {
@@ -772,6 +792,54 @@ final class MakingTracksTilesTests: XCTestCase {
         } catch {
             XCTAssertFalse(RedirectURLProtocol.requestedURLs.contains(URL(string: "https://evil.example/uk/current.json")!))
         }
+    }
+
+    func testOfflineFetcherDownloadRejectsPostHocOriginMismatch() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RedirectURLProtocol.self]
+        let fetcher = HTTPTileFetcher(configuration: configuration)
+        RedirectURLProtocol.reset()
+        RedirectURLProtocol.mode = .statusFromResponseURL(
+            200,
+            responseURL: "https://evil.example/uk/current.json"
+        )
+        RedirectURLProtocol.responseBody = Data("evil body".utf8)
+        defer { RedirectURLProtocol.reset() }
+
+        do {
+            _ = try await fetcher.download(URL(string: "https://tiles.making-tracks.app/uk/current.json")!)
+            XCTFail("download unexpectedly succeeded after final response URL changed origin")
+        } catch TileError.untrustedHost {
+        } catch {
+            XCTFail("expected untrustedHost, got \(error)")
+        }
+    }
+
+    func testDownloadedFileValidationRemovesTempFileWhenFinalURLIsMissingOrUntrusted() throws {
+        let root = temporaryOfflineRoot()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let tempURL = root.appendingPathComponent("download.tmp")
+        try Data("body".utf8).write(to: tempURL)
+        let missingURLResponse = MissingURLHTTPResponse(
+            url: URL(string: "https://tiles.making-tracks.app/uk/current.json")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        XCTAssertThrowsError(try HTTPTileFetcher.validateDownloadedFile(tempURL, response: missingURLResponse))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tempURL.path))
+
+        try Data("body".utf8).write(to: tempURL)
+        let offOriginResponse = HTTPURLResponse(
+            url: URL(string: "https://evil.example/uk/current.json")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        XCTAssertThrowsError(try HTTPTileFetcher.validateDownloadedFile(tempURL, response: offOriginResponse))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tempURL.path))
     }
 
     func testTileClientPrefersInstalledPackForTilesAndBasemap() async throws {
@@ -1736,6 +1804,49 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles"))
     }
 
+    func testOfflineDownloaderUsesObjectFetcherForPackObjects() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let basemap = Data("basemap".utf8)
+        let currentURL = "https://tiles.making-tracks.app/uk/current.json"
+        let manifestURL = "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json"
+        let tileURL = "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz"
+        let basemapURL = "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles"
+        let metadataFetcher = StubFetcher(routes: [
+            currentURL: jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            manifestURL: manifestData(
+                publishVersion: "20260717T000000Z",
+                tileSHA: sha256(tile),
+                tileBytes: tile.count,
+                basemapSHA: sha256(basemap),
+                basemapBytes: basemap.count,
+                attributionSources: []
+            ),
+        ])
+        let objectFetcher = StubFetcher(routes: [
+            tileURL: tile,
+            basemapURL: basemap,
+        ])
+        let downloader = OfflineRegionDownloader(
+            region: "uk",
+            metadataFetcher: metadataFetcher,
+            objectFetcher: objectFetcher,
+            store: store,
+            availableBytes: { 10_000_000_000 }
+        )
+
+        _ = try await downloader.downloadCurrentRegion()
+
+        XCTAssertEqual(metadataFetcher.requestedURLs, [currentURL, manifestURL])
+        XCTAssertEqual(objectFetcher.requestedURLs, [tileURL, basemapURL])
+        XCTAssertFalse(objectFetcher.requestedURLs.contains(currentURL))
+        XCTAssertFalse(objectFetcher.requestedURLs.contains(manifestURL))
+        XCTAssertFalse(metadataFetcher.requestedURLs.contains(tileURL))
+        XCTAssertFalse(metadataFetcher.requestedURLs.contains(basemapURL))
+        XCTAssertEqual(try store.installedPublish(region: "uk")?.publishVersion, "20260717T000000Z")
+    }
+
     func testOfflineDownloaderPersistsVerifiedObjectsBeforeInstallAndResumeSkipsThem() async throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)
@@ -2328,9 +2439,14 @@ private final class ProgressRecorder: @unchecked Sendable {
     }
 }
 
+private final class MissingURLHTTPResponse: HTTPURLResponse, @unchecked Sendable {
+    override var url: URL? { nil }
+}
+
 private final class RedirectURLProtocol: URLProtocol, @unchecked Sendable {
     enum Mode: Sendable {
         case status(Int, location: String?)
+        case statusFromResponseURL(Int, responseURL: String)
         case redirect(to: String)
         case blockingDownload(routes: [String: Data])
     }
@@ -2357,6 +2473,16 @@ private final class RedirectURLProtocol: URLProtocol, @unchecked Sendable {
         switch Self.mode {
         case .status(let status, let location):
             startLoadingStatus(status, location: location, body: Self.responseBody)
+        case .statusFromResponseURL(let status, let responseURL):
+            let response = HTTPURLResponse(
+                url: URL(string: responseURL)!,
+                statusCode: status,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Self.responseBody)
+            client?.urlProtocolDidFinishLoading(self)
         case .redirect(let location):
             let response = response(status: 302, location: location)
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)

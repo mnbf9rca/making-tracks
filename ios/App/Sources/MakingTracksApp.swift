@@ -1,9 +1,13 @@
 import CoreLocation
 import SwiftUI
 import MakingTracksData
+import MakingTracksTiles
+import UIKit
 
 @main
 struct MakingTracksApp: App {
+    @UIApplicationDelegateAdaptor(MakingTracksAppDelegate.self) private var appDelegate
+
     private static let rawArguments = CommandLine.arguments
     private static let arguments = Set(rawArguments)
     private static let isFixtureMap = arguments.contains("--ui-testing-fixture-map")
@@ -127,5 +131,15 @@ struct MakingTracksApp: App {
             || UserDefaults.standard.string(forKey: OnboardingStorage.chosenRegionKey) == nil {
             UserDefaults.standard.set(OnboardingRegionChoice.malaysia.rawValue, forKey: OnboardingStorage.chosenRegionKey)
         }
+    }
+}
+
+final class MakingTracksAppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        OfflineDownloadSession.handleEvents(for: identifier, completionHandler: completionHandler)
     }
 }

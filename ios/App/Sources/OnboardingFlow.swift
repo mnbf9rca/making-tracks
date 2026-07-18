@@ -175,7 +175,10 @@ struct MakingTracksRootView: View {
                 )
                 let downloader = OfflineRegionDownloader(
                     region: region.mapRegion.rawValue,
-                    fetcher: HTTPTileFetcher(),
+                    metadataFetcher: HTTPTileFetcher.offlineForeground(),
+                    objectFetcher: HTTPTileFetcher.offlineBackground(
+                        identifier: OfflineDownloadSession.backgroundIdentifier(region: region.mapRegion.rawValue)
+                    ),
                     store: try .documentsStore(),
                     availableBytes: { StorageHeadroom.availableBytes(at: documents) }
                 )
