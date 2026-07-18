@@ -3,19 +3,10 @@ import MakingTracksData
 public enum PinFeatureFilter {
     public static func discoveryFeatures(
         _ features: [(MapPlace, PinState)],
-        showHidden: Bool,
-        visibleCategories: Set<String>?
+        showHidden: Bool
     ) -> [(MapPlace, PinState)] {
-        features.filter { place, state in
-            (showHidden || !state.hidden) && isCategoryVisible(place.category, visibleCategories: visibleCategories)
+        features.filter { _, state in
+            showHidden || !state.hidden
         }
-    }
-
-    private static func isCategoryVisible(_ category: String, visibleCategories: Set<String>?) -> Bool {
-        guard let visibleCategories else { return true }
-        if PinLayers.categoryIconNames.keys.contains(category) {
-            return visibleCategories.contains(category)
-        }
-        return visibleCategories.contains(PinLayers.fallbackCategoryID)
     }
 }

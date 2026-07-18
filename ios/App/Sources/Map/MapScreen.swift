@@ -92,6 +92,7 @@ struct MapScreen: View {
     @State private var cardPresentation = PlaceCardPresentation()
     @State private var showLayers = false
     @State private var layerVisibility = MapLayerVisibility()
+    @State private var appliedShowHiddenPlaces = false
     @State private var loadState: TileLoadState = .unavailable
     @State private var viewportRequestID = 0
     @State private var stateEpoch = 0
@@ -588,6 +589,8 @@ struct MapScreen: View {
                 forceTileNetworkOffline: debugForceTileNetworkOffline
             )
         }
+        model?.setShowHidden(layerVisibility.showHiddenPlaces)
+        appliedShowHiddenPlaces = layerVisibility.showHiddenPlaces
 #if DEBUG
         if let debugInstallOfflineRegion, let model {
             await MainActor.run {
@@ -779,10 +782,10 @@ struct MapScreen: View {
 
     @MainActor
     private func applyLayerVisibility(_ visibility: MapLayerVisibility) async {
-        model?.setLayerVisibility(
-            showHidden: visibility.showHiddenPlaces,
-            visibleCategories: visibility.visibleCategories
-        )
+        guard visibility.showHiddenPlaces != appliedShowHiddenPlaces else { return }
+        guard let model else { return }
+        model.setShowHidden(visibility.showHiddenPlaces)
+        appliedShowHiddenPlaces = visibility.showHiddenPlaces
         await refreshCurrentViewport()
     }
 
@@ -1681,7 +1684,6 @@ private final class MapScreenModel {
     private var selectedRegion: MapRegion = .malaysia
     private var hiddenTracker: HiddenMembershipTracker
     private var showHiddenPlaces = false
-    private var visibleCategories: Set<String>?
 
     var changes: AsyncStream<Set<String>> { coreLoop.changes }
 
@@ -1760,19 +1762,18 @@ private final class MapScreenModel {
                 )
                 return (place, states[fixturePlace.placeID] ?? PinState(saved: false, visit: .none))
             }
-            return PinFeatureFilter.discoveryFeatures(next, showHidden: showHiddenPlaces, visibleCategories: visibleCategories)
+            return PinFeatureFilter.discoveryFeatures(next, showHidden: showHiddenPlaces)
         }
         guard let client = await selectClient(for: bbox) else { return [] }
         let places = await client.places(inViewport: bbox, zoom: zoom)
         let ids = places.map(\.id)
         let states = await states(for: Set(ids))
         let next = places.map { ($0, states[$0.id] ?? PinState(saved: false, visit: .none)) }
-        return PinFeatureFilter.discoveryFeatures(next, showHidden: showHiddenPlaces, visibleCategories: visibleCategories)
+        return PinFeatureFilter.discoveryFeatures(next, showHidden: showHiddenPlaces)
     }
 
-    func setLayerVisibility(showHidden: Bool, visibleCategories: Set<String>?) {
+    func setShowHidden(_ showHidden: Bool) {
         showHiddenPlaces = showHidden
-        self.visibleCategories = visibleCategories
     }
 
     func states(for ids: Set<String>) async -> [String: PinState] {

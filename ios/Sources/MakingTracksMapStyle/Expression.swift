@@ -22,6 +22,16 @@ public enum Expression {
                 if case let .bool(value) = evaluate(expression, props) { return value }
                 return false
             })
+        case "case":
+            guard items.count >= 4 else { return .null }
+            var index = 1
+            while index + 1 < items.count {
+                if evaluate(items[index], props) == .bool(true) {
+                    return evaluate(items[index + 1], props)
+                }
+                index += 2
+            }
+            return evaluate(items.last ?? .null, props)
         case "any":
             return .bool(items.dropFirst().contains { expression in
                 if case let .bool(value) = evaluate(expression, props) { return value }
@@ -38,11 +48,11 @@ public enum Expression {
             var index = 2
             while index + 1 < items.count {
                 if evaluate(items[index], props) == input {
-                    return items[index + 1]
+                    return evaluate(items[index + 1], props)
                 }
                 index += 2
             }
-            return items.last ?? .null
+            return evaluate(items.last ?? .null, props)
         default:
             return expression
         }

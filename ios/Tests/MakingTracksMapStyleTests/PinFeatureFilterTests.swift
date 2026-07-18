@@ -12,16 +12,16 @@ final class PinFeatureFilterTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: false, visibleCategories: nil).map(\.0.id),
+            PinFeatureFilter.discoveryFeatures(features, showHidden: false).map(\.0.id),
             ["visible"]
         )
         XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: true, visibleCategories: nil).map(\.0.id),
+            PinFeatureFilter.discoveryFeatures(features, showHidden: true).map(\.0.id),
             ["visible", "hidden"]
         )
     }
 
-    func testCategoryFilterAppliesAfterHiddenFilter() {
+    func testCategoryTogglesDoNotAffectSourceFeatures() {
         let attraction = MapPlace(id: "attraction", lat: 51.5, lon: -0.12, tier: 1, category: "attraction")
         let hiddenMuseum = MapPlace(id: "hidden-museum", lat: 51.6, lon: -0.11, tier: 2, category: "museum")
         let museum = MapPlace(id: "museum", lat: 51.7, lon: -0.10, tier: 2, category: "museum")
@@ -34,20 +34,12 @@ final class PinFeatureFilterTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: false, visibleCategories: ["museum", PinLayers.fallbackCategoryID]).map(\.0.id),
-            ["museum", "future"]
+            PinFeatureFilter.discoveryFeatures(features, showHidden: false).map(\.0.id),
+            ["attraction", "museum", "future"]
         )
         XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: true, visibleCategories: ["museum", PinLayers.fallbackCategoryID]).map(\.0.id),
-            ["hidden-museum", "museum", "future"]
-        )
-        XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: true, visibleCategories: ["museum"]).map(\.0.id),
-            ["hidden-museum", "museum"]
-        )
-        XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: true, visibleCategories: []).map(\.0.id),
-            []
+            PinFeatureFilter.discoveryFeatures(features, showHidden: true).map(\.0.id),
+            ["attraction", "hidden-museum", "museum", "future"]
         )
     }
 }

@@ -8,7 +8,7 @@ import MakingTracksTiles
 enum PinCategoryImageRegistry {
     static let categorySymbolNames = PinLayers.categorySymbolNames
     static let requiredIconNames = Set(PinLayers.categoryIconNames.values)
-        .union([PinLayers.fallbackCategoryIconName])
+        .union([PinLayers.fallbackCategoryIconName, PinLayers.hiddenIconName])
 }
 
 @MainActor
@@ -174,7 +174,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
 
             let circle = MLNCircleStyleLayer(identifier: "pins-circle", source: source)
             circle.circleOpacity = NSExpression(mglJSONObject: PinLayers.fadeOpacityExpression().foundationObject)
-            circle.circleColor = NSExpression(forConstantValue: UIColor(hex: PinLayers.pinColor))
+            circle.circleColor = NSExpression(mglJSONObject: PinLayers.pinColorExpression().foundationObject)
             circle.circleRadius = NSExpression(forConstantValue: 6)
             style.addLayer(circle)
 
@@ -292,21 +292,5 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                 style.setImage(image, forName: iconName)
             }
         }
-    }
-}
-
-private extension UIColor {
-    convenience init(hex: String) {
-        var string = hex
-        if string.hasPrefix("#") {
-            string.removeFirst()
-        }
-        let value = UInt64(string, radix: 16) ?? 0
-        self.init(
-            red: CGFloat((value >> 16) & 0xFF) / 255,
-            green: CGFloat((value >> 8) & 0xFF) / 255,
-            blue: CGFloat(value & 0xFF) / 255,
-            alpha: 1
-        )
     }
 }
