@@ -8,6 +8,18 @@ import MakingTracksData
 import MakingTracksMapStyle
 import MakingTracksTiles
 
+struct MapHomeChromeSpec {
+    static let menuSymbolName = "line.3.horizontal"
+    static let menuGlyphPointSize: CGFloat = 30
+    static let hitTargetSide: CGFloat = 44
+    static let glyphHaloRadius: CGFloat = 1.2
+    static let glyphHaloYOffset: CGFloat = 1
+
+    static func layersSymbolName(isActive: Bool) -> String {
+        isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"
+    }
+}
+
 struct OfflineRegionCatalogZone: Identifiable, Hashable, Sendable {
     let id: String
     let displayName: String
@@ -622,6 +634,7 @@ struct MapScreen: View {
     @State private var isMapReady = false
     @State private var didMapLoadFail = false
     @State private var mapLoadAttemptID = 0
+    @State private var loadedThemeID: String?
     @State private var didSchedulePostFirstRenderManifestRefresh = false
     @State private var didCompletePostFirstRenderManifestRefresh = false
     @State private var didScheduleDeferredOfflineMaintenance = false
@@ -715,10 +728,11 @@ struct MapScreen: View {
                         cardPresentation.dismiss()
                     }
                 },
-                onMapReady: {
+                onMapReady: { loadedThemeID in
                     Task { @MainActor in
                         guard !isMapReady || didMapLoadFail else { return }
                         isMapReady = true
+                        self.loadedThemeID = loadedThemeID
                         didMapLoadFail = false
                         MakingTracksLog.startup.info("overlay transition surface=map state=ready")
                         schedulePostFirstRenderManifestRefresh()
@@ -736,6 +750,7 @@ struct MapScreen: View {
                         isMapReady = false
                         didMapLoadFail = false
                         hasLoadedFixtureFeatures = false
+                        loadedThemeID = nil
                         debugProjectedFixturePins = []
                         mapLoadAttemptID += 1
                         let attempt = mapLoadAttemptID
@@ -1097,6 +1112,13 @@ struct MapScreen: View {
                     .background(.ultraThinMaterial, in: Capsule())
                     .accessibilityIdentifier("tracks.visit-count.\(Self.primaryFixturePlaceID)")
 #if DEBUG
+                Text(verbatim: "Loaded theme: \(loadedThemeID ?? "loading")")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.loaded-theme")
+
                 HStack(spacing: 6) {
                     Button("Hide fixture") {
                         Task { await setPrimaryFixtureHidden(true) }
@@ -1177,10 +1199,13 @@ struct MapScreen: View {
                 appShell.deepLinkPath = nil
                 appShell.isMenuPresented = true
             } label: {
-                Image(systemName: "line.3.horizontal")
-                    .font(.headline)
-                    .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial, in: Circle())
+                Image(systemName: MapHomeChromeSpec.menuSymbolName)
+                    .font(.system(size: MapHomeChromeSpec.menuGlyphPointSize, weight: .bold))
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(mapBareGlyphStyle)
+                    .mapChromeGlyphHalo()
+                    .frame(width: MapHomeChromeSpec.hitTargetSide, height: MapHomeChromeSpec.hitTargetSide)
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel("Menu")
             .accessibilityHint("Opens app menu")
@@ -1357,16 +1382,32 @@ struct MapScreen: View {
         Button {
             showLayers = true
         } label: {
-            Image(systemName: "slider.horizontal.3")
-                .font(.title3)
-                .foregroundStyle(layerVisibility.isDefault ? AnyShapeStyle(.primary) : AnyShapeStyle(Color.white))
-                .frame(width: 44, height: 44)
+            layersIcon
+                .frame(width: MapHomeChromeSpec.hitTargetSide, height: MapHomeChromeSpec.hitTargetSide)
                 .background(layerVisibility.isDefault ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.accentColor), in: Circle())
+                .contentShape(Rectangle())
         }
         .accessibilityLabel("Layers")
         .accessibilityHint("Shows map layer controls")
         .accessibilityValue(layerVisibility.isDefault ? "Default" : "Custom")
         .accessibilityIdentifier("map.layers")
+    }
+
+    @ViewBuilder
+    private var layersIcon: some View {
+        let icon = Image(systemName: MapHomeChromeSpec.layersSymbolName(isActive: !layerVisibility.isDefault))
+            .font(.title3)
+            .foregroundStyle(layerVisibility.isDefault ? AnyShapeStyle(.primary) : AnyShapeStyle(Color.white))
+        if layerVisibility.isDefault {
+            icon.mapChromeGlyphHalo()
+        } else {
+            icon
+        }
+    }
+
+    private var mapBareGlyphStyle: AnyShapeStyle {
+        // Current map themes are light paper palettes; revisit this if a dark basemap theme lands.
+        AnyShapeStyle(Color.black)
     }
 
     private var locationChrome: some View {
@@ -2865,6 +2906,13 @@ private struct LocationSettingsButton: UIViewRepresentable {
         @objc func tap() {
             action()
         }
+    }
+}
+
+private extension View {
+    func mapChromeGlyphHalo() -> some View {
+        shadow(color: Color.white.opacity(0.95), radius: MapHomeChromeSpec.glyphHaloRadius, x: 0, y: 0)
+            .shadow(color: Color.white.opacity(0.95), radius: 0.5, x: 0, y: MapHomeChromeSpec.glyphHaloYOffset)
     }
 }
 

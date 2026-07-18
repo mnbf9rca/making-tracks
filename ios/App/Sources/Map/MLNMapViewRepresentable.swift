@@ -39,7 +39,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var onUserPanned: () -> Void
     var onTapPlace: (String) -> Void
     var onTapEmpty: () -> Void
-    var onMapReady: () -> Void
+    var onMapReady: (String?) -> Void
     var onFeaturesApplied: () -> Void
     var onStyleWillReload: () -> Void
     var onMapLoadFailed: () -> Void
@@ -144,7 +144,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var onUserPanned: () -> Void
         var onTapPlace: (String) -> Void
         var onTapEmpty: () -> Void
-        var onMapReady: () -> Void
+        var onMapReady: (String?) -> Void
         var onFeaturesApplied: () -> Void
         var onStyleWillReload: () -> Void
         var onMapLoadFailed: () -> Void
@@ -176,7 +176,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             onUserPanned: @escaping () -> Void,
             onTapPlace: @escaping (String) -> Void,
             onTapEmpty: @escaping () -> Void,
-            onMapReady: @escaping () -> Void,
+            onMapReady: @escaping (String?) -> Void,
             onFeaturesApplied: @escaping () -> Void,
             onStyleWillReload: @escaping () -> Void,
             onMapLoadFailed: @escaping () -> Void
@@ -247,7 +247,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             map = mapView
             registerBadgeImages(in: style)
             registerCategoryImages(in: style)
-            onMapReady()
+            onMapReady(currentThemeID)
 
             if style.source(withIdentifier: PinLayers.sourceID) == nil {
                 style.addSource(MLNShapeSource(identifier: PinLayers.sourceID, shape: nil, options: nil))
