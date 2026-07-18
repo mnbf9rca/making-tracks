@@ -10,13 +10,13 @@ final class InteractionsTests: XCTestCase {
         fetchedAt: Date = Date(timeIntervalSince1970: 50)
     ) throws -> PlaceRef {
         let raw = "{\"place_id\":\"\(id)\",\"name\":\"\(name)\",\"lat\":51.5,\"lon\":-0.12," +
-            "\"category\":\"architecture\",\"tier\":1,\"score\":0.82,\"source_refs\":[\"wd:Q42\"]}"
+            "\"category\":\"historic_building\",\"tier\":1,\"score\":0.82,\"source_refs\":[\"wd:Q42\"]}"
         return try PlaceRef(
             placeID: id,
             name: name,
             lat: 51.5,
             lon: -0.12,
-            category: "architecture",
+            category: "historic_building",
             tier: 1,
             schemaVersion: schemaVersion,
             fetchedAt: fetchedAt,
@@ -108,7 +108,7 @@ final class InteractionsTests: XCTestCase {
                 name: "Big Ben",
                 lat: 51.5,
                 lon: -0.12,
-                category: "architecture",
+                category: "historic_building",
                 tier: 1,
                 snapshotJSON: place.rawJSON,
                 snapshotSchemaVersion: 1,

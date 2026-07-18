@@ -14,9 +14,12 @@
 		1477E9C0802B5ACD26327A43 /* AppLocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B6E6A8728A3BBF7FBCF25B9 /* AppLocationManager.swift */; };
 		1E88D6E14A988414962AB763 /* MapLibre in Frameworks */ = {isa = PBXBuildFile; productRef = CBADA08F3DCFE4D9F14B6043 /* MapLibre */; };
 		59C7C078ADD59064266740CA /* MakingTracksData in Frameworks */ = {isa = PBXBuildFile; productRef = 52E446EDADC05A0EB10CB788 /* MakingTracksData */; };
+		64A1E7F7EC974E18939E76A0 /* HiddenMembershipTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A0C31D4D48E4E49B093A101 /* HiddenMembershipTracker.swift */; };
 		860B88DB4E847DB9B041149A /* MakingTracksMapStyle in Frameworks */ = {isa = PBXBuildFile; productRef = 1340500250A212BB86356FB9 /* MakingTracksMapStyle */; };
+		AA43008C099442B1A07CB2F8 /* PinCategorySymbolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B85E30D5635849FF984B528A /* PinCategorySymbolTests.swift */; };
 		AE9F899F811FE6AD774A0F38 /* OSSCredits.json in Resources */ = {isa = PBXBuildFile; fileRef = 1CB5F787D9335E6F6658C952 /* OSSCredits.json */; };
 		AF3142C210A9AC6EE4DBDB9C /* LocationPermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E7EFD1E5877507BEC18A82D /* LocationPermission.swift */; };
+		CB1F6C6F7D6543AEBE645655 /* HiddenMembershipTrackerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDF309F41553406AB77EF7B3 /* HiddenMembershipTrackerTests.swift */; };
 		D723B8F7C4E54215817261EA /* MLNMapViewRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DE03FCA363155B0C5A81CE1 /* MLNMapViewRepresentable.swift */; };
 		D9BF447A005052495B5FAA51 /* MakingTracksTiles in Frameworks */ = {isa = PBXBuildFile; productRef = 4F393EE9E72B3705269D6DE4 /* MakingTracksTiles */; };
 		E205428A35137AEC62A677DE /* MakingTracksApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8165BC8A095352568E0849A6 /* MakingTracksApp.swift */; };
@@ -56,7 +59,10 @@
 		7406D8636B27B4FE8E1C1555 /* MakingTracks.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MakingTracks.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7DE03FCA363155B0C5A81CE1 /* MLNMapViewRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLNMapViewRepresentable.swift; sourceTree = "<group>"; };
 		8165BC8A095352568E0849A6 /* MakingTracksApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MakingTracksApp.swift; sourceTree = "<group>"; };
+		8A0C31D4D48E4E49B093A101 /* HiddenMembershipTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiddenMembershipTracker.swift; sourceTree = "<group>"; };
+		B85E30D5635849FF984B528A /* PinCategorySymbolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinCategorySymbolTests.swift; sourceTree = "<group>"; };
 		B3982196AEEBAE17B1F5D899 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		DDF309F41553406AB77EF7B3 /* HiddenMembershipTrackerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiddenMembershipTrackerTests.swift; sourceTree = "<group>"; };
 		E36873FF1289D2248F06F618 /* MakingTracksCoreLoopUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MakingTracksCoreLoopUITests.swift; sourceTree = "<group>"; };
 		E67D53581962B4787D079BCA /* LocationSessionPolicies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationSessionPolicies.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -92,7 +98,9 @@
 		147428FCFBC8BD3BB845BC82 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				DDF309F41553406AB77EF7B3 /* HiddenMembershipTrackerTests.swift */,
 				2B2C08C6EC4CC9B925C76CEC /* LocationSessionPoliciesTests.swift */,
+				B85E30D5635849FF984B528A /* PinCategorySymbolTests.swift */,
 				5A925CD29D8E1456B66E9F7B /* WorldBasemapTests.swift */,
 			);
 			path = Tests;
@@ -109,6 +117,7 @@
 		C07738BF062CB3DA2EC726F0 /* Map */ = {
 			isa = PBXGroup;
 			children = (
+				8A0C31D4D48E4E49B093A101 /* HiddenMembershipTracker.swift */,
 				344D7C929CEBD0057FA01F8C /* MapScreen.swift */,
 				7DE03FCA363155B0C5A81CE1 /* MLNMapViewRepresentable.swift */,
 				1E19C34E0B445601AD8B5A35 /* WorldBasemap.swift */,
@@ -362,7 +371,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CB1F6C6F7D6543AEBE645655 /* HiddenMembershipTrackerTests.swift in Sources */,
 				E33AAF4D7C085C6FBE57C261 /* LocationSessionPoliciesTests.swift in Sources */,
+				AA43008C099442B1A07CB2F8 /* PinCategorySymbolTests.swift in Sources */,
 				FAED196EEC3399D466D1AE9E /* WorldBasemapTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -374,6 +385,7 @@
 				1477E9C0802B5ACD26327A43 /* AppLocationManager.swift in Sources */,
 				AF3142C210A9AC6EE4DBDB9C /* LocationPermission.swift in Sources */,
 				12180A7BEBB27840E1614C1A /* LocationSessionPolicies.swift in Sources */,
+				64A1E7F7EC974E18939E76A0 /* HiddenMembershipTracker.swift in Sources */,
 				D723B8F7C4E54215817261EA /* MLNMapViewRepresentable.swift in Sources */,
 				E205428A35137AEC62A677DE /* MakingTracksApp.swift in Sources */,
 				03DDC05F05147127FAC7FFA5 /* MapScreen.swift in Sources */,

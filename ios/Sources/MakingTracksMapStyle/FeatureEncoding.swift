@@ -24,6 +24,7 @@ public enum FeatureEncoding {
         var props = featureProperties(state)
         props["place_id"] = .string(place.id)
         props["tier"] = .double(Double(place.tier))
+        props["category"] = .string(place.category)
         return .object([
             "type": .string("Feature"),
             "geometry": .object([

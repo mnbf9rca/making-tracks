@@ -6,11 +6,13 @@ public struct MapPlace: Sendable, Equatable {
     public let lat: Double
     public let lon: Double
     public let tier: Int
+    public let category: String
 
-    public init(id: String, lat: Double, lon: Double, tier: Int) {
+    public init(id: String, lat: Double, lon: Double, tier: Int, category: String) {
         self.id = id
         self.lat = lat
         self.lon = lon
         self.tier = tier
+        self.category = category
     }
 }

@@ -42,13 +42,13 @@ final class ModelsTests: XCTestCase {
     }
 
     func testPlaceRefCarriesProvenanceAndVerbatimPayload() throws {
-        let raw = "{\"place_id\":\"p1\",\"name\":\"Big Ben\",\"lat\":51.5,\"lon\":-0.12,\"category\":\"architecture\",\"tier\":1,\"score\":0.8,\"source_refs\":[\"wd:Q42\"]}"
+        let raw = "{\"place_id\":\"p1\",\"name\":\"Big Ben\",\"lat\":51.5,\"lon\":-0.12,\"category\":\"historic_building\",\"tier\":1,\"score\":0.8,\"source_refs\":[\"wd:Q42\"]}"
         let ref = try PlaceRef(
             placeID: "p1",
             name: "Big Ben",
             lat: 51.5,
             lon: -0.12,
-            category: "architecture",
+            category: "historic_building",
             tier: 1,
             schemaVersion: 3,
             fetchedAt: Date(timeIntervalSince1970: 7),

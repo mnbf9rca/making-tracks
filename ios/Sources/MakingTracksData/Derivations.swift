@@ -31,19 +31,6 @@ extension AppDatabase {
         }
     }
 
-    public func hidden(among placeIDs: [String]) throws -> Set<String> {
-        guard !placeIDs.isEmpty else { return [] }
-        return try dbQueue.read { db in
-            let sql = """
-                SELECT place_id FROM hidden_places
-                WHERE place_id IN (\(databaseQuestionMarks(count: placeIDs.count)))
-                """
-            return try Set(
-                String.fetchAll(db, sql: sql, arguments: StatementArguments(placeIDs))
-            )
-        }
-    }
-
     public func visitCount(placeID: String) throws -> Int {
         try dbQueue.read { db in
             try Int.fetchOne(

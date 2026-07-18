@@ -701,7 +701,7 @@ public enum PlaceDecoder {
         ) else { return nil }
 
         return DecodedPlace(
-            mapPlace: MapPlace(id: placeID, lat: lat, lon: lon, tier: tier),
+            mapPlace: MapPlace(id: placeID, lat: lat, lon: lon, tier: tier, category: category),
             placeRef: placeRef,
             imageURL: imageURL,
             sourceRefs: sourceRefs
