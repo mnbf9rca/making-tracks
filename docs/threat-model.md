@@ -27,19 +27,25 @@ flowchart TB
     subgraph up["🌍 Upstream open data"]
         src["OpenStreetMap, Wikipedia"]
     end
+    subgraph share["🔗 Sharing service — planned, optional account"]
+        sh["Shared lists"]
+    end
 
     src -->|"we ingest, check, and publish"| obj
     ud -->|"HTTPS: request a bundle"| obj
     obj -->|"bundle returned;<br/>each object checked against its expected hash"| ud
+    ud -.->|"PLANNED, user-initiated:<br/>list contents + notes only —<br/>never visits or loved places"| sh
 
     net(["Network observer<br/>Wi-Fi / ISP"]) -.->|"stopped by TLS"| ud
     self(["Us / the CDN<br/>sees IP + timing"]) -.->|"planned: cover traffic"| obj
-    vand(["Content vandal<br/>edits OSM / Wikipedia"]) -.->|"defused: size caps,<br/>plain-text rendering"| src
+    vand(["Content vandal<br/>edits OSM / Wikipedia"]) -.->|"defused technically:<br/>size caps, plain-text render"| src
 
     oos["OUT OF SCOPE: nation-state · seized/unlocked device ·<br/>jailbroken or compromised OS · our own infra turning hostile · enterprise MITM"]
 
     classDef out fill:#eee,stroke:#999,color:#555,stroke-dasharray:4 3;
+    classDef planned fill:#f5f5ff,stroke:#88a,color:#446,stroke-dasharray:4 3;
     class oos out;
+    class share,sh planned;
 ```
 
 ## 1. What we protect, in order
@@ -83,6 +89,13 @@ flowchart TB
   https-only host allowlist, and every source string shown as plain text — never as HTML, never built
   straight into a database query, a shell command, or a prompt. **Any review finding about handling
   untrusted content belongs here** (§6); it does not need to name a network attacker.
+
+  To be clear about the limit: we defend against the **technical** consequences of a bad edit — safe
+  plain-text rendering, no markup or script execution, length caps, hash-verified delivery. We do **not**
+  promise to catch offensive or illegal *content itself*; there is no content-moderation system. A
+  vandalized entry that is technically harmless will render until the next pipeline refresh re-ingests the
+  upstream source and picks up its revert. The recourse is that refresh cadence, plus the user's ability to
+  report a problem with a place (`privacy.md`), which a person reviews — not a real-time takedown.
 - **Data brokers via third-party code.** The app ships **no third-party analytics, advertising, or tracking
   code, and makes no third-party network calls of its own** — this is a fixed rule (`privacy.md` principle
   3), and it is the single most effective privacy measure a consumer app can take. This is not the same as
@@ -97,9 +110,12 @@ flowchart TB
 The diagram above is the whole picture. In words: the user's data lives inside the iOS sandbox on their
 device. It leaves only over HTTPS, and only through the specific user-initiated actions `privacy.md`
 already lists (share a list, report a place, opt-in place statistics). The device fetches published bundles
-from the CDN and checks each object against its expected hash. There is no server that stores what a user
-does, because we never built one — the optional accounts system, when it exists, holds only a sharing
-identity and the lists a user chose to share, never their visits or map history.
+from the CDN and checks each object against its expected hash. The one outbound flow of a user's own data
+is sharing a list (shown as *planned* in the diagram): with an optional account, a user can send a list —
+its places and any notes they added — to people they choose. Even then, what travels is only that list and
+its notes; a shared list never carries whether the user visited or loved a place. There is no server that
+stores what a user does, because we never built one — the optional accounts system, when it exists, holds
+only a sharing identity and the lists a user chose to share, never their visits or map history.
 
 ## 4. What is out of scope
 
