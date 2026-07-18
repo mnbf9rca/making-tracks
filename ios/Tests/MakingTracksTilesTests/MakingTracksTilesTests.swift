@@ -34,6 +34,8 @@ final class MakingTracksTilesTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RedirectURLProtocol.self]
         let fetcher = HTTPTileFetcher(configuration: configuration)
+        RedirectURLProtocol.reset()
+        defer { RedirectURLProtocol.reset() }
         RedirectURLProtocol.mode = .status(302, location: "https://evil.example/uk/current.json")
         do {
             _ = try await fetcher.fetch(URL(string: "https://tiles.making-tracks.app/uk/current.json")!)
@@ -681,7 +683,7 @@ final class MakingTracksTilesTests: XCTestCase {
     }
 
     func testBackgroundDownloadConfigurationIsWifiPreferredAndRelaunchable() {
-        let configuration = OfflineDownloadSession.configuration(identifier: "app.making-tracks.tests.offline")
+        let configuration = OfflineDownloadSession.backgroundConfiguration(identifier: "app.making-tracks.tests.offline")
 
         XCTAssertEqual(configuration.identifier, "app.making-tracks.tests.offline")
         XCTAssertTrue(configuration.sessionSendsLaunchEvents)
@@ -689,6 +691,54 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertFalse(configuration.allowsExpensiveNetworkAccess)
         XCTAssertFalse(configuration.allowsConstrainedNetworkAccess)
         XCTAssertNil(configuration.httpAdditionalHeaders)
+        XCTAssertNil(configuration.httpCookieStorage)
+        XCTAssertFalse(configuration.httpShouldSetCookies)
+        XCTAssertNil(configuration.urlCredentialStorage)
+        XCTAssertNil(configuration.urlCache)
+    }
+
+    func testForegroundDownloadConfigurationWaitsForConnectivityAndCarriesNoAmbientState() {
+        let configuration = OfflineDownloadSession.foregroundConfiguration()
+
+        XCTAssertNil(configuration.identifier)
+        XCTAssertTrue(configuration.waitsForConnectivity)
+        XCTAssertNil(configuration.httpAdditionalHeaders)
+        XCTAssertNil(configuration.httpCookieStorage)
+        XCTAssertFalse(configuration.httpShouldSetCookies)
+        XCTAssertNil(configuration.urlCredentialStorage)
+        XCTAssertNil(configuration.urlCache)
+    }
+
+    func testOfflineFetcherDownloadTaskPathReturnsResponseBody() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RedirectURLProtocol.self]
+        let fetcher = HTTPTileFetcher(configuration: configuration)
+        RedirectURLProtocol.reset()
+        RedirectURLProtocol.mode = .status(200, location: nil)
+        RedirectURLProtocol.responseBody = Data("offline body".utf8)
+        defer { RedirectURLProtocol.reset() }
+
+        let fileURL = try await fetcher.download(URL(string: "https://tiles.making-tracks.app/uk/current.json")!)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let data = try Data(contentsOf: fileURL)
+
+        XCTAssertEqual(String(data: data, encoding: .utf8), "offline body")
+    }
+
+    func testOfflineFetcherDownloadTaskPathRejectsRedirectCallbacks() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RedirectURLProtocol.self]
+        let fetcher = HTTPTileFetcher(configuration: configuration)
+        RedirectURLProtocol.reset()
+        RedirectURLProtocol.mode = .redirect(to: "https://evil.example/uk/current.json")
+        defer { RedirectURLProtocol.reset() }
+
+        do {
+            _ = try await fetcher.download(URL(string: "https://tiles.making-tracks.app/uk/current.json")!)
+            XCTFail("302 redirect download unexpectedly succeeded")
+        } catch {
+            XCTAssertFalse(RedirectURLProtocol.requestedURLs.contains(URL(string: "https://evil.example/uk/current.json")!))
+        }
     }
 
     func testTileClientPrefersInstalledPackForTilesAndBasemap() async throws {
@@ -1536,6 +1586,501 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles"))
     }
 
+    func testOfflineDownloaderPersistsVerifiedObjectsBeforeInstallAndResumeSkipsThem() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let firstTile = try gzipJSON(tileObject(places: [validPlace()]))
+        let firstSHA = sha256(firstTile)
+        let secondTile = try gzipJSON(tileObject(places: [validPlace(["place_id": "mt1_00000000000000000000000001"])], x: 512))
+        let secondSHA = sha256(secondTile)
+        let basemap = Data("basemap".utf8)
+        let targetObject = twoTileManifestObject(
+            firstSHA: firstSHA,
+            firstBytes: firstTile.count,
+            secondSHA: secondSHA,
+            secondBytes: secondTile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count
+        )
+        let firstAttempt = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz": firstTile,
+        ])
+        let firstDownloader = OfflineRegionDownloader(region: "uk", fetcher: firstAttempt, store: store, availableBytes: { 10_000_000_000 })
+
+        do {
+            _ = try await firstDownloader.downloadCurrentRegion()
+            XCTFail("download unexpectedly succeeded with the second tile missing")
+        } catch let error as URLError where error.code == .notConnectedToInternet {
+        } catch {
+            XCTFail("expected interrupted fetch, got \(error)")
+        }
+
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+        XCTAssertEqual(try Data(contentsOf: offlineTileObjectURL(root: root, sha: firstSHA)), firstTile)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+        try store.delete(region: "malaysia")
+        XCTAssertEqual(try Data(contentsOf: offlineTileObjectURL(root: root, sha: firstSHA)), firstTile)
+
+        let relaunchedStore = try OfflineRegionStore(root: root)
+        let resumed = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/512/340.json.gz": secondTile,
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles": basemap,
+        ])
+        let resumedProgress = ProgressRecorder()
+        let resumedDownloader = OfflineRegionDownloader(region: "uk", fetcher: resumed, store: relaunchedStore, availableBytes: { 10_000_000_000 })
+
+        let result = try await resumedDownloader.downloadCurrentRegion { event in
+            resumedProgress.append(event)
+        }
+
+        XCTAssertEqual(result.fetchedTileCount, 1)
+        XCTAssertEqual(result.reusedTileCount, 1)
+        XCTAssertEqual(try relaunchedStore.installedPublish(region: "uk")?.publishVersion, "20260717T000000Z")
+        XCTAssertFalse(resumed.requestedURLs.contains("https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz"))
+        XCTAssertEqual(resumedProgress.events.first?.completedBytes, firstTile.count + secondTile.count)
+        XCTAssertEqual(resumedProgress.events.first?.totalBytes, firstTile.count + secondTile.count + basemap.count)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+    }
+
+    func testOfflineDownloaderEmitsPerRegionByteProgressAndCanPause() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let firstTile = try gzipJSON(tileObject(places: [validPlace()]))
+        let firstSHA = sha256(firstTile)
+        let secondTile = try gzipJSON(tileObject(places: [validPlace(["place_id": "mt1_00000000000000000000000001"])], x: 512))
+        let secondSHA = sha256(secondTile)
+        let basemap = Data("basemap".utf8)
+        let targetObject = twoTileManifestObject(
+            firstSHA: firstSHA,
+            firstBytes: firstTile.count,
+            secondSHA: secondSHA,
+            secondBytes: secondTile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count
+        )
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz": firstTile,
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/512/340.json.gz": secondTile,
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles": basemap,
+        ])
+        let control = OfflineRegionDownloadControl()
+        let progress = ProgressRecorder()
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 10_000_000_000 })
+
+        do {
+            _ = try await downloader.downloadCurrentRegion(control: control) { event in
+                progress.append(event)
+                if event.completedObjectCount == 1 {
+                    control.pause()
+                }
+            }
+            XCTFail("download unexpectedly succeeded after pause")
+        } catch TileError.downloadPaused {
+        } catch {
+            XCTFail("expected downloadPaused, got \(error)")
+        }
+
+        let events = progress.events
+        XCTAssertEqual(events.first?.region, "uk")
+        XCTAssertEqual(events.first?.publishVersion, "20260717T000000Z")
+        XCTAssertEqual(events.first?.completedBytes, firstTile.count)
+        XCTAssertEqual(events.first?.totalBytes, firstTile.count + secondTile.count + basemap.count)
+        XCTAssertEqual(events.first?.completedObjectCount, 1)
+        XCTAssertEqual(events.first?.totalObjectCount, 3)
+        XCTAssertEqual(try Data(contentsOf: offlineTileObjectURL(root: root, sha: firstSHA)), firstTile)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+    }
+
+    func testOfflineDownloaderCancelStopsInflightDownloadAndDoesNotStageObject() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let tileSHA = sha256(tile)
+        let basemap = Data("basemap".utf8)
+        let targetObject = manifestObject(
+            publishVersion: "20260717T000000Z",
+            tileSHA: tileSHA,
+            tileBytes: tile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+        let started = expectation(description: "download started")
+        let fetcher = SlowDownloadFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz": tile,
+        ], onDownloadStarted: {
+            started.fulfill()
+        })
+        let control = OfflineRegionDownloadControl()
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 10_000_000_000 })
+
+        let task = Task {
+            try await downloader.downloadCurrentRegion(control: control)
+        }
+        await fulfillment(of: [started], timeout: 1)
+        control.cancel()
+
+        do {
+            _ = try await task.value
+            XCTFail("download unexpectedly succeeded after inflight cancel")
+        } catch TileError.downloadCancelled {
+        } catch {
+            XCTFail("expected downloadCancelled, got \(error)")
+        }
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: tileSHA).path))
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+    }
+
+    func testOfflineDownloaderPauseStopsInflightDownloadAndRetainsInProgressRoot() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let tileSHA = sha256(tile)
+        let basemap = Data("basemap".utf8)
+        let targetObject = manifestObject(
+            publishVersion: "20260717T000000Z",
+            tileSHA: tileSHA,
+            tileBytes: tile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+        let started = expectation(description: "download started")
+        let fetcher = SlowDownloadFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz": tile,
+        ], onDownloadStarted: {
+            started.fulfill()
+        })
+        let control = OfflineRegionDownloadControl()
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 10_000_000_000 })
+
+        let task = Task {
+            try await downloader.downloadCurrentRegion(control: control)
+        }
+        await fulfillment(of: [started], timeout: 1)
+        control.pause()
+
+        do {
+            _ = try await task.value
+            XCTFail("download unexpectedly succeeded after inflight pause")
+        } catch TileError.downloadPaused {
+        } catch {
+            XCTFail("expected downloadPaused, got \(error)")
+        }
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: tileSHA).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+    }
+
+    func testOfflineDownloaderPauseCancelsHTTPDownloadTaskAndRetainsInProgressRoot() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let basemap = Data("basemap".utf8)
+        let targetObject = manifestObject(
+            publishVersion: "20260717T000000Z",
+            tileSHA: sha256(tile),
+            tileBytes: tile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+        let started = expectation(description: "HTTP download started")
+        let stopped = expectation(description: "HTTP download task cancelled")
+        let tileURL = "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz"
+        RedirectURLProtocol.reset()
+        RedirectURLProtocol.mode = .blockingDownload(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+        ])
+        RedirectURLProtocol.onBlockedRequest = { request in
+            if request.url?.absoluteString == tileURL {
+                started.fulfill()
+            }
+        }
+        RedirectURLProtocol.onStopLoading = { request in
+            if request.url?.absoluteString == tileURL {
+                stopped.fulfill()
+            }
+        }
+        defer { RedirectURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RedirectURLProtocol.self]
+        let fetcher = HTTPTileFetcher(configuration: configuration)
+        let control = OfflineRegionDownloadControl()
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 10_000_000_000 })
+
+        let task = Task {
+            try await downloader.downloadCurrentRegion(control: control)
+        }
+        await fulfillment(of: [started], timeout: 2)
+        control.pause()
+
+        do {
+            _ = try await task.value
+            XCTFail("download unexpectedly succeeded after HTTP download pause")
+        } catch TileError.downloadPaused {
+        } catch {
+            XCTFail("expected downloadPaused, got \(error)")
+        }
+        await fulfillment(of: [stopped], timeout: 2)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+    }
+
+    func testOfflineDownloaderPauseResumeRaceDoesNotDiscardRetainedWork() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let tileSHA = sha256(tile)
+        let basemap = Data("basemap".utf8)
+        let targetObject = manifestObject(
+            publishVersion: "20260717T000000Z",
+            tileSHA: tileSHA,
+            tileBytes: tile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+        let started = expectation(description: "download started")
+        let fetcher = SlowDownloadFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz": tile,
+        ], onDownloadStarted: {
+            started.fulfill()
+        })
+        let control = OfflineRegionDownloadControl()
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 10_000_000_000 })
+
+        let task = Task {
+            try await downloader.downloadCurrentRegion(control: control)
+        }
+        await fulfillment(of: [started], timeout: 1)
+        control.pause()
+        control.resume()
+
+        do {
+            _ = try await task.value
+            XCTFail("download unexpectedly succeeded after pause/resume race")
+        } catch TileError.downloadPaused {
+        } catch {
+            XCTFail("expected latched downloadPaused, got \(error)")
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+    }
+
+    func testOfflineDownloaderPauseThenCancelDiscardsRetainedWork() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let basemap = Data("basemap".utf8)
+        let targetObject = manifestObject(
+            publishVersion: "20260717T000000Z",
+            tileSHA: sha256(tile),
+            tileBytes: tile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+        let started = expectation(description: "download started")
+        let fetcher = SlowDownloadFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz": tile,
+        ], onDownloadStarted: {
+            started.fulfill()
+        })
+        let control = OfflineRegionDownloadControl()
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 10_000_000_000 })
+
+        let task = Task {
+            try await downloader.downloadCurrentRegion(control: control)
+        }
+        await fulfillment(of: [started], timeout: 1)
+        control.pause()
+        control.cancel()
+
+        do {
+            _ = try await task.value
+            XCTFail("download unexpectedly succeeded after pause then cancel")
+        } catch TileError.downloadCancelled {
+        } catch {
+            XCTFail("expected downloadCancelled, got \(error)")
+        }
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+    }
+
+    func testOfflineDownloaderSweepsSupersededInProgressRootsForSameRegion() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let oldTile = try gzipJSON(tileObject(places: [validPlace()]))
+        let oldSHA = sha256(oldTile)
+        let missingOldTile = try gzipJSON(tileObject(places: [validPlace(["place_id": "mt1_00000000000000000000000001"])], x: 512))
+        let oldBasemap = Data("old-basemap".utf8)
+        let oldManifest = twoTileManifestObject(
+            publishVersion: "20260717T000000Z",
+            firstSHA: oldSHA,
+            firstBytes: oldTile.count,
+            secondSHA: sha256(missingOldTile),
+            secondBytes: missingOldTile.count,
+            basemapSHA: sha256(oldBasemap),
+            basemapBytes: oldBasemap.count
+        )
+        let interrupted = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(oldManifest),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz": oldTile,
+        ])
+        let interruptedDownloader = OfflineRegionDownloader(region: "uk", fetcher: interrupted, store: store, availableBytes: { 10_000_000_000 })
+        do {
+            _ = try await interruptedDownloader.downloadCurrentRegion()
+            XCTFail("download unexpectedly succeeded with the second tile missing")
+        } catch let error as URLError where error.code == .notConnectedToInternet {
+        } catch {
+            XCTFail("expected interrupted fetch, got \(error)")
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: oldSHA).path))
+
+        let newTile = try gzipJSON(tileObject(places: [validPlace(["place_id": "mt1_00000000000000000000000002"])], x: 513))
+        let newBasemap = Data("new-basemap".utf8)
+        let newManifest = manifestObject(
+            publishVersion: "20260718T000000Z",
+            tileX: 513,
+            tileY: 340,
+            tileSHA: sha256(newTile),
+            tileBytes: newTile.count,
+            basemapSHA: sha256(newBasemap),
+            basemapBytes: newBasemap.count,
+            attributionSources: []
+        )
+        let complete = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260718T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260718T000000Z/manifest.json": jsonData(newManifest),
+            "https://tiles.making-tracks.app/uk/20260718T000000Z/tiles/10/513/340.json.gz": newTile,
+            "https://tiles.making-tracks.app/uk/20260718T000000Z/uk.pmtiles": newBasemap,
+        ])
+        let completeDownloader = OfflineRegionDownloader(region: "uk", fetcher: complete, store: store, availableBytes: { 10_000_000_000 })
+
+        _ = try await completeDownloader.downloadCurrentRegion()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: oldSHA).path))
+        XCTAssertEqual(try store.installedPublish(region: "uk")?.publishVersion, "20260718T000000Z")
+    }
+
+    func testOfflineStoreBasemapStagingMovesDownloadedFileIntoObjectStore() throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let basemap = Data("basemap".utf8)
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MakingTracksBasemapMoveTest-\(UUID().uuidString).pmtiles")
+        try basemap.write(to: source, options: .atomic)
+
+        try store.stageDownloadedBasemapObject(source, sha256: sha256(basemap), bytes: basemap.count)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertEqual(try Data(contentsOf: offlineBasemapObjectURL(root: root, sha: sha256(basemap))), basemap)
+    }
+
+    func testOfflineStoreDeleteRegionDiscardsMatchingInProgressObjects() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let firstTile = try gzipJSON(tileObject(places: [validPlace()]))
+        let firstSHA = sha256(firstTile)
+        let secondTile = try gzipJSON(tileObject(places: [validPlace(["place_id": "mt1_00000000000000000000000001"])], x: 512))
+        let basemap = Data("basemap".utf8)
+        let targetObject = twoTileManifestObject(
+            firstSHA: firstSHA,
+            firstBytes: firstTile.count,
+            secondSHA: sha256(secondTile),
+            secondBytes: secondTile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count
+        )
+        let firstAttempt = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz": firstTile,
+        ])
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: firstAttempt, store: store, availableBytes: { 10_000_000_000 })
+
+        do {
+            _ = try await downloader.downloadCurrentRegion()
+            XCTFail("download unexpectedly succeeded with the second tile missing")
+        } catch let error as URLError where error.code == .notConnectedToInternet {
+        } catch {
+            XCTFail("expected interrupted fetch, got \(error)")
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: firstSHA).path))
+        try store.delete(region: "uk")
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: firstSHA).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+    }
+
+    func testOfflineDownloaderCanCancelAfterPersistingCurrentObject() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let firstTile = try gzipJSON(tileObject(places: [validPlace()]))
+        let firstSHA = sha256(firstTile)
+        let secondTile = try gzipJSON(tileObject(places: [validPlace(["place_id": "mt1_00000000000000000000000001"])], x: 512))
+        let secondSHA = sha256(secondTile)
+        let basemap = Data("basemap".utf8)
+        let targetObject = twoTileManifestObject(
+            firstSHA: firstSHA,
+            firstBytes: firstTile.count,
+            secondSHA: secondSHA,
+            secondBytes: secondTile.count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count
+        )
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz": firstTile,
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/512/340.json.gz": secondTile,
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles": basemap,
+        ])
+        let control = OfflineRegionDownloadControl()
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 10_000_000_000 })
+
+        do {
+            _ = try await downloader.downloadCurrentRegion(control: control) { event in
+                if event.completedObjectCount == 1 {
+                    control.cancel()
+                }
+            }
+            XCTFail("download unexpectedly succeeded after cancel")
+        } catch TileError.downloadCancelled {
+        } catch {
+            XCTFail("expected downloadCancelled, got \(error)")
+        }
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineTileObjectURL(root: root, sha: firstSHA).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+    }
+
     func testOfflineDownloaderRejectsInsufficientStorageBeforeBlobFetch() async throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)
@@ -1566,7 +2111,7 @@ final class MakingTracksTilesTests: XCTestCase {
     }
 }
 
-private final class StubFetcher: TileFetching, @unchecked Sendable {
+private final class StubFetcher: OfflineRegionFetching, @unchecked Sendable {
     var routes: [String: Data]
     private(set) var requestedURLs: [String] = []
 
@@ -1579,38 +2124,126 @@ private final class StubFetcher: TileFetching, @unchecked Sendable {
         guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
         return data
     }
+
+    func download(_ url: URL) async throws -> URL {
+        let data = try await fetch(url)
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MakingTracksStubDownload-\(UUID().uuidString)")
+        try data.write(to: fileURL, options: .atomic)
+        return fileURL
+    }
+}
+
+private final class SlowDownloadFetcher: OfflineRegionFetching, @unchecked Sendable {
+    private let routes: [String: Data]
+    private let onDownloadStarted: () -> Void
+
+    init(routes: [String: Data], onDownloadStarted: @escaping () -> Void) {
+        self.routes = routes
+        self.onDownloadStarted = onDownloadStarted
+    }
+
+    func fetch(_ url: URL) async throws -> Data {
+        guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
+        return data
+    }
+
+    func download(_ url: URL) async throws -> URL {
+        onDownloadStarted()
+        do {
+            try await Task.sleep(nanoseconds: 10_000_000_000)
+        } catch is CancellationError {
+            throw URLError(.cancelled)
+        }
+        let data = try await fetch(url)
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MakingTracksSlowDownload-\(UUID().uuidString)")
+        try data.write(to: fileURL, options: .atomic)
+        return fileURL
+    }
+}
+
+private final class ProgressRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [OfflineRegionDownloadProgress] = []
+
+    var events: [OfflineRegionDownloadProgress] {
+        lock.withLock { recorded }
+    }
+
+    func append(_ event: OfflineRegionDownloadProgress) {
+        lock.withLock {
+            recorded.append(event)
+        }
+    }
 }
 
 private final class RedirectURLProtocol: URLProtocol, @unchecked Sendable {
     enum Mode: Sendable {
         case status(Int, location: String?)
+        case redirect(to: String)
+        case blockingDownload(routes: [String: Data])
     }
 
     nonisolated(unsafe) static var mode: Mode = .status(200, location: nil)
+    nonisolated(unsafe) static var responseBody = Data()
+    nonisolated(unsafe) static var requestedURLs: [URL] = []
+    nonisolated(unsafe) static var onBlockedRequest: ((URLRequest) -> Void)?
+    nonisolated(unsafe) static var onStopLoading: ((URLRequest) -> Void)?
+
+    static func reset() {
+        mode = .status(200, location: nil)
+        responseBody = Data()
+        requestedURLs = []
+        onBlockedRequest = nil
+        onStopLoading = nil
+    }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        Self.requestedURLs.append(request.url!)
         switch Self.mode {
         case .status(let status, let location):
-            var headers: [String: String] = [:]
-            if let location {
-                headers["Location"] = location
-            }
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: status,
-                httpVersion: nil,
-                headerFields: headers
-            )!
+            startLoadingStatus(status, location: location, body: Self.responseBody)
+        case .redirect(let location):
+            let response = response(status: 302, location: location)
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: Data())
+            client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: URL(string: location)!), redirectResponse: response)
             client?.urlProtocolDidFinishLoading(self)
+        case .blockingDownload(let routes):
+            if let data = routes[request.url!.absoluteString] {
+                startLoadingStatus(200, location: nil, body: data)
+            } else {
+                Self.onBlockedRequest?(request)
+            }
         }
     }
 
-    override func stopLoading() {}
+    private func startLoadingStatus(_ status: Int, location: String?, body: Data) {
+        let response = response(status: status, location: location)
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    private func response(status: Int, location: String?) -> HTTPURLResponse {
+        var headers: [String: String] = [:]
+        if let location {
+            headers["Location"] = location
+        }
+        return HTTPURLResponse(
+            url: request.url!,
+            statusCode: status,
+            httpVersion: nil,
+            headerFields: headers
+        )!
+    }
+
+    override func stopLoading() {
+        Self.onStopLoading?(request)
+    }
 }
 
 private func temporaryCache(maxBytes: Int = 1024 * 1024) throws -> TileCache {
@@ -1638,6 +2271,10 @@ private func offlineCurrentPackURL(root: URL, region: String) -> URL {
 
 private func offlinePackIndexURL(root: URL, region: String, publishVersion: String) -> URL {
     root.appendingPathComponent("packs/\(region)/\(publishVersion)/pack-index.json")
+}
+
+private func offlineInProgressIndexURL(root: URL, region: String, publishVersion: String) -> URL {
+    root.appendingPathComponent("in-progress/\(region)/\(publishVersion)/pack-index.json")
 }
 
 private func cachedPublish(
@@ -1726,6 +2363,31 @@ private func manifestObject(
     } else {
         object["attribution"] = []
     }
+    return object
+}
+
+private func twoTileManifestObject(
+    publishVersion: String = "20260717T000000Z",
+    firstSHA: String,
+    firstBytes: Int,
+    secondSHA: String,
+    secondBytes: Int,
+    basemapSHA: String,
+    basemapBytes: Int
+) -> [String: Any] {
+    var object = manifestObject(
+        publishVersion: publishVersion,
+        tileSHA: firstSHA,
+        tileBytes: firstBytes,
+        basemapSHA: basemapSHA,
+        basemapBytes: basemapBytes,
+        attributionSources: []
+    )
+    object["tiles"] = [
+        ["x": 511, "y": 340, "sha256": firstSHA, "bytes": firstBytes],
+        ["x": 512, "y": 340, "sha256": secondSHA, "bytes": secondBytes],
+    ]
+    object["counts"] = ["total": 2, "by_tier": [2, 0, 0, 0]]
     return object
 }
 

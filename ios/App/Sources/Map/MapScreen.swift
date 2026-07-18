@@ -77,7 +77,33 @@ final class AppShellModel {
 }
 
 struct OfflineDownloadProgress: Sendable {
+    let region: String?
+    let publishVersion: String?
+    let completedBytes: Int?
+    let totalBytes: Int?
     let fractionComplete: Double
+
+    init(
+        region: String? = nil,
+        publishVersion: String? = nil,
+        completedBytes: Int? = nil,
+        totalBytes: Int? = nil,
+        fractionComplete: Double
+    ) {
+        self.region = region
+        self.publishVersion = publishVersion
+        self.completedBytes = completedBytes
+        self.totalBytes = totalBytes
+        self.fractionComplete = fractionComplete
+    }
+
+    init(_ progress: OfflineRegionDownloadProgress) {
+        region = progress.region
+        publishVersion = progress.publishVersion
+        completedBytes = progress.completedBytes
+        totalBytes = progress.totalBytes
+        fractionComplete = progress.fractionComplete
+    }
 
     var percentComplete: Int {
         Int((boundedFraction * 100).rounded())
@@ -111,6 +137,8 @@ struct MapScreen: View {
     @State private var regionPMTilesURL: String?
     @State private var attribution: [Attribution] = []
     @State private var debugOfflineStatus: String?
+    @State private var liveOfflineDownloadProgress: OfflineDownloadProgress?
+    @State private var liveOfflineDownloadProgressID: UUID?
     @State private var appShell = AppShellModel()
     @State private var cardPresentation = PlaceCardPresentation()
     @State private var showLayers = false
@@ -608,7 +636,7 @@ struct MapScreen: View {
             .accessibilityHint("Opens app menu")
             .accessibilityIdentifier("map.menu")
 
-            if let offlineDownloadProgress {
+            if let offlineDownloadProgress = currentOfflineDownloadProgress {
                 Button {
                     appShell.deepLinkPath = .offlineMaps
                     appShell.isMenuPresented = true
@@ -639,6 +667,10 @@ struct MapScreen: View {
             .background(.ultraThinMaterial, in: Capsule())
             .accessibilityLabel("OpenStreetMap attribution")
             .accessibilityIdentifier("map.openstreetmap-attribution")
+    }
+
+    private var currentOfflineDownloadProgress: OfflineDownloadProgress? {
+        liveOfflineDownloadProgress ?? offlineDownloadProgress
     }
 
     private var locationMenuStatus: LocationMenuStatus {
@@ -799,12 +831,24 @@ struct MapScreen: View {
         appliedShowHiddenPlaces = layerVisibility.showHiddenPlaces
 #if DEBUG
         if let debugInstallOfflineRegion, let model {
+            let progressID = UUID()
             await MainActor.run {
                 debugOfflineStatus = "Installing \(debugInstallOfflineRegion)"
+                liveOfflineDownloadProgressID = progressID
+                liveOfflineDownloadProgress = OfflineDownloadProgress(fractionComplete: 0)
             }
-            let status = await model.installDebugOfflineRegion(debugInstallOfflineRegion)
+            let status = await model.installDebugOfflineRegion(debugInstallOfflineRegion) { progress in
+                Task { @MainActor in
+                    guard liveOfflineDownloadProgressID == progressID else { return }
+                    liveOfflineDownloadProgress = OfflineDownloadProgress(progress)
+                }
+            }
             await MainActor.run {
                 debugOfflineStatus = status
+                if liveOfflineDownloadProgressID == progressID {
+                    liveOfflineDownloadProgressID = nil
+                    liveOfflineDownloadProgress = nil
+                }
             }
         } else if debugForceTileNetworkOffline {
             await MainActor.run {
@@ -1962,7 +2006,10 @@ private final class MapScreenModel {
     }
 
 #if DEBUG
-    func installDebugOfflineRegion(_ region: String) async -> String {
+    func installDebugOfflineRegion(
+        _ region: String,
+        progress: @escaping @Sendable (OfflineRegionDownloadProgress) -> Void
+    ) async -> String {
         guard fixturePlaces.isEmpty,
               let offlineStore,
               Self.isValidRegion(region)
@@ -1976,11 +2023,11 @@ private final class MapScreenModel {
             )
             let downloader = OfflineRegionDownloader(
                 region: region,
-                fetcher: HTTPTileFetcher(),
+                fetcher: HTTPTileFetcher.offlineForeground(),
                 store: offlineStore,
                 availableBytes: { StorageHeadroom.availableBytes(at: documents) }
             )
-            let result = try await downloader.downloadCurrentRegion()
+            let result = try await downloader.downloadCurrentRegion(progress: progress)
             return "Installed \(result.publish.publishVersion)"
         } catch {
             return "Install failed: \(String(describing: error))"
