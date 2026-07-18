@@ -94,9 +94,6 @@ public enum PinLayers {
 
     public static func categoryVisibilityFilter(visibleCategories: Set<String>?) -> JSONValue? {
         guard let visibleCategories else { return nil }
-        guard !visibleCategories.isEmpty else {
-            return hiddenFilter()
-        }
         let category = JSONValue.array([.string("get"), .string("category")])
         let knownCategories = JSONValue.array([.string("literal"), .array(categoryIconNames.keys.sorted().map(JSONValue.string))])
         let visibleKnownCategories = JSONValue.array([.string("literal"), .array(visibleCategories.subtracting([fallbackCategoryID]).sorted().map(JSONValue.string))])
@@ -108,7 +105,7 @@ public enum PinLayers {
         } else {
             categoryFilter = knownCategoryFilter
         }
-        return .array([.string("any"), hiddenFilter(), categoryFilter])
+        return categoryFilter
     }
 
     public static func combinedFilter(_ filters: [JSONValue?]) -> JSONValue? {

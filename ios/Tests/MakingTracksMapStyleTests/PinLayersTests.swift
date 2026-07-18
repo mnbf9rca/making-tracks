@@ -119,19 +119,22 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(emittedIconNames, Set(PinLayers.categorySymbolNames.keys))
     }
 
-    func testCategoryVisibilityFilterIsDeterministicAndOpenStringSafe() {
+    func testCategoryVisibilityFilterComposesWithHiddenVisibility() {
         XCTAssertNil(PinLayers.categoryVisibilityFilter(visibleCategories: nil))
         let museumAndOtherFilter = PinLayers.categoryVisibilityFilter(
             visibleCategories: ["museum", PinLayers.fallbackCategoryID]
         )
         XCTAssertEqual(Expression.evaluate(museumAndOtherFilter!, ["category": .string("museum")]), .bool(true))
         XCTAssertEqual(Expression.evaluate(museumAndOtherFilter!, ["category": .string("future_category")]), .bool(true))
+        XCTAssertEqual(Expression.evaluate(museumAndOtherFilter!, ["category": .string("future_category"), "hidden": .bool(true)]), .bool(true))
         XCTAssertEqual(Expression.evaluate(museumAndOtherFilter!, ["category": .string("artwork")]), .bool(false))
 
         let museumOnlyFilter = PinLayers.categoryVisibilityFilter(visibleCategories: ["museum"])
         XCTAssertEqual(Expression.evaluate(museumOnlyFilter!, ["category": .string("museum")]), .bool(true))
+        XCTAssertEqual(Expression.evaluate(museumOnlyFilter!, ["category": .string("museum"), "hidden": .bool(true)]), .bool(true))
         XCTAssertEqual(Expression.evaluate(museumOnlyFilter!, ["category": .string("future_category")]), .bool(false))
-        XCTAssertEqual(Expression.evaluate(museumOnlyFilter!, ["category": .string("artwork"), "hidden": .bool(true)]), .bool(true))
+        XCTAssertEqual(Expression.evaluate(museumOnlyFilter!, ["category": .string("future_category"), "hidden": .bool(true)]), .bool(false))
+        XCTAssertEqual(Expression.evaluate(museumOnlyFilter!, ["category": .string("artwork"), "hidden": .bool(true)]), .bool(false))
 
         XCTAssertEqual(
             Expression.evaluate(PinLayers.categoryVisibilityFilter(visibleCategories: [])!, ["category": .string("museum")]),
@@ -139,8 +142,38 @@ final class PinLayersTests: XCTestCase {
         )
         XCTAssertEqual(
             Expression.evaluate(PinLayers.categoryVisibilityFilter(visibleCategories: [])!, ["category": .string("museum"), "hidden": .bool(true)]),
-            .bool(true)
+            .bool(false)
         )
+    }
+
+    func testShowHiddenSourceStillComposesWithCategoryLayerFilters() {
+        let visibleMuseum = MapPlace(id: "visible-museum", lat: 51.5, lon: -0.12, tier: 1, category: "museum")
+        let hiddenMuseum = MapPlace(id: "hidden-museum", lat: 51.6, lon: -0.11, tier: 2, category: "museum")
+        let hiddenArtwork = MapPlace(id: "hidden-artwork", lat: 51.7, lon: -0.10, tier: 2, category: "artwork")
+        let features = [
+            (visibleMuseum, PinState(saved: false, visit: .none, hidden: false)),
+            (hiddenMuseum, PinState(saved: false, visit: .none, hidden: true)),
+            (hiddenArtwork, PinState(saved: false, visit: .none, hidden: true)),
+        ]
+
+        let sourceFeatures = PinFeatureFilter.discoveryFeatures(features, showHidden: true)
+        XCTAssertEqual(sourceFeatures.map(\.0.id), ["visible-museum", "hidden-museum", "hidden-artwork"])
+
+        let museumFilter = PinLayers.categoryVisibilityFilter(visibleCategories: ["museum"])!
+        let visibleIDs = sourceFeatures.compactMap { place, state -> String? in
+            let props = FeatureEncoding.featureProperties(state)
+                .merging(["category": .string(place.category)]) { _, new in new }
+            return Expression.evaluate(museumFilter, props) == .bool(true) ? place.id : nil
+        }
+        XCTAssertEqual(visibleIDs, ["visible-museum", "hidden-museum"])
+
+        let noCategoryFilter = PinLayers.categoryVisibilityFilter(visibleCategories: [])!
+        let noCategoryIDs = sourceFeatures.compactMap { place, state -> String? in
+            let props = FeatureEncoding.featureProperties(state)
+                .merging(["category": .string(place.category)]) { _, new in new }
+            return Expression.evaluate(noCategoryFilter, props) == .bool(true) ? place.id : nil
+        }
+        XCTAssertEqual(noCategoryIDs, [])
     }
 
     func testCombinesCategoryFilterWithBadgeFilters() {
