@@ -8,6 +8,192 @@ import MakingTracksData
 import MakingTracksMapStyle
 import MakingTracksTiles
 
+struct OfflineRegionCatalogZone: Identifiable, Hashable, Sendable {
+    let id: String
+    let displayName: String
+    let parentID: String?
+    let publishVersion: String
+    let bytesWithoutThumbnails: Int
+    let bytesWithThumbnails: Int
+
+    func sizeLabel(includeThumbnails: Bool) -> String {
+        let bytes = includeThumbnails ? bytesWithThumbnails : bytesWithoutThumbnails
+        if bytes >= 1_000_000_000 {
+            return String(format: "%.1f GB", Double(bytes) / 1_000_000_000.0)
+        }
+        return "\(Int((Double(bytes) / 1_000_000.0).rounded())) MB"
+    }
+}
+
+struct OfflineRegionCatalog: Sendable, Equatable {
+    let zones: [OfflineRegionCatalogZone]
+
+    static let debugFixture = OfflineRegionCatalog(zones: [
+        OfflineRegionCatalogZone(
+            id: "uk",
+            displayName: "United Kingdom",
+            parentID: nil,
+            publishVersion: "20260718T000000Z",
+            bytesWithoutThumbnails: 2_640_000_000,
+            bytesWithThumbnails: 3_180_000_000
+        ),
+        OfflineRegionCatalogZone(
+            id: "uk_london",
+            displayName: "London",
+            parentID: "uk",
+            publishVersion: "20260718T000000Z",
+            bytesWithoutThumbnails: 842_000_000,
+            bytesWithThumbnails: 1_160_000_000
+        ),
+        OfflineRegionCatalogZone(
+            id: "uk_south_east",
+            displayName: "South East England",
+            parentID: "uk",
+            publishVersion: "20260718T000000Z",
+            bytesWithoutThumbnails: 1_120_000_000,
+            bytesWithThumbnails: 1_410_000_000
+        ),
+        OfflineRegionCatalogZone(
+            id: "malaysia",
+            displayName: "Malaysia",
+            parentID: nil,
+            publishVersion: "20260718T000000Z",
+            bytesWithoutThumbnails: 1_420_000_000,
+            bytesWithThumbnails: 1_980_000_000
+        ),
+        OfflineRegionCatalogZone(
+            id: "malaysia_kl",
+            displayName: "Kuala Lumpur",
+            parentID: "malaysia",
+            publishVersion: "20260718T000000Z",
+            bytesWithoutThumbnails: 610_000_000,
+            bytesWithThumbnails: 915_000_000
+        ),
+        OfflineRegionCatalogZone(
+            id: "malaysia_penang",
+            displayName: "Penang",
+            parentID: "malaysia",
+            publishVersion: "20260718T000000Z",
+            bytesWithoutThumbnails: 520_000_000,
+            bytesWithThumbnails: 760_000_000
+        ),
+    ])
+
+    var rootZones: [OfflineRegionCatalogZone] {
+        zones.filter { $0.parentID == nil }.sorted(by: zoneSort)
+    }
+
+    func zone(id: String) -> OfflineRegionCatalogZone? {
+        zones.first { $0.id == id }
+    }
+
+    func children(of parentID: String) -> [OfflineRegionCatalogZone] {
+        zones.filter { $0.parentID == parentID }.sorted(by: zoneSort)
+    }
+
+    func rows(
+        installed: [String: String],
+        activeProgress: OfflineDownloadProgress?,
+        pausedProgress: OfflineDownloadProgress? = nil,
+        quarantines: [OfflinePackQuarantine]
+    ) -> [OfflineRegionCatalogRow] {
+        let quarantineByRegion = quarantines.reduce(into: [String: OfflinePackQuarantine]()) { byRegion, quarantine in
+            byRegion[quarantine.region] = quarantine
+        }
+        return rootZones.flatMap {
+            rows(
+                for: $0,
+                depth: 0,
+                installed: installed,
+                activeProgress: activeProgress,
+                pausedProgress: pausedProgress,
+                quarantines: quarantineByRegion
+            )
+        }
+    }
+
+    private func rows(
+        for zone: OfflineRegionCatalogZone,
+        depth: Int,
+        installed: [String: String],
+        activeProgress: OfflineDownloadProgress?,
+        pausedProgress: OfflineDownloadProgress?,
+        quarantines: [String: OfflinePackQuarantine]
+    ) -> [OfflineRegionCatalogRow] {
+        let state: OfflineRegionCatalogRow.State
+        if let quarantine = quarantines[zone.id] {
+            state = .quarantined(quarantine)
+        } else if activeProgress?.region == zone.id {
+            state = .downloading(activeProgress!)
+        } else if pausedProgress?.region == zone.id {
+            state = .paused(pausedProgress!)
+        } else if let installedVersion = installed[zone.id] {
+            if installedVersion == zone.publishVersion {
+                state = .installed(publishVersion: installedVersion)
+            } else {
+                state = .updateAvailable(
+                    installedPublishVersion: installedVersion,
+                    availablePublishVersion: zone.publishVersion
+                )
+            }
+        } else {
+            state = .notInstalled
+        }
+        let current = OfflineRegionCatalogRow(zone: zone, depth: depth, state: state)
+        return [current] + children(of: zone.id).flatMap {
+            rows(
+                for: $0,
+                depth: depth + 1,
+                installed: installed,
+                activeProgress: activeProgress,
+                pausedProgress: pausedProgress,
+                quarantines: quarantines
+            )
+        }
+    }
+
+    private func zoneSort(_ lhs: OfflineRegionCatalogZone, _ rhs: OfflineRegionCatalogZone) -> Bool {
+        if lhs.displayName != rhs.displayName {
+            return lhs.displayName < rhs.displayName
+        }
+        return lhs.id < rhs.id
+    }
+}
+
+struct OfflineRegionCatalogRow: Identifiable, Sendable, Equatable {
+    enum State: Sendable, Equatable {
+        case notInstalled
+        case installed(publishVersion: String)
+        case updateAvailable(installedPublishVersion: String, availablePublishVersion: String)
+        case downloading(OfflineDownloadProgress)
+        case paused(OfflineDownloadProgress)
+        case quarantined(OfflinePackQuarantine)
+    }
+
+    let zone: OfflineRegionCatalogZone
+    let depth: Int
+    let state: State
+
+    var id: String { zone.id }
+
+    var statusLabel: String {
+        switch state {
+        case .notInstalled:
+            "Not downloaded"
+        case .installed:
+            "Downloaded"
+        case .updateAvailable:
+            "Update available"
+        case let .downloading(progress):
+            "Downloading \(progress.percentComplete)%"
+        case let .paused(progress):
+            "Paused at \(progress.percentComplete)%"
+        case .quarantined:
+            "Quarantined pack"
+        }
+    }
+}
+
 struct ViewportSeed: Sendable, Equatable {
     let bbox: BBox
     let zoom: Int
@@ -76,7 +262,7 @@ final class AppShellModel {
     var deepLinkPath: MenuDestination?
 }
 
-struct OfflineDownloadProgress: Sendable {
+struct OfflineDownloadProgress: Sendable, Equatable {
     let region: String?
     let publishVersion: String?
     let completedBytes: Int?
@@ -217,6 +403,74 @@ struct ViewportRefreshTracker: Equatable {
     }
 }
 
+@Observable
+@MainActor
+final class OfflineRegionDownloadSession {
+    var liveProgress: OfflineDownloadProgress?
+    var pausedProgress: OfflineDownloadProgress?
+    @ObservationIgnored var activeControl: OfflineRegionDownloadControl?
+    @ObservationIgnored var activeTask: Task<Void, Never>?
+    @ObservationIgnored var activeDownloadID: UUID?
+
+    var rowProgress: OfflineDownloadProgress? {
+        liveProgress ?? pausedProgress
+    }
+
+    var chromeProgress: OfflineDownloadProgress? {
+        liveProgress
+    }
+
+    var pausedRegion: String? {
+        pausedProgress?.region
+    }
+
+    func canBegin(region: String) -> Bool {
+        guard let pausedRegion else { return true }
+        return pausedRegion == region
+    }
+
+    func begin(region: String, control: OfflineRegionDownloadControl, downloadID: UUID) {
+        activeControl?.cancel()
+        activeTask?.cancel()
+        activeControl = control
+        activeTask = nil
+        activeDownloadID = downloadID
+        pausedProgress = nil
+        liveProgress = OfflineDownloadProgress(region: region, publishVersion: nil, completedBytes: 0, totalBytes: nil, fractionComplete: 0)
+    }
+
+    func attach(task: Task<Void, Never>) {
+        activeTask = task
+    }
+
+    func update(_ progress: OfflineDownloadProgress) {
+        liveProgress = progress
+    }
+
+    func pause(region: String) {
+        pausedProgress = liveProgress ?? pausedProgress ?? OfflineDownloadProgress(region: region, fractionComplete: 0)
+        liveProgress = nil
+        activeControl = nil
+        activeTask = nil
+        activeDownloadID = nil
+    }
+
+    func clear() {
+        liveProgress = nil
+        pausedProgress = nil
+        activeControl = nil
+        activeTask = nil
+        activeDownloadID = nil
+    }
+
+    func noteDeleted(region: String) {
+        guard liveProgress?.region == region || pausedProgress?.region == region else { return }
+        activeControl?.cancel()
+        activeTask?.cancel()
+        clear()
+    }
+}
+
 struct MapScreen: View {
     static let themeStorageKey = "map.theme.id"
 
@@ -239,7 +493,7 @@ struct MapScreen: View {
     @State private var regionPMTilesURL: String?
     @State private var attribution: [Attribution] = []
     @State private var debugOfflineStatus: String?
-    @State private var liveOfflineDownloadProgress: OfflineDownloadProgress?
+    @State private var offlineDownloadSession = OfflineRegionDownloadSession()
     @State private var liveOfflineDownloadProgressID: UUID?
     @State private var appShell = AppShellModel()
     @State private var storageMenuStatus = StorageMenuStatus.loading
@@ -501,12 +755,16 @@ struct MapScreen: View {
         .sheet(isPresented: $appShell.isMenuPresented) {
             AppMenuSheet(
                 shell: appShell,
+                model: model,
                 attribution: attribution,
                 selectedThemeID: $selectedThemeID,
+                seededOfflineDownloadProgress: offlineDownloadProgress,
+                offlineDownloadSession: offlineDownloadSession,
                 locationStatus: locationMenuStatus,
                 storageStatus: storageMenuStatus,
                 openLocationSettings: openLocationSettings,
-                replayOnboarding: onReplayOnboarding
+                replayOnboarding: onReplayOnboarding,
+                onOfflineMapsChanged: refreshAfterOfflineMapsChanged
             )
         }
         .fullScreenCover(isPresented: updateRequiredPresentationBinding) {
@@ -821,7 +1079,7 @@ struct MapScreen: View {
     }
 
     private var currentOfflineDownloadProgress: OfflineDownloadProgress? {
-        liveOfflineDownloadProgress ?? offlineDownloadProgress
+        offlineDownloadSession.chromeProgress ?? offlineDownloadProgress
     }
 
     private var locationMenuStatus: LocationMenuStatus {
@@ -838,6 +1096,13 @@ struct MapScreen: View {
         }
         storageMenuStatus = .loading
         storageMenuStatus = await model.storageMenuStatus()
+    }
+
+    @MainActor
+    private func refreshAfterOfflineMapsChanged() async {
+        await model?.refreshManifest()
+        await refreshCurrentViewport()
+        await refreshStorageMenuStatus()
     }
 
     private var layersButton: some View {
@@ -995,19 +1260,19 @@ struct MapScreen: View {
             await MainActor.run {
                 debugOfflineStatus = "Installing \(debugInstallOfflineRegion)"
                 liveOfflineDownloadProgressID = progressID
-                liveOfflineDownloadProgress = OfflineDownloadProgress(fractionComplete: 0)
+                offlineDownloadSession.update(OfflineDownloadProgress(fractionComplete: 0))
             }
             let status = await model.installDebugOfflineRegion(debugInstallOfflineRegion) { progress in
                 Task { @MainActor in
                     guard liveOfflineDownloadProgressID == progressID else { return }
-                    liveOfflineDownloadProgress = OfflineDownloadProgress(progress)
+                    offlineDownloadSession.update(OfflineDownloadProgress(progress))
                 }
             }
             await MainActor.run {
                 debugOfflineStatus = status
                 if liveOfflineDownloadProgressID == progressID {
                     liveOfflineDownloadProgressID = nil
-                    liveOfflineDownloadProgress = nil
+                    offlineDownloadSession.clear()
                 }
             }
         } else if debugForceTileNetworkOffline {
@@ -1438,12 +1703,16 @@ private extension MapEmptyRegionSurface {
 
 private struct AppMenuSheet: View {
     @Bindable var shell: AppShellModel
+    let model: MapScreenModel?
     let attribution: [Attribution]
     @Binding var selectedThemeID: String
+    let seededOfflineDownloadProgress: OfflineDownloadProgress?
+    let offlineDownloadSession: OfflineRegionDownloadSession
     let locationStatus: LocationMenuStatus
     let storageStatus: StorageMenuStatus
     let openLocationSettings: () -> Void
     let replayOnboarding: @MainActor () -> Void
+    let onOfflineMapsChanged: @MainActor () async -> Void
 
     @State private var path: [MenuDestination] = []
     @Environment(\.dismiss) private var dismiss
@@ -1474,7 +1743,17 @@ private struct AppMenuSheet: View {
         case .lists:
             destinationWithDone(ListsPlaceholderView())
         case .offlineMaps:
-            destinationWithDone(OfflineMapsPlaceholderView())
+#if DEBUG
+            destinationWithDone(OfflineMapsView(
+                model: model,
+                seededProgress: seededOfflineDownloadProgress,
+                downloadSession: offlineDownloadSession,
+                storageStatus: storageStatus,
+                onOfflineMapsChanged: onOfflineMapsChanged
+            ))
+#else
+            destinationWithDone(OfflineMapsReleaseGatedView())
+#endif
         case .settings:
             destinationWithDone(SettingsView(
                 selectedThemeID: $selectedThemeID,
@@ -1576,16 +1855,331 @@ private struct ListsPlaceholderView: View {
     }
 }
 
-private struct OfflineMapsPlaceholderView: View {
+private struct OfflineMapsReleaseGatedView: View {
     var body: some View {
         ContentUnavailableView(
             "Offline maps",
             systemImage: "arrow.down.circle",
-            description: Text("Region downloads will appear here.")
+            description: Text("Region downloads are not enabled in this build.")
         )
         .navigationTitle("Offline maps")
     }
 }
+
+#if DEBUG
+private struct OfflineMapsView: View {
+    let model: MapScreenModel?
+    let seededProgress: OfflineDownloadProgress?
+    let downloadSession: OfflineRegionDownloadSession
+    let onOfflineMapsChanged: @MainActor () async -> Void
+
+    private let catalog = OfflineRegionCatalog.debugFixture
+    @State private var installed: [String: String] = [:]
+    @State private var quarantines: [OfflinePackQuarantine] = []
+    @State private var storageStatus: StorageMenuStatus
+    @State private var statusMessage: String?
+    @State private var pendingDeleteRegion: String?
+    @State private var pendingDeleteRegionName: String?
+
+    init(
+        model: MapScreenModel?,
+        seededProgress: OfflineDownloadProgress?,
+        downloadSession: OfflineRegionDownloadSession,
+        storageStatus: StorageMenuStatus,
+        onOfflineMapsChanged: @escaping @MainActor () async -> Void
+    ) {
+        self.model = model
+        self.seededProgress = seededProgress
+        self.downloadSession = downloadSession
+        self._storageStatus = State(initialValue: storageStatus)
+        self.onOfflineMapsChanged = onOfflineMapsChanged
+    }
+
+    private var activeProgress: OfflineDownloadProgress? {
+        downloadSession.liveProgress ?? seededProgress
+    }
+
+    private var pausedProgress: OfflineDownloadProgress? {
+        downloadSession.pausedProgress
+    }
+
+    private var rows: [OfflineRegionCatalogRow] {
+        catalog.rows(
+            installed: installed,
+            activeProgress: activeProgress,
+            pausedProgress: pausedProgress,
+            quarantines: quarantines
+        )
+    }
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(rows) { row in
+                    rowView(row)
+                }
+            } header: {
+                Text("Named zones")
+            }
+
+            Section("Storage") {
+                storageView
+            }
+
+            if let statusMessage {
+                Section {
+                    Label(statusMessage, systemImage: "info.circle")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("offline-maps.status")
+                }
+            }
+        }
+        .navigationTitle("Offline maps")
+        .task {
+            await refresh()
+        }
+        .refreshable {
+            await refresh()
+        }
+        .confirmationDialog(
+            pendingDeleteRegionName.map { "Delete \($0)?" } ?? "Delete downloaded map?",
+            isPresented: Binding(
+                get: { pendingDeleteRegion != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingDeleteRegion = nil
+                        pendingDeleteRegionName = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                guard let region = pendingDeleteRegion else { return }
+                pendingDeleteRegion = nil
+                pendingDeleteRegionName = nil
+                Task { await delete(region) }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDeleteRegion = nil
+                pendingDeleteRegionName = nil
+            }
+        } message: {
+            Text("This removes the downloaded region from this device.")
+        }
+    }
+
+    @ViewBuilder
+    private var storageView: some View {
+        switch storageStatus.kind {
+        case .loading:
+            ProgressView("Calculating installed maps")
+                .accessibilityIdentifier("offline-maps.storage.loading")
+        case .unavailable:
+            Label("Storage unavailable", systemImage: "externaldrive.badge.exclamationmark")
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("offline-maps.storage.unavailable")
+        case .ready:
+            LabeledContent("Installed maps", value: storageStatus.totalBytesText)
+                .accessibilityIdentifier("offline-maps.storage.total")
+            if storageStatus.regions.isEmpty {
+                Text("No downloaded regions")
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("offline-maps.storage.empty")
+            } else {
+                ForEach(storageStatus.regions) { region in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(verbatim: region.title)
+                        Text(verbatim: region.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .badge(Text(verbatim: region.bytesText))
+                    .accessibilityIdentifier("offline-maps.storage.region.\(region.region)")
+                }
+            }
+            ForEach(storageStatus.failedRegions, id: \.self) { region in
+                Label {
+                    Text(verbatim: region)
+                } icon: {
+                    Image(systemName: "externaldrive.badge.xmark")
+                }
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("offline-maps.storage.failed-region.\(region)")
+            }
+        }
+    }
+
+    private func rowView(_ row: OfflineRegionCatalogRow) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(verbatim: row.zone.displayName)
+                    .font(row.depth == 0 ? .headline : .body)
+                Text(verbatim: "\(row.zone.sizeLabel(includeThumbnails: false)) · \(row.statusLabel)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                if case let .quarantined(quarantine) = row.state {
+                    Text(verbatim: quarantineDetail(quarantine))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            .padding(.leading, CGFloat(row.depth) * 18)
+
+            Spacer(minLength: 8)
+
+            actionButtons(for: row)
+        }
+        .frame(minHeight: 56)
+        .accessibilityIdentifier("offline-maps.zone.\(row.zone.id)")
+    }
+
+    @ViewBuilder
+    private func actionButtons(for row: OfflineRegionCatalogRow) -> some View {
+        switch row.state {
+        case .notInstalled:
+            iconButton("Download", systemImage: "arrow.down.circle") {
+                startDownload(row.zone.id)
+            }
+        case .installed:
+            iconButton("Delete", systemImage: "trash", role: .destructive) {
+                pendingDeleteRegion = row.zone.id
+                pendingDeleteRegionName = row.zone.displayName
+            }
+        case .updateAvailable:
+            iconButton("Update", systemImage: "arrow.triangle.2.circlepath") {
+                startDownload(row.zone.id)
+            }
+        case .quarantined:
+            iconButton("Re-download", systemImage: "arrow.clockwise.circle") {
+                startDownload(row.zone.id)
+            }
+        case .downloading:
+            HStack(spacing: 8) {
+                if downloadSession.activeControl != nil {
+                    iconButton("Pause", systemImage: "pause.circle") {
+                        downloadSession.activeControl?.pause()
+                    }
+                }
+                iconButton("Cancel", systemImage: "xmark.circle", role: .destructive) {
+                    Task { await cancelDownload() }
+                }
+            }
+        case .paused:
+            HStack(spacing: 8) {
+                iconButton("Resume", systemImage: "play.circle") {
+                    startDownload(row.zone.id)
+                }
+                iconButton("Cancel", systemImage: "xmark.circle", role: .destructive) {
+                    Task { await cancelDownload() }
+                }
+            }
+        }
+    }
+
+    private func iconButton(
+        _ label: String,
+        systemImage: String,
+        role: ButtonRole? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(role: role, action: action) {
+            Image(systemName: systemImage)
+                .font(.title3)
+                .frame(width: 36, height: 36)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(label)
+    }
+
+    private func startDownload(_ region: String) {
+        guard let model else {
+            statusMessage = "Offline downloads unavailable"
+            return
+        }
+        guard downloadSession.canBegin(region: region) else {
+            statusMessage = "Resume or cancel the paused download first"
+            return
+        }
+        let downloadID = UUID()
+        let control = OfflineRegionDownloadControl()
+        downloadSession.begin(region: region, control: control, downloadID: downloadID)
+        statusMessage = nil
+        let task = Task {
+            let message = await model.installOfflineRegion(region, control: control) { progress in
+                Task { @MainActor in
+                    guard downloadSession.activeDownloadID == downloadID else { return }
+                    downloadSession.update(OfflineDownloadProgress(progress))
+                }
+            }
+            let shouldRefreshMap = await MainActor.run { () -> Bool in
+                guard downloadSession.activeDownloadID == downloadID else { return false }
+                if message == "Download paused" {
+                    downloadSession.pause(region: region)
+                } else {
+                    downloadSession.clear()
+                }
+                statusMessage = message
+                return message.hasPrefix("Installed ")
+            }
+            if shouldRefreshMap {
+                await onOfflineMapsChanged()
+            }
+            await refresh()
+        }
+        downloadSession.attach(task: task)
+    }
+
+    private func cancelDownload() async {
+        guard downloadSession.activeControl != nil
+            || downloadSession.activeTask != nil
+            || downloadSession.liveProgress != nil
+            || downloadSession.pausedProgress != nil
+        else { return }
+        let regionToDiscard = downloadSession.pausedProgress?.region ?? downloadSession.liveProgress?.region
+        downloadSession.activeControl?.cancel()
+        downloadSession.activeTask?.cancel()
+        downloadSession.clear()
+        if let regionToDiscard, let model {
+            statusMessage = await model.discardOfflineRegionDownload(regionToDiscard)
+            await refresh()
+        } else {
+            statusMessage = "Download cancelled"
+        }
+    }
+
+    private func delete(_ region: String) async {
+        guard let model else {
+            statusMessage = "Offline downloads unavailable"
+            return
+        }
+        statusMessage = await model.deleteOfflineRegion(region)
+        downloadSession.noteDeleted(region: region)
+        await onOfflineMapsChanged()
+        await refresh()
+    }
+
+    private func refresh() async {
+        guard let model else {
+            installed = [:]
+            quarantines = []
+            storageStatus = .unavailable
+            return
+        }
+        installed = await model.installedOfflinePublishVersions(for: catalog)
+        quarantines = model.offlinePackQuarantines()
+        storageStatus = await model.storageMenuStatus()
+    }
+
+    private func quarantineDetail(_ quarantine: OfflinePackQuarantine) -> String {
+        let version = quarantine.publishVersion ?? "unknown version"
+        let cells = quarantine.coordinates.count
+        return "\(version) · \(cells) affected \(cells == 1 ? "cell" : "cells")"
+    }
+}
+#endif
 
 private struct SettingsView: View {
     @Binding var selectedThemeID: String
@@ -2389,6 +2983,14 @@ private final class MapScreenModel {
         _ region: String,
         progress: @escaping @Sendable (OfflineRegionDownloadProgress) -> Void
     ) async -> String {
+        await installOfflineRegion(region, control: OfflineRegionDownloadControl(), progress: progress)
+    }
+
+    func installOfflineRegion(
+        _ region: String,
+        control: OfflineRegionDownloadControl,
+        progress: @escaping @Sendable (OfflineRegionDownloadProgress) -> Void
+    ) async -> String {
         guard fixturePlaces.isEmpty,
               let offlineStore,
               Self.isValidRegion(region)
@@ -2406,11 +3008,60 @@ private final class MapScreenModel {
                 store: offlineStore,
                 availableBytes: { StorageHeadroom.availableBytes(at: documents) }
             )
-            let result = try await downloader.downloadCurrentRegion(progress: progress)
+            let result = try await downloader.downloadCurrentRegion(control: control, progress: progress)
             return "Installed \(result.publish.publishVersion)"
+        } catch TileError.downloadPaused {
+            return "Download paused"
+        } catch TileError.downloadCancelled {
+            return "Download cancelled"
         } catch {
             return "Install failed: \(String(describing: error))"
         }
+    }
+
+    func installedOfflinePublishVersions(for catalog: OfflineRegionCatalog) async -> [String: String] {
+        guard let offlineStore else { return [:] }
+        let regionIDs = catalog.zones.map(\.id)
+        return await Task.detached {
+            var installed: [String: String] = [:]
+            for regionID in regionIDs {
+                guard let publish = try? offlineStore.installedPublish(region: regionID) else { continue }
+                installed[regionID] = publish.publishVersion
+            }
+            return installed
+        }.value
+    }
+
+    func offlinePackQuarantines() -> [OfflinePackQuarantine] {
+        offlineStore?.lastPackQuarantines() ?? []
+    }
+
+    func deleteOfflineRegion(_ region: String) async -> String {
+        guard let offlineStore, Self.isValidRegion(region) else {
+            return "Offline delete unavailable"
+        }
+        return await Task.detached {
+            do {
+                try offlineStore.delete(region: region)
+                return "Deleted \(region)"
+            } catch {
+                return "Delete failed: \(String(describing: error))"
+            }
+        }.value
+    }
+
+    func discardOfflineRegionDownload(_ region: String) async -> String {
+        guard let offlineStore, Self.isValidRegion(region) else {
+            return "Download cancelled"
+        }
+        return await Task.detached {
+            do {
+                try offlineStore.discardInProgressDownloads(region: region)
+                return "Download cancelled"
+            } catch {
+                return "Cancel failed: \(String(describing: error))"
+            }
+        }.value
     }
 
     private static func isValidRegion(_ value: String) -> Bool {
