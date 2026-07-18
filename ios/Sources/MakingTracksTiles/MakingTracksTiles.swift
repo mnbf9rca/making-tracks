@@ -145,26 +145,36 @@ public final class HTTPTileFetcher: OfflineRegionFetching, @unchecked Sendable {
     public func fetch(_ url: URL) async throws -> Data {
         try Self.validateOrigin(url)
         guard configurationIdentifier == nil else {
+            MakingTracksLog.resolution.error("fetch rejected kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
             throw TileError.invalidBackgroundFetch
         }
+        MakingTracksLog.resolution.debug("fetch started host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
         let request = URLRequest(url: url)
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse,
               (200...299).contains(http.statusCode)
         else {
-            throw TileError.httpStatus((response as? HTTPURLResponse)?.statusCode ?? -1)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            MakingTracksLog.resolution.error("fetch failed host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public) status=\(status, privacy: .public)")
+            throw TileError.httpStatus(status)
         }
+        MakingTracksLog.resolution.debug("fetch finished host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public) bytes=\(data.count, privacy: .public)")
         return data
     }
 
     public func download(_ url: URL) async throws -> URL {
         try Self.validateOrigin(url)
+        let kind = configurationIdentifier == nil ? "foreground" : "background"
+        let identifier = configurationIdentifier ?? "foreground"
+        let discretionary = session.configuration.isDiscretionary
+        MakingTracksLog.downloads.info("download started session=\(kind, privacy: .public) discretionary=\(discretionary, privacy: .public) identifier=\(identifier, privacy: .public) host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
         let request = URLRequest(url: url)
         if configurationIdentifier != nil {
             return try await delegate.download(request, on: session)
         }
         let (fileURL, response) = try await session.download(for: request)
         try Self.validateDownloadedFile(fileURL, response: response)
+        MakingTracksLog.downloads.info("download finished session=\(kind, privacy: .public) discretionary=\(discretionary, privacy: .public) identifier=\(identifier, privacy: .public) host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
         return fileURL
     }
 
@@ -181,13 +191,21 @@ public final class HTTPTileFetcher: OfflineRegionFetching, @unchecked Sendable {
               url.host == trustedHost,
               url.port == nil || url.port == 443
         else {
+            MakingTracksLog.resolution.error("origin check failed host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
             throw TileError.untrustedHost
         }
+        MakingTracksLog.resolution.debug("origin check passed host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
     }
 
     public static func validateRedirect(from: URL, to: URL) throws {
         try validateOrigin(from)
-        try validateOrigin(to)
+        do {
+            try validateOrigin(to)
+            MakingTracksLog.resolution.debug("redirect check passed host=\(MakingTracksLog.host(to), privacy: .public) kind=\(MakingTracksLog.objectKind(to), privacy: .public)")
+        } catch {
+            MakingTracksLog.resolution.error("redirect check failed host=\(MakingTracksLog.host(to), privacy: .public) kind=\(MakingTracksLog.objectKind(to), privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            throw error
+        }
     }
 
     static func validateDownloadedFile(_ fileURL: URL, response: URLResponse) throws {
@@ -205,6 +223,7 @@ public final class HTTPTileFetcher: OfflineRegionFetching, @unchecked Sendable {
             try validateOrigin(finalURL)
         } catch {
             try? FileManager.default.removeItem(at: fileURL)
+            MakingTracksLog.downloads.error("download validation failed host=\(MakingTracksLog.host(finalURL), privacy: .public) kind=\(MakingTracksLog.objectKind(finalURL), privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
             throw error
         }
     }
@@ -252,6 +271,11 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let task = session.downloadTask(with: request)
+                let sessionKind = session.configuration.identifier == nil ? "foreground" : "background"
+                let sessionID = session.configuration.identifier ?? "foreground"
+                let host = request.url.map(MakingTracksLog.host) ?? "unknown"
+                let objectKind = request.url.map(MakingTracksLog.objectKind) ?? "unknown"
+                MakingTracksLog.downloads.info("task created session=\(sessionKind, privacy: .public) discretionary=\(session.configuration.isDiscretionary, privacy: .public) identifier=\(sessionID, privacy: .public) task=\(task.taskIdentifier, privacy: .public) host=\(host, privacy: .public) kind=\(objectKind, privacy: .public)")
                 lock.withLock {
                     downloads[task.taskIdentifier] = DownloadState(
                         continuation: continuation,
@@ -280,8 +304,10 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
         }
         do {
             try HTTPTileFetcher.validateRedirect(from: from, to: to)
+            MakingTracksLog.resolution.debug("redirect allowed status=\(response.statusCode, privacy: .public) host=\(MakingTracksLog.host(to), privacy: .public) kind=\(MakingTracksLog.objectKind(to), privacy: .public)")
             completionHandler(request)
         } catch {
+            MakingTracksLog.resolution.error("redirect blocked status=\(response.statusCode, privacy: .public) host=\(MakingTracksLog.host(to), privacy: .public) kind=\(MakingTracksLog.objectKind(to), privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
             completionHandler(nil)
         }
     }
@@ -298,8 +324,11 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
 
         let result: Result<URL, Error>
         do {
-            result = .success(try BackgroundDownloadFileStager.stage(location))
+            let staged = try BackgroundDownloadFileStager.stage(location)
+            MakingTracksLog.downloads.debug("task staged task=\(downloadTask.taskIdentifier, privacy: .public)")
+            result = .success(staged)
         } catch {
+            MakingTracksLog.downloads.error("task stage failed task=\(downloadTask.taskIdentifier, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
             result = .failure(error)
         }
 
@@ -336,13 +365,17 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
                 taskError: error,
                 stagingError: state.stagingError
             )
+            MakingTracksLog.downloads.info("task completed task=\(task.taskIdentifier, privacy: .public)")
             state.continuation.resume(returning: fileURL)
         } catch {
+            MakingTracksLog.downloads.error("task failed task=\(task.taskIdentifier, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
             state.continuation.resume(throwing: error)
         }
     }
 
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        let sessionID = session.configuration.identifier ?? "foreground"
+        MakingTracksLog.downloads.info("session events finished identifier=\(sessionID, privacy: .public)")
         OfflineDownloadSession.finishEvents(for: session.configuration.identifier)
     }
 
@@ -358,6 +391,7 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
             }
             state.continuation.resume(throwing: error)
         }
+        MakingTracksLog.downloads.info("session downloads cancelled count=\(states.count, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
     }
 }
 
@@ -1260,6 +1294,7 @@ public enum OfflineDownloadSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.waitsForConnectivity = true
         harden(configuration)
+        MakingTracksLog.downloads.info("session configured session=foreground discretionary=\(configuration.isDiscretionary, privacy: .public) launchEvents=\(configuration.sessionSendsLaunchEvents, privacy: .public)")
         return configuration
     }
 
@@ -1271,6 +1306,7 @@ public enum OfflineDownloadSession {
         configuration.allowsExpensiveNetworkAccess = false
         configuration.allowsConstrainedNetworkAccess = false
         harden(configuration)
+        MakingTracksLog.downloads.info("session configured session=background discretionary=\(configuration.isDiscretionary, privacy: .public) launchEvents=\(configuration.sessionSendsLaunchEvents, privacy: .public) identifier=\(identifier, privacy: .public)")
         return configuration
     }
 
@@ -1286,6 +1322,7 @@ public enum OfflineDownloadSession {
         for identifier: String,
         completionHandler: @escaping () -> Void
     ) {
+        MakingTracksLog.downloads.info("session events received identifier=\(identifier, privacy: .public)")
         OfflineDownloadSessionEventRegistry.shared.handleEvents(
             for: identifier,
             completionHandler: completionHandler
@@ -1298,6 +1335,7 @@ public enum OfflineDownloadSession {
 
     static func finishEvents(for identifier: String?) {
         guard let identifier else { return }
+        MakingTracksLog.downloads.info("session events completing identifier=\(identifier, privacy: .public)")
         OfflineDownloadSessionEventRegistry.shared.finishEvents(for: identifier)
     }
 
@@ -1324,12 +1362,14 @@ private final class OfflineBackgroundSessionRegistry: @unchecked Sendable {
     func session(identifier: String, configuration: URLSessionConfiguration) -> OfflineBackgroundSessionBox {
         lock.withLock {
             if let existing = sessions[identifier] {
+                MakingTracksLog.downloads.debug("session reused session=background discretionary=\(existing.session.configuration.isDiscretionary, privacy: .public) identifier=\(identifier, privacy: .public)")
                 return existing
             }
             let delegate = RedirectDelegate()
             let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
             let box = OfflineBackgroundSessionBox(session: session, delegate: delegate)
             sessions[identifier] = box
+            MakingTracksLog.downloads.info("session created session=background discretionary=\(configuration.isDiscretionary, privacy: .public) identifier=\(identifier, privacy: .public)")
             return box
         }
     }
@@ -1344,6 +1384,7 @@ private final class OfflineBackgroundSessionRegistry: @unchecked Sendable {
         let box = lock.withLock {
             sessions.removeValue(forKey: identifier)
         }
+        MakingTracksLog.downloads.info("session invalidated identifier=\(identifier, privacy: .public)")
         box?.session.invalidateAndCancel()
         box?.delegate.cancelAll(with: URLError(.cancelled))
     }
@@ -1359,6 +1400,7 @@ private final class OfflineDownloadSessionEventRegistry: @unchecked Sendable {
         lock.withLock {
             completionHandlers[identifier] = completionHandler
         }
+        MakingTracksLog.downloads.debug("session event handler stored identifier=\(identifier, privacy: .public)")
     }
 
     func finishEvents(for identifier: String) {
@@ -1366,6 +1408,7 @@ private final class OfflineDownloadSessionEventRegistry: @unchecked Sendable {
             completionHandlers.removeValue(forKey: identifier)
         }
         guard let completionHandler else { return }
+        MakingTracksLog.downloads.debug("session event handler firing identifier=\(identifier, privacy: .public)")
         DispatchQueue.main.async {
             completionHandler()
         }
@@ -1428,6 +1471,7 @@ public final class OfflineRegionDownloadControl: @unchecked Sendable {
     public init() {}
 
     public func pause() {
+        MakingTracksLog.downloads.info("control transition state=paused")
         interrupt(with: .paused)
     }
 
@@ -1435,9 +1479,11 @@ public final class OfflineRegionDownloadControl: @unchecked Sendable {
         lock.withLock {
             state = .running
         }
+        MakingTracksLog.downloads.info("control transition state=running")
     }
 
     public func cancel() {
+        MakingTracksLog.downloads.info("control transition state=cancelled")
         interrupt(with: .cancelled)
     }
 
@@ -1447,8 +1493,10 @@ public final class OfflineRegionDownloadControl: @unchecked Sendable {
         case .running:
             return
         case .paused:
+            MakingTracksLog.downloads.debug("control checkpoint state=paused")
             throw TileError.downloadPaused
         case .cancelled:
+            MakingTracksLog.downloads.debug("control checkpoint state=cancelled")
             throw TileError.downloadCancelled
         }
     }
@@ -1468,6 +1516,7 @@ public final class OfflineRegionDownloadControl: @unchecked Sendable {
             }
         }
         if let immediateInterruption {
+            MakingTracksLog.downloads.debug("control latch immediate state=\(String(describing: immediateInterruption), privacy: .public)")
             handler(immediateInterruption)
         }
         return id
@@ -1491,6 +1540,7 @@ public final class OfflineRegionDownloadControl: @unchecked Sendable {
         for handler in handlers {
             handler(interruption)
         }
+        MakingTracksLog.downloads.debug("control handlers notified count=\(handlers.count, privacy: .public) state=\(String(describing: interruption), privacy: .public)")
     }
 }
 
@@ -1517,16 +1567,20 @@ private final class OfflineRegionDownloadInterruptionLatch: @unchecked Sendable 
                 interruption = next
             }
         }
+        MakingTracksLog.downloads.debug("latch recorded state=\(String(describing: next), privacy: .public)")
     }
 
     func error() -> TileError? {
         lock.withLock {
             switch interruption {
             case .paused:
+                MakingTracksLog.downloads.debug("latch resolved state=paused")
                 return .downloadPaused
             case .cancelled:
+                MakingTracksLog.downloads.debug("latch resolved state=cancelled")
                 return .downloadCancelled
             case nil:
+                MakingTracksLog.downloads.debug("latch resolved state=none")
                 return nil
             }
         }
@@ -1571,21 +1625,48 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
         control: OfflineRegionDownloadControl = OfflineRegionDownloadControl(),
         progress: (@Sendable (OfflineRegionDownloadProgress) -> Void)? = nil
     ) async throws -> OfflineRegionDownloadResult {
-        guard region.matches("^[a-z][a-z0-9_]{0,63}$") else { throw TileError.invalidOfflinePack }
-        try store.acquireDownloadLease(region: region)
+        let startedAt = Date()
+        guard region.matches("^[a-z][a-z0-9_]{0,63}$") else {
+            MakingTracksLog.downloads.error("region download rejected reason=invalid-region")
+            throw TileError.invalidOfflinePack
+        }
+        let regionID = region
+        do {
+            try store.acquireDownloadLease(region: region)
+            MakingTracksLog.downloads.info("region download started region=\(regionID, privacy: .private(mask: .hash))")
+        } catch {
+            MakingTracksLog.downloads.error("region download lease failed region=\(regionID, privacy: .private(mask: .hash)) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            throw error
+        }
         defer {
             store.releaseDownloadLease(region: region)
+            MakingTracksLog.downloads.debug("region download lease released region=\(regionID, privacy: .private(mask: .hash))")
         }
-        let currentData = try await metadataFetcher.fetch(try trustedURL("\(region)/current.json"))
-        let publishVersion = try ManifestClient.decodeCurrent(currentData)
-        let manifestData = try await metadataFetcher.fetch(try trustedURL("\(region)/\(publishVersion)/manifest.json"))
-        let manifest = try Manifest.decode(manifestData)
+        let publishVersion: String
+        let manifest: Manifest
+        do {
+            let currentData = try await metadataFetcher.fetch(try trustedURL("\(region)/current.json"))
+            publishVersion = try ManifestClient.decodeCurrent(currentData)
+            MakingTracksLog.downloads.info("region current pinned region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public)")
+            let manifestData = try await metadataFetcher.fetch(try trustedURL("\(region)/\(publishVersion)/manifest.json"))
+            manifest = try Manifest.decode(manifestData)
+            let manifestBytes = manifest.tiles.reduce(0) { $0 + $1.bytes } + manifest.basemap.bytes
+            MakingTracksLog.downloads.info("region manifest loaded region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) objects=\(manifest.tiles.count + 1, privacy: .public) bytes=\(manifestBytes, privacy: .public)")
+        } catch {
+            MakingTracksLog.downloads.error("region metadata failed region=\(regionID, privacy: .private(mask: .hash)) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            throw error
+        }
         guard manifest.region == region, manifest.publishVersion == publishVersion else {
             throw TileError.invalidManifest
         }
         let publish = PinnedPublish(region: region, publishVersion: publishVersion, manifest: manifest)
         let plan = try store.updatePlan(for: publish)
-        guard StorageHeadroom.hasHeadroom(requiredBytes: plan.bytesToFetch, availableBytes: availableBytes()) else {
+        let fetchObjectCount = plan.tilesToFetch.count + (plan.basemapNeedsFetch ? 1 : 0)
+        let reusedObjectCount = plan.reusedTileCount + (plan.basemapNeedsFetch ? 0 : 1)
+        MakingTracksLog.downloads.info("plan computed region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) fetchObjects=\(fetchObjectCount, privacy: .public) reusedObjects=\(reusedObjectCount, privacy: .public) bytes=\(plan.bytesToFetch, privacy: .public)")
+        let available = availableBytes()
+        guard StorageHeadroom.hasHeadroom(requiredBytes: plan.bytesToFetch, availableBytes: available) else {
+            MakingTracksLog.downloads.error("plan rejected region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) bytes=\(plan.bytesToFetch, privacy: .public) available=\(available ?? -1, privacy: .public)")
             throw TileError.insufficientStorage
         }
         try store.beginDownload(publish: publish)
@@ -1597,6 +1678,7 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             var completedBytes = totalBytes - plan.bytesToFetch
             for item in plan.tilesToFetch {
                 try control.checkpoint()
+                MakingTracksLog.downloads.debug("object fetch planned region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=tile sha=\(item.sha256, privacy: .private(mask: .hash)) bytes=\(item.bytes, privacy: .public)")
                 try ensureHeadroomForSmallObject(bytes: item.bytes)
                 let fileURL: URL
                 do {
@@ -1608,12 +1690,14 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
                     try store.stageDownloadedTileObject(fileURL, sha256: item.sha256, bytes: item.bytes)
                 } catch {
                     if isOutOfSpace(error) {
+                        MakingTracksLog.downloads.info("object fetch interrupted region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=tile reason=out-of-space")
                         throw TileError.downloadPaused
                     }
                     throw error
                 }
                 completedObjectCount += 1
                 completedBytes += item.bytes
+                MakingTracksLog.downloads.debug("object staged region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=tile completed=\(completedObjectCount, privacy: .public) total=\(totalObjectCount, privacy: .public) bytes=\(completedBytes, privacy: .public)")
                 progress?(OfflineRegionDownloadProgress(
                     region: region,
                     publishVersion: publishVersion,
@@ -1625,6 +1709,7 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             }
             if plan.basemapNeedsFetch {
                 try control.checkpoint()
+                MakingTracksLog.downloads.debug("object fetch planned region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=basemap sha=\(manifest.basemap.sha256, privacy: .private(mask: .hash)) bytes=\(manifest.basemap.bytes, privacy: .public)")
                 try ensureHeadroomForLargeObject(bytes: manifest.basemap.bytes)
                 let fileURL: URL
                 do {
@@ -1636,12 +1721,14 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
                     try store.stageDownloadedBasemapObject(fileURL, sha256: manifest.basemap.sha256, bytes: manifest.basemap.bytes)
                 } catch {
                     if isOutOfSpace(error) {
+                        MakingTracksLog.downloads.info("object fetch interrupted region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=basemap reason=out-of-space")
                         throw TileError.downloadPaused
                     }
                     throw error
                 }
                 completedObjectCount += 1
                 completedBytes += manifest.basemap.bytes
+                MakingTracksLog.downloads.debug("object staged region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=basemap completed=\(completedObjectCount, privacy: .public) total=\(totalObjectCount, privacy: .public) bytes=\(completedBytes, privacy: .public)")
                 progress?(OfflineRegionDownloadProgress(
                     region: region,
                     publishVersion: publishVersion,
@@ -1654,9 +1741,18 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             try control.checkpoint()
             try store.install(publish: publish, tiles: [:], basemap: nil)
         } catch TileError.downloadCancelled {
+            MakingTracksLog.downloads.info("region download cancelled region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public)")
             try? store.discardDownload(region: region, publishVersion: publishVersion)
             throw TileError.downloadCancelled
+        } catch TileError.downloadPaused {
+            MakingTracksLog.downloads.info("region download paused region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public)")
+            throw TileError.downloadPaused
+        } catch {
+            MakingTracksLog.downloads.error("region download failed region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            throw error
         }
+        let elapsedMS = Int(Date().timeIntervalSince(startedAt) * 1000)
+        MakingTracksLog.downloads.info("region download finished region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) fetchedObjects=\(fetchObjectCount, privacy: .public) reusedObjects=\(reusedObjectCount, privacy: .public) bytes=\(plan.bytesToFetch, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
         return OfflineRegionDownloadResult(
             publish: publish,
             fetchedTileCount: plan.tilesToFetch.count,
@@ -1683,6 +1779,7 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
 
     private func downloadObject(_ url: URL, control: OfflineRegionDownloadControl) async throws -> URL {
         try control.checkpoint()
+        MakingTracksLog.downloads.debug("object task spawning host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
         let downloadTask = Task {
             try await objectFetcher.download(url)
         }
@@ -1697,18 +1794,22 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
         do {
             let fileURL = try await downloadTask.value
             try control.checkpoint()
+            MakingTracksLog.downloads.debug("object task finished host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
             return fileURL
         } catch is CancellationError {
             if let error = interruptionLatch.error() {
+                MakingTracksLog.downloads.info("object task interrupted host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
                 throw error
             }
             throw TileError.downloadCancelled
         } catch let error as URLError where error.code == .cancelled {
             if let error = interruptionLatch.error() {
+                MakingTracksLog.downloads.info("object task interrupted host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
                 throw error
             }
             throw error
         } catch {
+            MakingTracksLog.downloads.error("object task failed host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
             throw error
         }
     }
@@ -1768,17 +1869,26 @@ public final class OfflineRegionStore: @unchecked Sendable {
         self.rootState = OfflineRegionStoreRootStates.state(for: root)
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try excludeFromBackup(root)
+        MakingTracksLog.install.info("store init completed")
     }
 
     public func performDeferredMaintenance() throws {
-        try withLock {
-            try recoverInterruptedInstallsLocked()
-            try garbageCollectObjects()
+        MakingTracksLog.gc.info("deferred maintenance started")
+        do {
+            try withLock {
+                try recoverInterruptedInstallsLocked()
+                try garbageCollectObjects()
+            }
+            MakingTracksLog.gc.info("deferred maintenance finished")
+        } catch {
+            MakingTracksLog.gc.error("deferred maintenance failed reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            throw error
         }
     }
 
     public static func documentsStore() throws -> OfflineRegionStore {
         let documents = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        MakingTracksLog.install.debug("store init requested kind=documents")
         return try OfflineRegionStore(root: documents.appendingPathComponent("MakingTracks/OfflineRegions", isDirectory: true))
     }
 
@@ -1795,6 +1905,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
             try fm.createDirectory(at: inProgressURL(region: publish.region, publishVersion: publish.publishVersion), withIntermediateDirectories: true)
             try JSONEncoder().encode(packIndex(for: publish))
                 .write(to: inProgressURL(region: publish.region, publishVersion: publish.publishVersion).appendingPathComponent("pack-index.json"), options: .atomic)
+            MakingTracksLog.downloads.info("download marker written region=\(publish.region, privacy: .private(mask: .hash)) version=\(publish.publishVersion, privacy: .public) objects=\(publish.manifest.tiles.count + 1, privacy: .public)")
             try garbageCollectObjects()
         }
     }
@@ -1827,14 +1938,17 @@ public final class OfflineRegionStore: @unchecked Sendable {
             guard try fileByteCount(fileURL) == bytes else { throw TileError.byteCountMismatch }
             let data = try Data(contentsOf: fileURL)
             try writeVerifiedTileObject(data, sha256: sha256, bytes: bytes)
+            MakingTracksLog.downloads.debug("object verified kind=tile sha=\(sha256, privacy: .private(mask: .hash)) bytes=\(bytes, privacy: .public)")
         }
     }
 
     func stageDownloadedBasemapObject(_ fileURL: URL, sha256: String, bytes: Int) throws {
         let prepared = basemapObjectTemporaryURL()
         registerLiveTemporaryObject(prepared)
+        MakingTracksLog.downloads.debug("live temporary registered kind=basemap")
         defer {
             unregisterLiveTemporaryObject(prepared)
+            MakingTracksLog.downloads.debug("live temporary unregistered kind=basemap")
             if fm.fileExists(atPath: prepared.path) {
                 try? fm.removeItem(at: prepared)
             }
@@ -1843,6 +1957,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
         try withLock {
             do {
                 try movePreparedBasemapObject(prepared, sha256: sha256, bytes: bytes)
+                MakingTracksLog.downloads.debug("object verified kind=basemap sha=\(sha256, privacy: .private(mask: .hash)) bytes=\(bytes, privacy: .public)")
             } catch {
                 throw error
             }
@@ -1853,11 +1968,13 @@ public final class OfflineRegionStore: @unchecked Sendable {
         try withLock {
             try removeInProgressDownload(region: region, publishVersion: publishVersion)
             try garbageCollectObjects()
+            MakingTracksLog.downloads.info("download discarded region=\(region, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public)")
         }
     }
 
     private func installLocked(publish: PinnedPublish, tiles: [TileCoordinate: Data], basemap: Data?) throws {
         try validatePublish(publish)
+        MakingTracksLog.install.info("install started region=\(publish.region, privacy: .private(mask: .hash)) version=\(publish.publishVersion, privacy: .public) objects=\(publish.manifest.tiles.count + 1, privacy: .public)")
         let requiredCoordinates = Set(publish.manifest.tiles.map { TileCoordinate(z: publish.manifest.tileZ, x: $0.x, y: $0.y) })
         guard Set(tiles.keys).isSubset(of: requiredCoordinates) else { throw TileError.invalidOfflinePack }
         if let basemap {
@@ -1875,6 +1992,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
                 try verifyExistingTileObject(sha256: manifestTile.sha256, bytes: manifestTile.bytes)
             }
         }
+        MakingTracksLog.install.info("install prerequisites verified region=\(publish.region, privacy: .private(mask: .hash)) version=\(publish.publishVersion, privacy: .public) tileObjects=\(publish.manifest.tiles.count, privacy: .public) basemapObjects=1")
 
         let temp = root.appendingPathComponent("tmp/\(UUID().uuidString)", isDirectory: true)
         let backup = root.appendingPathComponent("tmp/\(UUID().uuidString)-backup", isDirectory: true)
@@ -1907,12 +2025,15 @@ public final class OfflineRegionStore: @unchecked Sendable {
             try fm.createDirectory(at: regionDirectory, withIntermediateDirectories: true)
             try JSONEncoder().encode(OfflineCurrentPack(publishVersion: publish.publishVersion))
                 .write(to: regionDirectory.appendingPathComponent("current-pack.json"), options: .atomic)
+            MakingTracksLog.install.info("install promoted region=\(publish.region, privacy: .private(mask: .hash)) version=\(publish.publishVersion, privacy: .public)")
             try removeInProgressDownload(region: publish.region, publishVersion: publish.publishVersion)
             if fm.fileExists(atPath: backup.path) {
                 try fm.removeItem(at: backup)
             }
             try? garbageCollectObjects()
+            MakingTracksLog.install.info("install finished region=\(publish.region, privacy: .private(mask: .hash)) version=\(publish.publishVersion, privacy: .public)")
         } catch {
+            MakingTracksLog.install.error("install failed region=\(publish.region, privacy: .private(mask: .hash)) version=\(publish.publishVersion, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
             if fm.fileExists(atPath: temp.path) {
                 try? fm.removeItem(at: temp)
             }
@@ -1921,6 +2042,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
             }
             if fm.fileExists(atPath: backup.path) {
                 try? fm.moveItem(at: backup, to: final)
+                MakingTracksLog.install.info("install recovered previous region=\(publish.region, privacy: .private(mask: .hash)) version=\(publish.publishVersion, privacy: .public)")
             }
             try? removeInProgressDownload(region: publish.region, publishVersion: publish.publishVersion)
             try? garbageCollectObjects()
@@ -2005,6 +2127,8 @@ public final class OfflineRegionStore: @unchecked Sendable {
             } catch {
                 let quarantine = try corruptCurrentPackQuarantineLocked(region: region, viewportCoordinates: viewportCoordinates)
                 quarantines.append(quarantine)
+                let affected = quarantine.coordinates.count
+                MakingTracksLog.resolution.error("quarantine raised region=\(region, privacy: .private(mask: .hash)) version=unknown affected=\(affected, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
                 continue
             }
             guard let current else { continue }
@@ -2018,6 +2142,8 @@ public final class OfflineRegionStore: @unchecked Sendable {
                     viewportCoordinates: viewportCoordinates
                 )
                 quarantines.append(quarantine)
+                let affected = quarantine.coordinates.count
+                MakingTracksLog.resolution.error("quarantine raised region=\(region, privacy: .private(mask: .hash)) version=\(current.publishVersion, privacy: .public) affected=\(affected, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
                 continue
             }
             let basemap = InstalledPackBasemap(
@@ -2040,6 +2166,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
                 ))
             }
         }
+        MakingTracksLog.resolution.debug("offline resolved packs=\(directories.count, privacy: .public) tiles=\(tiles.count, privacy: .public) quarantines=\(quarantines.count, privacy: .public)")
         return OfflinePackResolution(tiles: tiles, quarantinedPacks: quarantines)
     }
 
@@ -2315,11 +2442,15 @@ public final class OfflineRegionStore: @unchecked Sendable {
         for tile in target.manifest.tiles {
             if (try? verifyExistingTileObject(sha256: tile.sha256, bytes: tile.bytes)) != nil {
                 reused += 1
+                MakingTracksLog.downloads.debug("object skipped region=\(target.region, privacy: .private(mask: .hash)) version=\(target.publishVersion, privacy: .public) kind=tile sha=\(tile.sha256, privacy: .private(mask: .hash)) bytes=\(tile.bytes, privacy: .public)")
             } else {
                 fetches.append(OfflineTileFetch(coordinate: TileCoordinate(z: target.manifest.tileZ, x: tile.x, y: tile.y), sha256: tile.sha256, bytes: tile.bytes))
             }
         }
         let basemapNeedsFetch = (try? verifyExistingBasemapObject(sha256: target.manifest.basemap.sha256, bytes: target.manifest.basemap.bytes)) == nil
+        if !basemapNeedsFetch {
+            MakingTracksLog.downloads.debug("object skipped region=\(target.region, privacy: .private(mask: .hash)) version=\(target.publishVersion, privacy: .public) kind=basemap sha=\(target.manifest.basemap.sha256, privacy: .private(mask: .hash)) bytes=\(target.manifest.basemap.bytes, privacy: .public)")
+        }
         let tileBytes = fetches.reduce(0) { $0 + $1.bytes }
         return OfflineRegionUpdatePlan(
             tilesToFetch: fetches,
@@ -2374,18 +2505,27 @@ public final class OfflineRegionStore: @unchecked Sendable {
     public func discardInProgressDownloads(region: String) throws {
         try withLock {
             guard isValidRegion(region) else { throw TileError.invalidOfflinePack }
-            guard !rootState.activeDownloadRegions.contains(region) else { throw TileError.downloadAlreadyInProgress }
+            guard !rootState.activeDownloadRegions.contains(region) else {
+                MakingTracksLog.downloads.info("in-progress discard skipped region=\(region, privacy: .private(mask: .hash)) reason=active-download")
+                throw TileError.downloadAlreadyInProgress
+            }
+            MakingTracksLog.downloads.info("in-progress discard started region=\(region, privacy: .private(mask: .hash))")
             let inProgressRegion = root.appendingPathComponent("in-progress").appendingPathComponent(region, isDirectory: true)
             if fm.fileExists(atPath: inProgressRegion.path) {
                 try fm.removeItem(at: inProgressRegion)
             }
             try garbageCollectObjects()
+            MakingTracksLog.downloads.info("in-progress discard finished region=\(region, privacy: .private(mask: .hash))")
         }
     }
 
     private func deleteLocked(region: String) throws {
         guard isValidRegion(region) else { throw TileError.invalidOfflinePack }
-        guard !rootState.activeDownloadRegions.contains(region) else { throw TileError.downloadAlreadyInProgress }
+        guard !rootState.activeDownloadRegions.contains(region) else {
+            MakingTracksLog.install.info("delete skipped region=\(region, privacy: .private(mask: .hash)) reason=active-download")
+            throw TileError.downloadAlreadyInProgress
+        }
+        MakingTracksLog.install.info("delete started region=\(region, privacy: .private(mask: .hash))")
         let packs = root.appendingPathComponent("packs").appendingPathComponent(region)
         if fm.fileExists(atPath: packs.path) {
             try fm.removeItem(at: packs)
@@ -2402,6 +2542,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
             !key.hasPrefix("\(region)/")
         }
         try garbageCollectObjects()
+        MakingTracksLog.install.info("delete finished region=\(region, privacy: .private(mask: .hash))")
     }
 
     private func removeSupersededInProgressDownloads(region: String, keeping publishVersion: String) throws {
@@ -2442,7 +2583,10 @@ public final class OfflineRegionStore: @unchecked Sendable {
 
     private func writeVerifiedTileObject(_ data: Data, sha256: String, bytes: Int) throws {
         let url = tileObjectURL(sha256: sha256)
-        if (try? verifyExistingTileObject(sha256: sha256, bytes: bytes)) != nil { return }
+        if (try? verifyExistingTileObject(sha256: sha256, bytes: bytes)) != nil {
+            MakingTracksLog.downloads.debug("object skipped kind=tile sha=\(sha256, privacy: .private(mask: .hash)) bytes=\(bytes, privacy: .public)")
+            return
+        }
         if fm.fileExists(atPath: url.path) {
             try fm.removeItem(at: url)
         }
@@ -2456,6 +2600,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
             try verifyTileObject(temp, sha256: sha256, bytes: bytes)
             try fm.moveItem(at: temp, to: url)
             try verifyExistingTileObject(sha256: sha256, bytes: bytes)
+            MakingTracksLog.downloads.debug("object written kind=tile sha=\(sha256, privacy: .private(mask: .hash)) bytes=\(bytes, privacy: .public)")
         } catch {
             if fm.fileExists(atPath: temp.path) {
                 try? fm.removeItem(at: temp)
@@ -2466,17 +2611,24 @@ public final class OfflineRegionStore: @unchecked Sendable {
 
     private func writeVerifiedBasemapObject(_ data: Data, sha256: String, bytes: Int) throws {
         let url = basemapObjectURL(sha256: sha256)
-        if (try? verifyExistingBasemapObject(sha256: sha256, bytes: bytes)) != nil { return }
+        if (try? verifyExistingBasemapObject(sha256: sha256, bytes: bytes)) != nil {
+            MakingTracksLog.downloads.debug("object skipped kind=basemap sha=\(sha256, privacy: .private(mask: .hash)) bytes=\(bytes, privacy: .public)")
+            return
+        }
         if fm.fileExists(atPath: url.path) {
             try fm.removeItem(at: url)
         }
         try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: url, options: .atomic)
         try verifyExistingBasemapObject(sha256: sha256, bytes: bytes)
+        MakingTracksLog.downloads.debug("object written kind=basemap sha=\(sha256, privacy: .private(mask: .hash)) bytes=\(bytes, privacy: .public)")
     }
 
     private func writeVerifiedBasemapObject(from fileURL: URL, sha256: String, bytes: Int) throws {
-        if (try? verifyExistingBasemapObject(sha256: sha256, bytes: bytes)) != nil { return }
+        if (try? verifyExistingBasemapObject(sha256: sha256, bytes: bytes)) != nil {
+            MakingTracksLog.downloads.debug("object skipped kind=basemap sha=\(sha256, privacy: .private(mask: .hash)) bytes=\(bytes, privacy: .public)")
+            return
+        }
         let temp = try prepareVerifiedBasemapObject(from: fileURL, sha256: sha256, bytes: bytes)
         try movePreparedBasemapObject(temp, sha256: sha256, bytes: bytes)
     }
@@ -2526,6 +2678,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
             if fm.fileExists(atPath: temp.path) {
                 try fm.removeItem(at: temp)
             }
+            MakingTracksLog.downloads.debug("object skipped kind=basemap sha=\(sha256, privacy: .private(mask: .hash)) bytes=\(bytes, privacy: .public)")
             return
         }
         if fm.fileExists(atPath: url.path) {
@@ -2533,6 +2686,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
         }
         try fm.moveItem(at: temp, to: url)
         try verifyExistingBasemapObject(sha256: sha256, bytes: bytes)
+        MakingTracksLog.downloads.debug("object written kind=basemap sha=\(sha256, privacy: .private(mask: .hash)) bytes=\(bytes, privacy: .public)")
     }
 
     private func verifyExistingTileObject(sha256: String, bytes: Int) throws {
@@ -2608,32 +2762,45 @@ public final class OfflineRegionStore: @unchecked Sendable {
     }
 
     private func garbageCollectObjects() throws {
-        try sweepTemporaryInstallDirectories()
-        try sweepTemporaryObjectFiles(in: tileObjectsURL)
-        try sweepTemporaryObjectFiles(in: basemapObjectsURL)
+        let tempInstallsSwept = try sweepTemporaryInstallDirectories()
+        let tileTemps = try sweepTemporaryObjectFiles(in: tileObjectsURL)
+        let basemapTemps = try sweepTemporaryObjectFiles(in: basemapObjectsURL)
+        MakingTracksLog.gc.debug("gc temporary sweep installs=\(tempInstallsSwept, privacy: .public) tileSwept=\(tileTemps.swept, privacy: .public) tileRetained=\(tileTemps.retained, privacy: .public) basemapSwept=\(basemapTemps.swept, privacy: .public) basemapRetained=\(basemapTemps.retained, privacy: .public)")
         guard let references = try referencedObjectsForDeletion() else { return }
-        try removeUnreferencedObjects(in: tileObjectsURL, keeping: references.tileSHAs, extension: "gz")
-        try removeUnreferencedObjects(in: basemapObjectsURL, keeping: references.basemapSHAs, extension: "pmtiles")
+        let tileGC = try removeUnreferencedObjects(in: tileObjectsURL, keeping: references.tileSHAs, extension: "gz")
+        let basemapGC = try removeUnreferencedObjects(in: basemapObjectsURL, keeping: references.basemapSHAs, extension: "pmtiles")
+        MakingTracksLog.gc.info("gc pass kind=tile swept=\(tileGC.swept, privacy: .public) retained=\(tileGC.retained, privacy: .public)")
+        MakingTracksLog.gc.info("gc pass kind=basemap swept=\(basemapGC.swept, privacy: .public) retained=\(basemapGC.retained, privacy: .public)")
     }
 
     private func referencedObjectsForDeletion() throws -> (tileSHAs: Set<String>, basemapSHAs: Set<String>)? {
         do {
             return try referencedObjects()
         } catch {
+            MakingTracksLog.gc.error("gc skipped reason=reference-scan-failed detail=\(MakingTracksLog.errorLabel(error), privacy: .public)")
             return nil
         }
     }
 
     private func recoverInterruptedInstallsLocked() throws {
         let tmpRoot = root.appendingPathComponent("tmp", isDirectory: true)
-        guard let children = try? fm.contentsOfDirectory(at: tmpRoot, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
+        guard let children = try? fm.contentsOfDirectory(at: tmpRoot, includingPropertiesForKeys: [.isDirectoryKey]) else {
+            MakingTracksLog.install.debug("install recovery scanned backups=0 recovered=0 removed=0 skipped=0")
+            return
+        }
+        var scanned = 0
+        var recovered = 0
+        var removed = 0
+        var skipped = 0
         for child in children where child.lastPathComponent.hasSuffix("-backup") {
+            scanned += 1
             let values = try child.resourceValues(forKeys: [.isDirectoryKey])
             guard values.isDirectory == true else { continue }
             guard let publish = try? JSONDecoder().decode(
                 PinnedPublish.self,
                 from: boundedData(contentsOf: child.appendingPathComponent("manifest-snapshot.json"), maxBytes: Self.maxOfflineManifestSnapshotBytes)
             ) else {
+                skipped += 1
                 continue
             }
             guard isValidRegion(publish.region),
@@ -2641,18 +2808,22 @@ public final class OfflineRegionStore: @unchecked Sendable {
                   (try? installedCurrentPackLocked(region: publish.region))?.publishVersion == publish.publishVersion
             else {
                 try? fm.removeItem(at: child)
+                removed += 1
                 continue
             }
             let final = packURL(region: publish.region, publishVersion: publish.publishVersion)
             if fm.fileExists(atPath: final.path) {
                 try? fm.removeItem(at: child)
+                removed += 1
             } else {
                 try fm.createDirectory(at: final.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try fm.moveItem(at: child, to: final)
                 try excludeFromBackup(final)
+                recovered += 1
             }
             try removeNonCurrentPackDirectoriesLocked(region: publish.region, currentPublishVersion: publish.publishVersion)
         }
+        MakingTracksLog.install.info("install recovery scanned backups=\(scanned, privacy: .public) recovered=\(recovered, privacy: .public) removed=\(removed, privacy: .public) skipped=\(skipped, privacy: .public)")
     }
 
     private func removeNonCurrentPackDirectoriesLocked(region: String, currentPublishVersion: String) throws {
@@ -2665,20 +2836,25 @@ public final class OfflineRegionStore: @unchecked Sendable {
         }
     }
 
-    private func sweepTemporaryInstallDirectories() throws {
+    private func sweepTemporaryInstallDirectories() throws -> Int {
         let tmpRoot = root.appendingPathComponent("tmp", isDirectory: true)
-        guard let children = try? fm.contentsOfDirectory(at: tmpRoot, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
+        guard let children = try? fm.contentsOfDirectory(at: tmpRoot, includingPropertiesForKeys: [.isDirectoryKey]) else { return 0 }
+        var swept = 0
         for child in children {
             guard !child.lastPathComponent.hasSuffix("-backup") else { continue }
             let values = try child.resourceValues(forKeys: [.isDirectoryKey])
             guard values.isDirectory == true else { continue }
             try? fm.removeItem(at: child)
+            swept += 1
         }
+        return swept
     }
 
-    private func sweepTemporaryObjectFiles(in directory: URL) throws {
-        guard let children = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey], options: []) else { return }
+    private func sweepTemporaryObjectFiles(in directory: URL) throws -> (swept: Int, retained: Int) {
+        guard let children = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey], options: []) else { return (0, 0) }
         let liveTemporaryObjectNames = rootState.liveTemporaryObjectNames
+        var swept = 0
+        var retained = 0
         for child in children where Self.shouldSweepTemporaryObjectFile(
             named: child.lastPathComponent,
             liveTemporaryObjectNames: liveTemporaryObjectNames
@@ -2686,8 +2862,16 @@ public final class OfflineRegionStore: @unchecked Sendable {
             let values = try child.resourceValues(forKeys: [.isRegularFileKey])
             if values.isRegularFile == true {
                 try? fm.removeItem(at: child)
+                swept += 1
             }
         }
+        for child in children where liveTemporaryObjectNames.contains(child.lastPathComponent) {
+            let values = try child.resourceValues(forKeys: [.isRegularFileKey])
+            if values.isRegularFile == true {
+                retained += 1
+            }
+        }
+        return (swept, retained)
     }
 
     static func shouldSweepTemporaryObjectFile(named name: String, liveTemporaryObjectNames: Set<String>) -> Bool {
@@ -2737,14 +2921,20 @@ public final class OfflineRegionStore: @unchecked Sendable {
         return (tileSHAs, basemapSHAs)
     }
 
-    private func removeUnreferencedObjects(in directory: URL, keeping references: Set<String>, extension pathExtension: String) throws {
-        guard let children = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
+    private func removeUnreferencedObjects(in directory: URL, keeping references: Set<String>, extension pathExtension: String) throws -> (swept: Int, retained: Int) {
+        guard let children = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return (0, 0) }
+        var swept = 0
+        var retained = 0
         for child in children where child.pathExtension == pathExtension {
             let sha = objectSHA(from: child)
             if !references.contains(sha) {
                 try? fm.removeItem(at: child)
+                swept += 1
+            } else {
+                retained += 1
             }
         }
+        return (swept, retained)
     }
 
     private func objectSHA(from url: URL) -> String {
@@ -3059,6 +3249,9 @@ public actor TileClient {
     }
 
     public func refreshPin() async throws {
+        let startedAt = Date()
+        let regionID = region
+        MakingTracksLog.resolution.info("pin refresh started region=\(regionID, privacy: .private(mask: .hash))")
         let oldPublishVersion = pin?.publishVersion
         let result = await ManifestClient(region: region, fetcher: fetcher, cache: cache).refresh()
         let installed = try? offlineStore?.installedPublish(region: region)
@@ -3073,6 +3266,10 @@ public actor TileClient {
         if let pin {
             cache.purgeNonPinned(region: region, pinnedPublishVersion: pin.publishVersion)
         }
+        let elapsedMS = Int(Date().timeIntervalSince(startedAt) * 1000)
+        let stateLabel = state.rawValue
+        let version = pin?.publishVersion ?? "none"
+        MakingTracksLog.resolution.info("pin refresh finished region=\(regionID, privacy: .private(mask: .hash)) state=\(stateLabel, privacy: .public) version=\(version, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
     }
 
     public func loadLocalPin() {
@@ -3096,6 +3293,8 @@ public actor TileClient {
                 loadLocalPin()
             }
         }
+        let startedAt = Date()
+        let regionID = region
         let coveredCoordinates = Set(TileCoverage.tiles(for: bbox))
         let offlineResolution: OfflinePackResolution
         do {
@@ -3106,6 +3305,7 @@ public actor TileClient {
             viewportBasemap = nil
             viewportAttribution = []
             state = .manifestInvalid
+            MakingTracksLog.resolution.error("viewport failed region=\(regionID, privacy: .private(mask: .hash)) zoom=\(zoom, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
             return []
         }
         let blockedCoordinates = offlineResolution.blockedCoordinates.intersection(coveredCoordinates)
@@ -3115,6 +3315,11 @@ public actor TileClient {
             coveredCoordinates: coveredCoordinates,
             blockedFallbackCoordinates: blockedCoordinates
         )
+        let covered = coveredCoordinates.count
+        let blocked = blockedCoordinates.count
+        let installedRequests = needed.filter(\.source.isInstalled).count
+        let fallbackRequests = needed.count - installedRequests
+        MakingTracksLog.resolution.info("viewport planned region=\(regionID, privacy: .private(mask: .hash)) zoom=\(zoom, privacy: .public) covered=\(covered, privacy: .public) blocked=\(blocked, privacy: .public) installed=\(installedRequests, privacy: .public) fallback=\(fallbackRequests, privacy: .public) quarantines=\(offlineResolution.quarantinedPacks.count, privacy: .public)")
         guard !needed.isEmpty else {
             loadedPlaces = [:]
             viewportBasemap = nil
@@ -3122,6 +3327,8 @@ public actor TileClient {
             if !blockedCoordinates.isEmpty, state != .updateAvailable {
                 state = .manifestInvalid
             }
+            let stateLabel = state.rawValue
+            MakingTracksLog.resolution.info("viewport empty region=\(regionID, privacy: .private(mask: .hash)) state=\(stateLabel, privacy: .public)")
             return []
         }
         viewportBasemap = needed.reduce(nil as PublishTileRequest?) { current, request in
@@ -3171,6 +3378,7 @@ public actor TileClient {
                         self.pin = nil
                         clearLoadedPlaceRefs()
                         state = .manifestInvalid
+                        MakingTracksLog.resolution.error("viewport rejected region=\(regionID, privacy: .private(mask: .hash)) reason=missing-attribution sources=\(loaded.decoded.missingAttributionSources.count, privacy: .public)")
                         group.cancelAll()
                         return
                     }
@@ -3207,6 +3415,9 @@ public actor TileClient {
         } else if missingTile, !needed.isEmpty, state != .updateAvailable {
             state = .unavailable
         }
+        let elapsedMS = Int(Date().timeIntervalSince(startedAt) * 1000)
+        let stateLabel = state.rawValue
+        MakingTracksLog.resolution.info("viewport finished region=\(regionID, privacy: .private(mask: .hash)) state=\(stateLabel, privacy: .public) loaded=\(viewportPlaces.count, privacy: .public) requests=\(needed.count, privacy: .public) cache=\(usedCache, privacy: .public) trusted=\(trustedTile, privacy: .public) missing=\(missingTile, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
         return viewportPlaces.values.map(\.mapPlace).sorted(by: { $0.id < $1.id })
     }
 
@@ -3399,6 +3610,19 @@ private enum TileLoadSource: Sendable {
     case offlinePack
 }
 
+private extension TileLoadSource {
+    var logLabel: String {
+        switch self {
+        case .network:
+            return "network"
+        case .cache:
+            return "cache"
+        case .offlinePack:
+            return "offlinePack"
+        }
+    }
+}
+
 private enum TileLoadResult: Sendable {
     case loaded(LoadedTile)
     case missing
@@ -3421,13 +3645,16 @@ private func loadTile(
     ) {
         gzipped = offline
         source = .offlinePack
+        MakingTracksLog.resolution.debug("tile loaded source=offlinePack region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) bytes=\(request.tile.bytes, privacy: .public)")
     } else {
         do {
             gzipped = try await fetcher.fetch(try trustedURL("\(request.region)/\(request.publishVersion)/tiles/10/\(request.coordinate.x)/\(request.coordinate.y).json.gz"))
             _ = try TileCodec.decode(gzipped: gzipped, expectedSHA256: request.tile.sha256, expectedBytes: request.tile.bytes)
             try cache.storeTile(region: request.region, publishVersion: request.publishVersion, coordinate: request.coordinate, sha256: request.tile.sha256, data: gzipped)
             source = .network
+            MakingTracksLog.resolution.debug("tile loaded source=network region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) bytes=\(request.tile.bytes, privacy: .public)")
         } catch let error as TileError {
+            MakingTracksLog.resolution.error("tile load failed source=network region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
             switch error {
             case .checksumMismatch, .byteCountMismatch, .compressedTooLarge, .inflatedTooLarge, .invalidGzip, .invalidTile:
                 guard let cached = cache.tile(region: request.region, publishVersion: request.publishVersion, coordinate: request.coordinate, sha256: request.tile.sha256) else {
@@ -3435,27 +3662,33 @@ private func loadTile(
                 }
                 gzipped = cached
                 source = .cache
+                MakingTracksLog.resolution.debug("tile loaded source=cache region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) bytes=\(request.tile.bytes, privacy: .public)")
             default:
                 guard let cached = cache.tile(region: request.region, publishVersion: request.publishVersion, coordinate: request.coordinate, sha256: request.tile.sha256) else {
                     return .missing
                 }
                 gzipped = cached
                 source = .cache
+                MakingTracksLog.resolution.debug("tile loaded source=cache region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) bytes=\(request.tile.bytes, privacy: .public)")
             }
         } catch {
+            MakingTracksLog.resolution.error("tile load failed source=network region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
             guard let cached = cache.tile(region: request.region, publishVersion: request.publishVersion, coordinate: request.coordinate, sha256: request.tile.sha256) else {
                 return .missing
             }
             gzipped = cached
             source = .cache
+            MakingTracksLog.resolution.debug("tile loaded source=cache region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) bytes=\(request.tile.bytes, privacy: .public)")
         }
     }
 
     do {
         let raw = try TileCodec.decode(gzipped: gzipped, expectedSHA256: request.tile.sha256, expectedBytes: request.tile.bytes)
         let decoded = try PlaceDecoder.decode(tileData: raw, expected: request.coordinate, attributionSources: request.attributionSources)
+        MakingTracksLog.resolution.debug("tile decoded source=\(source.logLabel, privacy: .public) region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) places=\(decoded.places.count, privacy: .public)")
         return .loaded(LoadedTile(decoded: decoded, source: source, request: request))
     } catch {
+        MakingTracksLog.resolution.error("tile decode failed source=\(source.logLabel, privacy: .public) region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
         return .missing
     }
 }

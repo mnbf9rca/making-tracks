@@ -77,6 +77,11 @@ struct MakingTracksRootView: View {
         .fullScreenCover(isPresented: replayOnboardingPresented) {
             onboardingFlow(isReplay: true)
         }
+        .onAppear {
+            let completed = hasCompletedOnboarding
+            let replay = isReplayingOnboarding
+            MakingTracksLog.startup.info("root appeared completed=\(completed, privacy: .public) replay=\(replay, privacy: .public)")
+        }
     }
 
     private var replayOnboardingPresented: Binding<Bool> {
@@ -110,6 +115,14 @@ struct MakingTracksRootView: View {
                 completeOnboarding(region: region)
             }
         )
+        .onAppear {
+            let completed = hasCompletedOnboarding
+            MakingTracksLog.startup.info("onboarding presented replay=\(isReplay, privacy: .public) completed=\(completed, privacy: .public)")
+        }
+        .onDisappear {
+            let completed = hasCompletedOnboarding
+            MakingTracksLog.startup.info("onboarding dismissed replay=\(isReplay, privacy: .public) completed=\(completed, privacy: .public)")
+        }
     }
 
     @MainActor
@@ -120,6 +133,8 @@ struct MakingTracksRootView: View {
         cameraRequest = ViewportCameraRequest(id: cameraRequestID, viewport: resolvedRegion.startupViewport)
         hasCompletedOnboarding = true
         isReplayingOnboarding = false
+        let requestID = cameraRequestID
+        MakingTracksLog.startup.info("onboarding completed region=\(resolvedRegion.rawValue, privacy: .private(mask: .hash)) cameraRequest=\(requestID, privacy: .public)")
     }
 
     @MainActor
@@ -140,20 +155,24 @@ struct MakingTracksRootView: View {
         }
         guard !isFixtureMap else {
             downloadState = .ready(OnboardingDownloadPlan.fixture(region: region))
+            MakingTracksLog.startup.info("onboarding plan fixture region=\(region.rawValue, privacy: .private(mask: .hash))")
             return
         }
         downloadState = .planning(region)
+        MakingTracksLog.startup.info("onboarding plan started region=\(region.rawValue, privacy: .private(mask: .hash))")
         Task {
             do {
                 let plan = try await makeOfflinePlan(for: region)
                 await MainActor.run {
                     guard downloadState.region == region else { return }
                     downloadState = plan.hasHeadroom ? .ready(plan) : .storageFull(plan)
+                    MakingTracksLog.startup.info("onboarding plan finished region=\(region.rawValue, privacy: .private(mask: .hash)) bytes=\(plan.bytesToFetch, privacy: .public) headroom=\(plan.hasHeadroom, privacy: .public)")
                 }
             } catch {
                 await MainActor.run {
                     guard downloadState.region == region else { return }
                     downloadState = .failed(region)
+                    MakingTracksLog.startup.error("onboarding plan failed region=\(region.rawValue, privacy: .private(mask: .hash)) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
                 }
             }
         }
@@ -174,13 +193,16 @@ struct MakingTracksRootView: View {
         }
         guard plan.hasHeadroom else {
             downloadState = .storageFull(plan)
+            MakingTracksLog.startup.info("onboarding download blocked region=\(region.rawValue, privacy: .private(mask: .hash)) bytes=\(plan.bytesToFetch, privacy: .public)")
             return
         }
         guard !isFixtureMap else {
             downloadState = .complete(plan)
+            MakingTracksLog.startup.info("onboarding download fixture region=\(region.rawValue, privacy: .private(mask: .hash))")
             return
         }
         downloadState = .downloading(plan, fetchedBytes: 0)
+        MakingTracksLog.startup.info("onboarding download started region=\(region.rawValue, privacy: .private(mask: .hash)) bytes=\(plan.bytesToFetch, privacy: .public)")
         Task {
             do {
                 let documents = try FileManager.default.url(
@@ -202,17 +224,20 @@ struct MakingTracksRootView: View {
                 await MainActor.run {
                     guard downloadState.isDownloading else { return }
                     downloadState = .complete(plan.withFetchedBytes(result.fetchedBytes))
+                    MakingTracksLog.startup.info("onboarding download finished region=\(region.rawValue, privacy: .private(mask: .hash)) bytes=\(result.fetchedBytes, privacy: .public)")
                 }
             } catch {
                 await MainActor.run {
                     guard downloadState.isDownloading else { return }
                     downloadState = .failed(region)
+                    MakingTracksLog.startup.error("onboarding download failed region=\(region.rawValue, privacy: .private(mask: .hash)) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
                 }
             }
         }
     }
 
     private func makeOfflinePlan(for region: OnboardingRegionChoice) async throws -> OnboardingDownloadPlan {
+        let startedAt = Date()
         let documents = try FileManager.default.url(
             for: .documentDirectory,
             in: .userDomainMask,
@@ -228,6 +253,8 @@ struct MakingTracksRootView: View {
         let cache = try TileCache(directory: cacheRoot)
         let client = ManifestClient(region: region.mapRegion.rawValue, fetcher: HTTPTileFetcher(), cache: cache)
         let result = await client.refresh()
+        let elapsedMS = Int(Date().timeIntervalSince(startedAt) * 1000)
+        MakingTracksLog.startup.info("onboarding manifest polled region=\(region.rawValue, privacy: .private(mask: .hash)) state=\(result.state.rawValue, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
         guard let publish = result.publish else { throw OnboardingDownloadError.planUnavailable }
         let store = try OfflineRegionStore.documentsStore()
         let updatePlan = try store.updatePlan(for: publish)

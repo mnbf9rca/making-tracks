@@ -426,7 +426,9 @@ final class OfflineRegionDownloadSession {
 
     func canBegin(region: String) -> Bool {
         guard let pausedRegion else { return true }
-        return pausedRegion == region
+        let allowed = pausedRegion == region
+        MakingTracksLog.downloads.info("ui begin checked region=\(region, privacy: .private(mask: .hash)) pausedRegion=\(pausedRegion, privacy: .private(mask: .hash)) allowed=\(allowed, privacy: .public)")
+        return allowed
     }
 
     func begin(region: String, control: OfflineRegionDownloadControl, downloadID: UUID) {
@@ -437,14 +439,17 @@ final class OfflineRegionDownloadSession {
         activeDownloadID = downloadID
         pausedProgress = nil
         liveProgress = OfflineDownloadProgress(region: region, publishVersion: nil, completedBytes: 0, totalBytes: nil, fractionComplete: 0)
+        MakingTracksLog.downloads.info("ui session began region=\(region, privacy: .private(mask: .hash))")
     }
 
     func attach(task: Task<Void, Never>) {
         activeTask = task
+        MakingTracksLog.downloads.debug("ui session task attached")
     }
 
     func update(_ progress: OfflineDownloadProgress) {
         liveProgress = progress
+        MakingTracksLog.downloads.debug("ui progress updated region=\(progress.region ?? "unknown", privacy: .private(mask: .hash)) version=\(progress.publishVersion ?? "unknown", privacy: .public) percent=\(progress.percentComplete, privacy: .public) bytes=\(progress.completedBytes ?? -1, privacy: .public) total=\(progress.totalBytes ?? -1, privacy: .public)")
     }
 
     func pause(region: String) {
@@ -453,14 +458,17 @@ final class OfflineRegionDownloadSession {
         activeControl = nil
         activeTask = nil
         activeDownloadID = nil
+        MakingTracksLog.downloads.info("ui session paused region=\(region, privacy: .private(mask: .hash))")
     }
 
     func clear() {
+        let region = liveProgress?.region ?? pausedProgress?.region ?? "unknown"
         liveProgress = nil
         pausedProgress = nil
         activeControl = nil
         activeTask = nil
         activeDownloadID = nil
+        MakingTracksLog.downloads.info("ui session cleared region=\(region, privacy: .private(mask: .hash))")
     }
 
     func noteDeleted(region: String) {
@@ -468,6 +476,7 @@ final class OfflineRegionDownloadSession {
         activeControl?.cancel()
         activeTask?.cancel()
         clear()
+        MakingTracksLog.downloads.info("ui session deleted region=\(region, privacy: .private(mask: .hash))")
     }
 }
 
@@ -603,6 +612,7 @@ struct MapScreen: View {
                         guard !isMapReady || didMapLoadFail else { return }
                         isMapReady = true
                         didMapLoadFail = false
+                        MakingTracksLog.startup.info("overlay transition surface=map state=ready")
                         schedulePostFirstRenderManifestRefresh()
                         scheduleDeferredOfflineMaintenanceIfReady()
                     }
@@ -620,11 +630,14 @@ struct MapScreen: View {
                         hasLoadedFixtureFeatures = false
                         debugProjectedFixturePins = []
                         mapLoadAttemptID += 1
+                        let attempt = mapLoadAttemptID
+                        MakingTracksLog.startup.info("overlay transition surface=map state=styleReload attempt=\(attempt, privacy: .public)")
                     }
                 },
                 onMapLoadFailed: {
                     Task { @MainActor in
                         didMapLoadFail = true
+                        MakingTracksLog.startup.error("overlay transition surface=map state=failed")
                         if MapManifestRefreshPolicy.mapLoadFailureAllowsManifestRefresh(
                             afterPostFirstRenderRefreshCompleted: didCompletePostFirstRenderManifestRefresh
                         ) {
@@ -811,6 +824,8 @@ struct MapScreen: View {
             await MainActor.run {
                 if isMapLoading {
                     didMapLoadFail = true
+                    let attempt = mapLoadAttemptID
+                    MakingTracksLog.startup.error("overlay transition surface=map state=timeout attempt=\(attempt, privacy: .public)")
                 }
             }
         }
@@ -1108,10 +1123,17 @@ struct MapScreen: View {
     private func refreshStorageMenuStatus() async {
         guard let model else {
             storageMenuStatus = .unavailable
+            MakingTracksLog.startup.info("storage status state=unavailable")
             return
         }
         storageMenuStatus = .loading
+        MakingTracksLog.startup.debug("storage status state=loading")
         storageMenuStatus = await model.storageMenuStatus()
+        let statusKind = storageMenuStatus.kind.logLabel
+        let regionCount = storageMenuStatus.regions.count
+        let failedCount = storageMenuStatus.failedRegions.count
+        let totalBytes = storageMenuStatus.totalBytes
+        MakingTracksLog.startup.info("storage status state=\(statusKind, privacy: .public) regions=\(regionCount, privacy: .public) failed=\(failedCount, privacy: .public) bytes=\(totalBytes, privacy: .public)")
     }
 
     @MainActor
@@ -1163,9 +1185,11 @@ struct MapScreen: View {
 
     @MainActor
     private func refreshAfterOfflineMapsChanged() async {
+        MakingTracksLog.startup.info("offline refresh started")
         await model?.refreshManifest()
         await refreshCurrentViewport()
         await refreshStorageMenuStatus()
+        MakingTracksLog.startup.info("offline refresh finished")
     }
 
     private var layersButton: some View {
@@ -1308,12 +1332,17 @@ struct MapScreen: View {
     }
 
     private func start() async {
+        let startedAt = Date()
+        let fixture = isFixtureMap
+        MakingTracksLog.startup.info("map start started fixture=\(fixture, privacy: .public)")
         if model == nil {
             model = try? MapScreenModel(
                 database: database,
                 fixturePlaces: isFixtureMap ? Self.fixturePlaces : [],
                 forceTileNetworkOffline: debugForceTileNetworkOffline
             )
+            let hasModel = model != nil
+            MakingTracksLog.startup.info("map model initialized available=\(hasModel, privacy: .public)")
         }
         model?.setShowHidden(layerVisibility.showHiddenPlaces)
         appliedShowHiddenPlaces = layerVisibility.showHiddenPlaces
@@ -1352,6 +1381,10 @@ struct MapScreen: View {
             allowManifestRefresh: MapManifestRefreshPolicy.startupAllowsManifestRefresh
         )
         await refreshFixtureVisitCount()
+        let elapsedMS = Int(Date().timeIntervalSince(startedAt) * 1000)
+        let finalState = loadState.rawValue
+        let featureCount = features.count
+        MakingTracksLog.startup.info("map start finished state=\(finalState, privacy: .public) features=\(featureCount, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
     }
 
     @MainActor
@@ -1438,6 +1471,8 @@ struct MapScreen: View {
         allowManifestRefresh: Bool = true
     ) async {
         guard let model else { return }
+        let startedAt = Date()
+        MakingTracksLog.resolution.debug("viewport refresh started request=\(requestID, privacy: .public) zoom=\(zoom, privacy: .public)")
         let next = await model.features(in: bbox, zoom: zoom, allowManifestRefresh: allowManifestRefresh)
         let nextRegionPMTilesURL = await model.pmtilesURL
         let nextAttribution = await model.attribution
@@ -1459,6 +1494,11 @@ struct MapScreen: View {
             regionPMTilesURL = nextRegionPMTilesURL
             attribution = nextAttribution
             loadState = nextLoadState
+            let elapsedMS = Int(Date().timeIntervalSince(startedAt) * 1000)
+            let stateLabel = nextLoadState.rawValue
+            let featureCount = next.count
+            let hasRegionalBasemap = nextRegionPMTilesURL != nil
+            MakingTracksLog.resolution.info("viewport refresh finished request=\(requestID, privacy: .public) state=\(stateLabel, privacy: .public) features=\(featureCount, privacy: .public) regionalBasemap=\(hasRegionalBasemap, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
         }
     }
 
@@ -1644,6 +1684,19 @@ struct StorageMenuStatus: Equatable, Sendable {
 
     static func formatBytes(_ bytes: Int) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(max(bytes, 0)), countStyle: .file)
+    }
+}
+
+private extension StorageMenuStatus.Kind {
+    var logLabel: String {
+        switch self {
+        case .loading:
+            return "loading"
+        case .unavailable:
+            return "unavailable"
+        case .ready:
+            return "ready"
+        }
     }
 }
 
@@ -2155,16 +2208,19 @@ private struct OfflineMapsView: View {
     private func startDownload(_ region: String) {
         guard let model else {
             statusMessage = "Offline downloads unavailable"
+            MakingTracksLog.downloads.error("ui download unavailable region=\(region, privacy: .private(mask: .hash))")
             return
         }
         guard downloadSession.canBegin(region: region) else {
             statusMessage = "Resume or cancel the paused download first"
+            MakingTracksLog.downloads.info("ui download blocked region=\(region, privacy: .private(mask: .hash))")
             return
         }
         let downloadID = UUID()
         let control = OfflineRegionDownloadControl()
         downloadSession.begin(region: region, control: control, downloadID: downloadID)
         statusMessage = nil
+        MakingTracksLog.downloads.info("ui download started region=\(region, privacy: .private(mask: .hash))")
         let task = Task {
             let message = await model.installOfflineRegion(region, control: control) { progress in
                 Task { @MainActor in
@@ -2180,6 +2236,8 @@ private struct OfflineMapsView: View {
                     downloadSession.clear()
                 }
                 statusMessage = message
+                let result = statusLogLabel(message)
+                MakingTracksLog.downloads.info("ui download finished region=\(region, privacy: .private(mask: .hash)) result=\(result, privacy: .public)")
                 return message.hasPrefix("Installed ")
             }
             if shouldRefreshMap {
@@ -2197,26 +2255,34 @@ private struct OfflineMapsView: View {
             || downloadSession.pausedProgress != nil
         else { return }
         let regionToDiscard = downloadSession.pausedProgress?.region ?? downloadSession.liveProgress?.region
+        MakingTracksLog.downloads.info("ui cancel requested region=\(regionToDiscard ?? "unknown", privacy: .private(mask: .hash))")
         downloadSession.activeControl?.cancel()
         downloadSession.activeTask?.cancel()
         downloadSession.clear()
         if let regionToDiscard, let model {
             statusMessage = await model.discardOfflineRegionDownload(regionToDiscard)
             await refresh()
+            let result = statusLogLabel(statusMessage)
+            MakingTracksLog.downloads.info("ui cancel finished region=\(regionToDiscard, privacy: .private(mask: .hash)) result=\(result, privacy: .public)")
         } else {
             statusMessage = "Download cancelled"
+            MakingTracksLog.downloads.info("ui cancel finished region=unknown result=cancelled")
         }
     }
 
     private func delete(_ region: String) async {
         guard let model else {
             statusMessage = "Offline downloads unavailable"
+            MakingTracksLog.downloads.error("ui delete unavailable region=\(region, privacy: .private(mask: .hash))")
             return
         }
+        MakingTracksLog.downloads.info("ui delete requested region=\(region, privacy: .private(mask: .hash))")
         statusMessage = await model.deleteOfflineRegion(region)
         downloadSession.noteDeleted(region: region)
         await onOfflineMapsChanged()
         await refresh()
+        let result = statusLogLabel(statusMessage)
+        MakingTracksLog.downloads.info("ui delete finished region=\(region, privacy: .private(mask: .hash)) result=\(result, privacy: .public)")
     }
 
     private func refresh() async {
@@ -2224,17 +2290,50 @@ private struct OfflineMapsView: View {
             installed = [:]
             quarantines = []
             storageStatus = .unavailable
+            MakingTracksLog.startup.info("offline rows state=unavailable")
             return
         }
         installed = await model.installedOfflinePublishVersions(for: catalog)
         quarantines = model.offlinePackQuarantines()
         storageStatus = await model.storageMenuStatus()
+        let installedCount = installed.count
+        let quarantineCount = quarantines.count
+        MakingTracksLog.startup.info("offline rows refreshed installed=\(installedCount, privacy: .public) quarantines=\(quarantineCount, privacy: .public)")
     }
 
     private func quarantineDetail(_ quarantine: OfflinePackQuarantine) -> String {
         let version = quarantine.publishVersion ?? "unknown version"
         let cells = quarantine.coordinates.count
         return "\(version) · \(cells) affected \(cells == 1 ? "cell" : "cells")"
+    }
+
+    private func statusLogLabel(_ message: String?) -> String {
+        guard let message else { return "none" }
+        if message.hasPrefix("Installed ") {
+            return "installed"
+        }
+        if message.hasPrefix("Deleted ") {
+            return "deleted"
+        }
+        if message.hasPrefix("Install failed:") {
+            return "install-failed"
+        }
+        if message.hasPrefix("Delete failed:") {
+            return "delete-failed"
+        }
+        if message.hasPrefix("Cancel failed:") {
+            return "cancel-failed"
+        }
+        if message == "Download paused" {
+            return "download-paused"
+        }
+        if message == "Download cancelled" {
+            return "download-cancelled"
+        }
+        if message == "Offline downloads unavailable" || message == "Offline install unavailable" || message == "Offline delete unavailable" {
+            return "offline-unavailable"
+        }
+        return "other"
     }
 }
 #endif
@@ -3063,6 +3162,7 @@ private final class MapScreenModel {
         fixturePlaces: [PlaceRef] = [],
         forceTileNetworkOffline: Bool = false
     ) throws {
+        MakingTracksLog.startup.info("map model init started fixture=\(fixturePlaces.isEmpty == false, privacy: .public) forcedOffline=\(forceTileNetworkOffline, privacy: .public)")
         self.database = database
         self.forceTileNetworkOffline = forceTileNetworkOffline
         self.fixturePlaces = Dictionary(uniqueKeysWithValues: fixturePlaces.map { ($0.placeID, $0) })
@@ -3081,6 +3181,9 @@ private final class MapScreenModel {
             tileCache = nil
             offlineStore = nil
         }
+        let hasCache = tileCache != nil
+        let hasOfflineStore = offlineStore != nil
+        MakingTracksLog.startup.info("map model init finished cache=\(hasCache, privacy: .public) offlineStore=\(hasOfflineStore, privacy: .public)")
     }
 
 #if DEBUG
@@ -3099,7 +3202,11 @@ private final class MapScreenModel {
         guard fixturePlaces.isEmpty,
               let offlineStore,
               Self.isValidRegion(region)
-        else { return "Offline install unavailable" }
+        else {
+            MakingTracksLog.install.error("offline install unavailable region=\(region, privacy: .private(mask: .hash))")
+            return "Offline install unavailable"
+        }
+        MakingTracksLog.install.info("offline install requested region=\(region, privacy: .private(mask: .hash))")
         do {
             let documents = try FileManager.default.url(
                 for: .documentDirectory,
@@ -3117,12 +3224,16 @@ private final class MapScreenModel {
                 availableBytes: { StorageHeadroom.availableBytes(at: documents) }
             )
             let result = try await downloader.downloadCurrentRegion(control: control, progress: progress)
+            MakingTracksLog.install.info("offline install completed region=\(region, privacy: .private(mask: .hash)) version=\(result.publish.publishVersion, privacy: .public) bytes=\(result.fetchedBytes, privacy: .public)")
             return "Installed \(result.publish.publishVersion)"
         } catch TileError.downloadPaused {
+            MakingTracksLog.install.info("offline install paused region=\(region, privacy: .private(mask: .hash))")
             return "Download paused"
         } catch TileError.downloadCancelled {
+            MakingTracksLog.install.info("offline install cancelled region=\(region, privacy: .private(mask: .hash))")
             return "Download cancelled"
         } catch {
+            MakingTracksLog.install.error("offline install failed region=\(region, privacy: .private(mask: .hash)) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
             return "Install failed: \(String(describing: error))"
         }
     }
@@ -3146,13 +3257,16 @@ private final class MapScreenModel {
 
     func deleteOfflineRegion(_ region: String) async -> String {
         guard let offlineStore, Self.isValidRegion(region) else {
+            MakingTracksLog.install.error("offline delete unavailable region=\(region, privacy: .private(mask: .hash))")
             return "Offline delete unavailable"
         }
         return await Task.detached {
             do {
                 try offlineStore.delete(region: region)
+                MakingTracksLog.install.info("offline delete completed region=\(region, privacy: .private(mask: .hash))")
                 return "Deleted \(region)"
             } catch {
+                MakingTracksLog.install.error("offline delete failed region=\(region, privacy: .private(mask: .hash)) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
                 return "Delete failed: \(String(describing: error))"
             }
         }.value
@@ -3160,12 +3274,19 @@ private final class MapScreenModel {
 
     func discardOfflineRegionDownload(_ region: String) async -> String {
         guard let offlineStore, Self.isValidRegion(region) else {
+            MakingTracksLog.downloads.info("offline discard unavailable region=\(region, privacy: .private(mask: .hash))")
             return "Download cancelled"
         }
         return await Task.detached {
-            offlineDownloadCancelMessage {
+            let message = offlineDownloadCancelMessage {
                 try offlineStore.discardInProgressDownloads(region: region)
             }
+            if message == "Download cancelled" {
+                MakingTracksLog.downloads.info("offline discard completed region=\(region, privacy: .private(mask: .hash))")
+            } else {
+                MakingTracksLog.downloads.error("offline discard failed region=\(region, privacy: .private(mask: .hash)) result=cancel-failed")
+            }
+            return message
         }.value
     }
 
@@ -3187,16 +3308,31 @@ private final class MapScreenModel {
     }
 
     func refreshManifest() async {
+        let startedAt = Date()
         guard let client = tileClient(for: selectedRegion) else { return }
         try? await client.refreshPin()
+        let state = await client.loadState
+        let elapsedMS = Int(Date().timeIntervalSince(startedAt) * 1000)
+        let regionID = selectedRegion.rawValue
+        let stateLabel = state.rawValue
+        MakingTracksLog.startup.info("manifest refresh finished region=\(regionID, privacy: .private(mask: .hash)) state=\(stateLabel, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
     }
 
     func storageMenuStatus() async -> StorageMenuStatus {
-        guard let offlineStore else { return .unavailable }
+        guard let offlineStore else {
+            MakingTracksLog.startup.info("storage summary unavailable")
+            return .unavailable
+        }
+        let startedAt = Date()
         return await Task.detached {
             do {
-                return .ready(from: try offlineStore.installedPackStorageSummary())
+                let status = StorageMenuStatus.ready(from: try offlineStore.installedPackStorageSummary())
+                let elapsedMS = Int(Date().timeIntervalSince(startedAt) * 1000)
+                MakingTracksLog.startup.info("storage summary finished regions=\(status.regions.count, privacy: .public) failed=\(status.failedRegions.count, privacy: .public) bytes=\(status.totalBytes, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
+                return status
             } catch {
+                let elapsedMS = Int(Date().timeIntervalSince(startedAt) * 1000)
+                MakingTracksLog.startup.error("storage summary failed reason=\(MakingTracksLog.errorLabel(error), privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
                 return .unavailable
             }
         }.value
@@ -3380,6 +3516,7 @@ private final class MapScreenModel {
         selectedRegion = nextRegion
         guard let client = tileClient(for: nextRegion) else { return nil }
         if changed {
+            MakingTracksLog.resolution.info("region selected region=\(nextRegion.rawValue, privacy: .private(mask: .hash))")
             if allowManifestRefresh {
                 try? await client.refreshPin()
             } else {
@@ -3406,6 +3543,9 @@ private final class MapScreenModel {
             offlineStore: offlineStore
         )
         tileClients[region] = client
+        let regionID = region.rawValue
+        let hasOfflineStore = offlineStore != nil
+        MakingTracksLog.startup.info("tile client created region=\(regionID, privacy: .private(mask: .hash)) offlineStore=\(hasOfflineStore, privacy: .public)")
         return client
     }
 }
