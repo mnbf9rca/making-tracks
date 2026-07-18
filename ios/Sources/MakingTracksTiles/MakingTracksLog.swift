@@ -84,6 +84,8 @@ private extension TileError {
             return "download-paused"
         case .downloadCancelled:
             return "download-cancelled"
+        case .downloadAlreadyInProgress:
+            return "download-already-in-progress"
         }
     }
 }

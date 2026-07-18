@@ -1154,19 +1154,24 @@ struct MapScreen: View {
               UIApplication.shared.isProtectedDataAvailable
         else { return }
         didScheduleDeferredOfflineMaintenance = true
+        MakingTracksLog.gc.info("deferred maintenance scheduled")
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
             guard UIApplication.shared.isProtectedDataAvailable else {
                 didScheduleDeferredOfflineMaintenance = false
+                MakingTracksLog.gc.info("deferred maintenance deferred reason=protected-data")
                 return
             }
             let didPerformMaintenance = await model?.performDeferredOfflineMaintenance() ?? true
             if !didPerformMaintenance || !UIApplication.shared.isProtectedDataAvailable {
                 didScheduleDeferredOfflineMaintenance = false
+                let reason = didPerformMaintenance ? "protected-data" : "failed"
+                MakingTracksLog.gc.info("deferred maintenance retry scheduled reason=\(reason, privacy: .public)")
                 return
             }
             await refreshStorageMenuStatus()
+            MakingTracksLog.gc.info("deferred maintenance storage refreshed")
         }
     }
 
