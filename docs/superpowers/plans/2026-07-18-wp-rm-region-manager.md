@@ -317,18 +317,15 @@ each gap, and the acceptance test that pins it. **Audited against merged `origin
 audit contradicted the commission's framing it is marked **[framing correction]**. Status legend:
 ✅ satisfied · ◐ partial · ❌ violated · ▷ target (unbuilt, owned).
 
-- **INV-1 Object atomicity — ◐ effectively satisfied, ASYMMETRIC [framing correction].** *An object is
-  verified-in-store or absent; no readable partials.* Objects are content-addressed by **expected** sha
-  (`tileObjectURL` L1975, `basemapObjectURL` L1979). **Basemap = true verify-then-rename**
-  (`prepareVerifiedBasemapObject` L2011 hashes a `.pmtiles.tmp`, `movePreparedBasemapObject` L2031 renames
-  only on pass). **Tiles = write-to-final-THEN-verify** (`writeVerifiedTileObject` L1983 does
-  `data.write(.atomic)` to the *final* path, then verifies; a sha mismatch throws but **leaves the
-  mis-sha'd file at its final name**). It is safe only because **every consumer re-verifies sha**
-  (`loadTile`→`TileCodec.decode` L2830; `install`/`updatePlan` re-verify L1428/L1869) and the bad object
-  self-heals on retry — not because the write was atomic-correct. **Gap/owner:** mirror the basemap's
-  verify-then-rename for tiles → **WP-DL-SAFETY** (low severity). **Test:** stage a tile whose bytes match
-  but sha does not; assert the stage throws **and** `objects/tiles/{sha}.json.gz` does not exist after
-  (fails today).
+- **INV-1 Object atomicity — ✅ satisfied by WP-DL-SAFETY (#202).** *An object is verified-in-store or
+  absent; no readable partials.* Both object kinds now use the same verify-before-final-name shape:
+  `writeVerifiedTileObject` writes a hidden `.json.gz.tmp`, decodes/verifies it, then renames to
+  `objects/tiles/{sha}.json.gz`; basemaps prepare a hidden `.pmtiles.tmp`, hash/byte-check it, then rename
+  to `objects/basemaps/{sha}.pmtiles`. A failed tile stage leaves no final object at the expected sha path.
+  **Evidence:** `ios/Sources/MakingTracksTiles/MakingTracksTiles.swift` (`stageDownloadedBasemapObject`,
+  `prepareVerifiedBasemapObject`, `movePreparedBasemapObject`); **Test:**
+  `ios/Tests/MakingTracksTilesTests/MakingTracksTilesTests.swift`
+  (`testOfflineStoreTileStagingDoesNotLeaveCorruptFinalObjectOnVerifyFailure`).
 - **INV-2 Resume across every interruption class — ✅ satisfied (object-granular).** *Pause/crash/kill/
   net-drop/background/power-loss all degrade to object-granular resume; only explicit cancel discards.*
   Resume is driven by what is already in-store: `updatePlanLocked` (L1860) skips present objects and fetches
@@ -356,71 +353,59 @@ audit contradicted the commission's framing it is marked **[framing correction]*
   per-cell-grid fork, §6b). **Test:** with a basemap object >
   threshold and a fetcher failing at 50%, assert the retry does not re-transfer the fetched bytes (fails
   today); post-fix, assert the basemap plans as N per-cell objects each ≤ the tile bound.
-- **INV-5 GC soundness — ◐ partial; MORE gaps than the one known [framing correction].** *Never collects
-  installed- or live-in-progress-referenced objects; always eventually collects abandoned staging.* The
-  **mark** side is sound: `referencedObjects` (L2120, all installed `pack-index.json`) ∪
-  `referencedInProgressObjects` (L2138, all live in-progress) are protected before the sweep. The **sweep**
-  is too narrow — it cleans only `objects/tiles/*.gz` and `objects/basemaps/*.pmtiles` by exact extension
-  (L2116, filter L2162), so it **never sweeps: (1)** crash-stranded `objects/basemaps/*.pmtiles.tmp` (the
-  #193 residual — confirmed), **(2)** `root/tmp/{uuid}` install temp/backup dirs (L1432, cleaned only on
-  the in-line success/error paths, never by GC), and GC **(3) never runs at plain app launch** (only on
-  install-success, install-FAILURE, discard, and delete), so a *killed* download's orphans linger until the
-  next such op. **Gap/owner:** add a launch-time + `beginDownload` sweep of `*.pmtiles.tmp` and `root/tmp/*`
-  → **WP-DL-SAFETY**. **Test:** drop a **dot-prefixed `.{uuid}.pmtiles.tmp`** (the real strays are HIDDEN
-  files — a fixture that isn't dot-prefixed would be swept by a `skipsHiddenFiles` enumerator and give a
-  false pass while every real stray survives) + a `root/tmp/{uuid}` dir, trigger GC, assert both gone (fails
-  today); positive control — an in-progress pack-index's tile sha survives GC (passes).
-- **INV-6 Crash-window consistency — ◐ no corruption + readers fail safe, but a same-version-reinstall
-  crash can silently LOSE a pack [scoped].** *The store never serves an inconsistent pack; readers fail
-  safe.* Install writes+verifies all objects first (L1438), builds a temp pack dir, renames `temp→final`,
-  and **only then flips the `current-pack.json` pointer** (L1461); readers resolve exclusively through
-  `installedCurrentPackLocked` (L1765), so a half-moved pack is invisible; a thrown error restores the
-  backup (L1472). All mutations + GC run under one `NSLock` (L2233), GC **inside** the install lock (L1467).
-  So **no corruption and readers always fail safe** — but two real crash windows keep this off ✅:
-  - **Same-version reinstall backup window [gate].** A reinstall does `moveItem(final→backup)` **BEFORE**
-    `moveItem(temp→final)`; a crash *between* the two moves strands the previously-installed pack in
-    `root/tmp/{uuid}-backup` with `current-pack.json` left **dangling** → readers fail safe (no corruption)
-    but the **pack is silently lost** (must be re-downloaded). Not just an uncollected orphan — a
-    functional regression on crash.
-  - **Pointer-write window.** A crash *between* `temp→final` and the pointer write leaves a well-formed but
-    unreferenced pack dir (invisible, objects retained, uncollected).
-  `NSLock` is in-process only (fine on single-instance iOS; would break under an app-extension writer).
-  **Owner:** WP-DL-SAFETY — recover the backup on next launch (re-point or restore) + the orphan-dir sweep
-  (INV-5). **Test:** (i) fault after `temp→final` but before the pointer write → assert `installedPublish`
-  returns the *previous* version and the store reads; (ii) fault **between `final→backup` and `temp→final`**
-  → assert the pack is recoverable on relaunch (not silently lost — fails today).
-- **INV-7 Disk safety — ◐ partial: no corruption on ENOSPC, but a raw error not a graceful pause.**
-  *Headroom checked incl. transient peaks; ENOSPC mid-download → resumable pause, never corruption.*
-  Headroom is checked **once** before `beginDownload` (`hasHeadroom(requiredBytes: plan.bytesToFetch…)`
-  L1248, static 512 MiB reserve L1011) — **one-shot, not re-checked per object.** The transient peak is
-  bounded but real: a **tile** (≤1 MiB) is held twice mid-stage (URLSession temp + the `.atomic` write, and
-  `stageDownloadedTileObject` reads the whole file into memory L1386), so the peak is ~2× *per small object*;
-  the **basemap** stages by same-volume **rename** (`.pmtiles.tmp`→final, no second full copy), so its peak
-  is ~1×, not 2×. The one-shot check models neither the small-object 2× nor concurrent staging.
-  On **ENOSPC mid-write** the atomic write throws `NSFileWriteOutOfSpaceError`
-  (all-or-nothing → **no partial/corrupt object**), which is not `downloadCancelled` → rethrown without
-  discard → the marker + staged objects survive → **resumable**. So: no corruption ✅, but it surfaces as an
-  opaque throw, not a "paused" state, and there is no transient-peak accounting. **Gap/owner:** per-object
-  headroom re-check for the 2× peak + map ENOSPC → resumable pause → **WP-DL-SAFETY** (the per-cell basemap,
-  §6/WP-RM-P, also shrinks the peak). **Test:** inject an ENOSPC writer at object k; assert (i) no
-  partial/corrupt object at its final path, (ii) marker survives, (iii) a re-run with space resumes reusing
-  0..k−1.
-- **INV-8 Concurrency — ◐ partial; enforcement is UI-ONLY today [framing correction — no review threads
-  exist to cite].** *Parallel regions isolated; double-start of the same region impossible;
-  delete-during-download defined.* **Different regions:** isolated (separate markers; shared objects written
-  under the lock, idempotent). **Same-region double-start:** **no ENGINE guard** — `downloadCurrentRegion`
-  (L1234) has no single-flight; the *only* guard is the **OPEN #196** UI (`startDownload` tracks one
-  `activeDownloadID` in MapScreen), i.e. per-view, not engine-wide. **Delete-during-download:** **racy** —
-  `deleteLocked` (L1927) removes the in-progress marker then GCs, so a concurrent download's staged objects
-  can be swept and its later `install` fails verification; #196 adds `discardInProgressDownloads(region:)`
-  for *cooperative* cleanup, not mutual exclusion. **(The commission asked to cite #196/#197 "review
-  findings" as the enforcement tests — there are **zero inline review threads**: sourcery ran but was
-  rate-limited with no findings, so the enforcement is the PRs' own code + tests, not review threads.)**
-  **Gap/owner:** push a per-region
-  single-flight lease + a defined delete-vs-download precedence **into the engine** (not MapScreen) →
-  **WP-DL-SAFETY**, with **#196** as the natural UI consumer. **Test:** (i) start two downloaders for one
-  region → the second is rejected/coalesced; (ii) `delete` while k objects are staged → defined outcome
-  (clean download failure OR delete refused) and the store never references a GC'd object.
+- **INV-5 GC soundness — ✅ satisfied for the monolithic-pack engine by WP-DL-SAFETY (#202).** *Never
+  collects installed- or live-in-progress-referenced objects; always eventually collects abandoned staging.*
+  The mark side includes installed packs plus `referencedInProgressObjects`; if installed/current metadata
+  cannot be trusted, final object deletion is skipped entirely (fail-closed global-skip), while temporary
+  staging is still swept. Deferred maintenance runs after bootstrap instead of blocking launch, and
+  `beginDownload` also sweeps newly stranded temp files. Hidden `*.tmp` object files and `root/tmp/*` dirs
+  are cleaned; same-version backup dirs remain recoverable; undecodable backups are kept for inspection;
+  decodable stale backups are deleted. Live basemap prepare temps are registered by name and excluded from
+  `sweepTemporaryObjectFiles`, so hash verification can stay outside the root lock without a GC race.
+  **Evidence:** `ios/Sources/MakingTracksTiles/MakingTracksTiles.swift` (`referencedObjectsForDeletion`,
+  `recoverInterruptedInstallsLocked`, `sweepTemporaryInstallDirectories`, `sweepTemporaryObjectFiles`,
+  `registerLiveTemporaryObject`); **Tests:**
+  `testOfflineStoreDeferredMaintenanceSweepsHiddenBasemapTempsAndRootTmpDirs`,
+  `testOfflineDownloaderBeginDownloadSweepsNewStrandedTemps`,
+  `testOfflineStoreDeferredMaintenanceKeepsRegisteredLiveBasemapTemp`,
+  `testOfflineStoreDeferredMaintenanceSkipsFinalObjectGCWhenCurrentMetadataCannotBeRead`, and
+  `testOfflineStoreDeferredMaintenanceSkipsFinalObjectGCWhenManifestSnapshotCannotBeRead`.
+- **INV-6 Crash-window consistency — ✅ same-version backup recovery satisfied by WP-DL-SAFETY (#202).**
+  *The store never serves an inconsistent pack; readers fail safe.* Install still writes and verifies all
+  objects before pack pointer mutation, and readers resolve through `current-pack.json`. Deferred
+  maintenance now recovers a decodable `{uuid}-backup` only when it matches the current pointer's
+  publish_version, restoring the pack after the `final→backup` / `temp→final` crash window; decodable
+  mismatched backups are stale and are deleted, while undecodable backups are kept. Pointer-write-window
+  orphan packs remain invisible/fail-safe and are a cleanup issue rather than a served-corruption path.
+  **Evidence:** `ios/Sources/MakingTracksTiles/MakingTracksTiles.swift`
+  (`recoverInterruptedInstallsLocked`); **Tests:**
+  `testOfflineStoreDeferredMaintenanceRecoversSameVersionReinstallBackupWindow`,
+  `testOfflineStoreDeferredMaintenanceDeletesStaleDecodableBackupWhenCurrentPointsElsewhere`, and
+  `testOfflineStoreDeferredMaintenanceKeepsUndecodableBackupDirectory`.
+- **INV-7 Disk safety — ✅ satisfied for current object granularity by WP-DL-SAFETY (#202).** *Headroom
+  checked incl. transient peaks; ENOSPC mid-download → resumable pause, never corruption.* The downloader
+  still checks total headroom before `beginDownload`, then re-checks per object: small tile staging budgets
+  a 2x transient peak and the monolithic basemap budgets 1x. Cocoa/POSIX/underlying URLSession ENOSPC maps
+  to `downloadPaused`, preserving the in-progress marker and already verified objects. A later run with
+  space uses `updatePlan` sha-skip and does not re-fetch objects `0..k-1`. **Evidence:**
+  `ios/Sources/MakingTracksTiles/MakingTracksTiles.swift` (`downloadCurrentRegion`, `isOutOfSpace`,
+  `updatePlanLocked`, `writeVerifiedTileObject`, `movePreparedBasemapObject`); **Tests:**
+  `testOfflineDownloaderRechecksHeadroomPerObjectAndPausesResumably`,
+  `testOfflineDownloaderRechecksHeadroomBeforeBasemapFetch`,
+  `testOfflineDownloaderMapsOutOfSpaceDownloadErrorToResumablePause`,
+  `testOfflineDownloaderMapsURLSessionUnderlyingENOSPCToResumablePause`, and
+  `testOfflineDownloaderResumesAfterENOSPCByReusingPreviouslyStoredObjects`.
+- **INV-8 Concurrency — ✅ engine guard satisfied by WP-DL-SAFETY (#202).** *Parallel regions isolated;
+  double-start of the same region impossible; delete-during-download defined.* A root-scoped per-region
+  lease is acquired before metadata fetch and released by `defer`; a second same-region downloader is
+  rejected before issuing network requests. `delete(region:)` refuses while that region has an active
+  download lease, so delete cannot sweep objects out from under a live installer. Different regions remain
+  isolated by region markers and idempotent content-addressed writes under the store lock. **Evidence:**
+  `ios/Sources/MakingTracksTiles/MakingTracksTiles.swift` (`acquireDownloadLease`,
+  `releaseDownloadLease`, `delete(region:)`); **Tests:**
+  `testOfflineDownloaderRejectsSameRegionDoubleStartInEngine`,
+  `testOfflineStoreDeleteRefusesRegionWithActiveDownloadLease`, and
+  `testOfflineStoreDownloadLeaseSpansStoreInstancesForSameRoot`.
 - **INV-9 Honest progress — ◐ satisfied only in the OPEN #196 UI; the engine has no status [framing
   correction].** *A paused download reports "paused", never "downloading"/fabricated progress.* The engine's
   `OfflineRegionDownloadProgress` (L1062) carries bytes/objects/fraction **but no status field** — pause is
@@ -449,15 +434,12 @@ audit contradicted the commission's framing it is marked **[framing correction]*
   resumes/completes and progress reattaches on relaunch (fails until (b) is built — do NOT assert this
   against #197).
 
-**What this contract adds to the build queue:** the engine is **mostly sound — no corruption paths** (by
-the markers above: 2 ✅, 6 ◐, 1 ❌, 1 ▷ — the ◐/❌ are hardening + resumability gaps, not data-loss-on-happy-
-path); the gaps cluster into a few owners — §6/**WP-RM-P** (INV-4 per-cell basemap *pipeline cut*) + **WP-RM-G** (INV-4 *app* basemap-source
-render), both from the already-ratified §6b, reframed here as *safety*; **#197** (INV-10**(a)** session
-recreation + handler delivery, merged); and a **NEW WP-DL-SAFETY** (engine hardening: INV-1 tile
-verify-then-rename, INV-5 GC + orphan-dir sweep incl. launch-time GC, INV-6 backup-window recovery, INV-7
-per-object headroom + ENOSPC→pause, INV-8 engine single-flight + delete precedence, INV-9 engine status if
-first-class, INV-10**(b)** full task adoption after relaunch). See Open flag 5 (commission WP-DL-SAFETY)
-and flag 6 (INV-8/9 engine-vs-UI scope).
+**What this contract leaves in the build queue after WP-DL-SAFETY (#202):** the engine has no known
+served-corruption path. The remaining gaps are §6/**WP-RM-P** (INV-4 per-cell basemap *pipeline cut*) +
+**WP-RM-G** (INV-4 *app* basemap-source render), both from the already-ratified §6b and reframed here as
+*safety*; **#197** satisfied INV-10**(a)** session recreation + handler delivery; **INV-10(b)** full task
+adoption after relaunch remains a target/deferred item; **INV-9** remains the #196 UI contract unless a
+future non-UI caller needs an engine-level status model.
 
 ## Build-WP decomposition
 
@@ -469,7 +451,7 @@ and flag 6 (INV-8/9 engine-vs-UI scope).
 | **WP-RM-B** region-manager UX | **app (`ios`)** | named-hierarchy browser (install a zone = install its **pack**, size up front); a **download-progress surface** (inherits WP-B10d's progress stream — per-zone %/bytes, cancel/pause); grid coverage feedback + **per-ZONE** update/delete (whole-pack, §4; per-cell is an Open flag); consumes `OfflineRegionStore` (pack unit) + the catalog. **NOT user-shippable before WP-RM-CT** (a sub-country download without cover-traffic is a privacy regression — CT is in B's release gate) | WP-RM-P; **WP-RM-B3**; **WP-B10d** (progress/incremental-persist); **WP-RM-CT** (release gate); the built store; WP-IMG-B2 |
 | **WP-RM-B2** custom-rectangle path | **app + pipeline** | drag-rectangle→cells + confirm (size + decoy cost + halo); **needs a store extension** (synthetic-manifest cell-set install) OR composes published sub-zone packs — **new engine work, not free on the built store** | WP-RM-B; a store extension |
 | **WP-RM-CT** cover-traffic | **app (`ios`)** | apply #131 in RATIFIED terms (intersection-resistant cohort, budget scales with distinctiveness); the fetch layer's decoy wrapper (WP-B7/fetch-model) | WP-RM-B; #131 rulings; Rob's decoy numbers |
-| **WP-DL-SAFETY** engine hardening (§8) | **app (`ios`)** | close the download-safety gaps §8 names: **INV-1** tile verify-then-rename (mirror the basemap); **INV-5** GC + orphan-dir sweep (`.{uuid}.pmtiles.tmp`, `root/tmp/*`) **incl. launch-time GC**; **INV-6** same-version-reinstall **backup-window recovery** (re-point/restore a `{uuid}-backup` pack orphaned by a crash between `final→backup` and `temp→final`, else the pack is silently lost); **INV-7** per-object headroom (small-object 2× peak + concurrent staging) + ENOSPC→resumable-pause; **INV-8** engine per-region single-flight lease + delete-vs-download precedence; **INV-9** engine paused/running status (if made first-class, flag 6); **INV-10(b)** full background-task adoption after relaunch (task-state re-adoption, pack completion, progress reattachment, partial recovery — the residual #197 disclaims). Each ships with the §8 acceptance test (neuter → red) | the #193 engine (merged); **#197** (INV-10(a) session recreation); #196 (UI consumer of INV-8/9); **Rob commission (flag 5)** |
+| **WP-DL-SAFETY** engine hardening (§8) | **app (`ios`)** | **BUILT in #202 for INV-1/5/6/7/8:** tile verify-then-rename; fail-closed GC + temp/orphan sweep with live basemap-temp exclusion and deferred startup maintenance; same-version backup recovery plus stale-decoded backup deletion; per-object headroom + ENOSPC→resumable-pause + post-ENOSPC sha-skip; engine per-region single-flight lease + delete refusal during active downloads. **Not built:** **INV-10(b)** full background-task adoption after relaunch (task-state re-adoption, pack completion, progress reattachment, partial recovery — the residual #197 disclaims). **INV-9** stays the #196 UI contract unless promoted later. | the #193 engine (merged); **#197** (INV-10(a) session recreation); #196 (UI consumer of INV-8/9); #202 |
 
 **Seam to B10:** B10's first-run "region pick" is the **entry point** into this catalog (pick a
 top-level zone → offer its pack). **B10 persists `chosenRegion` → the startup seed; WP-RM inherits/
@@ -490,13 +472,9 @@ moment.
    coverage-manager). **Recommended default: per-zone now; per-cell later via the WP-RM-B2
    synthetic-manifest path** (a rectangle/cell-set installed as an ad-hoc pack is then per-cell-deletable).
    **Logged on the WP-RM issue body for Rob's morning.** Confirm.
-5. **Commission WP-DL-SAFETY [§8].** The download-safety audit found the engine mostly sound but with a
-   real cluster of hardening gaps (INV-1/5/6/7/8/9 + INV-10b full task adoption) that today have **no
-   owner** — per the plan-language
-   law they must become a named WP, so §8 defines **WP-DL-SAFETY**. It needs commissioning (it is not part
-   of any merged/queued WP). None is a data-corruption bug today (INV-6 holds, ENOSPC doesn't corrupt), but
-   INV-5 (stranded temp files) and INV-8 (delete-during-download race) are the sharpest. Confirm the WP +
-   its priority.
+5. **WP-DL-SAFETY follow-on [§8].** #202 closes the commissioned engine hardening cluster for
+   INV-1/5/6/7/8. The remaining safety follow-on is **INV-10b** full task adoption after relaunch; keep it
+   as a named target and do not let #197's session-recreation work be recorded as closing it.
 6. **INV-8/INV-9 engine-vs-UI scope [§8].** The same-region single-flight guard (INV-8) and paused-status
    honesty (INV-9) live in the **UI (#196)** today. Recommend pushing **INV-8 into the engine** (a
    per-view guard doesn't prevent two agents/paths racing the same region) and leaving **INV-9 as the #196
