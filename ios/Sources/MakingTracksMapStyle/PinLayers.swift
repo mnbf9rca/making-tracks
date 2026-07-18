@@ -12,7 +12,6 @@ public enum PinLayers {
     public static let baseCategoryIconScale = 0.72
     public static let baseBadgeIconScale = 1.0
     public static let categorySymbolPointSize = 17.0
-    public static let categoryIconScale = PinSize().categoryIconScale
     public static let fallbackCategoryID = "__other__"
     public static let fallbackCategoryIconName = "pin-category-uncategorized"
     public static let hiddenIconName = "pin-hidden"
@@ -130,7 +129,7 @@ public enum PinLayers {
                 "paint": .object([
                     "circle-color": pinColorExpression(),
                     "circle-opacity": fadeOpacityExpression(),
-                    "circle-radius": .double(pinSize.circleRadius),
+                    "circle-radius": pinSize.circleRadiusExpression,
                 ]),
             ]),
             .object([
@@ -144,7 +143,7 @@ public enum PinLayers {
                     "icon-image": categoryIconExpression(),
                     "icon-allow-overlap": .bool(true),
                     "icon-ignore-placement": .bool(true),
-                    "icon-size": .double(pinSize.categoryIconScale),
+                    "icon-size": pinSize.categoryIconScaleExpression,
                 ]),
             ]),
             .object([
@@ -155,7 +154,7 @@ public enum PinLayers {
                 "layout": .object([
                     "icon-image": .string("badge-bookmark"),
                     "icon-allow-overlap": .bool(true),
-                    "icon-size": .double(pinSize.badgeIconScale),
+                    "icon-size": pinSize.badgeIconScaleExpression,
                     "icon-offset": pinSize.bookmarkOffset,
                 ]),
             ]),
@@ -167,7 +166,7 @@ public enum PinLayers {
                 "layout": .object([
                     "icon-image": .string("badge-heart"),
                     "icon-allow-overlap": .bool(true),
-                    "icon-size": .double(pinSize.badgeIconScale),
+                    "icon-size": pinSize.badgeIconScaleExpression,
                     "icon-offset": pinSize.heartOffset,
                 ]),
             ]),

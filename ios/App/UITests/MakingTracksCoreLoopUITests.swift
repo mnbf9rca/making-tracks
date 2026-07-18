@@ -501,6 +501,37 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
     }
 
+    func testPinSizeSliderUpdatesLiveMapLayers() {
+        let app = launch(
+            reset: true,
+            pinSizeMultiplier: 0.8,
+            pinDiagnostics: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+        XCTAssertTrue(waitForSourceFeatureCount(2, in: app))
+
+        XCTAssertEqual(
+            app.staticTexts["map.debug-pin-layer-size"].label,
+            "pin-layer-size:80% circle:true icon:true bookmark:true heart:true"
+        )
+
+        openAppMenu(in: app)
+        app.buttons["menu.row.settings"].tap()
+        XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
+        let slider = app.sliders["settings.pin-size"]
+        XCTAssertTrue(scrollToHittable(slider, in: app))
+        slider.adjust(toNormalizedSliderPosition: 1.0)
+        app.buttons["menu.done"].tap()
+
+        let liveLayerSize = app.staticTexts["map.debug-pin-layer-size"]
+        XCTAssertTrue(liveLayerSize.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            liveLayerSize.label,
+            "pin-layer-size:160% circle:true icon:true bookmark:true heart:true"
+        )
+    }
+
     func testPlaceCardStacksActionsAtAccessibilityTextSize() {
         let app = launch(reset: true, accessibilityTextSize: true)
 

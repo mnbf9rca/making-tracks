@@ -47,6 +47,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var debugReportProjectedFeatureDiagnostics: ([ProjectedFeatureDiagnostic]) -> Void = { _ in }
     var debugReportMapUpdateStatus: (String) -> Void = { _ in }
     var debugReportTapStatus: (String) -> Void = { _ in }
+    var debugReportPinLayerSize: (String) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator {
         let coordinator = Coordinator(
@@ -63,6 +64,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         coordinator.debugReportProjectedFeatureDiagnostics = debugReportProjectedFeatureDiagnostics
         coordinator.debugReportMapUpdateStatus = debugReportMapUpdateStatus
         coordinator.debugReportTapStatus = debugReportTapStatus
+        coordinator.debugReportPinLayerSize = debugReportPinLayerSize
         return coordinator
     }
 
@@ -112,6 +114,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         context.coordinator.debugReportProjectedFeatureDiagnostics = debugReportProjectedFeatureDiagnostics
         context.coordinator.debugReportMapUpdateStatus = debugReportMapUpdateStatus
         context.coordinator.debugReportTapStatus = debugReportTapStatus
+        context.coordinator.debugReportPinLayerSize = debugReportPinLayerSize
         context.coordinator.pendingFeatures = features
         context.coordinator.desiredVisibleCategories = visibleCategories
         context.coordinator.desiredPinSizeMultiplier = pinSizeMultiplier
@@ -156,6 +159,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var debugReportProjectedFeatureDiagnostics: ([ProjectedFeatureDiagnostic]) -> Void = { _ in }
         var debugReportMapUpdateStatus: (String) -> Void = { _ in }
         var debugReportTapStatus: (String) -> Void = { _ in }
+        var debugReportPinLayerSize: (String) -> Void = { _ in }
         weak var map: MLNMapView?
         var currentWorldPMTilesURL: String?
         var currentRegionPMTilesURL: String?
@@ -264,7 +268,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             let circle = MLNCircleStyleLayer(identifier: "pins-circle", source: source)
             circle.circleOpacity = NSExpression(mglJSONObject: PinLayers.fadeOpacityExpression().foundationObject)
             circle.circleColor = NSExpression(mglJSONObject: PinLayers.pinColorExpression().foundationObject)
-            circle.circleRadius = NSExpression(forConstantValue: pinSize.circleRadius)
+            circle.circleRadius = Self.mapExpression(pinSize.circleRadiusExpression)
             style.addLayer(circle)
 
             addCategoryIcon(source: source, style: style, pinSize: pinSize)
@@ -272,6 +276,9 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             addBadge(id: "pins-heart", icon: "badge-heart", filter: PinLayers.heartFilter(), pinSize: pinSize, offset: pinSize.heartOffset, source: source, style: style)
             currentVisibleCategories = nil
             currentPinSize = pinSize
+#if DEBUG
+            reportPinLayerSize(in: style, pinSize: pinSize)
+#endif
             updateLayerFilters(on: mapView, visibleCategories: desiredVisibleCategories)
             updateSource(on: mapView, features: pendingFeatures)
             reportViewport(mapView)
@@ -352,19 +359,22 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             else { return }
             currentPinSize = pinSize
             if let circle = style.layer(withIdentifier: "pins-circle") as? MLNCircleStyleLayer {
-                circle.circleRadius = NSExpression(forConstantValue: pinSize.circleRadius)
+                circle.circleRadius = Self.mapExpression(pinSize.circleRadiusExpression)
             }
             if let icon = style.layer(withIdentifier: "pins-icon") as? MLNSymbolStyleLayer {
-                icon.iconScale = NSExpression(forConstantValue: pinSize.categoryIconScale)
+                icon.iconScale = Self.mapExpression(pinSize.categoryIconScaleExpression)
             }
             if let bookmark = style.layer(withIdentifier: "pins-bookmark") as? MLNSymbolStyleLayer {
-                bookmark.iconScale = NSExpression(forConstantValue: pinSize.badgeIconScale)
+                bookmark.iconScale = Self.mapExpression(pinSize.badgeIconScaleExpression)
                 setIconOffset(pinSize.bookmarkOffset, on: bookmark)
             }
             if let heart = style.layer(withIdentifier: "pins-heart") as? MLNSymbolStyleLayer {
-                heart.iconScale = NSExpression(forConstantValue: pinSize.badgeIconScale)
+                heart.iconScale = Self.mapExpression(pinSize.badgeIconScaleExpression)
                 setIconOffset(pinSize.heartOffset, on: heart)
             }
+#if DEBUG
+            reportPinLayerSize(in: style, pinSize: pinSize)
+#endif
         }
 
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
@@ -396,7 +406,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             layer.iconImageName = NSExpression(mglJSONObject: PinLayers.categoryIconExpression().foundationObject)
             layer.iconAllowsOverlap = NSExpression(forConstantValue: true)
             layer.iconIgnoresPlacement = NSExpression(forConstantValue: true)
-            layer.iconScale = NSExpression(forConstantValue: pinSize.categoryIconScale)
+            layer.iconScale = Self.mapExpression(pinSize.categoryIconScaleExpression)
             layer.iconOpacity = NSExpression(mglJSONObject: PinLayers.fadeOpacityExpression().foundationObject)
             style.addLayer(layer)
         }
@@ -411,6 +421,20 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         }
 
 #if DEBUG
+        private func reportPinLayerSize(in style: MLNStyle, pinSize: PinSize) {
+            let circle = style.layer(withIdentifier: "pins-circle") as? MLNCircleStyleLayer
+            let icon = style.layer(withIdentifier: "pins-icon") as? MLNSymbolStyleLayer
+            let bookmark = style.layer(withIdentifier: "pins-bookmark") as? MLNSymbolStyleLayer
+            let heart = style.layer(withIdentifier: "pins-heart") as? MLNSymbolStyleLayer
+            debugReportPinLayerSize(
+                "pin-layer-size:\(pinSize.accessibilityValue) " +
+                    "circle:\(Self.expression(circle?.circleRadius, matches: pinSize.circleRadiusExpression)) " +
+                    "icon:\(Self.expression(icon?.iconScale, matches: pinSize.categoryIconScaleExpression)) " +
+                    "bookmark:\(Self.expression(bookmark?.iconScale, matches: pinSize.badgeIconScaleExpression)) " +
+                    "heart:\(Self.expression(heart?.iconScale, matches: pinSize.badgeIconScaleExpression))"
+            )
+        }
+
         private func reportProjectedFeatureDiagnostics(on map: MLNMapView, features: [(MapPlace, PinState)]) {
             let diagnostics = features.map { place, _ in
                 let coordinate = CLLocationCoordinate2D(latitude: place.lat, longitude: place.lon)
@@ -436,10 +460,21 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             let layer = MLNSymbolStyleLayer(identifier: id, source: source)
             layer.iconImageName = NSExpression(forConstantValue: icon)
             layer.iconAllowsOverlap = NSExpression(forConstantValue: true)
-            layer.iconScale = NSExpression(forConstantValue: pinSize.badgeIconScale)
+            layer.iconScale = Self.mapExpression(pinSize.badgeIconScaleExpression)
             setIconOffset(offset, on: layer)
             layer.predicate = NSPredicate(mglJSONObject: filter.foundationObject)
             style.addLayer(layer)
+        }
+
+        private static func mapExpression(_ value: JSONValue) -> NSExpression {
+            NSExpression(mglJSONObject: value.foundationObject)
+        }
+
+        private static func expression(_ expression: NSExpression?, matches expected: JSONValue) -> Bool {
+            guard let expression else { return false }
+            let expectedExpression = mapExpression(expected)
+            return expression.isEqual(expectedExpression)
+                || expression.description == expectedExpression.description
         }
 
         private func setIconOffset(_ offset: JSONValue, on layer: MLNSymbolStyleLayer) {

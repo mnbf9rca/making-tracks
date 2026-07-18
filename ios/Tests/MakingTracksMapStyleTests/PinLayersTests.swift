@@ -45,7 +45,7 @@ final class PinLayersTests: XCTestCase {
         if case let .object(paint)? = circle?["paint"] {
             XCTAssertEqual(paint["circle-color"], PinLayers.pinColorExpression())
             XCTAssertEqual(paint["circle-opacity"], PinLayers.fadeOpacityExpression())
-            XCTAssertEqual(paint["circle-radius"], .double(PinSize().circleRadius))
+            XCTAssertEqual(paint["circle-radius"], PinSize().circleRadiusExpression)
         } else {
             XCTFail("pin circle paint")
         }
@@ -55,13 +55,13 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(layoutValue("icon-image", in: icon), PinLayers.categoryIconExpression())
         XCTAssertEqual(layoutValue("icon-allow-overlap", in: icon), .bool(true))
         XCTAssertEqual(layoutValue("icon-ignore-placement", in: icon), .bool(true))
-        XCTAssertEqual(layoutValue("icon-size", in: icon), .double(PinSize().categoryIconScale))
+        XCTAssertEqual(layoutValue("icon-size", in: icon), PinSize().categoryIconScaleExpression)
         XCTAssertEqual(layoutValue("icon-image", in: bookmark), .string("badge-bookmark"))
         XCTAssertEqual(layoutValue("icon-image", in: heart), .string("badge-heart"))
         XCTAssertEqual(layoutValue("icon-allow-overlap", in: bookmark), .bool(true))
         XCTAssertEqual(layoutValue("icon-allow-overlap", in: heart), .bool(true))
-        XCTAssertEqual(layoutValue("icon-size", in: bookmark), .double(PinSize().badgeIconScale))
-        XCTAssertEqual(layoutValue("icon-size", in: heart), .double(PinSize().badgeIconScale))
+        XCTAssertEqual(layoutValue("icon-size", in: bookmark), PinSize().badgeIconScaleExpression)
+        XCTAssertEqual(layoutValue("icon-size", in: heart), PinSize().badgeIconScaleExpression)
         XCTAssertEqual(layoutValue("icon-offset", in: bookmark), PinSize().bookmarkOffset)
         XCTAssertEqual(layoutValue("icon-offset", in: heart), PinSize().heartOffset)
     }
@@ -84,7 +84,7 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(PinSize(multiplier: 2.4).multiplier, PinSize.maximumMultiplier)
     }
 
-    func testPinLayerJSONUsesDefaultPinSizeMetrics() {
+    func testPinLayerJSONUsesZoomAwareSizeExpressionsComposedWithMultiplier() {
         let layers = PinLayers.pinLayers()
         let circle = layer(id: "pins-circle", in: layers)
         let icon = layer(id: "pins-icon", in: layers)
@@ -93,15 +93,29 @@ final class PinLayersTests: XCTestCase {
         let defaultSize = PinSize()
 
         if case let .object(paint)? = circle?["paint"] {
-            XCTAssertEqual(paint["circle-radius"], .double(defaultSize.circleRadius))
+            XCTAssertEqual(paint["circle-radius"], defaultSize.circleRadiusExpression)
         } else {
             XCTFail("pin circle paint")
         }
-        XCTAssertEqual(layoutValue("icon-size", in: icon), .double(defaultSize.categoryIconScale))
-        XCTAssertEqual(layoutValue("icon-size", in: bookmark), .double(defaultSize.badgeIconScale))
-        XCTAssertEqual(layoutValue("icon-size", in: heart), .double(defaultSize.badgeIconScale))
+        XCTAssertEqual(layoutValue("icon-size", in: icon), defaultSize.categoryIconScaleExpression)
+        XCTAssertEqual(layoutValue("icon-size", in: bookmark), defaultSize.badgeIconScaleExpression)
+        XCTAssertEqual(layoutValue("icon-size", in: heart), defaultSize.badgeIconScaleExpression)
         XCTAssertEqual(layoutValue("icon-offset", in: bookmark), defaultSize.bookmarkOffset)
         XCTAssertEqual(layoutValue("icon-offset", in: heart), defaultSize.heartOffset)
+
+        let maximumSize = PinSize(multiplier: PinSize.maximumMultiplier)
+        let maximumLayers = PinLayers.pinLayers(pinSize: maximumSize)
+        let maximumCircle = layer(id: "pins-circle", in: maximumLayers)
+        let maximumIcon = layer(id: "pins-icon", in: maximumLayers)
+        if case let .object(paint)? = maximumCircle?["paint"] {
+            XCTAssertEqual(paint["circle-radius"], maximumSize.circleRadiusExpression)
+        } else {
+            XCTFail("maximum pin circle paint")
+        }
+        XCTAssertEqual(layoutValue("icon-size", in: maximumIcon), maximumSize.categoryIconScaleExpression)
+        XCTAssertNotEqual(defaultSize.circleRadiusExpression, maximumSize.circleRadiusExpression)
+        XCTAssertTrue(isZoomInterpolation(defaultSize.circleRadiusExpression))
+        XCTAssertTrue(isZoomInterpolation(defaultSize.categoryIconScaleExpression))
     }
 
     func testWhiteCategoryGlyphHasEnoughContrastOnFullOpacityPinCircles() throws {
@@ -296,6 +310,15 @@ final class PinLayersTests: XCTestCase {
     private func layoutValue(_ key: String, in layer: [String: JSONValue]?) -> JSONValue? {
         guard case let .object(layout)? = layer?["layout"] else { return nil }
         return layout[key]
+    }
+
+    private func isZoomInterpolation(_ value: JSONValue) -> Bool {
+        guard case let .array(expression) = value,
+              expression.count >= 5,
+              expression.first == .string("interpolate"),
+              case let .array(input) = expression[2]
+        else { return false }
+        return input == [.string("zoom")]
     }
 
     private func contrastRatio(_ first: String, _ second: String) throws -> Double {

@@ -680,6 +680,7 @@ struct MapScreen: View {
     @State private var debugProjectedFixturePins: [ProjectedFeatureDiagnostic] = []
     @State private var debugMapUpdateStatus = "not-updated"
     @State private var debugTapStatus = "not-tapped"
+    @State private var debugPinLayerSizeStatus = "pin-layer-size:unreported"
     private let locationManager: AppLocationManager
     private static let primaryFixturePlaceID = fixturePlaces[0].placeID
     private static let nearbyPromptDistanceMeters: CLLocationDistance = 125
@@ -815,6 +816,13 @@ struct MapScreen: View {
                     Task { @MainActor in
                         guard debugTapStatus != status else { return }
                         debugTapStatus = status
+                    }
+                },
+                debugReportPinLayerSize: { status in
+                    guard debugExposeFixturePinDiagnostics else { return }
+                    Task { @MainActor in
+                        guard debugPinLayerSizeStatus != status else { return }
+                        debugPinLayerSizeStatus = status
                     }
                 }
             )
@@ -1207,6 +1215,13 @@ struct MapScreen: View {
                     .padding(.vertical, 5)
                     .background(.ultraThinMaterial, in: Capsule())
                     .accessibilityIdentifier("map.debug-pin-size")
+
+                Text(verbatim: debugPinLayerSizeStatus)
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.debug-pin-layer-size")
             }
 
             if let debugOfflineStatus {
