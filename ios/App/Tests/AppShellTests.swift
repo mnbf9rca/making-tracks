@@ -153,6 +153,7 @@ final class AppShellTests: XCTestCase {
     @MainActor
     func testThemeStorageUsesStableKeyAndDefinedPaperDefault() {
         XCTAssertEqual(MapScreen.themeStorageKey, "map.theme.id")
+        XCTAssertEqual(MapScreen.pinSizeMultiplierStorageKey, "map.pinSize.multiplier")
         XCTAssertEqual(MapTheme.named(nil).id, MapTheme.definedPaper.id)
         XCTAssertEqual(MapTheme.named("defined-paper").displayName, "Defined Paper")
     }

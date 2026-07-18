@@ -625,6 +625,7 @@ final class OfflineRegionDownloadSession {
 
 struct MapScreen: View {
     static let themeStorageKey = "map.theme.id"
+    static let pinSizeMultiplierStorageKey = "map.pinSize.multiplier"
 
     let database: AppDatabase
     let startupViewport: ViewportSeed
@@ -640,6 +641,7 @@ struct MapScreen: View {
     @StateObject private var locationPermission: LocationPermission
     @AppStorage(Self.themeStorageKey) private var selectedThemeID = MapTheme.definedPaper.id
     @AppStorage(OfflineDownloadSettings.allowsCellularDownloadsKey) private var allowsCellularDownloads = OfflineDownloadSettings.defaultAllowsCellularDownloads
+    @AppStorage(Self.pinSizeMultiplierStorageKey) private var pinSizeMultiplier = PinSize.defaultMultiplier
     @Environment(\.scenePhase) private var scenePhase
     @State private var worldPMTilesURL: String? = WorldBasemap.pmtilesURL()
     @State private var features: [(MapPlace, PinState)] = []
@@ -678,6 +680,7 @@ struct MapScreen: View {
     @State private var debugProjectedFixturePins: [ProjectedFeatureDiagnostic] = []
     @State private var debugMapUpdateStatus = "not-updated"
     @State private var debugTapStatus = "not-tapped"
+    @State private var debugPinLayerSizeStatus = "pin-layer-size:unreported"
     private let locationManager: AppLocationManager
     private static let primaryFixturePlaceID = fixturePlaces[0].placeID
     private static let nearbyPromptDistanceMeters: CLLocationDistance = 125
@@ -718,6 +721,7 @@ struct MapScreen: View {
                 startupViewport: startupViewport,
                 features: features,
                 visibleCategories: layerVisibility.visibleCategories,
+                pinSizeMultiplier: pinSizeMultiplier,
                 locationManager: locationManager,
                 showsUserLocation: showsUserLocation,
                 userTrackingMode: userTrackingMode,
@@ -812,6 +816,13 @@ struct MapScreen: View {
                     Task { @MainActor in
                         guard debugTapStatus != status else { return }
                         debugTapStatus = status
+                    }
+                },
+                debugReportPinLayerSize: { status in
+                    guard debugExposeFixturePinDiagnostics else { return }
+                    Task { @MainActor in
+                        guard debugPinLayerSizeStatus != status else { return }
+                        debugPinLayerSizeStatus = status
                     }
                 }
             )
@@ -932,6 +943,7 @@ struct MapScreen: View {
                 model: model,
                 attribution: attribution,
                 selectedThemeID: $selectedThemeID,
+                pinSizeMultiplier: $pinSizeMultiplier,
                 seededOfflineDownloadProgress: offlineDownloadProgress,
                 offlineDownloadSession: offlineDownloadSession,
                 locationStatus: locationMenuStatus,
@@ -1189,6 +1201,27 @@ struct MapScreen: View {
                     .padding(.vertical, 5)
                     .background(.ultraThinMaterial, in: Capsule())
                     .accessibilityIdentifier("map.debug-tap-status")
+
+                Text(verbatim: "theme:\(selectedTheme.id)")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.debug-theme")
+
+                Text(verbatim: "pin-size:\(PinSize(multiplier: pinSizeMultiplier).accessibilityValue)")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.debug-pin-size")
+
+                Text(verbatim: debugPinLayerSizeStatus)
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.debug-pin-layer-size")
             }
 
             if let debugOfflineStatus {
@@ -2046,6 +2079,7 @@ private struct AppMenuSheet: View {
     let model: MapScreenModel?
     let attribution: [Attribution]
     @Binding var selectedThemeID: String
+    @Binding var pinSizeMultiplier: Double
     let seededOfflineDownloadProgress: OfflineDownloadProgress?
     let offlineDownloadSession: OfflineRegionDownloadSession
     let locationStatus: LocationMenuStatus
@@ -2097,6 +2131,7 @@ private struct AppMenuSheet: View {
         case .settings:
             destinationWithDone(SettingsView(
                 selectedThemeID: $selectedThemeID,
+                pinSizeMultiplier: $pinSizeMultiplier,
                 locationStatus: locationStatus,
                 storageStatus: storageStatus,
                 openLocationSettings: openLocationSettings,
@@ -2588,6 +2623,7 @@ private struct OfflineMapsView: View {
 
 private struct SettingsView: View {
     @Binding var selectedThemeID: String
+    @Binding var pinSizeMultiplier: Double
     let locationStatus: LocationMenuStatus
     let storageStatus: StorageMenuStatus
     let openLocationSettings: () -> Void
@@ -2637,6 +2673,25 @@ private struct SettingsView: View {
                     }
                 }
                 .accessibilityIdentifier("settings.downloads.allow-cellular")
+            }
+
+            Section("Pins") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Pin size")
+                        Spacer()
+                        Text(pinSize.accessibilityValue)
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(
+                        value: pinSizeBinding,
+                        in: PinSize.minimumMultiplier...PinSize.maximumMultiplier,
+                        step: 0.1
+                    )
+                    .accessibilityLabel("Pin size")
+                    .accessibilityValue(pinSize.accessibilityValue)
+                    .accessibilityIdentifier("settings.pin-size")
+                }
             }
 
             Section("Location") {
@@ -2708,6 +2763,17 @@ private struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+    }
+
+    private var pinSize: PinSize {
+        PinSize(multiplier: pinSizeMultiplier)
+    }
+
+    private var pinSizeBinding: Binding<Double> {
+        Binding(
+            get: { pinSize.multiplier },
+            set: { pinSizeMultiplier = PinSize(multiplier: $0).multiplier }
+        )
     }
 }
 
@@ -3033,9 +3099,9 @@ private struct LayersSheet: View {
                         }
                         .accessibilityIdentifier("map.layers.category.\(category.id)")
                     }
-                    Button("Show all categories") {
+                    Button(visibility.toggleAllCategoriesTitle) {
                         var next = visibility
-                        next.showAllCategories()
+                        next.toggleAllCategories()
                         visibility = next
                     }
                     .accessibilityIdentifier("map.layers.show-all-categories")

@@ -45,7 +45,7 @@ final class PinLayersTests: XCTestCase {
         if case let .object(paint)? = circle?["paint"] {
             XCTAssertEqual(paint["circle-color"], PinLayers.pinColorExpression())
             XCTAssertEqual(paint["circle-opacity"], PinLayers.fadeOpacityExpression())
-            XCTAssertEqual(paint["circle-radius"], .double(6))
+            XCTAssertEqual(paint["circle-radius"], PinSize().circleRadiusExpression)
         } else {
             XCTFail("pin circle paint")
         }
@@ -55,13 +55,73 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(layoutValue("icon-image", in: icon), PinLayers.categoryIconExpression())
         XCTAssertEqual(layoutValue("icon-allow-overlap", in: icon), .bool(true))
         XCTAssertEqual(layoutValue("icon-ignore-placement", in: icon), .bool(true))
-        XCTAssertEqual(layoutValue("icon-size", in: icon), .double(PinLayers.categoryIconScale))
+        XCTAssertEqual(layoutValue("icon-size", in: icon), PinSize().categoryIconScaleExpression)
         XCTAssertEqual(layoutValue("icon-image", in: bookmark), .string("badge-bookmark"))
         XCTAssertEqual(layoutValue("icon-image", in: heart), .string("badge-heart"))
         XCTAssertEqual(layoutValue("icon-allow-overlap", in: bookmark), .bool(true))
         XCTAssertEqual(layoutValue("icon-allow-overlap", in: heart), .bool(true))
-        XCTAssertEqual(layoutValue("icon-offset", in: bookmark), PinLayers.bookmarkOffset)
-        XCTAssertEqual(layoutValue("icon-offset", in: heart), PinLayers.heartOffset)
+        XCTAssertEqual(layoutValue("icon-size", in: bookmark), PinSize().badgeIconScaleExpression)
+        XCTAssertEqual(layoutValue("icon-size", in: heart), PinSize().badgeIconScaleExpression)
+        XCTAssertEqual(layoutValue("icon-offset", in: bookmark), PinSize().bookmarkOffset)
+        XCTAssertEqual(layoutValue("icon-offset", in: heart), PinSize().heartOffset)
+    }
+
+    func testPinSizeMetricsScaleCircleCategoryIconAndBadgesTogether() {
+        XCTAssertEqual(PinSize.minimumMultiplier, 0.8)
+        XCTAssertEqual(PinSize.defaultMultiplier, 1.2)
+        XCTAssertEqual(PinSize.maximumMultiplier, 1.6)
+
+        let defaultSize = PinSize()
+        XCTAssertEqual(defaultSize.multiplier, PinSize.defaultMultiplier)
+        XCTAssertEqual(defaultSize.circleRadius, PinLayers.baseCircleRadius * PinSize.defaultMultiplier, accuracy: 1e-9)
+        XCTAssertEqual(defaultSize.categoryIconScale, PinLayers.baseCategoryIconScale * PinSize.defaultMultiplier, accuracy: 1e-9)
+        XCTAssertEqual(defaultSize.badgeIconScale, PinLayers.baseBadgeIconScale * PinSize.defaultMultiplier, accuracy: 1e-9)
+        XCTAssertEqual(defaultSize.bookmarkOffset, .array([.double(PinLayers.baseBadgeOffset * PinSize.defaultMultiplier), .double(-PinLayers.baseBadgeOffset * PinSize.defaultMultiplier)]))
+        XCTAssertEqual(defaultSize.heartOffset, .array([.double(-PinLayers.baseBadgeOffset * PinSize.defaultMultiplier), .double(-PinLayers.baseBadgeOffset * PinSize.defaultMultiplier)]))
+        XCTAssertEqual(defaultSize.accessibilityValue, "120%")
+
+        XCTAssertEqual(PinSize(multiplier: 0.1).multiplier, PinSize.minimumMultiplier)
+        XCTAssertEqual(PinSize(multiplier: 2.4).multiplier, PinSize.maximumMultiplier)
+    }
+
+    func testPinLayerJSONUsesZoomAwareSizeExpressionsComposedWithMultiplier() {
+        let layers = PinLayers.pinLayers()
+        let circle = layer(id: "pins-circle", in: layers)
+        let icon = layer(id: "pins-icon", in: layers)
+        let bookmark = layer(id: "pins-bookmark", in: layers)
+        let heart = layer(id: "pins-heart", in: layers)
+        let defaultSize = PinSize()
+
+        if case let .object(paint)? = circle?["paint"] {
+            XCTAssertEqual(paint["circle-radius"], defaultSize.circleRadiusExpression)
+        } else {
+            XCTFail("pin circle paint")
+        }
+        XCTAssertEqual(layoutValue("icon-size", in: icon), defaultSize.categoryIconScaleExpression)
+        XCTAssertEqual(layoutValue("icon-size", in: bookmark), defaultSize.badgeIconScaleExpression)
+        XCTAssertEqual(layoutValue("icon-size", in: heart), defaultSize.badgeIconScaleExpression)
+        XCTAssertEqual(layoutValue("icon-offset", in: bookmark), defaultSize.bookmarkOffset)
+        XCTAssertEqual(layoutValue("icon-offset", in: heart), defaultSize.heartOffset)
+
+        let maximumSize = PinSize(multiplier: PinSize.maximumMultiplier)
+        let maximumLayers = PinLayers.pinLayers(pinSize: maximumSize)
+        let maximumCircle = layer(id: "pins-circle", in: maximumLayers)
+        let maximumIcon = layer(id: "pins-icon", in: maximumLayers)
+        if case let .object(paint)? = maximumCircle?["paint"] {
+            XCTAssertEqual(paint["circle-radius"], maximumSize.circleRadiusExpression)
+        } else {
+            XCTFail("maximum pin circle paint")
+        }
+        XCTAssertEqual(layoutValue("icon-size", in: maximumIcon), maximumSize.categoryIconScaleExpression)
+        XCTAssertNotEqual(defaultSize.circleRadiusExpression, maximumSize.circleRadiusExpression)
+        XCTAssertTrue(isZoomInterpolation(defaultSize.circleRadiusExpression))
+        XCTAssertTrue(isZoomInterpolation(defaultSize.categoryIconScaleExpression))
+    }
+
+    func testWhiteCategoryGlyphHasEnoughContrastOnFullOpacityPinCircles() throws {
+        let white = "#FFFFFF"
+        XCTAssertGreaterThanOrEqual(try contrastRatio(white, PinLayers.pinColor), 3.0)
+        XCTAssertGreaterThanOrEqual(try contrastRatio(white, PinLayers.hiddenPinColor), 3.0)
     }
 
     func testCategoryIconExpressionMapsKnownCategoriesAndFallsBackForUnknowns() {
@@ -250,5 +310,35 @@ final class PinLayersTests: XCTestCase {
     private func layoutValue(_ key: String, in layer: [String: JSONValue]?) -> JSONValue? {
         guard case let .object(layout)? = layer?["layout"] else { return nil }
         return layout[key]
+    }
+
+    private func isZoomInterpolation(_ value: JSONValue) -> Bool {
+        guard case let .array(expression) = value,
+              expression.count >= 5,
+              expression.first == .string("interpolate"),
+              case let .array(input) = expression[2]
+        else { return false }
+        return input == [.string("zoom")]
+    }
+
+    private func contrastRatio(_ first: String, _ second: String) throws -> Double {
+        let firstLuminance = try relativeLuminance(first)
+        let secondLuminance = try relativeLuminance(second)
+        let lighter = max(firstLuminance, secondLuminance)
+        let darker = min(firstLuminance, secondLuminance)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    private func relativeLuminance(_ hex: String) throws -> Double {
+        let scalars = Array(hex.dropFirst())
+        XCTAssertEqual(hex.first, "#")
+        XCTAssertEqual(scalars.count, 6)
+        let channels = try stride(from: 0, to: scalars.count, by: 2).map { index -> Double in
+            let channel = String(scalars[index..<(index + 2)])
+            let value = try XCTUnwrap(Int(channel, radix: 16))
+            let component = Double(value) / 255.0
+            return component <= 0.03928 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
+        }
+        return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2])
     }
 }

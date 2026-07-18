@@ -16,6 +16,15 @@ struct MapLayerVisibility: Equatable, Sendable {
         !showHiddenPlaces && visibleCategories == nil
     }
 
+    var toggleAllCategoriesTitle: String {
+        areAllCategoriesVisible ? "Hide all categories" : "Show all categories"
+    }
+
+    private var areAllCategoriesVisible: Bool {
+        guard let visibleCategories else { return true }
+        return visibleCategories == Set(categories.map(\.id))
+    }
+
     init(
         categories: [MapLayerCategory] = MapLayerVisibility.defaultCategories,
         showHiddenPlaces: Bool = false,
@@ -45,6 +54,10 @@ struct MapLayerVisibility: Equatable, Sendable {
 
     mutating func showAllCategories() {
         visibleCategories = nil
+    }
+
+    mutating func toggleAllCategories() {
+        visibleCategories = areAllCategoriesVisible ? [] : nil
     }
 
     private static let defaultCategories: [MapLayerCategory] = PinLayers.categoryIconNames.keys.sorted().map { categoryID in
