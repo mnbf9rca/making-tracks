@@ -1193,6 +1193,20 @@ struct MapScreen: View {
                     .padding(.vertical, 5)
                     .background(.ultraThinMaterial, in: Capsule())
                     .accessibilityIdentifier("map.debug-tap-status")
+
+                Text(verbatim: "theme:\(selectedTheme.id)")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.debug-theme")
+
+                Text(verbatim: "pin-size:\(PinSize(multiplier: pinSizeMultiplier).accessibilityValue)")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.debug-pin-size")
             }
 
             if let debugOfflineStatus {
@@ -3070,9 +3084,9 @@ private struct LayersSheet: View {
                         }
                         .accessibilityIdentifier("map.layers.category.\(category.id)")
                     }
-                    Button("Show all categories") {
+                    Button(visibility.toggleAllCategoriesTitle) {
                         var next = visibility
-                        next.showAllCategories()
+                        next.toggleAllCategories()
                         visibility = next
                     }
                     .accessibilityIdentifier("map.layers.show-all-categories")

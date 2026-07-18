@@ -51,4 +51,40 @@ final class MapLayerVisibilityTests: XCTestCase {
             category.id == PinLayers.fallbackCategoryID && category.title == "Other"
         })
     }
+
+    func testToggleAllCategoriesHidesEverythingWhenEverythingIsVisible() {
+        let categories = [
+            MapLayerCategory(id: "attraction", title: "Attraction", iconName: "pin-category-attraction"),
+            MapLayerCategory(id: "museum", title: "Museum", iconName: "pin-category-museum"),
+            MapLayerCategory(id: PinLayers.fallbackCategoryID, title: "Other", iconName: PinLayers.fallbackCategoryIconName),
+        ]
+        var visibility = MapLayerVisibility(categories: categories)
+
+        visibility.toggleAllCategories()
+
+        XCTAssertEqual(visibility.visibleCategories, [])
+        XCTAssertFalse(visibility.isCategoryVisible("attraction"))
+        XCTAssertFalse(visibility.isCategoryVisible("museum"))
+        XCTAssertFalse(visibility.isCategoryVisible(PinLayers.fallbackCategoryID))
+
+        visibility.toggleAllCategories()
+
+        XCTAssertNil(visibility.visibleCategories)
+        XCTAssertTrue(visibility.isCategoryVisible("attraction"))
+        XCTAssertTrue(visibility.isCategoryVisible("museum"))
+        XCTAssertTrue(visibility.isCategoryVisible(PinLayers.fallbackCategoryID))
+    }
+
+    func testToggleAllCategoriesTitleReflectsCurrentState() {
+        let categories = [
+            MapLayerCategory(id: "attraction", title: "Attraction", iconName: "pin-category-attraction"),
+            MapLayerCategory(id: "museum", title: "Museum", iconName: "pin-category-museum"),
+        ]
+        var visibility = MapLayerVisibility(categories: categories)
+
+        XCTAssertEqual(visibility.toggleAllCategoriesTitle, "Hide all categories")
+
+        visibility.setCategory("museum", visible: false)
+        XCTAssertEqual(visibility.toggleAllCategoriesTitle, "Show all categories")
+    }
 }

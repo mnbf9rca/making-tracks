@@ -311,6 +311,37 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openFixtureCard(in: map, app: app)
     }
 
+    func testLayersToggleAllCategoriesHidesAndRestoresPins() {
+        let app = launch(reset: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        openLayers(in: app)
+        let toggleAll = app.buttons["map.layers.show-all-categories"]
+        XCTAssertTrue(scrollToHittable(toggleAll, in: app))
+        XCTAssertEqual(toggleAll.label, "Hide all categories")
+        toggleAll.tap()
+        XCTAssertEqual(toggleAll.label, "Show all categories")
+        app.buttons["map.layers.done"].tap()
+
+        tapFixturePin(in: map)
+        XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
+        tapSecondFixturePin(in: map)
+        XCTAssertFalse(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 2))
+
+        openLayers(in: app)
+        XCTAssertTrue(scrollToHittable(toggleAll, in: app))
+        XCTAssertEqual(toggleAll.label, "Show all categories")
+        toggleAll.tap()
+        XCTAssertEqual(toggleAll.label, "Hide all categories")
+        app.buttons["map.layers.done"].tap()
+
+        openFixtureCard(in: map, app: app)
+        app.buttons["place-card.close"].tap()
+        openSecondFixtureCard(in: map, app: app)
+    }
+
     func testShowHiddenModeExposesUnhideAffordanceWithoutNormalHideOwnership() {
         let app = launch(reset: true)
 
@@ -440,6 +471,36 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "map-home-chrome-snow-filtered")
     }
 
+    func testPinSizeScreenshotsAcrossThemes() {
+        let cases: [(theme: String, size: Double, screenshotName: String)] = [
+            ("defined-paper", 0.8, "pin-defined-paper-min"),
+            ("defined-paper", 1.2, "pin-defined-paper-default"),
+            ("defined-paper", 1.6, "pin-defined-paper-max"),
+            ("snow", 0.8, "pin-snow-min"),
+            ("snow", 1.2, "pin-snow-default"),
+            ("snow", 1.6, "pin-snow-max"),
+        ]
+
+        for testCase in cases {
+            let app = launch(
+                reset: true,
+                resetTheme: true,
+                theme: testCase.theme,
+                pinSizeMultiplier: testCase.size,
+                pinDiagnostics: true
+            )
+            XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10), testCase.screenshotName)
+            XCTAssertTrue(waitForMapToFinishLoading(in: app), testCase.screenshotName)
+            XCTAssertFalse(app.otherElements["map.unavailable"].exists, testCase.screenshotName)
+            XCTAssertTrue(waitForSourceFeatureCount(2, in: app), testCase.screenshotName)
+            XCTAssertEqual(app.staticTexts["map.fixture-pin.\(placeID)"].label, "hit", testCase.screenshotName)
+            XCTAssertEqual(app.staticTexts["map.debug-theme"].label, "theme:\(testCase.theme)", testCase.screenshotName)
+            XCTAssertEqual(app.staticTexts["map.debug-pin-size"].label, "pin-size:\(pinSizeAccessibilityValue(for: testCase.size))", testCase.screenshotName)
+            attachScreenshot(named: testCase.screenshotName)
+            app.terminate()
+        }
+    }
+
     func testPlaceCardStacksActionsAtAccessibilityTextSize() {
         let app = launch(reset: true, accessibilityTextSize: true)
 
@@ -544,6 +605,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         seedUserList: Bool = false,
         offlineProgress: Double? = nil,
         resetTheme: Bool = false,
+        theme: String? = nil,
+        pinSizeMultiplier: Double? = nil,
         pinDiagnostics: Bool = false,
         resetOnboarding: Bool = false,
         forceDarkAppearance: Bool = false
@@ -591,6 +654,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         if resetTheme {
             app.launchArguments.append("--ui-testing-reset-theme")
+        }
+        if let theme {
+            app.launchArguments.append("--ui-testing-theme")
+            app.launchArguments.append(theme)
+        }
+        if let pinSizeMultiplier {
+            app.launchArguments.append("--ui-testing-pin-size-multiplier")
+            app.launchArguments.append(String(pinSizeMultiplier))
         }
         if resetOnboarding {
             app.launchArguments.append("--ui-testing-reset-onboarding")
@@ -803,11 +874,21 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     private func exportScreenshot(_ screenshot: XCUIScreenshot, named name: String) {
         guard ProcessInfo.processInfo.environment["MAKING_TRACKS_EXPORT_UI_TEST_SCREENSHOTS"] == "1" else { return }
-        guard let exportName = screenshotExportNames[name] else { return }
+        guard let exportName = screenshotExportNames[name] else {
+            XCTFail("No screenshot export name configured for \(name)")
+            return
+        }
         let directory = URL(fileURLWithPath: "/private/tmp/making-tracks-artifacts", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let fileURL = directory.appendingPathComponent(exportName).appendingPathExtension("png")
-        try? screenshot.pngRepresentation.write(to: fileURL)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try screenshot.pngRepresentation.write(to: fileURL)
+            let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+            let byteCount = attributes[.size] as? UInt64 ?? 0
+            XCTAssertGreaterThan(byteCount, 0, "Exported screenshot should not be empty: \(fileURL.path)")
+        } catch {
+            XCTFail("Failed to export screenshot \(name): \(error)")
+        }
     }
 
     @discardableResult
@@ -826,12 +907,32 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         return element.exists
     }
 
+    @discardableResult
+    private func scrollToHittable(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+        if element.waitForExistence(timeout: 2), element.isHittable {
+            return true
+        }
+
+        for _ in 0..<5 {
+            scrollTarget(in: app).swipeUp()
+            if element.waitForExistence(timeout: 1), element.isHittable {
+                return true
+            }
+        }
+
+        return element.exists && element.isHittable
+    }
+
     private func scrollTarget(in app: XCUIApplication) -> XCUIElement {
         let scrollView = app.scrollViews.firstMatch
         if scrollView.exists {
             return scrollView
         }
         return app
+    }
+
+    private func pinSizeAccessibilityValue(for multiplier: Double) -> String {
+        "\(Int((multiplier * 100).rounded()))%"
     }
 
     private func element(identifier: String, in app: XCUIApplication) -> XCUIElement {
@@ -899,6 +1000,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "map-location-off": "denied-settings",
         "place-card-a11y": "place-card-a11y",
         "credits-a11y": "credits-a11y",
+        "pin-defined-paper-min": "pin-defined-paper-min",
+        "pin-defined-paper-default": "pin-defined-paper-default",
+        "pin-defined-paper-max": "pin-defined-paper-max",
+        "pin-snow-min": "pin-snow-min",
+        "pin-snow-default": "pin-snow-default",
+        "pin-snow-max": "pin-snow-max",
     ]
 }
 

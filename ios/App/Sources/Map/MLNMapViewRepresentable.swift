@@ -268,8 +268,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             style.addLayer(circle)
 
             addCategoryIcon(source: source, style: style, pinSize: pinSize)
-            addBadge(id: "pins-bookmark", icon: "badge-bookmark", filter: PinLayers.bookmarkFilter(), offset: pinSize.bookmarkOffset, source: source, style: style)
-            addBadge(id: "pins-heart", icon: "badge-heart", filter: PinLayers.heartFilter(), offset: pinSize.heartOffset, source: source, style: style)
+            addBadge(id: "pins-bookmark", icon: "badge-bookmark", filter: PinLayers.bookmarkFilter(), pinSize: pinSize, offset: pinSize.bookmarkOffset, source: source, style: style)
+            addBadge(id: "pins-heart", icon: "badge-heart", filter: PinLayers.heartFilter(), pinSize: pinSize, offset: pinSize.heartOffset, source: source, style: style)
             currentVisibleCategories = nil
             currentPinSize = pinSize
             updateLayerFilters(on: mapView, visibleCategories: desiredVisibleCategories)
@@ -358,9 +358,11 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                 icon.iconScale = NSExpression(forConstantValue: pinSize.categoryIconScale)
             }
             if let bookmark = style.layer(withIdentifier: "pins-bookmark") as? MLNSymbolStyleLayer {
+                bookmark.iconScale = NSExpression(forConstantValue: pinSize.badgeIconScale)
                 setIconOffset(pinSize.bookmarkOffset, on: bookmark)
             }
             if let heart = style.layer(withIdentifier: "pins-heart") as? MLNSymbolStyleLayer {
+                heart.iconScale = NSExpression(forConstantValue: pinSize.badgeIconScale)
                 setIconOffset(pinSize.heartOffset, on: heart)
             }
         }
@@ -430,10 +432,11 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         }
 #endif
 
-        private func addBadge(id: String, icon: String, filter: JSONValue, offset: JSONValue, source: MLNShapeSource, style: MLNStyle) {
+        private func addBadge(id: String, icon: String, filter: JSONValue, pinSize: PinSize, offset: JSONValue, source: MLNShapeSource, style: MLNStyle) {
             let layer = MLNSymbolStyleLayer(identifier: id, source: source)
             layer.iconImageName = NSExpression(forConstantValue: icon)
             layer.iconAllowsOverlap = NSExpression(forConstantValue: true)
+            layer.iconScale = NSExpression(forConstantValue: pinSize.badgeIconScale)
             setIconOffset(offset, on: layer)
             layer.predicate = NSPredicate(mglJSONObject: filter.foundationObject)
             style.addLayer(layer)

@@ -10,6 +10,7 @@ public enum PinLayers {
     // Tuned from device-representative fixture screenshots so category glyphs stay legible.
     public static let baseCircleRadius = 6.5
     public static let baseCategoryIconScale = 0.72
+    public static let baseBadgeIconScale = 1.0
     public static let categorySymbolPointSize = 17.0
     public static let categoryIconScale = PinSize().categoryIconScale
     public static let fallbackCategoryID = "__other__"
@@ -154,6 +155,7 @@ public enum PinLayers {
                 "layout": .object([
                     "icon-image": .string("badge-bookmark"),
                     "icon-allow-overlap": .bool(true),
+                    "icon-size": .double(pinSize.badgeIconScale),
                     "icon-offset": pinSize.bookmarkOffset,
                 ]),
             ]),
@@ -165,6 +167,7 @@ public enum PinLayers {
                 "layout": .object([
                     "icon-image": .string("badge-heart"),
                     "icon-allow-overlap": .bool(true),
+                    "icon-size": .double(pinSize.badgeIconScale),
                     "icon-offset": pinSize.heartOffset,
                 ]),
             ]),

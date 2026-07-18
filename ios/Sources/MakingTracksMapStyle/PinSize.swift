@@ -17,6 +17,10 @@ public struct PinSize: Equatable, Sendable {
         PinLayers.baseCategoryIconScale * multiplier
     }
 
+    public var badgeIconScale: Double {
+        PinLayers.baseBadgeIconScale * multiplier
+    }
+
     public var bookmarkOffset: JSONValue {
         .array([
             .double(PinLayers.baseBadgeOffset * multiplier),

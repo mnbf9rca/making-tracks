@@ -60,11 +60,13 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(layoutValue("icon-image", in: heart), .string("badge-heart"))
         XCTAssertEqual(layoutValue("icon-allow-overlap", in: bookmark), .bool(true))
         XCTAssertEqual(layoutValue("icon-allow-overlap", in: heart), .bool(true))
+        XCTAssertEqual(layoutValue("icon-size", in: bookmark), .double(PinSize().badgeIconScale))
+        XCTAssertEqual(layoutValue("icon-size", in: heart), .double(PinSize().badgeIconScale))
         XCTAssertEqual(layoutValue("icon-offset", in: bookmark), PinSize().bookmarkOffset)
         XCTAssertEqual(layoutValue("icon-offset", in: heart), PinSize().heartOffset)
     }
 
-    func testPinSizeMetricsScaleCircleAndCategoryIconTogether() {
+    func testPinSizeMetricsScaleCircleCategoryIconAndBadgesTogether() {
         XCTAssertEqual(PinSize.minimumMultiplier, 0.8)
         XCTAssertEqual(PinSize.defaultMultiplier, 1.2)
         XCTAssertEqual(PinSize.maximumMultiplier, 1.6)
@@ -73,6 +75,7 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(defaultSize.multiplier, PinSize.defaultMultiplier)
         XCTAssertEqual(defaultSize.circleRadius, PinLayers.baseCircleRadius * PinSize.defaultMultiplier, accuracy: 1e-9)
         XCTAssertEqual(defaultSize.categoryIconScale, PinLayers.baseCategoryIconScale * PinSize.defaultMultiplier, accuracy: 1e-9)
+        XCTAssertEqual(defaultSize.badgeIconScale, PinLayers.baseBadgeIconScale * PinSize.defaultMultiplier, accuracy: 1e-9)
         XCTAssertEqual(defaultSize.bookmarkOffset, .array([.double(PinLayers.baseBadgeOffset * PinSize.defaultMultiplier), .double(-PinLayers.baseBadgeOffset * PinSize.defaultMultiplier)]))
         XCTAssertEqual(defaultSize.heartOffset, .array([.double(-PinLayers.baseBadgeOffset * PinSize.defaultMultiplier), .double(-PinLayers.baseBadgeOffset * PinSize.defaultMultiplier)]))
         XCTAssertEqual(defaultSize.accessibilityValue, "120%")
@@ -95,6 +98,8 @@ final class PinLayersTests: XCTestCase {
             XCTFail("pin circle paint")
         }
         XCTAssertEqual(layoutValue("icon-size", in: icon), .double(defaultSize.categoryIconScale))
+        XCTAssertEqual(layoutValue("icon-size", in: bookmark), .double(defaultSize.badgeIconScale))
+        XCTAssertEqual(layoutValue("icon-size", in: heart), .double(defaultSize.badgeIconScale))
         XCTAssertEqual(layoutValue("icon-offset", in: bookmark), defaultSize.bookmarkOffset)
         XCTAssertEqual(layoutValue("icon-offset", in: heart), defaultSize.heartOffset)
     }
