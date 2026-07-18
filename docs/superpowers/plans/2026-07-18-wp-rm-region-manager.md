@@ -161,9 +161,9 @@ cells → per-cell delete/dedup for free" does not exist. Reframed:]**
   in-progress objects** (`referencedInProgressObjects`). *(Earlier revisions of this bullet described the
   RAM-buffer as current and this as "required rework" — corrected on the #193 merge; the full safety audit
   is §8.)* **Still open:** the background `OfflineDownloadSession` is **dead-wired** (production = foreground
-  ephemeral `HTTPTileFetcher`, to preserve single-origin redirect pinning) → **wiring it + relaunch task
-  adoption is #197's target** (§8 INV-10), and the §8 INV-1/5/6/7/8/9 engine-hardening gaps are owned by
-  the proposed **WP-DL-SAFETY**.
+  ephemeral `HTTPTileFetcher`, to preserve single-origin redirect pinning) → **#197 wires session
+  recreation + handler delivery** (§8 INV-10a); **full task adoption** after relaunch (§8 INV-10b) and the
+  INV-1/5/6/7/8/9 engine-hardening gaps are owned by the proposed **WP-DL-SAFETY**.
 - **Update (Apple resize-and-redownload + auto-update):** a pack records its `publish_version`; a new
   publish → the pack's manifest sha-diffs → fetch only changed cells (reuse-by-sha). Auto-update default
   (WiFi, discretionary), user-toggleable — **and this recurring fetch carries cover-traffic (§5).**
@@ -453,8 +453,9 @@ audit contradicted the commission's framing it is marked **[framing correction]*
   resumes/completes and progress reattaches on relaunch (fails until (b) is built — do NOT assert this
   against #197).
 
-**What this contract adds to the build queue:** most invariants are ✅ today; the gaps cluster into a few
-owners — §6/**WP-RM-P** (INV-4 per-cell basemap *pipeline cut*) + **WP-RM-G** (INV-4 *app* basemap-source
+**What this contract adds to the build queue:** the engine is **mostly sound — no corruption paths** (by
+the markers above: 2 ✅, 6 ◐, 1 ❌, 1 ▷ — the ◐/❌ are hardening + resumability gaps, not data-loss-on-happy-
+path); the gaps cluster into a few owners — §6/**WP-RM-P** (INV-4 per-cell basemap *pipeline cut*) + **WP-RM-G** (INV-4 *app* basemap-source
 render), both from the already-ratified §6b, reframed here as *safety*; **#197** (INV-10**(a)** session
 recreation + handler delivery, already open); and a **NEW WP-DL-SAFETY** (engine hardening: INV-1 tile
 verify-then-rename, INV-5 GC + orphan-dir sweep incl. launch-time GC, INV-6 backup-window recovery, INV-7
@@ -494,7 +495,8 @@ moment.
    synthetic-manifest path** (a rectangle/cell-set installed as an ad-hoc pack is then per-cell-deletable).
    **Logged on the WP-RM issue body for Rob's morning.** Confirm.
 5. **Commission WP-DL-SAFETY [§8].** The download-safety audit found the engine mostly sound but with a
-   real cluster of hardening gaps (INV-1/5/6/7/8/9) that today have **no owner** — per the plan-language
+   real cluster of hardening gaps (INV-1/5/6/7/8/9 + INV-10b full task adoption) that today have **no
+   owner** — per the plan-language
    law they must become a named WP, so §8 defines **WP-DL-SAFETY**. It needs commissioning (it is not part
    of any merged/queued WP). None is a data-corruption bug today (INV-6 holds, ENOSPC doesn't corrupt), but
    INV-5 (stranded temp files) and INV-8 (delete-during-download race) are the sharpest. Confirm the WP +

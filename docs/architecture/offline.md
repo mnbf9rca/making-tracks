@@ -81,8 +81,8 @@ of the designs.
 - **Download safety contract:** the full set of download-safety invariants (atomicity, resume,
   idempotence, chunking bound, GC soundness, crash-window consistency, disk/ENOSPC safety, concurrency,
   honest progress, relaunch adoption) — each with a today-vs-target marker, `file:line`/PR evidence, an
-  owning WP, and its acceptance test — lives in **[[WP-RM §8 download safety contract]]**. Today most are
-  satisfied by #193; the open gaps are INV-4 (basemap chunking → WP-RM-P pipeline cut + WP-RM-G app render),
+  owning WP, and its acceptance test — lives in **[[WP-RM §8 download safety contract]]**. The engine is
+  **mostly sound — no corruption paths** (by the §8 markers: 2 satisfied, 6 partial, 1 violated, 1 target); the open gaps are INV-4 (basemap chunking → WP-RM-P pipeline cut + WP-RM-G app render),
   INV-10 (background adoption → #197 for session recreation, WP-DL-SAFETY for full task adoption), and the
   INV-1/5/6/7/8/9 engine-hardening cluster (→ the proposed **WP-DL-SAFETY**).
 - **Compression:** place tiles are app-level gzip at rest and on device, **sha over gzipped bytes** (no
