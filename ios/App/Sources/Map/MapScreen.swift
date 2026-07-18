@@ -191,7 +191,7 @@ struct OfflineRegionCatalogRow: Identifiable, Sendable, Equatable {
         case .updateAvailable:
             "Update available"
         case let .downloading(progress):
-            "Downloading \(progress.percentComplete)%"
+            progress.isWaitingForConnectivity ? "Waiting for Wi-Fi" : "Downloading \(progress.percentComplete)%"
         case let .paused(progress):
             "Paused at \(progress.percentComplete)%"
         case .quarantined:
@@ -267,6 +267,11 @@ enum MenuDestination: Hashable {
     case about
 }
 
+enum OfflineDownloadSettings {
+    static let allowsCellularDownloadsKey = "offline.downloads.allow-cellular"
+    static let defaultAllowsCellularDownloads = false
+}
+
 @Observable
 final class AppShellModel {
     var isMenuPresented = false
@@ -279,19 +284,22 @@ struct OfflineDownloadProgress: Sendable, Equatable {
     let completedBytes: Int?
     let totalBytes: Int?
     let fractionComplete: Double
+    let isWaitingForConnectivity: Bool
 
     init(
         region: String? = nil,
         publishVersion: String? = nil,
         completedBytes: Int? = nil,
         totalBytes: Int? = nil,
-        fractionComplete: Double
+        fractionComplete: Double,
+        isWaitingForConnectivity: Bool = false
     ) {
         self.region = region
         self.publishVersion = publishVersion
         self.completedBytes = completedBytes
         self.totalBytes = totalBytes
         self.fractionComplete = fractionComplete
+        self.isWaitingForConnectivity = isWaitingForConnectivity
     }
 
     init(_ progress: OfflineRegionDownloadProgress) {
@@ -300,6 +308,7 @@ struct OfflineDownloadProgress: Sendable, Equatable {
         completedBytes = progress.completedBytes
         totalBytes = progress.totalBytes
         fractionComplete = progress.fractionComplete
+        isWaitingForConnectivity = progress.isWaitingForConnectivity
     }
 
     var percentComplete: Int {
@@ -309,6 +318,18 @@ struct OfflineDownloadProgress: Sendable, Equatable {
     private var boundedFraction: Double {
         guard fractionComplete.isFinite else { return 0 }
         return min(max(fractionComplete, 0), 1)
+    }
+
+    var statusText: String {
+        if isWaitingForConnectivity {
+            return "Waiting for Wi-Fi"
+        }
+        if let completedBytes, let totalBytes {
+            let completed = ByteCountFormatter.string(fromByteCount: Int64(completedBytes), countStyle: .file)
+            let total = ByteCountFormatter.string(fromByteCount: Int64(totalBytes), countStyle: .file)
+            return "\(completed) of \(total)"
+        }
+        return "\(percentComplete)%"
     }
 }
 
@@ -550,6 +571,7 @@ struct MapScreen: View {
     @State private var model: MapScreenModel?
     @StateObject private var locationPermission: LocationPermission
     @AppStorage(Self.themeStorageKey) private var selectedThemeID = MapTheme.definedPaper.id
+    @AppStorage(OfflineDownloadSettings.allowsCellularDownloadsKey) private var allowsCellularDownloads = OfflineDownloadSettings.defaultAllowsCellularDownloads
     @Environment(\.scenePhase) private var scenePhase
     @State private var worldPMTilesURL: String? = WorldBasemap.pmtilesURL()
     @State private var features: [(MapPlace, PinState)] = []
@@ -1138,7 +1160,9 @@ struct MapScreen: View {
                     appShell.isMenuPresented = true
                 } label: {
                     Label(
-                        "Offline maps \(offlineDownloadProgress.percentComplete)%",
+                        offlineDownloadProgress.isWaitingForConnectivity
+                            ? "Offline maps Waiting for Wi-Fi"
+                            : "Offline maps \(offlineDownloadProgress.percentComplete)%",
                         systemImage: "arrow.down.circle"
                     )
                     .font(.caption.weight(.semibold))
@@ -1237,6 +1261,7 @@ struct MapScreen: View {
             let replayControl = OfflineRegionDownloadControl()
             let replayDownloadID = UUID()
             let didPerformMaintenance = await model?.performDeferredOfflineMaintenance(
+                allowsCellularDownloads: allowsCellularDownloads,
                 control: replayControl,
                 onReplayRegionStart: { region in
                     offlineDownloadSession.beginDeferredReplay(
@@ -1458,7 +1483,10 @@ struct MapScreen: View {
                 liveOfflineDownloadProgressID = progressID
                 offlineDownloadSession.update(OfflineDownloadProgress(fractionComplete: 0))
             }
-            let status = await model.installDebugOfflineRegion(debugInstallOfflineRegion) { progress in
+            let status = await model.installDebugOfflineRegion(
+                debugInstallOfflineRegion,
+                allowsCellularDownloads: allowsCellularDownloads
+            ) { progress in
                 Task { @MainActor in
                     guard liveOfflineDownloadProgressID == progressID else { return }
                     offlineDownloadSession.update(OfflineDownloadProgress(progress))
@@ -2096,6 +2124,7 @@ private struct OfflineMapsView: View {
     @State private var statusMessage: String?
     @State private var pendingDeleteRegion: String?
     @State private var pendingDeleteRegionName: String?
+    @AppStorage(OfflineDownloadSettings.allowsCellularDownloadsKey) private var allowsCellularDownloads = OfflineDownloadSettings.defaultAllowsCellularDownloads
 
     init(
         model: MapScreenModel?,
@@ -2331,7 +2360,8 @@ private struct OfflineMapsView: View {
             let message = await model.installOfflineRegion(
                 region,
                 control: control,
-                resumingPausedDownload: resumingPausedDownload
+                resumingPausedDownload: resumingPausedDownload,
+                allowsCellularDownloads: allowsCellularDownloads
             ) { progress in
                 Task { @MainActor in
                     guard downloadSession.activeDownloadID == downloadID else { return }
@@ -2459,6 +2489,7 @@ private struct SettingsView: View {
     let storageStatus: StorageMenuStatus
     let openLocationSettings: () -> Void
     let replayOnboarding: @MainActor () -> Void
+    @AppStorage(OfflineDownloadSettings.allowsCellularDownloadsKey) private var allowsCellularDownloads = OfflineDownloadSettings.defaultAllowsCellularDownloads
 
     var body: some View {
         List {
@@ -2486,6 +2517,18 @@ private struct SettingsView: View {
                     }
                     .accessibilityIdentifier("settings.theme.\(theme.id)")
                 }
+            }
+
+            Section("Downloads") {
+                Toggle(isOn: $allowsCellularDownloads) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Allow cellular downloads")
+                        Text("Off keeps offline maps waiting for Wi-Fi.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("settings.downloads.allow-cellular")
             }
 
             Section("Location") {
@@ -3321,15 +3364,22 @@ private final class MapScreenModel {
 #if DEBUG
     func installDebugOfflineRegion(
         _ region: String,
+        allowsCellularDownloads: Bool,
         progress: @escaping @Sendable (OfflineRegionDownloadProgress) -> Void
     ) async -> String {
-        await installOfflineRegion(region, control: OfflineRegionDownloadControl(), progress: progress)
+        await installOfflineRegion(
+            region,
+            control: OfflineRegionDownloadControl(),
+            allowsCellularDownloads: allowsCellularDownloads,
+            progress: progress
+        )
     }
 
     func installOfflineRegion(
         _ region: String,
         control: OfflineRegionDownloadControl,
         resumingPausedDownload: Bool = false,
+        allowsCellularDownloads: Bool,
         progress: @escaping @Sendable (OfflineRegionDownloadProgress) -> Void
     ) async -> String {
         guard fixturePlaces.isEmpty,
@@ -3347,11 +3397,19 @@ private final class MapScreenModel {
                 appropriateFor: nil,
                 create: true
             )
+            let backgroundIdentifier = OfflineDownloadSession.backgroundIdentifier(region: region)
+            await OfflineDownloadSession.prepareBackgroundSessionForPolicyChange(
+                identifier: backgroundIdentifier,
+                allowsCellularDownloads: allowsCellularDownloads
+            )
             let downloader = OfflineRegionDownloader(
                 region: region,
-                metadataFetcher: HTTPTileFetcher.offlineForeground(),
+                metadataFetcher: HTTPTileFetcher.offlineForeground(
+                    allowsCellularDownloads: allowsCellularDownloads
+                ),
                 objectFetcher: HTTPTileFetcher.offlineBackground(
-                    identifier: OfflineDownloadSession.backgroundIdentifier(region: region)
+                    identifier: backgroundIdentifier,
+                    allowsCellularDownloads: allowsCellularDownloads
                 ),
                 store: offlineStore,
                 availableBytes: { StorageHeadroom.availableBytes(at: documents) }
@@ -3442,6 +3500,7 @@ private final class MapScreenModel {
 #endif
 
     func performDeferredOfflineMaintenance(
+        allowsCellularDownloads: Bool,
         control: OfflineRegionDownloadControl = OfflineRegionDownloadControl(),
         onReplayRegionStart: (@MainActor @Sendable (String) -> Bool)? = nil,
         onReplayRegionPause: (@MainActor @Sendable (String) -> Void)? = nil,
@@ -3471,9 +3530,12 @@ private final class MapScreenModel {
                     )
                     let downloader = OfflineRegionDownloader(
                         region: region,
-                        metadataFetcher: HTTPTileFetcher.offlineForeground(),
+                        metadataFetcher: HTTPTileFetcher.offlineForeground(
+                            allowsCellularDownloads: allowsCellularDownloads
+                        ),
                         objectFetcher: HTTPTileFetcher.offlineBackground(
-                            identifier: OfflineDownloadSession.backgroundIdentifier(region: region)
+                            identifier: OfflineDownloadSession.backgroundIdentifier(region: region),
+                            allowsCellularDownloads: allowsCellularDownloads
                         ),
                         store: offlineStore,
                         availableBytes: { StorageHeadroom.availableBytes(at: documents) }
