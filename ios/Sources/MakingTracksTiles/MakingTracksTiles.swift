@@ -96,6 +96,7 @@ public enum TileError: Error, Equatable {
     case invalidRegionIndex
     case invalidTile
     case invalidOfflinePack
+    case invalidBackgroundFetch
     case insufficientStorage
     case checksumMismatch
     case byteCountMismatch
@@ -126,13 +127,25 @@ public final class HTTPTileFetcher: OfflineRegionFetching, @unchecked Sendable {
     }
 
     init(configuration: URLSessionConfiguration) {
-        delegate = RedirectDelegate()
         configurationIdentifier = configuration.identifier
-        session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        if let identifier = configuration.identifier {
+            let box = OfflineBackgroundSessionRegistry.shared.session(
+                identifier: identifier,
+                configuration: configuration
+            )
+            delegate = box.delegate
+            session = box.session
+        } else {
+            delegate = RedirectDelegate()
+            session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        }
     }
 
     public func fetch(_ url: URL) async throws -> Data {
         try Self.validateOrigin(url)
+        guard configurationIdentifier == nil else {
+            throw TileError.invalidBackgroundFetch
+        }
         let request = URLRequest(url: url)
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse,
@@ -146,9 +159,20 @@ public final class HTTPTileFetcher: OfflineRegionFetching, @unchecked Sendable {
     public func download(_ url: URL) async throws -> URL {
         try Self.validateOrigin(url)
         let request = URLRequest(url: url)
+        if configurationIdentifier != nil {
+            return try await delegate.download(request, on: session)
+        }
         let (fileURL, response) = try await session.download(for: request)
         try Self.validateDownloadedFile(fileURL, response: response)
         return fileURL
+    }
+
+    func sharesSession(with other: HTTPTileFetcher) -> Bool {
+        session === other.session
+    }
+
+    func finishBackgroundEventsForTesting() {
+        delegate.urlSessionDidFinishEvents(forBackgroundURLSession: session)
     }
 
     public static func validateOrigin(_ url: URL) throws {
@@ -185,7 +209,63 @@ public final class HTTPTileFetcher: OfflineRegionFetching, @unchecked Sendable {
     }
 }
 
-private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDownloadDelegate, @unchecked Sendable {
+    private struct DownloadState {
+        let continuation: CheckedContinuation<URL, Error>
+        var stagedURL: URL?
+        var response: URLResponse?
+        var stagingError: Error?
+    }
+
+    private final class CancellationBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var task: URLSessionTask?
+        private var cancelled = false
+
+        func setAndResume(_ task: URLSessionTask, shouldCancel: Bool) {
+            let shouldCancel = lock.withLock {
+                self.task = task
+                let shouldCancel = cancelled || shouldCancel
+                task.resume()
+                return shouldCancel
+            }
+            if shouldCancel {
+                cancel()
+            }
+        }
+
+        func cancel() {
+            let task = lock.withLock {
+                cancelled = true
+                return self.task
+            }
+            task?.cancel()
+        }
+    }
+
+    private let lock = NSLock()
+    private var downloads: [Int: DownloadState] = [:]
+
+    func download(_ request: URLRequest, on session: URLSession) async throws -> URL {
+        let cancellation = CancellationBox()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let task = session.downloadTask(with: request)
+                lock.withLock {
+                    downloads[task.taskIdentifier] = DownloadState(
+                        continuation: continuation,
+                        stagedURL: nil,
+                        response: nil,
+                        stagingError: nil
+                    )
+                }
+                cancellation.setAndResume(task, shouldCancel: Task.isCancelled)
+            }
+        } onCancel: {
+            cancellation.cancel()
+        }
+    }
+
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,
@@ -205,8 +285,114 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, @uncheck
         }
     }
 
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        let result: Result<URL, Error>
+        do {
+            result = .success(try BackgroundDownloadFileStager.stage(location))
+        } catch {
+            result = .failure(error)
+        }
+
+        lock.withLock {
+            guard var state = downloads[downloadTask.taskIdentifier] else { return }
+            switch result {
+            case let .success(url):
+                state.stagedURL = url
+                state.response = downloadTask.response
+            case let .failure(error):
+                state.stagingError = error
+            }
+            downloads[downloadTask.taskIdentifier] = state
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        guard let state = lock.withLock({ downloads.removeValue(forKey: task.taskIdentifier) }) else {
+            return
+        }
+        do {
+            let fileURL = try BackgroundDownloadCompletion.validate(
+                stagedURL: state.stagedURL,
+                response: state.response ?? task.response,
+                taskError: error,
+                stagingError: state.stagingError
+            )
+            state.continuation.resume(returning: fileURL)
+        } catch {
+            state.continuation.resume(throwing: error)
+        }
+    }
+
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         OfflineDownloadSession.finishEvents(for: session.configuration.identifier)
+    }
+
+    func cancelAll(with error: Error) {
+        let states = lock.withLock {
+            let states = Array(downloads.values)
+            downloads.removeAll()
+            return states
+        }
+        for state in states {
+            if let stagedURL = state.stagedURL {
+                try? FileManager.default.removeItem(at: stagedURL)
+            }
+            state.continuation.resume(throwing: error)
+        }
+    }
+}
+
+enum BackgroundDownloadFileStager {
+    static func stage(_ location: URL) throws -> URL {
+        let stagedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MakingTracksBackgroundDownload-\(UUID().uuidString)")
+        try FileManager.default.moveItem(at: location, to: stagedURL)
+        return stagedURL
+    }
+}
+
+enum BackgroundDownloadCompletion {
+    static func validate(
+        stagedURL: URL?,
+        response: URLResponse?,
+        taskError: Error?,
+        stagingError: Error?
+    ) throws -> URL {
+        if let error = taskError {
+            remove(stagedURL)
+            throw error
+        }
+        if let error = stagingError {
+            remove(stagedURL)
+            throw error
+        }
+        guard let stagedURL else {
+            throw TileError.httpStatus(-1)
+        }
+        guard let response else {
+            remove(stagedURL)
+            throw TileError.httpStatus(-1)
+        }
+        do {
+            try HTTPTileFetcher.validateDownloadedFile(stagedURL, response: response)
+            return stagedURL
+        } catch {
+            remove(stagedURL)
+            throw error
+        }
+    }
+
+    private static func remove(_ url: URL?) {
+        guard let url else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 }
 
@@ -1093,11 +1279,62 @@ public enum OfflineDownloadSession {
             for: identifier,
             completionHandler: completionHandler
         )
+        _ = OfflineBackgroundSessionRegistry.shared.session(
+            identifier: identifier,
+            configuration: backgroundConfiguration(identifier: identifier)
+        )
     }
 
     static func finishEvents(for identifier: String?) {
         guard let identifier else { return }
         OfflineDownloadSessionEventRegistry.shared.finishEvents(for: identifier)
+    }
+
+    static func hasBackgroundSessionForTesting(identifier: String) -> Bool {
+        OfflineBackgroundSessionRegistry.shared.hasSession(identifier: identifier)
+    }
+
+    static func invalidateBackgroundSessionForTesting(identifier: String) {
+        OfflineBackgroundSessionRegistry.shared.invalidate(identifier: identifier)
+    }
+}
+
+private struct OfflineBackgroundSessionBox {
+    let session: URLSession
+    let delegate: RedirectDelegate
+}
+
+private final class OfflineBackgroundSessionRegistry: @unchecked Sendable {
+    static let shared = OfflineBackgroundSessionRegistry()
+
+    private let lock = NSLock()
+    private var sessions: [String: OfflineBackgroundSessionBox] = [:]
+
+    func session(identifier: String, configuration: URLSessionConfiguration) -> OfflineBackgroundSessionBox {
+        lock.withLock {
+            if let existing = sessions[identifier] {
+                return existing
+            }
+            let delegate = RedirectDelegate()
+            let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+            let box = OfflineBackgroundSessionBox(session: session, delegate: delegate)
+            sessions[identifier] = box
+            return box
+        }
+    }
+
+    func hasSession(identifier: String) -> Bool {
+        lock.withLock {
+            sessions[identifier] != nil
+        }
+    }
+
+    func invalidate(identifier: String) {
+        let box = lock.withLock {
+            sessions.removeValue(forKey: identifier)
+        }
+        box?.session.invalidateAndCancel()
+        box?.delegate.cancelAll(with: URLError(.cancelled))
     }
 }
 

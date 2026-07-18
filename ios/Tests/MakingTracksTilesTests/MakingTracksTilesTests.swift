@@ -750,14 +750,234 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(fetcher.configurationIdentifier, "app.making-tracks.tests.offline")
     }
 
+    func testOfflineBackgroundFetcherDownloadStartsWithoutAsyncConvenienceAPI() async throws {
+        let identifier = "app.making-tracks.tests.offline.\(UUID().uuidString)"
+        let fetcher = HTTPTileFetcher.offlineBackground(
+            identifier: identifier
+        )
+        defer { OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: identifier) }
+        let task = Task {
+            try await fetcher.download(URL(string: "https://tiles.making-tracks.app/uk/current.json")!)
+        }
+
+        try await Task.sleep(nanoseconds: 100_000_000)
+        task.cancel()
+
+        do {
+            _ = try await task.value
+            XCTFail("background download unexpectedly completed before cancellation")
+        } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
+        } catch {
+            XCTFail("expected cancellation after background task startup, got \(error)")
+        }
+    }
+
+    func testOfflineBackgroundFetcherRefusesMetadataFetchWithoutAsyncConvenienceAPI() async throws {
+        let identifier = "app.making-tracks.tests.offline.\(UUID().uuidString)"
+        let fetcher = HTTPTileFetcher.offlineBackground(identifier: identifier)
+        defer { OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: identifier) }
+
+        do {
+            _ = try await fetcher.fetch(URL(string: "https://tiles.making-tracks.app/uk/current.json")!)
+            XCTFail("background fetch unexpectedly reached the URLSession data task path")
+        } catch TileError.invalidBackgroundFetch {
+        } catch {
+            XCTFail("expected invalidBackgroundFetch, got \(error)")
+        }
+    }
+
+    func testSingleFetcherDownloaderRefusesBackgroundFetcherForMetadata() async throws {
+        let identifier = "app.making-tracks.tests.offline.\(UUID().uuidString)"
+        let fetcher = HTTPTileFetcher.offlineBackground(identifier: identifier)
+        defer { OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: identifier) }
+        let downloader = OfflineRegionDownloader(
+            region: "uk",
+            fetcher: fetcher,
+            store: try OfflineRegionStore(root: temporaryOfflineRoot()),
+            availableBytes: { 10_000_000_000 }
+        )
+
+        do {
+            _ = try await downloader.downloadCurrentRegion()
+            XCTFail("single-fetcher downloader unexpectedly used a background fetcher for metadata")
+        } catch TileError.invalidBackgroundFetch {
+        } catch {
+            XCTFail("expected invalidBackgroundFetch, got \(error)")
+        }
+    }
+
+    func testOfflineBackgroundFetcherReusesSessionForIdentifier() {
+        let identifier = "app.making-tracks.tests.offline.\(UUID().uuidString)"
+        defer { OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: identifier) }
+
+        let first = HTTPTileFetcher.offlineBackground(identifier: identifier)
+        let second = HTTPTileFetcher.offlineBackground(identifier: identifier)
+
+        XCTAssertTrue(first.sharesSession(with: second))
+    }
+
+    func testBackgroundDownloadStagerMovesDelegateTempFileToOwnedPath() throws {
+        let root = temporaryOfflineRoot()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let delegateTempURL = root.appendingPathComponent("delegate.tmp")
+        try Data("background body".utf8).write(to: delegateTempURL)
+
+        let stagedURL = try BackgroundDownloadFileStager.stage(delegateTempURL)
+        defer { try? FileManager.default.removeItem(at: stagedURL) }
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: delegateTempURL.path))
+        XCTAssertEqual(try Data(contentsOf: stagedURL), Data("background body".utf8))
+    }
+
+    func testBackgroundDownloadCompletionValidatesStagedFile() throws {
+        let root = temporaryOfflineRoot()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let stagedURL = root.appendingPathComponent("staged.tmp")
+        try Data("background body".utf8).write(to: stagedURL)
+        let response = HTTPURLResponse(
+            url: URL(string: "https://tiles.making-tracks.app/uk/current.json")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        let result = try BackgroundDownloadCompletion.validate(
+            stagedURL: stagedURL,
+            response: response,
+            taskError: nil,
+            stagingError: nil
+        )
+
+        XCTAssertEqual(result, stagedURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stagedURL.path))
+    }
+
+    func testBackgroundDownloadCompletionRemovesStagedFileOnMissingResponseAndHTTPFailure() throws {
+        let root = temporaryOfflineRoot()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let missingResponseURL = root.appendingPathComponent("missing-response.tmp")
+        try Data("body".utf8).write(to: missingResponseURL)
+
+        XCTAssertThrowsError(
+            try BackgroundDownloadCompletion.validate(
+                stagedURL: missingResponseURL,
+                response: nil,
+                taskError: nil,
+                stagingError: nil
+            )
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: missingResponseURL.path))
+
+        let httpFailureURL = root.appendingPathComponent("http-failure.tmp")
+        try Data("body".utf8).write(to: httpFailureURL)
+        let response = HTTPURLResponse(
+            url: URL(string: "https://tiles.making-tracks.app/uk/current.json")!,
+            statusCode: 500,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+
+        XCTAssertThrowsError(
+            try BackgroundDownloadCompletion.validate(
+                stagedURL: httpFailureURL,
+                response: response,
+                taskError: nil,
+                stagingError: nil
+            )
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: httpFailureURL.path))
+    }
+
+    func testBackgroundDownloadCompletionRemovesStagedFileOnTaskOrStagingError() throws {
+        let root = temporaryOfflineRoot()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let taskErrorURL = root.appendingPathComponent("task-error.tmp")
+        try Data("body".utf8).write(to: taskErrorURL)
+
+        XCTAssertThrowsError(
+            try BackgroundDownloadCompletion.validate(
+                stagedURL: taskErrorURL,
+                response: nil,
+                taskError: URLError(.cancelled),
+                stagingError: nil
+            )
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: taskErrorURL.path))
+
+        let stagingErrorURL = root.appendingPathComponent("staging-error.tmp")
+        try Data("body".utf8).write(to: stagingErrorURL)
+        XCTAssertThrowsError(
+            try BackgroundDownloadCompletion.validate(
+                stagedURL: stagingErrorURL,
+                response: nil,
+                taskError: nil,
+                stagingError: CocoaError(.fileNoSuchFile)
+            )
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stagingErrorURL.path))
+    }
+
     func testBackgroundSessionFinishEventsCallCompletionOnMainThread() {
+        let identifier = "app.making-tracks.tests.offline.\(UUID().uuidString)"
+        defer { OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: identifier) }
         let expectation = expectation(description: "completion called")
-        OfflineDownloadSession.handleEvents(for: "app.making-tracks.tests.offline") {
+        OfflineDownloadSession.handleEvents(for: identifier) {
+            XCTAssertTrue(Thread.isMainThread)
+            expectation.fulfill()
+        }
+        XCTAssertTrue(OfflineDownloadSession.hasBackgroundSessionForTesting(identifier: identifier))
+
+        OfflineDownloadSession.finishEvents(for: identifier)
+
+        wait(for: [expectation], timeout: 2)
+    }
+
+    func testBackgroundHandleEventsBeforeFetcherReusesRegisteredSession() {
+        let identifier = "app.making-tracks.tests.offline.\(UUID().uuidString)"
+        defer { OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: identifier) }
+        OfflineDownloadSession.handleEvents(for: identifier) {}
+
+        let first = HTTPTileFetcher.offlineBackground(identifier: identifier)
+        let second = HTTPTileFetcher.offlineBackground(identifier: identifier)
+
+        XCTAssertTrue(first.sharesSession(with: second))
+    }
+
+    func testBackgroundSessionFinishEventsIgnoreWrongIdentifierAndCallOnce() {
+        let identifier = "app.making-tracks.tests.offline.\(UUID().uuidString)"
+        let fetcher = HTTPTileFetcher.offlineBackground(identifier: identifier)
+        defer {
+            _ = fetcher
+            OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: identifier)
+        }
+        let expectation = expectation(description: "completion called once")
+        expectation.assertForOverFulfill = true
+        OfflineDownloadSession.handleEvents(for: identifier) {
+            expectation.fulfill()
+        }
+
+        OfflineDownloadSession.finishEvents(for: "app.making-tracks.tests.other")
+        fetcher.finishBackgroundEventsForTesting()
+        fetcher.finishBackgroundEventsForTesting()
+
+        wait(for: [expectation], timeout: 2)
+    }
+
+    func testBackgroundSessionDelegateFinishEventsCallStoredCompletion() {
+        let identifier = "app.making-tracks.tests.offline.\(UUID().uuidString)"
+        let fetcher = HTTPTileFetcher.offlineBackground(identifier: identifier)
+        defer {
+            _ = fetcher
+            OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: identifier)
+        }
+        let expectation = expectation(description: "completion called")
+        OfflineDownloadSession.handleEvents(for: identifier) {
             XCTAssertTrue(Thread.isMainThread)
             expectation.fulfill()
         }
 
-        OfflineDownloadSession.finishEvents(for: "app.making-tracks.tests.offline")
+        fetcher.finishBackgroundEventsForTesting()
 
         wait(for: [expectation], timeout: 2)
     }
