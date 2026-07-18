@@ -888,6 +888,41 @@ public struct OfflineTileFetch: Sendable, Equatable {
     }
 }
 
+public struct InstalledPackBasemap: Sendable, Equatable {
+    public let region: String
+    public let publishVersion: String
+    public let sha256: String
+    public let bytes: Int
+}
+
+public struct InstalledPackTile: Sendable, Equatable {
+    public let region: String
+    public let publishVersion: String
+    public let coordinate: TileCoordinate
+    public let tile: ManifestTile
+    public let attribution: [Attribution]
+    public let attributionSources: [String]
+    public let packTileCount: Int
+    public let basemap: InstalledPackBasemap
+}
+
+public struct OfflinePackQuarantine: Sendable, Equatable {
+    public let region: String
+    public let publishVersion: String?
+    public let coordinates: Set<TileCoordinate>
+}
+
+public struct OfflinePackResolution: Sendable, Equatable {
+    public let tiles: [InstalledPackTile]
+    public let quarantinedPacks: [OfflinePackQuarantine]
+
+    public var blockedCoordinates: Set<TileCoordinate> {
+        quarantinedPacks.reduce(into: Set<TileCoordinate>()) { blocked, quarantine in
+            blocked.formUnion(quarantine.coordinates)
+        }
+    }
+}
+
 public struct OfflineRegionUpdatePlan: Sendable, Equatable {
     public let tilesToFetch: [OfflineTileFetch]
     public let reusedTileCount: Int
@@ -989,9 +1024,16 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
 }
 
 public final class OfflineRegionStore: @unchecked Sendable {
+    static let maxInstalledPackCount = 256
+    static let maxCurrentPackBytes = 4 * 1024
+    static let maxOfflinePackIndexBytes = 1024 * 1024
+    static let maxOfflineManifestSnapshotBytes = 16 * 1024 * 1024
+
     private let root: URL
     private let fm = FileManager.default
     private let lock = NSLock()
+    private var validatedPackIndexes: [String: OfflinePackIndex] = [:]
+    private var lastPackQuarantinesSnapshot: [OfflinePackQuarantine] = []
 
     public init(root: URL) throws {
         self.root = root
@@ -1058,13 +1100,23 @@ public final class OfflineRegionStore: @unchecked Sendable {
                 tileSHAs: Dictionary(uniqueKeysWithValues: publish.manifest.tiles.map {
                     ("\($0.x)/\($0.y)", $0.sha256)
                 }),
-                basemapSHA: publish.manifest.basemap.sha256
+                tiles: Dictionary(uniqueKeysWithValues: publish.manifest.tiles.map {
+                    (
+                        "\($0.x)/\($0.y)",
+                        OfflinePackTileIndexEntry(sha256: $0.sha256, bytes: $0.bytes)
+                    )
+                }),
+                basemapSHA: publish.manifest.basemap.sha256,
+                basemapBytes: publish.manifest.basemap.bytes,
+                attribution: publish.manifest.attribution,
+                attributionSources: publish.manifest.attribution.map(\.source)
             )).write(to: temp.appendingPathComponent("pack-index.json"), options: .atomic)
             try excludeFromBackup(temp)
             try fm.createDirectory(at: final.deletingLastPathComponent(), withIntermediateDirectories: true)
             if fm.fileExists(atPath: final.path) {
                 try fm.moveItem(at: final, to: backup)
             }
+            validatedPackIndexes.removeValue(forKey: packIndexCacheKey(region: publish.region, publishVersion: publish.publishVersion))
             try fm.moveItem(at: temp, to: final)
             try excludeFromBackup(final)
             let regionDirectory = regionURL(region: publish.region)
@@ -1095,21 +1147,280 @@ public final class OfflineRegionStore: @unchecked Sendable {
         }
     }
 
+    public func installedPublishes(intersecting viewport: BBox) throws -> [PinnedPublish] {
+        try withLock {
+            do {
+                return try installedPublishesLocked(intersecting: viewport)
+            } catch {
+                lastPackQuarantinesSnapshot = []
+                throw error
+            }
+        }
+    }
+
+    public func installedTileResolution(intersecting viewport: BBox) throws -> OfflinePackResolution {
+        try withLock {
+            do {
+                let resolution = try installedTileResolutionLocked(intersecting: viewport)
+                lastPackQuarantinesSnapshot = resolution.quarantinedPacks
+                return resolution
+            } catch {
+                lastPackQuarantinesSnapshot = []
+                throw error
+            }
+        }
+    }
+
+    public func installedTiles(intersecting viewport: BBox) throws -> [InstalledPackTile] {
+        try withLock {
+            do {
+                let resolution = try installedTileResolutionLocked(intersecting: viewport)
+                lastPackQuarantinesSnapshot = resolution.quarantinedPacks
+                return resolution.tiles
+            } catch {
+                lastPackQuarantinesSnapshot = []
+                throw error
+            }
+        }
+    }
+
+    public func lastPackQuarantines() -> [OfflinePackQuarantine] {
+        withLock {
+            lastPackQuarantinesSnapshot
+        }
+    }
+
+    private func installedPublishesLocked(intersecting viewport: BBox) throws -> [PinnedPublish] {
+        let resolution = try installedTileResolutionLocked(intersecting: viewport)
+        lastPackQuarantinesSnapshot = resolution.quarantinedPacks
+        let regions = Set(resolution.tiles.map(\.region))
+        return try regions.sorted().compactMap { try installedPublishLocked(region: $0) }
+    }
+
+    private func installedTileResolutionLocked(intersecting viewport: BBox) throws -> OfflinePackResolution {
+        let regionsRoot = root.appendingPathComponent("regions", isDirectory: true)
+        guard fm.fileExists(atPath: regionsRoot.path) else {
+            return OfflinePackResolution(tiles: [], quarantinedPacks: [])
+        }
+        let children = try fm.contentsOfDirectory(at: regionsRoot, includingPropertiesForKeys: [.isDirectoryKey])
+        let directories = try children.compactMap { child -> URL? in
+            let values = try child.resourceValues(forKeys: [.isDirectoryKey])
+            return values.isDirectory == true ? child : nil
+        }
+        guard directories.count <= Self.maxInstalledPackCount else { throw TileError.invalidOfflinePack }
+        let viewportCoordinates = Set(TileCoverage.tiles(for: viewport))
+        var tiles: [InstalledPackTile] = []
+        var quarantines: [OfflinePackQuarantine] = []
+        for child in directories.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let region = child.lastPathComponent
+            guard isValidRegion(region) else { continue }
+            let current: OfflineCurrentPack?
+            do {
+                current = try installedCurrentPackLocked(region: region)
+            } catch {
+                let quarantine = try corruptCurrentPackQuarantineLocked(region: region, viewportCoordinates: viewportCoordinates)
+                quarantines.append(quarantine)
+                continue
+            }
+            guard let current else { continue }
+            let packIndex: OfflinePackIndex
+            do {
+                packIndex = try offlinePackIndexLocked(region: region, publishVersion: current.publishVersion)
+            } catch {
+                let quarantine = corruptPackIndexQuarantineLocked(
+                    region: region,
+                    publishVersion: current.publishVersion,
+                    viewportCoordinates: viewportCoordinates
+                )
+                quarantines.append(quarantine)
+                continue
+            }
+            let basemap = InstalledPackBasemap(
+                region: region,
+                publishVersion: current.publishVersion,
+                sha256: packIndex.basemapSHA,
+                bytes: packIndex.basemapBytes
+            )
+            for coordinate in viewportCoordinates.sorted(by: { ($0.x, $0.y) < ($1.x, $1.y) }) {
+                guard let entry = packIndex.tiles["\(coordinate.x)/\(coordinate.y)"] else { continue }
+                tiles.append(InstalledPackTile(
+                    region: region,
+                    publishVersion: current.publishVersion,
+                    coordinate: coordinate,
+                    tile: ManifestTile(x: coordinate.x, y: coordinate.y, sha256: entry.sha256, bytes: entry.bytes),
+                    attribution: packIndex.attribution,
+                    attributionSources: packIndex.attributionSources,
+                    packTileCount: packIndex.tiles.count,
+                    basemap: basemap
+                ))
+            }
+        }
+        return OfflinePackResolution(tiles: tiles, quarantinedPacks: quarantines)
+    }
+
     private func installedPublishLocked(region: String) throws -> PinnedPublish? {
         guard isValidRegion(region) else { throw TileError.invalidOfflinePack }
-        let currentURL = regionURL(region: region).appendingPathComponent("current-pack.json")
-        guard fm.fileExists(atPath: currentURL.path) else { return nil }
-        let current = try JSONDecoder().decode(OfflineCurrentPack.self, from: Data(contentsOf: currentURL))
-        guard isValidPublishVersion(current.publishVersion) else { throw TileError.invalidOfflinePack }
-        let manifestURL = packURL(region: region, publishVersion: current.publishVersion).appendingPathComponent("manifest-snapshot.json")
-        let publish = try JSONDecoder().decode(PinnedPublish.self, from: Data(contentsOf: manifestURL))
+        guard let current = try installedCurrentPackLocked(region: region) else { return nil }
+        return try publishSnapshotLocked(region: region, publishVersion: current.publishVersion)
+    }
+
+    private func publishSnapshotLocked(region: String, publishVersion: String) throws -> PinnedPublish {
+        let manifestURL = packURL(region: region, publishVersion: publishVersion).appendingPathComponent("manifest-snapshot.json")
+        let publish = try JSONDecoder().decode(
+            PinnedPublish.self,
+            from: try boundedData(contentsOf: manifestURL, maxBytes: Self.maxOfflineManifestSnapshotBytes)
+        )
         let strictManifest = try Manifest.decode(try JSONEncoder().encode(publish.manifest))
         guard publish.region == region,
-              publish.publishVersion == current.publishVersion,
+              publish.publishVersion == publishVersion,
               strictManifest.region == region,
-              strictManifest.publishVersion == current.publishVersion
+              strictManifest.publishVersion == publishVersion
         else { throw TileError.invalidOfflinePack }
         return PinnedPublish(region: publish.region, publishVersion: publish.publishVersion, manifest: strictManifest)
+    }
+
+    private func corruptCurrentPackQuarantineLocked(
+        region: String,
+        viewportCoordinates: Set<TileCoordinate>
+    ) throws -> OfflinePackQuarantine {
+        let packsRoot = root.appendingPathComponent("packs").appendingPathComponent(region, isDirectory: true)
+        guard let children = try? fm.contentsOfDirectory(at: packsRoot, includingPropertiesForKeys: [.isDirectoryKey]) else {
+            return OfflinePackQuarantine(region: region, publishVersion: nil, coordinates: [])
+        }
+        let directories = try children.compactMap { child -> URL? in
+            let values = try child.resourceValues(forKeys: [.isDirectoryKey])
+            return values.isDirectory == true ? child : nil
+        }
+        guard directories.count <= Self.maxInstalledPackCount else { throw TileError.invalidOfflinePack }
+        var coordinates = Set<TileCoordinate>()
+        for child in directories.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let publishVersion = child.lastPathComponent
+            guard isValidPublishVersion(publishVersion) else { continue }
+            coordinates.formUnion(packCoverageFromManifestSnapshotLocked(
+                region: region,
+                publishVersion: publishVersion,
+                viewportCoordinates: viewportCoordinates
+            ))
+        }
+        return OfflinePackQuarantine(region: region, publishVersion: nil, coordinates: coordinates)
+    }
+
+    private func corruptPackIndexQuarantineLocked(
+        region: String,
+        publishVersion: String,
+        viewportCoordinates: Set<TileCoordinate>
+    ) -> OfflinePackQuarantine {
+        OfflinePackQuarantine(
+            region: region,
+            publishVersion: publishVersion,
+            coordinates: packCoverageFromManifestSnapshotLocked(
+                region: region,
+                publishVersion: publishVersion,
+                viewportCoordinates: viewportCoordinates
+            )
+        )
+    }
+
+    private func packCoverageFromManifestSnapshotLocked(
+        region: String,
+        publishVersion: String,
+        viewportCoordinates: Set<TileCoordinate>
+    ) -> Set<TileCoordinate> {
+        guard let publish = try? publishSnapshotLocked(region: region, publishVersion: publishVersion) else {
+            return []
+        }
+        return Set(publish.manifest.tiles.map {
+            TileCoordinate(z: publish.manifest.tileZ, x: $0.x, y: $0.y)
+        }).intersection(viewportCoordinates)
+    }
+
+    private func installedCurrentPackLocked(region: String) throws -> OfflineCurrentPack? {
+        let currentURL = regionURL(region: region).appendingPathComponent("current-pack.json")
+        guard fm.fileExists(atPath: currentURL.path) else { return nil }
+        let current = try JSONDecoder().decode(
+            OfflineCurrentPack.self,
+            from: try boundedData(contentsOf: currentURL, maxBytes: Self.maxCurrentPackBytes)
+        )
+        guard isValidPublishVersion(current.publishVersion) else { throw TileError.invalidOfflinePack }
+        return current
+    }
+
+    private func offlinePackIndexLocked(region: String, publishVersion: String) throws -> OfflinePackIndex {
+        let cacheKey = packIndexCacheKey(region: region, publishVersion: publishVersion)
+        if let cached = validatedPackIndexes[cacheKey] {
+            return cached
+        }
+        let indexURL = packURL(region: region, publishVersion: publishVersion).appendingPathComponent("pack-index.json")
+        let index = try JSONDecoder().decode(
+            OfflinePackIndex.self,
+            from: try boundedData(contentsOf: indexURL, maxBytes: Self.maxOfflinePackIndexBytes)
+        )
+        guard index.tileSHAs.count <= 1_048_576,
+              index.tiles.count <= 1_048_576
+        else { throw TileError.invalidOfflinePack }
+        let resolvedIndex = try offlinePackIndexFromManifestSnapshotLocked(
+            region: region,
+            publishVersion: publishVersion,
+            storedIndex: index
+        )
+        guard resolvedIndex.region == region,
+              resolvedIndex.publishVersion == publishVersion,
+              resolvedIndex.basemapSHA.matches("^[0-9a-f]{64}$"),
+              resolvedIndex.basemapBytes > 0
+        else { throw TileError.invalidOfflinePack }
+        for (key, tile) in resolvedIndex.tiles {
+            guard key.matches("^[0-9]{1,4}/[0-9]{1,4}$"),
+                  tile.sha256.matches("^[0-9a-f]{64}$"),
+                  (1...TileCodec.maxCompressedBytes).contains(tile.bytes)
+            else { throw TileError.invalidOfflinePack }
+        }
+        guard resolvedIndex.attributionSources.count <= 32,
+              resolvedIndex.attributionSources.allSatisfy({ (1...32).contains($0.scalarCount) && $0.isSafeText })
+        else { throw TileError.invalidOfflinePack }
+        for item in resolvedIndex.attribution {
+            try item.validate()
+        }
+        validatedPackIndexes[cacheKey] = resolvedIndex
+        return resolvedIndex
+    }
+
+    private func offlinePackIndexFromManifestSnapshotLocked(
+        region: String,
+        publishVersion: String,
+        storedIndex: OfflinePackIndex
+    ) throws -> OfflinePackIndex {
+        let publish = try publishSnapshotLocked(region: region, publishVersion: publishVersion)
+        let strictManifest = publish.manifest
+        guard publish.region == region,
+              publish.publishVersion == publishVersion,
+              strictManifest.region == region,
+              strictManifest.publishVersion == publishVersion,
+              strictManifest.basemap.sha256 == storedIndex.basemapSHA
+        else { throw TileError.invalidOfflinePack }
+        let tiles = Dictionary(uniqueKeysWithValues: strictManifest.tiles.map {
+            (
+                "\($0.x)/\($0.y)",
+                OfflinePackTileIndexEntry(sha256: $0.sha256, bytes: $0.bytes)
+            )
+        })
+        guard tiles.mapValues(\.sha256) == storedIndex.tileSHAs else { throw TileError.invalidOfflinePack }
+        if storedIndex.hasTileMetadata {
+            guard storedIndex.tiles == tiles,
+                  storedIndex.basemapBytes == strictManifest.basemap.bytes,
+                  storedIndex.attribution == strictManifest.attribution,
+                  storedIndex.attributionSources == strictManifest.attribution.map(\.source)
+            else { throw TileError.invalidOfflinePack }
+        }
+        return OfflinePackIndex(
+            region: region,
+            publishVersion: publishVersion,
+            tileSHAs: storedIndex.tileSHAs,
+            tiles: tiles,
+            basemapSHA: storedIndex.basemapSHA,
+            basemapBytes: strictManifest.basemap.bytes,
+            attribution: strictManifest.attribution,
+            attributionSources: strictManifest.attribution.map(\.source)
+        )
     }
 
     public func updatePlan(for target: PinnedPublish) throws -> OfflineRegionUpdatePlan {
@@ -1195,6 +1506,9 @@ public final class OfflineRegionStore: @unchecked Sendable {
         if fm.fileExists(atPath: regionDirectory.path) {
             try fm.removeItem(at: regionDirectory)
         }
+        validatedPackIndexes = validatedPackIndexes.filter { key, _ in
+            !key.hasPrefix("\(region)/")
+        }
         try garbageCollectObjects()
     }
 
@@ -1271,7 +1585,10 @@ public final class OfflineRegionStore: @unchecked Sendable {
         var tileSHAs = Set<String>()
         var basemapSHAs = Set<String>()
         for case let url as URL in enumerator where url.lastPathComponent == "pack-index.json" {
-            let index = try JSONDecoder().decode(OfflinePackIndex.self, from: Data(contentsOf: url))
+            let index = try JSONDecoder().decode(
+                OfflinePackIndex.self,
+                from: try boundedData(contentsOf: url, maxBytes: Self.maxOfflinePackIndexBytes)
+            )
             tileSHAs.formUnion(index.tileSHAs.values)
             basemapSHAs.insert(index.basemapSHA)
         }
@@ -1296,6 +1613,18 @@ public final class OfflineRegionStore: @unchecked Sendable {
         value.matches("^[0-9]{8}T[0-9]{6}Z$")
     }
 
+    private func packIndexCacheKey(region: String, publishVersion: String) -> String {
+        "\(region)/\(publishVersion)"
+    }
+
+    private func boundedData(contentsOf url: URL, maxBytes: Int) throws -> Data {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let data = try handle.read(upToCount: maxBytes + 1) ?? Data()
+        guard data.count <= maxBytes else { throw TileError.invalidOfflinePack }
+        return data
+    }
+
     private func withLock<T>(_ body: () throws -> T) rethrows -> T {
         lock.lock()
         defer { lock.unlock() }
@@ -1318,7 +1647,67 @@ private struct OfflinePackIndex: Codable {
     let region: String
     let publishVersion: String
     let tileSHAs: [String: String]
+    let tiles: [String: OfflinePackTileIndexEntry]
     let basemapSHA: String
+    let basemapBytes: Int
+    let attribution: [Attribution]
+    let attributionSources: [String]
+    let hasTileMetadata: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case region
+        case publishVersion
+        case tileSHAs
+        case tiles
+        case basemapSHA
+        case basemapBytes
+        case attribution
+        case attributionSources
+    }
+
+    init(
+        region: String,
+        publishVersion: String,
+        tileSHAs: [String: String],
+        tiles: [String: OfflinePackTileIndexEntry],
+        basemapSHA: String,
+        basemapBytes: Int,
+        attribution: [Attribution],
+        attributionSources: [String]
+    ) {
+        self.region = region
+        self.publishVersion = publishVersion
+        self.tileSHAs = tileSHAs
+        self.tiles = tiles
+        self.basemapSHA = basemapSHA
+        self.basemapBytes = basemapBytes
+        self.attribution = attribution
+        self.attributionSources = attributionSources
+        hasTileMetadata = true
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        region = try container.decode(String.self, forKey: .region)
+        publishVersion = try container.decode(String.self, forKey: .publishVersion)
+        tileSHAs = try container.decode([String: String].self, forKey: .tileSHAs)
+        if let decodedTiles = try container.decodeIfPresent([String: OfflinePackTileIndexEntry].self, forKey: .tiles) {
+            tiles = decodedTiles
+            hasTileMetadata = true
+        } else {
+            tiles = [:]
+            hasTileMetadata = false
+        }
+        basemapSHA = try container.decode(String.self, forKey: .basemapSHA)
+        basemapBytes = try container.decodeIfPresent(Int.self, forKey: .basemapBytes) ?? 0
+        attribution = try container.decodeIfPresent([Attribution].self, forKey: .attribution) ?? []
+        attributionSources = try container.decodeIfPresent([String].self, forKey: .attributionSources) ?? attribution.map(\.source)
+    }
+}
+
+private struct OfflinePackTileIndexEntry: Codable, Sendable, Equatable {
+    let sha256: String
+    let bytes: Int
 }
 
 public final class TileCache: @unchecked Sendable {
@@ -1473,6 +1862,8 @@ public actor TileClient {
     private var loadedPlaces: [String: DecodedPlace] = [:]
     private var recentPlaceRefs: [String: PlaceRef] = [:]
     private var recentPlaceRefOrder: [String] = []
+    private var viewportBasemap: InstalledPackBasemap?
+    private var viewportAttribution: [Attribution] = []
     private var viewportGeneration = 0
 
     public init(region: String, fetcher: TileFetching, cache: TileCache, offlineStore: OfflineRegionStore? = nil) {
@@ -1491,6 +1882,8 @@ public actor TileClient {
         state = resolved.state
         if oldPublishVersion != resolved.publish?.publishVersion {
             clearLoadedPlaceRefs()
+            viewportBasemap = nil
+            viewportAttribution = []
         }
         if let pin {
             cache.purgeNonPinned(region: region, pinnedPublishVersion: pin.publishVersion)
@@ -1501,16 +1894,44 @@ public actor TileClient {
         if pin == nil {
             try? await refreshPin()
         }
-        guard let pin else { return [] }
+        let coveredCoordinates = Set(TileCoverage.tiles(for: bbox))
+        let offlineResolution: OfflinePackResolution
+        do {
+            offlineResolution = try offlineStore?.installedTileResolution(intersecting: bbox)
+                ?? OfflinePackResolution(tiles: [], quarantinedPacks: [])
+        } catch {
+            loadedPlaces = [:]
+            viewportBasemap = nil
+            viewportAttribution = []
+            state = .manifestInvalid
+            return []
+        }
+        let blockedCoordinates = offlineResolution.blockedCoordinates.intersection(coveredCoordinates)
+        let needed = tileRequests(
+            installedTiles: offlineResolution.tiles,
+            fallback: pin,
+            coveredCoordinates: coveredCoordinates,
+            blockedFallbackCoordinates: blockedCoordinates
+        )
+        guard !needed.isEmpty else {
+            loadedPlaces = [:]
+            viewportBasemap = nil
+            viewportAttribution = []
+            if !blockedCoordinates.isEmpty, state != .updateAvailable {
+                state = .manifestInvalid
+            }
+            return []
+        }
+        viewportBasemap = needed.reduce(nil as PublishTileRequest?) { current, request in
+            guard request.basemap != nil else { return current }
+            return tileRequest(request, winsOver: current) ? request : current
+        }?.basemap
+        viewportAttribution = mergedAttribution(from: needed)
         viewportGeneration += 1
         let generation = viewportGeneration
 
-        let needed = Set(TileCoverage.tiles(for: bbox).filter { coordinate in
-            pin.manifest.tiles.contains { $0.x == coordinate.x && $0.y == coordinate.y }
-        }).sorted(by: { ($0.x, $0.y) < ($1.x, $1.y) })
-        var output: [MapPlace] = []
         var viewportPlaces: [String: DecodedPlace] = [:]
-        let attributionSources = Set(pin.manifest.attribution.map(\.source))
+        var viewportRequests: [String: PublishTileRequest] = [:]
         var usedCache = false
         var trustedTile = false
         var missingTile = false
@@ -1518,16 +1939,10 @@ public actor TileClient {
         await withTaskGroup(of: TileLoadResult.self) { group in
             var iterator = needed.makeIterator()
             for _ in 0..<TileFetchConcurrency.maxConcurrent {
-                guard let coordinate = iterator.next(),
-                      let tile = pin.manifest.tiles.first(where: { $0.x == coordinate.x && $0.y == coordinate.y })
-                else { break }
+                guard let request = iterator.next() else { break }
                 group.addTask {
                     await loadTile(
-                        region: self.region,
-                        publish: pin,
-                        coordinate: coordinate,
-                        tile: tile,
-                        attributionSources: attributionSources,
+                        request: request,
                         fetcher: self.fetcher,
                         cache: self.cache,
                         offlineStore: self.offlineStore
@@ -1540,8 +1955,8 @@ public actor TileClient {
                     return
                 }
                 switch result {
-                case .loaded(let decoded, let source):
-                    switch source {
+                case .loaded(let loaded):
+                    switch loaded.source {
                     case .cache:
                         usedCache = true
                     case .network:
@@ -1549,33 +1964,30 @@ public actor TileClient {
                     case .offlinePack:
                         trustedTile = true
                     }
-                    if !decoded.missingAttributionSources.isEmpty {
-                        cache.evictPublish(region: region, publishVersion: pin.publishVersion)
+                    if !loaded.decoded.missingAttributionSources.isEmpty {
+                        cache.evictPublish(region: loaded.request.region, publishVersion: loaded.request.publishVersion)
                         self.pin = nil
                         clearLoadedPlaceRefs()
                         state = .manifestInvalid
                         group.cancelAll()
                         return
                     }
-                    for place in decoded.places {
-                        viewportPlaces[place.mapPlace.id] = place
-                        output.append(place.mapPlace)
+                    for place in loaded.decoded.places {
+                        let currentRequest = viewportRequests[place.mapPlace.id]
+                        if tileRequest(loaded.request, winsOver: currentRequest) {
+                            viewportPlaces[place.mapPlace.id] = place
+                            viewportRequests[place.mapPlace.id] = loaded.request
+                        }
                     }
                 case .missing:
                     missingTile = true
                 case .invalid:
                     missingTile = true
                 }
-                guard let coordinate = iterator.next(),
-                      let tile = pin.manifest.tiles.first(where: { $0.x == coordinate.x && $0.y == coordinate.y })
-                else { continue }
+                guard let request = iterator.next() else { continue }
                 group.addTask {
                     await loadTile(
-                        region: self.region,
-                        publish: pin,
-                        coordinate: coordinate,
-                        tile: tile,
-                        attributionSources: attributionSources,
+                        request: request,
                         fetcher: self.fetcher,
                         cache: self.cache,
                         offlineStore: self.offlineStore
@@ -1593,7 +2005,7 @@ public actor TileClient {
         } else if missingTile, !needed.isEmpty, state != .updateAvailable {
             state = .unavailable
         }
-        return output.sorted(by: { $0.id < $1.id })
+        return viewportPlaces.values.map(\.mapPlace).sorted(by: { $0.id < $1.id })
     }
 
     public func isPresentInCurrentTiles(_ placeID: String) async -> Bool {
@@ -1625,11 +2037,20 @@ public actor TileClient {
     }
 
     public var attribution: [Attribution] {
-        get async { pin?.attribution ?? [] }
+        get async { viewportAttribution.isEmpty ? (pin?.attribution ?? []) : viewportAttribution }
     }
 
     public var basemapURL: URL? {
         get async {
+            if let viewportBasemap,
+               let offlineURL = offlineStore?.basemapURL(
+                   region: viewportBasemap.region,
+                   publishVersion: viewportBasemap.publishVersion,
+                   sha256: viewportBasemap.sha256,
+                   bytes: viewportBasemap.bytes
+               ) {
+                return offlineURL
+            }
             guard let pin else { return nil }
             return offlineStore?.basemapURL(
                 region: pin.region,
@@ -1641,7 +2062,12 @@ public actor TileClient {
     }
 
     public var basemapIntegrity: (sha256: String, bytes: Int)? {
-        get async { pin?.basemapIntegrity }
+        get async {
+            if let viewportBasemap {
+                return (viewportBasemap.sha256, viewportBasemap.bytes)
+            }
+            return pin?.basemapIntegrity
+        }
     }
 
     public var loadState: TileLoadState {
@@ -1669,6 +2095,100 @@ public actor TileClient {
         }
         return ManifestPinResult(publish: installed, state: .updateAvailable)
     }
+
+    private func tileRequests(
+        installedTiles: [InstalledPackTile],
+        fallback: PinnedPublish?,
+        coveredCoordinates: Set<TileCoordinate>,
+        blockedFallbackCoordinates: Set<TileCoordinate> = []
+    ) -> [PublishTileRequest] {
+        var requestsByCoordinate: [TileCoordinate: PublishTileRequest] = [:]
+        for installedTile in installedTiles {
+            let request = PublishTileRequest(
+                region: installedTile.region,
+                publishVersion: installedTile.publishVersion,
+                coordinate: installedTile.coordinate,
+                tile: installedTile.tile,
+                attribution: installedTile.attribution,
+                attributionSources: Set(installedTile.attributionSources),
+                source: .installed(packTileCount: installedTile.packTileCount),
+                basemap: installedTile.basemap
+            )
+            if tileRequest(request, winsOver: requestsByCoordinate[installedTile.coordinate]) {
+                requestsByCoordinate[installedTile.coordinate] = request
+            }
+        }
+        if let fallback {
+            for tile in fallback.manifest.tiles {
+                let coordinate = TileCoordinate(z: fallback.manifest.tileZ, x: tile.x, y: tile.y)
+                guard coveredCoordinates.contains(coordinate) else { continue }
+                guard !blockedFallbackCoordinates.contains(coordinate) else { continue }
+                let request = PublishTileRequest(
+                    region: fallback.region,
+                    publishVersion: fallback.publishVersion,
+                    coordinate: coordinate,
+                    tile: tile,
+                    attribution: fallback.manifest.attribution,
+                    attributionSources: Set(fallback.manifest.attribution.map(\.source)),
+                    source: .fallback,
+                    basemap: nil
+                )
+                if tileRequest(request, winsOver: requestsByCoordinate[coordinate]) {
+                    requestsByCoordinate[coordinate] = request
+                }
+            }
+        }
+        return requestsByCoordinate.values.sorted(by: {
+            ($0.coordinate.x, $0.coordinate.y, $0.region, $0.publishVersion) <
+                ($1.coordinate.x, $1.coordinate.y, $1.region, $1.publishVersion)
+        })
+    }
+
+    private func mergedAttribution(from requests: [PublishTileRequest]) -> [Attribution] {
+        var bySource: [String: Attribution] = [:]
+        for request in requests {
+            for attribution in request.attribution where bySource[attribution.source] == nil {
+                bySource[attribution.source] = attribution
+            }
+        }
+        return bySource.values.sorted(by: { $0.source < $1.source })
+    }
+}
+
+private struct PublishTileRequest: Sendable {
+    let region: String
+    let publishVersion: String
+    let coordinate: TileCoordinate
+    let tile: ManifestTile
+    let attribution: [Attribution]
+    let attributionSources: Set<String>
+    let source: TileRequestSource
+    let basemap: InstalledPackBasemap?
+}
+
+private struct LoadedTile: Sendable {
+    let decoded: DecodedTile
+    let source: TileLoadSource
+    let request: PublishTileRequest
+}
+
+private enum TileRequestSource: Sendable, Equatable {
+    case installed(packTileCount: Int)
+    case fallback
+
+    var isInstalled: Bool {
+        if case .installed = self { return true }
+        return false
+    }
+
+    var packTileCount: Int {
+        switch self {
+        case .installed(let packTileCount):
+            packTileCount
+        case .fallback:
+            Int.max
+        }
+    }
 }
 
 private enum TileLoadSource: Sendable {
@@ -1678,17 +2198,13 @@ private enum TileLoadSource: Sendable {
 }
 
 private enum TileLoadResult: Sendable {
-    case loaded(DecodedTile, TileLoadSource)
+    case loaded(LoadedTile)
     case missing
     case invalid
 }
 
 private func loadTile(
-    region: String,
-    publish: PinnedPublish,
-    coordinate: TileCoordinate,
-    tile: ManifestTile,
-    attributionSources: Set<String>,
+    request: PublishTileRequest,
     fetcher: TileFetching,
     cache: TileCache,
     offlineStore: OfflineRegionStore?
@@ -1696,36 +2212,36 @@ private func loadTile(
     var gzipped: Data
     var source: TileLoadSource
     if let offline = offlineStore?.tile(
-        region: region,
-        publishVersion: publish.publishVersion,
-        coordinate: coordinate,
-        sha256: tile.sha256
+        region: request.region,
+        publishVersion: request.publishVersion,
+        coordinate: request.coordinate,
+        sha256: request.tile.sha256
     ) {
         gzipped = offline
         source = .offlinePack
     } else {
         do {
-        gzipped = try await fetcher.fetch(try trustedURL("\(region)/\(publish.publishVersion)/tiles/10/\(coordinate.x)/\(coordinate.y).json.gz"))
-        _ = try TileCodec.decode(gzipped: gzipped, expectedSHA256: tile.sha256, expectedBytes: tile.bytes)
-        try cache.storeTile(region: region, publishVersion: publish.publishVersion, coordinate: coordinate, sha256: tile.sha256, data: gzipped)
-        source = .network
+            gzipped = try await fetcher.fetch(try trustedURL("\(request.region)/\(request.publishVersion)/tiles/10/\(request.coordinate.x)/\(request.coordinate.y).json.gz"))
+            _ = try TileCodec.decode(gzipped: gzipped, expectedSHA256: request.tile.sha256, expectedBytes: request.tile.bytes)
+            try cache.storeTile(region: request.region, publishVersion: request.publishVersion, coordinate: request.coordinate, sha256: request.tile.sha256, data: gzipped)
+            source = .network
         } catch let error as TileError {
             switch error {
             case .checksumMismatch, .byteCountMismatch, .compressedTooLarge, .inflatedTooLarge, .invalidGzip, .invalidTile:
-                guard let cached = cache.tile(region: region, publishVersion: publish.publishVersion, coordinate: coordinate, sha256: tile.sha256) else {
+                guard let cached = cache.tile(region: request.region, publishVersion: request.publishVersion, coordinate: request.coordinate, sha256: request.tile.sha256) else {
                     return .missing
                 }
                 gzipped = cached
                 source = .cache
             default:
-                guard let cached = cache.tile(region: region, publishVersion: publish.publishVersion, coordinate: coordinate, sha256: tile.sha256) else {
+                guard let cached = cache.tile(region: request.region, publishVersion: request.publishVersion, coordinate: request.coordinate, sha256: request.tile.sha256) else {
                     return .missing
                 }
                 gzipped = cached
                 source = .cache
             }
         } catch {
-            guard let cached = cache.tile(region: region, publishVersion: publish.publishVersion, coordinate: coordinate, sha256: tile.sha256) else {
+            guard let cached = cache.tile(region: request.region, publishVersion: request.publishVersion, coordinate: request.coordinate, sha256: request.tile.sha256) else {
                 return .missing
             }
             gzipped = cached
@@ -1734,12 +2250,29 @@ private func loadTile(
     }
 
     do {
-        let raw = try TileCodec.decode(gzipped: gzipped, expectedSHA256: tile.sha256, expectedBytes: tile.bytes)
-        let decoded = try PlaceDecoder.decode(tileData: raw, expected: coordinate, attributionSources: attributionSources)
-        return .loaded(decoded, source)
+        let raw = try TileCodec.decode(gzipped: gzipped, expectedSHA256: request.tile.sha256, expectedBytes: request.tile.bytes)
+        let decoded = try PlaceDecoder.decode(tileData: raw, expected: request.coordinate, attributionSources: request.attributionSources)
+        return .loaded(LoadedTile(decoded: decoded, source: source, request: request))
     } catch {
         return .missing
     }
+}
+
+private func tileRequest(_ candidate: PublishTileRequest, winsOver current: PublishTileRequest?) -> Bool {
+    guard let current else { return true }
+    if candidate.source.isInstalled != current.source.isInstalled {
+        return candidate.source.isInstalled
+    }
+    if candidate.publishVersion != current.publishVersion {
+        return candidate.publishVersion > current.publishVersion
+    }
+    if candidate.source.packTileCount != current.source.packTileCount {
+        return candidate.source.packTileCount < current.source.packTileCount
+    }
+    if candidate.coordinate != current.coordinate {
+        return (candidate.coordinate.x, candidate.coordinate.y) < (current.coordinate.x, current.coordinate.y)
+    }
+    return candidate.region > current.region
 }
 
 func trustedURL(_ path: String) throws -> URL {
