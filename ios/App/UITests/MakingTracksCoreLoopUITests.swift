@@ -92,7 +92,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openAppMenu(in: app)
         app.buttons["menu.row.settings"].tap()
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
-        app.buttons["settings.replay-onboarding"].tap()
+        let replayOnboarding = app.buttons["settings.replay-onboarding"]
+        XCTAssertTrue(scrollToExistence(of: replayOnboarding, in: app))
+        replayOnboarding.tap()
 
         XCTAssertTrue(app.staticTexts["Interesting places around you"].waitForExistence(timeout: 5))
         app.buttons["onboarding.next"].tap()

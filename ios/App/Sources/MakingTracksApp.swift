@@ -154,6 +154,12 @@ final class MakingTracksAppDelegate: NSObject, UIApplicationDelegate {
         completionHandler: @escaping () -> Void
     ) {
         MakingTracksLog.downloads.info("app background events received identifier=\(identifier, privacy: .private(mask: .hash))")
-        OfflineDownloadSession.handleEvents(for: identifier, completionHandler: completionHandler)
+        OfflineDownloadSession.handleEvents(
+            for: identifier,
+            allowsCellularDownloads: UserDefaults.standard.bool(
+                forKey: OfflineDownloadSettings.allowsCellularDownloadsKey
+            ),
+            completionHandler: completionHandler
+        )
     }
 }

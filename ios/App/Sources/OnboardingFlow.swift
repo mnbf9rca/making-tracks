@@ -15,6 +15,7 @@ struct MakingTracksRootView: View {
 
     @AppStorage(OnboardingStorage.hasCompletedOnboardingKey) private var hasCompletedOnboarding = false
     @AppStorage(OnboardingStorage.chosenRegionKey) private var chosenRegionRawValue = OnboardingRegionChoice.malaysia.rawValue
+    @AppStorage(OfflineDownloadSettings.allowsCellularDownloadsKey) private var allowsCellularDownloads = OfflineDownloadSettings.defaultAllowsCellularDownloads
     @StateObject private var locationPermission: LocationPermission
     @State private var isReplayingOnboarding = false
     @State private var downloadState: OnboardingDownloadState = .idle
@@ -148,7 +149,7 @@ struct MakingTracksRootView: View {
             return
         case let .complete(plan) where plan.region == region:
             return
-        case let .downloading(plan, _) where plan.region == region:
+        case let .downloading(plan, _, _) where plan.region == region:
             return
         default:
             break
@@ -201,8 +202,9 @@ struct MakingTracksRootView: View {
             MakingTracksLog.startup.info("onboarding download fixture region=\(region.rawValue, privacy: .private(mask: .hash))")
             return
         }
-        downloadState = .downloading(plan, fetchedBytes: 0)
+        downloadState = .downloading(plan, fetchedBytes: 0, isWaitingForConnectivity: false)
         MakingTracksLog.startup.info("onboarding download started region=\(region.rawValue, privacy: .private(mask: .hash)) bytes=\(plan.bytesToFetch, privacy: .public)")
+        let downloadAllowsCellular = allowsCellularDownloads
         Task {
             do {
                 let documents = try FileManager.default.url(
@@ -211,16 +213,37 @@ struct MakingTracksRootView: View {
                     appropriateFor: nil,
                     create: true
                 )
-                let downloader = OfflineRegionDownloader(
-                    region: region.mapRegion.rawValue,
-                    metadataFetcher: HTTPTileFetcher.offlineForeground(),
-                    objectFetcher: HTTPTileFetcher.offlineBackground(
-                        identifier: OfflineDownloadSession.backgroundIdentifier(region: region.mapRegion.rawValue)
-                    ),
-                    store: try .documentsStore(),
-                    availableBytes: { StorageHeadroom.availableBytes(at: documents) }
+                let backgroundIdentifier = OfflineDownloadSession.backgroundIdentifier(region: region.mapRegion.rawValue)
+                await OfflineDownloadSession.prepareBackgroundSessionForPolicyChange(
+                    identifier: backgroundIdentifier,
+                    allowsCellularDownloads: downloadAllowsCellular
                 )
-                let result = try await downloader.downloadCurrentRegion()
+                let result = try await OfflineDownloadSession.withBackgroundSessionUse(
+                    identifier: backgroundIdentifier
+                ) {
+                    let downloader = OfflineRegionDownloader(
+                        region: region.mapRegion.rawValue,
+                        metadataFetcher: HTTPTileFetcher.offlineForeground(
+                            allowsCellularDownloads: downloadAllowsCellular
+                        ),
+                        objectFetcher: HTTPTileFetcher.offlineBackground(
+                            identifier: backgroundIdentifier,
+                            allowsCellularDownloads: downloadAllowsCellular
+                        ),
+                        store: try .documentsStore(),
+                        availableBytes: { StorageHeadroom.availableBytes(at: documents) }
+                    )
+                    return try await downloader.downloadCurrentRegion { progress in
+                        Task { @MainActor in
+                            guard downloadState.isDownloading else { return }
+                            downloadState = .downloading(
+                                plan,
+                                fetchedBytes: progress.completedBytes,
+                                isWaitingForConnectivity: progress.isWaitingForConnectivity
+                            )
+                        }
+                    }
+                }
                 await MainActor.run {
                     guard downloadState.isDownloading else { return }
                     downloadState = .complete(plan.withFetchedBytes(result.fetchedBytes))
@@ -368,7 +391,7 @@ enum OnboardingDownloadState: Equatable {
     case planning(OnboardingRegionChoice)
     case ready(OnboardingDownloadPlan)
     case storageFull(OnboardingDownloadPlan)
-    case downloading(OnboardingDownloadPlan, fetchedBytes: Int)
+    case downloading(OnboardingDownloadPlan, fetchedBytes: Int, isWaitingForConnectivity: Bool = false)
     case complete(OnboardingDownloadPlan)
     case failed(OnboardingRegionChoice)
 
@@ -380,7 +403,7 @@ enum OnboardingDownloadState: Equatable {
             return region
         case let .ready(plan), let .storageFull(plan), let .complete(plan):
             return plan.region
-        case let .downloading(plan, _):
+        case let .downloading(plan, _, _):
             return plan.region
         }
     }
@@ -388,6 +411,18 @@ enum OnboardingDownloadState: Equatable {
     var isDownloading: Bool {
         if case .downloading = self { return true }
         return false
+    }
+
+    var statusText: String? {
+        switch self {
+        case let .downloading(plan, fetchedBytes, isWaitingForConnectivity):
+            if isWaitingForConnectivity {
+                return "Waiting for Wi-Fi"
+            }
+            return "\(plan.withFetchedBytes(fetchedBytes).formattedFetchedBytes) of \(plan.formattedSize)"
+        default:
+            return nil
+        }
     }
 }
 
@@ -591,14 +626,15 @@ struct OnboardingFlow: View {
             Label(plan.storageFullMessage, systemImage: "externaldrive.badge.exclamationmark")
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("onboarding.download.storage-full")
-        case let .downloading(plan, fetchedBytes):
+        case let .downloading(plan, fetchedBytes, _):
             let activePlan = plan.withFetchedBytes(fetchedBytes)
+            let statusText = downloadState.statusText ?? "\(activePlan.formattedFetchedBytes) of \(activePlan.formattedSize)"
             VStack(alignment: .leading, spacing: 8) {
                 ProgressView(value: activePlan.progressFraction)
                     .accessibilityLabel("Download progress")
-                    .accessibilityValue("\(activePlan.formattedFetchedBytes) of \(activePlan.formattedSize)")
+                    .accessibilityValue(statusText)
                     .accessibilityIdentifier("onboarding.download.progress")
-                Text("\(activePlan.formattedFetchedBytes) of \(activePlan.formattedSize)")
+                Text(statusText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("onboarding.download.progress-text")

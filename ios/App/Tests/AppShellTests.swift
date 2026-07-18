@@ -159,6 +159,8 @@ final class AppShellTests: XCTestCase {
     func testOnboardingStorageUsesFoldedDesignKeys() {
         XCTAssertEqual(OnboardingStorage.hasCompletedOnboardingKey, "hasCompletedOnboarding")
         XCTAssertEqual(OnboardingStorage.chosenRegionKey, "chosenRegion")
+        XCTAssertEqual(OfflineDownloadSettings.allowsCellularDownloadsKey, "offline.downloads.allow-cellular")
+        XCTAssertFalse(OfflineDownloadSettings.defaultAllowsCellularDownloads)
     }
 
     func testChosenRegionDrivesStartupSeedUnlessUITestArgumentOverrides() {
@@ -232,6 +234,40 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(progress.completedBytes, 25)
         XCTAssertEqual(progress.totalBytes, 100)
         XCTAssertEqual(progress.percentComplete, 25)
+    }
+
+    func testOfflineDownloadProgressSurfacesConnectivityWaitingState() {
+        let progress = OfflineDownloadProgress(
+            region: "uk_london",
+            publishVersion: "20260718T000000Z",
+            completedBytes: 0,
+            totalBytes: 100,
+            fractionComplete: 0,
+            isWaitingForConnectivity: true
+        )
+        let row = OfflineRegionCatalogRow(
+            zone: OfflineRegionCatalog.debugFixture.zone(id: "uk_london")!,
+            depth: 1,
+            state: .downloading(progress)
+        )
+
+        XCTAssertEqual(progress.statusText, "Waiting for Wi-Fi")
+        XCTAssertEqual(row.statusLabel, "Waiting for Wi-Fi")
+    }
+
+    func testOnboardingDownloadStateSurfacesWaitingForWiFi() {
+        let plan = OnboardingDownloadPlan(
+            region: .malaysia,
+            bytesToFetch: 100,
+            availableBytes: 10_000_000_000,
+            hasHeadroom: true,
+            fetchedBytes: 0
+        )
+
+        XCTAssertEqual(
+            OnboardingDownloadState.downloading(plan, fetchedBytes: 0, isWaitingForConnectivity: true).statusText,
+            "Waiting for Wi-Fi"
+        )
     }
 
     func testOfflineDownloadCancelTreatsActiveLeaseAsCancellationSuccess() {
@@ -595,6 +631,20 @@ final class AppShellTests: XCTestCase {
         XCTAssertTrue(session.shouldClearSessionForCancel(fallbackRegion: "uk"))
         XCTAssertFalse(session.isSessionRegion("uk_london"))
         XCTAssertTrue(session.isSessionRegion("uk"))
+    }
+
+    func testDeferredOfflineMaintenanceRouteCarriesCellularPolicyIntoReplayFetchers() {
+        let route = DeferredOfflineMaintenanceDownloadRoute(
+            region: "uk",
+            allowsCellularDownloads: true
+        )
+        defer {
+            OfflineDownloadSession.invalidateBackgroundSessionForTesting(identifier: route.backgroundIdentifier)
+        }
+
+        XCTAssertEqual(route.backgroundIdentifier, OfflineDownloadSession.backgroundIdentifier(region: "uk"))
+        XCTAssertTrue(route.metadataAllowsCellularDownloadsForTesting)
+        XCTAssertTrue(route.objectAllowsCellularDownloadsForTesting)
     }
 
     func testPausedOfflineRegionCatalogRowCarriesRowRegionForCancelAction() {
