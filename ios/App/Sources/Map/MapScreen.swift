@@ -198,6 +198,11 @@ struct OfflineRegionCatalogRow: Identifiable, Sendable, Equatable {
             "Quarantined pack"
         }
     }
+
+    var cancelRegion: String? {
+        guard case .paused = state else { return nil }
+        return zone.id
+    }
 }
 
 struct ViewportSeed: Sendable, Equatable {
@@ -435,13 +440,26 @@ final class OfflineRegionDownloadSession {
     }
 
     func regionForCancel(fallbackRegion: String? = nil) -> String? {
-        pausedProgress?.region ?? liveProgress?.region ?? fallbackRegion
+        fallbackRegion ?? pausedProgress?.region ?? liveProgress?.region
+    }
+
+    func isSessionRegion(_ region: String) -> Bool {
+        pausedProgress?.region == region || liveProgress?.region == region
+    }
+
+    func shouldClearSessionForCancel(fallbackRegion: String? = nil) -> Bool {
+        guard let region = regionForCancel(fallbackRegion: fallbackRegion) else { return true }
+        return isSessionRegion(region)
     }
 
     func canBegin(region: String) -> Bool {
-        guard let pausedRegion else { return true }
-        let allowed = pausedRegion == region
-        MakingTracksLog.downloads.info("ui begin checked region=\(region, privacy: .private(mask: .hash)) pausedRegion=\(pausedRegion, privacy: .private(mask: .hash)) allowed=\(allowed, privacy: .public)")
+        if let pausedRegion {
+            let allowed = pausedRegion == region
+            MakingTracksLog.downloads.info("ui begin checked region=\(region, privacy: .private(mask: .hash)) pausedRegion=\(pausedRegion, privacy: .private(mask: .hash)) allowed=\(allowed, privacy: .public)")
+            return allowed
+        }
+        let allowed = !hasActiveDownload
+        MakingTracksLog.downloads.info("ui begin checked region=\(region, privacy: .private(mask: .hash)) activeDownload=\(!allowed, privacy: .public) allowed=\(allowed, privacy: .public)")
         return allowed
     }
 
@@ -2272,7 +2290,7 @@ private struct OfflineMapsView: View {
                     startDownload(row.zone.id, resumingPausedDownload: true)
                 }
                 iconButton("Cancel", systemImage: "xmark.circle", role: .destructive) {
-                    Task { await cancelDownload(region: row.zone.id) }
+                    Task { await cancelDownload(region: row.cancelRegion) }
                 }
             }
         }
@@ -2349,9 +2367,11 @@ private struct OfflineMapsView: View {
         else { return }
         let regionToDiscard = downloadSession.regionForCancel(fallbackRegion: persistedPausedRegion)
         MakingTracksLog.downloads.info("ui cancel requested region=\(regionToDiscard ?? "unknown", privacy: .private(mask: .hash))")
-        downloadSession.activeControl?.cancel()
-        downloadSession.activeTask?.cancel()
-        downloadSession.clear()
+        if downloadSession.shouldClearSessionForCancel(fallbackRegion: persistedPausedRegion) {
+            downloadSession.activeControl?.cancel()
+            downloadSession.activeTask?.cancel()
+            downloadSession.clear()
+        }
         if let regionToDiscard, let model {
             statusMessage = await model.discardOfflineRegionDownload(regionToDiscard)
             await refresh()

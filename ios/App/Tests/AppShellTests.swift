@@ -584,6 +584,45 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
+    func testOfflineDownloadSessionUsesTappedPausedRowRegionBeforeLiveSessionForCancel() {
+        let session = OfflineRegionDownloadSession()
+        session.begin(region: "uk", control: OfflineRegionDownloadControl(), downloadID: UUID())
+        session.update(OfflineDownloadProgress(region: "uk", fractionComplete: 0.42))
+
+        XCTAssertFalse(session.canBegin(region: "uk_london"))
+        XCTAssertEqual(session.regionForCancel(fallbackRegion: "uk_london"), "uk_london")
+        XCTAssertFalse(session.shouldClearSessionForCancel(fallbackRegion: "uk_london"))
+        XCTAssertTrue(session.shouldClearSessionForCancel(fallbackRegion: "uk"))
+        XCTAssertFalse(session.isSessionRegion("uk_london"))
+        XCTAssertTrue(session.isSessionRegion("uk"))
+    }
+
+    func testPausedOfflineRegionCatalogRowCarriesRowRegionForCancelAction() {
+        let zone = OfflineRegionCatalogZone(
+            id: "uk_london",
+            displayName: "London",
+            parentID: "uk",
+            publishVersion: "20260718T000000Z",
+            bytesWithoutThumbnails: 842_000_000,
+            bytesWithThumbnails: 1_160_000_000
+        )
+
+        XCTAssertEqual(
+            OfflineRegionCatalogRow(
+                zone: zone,
+                depth: 1,
+                state: .paused(OfflineDownloadProgress(region: "uk_london", fractionComplete: 0))
+            ).cancelRegion,
+            "uk_london"
+        )
+        XCTAssertNil(OfflineRegionCatalogRow(
+            zone: zone,
+            depth: 1,
+            state: .downloading(OfflineDownloadProgress(region: "uk_london", fractionComplete: 0.42))
+        ).cancelRegion)
+    }
+
+    @MainActor
     func testCoordinatorGeneratesThemeSpecificStyleJSON() throws {
         let coordinator = makeCoordinator()
 
