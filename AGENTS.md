@@ -83,6 +83,25 @@ flock /tmp/agent-ios-sim.lock sh -ec '
 
 Current repo state: `/ios` is a Swift package, so use `swift test` there. When a B-track work package creates the app `.xcodeproj` or `.xcworkspace`, replace `<project-or-workspace-args>` and `<scheme>` with that package's real `xcodebuild` arguments; do not invent paths in shared docs.
 
+### Disk hygiene (mandatory)
+
+Derived data and result bundles are the biggest disk producers on this shared host. Two laws, both non-negotiable:
+
+1. **One reusable derived-data path per agent — never per-run numbered dirs.** Point every `xcodebuild` run at a single stable path `-derivedDataPath /private/tmp/dd-<agent-name>` (e.g. `/private/tmp/dd-codex4`). Reusing one path lets each build overwrite the last; per-run paths (`dd-1`, `dd-run-2`, timestamped dirs) accumulate without bound.
+2. **Delete result bundles after extracting counts.** If a run uses `-resultBundlePath <path>.xcresult`, parse the pass/fail counts you need, then `rm -rf` the bundle in the same script — never leave `.xcresult` bundles on disk between runs.
+
+```bash
+# Idiom: stable derived-data path + result bundle deleted after counts are read
+DD=/private/tmp/dd-<agent-name>
+RB=/private/tmp/<agent-name>.xcresult
+rm -rf "$RB"
+xcodebuild ... -derivedDataPath "$DD" -resultBundlePath "$RB" test
+# ... extract counts from "$RB" ...
+rm -rf "$RB"
+```
+
+**Why this is a law, not a nicety:** on 2026-07-18 roughly **35 GB** of derived-data and result-bundle litter filled this Mac's disk to **100%**, which killed CoreSimulator **fleet-wide** — every "flaky simulator" failure that night was actually disk suffocation, not a flaky test. A full disk masquerades as flakiness; keep the litter from accumulating in the first place.
+
 Parallel testing and multi-destination runs are the normal paths that spawn simulator clones. The single-destination command above, with `-parallel-testing-enabled NO` and `-disable-concurrent-destination-testing`, is the required defense against clone creation. If a run leaks clones, they hide in XCTest's separate device set; inspect it with:
 
 ```bash
