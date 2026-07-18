@@ -1,4 +1,5 @@
 import CoreLocation
+import Observation
 import SwiftUI
 import UIKit
 @preconcurrency import MapLibre
@@ -42,23 +43,53 @@ struct ViewportSeed: Sendable {
     }
 }
 
+enum MenuDestination: Hashable {
+    case lists
+    case offlineMaps
+    case settings
+    case about
+}
+
+@Observable
+final class AppShellModel {
+    var isMenuPresented = false
+    var deepLinkPath: MenuDestination?
+}
+
+struct OfflineDownloadProgress: Sendable {
+    let fractionComplete: Double
+
+    var percentComplete: Int {
+        Int((boundedFraction * 100).rounded())
+    }
+
+    private var boundedFraction: Double {
+        guard fractionComplete.isFinite else { return 0 }
+        return min(max(fractionComplete, 0), 1)
+    }
+}
+
 struct MapScreen: View {
+    static let themeStorageKey = "map.theme.id"
+
     let database: AppDatabase
     let startupViewport: ViewportSeed
     var isFixtureMap = false
     var debugInstallOfflineRegion: String?
     var debugForceTileNetworkOffline = false
+    var offlineDownloadProgress: OfflineDownloadProgress?
 
     @State private var model: MapScreenModel?
     @StateObject private var locationPermission: LocationPermission
+    @AppStorage(Self.themeStorageKey) private var selectedThemeID = MapTheme.definedPaper.id
     @Environment(\.scenePhase) private var scenePhase
     @State private var worldPMTilesURL: String? = WorldBasemap.pmtilesURL()
     @State private var features: [(MapPlace, PinState)] = []
     @State private var regionPMTilesURL: String?
     @State private var attribution: [Attribution] = []
     @State private var debugOfflineStatus: String?
+    @State private var appShell = AppShellModel()
     @State private var cardPresentation = PlaceCardPresentation()
-    @State private var showCredits = false
     @State private var loadState: TileLoadState = .unavailable
     @State private var viewportRequestID = 0
     @State private var stateEpoch = 0
@@ -82,6 +113,7 @@ struct MapScreen: View {
         isFixtureMap: Bool = false,
         debugInstallOfflineRegion: String? = nil,
         debugForceTileNetworkOffline: Bool = false,
+        offlineDownloadProgress: OfflineDownloadProgress? = nil,
         locationManager: AppLocationManager = AppLocationManager()
     ) {
         self.database = database
@@ -89,6 +121,7 @@ struct MapScreen: View {
         self.isFixtureMap = isFixtureMap
         self.debugInstallOfflineRegion = debugInstallOfflineRegion
         self.debugForceTileNetworkOffline = debugForceTileNetworkOffline
+        self.offlineDownloadProgress = offlineDownloadProgress
         self.locationManager = locationManager
         _locationPermission = StateObject(wrappedValue: LocationPermission(manager: locationManager))
     }
@@ -98,6 +131,7 @@ struct MapScreen: View {
             MLNMapViewRepresentable(
                 worldPMTilesURL: worldPMTilesURL,
                 regionPMTilesURL: regionPMTilesURL,
+                theme: selectedTheme,
                 startupViewport: startupViewport,
                 features: features,
                 locationManager: locationManager,
@@ -125,13 +159,18 @@ struct MapScreen: View {
                 }
             )
             .ignoresSafeArea()
+            .overlay(alignment: .topLeading) {
+                shellChrome
+                    .padding(.top, 72)
+                    .padding(.leading, 16)
+            }
             .overlay(alignment: .topTrailing) {
                 statusChrome
                     .padding(.top, 72)
                     .padding(.trailing, 16)
             }
             .overlay(alignment: .bottomLeading) {
-                attributionButton
+                attributionText
                     .padding(.leading, 16)
                     .padding(.bottom, 16)
             }
@@ -155,6 +194,15 @@ struct MapScreen: View {
                 }
             }
         }
+        .sheet(isPresented: $appShell.isMenuPresented) {
+            AppMenuSheet(
+                shell: appShell,
+                attribution: attribution,
+                selectedThemeID: $selectedThemeID,
+                locationStatus: locationMenuStatus,
+                openLocationSettings: openLocationSettings
+            )
+        }
         .onChange(of: scenePhase) { _, newPhase in
             LocationSessionPolicies.handleScenePhaseChange(
                 newPhase,
@@ -175,9 +223,6 @@ struct MapScreen: View {
             if let model {
                 await observeChanges(from: model)
             }
-        }
-        .sheet(isPresented: $showCredits) {
-            CreditsView(attribution: attribution)
         }
         .sheet(item: cardPresentationItemBinding) { presentation in
             PlaceCardSheet(
@@ -290,6 +335,12 @@ struct MapScreen: View {
                     .buttonStyle(.bordered)
                     .accessibilityIdentifier("debug.unhide-fixture")
                 }
+                Text(verbatim: "Fixture hidden: \(isPrimaryFixtureHidden ? "true" : "false")")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("debug.fixture-hidden-state")
 #endif
             }
 
@@ -310,20 +361,67 @@ struct MapScreen: View {
         mapChrome
     }
 
-    private var attributionButton: some View {
-        Button {
-            showCredits = true
-        } label: {
-            Text(verbatim: "© OpenStreetMap")
-                .font(.caption2)
-                .fontWeight(.semibold)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(.ultraThinMaterial, in: Capsule())
+    private var selectedTheme: MapTheme {
+        MapTheme.named(selectedThemeID)
+    }
+
+#if DEBUG
+    private var isPrimaryFixtureHidden: Bool {
+        model?.hiddenIDs.contains(Self.primaryFixturePlaceID) ?? false
+    }
+#endif
+
+    private var shellChrome: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                appShell.deepLinkPath = nil
+                appShell.isMenuPresented = true
+            } label: {
+                Image(systemName: "line.3.horizontal")
+                    .font(.headline)
+                    .frame(width: 44, height: 44)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .accessibilityLabel("Menu")
+            .accessibilityHint("Opens app menu")
+            .accessibilityIdentifier("map.menu")
+
+            if let offlineDownloadProgress {
+                Button {
+                    appShell.deepLinkPath = .offlineMaps
+                    appShell.isMenuPresented = true
+                } label: {
+                    Label(
+                        "Offline maps \(offlineDownloadProgress.percentComplete)%",
+                        systemImage: "arrow.down.circle"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(.ultraThinMaterial, in: Capsule())
+                }
+                .accessibilityIdentifier("map.download-progress")
+            }
         }
-        .accessibilityLabel("OpenStreetMap attribution")
-        .accessibilityHint("Opens credits")
-        .accessibilityIdentifier("map.openstreetmap-attribution")
+    }
+
+    private var attributionText: some View {
+        Text(verbatim: "© OpenStreetMap")
+            .font(.caption2)
+            .fontWeight(.semibold)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
+            .accessibilityLabel("OpenStreetMap attribution")
+            .accessibilityIdentifier("map.openstreetmap-attribution")
+    }
+
+    private var locationMenuStatus: LocationMenuStatus {
+        LocationMenuStatus(
+            label: locationPermission.isLocationOff ? "Location off" : "Location available",
+            canOpenSettings: locationPermission.isLocationOff
+        )
     }
 
     private var locationChrome: some View {
@@ -676,12 +774,213 @@ struct MapScreen: View {
     ]
 }
 
-private struct CreditsView: View {
+private struct LocationMenuStatus: Sendable {
+    let label: String
+    let canOpenSettings: Bool
+}
+
+private struct AppMenuSheet: View {
+    @Bindable var shell: AppShellModel
     let attribution: [Attribution]
+    @Binding var selectedThemeID: String
+    let locationStatus: LocationMenuStatus
+    let openLocationSettings: () -> Void
+
+    @State private var path: [MenuDestination] = []
     @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            AppMenuRootView(path: $path)
+                .navigationTitle("Menu")
+                .navigationDestination(for: MenuDestination.self) { destination in
+                    destinationView(destination)
+                }
+                .toolbar {
+                    Button("Done") { dismiss() }
+                        .accessibilityIdentifier("menu.done")
+                }
+        }
+        .onAppear {
+            applyDeepLinkIfNeeded(resetToRootWhenNoDeepLink: true)
+        }
+        .onChange(of: shell.deepLinkPath) { _, _ in
+            applyDeepLinkIfNeeded(resetToRootWhenNoDeepLink: false)
+        }
+    }
+
+    @ViewBuilder
+    private func destinationView(_ destination: MenuDestination) -> some View {
+        switch destination {
+        case .lists:
+            destinationWithDone(ListsPlaceholderView())
+        case .offlineMaps:
+            destinationWithDone(OfflineMapsPlaceholderView())
+        case .settings:
+            destinationWithDone(SettingsView(
+                selectedThemeID: $selectedThemeID,
+                locationStatus: locationStatus,
+                openLocationSettings: openLocationSettings
+            ))
+        case .about:
+            destinationWithDone(AboutView(attribution: attribution))
+        }
+    }
+
+    private func destinationWithDone<Content: View>(_ content: Content) -> some View {
+        content.toolbar {
+            Button("Done") { dismiss() }
+                .accessibilityIdentifier("menu.done")
+        }
+    }
+
+    private func applyDeepLinkIfNeeded(resetToRootWhenNoDeepLink: Bool) {
+        guard let destination = shell.deepLinkPath else {
+            if resetToRootWhenNoDeepLink {
+                path = []
+            }
+            return
+        }
+        path = [destination]
+        shell.deepLinkPath = nil
+    }
+}
+
+private struct AppMenuRootView: View {
+    @Binding var path: [MenuDestination]
+
+    var body: some View {
+        List {
+            Button {
+                path.append(.lists)
+            } label: {
+                menuRow(title: "Lists", subtitle: "Saved places and collections", systemImage: "list.bullet")
+            }
+            .accessibilityIdentifier("menu.row.lists")
+
+            Button {
+                path.append(.offlineMaps)
+            } label: {
+                menuRow(title: "Offline maps", subtitle: "Download regions for later", systemImage: "arrow.down.circle")
+            }
+            .accessibilityIdentifier("menu.row.offline-maps")
+
+            Button {
+                path.append(.settings)
+            } label: {
+                menuRow(title: "Settings", subtitle: "Map theme, location, and storage", systemImage: "gearshape")
+            }
+            .accessibilityIdentifier("menu.row.settings")
+
+            Button {
+                path.append(.about)
+            } label: {
+                menuRow(title: "About", subtitle: "Credits, attribution, and build info", systemImage: "info.circle")
+            }
+            .accessibilityIdentifier("menu.row.about")
+        }
+    }
+
+    private func menuRow(title: String, subtitle: String, systemImage: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.headline)
+                .frame(width: 28)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.body)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(minHeight: 44, alignment: .leading)
+    }
+}
+
+private struct ListsPlaceholderView: View {
+    var body: some View {
+        ContentUnavailableView(
+            "Lists",
+            systemImage: "list.bullet",
+            description: Text("Saved lists will appear here.")
+        )
+        .navigationTitle("Lists")
+    }
+}
+
+private struct OfflineMapsPlaceholderView: View {
+    var body: some View {
+        ContentUnavailableView(
+            "Offline maps",
+            systemImage: "arrow.down.circle",
+            description: Text("Region downloads will appear here.")
+        )
+        .navigationTitle("Offline maps")
+    }
+}
+
+private struct SettingsView: View {
+    @Binding var selectedThemeID: String
+    let locationStatus: LocationMenuStatus
+    let openLocationSettings: () -> Void
+
+    var body: some View {
+        List {
+            Section("Map theme") {
+                Text(MapTheme.named(selectedThemeID).displayName)
+                    .accessibilityIdentifier("settings.theme.selected")
+                ForEach(MapTheme.allCandidates, id: \.id) { theme in
+                    Button {
+                        selectedThemeID = theme.id
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(verbatim: theme.displayName)
+                                Text(verbatim: theme.id)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if MapTheme.named(selectedThemeID).id == theme.id {
+                                Image(systemName: "checkmark")
+                                    .font(.headline)
+                                    .accessibilityLabel("Selected")
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("settings.theme.\(theme.id)")
+                }
+            }
+
+            Section("Location") {
+                HStack {
+                    Label(locationStatus.label, systemImage: "location")
+                    Spacer()
+                    if locationStatus.canOpenSettings {
+                        Button("Settings", action: openLocationSettings)
+                            .accessibilityIdentifier("settings.location.open-system")
+                    }
+                }
+            }
+
+            Section("Storage") {
+                Label("Storage details coming soon", systemImage: "internaldrive")
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("settings.storage.stub")
+            }
+        }
+        .navigationTitle("Settings")
+    }
+}
+
+private struct AboutView: View {
+    let attribution: [Attribution]
 
     private static let buildCommit = loadBuildCommit()
     private static let ossCredits = loadOSSCredits()
+    private static let osmCopyrightURL = URL(string: "https://www.openstreetmap.org/copyright")!
 
     private static func loadBuildCommit() -> String {
         guard let url = Bundle.main.url(forResource: "BuildInfo", withExtension: "plist"),
@@ -701,55 +1000,62 @@ private struct CreditsView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Build")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Build")
+                        .font(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(verbatim: "Build \(Self.buildCommit)")
+                        .font(.caption)
+                        .fontDesign(.monospaced)
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Map attribution")
+                        .font(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Map data © OpenStreetMap contributors.")
+                    Link(destination: Self.osmCopyrightURL) {
+                        Text("OpenStreetMap copyright")
+                    }
+                    .accessibilityValue(Self.osmCopyrightURL.absoluteString)
+                    .accessibilityIdentifier("about.openstreetmap-copyright")
+                }
+
+                if !attribution.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Manifest attribution")
                             .font(.headline)
                             .accessibilityAddTraits(.isHeader)
-                        Text(verbatim: "Build \(Self.buildCommit)")
-                            .font(.caption)
-                            .fontDesign(.monospaced)
-                    }
-
-                    if !attribution.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Manifest attribution")
-                                .font(.headline)
-                                .accessibilityAddTraits(.isHeader)
-                            VStack(alignment: .leading, spacing: 12) {
-                                ForEach(Array(attribution.enumerated()), id: \.offset) { _, item in
-                                    CreditEntryView(
-                                        title: item.source,
-                                        subtitle: item.license,
-                                        text: item.text
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    if !Self.ossCredits.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Open source acknowledgements")
-                                .font(.headline)
-                                .accessibilityAddTraits(.isHeader)
-                            VStack(alignment: .leading, spacing: 20) {
-                                ForEach(Self.ossCredits) { credit in
-                                    OpenSourceCreditView(credit: credit)
-                                }
+                            ForEach(Array(attribution.enumerated()), id: \.offset) { _, item in
+                                CreditEntryView(
+                                    title: item.source,
+                                    subtitle: item.license,
+                                    text: item.text
+                                )
                             }
                         }
                     }
                 }
-                .padding()
+
+                if !Self.ossCredits.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Open source acknowledgements")
+                            .font(.headline)
+                            .accessibilityAddTraits(.isHeader)
+                        VStack(alignment: .leading, spacing: 20) {
+                            ForEach(Self.ossCredits) { credit in
+                                OpenSourceCreditView(credit: credit)
+                            }
+                        }
+                    }
+                }
             }
-            .navigationTitle("Credits")
-            .toolbar {
-                Button("Done") { dismiss() }
-            }
+            .padding()
         }
+        .navigationTitle("About")
     }
 }
 

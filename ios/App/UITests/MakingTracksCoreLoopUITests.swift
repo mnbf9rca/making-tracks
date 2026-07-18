@@ -143,6 +143,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openFixtureCard(in: map, app: app)
         app.buttons["place-card.close"].tap()
         app.buttons["debug.hide-fixture"].tap()
+        XCTAssertTrue(waitForFixtureHidden(true, in: app))
 
         tapFixturePin(in: map)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
@@ -157,40 +158,75 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
         app.buttons["debug.hide-fixture"].tap()
+        XCTAssertTrue(waitForFixtureHidden(true, in: app))
         tapFixturePin(in: map)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
 
         app.buttons["debug.unhide-fixture"].tap()
+        XCTAssertTrue(waitForFixtureHidden(false, in: app))
         openFixtureCard(in: map, app: app)
     }
 
-    func testCreditsShowBuildCommitHash() throws {
+    func testMenuAboutCarriesCreditsAndMapAttributionIsInert() throws {
         let app = launch(reset: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
-        let osmAttribution = app.buttons["map.openstreetmap-attribution"]
-        XCTAssertTrue(osmAttribution.waitForExistence(timeout: 5))
-        osmAttribution.tap()
+        XCTAssertFalse(app.buttons["map.openstreetmap-attribution"].exists)
+        XCTAssertTrue(app.staticTexts["map.openstreetmap-attribution"].waitForExistence(timeout: 5))
+
+        openAppMenu(in: app)
+        XCTAssertTrue(app.staticTexts["Menu"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["menu.row.lists"].exists)
+        XCTAssertTrue(app.buttons["menu.row.offline-maps"].exists)
+        XCTAssertTrue(app.buttons["menu.row.settings"].exists)
+
+        app.buttons["menu.row.about"].tap()
+        XCTAssertTrue(app.staticTexts["About"].waitForExistence(timeout: 5))
         let expectedBuildLabel = "Build \(try currentGitCommit())"
         XCTAssertTrue(app.staticTexts[expectedBuildLabel].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Open source acknowledgements"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["about.openstreetmap-copyright"].waitForExistence(timeout: 5))
+        app.buttons["menu.done"].tap()
     }
 
-    func testMapShowsOpenStreetMapAttribution() {
-        let app = launch(reset: true)
+    func testOfflineProgressChipDeepLinksToOfflineMaps() {
+        let activeDownloadApp = launch(reset: true, offlineProgress: 0.42)
+        let activeMap = activeDownloadApp.otherElements["map.surface"]
+        XCTAssertTrue(activeMap.waitForExistence(timeout: 10))
+
+        let progressChip = activeDownloadApp.buttons["map.download-progress"]
+        XCTAssertTrue(progressChip.waitForExistence(timeout: 5))
+        XCTAssertTrue(progressChip.label.contains("42%"))
+        progressChip.tap()
+
+        XCTAssertTrue(activeDownloadApp.staticTexts["Offline maps"].waitForExistence(timeout: 5))
+        activeDownloadApp.buttons["menu.done"].tap()
+
+        XCTAssertTrue(activeMap.waitForExistence(timeout: 5))
+        openAppMenu(in: activeDownloadApp)
+        XCTAssertTrue(activeDownloadApp.staticTexts["Menu"].waitForExistence(timeout: 5))
+        XCTAssertTrue(activeDownloadApp.buttons["menu.row.lists"].exists)
+        XCTAssertTrue(activeDownloadApp.buttons["menu.row.settings"].exists)
+        activeDownloadApp.buttons["menu.done"].tap()
+    }
+
+    func testSettingsThemePickerSelectsRealTheme() {
+        let app = launch(reset: true, resetTheme: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
-        attachScreenshot(named: "locate-me-chrome")
+        openAppMenu(in: app)
+        app.buttons["menu.row.settings"].tap()
+        XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["settings.theme.selected"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["settings.theme.selected"].label, "Defined Paper")
 
-        let osmAttribution = app.buttons["map.openstreetmap-attribution"]
-        XCTAssertTrue(osmAttribution.waitForExistence(timeout: 5))
-        osmAttribution.tap()
-
-        XCTAssertTrue(app.staticTexts["Credits"].waitForExistence(timeout: 5))
-        attachScreenshot(named: "map-openstreetmap-attribution")
+        app.buttons["settings.theme.snow"].tap()
+        XCTAssertEqual(app.staticTexts["settings.theme.selected"].label, "Snow")
+        app.buttons["menu.done"].tap()
     }
 
     func testPlaceCardStacksActionsAtAccessibilityTextSize() {
@@ -262,9 +298,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
-        let osmAttribution = app.buttons["map.openstreetmap-attribution"]
-        XCTAssertTrue(osmAttribution.waitForExistence(timeout: 5))
-        osmAttribution.tap()
+        openAppMenu(in: app)
+        app.buttons["menu.row.about"].tap()
+        XCTAssertTrue(app.staticTexts["About"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Build"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Open source acknowledgements"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Build \(try currentGitCommit())"].waitForExistence(timeout: 5))
@@ -293,7 +329,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         simulatedLatitude: Double? = nil,
         simulatedLongitude: Double? = nil,
         accessibilityTextSize: Bool = false,
-        seedUserList: Bool = false
+        seedUserList: Bool = false,
+        offlineProgress: Double? = nil,
+        resetTheme: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
@@ -321,8 +359,22 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         if seedUserList {
             app.launchArguments.append("--ui-testing-seed-user-list")
         }
+        if let offlineProgress {
+            app.launchArguments.append("--ui-testing-offline-progress")
+            app.launchArguments.append(String(offlineProgress))
+        }
+        if resetTheme {
+            app.launchArguments.append("--ui-testing-reset-theme")
+        }
         app.launch()
         return app
+    }
+
+    private func openAppMenu(in app: XCUIApplication) {
+        let menuButton = app.buttons["map.menu"]
+        XCTAssertTrue(menuButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(menuButton.label, "Menu")
+        menuButton.tap()
     }
 
     private func tapFixturePin(in map: XCUIElement) {
@@ -414,6 +466,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let predicate = NSPredicate(format: "exists == false")
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func waitForFixtureHidden(_ hidden: Bool, in app: XCUIApplication) -> Bool {
+        let element = app.staticTexts["debug.fixture-hidden-state"]
+        let predicate = NSPredicate(format: "exists == true AND label == %@", "Fixture hidden: \(hidden)")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: 5) == .completed
     }
 
     private func assertVerticallyOrdered(

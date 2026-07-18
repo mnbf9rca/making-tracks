@@ -15,7 +15,12 @@ struct MakingTracksApp: App {
     private static let isLocationAuthorizedFixture = arguments.contains("--ui-testing-location-authorized")
     private static let simulatedLatitude = argumentValue("--ui-testing-location-latitude").flatMap(Double.init)
     private static let simulatedLongitude = argumentValue("--ui-testing-location-longitude").flatMap(Double.init)
+    private static let uiTestingOfflineProgress = argumentValue("--ui-testing-offline-progress").flatMap(Double.init)
     private static let primaryFixturePlaceID = "mt1_00000000000000000000000000"
+
+    init() {
+        Self.resetUITestingThemeIfNeeded()
+    }
 
     private let database: AppDatabase = {
         try! resetUITestingDatabaseIfNeeded()
@@ -54,6 +59,7 @@ struct MakingTracksApp: App {
                 isFixtureMap: Self.isFixtureMap,
                 debugInstallOfflineRegion: Self.debugInstallOfflineRegion,
                 debugForceTileNetworkOffline: Self.debugForceTileNetworkOffline,
+                offlineDownloadProgress: Self.offlineDownloadProgress,
                 locationManager: locationManager
             )
         }
@@ -78,5 +84,15 @@ struct MakingTracksApp: App {
         for suffix in ["", "-wal", "-shm"] {
             try? FileManager.default.removeItem(at: URL(fileURLWithPath: dbURL.path + suffix))
         }
+    }
+
+    private static var offlineDownloadProgress: OfflineDownloadProgress? {
+        guard isFixtureMap, let uiTestingOfflineProgress else { return nil }
+        return OfflineDownloadProgress(fractionComplete: uiTestingOfflineProgress)
+    }
+
+    private static func resetUITestingThemeIfNeeded() {
+        guard isFixtureMap, arguments.contains("--ui-testing-reset-theme") else { return }
+        UserDefaults.standard.removeObject(forKey: MapScreen.themeStorageKey)
     }
 }

@@ -15,6 +15,7 @@ enum PinCategoryImageRegistry {
 struct MLNMapViewRepresentable: UIViewRepresentable {
     var worldPMTilesURL: String?
     var regionPMTilesURL: String?
+    var theme: MapTheme
     var startupViewport: ViewportSeed
     var features: [(MapPlace, PinState)]
     var locationManager: AppLocationManager
@@ -30,9 +31,14 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> MLNMapView {
+        let initialStyleReload = context.coordinator.prepareStyleReload(
+            worldPMTilesURL: worldPMTilesURL,
+            regionPMTilesURL: regionPMTilesURL,
+            theme: theme
+        )
         let map = MLNMapView(
             frame: .zero,
-            styleURL: context.coordinator.styleURL(worldPMTilesURL: worldPMTilesURL, regionPMTilesURL: regionPMTilesURL)
+            styleURL: initialStyleReload?.url
         )
         map.accessibilityIdentifier = "map.surface"
         map.accessibilityLabel = "Map"
@@ -48,6 +54,9 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         map.addGestureRecognizer(tap)
         context.coordinator.map = map
+        if let initialStyleReload {
+            context.coordinator.commitStyleReload(initialStyleReload)
+        }
         context.coordinator.pendingFeatures = features
         return map
     }
@@ -62,10 +71,13 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         map.showsUserLocation = showsUserLocation
         map.userTrackingMode = userTrackingMode
 
-        if context.coordinator.currentWorldPMTilesURL != worldPMTilesURL || context.coordinator.currentRegionPMTilesURL != regionPMTilesURL {
-            context.coordinator.currentWorldPMTilesURL = worldPMTilesURL
-            context.coordinator.currentRegionPMTilesURL = regionPMTilesURL
-            map.styleURL = context.coordinator.styleURL(worldPMTilesURL: worldPMTilesURL, regionPMTilesURL: regionPMTilesURL)
+        if let styleReload = context.coordinator.prepareStyleReload(
+            worldPMTilesURL: worldPMTilesURL,
+            regionPMTilesURL: regionPMTilesURL,
+            theme: theme
+        ) {
+            context.coordinator.commitStyleReload(styleReload)
+            map.styleURL = styleReload.url
         } else {
             context.coordinator.updateSource(on: map, features: features)
         }
@@ -80,7 +92,15 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         weak var map: MLNMapView?
         var currentWorldPMTilesURL: String?
         var currentRegionPMTilesURL: String?
+        var currentThemeID: String?
         var pendingFeatures: [(MapPlace, PinState)] = []
+
+        struct StyleReload: Equatable {
+            let url: URL
+            let worldPMTilesURL: String?
+            let regionPMTilesURL: String?
+            let themeID: String
+        }
 
         init(
             onCameraIdle: @escaping (BBox, Int) -> Void,
@@ -94,8 +114,38 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             self.onTapEmpty = onTapEmpty
         }
 
-        func styleURL(worldPMTilesURL: String?, regionPMTilesURL: String?) -> URL? {
-            let style = paperBasemapStyle(worldPMTilesURL: worldPMTilesURL, regionPMTilesURL: regionPMTilesURL)
+        func prepareStyleReload(
+            worldPMTilesURL: String?,
+            regionPMTilesURL: String?,
+            theme: MapTheme,
+            makeStyleURL: ((String?, String?, MapTheme) -> URL?)? = nil
+        ) -> StyleReload? {
+            guard currentWorldPMTilesURL != worldPMTilesURL
+                || currentRegionPMTilesURL != regionPMTilesURL
+                || currentThemeID != theme.id
+            else { return nil }
+            let makeStyleURL = makeStyleURL ?? styleURL
+            guard let url = makeStyleURL(worldPMTilesURL, regionPMTilesURL, theme) else { return nil }
+            return StyleReload(
+                url: url,
+                worldPMTilesURL: worldPMTilesURL,
+                regionPMTilesURL: regionPMTilesURL,
+                themeID: theme.id
+            )
+        }
+
+        func commitStyleReload(_ reload: StyleReload) {
+            currentWorldPMTilesURL = reload.worldPMTilesURL
+            currentRegionPMTilesURL = reload.regionPMTilesURL
+            currentThemeID = reload.themeID
+        }
+
+        func styleURL(worldPMTilesURL: String?, regionPMTilesURL: String?, theme: MapTheme) -> URL? {
+            let style = paperBasemapStyle(
+                worldPMTilesURL: worldPMTilesURL,
+                regionPMTilesURL: regionPMTilesURL,
+                theme: theme
+            )
             guard let json = try? style.jsonString() else { return nil }
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("making-tracks-style-\(UUID().uuidString).json")
             do {

@@ -10,6 +10,7 @@
 		0297C33B171577FE15A6AC32 /* MakingTracksCoreLoopUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36873FF1289D2248F06F618 /* MakingTracksCoreLoopUITests.swift */; };
 		03DDC05F05147127FAC7FFA5 /* MapScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 344D7C929CEBD0057FA01F8C /* MapScreen.swift */; };
 		0690E2BBD5D936C280A81F6C /* WorldBasemap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E19C34E0B445601AD8B5A35 /* WorldBasemap.swift */; };
+		0A2C680593F94D059C240D5C /* AppShellTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F84893D5D6748C5934F22B2 /* AppShellTests.swift */; };
 		12180A7BEBB27840E1614C1A /* LocationSessionPolicies.swift in Sources */ = {isa = PBXBuildFile; fileRef = E67D53581962B4787D079BCA /* LocationSessionPolicies.swift */; };
 		1477E9C0802B5ACD26327A43 /* AppLocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B6E6A8728A3BBF7FBCF25B9 /* AppLocationManager.swift */; };
 		1E88D6E14A988414962AB763 /* MapLibre in Frameworks */ = {isa = PBXBuildFile; productRef = CBADA08F3DCFE4D9F14B6043 /* MapLibre */; };
@@ -50,6 +51,7 @@
 		0B6E6A8728A3BBF7FBCF25B9 /* AppLocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocationManager.swift; sourceTree = "<group>"; };
 		1CB5F787D9335E6F6658C952 /* OSSCredits.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = OSSCredits.json; sourceTree = "<group>"; };
 		1E19C34E0B445601AD8B5A35 /* WorldBasemap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorldBasemap.swift; sourceTree = "<group>"; };
+		1F84893D5D6748C5934F22B2 /* AppShellTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellTests.swift; sourceTree = "<group>"; };
 		2B2C08C6EC4CC9B925C76CEC /* LocationSessionPoliciesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationSessionPoliciesTests.swift; sourceTree = "<group>"; };
 		344D7C929CEBD0057FA01F8C /* MapScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapScreen.swift; sourceTree = "<group>"; };
 		549B3C04D699BA9D8D06A6D7 /* MakingTracksTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MakingTracksTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -98,6 +100,7 @@
 		147428FCFBC8BD3BB845BC82 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				1F84893D5D6748C5934F22B2 /* AppShellTests.swift */,
 				DDF309F41553406AB77EF7B3 /* HiddenMembershipTrackerTests.swift */,
 				2B2C08C6EC4CC9B925C76CEC /* LocationSessionPoliciesTests.swift */,
 				B85E30D5635849FF984B528A /* PinCategorySymbolTests.swift */,
@@ -371,6 +374,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0A2C680593F94D059C240D5C /* AppShellTests.swift in Sources */,
 				CB1F6C6F7D6543AEBE645655 /* HiddenMembershipTrackerTests.swift in Sources */,
 				E33AAF4D7C085C6FBE57C261 /* LocationSessionPoliciesTests.swift in Sources */,
 				AA43008C099442B1A07CB2F8 /* PinCategorySymbolTests.swift in Sources */,
