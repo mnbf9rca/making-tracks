@@ -153,7 +153,7 @@ final class MakingTracksAppDelegate: NSObject, UIApplicationDelegate {
         handleEventsForBackgroundURLSession identifier: String,
         completionHandler: @escaping () -> Void
     ) {
-        MakingTracksLog.downloads.info("app background events received identifier=\(identifier, privacy: .public)")
+        MakingTracksLog.downloads.info("app background events received identifier=\(identifier, privacy: .private(mask: .hash))")
         OfflineDownloadSession.handleEvents(for: identifier, completionHandler: completionHandler)
     }
 }

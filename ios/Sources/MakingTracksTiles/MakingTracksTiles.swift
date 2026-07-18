@@ -167,14 +167,14 @@ public final class HTTPTileFetcher: OfflineRegionFetching, @unchecked Sendable {
         let kind = configurationIdentifier == nil ? "foreground" : "background"
         let identifier = configurationIdentifier ?? "foreground"
         let discretionary = session.configuration.isDiscretionary
-        MakingTracksLog.downloads.info("download started session=\(kind, privacy: .public) discretionary=\(discretionary, privacy: .public) identifier=\(identifier, privacy: .public) host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
+        MakingTracksLog.downloads.debug("download started session=\(kind, privacy: .public) discretionary=\(discretionary, privacy: .public) identifier=\(identifier, privacy: .private(mask: .hash)) host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
         let request = URLRequest(url: url)
         if configurationIdentifier != nil {
             return try await delegate.download(request, on: session)
         }
         let (fileURL, response) = try await session.download(for: request)
         try Self.validateDownloadedFile(fileURL, response: response)
-        MakingTracksLog.downloads.info("download finished session=\(kind, privacy: .public) discretionary=\(discretionary, privacy: .public) identifier=\(identifier, privacy: .public) host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
+        MakingTracksLog.downloads.debug("download finished session=\(kind, privacy: .public) discretionary=\(discretionary, privacy: .public) identifier=\(identifier, privacy: .private(mask: .hash)) host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
         return fileURL
     }
 
@@ -275,7 +275,7 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
                 let sessionID = session.configuration.identifier ?? "foreground"
                 let host = request.url.map(MakingTracksLog.host) ?? "unknown"
                 let objectKind = request.url.map(MakingTracksLog.objectKind) ?? "unknown"
-                MakingTracksLog.downloads.info("task created session=\(sessionKind, privacy: .public) discretionary=\(session.configuration.isDiscretionary, privacy: .public) identifier=\(sessionID, privacy: .public) task=\(task.taskIdentifier, privacy: .public) host=\(host, privacy: .public) kind=\(objectKind, privacy: .public)")
+                MakingTracksLog.downloads.debug("task created session=\(sessionKind, privacy: .public) discretionary=\(session.configuration.isDiscretionary, privacy: .public) identifier=\(sessionID, privacy: .private(mask: .hash)) task=\(task.taskIdentifier, privacy: .public) host=\(host, privacy: .public) kind=\(objectKind, privacy: .public)")
                 lock.withLock {
                     downloads[task.taskIdentifier] = DownloadState(
                         continuation: continuation,
@@ -365,7 +365,7 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
                 taskError: error,
                 stagingError: state.stagingError
             )
-            MakingTracksLog.downloads.info("task completed task=\(task.taskIdentifier, privacy: .public)")
+            MakingTracksLog.downloads.debug("task completed task=\(task.taskIdentifier, privacy: .public)")
             state.continuation.resume(returning: fileURL)
         } catch {
             MakingTracksLog.downloads.error("task failed task=\(task.taskIdentifier, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
@@ -375,7 +375,7 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessi
 
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         let sessionID = session.configuration.identifier ?? "foreground"
-        MakingTracksLog.downloads.info("session events finished identifier=\(sessionID, privacy: .public)")
+        MakingTracksLog.downloads.info("session events finished identifier=\(sessionID, privacy: .private(mask: .hash))")
         OfflineDownloadSession.finishEvents(for: session.configuration.identifier)
     }
 
@@ -1306,7 +1306,7 @@ public enum OfflineDownloadSession {
         configuration.allowsExpensiveNetworkAccess = false
         configuration.allowsConstrainedNetworkAccess = false
         harden(configuration)
-        MakingTracksLog.downloads.info("session configured session=background discretionary=\(configuration.isDiscretionary, privacy: .public) launchEvents=\(configuration.sessionSendsLaunchEvents, privacy: .public) identifier=\(identifier, privacy: .public)")
+        MakingTracksLog.downloads.info("session configured session=background discretionary=\(configuration.isDiscretionary, privacy: .public) launchEvents=\(configuration.sessionSendsLaunchEvents, privacy: .public) identifier=\(identifier, privacy: .private(mask: .hash))")
         return configuration
     }
 
@@ -1322,7 +1322,7 @@ public enum OfflineDownloadSession {
         for identifier: String,
         completionHandler: @escaping () -> Void
     ) {
-        MakingTracksLog.downloads.info("session events received identifier=\(identifier, privacy: .public)")
+        MakingTracksLog.downloads.info("session events received identifier=\(identifier, privacy: .private(mask: .hash))")
         OfflineDownloadSessionEventRegistry.shared.handleEvents(
             for: identifier,
             completionHandler: completionHandler
@@ -1335,7 +1335,7 @@ public enum OfflineDownloadSession {
 
     static func finishEvents(for identifier: String?) {
         guard let identifier else { return }
-        MakingTracksLog.downloads.info("session events completing identifier=\(identifier, privacy: .public)")
+        MakingTracksLog.downloads.info("session events completing identifier=\(identifier, privacy: .private(mask: .hash))")
         OfflineDownloadSessionEventRegistry.shared.finishEvents(for: identifier)
     }
 
@@ -1362,14 +1362,14 @@ private final class OfflineBackgroundSessionRegistry: @unchecked Sendable {
     func session(identifier: String, configuration: URLSessionConfiguration) -> OfflineBackgroundSessionBox {
         lock.withLock {
             if let existing = sessions[identifier] {
-                MakingTracksLog.downloads.debug("session reused session=background discretionary=\(existing.session.configuration.isDiscretionary, privacy: .public) identifier=\(identifier, privacy: .public)")
+                MakingTracksLog.downloads.debug("session reused session=background discretionary=\(existing.session.configuration.isDiscretionary, privacy: .public) identifier=\(identifier, privacy: .private(mask: .hash))")
                 return existing
             }
             let delegate = RedirectDelegate()
             let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
             let box = OfflineBackgroundSessionBox(session: session, delegate: delegate)
             sessions[identifier] = box
-            MakingTracksLog.downloads.info("session created session=background discretionary=\(configuration.isDiscretionary, privacy: .public) identifier=\(identifier, privacy: .public)")
+            MakingTracksLog.downloads.info("session created session=background discretionary=\(configuration.isDiscretionary, privacy: .public) identifier=\(identifier, privacy: .private(mask: .hash))")
             return box
         }
     }
@@ -1384,7 +1384,7 @@ private final class OfflineBackgroundSessionRegistry: @unchecked Sendable {
         let box = lock.withLock {
             sessions.removeValue(forKey: identifier)
         }
-        MakingTracksLog.downloads.info("session invalidated identifier=\(identifier, privacy: .public)")
+        MakingTracksLog.downloads.info("session invalidated identifier=\(identifier, privacy: .private(mask: .hash))")
         box?.session.invalidateAndCancel()
         box?.delegate.cancelAll(with: URLError(.cancelled))
     }
@@ -1400,7 +1400,7 @@ private final class OfflineDownloadSessionEventRegistry: @unchecked Sendable {
         lock.withLock {
             completionHandlers[identifier] = completionHandler
         }
-        MakingTracksLog.downloads.debug("session event handler stored identifier=\(identifier, privacy: .public)")
+        MakingTracksLog.downloads.debug("session event handler stored identifier=\(identifier, privacy: .private(mask: .hash))")
     }
 
     func finishEvents(for identifier: String) {
@@ -1408,7 +1408,7 @@ private final class OfflineDownloadSessionEventRegistry: @unchecked Sendable {
             completionHandlers.removeValue(forKey: identifier)
         }
         guard let completionHandler else { return }
-        MakingTracksLog.downloads.debug("session event handler firing identifier=\(identifier, privacy: .public)")
+        MakingTracksLog.downloads.debug("session event handler firing identifier=\(identifier, privacy: .private(mask: .hash))")
         DispatchQueue.main.async {
             completionHandler()
         }
@@ -3319,7 +3319,7 @@ public actor TileClient {
         let blocked = blockedCoordinates.count
         let installedRequests = needed.filter(\.source.isInstalled).count
         let fallbackRequests = needed.count - installedRequests
-        MakingTracksLog.resolution.info("viewport planned region=\(regionID, privacy: .private(mask: .hash)) zoom=\(zoom, privacy: .public) covered=\(covered, privacy: .public) blocked=\(blocked, privacy: .public) installed=\(installedRequests, privacy: .public) fallback=\(fallbackRequests, privacy: .public) quarantines=\(offlineResolution.quarantinedPacks.count, privacy: .public)")
+        MakingTracksLog.resolution.debug("viewport planned region=\(regionID, privacy: .private(mask: .hash)) zoom=\(zoom, privacy: .public) covered=\(covered, privacy: .public) blocked=\(blocked, privacy: .public) installed=\(installedRequests, privacy: .public) fallback=\(fallbackRequests, privacy: .public) quarantines=\(offlineResolution.quarantinedPacks.count, privacy: .public)")
         guard !needed.isEmpty else {
             loadedPlaces = [:]
             viewportBasemap = nil

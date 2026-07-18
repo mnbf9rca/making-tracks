@@ -19,12 +19,14 @@ final class LoggingPrivacyTests: XCTestCase {
             root.appendingPathComponent("App/Sources"),
         ]
         let forbiddenPatterns = [
-            #"(?i)\blat\b"#, #"(?i)\blatitude\b"#, #"(?i)\blon\b"#, #"(?i)\blongitude\b"#,
+            #"(?i)\blat\b"#, #"(?i)latitude"#, #"(?i)\blon\b"#, #"(?i)longitude"#,
             #"(?i)coordinate"#, #"(?i)\bbbox\b"#,
-            #"(?i)placeID"#, #"(?i)placeId"#, #"(?i)place_id"#, #"(?i)placeName"#, #"(?i)name:"#,
+            #"(?i)placeID"#, #"(?i)placeId"#, #"(?i)place_id"#, #"(?i)placeName"#, #"(?i)\bplace\."#, #"(?i)name:"#,
             #"(?i)absoluteString"#, #"(?i)path:"#, #"(?i)url:"#, #"URL\("#,
+            #"\\\(url(?:[,)]|\s)"#,
             #"(?i)\bregion=\\\([^)]*, privacy: \.public"#,
             #"(?i)\bpausedRegion=\\\([^)]*, privacy: \.public"#,
+            #"(?i)\bidentifier=\\\([^)]*, privacy: \.public"#,
         ]
 
         for sourceRoot in sourceRoots {
@@ -32,6 +34,10 @@ final class LoggingPrivacyTests: XCTestCase {
                 let source = try String(contentsOf: fileURL, encoding: .utf8)
                 for line in source.split(separator: "\n", omittingEmptySubsequences: false) {
                     guard line.contains("MakingTracksLog.") else { continue }
+                    XCTAssertTrue(
+                        logLineHasExplicitPrivacyAnnotations(String(line)),
+                        "\(fileURL.path): log interpolation lacks explicit privacy annotation: \(line)"
+                    )
                     for pattern in forbiddenPatterns {
                         XCTAssertFalse(
                             line.range(of: pattern, options: .regularExpression) != nil,
@@ -41,6 +47,25 @@ final class LoggingPrivacyTests: XCTestCase {
                 }
             }
         }
+    }
+
+    func testPrivacyLintRejectsRepresentativeBypasses() {
+        let unsafeLines = [
+            #"MakingTracksLog.downloads.info("raw=\(url)")"#,
+            #"MakingTracksLog.downloads.info("place=\(place.name, privacy: .public)")"#,
+            #"MakingTracksLog.downloads.info("center=\(centerLatitude, privacy: .public)")"#,
+            #"MakingTracksLog.downloads.info("detail=\(prebuilt)")"#,
+        ]
+        let forbiddenPatterns = [
+            #"(?i)latitude"#,
+            #"(?i)\bplace\."#,
+            #"\\\(url(?:[,)]|\s)"#,
+        ]
+
+        XCTAssertFalse(logLineHasExplicitPrivacyAnnotations(unsafeLines[0]))
+        XCTAssertTrue(unsafeLines[1].range(of: forbiddenPatterns[1], options: .regularExpression) != nil)
+        XCTAssertTrue(unsafeLines[2].range(of: forbiddenPatterns[0], options: .regularExpression) != nil)
+        XCTAssertFalse(logLineHasExplicitPrivacyAnnotations(unsafeLines[3]))
     }
 
     func testLoggingSanitizersDoNotEchoRawURLsOrErrorText() throws {
@@ -89,9 +114,56 @@ final class LoggingPrivacyTests: XCTestCase {
                     continue
                 }
                 XCTAssertFalse(source.contains("import OSLog"), "\(fileURL.path): import OSLog must stay behind MakingTracksLog")
+                XCTAssertFalse(source.contains("import os"), "\(fileURL.path): import os must stay behind MakingTracksLog")
                 XCTAssertFalse(source.contains("Logger("), "\(fileURL.path): Logger construction must stay behind MakingTracksLog")
+                XCTAssertFalse(source.contains("OSLog("), "\(fileURL.path): OSLog construction must stay behind MakingTracksLog")
+                XCTAssertFalse(source.contains("os_log("), "\(fileURL.path): legacy os_log must stay behind MakingTracksLog")
             }
         }
+    }
+
+    private func logLineHasExplicitPrivacyAnnotations(_ line: String) -> Bool {
+        for interpolation in logInterpolations(in: line) {
+            if interpolation.range(of: #"privacy\s*:"#, options: .regularExpression) == nil {
+                return false
+            }
+        }
+        return true
+    }
+
+    private func logInterpolations(in line: String) -> [String] {
+        let characters = Array(line)
+        var results: [String] = []
+        var index = characters.startIndex
+        while index < characters.endIndex {
+            guard characters[index] == "\\",
+                  characters.index(after: index) < characters.endIndex,
+                  characters[characters.index(after: index)] == "("
+            else {
+                index = characters.index(after: index)
+                continue
+            }
+
+            var cursor = characters.index(index, offsetBy: 2)
+            var depth = 1
+            var interpolation = ""
+            while cursor < characters.endIndex, depth > 0 {
+                let character = characters[cursor]
+                if character == "(" {
+                    depth += 1
+                } else if character == ")" {
+                    depth -= 1
+                    if depth == 0 {
+                        break
+                    }
+                }
+                interpolation.append(character)
+                cursor = characters.index(after: cursor)
+            }
+            results.append(interpolation)
+            index = cursor < characters.endIndex ? characters.index(after: cursor) : cursor
+        }
+        return results
     }
 
     private func sourceFile(_ relativePath: String) throws -> String {
