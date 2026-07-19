@@ -93,3 +93,24 @@ when written and later became false:
 
 Rule: this file, and `AGENTS.md` → **Amending this file**. Dated facts inside rule text are the failure mode
 that produced the incidents/rule split.
+
+## A chained commit reached the main checkout
+
+**2026-07-19.** An agent ran `cd <worktree> && git add -A && git commit && git push && echo PUSHED` as one
+command. The `git worktree add` before it had failed — the branch was already checked out elsewhere — so the
+`cd` failed and the rest ran in the **main checkout**, on the `ios` branch, which is Rob's Xcode surface.
+
+`git add -A` swept up two files that happened to be sitting untracked in that working tree: a
+`.claude/settings.json` enabling a third-party plugin, and a regenerated `Package.resolved`. The plugin
+setting would have been a supply-chain trust change travelling under a documentation commit message. The
+push then failed non-fast-forward, and `echo PUSHED` printed anyway, so the agent reported success and moved
+on.
+
+Contained: the commit never reached a remote, a mixed reset restored the working tree byte-for-byte, and the
+containment was independently verified before the checkout was fast-forwarded.
+
+Three rules already existed and all three were broken by one command: never commit in the main checkout,
+never chain an irreversible action past a check, and verify from the artifact rather than the step before it.
+The agent had re-stated the second of those in the same pull request it was writing at the time.
+
+→ *A mutation is a bare single call* (Workflow); *Worktree discipline* (Workflow).
