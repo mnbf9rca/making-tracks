@@ -182,6 +182,167 @@ final class PlaceCardModelTests: XCTestCase {
         XCTAssertEqual(enriched.photo?.height, 480)
         XCTAssertEqual(enriched.photo?.accessibilityLabel, "Photo of Clock")
         XCTAssertEqual(enriched.photo?.attribution, "Alice Example / Creative Commons Attribution 4.0 / modified")
+        XCTAssertEqual(enriched.sourceArticleLink, base.sourceArticleLink)
+    }
+
+    func testSourceArticleLinkPrefersCanonicalWikipediaPageIDProvenanceWithKnownHTTPSHost() throws {
+        let snapshot = makeSnapshot(snapshotJSON: jsonString([
+            "place_id": "mt1_00000000000000000000000000",
+            "name": "Clock",
+            "lat": 51.5,
+            "lon": -0.12,
+            "category": "historic_building",
+            "tier": 1,
+            "score": 0.9,
+            "source_refs": ["osm:node/1", "wp:12345"],
+            "wikipedia_title": "Clock tower",
+        ]))
+
+        let model = PlaceCardModel.from(snapshot: snapshot, pinState: PinState(saved: false, visit: .none))
+
+        XCTAssertEqual(model?.sourceArticleLink?.label, "Source article")
+        XCTAssertEqual(model?.sourceArticleLink?.sourceName, "Wikipedia")
+        XCTAssertEqual(model?.sourceArticleLink?.url.absoluteString, "https://en.wikipedia.org/?curid=12345")
+    }
+
+    func testSourceArticleLinkDropsUnsafeWikipediaTitleWithoutCanonicalSourceRefFallback() throws {
+        let snapshot = makeSnapshot(snapshotJSON: jsonString([
+            "place_id": "mt1_00000000000000000000000000",
+            "name": "Clock",
+            "lat": 51.5,
+            "lon": -0.12,
+            "category": "historic_building",
+            "tier": 1,
+            "score": 0.9,
+            "source_refs": ["evil:payload"],
+            "wikipedia_title": "safe\u{202E}evil",
+        ]))
+
+        let model = PlaceCardModel.from(snapshot: snapshot, pinState: PinState(saved: false, visit: .none))
+
+        XCTAssertNil(model?.sourceArticleLink)
+    }
+
+    func testSourceArticleLinkUsesSafeWikipediaTitleFallback() throws {
+        let snapshot = makeSnapshot(snapshotJSON: jsonString([
+            "place_id": "mt1_00000000000000000000000000",
+            "name": "Clock",
+            "lat": 51.5,
+            "lon": -0.12,
+            "category": "historic_building",
+            "tier": 1,
+            "score": 0.9,
+            "source_refs": ["evil:payload"],
+            "wikipedia_title": "Clock tower",
+        ]))
+
+        let model = PlaceCardModel.from(snapshot: snapshot, pinState: PinState(saved: false, visit: .none))
+
+        XCTAssertEqual(model?.sourceArticleLink?.sourceName, "Wikipedia")
+        XCTAssertEqual(model?.sourceArticleLink?.url.absoluteString, "https://en.wikipedia.org/wiki/Clock_tower")
+    }
+
+    func testSourceArticleLinkUsesCanonicalOpenPlaquesRef() throws {
+        let snapshot = makeSnapshot(snapshotJSON: jsonString([
+            "place_id": "mt1_00000000000000000000000000",
+            "name": "Clock",
+            "lat": 51.5,
+            "lon": -0.12,
+            "category": "historic_building",
+            "tier": 1,
+            "score": 0.9,
+            "source_refs": ["plaque:openplaques/9876"],
+        ]))
+
+        let model = PlaceCardModel.from(snapshot: snapshot, pinState: PinState(saved: false, visit: .none))
+
+        XCTAssertEqual(model?.sourceArticleLink?.sourceName, "Open Plaques")
+        XCTAssertEqual(model?.sourceArticleLink?.url.absoluteString, "https://openplaques.org/plaques/9876")
+    }
+
+    func testSourceArticleLinkUsesDirectOpenPlaquesRef() throws {
+        let snapshot = makeSnapshot(snapshotJSON: jsonString([
+            "place_id": "mt1_00000000000000000000000000",
+            "name": "Clock",
+            "lat": 51.5,
+            "lon": -0.12,
+            "category": "historic_building",
+            "tier": 1,
+            "score": 0.9,
+            "source_refs": ["open_plaques:4321"],
+        ]))
+
+        let model = PlaceCardModel.from(snapshot: snapshot, pinState: PinState(saved: false, visit: .none))
+
+        XCTAssertEqual(model?.sourceArticleLink?.sourceName, "Open Plaques")
+        XCTAssertEqual(model?.sourceArticleLink?.url.absoluteString, "https://openplaques.org/plaques/4321")
+    }
+
+    func testSourceArticleLinkUsesCanonicalOpenDataRefs() throws {
+        let cases: [(sourceRef: String, sourceName: String, url: String)] = [
+            ("osm:node/12", "OpenStreetMap", "https://www.openstreetmap.org/node/12"),
+            ("osm:way/34", "OpenStreetMap", "https://www.openstreetmap.org/way/34"),
+            ("osm:relation/56", "OpenStreetMap", "https://www.openstreetmap.org/relation/56"),
+            (
+                "hehle:1234567",
+                "Historic England",
+                "https://historicengland.org.uk/listing/the-list/list-entry/1234567"
+            ),
+        ]
+
+        for testCase in cases {
+            let snapshot = makeSnapshot(snapshotJSON: jsonString([
+                "place_id": "mt1_00000000000000000000000000",
+                "name": "Clock",
+                "lat": 51.5,
+                "lon": -0.12,
+                "category": "historic_building",
+                "tier": 1,
+                "score": 0.9,
+                "source_refs": [testCase.sourceRef],
+            ]))
+
+            let model = PlaceCardModel.from(snapshot: snapshot, pinState: PinState(saved: false, visit: .none))
+
+            XCTAssertEqual(model?.sourceArticleLink?.sourceName, testCase.sourceName, testCase.sourceRef)
+            XCTAssertEqual(model?.sourceArticleLink?.url.absoluteString, testCase.url, testCase.sourceRef)
+        }
+    }
+
+    func testSourceArticleLinkUsesWikidataRef() throws {
+        let snapshot = makeSnapshot(snapshotJSON: jsonString([
+            "place_id": "mt1_00000000000000000000000000",
+            "name": "Clock",
+            "lat": 51.5,
+            "lon": -0.12,
+            "category": "historic_building",
+            "tier": 1,
+            "score": 0.9,
+            "source_refs": ["wd:Q42"],
+        ]))
+
+        let model = PlaceCardModel.from(snapshot: snapshot, pinState: PinState(saved: false, visit: .none))
+
+        XCTAssertEqual(model?.sourceArticleLink?.sourceName, "Wikidata")
+        XCTAssertEqual(model?.sourceArticleLink?.url.absoluteString, "https://www.wikidata.org/wiki/Q42")
+    }
+
+    func testSourceArticleLinkUsesHistoricEnglandRef() throws {
+        let snapshot = makeSnapshot(snapshotJSON: jsonString([
+            "place_id": "mt1_00000000000000000000000000",
+            "name": "Clock",
+            "lat": 51.5,
+            "lon": -0.12,
+            "category": "historic_building",
+            "tier": 1,
+            "score": 0.9,
+            "source_refs": ["historic_england:1234567"],
+        ]))
+
+        let model = PlaceCardModel.from(snapshot: snapshot, pinState: PinState(saved: false, visit: .none))
+
+        XCTAssertEqual(model?.sourceArticleLink?.sourceName, "Historic England")
+        XCTAssertEqual(model?.sourceArticleLink?.url.absoluteString, "https://historicengland.org.uk/listing/the-list/list-entry/1234567")
     }
 }
 

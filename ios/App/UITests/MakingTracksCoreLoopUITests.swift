@@ -175,6 +175,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.scrollViews[sheetInstanceIdentifier].exists)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].exists)
+        XCTAssertFalse(element(identifier: "place-card.description", in: app).exists)
+        let sourceArticle = app.buttons["place-card.source-article"]
+        XCTAssertTrue(sourceArticle.exists)
+        XCTAssertEqual(sourceArticle.label, "OpenStreetMap source article")
+        XCTAssertTrue(sourceArticle.isHittable)
+        assertDoesNotExposeURL(sourceArticle)
         attachScreenshot(named: "card-switched-to-art-deco-cinema")
 
         app.buttons["place-card.close"].tap()
@@ -192,6 +198,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let title = element(identifier: "place-card.title", in: app)
         let typeLabel = element(identifier: "place-card.type.label", in: app)
         let description = element(identifier: "place-card.description", in: app)
+        let sourceArticle = app.buttons["place-card.source-article"]
         let photo = element(identifier: "place-card.photo", in: app)
         let chips = element(identifier: "place-card.list-chips", in: app)
         let attribution = element(identifier: "place-card.attribution", in: app)
@@ -203,6 +210,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             description.label,
             "A hand-painted sign still visible above the old shopfront."
         )
+        XCTAssertTrue(sourceArticle.waitForExistence(timeout: 5))
+        XCTAssertEqual(sourceArticle.label, "Wikipedia source article")
+        XCTAssertTrue(sourceArticle.isHittable)
+        assertDoesNotExposeURL(sourceArticle)
+        XCTAssertTrue(expandPlaceCardSheet(in: app))
 
         XCTAssertTrue(photo.waitForExistence(timeout: 5))
         XCTAssertEqual(photo.label, "Photo of Ghost Sign")
@@ -230,6 +242,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             ("title", title),
             ("type", typeLabel),
             ("description", description),
+            ("sourceArticle", sourceArticle),
             ("photo", photo),
             ("chips", chips),
             ("attribution", attribution),
@@ -1267,6 +1280,30 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: tapStatus)], timeout: 3) == .completed
     }
 
+    private func expandPlaceCardSheet(in app: XCUIApplication) -> Bool {
+        let sheet = app.scrollViews.matching(identifierPrefix: "place-card.instance.").firstMatch
+        guard sheet.waitForExistence(timeout: 5) else { return false }
+        let initialHeight = sheet.frame.height
+        let appHeight = app.frame.height
+        guard appHeight > 0, initialHeight < appHeight * 0.85 else { return false }
+
+        sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08))
+            .press(
+                forDuration: 0.1,
+                thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12))
+            )
+
+        let targetHeight = min(initialHeight + 80, appHeight * 0.85)
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            if sheet.frame.height > targetHeight {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return false
+    }
+
     private func tapProjectedFixtureMarker(_ marker: XCUIElement, through map: XCUIElement, in app: XCUIApplication) -> Bool {
         guard let point = projectedScreenPoint(from: marker, through: map, in: app) else { return false }
         let appFrame = app.frame
@@ -1472,6 +1509,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == %@", identifier))
             .firstMatch
+    }
+
+    private func assertDoesNotExposeURL(
+        _ element: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let value = element.value as? String ?? ""
+        XCTAssertFalse(element.label.localizedCaseInsensitiveContains("http"), file: file, line: line)
+        XCTAssertFalse(value.localizedCaseInsensitiveContains("http"), file: file, line: line)
     }
 
     private func waitForNonExistence(of element: XCUIElement, timeout: TimeInterval) -> Bool {
