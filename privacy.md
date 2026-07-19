@@ -81,7 +81,7 @@ The app may offer to let you share when you saved or loved a place. This is opti
 
 ## Where place information comes from
 
-Places, descriptions, and photos come from open data. We credit every source — see [attribution.md](attribution.md). We treat all of it as untrusted: checked, size-limited, and shown as plain text, so a bad entry in a public database can't harm your phone.
+Places, descriptions, photos, and source-article links come from open data. We credit every source — see [attribution.md](attribution.md). We treat all of it as untrusted: checked, size-limited, shown as plain text, and linked only when the URL is HTTPS on a known source host, so a bad entry in a public database can't harm your phone. If you tap a source-article link, your browser opens that source site, which can see the article URL and normal request metadata such as your IP address.
 
 ## Checking this is true
 

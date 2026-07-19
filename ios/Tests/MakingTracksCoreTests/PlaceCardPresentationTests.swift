@@ -2,6 +2,17 @@ import XCTest
 @testable import MakingTracksCore
 
 final class PlaceCardPresentationTests: XCTestCase {
+    func testDetentPolicyAllowsNormalCardsToProgressFromMediumToLarge() {
+        XCTAssertEqual(
+            PlaceCardDetentPolicy.identifiers(isAccessibilitySize: false),
+            ["medium", "large"]
+        )
+        XCTAssertEqual(
+            PlaceCardDetentPolicy.identifiers(isAccessibilitySize: true),
+            ["large"]
+        )
+    }
+
     func testShowingAnotherPlaceSwitchesCardWithoutDismissingPresentation() {
         var presentation = PlaceCardPresentation()
 

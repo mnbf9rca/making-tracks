@@ -13,6 +13,7 @@ public struct PlaceCardModel: Sendable, Equatable {
     public let photo: PlaceCardPhoto?
     public let listNames: [String]
     public let sourceNames: [String]
+    public let sourceArticleLink: SourceArticleLink?
     public let pinState: PinState
 
     public init(
@@ -24,6 +25,7 @@ public struct PlaceCardModel: Sendable, Equatable {
         photo: PlaceCardPhoto?,
         listNames: [String],
         sourceNames: [String],
+        sourceArticleLink: SourceArticleLink?,
         pinState: PinState
     ) {
         self.placeID = placeID
@@ -34,6 +36,7 @@ public struct PlaceCardModel: Sendable, Equatable {
         self.photo = photo
         self.listNames = listNames
         self.sourceNames = sourceNames
+        self.sourceArticleLink = sourceArticleLink
         self.pinState = pinState
     }
 
@@ -85,6 +88,10 @@ public struct PlaceCardModel: Sendable, Equatable {
         let blurb = safeText(object["blurb"] as? String, max: 600)
         let altNames = safeTextArray(object["alt_names"] as? [String], maxItems: 8, maxScalars: PlaceRef.maxNameLength)
         let sourceNames = SourceNames.names(from: object["source_refs"] as? [String])
+        let sourceArticleLink = SourceArticleLinks.link(
+            wikipediaTitle: object["wikipedia_title"] as? String,
+            sourceRefs: object["source_refs"] as? [String]
+        )
 
         return PlaceCardModel(
             placeID: fallback.placeID,
@@ -95,6 +102,7 @@ public struct PlaceCardModel: Sendable, Equatable {
             photo: nil,
             listNames: [],
             sourceNames: sourceNames,
+            sourceArticleLink: sourceArticleLink,
             pinState: pinState
         )
     }
@@ -109,6 +117,7 @@ public struct PlaceCardModel: Sendable, Equatable {
             photo: photo ?? self.photo,
             listNames: listNames ?? self.listNames,
             sourceNames: sourceNames,
+            sourceArticleLink: sourceArticleLink,
             pinState: pinState
         )
     }
@@ -167,6 +176,12 @@ public struct PlaceCardPhoto: Sendable, Equatable {
         self.accessibilityLabel = "Photo of \(placeName)"
         self.attribution = image.attribution.displayText
     }
+}
+
+public struct SourceArticleLink: Sendable, Equatable {
+    public let label: String
+    public let sourceName: String
+    public let url: URL
 }
 
 private struct Fallback {

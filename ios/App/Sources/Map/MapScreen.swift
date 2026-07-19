@@ -2449,7 +2449,7 @@ struct MapScreen: View {
             schemaVersion: 1,
             fetchedAt: Date(timeIntervalSince1970: 0),
             rawJSON: """
-            {"blurb":"A hand-painted sign still visible above the old shopfront.","category":"attraction","lat":3.14,"lon":101.69,"name":"Ghost Sign","place_id":"mt1_00000000000000000000000000","score":0.5,"source_refs":["osm:node/1"],"tier":1}
+            {"blurb":"A hand-painted sign still visible above the old shopfront.","category":"attraction","lat":3.14,"lon":101.69,"name":"Ghost Sign","place_id":"mt1_00000000000000000000000000","score":0.5,"source_refs":["osm:node/1","wp:12345"],"tier":1,"wikipedia_title":"Ghost Sign"}
             """
         ),
         try! PlaceRef(
@@ -2462,7 +2462,7 @@ struct MapScreen: View {
             schemaVersion: 1,
             fetchedAt: Date(timeIntervalSince1970: 0),
             rawJSON: """
-            {"blurb":"A restored neighborhood cinema with stepped plasterwork and neon trim.","category":"historic_building","lat":3.16,"lon":101.702,"name":"Art Deco Cinema","place_id":"mt1_00000000000000000000000001","score":0.5,"source_refs":["osm:node/2"],"tier":2}
+            {"category":"historic_building","lat":3.16,"lon":101.702,"name":"Art Deco Cinema","place_id":"mt1_00000000000000000000000001","score":0.5,"source_refs":["osm:node/2"],"tier":2}
             """
         ),
     ]
@@ -4615,7 +4615,7 @@ private struct PlaceCardSheet: View {
                 }
             }
         }
-        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium])
+        .presentationDetents(cardDetents)
         .presentationBackgroundInteraction(.enabled(upThrough: dynamicTypeSize.isAccessibilitySize ? .large : .medium))
         .task(id: placeID) {
             await loadCard()
@@ -4651,6 +4651,7 @@ private struct PlaceCardSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("place-card.description")
                 }
+                sourceArticleLink(card.sourceArticleLink)
                 photoSlot(card)
                 listChips(card.listNames)
                 attributionText(card)
@@ -4665,6 +4666,19 @@ private struct PlaceCardSheet: View {
                     .textSelection(.enabled)
             }
         }
+    }
+
+    private var cardDetents: Set<PresentationDetent> {
+        Set(PlaceCardDetentPolicy.identifiers(isAccessibilitySize: dynamicTypeSize.isAccessibilitySize).compactMap { identifier in
+            switch identifier {
+            case "medium":
+                return .medium
+            case "large":
+                return .large
+            default:
+                return nil
+            }
+        })
     }
 
     private var header: some View {
@@ -4688,6 +4702,18 @@ private struct PlaceCardSheet: View {
             endPoint: .bottom
         )
         .frame(height: CGFloat(PlaceCardOverlayMetrics.fadeHeight))
+    }
+
+    @ViewBuilder
+    private func sourceArticleLink(_ link: SourceArticleLink?) -> some View {
+        if let link {
+            Link(destination: link.url) {
+                Text(verbatim: link.label)
+                    .font(.callout.weight(.medium))
+            }
+            .accessibilityIdentifier("place-card.source-article")
+            .accessibilityValue(link.url.absoluteString)
+        }
     }
 
     @ViewBuilder
