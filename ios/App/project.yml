@@ -29,8 +29,10 @@ targets:
     platform: iOS
     sources:
       - Sources
+      - Assets.xcassets
     resources:
       - Sources/OSSCredits.json
+      - Assets.xcassets
     dependencies:
       - package: MakingTracksData
         product: MakingTracksData
@@ -82,6 +84,9 @@ targets:
           target="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/protomaps-20260714-z0-6.pmtiles"
           mkdir -p "$(dirname "$target")"
           cp "$source" "$target"
+    settings:
+      base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: Sources/Info.plist
       properties:
