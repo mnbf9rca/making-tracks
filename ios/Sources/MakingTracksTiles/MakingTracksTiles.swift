@@ -1900,11 +1900,15 @@ public enum ImageIndexDecoder {
     }
 
     private static func safeAttributionText(_ value: String) -> Bool {
-        safeText(value)
-            && value.range(
-                of: #"(?i)(https?://|www\.|[a-z0-9][a-z0-9.-]*\.[a-z]{2,})"#,
-                options: .regularExpression
-            ) == nil
+        safeText(value) && !containsLink(in: value)
+    }
+
+    private static func containsLink(in value: String) -> Bool {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return true
+        }
+        let range = NSRange(value.startIndex..<value.endIndex, in: value)
+        return detector.firstMatch(in: value, options: [], range: range) != nil
     }
 
     private static func allowedURL(_ value: Any?, hosts: Set<String>) -> URL? {

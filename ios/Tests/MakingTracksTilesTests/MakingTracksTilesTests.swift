@@ -454,11 +454,38 @@ final class MakingTracksTilesTests: XCTestCase {
                         "creator": "www.evil.example",
                     ]),
                 ]),
+                validImageEntry([
+                    "place_id": "mt1_00000000000000000000000002",
+                    "attribution": validImageAttribution([
+                        "creator": "evil.example.com",
+                    ]),
+                ]),
             ])),
             expected: TileCoordinate(z: 10, x: 511, y: 340)
         )
 
         XCTAssertTrue(images.isEmpty)
+    }
+
+    func testImageIndexDecoderAllowsDottedCommonsCreatorNamesAndInitials() throws {
+        let images = try ImageIndexDecoder.decode(
+            jsonData(imageIndexObject(places: [
+                validImageEntry([
+                    "attribution": validImageAttribution([
+                        "creator": "W.carter",
+                    ]),
+                ]),
+                validImageEntry([
+                    "place_id": "mt1_00000000000000000000000001",
+                    "attribution": validImageAttribution([
+                        "creator": "A.N.Other",
+                    ]),
+                ]),
+            ])),
+            expected: TileCoordinate(z: 10, x: 511, y: 340)
+        )
+
+        XCTAssertEqual(images.map(\.attribution.creator), ["W.carter", "A.N.Other"])
     }
 
     func testImageIndexDecoderDropsInvalidRowsButAllowsPublicDomainWithoutCreator() throws {

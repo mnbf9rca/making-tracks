@@ -4346,7 +4346,9 @@ private struct PlaceCardSheet: View {
             ScrollView {
                 cardContent
                     .padding()
-                    .padding(.bottom, actionBarHeight)
+                    .padding(.bottom, CGFloat(
+                        PlaceCardOverlayMetrics.contentBottomPadding(actionBarHeight: Double(actionBarHeight))
+                    ))
             }
             .accessibilityIdentifier("place-card.instance.\(sheetInstanceID)")
 
@@ -4420,15 +4422,6 @@ private struct PlaceCardSheet: View {
 
     private var header: some View {
         HStack {
-            Button {
-                showListPicker = true
-            } label: {
-                Image(systemName: "text.badge.plus")
-                    .accessibilityLabel("Add to list")
-            }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("place-card.add-to-list")
-
             Spacer()
 
             Button("Close") {
@@ -4447,7 +4440,7 @@ private struct PlaceCardSheet: View {
             startPoint: .top,
             endPoint: .bottom
         )
-        .frame(height: 24)
+        .frame(height: CGFloat(PlaceCardOverlayMetrics.fadeHeight))
     }
 
     @ViewBuilder
@@ -4507,7 +4500,7 @@ private struct PlaceCardSheet: View {
 
     @ViewBuilder
     private func actionBar(_ card: PlaceCardModel) -> some View {
-        let slots = PlaceCardActionSlots(pinState: card.pinState).actions
+        let slots = PlaceCardActionSlots(pinState: card.pinState).renderedActions(showHiddenMode: showHiddenMode)
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             : AnyLayout(HStackLayout(spacing: 10))
@@ -4583,9 +4576,7 @@ private struct PlaceCardSheet: View {
                 .accessibilityValue("Hidden")
                 .disabled(true)
         case .unhide:
-            if showHiddenMode {
-                unhideButton()
-            }
+            unhideButton()
         }
     }
 
@@ -4593,9 +4584,16 @@ private struct PlaceCardSheet: View {
         Button(card.pinState.saved ? "Saved" : "Save") {
             startAction { await setSaved(!card.pinState.saved) }
         }
+        .highPriorityGesture(
+            LongPressGesture(minimumDuration: 0.5)
+                .onEnded { _ in
+                    showListPicker = true
+                }
+        )
         .buttonStyle(.bordered)
         .accessibilityIdentifier("place-card.save")
         .accessibilityValue(card.pinState.saved ? "Saved" : "Not saved")
+        .accessibilityHint(PlaceCardAction.save.accessibilityHint(isSaved: card.pinState.saved) ?? "")
     }
 
     private func hideButton(_ card: PlaceCardModel) -> some View {

@@ -211,13 +211,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let saveButton = actionBar.buttons["place-card.save"]
         let seenButton = actionBar.buttons["place-card.visited"]
         let hideButton = actionBar.buttons["place-card.hide"]
-        let addToListButton = app.buttons["place-card.add-to-list"]
         XCTAssertTrue(actionBar.waitForExistence(timeout: 5))
         XCTAssertEqual(actionBar.buttons.count, 3)
         XCTAssertTrue(saveButton.exists)
         XCTAssertTrue(seenButton.exists)
         XCTAssertTrue(hideButton.exists)
-        XCTAssertLessThan(addToListButton.frame.minY, saveButton.frame.minY)
+        XCTAssertFalse(app.buttons["place-card.add-to-list"].exists)
         XCTAssertEqual(seenButton.label, "Seen")
         XCTAssertEqual(hideButton.label, "Hide")
         let saveFrameBeforeAttributionScroll = saveButton.frame
@@ -254,7 +253,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
         openFixtureCard(in: map, app: app)
 
-        app.buttons["place-card.add-to-list"].tap()
+        let saveButton = app.otherElements["place-card.action-bar"].buttons["place-card.save"]
+        XCTAssertTrue(saveButton.waitForExistence(timeout: 5))
+        saveButton.press(forDuration: 1.0)
         XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
         app.textFields["list-picker.new-name"].tap()
         app.textFields["list-picker.new-name"].typeText("KL walk")

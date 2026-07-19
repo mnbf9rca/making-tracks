@@ -39,6 +39,17 @@ public enum PlaceCardAction: Sendable, Equatable {
             return true
         }
     }
+
+    public func accessibilityHint(isSaved: Bool = false) -> String? {
+        switch self {
+        case .save:
+            return isSaved
+                ? "Double-tap to unsave, double-tap and hold to choose list."
+                : "Double-tap to save, double-tap and hold to choose list."
+        case .seen, .love, .unlove, .hide, .unsee, .seenDisabled, .unhide:
+            return nil
+        }
+    }
 }
 
 public struct PlaceCardActionSlots: Sendable, Equatable {
@@ -58,5 +69,17 @@ public struct PlaceCardActionSlots: Sendable, Equatable {
         case .loved:
             actions = [.save, .unlove, .unsee(isEnabled: false)]
         }
+    }
+
+    public func renderedActions(showHiddenMode _: Bool) -> [PlaceCardAction] {
+        actions
+    }
+}
+
+public enum PlaceCardOverlayMetrics {
+    public static let fadeHeight: Double = 24
+
+    public static func contentBottomPadding(actionBarHeight: Double) -> Double {
+        actionBarHeight + fadeHeight
     }
 }
