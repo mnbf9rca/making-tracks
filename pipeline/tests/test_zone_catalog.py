@@ -9,7 +9,7 @@ def _cfg():
     return config.RegionConfig.from_dict(
         {
             "schema_version": 1,
-            "region_id": "uk",
+            "region_id": "united-kingdom",
             "display_name": "United Kingdom",
             "bbox": [-1.0, -1.0, 1.0, 1.0],
             "languages": ["en"],
@@ -31,7 +31,7 @@ def _cfg_with_regions():
     return config.RegionConfig.from_dict(
         {
             "schema_version": 1,
-            "region_id": "uk",
+            "region_id": "united-kingdom",
             "display_name": "United Kingdom",
             "bbox": [-1.0, -1.0, 3.0, 3.0],
             "languages": ["en"],
@@ -60,7 +60,7 @@ def _insert_boundary(conn, *, relation_id, admin_level, level_name, name, ring):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            "uk",
+            "united-kingdom",
             f"osm_r{relation_id}",
             relation_id,
             admin_level,
@@ -365,7 +365,7 @@ def test_materialize_catalog_fails_when_allowlist_zone_is_missing(tmp_path):
     cfg = config.RegionConfig.from_dict(
         {
             "schema_version": 1,
-            "region_id": "uk",
+            "region_id": "united-kingdom",
             "display_name": "United Kingdom",
             "bbox": [-1.0, -1.0, 1.0, 1.0],
             "languages": ["en"],

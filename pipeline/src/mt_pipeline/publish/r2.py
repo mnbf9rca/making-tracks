@@ -19,8 +19,9 @@ from mt_contracts.region_index import validate_region_index
 from mt_contracts.versions import SCHEMA_VERSIONS
 
 
-_REGION_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+_REGION_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
 _PUBLISH_VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
+_LEGACY_REGION_IDS = frozenset({"uk", "malaysia"})
 _PRIVATE_KINDS = {"registry", "cache", "feedback", "lock"}
 _PUBLIC_KINDS = {
     "tile",
@@ -610,7 +611,12 @@ def _region_index_op_from_file(
 def _merge_region_indexes(
     existing: Mapping[str, Any], new_index: Mapping[str, Any]
 ) -> dict[str, Any]:
-    by_id = {str(entry["id"]): dict(entry) for entry in existing.get("regions", [])}
+    by_id = {
+        str(entry["id"]): dict(entry)
+        for entry in existing.get("regions", [])
+        if not _is_legacy_region_id(str(entry["id"]))
+        and not _is_legacy_region_id(str(entry.get("parent") or ""))
+    }
     for entry in new_index["regions"]:
         by_id[str(entry["id"])] = dict(entry)
     return {
@@ -635,6 +641,12 @@ def _validate_existing_region_index_for_merge(existing: Mapping[str, Any]) -> di
         normalised = dict(existing)
     validate_region_index(normalised)
     return normalised
+
+
+def _is_legacy_region_id(region_id: str) -> bool:
+    return region_id in _LEGACY_REGION_IDS or any(
+        region_id.startswith(f"{legacy}_") for legacy in _LEGACY_REGION_IDS
+    )
 
 
 def _json_bytes(obj: Any) -> bytes:

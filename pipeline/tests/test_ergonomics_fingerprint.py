@@ -52,7 +52,7 @@ def _inputs(tmp_path, region_config=None, *, succeeded_sources=None):
     return F.FingerprintInputs(
         region_config=region_config
         or FakeRegionConfig(
-            region_id="uk",
+            region_id="united-kingdom",
             sources={"wikidata": True, "wikipedia": False, "osm": True},
             languages=["en"],
         ),
@@ -75,7 +75,7 @@ def _insert_source(conn, *, name="A", lat=1.0, lon=2.0, props=None):
     source_record.persist(
         conn,
         source_record.parse(
-            "uk",
+            "united-kingdom",
             "wd",
             "wd:Q1",
             name,
@@ -92,7 +92,7 @@ def _insert_place(conn, *, member_refs='["wd:Q1"]', name="Place", lat=1.0, lon=2
         """
         INSERT INTO places
             (place_id, region, name, lat, lon, refs_json, member_refs_json, status)
-        VALUES ('p1', 'uk', ?, ?, ?, '["wd:Q1"]', ?, 'live')
+        VALUES ('p1', 'united-kingdom', ?, ?, ?, '["wd:Q1"]', ?, 'live')
         """,
         (name, lat, lon, member_refs),
     )
@@ -125,7 +125,7 @@ def test_reconcile_fingerprint_moves_on_each_source_record_field(tmp_path):
     base_conn = _conn(tmp_path)
     _insert_source(base_conn)
     inputs = _inputs(tmp_path)
-    base = F.stage_fingerprint(base_conn, "uk", "reconcile", inputs=inputs)
+    base = F.stage_fingerprint(base_conn, "united-kingdom", "reconcile", inputs=inputs)
 
     for column, value in (
         ("source", "wp"),
@@ -141,7 +141,7 @@ def test_reconcile_fingerprint_moves_on_each_source_record_field(tmp_path):
             f"UPDATE source_records SET {column} = ? WHERE source_ref = ?",
             (value, "wd:Q1"),
         )
-        assert F.stage_fingerprint(conn, "uk", "reconcile", inputs=inputs) != base
+        assert F.stage_fingerprint(conn, "united-kingdom", "reconcile", inputs=inputs) != base
 
 
 def test_reconcile_fingerprint_is_order_and_json_whitespace_stable(tmp_path):
@@ -155,8 +155,8 @@ def test_reconcile_fingerprint_is_order_and_json_whitespace_stable(tmp_path):
     )
     inputs = _inputs(tmp_path)
 
-    assert F.stage_fingerprint(a, "uk", "reconcile", inputs=inputs) == F.stage_fingerprint(
-        b, "uk", "reconcile", inputs=inputs
+    assert F.stage_fingerprint(a, "united-kingdom", "reconcile", inputs=inputs) == F.stage_fingerprint(
+        b, "united-kingdom", "reconcile", inputs=inputs
     )
 
 
@@ -170,7 +170,7 @@ def test_content_hash_rejects_unknown_sql_shape(conn):
         ("source_records", malicious_cols),
     ):
         try:
-            F.content_hash(conn, "uk", table, cols)
+            F.content_hash(conn, "united-kingdom", table, cols)
         except ValueError as exc:
             assert "unsupported content-hash shape" in str(exc)
         else:
@@ -183,32 +183,32 @@ def test_content_hash_rejects_unknown_sql_shape(conn):
 
 def test_extract_fingerprint_moves_on_enabled_sources_languages_and_files(tmp_path):
     inputs = _inputs(tmp_path)
-    base = F.stage_fingerprint(_conn(tmp_path / "db"), "uk", "extract", inputs=inputs)
+    base = F.stage_fingerprint(_conn(tmp_path / "db"), "united-kingdom", "extract", inputs=inputs)
 
     no_osm = _inputs(
         tmp_path / "no-osm",
         FakeRegionConfig(
-            region_id="uk",
+            region_id="united-kingdom",
             sources={"wikidata": True, "wikipedia": False, "osm": False},
             languages=["en"],
         ),
     )
-    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "uk", "extract", inputs=no_osm) != base
+    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "united-kingdom", "extract", inputs=no_osm) != base
 
     fr = _inputs(
         tmp_path / "fr",
         FakeRegionConfig(
-            region_id="uk",
+            region_id="united-kingdom",
             sources={"wikidata": True, "wikipedia": False, "osm": True},
             languages=["en", "fr"],
         ),
     )
-    assert F.stage_fingerprint(_conn(tmp_path / "db3"), "uk", "extract", inputs=fr) != base
+    assert F.stage_fingerprint(_conn(tmp_path / "db3"), "united-kingdom", "extract", inputs=fr) != base
 
     changed_file = _inputs(tmp_path / "changed")
     changed_file.snapshots["wikidata"].write_text('{"a":99}')
     assert (
-        F.stage_fingerprint(_conn(tmp_path / "db4"), "uk", "extract", inputs=changed_file)
+        F.stage_fingerprint(_conn(tmp_path / "db4"), "united-kingdom", "extract", inputs=changed_file)
         != base
     )
 
@@ -219,7 +219,7 @@ def test_extract_fingerprint_moves_on_enabled_sources_languages_and_files(tmp_pa
     assert (
         F.stage_fingerprint(
             _conn(tmp_path / "db5"),
-            "uk",
+            "united-kingdom",
             "extract",
             inputs=changed_allowlist,
         )
@@ -231,7 +231,7 @@ def test_extract_fingerprint_moves_on_enabled_sources_languages_and_files(tmp_pa
         '{"tags":{"tourism":true}}'
     )
     assert (
-        F.stage_fingerprint(_conn(tmp_path / "db6"), "uk", "extract", inputs=changed_tags)
+        F.stage_fingerprint(_conn(tmp_path / "db6"), "united-kingdom", "extract", inputs=changed_tags)
         != base
     )
 
@@ -254,7 +254,7 @@ def test_extract_fingerprint_moves_on_pageview_cache_contents(tmp_path):
     )
     inputs = F.FingerprintInputs(
         region_config=FakeRegionConfig(
-            region_id="malaysia",
+            region_id="malaysia-singapore-brunei",
             sources={"wikipedia": True},
             languages=["en"],
         ),
@@ -266,13 +266,13 @@ def test_extract_fingerprint_moves_on_pageview_cache_contents(tmp_path):
         pageview_cache_files=(cache_file,),
         pageview_window=window,
     )
-    base = F.stage_fingerprint(_conn(tmp_path / "db"), "malaysia", "extract", inputs=inputs)
+    base = F.stage_fingerprint(_conn(tmp_path / "db"), "malaysia-singapore-brunei", "extract", inputs=inputs)
 
     cache_file.write_text(
         '{"daily":[2],"title":"A","window":["2025-07-15","2026-07-15"]}'
     )
 
-    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "malaysia", "extract", inputs=inputs) != base
+    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "malaysia-singapore-brunei", "extract", inputs=inputs) != base
 
 
 def test_extract_fingerprint_moves_on_pageview_window(tmp_path):
@@ -286,7 +286,7 @@ def test_extract_fingerprint_moves_on_pageview_window(tmp_path):
     inputs = _inputs(
         tmp_path,
         FakeRegionConfig(
-            region_id="malaysia",
+            region_id="malaysia-singapore-brunei",
             sources={"wikipedia": True},
             languages=["en"],
         ),
@@ -297,11 +297,11 @@ def test_extract_fingerprint_moves_on_pageview_window(tmp_path):
         pageview_cache_files=(cache_file,),
         pageview_window=window,
     )
-    base = F.stage_fingerprint(_conn(tmp_path / "db"), "malaysia", "extract", inputs=inputs)
+    base = F.stage_fingerprint(_conn(tmp_path / "db"), "malaysia-singapore-brunei", "extract", inputs=inputs)
 
     changed = replace(inputs, pageview_window=("2024-07-15", "2025-07-15"))
 
-    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "malaysia", "extract", inputs=changed) != base
+    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "malaysia-singapore-brunei", "extract", inputs=changed) != base
 
 
 def test_extract_fingerprint_ignores_unselected_source_configs_for_wikipedia_only(tmp_path):
@@ -315,7 +315,7 @@ def test_extract_fingerprint_ignores_unselected_source_configs_for_wikipedia_onl
     inputs = _inputs(
         tmp_path,
         FakeRegionConfig(
-            region_id="malaysia",
+            region_id="malaysia-singapore-brunei",
             sources={"wikidata": True, "wikipedia": True, "osm": True},
             languages=["en"],
         ),
@@ -331,12 +331,12 @@ def test_extract_fingerprint_ignores_unselected_source_configs_for_wikipedia_onl
         pageview_cache_files=(cache_file,),
         pageview_window=window,
     )
-    base = F.stage_fingerprint(_conn(tmp_path / "db"), "malaysia", "extract", inputs=inputs)
+    base = F.stage_fingerprint(_conn(tmp_path / "db"), "malaysia-singapore-brunei", "extract", inputs=inputs)
 
     inputs.config_paths["wikidata_class_allowlist"].write_text('{"allow":["Q2"]}')
     inputs.config_paths["osm_candidate_tags"].write_text('{"tags":{"tourism":true}}')
 
-    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "malaysia", "extract", inputs=inputs) == base
+    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "malaysia-singapore-brunei", "extract", inputs=inputs) == base
 
 
 def test_extract_fingerprint_ignores_unselected_pageview_cache_files(tmp_path):
@@ -350,7 +350,7 @@ def test_extract_fingerprint_ignores_unselected_pageview_cache_files(tmp_path):
     inputs = _inputs(
         tmp_path,
         FakeRegionConfig(
-            region_id="malaysia",
+            region_id="malaysia-singapore-brunei",
             sources={"wikipedia": True},
             languages=["en"],
         ),
@@ -361,11 +361,11 @@ def test_extract_fingerprint_ignores_unselected_pageview_cache_files(tmp_path):
         pageview_cache_files=(selected,),
         pageview_window=window,
     )
-    base = F.stage_fingerprint(_conn(tmp_path / "db"), "malaysia", "extract", inputs=inputs)
+    base = F.stage_fingerprint(_conn(tmp_path / "db"), "malaysia-singapore-brunei", "extract", inputs=inputs)
 
     (cache / "unrelated.json").write_text('{"daily":[99]}')
 
-    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "malaysia", "extract", inputs=inputs) == base
+    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "malaysia-singapore-brunei", "extract", inputs=inputs) == base
 
 
 def test_extract_fingerprint_does_not_follow_pageview_cache_symlink(tmp_path):
@@ -378,7 +378,7 @@ def test_extract_fingerprint_does_not_follow_pageview_cache_symlink(tmp_path):
     inputs = _inputs(
         tmp_path,
         FakeRegionConfig(
-            region_id="malaysia",
+            region_id="malaysia-singapore-brunei",
             sources={"wikipedia": True},
             languages=["en"],
         ),
@@ -389,11 +389,11 @@ def test_extract_fingerprint_does_not_follow_pageview_cache_symlink(tmp_path):
         pageview_cache_files=(selected,),
         pageview_window=("2025-07-15", "2026-07-15"),
     )
-    base = F.stage_fingerprint(_conn(tmp_path / "db"), "malaysia", "extract", inputs=inputs)
+    base = F.stage_fingerprint(_conn(tmp_path / "db"), "malaysia-singapore-brunei", "extract", inputs=inputs)
 
     target.write_text('{"daily":[2]}')
 
-    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "malaysia", "extract", inputs=inputs) == base
+    assert F.stage_fingerprint(_conn(tmp_path / "db2"), "malaysia-singapore-brunei", "extract", inputs=inputs) == base
 
 
 def test_extract_fingerprint_moves_on_merge_bookkeeping_code_change(
@@ -411,14 +411,14 @@ def test_extract_fingerprint_moves_on_merge_bookkeeping_code_change(
     monkeypatch.setattr(F, "_file_hash", fake_file_hash)
     conn = _conn(tmp_path / "db")
     inputs = _inputs(tmp_path)
-    base = F.stage_fingerprint(conn, "uk", "extract", inputs=inputs)
-    F.record(conn, "uk", "extract", base, completed_at="2026-07-16T00:00:00Z")
+    base = F.stage_fingerprint(conn, "united-kingdom", "extract", inputs=inputs)
+    F.record(conn, "united-kingdom", "extract", base, completed_at="2026-07-16T00:00:00Z")
 
     changed = True
-    next_fp = F.stage_fingerprint(conn, "uk", "extract", inputs=inputs)
+    next_fp = F.stage_fingerprint(conn, "united-kingdom", "extract", inputs=inputs)
 
     assert next_fp != base
-    assert F.should_skip(conn, "uk", "extract", next_fp, force=False) is False
+    assert F.should_skip(conn, "united-kingdom", "extract", next_fp, force=False) is False
 
 
 def test_extract_fingerprint_moves_on_staging_bookkeeping_code_change(
@@ -436,14 +436,14 @@ def test_extract_fingerprint_moves_on_staging_bookkeeping_code_change(
     monkeypatch.setattr(F, "_file_hash", fake_file_hash)
     conn = _conn(tmp_path / "db")
     inputs = _inputs(tmp_path)
-    base = F.stage_fingerprint(conn, "uk", "extract", inputs=inputs)
-    F.record(conn, "uk", "extract", base, completed_at="2026-07-16T00:00:00Z")
+    base = F.stage_fingerprint(conn, "united-kingdom", "extract", inputs=inputs)
+    F.record(conn, "united-kingdom", "extract", base, completed_at="2026-07-16T00:00:00Z")
 
     changed = True
-    next_fp = F.stage_fingerprint(conn, "uk", "extract", inputs=inputs)
+    next_fp = F.stage_fingerprint(conn, "united-kingdom", "extract", inputs=inputs)
 
     assert next_fp != base
-    assert F.should_skip(conn, "uk", "extract", next_fp, force=False) is False
+    assert F.should_skip(conn, "united-kingdom", "extract", next_fp, force=False) is False
 
 
 def test_extract_module_marker_covers_extractor_source(monkeypatch):
@@ -568,7 +568,7 @@ def test_reconcile_fingerprint_moves_on_config_redirect_and_registry(tmp_path):
     conn = _conn(tmp_path / "db")
     _insert_source(conn)
     inputs = _inputs(tmp_path)
-    base = F.stage_fingerprint(conn, "uk", "reconcile", inputs=inputs)
+    base = F.stage_fingerprint(conn, "united-kingdom", "reconcile", inputs=inputs)
 
     for key, text in (
         ("reconcile_config", '{"fuzzy":{"distance":1}}'),
@@ -577,7 +577,7 @@ def test_reconcile_fingerprint_moves_on_config_redirect_and_registry(tmp_path):
     ):
         changed = _inputs(tmp_path / key)
         changed.config_paths[key].write_text(text)
-        assert F.stage_fingerprint(conn, "uk", "reconcile", inputs=changed) != base
+        assert F.stage_fingerprint(conn, "united-kingdom", "reconcile", inputs=changed) != base
 
 
 def test_score_fingerprint_moves_on_places_source_records_and_config(tmp_path):
@@ -585,21 +585,21 @@ def test_score_fingerprint_moves_on_places_source_records_and_config(tmp_path):
     _insert_source(conn)
     _insert_place(conn)
     inputs = _inputs(tmp_path)
-    base = F.stage_fingerprint(conn, "uk", "score", inputs=inputs)
+    base = F.stage_fingerprint(conn, "united-kingdom", "score", inputs=inputs)
 
     changed_source = _conn(tmp_path / "changed-source")
     _insert_source(changed_source, props={"heritage": "listed"})
     _insert_place(changed_source)
-    assert F.stage_fingerprint(changed_source, "uk", "score", inputs=inputs) != base
+    assert F.stage_fingerprint(changed_source, "united-kingdom", "score", inputs=inputs) != base
 
     changed_place = _conn(tmp_path / "changed-place")
     _insert_source(changed_place)
     _insert_place(changed_place, name="Other")
-    assert F.stage_fingerprint(changed_place, "uk", "score", inputs=inputs) != base
+    assert F.stage_fingerprint(changed_place, "united-kingdom", "score", inputs=inputs) != base
 
     changed_config = _inputs(tmp_path / "changed-score-config")
     changed_config.config_paths["scoring_config"].write_text('{"rarity_keys":["other"]}')
-    assert F.stage_fingerprint(conn, "uk", "score", inputs=changed_config) != base
+    assert F.stage_fingerprint(conn, "united-kingdom", "score", inputs=changed_config) != base
 
 
 def test_categorize_fingerprint_moves_on_source_records_and_configs(tmp_path):
@@ -607,12 +607,12 @@ def test_categorize_fingerprint_moves_on_source_records_and_configs(tmp_path):
     _insert_source(conn, props={"p31": "Q1"})
     _insert_place(conn)
     inputs = _inputs(tmp_path)
-    base = F.stage_fingerprint(conn, "uk", "categorize", inputs=inputs)
+    base = F.stage_fingerprint(conn, "united-kingdom", "categorize", inputs=inputs)
 
     changed_source = _conn(tmp_path / "changed-source")
     _insert_source(changed_source, props={"p31": "Q2"})
     _insert_place(changed_source)
-    assert F.stage_fingerprint(changed_source, "uk", "categorize", inputs=inputs) != base
+    assert F.stage_fingerprint(changed_source, "united-kingdom", "categorize", inputs=inputs) != base
 
     for column, value in (
         ("member_refs_json", '["wd:Q2"]'),
@@ -625,33 +625,33 @@ def test_categorize_fingerprint_moves_on_source_records_and_configs(tmp_path):
             f"UPDATE places SET {column} = ? WHERE place_id = ?",
             (value, "p1"),
         )
-        assert F.stage_fingerprint(changed_place, "uk", "categorize", inputs=inputs) != base
+        assert F.stage_fingerprint(changed_place, "united-kingdom", "categorize", inputs=inputs) != base
 
     changed_taxonomy = _inputs(tmp_path / "changed-taxonomy")
     changed_taxonomy.config_paths["taxonomy_config"].write_text(
         '{"categories":["architecture"],"uncovered":"other"}'
     )
-    assert F.stage_fingerprint(conn, "uk", "categorize", inputs=changed_taxonomy) != base
+    assert F.stage_fingerprint(conn, "united-kingdom", "categorize", inputs=changed_taxonomy) != base
 
     changed_tags = _inputs(tmp_path / "changed-categorize-tags")
     changed_tags.config_paths["osm_candidate_tags"].write_text(
         '{"tags":{"amenity":true}}'
     )
-    assert F.stage_fingerprint(conn, "uk", "categorize", inputs=changed_tags) != base
+    assert F.stage_fingerprint(conn, "united-kingdom", "categorize", inputs=changed_tags) != base
 
 
 def test_identical_fingerprint_skips_unless_forced(conn, tmp_path):
     store.init_schema(conn)
-    fp = F.stage_fingerprint(conn, "uk", "extract", inputs=_inputs(tmp_path))
-    F.record(conn, "uk", "extract", fp, completed_at="2026-07-16T00:00:00Z")
+    fp = F.stage_fingerprint(conn, "united-kingdom", "extract", inputs=_inputs(tmp_path))
+    F.record(conn, "united-kingdom", "extract", fp, completed_at="2026-07-16T00:00:00Z")
 
-    assert F.should_skip(conn, "uk", "extract", fp, force=False) is True
-    assert F.should_skip(conn, "uk", "extract", fp, force=True) is False
-    assert F.should_skip(conn, "uk", "extract", "other", force=False) is False
+    assert F.should_skip(conn, "united-kingdom", "extract", fp, force=False) is True
+    assert F.should_skip(conn, "united-kingdom", "extract", fp, force=True) is False
+    assert F.should_skip(conn, "united-kingdom", "extract", "other", force=False) is False
 
 
 def test_fingerprint_covers_tracks_actual_component_presence(conn, tmp_path):
-    components = F.fingerprint_components(conn, "uk", "extract", inputs=_inputs(tmp_path))
+    components = F.fingerprint_components(conn, "united-kingdom", "extract", inputs=_inputs(tmp_path))
 
     assert "languages" in F.fingerprint_covers("extract", components)
 
@@ -674,7 +674,7 @@ def test_extract_fingerprint_covers_build_registry_inputs(conn, tmp_path):
         parameter_to_read[name]
         for name in signature.parameters
     }
-    components = F.fingerprint_components(conn, "uk", "extract", inputs=_inputs(tmp_path))
+    components = F.fingerprint_components(conn, "united-kingdom", "extract", inputs=_inputs(tmp_path))
 
     assert required_reads == set(parameter_to_read.values())
     assert required_reads <= F.STAGE_READS["extract"]
@@ -685,7 +685,7 @@ def test_unselected_extract_source_configs_are_not_claimed_as_fingerprinted(conn
     inputs = _inputs(
         tmp_path,
         FakeRegionConfig(
-            region_id="malaysia",
+            region_id="malaysia-singapore-brunei",
             sources={"wikipedia": True},
             languages=["en"],
         ),
@@ -695,7 +695,7 @@ def test_unselected_extract_source_configs_are_not_claimed_as_fingerprinted(conn
         snapshots={"wikipedia": tmp_path / "wikidata.snapshot.json"},
         pageview_window=("2025-07-15", "2026-07-15"),
     )
-    components = F.fingerprint_components(conn, "malaysia", "extract", inputs=inputs)
+    components = F.fingerprint_components(conn, "malaysia-singapore-brunei", "extract", inputs=inputs)
     covered = F.fingerprint_covers("extract", components)
 
     assert "wikidata_class_allowlist" not in components
@@ -710,12 +710,12 @@ def test_every_declared_stage_read_is_fingerprinted(conn, tmp_path):
     inputs = _inputs(
         tmp_path,
         FakeRegionConfig(
-            region_id="uk",
+            region_id="united-kingdom",
             sources={"wikidata": True, "wikipedia": True, "osm": True},
             languages=["en"],
         ),
     )
     inputs = replace(inputs, pageview_window=("2025-07-15", "2026-07-15"))
     for stage, reads in F.STAGE_READS.items():
-        components = F.fingerprint_components(conn, "uk", stage, inputs=inputs)
+        components = F.fingerprint_components(conn, "united-kingdom", stage, inputs=inputs)
         assert reads - F.fingerprint_covers(stage, components) == set()

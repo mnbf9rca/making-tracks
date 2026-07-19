@@ -9,7 +9,7 @@ from mt_pipeline import store
 
 def _ok(**over):
     kwargs = dict(
-        region="uk",
+        region="united-kingdom",
         source="wd",
         source_ref="wd:Q42",
         name="Big Ben",
@@ -194,7 +194,7 @@ def test_injection_hostile_name_through_production_persist(tmp_path):
     conn = store.connect(tmp_path / "w.db")
     store.init_schema(conn)
     record = sr.parse(
-        region="uk",
+        region="united-kingdom",
         source="wd",
         source_ref="wd:Q42",
         name="Robert'); DROP TABLE source_records;--",

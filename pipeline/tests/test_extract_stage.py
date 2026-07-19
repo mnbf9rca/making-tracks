@@ -129,7 +129,7 @@ def _insert_record(conn, *, source, source_ref, name):
     source_record.persist(
         conn,
         source_record.parse(
-            "uk",
+            "united-kingdom",
             source,
             source_ref,
             name,
@@ -148,7 +148,7 @@ def test_runs_only_enabled_extractors_from_regionconfig(tmp_path):
         languages={"en"},
     )
     cfg = FakeRegionConfig(
-        region_id="uk",
+        region_id="united-kingdom",
         sources={
             "wikidata": True,
             "wikipedia": False,
@@ -172,7 +172,7 @@ def test_enabled_but_unregistered_source_fails_loudly(tmp_path):
         languages={"en"},
     )
     cfg = FakeRegionConfig(
-        region_id="uk",
+        region_id="united-kingdom",
         sources={"wikidata": True, "unknown_register": True},
     )
     with pytest.raises(
@@ -188,7 +188,7 @@ def test_run_extract_passes_source_specific_options(tmp_path):
 
     class FakeExtractor:
         def extract(self, region, snapshot_path, conn, *, run_id, index_type):
-            assert region == "uk"
+            assert region == "united-kingdom"
             assert snapshot_path == "osm.pbf"
             assert run_id == "r1"
             assert index_type == "sparse_file_array,/tmp/osm.idx"
@@ -202,7 +202,7 @@ def test_run_extract_passes_source_specific_options(tmp_path):
             assert sources == {"osm": True}
             return [("osm", FakeExtractor())]
 
-    cfg = FakeRegionConfig(region_id="uk", sources={"osm": True})
+    cfg = FakeRegionConfig(region_id="united-kingdom", sources={"osm": True})
 
     counts = extract_stage.run_extract(
         conn,
@@ -224,7 +224,7 @@ def test_run_extract_parallel_passes_source_specific_options_to_worker(tmp_path)
 
     counts = extract_stage.run_extract(
         conn,
-        FakeRegionConfig(region_id="malaysia", sources={"wikipedia": True}),
+        FakeRegionConfig(region_id="malaysia-singapore-brunei", sources={"wikipedia": True}),
         {"wikipedia": snapshot},
         run_id="r1",
         registry=OptionRecordingRegistry(),
@@ -273,7 +273,7 @@ def test_run_extract_records_disk_floor_failure(monkeypatch, tmp_path):
     with pytest.raises(extract_stage.DiskSpaceError, match="low disk"):
         extract_stage.run_extract(
             conn,
-            FakeRegionConfig(region_id="uk", sources={"wikidata": True}),
+            FakeRegionConfig(region_id="united-kingdom", sources={"wikidata": True}),
             {"wikidata": tmp_path / "wikidata.snapshot.json"},
             run_id="r1",
             registry=FakeRegistry(),
@@ -316,7 +316,7 @@ def test_run_extract_only_source_replaces_that_source_after_staged_success(tmp_p
 
     counts = extract_stage.run_extract(
         conn,
-        FakeRegionConfig(region_id="uk", sources={"wd": True, "osm": True}),
+        FakeRegionConfig(region_id="united-kingdom", sources={"wd": True, "osm": True}),
         {"wd": tmp_path / "wd.json"},
         run_id="new",
         registry=FakeRegistry(),
@@ -351,7 +351,7 @@ def test_run_extract_only_source_preserves_existing_rows_when_staging_fails(tmp_
     with pytest.raises(RuntimeError, match="bad snapshot"):
         extract_stage.run_extract(
             conn,
-            FakeRegionConfig(region_id="uk", sources={"wd": True}),
+            FakeRegionConfig(region_id="united-kingdom", sources={"wd": True}),
             {"wd": tmp_path / "wd.json"},
             run_id="new",
             registry=FakeRegistry(),
@@ -368,7 +368,7 @@ def test_run_extract_only_source_preserves_existing_rows_when_staging_fails(tmp_
 
 
 def test_run_extract_parallel_merge_is_deterministic_across_worker_order(tmp_path):
-    cfg = FakeRegionConfig(region_id="uk", sources={"wikidata": True, "osm": True})
+    cfg = FakeRegionConfig(region_id="united-kingdom", sources={"wikidata": True, "osm": True})
     snapshots = {}
     for source in cfg.sources:
         snapshot = tmp_path / f"{source}.snapshot"
@@ -405,7 +405,7 @@ def test_run_extract_parallel_merge_is_deterministic_across_worker_order(tmp_pat
 
 
 def test_run_extract_parallel_merge_is_deterministic_across_completion_order(tmp_path):
-    cfg = FakeRegionConfig(region_id="uk", sources={"wikidata": True, "osm": True})
+    cfg = FakeRegionConfig(region_id="united-kingdom", sources={"wikidata": True, "osm": True})
     snapshots = {}
     for source in cfg.sources:
         snapshot = tmp_path / f"{source}.snapshot"
@@ -461,7 +461,7 @@ def test_run_extract_parallel_workers_stage_before_parent_merge(monkeypatch, tmp
 
     monkeypatch.setattr(merge_module, "merge_sources", assert_staged_before_merge)
 
-    cfg = FakeRegionConfig(region_id="uk", sources={"wikidata": True, "osm": True})
+    cfg = FakeRegionConfig(region_id="united-kingdom", sources={"wikidata": True, "osm": True})
     snapshots = {}
     for source in cfg.sources:
         snapshot = tmp_path / f"{source}.snapshot"
@@ -483,7 +483,7 @@ def test_run_extract_parallel_workers_stage_before_parent_merge(monkeypatch, tmp
 
 
 def test_run_extract_parallel_cleans_staging_after_success(tmp_path):
-    cfg = FakeRegionConfig(region_id="uk", sources={"wikidata": True})
+    cfg = FakeRegionConfig(region_id="united-kingdom", sources={"wikidata": True})
     snapshot = tmp_path / "wikidata.snapshot"
     snapshot.write_text("wikidata")
     staging_root = tmp_path / "staging-clean"
@@ -505,7 +505,7 @@ def test_run_extract_parallel_only_source_replaces_selected_source(tmp_path):
     conn = _conn(tmp_path)
     _insert_record(conn, source="wd", source_ref="wd:Q0", name="Old WD")
     _insert_record(conn, source="osm", source_ref="osm:node/1", name="Keep OSM")
-    cfg = FakeRegionConfig(region_id="uk", sources={"wikidata": True, "osm": True})
+    cfg = FakeRegionConfig(region_id="united-kingdom", sources={"wikidata": True, "osm": True})
     wikidata_snapshot = tmp_path / "wikidata.snapshot"
     wikidata_snapshot.write_text("wikidata")
 
@@ -536,7 +536,7 @@ def test_run_extract_parallel_only_source_replaces_selected_source(tmp_path):
 def test_run_extract_parallel_fail_fast_records_failure_without_partial_merge(tmp_path):
     conn = _conn(tmp_path)
     statuses = {}
-    cfg = FakeRegionConfig(region_id="uk", sources={"wikidata": True, "osm": True})
+    cfg = FakeRegionConfig(region_id="united-kingdom", sources={"wikidata": True, "osm": True})
     wd_snapshot = tmp_path / "wikidata.snapshot"
     wd_snapshot.write_text("wikidata")
 
@@ -560,7 +560,7 @@ def test_run_extract_parallel_fail_fast_records_failure_without_partial_merge(tm
 def test_run_extract_parallel_continue_records_failed_not_absent(tmp_path):
     conn = _conn(tmp_path)
     statuses = {}
-    cfg = FakeRegionConfig(region_id="uk", sources={"wikidata": True, "osm": True})
+    cfg = FakeRegionConfig(region_id="united-kingdom", sources={"wikidata": True, "osm": True})
     wd_snapshot = tmp_path / "wikidata.snapshot"
     wd_snapshot.write_text("wikidata")
 
@@ -595,7 +595,7 @@ def test_run_extract_parallel_worker_crash_uses_exitcode_not_exception(tmp_path)
     with pytest.raises(RuntimeError, match="worker exitcode 9"):
         extract_stage.run_extract(
             conn,
-            FakeRegionConfig(region_id="uk", sources={"wikidata": True}),
+            FakeRegionConfig(region_id="united-kingdom", sources={"wikidata": True}),
             {"wikidata": snapshot},
             run_id="r1",
             registry=CrashRegistry(),

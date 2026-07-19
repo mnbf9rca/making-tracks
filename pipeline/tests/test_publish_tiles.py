@@ -167,12 +167,12 @@ def test_emit_tiles_heartbeats_during_winner_pass(monkeypatch, capsys):
         R.RegistryRecord(_pid(2), refs={"wd:Q2"}, mint_anchor="wd:Q2", status="live", superseded_by=_pid(1)),
     ]
 
-    T.emit_tiles([_p(_pid(1), 1, 0.9), _p(_pid(2), 1, 0.8)], records, region="uk")
+    T.emit_tiles([_p(_pid(1), 1, 0.9), _p(_pid(2), 1, 0.8)], records, region="united-kingdom")
 
     err = capsys.readouterr().err
-    assert "PHASE START publish.winner_validation region=uk places=2" in err
-    assert "PHASE HEARTBEAT publish.winner_validation region=uk processed=1/2" in err
-    assert "PHASE DONE publish.winner_validation region=uk processed=2/2" in err
+    assert "PHASE START publish.winner_validation region=united-kingdom places=2" in err
+    assert "PHASE HEARTBEAT publish.winner_validation region=united-kingdom processed=1/2" in err
+    assert "PHASE DONE publish.winner_validation region=united-kingdom processed=2/2" in err
     assert "non_winner_excluded=1" in err
 
 

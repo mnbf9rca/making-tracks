@@ -50,7 +50,7 @@ def test_osm_extractor_captures_configured_admin_boundary_areas(tmp_path):
     store.init_schema(conn)
 
     count = osm.OsmExtractor(tag_config={}).extract(
-        "uk",
+        "united-kingdom",
         pbf,
         conn,
         run_id="r1",
@@ -89,7 +89,7 @@ def test_osm_extractor_ignores_admin_levels_not_declared_for_zones(tmp_path):
     store.init_schema(conn)
 
     osm.OsmExtractor(tag_config={}).extract(
-        "uk",
+        "united-kingdom",
         pbf,
         conn,
         run_id="r1",
@@ -134,7 +134,7 @@ def test_osm_boundary_extractor_caps_translations(tmp_path):
     store.init_schema(conn)
 
     osm.OsmExtractor(tag_config={}).extract(
-        "uk",
+        "united-kingdom",
         pbf,
         conn,
         run_id="r1",
@@ -153,7 +153,7 @@ def test_osm_boundary_extractor_drops_oversized_geometry(tmp_path, monkeypatch):
     store.init_schema(conn)
 
     osm.OsmExtractor(tag_config={}).extract(
-        "uk",
+        "united-kingdom",
         pbf,
         conn,
         run_id="r1",
@@ -228,7 +228,7 @@ def test_osm_boundary_extractor_simplifies_multiring_geometry_before_total_cap(
     monkeypatch.setattr(osm, "MAX_BOUNDARY_POINTS", 80)
 
     osm.OsmExtractor(tag_config={}).extract(
-        "uk",
+        "united-kingdom",
         pbf,
         conn,
         run_id="r1",
@@ -286,7 +286,7 @@ def test_osm_boundary_extractor_simplifies_geometry_before_byte_cap(
     monkeypatch.setattr(osm, "MAX_BOUNDARY_GEOMETRY_BYTES", 600)
 
     osm.OsmExtractor(tag_config={}).extract(
-        "uk",
+        "united-kingdom",
         pbf,
         conn,
         run_id="r1",
@@ -329,7 +329,7 @@ def test_osm_boundary_extractor_truncates_boundary_names_to_schema_cap(tmp_path)
     store.init_schema(conn)
 
     osm.OsmExtractor(tag_config={}).extract(
-        "uk",
+        "united-kingdom",
         pbf,
         conn,
         run_id="r1",

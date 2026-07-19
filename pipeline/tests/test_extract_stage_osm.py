@@ -18,7 +18,7 @@ class RC:
 
 def _enabled_osm_config():
     return RC(
-        "uk",
+        "united-kingdom",
         {
             "wikidata": False,
             "wikipedia": False,

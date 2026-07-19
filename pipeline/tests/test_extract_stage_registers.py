@@ -22,7 +22,7 @@ def test_registers_are_registered_by_default_and_run_when_enabled(tmp_path):
     store.init_schema(conn)
     registry = _registry()
     cfg = RC(
-        "uk",
+        "united-kingdom",
         {
             "wikidata": False,
             "wikipedia": False,
@@ -51,7 +51,7 @@ def test_national_register_object_is_not_treated_as_enabled(tmp_path):
     store.init_schema(conn)
     registry = _registry()
     cfg = RC(
-        "uk",
+        "united-kingdom",
         {
             "historic_england": False,
             "open_plaques": True,
@@ -74,7 +74,7 @@ def test_registered_key_with_truthy_non_true_value_does_not_run(tmp_path):
     conn = store.connect(tmp_path / "w.db")
     store.init_schema(conn)
     registry = _registry()
-    cfg = RC("uk", {"open_plaques": {"enabled": True}})
+    cfg = RC("united-kingdom", {"open_plaques": {"enabled": True}})
 
     counts = extract_stage.run_extract(
         conn,

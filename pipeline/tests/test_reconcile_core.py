@@ -286,14 +286,14 @@ def test_reconcile_threads_region_to_fuzzy_telemetry(capsys):
         version=V1,
         succeeded_sources=SUCCEEDED,
         cfg=FUZZY,
-        telemetry_region="uk",
+        telemetry_region="united-kingdom",
         fuzzy_heartbeat_every_pairs=1,
     )
 
     err = capsys.readouterr().err
-    assert "PHASE START reconcile.fuzzy_defer region=uk candidate_pairs=1" in err
-    assert "PHASE HEARTBEAT reconcile.fuzzy_defer region=uk processed=1/1" in err
-    assert "PHASE DONE reconcile.fuzzy_defer region=uk processed=1/1" in err
+    assert "PHASE START reconcile.fuzzy_defer region=united-kingdom candidate_pairs=1" in err
+    assert "PHASE HEARTBEAT reconcile.fuzzy_defer region=united-kingdom processed=1/1" in err
+    assert "PHASE DONE reconcile.fuzzy_defer region=united-kingdom processed=1/1" in err
 
 
 def test_reconcile_emits_resolve_mint_phase_telemetry(capsys):
@@ -309,12 +309,12 @@ def test_reconcile_emits_resolve_mint_phase_telemetry(capsys):
         version=V2,
         succeeded_sources=SUCCEEDED,
         cfg=FUZZY,
-        telemetry_region="uk",
+        telemetry_region="united-kingdom",
         resolve_heartbeat_every_clusters=1,
     )
 
     err = capsys.readouterr().err
-    assert "PHASE START reconcile.resolve_mint region=uk clusters=2" in err
-    assert "PHASE HEARTBEAT reconcile.resolve_mint region=uk processed=1/2" in err
-    assert "PHASE DONE reconcile.resolve_mint region=uk processed=2/2" in err
+    assert "PHASE START reconcile.resolve_mint region=united-kingdom clusters=2" in err
+    assert "PHASE HEARTBEAT reconcile.resolve_mint region=united-kingdom processed=1/2" in err
+    assert "PHASE DONE reconcile.resolve_mint region=united-kingdom processed=2/2" in err
     assert "minted=1 matched=1" in err

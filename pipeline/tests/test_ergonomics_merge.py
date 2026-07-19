@@ -22,7 +22,7 @@ def _stage(root, run_id, source, rows):
                 (source, source_ref, region, name, lat, lon, props_json, run_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (stored_source, source_ref, "uk", name, 0.0, 0.0, "{}", run_id),
+            (stored_source, source_ref, "united-kingdom", name, 0.0, 0.0, "{}", run_id),
         )
     conn.commit()
     conn.close()
@@ -81,11 +81,11 @@ def test_partial_merge_without_region_preserves_other_regions(tmp_path):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
-            ("osm", "osm:node/old-uk", "uk", "Old UK", 0.0, 0.0, "{}", "old"),
+            ("osm", "osm:node/old-uk", "united-kingdom", "Old UK", 0.0, 0.0, "{}", "old"),
             (
                 "osm",
                 "osm:node/old-my",
-                "malaysia",
+                "malaysia-singapore-brunei",
                 "Old Malaysia",
                 0.0,
                 0.0,
@@ -112,8 +112,8 @@ def test_partial_merge_without_region_preserves_other_regions(tmp_path):
         ORDER BY region, source_ref
         """
     ).fetchall() == [
-        ("malaysia", "osm:node/old-my", "Old Malaysia"),
-        ("uk", "osm:node/new-uk", "New UK"),
+        ("malaysia-singapore-brunei", "osm:node/old-my", "Old Malaysia"),
+        ("united-kingdom", "osm:node/new-uk", "New UK"),
     ]
 
 
@@ -125,7 +125,7 @@ def test_empty_partial_merge_without_region_fails_without_deleting_rows(tmp_path
             (source, source_ref, region, name, lat, lon, props_json, run_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        ("osm", "osm:node/old", "uk", "Old", 0.0, 0.0, "{}", "old"),
+        ("osm", "osm:node/old", "united-kingdom", "Old", 0.0, 0.0, "{}", "old"),
     )
     main.commit()
     staged = _stage(tmp_path, "r", "osm", [])
@@ -148,7 +148,7 @@ def test_empty_partial_merge_without_region_fails_without_deleting_rows(tmp_path
         SELECT region, source, source_ref, name
         FROM source_records
         """
-    ).fetchall() == [("uk", "osm", "osm:node/old", "Old")]
+    ).fetchall() == [("united-kingdom", "osm", "osm:node/old", "Old")]
 
 
 def test_open_staging_recreates_existing_source_database(tmp_path):
@@ -159,7 +159,7 @@ def test_open_staging_recreates_existing_source_database(tmp_path):
             (source, source_ref, region, name, lat, lon, props_json, run_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        ("wd", "wd:Q1", "uk", "Old", 0.0, 0.0, "{}", "old"),
+        ("wd", "wd:Q1", "united-kingdom", "Old", 0.0, 0.0, "{}", "old"),
     )
     conn.commit()
     conn.close()
