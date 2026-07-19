@@ -17,6 +17,12 @@ def _valid_index():
                 "parent": None,
                 "bbox": [99.64, 0.85, 119.27, 7.36],
                 "publish_version": "20260717T120000Z",
+                "search_compact": {
+                    "path": "malaysia-singapore-brunei/20260717T120000Z/search/compact.json",
+                    "sha256": "1" * 64,
+                    "bytes": 4096,
+                    "schema_version": SCHEMA_VERSIONS["search_index"],
+                },
                 "basemap_bytes": 223155574,
                 "tile_count": 12,
                 "bytes_without_thumbs": 223456789,
@@ -28,6 +34,12 @@ def _valid_index():
                 "parent": "malaysia-singapore-brunei",
                 "bbox": [101.6, 3.0, 101.8, 3.2],
                 "publish_version": "20260717T120000Z",
+                "search_compact": {
+                    "path": "malaysia-singapore-brunei_central/20260717T120000Z/search/compact.json",
+                    "sha256": "2" * 64,
+                    "bytes": 2048,
+                    "schema_version": SCHEMA_VERSIONS["search_index"],
+                },
                 "basemap_bytes": 12345,
                 "tile_count": 1,
                 "bytes_without_thumbs": 13000,
@@ -76,6 +88,27 @@ def test_region_index_contract_rejects_unsafe_text_and_paths():
     inst = _valid_index()
     inst["regions"][0]["id"] = "../malaysia-singapore-brunei"
     assert not is_valid("region-index", inst)
+
+
+def test_region_index_contract_rejects_bad_search_compact_path():
+    inst = _valid_index()
+    inst["regions"][0]["search_compact"]["path"] = "../search/compact.json"
+    assert not is_valid("region-index", inst)
+
+
+def test_region_index_contract_requires_search_compact_metadata():
+    inst = _valid_index()
+    del inst["regions"][0]["search_compact"]
+    assert not is_valid("region-index", inst)
+
+
+def test_region_index_helper_rejects_search_compact_version_mismatch():
+    inst = _valid_index()
+    inst["regions"][0]["search_compact"]["path"] = (
+        "malaysia-singapore-brunei/20260718T120000Z/search/compact.json"
+    )
+    with pytest.raises(region_index.RegionIndexInvalid, match="search_compact path"):
+        region_index.validate_region_index(inst)
 
 
 def test_region_index_contract_rejects_invalid_latitude():

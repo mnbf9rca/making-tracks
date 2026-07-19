@@ -15,6 +15,12 @@ WIKIPEDIA_TITLE_MAX = 300
 WIKIPEDIA_LANG_MAX = 16
 DESCRIPTION_EXCERPT_MAX = 500
 MAX_DESCRIPTION_INDEX_BYTES = 2 * 1024 * 1024
+SEARCH_TOKEN_MAX = 64
+SEARCH_TOKENS_MAX = 32
+SEARCH_INDEX_ENTRIES_MAX = 700_000
+# Per-file cap is deliberately tunable: it bounds app-side validation memory,
+# and B9 publish tests exercise the current shard/compact outputs against it.
+MAX_SEARCH_INDEX_BYTES = 2 * 1024 * 1024
 REF_MAX = 128
 SOURCE_REFS_MAX = 64
 REGISTRY_REFS_MAX = 256
@@ -82,6 +88,13 @@ CAPS_SCHEMA_MAP = {
     ("description-index", ("properties", "places", "items", "properties", "wikipedia_title"), "maxLength"): "WIKIPEDIA_TITLE_MAX",
     ("description-index", ("properties", "places", "items", "properties", "excerpt"), "maxLength"): "DESCRIPTION_EXCERPT_MAX",
     ("description-index", ("properties", "places", "items", "properties", "source_ref"), "maxLength"): "REF_MAX",
+    ("search-index", ("properties", "entries"), "maxItems"): "SEARCH_INDEX_ENTRIES_MAX",
+    ("search-index", ("properties", "entries", "items", "properties", "name"), "maxLength"): "NAME_MAX",
+    ("search-index", ("properties", "entries", "items", "properties", "alt_names"), "maxItems"): "ALT_NAMES_MAX",
+    ("search-index", ("properties", "entries", "items", "properties", "alt_names", "items"), "maxLength"): "NAME_MAX",
+    ("search-index", ("properties", "entries", "items", "properties", "tokens"), "maxItems"): "SEARCH_TOKENS_MAX",
+    ("search-index", ("properties", "entries", "items", "properties", "tokens", "items"), "maxLength"): "SEARCH_TOKEN_MAX",
+    ("search-index", ("properties", "entries", "items", "properties", "category"), "maxLength"): "CATEGORY_MAX",
     ("region-config", ("properties", "region_id"), "maxLength"): "REGION_ID_MAX",
     ("region-config", ("properties", "display_name"), "maxLength"): "DISPLAY_NAME_MAX",
     ("region-config", ("properties", "languages"), "maxItems"): "LANGUAGES_MAX",

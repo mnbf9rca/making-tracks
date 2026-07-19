@@ -20,6 +20,8 @@ def build_staging(
     tile_arts,
     image_index_arts=(),
     description_index_arts=(),
+    search_index_arts=(),
+    search_compact_art=None,
     thumb_arts=(),
     manifest_obj: dict[str, Any],
     basemap_path: Path,
@@ -46,6 +48,16 @@ def build_staging(
         )
         desc_path.parent.mkdir(parents=True, exist_ok=True)
         desc_path.write_bytes(art.json_bytes)
+    for art in search_index_arts:
+        if art.shard_key is None:
+            raise ValueError("full search-index artifact missing shard_key")
+        search_path = version_root / "search" / "full" / f"{art.shard_key}.json"
+        search_path.parent.mkdir(parents=True, exist_ok=True)
+        search_path.write_bytes(art.json_bytes)
+    if search_compact_art is not None:
+        compact_path = version_root / "search" / "compact.json"
+        compact_path.parent.mkdir(parents=True, exist_ok=True)
+        compact_path.write_bytes(search_compact_art.json_bytes)
     for art in thumb_arts:
         thumb_path = Path(root) / "thumbs" / art.sha256[:2] / f"{art.sha256}.webp"
         thumb_path.parent.mkdir(parents=True, exist_ok=True)

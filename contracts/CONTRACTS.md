@@ -48,6 +48,22 @@ A region manifest contains schema version, reader floor, publish version, tile i
 
 `basemap.filename` is anchored, character-classed, length-capped, and `.pmtiles`-suffixed to prevent path traversal. `tiles` and `provenance` arrays are bounded. The publisher writes manifests last and atomically under versioned publish paths; rollback is repointing the manifest.
 
+## Search Index
+
+The v1 `search-index` contract is a local-search artifact over places that actually shipped in z10 tiles. It is not a source corpus and must not contain broader live DB rows that the app cannot resolve from a tile. Entries carry `kind`, `place_id`, `name`, `alt_names`, folded `tokens`, `lat`, `lon`, `tier`, and `category`. `place_id` is required for `kind == "place"` and must be null for future `kind == "zone"` entries. Text uses the same `SAFE_TEXT` denylist and place/category caps as place JSON. Tokens are bounded by `SEARCH_TOKENS_MAX` and `SEARCH_TOKEN_MAX`; each artifact is capped by `MAX_SEARCH_INDEX_BYTES`.
+
+Full offline search is prefix-sharded under:
+
+- `{region}/{publish_version}/search/full/{prefix}.json`
+
+Those shard objects are listed in `pack-descriptor.json` as `kind: "search_index"` with per-object `sha256`, `bytes`, and `schema_version`, so pack updates can delta per changed prefix shard. ASCII tokens shard by their first one or two lowercase alphanumeric characters. Non-ASCII tokens shard by `u_` plus the first eight lowercase hex characters of `sha256(token_utf8)`, via `mt_contracts.shard_key_for_token`; this keeps object paths ASCII while preserving native-script search terms inside the artifact. A full shard validates only if each entry has at least one token that maps to that shard key.
+
+The online no-pack search entry point is the notable compact index under:
+
+- `{region}/{publish_version}/search/compact.json`
+
+The compact object is not pack-scoped and is not listed in the pack descriptor. It is discovered from `regions.json` via required `search_compact: {path, sha256, bytes, schema_version}`. `validate_region_index` requires that path to match the same region id and `publish_version`, keeping `current.json`'s publish version as the single version authority. When upgrading a pre-search `regions.json`, the publisher must not synthesize compact URLs for old publish versions that do not contain the object; those legacy entries are omitted until republished with real compact metadata.
+
 ## Region Config
 
 Region IDs and source keys are lowercase additive identifiers, not enums. Top-level region IDs are deterministic slugs derived from the source extract path: strip the Geofabrik continent directory and `-latest.osm.pbf` suffix, then use the remaining lowercase hyphenated basename unchanged (`europe/united-kingdom-latest.osm.pbf` -> `united-kingdom`; `asia/malaysia-singapore-brunei-latest.osm.pbf` -> `malaysia-singapore-brunei`). The region config filename must be `{region_id}.json`, and `load_region_config` rejects filename/content mismatches. Display names are taken from the extract source metadata, not hand-authored labels; for Geofabrik extracts, use the proper extract name published by Geofabrik. The pre-release legacy IDs `uk` and `malaysia` are not aliases; a cutover to new region IDs must be paired with the app-side hardcoded region-list update in the same release. Sources are optional per region; no source or region is load-bearing. Region config includes `region_id`, `display_name`, `bbox`, `languages`, `sources`, and `basemap`. `source_pmtiles` is HTTPS-only and control/whitespace-free. A1 reads configs through `available_regions()` and `load_region_config(region_id)`.
@@ -86,3 +102,4 @@ On fresh install with only too-new data, the app shows an update-required state.
 | B1 | `place.schema.json` |
 | B3 | `manifest.schema.json`, `tile.schema.json`, `versions.check_version`, `tilecodec.safe_gunzip` |
 | B7 | `basemap-budget.json`, `caps.PACK_BUDGET_CEILING_BYTES`, region `basemap` block |
+| B9 | `search-index.schema.json`, `region-index.schema.json` `search_compact`, `pack-descriptor.schema.json` `search_index`, `versions.check_version` |

@@ -63,6 +63,15 @@ def _description_arts():
     ]
 
 
+def _search_compact(region, publish_version, marker="1"):
+    return {
+        "path": f"{region}/{publish_version}/search/compact.json",
+        "sha256": marker * 64,
+        "bytes": 123,
+        "schema_version": SCHEMA_VERSIONS["search_index"],
+    }
+
+
 def _real_thumb_bytes():
     body = b"thumb"
     return hashlib.sha256(body).hexdigest(), body
@@ -471,6 +480,9 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
                         "parent": None,
                         "bbox": [-8.65, 49.84, 1.77, 60.86],
                         "publish_version": "20260715T120000Z",
+                        "search_compact": _search_compact(
+                            "united-kingdom", "20260715T120000Z", "1"
+                        ),
                         "basemap_bytes": 7,
                         "tile_count": 1,
                         "bytes_without_thumbs": 11,
@@ -482,6 +494,9 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
                         "parent": "united-kingdom",
                         "bbox": [-0.5, 51.2, 0.3, 51.8],
                         "publish_version": "20260715T120000Z",
+                        "search_compact": _search_compact(
+                            "united-kingdom_london", "20260715T120000Z", "2"
+                        ),
                         "basemap_bytes": 7,
                         "tile_count": 1,
                         "bytes_without_thumbs": 11,
@@ -601,11 +616,7 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
     merged_ids = [entry["id"] for entry in merged_index["regions"]]
     assert "uk" not in merged_ids
     assert "uk_london" not in merged_ids
-    assert merged_ids == [
-        "malaysia-singapore-brunei",
-        "united-kingdom",
-        "united-kingdom_london",
-    ]
+    assert merged_ids == ["united-kingdom", "united-kingdom_london"]
     assert result.region_index_result.dry_run is False
 
 
@@ -626,6 +637,9 @@ def test_region_index_dry_run_with_client_previews_merged_upload_body(tmp_path):
                         "parent": None,
                         "bbox": [-8.65, 49.84, 1.77, 60.86],
                         "publish_version": "20260715T120000Z",
+                        "search_compact": _search_compact(
+                            "united-kingdom", "20260715T120000Z", "1"
+                        ),
                         "basemap_bytes": 7,
                         "tile_count": 1,
                         "bytes_without_thumbs": 11,
@@ -666,7 +680,7 @@ def test_region_index_dry_run_with_client_previews_merged_upload_body(tmp_path):
     assert result.dry_run is True
     assert result.plan.ops[0].source_path is None
     merged = json.loads(result.plan.ops[0].body)
-    assert [entry["id"] for entry in merged["regions"]] == ["malaysia-singapore-brunei", "united-kingdom"]
+    assert [entry["id"] for entry in merged["regions"]] == ["united-kingdom"]
 
 
 def test_region_index_offline_dry_run_plan_serializes_the_planned_body(tmp_path):
@@ -686,6 +700,9 @@ def test_region_index_offline_dry_run_plan_serializes_the_planned_body(tmp_path)
                         "parent": None,
                         "bbox": [-8.65, 49.84, 1.77, 60.86],
                         "publish_version": "20260715T120000Z",
+                        "search_compact": _search_compact(
+                            "united-kingdom", "20260715T120000Z", "1"
+                        ),
                         "basemap_bytes": 7,
                         "tile_count": 1,
                         "bytes_without_thumbs": 11,

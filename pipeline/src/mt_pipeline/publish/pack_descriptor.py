@@ -12,7 +12,7 @@ from mt_contracts.validation import validate_instance
 _KINDS = (
     ("description_index", "descriptions/10", False, 1),
     ("image_index", "images/10", True, 1),
-    ("search_index", "search", False, 1),
+    ("search_index", "search/full", False, 1),
 )
 
 

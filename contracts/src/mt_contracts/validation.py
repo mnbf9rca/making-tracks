@@ -14,6 +14,7 @@ from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
 
 from .place_id import assert_canonical_ref
+from .search import shard_key_for_token
 
 _ROOT_SCHEMA_DIR = pathlib.Path(__file__).resolve().parents[2] / "schemas"
 _PACK_PATHS = {
@@ -22,7 +23,7 @@ _PACK_PATHS = {
     "description_index": (re.compile(r"^descriptions/10/[0-9]{1,4}/[0-9]{1,4}\.json$"), False),
     "image_index": (re.compile(r"^images/10/[0-9]{1,4}/[0-9]{1,4}\.json$"), True),
     "image_thumb": (re.compile(r"^thumbs/[0-9a-f]{2}/[0-9a-f]{64}\.webp$"), True),
-    "search_index": (re.compile(r"^search/[A-Za-z0-9._/-]+\.json$"), False),
+    "search_index": (re.compile(r"^search/full/[a-z0-9_]{1,16}\.json$"), False),
 }
 
 
@@ -173,6 +174,37 @@ def _reject_pack_descriptor_mismatches(name: str, instance: dict) -> None:
                 raise ValueError("thumbnail path must match sha256")
 
 
+def _reject_search_index_mismatches(name: str, instance: dict) -> None:
+    if name != "search-index":
+        return
+    index_kind = instance.get("index_kind")
+    shard_key = instance.get("shard_key")
+    if index_kind == "full" and not isinstance(shard_key, str):
+        raise ValueError("full search-index requires shard_key")
+    if index_kind == "compact" and shard_key is not None:
+        raise ValueError("compact search-index shard_key must be null")
+    seen_ids: set[str] = set()
+    for entry in instance.get("entries", []):
+        tokens = entry.get("tokens", [])
+        if (
+            index_kind == "full"
+            and isinstance(shard_key, str)
+            and not any(shard_key_for_token(str(token)) == shard_key for token in tokens)
+        ):
+            raise ValueError("full search-index entry does not belong to shard_key")
+        if index_kind == "compact" and int(entry.get("tier", 999)) > 2:
+            raise ValueError("compact search-index entries must be tier 1 or 2")
+        if entry.get("kind") == "place":
+            place_id = entry.get("place_id")
+            if not isinstance(place_id, str):
+                raise ValueError("place search entry requires place_id")
+            if place_id in seen_ids:
+                raise ValueError(f"duplicate search place_id: {place_id}")
+            seen_ids.add(place_id)
+        elif entry.get("place_id") is not None:
+            raise ValueError("zone search entry place_id must be null")
+
+
 def validate_instance(name: str, instance: dict) -> None:
     _reject_non_finite(instance)
     validator_for(name).validate(instance)
@@ -180,6 +212,7 @@ def validate_instance(name: str, instance: dict) -> None:
     _reject_description_mismatches(name, instance)
     _reject_zone_catalog_mismatches(name, instance)
     _reject_pack_descriptor_mismatches(name, instance)
+    _reject_search_index_mismatches(name, instance)
 
 
 def is_valid(name: str, instance: dict) -> bool:

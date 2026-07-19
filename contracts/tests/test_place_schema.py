@@ -73,6 +73,23 @@ def test_known_source_refs_must_be_canonical():
         assert not is_valid("place", bad)
 
 
+def test_place_blurb_contract_is_optional_plain_text_under_cap():
+    base = {
+        "place_id": "mt1_" + "0" * 26,
+        "name": "X",
+        "lat": 1,
+        "lon": 1,
+        "category": "c",
+        "tier": 1,
+        "score": 0.5,
+        "source_refs": ["wd:Q1"],
+    }
+    validate_instance("place", base)
+    validate_instance("place", {**base, "blurb": "Plain text description."})
+    validate_instance("place", {**base, "blurb": None})
+    assert not is_valid("place", {**base, "blurb": "x" * 601})
+
+
 def test_zero_width_joiners_are_rejected_but_rtl_marks_survive():
     base = {
         "place_id": "mt1_" + "0" * 26,

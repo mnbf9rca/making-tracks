@@ -25,6 +25,14 @@ def _valid_pack_descriptor():
                 "schema_version": 1,
                 "optional": True,
             },
+            {
+                "kind": "search_index",
+                "path": "search/full/ke.json",
+                "sha256": "b" * 64,
+                "bytes": 2345,
+                "schema_version": 1,
+                "optional": False,
+            },
         ],
     }
 
