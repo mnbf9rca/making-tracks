@@ -81,6 +81,17 @@ would delete another region's staged bytes between plan construction and upload.
 Resume is not a risk. Publish is not fingerprinted, so a publish always fully re-derives its tree, and staged
 bytes are read only within the same process call. There is no stage-now-upload-later path.
 
+### Where the prune lives
+
+This document sets the policy; it does not pick the implementation. Two constraints on whoever does:
+
+- **The prune belongs in the publish entry point**, before the first region stages — not inside
+  `build_staging`, which runs per region and per version and so cannot see the sibling trees or the other
+  regions.
+- **The safe set is a glob, not a wildcard.** `<root>/*/<publish_version>/` and `<root>/.work/` are prunable;
+  `<root>/*` is not, because it takes `.image-cache/` with it. A prune that enumerates what it deletes is
+  safer than one that deletes what it does not recognise.
+
 ## 4. Logs
 
 **Keep forever. Do not rotate, do not compress, do not expire.**
@@ -101,14 +112,24 @@ handler and no rotation; a helper exists to announce a redirect path but nothing
 because an out-of-repo wrapper redirects output. Until that wrapper is in the repo, "keep forever" is a
 policy about files the pipeline does not itself create, and the owner of that redirect owns the retention.
 
-**Owed:** name the log destination in the repo, so the policy attaches to something the pipeline controls.
+**The division of responsibility, until that changes:**
+
+| | Owns |
+|---|---|
+| The wrapper | Where output lands, the filename, and therefore retention |
+| The pipeline | What is written and at what verbosity |
+
+**Owed:** move the destination into the repo, so retention attaches to something the pipeline controls. Once
+it does, this section governs the pipeline's own log files and the wrapper's role reduces to invoking it. The
+helper that announces a redirect path already exists and is uncalled — wiring it is the smallest first step.
 
 ## 5. Caches
 
 **The audited image cache is retained.** It holds raw downloads, transcoded thumbs, and — the part that
-matters — cached accept and reject decisions per place. Deleting it forces re-fetching and re-downloading
-every original, rate-limited, and loses the record of which candidates were already rejected. It is the
-single most expensive thing on the volume to rebuild.
+matters — cached accept and reject decisions per place. Deleting it forces a re-fetch and re-download of
+every original, which is rate-limited. It also discards the record of which candidates were already
+rejected, so the next run repeats work that was already done and thrown away. Rebuilding this cache is the
+most expensive operation on the volume.
 
 **Generations are operator-owned.** No code computes, selects or promotes a current generation; the pipeline
 reads whichever directory it is pointed at. Nothing in the repo can tell you which generation is current.
@@ -184,8 +205,9 @@ budget and a minimum-free-space gate, not a tick box.
 
 - No cleanup, prune, rotate or expiry exists anywhere in the pipeline today. The only disk guard is the
   pre-flight refusal. The current effective policy is "grow until a run refuses to start".
-- Two cleanup helpers exist in the code and are never called. Wire them or delete them; a helper nobody
-  invokes is a claim of hygiene rather than hygiene.
+- Two cleanup helpers exist in the code and are never called: `purge_nc_from_staging` and
+  `gc_unreferenced_thumbs`, both in `pipeline/src/mt_pipeline/publish/images.py`, with callers only in
+  tests. Wire them or delete them; a helper nobody invokes is a claim of hygiene rather than hygiene.
 - No scheduler is installed, so the steady-state model in §2 is prospective.
 - The log destination is out of repo (§4).
 - No backup rotation and no restore runbook (§6).
