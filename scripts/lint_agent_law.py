@@ -36,7 +36,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # only where present, so the check survives on branches carrying a subset of
 # docs (the `ios` branch has AGENTS.md but not docs/).
 REQUIRED = ("AGENTS.md",)
-OPTIONAL = ("docs/INFRA.md", "docs/process/gate-lessons.md")
+OPTIONAL = (
+    "docs/INFRA.md",
+    "docs/process/gate-lessons.md",
+    "docs/process/ios-simulator.md",
+)
 
 # NOT linted, deliberately:
 #   docs/PRINCIPLES.md   - its dates are amendment provenance, which is the
