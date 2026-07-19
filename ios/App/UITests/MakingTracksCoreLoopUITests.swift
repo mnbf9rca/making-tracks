@@ -178,8 +178,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(element(identifier: "place-card.description", in: app).exists)
         let sourceArticle = app.buttons["place-card.source-article"]
         XCTAssertTrue(sourceArticle.exists)
+        XCTAssertEqual(sourceArticle.label, "OpenStreetMap source article")
         XCTAssertTrue(sourceArticle.isHittable)
-        XCTAssertFalse((sourceArticle.value as? String ?? "").hasPrefix("https://"))
+        assertDoesNotExposeURL(sourceArticle)
         attachScreenshot(named: "card-switched-to-art-deco-cinema")
 
         app.buttons["place-card.close"].tap()
@@ -210,9 +211,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             "A hand-painted sign still visible above the old shopfront."
         )
         XCTAssertTrue(sourceArticle.waitForExistence(timeout: 5))
-        XCTAssertEqual(sourceArticle.label, "Source article")
+        XCTAssertEqual(sourceArticle.label, "Wikipedia source article")
         XCTAssertTrue(sourceArticle.isHittable)
-        XCTAssertFalse((sourceArticle.value as? String ?? "").hasPrefix("https://"))
+        assertDoesNotExposeURL(sourceArticle)
         XCTAssertTrue(expandPlaceCardSheet(in: app))
 
         XCTAssertTrue(photo.waitForExistence(timeout: 5))
@@ -1508,6 +1509,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == %@", identifier))
             .firstMatch
+    }
+
+    private func assertDoesNotExposeURL(
+        _ element: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let value = element.value as? String ?? ""
+        XCTAssertFalse(element.label.localizedCaseInsensitiveContains("http"), file: file, line: line)
+        XCTAssertFalse(value.localizedCaseInsensitiveContains("http"), file: file, line: line)
     }
 
     private func waitForNonExistence(of element: XCUIElement, timeout: TimeInterval) -> Bool {

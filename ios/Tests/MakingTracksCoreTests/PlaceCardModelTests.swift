@@ -278,6 +278,37 @@ final class PlaceCardModelTests: XCTestCase {
         XCTAssertEqual(model?.sourceArticleLink?.url.absoluteString, "https://openplaques.org/plaques/4321")
     }
 
+    func testSourceArticleLinkUsesCanonicalOpenDataRefs() throws {
+        let cases: [(sourceRef: String, sourceName: String, url: String)] = [
+            ("osm:node/12", "OpenStreetMap", "https://www.openstreetmap.org/node/12"),
+            ("osm:way/34", "OpenStreetMap", "https://www.openstreetmap.org/way/34"),
+            ("osm:relation/56", "OpenStreetMap", "https://www.openstreetmap.org/relation/56"),
+            (
+                "hehle:1234567",
+                "Historic England",
+                "https://historicengland.org.uk/listing/the-list/list-entry/1234567"
+            ),
+        ]
+
+        for testCase in cases {
+            let snapshot = makeSnapshot(snapshotJSON: jsonString([
+                "place_id": "mt1_00000000000000000000000000",
+                "name": "Clock",
+                "lat": 51.5,
+                "lon": -0.12,
+                "category": "historic_building",
+                "tier": 1,
+                "score": 0.9,
+                "source_refs": [testCase.sourceRef],
+            ]))
+
+            let model = PlaceCardModel.from(snapshot: snapshot, pinState: PinState(saved: false, visit: .none))
+
+            XCTAssertEqual(model?.sourceArticleLink?.sourceName, testCase.sourceName, testCase.sourceRef)
+            XCTAssertEqual(model?.sourceArticleLink?.url.absoluteString, testCase.url, testCase.sourceRef)
+        }
+    }
+
     func testSourceArticleLinkUsesWikidataRef() throws {
         let snapshot = makeSnapshot(snapshotJSON: jsonString([
             "place_id": "mt1_00000000000000000000000000",
