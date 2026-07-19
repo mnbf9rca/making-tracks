@@ -206,6 +206,18 @@ final class PinLayersTests: XCTestCase {
         )
     }
 
+    func testCategoryVisibilityHelperMatchesLayerFilterSemantics() {
+        XCTAssertTrue(PinLayers.isCategoryVisible("future_category", visibleCategories: nil))
+        XCTAssertTrue(PinLayers.isCategoryVisible("museum", visibleCategories: ["museum", PinLayers.fallbackCategoryID]))
+        XCTAssertTrue(PinLayers.isCategoryVisible("future_category", visibleCategories: ["museum", PinLayers.fallbackCategoryID]))
+        XCTAssertFalse(PinLayers.isCategoryVisible("artwork", visibleCategories: ["museum", PinLayers.fallbackCategoryID]))
+
+        XCTAssertTrue(PinLayers.isCategoryVisible("museum", visibleCategories: ["museum"]))
+        XCTAssertFalse(PinLayers.isCategoryVisible("future_category", visibleCategories: ["museum"]))
+        XCTAssertFalse(PinLayers.isCategoryVisible("future_category", visibleCategories: []))
+        XCTAssertFalse(PinLayers.isCategoryVisible("museum", visibleCategories: []))
+    }
+
     func testShowHiddenSourceStillComposesWithCategoryLayerFilters() {
         let visibleMuseum = MapPlace(id: "visible-museum", lat: 51.5, lon: -0.12, tier: 1, category: "museum")
         let hiddenMuseum = MapPlace(id: "hidden-museum", lat: 51.6, lon: -0.11, tier: 2, category: "museum")

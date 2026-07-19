@@ -1036,6 +1036,65 @@ final class AppShellTests: XCTestCase {
         ))
     }
 
+    func testMapPinAccessibilityContentUsesStableIdentifierAndReadableLabel() {
+        let place = MapPlace(id: "mt1_test", lat: 51.49, lon: -0.12, tier: 1, category: "historic_building")
+
+        let content = MapPinAccessibilityContent(
+            place: place,
+            state: PinState(saved: true, visit: .visited, hidden: false),
+            name: "Art Deco Cinema"
+        )
+
+        XCTAssertEqual(content.identifier, "map.pin.mt1_test")
+        XCTAssertEqual(content.label, "Art Deco Cinema, Historic Building, visited, saved")
+        XCTAssertEqual(content.hint, "Opens the place card")
+    }
+
+    func testMapPinAccessibilityContentIncludesHiddenAndLovedStateWhenRendered() {
+        let place = MapPlace(id: "hidden-loved", lat: 51.52, lon: -0.14, tier: 2, category: "artwork")
+
+        let content = MapPinAccessibilityContent(
+            place: place,
+            state: PinState(saved: false, visit: .loved, hidden: true),
+            name: "Laneway Mural"
+        )
+
+        XCTAssertEqual(content.label, "Laneway Mural, Artwork, loved, hidden")
+    }
+
+    func testMapPinAccessibilityContentDoesNotExposePlaceIDWhenNameIsMissing() {
+        let place = MapPlace(id: "mt1_internal_identifier", lat: 51.52, lon: -0.14, tier: 2, category: "future_category")
+
+        let content = MapPinAccessibilityContent(
+            place: place,
+            state: PinState(saved: false, visit: .none, hidden: false),
+            name: nil
+        )
+
+        XCTAssertEqual(content.label, "Unnamed place, Future Category, not visited")
+        XCTAssertFalse(content.label.contains(place.id))
+    }
+
+    func testListMapPinAccessibilityNamesUsesVisibleSnapshotNamesOnly() {
+        let visible = ListPlace(
+            placeID: "visible",
+            name: "Saved Ghost Sign",
+            category: "attraction",
+            pinState: PinState(saved: true, visit: .none)
+        )
+        let filtered = ListPlace(
+            placeID: "filtered",
+            name: "Already Seen",
+            category: "museum",
+            pinState: PinState(saved: false, visit: .visited)
+        )
+
+        XCTAssertEqual(
+            ListMapPinAccessibilityNames.names(from: [visible, filtered], visiblePlaceIDs: ["visible"]),
+            ["visible": "Saved Ghost Sign"]
+        )
+    }
+
     @MainActor
     private func makeCoordinator() -> MLNMapViewRepresentable.Coordinator {
         MLNMapViewRepresentable.Coordinator(

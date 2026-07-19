@@ -748,6 +748,7 @@ struct MapScreen: View {
     private let viewportRefreshDebouncer = ViewportRefreshDebouncer()
     @State private var suppressedNearbyPromptPlaceIDs: Set<String> = []
     @State private var nearbyPromptNames: [String: String] = [:]
+    @State private var listMapPinNames: [String: String] = [:]
     @State private var debugProjectedFixturePins: [ProjectedFeatureDiagnostic] = []
     @State private var debugMapUpdateStatus = "not-updated"
     @State private var debugTapStatus = "not-tapped"
@@ -795,6 +796,7 @@ struct MapScreen: View {
                 theme: selectedTheme,
                 startupViewport: startupViewport,
                 features: features,
+                pinAccessibilityNames: pinAccessibilityNames,
                 visibleCategories: ListMapCategoryVisibility.visibleCategories(
                     discoveryVisibleCategories: layerVisibility.visibleCategories,
                     isListMapActive: activeListMap != nil
@@ -1119,6 +1121,17 @@ struct MapScreen: View {
         .onDisappear {
             cancelHiddenToastDismissTask()
         }
+    }
+
+    private var pinAccessibilityNames: [String: String] {
+        var names = nearbyPromptNames
+        names.merge(listMapPinNames) { _, listName in listName }
+        if isFixtureMap {
+            for fixturePlace in Self.fixturePlaces {
+                names[fixturePlace.placeID] = fixturePlace.name
+            }
+        }
+        return names
     }
 
     private var cardPresentationItemBinding: Binding<PlaceCardPresentation.Item?> {
@@ -1919,6 +1932,7 @@ struct MapScreen: View {
             if capturedStateEpoch == stateEpoch {
                 features = next
                 nearbyPromptNames = nextNearbyPromptNames
+                listMapPinNames = [:]
                 currentViewport = ViewportSeed(bbox: bbox, zoom: zoom)
             }
             regionPMTilesURL = nextRegionPMTilesURL
@@ -2019,12 +2033,17 @@ struct MapScreen: View {
             listID: list.listID,
             showVisited: list.showVisited
         )
+        let nextNames = await model.listMapPinAccessibilityNames(
+            listID: list.listID,
+            visiblePlaceIDs: Set(next.map(\.0.id))
+        )
         guard let currentList = activeListMap,
               currentList.listID == list.listID,
               currentList.showVisited == list.showVisited
         else { return }
         features = next
         nearbyPromptNames = [:]
+        listMapPinNames = nextNames
         stateEpoch += 1
         if updateCamera, let viewport = Self.viewport(for: next.map(\.0)) {
             nextListCameraRequestID += 1
@@ -4319,6 +4338,15 @@ enum ListMapCategoryVisibility {
     }
 }
 
+enum ListMapPinAccessibilityNames {
+    static func names(from items: [ListPlace], visiblePlaceIDs: Set<String>) -> [String: String] {
+        items.reduce(into: [:]) { names, item in
+            guard visiblePlaceIDs.contains(item.placeID) else { return }
+            names[item.placeID] = item.name
+        }
+    }
+}
+
 @MainActor
 private final class MapScreenModel {
     private let database: AppDatabase
@@ -4784,6 +4812,11 @@ private final class MapScreenModel {
             features,
             showVisited: showVisited
         )
+    }
+
+    func listMapPinAccessibilityNames(listID: Int64, visiblePlaceIDs: Set<String>) async -> [String: String] {
+        let items = await listItems(listID: listID)
+        return ListMapPinAccessibilityNames.names(from: items, visiblePlaceIDs: visiblePlaceIDs)
     }
 
     func createList(named name: String) async throws -> PlaceList {
