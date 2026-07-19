@@ -100,7 +100,7 @@ of the designs.
 - **Target invariant:** all app fetches single-origin `tiles.making-tracks.app` (tiles, basemap, sidecars,
   thumbs, glyphs, search index, `current.json`); no third-party fetch at runtime. **⚠ NOT true today** —
   the shipped place-card image path still fetches from **Wikimedia** (`allowedImageHosts =
-  {upload,commons}.wikimedia.org`, `MakingTracksTiles.swift:582`); single-origin thumbs are unbuilt.
+  {upload,commons}.wikimedia.org` in `MakingTracksTiles.swift`); single-origin thumbs are unbuilt.
   **Single-origin holds only after WP-IMG-B/B2 lands.** Search is **local** (queries never leave the
   device); no third-party geocoder.
 - **Redirect/origin enforcement (#191 ruling):** first-party tile/object URLs are accepted only for
