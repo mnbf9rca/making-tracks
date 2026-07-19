@@ -478,8 +478,15 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         app.buttons["menu.row.about"].tap()
         XCTAssertTrue(app.staticTexts["About"].waitForExistence(timeout: 5))
+        let versionLabel = app.staticTexts["about.app-version"]
+        XCTAssertTrue(versionLabel.waitForExistence(timeout: 5))
+        XCTAssertEqual(versionLabel.label, try expectedAppVersionLabel())
         let expectedBuildLabel = "Build \(try currentGitCommit())"
         XCTAssertTrue(app.staticTexts[expectedBuildLabel].waitForExistence(timeout: 5))
+        let privacyPolicy = app.buttons["about.privacy-policy"]
+        XCTAssertTrue(privacyPolicy.waitForExistence(timeout: 5))
+        XCTAssertEqual(privacyPolicy.label, "Privacy policy")
+        XCTAssertEqual(privacyPolicy.value as? String, "https://making-tracks.app/privacy")
         XCTAssertTrue(app.staticTexts["Open source acknowledgements"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["about.openstreetmap-copyright"].waitForExistence(timeout: 5))
         app.buttons["menu.done"].tap()
@@ -1211,6 +1218,29 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let commit = try XCTUnwrap(plist["GitCommit"])
         XCTAssertFalse(commit.isEmpty)
         return commit
+    }
+
+    private func expectedAppVersionLabel() throws -> String {
+        let plistURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Info.plist")
+        let data = try Data(contentsOf: plistURL)
+        let plist = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        )
+        let version = (plist["CFBundleShortVersionString"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let build = (plist["CFBundleVersion"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        switch (version, build) {
+        case let (.some(version), .some(build)):
+            return "Version \(version) (\(build))"
+        case let (.some(version), nil):
+            return "Version \(version)"
+        case let (nil, .some(build)):
+            return "Version \(build)"
+        case (nil, nil):
+            return "Version unknown"
+        }
     }
 
     private let screenshotExportNames: [String: String] = [
