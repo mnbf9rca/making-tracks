@@ -60,6 +60,8 @@ Those shard objects are listed in `pack-descriptor.json` as `kind: "search_index
 
 Full shards that would exceed `MAX_SEARCH_INDEX_BYTES` split deterministically instead of aborting the publish. First-level split shards append `_x`, where `x` is the token's next lowercase ASCII alphanumeric character when one exists; short tokens and non-ASCII hash buckets use `_hN`, with `N` the first hex character of `sha256(place_id)`. If a split shard is still over the byte cap, it appends additional `_hN` place-id hash suffixes, consuming the next hash character at each level, until the artifact is under cap. Readers that search a shorter prefix load every shard whose key is the base prefix or starts with `{base}_`; readers with a longer prefix may narrow to the matching next-character split. `mt_contracts.shard_key_matches_token` is the semantic validator for unsplit, first-level split, and recursively hash-split full shards.
 
+Forward-compat note for WP-B9-Pgeo: full-shard membership currently requires a `place_id` so future `kind == "zone"` entries with `place_id: null` cannot pass full-shard validation without extending the shard-membership rule.
+
 The online no-pack search entry point is the notable compact index under:
 
 - `{region}/{publish_version}/search/compact.json`

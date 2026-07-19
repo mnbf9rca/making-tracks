@@ -23,7 +23,7 @@ _PACK_PATHS = {
     "description_index": (re.compile(r"^descriptions/10/[0-9]{1,4}/[0-9]{1,4}\.json$"), False),
     "image_index": (re.compile(r"^images/10/[0-9]{1,4}/[0-9]{1,4}\.json$"), True),
     "image_thumb": (re.compile(r"^thumbs/[0-9a-f]{2}/[0-9a-f]{64}\.webp$"), True),
-    "search_index": (re.compile(r"^search/full/[a-z0-9_]{1,16}\.json$"), False),
+    "search_index": (re.compile(r"^search/full/[a-z0-9_]{1,64}\.json$"), False),
 }
 
 
