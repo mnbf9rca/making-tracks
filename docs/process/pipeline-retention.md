@@ -115,9 +115,26 @@ reads whichever directory it is pointed at. Nothing in the repo can tell you whi
 
 - The current reviewed generation is retained in full, with its evidence: `completed.jsonl`, the audit
   report, and the run logs.
-- A superseded generation may be deleted once a newer generation has been used for a successful publish.
+- A superseded generation may be deleted once a newer generation has been used for a successful publish, and — where the change is visible in the app — once the new generation has been confirmed on a device.
 - Deleting a generation deletes the evidence for the audit that produced it. Retain the `completed.jsonl`
   and report from a superseded generation even when its cache is removed.
+
+### The next thumb generation
+
+A re-encoded thumb tier is planned: WebP q50 at 256 px max-edge, re-encoded from the originals rather than
+transcoded from the current thumbs. Extrapolated from a sample, that is roughly 372 M against about 2.27 G
+today — the largest single reduction available on the volume that costs nothing to serve.
+
+It lands as an ordinary content-addressed generation swap during a routine publish. It is not urgent and is
+queued behind the prune work in this document.
+
+**The old tier is not retired until a device screenshot confirms the new one.** The sample was judged
+identical by eye, and the gate exists because that judgement was made off-device: the card's photo slot
+renders at roughly 540 px physical, so a 256 px source is being scaled up in the place it actually matters.
+A sample viewed on a desktop cannot settle that. One screenshot after publish can.
+
+Until that confirmation, both tiers are retained. This is the one case where two generations coexist by
+design rather than by neglect.
 
 **The OSM node-locations index is retained.** It is derived and rebuildable from the PBF, but rebuilding is
 expensive and it is an active input. It is not scratch.
