@@ -38,7 +38,9 @@ public final class CoreLoopController: Sendable {
         if visited {
             _ = try database.recordVisit(place)
         } else {
-            try database.deleteVisits(placeID: place.placeID)
+            // Interim per #217: delete latest only. Multi-visit and stale
+            // disambiguation routes to the #221 edit screen when it exists.
+            try database.deleteLatestVisit(placeID: place.placeID)
         }
         emit(place.placeID)
     }

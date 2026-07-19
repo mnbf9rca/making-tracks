@@ -198,6 +198,26 @@ final class CoreLoopControllerTests: XCTestCase {
         let secondLovedChange = await changes.next()
         XCTAssertEqual(secondLovedChange, ["p_row_emit"])
     }
+
+    func testUnseeingFromPlaceCardDeletesOnlyLatestVisitEvent() async throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let controller = CoreLoopController(database: db)
+        var changes = controller.changes.makeAsyncIterator()
+        let place = try makePlace("p_unsee_latest")
+        let older = try db.recordVisit(place, verdict: .loved)
+        let newer = try db.recordVisit(place)
+
+        try controller.setVisited(place, false)
+
+        let unvisitedChange = await changes.next()
+        XCTAssertEqual(unvisitedChange, ["p_unsee_latest"])
+        let visits = try await db.dbQueue.read {
+            try Visit.fetchAll($0, sql: "SELECT * FROM visits WHERE place_id = ? ORDER BY id", arguments: ["p_unsee_latest"])
+        }
+        XCTAssertEqual(visits.map(\.id), [older])
+        XCTAssertFalse(visits.contains { $0.id == newer })
+        XCTAssertEqual(try db.viewportState(["p_unsee_latest"])["p_unsee_latest"], PinState(saved: false, visit: .loved))
+    }
 }
 
 private struct StubTileResolver: TileResolving {
