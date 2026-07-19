@@ -3743,8 +3743,10 @@ private struct AboutView: View {
     let attribution: [Attribution]
 
     private static let buildCommit = loadBuildCommit()
+    private static let appVersion = loadAppVersion()
     private static let ossCredits = loadOSSCredits()
     private static let osmCopyrightURL = URL(string: "https://www.openstreetmap.org/copyright")!
+    private static let privacyPolicyURL = URL(string: "https://making-tracks.app/privacy")!
 
     private static func loadBuildCommit() -> String {
         guard let url = Bundle.main.url(forResource: "BuildInfo", withExtension: "plist"),
@@ -3753,6 +3755,22 @@ private struct AboutView: View {
               let commit = plist["GitCommit"]
         else { return "unknown" }
         return commit
+    }
+
+    private static func loadAppVersion() -> String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String
+        let build = info["CFBundleVersion"] as? String
+        switch (version?.isEmpty == false ? version : nil, build?.isEmpty == false ? build : nil) {
+        case let (.some(version), .some(build)):
+            return "\(version) (\(build))"
+        case let (.some(version), nil):
+            return version
+        case let (nil, .some(build)):
+            return build
+        case (nil, nil):
+            return "unknown"
+        }
     }
 
     private static func loadOSSCredits() -> [OSSCreditEntry] {
@@ -3779,10 +3797,24 @@ private struct AboutView: View {
                     Text("Build")
                         .font(.headline)
                         .accessibilityAddTraits(.isHeader)
+                    Text(verbatim: "Version \(Self.appVersion)")
+                        .font(.caption)
+                        .accessibilityIdentifier("about.app-version")
                     Text(verbatim: "Build \(Self.buildCommit)")
                         .font(.caption)
                         .fontDesign(.monospaced)
                         .accessibilityIdentifier("credits.build-commit")
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Privacy")
+                        .font(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                    Link(destination: Self.privacyPolicyURL) {
+                        Text("Privacy policy")
+                    }
+                    .accessibilityValue(Self.privacyPolicyURL.absoluteString)
+                    .accessibilityIdentifier("about.privacy-policy")
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
