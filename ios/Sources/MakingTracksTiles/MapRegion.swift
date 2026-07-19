@@ -1,23 +1,23 @@
 import Foundation
 
 public enum MapRegion: String, CaseIterable, Sendable, Equatable {
-    case malaysia
-    case uk
+    case malaysiaSingaporeBrunei = "malaysia-singapore-brunei"
+    case unitedKingdom = "united-kingdom"
 
     public var displayName: String {
         switch self {
-        case .malaysia:
-            return "Malaysia"
-        case .uk:
+        case .malaysiaSingaporeBrunei:
+            return "Malaysia, Singapore, and Brunei"
+        case .unitedKingdom:
             return "United Kingdom"
         }
     }
 
     public var viewportBBox: BBox {
         switch self {
-        case .malaysia:
+        case .malaysiaSingaporeBrunei:
             return BBox(minLon: 99.64, minLat: 0.85, maxLon: 119.27, maxLat: 7.36)
-        case .uk:
+        case .unitedKingdom:
             return BBox(minLon: -8.65, minLat: 49.84, maxLon: 1.77, maxLat: 60.86)
         }
     }
@@ -36,7 +36,7 @@ public enum MapRegion: String, CaseIterable, Sendable, Equatable {
         return allCases.min(by: {
             distanceSquared($0.viewportBBox.center, viewport.center)
                 < distanceSquared($1.viewportBBox.center, viewport.center)
-        }) ?? .malaysia
+        }) ?? .malaysiaSingaporeBrunei
     }
 
     public static func supportedRegion(for viewport: BBox) -> MapRegion? {
