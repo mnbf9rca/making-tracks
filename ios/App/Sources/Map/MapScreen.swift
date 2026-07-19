@@ -838,6 +838,7 @@ struct MapScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var worldPMTilesURL: String? = WorldBasemap.pmtilesURL()
     @State private var features: [(MapPlace, PinState)] = []
+    @State private var trackSourceSnapshot = TrackSourceSnapshot.empty
     @State private var regionPMTilesURL: String?
     @State private var installedCoverageBBoxes: [CoverageBBox] = []
     @State private var attribution: [Attribution] = []
@@ -877,6 +878,7 @@ struct MapScreen: View {
     @State private var listMapPinNames: [String: String] = [:]
     @State private var debugProjectedFixturePins: [ProjectedFeatureDiagnostic] = []
     @State private var debugMapUpdateStatus = "not-updated"
+    @State private var debugTrackSourceStatus = "track source not-updated"
     @State private var debugTapStatus = "not-tapped"
     @State private var debugPinLayerSizeStatus = "pin-layer-size:unreported"
     private let locationManager: AppLocationManager
@@ -922,6 +924,7 @@ struct MapScreen: View {
                 theme: selectedTheme,
                 startupViewport: startupViewport,
                 features: features,
+                trackSourceSnapshot: visibleTrackSourceSnapshot,
                 pinAccessibilityNames: pinAccessibilityNames,
                 visibleCategories: ListMapCategoryVisibility.visibleCategories(
                     discoveryVisibleCategories: layerVisibility.visibleCategories,
@@ -1017,6 +1020,13 @@ struct MapScreen: View {
                     Task { @MainActor in
                         guard debugMapUpdateStatus != status else { return }
                         debugMapUpdateStatus = status
+                    }
+                },
+                debugReportTrackSourceStatus: { status in
+                    guard debugExposeFixturePinDiagnostics else { return }
+                    Task { @MainActor in
+                        guard debugTrackSourceStatus != status else { return }
+                        debugTrackSourceStatus = status
                     }
                 },
                 debugReportTapStatus: { status in
@@ -1437,6 +1447,13 @@ struct MapScreen: View {
                     .background(.ultraThinMaterial, in: Capsule())
                     .accessibilityIdentifier("map.debug-source-status")
 
+                Text(verbatim: debugTrackSourceStatus)
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.debug-track-source-status")
+
                 Text(verbatim: debugTapStatus)
                     .font(.caption2)
                     .padding(.horizontal, 8)
@@ -1569,6 +1586,7 @@ struct MapScreen: View {
                     activeListMap = nil
                     listCameraRequest = nil
                     await refreshCurrentViewport()
+                    await refreshTrackGeometry()
                 }
             } label: {
                 Label("Close list", systemImage: "xmark")
@@ -1592,6 +1610,11 @@ struct MapScreen: View {
                 }
             }
         )
+    }
+
+    private var visibleTrackSourceSnapshot: TrackSourceSnapshot {
+        guard activeListMap?.showVisited == true else { return .empty }
+        return trackSourceSnapshot
     }
 
     private var attributionText: some View {
@@ -1954,6 +1977,7 @@ struct MapScreen: View {
             stateEpoch: currentStateEpoch(),
             allowManifestRefresh: MapManifestRefreshPolicy.startupAllowsManifestRefresh
         )
+        await refreshTrackGeometry()
         await refreshFixtureVisitCount()
         let elapsedMS = Int(Date().timeIntervalSince(startedAt) * 1000)
         let finalState = loadState.rawValue
@@ -2097,6 +2121,7 @@ struct MapScreen: View {
         for await ids in model.changes {
             if activeListMap != nil {
                 await refreshActiveListMap()
+                await refreshTrackGeometry()
                 await refreshFixtureVisitCount()
                 continue
             }
@@ -2115,6 +2140,7 @@ struct MapScreen: View {
                     requestID: refresh.requestID,
                     stateEpoch: refresh.stateEpoch
                 )
+                await refreshTrackGeometry()
                 await refreshFixtureVisitCount()
                 continue
             }
@@ -2125,8 +2151,19 @@ struct MapScreen: View {
                     (place, states[place.id] ?? state)
                 }
             }
+            await refreshTrackGeometry()
             await refreshFixtureVisitCount()
         }
+    }
+
+    @MainActor
+    private func refreshTrackGeometry() async {
+        guard let model else { return }
+        guard let list = activeListMap, list.showVisited else {
+            trackSourceSnapshot = .empty
+            return
+        }
+        trackSourceSnapshot = await model.trackFeatureCollectionSnapshot(listID: list.listID)
     }
 
     private func refreshFixtureVisitCount() async {
@@ -2168,6 +2205,11 @@ struct MapScreen: View {
             listID: list.listID,
             visiblePlaceIDs: Set(next.map(\.0.id))
         )
+        let nextTrackSourceSnapshot = if list.showVisited {
+            await model.trackFeatureCollectionSnapshot(listID: list.listID)
+        } else {
+            TrackSourceSnapshot.empty
+        }
         guard let currentList = activeListMap,
               currentList.listID == list.listID,
               currentList.showVisited == list.showVisited
@@ -2175,6 +2217,7 @@ struct MapScreen: View {
         features = next
         nearbyPromptNames = [:]
         listMapPinNames = nextNames
+        trackSourceSnapshot = nextTrackSourceSnapshot
         stateEpoch += 1
         if updateCamera, let viewport = Self.viewport(for: next.map(\.0)) {
             nextListCameraRequestID += 1
@@ -2244,7 +2287,7 @@ struct MapScreen: View {
         var showVisited: Bool
     }
 
-    private static let fixturePlaces = [
+    static let fixturePlaces = [
         try! PlaceRef(
             placeID: "mt1_00000000000000000000000000",
             name: "Ghost Sign",
@@ -5203,6 +5246,19 @@ private final class MapScreenModel {
         let db = database
         return await Task.detached {
             (try? db.trackVisits()) ?? []
+        }.value
+    }
+
+    func trackFeatureCollectionSnapshot(listID: Int64) async -> TrackSourceSnapshot {
+        let db = database
+        return await Task.detached {
+            let visits = (try? db.trackVisits(listID: listID)) ?? []
+            let features = FeatureEncoding.trackSegmentFeatures(visits)
+            return TrackSourceSnapshot(
+                featureCollectionJSON: (try? FeatureEncoding.featureCollection(features).jsonString())
+                    ?? TrackSourceSnapshot.emptyFeatureCollectionJSON,
+                segmentCount: features.count
+            )
         }.value
     }
 

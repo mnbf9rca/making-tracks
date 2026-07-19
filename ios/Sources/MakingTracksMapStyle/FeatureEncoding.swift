@@ -1,3 +1,4 @@
+import Foundation
 import MakingTracksData
 
 public enum FeatureEncoding {
@@ -40,5 +41,77 @@ public enum FeatureEncoding {
             "type": .string("FeatureCollection"),
             "features": .array(features),
         ])
+    }
+
+    public static func trackSegmentFeatures(
+        _ visits: [TrackVisit],
+        maxConnectorGap: TimeInterval = TrackLayers.defaultMaxConnectorGap,
+        burstWindow: TimeInterval = TrackLayers.defaultBurstWindow
+    ) -> [JSONValue] {
+        guard visits.count >= 2 else { return [] }
+        return zip(visits, visits.dropFirst()).compactMap { from, to in
+            guard let gap = connectorGap(from: from, to: to),
+                  gap > burstWindow,
+                  gap <= maxConnectorGap,
+                  isValidCoordinate(from),
+                  isValidCoordinate(to),
+                  from.lat != to.lat || from.lon != to.lon
+            else { return nil }
+            return trackSegmentFeature(from: from, to: to, gap: gap)
+        }
+    }
+
+    private static func trackSegmentFeature(from: TrackVisit, to: TrackVisit, gap: TimeInterval) -> JSONValue {
+        .object([
+            "type": .string("Feature"),
+            "geometry": .object([
+                "type": .string("LineString"),
+                "coordinates": .array(trackArcCoordinates(from: from, to: to)),
+            ]),
+            "properties": .object([
+                "from_visit_id": .double(Double(from.id)),
+                "to_visit_id": .double(Double(to.id)),
+                "gap_seconds": .double(gap),
+            ]),
+        ])
+    }
+
+    private static func trackArcCoordinates(from: TrackVisit, to: TrackVisit) -> [JSONValue] {
+        let dx = to.lon - from.lon
+        let dy = to.lat - from.lat
+        let distance = max((dx * dx + dy * dy).squareRoot(), 0.000_001)
+        let midpointLon = (from.lon + to.lon) / 2
+        let midpointLat = (from.lat + to.lat) / 2
+        let normalLon = -dy / distance
+        let normalLat = dx / distance
+        let offset = distance * TrackLayers.arcBendRatio
+        return [
+            coordinate(lon: from.lon, lat: from.lat),
+            coordinate(
+                lon: clamped(midpointLon + normalLon * offset, to: -180.0...180.0),
+                lat: clamped(midpointLat + normalLat * offset, to: -90.0...90.0)
+            ),
+            coordinate(lon: to.lon, lat: to.lat),
+        ]
+    }
+
+    private static func clamped(_ value: Double, to range: ClosedRange<Double>) -> Double {
+        min(max(value, range.lowerBound), range.upperBound)
+    }
+
+    private static func coordinate(lon: Double, lat: Double) -> JSONValue {
+        .array([.double(lon), .double(lat)])
+    }
+
+    private static func connectorGap(from: TrackVisit, to: TrackVisit) -> TimeInterval? {
+        let gap = to.visitedAt.timeIntervalSince(from.visitedAt)
+        return gap >= 0 ? gap : nil
+    }
+
+    private static func isValidCoordinate(_ visit: TrackVisit) -> Bool {
+        visit.lat.isFinite
+            && visit.lon.isFinite
+            && (-90.0...90.0).contains(visit.lat)
+            && (-180.0...180.0).contains(visit.lon)
     }
 }

@@ -156,6 +156,25 @@ final class CoreLoopControllerTests: XCTestCase {
         )
     }
 
+    func testSetVisitedFalseDeletesOnlyLatestVisitForRevisitedPlace() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let controller = CoreLoopController(database: db)
+        let place = try makePlace("p_revisited")
+        try controller.setVisited(place, true)
+        try controller.setVisited(place, true)
+
+        try controller.setVisited(place, false)
+
+        let visits = try db.dbQueue.read {
+            try Visit.fetchAll($0, sql: "SELECT * FROM visits WHERE place_id = ? ORDER BY id", arguments: ["p_revisited"])
+        }
+        XCTAssertEqual(visits.count, 1)
+        XCTAssertEqual(try db.viewportState(["p_revisited"])["p_revisited"], PinState(saved: false, visit: .visited))
+
+        try controller.setVisited(place, false)
+        XCTAssertEqual(try db.viewportState(["p_revisited"])["p_revisited"], PinState(saved: false, visit: .none))
+    }
+
     func testCustomListMembershipChangesEmitChangedPlaceIDs() async throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         let controller = CoreLoopController(database: db)

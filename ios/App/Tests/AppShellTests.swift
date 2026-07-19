@@ -79,7 +79,9 @@ final class AppShellTests: XCTestCase {
             verdict: nil,
             name: "Plain",
             category: "history",
-            tier: 2
+            tier: 2,
+            lat: 51.50,
+            lon: -0.12
         )
         let lovedOlder = TrackVisit(
             id: 2,
@@ -88,7 +90,9 @@ final class AppShellTests: XCTestCase {
             verdict: .loved,
             name: "Loved",
             category: "history",
-            tier: 2
+            tier: 2,
+            lat: 51.51,
+            lon: -0.13
         )
         let lovedNewerPlain = TrackVisit(
             id: 3,
@@ -97,7 +101,9 @@ final class AppShellTests: XCTestCase {
             verdict: nil,
             name: "Loved",
             category: "history",
-            tier: 2
+            tier: 2,
+            lat: 51.52,
+            lon: -0.14
         )
 
         XCTAssertEqual(

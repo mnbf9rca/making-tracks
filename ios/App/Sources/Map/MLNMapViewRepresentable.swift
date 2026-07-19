@@ -22,6 +22,24 @@ struct ProjectedFeatureDiagnostic: Identifiable, Equatable, Sendable {
     var id: String { placeID }
 }
 
+struct TrackSourceSnapshot: Sendable {
+    static let emptyFeatureCollectionJSON = "{\"features\":[],\"type\":\"FeatureCollection\"}"
+    static let empty = TrackSourceSnapshot(
+        featureCollectionJSON: emptyFeatureCollectionJSON,
+        segmentCount: 0
+    )
+
+    let signature: String
+    let segmentCount: Int
+    let data: Data
+
+    init(featureCollectionJSON: String, segmentCount: Int) {
+        signature = featureCollectionJSON
+        self.segmentCount = segmentCount
+        data = Data(featureCollectionJSON.utf8)
+    }
+}
+
 struct MapPinAccessibilityContent: Equatable, Sendable {
     let identifier: String
     let label: String
@@ -122,6 +140,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var theme: MapTheme
     var startupViewport: ViewportSeed
     var features: [(MapPlace, PinState)]
+    var trackSourceSnapshot: TrackSourceSnapshot
     var pinAccessibilityNames: [String: String]
     var visibleCategories: Set<String>?
     var pinSizeMultiplier: Double
@@ -140,6 +159,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var onMapLoadFailed: () -> Void
     var debugReportProjectedFeatureDiagnostics: ([ProjectedFeatureDiagnostic]) -> Void = { _ in }
     var debugReportMapUpdateStatus: (String) -> Void = { _ in }
+    var debugReportTrackSourceStatus: (String) -> Void = { _ in }
     var debugReportTapStatus: (String) -> Void = { _ in }
     var debugReportPinLayerSize: (String) -> Void = { _ in }
 
@@ -157,6 +177,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         coordinator.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
         coordinator.debugReportProjectedFeatureDiagnostics = debugReportProjectedFeatureDiagnostics
         coordinator.debugReportMapUpdateStatus = debugReportMapUpdateStatus
+        coordinator.debugReportTrackSourceStatus = debugReportTrackSourceStatus
         coordinator.debugReportTapStatus = debugReportTapStatus
         coordinator.debugReportPinLayerSize = debugReportPinLayerSize
         return coordinator
@@ -198,6 +219,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             context.coordinator.commitStyleReload(initialStyleReload)
         }
         context.coordinator.pendingFeatures = features
+        context.coordinator.pendingTrackSourceSnapshot = trackSourceSnapshot
         context.coordinator.pinAccessibilityNames = pinAccessibilityNames
         context.coordinator.desiredVisibleCategories = visibleCategories
         context.coordinator.desiredPinSizeMultiplier = pinSizeMultiplier
@@ -215,9 +237,11 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         context.coordinator.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
         context.coordinator.debugReportProjectedFeatureDiagnostics = debugReportProjectedFeatureDiagnostics
         context.coordinator.debugReportMapUpdateStatus = debugReportMapUpdateStatus
+        context.coordinator.debugReportTrackSourceStatus = debugReportTrackSourceStatus
         context.coordinator.debugReportTapStatus = debugReportTapStatus
         context.coordinator.debugReportPinLayerSize = debugReportPinLayerSize
         context.coordinator.pendingFeatures = features
+        context.coordinator.pendingTrackSourceSnapshot = trackSourceSnapshot
         context.coordinator.pinAccessibilityNames = pinAccessibilityNames
         context.coordinator.desiredVisibleCategories = visibleCategories
         context.coordinator.desiredPinSizeMultiplier = pinSizeMultiplier
@@ -246,6 +270,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             context.coordinator.updatePinSize(on: map, multiplier: pinSizeMultiplier)
             context.coordinator.updateLayerFilters(on: map, visibleCategories: visibleCategories)
             context.coordinator.updateSource(on: map, features: features)
+            context.coordinator.updateTrackSource(on: map, snapshot: trackSourceSnapshot)
         }
         context.coordinator.updatePinAccessibilityElements(on: map)
     }
@@ -291,6 +316,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var debugExposeFixturePinDiagnostics = false
         var debugReportProjectedFeatureDiagnostics: ([ProjectedFeatureDiagnostic]) -> Void = { _ in }
         var debugReportMapUpdateStatus: (String) -> Void = { _ in }
+        var debugReportTrackSourceStatus: (String) -> Void = { _ in }
         var debugReportTapStatus: (String) -> Void = { _ in }
         var debugReportPinLayerSize: (String) -> Void = { _ in }
         weak var container: MapAccessibilityContainerView?
@@ -304,7 +330,9 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var desiredPinSizeMultiplier = PinSize.defaultMultiplier
         var currentPinSize: PinSize?
         var pendingFeatures: [(MapPlace, PinState)] = []
+        var pendingTrackSourceSnapshot = TrackSourceSnapshot.empty
         var renderedFeatures: [(MapPlace, PinState)] = []
+        var renderedTrackSignature: String?
         var pinAccessibilityNames: [String: String] = [:]
         private var pinAccessibilityElements: [String: PinAccessibilityElement] = [:]
 #if DEBUG
@@ -412,6 +440,9 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                 style.addSource(MLNShapeSource(identifier: PinLayers.sourceID, shape: nil, options: nil))
             }
             guard let source = style.source(withIdentifier: PinLayers.sourceID) as? MLNShapeSource else { return }
+            if style.source(withIdentifier: TrackLayers.sourceID) == nil {
+                style.addSource(MLNShapeSource(identifier: TrackLayers.sourceID, shape: nil, options: nil))
+            }
             let pinSize = PinSize(multiplier: desiredPinSizeMultiplier)
 
             let circle = MLNCircleStyleLayer(identifier: "pins-circle", source: source)
@@ -419,6 +450,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             circle.circleColor = NSExpression(mglJSONObject: PinLayers.pinColorExpression().foundationObject)
             circle.circleRadius = Self.mapExpression(pinSize.circleRadiusExpression)
             style.addLayer(circle)
+            addTrackLine(style: style)
 
             addCategoryIcon(source: source, style: style, pinSize: pinSize)
             addBadge(id: "pins-bookmark", icon: "badge-bookmark", filter: PinLayers.bookmarkFilter(), pinSize: pinSize, offset: pinSize.bookmarkOffset, source: source, style: style)
@@ -430,6 +462,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
 #endif
             updateLayerFilters(on: mapView, visibleCategories: desiredVisibleCategories)
             updateSource(on: mapView, features: pendingFeatures)
+            renderedTrackSignature = nil
+            updateTrackSource(on: mapView, snapshot: pendingTrackSourceSnapshot)
             updatePinAccessibilityElements(on: mapView)
             reportViewport(mapView)
         }
@@ -508,6 +542,27 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             setPredicate(PinLayers.combinedFilter([categoryFilter, PinLayers.bookmarkFilter()]), on: "pins-bookmark", in: style)
             setPredicate(PinLayers.combinedFilter([categoryFilter, PinLayers.heartFilter()]), on: "pins-heart", in: style)
             updatePinAccessibilityElements(on: map)
+        }
+
+        func updateTrackSource(on map: MLNMapView, snapshot: TrackSourceSnapshot) {
+            guard renderedTrackSignature != snapshot.signature else { return }
+            guard let style = map.style,
+                  let source = style.source(withIdentifier: TrackLayers.sourceID) as? MLNShapeSource
+            else {
+                debugReportTrackSourceStatus("track source missing")
+                return
+            }
+            guard let shape = Self.shape(from: snapshot.data) else {
+                source.shape = Self.emptyTrackShape()
+                renderedTrackSignature = snapshot.signature
+                debugReportTrackSourceStatus("track source shape-failed")
+                return
+            }
+            source.shape = shape
+            renderedTrackSignature = snapshot.signature
+            debugReportTrackSourceStatus(
+                "track source applied segments:\(snapshot.segmentCount) layer:\(style.layer(withIdentifier: TrackLayers.lineLayerID) != nil)"
+            )
         }
 
         func updatePinSize(on map: MLNMapView, multiplier: Double) {
@@ -626,6 +681,24 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             style.addLayer(layer)
         }
 
+        private func addTrackLine(style: MLNStyle) {
+            guard let source = style.source(withIdentifier: TrackLayers.sourceID) as? MLNShapeSource,
+                  style.layer(withIdentifier: TrackLayers.lineLayerID) == nil
+            else { return }
+            let line = MLNLineStyleLayer(identifier: TrackLayers.lineLayerID, source: source)
+            line.lineCap = NSExpression(forConstantValue: "round")
+            line.lineJoin = NSExpression(forConstantValue: "round")
+            line.lineColor = NSExpression(forConstantValue: MapThemeColor.uiColor(hex: TrackLayers.lineColor))
+            line.lineOpacity = NSExpression(forConstantValue: TrackLayers.lineOpacity)
+            line.lineWidth = NSExpression(forConstantValue: TrackLayers.lineWidth)
+            line.lineDashPattern = NSExpression(forConstantValue: TrackLayers.lineDashPatternValues)
+            if let circle = style.layer(withIdentifier: "pins-circle") {
+                style.insertLayer(line, below: circle)
+            } else {
+                style.addLayer(line)
+            }
+        }
+
         private func setPredicate(_ filter: JSONValue?, on layerID: String, in style: MLNStyle) {
             let predicate = filter.map { NSPredicate(mglJSONObject: $0.foundationObject) }
             if let circle = style.layer(withIdentifier: layerID) as? MLNCircleStyleLayer {
@@ -683,6 +756,14 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
 
         private static func mapExpression(_ value: JSONValue) -> NSExpression {
             NSExpression(mglJSONObject: value.foundationObject)
+        }
+
+        private static func shape(from data: Data) -> MLNShape? {
+            try? MLNShape(data: data, encoding: String.Encoding.utf8.rawValue)
+        }
+
+        private static func emptyTrackShape() -> MLNShape? {
+            shape(from: TrackSourceSnapshot.empty.data)
         }
 
         private static func expression(_ expression: NSExpression?, matches expected: JSONValue) -> Bool {
