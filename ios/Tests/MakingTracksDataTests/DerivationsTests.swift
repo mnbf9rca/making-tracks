@@ -97,6 +97,8 @@ final class DerivationsTests: XCTestCase {
         XCTAssertEqual(visits.map(\.name), ["Old Plaque", "New Arcade"])
         XCTAssertEqual(visits.map(\.category), ["history", "architecture"])
         XCTAssertEqual(visits.map(\.tier), [2, 1])
+        XCTAssertEqual(visits.map(\.lat), [51.50, 51.52])
+        XCTAssertEqual(visits.map(\.lon), [-0.12, -0.14])
     }
 
     func testTrackVisitsDocumentVisitIDTieBreakOrder() throws {
@@ -113,6 +115,25 @@ final class DerivationsTests: XCTestCase {
 
         XCTAssertEqual(visits.map(\.placeID), ["first", "second"])
         XCTAssertEqual(visits.map(\.id), visits.map(\.id).sorted())
+    }
+
+    func testTrackVisitsCanBeScopedToAListWithoutLeakingOtherVisitedPlaces() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        try db.dbQueue.write { d in
+            try d.execute(sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (42, 'Penang', 0, 0)")
+            try insertSnapshot(d, placeID: "in_list_a", name: "A", category: "history", lat: 51.50, lon: -0.12, tier: 2)
+            try insertSnapshot(d, placeID: "outside", name: "Outside", category: "oddity", lat: 51.51, lon: -0.13, tier: 2)
+            try insertSnapshot(d, placeID: "in_list_b", name: "B", category: "architecture", lat: 51.52, lon: -0.14, tier: 2)
+            try d.execute(sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (42, 'in_list_a', 0)")
+            try d.execute(sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (42, 'in_list_b', 0)")
+            try insertVisit(d, placeID: "in_list_a", timestamp: Date(timeIntervalSince1970: 10))
+            try insertVisit(d, placeID: "outside", timestamp: Date(timeIntervalSince1970: 20))
+            try insertVisit(d, placeID: "in_list_b", timestamp: Date(timeIntervalSince1970: 30))
+        }
+
+        let visits = try db.trackVisits(listID: 42)
+
+        XCTAssertEqual(visits.map(\.placeID), ["in_list_a", "in_list_b"])
     }
 
     private func insertSnapshot(

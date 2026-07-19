@@ -8,6 +8,8 @@ public struct TrackVisit: Sendable, Equatable, Identifiable {
     public let name: String
     public let category: String
     public let tier: Int
+    public let lat: Double
+    public let lon: Double
 
     public init(
         id: Int64,
@@ -16,7 +18,9 @@ public struct TrackVisit: Sendable, Equatable, Identifiable {
         verdict: Verdict?,
         name: String,
         category: String,
-        tier: Int
+        tier: Int,
+        lat: Double,
+        lon: Double
     ) {
         self.id = id
         self.placeID = placeID
@@ -25,5 +29,7 @@ public struct TrackVisit: Sendable, Equatable, Identifiable {
         self.name = name
         self.category = category
         self.tier = tier
+        self.lat = lat
+        self.lon = lon
     }
 }

@@ -273,6 +273,29 @@ final class InteractionsTests: XCTestCase {
         XCTAssertEqual(visits.map(\.verdict), [nil, .loved])
     }
 
+    func testDeleteLatestVisitRemovesOnlyNewestVisitForPlace() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_unsee_latest")
+        let older = try db.recordVisit(place, verdict: .loved)
+        let newer = try db.recordVisit(place)
+
+        let deleted = try db.deleteLatestVisit(placeID: "p_unsee_latest")
+
+        XCTAssertEqual(deleted, true)
+        let visits = try db.dbQueue.read {
+            try Visit.fetchAll($0, sql: "SELECT * FROM visits WHERE place_id = ? ORDER BY id", arguments: ["p_unsee_latest"])
+        }
+        XCTAssertEqual(visits.map(\.id), [older])
+        XCTAssertEqual(visits.map(\.verdict), [.loved])
+        XCTAssertEqual(try db.viewportState(["p_unsee_latest"])["p_unsee_latest"], PinState(saved: false, visit: .loved))
+        XCTAssertEqual(try db.trackVisits().map(\.id), [older])
+
+        try db.deleteLatestVisit(placeID: "p_unsee_latest")
+        XCTAssertFalse(try db.isSeen("p_unsee_latest"))
+        XCTAssertEqual(try db.deleteLatestVisit(placeID: "p_unsee_latest"), false)
+        XCTAssertEqual(newer, older + 1)
+    }
+
     func testDeleteVisitsClearsAllVisitStateForPlaceButKeepsSavedAxis() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         let place = try ref("p_unvisit")
@@ -286,27 +309,6 @@ final class InteractionsTests: XCTestCase {
         XCTAssertFalse(try db.isSeen("p_unvisit"))
         XCTAssertEqual(try db.viewportState(["p_unvisit"])["p_unvisit"], PinState(saved: true, visit: .none))
         XCTAssertNotNil(try db.snapshot(for: "p_unvisit"))
-    }
-
-    func testDeleteLatestVisitRemovesOnlyNewestVisitForPlace() throws {
-        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
-        let place = try ref("p_unsee_latest")
-        let older = try db.recordVisit(place, verdict: .loved)
-        _ = try db.recordVisit(place)
-
-        let deleted = try db.deleteLatestVisit(placeID: "p_unsee_latest")
-
-        XCTAssertEqual(deleted, true)
-        let visits = try db.dbQueue.read {
-            try Visit.fetchAll($0, sql: "SELECT * FROM visits WHERE place_id = ? ORDER BY id", arguments: ["p_unsee_latest"])
-        }
-        XCTAssertEqual(visits.map(\.id), [older])
-        XCTAssertEqual(visits.map(\.verdict), [.loved])
-        XCTAssertEqual(try db.viewportState(["p_unsee_latest"])["p_unsee_latest"], PinState(saved: false, visit: .loved))
-        XCTAssertEqual(try db.trackVisits().map(\.id), [older])
-
-        let deletedMissing = try db.deleteLatestVisit(placeID: "missing")
-        XCTAssertEqual(deletedMissing, false)
     }
 
     func testDeleteLatestVisitPrefersNewestVisitedAtTwoYearsAfterOlderRowID() throws {

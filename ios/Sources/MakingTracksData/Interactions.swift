@@ -265,6 +265,55 @@ extension AppDatabase {
     }
 
 #if DEBUG
+    public func seedUITestingTrackVisits(_ places: [PlaceRef]) throws {
+        try dbQueue.write { db in
+            let seedStart = Date(timeIntervalSince1970: 1_000)
+            for (index, place) in places.enumerated() {
+                try snapshotIfNeeded(place, db)
+                let timestamp = seedStart.addingTimeInterval(Double(index) * 60 * 60)
+                var visit = Visit(
+                    id: nil,
+                    placeID: place.placeID,
+                    visitedAt: timestamp,
+                    verdict: nil,
+                    createdAt: timestamp
+                )
+                try visit.insert(db)
+            }
+        }
+    }
+
+    public func seedUITestingTrackList(named name: String, places: [PlaceRef]) throws {
+        let normalized = try Self.normalizedListName(name)
+        try dbQueue.write { db in
+            let seedStart = Date(timeIntervalSince1970: 1_000)
+            try db.execute(
+                sql: "INSERT INTO lists (name, is_system, created_at) VALUES (?, ?, ?)",
+                arguments: [normalized, false, seedStart]
+            )
+            let listID = db.lastInsertedRowID
+            for (index, place) in places.enumerated() {
+                try snapshotIfNeeded(place, db)
+                let timestamp = seedStart.addingTimeInterval(Double(index) * 60 * 60)
+                var visit = Visit(
+                    id: nil,
+                    placeID: place.placeID,
+                    visitedAt: timestamp,
+                    verdict: nil,
+                    createdAt: timestamp
+                )
+                try visit.insert(db)
+                try db.execute(
+                    sql: """
+                        INSERT INTO list_items (list_id, place_id, added_at)
+                        VALUES (?, ?, ?)
+                        """,
+                    arguments: [listID, place.placeID, timestamp]
+                )
+            }
+        }
+    }
+
     public func seedUITestingUserList(named name: String, containingPlaceID placeID: String) throws {
         try dbQueue.write { db in
             let timestamp = now()

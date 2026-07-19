@@ -235,7 +235,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     func testCustomListCanBeCreatedBrowsedAndShownOnMap() {
-        let app = launch(reset: true, pinDiagnostics: true)
+        let app = launch(reset: true, pinDiagnostics: true, seedTrackVisits: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
@@ -253,7 +253,6 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let listChips = element(identifier: "place-card.list-chips", in: app)
         XCTAssertTrue(listChips.waitForExistence(timeout: 5))
         XCTAssertTrue(listChips.label.contains("KL walk"))
-        app.buttons["place-card.visited"].tap()
         app.buttons["place-card.close"].tap()
 
         openAppMenu(in: app)
@@ -272,11 +271,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["map.list-mode.title"].label, "KL walk")
         XCTAssertTrue(app.buttons["map.list-mode.close"].exists)
         XCTAssertTrue(waitForSourceFeatureCount(1, in: app))
+        XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
 
         let listModeToggle = app.segmentedControls["map.list-mode.toggle"]
         XCTAssertTrue(listModeToggle.waitForExistence(timeout: 5))
         listModeToggle.buttons["Fresh snow"].tap()
         XCTAssertTrue(waitForSourceFeatureCount(0, in: app))
+        XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
     }
 
     func testTracksMenuShowsVisitedRowsAndLovedFilter() {
@@ -300,6 +301,26 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["tracks.summary"].label, "1 visit")
         XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any).matching(identifierPrefix: "tracks.row.").firstMatch.exists)
+    }
+
+    func testTrackGeometryDrawsConnectorFromSeededFixtureVisits() {
+        let app = launch(reset: true, pinDiagnostics: true, seedTrackList: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+        XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
+
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["Track pair"].tap()
+        XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForSourceFeatureCount(2, in: app))
+        XCTAssertTrue(waitForTrackSegmentCount(1, in: app))
+        attachScreenshot(named: "tracks-static-geometry")
     }
 
     func testHiddenToastAutoDismissesWithoutUnhidingPlace() {
@@ -769,6 +790,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         theme: String? = nil,
         pinSizeMultiplier: Double? = nil,
         pinDiagnostics: Bool = false,
+        seedTrackVisits: Bool = false,
+        seedTrackList: Bool = false,
         coverageBBoxes: [String] = [],
         resetOnboarding: Bool = false,
         forceDarkAppearance: Bool = false
@@ -809,6 +832,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         if seedUserList {
             app.launchArguments.append("--ui-testing-seed-user-list")
+        }
+        if seedTrackVisits {
+            app.launchArguments.append("--ui-testing-seed-track-visits")
+        }
+        if seedTrackList {
+            app.launchArguments.append("--ui-testing-seed-track-list")
         }
         if let offlineProgress {
             app.launchArguments.append("--ui-testing-offline-progress")
@@ -1095,6 +1124,18 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         return true
     }
 
+    private func waitForTrackSegmentCount(_ count: Int, in app: XCUIApplication) -> Bool {
+        let sourceStatus = app.staticTexts["map.debug-track-source-status"]
+        let predicate = NSPredicate(format: "label == %@", "track source applied segments:\(count) layer:true")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: sourceStatus)
+        let result = XCTWaiter.wait(for: [expectation], timeout: 10)
+        if result != .completed {
+            XCTFail("Expected track source applied segments:\(count) layer:true, got \(sourceStatus.exists ? sourceStatus.label : "missing track source status")")
+            return false
+        }
+        return true
+    }
+
     private func attachScreenshot(named name: String) {
         let screenshot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
@@ -1255,6 +1296,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "map-location-off": "denied-settings",
         "place-card-a11y": "place-card-a11y",
         "credits-a11y": "credits-a11y",
+        "tracks-static-geometry": "tracks-static-geometry",
         "pin-defined-paper-min": "pin-defined-paper-min",
         "pin-defined-paper-default": "pin-defined-paper-default",
         "pin-defined-paper-max": "pin-defined-paper-max",

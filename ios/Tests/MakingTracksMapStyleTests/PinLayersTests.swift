@@ -66,6 +66,39 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(layoutValue("icon-offset", in: heart), PinSize().heartOffset)
     }
 
+    func testTrackLayerUsesSeparateDashedLineSourceBelowPins() throws {
+        XCTAssertNotEqual(TrackLayers.sourceID, PinLayers.sourceID)
+        let layer = try XCTUnwrap(layer(id: "tracks-line", in: TrackLayers.trackLayers()))
+        XCTAssertEqual(layer["id"], .string("tracks-line"))
+        XCTAssertEqual(layer["type"], .string("line"))
+        XCTAssertEqual(layer["source"], .string(TrackLayers.sourceID))
+        XCTAssertEqual(layoutValue("line-cap", in: layer), .string("round"))
+        XCTAssertEqual(layoutValue("line-join", in: layer), .string("round"))
+
+        guard case let .object(paint)? = layer["paint"] else { return XCTFail("line paint") }
+        XCTAssertEqual(paint["line-color"], .string(TrackLayers.lineColor))
+        XCTAssertEqual(paint["line-opacity"], .double(TrackLayers.lineOpacity))
+        XCTAssertEqual(paint["line-width"], .double(TrackLayers.lineWidth))
+        XCTAssertEqual(paint["line-dasharray"], TrackLayers.lineDashPattern)
+    }
+
+    func testTrackLineColorClearsPaperBackgroundContrastCommitment() throws {
+        for theme in MapTheme.allCandidates {
+            XCTAssertGreaterThanOrEqual(
+                try contrastRatio(
+                    compositedHex(
+                        foreground: TrackLayers.lineColor,
+                        alpha: TrackLayers.lineOpacity,
+                        background: theme.background
+                    ),
+                    theme.background
+                ),
+                4.5,
+                theme.id
+            )
+        }
+    }
+
     func testPinSizeMetricsScaleCircleCategoryIconAndBadgesTogether() {
         XCTAssertEqual(PinSize.minimumMultiplier, 0.8)
         XCTAssertEqual(PinSize.defaultMultiplier, 1.2)
@@ -312,11 +345,102 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(features, [feature])
     }
 
+    func testTrackSegmentFeaturesUseShallowArcsAndSuppressBurstAndGapConnectors() {
+        let visits = [
+            trackVisit(id: 1, placeID: "a", seconds: 0, lat: 0, lon: 0),
+            trackVisit(id: 2, placeID: "b", seconds: 300, lat: 0, lon: 1),
+            trackVisit(id: 3, placeID: "c", seconds: 330, lat: 1, lon: 1),
+            trackVisit(id: 4, placeID: "d", seconds: 7_200, lat: 1, lon: 2),
+            trackVisit(id: 5, placeID: "e", seconds: 7_500, lat: 2, lon: 2),
+        ]
+
+        let features = FeatureEncoding.trackSegmentFeatures(
+            visits,
+            maxConnectorGap: 3_600,
+            burstWindow: 120
+        )
+
+        XCTAssertEqual(features.count, 2)
+        XCTAssertEqual(trackProperty("from_visit_id", in: features[0]), .double(1))
+        XCTAssertEqual(trackProperty("to_visit_id", in: features[0]), .double(2))
+        XCTAssertEqual(trackProperty("from_visit_id", in: features[1]), .double(4))
+        XCTAssertEqual(trackProperty("to_visit_id", in: features[1]), .double(5))
+
+        guard case let .object(firstFeature) = features.first,
+              case let .object(geometry) = firstFeature["geometry"],
+              case let .array(coordinates) = geometry["coordinates"],
+              coordinates.count == 3,
+              case let .array(start) = coordinates.first,
+              case let .array(mid) = coordinates[1],
+              case let .array(end) = coordinates.last
+        else { return XCTFail("arc line string") }
+        XCTAssertEqual(geometry["type"], .string("LineString"))
+        XCTAssertEqual(start, [.double(0), .double(0)])
+        XCTAssertEqual(end, [.double(1), .double(0)])
+        XCTAssertNotEqual(mid, [.double(0.5), .double(0)], "middle coordinate should make the connector visibly abstract, not a straight segment")
+    }
+
+    func testTrackSegmentFeaturesKeepDerivedArcCoordinatesInWGS84Bounds() {
+        let visits = [
+            trackVisit(id: 1, placeID: "near-pole-west", seconds: 0, lat: 89.9, lon: -170),
+            trackVisit(id: 2, placeID: "near-pole-east", seconds: 600, lat: 89.9, lon: 170),
+        ]
+
+        let features = FeatureEncoding.trackSegmentFeatures(
+            visits,
+            maxConnectorGap: 3_600,
+            burstWindow: 120
+        )
+
+        guard case let .object(firstFeature) = features.first,
+              case let .object(geometry) = firstFeature["geometry"],
+              case let .array(coordinates) = geometry["coordinates"]
+        else { return XCTFail("track feature") }
+        for coordinate in coordinates {
+            guard case let .array(values) = coordinate,
+                  values.count == 2,
+                  case let .double(lon) = values[0],
+                  case let .double(lat) = values[1]
+            else { return XCTFail("coordinate pair") }
+            XCTAssertTrue(lon.isFinite)
+            XCTAssertTrue(lat.isFinite)
+            XCTAssertTrue((-180.0...180.0).contains(lon), "longitude \(lon)")
+            XCTAssertTrue((-90.0...90.0).contains(lat), "latitude \(lat)")
+        }
+    }
+
     private func layer(id: String, in layers: [JSONValue]) -> [String: JSONValue]? {
         for case let .object(layer) in layers where layer["id"] == .string(id) {
             return layer
         }
         return nil
+    }
+
+    private func trackProperty(_ key: String, in feature: JSONValue) -> JSONValue? {
+        guard case let .object(object) = feature,
+              case let .object(properties)? = object["properties"]
+        else { return nil }
+        return properties[key]
+    }
+
+    private func trackVisit(
+        id: Int64,
+        placeID: String,
+        seconds: TimeInterval,
+        lat: Double,
+        lon: Double
+    ) -> TrackVisit {
+        TrackVisit(
+            id: id,
+            placeID: placeID,
+            visitedAt: Date(timeIntervalSince1970: seconds),
+            verdict: nil,
+            name: placeID,
+            category: "history",
+            tier: 2,
+            lat: lat,
+            lon: lon
+        )
     }
 
     private func layoutValue(_ key: String, in layer: [String: JSONValue]?) -> JSONValue? {
@@ -341,13 +465,27 @@ final class PinLayersTests: XCTestCase {
         return (lighter + 0.05) / (darker + 0.05)
     }
 
-    private func relativeLuminance(_ hex: String) throws -> Double {
+    private func compositedHex(foreground: String, alpha: Double, background: String) throws -> String {
+        let foregroundRGB = try rgb(foreground)
+        let backgroundRGB = try rgb(background)
+        let channels = zip(foregroundRGB, backgroundRGB).map { foreground, background in
+            Int(((foreground * alpha) + (background * (1 - alpha))).rounded())
+        }
+        return String(format: "#%02X%02X%02X", channels[0], channels[1], channels[2])
+    }
+
+    private func rgb(_ hex: String) throws -> [Double] {
         let scalars = Array(hex.dropFirst())
         XCTAssertEqual(hex.first, "#")
         XCTAssertEqual(scalars.count, 6)
-        let channels = try stride(from: 0, to: scalars.count, by: 2).map { index -> Double in
+        return try stride(from: 0, to: scalars.count, by: 2).map { index -> Double in
             let channel = String(scalars[index..<(index + 2)])
-            let value = try XCTUnwrap(Int(channel, radix: 16))
+            return Double(try XCTUnwrap(Int(channel, radix: 16)))
+        }
+    }
+
+    private func relativeLuminance(_ hex: String) throws -> Double {
+        let channels = try rgb(hex).map { value -> Double in
             let component = Double(value) / 255.0
             return component <= 0.03928 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
         }

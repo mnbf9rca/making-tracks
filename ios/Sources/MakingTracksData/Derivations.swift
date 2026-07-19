@@ -86,18 +86,29 @@ extension AppDatabase {
         }
     }
 
-    public func trackVisits() throws -> [TrackVisit] {
+    public func trackVisits(listID: Int64? = nil) throws -> [TrackVisit] {
         return try dbQueue.read { db in
+            let listScopeJoin: String
+            let arguments: StatementArguments
+            if let listID {
+                listScopeJoin = "JOIN list_items li ON li.place_id = v.place_id AND li.list_id = ?"
+                arguments = [listID]
+            } else {
+                listScopeJoin = ""
+                arguments = []
+            }
             let rows = try Row.fetchAll(
                 db,
                 sql: """
                     SELECT v.id, v.place_id, v.visited_at, v.verdict,
-                           s.name, s.category, s.tier
+                           s.name, s.category, s.tier, s.lat, s.lon
                     FROM visits v
                     JOIN place_snapshots s ON s.place_id = v.place_id
+                    \(listScopeJoin)
                     WHERE v.place_id NOT IN (SELECT place_id FROM hidden_places)
                     ORDER BY v.visited_at ASC, v.id ASC
-                    """
+                    """,
+                arguments: arguments
             )
             return rows.compactMap(Self.trackVisitRow)
         }
@@ -136,7 +147,13 @@ extension AppDatabase {
         let name: String = row["name"]
         let category: String = row["category"]
         let tier: Int = row["tier"]
+        let lat: Double = row["lat"]
+        let lon: Double = row["lon"]
         guard placeID.count <= PlaceRef.maxPlaceIDLength,
+              lat.isFinite,
+              lon.isFinite,
+              (-90.0...90.0).contains(lat),
+              (-180.0...180.0).contains(lon),
               (1...4).contains(tier)
         else { return nil }
 
@@ -147,7 +164,9 @@ extension AppDatabase {
             verdict: rawVerdict.flatMap(Verdict.init(rawValue:)),
             name: safeListSnapshotText(name, max: PlaceRef.maxNameLength) ?? "Unnamed place",
             category: safeListSnapshotText(category, max: PlaceRef.maxCategoryLength) ?? "place",
-            tier: tier
+            tier: tier,
+            lat: lat,
+            lon: lon
         )
     }
 
