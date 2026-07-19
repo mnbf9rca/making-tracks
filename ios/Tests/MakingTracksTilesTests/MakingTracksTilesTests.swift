@@ -3515,6 +3515,63 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(try store.installedPublish(region: "uk")?.publishVersion, "20260717T000000Z")
     }
 
+    func testOfflineDownloaderFetchesSmallObjectsWithBoundedConcurrency() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tiles = try (0..<5).map { index in
+            try gzipJSON(tileObject(
+                places: [validPlace(["place_id": String(format: "mt1_%026d", index)])],
+                x: 511 + index,
+                y: 340
+            ))
+        }
+        let basemap = Data("basemap".utf8)
+        var targetObject = manifestObject(
+            publishVersion: "20260717T000000Z",
+            tileSHA: sha256(tiles[0]),
+            tileBytes: tiles[0].count,
+            basemapSHA: sha256(basemap),
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+        targetObject["tiles"] = tiles.enumerated().map { index, tile in
+            ["x": 511 + index, "y": 340, "sha256": sha256(tile), "bytes": tile.count]
+        }
+        targetObject["counts"] = ["total": tiles.count, "by_tier": [tiles.count, 0, 0, 0]]
+
+        let metadataFetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(targetObject),
+        ])
+        var objectRoutes: [String: Data] = [
+            "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles": basemap,
+        ]
+        for (index, tile) in tiles.enumerated() {
+            objectRoutes["https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/\(511 + index)/340.json.gz"] = tile
+        }
+        let objectFetcher = GatedConcurrentDownloadFetcher(
+            routes: objectRoutes,
+            releaseWhenInFlightReaches: TileFetchConcurrency.maxConcurrent
+        )
+        let downloader = OfflineRegionDownloader(
+            region: "uk",
+            metadataFetcher: metadataFetcher,
+            objectFetcher: objectFetcher,
+            store: store,
+            availableBytes: { 10_000_000_000 }
+        )
+
+        let task = Task {
+            try await downloader.downloadCurrentRegion()
+        }
+        let result = try await throwingTaskValue(task, timeoutNanoseconds: 1_000_000_000)
+
+        XCTAssertEqual(result.fetchedTileCount, tiles.count)
+        let maxInFlight = await objectFetcher.maxInFlight
+        XCTAssertEqual(maxInFlight, TileFetchConcurrency.maxConcurrent)
+        XCTAssertEqual(try store.installedPublish(region: "uk")?.publishVersion, "20260717T000000Z")
+    }
+
     func testOfflineDownloaderPersistsVerifiedObjectsBeforeInstallAndResumeSkipsThem() async throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)
@@ -4869,6 +4926,90 @@ private final class DelayedSidecarFetcher: OfflineRegionFetching, @unchecked Sen
 
     func releaseDelayedFetch() async {
         await gate.release()
+    }
+}
+
+private actor ConcurrentDownloadGate {
+    private let releaseThreshold: Int
+    private var isReleased = false
+    private var inFlight = 0
+    private(set) var maxInFlight = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(releaseThreshold: Int) {
+        self.releaseThreshold = releaseThreshold
+    }
+
+    func started() {
+        inFlight += 1
+        maxInFlight = max(maxInFlight, inFlight)
+        if inFlight >= releaseThreshold {
+            release()
+        }
+    }
+
+    func finished() {
+        inFlight -= 1
+    }
+
+    func waitUntilReleased() async {
+        if isReleased { return }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    private func release() {
+        isReleased = true
+        let continuations = waiters
+        waiters.removeAll()
+        for continuation in continuations {
+            continuation.resume()
+        }
+    }
+}
+
+private final class GatedConcurrentDownloadFetcher: OfflineRegionFetching, @unchecked Sendable {
+    private let routes: [String: Data]
+    private let gate: ConcurrentDownloadGate
+
+    var maxInFlight: Int {
+        get async { await gate.maxInFlight }
+    }
+
+    init(routes: [String: Data], releaseWhenInFlightReaches releaseThreshold: Int) {
+        self.routes = routes
+        self.gate = ConcurrentDownloadGate(releaseThreshold: releaseThreshold)
+    }
+
+    func fetch(_ url: URL) async throws -> Data {
+        guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
+        return data
+    }
+
+    func download(_ url: URL) async throws -> URL {
+        let isSmallObject = url.path.hasSuffix(".json.gz")
+        if isSmallObject {
+            await gate.started()
+            do {
+                await gate.waitUntilReleased()
+                let fileURL = try await writeDownload(for: url)
+                await gate.finished()
+                return fileURL
+            } catch {
+                await gate.finished()
+                throw error
+            }
+        }
+        return try await writeDownload(for: url)
+    }
+
+    private func writeDownload(for url: URL) async throws -> URL {
+        let data = try await fetch(url)
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MakingTracksGatedDownload-\(UUID().uuidString)")
+        try data.write(to: fileURL, options: .atomic)
+        return fileURL
     }
 }
 

@@ -3089,10 +3089,12 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
         let regionID = region
         let publishVersion = publish.publishVersion
         let manifest = publish.manifest
+        let planStartedAt = Date()
         let plan = try store.updatePlan(for: publish)
+        let planElapsedMS = Int(Date().timeIntervalSince(planStartedAt) * 1000)
         let fetchObjectCount = plan.tilesToFetch.count + (plan.basemapNeedsFetch ? 1 : 0)
         let reusedObjectCount = plan.reusedTileCount + (plan.basemapNeedsFetch ? 0 : 1)
-        MakingTracksLog.downloads.info("plan computed region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) fetchObjects=\(fetchObjectCount, privacy: .public) reusedObjects=\(reusedObjectCount, privacy: .public) bytes=\(plan.bytesToFetch, privacy: .public)")
+        MakingTracksLog.downloads.info("plan computed region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) fetchObjects=\(fetchObjectCount, privacy: .public) reusedObjects=\(reusedObjectCount, privacy: .public) bytes=\(plan.bytesToFetch, privacy: .public) durationMS=\(planElapsedMS, privacy: .public)")
         let available = availableBytes()
         guard StorageHeadroom.hasHeadroom(requiredBytes: plan.bytesToFetch, availableBytes: available) else {
             MakingTracksLog.downloads.error("plan rejected region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) bytes=\(plan.bytesToFetch, privacy: .public) available=\(available ?? -1, privacy: .public)")
@@ -3105,78 +3107,64 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             var completedObjectCount = plan.reusedTileCount + (plan.basemapNeedsFetch ? 0 : 1)
             let totalBytes = manifest.tiles.reduce(0) { $0 + $1.bytes } + manifest.basemap.bytes
             var completedBytes = totalBytes - plan.bytesToFetch
-            for item in plan.tilesToFetch {
-                try control.checkpoint()
-                MakingTracksLog.downloads.debug("object fetch planned region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=tile sha=\(item.sha256, privacy: .private(mask: .hash)) bytes=\(item.bytes, privacy: .public)")
-                try ensureHeadroomForSmallObject(bytes: item.bytes)
-                let fileURL: URL
-                let waitingProgress = OfflineRegionDownloadProgress(
-                    region: region,
-                    publishVersion: publishVersion,
-                    completedBytes: completedBytes,
-                    totalBytes: totalBytes,
-                    completedObjectCount: completedObjectCount,
-                    totalObjectCount: totalObjectCount,
-                    isWaitingForConnectivity: true
-                )
-                let availableProgress = OfflineRegionDownloadProgress(
-                    region: region,
-                    publishVersion: publishVersion,
-                    completedBytes: completedBytes,
-                    totalBytes: totalBytes,
-                    completedObjectCount: completedObjectCount,
-                    totalObjectCount: totalObjectCount,
-                    isWaitingForConnectivity: false
-                )
-                do {
-                    let objectStartBytes = completedBytes
-                    let objectStartCount = completedObjectCount
-                    fileURL = try await downloadObject(
-                        try trustedURL("\(region)/\(publishVersion)/tiles/10/\(item.coordinate.x)/\(item.coordinate.y).json.gz"),
-                        control: control,
-                        connectivityWaiting: { progress?(waitingProgress) },
-                        connectivityAvailable: { progress?(availableProgress) },
-                        progress: { totalBytesWritten, totalBytesExpectedToWrite in
-                            let objectBytes = Self.completedObjectBytes(
-                                totalBytesWritten: totalBytesWritten,
-                                totalBytesExpectedToWrite: totalBytesExpectedToWrite,
-                                expectedObjectBytes: item.bytes
-                            )
-                            progress?(OfflineRegionDownloadProgress(
-                                region: regionID,
-                                publishVersion: publishVersion,
-                                completedBytes: objectStartBytes + objectBytes,
-                                totalBytes: totalBytes,
-                                completedObjectCount: objectStartCount,
-                                totalObjectCount: totalObjectCount
-                            ))
-                        }
-                    )
-                    defer { try? FileManager.default.removeItem(at: fileURL) }
-                    try store.stageDownloadedTileObject(fileURL, sha256: item.sha256, bytes: item.bytes)
-                } catch {
-                    if isOutOfSpace(error) {
-                        MakingTracksLog.downloads.info("object fetch interrupted region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=tile reason=out-of-space")
-                        throw TileError.downloadPaused
+            let tileBytesToFetch = plan.tilesToFetch.reduce(0) { $0 + $1.bytes }
+            let tilePhaseStartedAt = Date()
+            if !plan.tilesToFetch.isEmpty {
+                MakingTracksLog.downloads.info("small-object phase started region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) objects=\(plan.tilesToFetch.count, privacy: .public) bytes=\(tileBytesToFetch, privacy: .public)")
+            }
+            try await withThrowingTaskGroup(of: OfflineTileFetch.self) { group in
+                var iterator = plan.tilesToFetch.makeIterator()
+
+                func enqueue(_ item: OfflineTileFetch) {
+                    let completedBytesSnapshot = completedBytes
+                    let completedObjectCountSnapshot = completedObjectCount
+                    group.addTask {
+                        try await self.fetchAndStageSmallObject(
+                            item,
+                            publishVersion: publishVersion,
+                            completedBytes: completedBytesSnapshot,
+                            totalBytes: totalBytes,
+                            completedObjectCount: completedObjectCountSnapshot,
+                            totalObjectCount: totalObjectCount,
+                            control: control,
+                            progress: progress
+                        )
                     }
-                    throw error
                 }
-                completedObjectCount += 1
-                completedBytes += item.bytes
-                MakingTracksLog.downloads.debug("object staged region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=tile completed=\(completedObjectCount, privacy: .public) total=\(totalObjectCount, privacy: .public) bytes=\(completedBytes, privacy: .public)")
-                progress?(OfflineRegionDownloadProgress(
-                    region: region,
-                    publishVersion: publishVersion,
-                    completedBytes: completedBytes,
-                    totalBytes: totalBytes,
-                    completedObjectCount: completedObjectCount,
-                    totalObjectCount: totalObjectCount
-                ))
+
+                for _ in 0..<TileFetchConcurrency.maxConcurrent {
+                    guard let item = iterator.next() else { break }
+                    enqueue(item)
+                }
+
+                while let item = try await group.next() {
+                    completedObjectCount += 1
+                    completedBytes += item.bytes
+                    MakingTracksLog.downloads.debug("object staged region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=tile completed=\(completedObjectCount, privacy: .public) total=\(totalObjectCount, privacy: .public) bytes=\(completedBytes, privacy: .public)")
+                    progress?(OfflineRegionDownloadProgress(
+                        region: region,
+                        publishVersion: publishVersion,
+                        completedBytes: completedBytes,
+                        totalBytes: totalBytes,
+                        completedObjectCount: completedObjectCount,
+                        totalObjectCount: totalObjectCount
+                    ))
+                    try control.checkpoint()
+
+                    guard let next = iterator.next() else { continue }
+                    enqueue(next)
+                }
+            }
+            if !plan.tilesToFetch.isEmpty {
+                let tilePhaseElapsedMS = Int(Date().timeIntervalSince(tilePhaseStartedAt) * 1000)
+                MakingTracksLog.downloads.info("small-object phase finished region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) objects=\(plan.tilesToFetch.count, privacy: .public) bytes=\(tileBytesToFetch, privacy: .public) durationMS=\(tilePhaseElapsedMS, privacy: .public)")
             }
             if plan.basemapNeedsFetch {
                 try control.checkpoint()
                 MakingTracksLog.downloads.debug("object fetch planned region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=basemap sha=\(manifest.basemap.sha256, privacy: .private(mask: .hash)) bytes=\(manifest.basemap.bytes, privacy: .public)")
                 try ensureHeadroomForLargeObject(bytes: manifest.basemap.bytes)
+                let basemapStartedAt = Date()
+                MakingTracksLog.downloads.info("basemap phase started region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) bytes=\(manifest.basemap.bytes, privacy: .public)")
                 let fileURL: URL
                 let waitingProgress = OfflineRegionDownloadProgress(
                     region: region,
@@ -3222,6 +3210,8 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
                     )
                     defer { try? FileManager.default.removeItem(at: fileURL) }
                     try store.stageDownloadedBasemapObject(fileURL, sha256: manifest.basemap.sha256, bytes: manifest.basemap.bytes)
+                    let basemapElapsedMS = Int(Date().timeIntervalSince(basemapStartedAt) * 1000)
+                    MakingTracksLog.downloads.info("basemap phase finished region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) bytes=\(manifest.basemap.bytes, privacy: .public) durationMS=\(basemapElapsedMS, privacy: .public)")
                 } catch {
                     if isOutOfSpace(error) {
                         MakingTracksLog.downloads.info("object fetch interrupted region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=basemap reason=out-of-space")
@@ -3265,6 +3255,60 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
         )
     }
 
+    private func fetchAndStageSmallObject(
+        _ item: OfflineTileFetch,
+        publishVersion: String,
+        completedBytes: Int,
+        totalBytes: Int,
+        completedObjectCount: Int,
+        totalObjectCount: Int,
+        control: OfflineRegionDownloadControl,
+        progress: (@Sendable (OfflineRegionDownloadProgress) -> Void)?
+    ) async throws -> OfflineTileFetch {
+        try control.checkpoint()
+        let regionID = region
+        MakingTracksLog.downloads.debug("object fetch planned region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=tile sha=\(item.sha256, privacy: .private(mask: .hash)) bytes=\(item.bytes, privacy: .public)")
+        try ensureHeadroomForSmallObject(bytes: item.bytes)
+        let waitingProgress = OfflineRegionDownloadProgress(
+            region: regionID,
+            publishVersion: publishVersion,
+            completedBytes: completedBytes,
+            totalBytes: totalBytes,
+            completedObjectCount: completedObjectCount,
+            totalObjectCount: totalObjectCount,
+            isWaitingForConnectivity: true
+        )
+        let availableProgress = OfflineRegionDownloadProgress(
+            region: regionID,
+            publishVersion: publishVersion,
+            completedBytes: completedBytes,
+            totalBytes: totalBytes,
+            completedObjectCount: completedObjectCount,
+            totalObjectCount: totalObjectCount,
+            isWaitingForConnectivity: false
+        )
+        do {
+            let objectStartedAt = Date()
+            let fileURL = try await downloadObject(
+                try trustedURL("\(region)/\(publishVersion)/tiles/10/\(item.coordinate.x)/\(item.coordinate.y).json.gz"),
+                control: control,
+                connectivityWaiting: { progress?(waitingProgress) },
+                connectivityAvailable: { progress?(availableProgress) }
+            )
+            defer { try? FileManager.default.removeItem(at: fileURL) }
+            try store.stageDownloadedTileObject(fileURL, sha256: item.sha256, bytes: item.bytes)
+            let objectElapsedMS = Int(Date().timeIntervalSince(objectStartedAt) * 1000)
+            MakingTracksLog.downloads.debug("object timed region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=tile bytes=\(item.bytes, privacy: .public) durationMS=\(objectElapsedMS, privacy: .public)")
+            return item
+        } catch {
+            if isOutOfSpace(error) {
+                MakingTracksLog.downloads.info("object fetch interrupted region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=tile reason=out-of-space")
+                throw TileError.downloadPaused
+            }
+            throw error
+        }
+    }
+
     private func targetPublish(
         allowPending: Bool,
         resumingPausedDownload: Bool,
@@ -3281,6 +3325,7 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
                 return TargetPublish(publish: pending, source: .pending)
             }
         }
+        let currentStartedAt = Date()
         let currentData = try await fetchMetadata(
             try trustedURL("\(region)/current.json"),
             connectivityWaiting: {
@@ -3306,8 +3351,11 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
                 ))
             }
         )
+        let currentElapsedMS = Int(Date().timeIntervalSince(currentStartedAt) * 1000)
+        MakingTracksLog.downloads.info("metadata phase fetched region=\(regionID, privacy: .private(mask: .hash)) kind=current bytes=\(currentData.count, privacy: .public) durationMS=\(currentElapsedMS, privacy: .public)")
         let publishVersion = try ManifestClient.decodeCurrent(currentData)
         MakingTracksLog.downloads.info("region current pinned region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public)")
+        let manifestStartedAt = Date()
         let manifestData = try await fetchMetadata(
             try trustedURL("\(region)/\(publishVersion)/manifest.json"),
             connectivityWaiting: {
@@ -3333,6 +3381,8 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
                 ))
             }
         )
+        let manifestElapsedMS = Int(Date().timeIntervalSince(manifestStartedAt) * 1000)
+        MakingTracksLog.downloads.info("metadata phase fetched region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public) kind=manifest bytes=\(manifestData.count, privacy: .public) durationMS=\(manifestElapsedMS, privacy: .public)")
         let manifest = try Manifest.decode(manifestData)
         guard manifest.region == region, manifest.publishVersion == publishVersion else {
             throw TileError.invalidManifest
