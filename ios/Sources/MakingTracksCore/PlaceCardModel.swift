@@ -137,12 +137,35 @@ public struct PlaceCardModel: Sendable, Equatable {
 }
 
 public struct PlaceCardPhoto: Sendable, Equatable {
+    public let image: PlaceImage?
+    public let thumbURL: URL?
+    public let thumbSHA256: String?
+    public let bytes: Int?
+    public let width: Int?
+    public let height: Int?
     public let accessibilityLabel: String
     public let attribution: String
 
     public init(accessibilityLabel: String, attribution: String) {
+        self.image = nil
+        self.thumbURL = nil
+        self.thumbSHA256 = nil
+        self.bytes = nil
+        self.width = nil
+        self.height = nil
         self.accessibilityLabel = accessibilityLabel
         self.attribution = attribution
+    }
+
+    public init(placeName: String, image: PlaceImage) {
+        self.image = image
+        self.thumbURL = image.thumbURL
+        self.thumbSHA256 = image.thumbSHA256
+        self.bytes = image.bytes
+        self.width = image.width
+        self.height = image.height
+        self.accessibilityLabel = "Photo of \(placeName)"
+        self.attribution = image.attribution.displayText
     }
 }
 

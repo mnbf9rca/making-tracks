@@ -60,6 +60,8 @@ private extension TileError {
             return "invalid-manifest"
         case .invalidRegionIndex:
             return "invalid-region-index"
+        case .invalidImageIndex:
+            return "invalid-image-index"
         case .invalidTile:
             return "invalid-tile"
         case .invalidOfflinePack:
@@ -68,6 +70,8 @@ private extension TileError {
             return "invalid-background-fetch"
         case .insufficientStorage:
             return "insufficient-storage"
+        case .responseTooLarge:
+            return "response-too-large"
         case .checksumMismatch:
             return "checksum-mismatch"
         case .byteCountMismatch:

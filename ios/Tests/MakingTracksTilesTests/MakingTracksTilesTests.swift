@@ -57,6 +57,35 @@ final class MakingTracksTilesTests: XCTestCase {
         }
     }
 
+    func testHTTPFetcherBoundedFetchRejectsOversizedResponses() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RedirectURLProtocol.self]
+        let fetcher = HTTPTileFetcher(configuration: configuration)
+        RedirectURLProtocol.reset()
+        defer { RedirectURLProtocol.reset() }
+
+        RedirectURLProtocol.mode = .status(200, location: nil)
+        RedirectURLProtocol.responseHeaders = ["Content-Length": "6"]
+        RedirectURLProtocol.responseBody = Data("12345".utf8)
+        do {
+            _ = try await fetcher.fetch(URL(string: "https://tiles.making-tracks.app/uk/current.json")!, maxBytes: 5)
+            XCTFail("declared oversized response unexpectedly succeeded")
+        } catch TileError.responseTooLarge {
+        } catch {
+            XCTFail("expected responseTooLarge, got \(error)")
+        }
+
+        RedirectURLProtocol.responseHeaders = [:]
+        RedirectURLProtocol.responseBody = Data("123456".utf8)
+        do {
+            _ = try await fetcher.fetch(URL(string: "https://tiles.making-tracks.app/uk/current.json")!, maxBytes: 5)
+            XCTFail("streamed oversized response unexpectedly succeeded")
+        } catch TileError.responseTooLarge {
+        } catch {
+            XCTFail("expected responseTooLarge, got \(error)")
+        }
+    }
+
     func testManifestPinsCurrentAndExposesAttributionBasemapAndIntegrity() async throws {
         let fetcher = StubFetcher(routes: [
             "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
@@ -182,7 +211,7 @@ final class MakingTracksTilesTests: XCTestCase {
     }
 
     func testPlaceDecoderDropsEveryInvalidCapButKeepsValidPlacesAndNullsBadImageHosts() throws {
-        var badCases: [[String: Any]] = [
+        let badCases: [[String: Any]] = [
             validPlace(["place_id": "mt1_short"]),
             validPlace(["name": String(repeating: "a", count: 201)]),
             validPlace(["name": "safe\u{202E}evil"]),
@@ -199,25 +228,35 @@ final class MakingTracksTilesTests: XCTestCase {
             validPlace(["score": 1.1]),
             validPlace(["lat": 91.0]),
             validPlace(["lon": 181.0]),
-            validPlace(["image_url": "http://upload.wikimedia.org/file.jpg"]),
-            validPlace(["image_url": "https://upload.wikimedia.org/" + String(repeating: "a", count: 2_050)]),
             validPlace(["alt_names": [String(repeating: "a", count: 201)]]),
             validPlace(["category": "safe\u{202E}evil"]),
             validPlace(["blurb": "safe\u{202E}evil"]),
             validPlace(["wikipedia_title": "safe\u{202E}evil"]),
             validPlace(["name": "e" + String(repeating: "\u{301}", count: 200)]),
         ]
-        let imageHostPlace = validPlace(["place_id": "mt1_00000000000000000000000001", "image_url": "https://example.com/file.jpg", "source_refs": ["osm:node/5", "wd:Q42"]])
-        badCases.append(imageHostPlace)
-        let tile = tileObject(places: [validPlace()] + badCases)
+        let retiredImageURLCases = [
+            validPlace(["place_id": "mt1_00000000000000000000000001", "image_url": "https://example.com/file.jpg", "source_refs": ["osm:node/5", "wd:Q42"]]),
+            validPlace(["place_id": "mt1_00000000000000000000000002", "image_url": "http://upload.wikimedia.org/file.jpg"]),
+            validPlace(["place_id": "mt1_00000000000000000000000003", "image_url": "https://upload.wikimedia.org/" + String(repeating: "a", count: 2_050)]),
+            validPlace(["place_id": "mt1_00000000000000000000000004", "image_url": ["nested": "value"]]),
+        ]
+        let tile = tileObject(places: [validPlace()] + badCases + retiredImageURLCases)
 
         let decoded = try PlaceDecoder.decode(tileData: jsonData(tile), expected: TileCoordinate(z: 10, x: 511, y: 340), attributionSources: ["wd"])
 
-        XCTAssertEqual(decoded.places.map(\.mapPlace.id), ["mt1_00000000000000000000000000", "mt1_00000000000000000000000001"])
+        XCTAssertEqual(decoded.places.map(\.mapPlace.id), [
+            "mt1_00000000000000000000000000",
+            "mt1_00000000000000000000000001",
+            "mt1_00000000000000000000000002",
+            "mt1_00000000000000000000000003",
+            "mt1_00000000000000000000000004",
+        ])
         XCTAssertEqual(decoded.places.first?.mapPlace.category, "historic_building")
-        XCTAssertNil(decoded.places.last?.imageURL)
-        XCTAssertEqual(decoded.places.last?.sourceRefs, ["osm:node/5", "wd:Q42"])
-        XCTAssertFalse(decoded.places.last?.placeRef.rawJSON.contains("https://example.com/file.jpg") ?? true)
+        XCTAssertTrue(decoded.places.allSatisfy { $0.imageURL == nil })
+        XCTAssertEqual(decoded.places[1].sourceRefs, ["osm:node/5", "wd:Q42"])
+        XCTAssertFalse(decoded.places[1].placeRef.rawJSON.contains("https://example.com/file.jpg"))
+        XCTAssertFalse(decoded.places[2].placeRef.rawJSON.contains("http://upload.wikimedia.org/file.jpg"))
+        XCTAssertFalse(decoded.places[4].placeRef.rawJSON.contains("nested"))
     }
 
     func testPlaceDecoderRejectsMislabeledTileAndReportsMissingAttributionSource() throws {
@@ -235,6 +274,223 @@ final class MakingTracksTilesTests: XCTestCase {
             attributionSources: []
         )
         XCTAssertEqual(decoded.missingAttributionSources, ["osm"])
+    }
+
+    func testImageIndexDecoderValidatesAttributionAndDerivesTrustedThumbURL() throws {
+        let imageSHA = String(repeating: "a", count: 64)
+        let duplicateSHA = String(repeating: "f", count: 64)
+        let images = try ImageIndexDecoder.decode(
+            jsonData(imageIndexObject(places: [
+                validImageEntry([
+                    "thumb_sha256": imageSHA,
+                    "attribution": validImageAttribution([
+                        "creator": "Alice Example",
+                        "license_code": "CC-BY-SA-4.0",
+                        "license_name": "Creative Commons Attribution-ShareAlike 4.0",
+                    ]),
+                ]),
+                validImageEntry(["thumb_sha256": duplicateSHA]),
+            ])),
+            expected: TileCoordinate(z: 10, x: 511, y: 340)
+        )
+
+        XCTAssertEqual(images.map(\.placeID), ["mt1_00000000000000000000000000"])
+        XCTAssertEqual(images.first?.thumbURL.absoluteString, "https://tiles.making-tracks.app/thumbs/aa/\(imageSHA).webp")
+        XCTAssertEqual(images.first?.attribution.displayText, "Alice Example / Creative Commons Attribution-ShareAlike 4.0 / Wikimedia Commons / modified")
+    }
+
+    func testImageIndexDecoderDropsInvalidRowsButAllowsPublicDomainWithoutCreator() throws {
+        let publicDomainSHA = String(repeating: "b", count: 64)
+        let images = try ImageIndexDecoder.decode(
+            jsonData(imageIndexObject(places: [
+                validImageEntry([
+                    "place_id": "mt1_00000000000000000000000001",
+                    "thumb_sha256": publicDomainSHA,
+                    "attribution": validImageAttribution([
+                        "creator": NSNull(),
+                        "license_code": "PD",
+                        "license_name": "Public domain",
+                    ]),
+                ]),
+                validImageEntry([
+                    "place_id": "mt1_00000000000000000000000002",
+                    "attribution": validImageAttribution([
+                        "creator": NSNull(),
+                        "license_code": "CC-BY-4.0",
+                    ]),
+                ]),
+                validImageEntry([
+                    "place_id": "mt1_00000000000000000000000003",
+                    "attribution": validImageAttribution([
+                        "source_url": "https://evil.example/wiki/File:Bad.jpg",
+                    ]),
+                ]),
+            ])),
+            expected: TileCoordinate(z: 10, x: 511, y: 340)
+        )
+
+        XCTAssertEqual(images.map(\.placeID), ["mt1_00000000000000000000000001"])
+        XCTAssertNil(images.first?.attribution.creator)
+        XCTAssertEqual(images.first?.attribution.displayText, "Public domain / Wikimedia Commons / modified")
+
+        XCTAssertThrowsError(
+            try ImageIndexDecoder.decode(
+                jsonData(imageIndexObject(z: 11, places: [validImageEntry()])),
+                expected: TileCoordinate(z: 10, x: 511, y: 340)
+            )
+        ) {
+            XCTAssertEqual($0 as? TileError, .invalidImageIndex)
+        }
+        XCTAssertThrowsError(
+            try ImageIndexDecoder.decode(
+                jsonData(imageIndexObject(minReaderVersion: VersionGate.readerVersion + 1, places: [validImageEntry()])),
+                expected: TileCoordinate(z: 10, x: 511, y: 340)
+            )
+        ) {
+            XCTAssertEqual($0 as? TileError, .invalidImageIndex)
+        }
+    }
+
+    func testThumbnailLoaderVerifiesShaAndCachesTrustedBlob() async throws {
+        let thumb = Data("fake-webp-thumb".utf8)
+        let thumbSHA = sha256(thumb)
+        let image = validPlaceImage(thumbSHA: thumbSHA, bytes: thumb.count)
+        let cache = try temporaryThumbCache()
+        let fetcher = StubFetcher(routes: [image.thumbURL.absoluteString: thumb])
+        let loader = ThumbnailLoader(fetcher: fetcher, cache: cache)
+
+        let first = try await loader.data(for: image)
+        XCTAssertEqual(first, thumb)
+        XCTAssertEqual(fetcher.requestedURLs, [image.thumbURL.absoluteString])
+
+        fetcher.routes.removeAll()
+        let cached = try await loader.data(for: image)
+        XCTAssertEqual(cached, thumb)
+
+        let tampered = PlaceImage(
+            placeID: image.placeID,
+            thumbSHA256: String(repeating: "c", count: 64),
+            bytes: thumb.count,
+            width: image.width,
+            height: image.height,
+            attribution: image.attribution
+        )
+        let tamperedFetcher = StubFetcher(routes: [tampered.thumbURL.absoluteString: thumb])
+        let tamperedLoader = ThumbnailLoader(fetcher: tamperedFetcher, cache: try temporaryThumbCache())
+        do {
+            _ = try await tamperedLoader.data(for: tampered)
+            XCTFail("tampered thumbnail unexpectedly loaded")
+        } catch {
+            XCTAssertEqual(error as? TileError, .checksumMismatch)
+        }
+
+        let malformed = PlaceImage(
+            placeID: image.placeID,
+            thumbSHA256: "not-a-sha",
+            bytes: thumb.count,
+            width: image.width,
+            height: image.height,
+            attribution: image.attribution
+        )
+        do {
+            _ = try await loader.data(for: malformed)
+            XCTFail("malformed thumbnail unexpectedly loaded")
+        } catch {
+            XCTAssertEqual(error as? TileError, .invalidImageIndex)
+        }
+
+        let oversizedFetcher = StubFetcher(routes: [image.thumbURL.absoluteString: thumb + Data([0])])
+        let oversizedLoader = ThumbnailLoader(fetcher: oversizedFetcher, cache: try temporaryThumbCache())
+        do {
+            _ = try await oversizedLoader.data(for: image)
+            XCTFail("oversized thumbnail unexpectedly loaded")
+        } catch {
+            XCTAssertEqual(error as? TileError, .responseTooLarge)
+        }
+    }
+
+    func testTileClientLoadsImageSidecarForCurrentViewportAndClearsOnPan() async throws {
+        let londonID = "mt1_00000000000000000000000000"
+        let klID = "mt1_00000000000000000000000001"
+        let londonTile = try gzipJSON(tileObject(places: [validPlace(["place_id": londonID])]))
+        let klTile = try gzipJSON(tileObject(
+            places: [validPlace([
+                "place_id": klID,
+                "name": "KL Tower",
+                "lat": 3.1528,
+                "lon": 101.7037,
+            ])],
+            x: 801,
+            y: 503
+        ))
+        let londonSHA = sha256(londonTile)
+        let klSHA = sha256(klTile)
+        var manifest = manifestObject(tileSHA: londonSHA, tileBytes: londonTile.count, attributionSources: [])
+        manifest["tiles"] = [
+            ["x": 511, "y": 340, "sha256": londonSHA, "bytes": londonTile.count],
+            ["x": 801, "y": 503, "sha256": klSHA, "bytes": klTile.count],
+        ]
+        manifest["counts"] = ["total": 2, "by_tier": [2, 0, 0, 0]]
+        let imageSHA = String(repeating: "d", count: 64)
+        let imageSidecarURL = "https://tiles.making-tracks.app/uk/20260716T155409Z/images/10/511/340.json"
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": jsonData(manifest),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/511/340.json.gz": londonTile,
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/801/503.json.gz": klTile,
+            imageSidecarURL: jsonData(imageIndexObject(places: [validImageEntry(["thumb_sha256": imageSHA])])),
+        ])
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache())
+
+        try await client.refreshPin()
+        _ = await client.places(
+            inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51),
+            zoom: 16
+        )
+        let image = try await waitForPlaceImage(client, londonID)
+        XCTAssertEqual(image?.thumbURL.absoluteString, "https://tiles.making-tracks.app/thumbs/dd/\(imageSHA).webp")
+        XCTAssertTrue(fetcher.requestedURLs.contains(imageSidecarURL))
+
+        _ = await client.places(
+            inViewport: BBox(minLon: 101.68, minLat: 3.13, maxLon: 101.70, maxLat: 3.15),
+            zoom: 16
+        )
+        let oldImage = await client.placeImage(for: londonID)
+        let klImage = await client.placeImage(for: klID)
+        XCTAssertNil(oldImage)
+        XCTAssertNil(klImage)
+    }
+
+    func testTileClientDoesNotBlockPlacesOnSlowImageSidecar() async throws {
+        let londonID = "mt1_00000000000000000000000000"
+        let londonTile = try gzipJSON(tileObject(places: [validPlace(["place_id": londonID])]))
+        let londonSHA = sha256(londonTile)
+        let imageSHA = String(repeating: "e", count: 64)
+        let imageSidecarURL = "https://tiles.making-tracks.app/uk/20260716T155409Z/images/10/511/340.json"
+        let fetcher = DelayedSidecarFetcher(
+            delayedURL: imageSidecarURL,
+            routes: [
+                "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+                "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": manifestData(tileSHA: londonSHA, tileBytes: londonTile.count, attributionSources: []),
+                "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/511/340.json.gz": londonTile,
+                imageSidecarURL: jsonData(imageIndexObject(places: [validImageEntry(["thumb_sha256": imageSHA])])),
+            ]
+        )
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache())
+
+        try await client.refreshPin()
+        let places = await client.places(
+            inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51),
+            zoom: 16
+        )
+
+        XCTAssertEqual(places.map(\.id), [londonID])
+        let imageBeforeRelease = await client.placeImage(for: londonID)
+        XCTAssertNil(imageBeforeRelease)
+        await fetcher.releaseDelayedFetch()
+
+        let image = try await waitForPlaceImage(client, londonID)
+        XCTAssertEqual(image?.thumbURL.absoluteString, "https://tiles.making-tracks.app/thumbs/ee/\(imageSHA).webp")
     }
 
     func testLiveCapturedUKTileFixtureRoundTripsThroughCodecAndDecoder() throws {
@@ -4295,6 +4551,64 @@ private final class StubFetcher: OfflineRegionFetching, @unchecked Sendable {
     }
 }
 
+private actor DelayedFetchGate {
+    private var isReleased = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitUntilReleased() async {
+        if isReleased { return }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        isReleased = true
+        let continuations = waiters
+        waiters.removeAll()
+        for continuation in continuations {
+            continuation.resume()
+        }
+    }
+}
+
+private final class DelayedSidecarFetcher: OfflineRegionFetching, @unchecked Sendable {
+    private let delayedURL: String
+    private let gate = DelayedFetchGate()
+    private let lock = NSLock()
+    private var routes: [String: Data]
+    private(set) var requestedURLs: [String] = []
+
+    init(delayedURL: String, routes: [String: Data]) {
+        self.delayedURL = delayedURL
+        self.routes = routes
+    }
+
+    func fetch(_ url: URL) async throws -> Data {
+        let data = lock.withLock {
+            requestedURLs.append(url.absoluteString)
+            return routes[url.absoluteString]
+        }
+        if url.absoluteString == delayedURL {
+            await gate.waitUntilReleased()
+        }
+        guard let data else { throw URLError(.notConnectedToInternet) }
+        return data
+    }
+
+    func download(_ url: URL) async throws -> URL {
+        let data = try await fetch(url)
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MakingTracksDelayedSidecarDownload-\(UUID().uuidString)")
+        try data.write(to: fileURL, options: .atomic)
+        return fileURL
+    }
+
+    func releaseDelayedFetch() async {
+        await gate.release()
+    }
+}
+
 private final class SlowDownloadFetcher: OfflineRegionFetching, @unchecked Sendable {
     private let routes: [String: Data]
     private let onDownloadStarted: () -> Void
@@ -4562,6 +4876,7 @@ private final class RedirectURLProtocol: URLProtocol, @unchecked Sendable {
 
     nonisolated(unsafe) static var mode: Mode = .status(200, location: nil)
     nonisolated(unsafe) static var responseBody = Data()
+    nonisolated(unsafe) static var responseHeaders: [String: String] = [:]
     nonisolated(unsafe) static var requestedURLs: [URL] = []
     nonisolated(unsafe) static var onBlockedRequest: ((URLRequest) -> Void)?
     nonisolated(unsafe) static var onStopLoading: ((URLRequest) -> Void)?
@@ -4569,6 +4884,7 @@ private final class RedirectURLProtocol: URLProtocol, @unchecked Sendable {
     static func reset() {
         mode = .status(200, location: nil)
         responseBody = Data()
+        responseHeaders = [:]
         requestedURLs = []
         onBlockedRequest = nil
         onStopLoading = nil
@@ -4619,6 +4935,7 @@ private final class RedirectURLProtocol: URLProtocol, @unchecked Sendable {
             headers["Location"] = location
         }
         headers["Content-Length"] = "\(Self.responseBody.count)"
+        headers.merge(Self.responseHeaders) { _, new in new }
         return HTTPURLResponse(
             url: request.url!,
             statusCode: status,
@@ -4636,6 +4953,26 @@ private func temporaryCache(maxBytes: Int = 1024 * 1024) throws -> TileCache {
     let url = FileManager.default.temporaryDirectory
         .appendingPathComponent("MakingTracksTilesTests-\(UUID().uuidString)", isDirectory: true)
     return try TileCache(directory: url, maxBytes: maxBytes)
+}
+
+private func temporaryThumbCache(maxBytes: Int = 1024 * 1024) throws -> ThumbnailCache {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("MakingTracksThumbTests-\(UUID().uuidString)", isDirectory: true)
+    return try ThumbnailCache(directory: url, maxBytes: maxBytes)
+}
+
+private func waitForPlaceImage(
+    _ client: TileClient,
+    _ placeID: String,
+    attempts: Int = 40
+) async throws -> PlaceImage? {
+    for _ in 0..<attempts {
+        if let image = await client.placeImage(for: placeID) {
+            return image
+        }
+        try await Task.sleep(nanoseconds: 50_000_000)
+    }
+    return nil
 }
 
 private func temporaryOfflineRoot() -> URL {
@@ -4829,6 +5166,71 @@ H4sIAAAAAAAC/x2PywrCMBBF/2XWtSSmD5NdXYhUCipiFyIlttEG2kaS+MZ/d+puuDPncuYD107WyoE4
 
 private func tileObject(places: [[String: Any]], z: Int = 10, x: Int = 511, y: Int = 340) -> [String: Any] {
     ["schema_version": 1, "z": z, "x": x, "y": y, "places": places]
+}
+
+private func imageIndexObject(
+    z: Int = 10,
+    x: Int = 511,
+    y: Int = 340,
+    minReaderVersion: Int = 2,
+    places: [[String: Any]]
+) -> [String: Any] {
+    [
+        "schema_version": 1,
+        "min_reader_version": minReaderVersion,
+        "z": z,
+        "x": x,
+        "y": y,
+        "places": places,
+    ]
+}
+
+private func validImageEntry(_ overrides: [String: Any] = [:]) -> [String: Any] {
+    var entry: [String: Any] = [
+        "place_id": "mt1_00000000000000000000000000",
+        "thumb_sha256": String(repeating: "a", count: 64),
+        "bytes": 12345,
+        "width": 640,
+        "height": 480,
+        "attribution": validImageAttribution(),
+    ]
+    for (key, value) in overrides {
+        entry[key] = value
+    }
+    return entry
+}
+
+private func validImageAttribution(_ overrides: [String: Any] = [:]) -> [String: Any] {
+    var attribution: [String: Any] = [
+        "creator": "Alice Example",
+        "license_code": "CC-BY-4.0",
+        "license_name": "Creative Commons Attribution 4.0",
+        "license_url": "https://creativecommons.org/licenses/by/4.0/",
+        "source_url": "https://commons.wikimedia.org/wiki/File:Big_Ben.jpg",
+        "modified": true,
+    ]
+    for (key, value) in overrides {
+        attribution[key] = value
+    }
+    return attribution
+}
+
+private func validPlaceImage(thumbSHA: String, bytes: Int) -> PlaceImage {
+    PlaceImage(
+        placeID: "mt1_00000000000000000000000000",
+        thumbSHA256: thumbSHA,
+        bytes: bytes,
+        width: 640,
+        height: 480,
+        attribution: PlaceImageAttribution(
+            creator: "Alice Example",
+            licenseCode: "CC-BY-4.0",
+            licenseName: "Creative Commons Attribution 4.0",
+            licenseURL: URL(string: "https://creativecommons.org/licenses/by/4.0/")!,
+            sourceURL: URL(string: "https://commons.wikimedia.org/wiki/File:Big_Ben.jpg")!,
+            modified: true
+        )
+    )
 }
 
 private func validPlace(_ overrides: [String: Any] = [:]) -> [String: Any] {
