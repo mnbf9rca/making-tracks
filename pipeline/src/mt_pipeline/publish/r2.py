@@ -269,7 +269,6 @@ def publish_to_r2(
     client=None,
     upload: bool = False,
     registry_blob: bytes | None = None,
-    reuse_existing_thumbs: bool = False,
 ) -> PublishResult:
     staging = Path(staging)
     region = staging.parent.name
@@ -292,19 +291,7 @@ def publish_to_r2(
     try:
         _assert_not_live(client, layout, region, publish_version)
         _assert_prefix_absent(client, layout, region, publish_version)
-        ops = _ordered_ops_for_visibility(plan.ops)
-        if reuse_existing_thumbs:
-            thumb_ops, stats = _reuse_existing_thumb_ops(
-                client, layout, [op for op in ops if op.kind == "thumb"]
-            )
-            print(
-                "THUMB_UPLOAD_REUSE "
-                f"staged={stats.staged} existing={stats.existing} "
-                f"missing={stats.missing} uploaded={stats.uploaded} "
-                f"skipped={stats.skipped}"
-            )
-            ops = [*thumb_ops, *[op for op in ops if op.kind != "thumb"]]
-        for op in ops:
+        for op in _ordered_ops_for_visibility(plan.ops):
             _upload_op(client, op)
             uploaded += 1
     finally:

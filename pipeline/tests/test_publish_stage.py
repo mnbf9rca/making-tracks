@@ -953,6 +953,73 @@ def test_publish_stage_upload_builds_all_targets_before_any_upload(
     assert calls == []
 
 
+def test_publish_stage_upload_passes_reuse_existing_thumbs_to_prepared_upload(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    _write_malaysia_registry(tmp_path)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+    monkeypatch.setattr(P.r2, "_import_module", lambda name: object())
+    monkeypatch.setenv("R2_S3_ENDPOINT", "https://example.r2.cloudflarestorage.com")
+    monkeypatch.setenv("R2_ACCESS_KEY_ID", "access")
+    monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "secret")
+    calls = []
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename=out_path.name,
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    def fake_publish_prepared_to_r2(plans, region_index_path, layout, **kwargs):
+        plan_list = list(plans)
+        calls.append((plan_list, region_index_path, layout, kwargs))
+        return P.r2.PreparedPublishResult(
+            target_results=tuple(
+                P.r2.PublishResult(plan=plan, uploaded=len(plan.ops), dry_run=False)
+                for plan in plan_list
+            ),
+            region_index_result=P.r2.PublishResult(
+                plan=P.r2.PublishPlan(
+                    layout=layout,
+                    region="regions",
+                    publish_version="20260717T120000Z",
+                    ops=(
+                        P.r2.PublishOp(
+                            kind="region_index",
+                            bucket=str(layout["public_bucket"]),
+                            key="regions.json",
+                            body=b"{}",
+                        ),
+                    ),
+                ),
+                uploaded=1,
+                dry_run=False,
+            ),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.r2, "publish_prepared_to_r2", fake_publish_prepared_to_r2)
+
+    P.run(
+        conn,
+        "malaysia-singapore-brunei",
+        publish_version="20260717T120000Z",
+        generated_at="2026-07-17T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        upload=True,
+        staging_root=tmp_path / "stage",
+        reuse_existing_thumbs=True,
+    )
+
+    assert calls[0][3]["reuse_existing_thumbs"] is True
+
+
 def test_subregion_bbox_filter_excludes_invalid_coordinates():
     places = [
         {"place_id": A, "lat": 3.1, "lon": 101.7},

@@ -87,7 +87,7 @@
               "license_url": {
                 "type": "string",
                 "maxLength": 512,
-                "pattern": "^https://(creativecommons\\.org/(licenses/(by|by-sa)/(1\\.0|2\\.0|2\\.1|2\\.5|3\\.0|4\\.0)(/([a-z]{2}(_[a-z]+)?|igo))?/?|publicdomain/zero/1\\.0/?)|commons\\.wikimedia\\.org/wiki/Commons:Copyright_tags/General_public_domain)$"
+                "pattern": "^https://creativecommons\\.org/(licenses/(by|by-sa)/(1\\.0|2\\.0|2\\.1|2\\.5|3\\.0|4\\.0)(/([a-z]{2}(_[a-z]+)?|igo))?/?|publicdomain/(zero|mark)/1\\.0/?)$"
               },
               "source_url": {
                 "type": "string",

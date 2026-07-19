@@ -50,7 +50,12 @@ IMAGE_WORKER_TIMEOUT_SECONDS = 30
 TRANSIENT_REJECT_REASONS = frozenset({"metadata_fetch_failed", "download_failed"})
 MAX_AUDITED_IMAGE_ROWS = 1_000_000
 MAX_AUDITED_IMAGE_JSONL_BYTES = 512 * 1024 * 1024
+MAX_AUDITED_THUMB_BYTES = 1_048_576
 _HEX_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_CC_BY_LICENSE_CODE_RE = re.compile(
+    r"^CC-BY(-SA)?-(1\.0|2\.0|2\.1|2\.5|3\.0|4\.0)(-[A-Z]{2}(_[A-Z]+)?|-IGO)?$"
+)
+_COMMONS_FILE_PATH_RE = re.compile(r"^/wiki/File:(?!.*(?:\.\.|/))[^?#\s]+$")
 
 
 @dataclass(frozen=True)
@@ -490,7 +495,11 @@ def _load_audited_image_rows(path: pathlib.Path) -> dict[str, dict[str, Any]]:
                 raise AuditedImageReuseError(
                     f"audited image row {lineno} has invalid place_id"
                 )
-            rows.setdefault(place_id, payload)
+            if place_id in rows:
+                raise AuditedImageReuseError(
+                    f"audited image JSONL has duplicate place_id at line {lineno}: {place_id}"
+                )
+            rows[place_id] = payload
     return rows
 
 
@@ -509,6 +518,11 @@ def _place_image_from_audited_row(
     if not thumb_path.exists():
         raise AuditedImageReuseError(
             f"referenced thumb missing for {candidate.place_id}: {thumb_path}"
+        )
+    if thumb_path.stat().st_size > MAX_AUDITED_THUMB_BYTES:
+        raise AuditedImageReuseError(
+            f"audited thumb exceeds {MAX_AUDITED_THUMB_BYTES} bytes for "
+            f"{candidate.place_id}: {thumb_path}"
         )
     thumb_bytes = thumb_path.read_bytes()
     if hashlib.sha256(thumb_bytes).hexdigest() != thumb_sha:
@@ -553,6 +567,10 @@ def _audited_attribution(value: object, *, place_id: str) -> ImageAttribution:
                 f"audited image creator is unsafe for {place_id}"
             )
     license_code = _safe_text_field(value, "license_code", 64, place_id=place_id)
+    if _CC_BY_LICENSE_CODE_RE.fullmatch(license_code) is not None and creator is None:
+        raise AuditedImageReuseError(
+            f"audited image creator is required for {license_code} at {place_id}"
+        )
     license_name = _safe_text_field(value, "license_name", 128, place_id=place_id)
     raw_license_url = _safe_text_field(value, "license_url", 512, place_id=place_id)
     license_url, license_url_reason = _license_url(raw_license_url, license_code)
@@ -560,11 +578,11 @@ def _audited_attribution(value: object, *, place_id: str) -> ImageAttribution:
         raise AuditedImageReuseError(
             f"audited image license_url rejected for {place_id}: {license_url_reason}"
         )
-    source_url = _safe_https_field(value, "source_url", place_id=place_id)
+    source_url = _safe_commons_file_url(value, "source_url", place_id=place_id)
     modified = value.get("modified")
-    if not isinstance(modified, bool):
+    if modified is not True:
         raise AuditedImageReuseError(
-            f"audited image modified must be boolean for {place_id}"
+            f"audited image modified must be true for {place_id}"
         )
     return ImageAttribution(
         creator=creator,
@@ -593,6 +611,23 @@ def _safe_https_field(value: dict[str, Any], key: str, *, place_id: str) -> str:
             f"audited image {key} is not safe HTTPS for {place_id}"
         )
     return safe
+
+
+def _safe_commons_file_url(value: dict[str, Any], key: str, *, place_id: str) -> str:
+    raw = _safe_text_field(value, key, 1024, place_id=place_id)
+    parsed = urlparse(raw)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "commons.wikimedia.org"
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or _COMMONS_FILE_PATH_RE.fullmatch(parsed.path) is None
+    ):
+        raise AuditedImageReuseError(
+            f"audited image {key} is not a safe Commons File URL for {place_id}"
+        )
+    return raw
 
 
 def transcode_to_webp_thumb(path) -> ThumbTranscode:
