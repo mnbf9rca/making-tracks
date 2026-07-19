@@ -634,6 +634,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
 
         let openFixture = app.buttons["debug.open-fixture"]
         XCTAssertTrue(openFixture.waitForExistence(timeout: 5))

@@ -1,4 +1,5 @@
 import CoreLocation
+import ImageIO
 import Observation
 import SwiftUI
 import UIKit
@@ -3990,6 +3991,9 @@ private struct PlaceCardSheet: View {
                 }
             )
         }
+        .task(id: placeID) {
+            await observeImageChanges()
+        }
     }
 
     @ViewBuilder
@@ -4010,19 +4014,7 @@ private struct PlaceCardSheet: View {
     @ViewBuilder
     private func photoSlot(_ card: PlaceCardModel) -> some View {
         if let photo = card.photo {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(.thinMaterial)
-                Image(systemName: "photo")
-                    .font(.system(size: 42, weight: .regular))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 180)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(photo.accessibilityLabel)
-            .accessibilityIdentifier("place-card.photo")
+            PlaceCardPhotoSlot(photo: photo, model: model)
         }
     }
 
@@ -4169,6 +4161,15 @@ private struct PlaceCardSheet: View {
         }
     }
 
+    private func observeImageChanges() async {
+        guard let changes = model?.imageChanges else { return }
+        for await ids in changes {
+            guard !Task.isCancelled else { return }
+            guard ids.contains(placeID) else { continue }
+            await refreshCard()
+        }
+    }
+
     private func setSaved(_ saved: Bool) async {
         await performAction {
             try await model?.setSaved(placeID: placeID, saved: saved)
@@ -4248,6 +4249,90 @@ private struct PlaceCardSheet: View {
         return parts
     }
 
+}
+
+private struct PlaceCardPhotoSlot: View {
+    let photo: PlaceCardPhoto
+    let model: MapScreenModel?
+
+    @State private var image: UIImage?
+    @State private var didFail = false
+
+    private var loadID: String {
+        photo.thumbSHA256 ?? photo.accessibilityLabel
+    }
+
+    private var slotAccessibilityLabel: String {
+        didFail && photo.thumbURL != nil ? "Photo unavailable" : photo.accessibilityLabel
+    }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(.thinMaterial)
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .accessibilityHidden(true)
+            } else if photo.thumbURL == nil || didFail {
+                Image(systemName: "photo")
+                    .font(.system(size: 42, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            } else if !didFail {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 180)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(slotAccessibilityLabel)
+        .accessibilityIdentifier("place-card.photo")
+        .task(id: loadID) {
+            await loadPhoto(expectedLoadID: loadID)
+        }
+    }
+
+    private func loadPhoto(expectedLoadID: String) async {
+        guard !Task.isCancelled else { return }
+        await MainActor.run {
+            guard !Task.isCancelled, loadID == expectedLoadID else { return }
+            image = nil
+            didFail = false
+        }
+        guard photo.thumbURL != nil else { return }
+        guard let data = await model?.photoData(for: photo) else {
+            await MainActor.run {
+                guard !Task.isCancelled, loadID == expectedLoadID else { return }
+                didFail = true
+            }
+            return
+        }
+        await MainActor.run {
+            guard !Task.isCancelled, loadID == expectedLoadID else { return }
+            if Self.isSafeDecodedImage(data), let decoded = UIImage(data: data) {
+                image = decoded
+            } else {
+                didFail = true
+            }
+        }
+    }
+
+    private static func isSafeDecodedImage(_ data: Data) -> Bool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0,
+              height > 0
+        else { return false }
+        // Tunable guard shared with the card contract: enough for thumbnails, bounded against decode bombs.
+        return width <= 16_000_000 / height
+    }
 }
 
 private enum MapScreenActionError: Error {
@@ -4351,6 +4436,7 @@ enum ListMapPinAccessibilityNames {
 private final class MapScreenModel {
     private let database: AppDatabase
     private let tileCache: TileCache?
+    private let thumbnailLoader: ThumbnailLoader?
     private let offlineStore: OfflineRegionStore?
     private let forceTileNetworkOffline: Bool
     private let fixturePlaces: [String: PlaceRef]
@@ -4361,6 +4447,10 @@ private final class MapScreenModel {
     private var showHiddenPlaces = false
 
     var changes: AsyncStream<Set<String>> { coreLoop.changes }
+
+    var imageChanges: AsyncStream<Set<String>>? {
+        tileClient(for: selectedRegion)?.imageChanges
+    }
 
     init(
         database: AppDatabase,
@@ -4381,9 +4471,17 @@ private final class MapScreenModel {
                 create: true
             ).appendingPathComponent("MakingTracks/Tiles", isDirectory: true)
             tileCache = try TileCache(directory: cacheRoot)
+            let thumbnailCache = try ThumbnailCache(directory: cacheRoot.appendingPathComponent("Thumbs", isDirectory: true))
+#if DEBUG
+            let thumbnailFetcher: TileFetching = forceTileNetworkOffline ? OfflineProofFetcher() : HTTPTileFetcher()
+#else
+            let thumbnailFetcher: TileFetching = HTTPTileFetcher()
+#endif
+            thumbnailLoader = ThumbnailLoader(fetcher: thumbnailFetcher, cache: thumbnailCache)
             offlineStore = try? OfflineRegionStore.documentsStore()
         } else {
             tileCache = nil
+            thumbnailLoader = nil
             offlineStore = nil
         }
         let hasCache = tileCache != nil
@@ -4855,7 +4953,24 @@ private final class MapScreenModel {
         }
         guard let base else { return nil }
         let lists = await userListNames(containing: placeID)
-        return base.enriching(photo: fixturePhoto(for: placeID, name: base.name), listNames: lists)
+        let photo = await cardPhoto(for: placeID, name: base.name) ?? fixturePhoto(for: placeID, name: base.name)
+        return base.enriching(photo: photo, listNames: lists)
+    }
+
+    func photoData(for photo: PlaceCardPhoto) async -> Data? {
+        guard let image = photo.image,
+              let thumbnailLoader
+        else { return nil }
+        return try? await thumbnailLoader.data(for: image)
+    }
+
+    private func cardPhoto(for placeID: String, name: String) async -> PlaceCardPhoto? {
+        guard thumbnailLoader != nil,
+              fixturePlaces[placeID] == nil,
+              let tileClient = tileClient(for: selectedRegion),
+              let image = await tileClient.placeImage(for: placeID)
+        else { return nil }
+        return PlaceCardPhoto(placeName: name, image: image)
     }
 
     private func userListNames(containing placeID: String) async -> [String] {

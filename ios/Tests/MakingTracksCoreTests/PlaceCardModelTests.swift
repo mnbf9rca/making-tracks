@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 import MakingTracksData
+import MakingTracksTiles
 @testable import MakingTracksCore
 
 final class PlaceCardModelTests: XCTestCase {
@@ -141,6 +142,46 @@ final class PlaceCardModelTests: XCTestCase {
         XCTAssertEqual(model?.name, "Snapshot name")
         XCTAssertEqual(model?.category, "snapshot-category")
         XCTAssertEqual(model?.sourceNames, [])
+    }
+
+    func testPlaceImageEnrichesCardPhotoWithoutLegacyImageURL() throws {
+        let snapshot = makeSnapshot(snapshotJSON: jsonString([
+            "place_id": "mt1_00000000000000000000000000",
+            "name": "Clock",
+            "lat": 51.5,
+            "lon": -0.12,
+            "category": "historic_building",
+            "tier": 1,
+            "score": 0.9,
+            "source_refs": ["wd:Q42"],
+            "image_url": "https://upload.wikimedia.org/legacy.jpg",
+            "blurb": "Clock tower",
+        ]))
+        let base = try XCTUnwrap(PlaceCardModel.from(snapshot: snapshot, pinState: PinState(saved: false, visit: .none)))
+        let image = PlaceImage(
+            placeID: "mt1_00000000000000000000000000",
+            thumbSHA256: String(repeating: "a", count: 64),
+            bytes: 12345,
+            width: 640,
+            height: 480,
+            attribution: PlaceImageAttribution(
+                creator: "Alice Example",
+                licenseCode: "CC-BY-4.0",
+                licenseName: "Creative Commons Attribution 4.0",
+                licenseURL: URL(string: "https://creativecommons.org/licenses/by/4.0/")!,
+                sourceURL: URL(string: "https://commons.wikimedia.org/wiki/File:Clock.jpg")!,
+                modified: true
+            )
+        )
+
+        let enriched = base.enriching(photo: PlaceCardPhoto(placeName: base.name, image: image))
+
+        XCTAssertEqual(enriched.photo?.thumbURL?.absoluteString, "https://tiles.making-tracks.app/thumbs/aa/\(String(repeating: "a", count: 64)).webp")
+        XCTAssertEqual(enriched.photo?.thumbSHA256, String(repeating: "a", count: 64))
+        XCTAssertEqual(enriched.photo?.width, 640)
+        XCTAssertEqual(enriched.photo?.height, 480)
+        XCTAssertEqual(enriched.photo?.accessibilityLabel, "Photo of Clock")
+        XCTAssertEqual(enriched.photo?.attribution, "Alice Example / Creative Commons Attribution 4.0 / modified / https://creativecommons.org/licenses/by/4.0/")
     }
 }
 
