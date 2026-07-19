@@ -1,0 +1,19 @@
+name: agent-law-lint
+
+on:
+  pull_request:
+    paths:
+      - AGENTS.md
+      - docs/INFRA.md
+      - scripts/lint_agent_law.py
+      - .github/workflows/agent-law-lint.yml
+  push:
+    branches: [develop, ios]
+
+jobs:
+  timeless-rule-text:
+    name: "rule text carries no dated narrative"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/lint_agent_law.py

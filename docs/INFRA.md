@@ -28,7 +28,8 @@ concluding:
   `SSH_AUTH_SOCK=~/Library/Group\ Containers/2BUA8C4S2C.com.1password/t/agent.sock ssh-add -l`
 
 A transient 1Password agent fault under concurrent load (`failed to fill whole buffer`) produces the same
-symptom as a locked Mac. Asserting the lock without probing has parked agents for hours.
+symptom as a locked Mac. Probe before concluding — see
+[`process/incidents.md`](process/incidents.md) → *Lock misdiagnosed from the symptom*.
 
 ### When the signer is unavailable
 
