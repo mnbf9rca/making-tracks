@@ -207,6 +207,12 @@ public final class HTTPTileFetcher: ProgressReportingOfflineRegionFetching, Boun
         }
     }
 
+    deinit {
+        guard configurationIdentifier == nil else { return }
+        session.invalidateAndCancel()
+        delegate.cancelAll(with: URLError(.cancelled))
+    }
+
     public func fetch(_ url: URL) async throws -> Data {
         try await fetch(url, connectivityWaiting: nil)
     }
@@ -1576,7 +1582,7 @@ public final class ManifestClient: @unchecked Sendable {
     }
 
     public static func currentPublishVersion(region: String, fetcher: TileFetching) async throws -> String {
-        guard region.matches("^[a-z][a-z0-9_]*$") else {
+        guard region.matches(regionIDPattern) else {
             throw TileError.invalidOfflinePack
         }
         return try decodeCurrent(await fetcher.fetch(try trustedURL("\(region)/current.json")))
@@ -1957,17 +1963,25 @@ public enum ImageIndexDecoder {
 public final class ThumbnailCache: @unchecked Sendable {
     /// Tunable budget for card thumbnails; offline packs own their own thumbnail storage later.
     public static let maxBytes = 64 * 1024 * 1024
+    /// Tunable ledger bound: enough for many recent thumbs while keeping thumb-access.json compact.
+    static let maxAccessEntries = 4_096
 
     private let directory: URL
     private let maxBytes: Int
+    private let maxAccessEntries: Int
     private let fm = FileManager.default
     private let lock = NSLock()
     private var accessCounter: Int
     private var accessEntries: [String: Int]
 
-    public init(directory: URL, maxBytes: Int = ThumbnailCache.maxBytes) throws {
+    public convenience init(directory: URL, maxBytes: Int = ThumbnailCache.maxBytes) throws {
+        try self.init(directory: directory, maxBytes: maxBytes, maxAccessEntries: Self.maxAccessEntries)
+    }
+
+    init(directory: URL, maxBytes: Int = ThumbnailCache.maxBytes, maxAccessEntries: Int) throws {
         self.directory = directory
         self.maxBytes = maxBytes
+        self.maxAccessEntries = maxAccessEntries
         let initialAccessURL = directory.appendingPathComponent("thumb-access.json")
         if let stored = try? JSONDecoder().decode(TileAccess.self, from: Data(contentsOf: initialAccessURL)) {
             accessCounter = stored.next
@@ -2007,9 +2021,14 @@ public final class ThumbnailCache: @unchecked Sendable {
         let files = try thumbnailFiles()
         var total = files.reduce(0) { $0 + $1.bytes }
         for file in files.sorted(by: { access[cacheKey($0.url), default: 0] < access[cacheKey($1.url), default: 0] }) where total > maxBytes {
-            try? fm.removeItem(at: file.url)
+            do {
+                try fm.removeItem(at: file.url)
+            } catch {
+                continue
+            }
             total -= file.bytes
         }
+        try compactAccessLedger(keeping: Set(thumbnailFiles().map { cacheKey($0.url) }))
     }
 
     private func thumbnailFiles() throws -> [(url: URL, bytes: Int)] {
@@ -2020,7 +2039,8 @@ public final class ThumbnailCache: @unchecked Sendable {
         for case let url as URL in enumerator {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
             if values.isRegularFile == true, url.pathExtension == "webp" {
-                files.append((url, values.fileSize ?? 0))
+                let bytes = values.fileSize ?? ((try? fm.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0)
+                files.append((url, bytes))
             }
         }
         return files
@@ -2030,9 +2050,28 @@ public final class ThumbnailCache: @unchecked Sendable {
         lock.lock()
         accessEntries[cacheKey(url)] = accessCounter
         accessCounter += 1
+        compactAccessEntriesLocked()
         let snapshot = TileAccess(next: accessCounter, entries: accessEntries)
         lock.unlock()
         try JSONEncoder().encode(snapshot).write(to: accessURL, options: .atomic)
+    }
+
+    private func compactAccessLedger(keeping keptKeys: Set<String>) throws {
+        lock.lock()
+        accessEntries = accessEntries.filter { keptKeys.contains($0.key) }
+        compactAccessEntriesLocked()
+        let snapshot = TileAccess(next: accessCounter, entries: accessEntries)
+        lock.unlock()
+        try JSONEncoder().encode(snapshot).write(to: accessURL, options: .atomic)
+    }
+
+    private func compactAccessEntriesLocked() {
+        guard accessEntries.count > maxAccessEntries else { return }
+        let keep = Set(accessEntries.sorted { lhs, rhs in
+            if lhs.value != rhs.value { return lhs.value > rhs.value }
+            return lhs.key < rhs.key
+        }.prefix(maxAccessEntries).map(\.key))
+        accessEntries = accessEntries.filter { keep.contains($0.key) }
     }
 
     private var accessURL: URL {

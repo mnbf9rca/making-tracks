@@ -412,9 +412,36 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(progress.percentComplete, 25)
     }
 
+    @MainActor
+    func testOfflineDownloadSessionKeepsProgressFloorAcrossRestart() {
+        let session = OfflineRegionDownloadSession()
+
+        session.begin(region: "uk", control: OfflineRegionDownloadControl(), downloadID: UUID())
+        session.update(OfflineDownloadProgress(region: "uk", fractionComplete: 0.6))
+        session.pause(region: "uk")
+        session.begin(region: "uk", control: OfflineRegionDownloadControl(), downloadID: UUID())
+        session.update(OfflineDownloadProgress(region: "uk", fractionComplete: 0.2))
+
+        XCTAssertEqual(session.liveProgress?.fractionComplete, 0.6)
+
+        session.update(OfflineDownloadProgress(region: "uk", fractionComplete: 0.8))
+        XCTAssertEqual(session.liveProgress?.fractionComplete, 0.8)
+    }
+
+    func testOfflineInstall404UsesUnavailableAreaCopy() {
+        XCTAssertEqual(
+            offlineInstallFailureMessage(for: TileError.httpStatus(404)),
+            "This area isn't available yet"
+        )
+        XCTAssertEqual(
+            offlineInstallFailureDetail(for: TileError.httpStatus(404)),
+            "http-404"
+        )
+    }
+
     func testOfflineDownloadProgressSurfacesConnectivityWaitingState() {
         let progress = OfflineDownloadProgress(
-            region: "uk_london",
+            region: "united-kingdom_london",
             publishVersion: "20260718T000000Z",
             completedBytes: 0,
             totalBytes: 100,
@@ -422,7 +449,7 @@ final class AppShellTests: XCTestCase {
             isWaitingForConnectivity: true
         )
         let row = OfflineRegionCatalogRow(
-            zone: OfflineRegionCatalog.debugFixture.zone(id: "uk_london")!,
+            zone: OfflineRegionCatalog.debugFixture.zone(id: "united-kingdom_london")!,
             depth: 1,
             state: .downloading(progress)
         )
@@ -662,10 +689,10 @@ final class AppShellTests: XCTestCase {
         let catalog = OfflineRegionCatalog.debugFixture
 
         XCTAssertEqual(catalog.rootZones.map(\.id), ["malaysia-singapore-brunei", "united-kingdom"])
-        XCTAssertEqual(catalog.children(of: "united-kingdom").map(\.id), ["uk_london", "uk_south_east"])
-        XCTAssertEqual(catalog.children(of: "malaysia-singapore-brunei").map(\.id), ["malaysia_kl", "malaysia_penang"])
-        XCTAssertEqual(catalog.zone(id: "uk_london")?.sizeLabel(includeThumbnails: false), "842 MB")
-        XCTAssertEqual(catalog.zone(id: "malaysia_kl")?.sizeLabel(includeThumbnails: true), "915 MB")
+        XCTAssertEqual(catalog.children(of: "united-kingdom").map(\.id), ["united-kingdom_london", "united-kingdom_south_east"])
+        XCTAssertEqual(catalog.children(of: "malaysia-singapore-brunei").map(\.id), ["malaysia-singapore-brunei_kl", "malaysia-singapore-brunei_penang"])
+        XCTAssertEqual(catalog.zone(id: "united-kingdom_london")?.sizeLabel(includeThumbnails: false), "842 MB")
+        XCTAssertEqual(catalog.zone(id: "malaysia-singapore-brunei_kl")?.sizeLabel(includeThumbnails: true), "915 MB")
         XCTAssertNil(catalog.zone(id: "not-a-zone"))
     }
 
@@ -687,18 +714,18 @@ final class AppShellTests: XCTestCase {
         let rows = catalog.rows(
             installed: [
                 "united-kingdom": "20260718T000000Z",
-                "uk_london": "20260717T000000Z",
-                "uk_south_east": "20260717T000000Z",
-                "malaysia_kl": "20260717T000000Z",
+                "united-kingdom_london": "20260717T000000Z",
+                "united-kingdom_south_east": "20260717T000000Z",
+                "malaysia-singapore-brunei_kl": "20260717T000000Z",
             ],
             activeProgress: progress,
             quarantines: [quarantine]
         )
         let uk = rows.first { $0.zone.id == "united-kingdom" }
-        let london = rows.first { $0.zone.id == "uk_london" }
-        let southEast = rows.first { $0.zone.id == "uk_south_east" }
+        let london = rows.first { $0.zone.id == "united-kingdom_london" }
+        let southEast = rows.first { $0.zone.id == "united-kingdom_south_east" }
         let malaysia = rows.first { $0.zone.id == "malaysia-singapore-brunei" }
-        let kl = rows.first { $0.zone.id == "malaysia_kl" }
+        let kl = rows.first { $0.zone.id == "malaysia-singapore-brunei_kl" }
 
         XCTAssertEqual(uk?.state, .downloading(progress))
         XCTAssertEqual(london?.state, .unavailable)
@@ -715,27 +742,56 @@ final class AppShellTests: XCTestCase {
     func testOfflineRegionRowsDoNotOfferSubregionDownloads() {
         let catalog = OfflineRegionCatalog.debugFixture
         let quarantine = OfflinePackQuarantine(
-            region: "malaysia_kl",
+            region: "malaysia-singapore-brunei_kl",
             publishVersion: "20260717T000000Z",
             coordinates: [TileCoordinate(z: 10, x: 806, y: 503)]
         )
 
         let rows = catalog.rows(
             installed: [
-                "uk_london": "20260717T000000Z",
-                "malaysia_kl": "20260717T000000Z",
+                "united-kingdom_london": "20260717T000000Z",
+                "malaysia-singapore-brunei_kl": "20260717T000000Z",
             ],
-            activeProgress: OfflineDownloadProgress(region: "uk_london", fractionComplete: 0.25),
-            pausedProgress: OfflineDownloadProgress(region: "malaysia_kl", fractionComplete: 0.5),
+            activeProgress: OfflineDownloadProgress(region: "united-kingdom_london", fractionComplete: 0.25),
+            pausedProgress: OfflineDownloadProgress(region: "malaysia-singapore-brunei_kl", fractionComplete: 0.5),
             quarantines: [quarantine]
         )
 
         XCTAssertEqual(rows.first { $0.zone.id == "united-kingdom" }?.state, .notInstalled)
         XCTAssertEqual(rows.first { $0.zone.id == "malaysia-singapore-brunei" }?.state, .notInstalled)
-        XCTAssertEqual(rows.first { $0.zone.id == "uk_london" }?.state, .unavailable)
-        XCTAssertEqual(rows.first { $0.zone.id == "malaysia_kl" }?.statusLabel, "Not available")
-        XCTAssertTrue(rows.first { $0.zone.id == "uk_london" }?.hasUnavailableLocalData == true)
-        XCTAssertTrue(rows.first { $0.zone.id == "malaysia_kl" }?.hasUnavailableLocalData == true)
+        XCTAssertEqual(rows.first { $0.zone.id == "united-kingdom_london" }?.state, .unavailable)
+        XCTAssertEqual(rows.first { $0.zone.id == "malaysia-singapore-brunei_kl" }?.statusLabel, "Not available")
+        XCTAssertTrue(rows.first { $0.zone.id == "united-kingdom_london" }?.hasUnavailableLocalData == true)
+        XCTAssertTrue(rows.first { $0.zone.id == "malaysia-singapore-brunei_kl" }?.hasUnavailableLocalData == true)
+    }
+
+    func testOfflineRegionRowsSurfaceUnknownLocalRegionsForCleanup() {
+        let catalog = OfflineRegionCatalog.debugFixture
+        let rows = catalog.rows(
+            installed: [
+                "uk": "20260716T155409Z",
+            ],
+            activeProgress: nil,
+            pausedRegions: ["uk_london"],
+            quarantines: [
+                OfflinePackQuarantine(
+                    region: "malaysia",
+                    publishVersion: "20260716T155035Z",
+                    coordinates: [TileCoordinate(z: 10, x: 806, y: 503)]
+                ),
+            ]
+        )
+
+        let installed = rows.first { $0.zone.id == "uk" }
+        let paused = rows.first { $0.zone.id == "uk_london" }
+        let quarantined = rows.first { $0.zone.id == "malaysia" }
+
+        XCTAssertEqual(installed?.state, .unavailable)
+        XCTAssertTrue(installed?.allowsDelete == true)
+        XCTAssertEqual(paused?.state, .unavailable)
+        XCTAssertEqual(paused?.cancelRegion, "uk_london")
+        XCTAssertEqual(quarantined?.state, .unavailable)
+        XCTAssertTrue(quarantined?.allowsDelete == true)
     }
 
     func testOfflineRegionRowsOfferCleanupForUnavailablePausedSubregion() {
@@ -744,14 +800,14 @@ final class AppShellTests: XCTestCase {
         let rows = catalog.rows(
             installed: [:],
             activeProgress: nil,
-            pausedRegions: ["uk_london"],
+            pausedRegions: ["united-kingdom_london"],
             quarantines: []
         )
-        let london = rows.first { $0.zone.id == "uk_london" }
+        let london = rows.first { $0.zone.id == "united-kingdom_london" }
 
         XCTAssertEqual(london?.state, .unavailable)
         XCTAssertEqual(london?.statusLabel, "Not available")
-        XCTAssertEqual(london?.cancelRegion, "uk_london")
+        XCTAssertEqual(london?.cancelRegion, "united-kingdom_london")
         XCTAssertFalse(london?.hasUnavailableLocalData == true)
         XCTAssertTrue(london?.hasUnavailablePausedDownload == true)
     }
@@ -815,12 +871,12 @@ final class AppShellTests: XCTestCase {
                 OfflineMapsLocalState(
                     installed: [
                         "united-kingdom": "20260718T000000Z",
-                        "uk_london": "20260717T000000Z",
+                        "united-kingdom_london": "20260717T000000Z",
                     ],
                     pausedRegions: ["malaysia-singapore-brunei"],
                     quarantines: [
                         OfflinePackQuarantine(
-                            region: "uk_london",
+                            region: "united-kingdom_london",
                             publishVersion: "20260717T000000Z",
                             coordinates: [TileCoordinate(z: 10, x: 511, y: 340)]
                         ),
@@ -853,7 +909,7 @@ final class AppShellTests: XCTestCase {
         await fulfillment(of: [localApplied], timeout: 1)
 
         XCTAssertEqual(observedRows.first { $0.zone.id == "united-kingdom" }?.state, .installed(publishVersion: "20260718T000000Z"))
-        XCTAssertEqual(observedRows.first { $0.zone.id == "uk_london" }?.state, .unavailable)
+        XCTAssertEqual(observedRows.first { $0.zone.id == "united-kingdom_london" }?.state, .unavailable)
         XCTAssertEqual(observedRows.first { $0.zone.id == "malaysia-singapore-brunei" }?.state, .paused(OfflineDownloadProgress(region: "malaysia-singapore-brunei", fractionComplete: 0)))
     }
 
@@ -963,6 +1019,24 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(route.backgroundIdentifier, OfflineDownloadSession.backgroundIdentifier(region: "uk"))
         XCTAssertTrue(route.metadataAllowsCellularDownloadsForTesting)
         XCTAssertTrue(route.objectAllowsCellularDownloadsForTesting)
+    }
+
+    func testOfflineCoverageBBoxUsesManifestLonLatOrder() {
+        XCTAssertEqual(
+            OfflineCoverageBBox.coverage(
+                fromManifestBasemapBBox: [99.60, 0.80, 119.30, 7.60],
+                for: .malaysiaSingaporeBrunei
+            ),
+            CoverageBBox(minLon: 99.60, minLat: 0.80, maxLon: 119.30, maxLat: 7.60)
+        )
+        XCTAssertNil(OfflineCoverageBBox.coverage(
+            fromManifestBasemapBBox: [0.80, 99.60, 7.60, 119.30],
+            for: .malaysiaSingaporeBrunei
+        ))
+        XCTAssertNil(OfflineCoverageBBox.coverage(
+            fromManifestBasemapBBox: [49.84, -8.65, 60.86, 1.77],
+            for: .unitedKingdom
+        ))
     }
 
     func testPausedOfflineRegionCatalogRowCarriesRowRegionForCancelAction() {

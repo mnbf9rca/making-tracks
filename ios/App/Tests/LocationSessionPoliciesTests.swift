@@ -17,10 +17,9 @@ final class LocationSessionPoliciesTests: XCTestCase {
     }
 
     func testShowsUserLocationPersistsAfterTrackingModeStops() {
-        XCTAssertTrue(LocationSessionPolicies.shouldShowUserLocation(authorizationStatus: .authorizedWhenInUse, userTrackingMode: .none))
-        XCTAssertFalse(LocationSessionPolicies.shouldShowUserLocation(authorizationStatus: .notDetermined, userTrackingMode: .follow))
-        XCTAssertTrue(LocationSessionPolicies.shouldShowUserLocation(authorizationStatus: .authorizedWhenInUse, userTrackingMode: .follow))
-        XCTAssertTrue(LocationSessionPolicies.shouldShowUserLocation(authorizationStatus: .authorizedAlways, userTrackingMode: .followWithHeading))
+        XCTAssertTrue(LocationSessionPolicies.shouldShowUserLocation(authorizationStatus: .authorizedWhenInUse))
+        XCTAssertFalse(LocationSessionPolicies.shouldShowUserLocation(authorizationStatus: .notDetermined))
+        XCTAssertTrue(LocationSessionPolicies.shouldShowUserLocation(authorizationStatus: .authorizedAlways))
     }
 
     func testScenePhaseBackgroundAndInactiveStopLocationUpdatesAndResetTrackingMode() {

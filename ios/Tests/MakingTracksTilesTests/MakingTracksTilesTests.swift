@@ -161,17 +161,17 @@ final class MakingTracksTilesTests: XCTestCase {
 
     func testManifestCurrentPublishVersionFetchesOnlyCurrentPointer() async throws {
         let fetcher = StubFetcher(routes: [
-            "https://tiles.making-tracks.app/malaysia/current.json": jsonData([
+            "https://tiles.making-tracks.app/malaysia-singapore-brunei/current.json": jsonData([
                 "schema_version": 1,
                 "publish_version": "20260716T155035Z",
             ]),
         ])
 
-        let version = try await ManifestClient.currentPublishVersion(region: "malaysia", fetcher: fetcher)
+        let version = try await ManifestClient.currentPublishVersion(region: "malaysia-singapore-brunei", fetcher: fetcher)
 
         XCTAssertEqual(version, "20260716T155035Z")
         XCTAssertEqual(fetcher.requestedURLs, [
-            "https://tiles.making-tracks.app/malaysia/current.json",
+            "https://tiles.making-tracks.app/malaysia-singapore-brunei/current.json",
         ])
     }
 
@@ -549,6 +549,53 @@ final class MakingTracksTilesTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? TileError, .responseTooLarge)
         }
+    }
+
+    func testThumbnailCacheCompactsAccessLedgerToStoredThumbnails() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MakingTracksThumbLedgerTests-\(UUID().uuidString)", isDirectory: true)
+        let cache = try ThumbnailCache(directory: root, maxBytes: 12)
+        let first = Data("11111111".utf8)
+        let second = Data("22222222".utf8)
+        let third = Data("33333333".utf8)
+        let firstSHA = sha256(first)
+        let secondSHA = sha256(second)
+        let thirdSHA = sha256(third)
+
+        try cache.storeThumbnail(sha256: firstSHA, data: first)
+        _ = cache.thumbnail(sha256: firstSHA)
+        try cache.storeThumbnail(sha256: secondSHA, data: second)
+        try cache.storeThumbnail(sha256: thirdSHA, data: third)
+
+        let ledgerURL = root.appendingPathComponent("thumb-access.json")
+        let ledger = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: ledgerURL)) as? [String: Any])
+        let entries = try XCTUnwrap(ledger["entries"] as? [String: Int])
+
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries.keys.first, thumbnailCacheKey(root: root, sha256: thirdSHA))
+        XCTAssertNil(cache.thumbnail(sha256: firstSHA))
+        XCTAssertNil(cache.thumbnail(sha256: secondSHA))
+        XCTAssertEqual(cache.thumbnail(sha256: thirdSHA), third)
+    }
+
+    func testThumbnailCacheBoundsAccessLedgerEntries() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MakingTracksThumbLedgerCapTests-\(UUID().uuidString)", isDirectory: true)
+        let cache = try ThumbnailCache(directory: root, maxBytes: 1024 * 1024, maxAccessEntries: 2)
+        var newestSHA = ""
+
+        for index in 0...2 {
+            let data = Data("thumb-\(index)".utf8)
+            newestSHA = sha256(data)
+            try cache.storeThumbnail(sha256: newestSHA, data: data)
+        }
+
+        let ledgerURL = root.appendingPathComponent("thumb-access.json")
+        let ledger = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: ledgerURL)) as? [String: Any])
+        let entries = try XCTUnwrap(ledger["entries"] as? [String: Int])
+
+        XCTAssertEqual(entries.count, 2)
+        XCTAssertNotNil(entries[thumbnailCacheKey(root: root, sha256: newestSHA)])
     }
 
     func testTileClientLoadsImageSidecarForCurrentViewportAndClearsOnPan() async throws {
@@ -2562,6 +2609,46 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(integrity?.sha256, sha256(basemap))
         XCTAssertEqual(integrity?.bytes, basemap.count)
         XCTAssertEqual(attribution.map(\.source), ["osm"])
+    }
+
+    func testTileClientSkipsImageSidecarsForInstalledOfflinePackTiles() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let placeID = "mt1_00000000000000000000000001"
+        let tile = try gzipJSON(tileObject(places: [validPlace([
+            "place_id": placeID,
+            "source_refs": ["osm:node/6"],
+        ])]))
+        let basemap = Data("offline-basemap".utf8)
+        try store.install(
+            publish: cachedPublish(
+                "20260716T155409Z",
+                tileSHA: sha256(tile),
+                tileBytes: tile.count,
+                basemapSHA: sha256(basemap),
+                basemapBytes: basemap.count,
+                attributionSources: ["osm"]
+            ),
+            tiles: [TileCoordinate(z: 10, x: 511, y: 340): tile],
+            basemap: basemap
+        )
+        let imageSidecarURL = "https://tiles.making-tracks.app/uk/20260716T155409Z/images/10/511/340.json"
+        let fetcher = StubFetcher(routes: [
+            imageSidecarURL: jsonData(imageIndexObject(places: [validImageEntry(["place_id": placeID])])),
+        ])
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache(), offlineStore: store)
+
+        let places = await client.places(
+            inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51),
+            zoom: 16,
+            allowManifestRefresh: false
+        )
+
+        XCTAssertEqual(places.map(\.id), [placeID])
+        let image = await client.placeImage(for: placeID)
+        XCTAssertNil(image)
+        let didRequestSidecar = try await waitForRequestedURL(fetcher, imageSidecarURL)
+        XCTAssertFalse(didRequestSidecar)
     }
 
     func testTileClientDoesNotFetchParentTileCoveredByInstalledZonePack() async throws {
@@ -5137,6 +5224,14 @@ private func temporaryThumbCache(maxBytes: Int = 1024 * 1024) throws -> Thumbnai
     return try ThumbnailCache(directory: url, maxBytes: maxBytes)
 }
 
+private func thumbnailCacheKey(root: URL, sha256: String) -> String {
+    root
+        .appendingPathComponent(String(sha256.prefix(2)))
+        .appendingPathComponent("\(sha256).webp")
+        .standardizedFileURL
+        .path
+}
+
 private func waitForPlaceImage(
     _ client: TileClient,
     _ placeID: String,
@@ -5149,6 +5244,20 @@ private func waitForPlaceImage(
         try await Task.sleep(nanoseconds: 50_000_000)
     }
     return nil
+}
+
+private func waitForRequestedURL(
+    _ fetcher: StubFetcher,
+    _ url: String,
+    attempts: Int = 40
+) async throws -> Bool {
+    for _ in 0..<attempts {
+        if fetcher.requestedURLs.contains(url) {
+            return true
+        }
+        try await Task.sleep(nanoseconds: 50_000_000)
+    }
+    return false
 }
 
 private func nextImageChange(from stream: AsyncStream<Set<String>>) async -> Set<String>? {

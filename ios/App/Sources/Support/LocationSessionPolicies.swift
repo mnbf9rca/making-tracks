@@ -5,8 +5,7 @@ import SwiftUI
 @MainActor
 struct LocationSessionPolicies {
     static func shouldShowUserLocation(
-        authorizationStatus: CLAuthorizationStatus,
-        userTrackingMode: MLNUserTrackingMode
+        authorizationStatus: CLAuthorizationStatus
     ) -> Bool {
         switch authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse:
