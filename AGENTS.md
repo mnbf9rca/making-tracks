@@ -29,7 +29,7 @@ You are working on **Making Tracks** (making-tracks.app), an iOS map app for dis
 
 ## Secrets
 
-All secrets via 1Password: `op run --env-file=.env.tpl -- <command>` (masking stays ON; never `--no-masking`, never render secrets to disk). See `docs/SECRETS.md`. STANDING RULE: any compromised secret (logged, printed unmasked, read into context, committed) gets IMMEDIATELY appended to `TO-ROTATE.log` — reference/name + timestamp + vector, never the value. Logging an exposure is mandatory and blame-free.
+All secrets via 1Password: `op run --env-file=.env.tpl -- <command>` (masking stays ON; never `--no-masking`, never render secrets to disk). See `docs/SECRETS.md`. STANDING RULE: any compromised secret (logged, printed unmasked, read into context, committed) gets IMMEDIATELY appended to `TO-ROTATE.log` — reference/name + timestamp + vector, never the value. Logging an exposure is mandatory and blame-free. Access topology — ssh, commit signing, and where heavy work runs — is in [`docs/INFRA.md`](docs/INFRA.md).
 
 ## Workflow
 
