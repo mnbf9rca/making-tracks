@@ -67,7 +67,7 @@ final class MigrationsTests: XCTestCase {
         let n = try db.dbQueue.read {
             try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM lists WHERE is_system = 1")
         }
-        XCTAssertEqual(n, 1)
+        XCTAssertEqual(n, 2)
     }
 
     func testV1DatabaseMigratesToCurrentSchemaWithoutLosingUserRows() throws {
@@ -120,7 +120,7 @@ final class MigrationsTests: XCTestCase {
 
         let db = try AppDatabase(queue, now: { Date(timeIntervalSince1970: 100) })
 
-        XCTAssertEqual(try db.appliedMigrations, ["v1", "v2", "v3"])
+        XCTAssertEqual(try db.appliedMigrations, ["v1", "v2", "v3", "v4"])
         XCTAssertEqual(try db.viewportState(["p1"])["p1"], PinState(saved: true, visit: .loved, hidden: false))
         XCTAssertEqual(try db.hiddenPlaceIDs(), [])
         XCTAssertEqual(try db.snapshot(for: "p1")?.name, "Ghost Sign")
@@ -179,25 +179,25 @@ final class MigrationsTests: XCTestCase {
 
         let db = try AppDatabase(queue, now: { Date(timeIntervalSince1970: 100) })
 
-        XCTAssertEqual(try db.appliedMigrations, ["v1", "v2", "v3"])
+        XCTAssertEqual(try db.appliedMigrations, ["v1", "v2", "v3", "v4"])
         XCTAssertEqual(try db.hiddenPlaceIDs(), ["p1"])
         let rows = try db.dbQueue.read {
             try Row.fetchAll($0, sql: "SELECT id, name, is_system, list_kind FROM lists ORDER BY id")
         }
-        XCTAssertEqual(rows.map { $0["name"] as String }, ["Want to go", "KL trip"])
-        XCTAssertEqual(rows.map { $0["list_kind"] as String }, [PlaceList.defaultKind, PlaceList.defaultKind])
+        XCTAssertEqual(rows.map { $0["name"] as String }, ["Want to go", "KL trip", "My tracks"])
+        XCTAssertEqual(rows.map { $0["list_kind"] as String }, [PlaceList.defaultKind, PlaceList.defaultKind, PlaceList.trackKind])
         XCTAssertEqual(try db.listMemberships(containing: "p1"), [2])
     }
 
-    func testSeedsWantToGoSystemListExactlyOnce() throws {
+    func testSeedsSystemListsExactlyOnce() throws {
         let db = try AppDatabase.inMemory()
         let rows = try db.dbQueue.read {
-            try Row.fetchAll($0, sql: "SELECT name, is_system, list_kind FROM lists")
+            try Row.fetchAll($0, sql: "SELECT name, is_system, list_kind FROM lists ORDER BY name")
         }
-        XCTAssertEqual(rows.count, 1)
-        XCTAssertEqual(rows[0]["name"], "Want to go")
-        XCTAssertEqual(rows[0]["is_system"], true)
-        XCTAssertEqual(rows[0]["list_kind"], PlaceList.defaultKind)
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows.map { $0["name"] as String }, ["My tracks", "Want to go"])
+        XCTAssertEqual(rows.map { $0["is_system"] as Bool }, [true, true])
+        XCTAssertEqual(rows.map { $0["list_kind"] as String }, [PlaceList.trackKind, PlaceList.defaultKind])
     }
 
     func testRefusesDatabaseFromNewerAppVersion() throws {

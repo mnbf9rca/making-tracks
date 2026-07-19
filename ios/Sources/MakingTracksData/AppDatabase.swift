@@ -5,6 +5,7 @@ import GRDB
 /// access, and `now` is a Sendable clock injected for deterministic tests.
 public final class AppDatabase: Sendable {
     public static let wantToGoListName = "Want to go"
+    public static let myTracksListName = "My tracks"
 
     let dbQueue: DatabaseQueue
     let now: @Sendable () -> Date

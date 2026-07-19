@@ -3,6 +3,7 @@ import GRDB
 
 public struct PlaceList: Codable, Sendable, Identifiable, FetchableRecord, MutablePersistableRecord {
     public static let defaultKind = "collection"
+    public static let trackKind = "track"
 
     public var id: Int64?
     public var name: String

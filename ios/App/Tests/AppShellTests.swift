@@ -253,6 +253,30 @@ final class AppShellTests: XCTestCase {
         )
     }
 
+    func testListDetailRowsDoNotOfferStoredMembershipRemovalForTrackList() {
+        let collection = PlaceList(id: 10, name: "Date night", isSystem: false, createdAt: Date(timeIntervalSince1970: 0))
+        let wantToGo = PlaceList(id: 1, name: "Want to go", isSystem: true, createdAt: Date(timeIntervalSince1970: 0))
+        let myTracks = PlaceList(
+            id: 2,
+            name: "My tracks",
+            isSystem: true,
+            kind: PlaceList.trackKind,
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+        let importedTrackKind = PlaceList(
+            id: 42,
+            name: "Imported",
+            isSystem: false,
+            kind: PlaceList.trackKind,
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+
+        XCTAssertTrue(ListDetailItemActions.canRemoveStoredMembership(from: collection))
+        XCTAssertTrue(ListDetailItemActions.canRemoveStoredMembership(from: wantToGo))
+        XCTAssertFalse(ListDetailItemActions.canRemoveStoredMembership(from: myTracks))
+        XCTAssertTrue(ListDetailItemActions.canRemoveStoredMembership(from: importedTrackKind))
+    }
+
     func testListMapCategoryVisibilityIgnoresDiscoveryCategoryToggles() {
         XCTAssertNil(
             ListMapCategoryVisibility.visibleCategories(

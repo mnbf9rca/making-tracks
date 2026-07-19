@@ -3146,7 +3146,8 @@ private struct ListDetailView: View {
                     ForEach(items) { item in
                         listItemRow(item)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                if let id = list.id {
+                                if let id = currentList.id,
+                                   ListDetailItemActions.canRemoveStoredMembership(from: currentList) {
                                     Button("Remove", role: .destructive) {
                                         Task { await remove(item.placeID, listID: id) }
                                     }
@@ -4923,6 +4924,12 @@ enum ListMapPinAccessibilityNames {
             guard visiblePlaceIDs.contains(item.placeID) else { return }
             names[item.placeID] = item.name
         }
+    }
+}
+
+enum ListDetailItemActions {
+    static func canRemoveStoredMembership(from list: PlaceList) -> Bool {
+        !(list.isSystem && list.kind == PlaceList.trackKind)
     }
 }
 

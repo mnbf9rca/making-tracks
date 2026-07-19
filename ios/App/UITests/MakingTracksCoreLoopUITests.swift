@@ -343,6 +343,25 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "tracks-static-geometry")
     }
 
+    func testMyTracksSystemListDrawsWholeLogTrackWithoutStoredListMembership() {
+        let app = launch(reset: true, pinDiagnostics: true, seedTrackVisits: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+        XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
+
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["My tracks"].tap()
+        XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForSourceFeatureCount(2, in: app))
+        XCTAssertTrue(waitForTrackSegmentCount(1, in: app))
+    }
+
     func testHiddenToastAutoDismissesWithoutUnhidingPlace() {
         let app = launch(reset: true)
 

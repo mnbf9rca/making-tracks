@@ -68,6 +68,26 @@ extension AppDatabase {
             }
         }
 
+        register("v4") { [now] db in
+            try db.execute(
+                sql: """
+                    INSERT INTO lists (name, is_system, created_at, list_kind)
+                    SELECT ?, ?, ?, ?
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM lists
+                        WHERE is_system = 1 AND list_kind = ?
+                    )
+                    """,
+                arguments: [
+                    AppDatabase.myTracksListName,
+                    true,
+                    now(),
+                    PlaceList.trackKind,
+                    PlaceList.trackKind,
+                ]
+            )
+        }
+
         return (migrator, identifiers)
     }
 

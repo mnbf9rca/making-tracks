@@ -64,13 +64,13 @@ final class PinStateTests: XCTestCase {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
         try db.dbQueue.write { d in
             try d.execute(
-                sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (2, 'Date night', 0, 0)"
+                sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (10, 'Date night', 0, 0)"
             )
             try d.execute(
                 sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (1, 'p_want', 0)"
             )
             try d.execute(
-                sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (2, 'p_user_list_only', 0)"
+                sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (10, 'p_user_list_only', 0)"
             )
         }
 
@@ -84,15 +84,15 @@ final class PinStateTests: XCTestCase {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
         try db.dbQueue.write { d in
             try d.execute(
-                sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (2, 'Date night', 0, 0)"
+                sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (10, 'Date night', 0, 0)"
             )
             try d.execute(
-                sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (3, 'Date night', 0, 0)"
+                sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (11, 'Date night', 0, 0)"
             )
             try d.execute(
-                sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (4, 'Architecture', 0, 0)"
+                sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (12, 'Architecture', 0, 0)"
             )
-            for listID in [1, 2, 3, 4] {
+            for listID in [1, 10, 11, 12] {
                 try d.execute(
                     sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (?, 'p_listed', 0)",
                     arguments: [listID]

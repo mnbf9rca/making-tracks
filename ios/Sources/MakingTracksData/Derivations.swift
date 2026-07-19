@@ -16,18 +16,7 @@ extension AppDatabase {
 
     public func listItems(listID: Int64) throws -> [ListPlace] {
         try dbQueue.read { db in
-            let rows = try Row.fetchAll(
-                db,
-                sql: """
-                    SELECT ps.place_id, ps.name, ps.lat, ps.lon, ps.category, ps.tier
-                    FROM list_items li
-                    JOIN place_snapshots ps ON ps.place_id = li.place_id
-                    WHERE li.list_id = ?
-                    ORDER BY li.added_at DESC, ps.name COLLATE NOCASE, ps.place_id
-                """,
-                arguments: [listID]
-            )
-            let places = rows.compactMap(Self.listSnapshotRow)
+            let places = try Self.listSnapshots(listID: listID, db)
             let placeIDs = places.map(\.placeID)
             let states = try Self.viewportState(placeIDs, db)
             return places.map { place in
@@ -43,18 +32,7 @@ extension AppDatabase {
 
     public func listMapFeatures(listID: Int64) throws -> [(MapPlace, PinState)] {
         try dbQueue.read { db in
-            let rows = try Row.fetchAll(
-                db,
-                sql: """
-                    SELECT ps.place_id, ps.name, ps.lat, ps.lon, ps.category, ps.tier
-                    FROM list_items li
-                    JOIN place_snapshots ps ON ps.place_id = li.place_id
-                    WHERE li.list_id = ?
-                    ORDER BY li.added_at DESC, ps.name COLLATE NOCASE, ps.place_id
-                    """,
-                arguments: [listID]
-            )
-            let places = rows.compactMap(Self.listSnapshotRow)
+            let places = try Self.listSnapshots(listID: listID, db)
             let placeIDs = places.map(\.placeID)
             let states = try Self.viewportState(placeIDs, db)
             return places.map { snapshot in
@@ -75,13 +53,19 @@ extension AppDatabase {
             try Int64.fetchAll(
                 db,
                 sql: """
-                    SELECT li.list_id
-                    FROM list_items li
-                    JOIN lists l ON l.id = li.list_id
-                    WHERE li.place_id = ?
+                    SELECT DISTINCT l.id
+                    FROM lists l
+                    LEFT JOIN list_items li ON li.list_id = l.id AND li.place_id = ?
+                    WHERE li.place_id IS NOT NULL
+                    OR (
+                        l.is_system = 1
+                        AND l.list_kind = ?
+                        AND EXISTS(SELECT 1 FROM visits v WHERE v.place_id = ?)
+                        AND NOT EXISTS(SELECT 1 FROM hidden_places h WHERE h.place_id = ?)
+                    )
                     ORDER BY l.is_system DESC, l.name COLLATE NOCASE, li.list_id
                     """,
-                arguments: [placeID]
+                arguments: [placeID, PlaceList.trackKind, placeID, placeID]
             )
         }
     }
@@ -90,7 +74,7 @@ extension AppDatabase {
         return try dbQueue.read { db in
             let listScopeJoin: String
             let arguments: StatementArguments
-            if let listID {
+            if let listID, try !Self.isTrackList(listID: listID, db) {
                 listScopeJoin = "JOIN list_items li ON li.place_id = v.place_id AND li.list_id = ?"
                 arguments = [listID]
             } else {
@@ -227,6 +211,18 @@ extension AppDatabase {
 
     public func listProgress(listID: Int64) throws -> (visited: Int, total: Int) {
         try dbQueue.read { db in
+            if try Self.isTrackList(listID: listID, db) {
+                let total = try Int.fetchOne(
+                    db,
+                    sql: """
+                        SELECT COUNT(DISTINCT v.place_id)
+                        FROM visits v
+                        JOIN place_snapshots ps ON ps.place_id = v.place_id
+                        WHERE v.place_id NOT IN (SELECT place_id FROM hidden_places)
+                        """
+                ) ?? 0
+                return (total, total)
+            }
             let total = try Int.fetchOne(
                 db,
                 sql: """
@@ -250,6 +246,53 @@ extension AppDatabase {
             ) ?? 0
             return (visited, total)
         }
+    }
+
+    private static func isTrackList(listID: Int64, _ db: Database) throws -> Bool {
+        try Bool.fetchOne(
+            db,
+            sql: "SELECT EXISTS(SELECT 1 FROM lists WHERE id = ? AND is_system = 1 AND list_kind = ?)",
+            arguments: [listID, PlaceList.trackKind]
+        ) ?? false
+    }
+
+    private static func listSnapshots(listID: Int64, _ db: Database) throws -> [ListSnapshotRow] {
+        if try isTrackList(listID: listID, db) {
+            return try trackListSnapshots(db)
+        }
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+                SELECT ps.place_id, ps.name, ps.lat, ps.lon, ps.category, ps.tier
+                FROM list_items li
+                JOIN place_snapshots ps ON ps.place_id = li.place_id
+                WHERE li.list_id = ?
+                ORDER BY li.added_at DESC, ps.name COLLATE NOCASE, ps.place_id
+                """,
+            arguments: [listID]
+        )
+        return rows.compactMap(Self.listSnapshotRow)
+    }
+
+    private static func trackListSnapshots(_ db: Database) throws -> [ListSnapshotRow] {
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+                SELECT ps.place_id, ps.name, ps.lat, ps.lon, ps.category, ps.tier
+                FROM visits v
+                JOIN place_snapshots ps ON ps.place_id = v.place_id
+                WHERE v.id = (
+                    SELECT v2.id
+                    FROM visits v2
+                    WHERE v2.place_id = v.place_id
+                    ORDER BY v2.visited_at DESC, v2.id DESC
+                    LIMIT 1
+                )
+                AND v.place_id NOT IN (SELECT place_id FROM hidden_places)
+                ORDER BY v.visited_at DESC, v.id DESC, ps.name COLLATE NOCASE, ps.place_id
+                """
+        )
+        return rows.compactMap(Self.listSnapshotRow)
     }
 
     public func userListNames(containing placeID: String) throws -> [String] {

@@ -94,6 +94,54 @@ final class InteractionsTests: XCTestCase {
         XCTAssertEqual(row?["is_system"] as Bool?, true)
     }
 
+    func testMyTracksSystemListIsProtectedAndUsesTrackKind() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let myTracks = try XCTUnwrap(try db.lists().first { $0.kind == PlaceList.trackKind })
+        let myTracksID = try XCTUnwrap(myTracks.id)
+
+        XCTAssertEqual(myTracks.name, "My tracks")
+        XCTAssertTrue(myTracks.isSystem)
+        XCTAssertThrowsError(try db.renameList(id: myTracksID, name: "Routes")) { error in
+            XCTAssertEqual(error as? AppDatabaseError, .systemListIsProtected)
+        }
+        XCTAssertThrowsError(try db.deleteList(id: myTracksID)) { error in
+            XCTAssertEqual(error as? AppDatabaseError, .systemListIsProtected)
+        }
+    }
+
+    func testMyTracksSystemListRejectsStoredMembershipWrites() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let myTracks = try XCTUnwrap(try db.lists().first { $0.kind == PlaceList.trackKind })
+        let myTracksID = try XCTUnwrap(myTracks.id)
+        let place = try ref("p_track_membership")
+
+        XCTAssertThrowsError(try db.addToList(place, listID: myTracksID)) { error in
+            XCTAssertEqual(error as? AppDatabaseError, .systemListIsProtected)
+        }
+        XCTAssertThrowsError(try db.removeFromList(placeID: place.placeID, listID: myTracksID)) { error in
+            XCTAssertEqual(error as? AppDatabaseError, .systemListIsProtected)
+        }
+        let rows = try db.dbQueue.read {
+            try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM list_items WHERE list_id = ?", arguments: [myTracksID])
+        }
+        XCTAssertEqual(rows, 0)
+    }
+
+    func testNonSystemTrackKindListStillAllowsStoredMembershipWrites() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        try db.dbQueue.write { d in
+            try d.execute(
+                sql: "INSERT INTO lists (id, name, is_system, created_at, list_kind) VALUES (42, 'Imported', 0, 0, ?)",
+                arguments: [PlaceList.trackKind]
+            )
+        }
+        let place = try ref("p_imported_track_kind")
+
+        try db.addToList(place, listID: 42)
+
+        XCTAssertEqual(try db.listItems(listID: 42).map(\.placeID), [place.placeID])
+    }
+
     func testSnapshotLookupReturnsEquatableSnapshot() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         let place = try ref("p_snapshot", fetchedAt: Date(timeIntervalSince1970: 77))
