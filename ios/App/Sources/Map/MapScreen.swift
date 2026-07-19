@@ -52,7 +52,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             bytesWithThumbnails: 3_180_000_000
         ),
         OfflineRegionCatalogZone(
-            id: "uk_london",
+            id: "united-kingdom_london",
             displayName: "London",
             parentID: MapRegion.unitedKingdom.rawValue,
             publishVersion: "20260718T000000Z",
@@ -60,7 +60,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             bytesWithThumbnails: 1_160_000_000
         ),
         OfflineRegionCatalogZone(
-            id: "uk_south_east",
+            id: "united-kingdom_south_east",
             displayName: "South East England",
             parentID: MapRegion.unitedKingdom.rawValue,
             publishVersion: "20260718T000000Z",
@@ -69,14 +69,14 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         ),
         OfflineRegionCatalogZone(
             id: MapRegion.malaysiaSingaporeBrunei.rawValue,
-            displayName: "Malaysia",
+            displayName: "Malaysia, Singapore, and Brunei",
             parentID: nil,
             publishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 1_420_000_000,
             bytesWithThumbnails: 1_980_000_000
         ),
         OfflineRegionCatalogZone(
-            id: "malaysia_kl",
+            id: "malaysia-singapore-brunei_kl",
             displayName: "Kuala Lumpur",
             parentID: MapRegion.malaysiaSingaporeBrunei.rawValue,
             publishVersion: "20260718T000000Z",
@@ -84,7 +84,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             bytesWithThumbnails: 915_000_000
         ),
         OfflineRegionCatalogZone(
-            id: "malaysia_penang",
+            id: "malaysia-singapore-brunei_penang",
             displayName: "Penang",
             parentID: MapRegion.malaysiaSingaporeBrunei.rawValue,
             publishVersion: "20260718T000000Z",
@@ -116,7 +116,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         let quarantineByRegion = quarantines.reduce(into: [String: OfflinePackQuarantine]()) { byRegion, quarantine in
             byRegion[quarantine.region] = quarantine
         }
-        return rootZones.flatMap {
+        let catalogRows = rootZones.flatMap {
             rows(
                 for: $0,
                 depth: 0,
@@ -128,6 +128,14 @@ struct OfflineRegionCatalog: Sendable, Equatable {
                 quarantines: quarantineByRegion
             )
         }
+        return catalogRows + unavailableLocalRows(
+            knownZoneIDs: Set(zones.map(\.id)),
+            installed: installed,
+            activeProgress: activeProgress,
+            pausedProgress: pausedProgress,
+            pausedRegions: pausedRegions,
+            quarantines: quarantineByRegion
+        )
     }
 
     private func rows(
@@ -188,6 +196,41 @@ struct OfflineRegionCatalog: Sendable, Equatable {
                 quarantines: quarantines
             )
         }
+    }
+
+    private func unavailableLocalRows(
+        knownZoneIDs: Set<String>,
+        installed: [String: String],
+        activeProgress: OfflineDownloadProgress?,
+        pausedProgress: OfflineDownloadProgress?,
+        pausedRegions: Set<String>,
+        quarantines: [String: OfflinePackQuarantine]
+    ) -> [OfflineRegionCatalogRow] {
+        let localIDs = Set(installed.keys)
+            .union(pausedRegions)
+            .union(quarantines.keys)
+            .union([activeProgress?.region, pausedProgress?.region].compactMap { $0 })
+        return localIDs
+            .subtracting(knownZoneIDs)
+            .sorted()
+            .map { regionID in
+                OfflineRegionCatalogRow(
+                    zone: OfflineRegionCatalogZone(
+                        id: regionID,
+                        displayName: regionID,
+                        parentID: nil,
+                        publishVersion: "",
+                        bytesWithoutThumbnails: 0,
+                        bytesWithThumbnails: 0
+                    ),
+                    depth: 0,
+                    state: .unavailable,
+                    hasUnavailableLocalData: installed[regionID] != nil || quarantines[regionID] != nil,
+                    hasUnavailablePausedDownload: activeProgress?.region == regionID
+                        || pausedProgress?.region == regionID
+                        || pausedRegions.contains(regionID)
+                )
+            }
     }
 
     private func zoneSort(_ lhs: OfflineRegionCatalogZone, _ rhs: OfflineRegionCatalogZone) -> Bool {
@@ -474,6 +517,68 @@ struct OfflineDownloadProgress: Sendable, Equatable {
         }
         return "\(percentComplete)%"
     }
+
+    func floored(by previous: OfflineDownloadProgress?) -> OfflineDownloadProgress {
+        guard let previous,
+              previous.region == nil || region == nil || previous.region == region,
+              previous.fractionComplete > fractionComplete
+        else { return self }
+        return OfflineDownloadProgress(
+            region: region ?? previous.region,
+            publishVersion: publishVersion ?? previous.publishVersion,
+            completedBytes: maxOptional(completedBytes, previous.completedBytes),
+            totalBytes: totalBytes ?? previous.totalBytes,
+            fractionComplete: previous.fractionComplete,
+            isWaitingForConnectivity: isWaitingForConnectivity
+        )
+    }
+
+    private func maxOptional(_ lhs: Int?, _ rhs: Int?) -> Int? {
+        switch (lhs, rhs) {
+        case let (lhs?, rhs?):
+            return max(lhs, rhs)
+        case let (lhs?, nil):
+            return lhs
+        case let (nil, rhs?):
+            return rhs
+        case (nil, nil):
+            return nil
+        }
+    }
+}
+
+func offlineInstallFailureMessage(for error: Error) -> String {
+    if case TileError.httpStatus(404) = error {
+        return "This area isn't available yet"
+    }
+    return "Install failed: \(String(describing: error))"
+}
+
+func offlineInstallFailureDetail(for error: Error) -> String {
+    MakingTracksLog.errorLabel(error)
+}
+
+enum OfflineCoverageBBox {
+    static func coverage(fromManifestBasemapBBox bbox: [Double], for region: MapRegion) -> CoverageBBox? {
+        guard bbox.count == 4 else { return nil }
+        let coverage = CoverageBBox(
+            minLon: bbox[0],
+            minLat: bbox[1],
+            maxLon: bbox[2],
+            maxLat: bbox[3]
+        )
+        guard coverage.isValid,
+              intersects(coverage, region.viewportBBox)
+        else { return nil }
+        return coverage
+    }
+
+    private static func intersects(_ coverage: CoverageBBox, _ bbox: BBox) -> Bool {
+        !(coverage.maxLon < bbox.minLon
+            || bbox.maxLon < coverage.minLon
+            || coverage.maxLat < bbox.minLat
+            || bbox.maxLat < coverage.minLat)
+    }
 }
 
 struct MapBlockingSurface: Equatable {
@@ -640,11 +745,12 @@ final class OfflineRegionDownloadSession {
     func begin(region: String, control: OfflineRegionDownloadControl, downloadID: UUID) {
         activeControl?.cancel()
         activeTask?.cancel()
+        let resumedProgress = pausedProgress?.region == region ? pausedProgress : nil
         activeControl = control
         activeTask = nil
         activeDownloadID = downloadID
         pausedProgress = nil
-        liveProgress = OfflineDownloadProgress(region: region, publishVersion: nil, completedBytes: 0, totalBytes: nil, fractionComplete: 0)
+        liveProgress = resumedProgress ?? OfflineDownloadProgress(region: region, publishVersion: nil, completedBytes: 0, totalBytes: nil, fractionComplete: 0)
         MakingTracksLog.downloads.info("ui session began region=\(region, privacy: .private(mask: .hash))")
     }
 
@@ -654,8 +760,9 @@ final class OfflineRegionDownloadSession {
     }
 
     func update(_ progress: OfflineDownloadProgress) {
-        liveProgress = progress
-        MakingTracksLog.downloads.debug("ui progress updated region=\(progress.region ?? "unknown", privacy: .private(mask: .hash)) version=\(progress.publishVersion ?? "unknown", privacy: .public) percent=\(progress.percentComplete, privacy: .public) bytes=\(progress.completedBytes ?? -1, privacy: .public) total=\(progress.totalBytes ?? -1, privacy: .public)")
+        let next = progress.floored(by: liveProgress ?? pausedProgress)
+        liveProgress = next
+        MakingTracksLog.downloads.debug("ui progress updated region=\(next.region ?? "unknown", privacy: .private(mask: .hash)) version=\(next.publishVersion ?? "unknown", privacy: .public) percent=\(next.percentComplete, privacy: .public) bytes=\(next.completedBytes ?? -1, privacy: .public) total=\(next.totalBytes ?? -1, privacy: .public)")
     }
 
     func beginDeferredReplay(
@@ -1925,8 +2032,7 @@ struct MapScreen: View {
 
     private var showsUserLocation: Bool {
         LocationSessionPolicies.shouldShowUserLocation(
-            authorizationStatus: locationPermission.authorizationStatus,
-            userTrackingMode: userTrackingMode
+            authorizationStatus: locationPermission.authorizationStatus
         )
     }
 
@@ -3454,6 +3560,9 @@ private struct OfflineMapsView: View {
         if message.hasPrefix("Install failed:") {
             return "install-failed"
         }
+        if message == "This area isn't available yet" {
+            return "install-failed"
+        }
         if message.hasPrefix("Delete failed:") {
             return "delete-failed"
         }
@@ -4736,19 +4845,20 @@ private final class MapScreenModel {
             MakingTracksLog.install.info("offline install cancelled region=\(region, privacy: .private(mask: .hash))")
             return "Download cancelled"
         } catch {
-            MakingTracksLog.install.error("offline install failed region=\(region, privacy: .private(mask: .hash)) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
-            return "Install failed: \(String(describing: error))"
+            let detail = offlineInstallFailureDetail(for: error)
+            MakingTracksLog.install.error("offline install failed region=\(region, privacy: .private(mask: .hash)) reason=\(detail, privacy: .public)")
+            return offlineInstallFailureMessage(for: error)
         }
     }
 
     func installedOfflinePublishVersions(for catalog: OfflineRegionCatalog) async -> [String: String] {
         guard let offlineStore else { return [:] }
-        let regionIDs = catalog.zones.compactMap { MapRegion(rawValue: $0.id)?.rawValue }
         return await Task.detached {
             var installed: [String: String] = [:]
-            for regionID in regionIDs {
-                guard let publish = try? offlineStore.installedPublish(region: regionID) else { continue }
-                installed[regionID] = publish.publishVersion
+            if let summary = try? offlineStore.installedPackStorageSummary() {
+                for pack in summary.packs {
+                    installed[pack.region] = pack.publishVersion
+                }
             }
             return installed
         }.value
@@ -4760,17 +4870,13 @@ private final class MapScreenModel {
         return await Task.detached {
             var coverage: [CoverageBBox] = []
             for regionID in regionIDs {
-                guard let publish = try? offlineStore.installedPublish(region: regionID),
-                      publish.manifest.basemap.bbox.count == 4
+                guard let region = MapRegion(rawValue: regionID),
+                      let publish = try? offlineStore.installedPublish(region: regionID),
+                      let coverageBBox = OfflineCoverageBBox.coverage(
+                        fromManifestBasemapBBox: publish.manifest.basemap.bbox,
+                        for: region
+                      )
                 else { continue }
-                let bbox = publish.manifest.basemap.bbox
-                let coverageBBox = CoverageBBox(
-                    minLon: bbox[0],
-                    minLat: bbox[1],
-                    maxLon: bbox[2],
-                    maxLat: bbox[3]
-                )
-                guard coverageBBox.isValid else { continue }
                 coverage.append(coverageBBox)
             }
             return coverage.sorted { lhs, rhs in
@@ -4804,14 +4910,15 @@ private final class MapScreenModel {
             .compactMap { MapRegion(rawValue: $0.id)?.rawValue }
             .filter { installedRegions.contains($0) }
         return await withTaskGroup(of: (String, String)?.self) { group in
+            let availabilityFetcher = HTTPTileFetcher.offlineAvailabilityProbe(
+                allowsCellularDownloads: allowsCellularDownloads
+            )
             for regionID in regionIDs {
                 group.addTask {
                     do {
                         let version = try await ManifestClient.currentPublishVersion(
                             region: regionID,
-                            fetcher: HTTPTileFetcher.offlineAvailabilityProbe(
-                                allowsCellularDownloads: allowsCellularDownloads
-                            )
+                            fetcher: availabilityFetcher
                         )
                         MakingTracksLog.downloads.info("offline catalog current fetched region=\(regionID, privacy: .private(mask: .hash)) version=\(version, privacy: .public)")
                         return (regionID, version)
@@ -4879,7 +4986,7 @@ private final class MapScreenModel {
     }
 
     private static func isValidRegion(_ value: String) -> Bool {
-        value.range(of: "^[a-z][a-z0-9_]{0,63}$", options: .regularExpression) == value.startIndex..<value.endIndex
+        value.range(of: "^[a-z][a-z0-9_-]{0,63}$", options: .regularExpression) == value.startIndex..<value.endIndex
     }
 #endif
 
