@@ -1,6 +1,7 @@
 import XCTest
 import GRDB
 @testable import MakingTracksData
+import MakingTracksMapStyle
 
 final class DerivationsTests: XCTestCase {
     private func seededDB() throws -> AppDatabase {
@@ -169,6 +170,33 @@ final class DerivationsTests: XCTestCase {
         XCTAssertEqual(try db.listItems(listID: myTracksID).map(\.placeID), ["p_b", "p_a"])
         XCTAssertTrue(try db.deleteLatestVisit(placeID: "p_a"))
         XCTAssertEqual(try db.listItems(listID: myTracksID).map(\.placeID), ["p_b"])
+    }
+
+    func testMyTracksListTrackVisitsDrawOneConnectorThroughVirtualMembership() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        let myTracks = try XCTUnwrap(try db.lists().first { $0.kind == PlaceList.trackKind })
+        let myTracksID = try XCTUnwrap(myTracks.id)
+        try db.dbQueue.write { d in
+            try insertSnapshot(d, placeID: "first", name: "First", category: "history", lat: 51.50, lon: -0.12, tier: 2)
+            try insertSnapshot(d, placeID: "second", name: "Second", category: "architecture", lat: 51.52, lon: -0.14, tier: 1)
+            try insertVisit(d, placeID: "first", timestamp: Date(timeIntervalSince1970: 10))
+            try insertVisit(d, placeID: "second", timestamp: Date(timeIntervalSince1970: 10 + TrackLayers.defaultBurstWindow + 60))
+        }
+
+        let storedMemberships = try db.dbQueue.read {
+            try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM list_items WHERE list_id = ?", arguments: [myTracksID])
+        }
+        XCTAssertEqual(storedMemberships, 0)
+
+        let summary = FeatureEncoding.trackSegmentSummary(try db.trackVisits(listID: myTracksID))
+
+        XCTAssertEqual(summary.features.count, 1)
+        XCTAssertEqual(summary.suppressedBurstConnectorCount, 0)
+        XCTAssertEqual(summary.connectableVisitCount, 2)
+        guard case let .object(feature) = summary.features.first,
+              case let .object(geometry) = feature["geometry"]
+        else { return XCTFail("track segment feature") }
+        XCTAssertEqual(geometry["type"], .string("LineString"))
     }
 
     func testNonSystemTrackKindRowsUseStoredMembershipNotVirtualTracks() throws {

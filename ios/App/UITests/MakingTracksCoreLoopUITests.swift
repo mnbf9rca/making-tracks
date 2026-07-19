@@ -306,6 +306,19 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertGreaterThan(freshLayerButton.frame.midY, map.frame.midY)
         XCTAssertGreaterThan(tracksLayerButton.frame.midY, map.frame.midY)
         XCTAssertLessThan(freshLayerButton.frame.midX, tracksLayerButton.frame.midX)
+        let locateButton = app.buttons["map.locate-me"]
+        let attribution = app.staticTexts["map.openstreetmap-attribution"]
+        let listModeControl = app.otherElements["map.list-mode.control"]
+        XCTAssertTrue(locateButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(attribution.waitForExistence(timeout: 5))
+        XCTAssertTrue(listModeControl.waitForExistence(timeout: 5))
+        assertNoFrameIntersection(locateButton, listModeControl)
+        assertNoFrameIntersection(attribution, listModeControl)
+        let layersButton = app.buttons["map.layers"]
+        XCTAssertTrue(layersButton.waitForExistence(timeout: 5))
+        layersButton.tap()
+        XCTAssertTrue(app.navigationBars["Layers"].waitForExistence(timeout: 5))
+        app.buttons["map.layers.done"].tap()
         attachScreenshot(named: "list-map-polished-chrome")
         freshLayerButton.tap()
         XCTAssertTrue(waitForSourceFeatureCount(0, in: app))
@@ -1307,6 +1320,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             return false
         }
         return true
+    }
+
+    private func assertNoFrameIntersection(
+        _ first: XCUIElement,
+        _ second: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertFalse(
+            first.frame.intersects(second.frame),
+            "\(first.identifier) frame \(first.frame) intersects \(second.identifier) frame \(second.frame)",
+            file: file,
+            line: line
+        )
     }
 
     private func waitForProjectedFixturePinCount(_ count: Int, in app: XCUIApplication) -> Bool {

@@ -21,6 +21,17 @@ struct MapHomeChromeSpec {
     }
 }
 
+private enum MapOverlayChromeSpec {
+    static let edgePadding: CGFloat = 16
+    static let listModeControlHeight: CGFloat = 56
+    static let listModeControlBottomPadding: CGFloat = 24
+    static let listModeAuxiliaryChromeClearance: CGFloat = 12
+
+    static var listModeAuxiliaryBottomPadding: CGFloat {
+        listModeControlHeight + listModeControlBottomPadding + listModeAuxiliaryChromeClearance
+    }
+}
+
 struct OfflineRegionCatalogZone: Identifiable, Hashable, Sendable {
     let id: String
     let displayName: String
@@ -1088,7 +1099,7 @@ struct MapScreen: View {
             .overlay(alignment: .topLeading) {
                 shellChrome
                     .padding(.top, 72)
-                    .padding(.leading, 16)
+                    .padding(.leading, MapOverlayChromeSpec.edgePadding)
             }
             .overlay {
                 if didMapLoadFail {
@@ -1168,37 +1179,37 @@ struct MapScreen: View {
             .overlay(alignment: .topTrailing) {
                 statusChrome
                     .padding(.top, 72)
-                    .padding(.trailing, 16)
+                    .padding(.trailing, MapOverlayChromeSpec.edgePadding)
             }
             .overlay(alignment: .bottomLeading) {
                 attributionText
-                    .padding(.leading, 16)
-                    .padding(.bottom, 16)
+                    .padding(.leading, MapOverlayChromeSpec.edgePadding)
+                    .padding(.bottom, auxiliaryBottomChromePadding)
             }
             .overlay(alignment: .bottomTrailing) {
                 locationChrome
-                    .padding(.trailing, 16)
-                    .padding(.bottom, 16)
+                    .padding(.trailing, MapOverlayChromeSpec.edgePadding)
+                    .padding(.bottom, auxiliaryBottomChromePadding)
             }
             .overlay(alignment: .bottom) {
                 if let activeListMap {
                     listMapModeChrome(activeListMap)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 24)
+                        .padding(.horizontal, MapOverlayChromeSpec.edgePadding)
+                        .padding(.bottom, MapOverlayChromeSpec.listModeControlBottomPadding)
                 }
             }
             .overlay(alignment: .bottom) {
                 if let prompt = nearbyPromptCandidate {
                     nearbyPromptView(for: prompt)
                         .padding(.bottom, 88)
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, MapOverlayChromeSpec.edgePadding)
                 }
             }
             .overlay(alignment: .bottom) {
                 if let hiddenToast {
                     hiddenToastView(for: hiddenToast)
-                        .padding(.bottom, 24)
-                        .padding(.horizontal, 16)
+                        .padding(.bottom, hiddenToastBottomPadding)
+                        .padding(.horizontal, MapOverlayChromeSpec.edgePadding)
                 }
             }
         }
@@ -1551,8 +1562,20 @@ struct MapScreen: View {
 
     private var statusChrome: some View {
         VStack(alignment: .trailing, spacing: 8) {
+            if activeListMap != nil {
+                layersButton
+            }
+
             mapChrome
         }
+    }
+
+    private var auxiliaryBottomChromePadding: CGFloat {
+        activeListMap == nil ? MapOverlayChromeSpec.edgePadding : MapOverlayChromeSpec.listModeAuxiliaryBottomPadding
+    }
+
+    private var hiddenToastBottomPadding: CGFloat {
+        activeListMap == nil ? MapOverlayChromeSpec.listModeControlBottomPadding : MapOverlayChromeSpec.listModeAuxiliaryBottomPadding
     }
 
     private var selectedTheme: MapTheme {
@@ -1663,6 +1686,11 @@ struct MapScreen: View {
         .frame(width: 280, height: 40)
         .padding(8)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.clear)
+                .accessibilityIdentifier("map.list-mode.control")
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color(uiColor: .separator), lineWidth: 1)
