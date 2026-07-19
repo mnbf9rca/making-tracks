@@ -761,6 +761,65 @@ def test_existing_content_addressed_thumb_is_treated_as_uploaded(tmp_path):
     R._upload_op(Client(), op)
 
 
+def test_reuse_existing_thumbs_filters_existing_keys_but_uploads_missing(tmp_path):
+    existing_sha, existing_body = _real_thumb_bytes()
+    missing_body = b"missing-thumb"
+    missing_sha = hashlib.sha256(missing_body).hexdigest()
+    existing_path = tmp_path / "existing.webp"
+    missing_path = tmp_path / "missing.webp"
+    existing_path.write_bytes(existing_body)
+    missing_path.write_bytes(missing_body)
+    existing = R.PublishOp(
+        kind="thumb",
+        bucket="making-tracks-tiles",
+        key=f"thumbs/{existing_sha[:2]}/{existing_sha}.webp",
+        source_path=existing_path,
+    )
+    missing = R.PublishOp(
+        kind="thumb",
+        bucket="making-tracks-tiles",
+        key=f"thumbs/{missing_sha[:2]}/{missing_sha}.webp",
+        source_path=missing_path,
+    )
+
+    class Client:
+        def __init__(self):
+            self.list_calls = []
+
+        def list_objects_v2(self, **kwargs):
+            self.list_calls.append(kwargs)
+            assert kwargs["Bucket"] == "making-tracks-tiles"
+            assert kwargs["Prefix"] == "thumbs/"
+            return {"Contents": [{"Key": existing.key}]}
+
+    filtered, stats = R._reuse_existing_thumb_ops(
+        Client(),
+        _layout(),
+        [existing, missing],
+    )
+
+    assert filtered == [missing]
+    assert stats == R.ThumbReuseStats(staged=2, existing=1, missing=1, uploaded=1, skipped=1)
+
+
+def test_reuse_existing_thumbs_still_validates_content_addressed_thumb_keys(tmp_path):
+    path = tmp_path / "bad.webp"
+    path.write_bytes(b"body")
+    bad = R.PublishOp(
+        kind="thumb",
+        bucket="making-tracks-tiles",
+        key="thumbs/not-a-content-addressed-key.webp",
+        source_path=path,
+    )
+
+    class Client:
+        def list_objects_v2(self, **_kwargs):
+            return {"Contents": [{"Key": bad.key}]}
+
+    with pytest.raises(ValueError, match="invalid thumb key"):
+        R._reuse_existing_thumb_ops(Client(), _layout(), [bad])
+
+
 def test_default_client_uses_committed_r2_s3_endpoint_contract(monkeypatch):
     calls = []
 

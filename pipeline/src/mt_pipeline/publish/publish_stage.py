@@ -63,6 +63,11 @@ def run(
     upload: bool = False,
     staging_root: str | pathlib.Path = _DEFAULT_STAGING_ROOT,
     image_candidate_limit: int | None = None,
+    audited_image_completed_jsonl: str | pathlib.Path | None = None,
+    audited_image_cache_dir: str | pathlib.Path | None = None,
+    no_image_fetch: bool = False,
+    no_zone_catalog: bool = False,
+    reuse_existing_thumbs: bool = False,
 ) -> PublishStageResult:
     r2.validate_path_components(region, publish_version)
     basemap.require_pmtiles()
@@ -90,12 +95,16 @@ def run(
         for candidate in image_candidates
         if candidate.place_id in shipped_by_id
     ]
-    place_images = images.build_place_images(
-        images.select_image_candidates(
-            image_candidate_rows,
-            limit=image_candidate_limit,
-        ),
-        cache_dir=pathlib.Path(staging_root) / ".image-cache",
+    selected_image_candidates = images.select_image_candidates(
+        image_candidate_rows,
+        limit=image_candidate_limit,
+    )
+    place_images = _build_place_images(
+        selected_image_candidates,
+        staging_root=pathlib.Path(staging_root),
+        audited_image_completed_jsonl=audited_image_completed_jsonl,
+        audited_image_cache_dir=audited_image_cache_dir,
+        no_image_fetch=no_image_fetch,
     )
     place_images_by_id = {item.place_id: item for item in place_images}
     source_description_rows = descriptions.source_rows_from_db(conn, region)
@@ -128,6 +137,7 @@ def run(
         place_images_by_id=place_images_by_id,
         source_description_rows=source_description_rows,
         conn=conn,
+        no_zone_catalog=no_zone_catalog,
     )
     target_results.append(parent_result)
 
@@ -153,6 +163,7 @@ def run(
             place_images_by_id=place_images_by_id,
             source_description_rows=source_description_rows,
             subregion=subregion,
+            no_zone_catalog=no_zone_catalog,
         )
         subregion_results.append(sub_result)
         target_results.append(sub_result)
@@ -181,6 +192,7 @@ def run(
             [target.publish_result.plan for target in target_results],
             region_index_path,
             layout,
+            reuse_existing_thumbs=reuse_existing_thumbs,
         )
         parent_result = replace(
             parent_result, publish_result=prepared.target_results[0]
@@ -210,6 +222,40 @@ def run(
         region_index=region_index_obj,
         region_index_path=region_index_path,
         region_index_publish_result=region_index_publish_result,
+    )
+
+
+def _build_place_images(
+    selected_candidates: list[images.ImageCandidate],
+    *,
+    staging_root: pathlib.Path,
+    audited_image_completed_jsonl: str | pathlib.Path | None,
+    audited_image_cache_dir: str | pathlib.Path | None,
+    no_image_fetch: bool,
+) -> list[images.PlaceImage]:
+    audit_args = [audited_image_completed_jsonl, audited_image_cache_dir]
+    if any(value is not None for value in audit_args):
+        if not all(value is not None for value in audit_args):
+            raise PublishStageError(
+                "audited image reuse requires both "
+                "--audited-image-completed-jsonl and --audited-image-cache-dir"
+            )
+        assert audited_image_completed_jsonl is not None
+        assert audited_image_cache_dir is not None
+        return images.build_place_images_from_audit(
+            selected_candidates,
+            completed_jsonl=pathlib.Path(audited_image_completed_jsonl),
+            audited_cache_dir=pathlib.Path(audited_image_cache_dir),
+        )
+    if no_image_fetch:
+        print(
+            "IMAGE_FETCH_DISABLED "
+            f"candidates={len(selected_candidates)} selected=0"
+        )
+        return []
+    return images.build_place_images(
+        selected_candidates,
+        cache_dir=staging_root / ".image-cache",
     )
 
 
@@ -308,6 +354,7 @@ def _publish_target(
     source_description_rows: list[dict[str, Any]],
     subregion: config.SubregionConfig | None = None,
     conn=None,
+    no_zone_catalog: bool = False,
 ) -> PublishedTargetResult:
     work_root = pathlib.Path(staging_root) / ".work" / target_region / publish_version
     work_root.mkdir(parents=True, exist_ok=True)
@@ -362,7 +409,19 @@ def _publish_target(
         manifest_obj=manifest_obj,
         basemap_path=basemap_path,
     )
-    if conn is not None and subregion is None and region_config.zone_levels:
+    if (
+        conn is not None
+        and subregion is None
+        and region_config.zone_levels
+        and no_zone_catalog
+    ):
+        print(
+            "NOZONE_DISABLE "
+            f"region={target_region} "
+            f"previous_zone_levels={sorted(region_config.zone_levels)} "
+            f"previous_allowlist={len(region_config.zone_allowlist)}"
+        )
+    elif conn is not None and subregion is None and region_config.zone_levels:
         proposal_catalog, pruned_catalog = zone_catalog.materialize_catalogs(
             conn,
             region_config,

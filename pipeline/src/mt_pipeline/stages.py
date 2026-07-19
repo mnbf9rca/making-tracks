@@ -179,6 +179,11 @@ def run_stage(
     upload: bool = False,
     staging_root: str | pathlib.Path | None = None,
     image_candidate_limit: int | None = None,
+    audited_image_completed_jsonl: str | pathlib.Path | None = None,
+    audited_image_cache_dir: str | pathlib.Path | None = None,
+    no_image_fetch: bool = False,
+    no_zone_catalog: bool = False,
+    reuse_existing_thumbs: bool = False,
     fingerprint_inputs=None,
     force: bool = False,
 ) -> None:
@@ -241,6 +246,11 @@ def run_stage(
                 scoring_config_version=scoring_config_version,
                 upload=upload,
                 image_candidate_limit=image_candidate_limit,
+                audited_image_completed_jsonl=audited_image_completed_jsonl,
+                audited_image_cache_dir=audited_image_cache_dir,
+                no_image_fetch=no_image_fetch,
+                no_zone_catalog=no_zone_catalog,
+                reuse_existing_thumbs=reuse_existing_thumbs,
                 **kwargs,
             )
         except (
@@ -250,6 +260,7 @@ def run_stage(
             publish_stage.basemap.PmtilesUnavailable,
             publish_stage.r2.Boto3Unavailable,
             publish_stage.r2.R2EnvironmentUnavailable,
+            publish_stage.images.AuditedImageReuseError,
             runtime_paths.RuntimePathError,
         ) as exc:
             raise StageOrderError(str(exc)) from exc

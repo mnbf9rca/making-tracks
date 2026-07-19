@@ -198,6 +198,53 @@ def test_cli_publish_passes_image_candidate_limit(tmp_path, monkeypatch):
     assert calls[0][1]["image_candidate_limit"] == 1000
 
 
+def test_cli_publish_passes_vps_wrapper_replacement_flags(tmp_path, monkeypatch):
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    store.mark_stage_complete(
+        conn, "malaysia-singapore-brunei", "categorize", "cat1", "2026-07-15T00:00:00Z"
+    )
+    conn.close()
+    calls = []
+
+    def fake_run_stage(*args, **kwargs):
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr(cli.stages, "run_stage", fake_run_stage)
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia-singapore-brunei",
+            "publish",
+            "--db",
+            str(db),
+            "--run-id",
+            "real-malaysia-20260715",
+            "--publish-version",
+            "20260716T000000Z",
+            "--generated-at",
+            "2026-07-16T00:00:00Z",
+            "--audited-image-completed-jsonl",
+            str(tmp_path / "completed.jsonl"),
+            "--audited-image-cache-dir",
+            str(tmp_path / "audit-cache"),
+            "--no-image-fetch",
+            "--no-zone-catalog",
+            "--skip-existing-thumbs",
+        ]
+    )
+
+    assert rc == 0
+    kwargs = calls[0][1]
+    assert kwargs["audited_image_completed_jsonl"] == tmp_path / "completed.jsonl"
+    assert kwargs["audited_image_cache_dir"] == tmp_path / "audit-cache"
+    assert kwargs["no_image_fetch"] is True
+    assert kwargs["no_zone_catalog"] is True
+    assert kwargs["reuse_existing_thumbs"] is True
+
+
 def test_cli_reconcile_requires_version(tmp_path, capsys):
     db = tmp_path / "w.db"
     conn = store.connect(db)
