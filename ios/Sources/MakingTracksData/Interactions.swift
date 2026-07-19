@@ -297,6 +297,24 @@ extension AppDatabase {
         }
     }
 
+    public func seedUITestingBurstTrackVisits(_ places: [PlaceRef]) throws {
+        try dbQueue.write { db in
+            let seedStart = Date(timeIntervalSince1970: 1_000)
+            for (index, place) in places.enumerated() {
+                try snapshotIfNeeded(place, db)
+                let timestamp = seedStart.addingTimeInterval(Double(index) * 45)
+                var visit = Visit(
+                    id: nil,
+                    placeID: place.placeID,
+                    visitedAt: timestamp,
+                    verdict: nil,
+                    createdAt: timestamp
+                )
+                try visit.insert(db)
+            }
+        }
+    }
+
     public func seedUITestingTrackList(named name: String, places: [PlaceRef]) throws {
         let normalized = try Self.normalizedListName(name)
         try dbQueue.write { db in

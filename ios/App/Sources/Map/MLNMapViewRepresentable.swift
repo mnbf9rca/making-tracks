@@ -26,16 +26,27 @@ struct TrackSourceSnapshot: Sendable {
     static let emptyFeatureCollectionJSON = "{\"features\":[],\"type\":\"FeatureCollection\"}"
     static let empty = TrackSourceSnapshot(
         featureCollectionJSON: emptyFeatureCollectionJSON,
-        segmentCount: 0
+        segmentCount: 0,
+        suppressedBurstConnectorCount: 0,
+        connectableVisitCount: 0
     )
 
     let signature: String
     let segmentCount: Int
+    let suppressedBurstConnectorCount: Int
+    let connectableVisitCount: Int
     let data: Data
 
-    init(featureCollectionJSON: String, segmentCount: Int) {
+    init(
+        featureCollectionJSON: String,
+        segmentCount: Int,
+        suppressedBurstConnectorCount: Int = 0,
+        connectableVisitCount: Int = 0
+    ) {
         signature = featureCollectionJSON
         self.segmentCount = segmentCount
+        self.suppressedBurstConnectorCount = suppressedBurstConnectorCount
+        self.connectableVisitCount = connectableVisitCount
         data = Data(featureCollectionJSON.utf8)
     }
 }
@@ -140,6 +151,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var theme: MapTheme
     var startupViewport: ViewportSeed
     var features: [(MapPlace, PinState)]
+    var pinPresentation: PinPresentation
     var trackSourceSnapshot: TrackSourceSnapshot
     var pinAccessibilityNames: [String: String]
     var visibleCategories: Set<String>?
@@ -219,6 +231,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             context.coordinator.commitStyleReload(initialStyleReload)
         }
         context.coordinator.pendingFeatures = features
+        context.coordinator.pendingPinPresentation = pinPresentation
         context.coordinator.pendingTrackSourceSnapshot = trackSourceSnapshot
         context.coordinator.pinAccessibilityNames = pinAccessibilityNames
         context.coordinator.desiredVisibleCategories = visibleCategories
@@ -241,6 +254,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         context.coordinator.debugReportTapStatus = debugReportTapStatus
         context.coordinator.debugReportPinLayerSize = debugReportPinLayerSize
         context.coordinator.pendingFeatures = features
+        context.coordinator.pendingPinPresentation = pinPresentation
         context.coordinator.pendingTrackSourceSnapshot = trackSourceSnapshot
         context.coordinator.pinAccessibilityNames = pinAccessibilityNames
         context.coordinator.desiredVisibleCategories = visibleCategories
@@ -269,7 +283,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         } else {
             context.coordinator.updatePinSize(on: map, multiplier: pinSizeMultiplier)
             context.coordinator.updateLayerFilters(on: map, visibleCategories: visibleCategories)
-            context.coordinator.updateSource(on: map, features: features)
+            context.coordinator.updateSource(on: map, features: features, pinPresentation: pinPresentation)
             context.coordinator.updateTrackSource(on: map, snapshot: trackSourceSnapshot)
         }
         context.coordinator.updatePinAccessibilityElements(on: map)
@@ -330,6 +344,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var desiredPinSizeMultiplier = PinSize.defaultMultiplier
         var currentPinSize: PinSize?
         var pendingFeatures: [(MapPlace, PinState)] = []
+        var pendingPinPresentation: PinPresentation = .discovery
         var pendingTrackSourceSnapshot = TrackSourceSnapshot.empty
         var renderedFeatures: [(MapPlace, PinState)] = []
         var renderedTrackSignature: String?
@@ -461,7 +476,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             reportPinLayerSize(in: style, pinSize: pinSize)
 #endif
             updateLayerFilters(on: mapView, visibleCategories: desiredVisibleCategories)
-            updateSource(on: mapView, features: pendingFeatures)
+            updateSource(on: mapView, features: pendingFeatures, pinPresentation: pendingPinPresentation)
             renderedTrackSignature = nil
             updateTrackSource(on: mapView, snapshot: pendingTrackSourceSnapshot)
             updatePinAccessibilityElements(on: mapView)
@@ -491,7 +506,11 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             reportViewport(mapView)
         }
 
-        func updateSource(on map: MLNMapView, features: [(MapPlace, PinState)]) {
+        func updateSource(
+            on map: MLNMapView,
+            features: [(MapPlace, PinState)],
+            pinPresentation: PinPresentation
+        ) {
             guard let style = map.style else {
                 renderedFeatures = []
                 debugReportMapUpdateStatus("source no-style features:\(features.count)")
@@ -504,7 +523,9 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                 updatePinAccessibilityElements(on: map)
                 return
             }
-            let collection = FeatureEncoding.featureCollection(features.map { FeatureEncoding.feature($0.0, $0.1) })
+            let collection = FeatureEncoding.featureCollection(features.map {
+                FeatureEncoding.feature($0.0, $0.1, pinPresentation: pinPresentation)
+            })
             guard let json = try? collection.jsonString(),
                   let shape = try? MLNShape(data: Data(json.utf8), encoding: String.Encoding.utf8.rawValue)
             else {

@@ -25,6 +25,21 @@ final class PinLayersTests: XCTestCase {
         }
     }
 
+    func testTracksModeKeepsVisitedPinsFullStrengthWithoutLyingAboutVisitState() {
+        let visited = PinState(saved: false, visit: .visited)
+        let loved = PinState(saved: true, visit: .loved)
+
+        let visitedProps = FeatureEncoding.featureProperties(visited, pinPresentation: .tracks)
+        let lovedProps = FeatureEncoding.featureProperties(loved, pinPresentation: .tracks)
+
+        XCTAssertEqual(visitedProps["visit"], .string("visited"))
+        XCTAssertEqual(lovedProps["visit"], .string("loved"))
+        XCTAssertEqual(Expression.evaluate(PinLayers.fadeOpacityExpression(), visitedProps), .double(FULL_OPACITY))
+        XCTAssertEqual(Expression.evaluate(PinLayers.fadeOpacityExpression(), lovedProps), .double(FULL_OPACITY))
+        XCTAssertEqual(Expression.evaluate(PinLayers.bookmarkFilter(), lovedProps), .bool(true))
+        XCTAssertEqual(Expression.evaluate(PinLayers.heartFilter(), lovedProps), .bool(true))
+    }
+
     func testPinSubstrateIsShapeSourcePlusStyleLayersNotAnnotations() {
         let layers = PinLayers.pinLayers()
         let circle = layer(id: "pins-circle", in: layers)
@@ -407,6 +422,23 @@ final class PinLayersTests: XCTestCase {
             XCTAssertTrue((-180.0...180.0).contains(lon), "longitude \(lon)")
             XCTAssertTrue((-90.0...90.0).contains(lat), "latitude \(lat)")
         }
+    }
+
+    func testTrackSegmentSummaryCountsBurstSuppressedConnectorsForHonestReadout() {
+        let visits = [
+            trackVisit(id: 1, placeID: "desk-a", seconds: 0, lat: 3.14, lon: 101.69),
+            trackVisit(id: 2, placeID: "desk-b", seconds: 45, lat: 3.16, lon: 101.70),
+        ]
+
+        let summary = FeatureEncoding.trackSegmentSummary(
+            visits,
+            maxConnectorGap: 3_600,
+            burstWindow: 300
+        )
+
+        XCTAssertEqual(summary.features.count, 0)
+        XCTAssertEqual(summary.suppressedBurstConnectorCount, 1)
+        XCTAssertEqual(summary.connectableVisitCount, 2)
     }
 
     private func layer(id: String, in layers: [JSONValue]) -> [String: JSONValue]? {

@@ -71,6 +71,26 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(TracksCopy.summary(visible: 1, total: 3, lovedOnly: true), "1 visit for loved places · 2 hidden by filter")
     }
 
+    func testListMapModeCopyUsesThemeNameForFreshLayer() {
+        XCTAssertEqual(ListMapModeCopy.freshLayerTitle(theme: .snow), "Fresh snow")
+        XCTAssertEqual(ListMapModeCopy.freshLayerTitle(theme: .definedPaper), "Defined Paper")
+        XCTAssertEqual(ListMapModeCopy.tracksLayerTitle, "My tracks")
+    }
+
+    func testTrackConnectionReadoutExplainsAllBurstSuppressedConnectors() {
+        XCTAssertEqual(
+            TrackConnectionReadout.message(segmentCount: 0, suppressedBurstConnectorCount: 1, connectableVisitCount: 2),
+            "2 visits too close together to connect"
+        )
+        XCTAssertNil(TrackConnectionReadout.message(segmentCount: 1, suppressedBurstConnectorCount: 1, connectableVisitCount: 3))
+        XCTAssertNil(TrackConnectionReadout.message(segmentCount: 0, suppressedBurstConnectorCount: 0, connectableVisitCount: 2))
+    }
+
+    func testListMapPinPresentationTracksModeUsesFullStrengthPins() {
+        XCTAssertEqual(ListMapPinPresentation.presentation(showVisited: true), .tracks)
+        XCTAssertEqual(ListMapPinPresentation.presentation(showVisited: false), .discovery)
+    }
+
     func testTracksVisitFilterKeepsLovedRowsByPerPlaceLovedState() {
         let plain = TrackVisit(
             id: 1,

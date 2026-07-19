@@ -246,7 +246,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     func testCustomListCanBeCreatedBrowsedAndShownOnMap() {
-        let app = launch(reset: true, pinDiagnostics: true, seedTrackVisits: true)
+        let app = launch(reset: true, resetTheme: true, pinDiagnostics: true, seedTrackVisits: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
@@ -289,15 +289,32 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["map.list-mode.title"].label, "KL walk")
-        XCTAssertTrue(app.buttons["map.list-mode.close"].exists)
+        XCTAssertTrue(app.buttons["map.list-mode.back"].exists)
+        XCTAssertFalse(app.buttons["map.list-mode.close"].exists)
+        XCTAssertFalse(app.buttons["map.menu"].exists)
         XCTAssertTrue(waitForSourceFeatureCount(1, in: app))
         XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
 
-        let listModeToggle = app.segmentedControls["map.list-mode.toggle"]
-        XCTAssertTrue(listModeToggle.waitForExistence(timeout: 5))
-        listModeToggle.buttons["Fresh snow"].tap()
+        let freshLayerButton = app.buttons["map.list-mode.fresh"]
+        let tracksLayerButton = app.buttons["map.list-mode.tracks"]
+        XCTAssertTrue(freshLayerButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(tracksLayerButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(freshLayerButton.label, "Defined Paper")
+        XCTAssertEqual(freshLayerButton.value as? String, "Not selected")
+        XCTAssertEqual(tracksLayerButton.label, "My tracks")
+        XCTAssertEqual(tracksLayerButton.value as? String, "Selected")
+        XCTAssertGreaterThan(freshLayerButton.frame.midY, map.frame.midY)
+        XCTAssertGreaterThan(tracksLayerButton.frame.midY, map.frame.midY)
+        XCTAssertLessThan(freshLayerButton.frame.midX, tracksLayerButton.frame.midX)
+        attachScreenshot(named: "list-map-polished-chrome")
+        freshLayerButton.tap()
         XCTAssertTrue(waitForSourceFeatureCount(0, in: app))
         XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
+        XCTAssertEqual(freshLayerButton.value as? String, "Selected")
+
+        app.buttons["map.list-mode.back"].tap()
+        XCTAssertTrue(app.buttons["map.menu"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForNonExistence(of: app.staticTexts["map.list-mode.title"], timeout: 5))
     }
 
     func testTracksMenuShowsVisitedRowsAndLovedFilter() {
@@ -344,7 +361,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     func testMyTracksSystemListDrawsWholeLogTrackWithoutStoredListMembership() {
-        let app = launch(reset: true, pinDiagnostics: true, seedTrackVisits: true)
+        let app = launch(reset: true, pinDiagnostics: true, seedBurstTrackVisits: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
@@ -358,8 +375,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["map.track-connection-readout"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["map.track-connection-readout"].label, "2 visits too close together to connect")
         XCTAssertTrue(waitForSourceFeatureCount(2, in: app))
-        XCTAssertTrue(waitForTrackSegmentCount(1, in: app))
+        XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
+        attachScreenshot(named: "my-tracks-burst-readout")
     }
 
     func testHiddenToastAutoDismissesWithoutUnhidingPlace() {
@@ -929,6 +949,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         pinSizeMultiplier: Double? = nil,
         pinDiagnostics: Bool = false,
         seedTrackVisits: Bool = false,
+        seedBurstTrackVisits: Bool = false,
         seedTrackList: Bool = false,
         coverageBBoxes: [String] = [],
         resetOnboarding: Bool = false,
@@ -982,6 +1003,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         if seedTrackVisits {
             app.launchArguments.append("--ui-testing-seed-track-visits")
+        }
+        if seedBurstTrackVisits {
+            app.launchArguments.append("--ui-testing-seed-burst-track-visits")
         }
         if seedTrackList {
             app.launchArguments.append("--ui-testing-seed-track-list")
@@ -1459,6 +1483,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "place-card-a11y": "place-card-a11y",
         "credits-a11y": "credits-a11y",
         "tracks-static-geometry": "tracks-static-geometry",
+        "list-map-polished-chrome": "list-map-polished-chrome",
+        "my-tracks-burst-readout": "my-tracks-burst-readout",
         "pin-defined-paper-min": "pin-defined-paper-min",
         "pin-defined-paper-default": "pin-defined-paper-default",
         "pin-defined-paper-max": "pin-defined-paper-max",

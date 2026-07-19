@@ -471,6 +471,34 @@ struct TracksCopy {
     }
 }
 
+enum ListMapModeCopy {
+    static let tracksLayerTitle = "My tracks"
+
+    static func freshLayerTitle(theme: MapTheme) -> String {
+        theme.id == MapTheme.snow.id ? "Fresh snow" : theme.displayName
+    }
+}
+
+enum TrackConnectionReadout {
+    static func message(
+        segmentCount: Int,
+        suppressedBurstConnectorCount: Int,
+        connectableVisitCount: Int
+    ) -> String? {
+        guard segmentCount == 0,
+              suppressedBurstConnectorCount > 0,
+              connectableVisitCount >= 2
+        else { return nil }
+        return "\(connectableVisitCount) visits too close together to connect"
+    }
+}
+
+enum ListMapPinPresentation {
+    static func presentation(showVisited: Bool) -> PinPresentation {
+        showVisited ? .tracks : .discovery
+    }
+}
+
 struct OfflineDownloadProgress: Sendable, Equatable {
     let region: String?
     let publishVersion: String?
@@ -935,6 +963,7 @@ struct MapScreen: View {
                 theme: selectedTheme,
                 startupViewport: startupViewport,
                 features: features,
+                pinPresentation: pinPresentation,
                 trackSourceSnapshot: visibleTrackSourceSnapshot,
                 pinAccessibilityNames: pinAccessibilityNames,
                 visibleCategories: ListMapCategoryVisibility.visibleCategories(
@@ -1150,6 +1179,13 @@ struct MapScreen: View {
                 locationChrome
                     .padding(.trailing, 16)
                     .padding(.bottom, 16)
+            }
+            .overlay(alignment: .bottom) {
+                if let activeListMap {
+                    listMapModeChrome(activeListMap)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 24)
+                }
             }
             .overlay(alignment: .bottom) {
                 if let prompt = nearbyPromptCandidate {
@@ -1515,9 +1551,6 @@ struct MapScreen: View {
 
     private var statusChrome: some View {
         VStack(alignment: .trailing, spacing: 8) {
-            if let activeListMap {
-                listMapChrome(activeListMap)
-            }
             mapChrome
         }
     }
@@ -1534,64 +1567,53 @@ struct MapScreen: View {
 
     private var shellChrome: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button {
-                appShell.deepLinkPath = nil
-                appShell.isMenuPresented = true
-            } label: {
-                Image(systemName: MapHomeChromeSpec.menuSymbolName)
-                    .font(.system(size: MapHomeChromeSpec.menuGlyphPointSize, weight: .bold))
-                    .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(mapBareGlyphStyle)
-                    .mapChromeGlyphHalo()
-                    .frame(width: MapHomeChromeSpec.hitTargetSide, height: MapHomeChromeSpec.hitTargetSide)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Menu")
-            .accessibilityHint("Opens app menu")
-            .accessibilityIdentifier("map.menu")
-
-            if let offlineDownloadProgress = currentOfflineDownloadProgress {
+            if let activeListMap {
+                listMapNavigationChrome(activeListMap)
+            } else {
                 Button {
-                    appShell.deepLinkPath = .offlineMaps
+                    appShell.deepLinkPath = nil
                     appShell.isMenuPresented = true
                 } label: {
-                    Label(
-                        offlineDownloadProgress.isWaitingForConnectivity
-                            ? "Offline maps \(offlineDownloadProgress.statusText)"
-                            : "Offline maps \(offlineDownloadProgress.percentComplete)%",
-                        systemImage: "arrow.down.circle"
-                    )
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    Image(systemName: MapHomeChromeSpec.menuSymbolName)
+                        .font(.system(size: MapHomeChromeSpec.menuGlyphPointSize, weight: .bold))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(mapBareGlyphStyle)
+                        .mapChromeGlyphHalo()
+                        .frame(width: MapHomeChromeSpec.hitTargetSide, height: MapHomeChromeSpec.hitTargetSide)
+                        .contentShape(Rectangle())
                 }
-                .accessibilityIdentifier("map.download-progress")
-            }
+                .accessibilityLabel("Menu")
+                .accessibilityHint("Opens app menu")
+                .accessibilityIdentifier("map.menu")
 
-            layersButton
+                if let offlineDownloadProgress = currentOfflineDownloadProgress {
+                    Button {
+                        appShell.deepLinkPath = .offlineMaps
+                        appShell.isMenuPresented = true
+                    } label: {
+                        Label(
+                            offlineDownloadProgress.isWaitingForConnectivity
+                                ? "Offline maps \(offlineDownloadProgress.statusText)"
+                                : "Offline maps \(offlineDownloadProgress.percentComplete)%",
+                            systemImage: "arrow.down.circle"
+                        )
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(.ultraThinMaterial, in: Capsule())
+                    }
+                    .accessibilityIdentifier("map.download-progress")
+                }
+
+                layersButton
+            }
         }
     }
 
     @ViewBuilder
-    private func listMapChrome(_ list: ActiveListMap) -> some View {
-        VStack(alignment: .trailing, spacing: 8) {
-            Text(verbatim: list.name)
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(.ultraThinMaterial, in: Capsule())
-                .accessibilityIdentifier("map.list-mode.title")
-
-            Picker("List map mode", selection: listMapShowVisitedBinding) {
-                Text("Fresh snow").tag(false)
-                Text("My tracks").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 190)
-            .accessibilityIdentifier("map.list-mode.toggle")
-
+    private func listMapNavigationChrome(_ list: ActiveListMap) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
             Button {
                 Task { @MainActor in
                     activeListMap = nil
@@ -1600,13 +1622,70 @@ struct MapScreen: View {
                     await refreshTrackGeometry()
                 }
             } label: {
-                Label("Close list", systemImage: "xmark")
-                    .labelStyle(.iconOnly)
-                    .frame(width: 36, height: 36)
+                Label("Back", systemImage: "chevron.left")
+                    .font(.callout.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
             }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("map.list-mode.close")
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("map.list-mode.back")
+
+            Text(verbatim: list.name)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.regularMaterial, in: Capsule())
+                .accessibilityIdentifier("map.list-mode.title")
+
+            if let message = trackConnectionReadoutMessage {
+                Text(verbatim: message)
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.regularMaterial, in: Capsule())
+                    .accessibilityIdentifier("map.track-connection-readout")
+            }
         }
+    }
+
+    private func listMapModeChrome(_: ActiveListMap) -> some View {
+        HStack(spacing: 0) {
+            listMapModeButton(
+                title: ListMapModeCopy.freshLayerTitle(theme: selectedTheme),
+                showVisited: false
+            )
+            listMapModeButton(
+                title: ListMapModeCopy.tracksLayerTitle,
+                showVisited: true
+            )
+        }
+        .frame(width: 280, height: 40)
+        .padding(8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(uiColor: .separator), lineWidth: 1)
+        }
+    }
+
+    private func listMapModeButton(title: String, showVisited: Bool) -> some View {
+        let isSelected = activeListMap?.showVisited == showVisited
+        return Button {
+            listMapShowVisitedBinding.wrappedValue = showVisited
+        } label: {
+            Text(verbatim: title)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .foregroundStyle(isSelected ? Color(uiColor: .systemBackground) : Color(uiColor: .label))
+                .background(isSelected ? Color(uiColor: .label) : Color.clear)
+        }
+        .buttonStyle(.plain)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .accessibilityIdentifier(showVisited ? "map.list-mode.tracks" : "map.list-mode.fresh")
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
     }
 
     private var listMapShowVisitedBinding: Binding<Bool> {
@@ -1626,6 +1705,19 @@ struct MapScreen: View {
     private var visibleTrackSourceSnapshot: TrackSourceSnapshot {
         guard activeListMap?.showVisited == true else { return .empty }
         return trackSourceSnapshot
+    }
+
+    private var pinPresentation: PinPresentation {
+        ListMapPinPresentation.presentation(showVisited: activeListMap?.showVisited == true)
+    }
+
+    private var trackConnectionReadoutMessage: String? {
+        guard activeListMap?.showVisited == true else { return nil }
+        return TrackConnectionReadout.message(
+            segmentCount: trackSourceSnapshot.segmentCount,
+            suppressedBurstConnectorCount: trackSourceSnapshot.suppressedBurstConnectorCount,
+            connectableVisitCount: trackSourceSnapshot.connectableVisitCount
+        )
     }
 
     private var attributionText: some View {
@@ -5453,11 +5545,13 @@ private final class MapScreenModel {
         let db = database
         return await Task.detached {
             let visits = (try? db.trackVisits(listID: listID)) ?? []
-            let features = FeatureEncoding.trackSegmentFeatures(visits)
+            let summary = FeatureEncoding.trackSegmentSummary(visits)
             return TrackSourceSnapshot(
-                featureCollectionJSON: (try? FeatureEncoding.featureCollection(features).jsonString())
+                featureCollectionJSON: (try? FeatureEncoding.featureCollection(summary.features).jsonString())
                     ?? TrackSourceSnapshot.emptyFeatureCollectionJSON,
-                segmentCount: features.count
+                segmentCount: summary.features.count,
+                suppressedBurstConnectorCount: summary.suppressedBurstConnectorCount,
+                connectableVisitCount: summary.connectableVisitCount
             )
         }.value
     }

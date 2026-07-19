@@ -24,6 +24,7 @@ struct MakingTracksApp: App {
     private static let isLocationAuthorizedFixture = arguments.contains("--ui-testing-location-authorized")
     private static let debugExposeFixturePinDiagnostics = arguments.contains("--ui-testing-pin-diagnostics")
     private static let seedFixtureTrackVisits = arguments.contains("--ui-testing-seed-track-visits")
+    private static let seedFixtureBurstTrackVisits = arguments.contains("--ui-testing-seed-burst-track-visits")
     private static let seedFixtureTrackList = arguments.contains("--ui-testing-seed-track-list")
     private static let simulatedLatitude = argumentValue("--ui-testing-location-latitude").flatMap(Double.init)
     private static let simulatedLongitude = argumentValue("--ui-testing-location-longitude").flatMap(Double.init)
@@ -37,6 +38,7 @@ struct MakingTracksApp: App {
     private static let isLocationAuthorizedFixture = false
     private static let debugExposeFixturePinDiagnostics = false
     private static let seedFixtureTrackVisits = false
+    private static let seedFixtureBurstTrackVisits = false
     private static let seedFixtureTrackList = false
     private static let simulatedLatitude: Double? = nil
     private static let simulatedLongitude: Double? = nil
@@ -78,6 +80,8 @@ struct MakingTracksApp: App {
                 }
                 if seedFixtureTrackList {
                     try database.seedUITestingTrackList(named: "Track pair", places: MapScreen.fixturePlaces)
+                } else if seedFixtureBurstTrackVisits {
+                    try database.seedUITestingBurstTrackVisits(MapScreen.fixturePlaces)
                 } else if seedFixtureTrackVisits {
                     try database.seedUITestingTrackVisits(MapScreen.fixturePlaces)
                 }
