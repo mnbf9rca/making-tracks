@@ -567,6 +567,13 @@ struct OnboardingFlow: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(!canStartDownload)
                 .accessibilityIdentifier("onboarding.download")
+
+                Button("Set up offline later") {
+                    complete(selectedRegion)
+                }
+                .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("onboarding.offline-later")
             }
             .task(id: selectedRegion ?? .malaysia) {
                 prepareDownload(selectedRegion ?? .malaysia)

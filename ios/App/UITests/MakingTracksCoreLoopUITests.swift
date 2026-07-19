@@ -90,6 +90,32 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(relaunched.staticTexts["Interesting places around you"].exists)
     }
 
+    func testOnboardingCanSetUpOfflineLaterWithoutStartingDownload() {
+        let app = launch(reset: true, resetOnboarding: true)
+
+        app.buttons["onboarding.next"].tap()
+        app.buttons["onboarding.next"].tap()
+        XCTAssertTrue(app.buttons["onboarding.region.uk"].waitForExistence(timeout: 5))
+        app.buttons["onboarding.region.uk"].tap()
+        app.buttons["onboarding.next"].tap()
+
+        XCTAssertTrue(app.staticTexts["Download UK"].waitForExistence(timeout: 5))
+        let setUpOfflineLater = app.buttons["onboarding.offline-later"]
+        XCTAssertTrue(setUpOfflineLater.waitForExistence(timeout: 5))
+        XCTAssertEqual(setUpOfflineLater.label, "Set up offline later")
+        setUpOfflineLater.tap()
+
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["map.startup-region"].label, "Startup region: UK")
+        XCTAssertFalse(app.buttons["map.download-progress"].exists)
+
+        openAppMenu(in: app)
+        app.buttons["menu.row.offline-maps"].tap()
+        XCTAssertTrue(app.staticTexts["Offline maps"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["United Kingdom"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Download"].exists)
+    }
+
     func testReplayOnboardingPreselectsPersistedRegionFromSettings() {
         let app = launch(reset: true, resetOnboarding: true)
         completeOnboardingSelectingUK(in: app)
