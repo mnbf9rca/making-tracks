@@ -23,6 +23,7 @@ struct MapHomeChromeSpec {
 
 private enum MapOverlayChromeSpec {
     static let edgePadding: CGFloat = 16
+    static let topPadding: CGFloat = 12
     static let listModeControlHeight: CGFloat = 56
     static let listModeControlBottomPadding: CGFloat = 24
     static let listModeAuxiliaryChromeClearance: CGFloat = 12
@@ -651,12 +652,14 @@ enum MapEmptyRegionSurface: Equatable {
 
     static func resolve(
         features: [(MapPlace, PinState)],
+        sourceFeatureCount: Int? = nil,
         loadState: TileLoadState,
         viewport: ViewportSeed,
         isFixtureMap: Bool,
         isViewportLoading: Bool = false
     ) -> MapEmptyRegionSurface? {
-        guard !isFixtureMap, !isViewportLoading, features.isEmpty else { return nil }
+        let availableFeatureCount = sourceFeatureCount ?? features.count
+        guard !isFixtureMap, !isViewportLoading, features.isEmpty, availableFeatureCount == 0 else { return nil }
         if MapRegion.supportedRegion(for: viewport.bbox) == nil {
             return .unsupportedRegion
         }
@@ -684,11 +687,11 @@ enum MapEmptyRegionSurface: Equatable {
     var message: String {
         switch self {
         case .unsupportedRegion:
-            return "Making Tracks v1 covers the UK and Malaysia."
+            return "Making Tracks v1 covers \(MapRegion.coverageListText)."
         case .mapDataUnavailable:
             return "The world map is still available. Check your connection or download a region for offline browsing."
         case .noPlaces:
-            return "Try another part of the UK or Malaysia."
+            return "Try another part of \(MapRegion.coverageListText)."
         }
     }
 
@@ -864,6 +867,7 @@ final class OfflineRegionDownloadSession {
 struct MapScreen: View {
     static let themeStorageKey = "map.theme.id"
     static let pinSizeMultiplierStorageKey = "map.pinSize.multiplier"
+    static let coverageShadingStorageKey = "map.coverageShading.visible"
 
     let database: AppDatabase
     let startupViewport: ViewportSeed
@@ -882,9 +886,11 @@ struct MapScreen: View {
     @AppStorage(Self.themeStorageKey) private var selectedThemeID = MapTheme.definedPaper.id
     @AppStorage(OfflineDownloadSettings.allowsCellularDownloadsKey) private var allowsCellularDownloads = OfflineDownloadSettings.defaultAllowsCellularDownloads
     @AppStorage(Self.pinSizeMultiplierStorageKey) private var pinSizeMultiplier = PinSize.defaultMultiplier
+    @AppStorage(Self.coverageShadingStorageKey) private var showCoverageShading = true
     @Environment(\.scenePhase) private var scenePhase
     @State private var worldPMTilesURL: String? = WorldBasemap.pmtilesURL()
     @State private var features: [(MapPlace, PinState)] = []
+    @State private var sourceFeatureCount = 0
     @State private var trackSourceSnapshot = TrackSourceSnapshot.empty
     @State private var regionPMTilesURL: String?
     @State private var installedCoverageBBoxes: [CoverageBBox] = []
@@ -962,15 +968,18 @@ struct MapScreen: View {
         self.locationManager = locationManager
         _features = State(initialValue: isFixtureMap ? Self.initialFixtureFeatures(dense: debugUseDenseFixturePins) : [])
         _installedCoverageBBoxes = State(initialValue: debugCoverageBBoxes)
+        _layerVisibility = State(initialValue: MapLayerVisibility(showCoverageShading: UserDefaults.standard.object(forKey: Self.coverageShadingStorageKey) as? Bool ?? true))
         _locationPermission = StateObject(wrappedValue: locationPermission ?? LocationPermission(manager: locationManager))
     }
 
     var body: some View {
         ZStack {
-            MLNMapViewRepresentable(
+            GeometryReader { _ in
+                MLNMapViewRepresentable(
                 worldPMTilesURL: worldPMTilesURL,
                 regionPMTilesURL: regionPMTilesURL,
                 coverageBBoxes: installedCoverageBBoxes,
+                showsCoverageShading: layerVisibility.showCoverageShading,
                 theme: selectedTheme,
                 startupViewport: startupViewport,
                 features: features,
@@ -1098,7 +1107,7 @@ struct MapScreen: View {
             .ignoresSafeArea()
             .overlay(alignment: .topLeading) {
                 shellChrome
-                    .padding(.top, 72)
+                    .padding(.top, MapOverlayChromeSpec.topPadding)
                     .padding(.leading, MapOverlayChromeSpec.edgePadding)
             }
             .overlay {
@@ -1178,7 +1187,7 @@ struct MapScreen: View {
 #endif
             .overlay(alignment: .topTrailing) {
                 statusChrome
-                    .padding(.top, 72)
+                    .padding(.top, MapOverlayChromeSpec.topPadding)
                     .padding(.trailing, MapOverlayChromeSpec.edgePadding)
             }
             .overlay(alignment: .bottomLeading) {
@@ -1211,6 +1220,7 @@ struct MapScreen: View {
                         .padding(.bottom, hiddenToastBottomPadding)
                         .padding(.horizontal, MapOverlayChromeSpec.edgePadding)
                 }
+            }
             }
         }
         .sheet(isPresented: $appShell.isMenuPresented) {
@@ -1292,6 +1302,7 @@ struct MapScreen: View {
             Task { await refreshStorageMenuStatus() }
         }
         .onChange(of: layerVisibility) { _, visibility in
+            showCoverageShading = visibility.showCoverageShading
             Task { @MainActor in
                 await applyLayerVisibility(visibility)
             }
@@ -1415,6 +1426,7 @@ struct MapScreen: View {
     private var emptyRegionSurface: MapEmptyRegionSurface? {
         MapEmptyRegionSurface.resolve(
             features: features,
+            sourceFeatureCount: sourceFeatureCount,
             loadState: loadState,
             viewport: currentViewport ?? startupViewport,
             isFixtureMap: isFixtureMap,
@@ -1780,15 +1792,9 @@ struct MapScreen: View {
         storageMenuStatus = .loading
         MakingTracksLog.startup.debug("storage status state=loading")
         async let nextStorageMenuStatus = model.storageMenuStatus()
-#if DEBUG
         async let nextInstalledCoverageBBoxes = model.installedOfflineCoverageBBoxes(for: OfflineRegionCatalog.debugFixture)
-#endif
         storageMenuStatus = await nextStorageMenuStatus
-#if DEBUG
         installedCoverageBBoxes = debugCoverageBBoxes + (await nextInstalledCoverageBBoxes)
-#else
-        installedCoverageBBoxes = debugCoverageBBoxes
-#endif
         let statusKind = storageMenuStatus.kind.logLabel
         let regionCount = storageMenuStatus.regions.count
         let failedCount = storageMenuStatus.failedRegions.count
@@ -2208,6 +2214,7 @@ struct MapScreen: View {
             allowManifestRefresh: allowManifestRefresh
         )
         let next = viewportFeatures.display
+        let nextSourceFeatureCount = viewportFeatures.sourceCount
         let nextNearbyPromptFeatures = viewportFeatures.nearbyPrompt
         let nextRegionPMTilesURL = await model.pmtilesURL
         let nextAttribution = await model.attribution
@@ -2223,6 +2230,7 @@ struct MapScreen: View {
             viewportRefreshTracker.complete(requestID: requestID)
             if capturedStateEpoch == stateEpoch {
                 features = next
+                sourceFeatureCount = nextSourceFeatureCount
                 nearbyPromptFeatures = nextNearbyPromptFeatures
                 nearbyPromptNames = nextNearbyPromptNames
                 listMapPinNames = [:]
@@ -2358,6 +2366,7 @@ struct MapScreen: View {
         features = next
         nearbyPromptFeatures = []
         nearbyPromptNames = [:]
+        sourceFeatureCount = next.count
         listMapPinNames = nextNames
         trackSourceSnapshot = nextTrackSourceSnapshot
         stateEpoch += 1
@@ -2808,6 +2817,7 @@ private struct AppMenuSheet: View {
 #endif
         case .settings:
             destinationWithDone(SettingsView(
+                path: $path,
                 selectedThemeID: $selectedThemeID,
                 pinSizeMultiplier: $pinSizeMultiplier,
                 locationStatus: locationStatus,
@@ -3812,6 +3822,7 @@ private struct OfflineMapsView: View {
 #endif
 
 private struct SettingsView: View {
+    @Binding var path: [MenuDestination]
     @Binding var selectedThemeID: String
     @Binding var pinSizeMultiplier: Double
     let locationStatus: LocationMenuStatus
@@ -3867,6 +3878,10 @@ private struct SettingsView: View {
 
             Section("Pins") {
                 VStack(alignment: .leading, spacing: 8) {
+                    PinSizePreview(pinSize: pinSize, theme: MapTheme.named(selectedThemeID))
+                        .padding(.bottom, 2)
+                        .accessibilityHidden(true)
+
                     HStack {
                         Text("Pin size")
                         Spacer()
@@ -3896,50 +3911,13 @@ private struct SettingsView: View {
             }
 
             Section("Storage") {
-                switch storageStatus.kind {
-                case .loading:
-                    Label("Checking installed maps", systemImage: "internaldrive")
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("settings.storage.loading")
-                case .unavailable:
-                    Label("Storage unavailable", systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("settings.storage.unavailable")
-                case .ready:
-                    LabeledContent("Installed maps", value: storageStatus.totalBytesText)
-                        .accessibilityIdentifier("settings.storage.total")
-                    if storageStatus.regions.isEmpty {
-                        Label("No offline regions installed", systemImage: "internaldrive")
-                            .foregroundStyle(.secondary)
-                            .accessibilityIdentifier("settings.storage.empty")
-                    } else {
-                        ForEach(storageStatus.regions) { region in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(region.title)
-                                    Spacer()
-                                    Text(region.bytesText)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Text(region.detail)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .accessibilityElement(children: .combine)
-                            .accessibilityIdentifier("settings.storage.region.\(region.region)")
-                        }
-                    }
-                    ForEach(storageStatus.failedRegions, id: \.self) { region in
-                        HStack {
-                            Text(region)
-                            Spacer()
-                            Text("Unavailable")
-                                .foregroundStyle(.secondary)
-                        }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityIdentifier("settings.storage.failed-region.\(region)")
-                    }
+                Button {
+                    path.append(SettingsStorageNavigation.destination)
+                } label: {
+                    SettingsStorageSummary(storageStatus: storageStatus)
                 }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings.storage.manage")
             }
 
             Section("Onboarding") {
@@ -3964,6 +3942,141 @@ private struct SettingsView: View {
             get: { pinSize.multiplier },
             set: { pinSizeMultiplier = PinSize(multiplier: $0).multiplier }
         )
+    }
+}
+
+struct PinSizePreviewMetrics: Equatable {
+    let circleDiameter: Double
+    let categoryIconScale: Double
+    let badgeIconScale: Double
+    let badgeOffset: Double
+
+    init(pinSize: PinSize) {
+        circleDiameter = pinSize.circleRadius * 2
+        categoryIconScale = pinSize.categoryIconScale
+        badgeIconScale = pinSize.badgeIconScale
+        badgeOffset = PinLayers.baseBadgeOffset * pinSize.multiplier
+    }
+}
+
+private struct PinSizePreview: View {
+    let pinSize: PinSize
+    let theme: MapTheme
+
+    private var metrics: PinSizePreviewMetrics {
+        PinSizePreviewMetrics(pinSize: pinSize)
+    }
+
+    var body: some View {
+        ZStack {
+            MapThemeColor.color(hex: theme.background)
+            dummyMapLines
+            dummyPin
+        }
+        .frame(maxWidth: .infinity, minHeight: 96)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(MapThemeColor.color(hex: theme.boundaries).opacity(0.55), lineWidth: 1)
+        )
+    }
+
+    private var dummyMapLines: some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+            Path { path in
+                path.move(to: CGPoint(x: size.width * 0.06, y: size.height * 0.72))
+                path.addCurve(
+                    to: CGPoint(x: size.width * 0.94, y: size.height * 0.28),
+                    control1: CGPoint(x: size.width * 0.30, y: size.height * 0.50),
+                    control2: CGPoint(x: size.width * 0.58, y: size.height * 0.84)
+                )
+                path.move(to: CGPoint(x: size.width * 0.12, y: size.height * 0.22))
+                path.addLine(to: CGPoint(x: size.width * 0.82, y: size.height * 0.58))
+                path.move(to: CGPoint(x: size.width * 0.22, y: size.height * 0.88))
+                path.addLine(to: CGPoint(x: size.width * 0.62, y: size.height * 0.10))
+            }
+            .stroke(MapThemeColor.color(hex: theme.roads), lineWidth: 5)
+
+            Path { path in
+                path.addRect(CGRect(x: size.width * 0.06, y: size.height * 0.10, width: size.width * 0.26, height: size.height * 0.22))
+                path.addRect(CGRect(x: size.width * 0.68, y: size.height * 0.66, width: size.width * 0.24, height: size.height * 0.18))
+            }
+            .fill(MapThemeColor.color(hex: theme.parks).opacity(theme.showsParks ? 0.75 : 0.35))
+        }
+    }
+
+    private var dummyPin: some View {
+        ZStack(alignment: .topTrailing) {
+            Circle()
+                .fill(MapThemeColor.color(hex: PinLayers.pinColor))
+                .frame(width: CGFloat(metrics.circleDiameter), height: CGFloat(metrics.circleDiameter))
+                .overlay {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: CGFloat(PinLayers.categorySymbolPointSize * metrics.categoryIconScale), weight: .bold))
+                        .foregroundStyle(.white)
+                }
+
+            Image(systemName: "bookmark.fill")
+                .font(.system(size: CGFloat(10 * metrics.badgeIconScale), weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: CGFloat(15 * metrics.badgeIconScale), height: CGFloat(15 * metrics.badgeIconScale))
+                .background(Color.accentColor, in: Circle())
+                .offset(x: CGFloat(metrics.badgeOffset * 0.55), y: CGFloat(-metrics.badgeOffset * 0.55))
+        }
+    }
+}
+
+enum SettingsStorageNavigation {
+    static let destination = MenuDestination.offlineMaps
+}
+
+private struct SettingsStorageSummary: View {
+    let storageStatus: StorageMenuStatus
+
+    var body: some View {
+        HStack(spacing: 10) {
+            storageIcon
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Manage offline maps")
+                    .foregroundStyle(.primary)
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var storageIcon: some View {
+        switch storageStatus.kind {
+        case .loading:
+            Image(systemName: "internaldrive")
+        case .unavailable:
+            Image(systemName: "exclamationmark.triangle")
+        case .ready:
+            Image(systemName: "arrow.down.circle")
+        }
+    }
+
+    private var statusText: String {
+        switch storageStatus.kind {
+        case .loading:
+            return "Checking installed maps"
+        case .unavailable:
+            return "Storage unavailable"
+        case .ready:
+            if storageStatus.regions.isEmpty {
+                return "No offline regions installed"
+            }
+            return "\(storageStatus.totalBytesText) installed"
+        }
     }
 }
 
@@ -4403,6 +4516,19 @@ private struct LayersSheet: View {
                         )
                     )
                         .accessibilityIdentifier("map.layers.show-hidden")
+
+                    Toggle(
+                        "Show offline coverage shading",
+                        isOn: Binding(
+                            get: { visibility.showCoverageShading },
+                            set: { visible in
+                                var next = visibility
+                                next.showCoverageShading = visible
+                                visibility = next
+                            }
+                        )
+                    )
+                    .accessibilityIdentifier("map.layers.coverage-shading")
                 }
 
                 Section("Categories") {
@@ -5210,30 +5336,6 @@ private final class MapScreenModel {
         }.value
     }
 
-    func installedOfflineCoverageBBoxes(for catalog: OfflineRegionCatalog) async -> [CoverageBBox] {
-        guard let offlineStore else { return [] }
-        let regionIDs = catalog.zones.compactMap { MapRegion(rawValue: $0.id)?.rawValue }
-        return await Task.detached {
-            var coverage: [CoverageBBox] = []
-            for regionID in regionIDs {
-                guard let region = MapRegion(rawValue: regionID),
-                      let publish = try? offlineStore.installedPublish(region: regionID),
-                      let coverageBBox = OfflineCoverageBBox.coverage(
-                        fromManifestBasemapBBox: publish.manifest.basemap.bbox,
-                        for: region
-                      )
-                else { continue }
-                coverage.append(coverageBBox)
-            }
-            return coverage.sorted { lhs, rhs in
-                if lhs.minLon != rhs.minLon { return lhs.minLon < rhs.minLon }
-                if lhs.minLat != rhs.minLat { return lhs.minLat < rhs.minLat }
-                if lhs.maxLon != rhs.maxLon { return lhs.maxLon < rhs.maxLon }
-                return lhs.maxLat < rhs.maxLat
-            }
-        }.value
-    }
-
     func offlineMapsLocalState(for catalog: OfflineRegionCatalog) async -> OfflineMapsLocalState {
         async let installed = installedOfflinePublishVersions(for: catalog)
         async let pausedRegions = pausedOfflineDownloadRegions(for: catalog)
@@ -5335,6 +5437,30 @@ private final class MapScreenModel {
         value.range(of: "^[a-z][a-z0-9_-]{0,63}$", options: .regularExpression) == value.startIndex..<value.endIndex
     }
 #endif
+
+    func installedOfflineCoverageBBoxes(for catalog: OfflineRegionCatalog) async -> [CoverageBBox] {
+        guard let offlineStore else { return [] }
+        let regionIDs = catalog.zones.compactMap { MapRegion(rawValue: $0.id)?.rawValue }
+        return await Task.detached {
+            var coverage: [CoverageBBox] = []
+            for regionID in regionIDs {
+                guard let region = MapRegion(rawValue: regionID),
+                      let publish = try? offlineStore.installedPublish(region: regionID),
+                      let coverageBBox = OfflineCoverageBBox.coverage(
+                        fromManifestBasemapBBox: publish.manifest.basemap.bbox,
+                        for: region
+                      )
+                else { continue }
+                coverage.append(coverageBBox)
+            }
+            return coverage.sorted { lhs, rhs in
+                if lhs.minLon != rhs.minLon { return lhs.minLon < rhs.minLon }
+                if lhs.minLat != rhs.minLat { return lhs.minLat < rhs.minLat }
+                if lhs.maxLon != rhs.maxLon { return lhs.maxLon < rhs.maxLon }
+                return lhs.maxLat < rhs.maxLat
+            }
+        }.value
+    }
 
     func performDeferredOfflineMaintenance(
         allowsCellularDownloads: Bool,
@@ -5449,6 +5575,7 @@ private final class MapScreenModel {
     struct ViewportFeatures: Sendable {
         let display: [(MapPlace, PinState)]
         let nearbyPrompt: [(MapPlace, PinState)]
+        let sourceCount: Int
     }
 
     func viewportFeatures(in bbox: BBox, zoom: Int, allowManifestRefresh: Bool = true) async -> ViewportFeatures {
@@ -5467,11 +5594,12 @@ private final class MapScreenModel {
             }
             return ViewportFeatures(
                 display: PinFeatureFilter.discoveryFeatures(sourceFeatures, showHidden: showHiddenPlaces, zoom: zoom),
-                nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures)
+                nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures),
+                sourceCount: sourceFeatures.count
             )
         }
         guard let client = await selectClient(for: bbox, allowManifestRefresh: allowManifestRefresh) else {
-            return ViewportFeatures(display: [], nearbyPrompt: [])
+            return ViewportFeatures(display: [], nearbyPrompt: [], sourceCount: 0)
         }
         let places = await client.places(inViewport: bbox, zoom: zoom, allowManifestRefresh: allowManifestRefresh)
         let ids = places.map(\.id)
@@ -5479,7 +5607,8 @@ private final class MapScreenModel {
         let sourceFeatures = places.map { ($0, states[$0.id] ?? PinState(saved: false, visit: .none)) }
         return ViewportFeatures(
             display: PinFeatureFilter.discoveryFeatures(sourceFeatures, showHidden: showHiddenPlaces, zoom: zoom),
-            nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures)
+            nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures),
+            sourceCount: sourceFeatures.count
         )
     }
 

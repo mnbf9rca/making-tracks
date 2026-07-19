@@ -205,6 +205,36 @@ final class AppShellTests: XCTestCase {
         XCTAssertNil(MapEmptyRegionSurface.resolve(features: [], loadState: .ok, viewport: london, isFixtureMap: true))
     }
 
+    func testEmptyRegionSurfaceDistinguishesTrueEmptyFromThinnedEmpty() {
+        let kl = ViewportSeed(
+            bbox: BBox(minLon: 101.64, minLat: 3.09, maxLon: 101.74, maxLat: 3.19),
+            zoom: 11
+        )
+
+        XCTAssertEqual(MapEmptyRegionSurface.resolve(
+            features: [],
+            sourceFeatureCount: 0,
+            loadState: .ok,
+            viewport: kl,
+            isFixtureMap: false
+        ), .noPlaces)
+        XCTAssertNil(MapEmptyRegionSurface.resolve(
+            features: [],
+            sourceFeatureCount: 1,
+            loadState: .ok,
+            viewport: kl,
+            isFixtureMap: false
+        ))
+    }
+
+    func testEmptyRegionNoPlacesCopyUsesPublishedRegionNames() {
+        XCTAssertEqual(
+            MapEmptyRegionSurface.noPlaces.message,
+            "Try another part of Malaysia, Singapore, and Brunei or United Kingdom."
+        )
+        XCTAssertFalse(MapEmptyRegionSurface.noPlaces.message.contains("UK or Malaysia"))
+    }
+
     func testMapDataUnavailableSurfaceUsesNeutralCopyAndOfflineMapsAffordance() throws {
         let surface = MapEmptyRegionSurface.mapDataUnavailable
 
@@ -350,8 +380,22 @@ final class AppShellTests: XCTestCase {
     func testThemeStorageUsesStableKeyAndDefinedPaperDefault() {
         XCTAssertEqual(MapScreen.themeStorageKey, "map.theme.id")
         XCTAssertEqual(MapScreen.pinSizeMultiplierStorageKey, "map.pinSize.multiplier")
+        XCTAssertEqual(MapScreen.coverageShadingStorageKey, "map.coverageShading.visible")
         XCTAssertEqual(MapTheme.named(nil).id, MapTheme.definedPaper.id)
         XCTAssertEqual(MapTheme.named("defined-paper").displayName, "Defined Paper")
+    }
+
+    func testPinSizePreviewMetricsUseSharedPinSizeMath() {
+        let pinSize = PinSize(multiplier: 1.4)
+        let metrics = PinSizePreviewMetrics(pinSize: pinSize)
+
+        XCTAssertEqual(metrics.circleDiameter, pinSize.circleRadius * 2)
+        XCTAssertEqual(metrics.categoryIconScale, pinSize.categoryIconScale)
+        XCTAssertEqual(metrics.badgeIconScale, pinSize.badgeIconScale)
+    }
+
+    func testSettingsStorageNavigationTargetsOfflineMaps() {
+        XCTAssertEqual(SettingsStorageNavigation.destination, .offlineMaps)
     }
 
     func testOfflineDownloadProgressBoundsInvalidFractions() {
@@ -1214,6 +1258,38 @@ final class AppShellTests: XCTestCase {
             theme: .definedPaper,
             makeStyleURL: { _, _, _, _ in URL(fileURLWithPath: "/tmp/unused.json") }
         ))
+    }
+
+    @MainActor
+    func testCoordinatorCoverageToggleRemovesMaskBBoxes() throws {
+        let coordinator = makeCoordinator()
+        coordinator.currentWorldPMTilesURL = "pmtiles://world.pmtiles"
+        coordinator.currentRegionPMTilesURL = "pmtiles://region.pmtiles"
+        coordinator.currentCoverageBBoxes = [
+            CoverageBBox(minLon: 99.60, minLat: 0.80, maxLon: 119.30, maxLat: 7.60),
+        ]
+        coordinator.currentShowsCoverageShading = true
+        coordinator.currentThemeID = MapTheme.definedPaper.id
+
+        var capturedCoverage: [CoverageBBox] = [
+            CoverageBBox(minLon: 99.60, minLat: 0.80, maxLon: 119.30, maxLat: 7.60),
+        ]
+        let reload = try XCTUnwrap(coordinator.prepareStyleReload(
+            worldPMTilesURL: "pmtiles://world.pmtiles",
+            regionPMTilesURL: "pmtiles://region.pmtiles",
+            coverageBBoxes: capturedCoverage,
+            showsCoverageShading: false,
+            theme: .definedPaper,
+            makeStyleURL: { _, _, coverage, _ in
+                capturedCoverage = coverage
+                return URL(fileURLWithPath: "/tmp/making-tracks-style-no-coverage.json")
+            }
+        ))
+
+        XCTAssertEqual(capturedCoverage, [])
+        coordinator.commitStyleReload(reload)
+        XCTAssertEqual(coordinator.currentCoverageBBoxes, [])
+        XCTAssertFalse(coordinator.currentShowsCoverageShading)
     }
 
     func testMapPinAccessibilityContentUsesStableIdentifierAndReadableLabel() {

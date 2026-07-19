@@ -10,6 +10,7 @@ struct MapLayerCategory: Identifiable, Equatable, Sendable {
 struct MapLayerVisibility: Equatable, Sendable {
     let categories: [MapLayerCategory]
     var showHiddenPlaces: Bool
+    var showCoverageShading: Bool
     private(set) var visibleCategories: Set<String>?
 
     var isDefault: Bool {
@@ -28,10 +29,12 @@ struct MapLayerVisibility: Equatable, Sendable {
     init(
         categories: [MapLayerCategory] = MapLayerVisibility.defaultCategories,
         showHiddenPlaces: Bool = false,
+        showCoverageShading: Bool = true,
         visibleCategories: Set<String>? = nil
     ) {
         self.categories = categories
         self.showHiddenPlaces = showHiddenPlaces
+        self.showCoverageShading = showCoverageShading
         self.visibleCategories = visibleCategories
     }
 

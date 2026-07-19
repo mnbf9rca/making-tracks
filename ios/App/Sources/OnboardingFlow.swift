@@ -14,6 +14,7 @@ struct MakingTracksRootView: View {
     let debugCoverageBBoxes: [CoverageBBox]
     let debugExposeFixturePinDiagnostics: Bool
     let debugUseDenseFixturePins: Bool
+    let forceFirstRunOnboarding: Bool
     let locationManager: AppLocationManager
 
     @AppStorage(OnboardingStorage.hasCompletedOnboardingKey) private var hasCompletedOnboarding = false
@@ -21,6 +22,7 @@ struct MakingTracksRootView: View {
     @AppStorage(OfflineDownloadSettings.allowsCellularDownloadsKey) private var allowsCellularDownloads = OfflineDownloadSettings.defaultAllowsCellularDownloads
     @StateObject private var locationPermission: LocationPermission
     @State private var isReplayingOnboarding = false
+    @State private var didConsumeForcedFirstRunOnboarding = false
     @State private var downloadState: OnboardingDownloadState = .idle
     @State private var cameraRequestID = 0
     @State private var cameraRequest: ViewportCameraRequest?
@@ -35,6 +37,7 @@ struct MakingTracksRootView: View {
         debugCoverageBBoxes: [CoverageBBox] = [],
         debugExposeFixturePinDiagnostics: Bool,
         debugUseDenseFixturePins: Bool = false,
+        forceFirstRunOnboarding: Bool = false,
         locationManager: AppLocationManager
     ) {
         self.database = database
@@ -46,6 +49,7 @@ struct MakingTracksRootView: View {
         self.debugCoverageBBoxes = debugCoverageBBoxes
         self.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
         self.debugUseDenseFixturePins = debugUseDenseFixturePins
+        self.forceFirstRunOnboarding = forceFirstRunOnboarding
         self.locationManager = locationManager
         _locationPermission = StateObject(wrappedValue: LocationPermission(manager: locationManager))
     }
@@ -59,7 +63,8 @@ struct MakingTracksRootView: View {
     }
 
     private var shouldShowFirstRunOnboarding: Bool {
-        !hasCompletedOnboarding && !isReplayingOnboarding
+        ((forceFirstRunOnboarding && !didConsumeForcedFirstRunOnboarding) || !hasCompletedOnboarding)
+            && !isReplayingOnboarding
     }
 
     private var mapScreen: some View {
@@ -142,6 +147,7 @@ struct MakingTracksRootView: View {
         cameraRequestID += 1
         cameraRequest = ViewportCameraRequest(id: cameraRequestID, viewport: resolvedRegion.startupViewport)
         hasCompletedOnboarding = true
+        didConsumeForcedFirstRunOnboarding = true
         isReplayingOnboarding = false
         let requestID = cameraRequestID
         MakingTracksLog.startup.info("onboarding completed region=\(resolvedRegion.rawValue, privacy: .private(mask: .hash)) cameraRequest=\(requestID, privacy: .public)")

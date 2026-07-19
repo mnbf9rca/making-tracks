@@ -13,6 +13,10 @@ public enum MapRegion: String, CaseIterable, Sendable, Equatable {
         }
     }
 
+    public static var coverageListText: String {
+        allCases.map(\.displayName).joined(separator: " or ")
+    }
+
     public var viewportBBox: BBox {
         switch self {
         case .malaysiaSingaporeBrunei:

@@ -148,6 +148,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var worldPMTilesURL: String?
     var regionPMTilesURL: String?
     var coverageBBoxes: [CoverageBBox]
+    var showsCoverageShading: Bool
     var theme: MapTheme
     var startupViewport: ViewportSeed
     var features: [(MapPlace, PinState)]
@@ -200,6 +201,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             worldPMTilesURL: worldPMTilesURL,
             regionPMTilesURL: regionPMTilesURL,
             coverageBBoxes: coverageBBoxes,
+            showsCoverageShading: showsCoverageShading,
             theme: theme
         )
         let map = MLNMapView(
@@ -271,6 +273,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             worldPMTilesURL: worldPMTilesURL,
             regionPMTilesURL: regionPMTilesURL,
             coverageBBoxes: coverageBBoxes,
+            showsCoverageShading: showsCoverageShading,
             theme: theme
         )
         context.coordinator.debugReportMapUpdateStatus(
@@ -338,6 +341,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var currentWorldPMTilesURL: String?
         var currentRegionPMTilesURL: String?
         var currentCoverageBBoxes: [CoverageBBox] = []
+        var currentShowsCoverageShading = true
         var currentThemeID: String?
         var desiredVisibleCategories: Set<String>?
         var currentVisibleCategories: Set<String>?
@@ -360,6 +364,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             let worldPMTilesURL: String?
             let regionPMTilesURL: String?
             let coverageBBoxes: [CoverageBBox]
+            let showsCoverageShading: Bool
             let themeID: String
         }
 
@@ -387,21 +392,25 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             worldPMTilesURL: String?,
             regionPMTilesURL: String?,
             coverageBBoxes: [CoverageBBox],
+            showsCoverageShading: Bool = true,
             theme: MapTheme,
             makeStyleURL: ((String?, String?, [CoverageBBox], MapTheme) -> URL?)? = nil
         ) -> StyleReload? {
+            let effectiveCoverageBBoxes = showsCoverageShading ? coverageBBoxes : []
             guard currentWorldPMTilesURL != worldPMTilesURL
                 || currentRegionPMTilesURL != regionPMTilesURL
-                || currentCoverageBBoxes != coverageBBoxes
+                || currentCoverageBBoxes != effectiveCoverageBBoxes
+                || currentShowsCoverageShading != showsCoverageShading
                 || currentThemeID != theme.id
             else { return nil }
             let makeStyleURL = makeStyleURL ?? styleURL
-            guard let url = makeStyleURL(worldPMTilesURL, regionPMTilesURL, coverageBBoxes, theme) else { return nil }
+            guard let url = makeStyleURL(worldPMTilesURL, regionPMTilesURL, effectiveCoverageBBoxes, theme) else { return nil }
             return StyleReload(
                 url: url,
                 worldPMTilesURL: worldPMTilesURL,
                 regionPMTilesURL: regionPMTilesURL,
-                coverageBBoxes: coverageBBoxes,
+                coverageBBoxes: effectiveCoverageBBoxes,
+                showsCoverageShading: showsCoverageShading,
                 themeID: theme.id
             )
         }
@@ -410,6 +419,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             currentWorldPMTilesURL = reload.worldPMTilesURL
             currentRegionPMTilesURL = reload.regionPMTilesURL
             currentCoverageBBoxes = reload.coverageBBoxes
+            currentShowsCoverageShading = reload.showsCoverageShading
             currentThemeID = reload.themeID
         }
 

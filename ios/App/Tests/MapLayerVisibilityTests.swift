@@ -44,6 +44,18 @@ final class MapLayerVisibilityTests: XCTestCase {
         XCTAssertTrue(visibility.showHiddenPlaces)
     }
 
+    func testCoverageShadingDefaultsOnButDoesNotAffectDefaultFilterState() {
+        var visibility = MapLayerVisibility()
+
+        XCTAssertTrue(visibility.showCoverageShading)
+        XCTAssertTrue(visibility.isDefault)
+
+        visibility.showCoverageShading = false
+
+        XCTAssertFalse(visibility.showCoverageShading)
+        XCTAssertTrue(visibility.isDefault)
+    }
+
     func testDefaultCategoriesExposeFallbackBucket() {
         let visibility = MapLayerVisibility()
 
