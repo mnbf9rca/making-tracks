@@ -1,6 +1,7 @@
 import XCTest
 import GRDB
 @testable import MakingTracksData
+import MakingTracksMapStyle
 
 final class DerivationsTests: XCTestCase {
     private func seededDB() throws -> AppDatabase {
@@ -134,6 +135,85 @@ final class DerivationsTests: XCTestCase {
         let visits = try db.trackVisits(listID: 42)
 
         XCTAssertEqual(visits.map(\.placeID), ["in_list_a", "in_list_b"])
+    }
+
+    func testMyTracksListDerivesDistinctVisitedPlacesWithoutStoredMembership() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        let myTracks = try XCTUnwrap(try db.lists().first { $0.kind == PlaceList.trackKind })
+        let myTracksID = try XCTUnwrap(myTracks.id)
+        let older = Date(timeIntervalSince1970: 10)
+        let afterOlder = Date(timeIntervalSince1970: 15)
+        let middle = Date(timeIntervalSince1970: 20)
+        let newer = Date(timeIntervalSince1970: 30)
+        try db.dbQueue.write { d in
+            try insertSnapshot(d, placeID: "p_a", name: "A", category: "history", lat: 51.50, lon: -0.12, tier: 2)
+            try insertSnapshot(d, placeID: "p_b", name: "B", category: "architecture", lat: 51.52, lon: -0.14, tier: 1)
+            try insertSnapshot(d, placeID: "p_hidden", name: "Hidden", category: "oddity", lat: 51.51, lon: -0.13, tier: 3)
+            try insertVisit(d, placeID: "p_b", timestamp: afterOlder)
+            try insertVisit(d, placeID: "p_hidden", timestamp: middle)
+            try insertVisit(d, placeID: "p_a", timestamp: older)
+            try insertVisit(d, placeID: "p_a", timestamp: newer)
+            try d.execute(sql: "INSERT INTO hidden_places (place_id, hidden_at) VALUES ('p_hidden', 40)")
+        }
+
+        XCTAssertEqual(try db.listItems(listID: myTracksID).map(\.placeID), ["p_a", "p_b"])
+        XCTAssertEqual(try db.listMapFeatures(listID: myTracksID).map(\.0.id), ["p_a", "p_b"])
+        let progress = try db.listProgress(listID: myTracksID)
+        XCTAssertEqual(progress.visited, 2)
+        XCTAssertEqual(progress.total, 2)
+        let storedMemberships = try db.dbQueue.read {
+            try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM list_items WHERE list_id = ?", arguments: [myTracksID])
+        }
+        XCTAssertEqual(storedMemberships, 0)
+
+        XCTAssertTrue(try db.deleteLatestVisit(placeID: "p_a"))
+        XCTAssertEqual(try db.listItems(listID: myTracksID).map(\.placeID), ["p_b", "p_a"])
+        XCTAssertTrue(try db.deleteLatestVisit(placeID: "p_a"))
+        XCTAssertEqual(try db.listItems(listID: myTracksID).map(\.placeID), ["p_b"])
+    }
+
+    func testMyTracksListTrackVisitsDrawOneConnectorThroughVirtualMembership() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        let myTracks = try XCTUnwrap(try db.lists().first { $0.kind == PlaceList.trackKind })
+        let myTracksID = try XCTUnwrap(myTracks.id)
+        try db.dbQueue.write { d in
+            try insertSnapshot(d, placeID: "first", name: "First", category: "history", lat: 51.50, lon: -0.12, tier: 2)
+            try insertSnapshot(d, placeID: "second", name: "Second", category: "architecture", lat: 51.52, lon: -0.14, tier: 1)
+            try insertVisit(d, placeID: "first", timestamp: Date(timeIntervalSince1970: 10))
+            try insertVisit(d, placeID: "second", timestamp: Date(timeIntervalSince1970: 10 + TrackLayers.defaultBurstWindow + 60))
+        }
+
+        let storedMemberships = try db.dbQueue.read {
+            try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM list_items WHERE list_id = ?", arguments: [myTracksID])
+        }
+        XCTAssertEqual(storedMemberships, 0)
+
+        let summary = FeatureEncoding.trackSegmentSummary(try db.trackVisits(listID: myTracksID))
+
+        XCTAssertEqual(summary.features.count, 1)
+        XCTAssertEqual(summary.suppressedBurstConnectorCount, 0)
+        XCTAssertEqual(summary.connectableVisitCount, 2)
+        guard case let .object(feature) = summary.features.first,
+              case let .object(geometry) = feature["geometry"]
+        else { return XCTFail("track segment feature") }
+        XCTAssertEqual(geometry["type"], .string("LineString"))
+    }
+
+    func testNonSystemTrackKindRowsUseStoredMembershipNotVirtualTracks() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        try db.dbQueue.write { d in
+            try d.execute(
+                sql: "INSERT INTO lists (id, name, is_system, created_at, list_kind) VALUES (42, 'Imported', 0, 0, ?)",
+                arguments: [PlaceList.trackKind]
+            )
+            try insertSnapshot(d, placeID: "stored", name: "Stored", category: "history", lat: 51.50, lon: -0.12, tier: 2)
+            try insertSnapshot(d, placeID: "visited_only", name: "Visited Only", category: "architecture", lat: 51.52, lon: -0.14, tier: 1)
+            try d.execute(sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (42, 'stored', 0)")
+            try insertVisit(d, placeID: "visited_only", timestamp: Date(timeIntervalSince1970: 30))
+        }
+
+        XCTAssertEqual(try db.listItems(listID: 42).map(\.placeID), ["stored"])
+        XCTAssertEqual(try db.listProgress(listID: 42).total, 1)
     }
 
     private func insertSnapshot(

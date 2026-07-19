@@ -145,6 +145,9 @@ extension AppDatabase {
 
     public func addToList(_ place: PlaceRef, listID: Int64) throws {
         try dbQueue.write { db in
+            guard try !Self.isTrackList(listID: listID, db) else {
+                throw AppDatabaseError.systemListIsProtected
+            }
             try snapshotIfNeeded(place, db)
             do {
                 try db.execute(
@@ -164,6 +167,9 @@ extension AppDatabase {
 
     public func removeFromList(placeID: String, listID: Int64) throws {
         try dbQueue.write { db in
+            guard try !Self.isTrackList(listID: listID, db) else {
+                throw AppDatabaseError.systemListIsProtected
+            }
             try db.execute(
                 sql: "DELETE FROM list_items WHERE list_id = ? AND place_id = ?",
                 arguments: [listID, placeID]
@@ -258,6 +264,14 @@ extension AppDatabase {
         }
     }
 
+    private static func isTrackList(listID: Int64, _ db: Database) throws -> Bool {
+        try Bool.fetchOne(
+            db,
+            sql: "SELECT EXISTS(SELECT 1 FROM lists WHERE id = ? AND is_system = 1 AND list_kind = ?)",
+            arguments: [listID, PlaceList.trackKind]
+        ) ?? false
+    }
+
     public func snapshot(for placeID: String) throws -> PlaceSnapshot? {
         try dbQueue.read { db in
             try PlaceSnapshot.fetchOne(db, key: placeID)
@@ -271,6 +285,24 @@ extension AppDatabase {
             for (index, place) in places.enumerated() {
                 try snapshotIfNeeded(place, db)
                 let timestamp = seedStart.addingTimeInterval(Double(index) * 60 * 60)
+                var visit = Visit(
+                    id: nil,
+                    placeID: place.placeID,
+                    visitedAt: timestamp,
+                    verdict: nil,
+                    createdAt: timestamp
+                )
+                try visit.insert(db)
+            }
+        }
+    }
+
+    public func seedUITestingBurstTrackVisits(_ places: [PlaceRef]) throws {
+        try dbQueue.write { db in
+            let seedStart = Date(timeIntervalSince1970: 1_000)
+            for (index, place) in places.enumerated() {
+                try snapshotIfNeeded(place, db)
+                let timestamp = seedStart.addingTimeInterval(Double(index) * 45)
                 var visit = Visit(
                     id: nil,
                     placeID: place.placeID,

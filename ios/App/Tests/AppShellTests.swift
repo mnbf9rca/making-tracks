@@ -71,6 +71,26 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(TracksCopy.summary(visible: 1, total: 3, lovedOnly: true), "1 visit for loved places · 2 hidden by filter")
     }
 
+    func testListMapModeCopyUsesThemeNameForFreshLayer() {
+        XCTAssertEqual(ListMapModeCopy.freshLayerTitle(theme: .snow), "Fresh snow")
+        XCTAssertEqual(ListMapModeCopy.freshLayerTitle(theme: .definedPaper), "Defined Paper")
+        XCTAssertEqual(ListMapModeCopy.tracksLayerTitle, "My tracks")
+    }
+
+    func testTrackConnectionReadoutExplainsAllBurstSuppressedConnectors() {
+        XCTAssertEqual(
+            TrackConnectionReadout.message(segmentCount: 0, suppressedBurstConnectorCount: 1, connectableVisitCount: 2),
+            "2 visits too close together to connect"
+        )
+        XCTAssertNil(TrackConnectionReadout.message(segmentCount: 1, suppressedBurstConnectorCount: 1, connectableVisitCount: 3))
+        XCTAssertNil(TrackConnectionReadout.message(segmentCount: 0, suppressedBurstConnectorCount: 0, connectableVisitCount: 2))
+    }
+
+    func testListMapPinPresentationTracksModeUsesFullStrengthPins() {
+        XCTAssertEqual(ListMapPinPresentation.presentation(showVisited: true), .tracks)
+        XCTAssertEqual(ListMapPinPresentation.presentation(showVisited: false), .discovery)
+    }
+
     func testTracksVisitFilterKeepsLovedRowsByPerPlaceLovedState() {
         let plain = TrackVisit(
             id: 1,
@@ -251,6 +271,30 @@ final class AppShellTests: XCTestCase {
             ListMapFeatureFilter.visibleFeatures(features, showVisited: true).map(\.0.id),
             ["fresh", "visited", "hidden-fresh", "hidden-visited"]
         )
+    }
+
+    func testListDetailRowsDoNotOfferStoredMembershipRemovalForTrackList() {
+        let collection = PlaceList(id: 10, name: "Date night", isSystem: false, createdAt: Date(timeIntervalSince1970: 0))
+        let wantToGo = PlaceList(id: 1, name: "Want to go", isSystem: true, createdAt: Date(timeIntervalSince1970: 0))
+        let myTracks = PlaceList(
+            id: 2,
+            name: "My tracks",
+            isSystem: true,
+            kind: PlaceList.trackKind,
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+        let importedTrackKind = PlaceList(
+            id: 42,
+            name: "Imported",
+            isSystem: false,
+            kind: PlaceList.trackKind,
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+
+        XCTAssertTrue(ListDetailItemActions.canRemoveStoredMembership(from: collection))
+        XCTAssertTrue(ListDetailItemActions.canRemoveStoredMembership(from: wantToGo))
+        XCTAssertFalse(ListDetailItemActions.canRemoveStoredMembership(from: myTracks))
+        XCTAssertTrue(ListDetailItemActions.canRemoveStoredMembership(from: importedTrackKind))
     }
 
     func testListMapCategoryVisibilityIgnoresDiscoveryCategoryToggles() {

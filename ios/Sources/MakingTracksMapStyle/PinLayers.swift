@@ -50,6 +50,8 @@ public enum PinLayers {
             .string("case"),
             hiddenFilter(),
             .double(FULL_OPACITY),
+            .array([.string("=="), .array([.string("get"), .string("pin_presentation")]), .string(PinPresentation.tracks.rawValue)]),
+            .double(FULL_OPACITY),
             .array(expression),
         ])
     }

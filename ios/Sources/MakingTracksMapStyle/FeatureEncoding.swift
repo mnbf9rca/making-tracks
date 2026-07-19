@@ -1,6 +1,17 @@
 import Foundation
 import MakingTracksData
 
+public enum PinPresentation: String, Sendable {
+    case discovery
+    case tracks
+}
+
+public struct TrackSegmentSummary: Sendable, Equatable {
+    public let features: [JSONValue]
+    public let suppressedBurstConnectorCount: Int
+    public let connectableVisitCount: Int
+}
+
 public enum FeatureEncoding {
     static func visitTag(_ visit: VisitState) -> String {
         switch visit {
@@ -13,16 +24,24 @@ public enum FeatureEncoding {
         }
     }
 
-    public static func featureProperties(_ state: PinState) -> [String: JSONValue] {
+    public static func featureProperties(
+        _ state: PinState,
+        pinPresentation: PinPresentation = .discovery
+    ) -> [String: JSONValue] {
         [
             "visit": .string(visitTag(state.visit)),
             "saved": .bool(state.saved),
             "hidden": .bool(state.hidden),
+            "pin_presentation": .string(pinPresentation.rawValue),
         ]
     }
 
-    public static func feature(_ place: MapPlace, _ state: PinState) -> JSONValue {
-        var props = featureProperties(state)
+    public static func feature(
+        _ place: MapPlace,
+        _ state: PinState,
+        pinPresentation: PinPresentation = .discovery
+    ) -> JSONValue {
+        var props = featureProperties(state, pinPresentation: pinPresentation)
         props["place_id"] = .string(place.id)
         props["tier"] = .double(Double(place.tier))
         props["category"] = .string(place.category)
@@ -48,17 +67,50 @@ public enum FeatureEncoding {
         maxConnectorGap: TimeInterval = TrackLayers.defaultMaxConnectorGap,
         burstWindow: TimeInterval = TrackLayers.defaultBurstWindow
     ) -> [JSONValue] {
-        guard visits.count >= 2 else { return [] }
-        return zip(visits, visits.dropFirst()).compactMap { from, to in
+        trackSegmentSummary(
+            visits,
+            maxConnectorGap: maxConnectorGap,
+            burstWindow: burstWindow
+        ).features
+    }
+
+    public static func trackSegmentSummary(
+        _ visits: [TrackVisit],
+        maxConnectorGap: TimeInterval = TrackLayers.defaultMaxConnectorGap,
+        burstWindow: TimeInterval = TrackLayers.defaultBurstWindow
+    ) -> TrackSegmentSummary {
+        guard visits.count >= 2 else {
+            return TrackSegmentSummary(
+                features: [],
+                suppressedBurstConnectorCount: 0,
+                connectableVisitCount: visits.count
+            )
+        }
+        var features: [JSONValue] = []
+        var suppressedBurstConnectorCount = 0
+        var connectableVisitIDs = Set<Int64>()
+        for (from, to) in zip(visits, visits.dropFirst()) {
             guard let gap = connectorGap(from: from, to: to),
-                  gap > burstWindow,
-                  gap <= maxConnectorGap,
                   isValidCoordinate(from),
                   isValidCoordinate(to),
                   from.lat != to.lat || from.lon != to.lon
-            else { return nil }
-            return trackSegmentFeature(from: from, to: to, gap: gap)
+            else { continue }
+            if gap <= burstWindow {
+                suppressedBurstConnectorCount += 1
+                connectableVisitIDs.insert(from.id)
+                connectableVisitIDs.insert(to.id)
+                continue
+            }
+            guard gap <= maxConnectorGap else { continue }
+            connectableVisitIDs.insert(from.id)
+            connectableVisitIDs.insert(to.id)
+            features.append(trackSegmentFeature(from: from, to: to, gap: gap))
         }
+        return TrackSegmentSummary(
+            features: features,
+            suppressedBurstConnectorCount: suppressedBurstConnectorCount,
+            connectableVisitCount: connectableVisitIDs.count
+        )
     }
 
     private static func trackSegmentFeature(from: TrackVisit, to: TrackVisit, gap: TimeInterval) -> JSONValue {
