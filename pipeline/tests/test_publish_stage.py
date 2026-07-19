@@ -94,6 +94,94 @@ def test_publish_stage_builds_local_staging_and_marks_shipped(
     assert shipped[B].last_seen_version == "20260701T000000Z"
 
 
+def test_publish_stage_prunes_stale_staging_at_run_start(conn, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    _write_malaysia_registry(tmp_path)
+    staging_root = tmp_path / "stage"
+    stale_version = staging_root / "malaysia-singapore-brunei" / "20260701T000000Z"
+    stale_current = staging_root / "malaysia-singapore-brunei" / "20260715T120000Z"
+    stale_work = staging_root / ".work" / "malaysia-singapore-brunei" / "20260701T000000Z"
+    symlink_target = tmp_path / "outside-cache"
+    symlink_target_version = symlink_target / "20260701T000000Z" / "kept.txt"
+    excluded_paths = [
+        staging_root / ".image-cache" / "raw" / "kept.webp",
+        staging_root / "thumbs" / "aa" / f"{'a' * 64}.webp",
+        staging_root / "regions.json",
+        staging_root / "registry" / "malaysia-singapore-brunei.jsonl",
+        staging_root / "registry" / "20260701T000000Z" / "registry.jsonl",
+        staging_root / "work.db",
+        staging_root / "audit-cache" / "20260701T000000Z" / "kept.txt",
+        staging_root
+        / "20260717T181500Z-full-all-candidates-reviewed"
+        / "cache"
+        / "raw"
+        / "kept.webp",
+        symlink_target_version,
+    ]
+    stale_paths = [
+        stale_version / "old.txt",
+        stale_current / "old.txt",
+        stale_work / "old.pmtiles",
+    ]
+    for path in [*stale_paths, *excluded_paths]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("keep-or-prune")
+    (staging_root / "linked-cache").symlink_to(symlink_target, target_is_directory=True)
+
+    real_registry_path = P._registry_path
+
+    def registry_path_after_prune(run_conn, run_region):
+        assert not stale_version.exists()
+        assert not stale_current.exists()
+        assert not stale_work.exists()
+        for excluded in excluded_paths:
+            assert excluded.exists()
+        return real_registry_path(run_conn, run_region)
+
+    def fake_cut_basemap(region_config, out_path):
+        assert not stale_version.exists()
+        assert not stale_current.exists()
+        assert not stale_work.exists()
+        for excluded in excluded_paths:
+            assert excluded.exists()
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename=f'{region_config["region_id"]}.pmtiles',
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+    monkeypatch.setattr(P, "_registry_path", registry_path_after_prune)
+
+    result = P.run(
+        conn,
+        "malaysia-singapore-brunei",
+        publish_version="20260715T120000Z",
+        generated_at="2026-07-15T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=staging_root,
+    )
+
+    assert not stale_version.exists()
+    assert not (result.staging_dir / "old.txt").exists()
+    assert not stale_work.exists()
+    assert (
+        staging_root
+        / ".work"
+        / "malaysia-singapore-brunei"
+        / "20260715T120000Z"
+        / "malaysia-singapore-brunei.pmtiles"
+    ).exists()
+    assert (result.staging_dir / "manifest.json").exists()
+    for excluded in excluded_paths:
+        assert excluded.exists()
+
+
 def test_publish_stage_emits_search_indexes_from_shipped_places_and_alt_names(
     conn, tmp_path, monkeypatch
 ):
