@@ -15,8 +15,8 @@ MAX_NAME_LEN = 300
 
 _PLAQUE_ID = re.compile(r"[0-9]+")
 _COUNTRY_BY_REGION = {
-    "uk": "gb",
-    "malaysia": "my",
+    "united-kingdom": "gb",
+    "malaysia-singapore-brunei": "my",
 }
 _log = logging.getLogger(__name__)
 

@@ -84,14 +84,14 @@ def test_extractor_path_verifies_provenance_before_parsing(tmp_path):
     conn = _db(tmp_path / "w")
 
     with pytest.raises(osm.ProvenanceError):
-        osm.OsmExtractor(CFG).extract("uk", path, conn, run_id="r1")
+        osm.OsmExtractor(CFG).extract("united-kingdom", path, conn, run_id="r1")
     assert conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0] == 0
 
 
 def test_extracts_nodes_and_way_centroids_skips_noncandidate_and_relations(tmp_path):
     conn = _db(tmp_path / "w")
 
-    count = osm.OsmExtractor(CFG).extract("uk", FIX, conn, run_id="r1")
+    count = osm.OsmExtractor(CFG).extract("united-kingdom", FIX, conn, run_id="r1")
     rows = conn.execute(
         "SELECT source_ref, name, lat, lon FROM source_records ORDER BY source_ref"
     ).fetchall()
@@ -106,7 +106,7 @@ def test_extracts_nodes_and_way_centroids_skips_noncandidate_and_relations(tmp_p
 def test_wikidata_tag_rides_in_props_as_the_a2_join_key(tmp_path):
     conn = _db(tmp_path / "w")
 
-    osm.OsmExtractor(CFG).extract("uk", FIX, conn, run_id="r1")
+    osm.OsmExtractor(CFG).extract("united-kingdom", FIX, conn, run_id="r1")
     props = json.loads(
         conn.execute(
             "SELECT props_json FROM source_records WHERE source_ref='osm:node/10'"
@@ -144,8 +144,8 @@ def test_binary_pbf_parity_with_xml(tmp_path):
     xml_conn = _db(tmp_path / "x")
     pbf_conn = _db(tmp_path / "y")
 
-    osm.OsmExtractor(CFG).extract("uk", FIX, xml_conn, run_id="r1")
-    osm.OsmExtractor(CFG).extract("uk", pbf, pbf_conn, run_id="r1")
+    osm.OsmExtractor(CFG).extract("united-kingdom", FIX, xml_conn, run_id="r1")
+    osm.OsmExtractor(CFG).extract("united-kingdom", pbf, pbf_conn, run_id="r1")
     xml_rows = xml_conn.execute(
         "SELECT source_ref, name, lat, lon FROM source_records ORDER BY source_ref"
     ).fetchall()
@@ -159,7 +159,7 @@ def test_binary_pbf_parity_with_xml(tmp_path):
 def test_index_type_is_threaded_to_pyosmium(tmp_path):
     with pytest.raises(osm.OsmParseError):
         osm.OsmExtractor(CFG).extract(
-            "uk",
+            "united-kingdom",
             FIX,
             _db(tmp_path / "idx"),
             run_id="r1",
@@ -180,12 +180,12 @@ def test_corrupt_file_is_a_loud_typed_osm_parse_error(tmp_path):
         )
     )
     with pytest.raises(osm.OsmParseError):
-        osm.OsmExtractor(CFG).extract("uk", over, _db(tmp_path / "o"), run_id="r1")
+        osm.OsmExtractor(CFG).extract("united-kingdom", over, _db(tmp_path / "o"), run_id="r1")
 
     garbage = tmp_path / "g.pbf"
     garbage.write_bytes(b"not a real pbf")
     with pytest.raises(osm.OsmParseError):
-        osm.OsmExtractor(CFG).extract("uk", garbage, _db(tmp_path / "g"), run_id="r1")
+        osm.OsmExtractor(CFG).extract("united-kingdom", garbage, _db(tmp_path / "g"), run_id="r1")
 
 
 def test_too_many_candidates_is_a_loud_bounded_abort(tmp_path, monkeypatch):
@@ -199,7 +199,7 @@ def test_too_many_candidates_is_a_loud_bounded_abort(tmp_path, monkeypatch):
     path.write_text(_osm(nodes))
 
     with pytest.raises(osm.TooManyCandidatesError):
-        osm.OsmExtractor(CFG).extract("uk", path, _db(tmp_path / "m"), run_id="r1")
+        osm.OsmExtractor(CFG).extract("united-kingdom", path, _db(tmp_path / "m"), run_id="r1")
 
 
 def test_too_many_tags_are_bounded(tmp_path):
@@ -216,7 +216,7 @@ def test_too_many_tags_are_bounded(tmp_path):
     )
     conn = _db(tmp_path / "d")
 
-    osm.OsmExtractor(CFG).extract("uk", path, conn, run_id="r1")
+    osm.OsmExtractor(CFG).extract("united-kingdom", path, conn, run_id="r1")
     props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
 
     assert len(props) <= osm.MAX_TAGS_PER_FEATURE
@@ -234,7 +234,7 @@ def test_long_tag_key_is_truncated_at_the_edge(tmp_path):
     )
     conn = _db(tmp_path / "lk")
 
-    osm.OsmExtractor(CFG).extract("uk", path, conn, run_id="r1")
+    osm.OsmExtractor(CFG).extract("united-kingdom", path, conn, run_id="r1")
     props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
 
     assert ("k" * osm.MAX_TAG_KEY_LEN) in props
@@ -252,7 +252,7 @@ def test_garbage_wikidata_tag_is_dropped_record_kept(tmp_path):
     )
     conn = _db(tmp_path / "d")
 
-    osm.OsmExtractor(CFG).extract("uk", path, conn, run_id="r1")
+    osm.OsmExtractor(CFG).extract("united-kingdom", path, conn, run_id="r1")
     props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
 
     assert "wikidata" not in props
@@ -269,7 +269,7 @@ def test_offglobe_coordinate_is_skipped_in_handler(tmp_path):
     )
     conn = _db(tmp_path / "d")
 
-    assert osm.OsmExtractor(CFG).extract("uk", path, conn, run_id="r1") == 0
+    assert osm.OsmExtractor(CFG).extract("united-kingdom", path, conn, run_id="r1") == 0
 
 
 def test_parse_rejected_candidate_is_skipped_and_warned(tmp_path, caplog):
@@ -282,7 +282,7 @@ def test_parse_rejected_candidate_is_skipped_and_warned(tmp_path, caplog):
     )
     conn = _db(tmp_path / "nameless")
 
-    assert osm.OsmExtractor(CFG).extract("uk", path, conn, run_id="r1") == 0
+    assert osm.OsmExtractor(CFG).extract("united-kingdom", path, conn, run_id="r1") == 0
     assert any(
         "rejected 1 candidate record" in record.message.lower()
         for record in caplog.records
@@ -294,7 +294,7 @@ def test_source_record_rejects_offglobe_coordinate_directly():
 
     with pytest.raises(source_record.SourceRecordError):
         source_record.parse(
-            region="uk",
+            region="united-kingdom",
             source="osm",
             source_ref="osm:node/1",
             name="X",
@@ -308,8 +308,8 @@ def test_deterministic_same_file_same_records(tmp_path):
     first = _db(tmp_path / "a")
     second = _db(tmp_path / "b")
 
-    osm.OsmExtractor(CFG).extract("uk", FIX, first, run_id="r1")
-    osm.OsmExtractor(CFG).extract("uk", FIX, second, run_id="r2")
+    osm.OsmExtractor(CFG).extract("united-kingdom", FIX, first, run_id="r1")
+    osm.OsmExtractor(CFG).extract("united-kingdom", FIX, second, run_id="r2")
     query = "SELECT source_ref, lat, lon FROM source_records ORDER BY id"
 
     assert first.execute(query).fetchall() == second.execute(query).fetchall()

@@ -25,9 +25,9 @@ def test_osm_acquisition_verifies_md5_and_writes_sha256_sidecar(tmp_path):
 
     path = acquire.acquire_osm(
         tmp_path,
-        region_id="malaysia",
+        region_id="malaysia-singapore-brunei",
         config={
-            "malaysia": {
+            "malaysia-singapore-brunei": {
                 "url": "https://download.geofabrik.de/asia/x.osm.pbf",
                 "md5_url": "https://download.geofabrik.de/asia/x.osm.pbf.md5",
                 "allowed_hosts": ["download.geofabrik.de"],
@@ -58,9 +58,9 @@ def test_osm_acquisition_aborts_loudly_on_md5_mismatch(tmp_path):
     with pytest.raises(acquire.AcquireError, match="md5"):
         acquire.acquire_osm(
             tmp_path,
-            region_id="uk",
+            region_id="united-kingdom",
             config={
-                "uk": {
+                "united-kingdom": {
                     "url": "https://download.geofabrik.de/europe/x.osm.pbf",
                     "md5_url": "https://download.geofabrik.de/europe/x.osm.pbf.md5",
                     "allowed_hosts": ["download.geofabrik.de"],
@@ -91,9 +91,9 @@ def test_osm_acquisition_cleans_transient_md5_file_on_download_failure(
     with pytest.raises(RuntimeError, match="network failed"):
         acquire.acquire_osm(
             tmp_path,
-            region_id="uk",
+            region_id="united-kingdom",
             config={
-                "uk": {
+                "united-kingdom": {
                     "url": "https://download.geofabrik.de/europe/x.osm.pbf",
                     "md5_url": "https://download.geofabrik.de/europe/x.osm.pbf.md5",
                     "allowed_hosts": ["download.geofabrik.de"],

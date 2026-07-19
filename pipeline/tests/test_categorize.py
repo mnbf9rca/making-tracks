@@ -94,7 +94,7 @@ def _seed_run(rows, places):
             """
             INSERT INTO places
                 (place_id, region, name, lat, lon, refs_json, member_refs_json, status)
-            VALUES (?, 'uk', ?, 1, 1, '[]', ?, 'live')
+            VALUES (?, 'united-kingdom', ?, 1, 1, '[]', ?, 'live')
             """,
             (place_id, place_id, json.dumps(member_refs)),
         )
@@ -106,7 +106,7 @@ def test_run_requires_a2_places_table():
     conn = sqlite3.connect(":memory:")
 
     try:
-        CZ.run(conn, "uk", run_id="cat1", taxonomy=TAX)
+        CZ.run(conn, "united-kingdom", run_id="cat1", taxonomy=TAX)
     except CZ.PlacesTableMissingError as exc:
         assert "A2 places table" in str(exc)
     else:
@@ -116,11 +116,11 @@ def test_run_requires_a2_places_table():
 def test_run_writes_place_categories_from_a2_places_shape():
     conn = _seed_run(
         [
-            ("uk", "wd", "wd:Q1", "Museum", 1, 1, json.dumps({"p31": "Q33506"}), "r"),
-            ("uk", "osm", "osm:node/1", "Castle", 1, 1, json.dumps({"historic": "castle"}), "r"),
-            ("uk", "hehle", "hehle:1", "Listed", 1, 1, json.dumps({"grade": "I"}), "r"),
-            ("uk", "plaque", "plaque:1", "Plaque", 1, 1, json.dumps({}), "r"),
-            ("uk", "wd", "wd:QX", "Tail", 1, 1, json.dumps({"p31": "Q999999"}), "r"),
+            ("united-kingdom", "wd", "wd:Q1", "Museum", 1, 1, json.dumps({"p31": "Q33506"}), "r"),
+            ("united-kingdom", "osm", "osm:node/1", "Castle", 1, 1, json.dumps({"historic": "castle"}), "r"),
+            ("united-kingdom", "hehle", "hehle:1", "Listed", 1, 1, json.dumps({"grade": "I"}), "r"),
+            ("united-kingdom", "plaque", "plaque:1", "Plaque", 1, 1, json.dumps({}), "r"),
+            ("united-kingdom", "wd", "wd:QX", "Tail", 1, 1, json.dumps({"p31": "Q999999"}), "r"),
         ],
         [
             ("place-culture", ["wd:Q1", "osm:node/1"]),
@@ -130,7 +130,7 @@ def test_run_writes_place_categories_from_a2_places_shape():
         ],
     )
 
-    hist = CZ.run(conn, "uk", run_id="cat1", taxonomy=TAX)
+    hist = CZ.run(conn, "united-kingdom", run_id="cat1", taxonomy=TAX)
 
     assert list(hist.items()) == [
         ("culture", 1),
@@ -153,30 +153,30 @@ def test_run_emits_phase_and_heartbeat_telemetry(monkeypatch, capsys):
     monkeypatch.setattr(CZ, "_HEARTBEAT_EVERY_RECORDS", 1)
     conn = _seed_run(
         [
-            ("uk", "wd", "wd:Q1", "Museum", 1, 1, json.dumps({"p31": "Q33506"}), "r"),
-            ("uk", "wd", "wd:Q2", "Castle", 1, 1, json.dumps({"p31": "Q23413"}), "r"),
+            ("united-kingdom", "wd", "wd:Q1", "Museum", 1, 1, json.dumps({"p31": "Q33506"}), "r"),
+            ("united-kingdom", "wd", "wd:Q2", "Castle", 1, 1, json.dumps({"p31": "Q23413"}), "r"),
         ],
         [("p1", ["wd:Q1"]), ("p2", ["wd:Q2"])],
     )
 
-    CZ.run(conn, "uk", run_id="cat1", taxonomy=TAX)
+    CZ.run(conn, "united-kingdom", run_id="cat1", taxonomy=TAX)
 
     err = capsys.readouterr().err
-    assert "PHASE START categorize.run region=uk places=2" in err
-    assert "PHASE HEARTBEAT categorize.run region=uk processed=1/2" in err
-    assert "PHASE DONE categorize.run region=uk processed=2/2" in err
+    assert "PHASE START categorize.run region=united-kingdom places=2" in err
+    assert "PHASE HEARTBEAT categorize.run region=united-kingdom processed=1/2" in err
+    assert "PHASE DONE categorize.run region=united-kingdom processed=2/2" in err
 
 
 def test_run_removes_stale_place_categories_for_region():
     conn = _seed_run(
-        [("uk", "wd", "wd:Q1", "Museum", 1, 1, json.dumps({"p31": "Q33506"}), "r")],
+        [("united-kingdom", "wd", "wd:Q1", "Museum", 1, 1, json.dumps({"p31": "Q33506"}), "r")],
         [("p", ["wd:Q1"])],
     )
-    CZ.run(conn, "uk", run_id="cat1", taxonomy=TAX)
+    CZ.run(conn, "united-kingdom", run_id="cat1", taxonomy=TAX)
     conn.execute("UPDATE places SET status = 'tombstoned' WHERE place_id = 'p'")
     conn.commit()
 
-    assert CZ.run(conn, "uk", run_id="cat2", taxonomy=TAX) == {}
+    assert CZ.run(conn, "united-kingdom", run_id="cat2", taxonomy=TAX) == {}
     assert conn.execute("SELECT * FROM place_categories WHERE place_id = 'p'").fetchall() == []
 
 
@@ -190,7 +190,7 @@ def test_run_treats_hostile_json_as_empty_without_crashing():
         """
         INSERT INTO source_records
             (region, source, source_ref, name, lat, lon, props_json, run_id)
-        VALUES ('uk', 'wd', 'wd:Q1', 'Deep', 1, 1, ?, 'r')
+        VALUES ('united-kingdom', 'wd', 'wd:Q1', 'Deep', 1, 1, ?, 'r')
         """,
         (deep_json,),
     )
@@ -198,34 +198,34 @@ def test_run_treats_hostile_json_as_empty_without_crashing():
         """
         INSERT INTO places
             (place_id, region, name, lat, lon, refs_json, member_refs_json, status)
-        VALUES ('p1', 'uk', 'P1', 1, 1, '[]', '["wd:Q1"]', 'live')
+        VALUES ('p1', 'united-kingdom', 'P1', 1, 1, '[]', '["wd:Q1"]', 'live')
         """
     )
     conn.execute(
         """
         INSERT INTO places
             (place_id, region, name, lat, lon, refs_json, member_refs_json, status)
-        VALUES ('p2', 'uk', 'P2', 1, 1, '[]', ?, 'live')
+        VALUES ('p2', 'united-kingdom', 'P2', 1, 1, '[]', ?, 'live')
         """,
         (oversized_members,),
     )
     conn.commit()
 
-    assert CZ.run(conn, "uk", run_id="cat1", taxonomy=TAX) == {"uncategorized": 2}
+    assert CZ.run(conn, "united-kingdom", run_id="cat1", taxonomy=TAX) == {"uncategorized": 2}
 
 
 def test_run_is_deterministic_across_member_and_record_order():
     records = [
-        ("uk", "wd", "wd:Q1", "Museum", 1, 1, json.dumps({"p31": "Q33506"}), "r"),
-        ("uk", "osm", "osm:node/1", "Castle", 1, 1, json.dumps({"historic": "castle"}), "r"),
+        ("united-kingdom", "wd", "wd:Q1", "Museum", 1, 1, json.dumps({"p31": "Q33506"}), "r"),
+        ("united-kingdom", "osm", "osm:node/1", "Castle", 1, 1, json.dumps({"historic": "castle"}), "r"),
     ]
     places_a = [("p", ["wd:Q1", "osm:node/1"])]
     places_b = [("p", ["osm:node/1", "wd:Q1"])]
 
     a = _seed_run(records, places_a)
     b = _seed_run(list(reversed(records)), places_b)
-    CZ.run(a, "uk", run_id="cat1", taxonomy=TAX)
-    CZ.run(b, "uk", run_id="cat1", taxonomy=TAX)
+    CZ.run(a, "united-kingdom", run_id="cat1", taxonomy=TAX)
+    CZ.run(b, "united-kingdom", run_id="cat1", taxonomy=TAX)
 
     rows_a = a.execute("SELECT place_id, category, run_id FROM place_categories").fetchall()
     rows_b = b.execute("SELECT place_id, category, run_id FROM place_categories").fetchall()
@@ -235,15 +235,15 @@ def test_run_is_deterministic_across_member_and_record_order():
 def test_stage_dispatches_categorize_body_after_score():
     expected_category = CZ.load_taxonomy()["class_map"]["Q33506"]
     conn = _seed_run(
-        [("uk", "wd", "wd:Q1", "Museum", 1, 1, json.dumps({"p31": "Q33506"}), "r")],
+        [("united-kingdom", "wd", "wd:Q1", "Museum", 1, 1, json.dumps({"p31": "Q33506"}), "r")],
         [("p", ["wd:Q1"])],
     )
     for stage in ("extract", "reconcile", "score"):
-        store.mark_stage_complete(conn, "uk", stage, "r1", "2026-07-15T00:00:00Z")
+        store.mark_stage_complete(conn, "united-kingdom", stage, "r1", "2026-07-15T00:00:00Z")
 
-    stages.run_stage(conn, "uk", "categorize", run_id="cat1")
+    stages.run_stage(conn, "united-kingdom", "categorize", run_id="cat1")
 
-    assert store.stage_completed(conn, "uk", "categorize")
+    assert store.stage_completed(conn, "united-kingdom", "categorize")
     assert conn.execute("SELECT category FROM place_categories WHERE place_id = 'p'").fetchone()[
         0
     ] == expected_category

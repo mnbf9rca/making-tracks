@@ -6,7 +6,7 @@ def _valid_zone_catalog():
     return {
         "schema_version": SCHEMA_VERSIONS["zone_catalog"],
         "min_reader_version": 1,
-        "region": "uk",
+        "region": "united-kingdom",
         "publish_version": "20260718T090000Z",
         "generated_at": "2026-07-18T09:00:00Z",
         "tile_z": 10,

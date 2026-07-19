@@ -5,7 +5,7 @@ def _valid_pack_descriptor():
     return {
         "schema_version": 1,
         "min_reader_version": 1,
-        "region": "uk",
+        "region": "united-kingdom",
         "publish_version": "20260718T090000Z",
         "generated_at": "2026-07-18T09:00:00Z",
         "objects": [

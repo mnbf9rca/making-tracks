@@ -12,7 +12,7 @@ def _valid_index():
         "generated_at": "2026-07-17T12:00:00Z",
         "regions": [
             {
-                "id": "malaysia",
+                "id": "malaysia-singapore-brunei",
                 "display_name": "Malaysia",
                 "parent": None,
                 "bbox": [99.64, 0.85, 119.27, 7.36],
@@ -23,9 +23,9 @@ def _valid_index():
                 "bytes_with_thumbs": 223456789,
             },
             {
-                "id": "malaysia_central",
+                "id": "malaysia-singapore-brunei_central",
                 "display_name": "Central Malaysia",
-                "parent": "malaysia",
+                "parent": "malaysia-singapore-brunei",
                 "bbox": [101.6, 3.0, 101.8, 3.2],
                 "publish_version": "20260717T120000Z",
                 "basemap_bytes": 12345,
@@ -74,7 +74,7 @@ def test_region_index_contract_rejects_unsafe_text_and_paths():
     assert not is_valid("region-index", inst)
 
     inst = _valid_index()
-    inst["regions"][0]["id"] = "../malaysia"
+    inst["regions"][0]["id"] = "../malaysia-singapore-brunei"
     assert not is_valid("region-index", inst)
 
 
@@ -86,7 +86,7 @@ def test_region_index_contract_rejects_invalid_latitude():
 
 def test_region_index_helper_rejects_duplicate_region_ids():
     inst = _valid_index()
-    inst["regions"][1]["id"] = "malaysia"
+    inst["regions"][1]["id"] = "malaysia-singapore-brunei"
     with pytest.raises(region_index.RegionIndexInvalid, match="duplicate"):
         region_index.validate_region_index(inst)
 

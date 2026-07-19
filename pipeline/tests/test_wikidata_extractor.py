@@ -41,7 +41,7 @@ def test_incomplete_or_malformed_meta_is_refused(tmp_path, meta):
     path.write_text(json.dumps(obj))
     with pytest.raises(wikidata.SnapshotIncompleteError):
         wikidata.WikidataExtractor({"Q33506"}).extract(
-            "uk", path, _db(tmp_path), run_id="r1"
+            "united-kingdom", path, _db(tmp_path), run_id="r1"
         )
 
 
@@ -51,7 +51,7 @@ def test_complete_true_snapshot_is_accepted(tmp_path):
         json.dumps({"_meta": {"complete": True}, "results": {"bindings": []}})
     )
     assert wikidata.WikidataExtractor({"Q33506"}).extract(
-        "uk", path, _db(tmp_path), run_id="r1"
+        "united-kingdom", path, _db(tmp_path), run_id="r1"
     ) == 0
 
 
@@ -60,7 +60,7 @@ def test_keeps_allowlisted_dedups_by_qid_drops_others_and_survives_malformed(
 ):
     conn = _db(tmp_path)
     count = wikidata.WikidataExtractor({"Q33506", "Q570116"}).extract(
-        "uk", FIX, conn, run_id="r1"
+        "united-kingdom", FIX, conn, run_id="r1"
     )
     rows = conn.execute(
         "SELECT source, source_ref, name FROM source_records ORDER BY source_ref"
@@ -72,7 +72,7 @@ def test_keeps_allowlisted_dedups_by_qid_drops_others_and_survives_malformed(
 def test_captures_section4_signals(tmp_path):
     conn = _db(tmp_path)
     wikidata.WikidataExtractor({"Q33506", "Q570116"}).extract(
-        "uk", FIX, conn, run_id="r1"
+        "united-kingdom", FIX, conn, run_id="r1"
     )
     props = json.loads(
         conn.execute(
@@ -105,7 +105,7 @@ def test_matched_class_allows_subclass_hit_but_props_keep_actual_p31s(tmp_path):
     conn = _db(tmp_path)
 
     assert wikidata.WikidataExtractor({"Q33506"}).extract(
-        "uk", path, conn, run_id="r1"
+        "united-kingdom", path, conn, run_id="r1"
     ) == 1
 
     props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
@@ -137,7 +137,7 @@ def test_deterministic_stable_order_multi_record(tmp_path):
     }
     path = _write(tmp_path, snap, "s.json")
     conn = _db(tmp_path)
-    wikidata.WikidataExtractor({"Q33506"}).extract("uk", path, conn, run_id="r1")
+    wikidata.WikidataExtractor({"Q33506"}).extract("united-kingdom", path, conn, run_id="r1")
     order = [row[0] for row in conn.execute("SELECT source_ref FROM source_records ORDER BY id")]
     assert order == ["wd:Q100", "wd:Q9"]
 
@@ -159,7 +159,7 @@ def test_bad_coordinate_row_is_dropped_via_a1_parse(tmp_path):
     path = _write(tmp_path, snap, "b.json")
     conn = _db(tmp_path)
     assert wikidata.WikidataExtractor({"Q33506"}).extract(
-        "uk", path, conn, run_id="r1"
+        "united-kingdom", path, conn, run_id="r1"
     ) == 0
 
 
@@ -179,7 +179,7 @@ def test_hostile_oversized_label_is_bounded_before_parse(tmp_path):
     }
     path = _write(tmp_path, snap, "h.json")
     conn = _db(tmp_path)
-    wikidata.WikidataExtractor({"Q33506"}).extract("uk", path, conn, run_id="r1")
+    wikidata.WikidataExtractor({"Q33506"}).extract("united-kingdom", path, conn, run_id="r1")
     name = conn.execute("SELECT name FROM source_records").fetchone()[0]
     assert len(name) <= wikidata.MAX_LABEL_LEN
 
@@ -190,7 +190,7 @@ def test_oversized_snapshot_file_is_rejected(tmp_path, monkeypatch):
     monkeypatch.setattr(wikidata, "MAX_SNAPSHOT_BYTES", 1)
     with pytest.raises(wikidata.SnapshotTooLargeError):
         wikidata.WikidataExtractor({"Q33506"}).extract(
-            "uk", path, _db(tmp_path), run_id="r1"
+            "united-kingdom", path, _db(tmp_path), run_id="r1"
         )
 
 
@@ -207,5 +207,5 @@ def test_malformed_results_container_is_dropped_cleanly(tmp_path):
     path = _write(tmp_path, {"results": []}, "malformed.json")
     conn = _db(tmp_path)
     assert wikidata.WikidataExtractor({"Q33506"}).extract(
-        "uk", path, conn, run_id="r1"
+        "united-kingdom", path, conn, run_id="r1"
     ) == 0

@@ -837,7 +837,7 @@ def test_image_worker_rejects_gif_and_oversized_dimensions(tmp_path, monkeypatch
 
 
 def test_purge_nc_from_staging_removes_nc_entries_and_gc_removes_unreferenced_thumbs(tmp_path):
-    image_path = tmp_path / "uk/20260717T120000Z/images/10/1/2.json"
+    image_path = tmp_path / "united-kingdom/20260717T120000Z/images/10/1/2.json"
     image_path.parent.mkdir(parents=True)
     kept_sha = "a" * 64
     purged_sha = "b" * 64

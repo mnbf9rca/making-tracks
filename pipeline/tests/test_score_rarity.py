@@ -66,7 +66,7 @@ def test_tag_value_frequency_reads_osm_props_for_region_only(conn):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            "malaysia",
+            "malaysia-singapore-brunei",
             "osm",
             "node/1",
             "A",
@@ -83,7 +83,7 @@ def test_tag_value_frequency_reads_osm_props_for_region_only(conn):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            "uk",
+            "united-kingdom",
             "osm",
             "node/2",
             "B",
@@ -94,7 +94,7 @@ def test_tag_value_frequency_reads_osm_props_for_region_only(conn):
         ),
     )
 
-    assert R.tag_value_frequency(conn, "malaysia", rarity_keys=RARITY_KEYS) == {
+    assert R.tag_value_frequency(conn, "malaysia-singapore-brunei", rarity_keys=RARITY_KEYS) == {
         "historic=fort": 1
     }
 
@@ -107,7 +107,7 @@ def test_malformed_props_and_frequency_values_do_not_crash(conn):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            "malaysia",
+            "malaysia-singapore-brunei",
             "osm",
             "node/1",
             "A",
@@ -118,5 +118,5 @@ def test_malformed_props_and_frequency_values_do_not_crash(conn):
         ),
     )
 
-    assert R.tag_value_frequency(conn, "malaysia", rarity_keys=RARITY_KEYS) == {}
+    assert R.tag_value_frequency(conn, "malaysia-singapore-brunei", rarity_keys=RARITY_KEYS) == {}
     assert R.rarity_score({"historic=fort"}, {"historic=fort": "bad"}) == 0.0

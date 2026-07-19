@@ -23,7 +23,7 @@ def test_publish_stage_builds_local_staging_and_marks_shipped(
 ):
     monkeypatch.chdir(tmp_path)
     _seed_publish_inputs(conn)
-    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
             RegistryRecord(
                 place_id=A,
@@ -47,7 +47,7 @@ def test_publish_stage_builds_local_staging_and_marks_shipped(
     def fake_cut_basemap(region_config, out_path):
         out_path.write_bytes(b"basemap")
         return basemap.BasemapArtifact(
-            filename="malaysia.pmtiles",
+            filename=f'{region_config["region_id"]}.pmtiles',
             maxzoom=14,
             sha256="0" * 64,
             bytes=7,
@@ -59,7 +59,7 @@ def test_publish_stage_builds_local_staging_and_marks_shipped(
 
     result = P.run(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         publish_version="20260715T120000Z",
         generated_at="2026-07-15T12:00:00Z",
         scoring_config_version="scoring-v1",
@@ -67,7 +67,9 @@ def test_publish_stage_builds_local_staging_and_marks_shipped(
     )
 
     manifest = json.loads((result.staging_dir / "manifest.json").read_text())
-    assert manifest["region"] == "malaysia"
+    assert manifest["region"] == "malaysia-singapore-brunei"
+    assert manifest["basemap"]["filename"] == "malaysia-singapore-brunei.pmtiles"
+    assert (result.staging_dir / manifest["basemap"]["filename"]).is_file()
     assert manifest["publish_version"] == "20260715T120000Z"
     assert manifest["min_reader_version"] == 2
     assert any(attr["source"] == "osm" for attr in manifest["attribution"])
@@ -79,9 +81,9 @@ def test_publish_stage_builds_local_staging_and_marks_shipped(
     ]
     assert len(registry_ops) == 1
     assert registry_ops[0].bucket == "making-tracks-state"
-    assert registry_ops[0].key == "registry/malaysia.jsonl"
+    assert registry_ops[0].key == "registry/malaysia-singapore-brunei.jsonl"
 
-    saved = LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").load()
+    saved = LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").load()
     shipped = {record.place_id: record for record in saved}
     assert shipped[A].first_shipped_version == "20260701T000000Z"
     assert shipped[A].last_seen_version == "20260701T000000Z"
@@ -94,7 +96,7 @@ def test_publish_stage_emits_zone_catalog_proposal_and_pruned_catalog(
     monkeypatch.chdir(tmp_path)
     _seed_publish_inputs(conn, seed_zone_boundaries=False)
     _seed_zone_boundary(conn)
-    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
             RegistryRecord(
                 place_id=A,
@@ -118,7 +120,7 @@ def test_publish_stage_emits_zone_catalog_proposal_and_pruned_catalog(
     def fake_cut_basemap(region_config, out_path):
         out_path.write_bytes(b"basemap")
         return basemap.BasemapArtifact(
-            filename="malaysia.pmtiles",
+            filename=f'{region_config["region_id"]}.pmtiles',
             maxzoom=14,
             sha256="0" * 64,
             bytes=7,
@@ -131,7 +133,7 @@ def test_publish_stage_emits_zone_catalog_proposal_and_pruned_catalog(
 
     result = P.run(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         publish_version="20260715T120000Z",
         generated_at="2026-07-15T12:00:00Z",
         scoring_config_version="scoring-v1",
@@ -152,7 +154,7 @@ def test_publish_stage_with_empty_zone_allowlist_writes_proposal_only(
     monkeypatch.chdir(tmp_path)
     _seed_publish_inputs(conn, seed_zone_boundaries=False)
     _seed_zone_boundary(conn)
-    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
             RegistryRecord(
                 place_id=A,
@@ -176,7 +178,7 @@ def test_publish_stage_with_empty_zone_allowlist_writes_proposal_only(
     def fake_cut_basemap(region_config, out_path):
         out_path.write_bytes(b"basemap")
         return basemap.BasemapArtifact(
-            filename="malaysia.pmtiles",
+            filename=f'{region_config["region_id"]}.pmtiles',
             maxzoom=14,
             sha256="0" * 64,
             bytes=7,
@@ -190,7 +192,7 @@ def test_publish_stage_with_empty_zone_allowlist_writes_proposal_only(
 
     result = P.run(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         publish_version="20260715T120000Z",
         generated_at="2026-07-15T12:00:00Z",
         scoring_config_version="scoring-v1",
@@ -212,7 +214,7 @@ def test_publish_stage_fails_when_configured_zone_levels_have_no_boundaries(
     def fake_cut_basemap(region_config, out_path):
         out_path.write_bytes(b"basemap")
         return basemap.BasemapArtifact(
-            filename="malaysia.pmtiles",
+            filename=f'{region_config["region_id"]}.pmtiles',
             maxzoom=14,
             sha256="0" * 64,
             bytes=7,
@@ -225,7 +227,7 @@ def test_publish_stage_fails_when_configured_zone_levels_have_no_boundaries(
     with pytest.raises(P.zone_catalog.ZoneCatalogError, match="configured zone level 2"):
         P.run(
             conn,
-            "malaysia",
+            "malaysia-singapore-brunei",
             publish_version="20260715T120000Z",
             generated_at="2026-07-15T12:00:00Z",
             scoring_config_version="scoring-v1",
@@ -242,7 +244,7 @@ def test_publish_stage_manifest_includes_osm_attribution_for_basemap_without_osm
         "UPDATE places SET member_refs_json = ? WHERE place_id = ?",
         (json.dumps(["wd:Q100"], sort_keys=True), A),
     )
-    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
             RegistryRecord(
                 place_id=A,
@@ -266,7 +268,7 @@ def test_publish_stage_manifest_includes_osm_attribution_for_basemap_without_osm
     def fake_cut_basemap(region_config, out_path):
         out_path.write_bytes(b"basemap")
         return basemap.BasemapArtifact(
-            filename="malaysia.pmtiles",
+            filename=f'{region_config["region_id"]}.pmtiles',
             maxzoom=14,
             sha256="0" * 64,
             bytes=7,
@@ -278,7 +280,7 @@ def test_publish_stage_manifest_includes_osm_attribution_for_basemap_without_osm
 
     result = P.run(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         publish_version="20260715T120000Z",
         generated_at="2026-07-15T12:00:00Z",
         scoring_config_version="scoring-v1",
@@ -313,7 +315,7 @@ def test_publish_stage_emits_bbox_subregion_shard_without_subregion_registry(
 
     result = P.run(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         publish_version="20260717T120000Z",
         generated_at="2026-07-17T12:00:00Z",
         scoring_config_version="scoring-v1",
@@ -323,10 +325,10 @@ def test_publish_stage_emits_bbox_subregion_shard_without_subregion_registry(
     assert result.counts.total_published == 2
     assert len(result.subregion_results) == 1
     sub = result.subregion_results[0]
-    assert sub.manifest["region"] == "malaysia_central"
+    assert sub.manifest["region"] == "malaysia-singapore-brunei_central"
     assert sub.counts.total_published == 1
     assert sub.manifest["basemap"]["bbox"] == [101.6, 3.0, 101.8, 3.2]
-    assert sub.staging_dir == tmp_path / "stage/malaysia_central/20260717T120000Z"
+    assert sub.staging_dir == tmp_path / "stage/malaysia-singapore-brunei_central/20260717T120000Z"
 
     parent_registry_ops = [
         op for op in result.publish_result.plan.ops if op.kind == "registry"
@@ -334,15 +336,15 @@ def test_publish_stage_emits_bbox_subregion_shard_without_subregion_registry(
     subregion_registry_ops = [
         op for op in sub.publish_result.plan.ops if op.kind == "registry"
     ]
-    assert [op.key for op in parent_registry_ops] == ["registry/malaysia.jsonl"]
+    assert [op.key for op in parent_registry_ops] == ["registry/malaysia-singapore-brunei.jsonl"]
     assert subregion_registry_ops == []
 
     index = json.loads((tmp_path / "stage/regions.json").read_text())
     assert [entry["id"] for entry in index["regions"]] == [
-        "malaysia",
-        "malaysia_central",
+        "malaysia-singapore-brunei",
+        "malaysia-singapore-brunei_central",
     ]
-    assert index["regions"][1]["parent"] == "malaysia"
+    assert index["regions"][1]["parent"] == "malaysia-singapore-brunei"
     assert index["regions"][1]["display_name"] == "Central Malaysia"
     assert index["regions"][1]["publish_version"] == "20260717T120000Z"
     assert index["regions"][1]["tile_count"] == len(sub.manifest["tiles"])
@@ -377,7 +379,7 @@ def test_publish_stage_emits_image_sidecars_from_shipped_wikidata_images(
     def fake_cut_basemap(region_config, out_path):
         out_path.write_bytes(b"basemap")
         return basemap.BasemapArtifact(
-            filename="malaysia.pmtiles",
+            filename=f'{region_config["region_id"]}.pmtiles',
             maxzoom=14,
             sha256="0" * 64,
             bytes=7,
@@ -414,7 +416,7 @@ def test_publish_stage_emits_image_sidecars_from_shipped_wikidata_images(
 
     result = P.run(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         publish_version="20260717T120000Z",
         generated_at="2026-07-17T12:00:00Z",
         scoring_config_version="scoring-v1",
@@ -447,7 +449,7 @@ def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extract
     source_record.persist(
         conn,
         source_record.parse(
-            "malaysia",
+            "malaysia-singapore-brunei",
             "wp",
             "wp:12345",
             "Kellie's Castle",
@@ -464,7 +466,7 @@ def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extract
     source_record.persist(
         conn,
         source_record.parse(
-            "malaysia",
+            "malaysia-singapore-brunei",
             "wp",
             "wp:99999",
             "Non-retained",
@@ -481,7 +483,7 @@ def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extract
     source_record.persist(
         conn,
         source_record.parse(
-            "malaysia",
+            "malaysia-singapore-brunei",
             "wp",
             "wp:22222",
             "Excluded",
@@ -505,7 +507,7 @@ def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extract
     )
     conn.commit()
     _write_malaysia_registry(tmp_path)
-    registry = LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").load()
+    registry = LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").load()
 
     def with_extra_wp_ref(record):
         extra_refs = {A: {"wp:12345"}, B: {"wp:22222"}}.get(record.place_id)
@@ -522,14 +524,14 @@ def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extract
             schema_version=record.schema_version,
         )
 
-    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [with_extra_wp_ref(record) for record in registry]
     )
 
     def fake_cut_basemap(region_config, out_path):
         out_path.write_bytes(b"basemap")
         return basemap.BasemapArtifact(
-            filename="malaysia.pmtiles",
+            filename=f'{region_config["region_id"]}.pmtiles',
             maxzoom=14,
             sha256="0" * 64,
             bytes=7,
@@ -541,7 +543,7 @@ def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extract
 
     result = P.run(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         publish_version="20260717T120000Z",
         generated_at="2026-07-17T12:00:00Z",
         scoring_config_version="scoring-v1",
@@ -581,7 +583,7 @@ def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extract
         op for op in result.publish_result.plan.ops if op.kind == "description"
     ]
     assert [op.key for op in description_ops] == [
-        "malaysia/20260717T120000Z/descriptions/10/801/503.json"
+        "malaysia-singapore-brunei/20260717T120000Z/descriptions/10/801/503.json"
     ]
 
 
@@ -602,7 +604,7 @@ def test_publish_stage_reports_description_sidecar_overflow_drops(
         source_record.persist(
             conn,
             source_record.parse(
-                "malaysia",
+                "malaysia-singapore-brunei",
                 "wp",
                 source_ref,
                 source_ref,
@@ -625,7 +627,7 @@ def test_publish_stage_reports_description_sidecar_overflow_drops(
             (tier, score, place_id),
         )
     conn.commit()
-    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
             RegistryRecord(
                 place_id=A,
@@ -649,7 +651,7 @@ def test_publish_stage_reports_description_sidecar_overflow_drops(
     def fake_cut_basemap(region_config, out_path):
         out_path.write_bytes(b"basemap")
         return basemap.BasemapArtifact(
-            filename="malaysia.pmtiles",
+            filename=f'{region_config["region_id"]}.pmtiles',
             maxzoom=14,
             sha256="0" * 64,
             bytes=7,
@@ -661,7 +663,7 @@ def test_publish_stage_reports_description_sidecar_overflow_drops(
 
     result = P.run(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         publish_version="20260717T120000Z",
         generated_at="2026-07-17T12:00:00Z",
         scoring_config_version="scoring-v1",
@@ -713,7 +715,7 @@ def test_publish_stage_writes_region_index_after_all_current_flips(
 
     result = P.run(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         publish_version="20260717T120000Z",
         generated_at="2026-07-17T12:00:00Z",
         scoring_config_version="scoring-v1",
@@ -721,8 +723,8 @@ def test_publish_stage_writes_region_index_after_all_current_flips(
     )
 
     assert order == [
-        "malaysia/current.json",
-        "malaysia_central/current.json",
+        "malaysia-singapore-brunei/current.json",
+        "malaysia-singapore-brunei_central/current.json",
         "regions.json",
     ]
     assert result.region_index_publish_result.plan.ops[-1].kind == "region_index"
@@ -744,7 +746,7 @@ def test_publish_stage_upload_builds_all_targets_before_any_upload(
     calls = []
 
     def fake_cut_basemap(region_config, out_path):
-        if out_path.name == "malaysia_central.pmtiles":
+        if out_path.name == "malaysia-singapore-brunei_central.pmtiles":
             raise RuntimeError("subregion basemap failed")
         out_path.write_bytes(b"basemap")
         return basemap.BasemapArtifact(
@@ -765,7 +767,7 @@ def test_publish_stage_upload_builds_all_targets_before_any_upload(
     with pytest.raises(RuntimeError, match="subregion basemap failed"):
         P.run(
             conn,
-            "malaysia",
+            "malaysia-singapore-brunei",
             publish_version="20260717T120000Z",
             generated_at="2026-07-17T12:00:00Z",
             scoring_config_version="scoring-v1",
@@ -796,7 +798,7 @@ def test_publish_stage_emits_phase_heartbeats_for_slow_publish_steps(
     monkeypatch.setattr(P, "_HEARTBEAT_EVERY_RECORDS", 1, raising=False)
     monkeypatch.setattr(P.tiles, "_HEARTBEAT_EVERY_RECORDS", 1, raising=False)
     _seed_publish_inputs(conn)
-    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
             RegistryRecord(
                 place_id=A,
@@ -820,7 +822,7 @@ def test_publish_stage_emits_phase_heartbeats_for_slow_publish_steps(
     def fake_cut_basemap(region_config, out_path):
         out_path.write_bytes(b"basemap")
         return basemap.BasemapArtifact(
-            filename="malaysia.pmtiles",
+            filename=f'{region_config["region_id"]}.pmtiles',
             maxzoom=14,
             sha256="0" * 64,
             bytes=7,
@@ -832,7 +834,7 @@ def test_publish_stage_emits_phase_heartbeats_for_slow_publish_steps(
 
     P.run(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         publish_version="20260715T120000Z",
         generated_at="2026-07-15T12:00:00Z",
         scoring_config_version="scoring-v1",
@@ -840,29 +842,29 @@ def test_publish_stage_emits_phase_heartbeats_for_slow_publish_steps(
     )
 
     err = capsys.readouterr().err
-    assert "PHASE START publish.registry_load region=malaysia records=unknown" in err
-    assert "PHASE HEARTBEAT publish.registry_load region=malaysia processed=1/unknown" in err
-    assert "PHASE DONE publish.registry_load region=malaysia processed=2/unknown" in err
-    assert "PHASE START publish.db_input_validation region=malaysia places=unknown" in err
-    assert "PHASE HEARTBEAT publish.db_input_validation region=malaysia processed=1/unknown" in err
-    assert "PHASE DONE publish.db_input_validation region=malaysia processed=2/unknown" in err
-    assert "PHASE START publish.joined_place_load region=malaysia places=unknown" in err
-    assert "PHASE HEARTBEAT publish.joined_place_load region=malaysia processed=1/unknown" in err
-    assert "PHASE DONE publish.joined_place_load region=malaysia processed=2/unknown" in err
-    assert "PHASE START publish.coverage_validation region=malaysia places=2" in err
-    assert "PHASE HEARTBEAT publish.coverage_validation region=malaysia processed=1/2" in err
-    assert "PHASE DONE publish.coverage_validation region=malaysia processed=2/2" in err
-    assert "PHASE START publish.tile_emit region=malaysia places=2" in err
-    assert "PHASE HEARTBEAT publish.tile_emit region=malaysia processed=1/2" in err
-    assert "PHASE DONE publish.tile_emit region=malaysia processed=2/2" in err
-    assert "PHASE START publish.tile_group region=malaysia places=1" in err
-    assert "PHASE HEARTBEAT publish.tile_group region=malaysia processed=1/1" in err
-    assert "PHASE DONE publish.tile_group region=malaysia processed=1/1" in err
-    assert "PHASE START publish.tile_write region=malaysia tiles=1" in err
+    assert "PHASE START publish.registry_load region=malaysia-singapore-brunei records=unknown" in err
+    assert "PHASE HEARTBEAT publish.registry_load region=malaysia-singapore-brunei processed=1/unknown" in err
+    assert "PHASE DONE publish.registry_load region=malaysia-singapore-brunei processed=2/unknown" in err
+    assert "PHASE START publish.db_input_validation region=malaysia-singapore-brunei places=unknown" in err
+    assert "PHASE HEARTBEAT publish.db_input_validation region=malaysia-singapore-brunei processed=1/unknown" in err
+    assert "PHASE DONE publish.db_input_validation region=malaysia-singapore-brunei processed=2/unknown" in err
+    assert "PHASE START publish.joined_place_load region=malaysia-singapore-brunei places=unknown" in err
+    assert "PHASE HEARTBEAT publish.joined_place_load region=malaysia-singapore-brunei processed=1/unknown" in err
+    assert "PHASE DONE publish.joined_place_load region=malaysia-singapore-brunei processed=2/unknown" in err
+    assert "PHASE START publish.coverage_validation region=malaysia-singapore-brunei places=2" in err
+    assert "PHASE HEARTBEAT publish.coverage_validation region=malaysia-singapore-brunei processed=1/2" in err
+    assert "PHASE DONE publish.coverage_validation region=malaysia-singapore-brunei processed=2/2" in err
+    assert "PHASE START publish.tile_emit region=malaysia-singapore-brunei places=2" in err
+    assert "PHASE HEARTBEAT publish.tile_emit region=malaysia-singapore-brunei processed=1/2" in err
+    assert "PHASE DONE publish.tile_emit region=malaysia-singapore-brunei processed=2/2" in err
+    assert "PHASE START publish.tile_group region=malaysia-singapore-brunei places=1" in err
+    assert "PHASE HEARTBEAT publish.tile_group region=malaysia-singapore-brunei processed=1/1" in err
+    assert "PHASE DONE publish.tile_group region=malaysia-singapore-brunei processed=1/1" in err
+    assert "PHASE START publish.tile_write region=malaysia-singapore-brunei tiles=1" in err
     assert "current_tile=" in err
     assert "gzip_attempt=1" in err
-    assert "PHASE HEARTBEAT publish.tile_write region=malaysia processed=1/1" in err
-    assert "PHASE DONE publish.tile_write region=malaysia processed=1/1" in err
+    assert "PHASE HEARTBEAT publish.tile_write region=malaysia-singapore-brunei processed=1/1" in err
+    assert "PHASE DONE publish.tile_write region=malaysia-singapore-brunei processed=1/1" in err
     assert "tiles=1" in err
     assert "invalid_excluded=0" in err
     assert "uncategorized_excluded=1" in err
@@ -873,7 +875,7 @@ def test_publish_stage_reports_registry_load_progress_before_parse_error(
 ):
     monkeypatch.setattr(P, "_HEARTBEAT_EVERY_RECORDS", 1, raising=False)
     _seed_publish_inputs(conn)
-    registry_path = tmp_path / "registry/malaysia.jsonl"
+    registry_path = tmp_path / "registry/malaysia-singapore-brunei.jsonl"
     registry_path.parent.mkdir(parents=True)
     registry_path.write_text(
         json.dumps(
@@ -898,7 +900,7 @@ def test_publish_stage_reports_registry_load_progress_before_parse_error(
     with pytest.raises(P.PublishStageError, match="publish registry rejected"):
         P.run(
             conn,
-            "malaysia",
+            "malaysia-singapore-brunei",
             publish_version="20260715T120000Z",
             generated_at="2026-07-15T12:00:00Z",
             scoring_config_version="scoring-v1",
@@ -906,17 +908,17 @@ def test_publish_stage_reports_registry_load_progress_before_parse_error(
         )
 
     err = capsys.readouterr().err
-    assert "PHASE START publish.registry_load region=malaysia records=unknown" in err
-    assert "PHASE HEARTBEAT publish.registry_load region=malaysia processed=1/unknown" in err
-    assert "PHASE DONE publish.registry_load region=malaysia processed=1/unknown" in err
+    assert "PHASE START publish.registry_load region=malaysia-singapore-brunei records=unknown" in err
+    assert "PHASE HEARTBEAT publish.registry_load region=malaysia-singapore-brunei processed=1/unknown" in err
+    assert "PHASE DONE publish.registry_load region=malaysia-singapore-brunei processed=1/unknown" in err
     assert "error=parse" in err
 
 
 def test_publish_stage_dispatch_requires_publish_version(conn):
-    store.mark_stage_complete(conn, "malaysia", "categorize", "r1", "2026-07-15T00:00:00Z")
+    store.mark_stage_complete(conn, "malaysia-singapore-brunei", "categorize", "r1", "2026-07-15T00:00:00Z")
 
     try:
-        stages.run_stage(conn, "malaysia", "publish", run_id="r1")
+        stages.run_stage(conn, "malaysia-singapore-brunei", "publish", run_id="r1")
     except stages.StageVersionError as exc:
         assert "--publish-version" in str(exc)
     else:
@@ -929,7 +931,7 @@ def test_publish_stage_checks_pmtiles_before_staging(conn, tmp_path, monkeypatch
     with pytest.raises(basemap.PmtilesUnavailable):
         P.run(
             conn,
-            "malaysia",
+            "malaysia-singapore-brunei",
             publish_version="20260715T120000Z",
             generated_at="2026-07-15T12:00:00Z",
             scoring_config_version="scoring-v1",
@@ -960,7 +962,7 @@ def test_publish_stage_checks_boto3_before_staging_when_upload_requested(
     with pytest.raises(P.r2.Boto3Unavailable) as excinfo:
         P.run(
             conn,
-            "malaysia",
+            "malaysia-singapore-brunei",
             publish_version="20260715T120000Z",
             generated_at="2026-07-15T12:00:00Z",
             scoring_config_version="scoring-v1",
@@ -993,7 +995,7 @@ def test_publish_stage_checks_r2_env_before_staging_when_upload_requested(
     with pytest.raises(P.r2.R2EnvironmentUnavailable) as excinfo:
         P.run(
             conn,
-            "malaysia",
+            "malaysia-singapore-brunei",
             publish_version="20260715T120000Z",
             generated_at="2026-07-15T12:00:00Z",
             scoring_config_version="scoring-v1",
@@ -1016,7 +1018,7 @@ def test_publish_stage_resolves_relative_registry_path_beside_db(
     other_cwd.mkdir()
     monkeypatch.chdir(other_cwd)
     _seed_publish_inputs(conn)
-    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
             RegistryRecord(
                 place_id=A,
@@ -1040,7 +1042,7 @@ def test_publish_stage_resolves_relative_registry_path_beside_db(
     def fake_cut_basemap(region_config, out_path):
         out_path.write_bytes(b"basemap")
         return basemap.BasemapArtifact(
-            filename="malaysia.pmtiles",
+            filename=f'{region_config["region_id"]}.pmtiles',
             maxzoom=14,
             sha256="0" * 64,
             bytes=7,
@@ -1052,7 +1054,7 @@ def test_publish_stage_resolves_relative_registry_path_beside_db(
 
     result = P.run(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         publish_version="20260715T120000Z",
         generated_at="2026-07-15T12:00:00Z",
         scoring_config_version="scoring-v1",
@@ -1077,7 +1079,7 @@ def test_publish_stage_requires_registry_before_basemap_cut(conn, tmp_path, monk
     with pytest.raises(P.PublishStageError) as excinfo:
         P.run(
             conn,
-            "malaysia",
+            "malaysia-singapore-brunei",
             publish_version="20260715T120000Z",
             generated_at="2026-07-15T12:00:00Z",
             scoring_config_version="scoring-v1",
@@ -1085,7 +1087,7 @@ def test_publish_stage_requires_registry_before_basemap_cut(conn, tmp_path, monk
         )
 
     assert "registry" in str(excinfo.value)
-    assert str(tmp_path / "registry/malaysia.jsonl") in str(excinfo.value)
+    assert str(tmp_path / "registry/malaysia-singapore-brunei.jsonl") in str(excinfo.value)
     assert called is False
 
 
@@ -1093,7 +1095,7 @@ def test_publish_stage_checks_registry_coverage_before_basemap_cut(
     conn, tmp_path, monkeypatch
 ):
     _seed_publish_inputs(conn)
-    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
             RegistryRecord(
                 place_id=B,
@@ -1118,7 +1120,7 @@ def test_publish_stage_checks_registry_coverage_before_basemap_cut(
     with pytest.raises(P.PublishStageError) as excinfo:
         P.run(
             conn,
-            "malaysia",
+            "malaysia-singapore-brunei",
             publish_version="20260715T120000Z",
             generated_at="2026-07-15T12:00:00Z",
             scoring_config_version="scoring-v1",
@@ -1127,7 +1129,7 @@ def test_publish_stage_checks_registry_coverage_before_basemap_cut(
 
     message = str(excinfo.value)
     assert "registry" in message
-    assert str(tmp_path / "registry/malaysia.jsonl") in message
+    assert str(tmp_path / "registry/malaysia-singapore-brunei.jsonl") in message
     assert A in message
     assert called is False
 
@@ -1137,7 +1139,7 @@ def test_publish_stage_checks_joined_db_inputs_before_basemap_cut(
 ):
     store.replace_places(
         conn,
-        region="malaysia",
+        region="malaysia-singapore-brunei",
         places=[
             {
                 "place_id": A,
@@ -1150,7 +1152,7 @@ def test_publish_stage_checks_joined_db_inputs_before_basemap_cut(
             }
         ],
     )
-    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
             RegistryRecord(
                 place_id=A,
@@ -1175,7 +1177,7 @@ def test_publish_stage_checks_joined_db_inputs_before_basemap_cut(
     with pytest.raises(P.PublishStageError) as excinfo:
         P.run(
             conn,
-            "malaysia",
+            "malaysia-singapore-brunei",
             publish_version="20260715T120000Z",
             generated_at="2026-07-15T12:00:00Z",
             scoring_config_version="scoring-v1",
@@ -1192,10 +1194,10 @@ def test_publish_stage_requires_scores_for_all_live_places_before_basemap_cut(
     _seed_publish_inputs(conn)
     conn.execute(
         "DELETE FROM place_scores WHERE region = ? AND place_id = ?",
-        ("malaysia", B),
+        ("malaysia-singapore-brunei", B),
     )
     conn.commit()
-    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
             RegistryRecord(
                 place_id=A,
@@ -1228,14 +1230,14 @@ def test_publish_stage_requires_scores_for_all_live_places_before_basemap_cut(
     with pytest.raises(P.PublishStageError) as excinfo:
         P.run(
             conn,
-            "malaysia",
+            "malaysia-singapore-brunei",
             publish_version="20260715T120000Z",
             generated_at="2026-07-15T12:00:00Z",
             scoring_config_version="scoring-v1",
             staging_root=tmp_path / "stage",
         )
 
-    assert "1 live malaysia place(s) missing place_scores" in str(excinfo.value)
+    assert "1 live malaysia-singapore-brunei place(s) missing place_scores" in str(excinfo.value)
     assert called is False
 
 
@@ -1243,7 +1245,7 @@ def test_publish_stage_rejects_non_live_registry_for_live_db_place_before_basema
     conn, tmp_path, monkeypatch
 ):
     _seed_publish_inputs(conn)
-    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
             RegistryRecord(
                 place_id=A,
@@ -1276,7 +1278,7 @@ def test_publish_stage_rejects_non_live_registry_for_live_db_place_before_basema
     with pytest.raises(P.PublishStageError) as excinfo:
         P.run(
             conn,
-            "malaysia",
+            "malaysia-singapore-brunei",
             publish_version="20260715T120000Z",
             generated_at="2026-07-15T12:00:00Z",
             scoring_config_version="scoring-v1",
@@ -1284,7 +1286,7 @@ def test_publish_stage_rejects_non_live_registry_for_live_db_place_before_basema
         )
 
     message = str(excinfo.value)
-    assert str(tmp_path / "registry/malaysia.jsonl") in message
+    assert str(tmp_path / "registry/malaysia-singapore-brunei.jsonl") in message
     assert "non-live" in message
     assert A in message
     assert called is False
@@ -1294,7 +1296,7 @@ def test_publish_stage_requires_registry_ref_coverage_before_basemap_cut(
     conn, tmp_path, monkeypatch
 ):
     _seed_publish_inputs(conn)
-    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
             RegistryRecord(
                 place_id=A,
@@ -1327,7 +1329,7 @@ def test_publish_stage_requires_registry_ref_coverage_before_basemap_cut(
     with pytest.raises(P.PublishStageError) as excinfo:
         P.run(
             conn,
-            "malaysia",
+            "malaysia-singapore-brunei",
             publish_version="20260715T120000Z",
             generated_at="2026-07-15T12:00:00Z",
             scoring_config_version="scoring-v1",
@@ -1335,7 +1337,7 @@ def test_publish_stage_requires_registry_ref_coverage_before_basemap_cut(
         )
 
     message = str(excinfo.value)
-    assert str(tmp_path / "registry/malaysia.jsonl") in message
+    assert str(tmp_path / "registry/malaysia-singapore-brunei.jsonl") in message
     assert "missing refs" in message
     assert "osm:node/100" in message
     assert called is False
@@ -1353,7 +1355,7 @@ def test_publish_stage_quarantines_malformed_member_refs_json(
     assert any(
         "malformed member_refs_json (parse error)" in record.message
         and "place_id=mt1_" in record.message
-        and "region=malaysia" in record.message
+        and "region=malaysia-singapore-brunei" in record.message
         and record.exc_info is not None
         for record in caplog.records
     )
@@ -1371,7 +1373,7 @@ def test_publish_stage_warns_on_non_list_member_refs_json(
     assert any(
         "malformed member_refs_json (not list[str], got dict)" in record.message
         and "place_id=mt1_" in record.message
-        and "region=malaysia" in record.message
+        and "region=malaysia-singapore-brunei" in record.message
         and record.exc_info is None
         for record in caplog.records
     )
@@ -1387,7 +1389,7 @@ def _run_with_member_refs_json(
         (member_refs_json, A),
     )
     conn.commit()
-    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
             RegistryRecord(
                 place_id=A,
@@ -1411,7 +1413,7 @@ def _run_with_member_refs_json(
     def fake_cut_basemap(region_config, out_path):
         out_path.write_bytes(b"basemap")
         return basemap.BasemapArtifact(
-            filename="malaysia.pmtiles",
+            filename=f'{region_config["region_id"]}.pmtiles',
             maxzoom=14,
             sha256="0" * 64,
             bytes=7,
@@ -1424,7 +1426,7 @@ def _run_with_member_refs_json(
     caplog.set_level("WARNING")
     return P.run(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         publish_version="20260715T120000Z",
         generated_at="2026-07-15T12:00:00Z",
         scoring_config_version="scoring-v1",
@@ -1433,7 +1435,7 @@ def _run_with_member_refs_json(
 
 
 def _write_malaysia_registry(tmp_path):
-    LocalRegistryStore(tmp_path / "registry/malaysia.jsonl").save(
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
             RegistryRecord(
                 place_id=A,
@@ -1499,7 +1501,7 @@ def _zone_catalog_region_config(zone_allowlist=("osm_r100",)):
     return P.config.RegionConfig.from_dict(
         {
             "schema_version": 1,
-            "region_id": "malaysia",
+            "region_id": "malaysia-singapore-brunei",
             "display_name": "Malaysia",
             "bbox": [99.64, 0.85, 119.27, 7.36],
             "languages": ["en"],
@@ -1533,7 +1535,7 @@ def _seed_zone_boundary(conn):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            "malaysia",
+            "malaysia-singapore-brunei",
             "osm_r100",
             100,
             4,
@@ -1553,7 +1555,7 @@ def _seed_publish_input_outside_central_subregion(conn):
     source_record.persist(
         conn,
         source_record.parse(
-            "malaysia",
+            "malaysia-singapore-brunei",
             "wd",
             "wd:Q300",
             "Outside",
@@ -1565,7 +1567,7 @@ def _seed_publish_input_outside_central_subregion(conn):
     )
     store.replace_places(
         conn,
-        region="malaysia",
+        region="malaysia-singapore-brunei",
         places=[
             {
                 "place_id": A,
@@ -1601,14 +1603,14 @@ def _seed_publish_input_outside_central_subregion(conn):
         INSERT INTO place_scores (place_id, region, score, tier, signals_json, run_id)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (C, "malaysia", 0.8, 2, "{}", "score1"),
+        (C, "malaysia-singapore-brunei", 0.8, 2, "{}", "score1"),
     )
     conn.execute(
         """
         INSERT INTO place_categories (place_id, region, category, run_id)
         VALUES (?, ?, ?, ?)
         """,
-        (C, "malaysia", "history", "cat1"),
+        (C, "malaysia-singapore-brunei", "history", "cat1"),
     )
     conn.commit()
 
@@ -1645,7 +1647,7 @@ def _seed_default_zone_boundaries(conn):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                "malaysia",
+                "malaysia-singapore-brunei",
                 zone_id,
                 relation_id,
                 admin_level,
@@ -1676,12 +1678,12 @@ def _seed_publish_inputs(conn, *, seed_zone_boundaries=True):
     ]:
         source_record.persist(
             conn,
-            source_record.parse("malaysia", source, source_ref, "Place", 3.1, 101.7, props),
+            source_record.parse("malaysia-singapore-brunei", source, source_ref, "Place", 3.1, 101.7, props),
             run_id="extract1",
         )
     store.replace_places(
         conn,
-        region="malaysia",
+        region="malaysia-singapore-brunei",
         places=[
             {
                 "place_id": A,
@@ -1709,8 +1711,8 @@ def _seed_publish_inputs(conn, *, seed_zone_boundaries=True):
         VALUES (?, ?, ?, ?, ?, ?)
         """,
         [
-            (A, "malaysia", 0.9, 1, "{}", "score1"),
-            (B, "malaysia", 0.2, 4, "{}", "score1"),
+            (A, "malaysia-singapore-brunei", 0.9, 1, "{}", "score1"),
+            (B, "malaysia-singapore-brunei", 0.2, 4, "{}", "score1"),
         ],
     )
     conn.executemany(
@@ -1718,7 +1720,7 @@ def _seed_publish_inputs(conn, *, seed_zone_boundaries=True):
         INSERT INTO place_categories (place_id, region, category, run_id)
         VALUES (?, ?, ?, ?)
         """,
-        [(A, "malaysia", "history", "cat1"), (B, "malaysia", "uncategorized", "cat1")],
+        [(A, "malaysia-singapore-brunei", "history", "cat1"), (B, "malaysia-singapore-brunei", "uncategorized", "cat1")],
     )
     conn.commit()
     if seed_zone_boundaries:

@@ -19,8 +19,8 @@ def test_predecessor_mapping():
 
 
 def test_first_stage_runs_without_predecessor(conn):
-    stages.run_stage(conn, "uk", "extract", run_id="r1")
-    assert store.stage_completed(conn, "uk", "extract")
+    stages.run_stage(conn, "united-kingdom", "extract", run_id="r1")
+    assert store.stage_completed(conn, "united-kingdom", "extract")
 
 
 def test_stage_fingerprint_skip_is_loud_and_force_overrides(conn, tmp_path, capsys):
@@ -42,20 +42,20 @@ def test_stage_fingerprint_skip_is_loud_and_force_overrides(conn, tmp_path, caps
             "osm_candidate_tags": tags,
         },
     )
-    stages.run_stage(conn, "uk", "extract", run_id="r1", fingerprint_inputs=inputs)
+    stages.run_stage(conn, "united-kingdom", "extract", run_id="r1", fingerprint_inputs=inputs)
 
-    stages.run_stage(conn, "uk", "extract", run_id="r2", fingerprint_inputs=inputs)
+    stages.run_stage(conn, "united-kingdom", "extract", run_id="r2", fingerprint_inputs=inputs)
     err = capsys.readouterr().err
 
     assert conn.execute(
         "SELECT run_id FROM stage_runs WHERE region = ? AND stage = ?",
-        ("uk", "extract"),
+        ("united-kingdom", "extract"),
     ).fetchone()[0] == "r1"
-    assert "SKIP stage=extract region=uk fingerprint=" in err
+    assert "SKIP stage=extract region=united-kingdom fingerprint=" in err
 
     stages.run_stage(
         conn,
-        "uk",
+        "united-kingdom",
         "extract",
         run_id="r2",
         fingerprint_inputs=inputs,
@@ -63,35 +63,35 @@ def test_stage_fingerprint_skip_is_loud_and_force_overrides(conn, tmp_path, caps
     )
     assert conn.execute(
         "SELECT run_id FROM stage_runs WHERE region = ? AND stage = ?",
-        ("uk", "extract"),
+        ("united-kingdom", "extract"),
     ).fetchone()[0] == "r2"
 
 
 def test_skipping_immediate_predecessor_is_blocked_even_when_earlier_stage_done(conn):
-    stages.run_stage(conn, "uk", "extract", run_id="r1")
+    stages.run_stage(conn, "united-kingdom", "extract", run_id="r1")
     with pytest.raises(stages.StageOrderError) as exc:
-        stages.run_stage(conn, "uk", "score", run_id="r1")
+        stages.run_stage(conn, "united-kingdom", "score", run_id="r1")
     assert "reconcile" in str(exc.value)
-    assert not store.stage_completed(conn, "uk", "score")
+    assert not store.stage_completed(conn, "united-kingdom", "score")
 
 
 def test_publish_blocked_names_categorize_after_extract_reconcile(conn):
-    stages.run_stage(conn, "uk", "extract", run_id="r1")
-    store.mark_stage_complete(conn, "uk", "reconcile", "r1", "2026-07-15T00:00:00Z")
+    stages.run_stage(conn, "united-kingdom", "extract", run_id="r1")
+    store.mark_stage_complete(conn, "united-kingdom", "reconcile", "r1", "2026-07-15T00:00:00Z")
     with pytest.raises(stages.StageOrderError) as exc:
-        stages.run_stage(conn, "uk", "publish", run_id="r1")
+        stages.run_stage(conn, "united-kingdom", "publish", run_id="r1")
     assert "categorize" in str(exc.value)
 
 
 def test_full_order_runs(conn):
     source_record.persist(
         conn,
-        source_record.parse("uk", "wd", "wd:Q1", "Example Place", 51.5, -0.1, {}),
+        source_record.parse("united-kingdom", "wd", "wd:Q1", "Example Place", 51.5, -0.1, {}),
         run_id="r1",
     )
     store.replace_places(
         conn,
-        region="uk",
+        region="united-kingdom",
         places=[
             {
                 "place_id": "mt:uk:1",
@@ -106,23 +106,23 @@ def test_full_order_runs(conn):
     )
     for stage in stages.STAGE_ORDER[:-1]:
         if stage == "reconcile":
-            store.mark_stage_complete(conn, "uk", "reconcile", "r1", "2026-07-15T00:00:00Z")
+            store.mark_stage_complete(conn, "united-kingdom", "reconcile", "r1", "2026-07-15T00:00:00Z")
             continue
-        stages.run_stage(conn, "uk", stage, run_id="r1")
-    assert store.stage_completed(conn, "uk", "categorize")
+        stages.run_stage(conn, "united-kingdom", stage, run_id="r1")
+    assert store.stage_completed(conn, "united-kingdom", "categorize")
     with pytest.raises(stages.StageVersionError, match="publish-version"):
-        stages.run_stage(conn, "uk", "publish", run_id="r1")
+        stages.run_stage(conn, "united-kingdom", "publish", run_id="r1")
 
 
 def test_score_stage_is_blocked_when_reconcile_has_no_places(conn):
-    stages.run_stage(conn, "uk", "extract", run_id="r1")
-    store.mark_stage_complete(conn, "uk", "reconcile", "r1", "2026-07-15T00:00:00Z")
+    stages.run_stage(conn, "united-kingdom", "extract", run_id="r1")
+    store.mark_stage_complete(conn, "united-kingdom", "reconcile", "r1", "2026-07-15T00:00:00Z")
 
     with pytest.raises(stages.StageOrderError) as exc:
-        stages.run_stage(conn, "uk", "score", run_id="r1")
+        stages.run_stage(conn, "united-kingdom", "score", run_id="r1")
 
     assert "no places" in str(exc.value)
-    assert not store.stage_completed(conn, "uk", "score")
+    assert not store.stage_completed(conn, "united-kingdom", "score")
 
 
 def test_categorize_stage_dispatches_after_score_predecessor(conn):
@@ -132,39 +132,39 @@ def test_categorize_stage_dispatches_after_score_predecessor(conn):
         """
         INSERT INTO source_records
             (region, source, source_ref, name, lat, lon, props_json, run_id)
-        VALUES ('uk', 'wd', 'wd:Q1', 'Museum', 1, 1, '{"p31":"Q33506"}', 'r')
+        VALUES ('united-kingdom', 'wd', 'wd:Q1', 'Museum', 1, 1, '{"p31":"Q33506"}', 'r')
         """
     )
     conn.execute(
         """
         INSERT INTO places
             (place_id, region, name, lat, lon, refs_json, member_refs_json, status)
-        VALUES ('p', 'uk', 'P', 1, 1, '[]', '["wd:Q1"]', 'live')
+        VALUES ('p', 'united-kingdom', 'P', 1, 1, '[]', '["wd:Q1"]', 'live')
         """
     )
     for stage in ("extract", "reconcile", "score"):
-        store.mark_stage_complete(conn, "uk", stage, "r1", "2026-07-15T00:00:00Z")
+        store.mark_stage_complete(conn, "united-kingdom", stage, "r1", "2026-07-15T00:00:00Z")
 
-    stages.run_stage(conn, "uk", "categorize", run_id="cat1")
+    stages.run_stage(conn, "united-kingdom", "categorize", run_id="cat1")
 
-    assert store.stage_completed(conn, "uk", "categorize")
+    assert store.stage_completed(conn, "united-kingdom", "categorize")
     assert conn.execute(
         "SELECT category FROM place_categories WHERE place_id = 'p'"
     ).fetchone()[0] == expected_category
 
 
 def test_order_is_per_region(conn):
-    stages.run_stage(conn, "uk", "extract", run_id="r1")
+    stages.run_stage(conn, "united-kingdom", "extract", run_id="r1")
     with pytest.raises(stages.StageOrderError):
         stages.run_stage(
-            conn, "malaysia", "reconcile", run_id="r1", version="20260715T000000Z"
+            conn, "malaysia-singapore-brunei", "reconcile", run_id="r1", version="20260715T000000Z"
         )
 
 
 def test_reconcile_requires_version(conn):
-    stages.run_stage(conn, "uk", "extract", run_id="r1")
+    stages.run_stage(conn, "united-kingdom", "extract", run_id="r1")
     with pytest.raises(stages.StageVersionError):
-        stages.run_stage(conn, "uk", "reconcile", run_id="r1")
+        stages.run_stage(conn, "united-kingdom", "reconcile", run_id="r1")
 
 
 def test_reconcile_stage_writes_places_registry_and_review(conn, tmp_path, monkeypatch):
@@ -172,7 +172,7 @@ def test_reconcile_stage_writes_places_registry_and_review(conn, tmp_path, monke
     source_record.persist(
         conn,
         source_record.parse(
-            "malaysia",
+            "malaysia-singapore-brunei",
             "wd",
             "wd:Q42",
             "Example Place",
@@ -184,7 +184,7 @@ def test_reconcile_stage_writes_places_registry_and_review(conn, tmp_path, monke
     )
     store.record_extract_run_metadata(
         conn,
-        region="malaysia",
+        region="malaysia-singapore-brunei",
         run_id="real",
         wikidata_snapshot_date="2026-07-15T00:00:00Z",
         source_statuses={
@@ -195,30 +195,30 @@ def test_reconcile_stage_writes_places_registry_and_review(conn, tmp_path, monke
             "national_register": {"status": "disabled"},
         },
     )
-    redirects = tmp_path / ".mt-data" / "malaysia" / "wikidata_redirects.snapshot.json"
+    redirects = tmp_path / ".mt-data" / "malaysia-singapore-brunei" / "wikidata_redirects.snapshot.json"
     redirects.parent.mkdir(parents=True)
     redirects.write_text(
         '{"_meta":{"complete":true,"retrieved_at":"2026-07-15T00:00:00Z",'
         '"wikidata_retrieved_at":"2026-07-15T00:00:00Z"},"redirects":{}}'
     )
-    stages.run_stage(conn, "malaysia", "extract", run_id="real")
+    stages.run_stage(conn, "malaysia-singapore-brunei", "extract", run_id="real")
 
     stages.run_stage(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         "reconcile",
         run_id="real",
         version="20260715T000000Z",
     )
-    first_registry = (tmp_path / "registry" / "malaysia.jsonl").read_bytes()
+    first_registry = (tmp_path / "registry" / "malaysia-singapore-brunei.jsonl").read_bytes()
     stages.run_stage(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         "reconcile",
         run_id="real",
         version="20260715T000000Z",
     )
-    second_registry = (tmp_path / "registry" / "malaysia.jsonl").read_bytes()
+    second_registry = (tmp_path / "registry" / "malaysia-singapore-brunei.jsonl").read_bytes()
 
     rows = conn.execute(
         f"SELECT name, refs_json, member_refs_json FROM {store.PLACES_TABLE}"
@@ -227,8 +227,8 @@ def test_reconcile_stage_writes_places_registry_and_review(conn, tmp_path, monke
         ("Example Place", '["wd:Q42"]', '["wd:Q42"]'),
     ]
     assert first_registry == second_registry
-    assert (tmp_path / "reconcile-review" / "malaysia.jsonl").exists()
-    assert store.stage_completed(conn, "malaysia", "reconcile")
+    assert (tmp_path / "reconcile-review" / "malaysia-singapore-brunei.jsonl").exists()
+    assert store.stage_completed(conn, "malaysia-singapore-brunei", "reconcile")
 
 
 def test_reconcile_stage_resolves_registry_paths_beside_db(conn, tmp_path, monkeypatch):
@@ -238,7 +238,7 @@ def test_reconcile_stage_resolves_registry_paths_beside_db(conn, tmp_path, monke
     source_record.persist(
         conn,
         source_record.parse(
-            "malaysia",
+            "malaysia-singapore-brunei",
             "wd",
             "wd:Q42",
             "Example Place",
@@ -250,7 +250,7 @@ def test_reconcile_stage_resolves_registry_paths_beside_db(conn, tmp_path, monke
     )
     store.record_extract_run_metadata(
         conn,
-        region="malaysia",
+        region="malaysia-singapore-brunei",
         run_id="real",
         wikidata_snapshot_date="2026-07-15T00:00:00Z",
         source_statuses={
@@ -261,25 +261,25 @@ def test_reconcile_stage_resolves_registry_paths_beside_db(conn, tmp_path, monke
             "national_register": {"status": "disabled"},
         },
     )
-    redirects = other_cwd / ".mt-data" / "malaysia" / "wikidata_redirects.snapshot.json"
+    redirects = other_cwd / ".mt-data" / "malaysia-singapore-brunei" / "wikidata_redirects.snapshot.json"
     redirects.parent.mkdir(parents=True)
     redirects.write_text(
         '{"_meta":{"complete":true,"retrieved_at":"2026-07-15T00:00:00Z",'
         '"wikidata_retrieved_at":"2026-07-15T00:00:00Z"},"redirects":{}}'
     )
-    stages.run_stage(conn, "malaysia", "extract", run_id="real")
+    stages.run_stage(conn, "malaysia-singapore-brunei", "extract", run_id="real")
 
     stages.run_stage(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         "reconcile",
         run_id="real",
         version="20260715T000000Z",
     )
 
-    assert (tmp_path / "registry" / "malaysia.jsonl").exists()
-    assert not (other_cwd / "registry" / "malaysia.jsonl").exists()
-    assert (tmp_path / "reconcile-review" / "malaysia.jsonl").exists()
+    assert (tmp_path / "registry" / "malaysia-singapore-brunei.jsonl").exists()
+    assert not (other_cwd / "registry" / "malaysia-singapore-brunei.jsonl").exists()
+    assert (tmp_path / "reconcile-review" / "malaysia-singapore-brunei.jsonl").exists()
 
 
 def test_reconcile_stage_review_file_preserves_fuzzy_defer_payload(
@@ -289,7 +289,7 @@ def test_reconcile_stage_review_file_preserves_fuzzy_defer_payload(
     source_record.persist(
         conn,
         source_record.parse(
-            "malaysia",
+            "malaysia-singapore-brunei",
             "osm",
             "osm:node/1",
             "Same Place",
@@ -302,7 +302,7 @@ def test_reconcile_stage_review_file_preserves_fuzzy_defer_payload(
     source_record.persist(
         conn,
         source_record.parse(
-            "malaysia",
+            "malaysia-singapore-brunei",
             "osm",
             "osm:node/2",
             "Same Place",
@@ -314,7 +314,7 @@ def test_reconcile_stage_review_file_preserves_fuzzy_defer_payload(
     )
     store.record_extract_run_metadata(
         conn,
-        region="malaysia",
+        region="malaysia-singapore-brunei",
         run_id="real",
         wikidata_snapshot_date="2026-07-15T00:00:00Z",
         source_statuses={
@@ -325,23 +325,23 @@ def test_reconcile_stage_review_file_preserves_fuzzy_defer_payload(
             "national_register": {"status": "disabled"},
         },
     )
-    redirects = tmp_path / ".mt-data" / "malaysia" / "wikidata_redirects.snapshot.json"
+    redirects = tmp_path / ".mt-data" / "malaysia-singapore-brunei" / "wikidata_redirects.snapshot.json"
     redirects.parent.mkdir(parents=True)
     redirects.write_text(
         '{"_meta":{"complete":true,"retrieved_at":"2026-07-15T00:00:00Z",'
         '"wikidata_retrieved_at":"2026-07-15T00:00:00Z"},"redirects":{}}'
     )
-    stages.run_stage(conn, "malaysia", "extract", run_id="real")
+    stages.run_stage(conn, "malaysia-singapore-brunei", "extract", run_id="real")
 
     stages.run_stage(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         "reconcile",
         run_id="real",
         version="20260715T000000Z",
     )
 
-    rows = (tmp_path / "reconcile-review" / "malaysia.jsonl").read_text().splitlines()
+    rows = (tmp_path / "reconcile-review" / "malaysia-singapore-brunei.jsonl").read_text().splitlines()
     fuzzy_rows = [json.loads(row) for row in rows if json.loads(row)["kind"] == "fuzzy_defer"]
 
     assert len(fuzzy_rows) == 1
@@ -353,10 +353,10 @@ def test_reconcile_stage_review_file_preserves_fuzzy_defer_payload(
 
 def test_reconcile_stage_refuses_missing_redirect_map(conn, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    stages.run_stage(conn, "malaysia", "extract", run_id="real")
+    stages.run_stage(conn, "malaysia-singapore-brunei", "extract", run_id="real")
     store.record_extract_run_metadata(
         conn,
-        region="malaysia",
+        region="malaysia-singapore-brunei",
         run_id="real",
         wikidata_snapshot_date="2026-07-15T00:00:00Z",
         source_statuses={"wikidata": {"status": "success", "count": 0}},
@@ -365,7 +365,7 @@ def test_reconcile_stage_refuses_missing_redirect_map(conn, tmp_path, monkeypatc
     with pytest.raises(stages.StageOrderError, match="redirect"):
         stages.run_stage(
             conn,
-            "malaysia",
+            "malaysia-singapore-brunei",
             "reconcile",
             run_id="real",
             version="20260715T000000Z",
@@ -374,15 +374,15 @@ def test_reconcile_stage_refuses_missing_redirect_map(conn, tmp_path, monkeypatc
 
 def test_reconcile_stage_refuses_stale_redirect_map(conn, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    stages.run_stage(conn, "malaysia", "extract", run_id="real")
+    stages.run_stage(conn, "malaysia-singapore-brunei", "extract", run_id="real")
     store.record_extract_run_metadata(
         conn,
-        region="malaysia",
+        region="malaysia-singapore-brunei",
         run_id="real",
         wikidata_snapshot_date="2026-07-15T00:00:00Z",
         source_statuses={"wikidata": {"status": "success", "count": 0}},
     )
-    redirect_path = tmp_path / ".mt-data" / "malaysia" / "wikidata_redirects.snapshot.json"
+    redirect_path = tmp_path / ".mt-data" / "malaysia-singapore-brunei" / "wikidata_redirects.snapshot.json"
     redirect_path.parent.mkdir(parents=True)
     redirect_path.write_text(
         json.dumps(
@@ -400,10 +400,10 @@ def test_reconcile_stage_refuses_stale_redirect_map(conn, tmp_path, monkeypatch)
     with pytest.raises(stages.StageOrderError, match="redirect map"):
         stages.run_stage(
             conn,
-            "malaysia",
+            "malaysia-singapore-brunei",
             "reconcile",
             run_id="real",
             version="20260715T000000Z",
         )
 
-    assert not store.stage_completed(conn, "malaysia", "reconcile")
+    assert not store.stage_completed(conn, "malaysia-singapore-brunei", "reconcile")

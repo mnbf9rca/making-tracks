@@ -216,7 +216,7 @@ def test_emit_description_result_trims_by_tier_score_and_reports_drops(monkeypat
     )
 
     caplog.set_level("WARNING")
-    result = D.emit_description_result([low, high], region="uk")
+    result = D.emit_description_result([low, high], region="united-kingdom")
 
     assert result.dropped_count == 1
     payload = json.loads(result.artifacts[0].json_bytes)

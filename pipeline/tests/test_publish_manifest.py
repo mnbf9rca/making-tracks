@@ -36,7 +36,7 @@ def _basemap():
 
 def test_no_LLM_publish_still_gets_a_valid_manifest_with_score_provenance():
     man = M.assemble_manifest(
-        region="uk",
+        region="united-kingdom",
         publish_version="20260715T120000Z",
         generated_at="2026-07-15T12:00:00Z",
         tiles=_tiles(),
@@ -58,7 +58,7 @@ def test_no_LLM_publish_still_gets_a_valid_manifest_with_score_provenance():
 
 def test_attribution_bumps_min_reader_version():
     man = M.assemble_manifest(
-        region="uk",
+        region="united-kingdom",
         publish_version="20260715T120000Z",
         generated_at="2026-07-15T12:00:00Z",
         tiles=_tiles(),
@@ -80,7 +80,7 @@ def test_manifest_rejects_an_oversize_tile():
     bad = [{"x": 0, "y": 0, "sha256": "0" * 64, "bytes": 2 * 1024 * 1024}]
     with pytest.raises(M.ManifestInvalid):
         M.assemble_manifest(
-            region="uk",
+            region="united-kingdom",
             publish_version="20260715T120000Z",
             generated_at="2026-07-15T12:00:00Z",
             tiles=bad,

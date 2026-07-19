@@ -43,9 +43,12 @@ def test_strip_unsafe_text_matches_safe_text_regex_for_control_ranges():
 
 
 def test_region_config_accessors_load_valid_configs():
-    assert mt_contracts.available_regions() == ["malaysia", "uk"]
-    uk = mt_contracts.load_region_config("uk")
-    assert uk["region_id"] == "uk"
+    assert mt_contracts.available_regions() == [
+        "malaysia-singapore-brunei",
+        "united-kingdom",
+    ]
+    uk = mt_contracts.load_region_config("united-kingdom")
+    assert uk["region_id"] == "united-kingdom"
     assert set(uk) == {
         "schema_version",
         "region_id",
@@ -58,6 +61,12 @@ def test_region_config_accessors_load_valid_configs():
         "zone_allowlist",
         "basemap",
     }
+
+
+def test_legacy_region_config_ids_do_not_load():
+    for legacy in ("uk", "malaysia"):
+        with pytest.raises(FileNotFoundError):
+            mt_contracts.load_region_config(legacy)
 
 
 def test_load_region_config_rejects_traversal():

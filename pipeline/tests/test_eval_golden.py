@@ -337,7 +337,7 @@ def test_dump_area_reads_planned_a2_a3_a4_tables(conn):
     )
     store.replace_places(
         conn,
-        region="uk",
+        region="united-kingdom",
         places=[
             {
                 "place_id": A,
@@ -364,28 +364,28 @@ def test_dump_area_reads_planned_a2_a3_a4_tables(conn):
         INSERT INTO place_categories (place_id, region, category, run_id)
         VALUES (?, ?, ?, ?)
         """,
-        (A, "uk", "history", "cat1"),
+        (A, "united-kingdom", "history", "cat1"),
     )
     conn.execute(
         """
         INSERT INTO place_categories (place_id, region, category, run_id)
         VALUES (?, ?, ?, ?)
         """,
-        (B, "uk", "history", "cat1"),
+        (B, "united-kingdom", "history", "cat1"),
     )
     conn.execute(
         """
         INSERT INTO place_scores (place_id, region, tier, score, signals_json, run_id)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (A, "uk", 2, 0.8, json.dumps({"article": 0.8, "llm_curiosity": None}), "score1"),
+        (A, "united-kingdom", 2, 0.8, json.dumps({"article": 0.8, "llm_curiosity": None}), "score1"),
     )
     conn.execute(
         """
         INSERT INTO place_scores (place_id, region, tier, score, signals_json, run_id)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (B, "uk", 3, 0.9, json.dumps({"article": 0.9, "llm_curiosity": None}), "score1"),
+        (B, "united-kingdom", 3, 0.9, json.dumps({"article": 0.9, "llm_curiosity": None}), "score1"),
     )
 
     rows = G.dump_area(conn, "london", [-0.2, 51.5, -0.1, 51.6], data_version="run-1")
@@ -426,7 +426,7 @@ def test_dump_area_rejects_malformed_signals_json(conn):
     )
     store.replace_places(
         conn,
-        region="uk",
+        region="united-kingdom",
         places=[
             {
                 "place_id": A,
@@ -444,14 +444,14 @@ def test_dump_area_rejects_malformed_signals_json(conn):
         INSERT INTO place_categories (place_id, region, category, run_id)
         VALUES (?, ?, ?, ?)
         """,
-        (A, "uk", "history", "cat1"),
+        (A, "united-kingdom", "history", "cat1"),
     )
     conn.execute(
         """
         INSERT INTO place_scores (place_id, region, tier, score, signals_json, run_id)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (A, "uk", 2, 0.8, '["bad"]', "score1"),
+        (A, "united-kingdom", 2, 0.8, '["bad"]', "score1"),
     )
 
     with pytest.raises(ValueError, match="signals_json"):

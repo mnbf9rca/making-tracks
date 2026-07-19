@@ -11,7 +11,7 @@ def _write(path, data):
 
 
 def test_pack_descriptor_emits_sha_list_for_sidecars_and_optional_images(tmp_path):
-    staging = tmp_path / "uk" / "20260718T090000Z"
+    staging = tmp_path / "united-kingdom" / "20260718T090000Z"
     thumb_sha = hashlib.sha256(b"thumb").hexdigest()
     _write(staging / "descriptions/10/509/340.json", b'{"description":true}')
     _write(
@@ -28,7 +28,7 @@ def test_pack_descriptor_emits_sha_list_for_sidecars_and_optional_images(tmp_pat
     )
 
     validate_instance("pack-descriptor", descriptor)
-    assert descriptor["region"] == "uk"
+    assert descriptor["region"] == "united-kingdom"
     assert descriptor["publish_version"] == "20260718T090000Z"
     objects = {(obj["kind"], obj["path"]): obj for obj in descriptor["objects"]}
     desc = objects[("description_index", "descriptions/10/509/340.json")]
@@ -43,7 +43,7 @@ def test_pack_descriptor_emits_sha_list_for_sidecars_and_optional_images(tmp_pat
 
 
 def test_write_pack_descriptor_writes_deterministic_json(tmp_path):
-    staging = tmp_path / "uk" / "20260718T090000Z"
+    staging = tmp_path / "united-kingdom" / "20260718T090000Z"
     _write(staging / "descriptions/10/509/340.json", b"{}")
 
     path = pack_descriptor.write_pack_descriptor(
