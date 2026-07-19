@@ -86,6 +86,61 @@ final class MakingTracksTilesTests: XCTestCase {
         }
     }
 
+    func testHTTPFetcherBoundedFetchCancelsOversizedResponses() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RedirectURLProtocol.self]
+        let fetcher = HTTPTileFetcher(configuration: configuration)
+        RedirectURLProtocol.reset()
+        defer { RedirectURLProtocol.reset() }
+
+        RedirectURLProtocol.mode = .status(200, location: nil)
+        RedirectURLProtocol.responseHeaders = ["Content-Length": "6"]
+        RedirectURLProtocol.responseBody = Data("12345".utf8)
+        let declaredCancelled = CancellationProbe()
+        RedirectURLProtocol.onStopLoading = { _ in declaredCancelled.signal() }
+
+        do {
+            _ = try await fetcher.fetch(URL(string: "https://tiles.making-tracks.app/uk/current.json")!, maxBytes: 5)
+            XCTFail("declared oversized response unexpectedly succeeded")
+        } catch TileError.responseTooLarge {
+        } catch {
+            XCTFail("expected responseTooLarge, got \(error)")
+        }
+        let didCancelDeclaredOversize = await declaredCancelled.wait()
+        XCTAssertTrue(didCancelDeclaredOversize)
+
+        RedirectURLProtocol.reset()
+        RedirectURLProtocol.mode = .blockingDownload(routes: [:])
+        let streamedCancelled = CancellationProbe()
+        RedirectURLProtocol.onStopLoading = { _ in streamedCancelled.signal() }
+        let delegate = RedirectDelegate()
+        let streamedSession = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        defer { streamedSession.invalidateAndCancel() }
+        let streamedURL = URL(string: "https://tiles.making-tracks.app/uk/current.json")!
+        let streamedFetch = Task {
+            try await delegate.fetch(URLRequest(url: streamedURL), on: streamedSession, maxBytes: 5)
+        }
+        let streamedTask = try await waitForDataTask(in: streamedSession)
+        let response = HTTPURLResponse(url: streamedURL, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        let disposition = await withCheckedContinuation { continuation in
+            delegate.urlSession(streamedSession, dataTask: streamedTask, didReceive: response) { disposition in
+                continuation.resume(returning: disposition)
+            }
+        }
+        XCTAssertEqual(disposition, .allow)
+
+        delegate.urlSession(streamedSession, dataTask: streamedTask, didReceive: Data("123456".utf8))
+        do {
+            _ = try await throwingTaskValue(streamedFetch, timeoutNanoseconds: 1_000_000_000)
+            XCTFail("streaming oversized response unexpectedly succeeded")
+        } catch TileError.responseTooLarge {
+        } catch {
+            XCTFail("expected responseTooLarge, got \(error)")
+        }
+        let didCancelStreamedOversize = await streamedCancelled.wait()
+        XCTAssertTrue(didCancelStreamedOversize)
+    }
+
     func testManifestPinsCurrentAndExposesAttributionBasemapAndIntegrity() async throws {
         let fetcher = StubFetcher(routes: [
             "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
@@ -287,6 +342,7 @@ final class MakingTracksTilesTests: XCTestCase {
                         "creator": "Alice Example",
                         "license_code": "CC-BY-SA-4.0",
                         "license_name": "Creative Commons Attribution-ShareAlike 4.0",
+                        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
                     ]),
                 ]),
                 validImageEntry(["thumb_sha256": duplicateSHA]),
@@ -296,7 +352,80 @@ final class MakingTracksTilesTests: XCTestCase {
 
         XCTAssertEqual(images.map(\.placeID), ["mt1_00000000000000000000000000"])
         XCTAssertEqual(images.first?.thumbURL.absoluteString, "https://tiles.making-tracks.app/thumbs/aa/\(imageSHA).webp")
-        XCTAssertEqual(images.first?.attribution.displayText, "Alice Example / Creative Commons Attribution-ShareAlike 4.0 / Wikimedia Commons / modified")
+        XCTAssertEqual(images.first?.attribution.displayText, "Alice Example / Creative Commons Attribution-ShareAlike 4.0 / modified / https://creativecommons.org/licenses/by-sa/4.0/")
+    }
+
+    func testImageIndexDecoderAllowsCCBY21AndRejectsNCNDSuffixes() throws {
+        let imageSHA = String(repeating: "b", count: 64)
+        let images = try ImageIndexDecoder.decode(
+            jsonData(imageIndexObject(places: [
+                validImageEntry([
+                    "thumb_sha256": imageSHA,
+                    "attribution": validImageAttribution([
+                        "license_code": "CC-BY-2.1",
+                        "license_name": "Creative Commons Attribution 2.1",
+                        "license_url": "https://creativecommons.org/licenses/by/2.1/",
+                    ]),
+                ]),
+                validImageEntry([
+                    "place_id": "mt1_00000000000000000000000001",
+                    "attribution": validImageAttribution([
+                        "license_code": "CC-BY-SA-4.0-NC",
+                    ]),
+                ]),
+                validImageEntry([
+                    "place_id": "mt1_00000000000000000000000002",
+                    "attribution": validImageAttribution([
+                        "license_code": "CC-BY-3.0-ND",
+                    ]),
+                ]),
+                validImageEntry([
+                    "place_id": "mt1_00000000000000000000000003",
+                    "attribution": validImageAttribution([
+                        "license_code": "CC-BY-4.0-NCND",
+                    ]),
+                ]),
+            ])),
+            expected: TileCoordinate(z: 10, x: 511, y: 340)
+        )
+
+        XCTAssertEqual(images.map(\.placeID), ["mt1_00000000000000000000000000"])
+        XCTAssertEqual(images.first?.attribution.licenseCode, "CC-BY-2.1")
+    }
+
+    func testImageIndexDecoderRejectsLicenseURLMismatches() throws {
+        let images = try ImageIndexDecoder.decode(
+            jsonData(imageIndexObject(places: [
+                validImageEntry([
+                    "attribution": validImageAttribution([
+                        "license_code": "CC-BY-SA-4.0",
+                        "license_name": "Creative Commons Attribution-ShareAlike 4.0",
+                        "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                    ]),
+                ]),
+                validImageEntry([
+                    "place_id": "mt1_00000000000000000000000001",
+                    "attribution": validImageAttribution([
+                        "creator": NSNull(),
+                        "license_code": "PD",
+                        "license_name": "Public domain",
+                        "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                    ]),
+                ]),
+                validImageEntry([
+                    "place_id": "mt1_00000000000000000000000002",
+                    "attribution": validImageAttribution([
+                        "creator": NSNull(),
+                        "license_code": "CC0-1.0",
+                        "license_name": "Creative Commons Zero 1.0",
+                        "license_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+                    ]),
+                ]),
+            ])),
+            expected: TileCoordinate(z: 10, x: 511, y: 340)
+        )
+
+        XCTAssertTrue(images.isEmpty)
     }
 
     func testImageIndexDecoderDropsInvalidRowsButAllowsPublicDomainWithoutCreator() throws {
@@ -310,6 +439,7 @@ final class MakingTracksTilesTests: XCTestCase {
                         "creator": NSNull(),
                         "license_code": "PD",
                         "license_name": "Public domain",
+                        "license_url": "https://creativecommons.org/publicdomain/mark/1.0/",
                     ]),
                 ]),
                 validImageEntry([
@@ -331,7 +461,7 @@ final class MakingTracksTilesTests: XCTestCase {
 
         XCTAssertEqual(images.map(\.placeID), ["mt1_00000000000000000000000001"])
         XCTAssertNil(images.first?.attribution.creator)
-        XCTAssertEqual(images.first?.attribution.displayText, "Public domain / Wikimedia Commons / modified")
+        XCTAssertEqual(images.first?.attribution.displayText, "Public domain / modified / https://creativecommons.org/publicdomain/mark/1.0/")
 
         XCTAssertThrowsError(
             try ImageIndexDecoder.decode(
@@ -459,6 +589,40 @@ final class MakingTracksTilesTests: XCTestCase {
         let klImage = await client.placeImage(for: klID)
         XCTAssertNil(oldImage)
         XCTAssertNil(klImage)
+    }
+
+    func testTileClientImageChangesCanBeSubscribedAfterCardDismissal() async throws {
+        let londonID = "mt1_00000000000000000000000000"
+        let londonTile = try gzipJSON(tileObject(places: [validPlace(["place_id": londonID])]))
+        let londonSHA = sha256(londonTile)
+        let imageSHA = String(repeating: "f", count: 64)
+        let imageSidecarURL = "https://tiles.making-tracks.app/uk/20260716T155409Z/images/10/511/340.json"
+        let fetcher = DelayedSidecarFetcher(
+            delayedURL: imageSidecarURL,
+            routes: [
+                "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+                "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": manifestData(tileSHA: londonSHA, tileBytes: londonTile.count, attributionSources: []),
+                "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/511/340.json.gz": londonTile,
+                imageSidecarURL: jsonData(imageIndexObject(places: [validImageEntry(["thumb_sha256": imageSHA])])),
+            ]
+        )
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache())
+
+        var dismissedIterator = client.imageChanges.makeAsyncIterator()
+        let dismissedTask = Task { await dismissedIterator.next() }
+        dismissedTask.cancel()
+        _ = await dismissedTask.value
+
+        try await client.refreshPin()
+        _ = await client.places(
+            inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51),
+            zoom: 16
+        )
+        let reopenedTask = Task { await nextImageChange(from: client.imageChanges) }
+        await fetcher.releaseDelayedFetch()
+
+        let changed = try await taskValue(reopenedTask, timeoutNanoseconds: 1_000_000_000)
+        XCTAssertEqual(changed, [londonID])
     }
 
     func testTileClientDoesNotBlockPlacesOnSlowImageSidecar() async throws {
@@ -4973,6 +5137,157 @@ private func waitForPlaceImage(
         try await Task.sleep(nanoseconds: 50_000_000)
     }
     return nil
+}
+
+private func nextImageChange(from stream: AsyncStream<Set<String>>) async -> Set<String>? {
+    var iterator = stream.makeAsyncIterator()
+    return await iterator.next()
+}
+
+private func taskValue<T: Sendable>(
+    _ task: Task<T, Never>,
+    timeoutNanoseconds: UInt64
+) async throws -> T {
+    let race = AsyncRace<T>()
+    return try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { continuation in
+            race.setContinuation(continuation)
+            Task {
+                let value = await task.value
+                race.resume(.success(value))
+            }
+            Task {
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                task.cancel()
+                race.resume(.failure(TimeoutError()))
+            }
+        }
+    } onCancel: {
+        task.cancel()
+        race.resume(.failure(CancellationError()))
+    }
+}
+
+private func throwingTaskValue<T: Sendable>(
+    _ task: Task<T, Error>,
+    timeoutNanoseconds: UInt64
+) async throws -> T {
+    let race = AsyncRace<T>()
+    return try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { continuation in
+            race.setContinuation(continuation)
+            Task {
+                do {
+                    race.resume(.success(try await task.value))
+                } catch {
+                    race.resume(.failure(error))
+                }
+            }
+            Task {
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                task.cancel()
+                race.resume(.failure(TimeoutError()))
+            }
+        }
+    } onCancel: {
+        task.cancel()
+        race.resume(.failure(CancellationError()))
+    }
+}
+
+private final class AsyncRace<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T, Error>?
+    private var result: Result<T, Error>?
+
+    func setContinuation(_ continuation: CheckedContinuation<T, Error>) {
+        let result: Result<T, Error>? = lock.withLock {
+            if let result = self.result {
+                return result
+            }
+            self.continuation = continuation
+            return nil as Result<T, Error>?
+        }
+        if let result {
+            continuation.resume(with: result)
+        }
+    }
+
+    func resume(_ result: Result<T, Error>) {
+        let continuation = lock.withLock {
+            guard self.result == nil else { return nil as CheckedContinuation<T, Error>? }
+            self.result = result
+            let continuation = self.continuation
+            self.continuation = nil
+            return continuation
+        }
+        continuation?.resume(with: result)
+    }
+}
+
+private func waitForDataTask(
+    in session: URLSession,
+    timeoutNanoseconds: UInt64 = 1_000_000_000
+) async throws -> URLSessionDataTask {
+    try await withThrowingTaskGroup(of: URLSessionDataTask.self) { group in
+        group.addTask {
+            while !Task.isCancelled {
+                let tasks = await session.allTasks()
+                if let task = tasks.compactMap({ $0 as? URLSessionDataTask }).first {
+                    return task
+                }
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+            throw CancellationError()
+        }
+        group.addTask {
+            try await Task.sleep(nanoseconds: timeoutNanoseconds)
+            throw TimeoutError()
+        }
+        let task = try await group.next()!
+        group.cancelAll()
+        return task
+    }
+}
+
+private extension URLSession {
+    func allTasks() async -> [URLSessionTask] {
+        await withCheckedContinuation { continuation in
+            getAllTasks { tasks in
+                continuation.resume(returning: tasks)
+            }
+        }
+    }
+}
+
+private struct TimeoutError: Error {}
+
+private final class CancellationProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var didSignal = false
+
+    func signal() {
+        lock.withLock {
+            didSignal = true
+        }
+    }
+
+    func wait(timeoutNanoseconds: UInt64 = 1_000_000_000) async -> Bool {
+        let pollNanoseconds: UInt64 = 10_000_000
+        var elapsed: UInt64 = 0
+        while elapsed < timeoutNanoseconds {
+            if hasSignal {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: pollNanoseconds)
+            elapsed += pollNanoseconds
+        }
+        return hasSignal
+    }
+
+    private var hasSignal: Bool {
+        lock.withLock { didSignal }
+    }
 }
 
 private func temporaryOfflineRoot() -> URL {

@@ -657,43 +657,69 @@ final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDe
         didReceive response: URLResponse,
         completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void
     ) {
-        lock.withLock {
-            guard var state = dataTasks[dataTask.taskIdentifier] else { return }
+        let result = lock.withLock {
+            guard var state = dataTasks[dataTask.taskIdentifier] else {
+                return (
+                    disposition: URLSession.ResponseDisposition.cancel,
+                    continuation: nil as CheckedContinuation<(Data, URLResponse), Error>?
+                )
+            }
             if let maxBytes = state.maxBytes,
                response.expectedContentLength > Int64(maxBytes) {
-                state.terminalError = TileError.responseTooLarge
-                dataTasks[dataTask.taskIdentifier] = state
-                return
+                _ = dataTasks.removeValue(forKey: dataTask.taskIdentifier)
+                return (
+                    disposition: URLSession.ResponseDisposition.cancel,
+                    continuation: state.continuation
+                )
             }
             state.response = response
             dataTasks[dataTask.taskIdentifier] = state
+            return (
+                disposition: URLSession.ResponseDisposition.allow,
+                continuation: nil as CheckedContinuation<(Data, URLResponse), Error>?
+            )
         }
-        completionHandler(.allow)
+        if let continuation = result.continuation {
+            MakingTracksLog.resolution.error("fetch failed kind=\(dataTask.currentRequest?.url.map(MakingTracksLog.objectKind) ?? "unknown", privacy: .public) reason=\(MakingTracksLog.errorLabel(TileError.responseTooLarge), privacy: .public)")
+            continuation.resume(throwing: TileError.responseTooLarge)
+        }
+        completionHandler(result.disposition)
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         guard !data.isEmpty else { return }
         let result = lock.withLock {
             guard var state = dataTasks[dataTask.taskIdentifier] else {
-                return (handler: nil as (@Sendable () -> Void)?, didExceedLimit: false)
+                return (
+                    handler: nil as (@Sendable () -> Void)?,
+                    continuation: nil as CheckedContinuation<(Data, URLResponse), Error>?
+                )
             }
             guard state.terminalError == nil else {
-                return (handler: nil as (@Sendable () -> Void)?, didExceedLimit: false)
+                return (
+                    handler: nil as (@Sendable () -> Void)?,
+                    continuation: nil as CheckedContinuation<(Data, URLResponse), Error>?
+                )
             }
             let handler = state.didReportConnectivityAvailable ? nil : state.connectivityAvailable
             state.didReportConnectivityAvailable = true
             if let maxBytes = state.maxBytes,
                data.count > maxBytes - state.data.count {
-                state.terminalError = TileError.responseTooLarge
-                dataTasks[dataTask.taskIdentifier] = state
-                return (handler: handler, didExceedLimit: true)
+                _ = dataTasks.removeValue(forKey: dataTask.taskIdentifier)
+                return (handler: handler, continuation: state.continuation)
             }
             state.data.append(data)
             dataTasks[dataTask.taskIdentifier] = state
-            return (handler: handler, didExceedLimit: false)
+            return (
+                handler: handler,
+                continuation: nil as CheckedContinuation<(Data, URLResponse), Error>?
+            )
         }
-        if result.didExceedLimit {
+        if let continuation = result.continuation {
+            dataTask.cancel()
             result.handler?()
+            MakingTracksLog.resolution.error("fetch failed kind=\(dataTask.currentRequest?.url.map(MakingTracksLog.objectKind) ?? "unknown", privacy: .public) reason=\(MakingTracksLog.errorLabel(TileError.responseTooLarge), privacy: .public)")
+            continuation.resume(throwing: TileError.responseTooLarge)
             return
         }
         result.handler?()
@@ -1740,10 +1766,10 @@ public struct PlaceImageAttribution: Sendable, Equatable {
             parts.append(creator)
         }
         parts.append(licenseName)
-        parts.append("Wikimedia Commons")
         if modified {
             parts.append("modified")
         }
+        parts.append(licenseURL.absoluteString)
         return parts.joined(separator: " / ")
     }
 }
@@ -1773,7 +1799,11 @@ public struct PlaceImage: Sendable, Equatable {
     }
 
     public var thumbURL: URL {
-        try! trustedURL("thumbs/\(thumbSHA256.prefix(2))/\(thumbSHA256).webp")
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = HTTPTileFetcher.trustedHost
+        components.path = "/thumbs/\(thumbSHA256.prefix(2))/\(thumbSHA256).webp"
+        return components.url ?? URL(string: "https://\(HTTPTileFetcher.trustedHost)/thumbs/invalid/invalid.webp")!
     }
 }
 
@@ -1848,6 +1878,7 @@ public enum ImageIndexDecoder {
               let licenseName = object["license_name"] as? String,
               safeText(licenseName),
               let licenseURL = allowedURL(object["license_url"], hosts: ["creativecommons.org", "www.creativecommons.org"]),
+              isExpectedLicenseURL(licenseURL, for: licenseCode),
               let sourceURL = allowedURL(object["source_url"], hosts: ["commons.wikimedia.org"]),
               object["modified"] as? Bool == true
         else { return nil }
@@ -1892,7 +1923,42 @@ public enum ImageIndexDecoder {
         if ["PD", "PUBLIC DOMAIN", "PUBLIC-DOMAIN", "PDM-1.0", "CC0-1.0"].contains(upper) {
             return true
         }
-        return upper.matches("^CC-BY(-SA)?-(1\\.0|2\\.0|2\\.5|3\\.0|4\\.0)(-[A-Z]{2,8})?$")
+        guard !upper.contains("NC"), !upper.contains("ND") else { return false }
+        return upper.matches("^CC-BY(-SA)?-(1\\.0|2\\.0|2\\.1|2\\.5|3\\.0|4\\.0)(-[A-Z]{2,8})?$")
+    }
+
+    private static func isExpectedLicenseURL(_ url: URL, for code: String) -> Bool {
+        let path = url.path.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let upper = code.uppercased()
+        switch upper {
+        case "PD", "PUBLIC DOMAIN", "PUBLIC-DOMAIN", "PDM-1.0":
+            return path == "publicdomain/mark/1.0"
+        case "CC0-1.0":
+            return path == "publicdomain/zero/1.0"
+        default:
+            break
+        }
+
+        let prefix: String
+        let family: String
+        if upper.hasPrefix("CC-BY-SA-") {
+            prefix = "CC-BY-SA-"
+            family = "by-sa"
+        } else if upper.hasPrefix("CC-BY-") {
+            prefix = "CC-BY-"
+            family = "by"
+        } else {
+            return false
+        }
+
+        let suffix = String(upper.dropFirst(prefix.count)).lowercased()
+        let parts = suffix.split(separator: "-", maxSplits: 1).map(String.init)
+        guard let version = parts.first else { return false }
+        var expectedPath = "licenses/\(family)/\(version)"
+        if parts.count == 2 {
+            expectedPath += "/\(parts[1])"
+        }
+        return path == expectedPath
     }
 
     private static func requiresCreator(_ code: String) -> Bool {
@@ -2039,7 +2105,6 @@ public enum PlaceContentGuards {
         "place_id", "name", "lat", "lon", "category", "tier", "score", "source_refs",
         "alt_names", "blurb", "image_url", "wikipedia_title",
     ]
-    public static let allowedImageHosts: Set<String> = ["upload.wikimedia.org", "commons.wikimedia.org"]
     public static let sourceRefPattern = "^[a-z][a-z0-9_]*:[A-Za-z0-9][A-Za-z0-9._/-]*$"
 
     public static func isSafeText(_ text: String) -> Bool {
@@ -2048,10 +2113,6 @@ public enum PlaceContentGuards {
 
     public static func isSafeURLString(_ text: String) -> Bool {
         text.isSafeURLString
-    }
-
-    public static func isAllowedImageURL(_ url: URL) -> Bool {
-        url.scheme == "https" && allowedImageHosts.contains(url.host ?? "")
     }
 
     public static func isValidSourceRef(_ ref: String) -> Bool {
@@ -4917,6 +4978,35 @@ public enum TileFetchConcurrency {
     public static let maxConcurrent = 4
 }
 
+private final class AsyncBroadcaster<Element: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var nextID = 0
+    private var continuations: [Int: AsyncStream<Element>.Continuation] = [:]
+
+    func stream() -> AsyncStream<Element> {
+        AsyncStream { continuation in
+            let id = lock.withLock {
+                let id = nextID
+                nextID += 1
+                continuations[id] = continuation
+                return id
+            }
+            continuation.onTermination = { [weak self] _ in
+                self?.lock.withLock {
+                    self?.continuations[id] = nil
+                }
+            }
+        }
+    }
+
+    func yield(_ value: Element) {
+        let snapshot = lock.withLock { Array(continuations.values) }
+        for continuation in snapshot {
+            continuation.yield(value)
+        }
+    }
+}
+
 public actor TileClient {
     // Tunable: enough refs for open/recent card actions after panning, still a hard memory bound.
     private static let recentPlaceRefLimit = 128
@@ -4935,19 +5025,16 @@ public actor TileClient {
     private var viewportAttribution: [Attribution] = []
     private var viewportGeneration = 0
     private var imageLoadTask: Task<Void, Never>?
-    private let imageContinuation: AsyncStream<Set<String>>.Continuation
-    public nonisolated let imageChanges: AsyncStream<Set<String>>
+    private let imageChangeBroadcaster = AsyncBroadcaster<Set<String>>()
+    public nonisolated var imageChanges: AsyncStream<Set<String>> {
+        imageChangeBroadcaster.stream()
+    }
 
     public init(region: String, fetcher: TileFetching, cache: TileCache, offlineStore: OfflineRegionStore? = nil) {
         self.region = region
         self.fetcher = fetcher
         self.cache = cache
         self.offlineStore = offlineStore
-        var captured: AsyncStream<Set<String>>.Continuation?
-        imageChanges = AsyncStream<Set<String>> { continuation in
-            captured = continuation
-        }
-        imageContinuation = captured!
     }
 
     public func refreshPin() async throws {
@@ -5182,7 +5269,7 @@ public actor TileClient {
         loadedImages = imagesByPlace.filter { currentPlaceIDs.contains($0.key) }
         imageLoadTask = nil
         if !loadedImages.isEmpty {
-            imageContinuation.yield(Set(loadedImages.keys))
+            imageChangeBroadcaster.yield(Set(loadedImages.keys))
         }
     }
 
