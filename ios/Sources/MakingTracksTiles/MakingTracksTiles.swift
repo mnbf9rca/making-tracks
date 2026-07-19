@@ -22,6 +22,7 @@ public enum SchemaCompatibility: Sendable, Equatable {
 public enum VersionGate {
     public static let readerVersion = 2
     public static let readerSchemaVersion = 1
+    public static let regionIndexReaderSchemaVersion = 2
     public static let minSupportedSchemaVersion = 1
 
     public static func schema(readerMax: Int, dataVersion: Int, minSupported: Int) -> SchemaCompatibility {
@@ -54,6 +55,8 @@ public struct BBox: Sendable, Equatable {
         self.maxLat = maxLat
     }
 }
+
+private let regionIDPattern = "^[a-z][a-z0-9_-]{0,63}$"
 
 public struct TileCoordinate: Codable, Sendable, Hashable {
     public let z: Int
@@ -1328,7 +1331,7 @@ public struct Manifest: Codable, Sendable, Equatable {
             minSupported: VersionGate.minSupportedSchemaVersion
         ) == .ok else { throw TileError.invalidManifest }
         guard minReaderVersion >= 1,
-              region.matches("^[a-z][a-z0-9_]*$"),
+              region.matches(regionIDPattern),
               publishVersion.matches("^[0-9]{8}T[0-9]{6}Z$"),
               tileZ == 10,
               !tiles.isEmpty || counts.total == 0,
@@ -1466,7 +1469,7 @@ public final class ManifestClient: @unchecked Sendable {
 
     public func refresh() async -> ManifestPinResult {
         do {
-            guard region.matches("^[a-z][a-z0-9_]*$") else {
+            guard region.matches(regionIDPattern) else {
                 return ManifestPinResult(publish: nil, state: .unavailable)
             }
             let currentURL = try trustedURL("\(region)/current.json")
@@ -1817,7 +1820,7 @@ public struct RegionIndex: Sendable, Equatable {
         let allowed: Set<String> = ["schema_version", "min_reader_version", "generated_at", "regions"]
         guard Set(object.keys).isSubset(of: allowed),
               let schemaVersion = object["schema_version"] as? Int,
-              VersionGate.schema(readerMax: VersionGate.readerSchemaVersion, dataVersion: schemaVersion, minSupported: VersionGate.minSupportedSchemaVersion) == .ok,
+              VersionGate.schema(readerMax: VersionGate.regionIndexReaderSchemaVersion, dataVersion: schemaVersion, minSupported: VersionGate.minSupportedSchemaVersion) == .ok,
               let minReaderVersion = object["min_reader_version"] as? Int,
               minReaderVersion >= 1,
               VersionGate.reader(minReaderVersion: minReaderVersion, hasReadableCache: false) == .ok,
@@ -1852,7 +1855,7 @@ public struct RegionIndex: Sendable, Equatable {
         ]
         guard Set(object.keys).isSubset(of: allowed),
               let id = object["id"] as? String,
-              id.matches("^[a-z][a-z0-9_]{0,63}$"),
+              id.matches(regionIDPattern),
               let displayName = object["display_name"] as? String,
               (1...120).contains(displayName.scalarCount),
               displayName.isSafeText,
@@ -1869,7 +1872,7 @@ public struct RegionIndex: Sendable, Equatable {
         else { throw TileError.invalidRegionIndex }
         let parent: String?
         if let value = object["parent"] as? String {
-            guard value.matches("^[a-z][a-z0-9_]{0,63}$") else { throw TileError.invalidRegionIndex }
+            guard value.matches(regionIDPattern) else { throw TileError.invalidRegionIndex }
             parent = value
         } else if object.keys.contains("parent"), !(object["parent"] is NSNull) {
             throw TileError.invalidRegionIndex
@@ -2541,7 +2544,7 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
         progress: (@Sendable (OfflineRegionDownloadProgress) -> Void)? = nil
     ) async throws -> OfflineRegionDownloadResult {
         let startedAt = Date()
-        guard region.matches("^[a-z][a-z0-9_]{0,63}$") else {
+        guard region.matches(regionIDPattern) else {
             MakingTracksLog.downloads.error("region download rejected reason=invalid-region")
             throw TileError.invalidOfflinePack
         }
@@ -4187,7 +4190,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
     }
 
     private func isValidRegion(_ value: String) -> Bool {
-        value.matches("^[a-z][a-z0-9_]{0,63}$")
+        value.matches(regionIDPattern)
     }
 
     private func isValidPublishVersion(_ value: String) -> Bool {
@@ -4207,7 +4210,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
     }
 
     private func validatePublish(_ publish: PinnedPublish) throws {
-        guard publish.region.matches("^[a-z][a-z0-9_]*$"),
+        guard publish.region.matches(regionIDPattern),
               publish.publishVersion.matches("^[0-9]{8}T[0-9]{6}Z$"),
               publish.region == publish.manifest.region,
               publish.publishVersion == publish.manifest.publishVersion

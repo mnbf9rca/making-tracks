@@ -131,6 +131,12 @@ final class MakingTracksTilesTests: XCTestCase {
         var object = manifestObject(attributionSources: [])
         object["counts"] = ["total": -1, "by_tier": [1, 0, 0, 0], "extra": true]
         XCTAssertThrowsError(try Manifest.decode(jsonData(object)))
+
+        var futureManifest = manifestObject(attributionSources: [])
+        futureManifest["schema_version"] = 2
+        XCTAssertThrowsError(try Manifest.decode(jsonData(futureManifest))) {
+            XCTAssertEqual($0 as? TileError, .invalidManifest)
+        }
     }
 
     func testCodecVerifiesShaInflatesAndRejectsTamperingBombsAndTrailingGarbage() throws {
@@ -564,7 +570,8 @@ final class MakingTracksTilesTests: XCTestCase {
     func testRegionIndexAcceptsPublishVersionsAndBoundedFootprints() throws {
         let index = try RegionIndex.decode(jsonData(regionIndexObject()))
 
-        XCTAssertEqual(index.regions.map(\.id), ["uk"])
+        XCTAssertEqual(index.schemaVersion, 2)
+        XCTAssertEqual(index.regions.map(\.id), ["united-kingdom", "united-kingdom_london"])
         XCTAssertEqual(index.regions.first?.publishVersion, "20260716T155409Z")
         XCTAssertEqual(index.regions.first?.bbox, BBox(minLon: -8.65, minLat: 49.84, maxLon: 1.77, maxLat: 60.86))
         XCTAssertEqual(index.regions.first?.bytesWithThumbnails, 2_500_000)
@@ -4613,16 +4620,24 @@ private func twoTileManifestObject(
 
 private func regionIndexObject() -> [String: Any] {
     [
-        "schema_version": 1,
+        "schema_version": 2,
         "min_reader_version": 2,
         "generated_at": "2026-07-17T10:00:00Z",
-        "regions": [regionIndexEntry()],
+        "regions": [
+            regionIndexEntry(),
+            regionIndexEntry([
+                "id": "united-kingdom_london",
+                "display_name": "London",
+                "parent": "united-kingdom",
+                "bbox": [-0.5, 51.2, 0.3, 51.8],
+            ]),
+        ],
     ]
 }
 
 private func regionIndexEntry(_ overrides: [String: Any] = [:]) -> [String: Any] {
     var entry: [String: Any] = [
-        "id": "uk",
+        "id": "united-kingdom",
         "display_name": "United Kingdom",
         "parent": NSNull(),
         "bbox": [-8.65, 49.84, 1.77, 60.86],
