@@ -32,8 +32,10 @@ The non-negotiables are in [`docs/PRINCIPLES.md`](docs/PRINCIPLES.md) and that i
 
 The ones that bite most often, by their number there: `place_id` is forever (7), all source data is polluted until proven otherwise (10), everything crossing a boundary is versioned (11), the pipeline is deterministic (12), "interesting" is measured not asserted (13), privacy is structural (14–15). Beyond principle 15, any network write of user-derived data must also satisfy the unlinkability rules in the spec's §9. If a change could reassign or reformat shipped `place_id`s, stop and flag it rather than proceeding.
 
-Three engineering standards are not principles and live here:
+These operational rules are not in `PRINCIPLES.md` and live here:
 
+- **Untrusted input, concretely.** Principle 10 states the posture; in practice it means validate schemas, bound sizes, sanitize strings, https-only URLs — and never interpolate source content unescaped into shell, SQL, or LLM prompts.
+- **Determinism, concretely.** No wall-clock and no randomness in outputs, except via cached, versioned LLM calls.
 - **Constants that shape output are earned, not baked.** A threshold, weight, or cap that affects output quality or behaviour is either swept by the eval harness or flagged tunable in a comment — never a silent magic number the next person fears to touch.
 - **No silent long-running work.** Any process expected to run beyond ~30 seconds emits greppable progress: per-phase START/DONE lines with counts and durations, plus heartbeats (every ~10k records or 30s) with count/rate/elapsed. Detached runs always report their log path at launch. A human tailing the log must be able to answer "is it working and how far along?" at any moment.
 - **Test-first, with teeth.** Where a behaviour can be expressed as a test, write it first; the ID-stability and reconciliation invariants must have regression tests. A test has teeth only if neutering the code it guards makes it fail — verify that. A test that stays green when the implementation is broken, or that exercises a value/path the product never actually produces, is a false green. The worked checklist is [`docs/process/gate-lessons.md`](docs/process/gate-lessons.md).
@@ -157,26 +159,25 @@ Nothing is "done" on the author's say-so. **No CI workflow runs the test suite**
 
 Before you declare a plan complete, open a PR, or report a build finished:
 
-1. **Adversarial self-review by subagents.** If your harness can spawn subagents or workflows, you MUST run an adversarial review pass over your own output before declaring it complete: several independent critics with distinct lenses (spec fidelity; internal coherence; feasibility/correctness; security + untrusted-data posture per §5.5; test quality — do the tests actually pin the invariants?). Have findings cross-examined (a critic's claim must survive a genuine refutation attempt), fix what survives, and include a short review summary (findings raised / survived / fixed) in your completion message. The worked checklist for that pass — how to prove teeth, the traps that produce green-but-wrong, and what to verify on bridged native code — is [`docs/process/gate-lessons.md`](docs/process/gate-lessons.md).
+1. **Adversarial self-review by subagents.** If your harness can spawn subagents or workflows, you MUST run an adversarial review pass over your own output before declaring it complete: several independent critics with distinct lenses (spec fidelity; internal coherence; feasibility/correctness; security + untrusted-data posture per §5.5; test quality — do the tests actually pin the invariants?). Have findings cross-examined (a critic's claim must survive a genuine refutation attempt), fix what survives, and for every fix prove **teeth** — neutering the fix turns a test red — and include a short review summary (findings raised / survived / fixed) in your completion message. The worked checklist for that pass — how to prove teeth, the traps that produce green-but-wrong, and what to verify on bridged native code — is [`docs/process/gate-lessons.md`](docs/process/gate-lessons.md).
 2. **No subagent capability?** Then request the review explicitly: message fable on AMQ (kind: review_request) with the artifact path and wait for the response before declaring completion.
-3. **Builders additionally:** full test suite green is a precondition, not evidence of review. Paste the actual test output (counts, not adjectives) in the PR description. A PR whose description says "tests pass" without output is incomplete. Two build requirements on top:
-   - **For iOS app-target work, a one-time RELEASE-configuration build before any PR** — the Debug build and `swift test` do not exercise Release, so a Debug-only gate lets a Release-only break through (incidents → *Debug-only gate let a Release break through*). Run it under the fleet lock:
+3. **Builders additionally:** full test suite green is a precondition, not evidence of review. Paste the actual test output (counts, not adjectives) in the PR description. A PR whose description says "tests pass" without output is incomplete. One build requirement on top: **for iOS app-target work, a one-time RELEASE-configuration build before any PR** — the Debug build and `swift test` do not exercise Release, so a Debug-only gate lets a Release-only break through (incidents → *Debug-only gate let a Release break through*). Run it under the fleet lock:
 
-     ```bash
-     flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
-       UDID=C4A64D49-24A2-4429-B6E2-AD9A14142A99
-       xcrun simctl bootstatus "$UDID" -b
-       xcodebuild build \
-         -configuration Release \
-         -project ios/App/MakingTracks.xcodeproj \
-         -scheme MakingTracks \
-         -destination "platform=iOS Simulator,id=$UDID"
-     '
-     ```
-   - **Zero new warnings.** The app target sets warnings-as-errors (`ios/App/project.yml`, on the `ios` branch), so a warning fails the Release build outright. Treat a warning as a defect that has not been triggered yet.
-4. **Automated review comments are part of the gate.** Sourcery reviews a PR only when the `sourcery-review` label is applied — apply it yourself the moment you open the PR (`gh pr edit <n> --add-label sourcery-review`); an unlabelled PR is silently skipped, and absence of comments then means nothing. Before a PR is merge-eligible, its author processes every review comment — use the `pr-tools:process-review` skill where available, otherwise apply the same discipline manually: triage each comment with technical rigor (verify against plan/spec — neither performative agreement nor reflexive dismissal), fix-and-reply or rebut-with-evidence, and resolve the thread. **Nothing merges with unresolved review comments — and the automated review can take time to arrive, so its absence is not cleanliness.** A PR is merge-eligible only after the automated reviewer has actually posted its review (check the PR's reviews list for it) AND every resulting thread is resolved.
-5. **Greptile is explicit-spend only.** Greptile (`greptile-review` label) costs $1/review and is applied only on fable's explicit instruction: `develop`→`main` promotions, security-surface PRs, and escalations. Sourcery remains the default automated layer; never apply `greptile-review` by default.
-6. **Independent review still happens — and your self-review is unconditional.** The adversarial self-review (point 1) does not replace the design lead's review, and the automated bots (Sourcery/Greptile) never substitute for it: run your own critic pass regardless of which bot layers are configured or whether their credit is available. Those layers raise the floor; they are not the floor.
+   ```bash
+   flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
+     UDID=C4A64D49-24A2-4429-B6E2-AD9A14142A99
+     xcrun simctl bootstatus "$UDID" -b
+     xcodebuild build \
+       -configuration Release \
+       -project ios/App/MakingTracks.xcodeproj \
+       -scheme MakingTracks \
+       -destination "platform=iOS Simulator,id=$UDID"
+   '
+   ```
+4. **Zero new warnings, on any branch.** A clean build introduces no new warnings. A warning is a defect that has not been triggered yet. On the app target this is enforced — `ios/App/project.yml` (on the `ios` branch) sets warnings-as-errors, so a warning fails the Release build outright. Everywhere else it is on you.
+5. **Automated review comments are part of the gate.** Sourcery reviews a PR only when the `sourcery-review` label is applied — apply it yourself the moment you open the PR (`gh pr edit <n> --add-label sourcery-review`); an unlabelled PR is silently skipped, and absence of comments then means nothing. Before a PR is merge-eligible, its author processes every review comment — use the `pr-tools:process-review` skill where available, otherwise apply the same discipline manually: triage each comment with technical rigor (verify against plan/spec — neither performative agreement nor reflexive dismissal), fix-and-reply or rebut-with-evidence, and resolve the thread. **Nothing merges with unresolved review comments — and the automated review can take time to arrive, so its absence is not cleanliness.** A PR is merge-eligible only after the automated reviewer has actually posted its review (check the PR's reviews list for it) AND every resulting thread is resolved.
+6. **Greptile is explicit-spend only.** Greptile (`greptile-review` label) costs $1/review and is applied only on fable's explicit instruction: `develop`→`main` promotions, security-surface PRs, and escalations. Sourcery remains the default automated layer; never apply `greptile-review` by default.
+7. **Independent review still happens — and your self-review is unconditional.** The adversarial self-review (point 1) does not replace the design lead's review, and the automated bots (Sourcery/Greptile) never substitute for it: run your own critic pass regardless of which bot layers are configured or whether their credit is available. Those layers raise the floor; they are not the floor.
 
 **Threat-model discipline (the §5.5 security-posture hook).** Every security or privacy review finding — whether from the adversarial self-review (point 1) or a human/bot reviewer — must **cite a specific in-scope vector from [`docs/threat-model.md`](docs/threat-model.md)**, or **explicitly propose an amendment to that model**. A finding that names no vector, or that assumes an out-of-scope adversary (a compromised/jailbroken device, physical seizure, a nation-state, our own infra turning hostile, enterprise-MITM), is **rejected as overreach** — do not action it, and say why. The threat model's calibration tests (its §5) are the screening rubric; apply them mechanically. **Untrusted-data / content-validation findings** (defensive parsing, size caps, `SAFE_TEXT`, plain-text rendering, URL allowlists, no unescaped SQL/shell/LLM interpolation) cite the **hostile-upstream-content vector** (threat-model §2 / this §5.5 posture / PRINCIPLES 10) and are **always in scope** — never "overreach"; the overreach rule targets out-of-scope *adversaries*, not the handling of hostile content we publish. The model is not frozen: a genuine new vector is argued into `threat-model.md` (ratified as project policy, like `privacy.md`), never smuggled in as a one-off review comment. This governs the "security + untrusted-data posture per §5.5" lens in point 1.
 
@@ -184,17 +185,17 @@ The one standing exception: trivial mechanical changes (typo fixes, comment corr
 
 ## Finishing a branch (the pre-PR checklist)
 
-The running order. Each step is stated in full in the section it names — this is the index, not a second copy. Do each irreversible step (push, PR, merge) as its own action after reading the prior check's result.
+Before opening any PR, run this sequence top to bottom. Each step is stated in full in the section it names — this is the index, not a second copy. Do each irreversible step (push, PR, merge) as its own action after reading the prior check's result.
 
 1. **Re-ground on a fresh target** (Workflow). `git fetch origin <target>` (`<target>` = `develop`, or `ios` for app work), then `git merge-base --is-ancestor origin/<target> HEAD` must succeed. If it fails, merge the fresh target in as its own step and re-run your gates.
 2. **Adversarial gate** (Review gates, point 1). Record the accounting — raised / survived / fixed — for the PR description.
 3. **Full test gate under the fleet lock** (iOS Simulator runbook). Capture actual pass/fail counts.
 4. **Release-configuration build** for iOS app-target work, under the fleet lock (Review gates, point 3).
-5. **Zero new warnings** (Review gates, point 3).
+5. **Zero new warnings** (Review gates, point 4).
 6. **Stale-base diff review.** `git diff --stat origin/<target>..HEAD` (two-dot) must show **only your additions**. Deletions or edits to other agents' merged work mean your base is stale and you are about to clobber it — stop and re-ground (step 1).
 7. **Artifact cleanup** (Disk hygiene). No `.xcresult` bundles left; one reusable derived-data dir.
 8. **Push before requesting review** (Workflow). A review request against unpushed work is a no-op. Confirm the remote branch exists.
-9. **Open the PR** into `<target>` with labels applied immediately — `sourcery-review` (always) + the **track** label + the **wp** label — and cross-link the issue(s) it delivers in the body (Review gates, point 4; Reporting, issues and labels).
-10. **Process every review comment** (Review gates, point 4). Nothing merges with an unresolved thread.
+9. **Open the PR** into `<target>` with labels applied immediately — `sourcery-review` (always) + the **track** label + the **wp** label — and cross-link the issue(s) it delivers in the body (Review gates, point 5; Reporting, issues and labels).
+10. **Process every review comment** (Review gates, point 5). Nothing merges with an unresolved thread.
 11. **After merge, the merger (fable) closes delivered issues explicitly** and ticks the #25 tracker (Reporting, issues and labels).
-12. **Remove the worktree as the FINAL step, immediately after the PR merges** — verify the PR is merged and the local branch tip is included in the target, then `git worktree remove <path>` and delete the local branch. Keep it only if the PR is still open or the worktree holds uncommitted work (Worktree discipline; incidents → *Dead worktrees accumulated 25 G*).
+12. **Remove the worktree as the FINAL step, immediately after the PR merges** — `git worktree remove <path>` and delete the local branch. Do not leave it for a weekly sweep (Worktree discipline; incidents → *Dead worktrees accumulated 25 G*).
