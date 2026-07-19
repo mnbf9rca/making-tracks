@@ -40,6 +40,12 @@ Simulator-backed work uses the app project `ios/App/MakingTracks.xcodeproj`, sch
 the repo root. Every `xcodebuild` invocation against it — **build or test** — takes the lock, because a
 Release build contends for the same simulator, `testmanagerd` and derived-data state as a test run.
 
+⚠️ **Run these from an `ios`-based branch.** `develop`'s `ios/` tree lags `ios`: its `project.yml` carries
+neither warnings-as-errors nor the `MakingTracksTests` target. The commands below still *succeed* on a
+`develop`-based worktree, but they build a weaker project — a Release build that cannot fail on warnings, and
+a test run missing the app test target. A gate you believe you passed did not run. App work belongs on `ios`
+anyway (`AGENTS.md` → **iOS branch**); this is what goes wrong if it isn't.
+
 The `/ios` Swift package's host tests (`cd ios && swift test`) never touch CoreSimulator and must **not** take
 the lock.
 
