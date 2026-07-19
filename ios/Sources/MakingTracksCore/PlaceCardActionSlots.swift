@@ -71,9 +71,6 @@ public struct PlaceCardActionSlots: Sendable, Equatable {
         }
     }
 
-    public func renderedActions(showHiddenMode _: Bool) -> [PlaceCardAction] {
-        actions
-    }
 }
 
 public enum PlaceCardOverlayMetrics {

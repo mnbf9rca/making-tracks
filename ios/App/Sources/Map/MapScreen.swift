@@ -4500,7 +4500,7 @@ private struct PlaceCardSheet: View {
 
     @ViewBuilder
     private func actionBar(_ card: PlaceCardModel) -> some View {
-        let slots = PlaceCardActionSlots(pinState: card.pinState).renderedActions(showHiddenMode: showHiddenMode)
+        let slots = PlaceCardActionSlots(pinState: card.pinState).actions
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             : AnyLayout(HStackLayout(spacing: 10))

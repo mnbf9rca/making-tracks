@@ -44,10 +44,10 @@ final class PlaceCardActionSlotsTests: XCTestCase {
         )
     }
 
-    func testHiddenFallbackStillRendersThreeSlotsOutsideHiddenMode() {
+    func testHiddenFallbackStillKeepsThreeSlots() {
         let slots = PlaceCardActionSlots(pinState: PinState(saved: false, visit: .none, hidden: true))
 
-        XCTAssertEqual(slots.renderedActions(showHiddenMode: false), [.save, .seenDisabled, .unhide])
+        XCTAssertEqual(slots.actions, [.save, .seenDisabled, .unhide])
     }
 
     func testPlaceCardContentBottomPaddingClearsFadeAndActionBar() {

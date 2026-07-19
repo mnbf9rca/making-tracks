@@ -251,7 +251,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
-        openFixtureCard(in: map, app: app)
+        let openFixture = app.buttons["debug.open-fixture"]
+        XCTAssertTrue(openFixture.waitForExistence(timeout: 5))
+        openFixture.tap()
+        XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
 
         let saveButton = app.otherElements["place-card.action-bar"].buttons["place-card.save"]
         XCTAssertTrue(saveButton.waitForExistence(timeout: 5))
@@ -263,9 +266,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.buttons.matching(identifierPrefix: "list-picker.row.").firstMatch.waitForExistence(timeout: 5))
         app.buttons["list-picker.done"].tap()
 
+        let savedButton = app.otherElements["place-card.action-bar"].buttons["place-card.save"]
+        XCTAssertTrue(savedButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(savedButton.label, "Save")
         let listChips = element(identifier: "place-card.list-chips", in: app)
         XCTAssertTrue(listChips.waitForExistence(timeout: 5))
         XCTAssertTrue(listChips.label.contains("KL walk"))
+        XCTAssertFalse(listChips.label.contains("Want to go"))
         app.buttons["place-card.close"].tap()
 
         openAppMenu(in: app)
