@@ -129,22 +129,40 @@ public enum FeatureEncoding {
     }
 
     private static func trackArcCoordinates(from: TrackVisit, to: TrackVisit) -> [JSONValue] {
-        let dx = to.lon - from.lon
+        let rawDX = to.lon - from.lon
+        let wrapsAntimeridian = abs(rawDX) > 180.0
+        let dx = wrapsAntimeridian ? shortestLongitudeDelta(from: from.lon, to: to.lon) : rawDX
+        let renderedToLon = wrapsAntimeridian ? from.lon + dx : to.lon
         let dy = to.lat - from.lat
         let distance = max((dx * dx + dy * dy).squareRoot(), 0.000_001)
-        let midpointLon = (from.lon + to.lon) / 2
+        // Dateline crossings render in one wrapped world copy so MapLibre draws the short connector.
+        let midpointLon = wrapsAntimeridian ? from.lon + (dx / 2) : (from.lon + to.lon) / 2
         let midpointLat = (from.lat + to.lat) / 2
         let normalLon = -dy / distance
         let normalLat = dx / distance
         let offset = distance * TrackLayers.arcBendRatio
+        let bentMidpointLon = midpointLon + normalLon * offset
+        let renderedMidpointLon = wrapsAntimeridian
+            ? bentMidpointLon
+            : clamped(bentMidpointLon, to: -180.0...180.0)
         return [
             coordinate(lon: from.lon, lat: from.lat),
             coordinate(
-                lon: clamped(midpointLon + normalLon * offset, to: -180.0...180.0),
+                lon: renderedMidpointLon,
                 lat: clamped(midpointLat + normalLat * offset, to: -90.0...90.0)
             ),
-            coordinate(lon: to.lon, lat: to.lat),
+            coordinate(lon: renderedToLon, lat: to.lat),
         ]
+    }
+
+    private static func shortestLongitudeDelta(from: Double, to: Double) -> Double {
+        var delta = to - from
+        if delta > 180.0 {
+            delta -= 360.0
+        } else if delta < -180.0 {
+            delta += 360.0
+        }
+        return delta
     }
 
     private static func clamped(_ value: Double, to range: ClosedRange<Double>) -> Double {
