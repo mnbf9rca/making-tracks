@@ -117,6 +117,29 @@ def test_wikidata_tag_rides_in_props_as_the_a2_join_key(tmp_path):
     assert props["historic"] == "memorial"
 
 
+def test_osm_name_translation_tags_ride_in_bounded_props_for_search_index(tmp_path):
+    path = tmp_path / "names.osm"
+    path.write_text(
+        _osm(
+            '<node id="1" lat="1" lon="1" version="1">'
+            '<tag k="historic" v="castle"/><tag k="name" v="Fort"/>'
+            '<tag k="name:ms" v="Kota Lama"/>'
+            '<tag k="name:zh" v="古堡"/>'
+            '<tag k="alt_name" v="Benteng Lama; Old Fort"/>'
+            '<tag k="int_name" v="International Fort"/></node>'
+        )
+    )
+    conn = _db(tmp_path / "names")
+
+    assert osm.OsmExtractor(CFG).extract("united-kingdom", path, conn, run_id="r1") == 1
+    props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
+
+    assert props["name:ms"] == "Kota Lama"
+    assert props["name:zh"] == "古堡"
+    assert props["alt_name"] == "Benteng Lama; Old Fort"
+    assert props["int_name"] == "International Fort"
+
+
 def test_binary_pbf_parity_with_xml(tmp_path):
     import osmium
 

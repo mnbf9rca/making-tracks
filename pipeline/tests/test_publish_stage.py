@@ -5,6 +5,7 @@ import json
 import pytest
 
 from mt_contracts.registry import RegistryRecord
+from mt_contracts.search import shard_key_for_token
 
 from mt_pipeline import source_record, stages, store
 from mt_pipeline.publish import basemap
@@ -76,6 +77,9 @@ def test_publish_stage_builds_local_staging_and_marks_shipped(
     assert result.counts.total_published == 1
     assert result.counts.uncategorized_excluded == 1
     assert (result.staging_dir / "tiles/10").exists()
+    tile_files = sorted(result.staging_dir.glob("tiles/10/*/*.json.gz"))
+    tile_payload = json.loads(gzip.decompress(tile_files[0].read_bytes()))
+    assert "blurb" not in tile_payload["places"][0]
     registry_ops = [
         op for op in result.publish_result.plan.ops if op.kind == "registry"
     ]
@@ -88,6 +92,108 @@ def test_publish_stage_builds_local_staging_and_marks_shipped(
     assert shipped[A].first_shipped_version == "20260701T000000Z"
     assert shipped[A].last_seen_version == "20260701T000000Z"
     assert shipped[B].last_seen_version == "20260701T000000Z"
+
+
+def test_publish_stage_emits_search_indexes_from_shipped_places_and_alt_names(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    conn.execute(
+        "UPDATE source_records SET props_json = ? WHERE source_ref = ?",
+        (
+            json.dumps(
+                {
+                    "historic": "fort",
+                    "name:ms": "Kota Lama",
+                    "alt_name": "Benteng Lama; Old Fort",
+                    "int_name": "Fort International",
+                    "name:zh": "古堡",
+                },
+                sort_keys=True,
+                ensure_ascii=False,
+            ),
+            "osm:node/100",
+        ),
+    )
+    conn.commit()
+    _write_malaysia_registry(tmp_path)
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename=f'{region_config["region_id"]}.pmtiles',
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    result = P.run(
+        conn,
+        "malaysia-singapore-brunei",
+        publish_version="20260719T100000Z",
+        generated_at="2026-07-19T10:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+    )
+
+    full_paths = sorted(result.staging_dir.glob("search/full/*.json"))
+    cjk_shard = shard_key_for_token("古堡")
+    assert {path.name for path in full_paths} == {
+        "be.json",
+        "fo.json",
+        "in.json",
+        "ko.json",
+        "la.json",
+        "ol.json",
+        f"{cjk_shard}.json",
+    }
+    full_indexes = {path.stem: json.loads(path.read_text()) for path in full_paths}
+    full_index = full_indexes["fo"]
+    assert full_index["index_kind"] == "full"
+    assert full_index["shard_key"] == "fo"
+    for payload in full_indexes.values():
+        assert [entry["place_id"] for entry in payload["entries"]] == [A]
+    assert full_index["entries"][0]["alt_names"] == [
+        "Benteng Lama",
+        "Fort International",
+        "Kota Lama",
+        "Old Fort",
+        "古堡",
+    ]
+    assert {"fort", "kota", "lama", "古堡"} <= set(full_index["entries"][0]["tokens"])
+
+    compact = json.loads((result.staging_dir / "search/compact.json").read_text())
+    assert compact["index_kind"] == "compact"
+    assert compact["shard_key"] is None
+    assert [entry["place_id"] for entry in compact["entries"]] == [A]
+
+    descriptor = json.loads((result.staging_dir / "pack-descriptor.json").read_text())
+    descriptor_objects = {(obj["kind"], obj["path"]) for obj in descriptor["objects"]}
+    assert {
+        path for kind, path in descriptor_objects if kind == "search_index"
+    } == {f"search/full/{path.name}" for path in full_paths}
+    assert ("search_index", "search/compact.json") not in descriptor_objects
+
+    region_entry = result.region_index["regions"][0]
+    compact_meta = region_entry["search_compact"]
+    assert compact_meta["path"] == (
+        "malaysia-singapore-brunei/20260719T100000Z/search/compact.json"
+    )
+    assert compact_meta["bytes"] == (result.staging_dir / "search/compact.json").stat().st_size
+    assert compact_meta["sha256"] == hashlib.sha256(
+        (result.staging_dir / "search/compact.json").read_bytes()
+    ).hexdigest()
+    assert result.search_index_bytes == sum(path.stat().st_size for path in full_paths)
+    assert result.search_compact_bytes == compact_meta["bytes"]
+    assert region_entry["bytes_without_thumbs"] >= result.search_index_bytes
+
+    op_kinds = {op.kind for op in result.publish_result.plan.ops}
+    assert {"search_index", "search_compact"} <= op_kinds
 
 
 def test_publish_stage_emits_zone_catalog_proposal_and_pruned_catalog(
@@ -729,6 +835,9 @@ def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extract
     assert len(desc_files) == 1
     tile_files = sorted(result.staging_dir.glob("tiles/10/*/*.json.gz"))
     tile_payload = json.loads(gzip.decompress(tile_files[0].read_bytes()))
+    assert tile_payload["places"][0]["blurb"] == (
+        "Kellie's Castle ialah sebuah bangunan bersejarah di Perak."
+    )
     assert "excerpt" not in tile_payload["places"][0]
     assert "source_url" not in tile_payload["places"][0]
     assert "wikipedia_lang" not in tile_payload["places"][0]
@@ -752,6 +861,7 @@ def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extract
         int(result.manifest["basemap"]["bytes"])
         + tile_bytes
         + result.description_index_bytes
+        + result.search_index_bytes
     )
     assert any(attr["source"] == "wikipedia" for attr in result.manifest["attribution"])
     description_ops = [

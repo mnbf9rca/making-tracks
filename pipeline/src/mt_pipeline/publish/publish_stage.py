@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import pathlib
+import hashlib
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -17,7 +18,7 @@ from mt_pipeline import config, progress, runtime_paths
 from mt_pipeline.reconcile.registry_file import LocalRegistryStore
 from mt_pipeline.score import score_stage
 
-from . import attribution, basemap, descriptions, images, manifest, r2, staging, tiles, zone_catalog
+from . import attribution, basemap, descriptions, images, manifest, r2, search_index, staging, tiles, zone_catalog
 
 _PIPELINE_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _A1D_SOURCES = _PIPELINE_ROOT / "config" / "a1d_sources.json"
@@ -42,6 +43,8 @@ class PublishedTargetResult:
     image_index_bytes: int = 0
     description_index_bytes: int = 0
     description_index_dropped: int = 0
+    search_index_bytes: int = 0
+    search_compact_bytes: int = 0
     thumb_bytes: int = 0
 
 
@@ -84,6 +87,12 @@ def run(
     _assert_db_inputs(conn, region)
     joined = _joined_places(conn, region)
     _assert_registry_covers_live_inputs(registry_records, joined, registry_path, region)
+    source_description_rows = descriptions.source_rows_from_db(conn, region)
+    joined_descriptions = descriptions.descriptions_from_source_records(
+        joined,
+        source_description_rows,
+    )
+    joined = _with_inline_blurbs(joined, joined_descriptions)
     tile_arts, counts = tiles.emit_tiles(joined, registry_records, region=region)
     shipped_places = _places_from_tiles(tile_arts)
     shipped_ids = {place["place_id"] for place in shipped_places}
@@ -107,7 +116,11 @@ def run(
         no_image_fetch=no_image_fetch,
     )
     place_images_by_id = {item.place_id: item for item in place_images}
-    source_description_rows = descriptions.source_rows_from_db(conn, region)
+    source_search_rows = search_index.source_rows_from_db(
+        conn,
+        region,
+        _source_refs_from_places(shipped_places),
+    )
     updated_registry = None
     registry_blob = None
     if shipped_ids:
@@ -136,6 +149,7 @@ def run(
         registry_blob=registry_blob,
         place_images_by_id=place_images_by_id,
         source_description_rows=source_description_rows,
+        source_search_rows=source_search_rows,
         conn=conn,
         no_zone_catalog=no_zone_catalog,
     )
@@ -162,6 +176,7 @@ def run(
             registry_blob=None,
             place_images_by_id=place_images_by_id,
             source_description_rows=source_description_rows,
+            source_search_rows=source_search_rows,
             subregion=subregion,
             no_zone_catalog=no_zone_catalog,
         )
@@ -217,6 +232,8 @@ def run(
         image_index_bytes=parent_result.image_index_bytes,
         description_index_bytes=parent_result.description_index_bytes,
         description_index_dropped=parent_result.description_index_dropped,
+        search_index_bytes=parent_result.search_index_bytes,
+        search_compact_bytes=parent_result.search_compact_bytes,
         thumb_bytes=parent_result.thumb_bytes,
         subregion_results=tuple(subregion_results),
         region_index=region_index_obj,
@@ -336,6 +353,27 @@ def _places_from_tiles(tile_arts) -> list[dict[str, Any]]:
     return out
 
 
+def _with_inline_blurbs(
+    places: list[dict[str, Any]],
+    place_descriptions: list[descriptions.PlaceDescription],
+) -> list[dict[str, Any]]:
+    by_id = {desc.place_id: desc.excerpt for desc in place_descriptions}
+    out: list[dict[str, Any]] = []
+    for place in places:
+        blurb = by_id.get(str(place["place_id"]))
+        out.append({**place, "blurb": blurb} if blurb else dict(place))
+    return out
+
+
+def _source_refs_from_places(places) -> set[str]:
+    refs: set[str] = set()
+    for place in places:
+        for ref in place.get("source_refs", []):
+            if isinstance(ref, str):
+                refs.add(ref)
+    return refs
+
+
 def _publish_target(
     *,
     region_config: config.RegionConfig,
@@ -352,6 +390,7 @@ def _publish_target(
     registry_blob: bytes | None,
     place_images_by_id: dict[str, images.PlaceImage],
     source_description_rows: list[dict[str, Any]],
+    source_search_rows: dict[str, dict[str, Any]],
     subregion: config.SubregionConfig | None = None,
     conn=None,
     no_zone_catalog: bool = False,
@@ -384,6 +423,13 @@ def _publish_target(
         region=target_region,
     )
     description_index_arts = description_result.artifacts
+    search_result = search_index.emit_search_indexes(
+        shipped_places,
+        source_props_by_ref=source_search_rows,
+        region=target_region,
+        publish_version=publish_version,
+        generated_at=generated_at,
+    )
     manifest_obj = manifest.assemble_manifest(
         region=target_region,
         publish_version=publish_version,
@@ -405,6 +451,8 @@ def _publish_target(
         tile_arts=tile_arts,
         image_index_arts=image_index_arts,
         description_index_arts=description_index_arts,
+        search_index_arts=search_result.full_artifacts,
+        search_compact_art=search_result.compact_artifact,
         thumb_arts=thumb_arts,
         manifest_obj=manifest_obj,
         basemap_path=basemap_path,
@@ -452,6 +500,8 @@ def _publish_target(
         image_index_bytes=sum(art.byte_len for art in image_index_arts),
         description_index_bytes=sum(art.byte_len for art in description_index_arts),
         description_index_dropped=description_result.dropped_count,
+        search_index_bytes=sum(art.byte_len for art in search_result.full_artifacts),
+        search_compact_bytes=search_result.compact_artifact.byte_len,
         thumb_bytes=sum(art.byte_len for art in thumb_arts),
     )
 
@@ -552,7 +602,12 @@ def _region_index(
         # Region-pack bytes without thumbnails include core map payloads plus
         # description text sidecars. Image indexes stay with thumbnail payloads
         # because they are only useful when thumbnails are present.
-        bytes_without_thumbs = basemap_bytes + tile_bytes + target.description_index_bytes
+        bytes_without_thumbs = (
+            basemap_bytes
+            + tile_bytes
+            + target.description_index_bytes
+            + target.search_index_bytes
+        )
         bytes_with_thumbs = (
             bytes_without_thumbs + target.image_index_bytes + target.thumb_bytes
         )
@@ -563,6 +618,7 @@ def _region_index(
                 "parent": parents.get(region),
                 "bbox": list(manifest_obj["basemap"]["bbox"]),
                 "publish_version": manifest_obj["publish_version"],
+                "search_compact": _search_compact_entry(target),
                 "basemap_bytes": basemap_bytes,
                 "tile_count": len(manifest_obj["tiles"]),
                 "bytes_without_thumbs": bytes_without_thumbs,
@@ -575,6 +631,24 @@ def _region_index(
         "generated_at": generated_at,
         "regions": entries,
     }
+
+
+def _search_compact_entry(target: PublishedTargetResult) -> dict[str, Any]:
+    path = target.staging_dir / "search" / "compact.json"
+    return {
+        "path": path.relative_to(target.staging_dir.parent.parent).as_posix(),
+        "sha256": _sha256_file(path),
+        "bytes": path.stat().st_size,
+        "schema_version": SCHEMA_VERSIONS["search_index"],
+    }
+
+
+def _sha256_file(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with pathlib.Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _load_registry(

@@ -31,6 +31,8 @@ _PUBLIC_KINDS = {
     "basemap",
     "zone_catalog",
     "zone_catalog_proposal",
+    "search_index",
+    "search_compact",
     "pack_descriptor",
     "manifest",
     "current",
@@ -124,6 +126,8 @@ class PublishPlan:
         basemap: bool,
         image_index_arts: Iterable[Any] = (),
         description_index_arts: Iterable[Any] = (),
+        search_index_arts: Iterable[Any] = (),
+        search_compact_art: Any | None = None,
         thumb_arts: Iterable[Any] = (),
         registry_blob: Any | None = None,
         cache_blob: Any | None = None,
@@ -162,6 +166,24 @@ class PublishPlan:
                         f"{DESCRIPTION_TILE_ZOOM}/{desc.x}/{desc.y}.json"
                     ),
                     body=getattr(desc, "json_bytes", None),
+                )
+            )
+        for search in sorted(search_index_arts, key=lambda art: str(art.shard_key)):
+            ops.append(
+                PublishOp(
+                    kind="search_index",
+                    bucket=public,
+                    key=f"{region}/{publish_version}/search/full/{search.shard_key}.json",
+                    body=getattr(search, "json_bytes", None),
+                )
+            )
+        if search_compact_art is not None:
+            ops.append(
+                PublishOp(
+                    kind="search_compact",
+                    bucket=public,
+                    key=f"{region}/{publish_version}/search/compact.json",
+                    body=getattr(search_compact_art, "json_bytes", None),
                 )
             )
         for tile in sorted(tile_arts, key=lambda art: (art.x, art.y)):
@@ -364,6 +386,8 @@ def publish_prepared_to_r2(
                 "basemap",
                 "zone_catalog_proposal",
                 "zone_catalog",
+                "search_index",
+                "search_compact",
                 "pack_descriptor",
                 "manifest",
             }
@@ -503,6 +527,8 @@ def _is_immutable_public_object(op: PublishOp) -> bool:
         "basemap",
         "zone_catalog_proposal",
         "zone_catalog",
+        "search_index",
+        "search_compact",
         "pack_descriptor",
         "manifest",
     }
@@ -552,6 +578,7 @@ def _plan_from_staging(
         tile_ops,
         basemap_op,
         zone_catalog_ops,
+        search_ops,
         pack_descriptor_op,
         manifest_op,
     ) = _ops_from_staging(
@@ -564,6 +591,7 @@ def _plan_from_staging(
         *tile_ops,
         basemap_op,
         *zone_catalog_ops,
+        *search_ops,
         pack_descriptor_op,
         manifest_op,
         _current_op(layout, region, publish_version),
@@ -636,6 +664,10 @@ def _merge_region_indexes(
         for entry in existing.get("regions", [])
         if not _is_legacy_region_id(str(entry["id"]))
         and not _is_legacy_region_id(str(entry.get("parent") or ""))
+        and (
+            int(new_index["schema_version"]) < 3
+            or "search_compact" in entry
+        )
     }
     for entry in new_index["regions"]:
         by_id[str(entry["id"])] = dict(entry)
@@ -654,12 +686,13 @@ def _validate_existing_region_index_for_merge(existing: Mapping[str, Any]) -> di
     current_version = SCHEMA_VERSIONS["region_index"]
     if int(existing.get("schema_version", 0)) == current_version:
         normalised = dict(existing)
-    elif int(existing.get("schema_version", 0)) == 1:
+        validate_region_index(normalised)
+        return normalised
+    elif int(existing.get("schema_version", 0)) in {1, 2}:
         normalised = dict(existing)
         normalised["schema_version"] = current_version
     else:
         normalised = dict(existing)
-    validate_region_index(normalised)
     return normalised
 
 
@@ -698,6 +731,7 @@ def _ops_from_staging(
     list[PublishOp],
     list[PublishOp],
     PublishOp,
+    list[PublishOp],
     list[PublishOp],
     PublishOp,
     PublishOp,
@@ -767,6 +801,25 @@ def _ops_from_staging(
                 source_path=catalog,
             )
         )
+    search_ops = [
+        PublishOp(
+            kind="search_index",
+            bucket=public,
+            key=f"{region}/{publish_version}/search/full/{path.stem}.json",
+            source_path=path,
+        )
+        for path in sorted((staging / "search/full").glob("*.json"))
+    ]
+    compact = staging / "search" / "compact.json"
+    if compact.exists():
+        search_ops.append(
+            PublishOp(
+                kind="search_compact",
+                bucket=public,
+                key=f"{region}/{publish_version}/search/compact.json",
+                source_path=compact,
+            )
+        )
     pack_descriptor = staging / "pack-descriptor.json"
     manifest = staging / "manifest.json"
     return (
@@ -776,6 +829,7 @@ def _ops_from_staging(
         tile_ops,
         PublishOp(kind="basemap", bucket=public, key=f"{region}/{publish_version}/{region}.pmtiles", source_path=basemap),
         zone_catalog_ops,
+        search_ops,
         PublishOp(kind="pack_descriptor", bucket=public, key=f"{region}/{publish_version}/pack-descriptor.json", source_path=pack_descriptor),
         PublishOp(kind="manifest", bucket=public, key=f"{region}/{publish_version}/manifest.json", source_path=manifest),
     )

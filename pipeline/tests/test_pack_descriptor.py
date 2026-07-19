@@ -20,7 +20,8 @@ def test_pack_descriptor_emits_sha_list_for_sidecars_and_optional_images(tmp_pat
     )
     _write(tmp_path / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp", b"thumb")
     _write(tmp_path / "thumbs/bb/" / ("b" * 64 + ".webp"), b"stale")
-    _write(staging / "search/index.json", b'{"search":true}')
+    _write(staging / "search/full/ke.json", b'{"search":true}')
+    _write(staging / "search/compact.json", b'{"compact":true}')
 
     descriptor = pack_descriptor.assemble_from_staging(
         staging,
@@ -39,7 +40,8 @@ def test_pack_descriptor_emits_sha_list_for_sidecars_and_optional_images(tmp_pat
     thumb = objects[("image_thumb", f"thumbs/{thumb_sha[:2]}/{thumb_sha}.webp")]
     assert thumb["bytes"] == 5
     assert ("image_thumb", "thumbs/bb/" + "b" * 64 + ".webp") not in objects
-    assert objects[("search_index", "search/index.json")]["optional"] is False
+    assert objects[("search_index", "search/full/ke.json")]["optional"] is False
+    assert ("search_index", "search/compact.json") not in objects
 
 
 def test_write_pack_descriptor_writes_deterministic_json(tmp_path):

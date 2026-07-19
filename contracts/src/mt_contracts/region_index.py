@@ -29,6 +29,13 @@ def validate_region_index(instance: Mapping[str, Any]) -> None:
         bbox = [float(value) for value in entry["bbox"]]
         if bbox[0] > bbox[2] or bbox[1] > bbox[3]:
             raise RegionIndexInvalid(f"invalid bbox ordering for region {region_id}")
+        compact = entry.get("search_compact")
+        if compact is not None:
+            expected = f"{region_id}/{entry['publish_version']}/search/compact.json"
+            if compact.get("path") != expected:
+                raise RegionIndexInvalid(
+                    f"search_compact path does not match region publish version for {region_id}"
+                )
 
     for entry in regions:
         parent = entry["parent"]

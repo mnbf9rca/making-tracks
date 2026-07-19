@@ -25,12 +25,26 @@ def _valid_pack_descriptor():
                 "schema_version": 1,
                 "optional": True,
             },
+            {
+                "kind": "search_index",
+                "path": "search/full/ke.json",
+                "sha256": "b" * 64,
+                "bytes": 2345,
+                "schema_version": 1,
+                "optional": False,
+            },
         ],
     }
 
 
 def test_pack_descriptor_contract_lists_non_manifest_pack_objects():
     validate_instance("pack-descriptor", _valid_pack_descriptor())
+
+
+def test_pack_descriptor_accepts_deep_search_split_path():
+    inst = _valid_pack_descriptor()
+    inst["objects"][2]["path"] = "search/full/st_a_h1_h8_hb_hd_he.json"
+    validate_instance("pack-descriptor", inst)
 
 
 def test_pack_descriptor_rejects_traversal_paths():

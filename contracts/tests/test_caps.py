@@ -19,6 +19,7 @@ def test_schema_literals_match_caps_via_map():
     code_only_caps = {
         "CAPS_VERSION",
         "MAX_DESCRIPTION_INDEX_BYTES",
+        "MAX_SEARCH_INDEX_BYTES",
         "MAX_TILE_UNCOMPRESSED_BYTES",
     }
     for name in dir(caps):

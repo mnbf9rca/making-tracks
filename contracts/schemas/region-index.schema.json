@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://contracts.making-tracks.app/region-index/2",
+  "$id": "https://contracts.making-tracks.app/region-index/3",
   "title": "RegionIndex",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "min_reader_version", "generated_at", "regions"],
   "properties": {
-    "schema_version": {"type": "integer", "const": 2},
+    "schema_version": {"type": "integer", "const": 3},
     "min_reader_version": {"type": "integer", "minimum": 1, "maximum": 999},
     "generated_at": {"type": "string", "format": "date-time", "maxLength": 32},
     "regions": {
@@ -22,6 +22,7 @@
           "parent",
           "bbox",
           "publish_version",
+          "search_compact",
           "basemap_bytes",
           "tile_count",
           "bytes_without_thumbs",
@@ -48,6 +49,17 @@
             ]
           },
           "publish_version": {"type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z$"},
+          "search_compact": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256", "bytes", "schema_version"],
+            "properties": {
+              "path": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+/search/compact\\.json$"},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "bytes": {"type": "integer", "minimum": 0, "maximum": 3221225472},
+              "schema_version": {"type": "integer", "minimum": 1, "maximum": 100}
+            }
+          },
           "basemap_bytes": {"type": "integer", "minimum": 0, "maximum": 3221225472},
           "tile_count": {"type": "integer", "minimum": 0, "maximum": 1048576},
           "bytes_without_thumbs": {"type": "integer", "minimum": 0, "maximum": 3221225472},
