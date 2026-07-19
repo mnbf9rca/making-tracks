@@ -67,7 +67,7 @@ Simulator-backed `xcodebuild` runs are shared-machine resources and must use one
 - UDID: `C4A64D49-24A2-4429-B6E2-AD9A14142A99`
 - Creation command: `xcrun simctl create agent-ios-tests "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-26-2`
 
-Every `xcodebuild` invocation — **build OR test** — must hold `flock` on `/private/tmp/making-tracks-ios-tests.lock` around the whole boot-and-run sequence. This is **one fleet-wide lock**: it serializes all simulator-backed work across every agent (a Release-configuration build contends for the same simulator/`testmanagerd`/derived-data state as a test run, so builds take the lock too — not just tests). `swift test` (host package tests, no simulator) does not take it. If `flock` is not available in `PATH`, stop and install/provide it; do not run simulator-backed work unlocked. As of 2026-07-16, this host does not expose `flock` in the default agent `PATH`, so `[XCODE/SIM]` work must provision it first. Two runs against one simulator collide in `testmanagerd` and app install state. Boot with `xcrun simctl bootstatus "$UDID" -b`; this is idempotent and blocking. Do not use `simctl boot` in agent scripts.
+Every `xcodebuild` invocation — **build OR test** — must hold `flock` on `/private/tmp/making-tracks-ios-tests.lock` around the whole boot-and-run sequence. This is **one fleet-wide lock**: it serializes all simulator-backed work across every agent (a Release-configuration build contends for the same simulator/`testmanagerd`/derived-data state as a test run, so builds take the lock too — not just tests). `swift test` (host package tests, no simulator) does not take it. `flock` is at `/opt/homebrew/bin/flock`. Two runs against one simulator collide in `testmanagerd` and app install state. Boot with `xcrun simctl bootstatus "$UDID" -b`; this is idempotent and blocking. Do not use `simctl boot` in agent scripts.
 
 Use exactly one destination, by UDID, and disable parallel/concurrent destination testing:
 
@@ -76,8 +76,8 @@ flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
   UDID=C4A64D49-24A2-4429-B6E2-AD9A14142A99
   xcrun simctl bootstatus "$UDID" -b
   xcodebuild \
-    <project-or-workspace-args> \
-    -scheme <scheme> \
+    -project ios/App/MakingTracks.xcodeproj \
+    -scheme MakingTracks \
     -destination "platform=iOS Simulator,id=$UDID" \
     -parallel-testing-enabled NO \
     -disable-concurrent-destination-testing \
@@ -85,7 +85,7 @@ flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
 '
 ```
 
-Current repo state: `/ios` is a Swift package, so use `swift test` there. When a B-track work package creates the app `.xcodeproj` or `.xcworkspace`, replace `<project-or-workspace-args>` and `<scheme>` with that package's real `xcodebuild` arguments; do not invent paths in shared docs.
+The `/ios` Swift package still has host tests — run those with `cd ios && swift test`, no lock. Simulator-backed work uses the app project above (`ios/App/MakingTracks.xcodeproj`, scheme `MakingTracks`), from the repo root.
 
 ### Disk hygiene (mandatory)
 
@@ -149,7 +149,7 @@ Nothing is "done" on the author's say-so. Before you declare a plan complete, op
 
 1. **Adversarial self-review by subagents.** If your harness can spawn subagents or workflows, you MUST run an adversarial review pass over your own output before declaring it complete: several independent critics with distinct lenses (spec fidelity; internal coherence; feasibility/correctness; security + untrusted-data posture per §5.5; test quality — do the tests actually pin the invariants?). Have findings cross-examined (a critic's claim must survive a genuine refutation attempt), fix what survives, and include a short review summary (findings raised / survived / fixed) in your completion message.
 2. **No subagent capability?** Then request the review explicitly: message fable on AMQ (kind: review_request) with the artifact path and wait for the response before declaring completion.
-3. **Builders additionally:** full test suite green is a precondition, not evidence of review. Paste the actual test output (counts, not adjectives) in the PR description. A PR whose description says "tests pass" without output is incomplete. **For iOS app-target work, a one-time RELEASE-configuration build is also required before any PR** (`xcodebuild build -configuration Release <project-or-workspace-args> -scheme <scheme> -destination "platform=iOS Simulator,id=$UDID"`) — the Debug build and `swift test` do not exercise Release. Rationale: on 2026-07-18 (#181) a `#if DEBUG` fence with an incomplete `#else` compiled clean under Debug but broke the Release compile; warnings-as-errors applies to Release too, so a Debug-only gate lets a Release-only break through. One green Release build before the PR catches it.
+3. **Builders additionally:** full test suite green is a precondition, not evidence of review. Paste the actual test output (counts, not adjectives) in the PR description. A PR whose description says "tests pass" without output is incomplete. **For iOS app-target work, a one-time RELEASE-configuration build is also required before any PR** (`xcodebuild build -configuration Release -project ios/App/MakingTracks.xcodeproj -scheme MakingTracks -destination "platform=iOS Simulator,id=$UDID"`) — the Debug build and `swift test` do not exercise Release. Rationale: on 2026-07-18 (#181) a `#if DEBUG` fence with an incomplete `#else` compiled clean under Debug but broke the Release compile; warnings-as-errors applies to Release too, so a Debug-only gate lets a Release-only break through. One green Release build before the PR catches it.
 4. **Automated review comments are part of the gate.** Sourcery reviews a PR only when the `sourcery-review` label is applied — apply it yourself the moment you open the PR (`gh pr edit <n> --add-label sourcery-review`); an unlabelled PR is silently skipped, and absence of comments then means nothing. Before a PR is merge-eligible, its author processes every review comment — use the `pr-tools:process-review` skill where available, otherwise apply the same discipline manually: triage each comment with technical rigor (verify against plan/spec — neither performative agreement nor reflexive dismissal), fix-and-reply or rebut-with-evidence, and resolve the thread. **Nothing merges with unresolved review comments — and the automated review can take time to arrive, so its absence is not cleanliness.** A PR is merge-eligible only after the automated reviewer has actually posted its review (check the PR's reviews list for it) AND every resulting thread is resolved.
 5. **Greptile is explicit-spend only.** Greptile (`greptile-review` label) costs $1/review and is applied only on fable's explicit instruction: `develop`→`main` promotions, security-surface PRs, and escalations. Sourcery remains the default automated layer; never apply `greptile-review` by default.
 6. **Independent review still happens — and your self-review is unconditional.** The adversarial self-review (point 1) does not replace the design lead's review, and the automated bots (Sourcery/Greptile) never substitute for it: run your own critic pass regardless of which bot layers are configured or whether their credit is available. Those layers raise the floor; they are not the floor.
