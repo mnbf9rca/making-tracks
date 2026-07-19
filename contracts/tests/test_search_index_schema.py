@@ -1,3 +1,4 @@
+from mt_contracts.search import split_shard_key_for_token
 from mt_contracts.validation import is_valid, validate_instance
 from mt_contracts.versions import SCHEMA_VERSIONS
 
@@ -75,4 +76,19 @@ def test_search_index_rejects_full_index_without_prefix_shard_key():
 def test_search_index_rejects_entry_in_wrong_full_shard():
     inst = _valid_search_index()
     inst["shard_key"] = "zz"
+    assert not is_valid("search-index", inst)
+
+
+def test_search_index_accepts_split_full_shard_key():
+    inst = _valid_search_index()
+    inst["shard_key"] = split_shard_key_for_token(
+        "kellie",
+        inst["entries"][0]["place_id"],
+    )
+    validate_instance("search-index", inst)
+
+
+def test_search_index_rejects_entry_in_wrong_split_full_shard():
+    inst = _valid_search_index()
+    inst["shard_key"] = "ke_x"
     assert not is_valid("search-index", inst)

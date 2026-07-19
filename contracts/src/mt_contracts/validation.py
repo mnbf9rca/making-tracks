@@ -14,7 +14,7 @@ from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
 
 from .place_id import assert_canonical_ref
-from .search import shard_key_for_token
+from .search import shard_key_matches_token
 
 _ROOT_SCHEMA_DIR = pathlib.Path(__file__).resolve().parents[2] / "schemas"
 _PACK_PATHS = {
@@ -186,16 +186,20 @@ def _reject_search_index_mismatches(name: str, instance: dict) -> None:
     seen_ids: set[str] = set()
     for entry in instance.get("entries", []):
         tokens = entry.get("tokens", [])
+        place_id = entry.get("place_id")
         if (
             index_kind == "full"
             and isinstance(shard_key, str)
-            and not any(shard_key_for_token(str(token)) == shard_key for token in tokens)
+            and not any(
+                isinstance(place_id, str)
+                and shard_key_matches_token(shard_key, str(token), place_id)
+                for token in tokens
+            )
         ):
             raise ValueError("full search-index entry does not belong to shard_key")
         if index_kind == "compact" and int(entry.get("tier", 999)) > 2:
             raise ValueError("compact search-index entries must be tier 1 or 2")
         if entry.get("kind") == "place":
-            place_id = entry.get("place_id")
             if not isinstance(place_id, str):
                 raise ValueError("place search entry requires place_id")
             if place_id in seen_ids:

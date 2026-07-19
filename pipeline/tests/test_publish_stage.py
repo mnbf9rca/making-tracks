@@ -77,6 +77,9 @@ def test_publish_stage_builds_local_staging_and_marks_shipped(
     assert result.counts.total_published == 1
     assert result.counts.uncategorized_excluded == 1
     assert (result.staging_dir / "tiles/10").exists()
+    tile_files = sorted(result.staging_dir.glob("tiles/10/*/*.json.gz"))
+    tile_payload = json.loads(gzip.decompress(tile_files[0].read_bytes()))
+    assert "blurb" not in tile_payload["places"][0]
     registry_ops = [
         op for op in result.publish_result.plan.ops if op.kind == "registry"
     ]

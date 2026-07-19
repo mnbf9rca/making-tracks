@@ -4,6 +4,7 @@ import sqlite3
 import pytest
 
 from mt_contracts.search import shard_key_for_token
+from mt_contracts.search import split_shard_key_for_token
 from mt_pipeline.publish import search_index
 
 
@@ -53,6 +54,38 @@ def test_search_index_artifact_byte_cap_has_teeth(monkeypatch):
         )
 
 
+def test_search_index_splits_oversize_full_shards(monkeypatch):
+    places = [
+        _place(
+            place_id="mt1_" + f"{index:026d}",
+            name=f"Station {index}",
+            tier=3,
+        )
+        for index in range(12)
+    ]
+    monkeypatch.setattr(search_index.caps, "MAX_SEARCH_INDEX_BYTES", 1000)
+
+    result = search_index.emit_search_indexes(
+        places,
+        source_props_by_ref={},
+        region="malaysia-singapore-brunei",
+        publish_version="20260719T100000Z",
+        generated_at="2026-07-19T10:00:00Z",
+    )
+
+    shard_keys = {artifact.shard_key for artifact in result.full_artifacts}
+    assert "st" not in shard_keys
+    assert "st_a" not in shard_keys
+    assert any(
+        key and key.startswith(f"{split_shard_key_for_token('station', A)}_h")
+        for key in shard_keys
+    )
+    assert all(
+        artifact.byte_len <= search_index.caps.MAX_SEARCH_INDEX_BYTES
+        for artifact in result.full_artifacts
+    )
+
+
 def test_source_props_loader_only_reads_requested_shipped_refs():
     conn = sqlite3.connect(":memory:")
     conn.execute(
@@ -62,6 +95,7 @@ def test_source_props_loader_only_reads_requested_shipped_refs():
         "INSERT INTO source_records (region, source_ref, props_json) VALUES (?, ?, ?)",
         [
             ("malaysia-singapore-brunei", "osm:node/1", '{"name:ms":"Kota"}'),
+            ("malaysia-singapore-brunei", "123", '{"name:ms":"Wrong"}'),
             ("malaysia-singapore-brunei", "osm:node/unused", "{not-json"),
             ("other-region", "osm:node/1", '{"name:ms":"Wrong"}'),
         ],
@@ -70,7 +104,7 @@ def test_source_props_loader_only_reads_requested_shipped_refs():
     rows = search_index.source_rows_from_db(
         conn,
         "malaysia-singapore-brunei",
-        {"osm:node/1"},
+        {"osm:node/1", 123, None},
     )
 
     assert rows == {"osm:node/1": {"name:ms": "Kota"}}

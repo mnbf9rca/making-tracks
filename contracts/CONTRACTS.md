@@ -58,6 +58,8 @@ Full offline search is prefix-sharded under:
 
 Those shard objects are listed in `pack-descriptor.json` as `kind: "search_index"` with per-object `sha256`, `bytes`, and `schema_version`, so pack updates can delta per changed prefix shard. ASCII tokens shard by their first one or two lowercase alphanumeric characters. Non-ASCII tokens shard by `u_` plus the first eight lowercase hex characters of `sha256(token_utf8)`, via `mt_contracts.shard_key_for_token`; this keeps object paths ASCII while preserving native-script search terms inside the artifact. A full shard validates only if each entry has at least one token that maps to that shard key.
 
+Full shards that would exceed `MAX_SEARCH_INDEX_BYTES` split deterministically instead of aborting the publish. First-level split shards append `_x`, where `x` is the token's next lowercase ASCII alphanumeric character when one exists; short tokens and non-ASCII hash buckets use `_hN`, with `N` the first hex character of `sha256(place_id)`. If a first-level split is still over the byte cap, it appends another `_hN` place-id hash suffix. Readers that search a shorter prefix load every shard whose key is the base prefix or starts with `{base}_`; readers with a longer prefix may narrow to the matching next-character split. `mt_contracts.shard_key_matches_token` is the semantic validator for both unsplit and split full shards.
+
 The online no-pack search entry point is the notable compact index under:
 
 - `{region}/{publish_version}/search/compact.json`

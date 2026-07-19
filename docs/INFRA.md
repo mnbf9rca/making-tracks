@@ -63,3 +63,9 @@ The pipeline publishes static files to Cloudflare R2, served from `tiles.making-
 Two buckets: a public one for published objects, and a private one for the registry. **The registry must
 never sit in the public bucket.** Layout and publish ordering are specified in
 [`superpowers/plans/2026-07-15-wp-a7-publisher.md`](superpowers/plans/2026-07-15-wp-a7-publisher.md).
+
+`regions.json` v3 requires `search_compact` metadata for every listed region. Until the app has a live
+region-index consumer or the contract makes `search_compact` nullable with an explicit compatibility rule,
+v3 publishes must include all live regions in one prepared publish. A single-region v3 publish intentionally
+omits legacy regions that lack real compact-search metadata rather than synthesizing false URLs, so running
+only one live region would temporarily unlist the others from `regions.json`.

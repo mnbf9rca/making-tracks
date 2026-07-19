@@ -12,7 +12,8 @@ from typing import Any
 
 import mt_contracts
 from mt_contracts import caps
-from mt_contracts.search import shard_key_for_token
+from mt_contracts.search import hash_split_shard_key, shard_key_for_token
+from mt_contracts.search import split_shard_key_for_token
 from mt_contracts.validation import validate_instance
 from mt_contracts.versions import SCHEMA_VERSIONS
 
@@ -46,7 +47,7 @@ def source_rows_from_db(
     refs: Iterable[str],
 ) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
-    ref_list = sorted({str(ref) for ref in refs if isinstance(ref, str) or ref is not None})
+    ref_list = sorted({ref for ref in refs if isinstance(ref, str)})
     for start in range(0, len(ref_list), _SOURCE_REF_CHUNK_SIZE):
         chunk = ref_list[start : start + _SOURCE_REF_CHUNK_SIZE]
         placeholders = ",".join("?" for _ in chunk)
@@ -100,17 +101,15 @@ def emit_search_indexes(
     phase.done(len(place_list), extra=f" entries={len(entries)}")
 
     full_artifacts = tuple(
-        _artifact(
-            _index_payload(
-                region=region,
-                publish_version=publish_version,
-                generated_at=generated_at,
-                index_kind="full",
-                shard_key=shard_key,
-                entries=shard_entries,
-            )
-        )
+        artifact
         for shard_key, shard_entries in _prefix_shards(entries)
+        for artifact in _full_artifacts_for_shard(
+            region=region,
+            publish_version=publish_version,
+            generated_at=generated_at,
+            shard_key=shard_key,
+            entries=shard_entries,
+        )
     )
     compact_entries = [
         entry for entry in entries if int(entry["tier"]) <= _COMPACT_MAX_TIER
@@ -214,6 +213,105 @@ def _prefix_shards(entries: list[dict[str, Any]]) -> list[tuple[str, list[dict[s
     ]
 
 
+def _full_artifacts_for_shard(
+    *,
+    region: str,
+    publish_version: str,
+    generated_at: str,
+    shard_key: str,
+    entries: list[dict[str, Any]],
+) -> tuple[SearchIndexArtifact, ...]:
+    payload = _index_payload(
+        region=region,
+        publish_version=publish_version,
+        generated_at=generated_at,
+        index_kind="full",
+        shard_key=shard_key,
+        entries=entries,
+    )
+    body = _artifact_bytes(payload)
+    if len(body) <= caps.MAX_SEARCH_INDEX_BYTES:
+        return (_artifact_from_payload(payload, body),)
+    return tuple(
+        artifact
+        for split_key, split_entries in _split_shards(shard_key, entries)
+        for artifact in _bounded_split_artifacts(
+            region=region,
+            publish_version=publish_version,
+            generated_at=generated_at,
+            shard_key=split_key,
+            entries=split_entries,
+        )
+    )
+
+
+def _bounded_split_artifacts(
+    *,
+    region: str,
+    publish_version: str,
+    generated_at: str,
+    shard_key: str,
+    entries: list[dict[str, Any]],
+) -> tuple[SearchIndexArtifact, ...]:
+    payload = _index_payload(
+        region=region,
+        publish_version=publish_version,
+        generated_at=generated_at,
+        index_kind="full",
+        shard_key=shard_key,
+        entries=entries,
+    )
+    body = _artifact_bytes(payload)
+    if len(body) <= caps.MAX_SEARCH_INDEX_BYTES:
+        return (_artifact_from_payload(payload, body),)
+    return tuple(
+        _artifact(
+            _index_payload(
+                region=region,
+                publish_version=publish_version,
+                generated_at=generated_at,
+                index_kind="full",
+                shard_key=hash_key,
+                entries=hash_entries,
+            )
+        )
+        for hash_key, hash_entries in _hash_split_shards(shard_key, entries)
+    )
+
+
+def _split_shards(
+    shard_key: str,
+    entries: list[dict[str, Any]],
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    shards: dict[str, dict[str, dict[str, Any]]] = {}
+    for entry in entries:
+        place_id = str(entry["place_id"])
+        for token in entry["tokens"]:
+            if shard_key_for_token(str(token)) != shard_key:
+                continue
+            split_key = split_shard_key_for_token(str(token), place_id)
+            shards.setdefault(split_key, {}).setdefault(place_id, entry)
+    return [
+        (key, sorted(value.values(), key=lambda entry: str(entry["place_id"])))
+        for key, value in sorted(shards.items())
+    ]
+
+
+def _hash_split_shards(
+    shard_key: str,
+    entries: list[dict[str, Any]],
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    shards: dict[str, dict[str, dict[str, Any]]] = {}
+    for entry in entries:
+        place_id = str(entry["place_id"])
+        hash_key = hash_split_shard_key(shard_key, place_id)
+        shards.setdefault(hash_key, {}).setdefault(place_id, entry)
+    return [
+        (key, sorted(value.values(), key=lambda entry: str(entry["place_id"])))
+        for key, value in sorted(shards.items())
+    ]
+
+
 def _index_payload(
     *,
     region: str,
@@ -236,20 +334,31 @@ def _index_payload(
 
 
 def _artifact(payload: dict[str, Any]) -> SearchIndexArtifact:
-    validate_instance("search-index", payload)
-    body = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
+    body = _artifact_bytes(payload)
     if len(body) > caps.MAX_SEARCH_INDEX_BYTES:
         shard = payload.get("shard_key")
         raise ValueError(
             f"search-index artifact exceeds {caps.MAX_SEARCH_INDEX_BYTES} bytes: "
             f"kind={payload.get('index_kind')} shard={shard!r}"
         )
+    return _artifact_from_payload(payload, body)
+
+
+def _artifact_bytes(payload: dict[str, Any]) -> bytes:
+    validate_instance("search-index", payload)
+    return json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def _artifact_from_payload(
+    payload: dict[str, Any],
+    body: bytes,
+) -> SearchIndexArtifact:
     return SearchIndexArtifact(
         shard_key=payload.get("shard_key"),
         index_kind=str(payload["index_kind"]),
