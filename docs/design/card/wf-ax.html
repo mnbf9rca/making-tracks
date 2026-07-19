@@ -28,13 +28,14 @@
   .chips{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
   .chip{ font-size:20px; padding:11px 16px; border-radius:26px; background:#f0eee9; color:#42424a; }
   .attr{ font-size:18px; color:#5f5f64; margin-top:14px; line-height:1.35; padding-bottom:14px;}
-  .attr a{ color:var(--accent); text-decoration:underline;}
-  .acts{ display:flex; flex-direction:column; gap:8px; padding:10px 17px 12px; border-top:1px solid #eceae4; background:#fff; flex:none;}
+  .attr a{ color:inherit; text-decoration:none;}
+  .srclink{ color:var(--accent); text-decoration:underline;}
+  .acts{ box-shadow:0 -6px 10px -8px rgba(0,0,0,.22);  display:flex; flex-direction:column; gap:8px; padding:10px 17px 12px; border-top:1px solid #eceae4; background:#fff; flex:none;}
   .btn{ text-align:center; font-size:24px; font-weight:560; padding:14px 0; border-radius:11px; background:#f0eee9;}
   .btn.prom{ background:var(--accent); color:#fff;}
   .btn.ghost{ background:#f7f6f3; color:#a9a6a0;}
   .clip{ overflow:hidden; flex:1; position:relative;}
-  .cut{ position:absolute; left:0; right:0; bottom:0; height:26px; background:linear-gradient(to bottom,rgba(255,255,255,0),#fff);}
+  .cut{ position:absolute; left:0; right:0; bottom:0; height:34px; background:linear-gradient(to bottom,rgba(255,255,255,0),#fff);}
   .fold{ position:absolute; left:0; right:0; border-top:2px dashed #c0392b;}
   .foldlab{ position:absolute; right:5px; font-size:9.5px; color:#c0392b; font-weight:650; background:rgba(255,255,255,.92); padding:1px 4px; border-radius:3px;}
   .bad{ border-color:#c0392b !important; }
@@ -80,7 +81,7 @@
   <!-- FULL AX -->
   <div class="col">
     <div class="cap">2 · Slid up</div>
-    <div class="capsub">Content scrolls; the action bar does not. Name and type still visible above it.</div>
+    <div class="capsub">Content slides up and scrolls behind the fixed bar, fading at its edge.</div>
     <div class="phone">
       <div class="map"><div class="pin sel" style="left:171px;top:14px"></div></div>
       <div class="sheet" style="height:790px">
@@ -92,9 +93,9 @@
             <div class="name">Former Lipton&rsquo;s Tea Warehouse</div>
             <div class="type"><span class="gl"></span>Attraction</div>
             <div class="photo">photo</div>
-            <div class="full">A hand-painted advert still legible above the old shopfront, uncovered when the newer facade came down.</div>
+            <div class="full">A hand-painted advert still legible above the old shopfront, uncovered when the newer facade came down. <a class="srclink">Read more on Wikipedia ↗</a></div>
             <div class="chips"><span class="chip">Date night</span><span class="chip">Weekend</span></div>
-            <div class="attr">Photo: J. Bloggs · <a>CC BY-SA 4.0 ↗</a></div>
+            <div class="attr">Photo: J. Bloggs · CC BY-SA 4.0</div>
           </div>
           <div class="cut"></div>
         </div>
@@ -122,7 +123,7 @@
             <div style="margin-top:14px; display:flex; flex-direction:column; gap:8px;">
               <div class="btn">Save</div><div class="btn">Add to list</div><div class="btn prom">Seen</div>
             </div>
-            <div class="full">A hand-painted advert still legible above the old shopfront, uncovered when the newer facade came down.</div>
+            <div class="full">A hand-painted advert still legible above the old shopfront, uncovered when the newer facade came down. <a class="srclink">Read more on Wikipedia ↗</a></div>
           </div>
           <div class="cut"></div>
         </div>

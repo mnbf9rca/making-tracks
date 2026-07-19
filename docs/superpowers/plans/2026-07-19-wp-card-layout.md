@@ -99,7 +99,35 @@ These are the load-bearing part, and they are omissions rather than statements �
 
 **Data-layer note.** "You can't hide a seen item" governs what the card offers, not a migration. Existing hidden-and-visited rows are legacy composition in the fade matrix and are unchanged.
 
-## 5. What the pictures show
+## 5. The source link and the credit
+
+Rob, 2026-07-19:
+
+> "the link at the bottom of the text. There should be a link to the wikipedia (or source) article - remember, might be any source (historic england, whatever). The licence terms are just printed text."
+
+This splits the attribution question in two.
+
+**One outbound link: the source article.** It sits at the end of the description text, and it is **source-agnostic** — driven by the entry's own provenance, not written against Wikipedia. Historic England, Open Plaques, OpenStreetMap and Wikipedia all reach the card by the same path, so the link is built from the source metadata and labelled from it.
+
+**The photo credit stays inert.** Creator, licence and modified-flag render as printed text. No licence hyperlink.
+
+Consequence for the shipped code: the photo credit currently ends with the full licence URL as text (`PlaceImageAttribution.displayText`). Under this ruling the URL comes out of that string — the licence is named, not linked. That is an iOS-side follow-up against #235, not part of this design.
+
+### The `privacy.md` question — for ratification, not resolved here
+
+`privacy.md:84` reads:
+
+> "We treat all of it as untrusted: checked, size-limited, and shown as plain text, so a bad entry in a public database can't harm your phone."
+
+A tappable source link is the one place the card stops treating source data as plain text. The protection the sentence promises is still delivered — the URL is validated, https-only and host-checked before it is offered — but the sentence as written does not describe what the card would do.
+
+Proposed one-line amendment, for Rob's ratification:
+
+> "We treat all of it as untrusted: checked, size-limited, and shown as plain text — with one exception, a link to the original source article, whose address we validate before showing it. A bad entry in a public database can't harm your phone."
+
+If he prefers the commitment unchanged, the link does not ship and this section reduces to shortening the credit line.
+
+## 6. What the pictures show
 
 **Peek carries the decision.** Name, type, photo, one taster line. On the evidence of the default-size render, that is enough to decide "worth a look" without expanding. The map stays usable behind it.
 
@@ -109,27 +137,32 @@ These are the load-bearing part, and they are omissions rather than statements �
 
 This finding was first derived on the wrong canvas, and it survived the correction — but it was re-derived, not carried over. On the corrected canvas it is a closer call than it was.
 
-**Actions are drawn pinned in all four proposal panels.** That is one option, shown so it can be compared, not a conclusion. §7 prices it.
+**Actions are drawn as a fixed bottom bar** in every panel, with content passing behind it. §8 records the ruling.
 
-## 6. What the pictures cannot settle
+## 7. What the pictures cannot settle
 
 Panel 3 of the accessibility render approximates today's card. **It is not a measurement**, and in the wireframe the actions look reachable — which contradicts the UI test, where `scrollToExistence` is required for Save, Seen and Love at AXXXL.
 
 One of those is wrong and a mockup cannot say which. **Measure on a device before any decision that depends on it.** The first draft of this design built its entire argument on the test evidence without checking it against a rendering, which is how it reached a conclusion Rob rejected.
 
-## 7. Where the actions live — the open question
+## 8. Where the actions live — ruled
 
-Rob's list has six elements. Actions are not among them. So their placement is genuinely open, and the wireframes show only one answer.
+Rob, 2026-07-19:
 
-**A. Pinned below the content** (as drawn). Reachable in every state at every text size by construction. Costs: the bar is always present even when the user is reading; it inverts `chips < actions < attribution` in the order-teeth test; and a `safeAreaInset` bar reads **last** in the VoiceOver tree by default, so without an explicit sort priority the design's own claim is false for VoiceOver users.
+> "yes fixed actions across the bottom, toast slides up behind almost"
 
-**B. In the scroll flow, as today.** Preserves the ratified order and the test as written. Costs: the current two-position hoist (position 4 at accessibility sizes, position 9 otherwise) stays, so two element orders continue to ship where Rob specified one.
+**A fixed bar across the bottom.** The actions leave the content spine. The question is closed.
 
-**C. In peek only.** Actions live in the peek state, and the slid-up state is for reading. Matches "decide from the toast, expand to read". Costs: a user who expands to read then wants to act must collapse or scroll back.
+**The bar is the stationary layer.** Content slides and scrolls *behind* it — the sheet rises from the peek state passing under the bar, and the description scrolls under it. The bar does not move with the content and is not part of the scroll.
 
-**Recommendation: A, conditional on the device measurement in §6.** If the measurement shows today's in-flow actions are reachable at AXXXL, B becomes defensible and the case for A weakens to "one order instead of two".
+Two things follow for the build:
 
-## 8. Constraints any option must answer
+- **The content needs a bottom inset equal to the bar**, so the end of the attribution can still clear it rather than resting permanently underneath.
+- **The edge where content passes behind the bar needs treatment** — a fade or clip, so text does not simply vanish at a hard line. The wireframes draw a fade.
+
+This also settles the ordering item: the bar sits below attribution in screen coordinates, inverting `chips < actions < attribution` in the order-teeth test. The six content elements keep Rob's order among themselves; the actions are no longer part of that sequence.
+
+## 9. Constraints any option must answer
 
 Carried from the research pass. These do not depend on which option wins.
 
@@ -138,12 +171,12 @@ Carried from the research pass. These do not depend on which option wins.
 - ~~Love's reserved slot~~ — resolved by the three-slot morph in §4. The row no longer grows.
 - **The photo is a hard 180pt** that does not scale with Dynamic Type, so it shrinks proportionally as text grows. The wireframes draw it scaled; the code does not do this today.
 - **The late-photo jump is block insertion, not byte arrival.** Bytes load into a fixed box with a spinner. The jump happens when `card.photo` flips nil to non-nil and the whole slot appears in an open card.
-- **Attribution has no outbound link.** The licence URL renders as inert plain text. This is the one item of Rob's original spec that never shipped. Making a data-supplied URL tappable touches `privacy.md`'s plain-text commitment and needs his ruling, not a layout sign-off.
+- **The outbound link is ruled** — see §5 above. The remaining question is the `privacy.md` wording, not the design.
 - **List chips are ~26–28pt against a 44pt tap target**, and there is no tap-target rule anywhere in this codebase to point at.
 - **No contrast test exists.** Any coloured text this design adds — the attribution link — is the first place the committed WCAG AA 4.5:1 is visibly on the line.
 - **`altNames` is decoded and never rendered.** Dead data either way.
 
-## 9. Test delta
+## 10. Test delta
 
 Unchanged from the analysis pass, and it only bites if option A wins.
 
@@ -154,7 +187,7 @@ Unchanged from the analysis pass, and it only bites if option A wins.
 
 The six content elements keep their order in every option. Only the actions move.
 
-## 10. What was withdrawn from the first draft
+## 11. What was withdrawn from the first draft
 
 Recorded so it is not re-derived.
 
