@@ -48,6 +48,11 @@ public final class CoreLoopController: Sendable {
         emit(placeID)
     }
 
+    public func setVisitVerdict(id: Int64, _ verdict: Verdict?) throws {
+        guard let placeID = try database.setVisitVerdict(id: id, verdict) else { return }
+        emit(placeID)
+    }
+
     public func setHidden(_ place: PlaceRef, _ hidden: Bool) throws {
         try database.setHidden(place, hidden)
         emit(place.placeID)

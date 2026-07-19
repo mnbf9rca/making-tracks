@@ -174,6 +174,23 @@ extension AppDatabase {
         }
     }
 
+    @discardableResult
+    public func setVisitVerdict(id: Int64, _ verdict: Verdict?) throws -> String? {
+        try dbQueue.write { db in
+            let placeID = try String.fetchOne(
+                db,
+                sql: "SELECT place_id FROM visits WHERE id = ?",
+                arguments: [id]
+            )
+            guard let placeID else { return nil }
+            try db.execute(
+                sql: "UPDATE visits SET verdict = ? WHERE id = ?",
+                arguments: [verdict?.rawValue, id]
+            )
+            return placeID
+        }
+    }
+
     public func setHidden(_ place: PlaceRef, _ hidden: Bool) throws {
         try dbQueue.write { db in
             if hidden {
