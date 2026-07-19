@@ -4336,61 +4336,38 @@ private struct PlaceCardSheet: View {
     @State private var isLoading = true
     @State private var actionError: String?
     @State private var showListPicker = false
+    @State private var actionBarHeight: CGFloat = 0
+    @State private var isPerformingAction = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if let card {
-                    HStack {
-                        Spacer()
-                        Button("Close") {
-                            dismiss()
-                        }
-                        .accessibilityIdentifier("place-card.close")
-                    }
-                    Text(verbatim: card.name)
-                        .font(.title2.weight(.semibold))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityAddTraits(.isHeader)
-                        .accessibilityIdentifier("place-card.title")
-                    typeRow(card)
-                    if dynamicTypeSize.isAccessibilitySize {
-                        actionButtons(card)
-                    }
-                    if let blurb = card.blurb {
-                        Text(verbatim: blurb)
-                            .font(.body)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("place-card.description")
-                    }
-                    photoSlot(card)
-                    listChips(card.listNames)
-                    if let actionError {
-                        Text(verbatim: actionError)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .accessibilityIdentifier("place-card.action-error")
-                    }
-                    if !dynamicTypeSize.isAccessibilitySize {
-                        actionButtons(card)
-                    }
-                    attributionText(card)
-                } else if isLoading {
-                    ProgressView()
-                        .frame(maxWidth: .infinity, alignment: .center)
-                } else {
-                    Text(verbatim: "Place unavailable")
-                        .font(.headline)
-                    Text(verbatim: placeID)
-                        .font(.caption2)
-                        .textSelection(.enabled)
+        ZStack(alignment: .bottom) {
+            ScrollView {
+                cardContent
+                    .padding()
+                    .padding(.bottom, CGFloat(
+                        PlaceCardOverlayMetrics.contentBottomPadding(actionBarHeight: Double(actionBarHeight))
+                    ))
+            }
+            .accessibilityIdentifier("place-card.instance.\(sheetInstanceID)")
+
+            if let card {
+                VStack(spacing: 0) {
+                    placeCardBottomFade
+                        .allowsHitTesting(false)
+                    actionBar(card)
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(key: PlaceCardActionBarHeightKey.self, value: proxy.size.height)
+                            }
+                        )
+                }
+                .onPreferenceChange(PlaceCardActionBarHeightKey.self) { height in
+                    actionBarHeight = height
                 }
             }
-            .padding()
         }
-        .accessibilityIdentifier("place-card.instance.\(sheetInstanceID)")
         .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium])
         .presentationBackgroundInteraction(.enabled(upThrough: dynamicTypeSize.isAccessibilitySize ? .large : .medium))
         .task(id: placeID) {
@@ -4408,6 +4385,62 @@ private struct PlaceCardSheet: View {
         .task(id: placeID) {
             await observeImageChanges()
         }
+    }
+
+    @ViewBuilder
+    private var cardContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let card {
+                header
+                Text(verbatim: card.name)
+                    .font(.title2.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("place-card.title")
+                typeRow(card)
+                if let blurb = card.blurb {
+                    Text(verbatim: blurb)
+                        .font(.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("place-card.description")
+                }
+                photoSlot(card)
+                listChips(card.listNames)
+                attributionText(card)
+            } else if isLoading {
+                ProgressView()
+                    .frame(maxWidth: .infinity, alignment: .center)
+            } else {
+                Text(verbatim: "Place unavailable")
+                    .font(.headline)
+                Text(verbatim: placeID)
+                    .font(.caption2)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            Spacer()
+
+            Button("Close") {
+                dismiss()
+            }
+            .accessibilityIdentifier("place-card.close")
+        }
+    }
+
+    private var placeCardBottomFade: some View {
+        LinearGradient(
+            stops: [
+                Gradient.Stop(color: Color(.systemBackground).opacity(0), location: 0),
+                Gradient.Stop(color: Color(.systemBackground), location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(height: CGFloat(PlaceCardOverlayMetrics.fadeHeight))
     }
 
     @ViewBuilder
@@ -4466,80 +4499,106 @@ private struct PlaceCardSheet: View {
     }
 
     @ViewBuilder
-    private func actionButtons(_ card: PlaceCardModel) -> some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 8) {
-                saveButton(card)
-                addToListButton()
-                seenButton(card)
-                if card.pinState.visit != .none {
-                    loveButton(card)
-                }
-                if card.pinState.hidden {
-                    if showHiddenMode {
-                        unhideButton()
-                    }
-                } else {
-                    hideButton(card)
+    private func actionBar(_ card: PlaceCardModel) -> some View {
+        let slots = PlaceCardActionSlots(pinState: card.pinState).actions
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 10))
+
+        VStack(alignment: .leading, spacing: 8) {
+            if let actionError {
+                Text(verbatim: actionError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("place-card.action-error")
+            }
+
+            layout {
+                ForEach(Array(slots.enumerated()), id: \.offset) { _, action in
+                    actionButton(action, card: card)
+                        .frame(maxWidth: .infinity)
+                        .accessibilitySortPriority(10)
                 }
             }
-        } else {
-            HStack(spacing: 10) {
-                saveButton(card)
-                addToListButton()
-                seenButton(card)
-                if card.pinState.visit != .none {
-                    loveButton(card)
-                }
-                if card.pinState.hidden {
-                    if showHiddenMode {
-                        unhideButton()
-                    }
-                } else {
-                    hideButton(card)
-                }
+        }
+        .disabled(isPerformingAction)
+        .padding(.horizontal)
+        .padding(.top, 10)
+        .padding(.bottom, 12)
+        .background(Color(.systemBackground))
+        .overlay(Divider(), alignment: .top)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("place-card.action-bar")
+        .accessibilitySortPriority(10)
+    }
+
+    @ViewBuilder
+    private func actionButton(_ action: PlaceCardAction, card: PlaceCardModel) -> some View {
+        switch action {
+        case .save:
+            saveButton(card)
+        case .seen:
+            Button(action.title) {
+                startAction { await setVisited(true) }
             }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("place-card.visited")
+            .accessibilityValue("Not seen")
+        case .love:
+            Button(action.title) {
+                startAction { await setLoved(true) }
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("place-card.loved")
+            .accessibilityValue("Not loved")
+        case .unlove:
+            Button(action.title) {
+                startAction { await setLoved(false) }
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("place-card.loved")
+            .accessibilityValue("Loved")
+        case .hide:
+            hideButton(card)
+        case let .unsee(isEnabled):
+            Button(action.title) {
+                startAction { await setVisited(false) }
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("place-card.unsee")
+            .accessibilityValue("Seen")
+            .disabled(!isEnabled)
+        case .seenDisabled:
+            Button(action.title) {}
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("place-card.visited")
+                .accessibilityValue("Hidden")
+                .disabled(true)
+        case .unhide:
+            unhideButton()
         }
     }
 
     private func saveButton(_ card: PlaceCardModel) -> some View {
         Button(card.pinState.saved ? "Saved" : "Save") {
-            Task { await setSaved(!card.pinState.saved) }
+            startAction { await setSaved(!card.pinState.saved) }
         }
+        .highPriorityGesture(
+            LongPressGesture(minimumDuration: 0.5)
+                .onEnded { _ in
+                    showListPicker = true
+                }
+        )
         .buttonStyle(.bordered)
         .accessibilityIdentifier("place-card.save")
         .accessibilityValue(card.pinState.saved ? "Saved" : "Not saved")
-    }
-
-    private func addToListButton() -> some View {
-        Button("Add to list") {
-            showListPicker = true
-        }
-        .buttonStyle(.bordered)
-        .accessibilityIdentifier("place-card.add-to-list")
-    }
-
-    private func seenButton(_ card: PlaceCardModel) -> some View {
-        Button(card.pinState.visit == .none ? "Seen" : "Unsee") {
-            Task { await setVisited(card.pinState.visit == .none) }
-        }
-        .buttonStyle(.borderedProminent)
-        .accessibilityIdentifier("place-card.visited")
-        .accessibilityValue(card.pinState.visit == .none ? "Not seen" : "Seen")
-    }
-
-    private func loveButton(_ card: PlaceCardModel) -> some View {
-        Button(card.pinState.visit == .loved ? "Loved" : "Love") {
-            Task { await setLoved(card.pinState.visit != .loved) }
-        }
-        .buttonStyle(.bordered)
-        .accessibilityIdentifier("place-card.loved")
-        .accessibilityValue(card.pinState.visit == .loved ? "Loved" : "Not loved")
+        .accessibilityHint(PlaceCardAction.save.accessibilityHint(isSaved: card.pinState.saved) ?? "")
     }
 
     private func hideButton(_ card: PlaceCardModel) -> some View {
         Button("Hide", role: .destructive) {
-            Task { await setHidden(card) }
+            startAction { await setHidden(card) }
         }
         .buttonStyle(.bordered)
         .accessibilityIdentifier("place-card.hide")
@@ -4548,7 +4607,7 @@ private struct PlaceCardSheet: View {
 
     private func unhideButton() -> some View {
         Button("Unhide") {
-            Task { await setHidden(false) }
+            startAction { await setHidden(false) }
         }
         .buttonStyle(.bordered)
         .accessibilityIdentifier("place-card.unhide")
@@ -4602,6 +4661,15 @@ private struct PlaceCardSheet: View {
         }
     }
 
+    private func startAction(_ action: @escaping () async -> Void) {
+        guard !isPerformingAction else { return }
+        isPerformingAction = true
+        actionError = nil
+        Task {
+            await action()
+        }
+    }
+
     private func setHidden(_ card: PlaceCardModel) async {
         await MainActor.run {
             actionError = nil
@@ -4609,12 +4677,14 @@ private struct PlaceCardSheet: View {
         do {
             try await model?.setHidden(placeID: placeID, hidden: true)
             await MainActor.run {
+                isPerformingAction = false
                 self.card = nil
                 dismiss()
                 onHide(placeID, card.name)
             }
         } catch {
             await MainActor.run {
+                isPerformingAction = false
                 actionError = "Could not save that change."
             }
         }
@@ -4631,8 +4701,10 @@ private struct PlaceCardSheet: View {
             try await action()
             await MainActor.run { actionError = nil }
             await refreshCard()
+            await MainActor.run { isPerformingAction = false }
         } catch {
             await MainActor.run {
+                isPerformingAction = false
                 actionError = "Could not save that change."
             }
         }
@@ -4663,6 +4735,14 @@ private struct PlaceCardSheet: View {
         return parts
     }
 
+}
+
+private struct PlaceCardActionBarHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
 }
 
 private struct PlaceCardPhotoSlot: View {

@@ -181,7 +181,7 @@ final class PlaceCardModelTests: XCTestCase {
         XCTAssertEqual(enriched.photo?.width, 640)
         XCTAssertEqual(enriched.photo?.height, 480)
         XCTAssertEqual(enriched.photo?.accessibilityLabel, "Photo of Clock")
-        XCTAssertEqual(enriched.photo?.attribution, "Alice Example / Creative Commons Attribution 4.0 / modified / https://creativecommons.org/licenses/by/4.0/")
+        XCTAssertEqual(enriched.photo?.attribution, "Alice Example / Creative Commons Attribution 4.0 / modified")
     }
 }
 

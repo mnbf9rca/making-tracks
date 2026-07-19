@@ -84,7 +84,8 @@ def _fake_tools(tmp_path: Path) -> tuple[Path, Path]:
     xcodebuild = fakebin / "xcodebuild"
     xcodebuild.write_text(
         "#!/bin/sh\n"
-        'echo "xcodebuild:$*" >> "$MT_RELEASE_GATE_LOG"\n',
+        'echo "xcodebuild:$*" >> "$MT_RELEASE_GATE_LOG"\n'
+        'if [ "${MT_RELEASE_GATE_FAIL_XCODEBUILD:-}" = "1" ]; then exit 65; fi\n',
         encoding="utf-8",
     )
     for path in (flock, xcrun, xcodebuild):
@@ -151,11 +152,15 @@ def test_release_gate_runs_release_build_and_tests_under_canonical_lock(tmp_path
     stale_result_bundle = log.parent / "release-gate-run" / "MakingTracksTests.xcresult"
     stale_result_bundle.mkdir(parents=True)
     (stale_result_bundle / "stale").write_text("stale\n", encoding="utf-8")
+    derived_data = log.parent / "release-gate-run" / "DerivedData"
+    derived_data.mkdir(parents=True)
+    (derived_data / "stale").write_text("stale\n", encoding="utf-8")
 
     result = _run([str(SCRIPT)], repo, env=_env(fakebin, log))
 
     assert result.returncode == 0, result.stderr
     assert not stale_result_bundle.exists()
+    assert not derived_data.exists()
     lines = log.read_text(encoding="utf-8").splitlines()
     assert lines[0] == f"flock:{LOCK}"
     assert lines[1] == f"xcrun:simctl bootstatus {UDID} -b"
@@ -178,3 +183,18 @@ def test_release_gate_runs_release_build_and_tests_under_canonical_lock(tmp_path
         and line.endswith(" test")
         for line in lines
     )
+
+
+def test_release_gate_keeps_derived_data_when_xcodebuild_fails(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env["MT_RELEASE_GATE_FAIL_XCODEBUILD"] = "1"
+    derived_data = log.parent / "release-gate-run" / "DerivedData"
+    derived_data.mkdir(parents=True)
+    (derived_data / "diagnostics").write_text("keep\n", encoding="utf-8")
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 65
+    assert derived_data.exists()

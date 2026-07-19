@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Runs the iOS release build and simulator UI suite under the shared simulator
+# lock. Successful runs remove this invocation's DerivedData after xcodebuild
+# has finished; failed runs keep DerivedData and the .xcresult for diagnosis.
 set -euo pipefail
 
 PROJECT="ios/App/MakingTracks.xcodeproj"
@@ -57,3 +60,5 @@ UDID="$UDID" DERIVED_DATA="$DERIVED_DATA" RESULT_BUNDLE="$RESULT_BUNDLE" "$FLOCK
     -resultBundlePath "$RESULT_BUNDLE" \
     test
 '
+
+rm -rf "$DERIVED_DATA"
