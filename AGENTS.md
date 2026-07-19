@@ -57,17 +57,17 @@ Simulator-backed `xcodebuild` runs are shared-machine resources and must use one
 - UDID: `C4A64D49-24A2-4429-B6E2-AD9A14142A99`
 - Creation command: `xcrun simctl create agent-ios-tests "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-26-2`
 
-Every simulator test run must hold `flock` on `/tmp/agent-ios-sim.lock` around the whole boot-and-test sequence. If `flock` is not available in `PATH`, stop and install/provide it; do not run simulator tests unlocked. As of 2026-07-16, this host does not expose `flock` in the default agent `PATH`, so `[XCODE/SIM]` work must provision it first. Two runs against one simulator collide in `testmanagerd` and app install state. Boot with `xcrun simctl bootstatus "$UDID" -b`; this is idempotent and blocking. Do not use `simctl boot` in agent scripts.
+Every `xcodebuild` invocation — **build OR test** — must hold `flock` on `/private/tmp/making-tracks-ios-tests.lock` around the whole boot-and-run sequence. This is **one fleet-wide lock**: it serializes all simulator-backed work across every agent (a Release-configuration build contends for the same simulator/`testmanagerd`/derived-data state as a test run, so builds take the lock too — not just tests). `swift test` (host package tests, no simulator) does not take it. `flock` is at `/opt/homebrew/bin/flock`. Two runs against one simulator collide in `testmanagerd` and app install state. Boot with `xcrun simctl bootstatus "$UDID" -b`; this is idempotent and blocking. Do not use `simctl boot` in agent scripts.
 
 Use exactly one destination, by UDID, and disable parallel/concurrent destination testing:
 
 ```bash
-flock /tmp/agent-ios-sim.lock sh -ec '
+flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
   UDID=C4A64D49-24A2-4429-B6E2-AD9A14142A99
   xcrun simctl bootstatus "$UDID" -b
   xcodebuild \
-    <project-or-workspace-args> \
-    -scheme <scheme> \
+    -project ios/App/MakingTracks.xcodeproj \
+    -scheme MakingTracks \
     -destination "platform=iOS Simulator,id=$UDID" \
     -parallel-testing-enabled NO \
     -disable-concurrent-destination-testing \
@@ -75,7 +75,7 @@ flock /tmp/agent-ios-sim.lock sh -ec '
 '
 ```
 
-Current repo state: `/ios` is a Swift package, so use `swift test` there. When a B-track work package creates the app `.xcodeproj` or `.xcworkspace`, replace `<project-or-workspace-args>` and `<scheme>` with that package's real `xcodebuild` arguments; do not invent paths in shared docs.
+The `/ios` Swift package still has host tests — run those with `cd ios && swift test`, no lock. Simulator-backed work uses the app project above (`ios/App/MakingTracks.xcodeproj`, scheme `MakingTracks`), from the repo root.
 Closing sequence: the app target must build zero-warning, with warnings treated as errors in `ios/App/project.yml`.
 
 Parallel testing and multi-destination runs are the normal paths that spawn simulator clones. The single-destination command above, with `-parallel-testing-enabled NO` and `-disable-concurrent-destination-testing`, is the required defense against clone creation. If a run leaks clones, they hide in XCTest's separate device set; inspect it with:
@@ -87,7 +87,7 @@ xcrun simctl --set testing list
 Weekly simulator cleanup for agents also takes the simulator lock, so cleanup cannot race an active simulator test:
 
 ```bash
-flock /tmp/agent-ios-sim.lock sh -ec '
+flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
   xcrun simctl --set testing delete all
   xcrun simctl delete unavailable
   find ~/Library/Developer/Xcode/DerivedData -mindepth 1 -maxdepth 1 -type d -mtime +14 \
