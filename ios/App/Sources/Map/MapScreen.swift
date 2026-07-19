@@ -346,6 +346,17 @@ final class AppShellModel {
     var deepLinkPath: MenuDestination?
 }
 
+struct ListsCopy {
+    static func progress(visited: Int, total: Int) -> String {
+        guard total > 0 else { return "No places yet" }
+        let remaining = max(total - visited, 0)
+        if remaining == 0 {
+            return "you've been to \(visited) of these · all seen"
+        }
+        return "you've been to \(visited) of these · \(remaining) to go"
+    }
+}
+
 struct OfflineDownloadProgress: Sendable, Equatable {
     let region: String?
     let publishVersion: String?
@@ -477,6 +488,11 @@ enum MapEmptyRegionSurface: Equatable {
 }
 
 extension AppShellModel {
+    func openListsDeepLink() {
+        deepLinkPath = .lists
+        isMenuPresented = true
+    }
+
     func openOfflineMapsDeepLink() {
         deepLinkPath = .offlineMaps
         isMenuPresented = true
@@ -674,6 +690,9 @@ struct MapScreen: View {
     @State private var hiddenToast: HiddenToast?
     @State private var hiddenToastDismissTask: Task<Void, Never>?
     @State private var nextHiddenToastID = 0
+    @State private var activeListMap: ActiveListMap?
+    @State private var listCameraRequest: ViewportCameraRequest?
+    @State private var nextListCameraRequestID = 10_000
     private let viewportRefreshDebouncer = ViewportRefreshDebouncer()
     @State private var suppressedNearbyPromptPlaceIDs: Set<String> = []
     @State private var nearbyPromptNames: [String: String] = [:]
@@ -726,19 +745,21 @@ struct MapScreen: View {
                 showsUserLocation: showsUserLocation,
                 userTrackingMode: userTrackingMode,
                 debugExposeFixturePinDiagnostics: debugExposeFixturePinDiagnostics,
-                cameraRequest: cameraRequest,
+                cameraRequest: listCameraRequest ?? cameraRequest,
                 onCameraIdle: { bbox, zoom in
                     Task { @MainActor in
                         currentViewport = ViewportSeed(bbox: bbox, zoom: zoom)
-                        scheduleViewportRefresh(
-                            bbox: bbox,
-                            zoom: zoom,
-                            requestID: nextViewportRequestID(),
-                            stateEpoch: currentStateEpoch(),
-                            allowManifestRefresh: MapManifestRefreshPolicy.cameraIdleAllowsManifestRefresh(
-                                afterPostFirstRenderRefreshCompleted: didCompletePostFirstRenderManifestRefresh
+                        if activeListMap == nil {
+                            scheduleViewportRefresh(
+                                bbox: bbox,
+                                zoom: zoom,
+                                requestID: nextViewportRequestID(),
+                                stateEpoch: currentStateEpoch(),
+                                allowManifestRefresh: MapManifestRefreshPolicy.cameraIdleAllowsManifestRefresh(
+                                    afterPostFirstRenderRefreshCompleted: didCompletePostFirstRenderManifestRefresh
+                                )
                             )
-                        )
+                        }
                     }
                 },
                 onUserPanned: {
@@ -950,7 +971,21 @@ struct MapScreen: View {
                 storageStatus: storageMenuStatus,
                 openLocationSettings: openLocationSettings,
                 replayOnboarding: onReplayOnboarding,
-                onOfflineMapsChanged: refreshAfterOfflineMapsChanged
+                onOfflineMapsChanged: refreshAfterOfflineMapsChanged,
+                onShowListOnMap: { list in
+                    Task { @MainActor in
+                        appShell.isMenuPresented = false
+                        await showListOnMap(list)
+                    }
+                },
+                onListRenamed: { list in
+                    reconcileActiveListMap(renamed: list)
+                },
+                onListDeleted: { listID in
+                    Task { @MainActor in
+                        await clearActiveListMap(deletedListID: listID)
+                    }
+                }
             )
         }
         .fullScreenCover(isPresented: updateRequiredPresentationBinding) {
@@ -1156,6 +1191,15 @@ struct MapScreen: View {
                     .accessibilityIdentifier("map.loaded-theme")
 
                 HStack(spacing: 6) {
+                    if debugExposeFixturePinDiagnostics {
+                        Button("Open fixture") {
+                            cardPresentation.show(placeID: Self.primaryFixturePlaceID)
+                        }
+                        .font(.caption2)
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("debug.open-fixture")
+                    }
+
                     Button("Hide fixture") {
                         Task { await setPrimaryFixtureHidden(true) }
                     }
@@ -1237,7 +1281,12 @@ struct MapScreen: View {
     }
 
     private var statusChrome: some View {
-        mapChrome
+        VStack(alignment: .trailing, spacing: 8) {
+            if let activeListMap {
+                listMapChrome(activeListMap)
+            }
+            mapChrome
+        }
     }
 
     private var selectedTheme: MapTheme {
@@ -1290,6 +1339,54 @@ struct MapScreen: View {
 
             layersButton
         }
+    }
+
+    @ViewBuilder
+    private func listMapChrome(_ list: ActiveListMap) -> some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            Text(verbatim: list.name)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.ultraThinMaterial, in: Capsule())
+                .accessibilityIdentifier("map.list-mode.title")
+
+            Picker("List map mode", selection: listMapShowVisitedBinding) {
+                Text("Fresh snow").tag(false)
+                Text("My tracks").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 190)
+            .accessibilityIdentifier("map.list-mode.toggle")
+
+            Button {
+                Task { @MainActor in
+                    activeListMap = nil
+                    listCameraRequest = nil
+                    await refreshCurrentViewport()
+                }
+            } label: {
+                Label("Close list", systemImage: "xmark")
+                    .labelStyle(.iconOnly)
+                    .frame(width: 36, height: 36)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("map.list-mode.close")
+        }
+    }
+
+    private var listMapShowVisitedBinding: Binding<Bool> {
+        Binding(
+            get: { activeListMap?.showVisited ?? true },
+            set: { showVisited in
+                guard var list = activeListMap else { return }
+                list.showVisited = showVisited
+                activeListMap = list
+                Task { @MainActor in
+                    await refreshActiveListMap()
+                }
+            }
+        )
     }
 
     private var attributionText: some View {
@@ -1732,6 +1829,7 @@ struct MapScreen: View {
         stateEpoch capturedStateEpoch: Int,
         allowManifestRefresh: Bool = true
     ) async {
+        guard activeListMap == nil else { return }
         guard let model else { return }
         let startedAt = Date()
         MakingTracksLog.resolution.debug("viewport refresh started request=\(requestID, privacy: .public) zoom=\(zoom, privacy: .public)")
@@ -1767,6 +1865,10 @@ struct MapScreen: View {
     @MainActor
     private func refreshCurrentViewport() async {
         stateEpoch += 1
+        guard activeListMap == nil else {
+            await refreshActiveListMap()
+            return
+        }
         let viewport = currentViewport ?? startupViewport
         await refreshViewport(
             bbox: viewport.bbox,
@@ -1778,6 +1880,11 @@ struct MapScreen: View {
 
     private func observeChanges(from model: MapScreenModel) async {
         for await ids in model.changes {
+            if activeListMap != nil {
+                await refreshActiveListMap()
+                await refreshFixtureVisitCount()
+                continue
+            }
             if model.consumeHiddenMembershipChange(overlapping: ids) {
                 let refresh = await MainActor.run { () -> (viewport: ViewportSeed, requestID: Int, stateEpoch: Int) in
                     stateEpoch += 1
@@ -1821,7 +1928,85 @@ struct MapScreen: View {
         guard let model else { return }
         model.setShowHidden(visibility.showHiddenPlaces)
         appliedShowHiddenPlaces = visibility.showHiddenPlaces
+        guard activeListMap == nil else {
+            await refreshActiveListMap()
+            return
+        }
         await refreshCurrentViewport()
+    }
+
+    @MainActor
+    private func showListOnMap(_ list: PlaceList) async {
+        guard let id = list.id else { return }
+        activeListMap = ActiveListMap(listID: id, name: list.name, showVisited: true)
+        await refreshActiveListMap(updateCamera: true)
+    }
+
+    @MainActor
+    private func refreshActiveListMap(updateCamera: Bool = false) async {
+        guard let model, let list = activeListMap else { return }
+        let requestedShowHidden = layerVisibility.showHiddenPlaces
+        let next = await model.listMapFeatures(
+            listID: list.listID,
+            showVisited: list.showVisited,
+            showHidden: requestedShowHidden
+        )
+        guard let currentList = activeListMap,
+              currentList.listID == list.listID,
+              currentList.showVisited == list.showVisited,
+              layerVisibility.showHiddenPlaces == requestedShowHidden
+        else { return }
+        features = next
+        nearbyPromptNames = [:]
+        stateEpoch += 1
+        if updateCamera, let viewport = Self.viewport(for: next.map(\.0)) {
+            nextListCameraRequestID += 1
+            listCameraRequest = ViewportCameraRequest(id: nextListCameraRequestID, viewport: viewport)
+            currentViewport = viewport
+        }
+    }
+
+    @MainActor
+    private func reconcileActiveListMap(renamed list: PlaceList) {
+        guard let id = list.id,
+              var active = activeListMap,
+              active.listID == id
+        else { return }
+        active.name = list.name
+        activeListMap = active
+    }
+
+    @MainActor
+    private func clearActiveListMap(deletedListID listID: Int64) async {
+        guard activeListMap?.listID == listID else { return }
+        activeListMap = nil
+        listCameraRequest = nil
+        await refreshCurrentViewport()
+    }
+
+    private static func viewport(for places: [MapPlace]) -> ViewportSeed? {
+        guard let first = places.first else { return nil }
+        var minLon = first.lon
+        var maxLon = first.lon
+        var minLat = first.lat
+        var maxLat = first.lat
+        for place in places.dropFirst() {
+            minLon = min(minLon, place.lon)
+            maxLon = max(maxLon, place.lon)
+            minLat = min(minLat, place.lat)
+            maxLat = max(maxLat, place.lat)
+        }
+        let lonPad = max((maxLon - minLon) * 0.18, 0.01)
+        let latPad = max((maxLat - minLat) * 0.18, 0.01)
+        return ViewportSeed(
+            bbox: BBox(
+                minLon: minLon - lonPad,
+                minLat: minLat - latPad,
+                maxLon: maxLon + lonPad,
+                maxLat: maxLat + latPad
+            ),
+            zoom: places.count == 1 ? 14 : 12
+        )
     }
 
     private struct NearbyPromptCandidate {
@@ -1834,6 +2019,12 @@ struct MapScreen: View {
         let id: Int
         let placeID: String
         let name: String
+    }
+
+    private struct ActiveListMap: Equatable {
+        let listID: Int64
+        var name: String
+        var showVisited: Bool
     }
 
     private static let fixturePlaces = [
@@ -2087,6 +2278,9 @@ private struct AppMenuSheet: View {
     let openLocationSettings: () -> Void
     let replayOnboarding: @MainActor () -> Void
     let onOfflineMapsChanged: @MainActor () async -> Void
+    let onShowListOnMap: @MainActor (PlaceList) -> Void
+    let onListRenamed: @MainActor (PlaceList) -> Void
+    let onListDeleted: @MainActor (Int64) -> Void
 
     @State private var path: [MenuDestination] = []
     @Environment(\.dismiss) private var dismiss
@@ -2115,7 +2309,12 @@ private struct AppMenuSheet: View {
     private func destinationView(_ destination: MenuDestination) -> some View {
         switch destination {
         case .lists:
-            destinationWithDone(ListsPlaceholderView())
+            destinationWithDone(ListsView(
+                model: model,
+                onShowOnMap: onShowListOnMap,
+                onListRenamed: onListRenamed,
+                onListDeleted: onListDeleted
+            ))
         case .offlineMaps:
 #if DEBUG
             destinationWithDone(OfflineMapsView(
@@ -2225,14 +2424,329 @@ private struct AppMenuRootView: View {
     }
 }
 
-private struct ListsPlaceholderView: View {
+private struct ListsView: View {
+    let model: MapScreenModel?
+    let onShowOnMap: @MainActor (PlaceList) -> Void
+    let onListRenamed: @MainActor (PlaceList) -> Void
+    let onListDeleted: @MainActor (Int64) -> Void
+
+    @State private var lists: [PlaceList] = []
+    @State private var progress: [Int64: ListProgress] = [:]
+    @State private var draftName = ""
+    @State private var actionError: String?
+    @State private var pendingDeleteList: PlaceList?
+
     var body: some View {
-        ContentUnavailableView(
-            "Lists",
-            systemImage: "list.bullet",
-            description: Text("Saved lists will appear here.")
-        )
+        List {
+            Section {
+                HStack(spacing: 8) {
+                    TextField("New list", text: $draftName)
+                        .textInputAutocapitalization(.words)
+                        .accessibilityIdentifier("lists.create.name")
+                    Button {
+                        Task { await createList() }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Create list")
+                    .accessibilityIdentifier("lists.create")
+                }
+                if let actionError {
+                    Text(verbatim: actionError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("lists.error")
+                }
+            }
+
+            Section {
+                ForEach(lists) { list in
+                    NavigationLink {
+                        ListDetailView(
+                            model: model,
+                            list: list,
+                            onChanged: { Task { await reload() } },
+                            onShowOnMap: onShowOnMap,
+                            onListRenamed: onListRenamed
+                        )
+                    } label: {
+                        listRow(list)
+                    }
+                    .accessibilityIdentifier("lists.row.\(list.id ?? -1)")
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if !list.isSystem, let id = list.id {
+                            Button("Delete", role: .destructive) {
+                                pendingDeleteList = list
+                            }
+                            .accessibilityIdentifier("lists.delete.\(id)")
+                        }
+                    }
+                }
+            }
+        }
         .navigationTitle("Lists")
+        .task { await reload() }
+        .refreshable { await reload() }
+        .toolbar {
+            Button {
+                Task { await reload() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .accessibilityLabel("Refresh lists")
+        }
+        .confirmationDialog(
+            pendingDeleteList.map { "Delete \($0.name)?" } ?? "Delete list?",
+            isPresented: Binding(
+                get: { pendingDeleteList != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingDeleteList = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                guard let id = pendingDeleteList?.id else { return }
+                pendingDeleteList = nil
+                Task { await deleteList(id: id) }
+            }
+            .accessibilityIdentifier("lists.delete.confirm")
+            Button("Cancel", role: .cancel) {
+                pendingDeleteList = nil
+            }
+        }
+    }
+
+    private func listRow(_ list: PlaceList) -> some View {
+        let p = progress[list.id ?? -1] ?? ListProgress(visited: 0, total: 0)
+        return HStack(spacing: 12) {
+            Image(systemName: list.isSystem ? "bookmark.fill" : "list.bullet")
+                .frame(width: 24)
+                .foregroundStyle(list.isSystem ? Color.accentColor : Color.secondary)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: list.name)
+                    .font(.body)
+                Text(verbatim: ListsCopy.progress(visited: p.visited, total: p.total))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(minHeight: 44, alignment: .leading)
+    }
+
+    @MainActor
+    private func reload() async {
+        guard let model else { return }
+        let nextLists = await model.lists()
+        var nextProgress: [Int64: ListProgress] = [:]
+        for list in nextLists {
+            guard let id = list.id else { continue }
+            nextProgress[id] = await model.listProgress(listID: id)
+        }
+        lists = nextLists
+        progress = nextProgress
+    }
+
+    @MainActor
+    private func createList() async {
+        guard let model else { return }
+        do {
+            _ = try await model.createList(named: draftName)
+            draftName = ""
+            actionError = nil
+            await reload()
+        } catch {
+            actionError = "Use a shorter list name."
+        }
+    }
+
+    @MainActor
+    private func deleteList(id: Int64) async {
+        guard let model else { return }
+        do {
+            try await model.deleteList(id: id)
+            actionError = nil
+            await reload()
+            onListDeleted(id)
+        } catch {
+            actionError = "Could not delete that list."
+        }
+    }
+}
+
+private struct ListDetailView: View {
+    let model: MapScreenModel?
+    let list: PlaceList
+    let onChanged: @MainActor () -> Void
+    let onShowOnMap: @MainActor (PlaceList) -> Void
+    let onListRenamed: @MainActor (PlaceList) -> Void
+
+    @State private var items: [ListPlace] = []
+    @State private var progress = ListProgress(visited: 0, total: 0)
+    @State private var currentList: PlaceList
+    @State private var renameDraft: String
+    @State private var actionError: String?
+
+    init(
+        model: MapScreenModel?,
+        list: PlaceList,
+        onChanged: @escaping @MainActor () -> Void,
+        onShowOnMap: @escaping @MainActor (PlaceList) -> Void,
+        onListRenamed: @escaping @MainActor (PlaceList) -> Void
+    ) {
+        self.model = model
+        self.list = list
+        self.onChanged = onChanged
+        self.onShowOnMap = onShowOnMap
+        self.onListRenamed = onListRenamed
+        _currentList = State(initialValue: list)
+        _renameDraft = State(initialValue: list.name)
+    }
+
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(verbatim: ListsCopy.progress(visited: progress.visited, total: progress.total))
+                        .font(.headline)
+                        .accessibilityIdentifier("lists.detail.progress")
+                    Button {
+                        onShowOnMap(currentList)
+                    } label: {
+                        Label("Show on map", systemImage: "map")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("lists.detail.show-map")
+                }
+                if !list.isSystem, let id = list.id {
+                    HStack(spacing: 8) {
+                        TextField("List name", text: $renameDraft)
+                            .textInputAutocapitalization(.words)
+                            .accessibilityIdentifier("lists.detail.rename.name")
+                        Button("Rename") {
+                            Task { await rename(id: id) }
+                        }
+                        .accessibilityIdentifier("lists.detail.rename")
+                    }
+                }
+                if let actionError {
+                    Text(verbatim: actionError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("lists.detail.error")
+                }
+            }
+
+            Section {
+                if items.isEmpty {
+                    ContentUnavailableView("No places yet", systemImage: "mappin.slash")
+                } else {
+                    ForEach(items) { item in
+                        listItemRow(item)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                if let id = list.id {
+                                    Button("Remove", role: .destructive) {
+                                        Task { await remove(item.placeID, listID: id) }
+                                    }
+                                    .accessibilityIdentifier("lists.detail.remove.\(item.placeID)")
+                                }
+                            }
+                    }
+                }
+            }
+        }
+        .navigationTitle(currentList.name)
+        .task { await reload() }
+        .refreshable { await reload() }
+    }
+
+    private func listItemRow(_ item: ListPlace) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: item.pinState.visit == .none ? "circle" : "checkmark.circle.fill")
+                .foregroundStyle(item.pinState.visit == .none ? Color.secondary : Color.accentColor)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: item.name)
+                    .font(.body)
+                HStack(spacing: 6) {
+                    Text(verbatim: categoryLabel(item.category))
+                    if item.pinState.hidden {
+                        Text(verbatim: "Hidden")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if item.pinState.hidden {
+                Button("Unhide") {
+                    Task { await unhide(item.placeID) }
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("lists.detail.unhide.\(item.placeID)")
+            }
+        }
+        .frame(minHeight: 44, alignment: .leading)
+        .accessibilityIdentifier("lists.detail.item.\(item.placeID)")
+    }
+
+    @MainActor
+    private func reload() async {
+        guard let model, let id = list.id else { return }
+        items = await model.listItems(listID: id)
+        progress = await model.listProgress(listID: id)
+    }
+
+    @MainActor
+    private func rename(id: Int64) async {
+        guard let model else { return }
+        do {
+            currentList = try await model.renameList(id: id, name: renameDraft)
+            renameDraft = currentList.name
+            actionError = nil
+            onChanged()
+            onListRenamed(currentList)
+        } catch {
+            actionError = "Use a shorter list name."
+        }
+    }
+
+    @MainActor
+    private func remove(_ placeID: String, listID: Int64) async {
+        guard let model else { return }
+        do {
+            try await model.removeFromList(placeID: placeID, listID: listID)
+            actionError = nil
+            await reload()
+            onChanged()
+        } catch {
+            actionError = "Could not remove that place."
+        }
+    }
+
+    @MainActor
+    private func unhide(_ placeID: String) async {
+        guard let model else { return }
+        do {
+            try await model.setHidden(placeID: placeID, hidden: false)
+            actionError = nil
+            await reload()
+            onChanged()
+        } catch {
+            actionError = "Could not unhide that place."
+        }
+    }
+
+    private func categoryLabel(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .split(separator: " ")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
     }
 }
 
@@ -2891,6 +3405,110 @@ private struct CreditEntryView: View {
     }
 }
 
+private struct ListPickerView: View {
+    let placeID: String
+    let model: MapScreenModel?
+    let onChanged: @MainActor () -> Void
+
+    @State private var lists: [PlaceList] = []
+    @State private var memberships: Set<Int64> = []
+    @State private var newListName = ""
+    @State private var actionError: String?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    HStack(spacing: 8) {
+                        TextField("New list", text: $newListName)
+                            .textInputAutocapitalization(.words)
+                            .accessibilityIdentifier("list-picker.new-name")
+                        Button {
+                            Task { await createAndAdd() }
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .accessibilityLabel("Create list and add place")
+                        .accessibilityIdentifier("list-picker.create")
+                    }
+                    if let actionError {
+                        Text(verbatim: actionError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .accessibilityIdentifier("list-picker.error")
+                    }
+                }
+
+                Section {
+                    ForEach(lists.filter { !$0.isSystem }) { list in
+                        Button {
+                            Task { await toggle(list) }
+                        } label: {
+                            HStack {
+                                Text(verbatim: list.name)
+                                Spacer()
+                                if let id = list.id, memberships.contains(id) {
+                                    Image(systemName: "checkmark")
+                                        .accessibilityLabel("In list")
+                                }
+                            }
+                        }
+                        .accessibilityIdentifier("list-picker.row.\(list.id ?? -1)")
+                    }
+                }
+            }
+            .navigationTitle("Add to list")
+            .toolbar {
+                Button("Done") { dismiss() }
+                    .accessibilityIdentifier("list-picker.done")
+            }
+            .task { await reload() }
+        }
+    }
+
+    @MainActor
+    private func reload() async {
+        guard let model else { return }
+        let nextLists = await model.lists()
+        lists = nextLists
+        memberships = Set(await model.listMemberships(containing: placeID))
+    }
+
+    @MainActor
+    private func toggle(_ list: PlaceList) async {
+        guard let id = list.id, let model else { return }
+        do {
+            if memberships.contains(id) {
+                try await model.removeFromList(placeID: placeID, listID: id)
+            } else {
+                try await model.addToList(placeID: placeID, listID: id)
+            }
+            actionError = nil
+            await reload()
+            onChanged()
+        } catch {
+            actionError = "Could not update that list."
+        }
+    }
+
+    @MainActor
+    private func createAndAdd() async {
+        guard let model else { return }
+        do {
+            let list = try await model.createList(named: newListName)
+            guard let id = list.id else { throw AppDatabaseError.unreadableDatabase }
+            try await model.addToList(placeID: placeID, listID: id)
+            newListName = ""
+            actionError = nil
+            await reload()
+            onChanged()
+        } catch {
+            actionError = "Use a shorter list name."
+        }
+    }
+}
+
 private struct OpenSourceCreditView: View {
     let credit: OSSCreditEntry
 
@@ -3130,6 +3748,7 @@ private struct PlaceCardSheet: View {
     @State private var card: PlaceCardModel?
     @State private var isLoading = true
     @State private var actionError: String?
+    @State private var showListPicker = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -3190,6 +3809,15 @@ private struct PlaceCardSheet: View {
         .task(id: placeID) {
             await loadCard()
         }
+        .sheet(isPresented: $showListPicker) {
+            ListPickerView(
+                placeID: placeID,
+                model: model,
+                onChanged: {
+                    Task { await refreshCard() }
+                }
+            )
+        }
     }
 
     @ViewBuilder
@@ -3231,11 +3859,16 @@ private struct PlaceCardSheet: View {
         if !names.isEmpty {
             FlowLayout(spacing: 8) {
                 ForEach(names, id: \.self) { name in
-                    Text(verbatim: name)
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(.thinMaterial, in: Capsule())
+                    Button {
+                        showListPicker = true
+                    } label: {
+                        Text(verbatim: name)
+                            .font(.caption.weight(.medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.thinMaterial, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .accessibilityIdentifier("place-card.list-chips")
@@ -3259,6 +3892,7 @@ private struct PlaceCardSheet: View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 8) {
                 saveButton(card)
+                addToListButton()
                 seenButton(card)
                 if card.pinState.visit != .none {
                     loveButton(card)
@@ -3274,6 +3908,7 @@ private struct PlaceCardSheet: View {
         } else {
             HStack(spacing: 10) {
                 saveButton(card)
+                addToListButton()
                 seenButton(card)
                 if card.pinState.visit != .none {
                     loveButton(card)
@@ -3296,6 +3931,14 @@ private struct PlaceCardSheet: View {
         .buttonStyle(.bordered)
         .accessibilityIdentifier("place-card.save")
         .accessibilityValue(card.pinState.saved ? "Saved" : "Not saved")
+    }
+
+    private func addToListButton() -> some View {
+        Button("Add to list") {
+            showListPicker = true
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier("place-card.add-to-list")
     }
 
     private func seenButton(_ card: PlaceCardModel) -> some View {
@@ -3501,6 +4144,19 @@ func offlineDownloadCancelMessage(for error: Error) -> String {
         return "Download cancelled"
     }
     return "Cancel failed: \(String(describing: error))"
+}
+
+enum ListMapFeatureFilter {
+    static func visibleFeatures(
+        _ features: [(MapPlace, PinState)],
+        showVisited: Bool,
+        showHidden: Bool
+    ) -> [(MapPlace, PinState)] {
+        let visitFiltered = showVisited ? features : features.filter { _, state in
+            state.visit == .none
+        }
+        return PinFeatureFilter.discoveryFeatures(visitFiltered, showHidden: showHidden)
+    }
 }
 
 @MainActor
@@ -3851,6 +4507,70 @@ private final class MapScreenModel {
         }.value
     }
 
+    func lists() async -> [PlaceList] {
+        let db = database
+        return await Task.detached {
+            (try? db.lists()) ?? []
+        }.value
+    }
+
+    func listProgress(listID: Int64) async -> ListProgress {
+        let db = database
+        return await Task.detached {
+            guard let progress = try? db.listProgress(listID: listID) else {
+                return ListProgress(visited: 0, total: 0)
+            }
+            return ListProgress(visited: progress.visited, total: progress.total)
+        }.value
+    }
+
+    func listItems(listID: Int64) async -> [ListPlace] {
+        let db = database
+        return await Task.detached {
+            (try? db.listItems(listID: listID)) ?? []
+        }.value
+    }
+
+    func listMemberships(containing placeID: String) async -> [Int64] {
+        let db = database
+        return await Task.detached {
+            (try? db.listMemberships(containing: placeID)) ?? []
+        }.value
+    }
+
+    func listMapFeatures(listID: Int64, showVisited: Bool, showHidden: Bool) async -> [(MapPlace, PinState)] {
+        let db = database
+        let features = await Task.detached {
+            (try? db.listMapFeatures(listID: listID)) ?? []
+        }.value
+        return ListMapFeatureFilter.visibleFeatures(
+            features,
+            showVisited: showVisited,
+            showHidden: showHidden
+        )
+    }
+
+    func createList(named name: String) async throws -> PlaceList {
+        let db = database
+        return try await Task.detached {
+            try db.createList(named: name)
+        }.value
+    }
+
+    func renameList(id: Int64, name: String) async throws -> PlaceList {
+        let db = database
+        return try await Task.detached {
+            try db.renameList(id: id, name: name)
+        }.value
+    }
+
+    func deleteList(id: Int64) async throws {
+        let db = database
+        try await Task.detached {
+            try db.deleteList(id: id)
+        }.value
+    }
+
     func cardModel(for placeID: String) async -> PlaceCardModel? {
         let pinState = await states(for: [placeID])[placeID] ?? PinState(saved: false, visit: .none)
         guard let source = await cardSource(for: placeID) else { return nil }
@@ -3887,6 +4607,15 @@ private final class MapScreenModel {
     func setSaved(placeID: String, saved: Bool) async throws {
         guard let placeRef = await actionPlaceRef(for: placeID) else { throw MapScreenActionError.placeUnavailable }
         try coreLoop.setSaved(placeRef, saved)
+    }
+
+    func addToList(placeID: String, listID: Int64) async throws {
+        guard let placeRef = await actionPlaceRef(for: placeID) else { throw MapScreenActionError.placeUnavailable }
+        try coreLoop.addToList(placeRef, listID: listID)
+    }
+
+    func removeFromList(placeID: String, listID: Int64) async throws {
+        try coreLoop.removeFromList(placeID: placeID, listID: listID)
     }
 
     func setVisited(placeID: String, visited: Bool) async throws {

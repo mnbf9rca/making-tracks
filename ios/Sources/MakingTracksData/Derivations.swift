@@ -2,6 +2,131 @@ import Foundation
 import GRDB
 
 extension AppDatabase {
+    public func lists() throws -> [PlaceList] {
+        try dbQueue.read { db in
+            try PlaceList.fetchAll(
+                db,
+                sql: """
+                    SELECT * FROM lists
+                    ORDER BY is_system DESC, name COLLATE NOCASE, id
+                    """
+            )
+        }
+    }
+
+    public func listItems(listID: Int64) throws -> [ListPlace] {
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT ps.place_id, ps.name, ps.lat, ps.lon, ps.category, ps.tier
+                    FROM list_items li
+                    JOIN place_snapshots ps ON ps.place_id = li.place_id
+                    WHERE li.list_id = ?
+                    ORDER BY li.added_at DESC, ps.name COLLATE NOCASE, ps.place_id
+                """,
+                arguments: [listID]
+            )
+            let places = rows.compactMap(Self.listSnapshotRow)
+            let placeIDs = places.map(\.placeID)
+            let states = try Self.viewportState(placeIDs, db)
+            return places.map { place in
+                return ListPlace(
+                    placeID: place.placeID,
+                    name: place.name,
+                    category: place.category,
+                    pinState: states[place.placeID] ?? PinState(saved: false, visit: .none)
+                )
+            }
+        }
+    }
+
+    public func listMapFeatures(listID: Int64) throws -> [(MapPlace, PinState)] {
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT ps.place_id, ps.name, ps.lat, ps.lon, ps.category, ps.tier
+                    FROM list_items li
+                    JOIN place_snapshots ps ON ps.place_id = li.place_id
+                    WHERE li.list_id = ?
+                    ORDER BY li.added_at DESC, ps.name COLLATE NOCASE, ps.place_id
+                    """,
+                arguments: [listID]
+            )
+            let places = rows.compactMap(Self.listSnapshotRow)
+            let placeIDs = places.map(\.placeID)
+            let states = try Self.viewportState(placeIDs, db)
+            return places.map { snapshot in
+                let place = MapPlace(
+                    id: snapshot.placeID,
+                    lat: snapshot.lat,
+                    lon: snapshot.lon,
+                    tier: snapshot.tier,
+                    category: snapshot.category
+                )
+                return (place, states[snapshot.placeID] ?? PinState(saved: false, visit: .none))
+            }
+        }
+    }
+
+    public func listMemberships(containing placeID: String) throws -> [Int64] {
+        try dbQueue.read { db in
+            try Int64.fetchAll(
+                db,
+                sql: """
+                    SELECT li.list_id
+                    FROM list_items li
+                    JOIN lists l ON l.id = li.list_id
+                    WHERE li.place_id = ?
+                    ORDER BY l.is_system DESC, l.name COLLATE NOCASE, li.list_id
+                    """,
+                arguments: [placeID]
+            )
+        }
+    }
+
+    private static func listSnapshotRow(_ row: Row) -> ListSnapshotRow? {
+        let placeID: String = row["place_id"]
+        let name: String = row["name"]
+        let lat: Double = row["lat"]
+        let lon: Double = row["lon"]
+        let category: String = row["category"]
+        let tier: Int = row["tier"]
+        guard placeID.count <= PlaceRef.maxPlaceIDLength,
+              lat.isFinite,
+              lon.isFinite,
+              (-90.0...90.0).contains(lat),
+              (-180.0...180.0).contains(lon),
+              (1...4).contains(tier)
+        else { return nil }
+
+        return ListSnapshotRow(
+            placeID: placeID,
+            name: safeListSnapshotText(name, max: PlaceRef.maxNameLength) ?? "Unnamed place",
+            lat: lat,
+            lon: lon,
+            category: safeListSnapshotText(category, max: PlaceRef.maxCategoryLength) ?? "place",
+            tier: tier
+        )
+    }
+
+    private static func safeListSnapshotText(_ text: String, max: Int) -> String? {
+        guard (1...max).contains(text.unicodeScalars.count),
+              text.unicodeScalars.allSatisfy({ scalar in
+                  switch scalar.value {
+                  case 0x0000...0x001f, 0x007f...0x009f,
+                       0x200b...0x200d, 0x2028...0x2029, 0x202a...0x202e,
+                       0x2060, 0x2066...0x2069, 0xfeff:
+                      return false
+                  default:
+                      return true
+                  }
+              })
+        else { return nil }
+        return text
+    }
+
     public func isSeen(_ placeID: String) throws -> Bool {
         try dbQueue.read { db in
             try Bool.fetchOne(
@@ -82,57 +207,71 @@ extension AppDatabase {
     public func viewportState(_ placeIDs: [String]) throws -> [String: PinState] {
         guard !placeIDs.isEmpty else { return [:] }
         return try dbQueue.read { db in
-            let qmarks = databaseQuestionMarks(count: placeIDs.count)
-            let saved = try Set(
-                String.fetchAll(
-                    db,
-                    sql: """
-                        SELECT DISTINCT li.place_id
-                        FROM list_items li
-                        JOIN lists l ON l.id = li.list_id
-                        WHERE li.place_id IN (\(qmarks))
-                        AND l.is_system = 1
-                        AND l.name = ?
-                        """,
-                    arguments: StatementArguments(placeIDs + [Self.wantToGoListName])
-                )
-            )
-            let hidden = try Set(
-                String.fetchAll(
-                    db,
-                    sql: "SELECT place_id FROM hidden_places WHERE place_id IN (\(qmarks))",
-                    arguments: StatementArguments(placeIDs)
-                )
-            )
-            let visitRows = try Row.fetchAll(
-                db,
-                sql: """
-                    SELECT place_id,
-                           MAX(CASE WHEN verdict = 'loved' THEN 1 ELSE 0 END) AS loved
-                    FROM visits
-                    WHERE place_id IN (\(qmarks))
-                    GROUP BY place_id
-                    """,
-                arguments: StatementArguments(placeIDs)
-            )
-            var visit: [String: VisitState] = [:]
-            for row in visitRows {
-                let placeID: String = row["place_id"]
-                let loved: Int = row["loved"]
-                visit[placeID] = loved == 1 ? .loved : .visited
-            }
-
-            var out: [String: PinState] = [:]
-            for placeID in placeIDs {
-                out[placeID] = PinState(
-                    saved: saved.contains(placeID),
-                    visit: visit[placeID] ?? .none,
-                    hidden: hidden.contains(placeID)
-                )
-            }
-            return out
+            try Self.viewportState(placeIDs, db)
         }
     }
+
+    private static func viewportState(_ placeIDs: [String], _ db: Database) throws -> [String: PinState] {
+        guard !placeIDs.isEmpty else { return [:] }
+        let qmarks = databaseQuestionMarks(count: placeIDs.count)
+        let saved = try Set(
+            String.fetchAll(
+                db,
+                sql: """
+                    SELECT DISTINCT li.place_id
+                    FROM list_items li
+                    JOIN lists l ON l.id = li.list_id
+                    WHERE li.place_id IN (\(qmarks))
+                    AND l.is_system = 1
+                    AND l.name = ?
+                    """,
+                arguments: StatementArguments(placeIDs + [Self.wantToGoListName])
+            )
+        )
+        let hidden = try Set(
+            String.fetchAll(
+                db,
+                sql: "SELECT place_id FROM hidden_places WHERE place_id IN (\(qmarks))",
+                arguments: StatementArguments(placeIDs)
+            )
+        )
+        let visitRows = try Row.fetchAll(
+            db,
+            sql: """
+                SELECT place_id,
+                       MAX(CASE WHEN verdict = 'loved' THEN 1 ELSE 0 END) AS loved
+                FROM visits
+                WHERE place_id IN (\(qmarks))
+                GROUP BY place_id
+                """,
+            arguments: StatementArguments(placeIDs)
+        )
+        var visit: [String: VisitState] = [:]
+        for row in visitRows {
+            let placeID: String = row["place_id"]
+            let loved: Int = row["loved"]
+            visit[placeID] = loved == 1 ? .loved : .visited
+        }
+
+        var out: [String: PinState] = [:]
+        for placeID in placeIDs {
+            out[placeID] = PinState(
+                saved: saved.contains(placeID),
+                visit: visit[placeID] ?? .none,
+                hidden: hidden.contains(placeID)
+            )
+        }
+        return out
+    }
+}
+
+private struct ListSnapshotRow {
+    let placeID: String
+    let name: String
+    let lat: Double
+    let lon: Double
+    let category: String
+    let tier: Int
 }
 
 private func databaseQuestionMarks(count: Int) -> String {

@@ -2,6 +2,71 @@ import Foundation
 import GRDB
 
 extension AppDatabase {
+    private static let maxListNameScalars = 80
+
+    static func normalizedListName(_ name: String) throws -> String {
+        let filtered = String(name.unicodeScalars.filter { !isUnsafeListNameScalar($0) })
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !filtered.isEmpty,
+              filtered.unicodeScalars.count <= maxListNameScalars
+        else {
+            throw AppDatabaseError.invalidListName
+        }
+        return filtered
+    }
+
+    private static func isUnsafeListNameScalar(_ scalar: Unicode.Scalar) -> Bool {
+        if CharacterSet.controlCharacters.contains(scalar) { return true }
+        switch scalar.value {
+        case 0x200B...0x200F, 0x202A...0x202E, 0x2060...0x206F, 0xFEFF:
+            return true
+        default:
+            return false
+        }
+    }
+
+    public func createList(named name: String) throws -> PlaceList {
+        let normalized = try Self.normalizedListName(name)
+        return try dbQueue.write { db in
+            var list = PlaceList(
+                id: nil,
+                name: normalized,
+                isSystem: false,
+                createdAt: now()
+            )
+            try list.insert(db)
+            return list
+        }
+    }
+
+    public func renameList(id: Int64, name: String) throws -> PlaceList {
+        let normalized = try Self.normalizedListName(name)
+        return try dbQueue.write { db in
+            guard let existing = try PlaceList.fetchOne(db, key: id) else {
+                throw AppDatabaseError.unreadableDatabase
+            }
+            guard !existing.isSystem else {
+                throw AppDatabaseError.systemListIsProtected
+            }
+            var renamed = existing
+            renamed.name = normalized
+            try renamed.update(db)
+            return renamed
+        }
+    }
+
+    public func deleteList(id: Int64) throws {
+        try dbQueue.write { db in
+            guard let existing = try PlaceList.fetchOne(db, key: id) else {
+                throw AppDatabaseError.unreadableDatabase
+            }
+            guard !existing.isSystem else {
+                throw AppDatabaseError.systemListIsProtected
+            }
+            _ = try existing.delete(db)
+        }
+    }
+
     func snapshotIfNeeded(_ place: PlaceRef, _ db: Database) throws {
         let exists = try Bool.fetchOne(
             db,
