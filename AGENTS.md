@@ -53,7 +53,7 @@ Work packages (spec §8) are designed one at a time (design agent) and built one
 - same surface and same owner;
 - the WP is not yet in review;
 - it introduces no design fork, no schema or contract change, and no new dependency;
-- fewer than 2 additions have already been absorbed (3 riders is a hard cap);
+- at most one addition has already been absorbed — a third means file it;
 - it is recorded as an explicit scope addition in the PR body.
 
 Otherwise file an issue first, then route it to its own PR if it is an urgent live bug, or to the next planned WP. Regardless of route, anything not fixed the same day gets a tracker issue — routing messages are not project memory. (Incidents → *Three riders on one work package*.)
