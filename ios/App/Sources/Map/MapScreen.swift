@@ -340,6 +340,11 @@ struct ViewportSeed: Sendable, Equatable {
         zoom: 12
     )
 
+    static let klStreet = ViewportSeed(
+        bbox: BBox(minLon: 101.676, minLat: 3.126, maxLon: 101.704, maxLat: 3.154),
+        zoom: 14
+    )
+
     static let ocean = ViewportSeed(
         bbox: BBox(minLon: -170, minLat: -10, maxLon: -150, maxLat: 10),
         zoom: 4
@@ -352,6 +357,8 @@ struct ViewportSeed: Sendable, Equatable {
 
     static func selected(_ value: String?) -> ViewportSeed {
         switch value {
+        case "kl-street":
+            return .klStreet
         case "ocean":
             return .ocean
         case "penang":
@@ -827,6 +834,7 @@ struct MapScreen: View {
     var offlineDownloadProgress: OfflineDownloadProgress?
     var debugCoverageBBoxes: [CoverageBBox] = []
     var debugExposeFixturePinDiagnostics = false
+    var debugUseDenseFixturePins = false
     var onReplayOnboarding: @MainActor () -> Void = {}
     var cameraRequest: ViewportCameraRequest?
 
@@ -874,6 +882,7 @@ struct MapScreen: View {
     @State private var nextListCameraRequestID = 10_000
     private let viewportRefreshDebouncer = ViewportRefreshDebouncer()
     @State private var suppressedNearbyPromptPlaceIDs: Set<String> = []
+    @State private var nearbyPromptFeatures: [(MapPlace, PinState)] = []
     @State private var nearbyPromptNames: [String: String] = [:]
     @State private var listMapPinNames: [String: String] = [:]
     @State private var debugProjectedFixturePins: [ProjectedFeatureDiagnostic] = []
@@ -894,6 +903,7 @@ struct MapScreen: View {
         offlineDownloadProgress: OfflineDownloadProgress? = nil,
         debugCoverageBBoxes: [CoverageBBox] = [],
         debugExposeFixturePinDiagnostics: Bool = false,
+        debugUseDenseFixturePins: Bool = false,
         locationManager: AppLocationManager = AppLocationManager(),
         locationPermission: LocationPermission? = nil,
         cameraRequest: ViewportCameraRequest? = nil,
@@ -907,10 +917,11 @@ struct MapScreen: View {
         self.offlineDownloadProgress = offlineDownloadProgress
         self.debugCoverageBBoxes = debugCoverageBBoxes
         self.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
+        self.debugUseDenseFixturePins = debugUseDenseFixturePins
         self.onReplayOnboarding = onReplayOnboarding
         self.cameraRequest = cameraRequest
         self.locationManager = locationManager
-        _features = State(initialValue: isFixtureMap ? Self.initialFixtureFeatures() : [])
+        _features = State(initialValue: isFixtureMap ? Self.initialFixtureFeatures(dense: debugUseDenseFixturePins) : [])
         _installedCoverageBBoxes = State(initialValue: debugCoverageBBoxes)
         _locationPermission = StateObject(wrappedValue: locationPermission ?? LocationPermission(manager: locationManager))
     }
@@ -1263,7 +1274,7 @@ struct MapScreen: View {
         var names = nearbyPromptNames
         names.merge(listMapPinNames) { _, listName in listName }
         if isFixtureMap {
-            for fixturePlace in Self.fixturePlaces {
+            for fixturePlace in Self.selectedFixturePlaces(dense: debugUseDenseFixturePins) {
                 names[fixturePlace.placeID] = fixturePlace.name
             }
         }
@@ -1875,7 +1886,7 @@ struct MapScreen: View {
         else { return nil }
 
         guard let candidate = NearbyPromptSelector.candidate(
-            features: features,
+            features: nearbyPromptFeatures,
             names: nearbyPromptNames,
             userLatitude: coordinate.latitude,
             userLongitude: coordinate.longitude,
@@ -1932,7 +1943,7 @@ struct MapScreen: View {
         if model == nil {
             model = try? MapScreenModel(
                 database: database,
-                fixturePlaces: isFixtureMap ? Self.fixturePlaces : [],
+                fixturePlaces: isFixtureMap ? Self.selectedFixturePlaces(dense: debugUseDenseFixturePins) : [],
                 forceTileNetworkOffline: debugForceTileNetworkOffline
             )
             let hasModel = model != nil
@@ -2071,12 +2082,18 @@ struct MapScreen: View {
         guard let model else { return }
         let startedAt = Date()
         MakingTracksLog.resolution.debug("viewport refresh started request=\(requestID, privacy: .public) zoom=\(zoom, privacy: .public)")
-        let next = await model.features(in: bbox, zoom: zoom, allowManifestRefresh: allowManifestRefresh)
+        let viewportFeatures = await model.viewportFeatures(
+            in: bbox,
+            zoom: zoom,
+            allowManifestRefresh: allowManifestRefresh
+        )
+        let next = viewportFeatures.display
+        let nextNearbyPromptFeatures = viewportFeatures.nearbyPrompt
         let nextRegionPMTilesURL = await model.pmtilesURL
         let nextAttribution = await model.attribution
         let nextLoadState = await model.loadState
         var nextNearbyPromptNames: [String: String] = [:]
-        for (place, _) in next {
+        for (place, _) in nextNearbyPromptFeatures {
             if let card = await model.cardModel(for: place.id) {
                 nextNearbyPromptNames[place.id] = card.name
             }
@@ -2086,6 +2103,7 @@ struct MapScreen: View {
             viewportRefreshTracker.complete(requestID: requestID)
             if capturedStateEpoch == stateEpoch {
                 features = next
+                nearbyPromptFeatures = nextNearbyPromptFeatures
                 nearbyPromptNames = nextNearbyPromptNames
                 listMapPinNames = [:]
                 currentViewport = ViewportSeed(bbox: bbox, zoom: zoom)
@@ -2148,6 +2166,9 @@ struct MapScreen: View {
             await MainActor.run {
                 stateEpoch += 1
                 features = features.map { place, state in
+                    (place, states[place.id] ?? state)
+                }
+                nearbyPromptFeatures = nearbyPromptFeatures.map { place, state in
                     (place, states[place.id] ?? state)
                 }
             }
@@ -2215,6 +2236,7 @@ struct MapScreen: View {
               currentList.showVisited == list.showVisited
         else { return }
         features = next
+        nearbyPromptFeatures = []
         nearbyPromptNames = [:]
         listMapPinNames = nextNames
         trackSourceSnapshot = nextTrackSourceSnapshot
@@ -2294,11 +2316,11 @@ struct MapScreen: View {
             lat: 3.14,
             lon: 101.69,
             category: "attraction",
-            tier: 3,
+            tier: 1,
             schemaVersion: 1,
             fetchedAt: Date(timeIntervalSince1970: 0),
             rawJSON: """
-            {"blurb":"A hand-painted sign still visible above the old shopfront.","category":"attraction","lat":3.14,"lon":101.69,"name":"Ghost Sign","place_id":"mt1_00000000000000000000000000","score":0.5,"source_refs":["osm:node/1"],"tier":3}
+            {"blurb":"A hand-painted sign still visible above the old shopfront.","category":"attraction","lat":3.14,"lon":101.69,"name":"Ghost Sign","place_id":"mt1_00000000000000000000000000","score":0.5,"source_refs":["osm:node/1"],"tier":1}
             """
         ),
         try! PlaceRef(
@@ -2307,17 +2329,59 @@ struct MapScreen: View {
             lat: 3.16,
             lon: 101.702,
             category: "historic_building",
-            tier: 3,
+            tier: 2,
             schemaVersion: 1,
             fetchedAt: Date(timeIntervalSince1970: 0),
             rawJSON: """
-            {"blurb":"A restored neighborhood cinema with stepped plasterwork and neon trim.","category":"historic_building","lat":3.16,"lon":101.702,"name":"Art Deco Cinema","place_id":"mt1_00000000000000000000000001","score":0.5,"source_refs":["osm:node/2"],"tier":3}
+            {"blurb":"A restored neighborhood cinema with stepped plasterwork and neon trim.","category":"historic_building","lat":3.16,"lon":101.702,"name":"Art Deco Cinema","place_id":"mt1_00000000000000000000000001","score":0.5,"source_refs":["osm:node/2"],"tier":2}
             """
         ),
     ]
 
-    private static func initialFixtureFeatures() -> [(MapPlace, PinState)] {
-        fixturePlaces.map { fixturePlace in
+    private static func selectedFixturePlaces(dense: Bool) -> [PlaceRef] {
+        dense ? denseFixturePlaces : fixturePlaces
+    }
+
+    private static let denseFixturePlaces: [PlaceRef] = {
+        let categories = ["attraction", "historic_building", "museum", "artwork", "memorial", "religious"]
+        return (0..<24).map { index in
+            let tier: Int
+            if index < 4 {
+                tier = 1
+            } else if index < 10 {
+                tier = 2
+            } else if index < 16 {
+                tier = 3
+            } else {
+                tier = 4
+            }
+            let lat = 3.132 + (Double(index / 6) * 0.004)
+            let lon = 101.682 + (Double(index % 6) * 0.004)
+            let category = categories[index % categories.count]
+            let placeID = "mt1_D000000000000000000000000\(crockfordDigit(for: index + 1))"
+            let name = "Dense Pin \(index + 1)"
+            return try! PlaceRef(
+                placeID: placeID,
+                name: name,
+                lat: lat,
+                lon: lon,
+                category: category,
+                tier: tier,
+                schemaVersion: 1,
+                fetchedAt: Date(timeIntervalSince1970: 0),
+                rawJSON: """
+                {"blurb":"Fixture pin for tier/zoom density screenshots.","category":"\(category)","lat":\(lat),"lon":\(lon),"name":"\(name)","place_id":"\(placeID)","score":0.5,"source_refs":["osm:node/\(10_000 + index)"],"tier":\(tier)}
+                """
+            )
+        }
+    }()
+
+    private static func crockfordDigit(for index: Int) -> Character {
+        Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")[index]
+    }
+
+    private static func initialFixtureFeatures(dense: Bool) -> [(MapPlace, PinState)] {
+        selectedFixturePlaces(dense: dense).map { fixturePlace in
             (
                 MapPlace(
                     id: fixturePlace.placeID,
@@ -5172,10 +5236,19 @@ private final class MapScreenModel {
     }
 
     func features(in bbox: BBox, zoom: Int, allowManifestRefresh: Bool = true) async -> [(MapPlace, PinState)] {
+        await viewportFeatures(in: bbox, zoom: zoom, allowManifestRefresh: allowManifestRefresh).display
+    }
+
+    struct ViewportFeatures: Sendable {
+        let display: [(MapPlace, PinState)]
+        let nearbyPrompt: [(MapPlace, PinState)]
+    }
+
+    func viewportFeatures(in bbox: BBox, zoom: Int, allowManifestRefresh: Bool = true) async -> ViewportFeatures {
         if !fixturePlaces.isEmpty {
             let sortedFixtures = fixturePlaces.values.sorted { $0.placeID < $1.placeID }
             let states = await states(for: Set(sortedFixtures.map(\.placeID)))
-            let next = sortedFixtures.map { fixturePlace in
+            let sourceFeatures = sortedFixtures.map { fixturePlace in
                 let place = MapPlace(
                     id: fixturePlace.placeID,
                     lat: fixturePlace.lat,
@@ -5185,14 +5258,22 @@ private final class MapScreenModel {
                 )
                 return (place, states[fixturePlace.placeID] ?? PinState(saved: false, visit: .none))
             }
-            return PinFeatureFilter.discoveryFeatures(next, showHidden: showHiddenPlaces)
+            return ViewportFeatures(
+                display: PinFeatureFilter.discoveryFeatures(sourceFeatures, showHidden: showHiddenPlaces, zoom: zoom),
+                nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures)
+            )
         }
-        guard let client = await selectClient(for: bbox, allowManifestRefresh: allowManifestRefresh) else { return [] }
+        guard let client = await selectClient(for: bbox, allowManifestRefresh: allowManifestRefresh) else {
+            return ViewportFeatures(display: [], nearbyPrompt: [])
+        }
         let places = await client.places(inViewport: bbox, zoom: zoom, allowManifestRefresh: allowManifestRefresh)
         let ids = places.map(\.id)
         let states = await states(for: Set(ids))
-        let next = places.map { ($0, states[$0.id] ?? PinState(saved: false, visit: .none)) }
-        return PinFeatureFilter.discoveryFeatures(next, showHidden: showHiddenPlaces)
+        let sourceFeatures = places.map { ($0, states[$0.id] ?? PinState(saved: false, visit: .none)) }
+        return ViewportFeatures(
+            display: PinFeatureFilter.discoveryFeatures(sourceFeatures, showHidden: showHiddenPlaces, zoom: zoom),
+            nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures)
+        )
     }
 
     func setShowHidden(_ showHidden: Bool) {

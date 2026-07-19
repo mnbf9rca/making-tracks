@@ -621,6 +621,24 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
     }
 
+    func testPinThinningScreenshotsCompareCityAndStreetZoomDensity() {
+        let cityApp = launch(reset: true, pinDiagnostics: true, densePins: true, startupViewport: "kl")
+        XCTAssertTrue(cityApp.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: cityApp))
+        XCTAssertTrue(waitForSourceFeatureCount(10, in: cityApp))
+        XCTAssertTrue(waitForProjectedFixturePinCount(10, in: cityApp))
+        attachScreenshot(named: "pin-thinning-city")
+        cityApp.terminate()
+
+        let streetApp = launch(reset: true, pinDiagnostics: true, densePins: true, startupViewport: "kl-street")
+        XCTAssertTrue(streetApp.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: streetApp))
+        XCTAssertTrue(waitForSourceFeatureCount(24, in: streetApp))
+        XCTAssertTrue(waitForProjectedFixturePinCount(24, in: streetApp))
+        attachScreenshot(named: "pin-thinning-street")
+        streetApp.terminate()
+    }
+
     func testCoverageEdgeScreenshotsAcrossThemes() {
         let coverageBBox = "101.640,3.090,101.690,3.190"
         let diagnosticApp = launch(
@@ -746,6 +764,68 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
     }
 
+    func testCardVisitStateSuppressesNearbyPromptWithoutViewportRefresh() {
+        let app = launch(
+            reset: true,
+            simulatedLocationAuthorization: true,
+            simulatedLatitude: 3.1402,
+            simulatedLongitude: 101.6902,
+            pinDiagnostics: true
+        )
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+
+        app.buttons["map.locate-me"].tap()
+
+        let nearbyPrompt = app.otherElements["map.nearby-prompt"]
+        XCTAssertTrue(nearbyPrompt.waitForExistence(timeout: 5))
+
+        XCTAssertTrue(activateFixturePin(
+            in: map,
+            app: app,
+            placeID: placeID,
+            title: "Ghost Sign",
+            expectedLabel: "Ghost Sign, Attraction, not visited"
+        ))
+        XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
+        app.buttons["place-card.visited"].tap()
+        app.buttons["place-card.close"].tap()
+
+        XCTAssertFalse(nearbyPrompt.waitForExistence(timeout: 2))
+        XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
+    }
+
+    func testLocateMePromptsForNearbyTierHiddenByCityZoomThinning() {
+        let app = launch(
+            reset: true,
+            simulatedLocationAuthorization: true,
+            simulatedLatitude: 3.1400,
+            simulatedLongitude: 101.6980,
+            pinDiagnostics: true,
+            densePins: true,
+            startupViewport: "kl"
+        )
+
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+        XCTAssertTrue(waitForSourceFeatureCount(10, in: app))
+        XCTAssertFalse(app.staticTexts["map.fixture-pin.mt1_D000000000000000000000000H"].exists)
+
+        app.buttons["map.locate-me"].tap()
+
+        let nearbyPrompt = app.otherElements["map.nearby-prompt"]
+        XCTAssertTrue(nearbyPrompt.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["You're near Dense Pin 17 — seen it?"].waitForExistence(timeout: 5))
+
+        let seenButton = app.buttons["map.nearby-prompt.seen"]
+        XCTAssertTrue(seenButton.waitForExistence(timeout: 5))
+        seenButton.tap()
+
+        XCTAssertFalse(nearbyPrompt.waitForExistence(timeout: 2))
+    }
+
     func testCreditsStayGroupedAtAccessibilityTextSize() throws {
         let app = launch(reset: true, accessibilityTextSize: true)
 
@@ -794,11 +874,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         seedTrackList: Bool = false,
         coverageBBoxes: [String] = [],
         resetOnboarding: Bool = false,
-        forceDarkAppearance: Bool = false
+        forceDarkAppearance: Bool = false,
+        densePins: Bool = false,
+        startupViewport: String? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
         app.launchArguments.append("--ui-testing-reset-pin-size")
+        if densePins {
+            app.launchArguments.append("--ui-testing-dense-pins")
+        }
+        if let startupViewport {
+            app.launchArguments.append("--ui-testing-map-state")
+            app.launchArguments.append(startupViewport)
+        }
         if pinDiagnostics {
             app.launchArguments.append("--ui-testing-pin-diagnostics")
         }
@@ -1136,6 +1225,19 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         return true
     }
 
+    private func waitForProjectedFixturePinCount(_ count: Int, in app: XCUIApplication) -> Bool {
+        let deadline = Date().addingTimeInterval(10)
+        let pins = app.staticTexts.matching(identifierPrefix: "map.fixture-pin.")
+        while Date() < deadline {
+            if pins.count == count {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        XCTFail("Expected \(count) projected fixture pins, got \(pins.count)")
+        return false
+    }
+
     private func attachScreenshot(named name: String) {
         let screenshot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
@@ -1303,6 +1405,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "pin-snow-min": "pin-snow-min",
         "pin-snow-default": "pin-snow-default",
         "pin-snow-max": "pin-snow-max",
+        "pin-thinning-city": "pin-thinning-city",
+        "pin-thinning-street": "pin-thinning-street",
         "coverage-edge-defined-paper": "coverage-edge-defined-paper",
         "coverage-edge-snow": "coverage-edge-snow",
         "coverage-edge-street-contrast": "coverage-edge-street-contrast",
