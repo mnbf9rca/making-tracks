@@ -40,6 +40,7 @@ OPTIONAL = (
     "docs/INFRA.md",
     "docs/process/gate-lessons.md",
     "docs/process/ios-simulator.md",
+    "docs/process/pipeline-retention.md",
 )
 
 # NOT linted, deliberately:
