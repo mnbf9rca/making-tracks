@@ -22,7 +22,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["place-card.save"].tap()
         app.buttons["place-card.visited"].tap()
         XCTAssertTrue(app.buttons["place-card.loved"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["place-card.loved"].label, "Love")
         app.buttons["place-card.loved"].tap()
+        XCTAssertTrue(app.buttons["place-card.loved"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["place-card.loved"].label, "Unlove")
         app.buttons["place-card.close"].tap()
 
         XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
@@ -43,7 +46,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(relaunched.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
         XCTAssertEqual(relaunched.buttons["place-card.save"].label, "Saved")
         XCTAssertTrue(relaunched.buttons["place-card.loved"].waitForExistence(timeout: 5))
-        XCTAssertEqual(relaunched.buttons["place-card.loved"].label, "Loved")
+        XCTAssertEqual(relaunched.buttons["place-card.loved"].label, "Unlove")
     }
 
     func testFirstRunOnboardingPersistsRegionAndCompletesBeforeRelaunch() {
@@ -204,12 +207,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(photo.waitForExistence(timeout: 5))
         XCTAssertEqual(photo.label, "Photo of Ghost Sign")
 
-        let saveButton = app.buttons["place-card.save"]
-        let seenButton = app.buttons["place-card.visited"]
-        let hideButton = app.buttons["place-card.hide"]
+        let actionBar = app.otherElements["place-card.action-bar"]
+        let saveButton = actionBar.buttons["place-card.save"]
+        let seenButton = actionBar.buttons["place-card.visited"]
+        let hideButton = actionBar.buttons["place-card.hide"]
+        let addToListButton = app.buttons["place-card.add-to-list"]
+        XCTAssertTrue(actionBar.waitForExistence(timeout: 5))
+        XCTAssertEqual(actionBar.buttons.count, 3)
         XCTAssertTrue(saveButton.exists)
         XCTAssertTrue(seenButton.exists)
         XCTAssertTrue(hideButton.exists)
+        XCTAssertLessThan(addToListButton.frame.minY, saveButton.frame.minY)
+        XCTAssertEqual(seenButton.label, "Seen")
+        XCTAssertEqual(hideButton.label, "Hide")
+        let saveFrameBeforeAttributionScroll = saveButton.frame
         XCTAssertTrue(chips.waitForExistence(timeout: 5))
         XCTAssertTrue(chips.label.contains("Date night"))
 
@@ -222,9 +233,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             ("description", description),
             ("photo", photo),
             ("chips", chips),
-            ("actions", saveButton),
             ("attribution", attribution),
         ])
+        XCTAssertLessThan(abs(saveButton.frame.minY - saveFrameBeforeAttributionScroll.minY), 3)
+        XCTAssertTrue(saveButton.isHittable)
 
         hideButton.tap()
         XCTAssertTrue(app.staticTexts["Hidden — Undo"].waitForExistence(timeout: 5))
@@ -698,7 +710,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
     }
 
-    func testPlaceCardStacksActionsAtAccessibilityTextSize() {
+    func testPlaceCardKeepsFixedActionSlotsReachableAtAccessibilityTextSize() {
         let app = launch(reset: true, accessibilityTextSize: true, pinDiagnostics: true)
 
         let map = app.otherElements["map.surface"]
@@ -710,17 +722,36 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openFixture.tap()
         XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
 
-        let saveButton = app.buttons["place-card.save"]
-        let visitedButton = app.buttons["place-card.visited"]
-        XCTAssertTrue(scrollToExistence(of: saveButton, in: app))
-        XCTAssertTrue(scrollToExistence(of: visitedButton, in: app))
+        let actionBar = app.otherElements["place-card.action-bar"]
+        XCTAssertTrue(actionBar.waitForExistence(timeout: 5))
+        let saveButton = actionBar.buttons["place-card.save"]
+        let visitedButton = actionBar.buttons["place-card.visited"]
+        let hideButton = actionBar.buttons["place-card.hide"]
+        XCTAssertTrue(saveButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(visitedButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(hideButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(actionBar.buttons.count, 3)
         attachScreenshot(named: "place-card-a11y")
         XCTAssertGreaterThan(visitedButton.frame.minY, saveButton.frame.minY)
+        XCTAssertGreaterThan(hideButton.frame.minY, visitedButton.frame.minY)
 
         visitedButton.tap()
-        let lovedButton = app.buttons["place-card.loved"]
-        XCTAssertTrue(scrollToExistence(of: lovedButton, in: app))
-        XCTAssertGreaterThan(lovedButton.frame.minY, visitedButton.frame.minY)
+        let lovedButton = actionBar.buttons["place-card.loved"]
+        let unseeButton = actionBar.buttons["place-card.unsee"]
+        XCTAssertTrue(lovedButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(unseeButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(actionBar.buttons.count, 3)
+        XCTAssertEqual(lovedButton.label, "Love")
+        XCTAssertEqual(unseeButton.label, "Un-see")
+        XCTAssertTrue(unseeButton.isEnabled)
+
+        lovedButton.tap()
+        XCTAssertTrue(lovedButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(unseeButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(actionBar.buttons.count, 3)
+        XCTAssertEqual(lovedButton.label, "Unlove")
+        XCTAssertFalse(unseeButton.isEnabled)
+        XCTAssertFalse(actionBar.buttons["place-card.hide"].exists)
     }
 
     func testLocateMeChromeExplainsWhenLocationIsDenied() throws {
@@ -949,6 +980,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         if resetOnboarding {
             app.launchArguments.append("--ui-testing-reset-onboarding")
+            app.launchArguments.append("-hasCompletedOnboarding")
+            app.launchArguments.append("NO")
         } else {
             app.launchArguments.append("--ui-testing-complete-onboarding")
         }

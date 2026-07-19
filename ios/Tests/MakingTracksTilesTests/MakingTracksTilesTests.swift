@@ -352,7 +352,7 @@ final class MakingTracksTilesTests: XCTestCase {
 
         XCTAssertEqual(images.map(\.placeID), ["mt1_00000000000000000000000000"])
         XCTAssertEqual(images.first?.thumbURL.absoluteString, "https://tiles.making-tracks.app/thumbs/aa/\(imageSHA).webp")
-        XCTAssertEqual(images.first?.attribution.displayText, "Alice Example / Creative Commons Attribution-ShareAlike 4.0 / modified / https://creativecommons.org/licenses/by-sa/4.0/")
+        XCTAssertEqual(images.first?.attribution.displayText, "Alice Example / Creative Commons Attribution-ShareAlike 4.0 / modified")
     }
 
     func testImageIndexDecoderAllowsCCBY21AndRejectsNCNDSuffixes() throws {
@@ -440,6 +440,27 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertTrue(images.isEmpty)
     }
 
+    func testImageIndexDecoderRejectsURLLikeAttributionDisplayText() throws {
+        let images = try ImageIndexDecoder.decode(
+            jsonData(imageIndexObject(places: [
+                validImageEntry([
+                    "attribution": validImageAttribution([
+                        "license_name": "https://evil.example/license",
+                    ]),
+                ]),
+                validImageEntry([
+                    "place_id": "mt1_00000000000000000000000001",
+                    "attribution": validImageAttribution([
+                        "creator": "www.evil.example",
+                    ]),
+                ]),
+            ])),
+            expected: TileCoordinate(z: 10, x: 511, y: 340)
+        )
+
+        XCTAssertTrue(images.isEmpty)
+    }
+
     func testImageIndexDecoderDropsInvalidRowsButAllowsPublicDomainWithoutCreator() throws {
         let publicDomainSHA = String(repeating: "b", count: 64)
         let images = try ImageIndexDecoder.decode(
@@ -473,7 +494,7 @@ final class MakingTracksTilesTests: XCTestCase {
 
         XCTAssertEqual(images.map(\.placeID), ["mt1_00000000000000000000000001"])
         XCTAssertNil(images.first?.attribution.creator)
-        XCTAssertEqual(images.first?.attribution.displayText, "Public domain / modified / https://creativecommons.org/publicdomain/mark/1.0/")
+        XCTAssertEqual(images.first?.attribution.displayText, "Public domain / modified")
 
         XCTAssertThrowsError(
             try ImageIndexDecoder.decode(

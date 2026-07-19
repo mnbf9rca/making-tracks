@@ -1762,7 +1762,6 @@ public struct PlaceImageAttribution: Sendable, Equatable {
         if modified {
             parts.append("modified")
         }
-        parts.append(licenseURL.absoluteString)
         return parts.joined(separator: " / ")
     }
 }
@@ -1869,7 +1868,7 @@ public enum ImageIndexDecoder {
               safeText(licenseCode),
               isAllowedLicenseCode(licenseCode),
               let licenseName = object["license_name"] as? String,
-              safeText(licenseName),
+              safeAttributionText(licenseName),
               let licenseURL = allowedURL(object["license_url"], hosts: ["creativecommons.org", "www.creativecommons.org"]),
               isExpectedLicenseURL(licenseURL, for: licenseCode),
               let sourceURL = allowedURL(object["source_url"], hosts: ["commons.wikimedia.org"]),
@@ -1879,7 +1878,7 @@ public enum ImageIndexDecoder {
         let creator: String?
         if object["creator"] is NSNull {
             creator = nil
-        } else if let decodedCreator = object["creator"] as? String, safeText(decodedCreator) {
+        } else if let decodedCreator = object["creator"] as? String, safeAttributionText(decodedCreator) {
             creator = decodedCreator
         } else {
             return nil
@@ -1898,6 +1897,14 @@ public enum ImageIndexDecoder {
 
     private static func safeText(_ value: String) -> Bool {
         (1...maxTextScalars).contains(value.scalarCount) && PlaceContentGuards.isSafeText(value)
+    }
+
+    private static func safeAttributionText(_ value: String) -> Bool {
+        safeText(value)
+            && value.range(
+                of: #"(?i)(https?://|www\.|[a-z0-9][a-z0-9.-]*\.[a-z]{2,})"#,
+                options: .regularExpression
+            ) == nil
     }
 
     private static func allowedURL(_ value: Any?, hosts: Set<String>) -> URL? {
