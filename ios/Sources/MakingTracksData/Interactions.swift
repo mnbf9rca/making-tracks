@@ -112,12 +112,34 @@ extension AppDatabase {
         }
     }
 
-    public func deleteVisits(placeID: String) throws {
+    // Data-layer helper for tests and maintenance only. Product un-see flows
+    // route through deleteLatestVisit so older visit history is preserved.
+    func deleteVisits(placeID: String) throws {
         try dbQueue.write { db in
             try db.execute(
                 sql: "DELETE FROM visits WHERE place_id = ?",
                 arguments: [placeID]
             )
+        }
+    }
+
+    @discardableResult
+    public func deleteLatestVisit(placeID: String) throws -> Bool {
+        try dbQueue.write { db in
+            guard let id = try Int64.fetchOne(
+                db,
+                sql: """
+                    SELECT id FROM visits
+                    WHERE place_id = ?
+                    ORDER BY visited_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                arguments: [placeID]
+            ) else {
+                return false
+            }
+            _ = try Visit.deleteOne(db, key: id)
+            return true
         }
     }
 

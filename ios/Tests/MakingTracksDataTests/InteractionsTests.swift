@@ -288,6 +288,65 @@ final class InteractionsTests: XCTestCase {
         XCTAssertNotNil(try db.snapshot(for: "p_unvisit"))
     }
 
+    func testDeleteLatestVisitRemovesOnlyNewestVisitForPlace() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_unsee_latest")
+        let older = try db.recordVisit(place, verdict: .loved)
+        _ = try db.recordVisit(place)
+
+        let deleted = try db.deleteLatestVisit(placeID: "p_unsee_latest")
+
+        XCTAssertEqual(deleted, true)
+        let visits = try db.dbQueue.read {
+            try Visit.fetchAll($0, sql: "SELECT * FROM visits WHERE place_id = ? ORDER BY id", arguments: ["p_unsee_latest"])
+        }
+        XCTAssertEqual(visits.map(\.id), [older])
+        XCTAssertEqual(visits.map(\.verdict), [.loved])
+        XCTAssertEqual(try db.viewportState(["p_unsee_latest"])["p_unsee_latest"], PinState(saved: false, visit: .loved))
+        XCTAssertEqual(try db.trackVisits().map(\.id), [older])
+
+        let deletedMissing = try db.deleteLatestVisit(placeID: "missing")
+        XCTAssertEqual(deletedMissing, false)
+    }
+
+    func testDeleteLatestVisitPrefersNewestVisitedAtTwoYearsAfterOlderRowID() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let olderVisitedAt = Date(timeIntervalSince1970: 100)
+        let newerVisitedAt = olderVisitedAt.addingTimeInterval(60 * 60 * 24 * 365 * 2)
+        let newerLowerID = try db.dbQueue.write { db in
+            var visit = Visit(
+                id: nil,
+                placeID: "p_unsee_order",
+                visitedAt: newerVisitedAt,
+                verdict: .loved,
+                createdAt: newerVisitedAt
+            )
+            try visit.insert(db)
+            return visit.id!
+        }
+        let olderHigherID = try db.dbQueue.write { db in
+            var visit = Visit(
+                id: nil,
+                placeID: "p_unsee_order",
+                visitedAt: olderVisitedAt,
+                verdict: nil,
+                createdAt: olderVisitedAt
+            )
+            try visit.insert(db)
+            return visit.id!
+        }
+        XCTAssertLessThan(newerLowerID, olderHigherID)
+
+        let deleted = try db.deleteLatestVisit(placeID: "p_unsee_order")
+
+        XCTAssertEqual(deleted, true)
+        let visits = try db.dbQueue.read {
+            try Visit.fetchAll($0, sql: "SELECT * FROM visits WHERE place_id = ? ORDER BY id", arguments: ["p_unsee_order"])
+        }
+        XCTAssertEqual(visits.map(\.id), [olderHigherID])
+        XCTAssertEqual(visits.map(\.visitedAt), [olderVisitedAt])
+    }
+
     func testSetHiddenIsIdempotentReversibleAndSnapshotsOnFirstInteraction() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         let place = try ref("p_hidden")
