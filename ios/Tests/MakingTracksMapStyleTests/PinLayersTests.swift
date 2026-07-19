@@ -395,10 +395,10 @@ final class PinLayersTests: XCTestCase {
         XCTAssertNotEqual(mid, [.double(0.5), .double(0)], "middle coordinate should make the connector visibly abstract, not a straight segment")
     }
 
-    func testTrackSegmentFeaturesKeepDerivedArcCoordinatesInWGS84Bounds() {
+    func testTrackSegmentFeaturesKeepNonDatelineDerivedArcCoordinatesInWGS84Bounds() {
         let visits = [
-            trackVisit(id: 1, placeID: "near-pole-west", seconds: 0, lat: 89.9, lon: -170),
-            trackVisit(id: 2, placeID: "near-pole-east", seconds: 600, lat: 89.9, lon: 170),
+            trackVisit(id: 1, placeID: "near-pole-west", seconds: 0, lat: 89.9, lon: -10),
+            trackVisit(id: 2, placeID: "near-pole-east", seconds: 600, lat: 89.9, lon: 10),
         ]
 
         let features = FeatureEncoding.trackSegmentFeatures(
@@ -421,6 +421,101 @@ final class PinLayersTests: XCTestCase {
             XCTAssertTrue(lat.isFinite)
             XCTAssertTrue((-180.0...180.0).contains(lon), "longitude \(lon)")
             XCTAssertTrue((-90.0...90.0).contains(lat), "latitude \(lat)")
+        }
+    }
+
+    func testTrackSegmentFeaturesClampNonDatelineArcNearAntimeridian() throws {
+        let visits = [
+            trackVisit(id: 1, placeID: "edge-north", seconds: 0, lat: 20, lon: 179.0),
+            trackVisit(id: 2, placeID: "edge-south", seconds: 3_600, lat: -10, lon: 179.5),
+        ]
+
+        let features = FeatureEncoding.trackSegmentFeatures(
+            visits,
+            maxConnectorGap: 12 * 60 * 60,
+            burstWindow: 120
+        )
+
+        let longitudes = trackLongitudes(in: try XCTUnwrap(features.first))
+
+        XCTAssertEqual(longitudes.count, 3)
+        XCTAssertEqual(longitudes[0], 179.0, accuracy: 1e-9)
+        XCTAssertEqual(longitudes[1], 180.0, accuracy: 1e-9)
+        XCTAssertEqual(longitudes[2], 179.5, accuracy: 1e-9)
+    }
+
+    func testTrackSegmentFeaturesPreserveNonDatelineEndpointLongitudeExactly() throws {
+        let fromLat = 12.345678901
+        let fromLon = 79.524723965298108
+        let toLat = -23.456789012
+        let toLon = -80.455733550403565
+        let visits = [
+            trackVisit(id: 1, placeID: "fractional-west", seconds: 0, lat: fromLat, lon: fromLon),
+            trackVisit(id: 2, placeID: "fractional-east", seconds: 3_600, lat: toLat, lon: toLon),
+        ]
+
+        let features = FeatureEncoding.trackSegmentFeatures(
+            visits,
+            maxConnectorGap: 12 * 60 * 60,
+            burstWindow: 120
+        )
+
+        let longitudes = trackLongitudes(in: try XCTUnwrap(features.first))
+        let dx = toLon - fromLon
+        let dy = toLat - fromLat
+        let distance = max((dx * dx + dy * dy).squareRoot(), 0.000_001)
+        let expectedMidpointLon = ((fromLon + toLon) / 2) + (-dy / distance) * distance * TrackLayers.arcBendRatio
+
+        XCTAssertEqual(longitudes.count, 3)
+        XCTAssertEqual(longitudes[1], expectedMidpointLon)
+        XCTAssertEqual(longitudes[2], toLon)
+    }
+
+    func testTrackSegmentFeaturesWrapAntimeridianUsingShortestLongitudePath() throws {
+        let visits = [
+            trackVisit(id: 1, placeID: "fiji", seconds: 0, lat: -17.7134, lon: 178.0650),
+            trackVisit(id: 2, placeID: "samoa", seconds: 3_600, lat: -13.7590, lon: -172.1046),
+        ]
+
+        let features = FeatureEncoding.trackSegmentFeatures(
+            visits,
+            maxConnectorGap: 12 * 60 * 60,
+            burstWindow: 120
+        )
+
+        let longitudes = trackLongitudes(in: try XCTUnwrap(features.first))
+
+        XCTAssertEqual(longitudes.count, 3)
+        XCTAssertEqual(longitudes[0], 178.0650, accuracy: 1e-9)
+        XCTAssertGreaterThan(longitudes[1], 180.0, "midpoint should stay near the dateline, not Greenwich")
+        XCTAssertEqual(longitudes[2], 187.8954, accuracy: 1e-9)
+        XCTAssertLessThan(abs(longitudes[2] - longitudes[0]), 20.0)
+        for (from, to) in zip(longitudes, longitudes.dropFirst()) {
+            XCTAssertLessThan(abs(to - from), 20.0, "adjacent arc segment should use the wrapped short path")
+        }
+    }
+
+    func testTrackSegmentFeaturesWrapReverseAntimeridianUsingShortestLongitudePath() throws {
+        let visits = [
+            trackVisit(id: 1, placeID: "samoa", seconds: 0, lat: -13.7590, lon: -172.1046),
+            trackVisit(id: 2, placeID: "fiji", seconds: 3_600, lat: -17.7134, lon: 178.0650),
+        ]
+
+        let features = FeatureEncoding.trackSegmentFeatures(
+            visits,
+            maxConnectorGap: 12 * 60 * 60,
+            burstWindow: 120
+        )
+
+        let longitudes = trackLongitudes(in: try XCTUnwrap(features.first))
+
+        XCTAssertEqual(longitudes.count, 3)
+        XCTAssertEqual(longitudes[0], -172.1046, accuracy: 1e-9)
+        XCTAssertLessThan(abs(longitudes[1] - (-180.0)), 10.0, "midpoint should stay near the dateline, not Greenwich")
+        XCTAssertEqual(longitudes[2], -181.9350, accuracy: 1e-9)
+        XCTAssertLessThan(abs(longitudes[2] - longitudes[0]), 20.0)
+        for (from, to) in zip(longitudes, longitudes.dropFirst()) {
+            XCTAssertLessThan(abs(to - from), 20.0, "adjacent arc segment should use the wrapped short path")
         }
     }
 
@@ -453,6 +548,26 @@ final class PinLayersTests: XCTestCase {
               case let .object(properties)? = object["properties"]
         else { return nil }
         return properties[key]
+    }
+
+    private func trackLongitudes(in feature: JSONValue) -> [Double] {
+        guard case let .object(firstFeature) = feature,
+              case let .object(geometry) = firstFeature["geometry"],
+              case let .array(coordinates) = geometry["coordinates"]
+        else {
+            XCTFail("track feature geometry missing")
+            return []
+        }
+        return coordinates.map { coordinate in
+            guard case let .array(values) = coordinate,
+                  values.count == 2,
+                  case let .double(lon) = values[0]
+            else {
+                XCTFail("track coordinate missing longitude")
+                return .nan
+            }
+            return lon
+        }
     }
 
     private func trackVisit(
