@@ -27,9 +27,8 @@ concluding:
 - Test the agent socket directly:
   `SSH_AUTH_SOCK=~/Library/Group\ Containers/2BUA8C4S2C.com.1password/t/agent.sock ssh-add -l`
 
-On 2026-07-18 a lock was asserted while Rob was actively messaging. The real cause was a transient 1Password
-agent fault under concurrent load (`failed to fill whole buffer`), and the wrong diagnosis parked an agent
-for about seven hours.
+A transient 1Password agent fault under concurrent load (`failed to fill whole buffer`) produces the same
+symptom as a locked Mac. Asserting the lock without probing has parked agents for hours.
 
 ### When the signer is unavailable
 
@@ -44,8 +43,9 @@ for about seven hours.
 ## 2. Where work runs
 
 **Heavy pipeline work runs on the VPS.** Full-region acquisition, extraction and multi-stage runs belong
-there; the Mac is for iteration. Anything needing 1Password credentials runs under the VPS service account,
-never on Rob's Mac.
+there; the Mac is for iteration. Unattended and long-running work authenticates through the VPS service
+account rather than Rob's desktop 1Password, which needs him present. Interactive `op run` on the Mac is
+sanctioned and routine — see [`SECRETS.md`](SECRETS.md) §1 for both auth paths.
 
 ⚠️ **Unverified from the repo.** The following came from an agent's operational memory and could not be
 checked against the tree or the host. Confirm before relying on them, and correct this file in place:
