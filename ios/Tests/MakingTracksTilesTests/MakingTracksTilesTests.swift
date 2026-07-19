@@ -421,6 +421,18 @@ final class MakingTracksTilesTests: XCTestCase {
                         "license_url": "https://creativecommons.org/publicdomain/mark/1.0/",
                     ]),
                 ]),
+                validImageEntry([
+                    "place_id": "mt1_00000000000000000000000003",
+                    "attribution": validImageAttribution([
+                        "license_url": "https://creativecommons.org/licenses/by/4.0/?injected-text",
+                    ]),
+                ]),
+                validImageEntry([
+                    "place_id": "mt1_00000000000000000000000004",
+                    "attribution": validImageAttribution([
+                        "license_url": "https://creativecommons.org/licenses/by/4.0/#injected-text",
+                    ]),
+                ]),
             ])),
             expected: TileCoordinate(z: 10, x: 511, y: 340)
         )

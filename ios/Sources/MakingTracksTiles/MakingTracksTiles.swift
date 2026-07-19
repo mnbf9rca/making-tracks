@@ -373,7 +373,6 @@ final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDe
         var data: Data
         var response: URLResponse?
         var didReportConnectivityAvailable: Bool
-        var terminalError: Error?
     }
 
     private struct DownloadState {
@@ -450,8 +449,7 @@ final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDe
                         connectivityAvailable: connectivityAvailable,
                         data: Data(),
                         response: nil,
-                        didReportConnectivityAvailable: false,
-                        terminalError: nil
+                        didReportConnectivityAvailable: false
                     )
                 }
                 cancellation.setAndResume(task, shouldCancel: Task.isCancelled)
@@ -695,12 +693,6 @@ final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDe
                     continuation: nil as CheckedContinuation<(Data, URLResponse), Error>?
                 )
             }
-            guard state.terminalError == nil else {
-                return (
-                    handler: nil as (@Sendable () -> Void)?,
-                    continuation: nil as CheckedContinuation<(Data, URLResponse), Error>?
-                )
-            }
             let handler = state.didReportConnectivityAvailable ? nil : state.connectivityAvailable
             state.didReportConnectivityAvailable = true
             if let maxBytes = state.maxBytes,
@@ -818,11 +810,6 @@ final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDe
         didCompleteWithError error: Error?
     ) {
         if let state = lock.withLock({ dataTasks.removeValue(forKey: task.taskIdentifier) }) {
-            if let terminalError = state.terminalError {
-                MakingTracksLog.resolution.error("fetch failed kind=\(task.currentRequest?.url.map(MakingTracksLog.objectKind) ?? "unknown", privacy: .public) reason=\(MakingTracksLog.errorLabel(terminalError), privacy: .public)")
-                state.continuation.resume(throwing: terminalError)
-                return
-            }
             if let error {
                 MakingTracksLog.resolution.error("fetch failed kind=\(task.currentRequest?.url.map(MakingTracksLog.objectKind) ?? "unknown", privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
                 state.continuation.resume(throwing: error)
@@ -1928,6 +1915,7 @@ public enum ImageIndexDecoder {
     }
 
     private static func isExpectedLicenseURL(_ url: URL, for code: String) -> Bool {
+        guard url.query == nil, url.fragment == nil else { return false }
         let path = url.path.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let upper = code.uppercased()
         switch upper {
