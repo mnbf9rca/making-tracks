@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import MakingTracksData
+import MakingTracksMapStyle
 import MakingTracksTiles
 
 struct MakingTracksRootView: View {
@@ -10,6 +11,7 @@ struct MakingTracksRootView: View {
     let debugInstallOfflineRegion: String?
     let debugForceTileNetworkOffline: Bool
     let offlineDownloadProgress: OfflineDownloadProgress?
+    let debugCoverageBBoxes: [CoverageBBox]
     let debugExposeFixturePinDiagnostics: Bool
     let locationManager: AppLocationManager
 
@@ -29,6 +31,7 @@ struct MakingTracksRootView: View {
         debugInstallOfflineRegion: String?,
         debugForceTileNetworkOffline: Bool,
         offlineDownloadProgress: OfflineDownloadProgress?,
+        debugCoverageBBoxes: [CoverageBBox] = [],
         debugExposeFixturePinDiagnostics: Bool,
         locationManager: AppLocationManager
     ) {
@@ -38,6 +41,7 @@ struct MakingTracksRootView: View {
         self.debugInstallOfflineRegion = debugInstallOfflineRegion
         self.debugForceTileNetworkOffline = debugForceTileNetworkOffline
         self.offlineDownloadProgress = offlineDownloadProgress
+        self.debugCoverageBBoxes = debugCoverageBBoxes
         self.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
         self.locationManager = locationManager
         _locationPermission = StateObject(wrappedValue: LocationPermission(manager: locationManager))
@@ -66,6 +70,7 @@ struct MakingTracksRootView: View {
             debugInstallOfflineRegion: debugInstallOfflineRegion,
             debugForceTileNetworkOffline: debugForceTileNetworkOffline,
             offlineDownloadProgress: offlineDownloadProgress,
+            debugCoverageBBoxes: debugCoverageBBoxes,
             debugExposeFixturePinDiagnostics: debugExposeFixturePinDiagnostics,
             locationManager: locationManager,
             locationPermission: locationPermission,

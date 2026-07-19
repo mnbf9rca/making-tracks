@@ -26,6 +26,7 @@ struct ProjectedFeatureDiagnostic: Identifiable, Equatable, Sendable {
 struct MLNMapViewRepresentable: UIViewRepresentable {
     var worldPMTilesURL: String?
     var regionPMTilesURL: String?
+    var coverageBBoxes: [CoverageBBox]
     var theme: MapTheme
     var startupViewport: ViewportSeed
     var features: [(MapPlace, PinState)]
@@ -72,6 +73,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         let initialStyleReload = context.coordinator.prepareStyleReload(
             worldPMTilesURL: worldPMTilesURL,
             regionPMTilesURL: regionPMTilesURL,
+            coverageBBoxes: coverageBBoxes,
             theme: theme
         )
         let map = MLNMapView(
@@ -129,6 +131,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         let styleReload = context.coordinator.prepareStyleReload(
             worldPMTilesURL: worldPMTilesURL,
             regionPMTilesURL: regionPMTilesURL,
+            coverageBBoxes: coverageBBoxes,
             theme: theme
         )
         context.coordinator.debugReportMapUpdateStatus(
@@ -163,6 +166,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         weak var map: MLNMapView?
         var currentWorldPMTilesURL: String?
         var currentRegionPMTilesURL: String?
+        var currentCoverageBBoxes: [CoverageBBox] = []
         var currentThemeID: String?
         var desiredVisibleCategories: Set<String>?
         var currentVisibleCategories: Set<String>?
@@ -178,6 +182,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             let url: URL
             let worldPMTilesURL: String?
             let regionPMTilesURL: String?
+            let coverageBBoxes: [CoverageBBox]
             let themeID: String
         }
 
@@ -204,19 +209,22 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         func prepareStyleReload(
             worldPMTilesURL: String?,
             regionPMTilesURL: String?,
+            coverageBBoxes: [CoverageBBox],
             theme: MapTheme,
-            makeStyleURL: ((String?, String?, MapTheme) -> URL?)? = nil
+            makeStyleURL: ((String?, String?, [CoverageBBox], MapTheme) -> URL?)? = nil
         ) -> StyleReload? {
             guard currentWorldPMTilesURL != worldPMTilesURL
                 || currentRegionPMTilesURL != regionPMTilesURL
+                || currentCoverageBBoxes != coverageBBoxes
                 || currentThemeID != theme.id
             else { return nil }
             let makeStyleURL = makeStyleURL ?? styleURL
-            guard let url = makeStyleURL(worldPMTilesURL, regionPMTilesURL, theme) else { return nil }
+            guard let url = makeStyleURL(worldPMTilesURL, regionPMTilesURL, coverageBBoxes, theme) else { return nil }
             return StyleReload(
                 url: url,
                 worldPMTilesURL: worldPMTilesURL,
                 regionPMTilesURL: regionPMTilesURL,
+                coverageBBoxes: coverageBBoxes,
                 themeID: theme.id
             )
         }
@@ -224,6 +232,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         func commitStyleReload(_ reload: StyleReload) {
             currentWorldPMTilesURL = reload.worldPMTilesURL
             currentRegionPMTilesURL = reload.regionPMTilesURL
+            currentCoverageBBoxes = reload.coverageBBoxes
             currentThemeID = reload.themeID
         }
 
@@ -237,10 +246,16 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             return true
         }
 
-        func styleURL(worldPMTilesURL: String?, regionPMTilesURL: String?, theme: MapTheme) -> URL? {
+        func styleURL(
+            worldPMTilesURL: String?,
+            regionPMTilesURL: String?,
+            coverageBBoxes: [CoverageBBox],
+            theme: MapTheme
+        ) -> URL? {
             let style = paperBasemapStyle(
                 worldPMTilesURL: worldPMTilesURL,
                 regionPMTilesURL: regionPMTilesURL,
+                coverageBBoxes: coverageBBoxes,
                 theme: theme
             )
             guard let json = try? style.jsonString() else { return nil }

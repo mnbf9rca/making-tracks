@@ -5,6 +5,30 @@ public let paperBasemapGlyphsURL = "https://tiles.making-tracks.app/global/fonts
 // and avoid rendering unbounded source lines when older tiles omit min_zoom.
 private let waterwayLineWidth = 0.8
 private let waterwayDefaultMinZoom = 14.0
+// Tunable after screenshots at pack edges; world z0-6 remains useful below this.
+private let coverageMaskMinZoom = 7.0
+private let coverageMaskFillOpacity = 0.46
+private let coverageMaskEdgeOpacity = 0.22
+private let coverageMaskEdgeWidth = 0.6
+private let webMercatorMaxLatitude = 85.05112878
+
+public struct CoverageBBox: Sendable, Equatable {
+    public let minLon: Double
+    public let minLat: Double
+    public let maxLon: Double
+    public let maxLat: Double
+
+    public init(minLon: Double, minLat: Double, maxLon: Double, maxLat: Double) {
+        self.minLon = max(-180, min(180, minLon))
+        self.minLat = max(-webMercatorMaxLatitude, min(webMercatorMaxLatitude, minLat))
+        self.maxLon = max(-180, min(180, maxLon))
+        self.maxLat = max(-webMercatorMaxLatitude, min(webMercatorMaxLatitude, maxLat))
+    }
+
+    public var isValid: Bool {
+        minLon < maxLon && minLat < maxLat
+    }
+}
 
 public func saturation(hex: String) -> Double {
     var string = hex
@@ -338,11 +362,71 @@ private func basemapLayers(sourceID: String, prefix: String, theme: MapTheme) ->
     return layers
 }
 
+private func coverageMaskSource(coverageBBoxes: [CoverageBBox]) -> JSONValue? {
+    let holes = coverageBBoxes.filter(\.isValid).map { bbox -> JSONValue in
+        .array([
+            coordinate(bbox.minLon, bbox.minLat),
+            coordinate(bbox.minLon, bbox.maxLat),
+            coordinate(bbox.maxLon, bbox.maxLat),
+            coordinate(bbox.maxLon, bbox.minLat),
+            coordinate(bbox.minLon, bbox.minLat),
+        ])
+    }
+    guard !holes.isEmpty else { return nil }
+    let worldRing: JSONValue = .array([
+        coordinate(-180, -webMercatorMaxLatitude),
+        coordinate(180, -webMercatorMaxLatitude),
+        coordinate(180, webMercatorMaxLatitude),
+        coordinate(-180, webMercatorMaxLatitude),
+        coordinate(-180, -webMercatorMaxLatitude),
+    ])
+    let geometry: JSONValue = .object([
+        "type": .string("Polygon"),
+        "coordinates": .array([worldRing] + holes),
+    ])
+    return .object([
+        "type": .string("geojson"),
+        "data": .object([
+            "type": .string("FeatureCollection"),
+            "features": .array([
+                .object([
+                    "type": .string("Feature"),
+                    "properties": .object([:]),
+                    "geometry": geometry,
+                ]),
+            ]),
+        ]),
+    ])
+}
+
+private func coordinate(_ lon: Double, _ lat: Double) -> JSONValue {
+    .array([.double(lon), .double(lat)])
+}
+
+private func coverageMaskLayers(theme: MapTheme) -> [JSONValue] {
+    [
+        layer("coverage-mask-fill", "fill", source: "coverage-mask", minzoom: coverageMaskMinZoom, paint: [
+            "fill-color": .string(theme.background),
+            "fill-opacity": .double(coverageMaskFillOpacity),
+        ]),
+        layer("coverage-mask-edge", "line", source: "coverage-mask", minzoom: coverageMaskMinZoom, paint: [
+            "line-color": .string(theme.boundaries),
+            "line-opacity": .double(coverageMaskEdgeOpacity),
+            "line-width": .double(coverageMaskEdgeWidth),
+        ]),
+    ]
+}
+
 public func paperBasemapStyle(pmtilesURL: String, theme: MapTheme = .definedPaper) -> JSONValue {
     paperBasemapStyle(worldPMTilesURL: pmtilesURL, regionPMTilesURL: nil, theme: theme)
 }
 
-public func paperBasemapStyle(worldPMTilesURL: String?, regionPMTilesURL: String?, theme: MapTheme = .definedPaper) -> JSONValue {
+public func paperBasemapStyle(
+    worldPMTilesURL: String?,
+    regionPMTilesURL: String?,
+    coverageBBoxes: [CoverageBBox] = [],
+    theme: MapTheme = .definedPaper
+) -> JSONValue {
     var sources: [String: JSONValue] = [:]
     if let worldPMTilesURL {
         sources["world"] = .object([
@@ -356,12 +440,18 @@ public func paperBasemapStyle(worldPMTilesURL: String?, regionPMTilesURL: String
             "url": .string(regionPMTilesURL),
         ])
     }
+    if let source = coverageMaskSource(coverageBBoxes: coverageBBoxes) {
+        sources["coverage-mask"] = source
+    }
 
     var layers: [JSONValue] = [
         layer("background", "background", paint: ["background-color": .string(theme.background)]),
     ]
     if worldPMTilesURL != nil {
         layers.append(contentsOf: basemapLayers(sourceID: "world", prefix: "world", theme: theme))
+    }
+    if sources["coverage-mask"] != nil {
+        layers.append(contentsOf: coverageMaskLayers(theme: theme))
     }
     if regionPMTilesURL != nil {
         layers.append(contentsOf: basemapLayers(sourceID: "region", prefix: "region", theme: theme))

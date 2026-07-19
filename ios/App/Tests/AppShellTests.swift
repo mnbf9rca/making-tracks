@@ -616,14 +616,14 @@ final class AppShellTests: XCTestCase {
     func testOfflineRegionRowsSurfaceProgressUpdatesAndQuarantines() {
         let catalog = OfflineRegionCatalog.debugFixture
         let progress = OfflineDownloadProgress(
-            region: "uk_london",
+            region: "uk",
             publishVersion: "20260718T000000Z",
             completedBytes: 50,
             totalBytes: 100,
             fractionComplete: 0.5
         )
         let quarantine = OfflinePackQuarantine(
-            region: "malaysia_kl",
+            region: "malaysia",
             publishVersion: "20260717T000000Z",
             coordinates: [TileCoordinate(z: 10, x: 806, y: 503)]
         )
@@ -641,27 +641,170 @@ final class AppShellTests: XCTestCase {
         let uk = rows.first { $0.zone.id == "uk" }
         let london = rows.first { $0.zone.id == "uk_london" }
         let southEast = rows.first { $0.zone.id == "uk_south_east" }
+        let malaysia = rows.first { $0.zone.id == "malaysia" }
         let kl = rows.first { $0.zone.id == "malaysia_kl" }
 
-        XCTAssertEqual(uk?.state, .installed(publishVersion: "20260718T000000Z"))
-        XCTAssertEqual(london?.state, .downloading(progress))
-        XCTAssertEqual(
-            southEast?.state,
-            .updateAvailable(
-                installedPublishVersion: "20260717T000000Z",
-                availablePublishVersion: "20260718T000000Z"
-            )
-        )
-        XCTAssertEqual(kl?.state, .quarantined(quarantine))
+        XCTAssertEqual(uk?.state, .downloading(progress))
+        XCTAssertEqual(london?.state, .unavailable)
+        XCTAssertEqual(southEast?.state, .unavailable)
+        XCTAssertEqual(malaysia?.state, .quarantined(quarantine))
+        XCTAssertEqual(kl?.state, .unavailable)
         XCTAssertEqual(london?.depth, 1)
-        XCTAssertEqual(southEast?.statusLabel, "Update available")
-        XCTAssertEqual(kl?.statusLabel, "Quarantined pack")
+        XCTAssertEqual(southEast?.statusLabel, "Not available")
+        XCTAssertEqual(malaysia?.statusLabel, "Quarantined pack")
+        XCTAssertEqual(kl?.statusLabel, "Not available")
+        XCTAssertTrue(kl?.hasUnavailableLocalData == true)
+    }
+
+    func testOfflineRegionRowsDoNotOfferSubregionDownloads() {
+        let catalog = OfflineRegionCatalog.debugFixture
+        let quarantine = OfflinePackQuarantine(
+            region: "malaysia_kl",
+            publishVersion: "20260717T000000Z",
+            coordinates: [TileCoordinate(z: 10, x: 806, y: 503)]
+        )
+
+        let rows = catalog.rows(
+            installed: [
+                "uk_london": "20260717T000000Z",
+                "malaysia_kl": "20260717T000000Z",
+            ],
+            activeProgress: OfflineDownloadProgress(region: "uk_london", fractionComplete: 0.25),
+            pausedProgress: OfflineDownloadProgress(region: "malaysia_kl", fractionComplete: 0.5),
+            quarantines: [quarantine]
+        )
+
+        XCTAssertEqual(rows.first { $0.zone.id == "uk" }?.state, .notInstalled)
+        XCTAssertEqual(rows.first { $0.zone.id == "malaysia" }?.state, .notInstalled)
+        XCTAssertEqual(rows.first { $0.zone.id == "uk_london" }?.state, .unavailable)
+        XCTAssertEqual(rows.first { $0.zone.id == "malaysia_kl" }?.statusLabel, "Not available")
+        XCTAssertTrue(rows.first { $0.zone.id == "uk_london" }?.hasUnavailableLocalData == true)
+        XCTAssertTrue(rows.first { $0.zone.id == "malaysia_kl" }?.hasUnavailableLocalData == true)
+    }
+
+    func testOfflineRegionRowsOfferCleanupForUnavailablePausedSubregion() {
+        let catalog = OfflineRegionCatalog.debugFixture
+
+        let rows = catalog.rows(
+            installed: [:],
+            activeProgress: nil,
+            pausedRegions: ["uk_london"],
+            quarantines: []
+        )
+        let london = rows.first { $0.zone.id == "uk_london" }
+
+        XCTAssertEqual(london?.state, .unavailable)
+        XCTAssertEqual(london?.statusLabel, "Not available")
+        XCTAssertEqual(london?.cancelRegion, "uk_london")
+        XCTAssertFalse(london?.hasUnavailableLocalData == true)
+        XCTAssertTrue(london?.hasUnavailablePausedDownload == true)
+    }
+
+    func testOfflineRegionRowsDoNotInventUpdatesFromFixtureVersions() {
+        let catalog = OfflineRegionCatalog.debugFixture
+
+        let rows = catalog.rows(
+            installed: [
+                "malaysia": "20260716T155035Z",
+            ],
+            activeProgress: nil,
+            quarantines: []
+        )
+        let malaysia = rows.first { $0.zone.id == "malaysia" }
+
+        XCTAssertEqual(malaysia?.state, .installed(publishVersion: "20260716T155035Z"))
+        XCTAssertEqual(malaysia?.statusLabel, "Downloaded")
+    }
+
+    func testOfflineRegionRowsUseFetchedCurrentForUpdateComparison() {
+        let catalog = OfflineRegionCatalog.debugFixture
+
+        let currentRows = catalog.rows(
+            installed: [
+                "malaysia": "20260716T155035Z",
+            ],
+            availablePublishVersions: [
+                "malaysia": "20260716T155035Z",
+            ],
+            activeProgress: nil,
+            quarantines: []
+        )
+        let updatedRows = catalog.rows(
+            installed: [
+                "malaysia": "20260716T155035Z",
+            ],
+            availablePublishVersions: [
+                "malaysia": "20260718T000000Z",
+            ],
+            activeProgress: nil,
+            quarantines: []
+        )
+
+        XCTAssertEqual(currentRows.first { $0.zone.id == "malaysia" }?.state, .installed(publishVersion: "20260716T155035Z"))
+        XCTAssertEqual(updatedRows.first { $0.zone.id == "malaysia" }?.state, .updateAvailable(
+            installedPublishVersion: "20260716T155035Z",
+            availablePublishVersion: "20260718T000000Z"
+        ))
+        XCTAssertTrue(updatedRows.first { $0.zone.id == "malaysia" }?.allowsDelete == true)
+    }
+
+    @MainActor
+    func testOfflineMapsRefreshPublishesLocalRowsBeforeAvailabilityCompletes() async {
+        let catalog = OfflineRegionCatalog.debugFixture
+        let localApplied = expectation(description: "local offline map rows applied")
+        var observedRows: [OfflineRegionCatalogRow] = []
+
+        let availabilityTask = await OfflineMapsRefreshCoordinator.refresh(
+            loadLocalState: {
+                OfflineMapsLocalState(
+                    installed: [
+                        "uk": "20260718T000000Z",
+                        "uk_london": "20260717T000000Z",
+                    ],
+                    pausedRegions: ["malaysia"],
+                    quarantines: [
+                        OfflinePackQuarantine(
+                            region: "uk_london",
+                            publishVersion: "20260717T000000Z",
+                            coordinates: [TileCoordinate(z: 10, x: 511, y: 340)]
+                        ),
+                    ],
+                    storageStatus: .ready(totalBytes: 1_024, regions: [], failedRegions: [])
+                )
+            },
+            loadAvailableVersions: { _ in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(10))
+                }
+                return [:]
+            },
+            applyLocalState: { localState in
+                observedRows = catalog.rows(
+                    installed: localState.installed,
+                    availablePublishVersions: [:],
+                    activeProgress: nil,
+                    pausedRegions: localState.pausedRegions,
+                    quarantines: localState.quarantines
+                )
+                localApplied.fulfill()
+            },
+            applyAvailableVersions: { _, _ in
+                XCTFail("availability fetch must not finish in this test")
+            }
+        )
+        defer { availabilityTask.cancel() }
+
+        await fulfillment(of: [localApplied], timeout: 1)
+
+        XCTAssertEqual(observedRows.first { $0.zone.id == "uk" }?.state, .installed(publishVersion: "20260718T000000Z"))
+        XCTAssertEqual(observedRows.first { $0.zone.id == "uk_london" }?.state, .unavailable)
+        XCTAssertEqual(observedRows.first { $0.zone.id == "malaysia" }?.state, .paused(OfflineDownloadProgress(region: "malaysia", fractionComplete: 0)))
     }
 
     func testOfflineRegionRowsSurfacePausedProgressSeparatelyFromActiveProgress() {
         let catalog = OfflineRegionCatalog.debugFixture
         let paused = OfflineDownloadProgress(
-            region: "uk_london",
+            region: "uk",
             publishVersion: "20260718T000000Z",
             completedBytes: 50,
             totalBytes: 100,
@@ -671,16 +814,15 @@ final class AppShellTests: XCTestCase {
         let rows = catalog.rows(
             installed: [
                 "uk": "20260718T000000Z",
-                "uk_london": "20260717T000000Z",
             ],
             activeProgress: nil,
             pausedProgress: paused,
             quarantines: []
         )
-        let london = rows.first { $0.zone.id == "uk_london" }
+        let uk = rows.first { $0.zone.id == "uk" }
 
-        XCTAssertEqual(london?.state, .paused(paused))
-        XCTAssertEqual(london?.statusLabel, "Paused at 50%")
+        XCTAssertEqual(uk?.state, .paused(paused))
+        XCTAssertEqual(uk?.statusLabel, "Paused at 50%")
     }
 
     @MainActor
@@ -799,11 +941,13 @@ final class AppShellTests: XCTestCase {
         let definedPaperURL = try XCTUnwrap(coordinator.styleURL(
             worldPMTilesURL: "pmtiles://world.pmtiles",
             regionPMTilesURL: nil,
+            coverageBBoxes: [],
             theme: .definedPaper
         ))
         let snowURL = try XCTUnwrap(coordinator.styleURL(
             worldPMTilesURL: "pmtiles://world.pmtiles",
             regionPMTilesURL: nil,
+            coverageBBoxes: [],
             theme: .snow
         ))
 
@@ -819,13 +963,15 @@ final class AppShellTests: XCTestCase {
         let coordinator = makeCoordinator()
         coordinator.currentWorldPMTilesURL = "pmtiles://world.pmtiles"
         coordinator.currentRegionPMTilesURL = nil
+        coordinator.currentCoverageBBoxes = []
         coordinator.currentThemeID = MapTheme.definedPaper.id
 
         let failedReload = coordinator.prepareStyleReload(
             worldPMTilesURL: "pmtiles://world.pmtiles",
             regionPMTilesURL: nil,
+            coverageBBoxes: [],
             theme: .snow,
-            makeStyleURL: { _, _, _ in nil }
+            makeStyleURL: { _, _, _, _ in nil }
         )
         XCTAssertNil(failedReload)
         XCTAssertEqual(coordinator.currentThemeID, MapTheme.definedPaper.id)
@@ -834,8 +980,9 @@ final class AppShellTests: XCTestCase {
         let reload = try XCTUnwrap(coordinator.prepareStyleReload(
             worldPMTilesURL: "pmtiles://world.pmtiles",
             regionPMTilesURL: nil,
+            coverageBBoxes: [],
             theme: .snow,
-            makeStyleURL: { _, _, _ in url }
+            makeStyleURL: { _, _, _, _ in url }
         ))
         XCTAssertEqual(reload.themeID, MapTheme.snow.id)
         coordinator.commitStyleReload(reload)
@@ -843,8 +990,49 @@ final class AppShellTests: XCTestCase {
         XCTAssertNil(coordinator.prepareStyleReload(
             worldPMTilesURL: "pmtiles://world.pmtiles",
             regionPMTilesURL: nil,
+            coverageBBoxes: [],
             theme: .snow,
-            makeStyleURL: { _, _, _ in url }
+            makeStyleURL: { _, _, _, _ in url }
+        ))
+    }
+
+    @MainActor
+    func testCoordinatorReloadPlanIncludesCoverageBBoxes() throws {
+        let coordinator = makeCoordinator()
+        coordinator.currentWorldPMTilesURL = "pmtiles://world.pmtiles"
+        coordinator.currentRegionPMTilesURL = "pmtiles://region.pmtiles"
+        coordinator.currentCoverageBBoxes = [
+            CoverageBBox(minLon: -8.65, minLat: 49.84, maxLon: 1.77, maxLat: 60.86),
+        ]
+        coordinator.currentThemeID = MapTheme.definedPaper.id
+
+        var capturedCoverage: [CoverageBBox] = []
+        let reload = try XCTUnwrap(coordinator.prepareStyleReload(
+            worldPMTilesURL: "pmtiles://world.pmtiles",
+            regionPMTilesURL: "pmtiles://region.pmtiles",
+            coverageBBoxes: [
+                CoverageBBox(minLon: -8.65, minLat: 49.84, maxLon: 1.77, maxLat: 60.86),
+                CoverageBBox(minLon: 99.60, minLat: 0.80, maxLon: 119.30, maxLat: 7.60),
+            ],
+            theme: .definedPaper,
+            makeStyleURL: { _, _, coverage, _ in
+                capturedCoverage = coverage
+                return URL(fileURLWithPath: "/tmp/making-tracks-style-coverage-test.json")
+            }
+        ))
+
+        XCTAssertEqual(capturedCoverage, [
+            CoverageBBox(minLon: -8.65, minLat: 49.84, maxLon: 1.77, maxLat: 60.86),
+            CoverageBBox(minLon: 99.60, minLat: 0.80, maxLon: 119.30, maxLat: 7.60),
+        ])
+        coordinator.commitStyleReload(reload)
+        XCTAssertEqual(coordinator.currentCoverageBBoxes, capturedCoverage)
+        XCTAssertNil(coordinator.prepareStyleReload(
+            worldPMTilesURL: "pmtiles://world.pmtiles",
+            regionPMTilesURL: "pmtiles://region.pmtiles",
+            coverageBBoxes: capturedCoverage,
+            theme: .definedPaper,
+            makeStyleURL: { _, _, _, _ in URL(fileURLWithPath: "/tmp/unused.json") }
         ))
     }
 

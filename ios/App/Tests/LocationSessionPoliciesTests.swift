@@ -16,8 +16,8 @@ final class LocationSessionPoliciesTests: XCTestCase {
         XCTAssertEqual(permission.authorizationStatus, .denied)
     }
 
-    func testShowsUserLocationRequiresAuthorizedStatusAndActiveTrackingMode() {
-        XCTAssertFalse(LocationSessionPolicies.shouldShowUserLocation(authorizationStatus: .authorizedWhenInUse, userTrackingMode: .none))
+    func testShowsUserLocationPersistsAfterTrackingModeStops() {
+        XCTAssertTrue(LocationSessionPolicies.shouldShowUserLocation(authorizationStatus: .authorizedWhenInUse, userTrackingMode: .none))
         XCTAssertFalse(LocationSessionPolicies.shouldShowUserLocation(authorizationStatus: .notDetermined, userTrackingMode: .follow))
         XCTAssertTrue(LocationSessionPolicies.shouldShowUserLocation(authorizationStatus: .authorizedWhenInUse, userTrackingMode: .follow))
         XCTAssertTrue(LocationSessionPolicies.shouldShowUserLocation(authorizationStatus: .authorizedAlways, userTrackingMode: .followWithHeading))

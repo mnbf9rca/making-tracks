@@ -1,6 +1,7 @@
 import CoreLocation
 import SwiftUI
 import MakingTracksData
+import MakingTracksMapStyle
 import MakingTracksTiles
 import UIKit
 
@@ -25,6 +26,7 @@ struct MakingTracksApp: App {
     private static let simulatedLatitude = argumentValue("--ui-testing-location-latitude").flatMap(Double.init)
     private static let simulatedLongitude = argumentValue("--ui-testing-location-longitude").flatMap(Double.init)
     private static let uiTestingOfflineProgress = argumentValue("--ui-testing-offline-progress").flatMap(Double.init)
+    private static let uiTestingCoverageBBoxes = coverageBBoxArguments()
     private static let primaryFixturePlaceID = "mt1_00000000000000000000000000"
 #else
     private static let isLocationNotDeterminedFixture = false
@@ -34,6 +36,7 @@ struct MakingTracksApp: App {
     private static let simulatedLatitude: Double? = nil
     private static let simulatedLongitude: Double? = nil
     private static let uiTestingOfflineProgress: Double? = nil
+    private static let uiTestingCoverageBBoxes: [CoverageBBox] = []
 #endif
 
     init() {
@@ -112,6 +115,7 @@ struct MakingTracksApp: App {
                     debugInstallOfflineRegion: Self.debugInstallOfflineRegion,
                     debugForceTileNetworkOffline: Self.debugForceTileNetworkOffline,
                     offlineDownloadProgress: Self.offlineDownloadProgress,
+                    debugCoverageBBoxes: Self.uiTestingCoverageBBoxes,
                     debugExposeFixturePinDiagnostics: Self.debugExposeFixturePinDiagnostics,
                     locationManager: locationManager
                 )
@@ -127,6 +131,30 @@ struct MakingTracksApp: App {
         else { return nil }
         return rawArguments[rawArguments.index(after: index)]
     }
+
+#if DEBUG
+    private static func coverageBBoxArguments() -> [CoverageBBox] {
+        var values: [CoverageBBox] = []
+        var index = rawArguments.startIndex
+        while index < rawArguments.endIndex {
+            defer { index = rawArguments.index(after: index) }
+            guard rawArguments[index] == "--ui-testing-coverage-bbox" else { continue }
+            let valueIndex = rawArguments.index(after: index)
+            guard valueIndex < rawArguments.endIndex else { continue }
+            let components = rawArguments[valueIndex].split(separator: ",")
+            guard components.count == 4,
+                  let minLon = Double(components[0]),
+                  let minLat = Double(components[1]),
+                  let maxLon = Double(components[2]),
+                  let maxLat = Double(components[3])
+            else { continue }
+            let bbox = CoverageBBox(minLon: minLon, minLat: minLat, maxLon: maxLon, maxLat: maxLat)
+            guard bbox.isValid else { continue }
+            values.append(bbox)
+        }
+        return values
+    }
+#endif
 
     private static func resetUITestingDatabaseIfNeeded() throws {
         guard isFixtureMap, arguments.contains("--ui-testing-reset-database") else { return }
