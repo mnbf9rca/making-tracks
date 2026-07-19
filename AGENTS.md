@@ -20,13 +20,13 @@ the same way — `git show origin/develop:<path>` — rather than assuming a mis
 
 ## What differs on `ios`
 
-Nothing currently. The app-specific facts an agent needs are stated in `develop`'s file, in these sections:
+The app-specific facts an agent needs are stated in `develop`'s file, in these sections:
 
 - **Workflow** → the iOS branch paragraph: anything under `ios/` branches from a freshly-fetched `ios` and
   PRs into `ios`, never `develop`. Same gates, same labels.
 - **Workflow** → *Ground in the current tree*: ground app-code citations against `ios`. `develop` carries a
   lagging copy of `ios/`, so a `file:line` grounded against `develop` points at code that is not here.
-- **Review gates**, point 3: the Release-configuration build and the zero-new-warnings requirement.
+- **Review gates**, point 3: run `scripts/release-gate.sh` for the Release build and simulator test gate.
   Warnings-as-errors is set on the app target in `ios/App/project.yml`, which lives on this branch.
 
 ## Adding to this file
