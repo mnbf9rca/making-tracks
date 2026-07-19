@@ -104,17 +104,43 @@ def emit_search_indexes(
         phase.tick(index)
     phase.done(len(place_list), extra=f" entries={len(entries)}")
 
-    full_artifacts = tuple(
-        artifact
-        for shard_key, shard_entries in _prefix_shards(entries)
-        for artifact in _full_artifacts_for_shard(
+    prefix_shards = _prefix_shards(entries)
+    artifact_phase = progress.PhaseProgress(
+        "publish.search_index_artifacts",
+        region=region,
+        total=len(prefix_shards),
+        total_label="base_shards",
+        heartbeat_every_records=100,
+        heartbeat_every_seconds=_HEARTBEAT_EVERY_SECONDS,
+    )
+    artifact_phase.start()
+    full_artifacts: list[SearchIndexArtifact] = []
+    for index, (shard_key, shard_entries) in enumerate(prefix_shards, start=1):
+        artifact_phase.tick(
+            index - 1,
+            extra=(
+                f" status=START shard={shard_key} entries={len(shard_entries)} "
+                f"artifacts={len(full_artifacts)}"
+            ),
+        )
+        shard_artifacts = _full_artifacts_for_shard(
             region=region,
             publish_version=publish_version,
             generated_at=generated_at,
             shard_key=shard_key,
             entries=shard_entries,
+            artifact_phase=artifact_phase,
+            processed_base_shards=index - 1,
         )
+        full_artifacts.extend(shard_artifacts)
+        artifact_phase.tick(
+            index,
+            extra=(
+                f" status=DONE shard={shard_key} entries={len(shard_entries)} "
+                f"emitted={len(shard_artifacts)} artifacts={len(full_artifacts)}"
+            ),
     )
+    artifact_phase.done(len(prefix_shards), extra=f" artifacts={len(full_artifacts)}")
     compact_entries = [
         entry for entry in entries if int(entry["tier"]) <= _COMPACT_MAX_TIER
     ]
@@ -129,7 +155,7 @@ def emit_search_indexes(
         )
     )
     return SearchIndexResult(
-        full_artifacts=full_artifacts,
+        full_artifacts=tuple(full_artifacts),
         compact_artifact=compact_artifact,
     )
 
@@ -224,6 +250,8 @@ def _full_artifacts_for_shard(
     generated_at: str,
     shard_key: str,
     entries: list[dict[str, Any]],
+    artifact_phase: progress.PhaseProgress | None = None,
+    processed_base_shards: int = 0,
 ) -> tuple[SearchIndexArtifact, ...]:
     payload = _index_payload(
         region=region,
@@ -237,6 +265,13 @@ def _full_artifacts_for_shard(
     if len(body) <= caps.MAX_SEARCH_INDEX_BYTES:
         validate_instance("search-index", payload)
         return (_artifact_from_payload(payload, body),)
+    _tick_artifact_split(
+        artifact_phase,
+        processed_base_shards,
+        shard_key=shard_key,
+        entries=len(entries),
+        bytes_len=len(body),
+    )
     return tuple(
         artifact
         for split_key, split_entries in _split_shards(shard_key, entries)
@@ -246,6 +281,8 @@ def _full_artifacts_for_shard(
             generated_at=generated_at,
             shard_key=split_key,
             entries=split_entries,
+            artifact_phase=artifact_phase,
+            processed_base_shards=processed_base_shards,
         )
     )
 
@@ -257,6 +294,8 @@ def _bounded_split_artifacts(
     generated_at: str,
     shard_key: str,
     entries: list[dict[str, Any]],
+    artifact_phase: progress.PhaseProgress | None = None,
+    processed_base_shards: int = 0,
 ) -> tuple[SearchIndexArtifact, ...]:
     payload = _index_payload(
         region=region,
@@ -272,6 +311,13 @@ def _bounded_split_artifacts(
         return (_artifact_from_payload(payload, body),)
     if shard_key.count("_h") >= MAX_HASH_SPLIT_DEPTH:
         return (_artifact(payload),)
+    _tick_artifact_split(
+        artifact_phase,
+        processed_base_shards,
+        shard_key=shard_key,
+        entries=len(entries),
+        bytes_len=len(body),
+    )
     return tuple(
         artifact
         for hash_key, hash_entries in _hash_split_shards(shard_key, entries)
@@ -281,7 +327,29 @@ def _bounded_split_artifacts(
             generated_at=generated_at,
             shard_key=hash_key,
             entries=hash_entries,
+            artifact_phase=artifact_phase,
+            processed_base_shards=processed_base_shards,
         )
+    )
+
+
+def _tick_artifact_split(
+    artifact_phase: progress.PhaseProgress | None,
+    processed_base_shards: int,
+    *,
+    shard_key: str,
+    entries: int,
+    bytes_len: int,
+) -> None:
+    if artifact_phase is None:
+        return
+    artifact_phase.tick(
+        processed_base_shards,
+        force=True,
+        extra=(
+            f" status=SPLIT shard={shard_key} entries={entries} "
+            f"bytes={bytes_len}"
+        ),
     )
 
 

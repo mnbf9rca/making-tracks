@@ -42,6 +42,20 @@ def test_non_latin_primary_name_uses_ascii_hash_shard_key():
     assert payload["entries"][0]["tokens"] == ["古堡"]
 
 
+def test_search_index_artifact_phase_reports_progress(capsys):
+    search_index.emit_search_indexes(
+        [_place(name="Fort")],
+        source_props_by_ref={},
+        region="malaysia-singapore-brunei",
+        publish_version="20260719T100000Z",
+        generated_at="2026-07-19T10:00:00Z",
+    )
+
+    stderr = capsys.readouterr().err
+    assert "PHASE START publish.search_index_artifacts" in stderr
+    assert "PHASE DONE publish.search_index_artifacts" in stderr
+
+
 def test_search_index_artifact_byte_cap_has_teeth(monkeypatch):
     monkeypatch.setattr(search_index.caps, "MAX_SEARCH_INDEX_BYTES", 64)
 
