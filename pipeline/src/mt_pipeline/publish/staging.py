@@ -3,13 +3,47 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 from mt_contracts.caps import DESCRIPTION_TILE_ZOOM
 
 from . import pack_descriptor, r2
+
+_PUBLISH_VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
+
+
+def prune_run_staging(root: Path, regions: Iterable[str]) -> list[Path]:
+    """Remove reproducible publish staging from prior runs."""
+    root = Path(root)
+    removed: list[Path] = []
+    work_root = root / ".work"
+    if work_root.is_symlink() or work_root.is_file():
+        work_root.unlink()
+        removed.append(work_root)
+    elif work_root.exists():
+        shutil.rmtree(work_root)
+        removed.append(work_root)
+    if not root.exists():
+        return removed
+    for region in sorted(set(regions)):
+        r2.validate_path_components(region, "19700101T000000Z")
+        parent = root / region
+        if parent.is_symlink() or not parent.is_dir():
+            continue
+        for version_root in sorted(parent.iterdir(), key=lambda item: item.name):
+            if not _PUBLISH_VERSION_RE.fullmatch(version_root.name):
+                continue
+            if version_root.is_symlink() or version_root.is_file():
+                version_root.unlink()
+                removed.append(version_root)
+            elif version_root.is_dir():
+                shutil.rmtree(version_root)
+                removed.append(version_root)
+    return removed
 
 
 def build_staging(

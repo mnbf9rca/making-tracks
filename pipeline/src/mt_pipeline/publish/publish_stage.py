@@ -7,6 +7,7 @@ import logging
 import math
 import pathlib
 import hashlib
+import sys
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -72,6 +73,7 @@ def run(
     no_zone_catalog: bool = False,
     reuse_existing_thumbs: bool = False,
 ) -> PublishStageResult:
+    staging_root = pathlib.Path(staging_root)
     r2.validate_path_components(region, publish_version)
     basemap.require_pmtiles()
     if upload:
@@ -81,6 +83,12 @@ def run(
 
     config.assert_global_region_ids()
     region_config = config.load(region)
+    target_region_ids = [region_config.region_id]
+    target_region_ids.extend(
+        subregion.region_id for subregion in region_config.subregions
+    )
+    for removed_path in staging.prune_run_staging(staging_root, target_region_ids):
+        print(f"PUBLISH_STAGING_PRUNE removed={removed_path}", file=sys.stderr)
     registry_path = _registry_path(conn, region)
     registry_store = LocalRegistryStore(registry_path)
     registry_records = _load_registry(registry_store, region)
@@ -145,7 +153,7 @@ def run(
         publish_version=publish_version,
         generated_at=generated_at,
         scoring_config_version=scoring_config_version,
-        staging_root=pathlib.Path(staging_root),
+        staging_root=staging_root,
         registry_blob=registry_blob,
         place_images_by_id=place_images_by_id,
         source_description_rows=source_description_rows,
@@ -172,7 +180,7 @@ def run(
             publish_version=publish_version,
             generated_at=generated_at,
             scoring_config_version=scoring_config_version,
-            staging_root=pathlib.Path(staging_root),
+            staging_root=staging_root,
             registry_blob=None,
             place_images_by_id=place_images_by_id,
             source_description_rows=source_description_rows,
@@ -198,7 +206,7 @@ def run(
         },
     )
     region_index_path = staging.write_region_index(
-        pathlib.Path(staging_root), region_index_obj
+        staging_root, region_index_obj
     )
     region_index_publish_result = r2.publish_region_index(region_index_path, layout)
 
