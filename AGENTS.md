@@ -1,7 +1,10 @@
 # Agent instructions — Making Tracks (`ios` branch)
 
-**This file inherits `develop`'s `AGENTS.md`.** That file is the project's agent law. It is not copied here.
-Read it first:
+**Two files exist because app work never checks out `develop`.** iOS branches are cut from `ios`, so
+`develop`'s tree — and the agent law in it — is not on disk here. This file exists to point at that law and
+to carry the few iOS-specific deltas. It is not a second copy, and nothing here overrides it.
+
+**The law is `develop`'s `AGENTS.md`.** Read it first:
 
 ```bash
 git fetch origin develop && git show origin/develop:AGENTS.md
