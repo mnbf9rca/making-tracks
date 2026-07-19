@@ -148,11 +148,30 @@ final class AppShellTests: XCTestCase {
             return XCTFail("expected startup failure surface")
         }
         XCTAssertEqual(surface.title, "History recovery needed")
+        XCTAssertEqual(surface.reasonLabel, "database-unavailable")
         XCTAssertTrue(surface.message.contains("saved places, lists, and visits have not been erased"))
         XCTAssertTrue(surface.recoveryHint.contains("Do not delete or reinstall"))
+        XCTAssertFalse(surface.recoveryHint.contains("Update Making Tracks"))
     }
 
-    func testListMapFeatureFilterCombinesVisitedAndHiddenVisibility() {
+    func testDatabaseStartupFailureForNewerDatabaseTellsUserToUpdate() {
+        let result = DatabaseStartupPolicy.open(
+            fixture: false,
+            resetFixtureStore: {},
+            openFixtureStore: { throw AppDatabaseError.unreadableDatabase },
+            openLiveStore: { throw AppDatabaseError.databaseFromNewerAppVersion(unknown: ["v99"]) },
+            seedFixtureUserList: nil
+        )
+
+        guard case .failed(let surface) = result else {
+            return XCTFail("expected startup failure surface")
+        }
+        XCTAssertEqual(surface.reasonLabel, "database-from-newer-app-version")
+        XCTAssertTrue(surface.message.contains("newer app version"))
+        XCTAssertTrue(surface.recoveryHint.contains("Update Making Tracks"))
+    }
+
+    func testListMapFeatureFilterKeepsHiddenMembersAndFiltersOnlyVisitedState() {
         let fresh = MapPlace(id: "fresh", lat: 51.49, lon: -0.12, tier: 1, category: "history")
         let visited = MapPlace(id: "visited", lat: 51.50, lon: -0.13, tier: 2, category: "museum")
         let hiddenFresh = MapPlace(id: "hidden-fresh", lat: 51.51, lon: -0.14, tier: 2, category: "artwork")
@@ -165,20 +184,28 @@ final class AppShellTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            ListMapFeatureFilter.visibleFeatures(features, showVisited: false, showHidden: false).map(\.0.id),
-            ["fresh"]
-        )
-        XCTAssertEqual(
-            ListMapFeatureFilter.visibleFeatures(features, showVisited: false, showHidden: true).map(\.0.id),
+            ListMapFeatureFilter.visibleFeatures(features, showVisited: false).map(\.0.id),
             ["fresh", "hidden-fresh"]
         )
         XCTAssertEqual(
-            ListMapFeatureFilter.visibleFeatures(features, showVisited: true, showHidden: false).map(\.0.id),
-            ["fresh", "visited"]
+            ListMapFeatureFilter.visibleFeatures(features, showVisited: true).map(\.0.id),
+            ["fresh", "visited", "hidden-fresh", "hidden-visited"]
+        )
+    }
+
+    func testListMapCategoryVisibilityIgnoresDiscoveryCategoryToggles() {
+        XCTAssertNil(
+            ListMapCategoryVisibility.visibleCategories(
+                discoveryVisibleCategories: ["history"],
+                isListMapActive: true
+            )
         )
         XCTAssertEqual(
-            ListMapFeatureFilter.visibleFeatures(features, showVisited: true, showHidden: true).map(\.0.id),
-            ["fresh", "visited", "hidden-fresh", "hidden-visited"]
+            ListMapCategoryVisibility.visibleCategories(
+                discoveryVisibleCategories: ["history"],
+                isListMapActive: false
+            ),
+            ["history"]
         )
     }
 

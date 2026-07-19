@@ -170,13 +170,20 @@ extension AppDatabase {
         try dbQueue.read { db in
             let total = try Int.fetchOne(
                 db,
-                sql: "SELECT COUNT(*) FROM list_items WHERE list_id = ?",
+                sql: """
+                    SELECT COUNT(*)
+                    FROM list_items li
+                    JOIN place_snapshots ps ON ps.place_id = li.place_id
+                    WHERE li.list_id = ?
+                    """,
                 arguments: [listID]
             ) ?? 0
             let visited = try Int.fetchOne(
                 db,
                 sql: """
-                    SELECT COUNT(*) FROM list_items li
+                    SELECT COUNT(*)
+                    FROM list_items li
+                    JOIN place_snapshots ps ON ps.place_id = li.place_id
                     WHERE li.list_id = ?
                     AND EXISTS(SELECT 1 FROM visits v WHERE v.place_id = li.place_id)
                     """,

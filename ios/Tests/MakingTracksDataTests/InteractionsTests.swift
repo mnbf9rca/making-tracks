@@ -174,8 +174,16 @@ final class InteractionsTests: XCTestCase {
         let futureSnapshotPlace = try ref("p_future_snapshot", schemaVersion: 99)
 
         try db.addToList(futureSnapshotPlace, listID: custom.id!)
+        try db.dbQueue.write { d in
+            try d.execute(
+                sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (?, ?, ?)",
+                arguments: [custom.id!, "p_missing_snapshot", Date(timeIntervalSince1970: 99)]
+            )
+        }
 
         XCTAssertEqual(try db.listMemberships(containing: "p_future_snapshot"), [custom.id!])
+        XCTAssertEqual(try db.listMemberships(containing: "p_missing_snapshot"), [custom.id!])
+        XCTAssertEqual(try db.listItems(listID: custom.id!).map(\.placeID), ["p_future_snapshot"])
     }
 
     func testListRowsSanitizeSnapshotFallbackTextWithoutDroppingHistory() throws {

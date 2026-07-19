@@ -219,18 +219,21 @@ struct DatabaseStartupFailureSurface: Equatable {
     static func resolve(error: Error) -> DatabaseStartupFailureSurface {
         let reasonLabel: String
         let message: String
+        let recoveryHint: String
         if case AppDatabaseError.databaseFromNewerAppVersion = error {
             reasonLabel = "database-from-newer-app-version"
             message = "Making Tracks could not open your on-device history because it was written by a newer app version. Your saved places, lists, and visits have not been erased."
+            recoveryHint = "Do not delete or reinstall the app if you want to preserve your history. Update Making Tracks, then try opening it again."
         } else {
             reasonLabel = "database-unavailable"
             message = "Making Tracks could not open your on-device history. Your saved places, lists, and visits have not been erased."
+            recoveryHint = "Do not delete or reinstall the app if you want to preserve your history. Try opening Making Tracks again later."
         }
         return DatabaseStartupFailureSurface(
             reasonLabel: reasonLabel,
             title: "History recovery needed",
             message: message,
-            recoveryHint: "Do not delete or reinstall the app if you want to preserve your history. Update Making Tracks, then try opening it again."
+            recoveryHint: recoveryHint
         )
     }
 }

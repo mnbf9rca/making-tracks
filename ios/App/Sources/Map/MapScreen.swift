@@ -739,7 +739,10 @@ struct MapScreen: View {
                 theme: selectedTheme,
                 startupViewport: startupViewport,
                 features: features,
-                visibleCategories: layerVisibility.visibleCategories,
+                visibleCategories: ListMapCategoryVisibility.visibleCategories(
+                    discoveryVisibleCategories: layerVisibility.visibleCategories,
+                    isListMapActive: activeListMap != nil
+                ),
                 pinSizeMultiplier: pinSizeMultiplier,
                 locationManager: locationManager,
                 showsUserLocation: showsUserLocation,
@@ -1945,16 +1948,13 @@ struct MapScreen: View {
     @MainActor
     private func refreshActiveListMap(updateCamera: Bool = false) async {
         guard let model, let list = activeListMap else { return }
-        let requestedShowHidden = layerVisibility.showHiddenPlaces
         let next = await model.listMapFeatures(
             listID: list.listID,
-            showVisited: list.showVisited,
-            showHidden: requestedShowHidden
+            showVisited: list.showVisited
         )
         guard let currentList = activeListMap,
               currentList.listID == list.listID,
-              currentList.showVisited == list.showVisited,
-              layerVisibility.showHiddenPlaces == requestedShowHidden
+              currentList.showVisited == list.showVisited
         else { return }
         features = next
         nearbyPromptNames = [:]
@@ -4149,13 +4149,20 @@ func offlineDownloadCancelMessage(for error: Error) -> String {
 enum ListMapFeatureFilter {
     static func visibleFeatures(
         _ features: [(MapPlace, PinState)],
-        showVisited: Bool,
-        showHidden: Bool
+        showVisited: Bool
     ) -> [(MapPlace, PinState)] {
-        let visitFiltered = showVisited ? features : features.filter { _, state in
+        showVisited ? features : features.filter { _, state in
             state.visit == .none
         }
-        return PinFeatureFilter.discoveryFeatures(visitFiltered, showHidden: showHidden)
+    }
+}
+
+enum ListMapCategoryVisibility {
+    static func visibleCategories(
+        discoveryVisibleCategories: Set<String>?,
+        isListMapActive: Bool
+    ) -> Set<String>? {
+        isListMapActive ? nil : discoveryVisibleCategories
     }
 }
 
@@ -4538,15 +4545,14 @@ private final class MapScreenModel {
         }.value
     }
 
-    func listMapFeatures(listID: Int64, showVisited: Bool, showHidden: Bool) async -> [(MapPlace, PinState)] {
+    func listMapFeatures(listID: Int64, showVisited: Bool) async -> [(MapPlace, PinState)] {
         let db = database
         let features = await Task.detached {
             (try? db.listMapFeatures(listID: listID)) ?? []
         }.value
         return ListMapFeatureFilter.visibleFeatures(
             features,
-            showVisited: showVisited,
-            showHidden: showHidden
+            showVisited: showVisited
         )
     }
 
