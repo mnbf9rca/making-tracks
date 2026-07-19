@@ -4,7 +4,7 @@ You are working on **Making Tracks** (making-tracks.app), an iOS map app for dis
 
 ## Amending this file
 
-Three constraints on anything written here. CI enforces the first and third (`scripts/lint_agent_law.py`).
+Three constraints on anything written here. `scripts/lint_agent_law.py` runs in CI and catches the known bad shapes of the first and third — dates, narrative openers, line-number citations. It cannot tell narrative from rule, so a green lint means "no known bad shape", not "correct". The constraints bind you, not the linter.
 
 1. **Rule text is timeless.** No dates, no `this morning`, no `as of`. A rule states what to do and why it is true, not what happened. Incident rationale goes in [`docs/process/incidents.md`](docs/process/incidents.md) and the rule cites it by name. A dated fact inside a rule eventually goes false, and a false fact reads as permission to skip the rule — see incidents → *Stale law disabled two gates*.
 2. **One rule, one home.** Principles live in `docs/PRINCIPLES.md`. Operational law lives here. Cross-reference; never restate.
@@ -47,6 +47,16 @@ All secrets via 1Password: `op run --env-file=.env.tpl -- <command>` (masking st
 ## Workflow
 
 Work packages (spec §8) are designed one at a time (design agent) and built one at a time (build agent) on feature branches. **All production code is written by build agents.** A design agent produces plans and never spawns a code-writing subagent; read-only research and review subagents are fine. fable coordinates, reviews and merges. Keep to your package's scope; if you discover a cross-package contract problem, surface it in your report rather than unilaterally changing the contract. Commit messages: imperative, plain, no attribution boilerplate.
+
+**Fold or file.** A new finding may be folded into an in-flight work package only if all of these hold:
+
+- same surface and same owner;
+- the WP is not yet in review;
+- it introduces no design fork, no schema or contract change, and no new dependency;
+- fewer than 2 additions have already been absorbed (3 riders is a hard cap);
+- it is recorded as an explicit scope addition in the PR body.
+
+Otherwise file an issue first, then route it to its own PR if it is an urgent live bug, or to the next planned WP. Regardless of route, anything not fixed the same day gets a tracker issue — routing messages are not project memory. (Incidents → *Three riders on one work package*.)
 
 Never invoke **interactive git**: always `git commit -m` (never a bare `commit`), `git commit --amend --no-edit`, and never `rebase -i`. Rob's environment has `EDITOR`/`VISUAL` set to VS Code `--wait`, so any git command that opens an editor **pops a window at the human and hangs the agent** until he closes it (incidents → *Editor-open hangs the agent*). Export `GIT_EDITOR=true` defensively so any accidental editor-open returns immediately instead of blocking.
 
@@ -155,11 +165,11 @@ Never put `simctl delete all` or `simctl shutdown all` in shared scripts. Those 
 
 ## Review gates (mandatory before declaring anything complete)
 
-Nothing is "done" on the author's say-so. **No CI workflow runs the test suite** — every gate below is executed by you on the host. CI checks only the attribution artifacts, the `main` source-branch guard, and this file's law lint. A green PR is not a tested PR.
+Nothing is "done" on the author's say-so. **Every gate below is yours to execute on the host — do not assume CI runs it.** CI does not run the test suite; check `.github/workflows/` for what it does cover. A green PR is not a tested PR.
 
 Before you declare a plan complete, open a PR, or report a build finished:
 
-1. **Adversarial self-review by subagents.** If your harness can spawn subagents or workflows, you MUST run an adversarial review pass over your own output before declaring it complete: several independent critics with distinct lenses (spec fidelity; internal coherence; feasibility/correctness; security + untrusted-data posture per §5.5; test quality — do the tests actually pin the invariants?). Have findings cross-examined (a critic's claim must survive a genuine refutation attempt), fix what survives, and for every fix prove **teeth** — neutering the fix turns a test red — and include a short review summary (findings raised / survived / fixed) in your completion message. The worked checklist for that pass — how to prove teeth, the traps that produce green-but-wrong, and what to verify on bridged native code — is [`docs/process/gate-lessons.md`](docs/process/gate-lessons.md).
+1. **Adversarial self-review by subagents.** If your harness can spawn subagents or workflows, you MUST run an adversarial review pass over your own output before declaring it complete: several independent critics with distinct lenses (spec fidelity; internal coherence; feasibility/correctness; security + untrusted-data posture per the spec's §5.5; test quality — do the tests actually pin the invariants?). Have findings cross-examined (a critic's claim must survive a genuine refutation attempt), fix what survives, and for every fix prove **teeth** — neutering the fix turns a test red — and include a short review summary (findings raised / survived / fixed) in your completion message. The worked checklist for that pass — how to prove teeth, the traps that produce green-but-wrong, and what to verify on bridged native code — is [`docs/process/gate-lessons.md`](docs/process/gate-lessons.md).
 2. **No subagent capability?** Then request the review explicitly: message fable on AMQ (kind: review_request) with the artifact path and wait for the response before declaring completion.
 3. **Builders additionally:** full test suite green is a precondition, not evidence of review. Paste the actual test output (counts, not adjectives) in the PR description. A PR whose description says "tests pass" without output is incomplete. One build requirement on top: **for iOS app-target work, a one-time RELEASE-configuration build before any PR** — the Debug build and `swift test` do not exercise Release, so a Debug-only gate lets a Release-only break through (incidents → *Debug-only gate let a Release break through*). Run it under the fleet lock:
 
@@ -179,13 +189,13 @@ Before you declare a plan complete, open a PR, or report a build finished:
 6. **Greptile is explicit-spend only.** Greptile (`greptile-review` label) costs $1/review and is applied only on fable's explicit instruction: `develop`→`main` promotions, security-surface PRs, and escalations. Sourcery remains the default automated layer; never apply `greptile-review` by default.
 7. **Independent review still happens — and your self-review is unconditional.** The adversarial self-review (point 1) does not replace the design lead's review, and the automated bots (Sourcery/Greptile) never substitute for it: run your own critic pass regardless of which bot layers are configured or whether their credit is available. Those layers raise the floor; they are not the floor.
 
-**Threat-model discipline (the §5.5 security-posture hook).** Every security or privacy review finding — whether from the adversarial self-review (point 1) or a human/bot reviewer — must **cite a specific in-scope vector from [`docs/threat-model.md`](docs/threat-model.md)**, or **explicitly propose an amendment to that model**. A finding that names no vector, or that assumes an out-of-scope adversary (a compromised/jailbroken device, physical seizure, a nation-state, our own infra turning hostile, enterprise-MITM), is **rejected as overreach** — do not action it, and say why. The threat model's calibration tests (its §5) are the screening rubric; apply them mechanically. **Untrusted-data / content-validation findings** (defensive parsing, size caps, `SAFE_TEXT`, plain-text rendering, URL allowlists, no unescaped SQL/shell/LLM interpolation) cite the **hostile-upstream-content vector** (threat-model §2 / this §5.5 posture / PRINCIPLES 10) and are **always in scope** — never "overreach"; the overreach rule targets out-of-scope *adversaries*, not the handling of hostile content we publish. The model is not frozen: a genuine new vector is argued into `threat-model.md` (ratified as project policy, like `privacy.md`), never smuggled in as a one-off review comment. This governs the "security + untrusted-data posture per §5.5" lens in point 1.
+**Threat-model discipline (the spec's §5.5 security-posture hook).** Every security or privacy review finding — whether from the adversarial self-review (point 1) or a human/bot reviewer — must **cite a specific in-scope vector from [`docs/threat-model.md`](docs/threat-model.md)**, or **explicitly propose an amendment to that model**. A finding that names no vector, or that assumes an out-of-scope adversary (a compromised/jailbroken device, physical seizure, a nation-state, our own infra turning hostile, enterprise-MITM), is **rejected as overreach** — do not action it, and say why. The threat model's calibration tests (its §5) are the screening rubric; apply them mechanically. **Untrusted-data / content-validation findings** (defensive parsing, size caps, `SAFE_TEXT`, plain-text rendering, URL allowlists, no unescaped SQL/shell/LLM interpolation) cite the **hostile-upstream-content vector** (threat-model §2 / the spec's §5.5 / PRINCIPLES 10) and are **always in scope** — never "overreach"; the overreach rule targets out-of-scope *adversaries*, not the handling of hostile content we publish. The model is not frozen: a genuine new vector is argued into `docs/threat-model.md` (ratified as project policy, like `privacy.md`), never smuggled in as a one-off review comment. This governs the "security + untrusted-data posture" lens in point 1.
 
 The one standing exception: trivial mechanical changes (typo fixes, comment corrections) need tests green but not the adversarial pass. When unsure whether something is trivial, it isn't.
 
 ## Finishing a branch (the pre-PR checklist)
 
-Before opening any PR, run this sequence top to bottom. Each step is stated in full in the section it names — this is the index, not a second copy. Do each irreversible step (push, PR, merge) as its own action after reading the prior check's result.
+Before opening any PR, run this sequence top to bottom. Each step is stated in full in the section it names — this is the index, not a second copy. The irreversible-action rule (**Workflow**) applies throughout.
 
 1. **Re-ground on a fresh target** (Workflow). `git fetch origin <target>` (`<target>` = `develop`, or `ios` for app work), then `git merge-base --is-ancestor origin/<target> HEAD` must succeed. If it fails, merge the fresh target in as its own step and re-run your gates.
 2. **Adversarial gate** (Review gates, point 1). Record the accounting — raised / survived / fixed — for the PR description.

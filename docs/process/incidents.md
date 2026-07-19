@@ -28,7 +28,7 @@ Rule: `AGENTS.md` → **Workflow**, the never-invoke-interactive-git paragraph.
 did not exist yet written in the present tense, and bare deferrals ("plan to fix X", "TODO") that hid real
 cross-package dependencies. Downstream work packages inherited both as fact.
 
-Rule: `AGENTS.md` → **Plan-language law**.
+Rule: `AGENTS.md` → **Authoring law (design docs and policy docs)**, the plan-language law.
 
 ---
 
@@ -38,7 +38,7 @@ Rule: `AGENTS.md` → **Plan-language law**.
 CoreSimulator died fleet-wide. Every "flaky simulator" failure that night was disk suffocation, not a flaky
 test — a full disk masquerades as flakiness.
 
-Rule: `AGENTS.md` → **Disk hygiene**, both laws.
+Rule: `AGENTS.md` → **Disk hygiene (mandatory)**, both laws.
 
 ---
 
@@ -47,7 +47,7 @@ Rule: `AGENTS.md` → **Disk hygiene**, both laws.
 **2026-07-18.** Merged branches' worktrees were left in `.worktrees/` for a later sweep. They reached 25 G on
 the shared disk.
 
-Rule: `AGENTS.md` → **Finishing a branch**, the worktree-removal step, and **Worktree discipline**.
+Rule: `AGENTS.md` → **Finishing a branch (the pre-PR checklist)**, the worktree-removal step, and **Worktree discipline**.
 
 ---
 
@@ -57,7 +57,16 @@ Rule: `AGENTS.md` → **Finishing a branch**, the worktree-removal step, and **W
 the Release compile. The Debug build and `swift test` do not exercise Release, and warnings-as-errors applies
 to Release too, so the pre-PR gate passed on a broken build. The standing fix landed in PR #192.
 
-Rule: `AGENTS.md` → **Review gates**, the builders' Release-configuration requirement.
+Rule: `AGENTS.md` → **Review gates (mandatory before declaring anything complete)**, the builders' Release-configuration requirement.
+
+---
+
+## Three riders on one work package
+
+**2026-07-19.** A status-honesty work package absorbed three follow-on findings before it reached review.
+Rob asked where the line was. The threshold below is the answer.
+
+Rule: `AGENTS.md` → **Workflow**, *Fold or file*.
 
 ---
 

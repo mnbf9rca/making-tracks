@@ -1,12 +1,10 @@
 name: agent-law-lint
 
+# No `paths:` filter on purpose. A path-filtered check never reports on a PR
+# that touches none of those paths, and a required-but-unreported check blocks
+# merge forever. Running always keeps it safe to mark required.
 on:
   pull_request:
-    paths:
-      - AGENTS.md
-      - docs/INFRA.md
-      - scripts/lint_agent_law.py
-      - .github/workflows/agent-law-lint.yml
   push:
     branches: [develop, ios]
 
