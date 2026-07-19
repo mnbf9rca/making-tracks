@@ -11,6 +11,7 @@ from typing import Any
 
 from mt_contracts import registry as registry_contract
 from mt_contracts.tilecodec import safe_gunzip
+from mt_contracts.versions import SCHEMA_VERSIONS
 
 from mt_pipeline import config, progress, runtime_paths
 from mt_pipeline.reconcile.registry_file import LocalRegistryStore
@@ -510,7 +511,7 @@ def _region_index(
             }
         )
     return {
-        "schema_version": 1,
+        "schema_version": SCHEMA_VERSIONS["region_index"],
         "min_reader_version": 1,
         "generated_at": generated_at,
         "regions": entries,

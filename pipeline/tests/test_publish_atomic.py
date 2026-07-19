@@ -5,6 +5,7 @@ from io import BytesIO
 
 import pytest
 
+from mt_contracts.versions import SCHEMA_VERSIONS
 from mt_pipeline.publish import r2 as R
 from mt_pipeline.publish import images as I
 from mt_pipeline.publish import descriptions as D
@@ -427,7 +428,7 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
             (root / "zone-catalog.proposal.json").write_text(
                 json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": SCHEMA_VERSIONS["zone_catalog"],
                         "min_reader_version": 1,
                         "region": "uk",
                         "publish_version": "20260715T120000Z",
@@ -441,7 +442,7 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
             (root / "zone-catalog.json").write_text(
                 json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": SCHEMA_VERSIONS["zone_catalog"],
                         "min_reader_version": 1,
                         "region": "uk",
                         "publish_version": "20260715T120000Z",
@@ -460,7 +461,7 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
     region_index.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": SCHEMA_VERSIONS["region_index"],
                 "min_reader_version": 1,
                 "generated_at": "2026-07-15T12:00:00Z",
                 "regions": [
@@ -590,7 +591,7 @@ def test_region_index_dry_run_with_client_previews_merged_upload_body(tmp_path):
     region_index.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": SCHEMA_VERSIONS["region_index"],
                 "min_reader_version": 1,
                 "generated_at": "2026-07-15T12:00:00Z",
                 "regions": [
@@ -650,7 +651,7 @@ def test_region_index_offline_dry_run_plan_serializes_the_planned_body(tmp_path)
     region_index.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": SCHEMA_VERSIONS["region_index"],
                 "min_reader_version": 1,
                 "generated_at": "2026-07-15T12:00:00Z",
                 "regions": [

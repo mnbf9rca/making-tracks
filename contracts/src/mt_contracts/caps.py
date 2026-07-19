@@ -33,6 +33,7 @@ MAX_PLACES_PER_TILE = 4000
 MAX_TILE_UNCOMPRESSED_BYTES = 8 * 1024 * 1024
 MAX_TILE_COMPRESSED_BYTES = 1 * 1024 * 1024
 PACK_BUDGET_CEILING_BYTES = 3_221_225_472
+PACK_WITH_THUMBS_CEILING_BYTES = 8 * 1024 * 1024 * 1024
 TILES_MAX = 1_048_576
 BASEMAP_FILENAME_MAX = 128
 GENERATED_AT_MAX = 32
@@ -92,6 +93,8 @@ CAPS_SCHEMA_MAP = {
     ("region-config", ("properties", "basemap", "properties", "subregions", "items", "properties", "id"), "maxLength"): "REGION_ID_MAX",
     ("region-config", ("properties", "basemap", "properties", "size_budget_bytes"), "maximum"): "PACK_BUDGET_CEILING_BYTES",
     ("region-config", ("properties", "basemap", "properties", "measured_archive_bytes"), "maximum"): "PACK_BUDGET_CEILING_BYTES",
+    ("region-index", ("properties", "regions", "items", "properties", "bytes_with_thumbs"), "maximum"): "PACK_WITH_THUMBS_CEILING_BYTES",
+    ("zone-catalog", ("properties", "zones", "items", "properties", "bytes_with_thumbs"), "maximum"): "PACK_WITH_THUMBS_CEILING_BYTES",
 }
 
 

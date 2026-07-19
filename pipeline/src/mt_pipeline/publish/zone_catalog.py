@@ -8,6 +8,7 @@ import math
 from typing import Any, Iterable, Mapping
 
 from mt_contracts import caps
+from mt_contracts.versions import SCHEMA_VERSIONS
 from mt_contracts.validation import validate_instance
 
 
@@ -199,7 +200,7 @@ def materialize_catalogs(
 
 def _catalog(region: str, publish_version: str, generated_at: str, zones: list[dict]) -> dict:
     return {
-        "schema_version": 1,
+        "schema_version": SCHEMA_VERSIONS["zone_catalog"],
         "min_reader_version": 1,
         "region": region,
         "publish_version": publish_version,

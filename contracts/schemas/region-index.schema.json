@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://contracts.making-tracks.app/region-index/1",
+  "$id": "https://contracts.making-tracks.app/region-index/2",
   "title": "RegionIndex",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "min_reader_version", "generated_at", "regions"],
   "properties": {
-    "schema_version": {"type": "integer", "const": 1},
+    "schema_version": {"type": "integer", "const": 2},
     "min_reader_version": {"type": "integer", "minimum": 1, "maximum": 999},
     "generated_at": {"type": "string", "format": "date-time", "maxLength": 32},
     "regions": {
@@ -51,7 +51,7 @@
           "basemap_bytes": {"type": "integer", "minimum": 0, "maximum": 3221225472},
           "tile_count": {"type": "integer", "minimum": 0, "maximum": 1048576},
           "bytes_without_thumbs": {"type": "integer", "minimum": 0, "maximum": 3221225472},
-          "bytes_with_thumbs": {"type": "integer", "minimum": 0, "maximum": 3221225472}
+          "bytes_with_thumbs": {"type": "integer", "minimum": 0, "maximum": 8589934592}
         }
       }
     }
