@@ -1,0 +1,73 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  :root{ --ink:#1c1c1e; --dim:#6b6b70; --accent:#0a6b5c; --pin:#E4572E; }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{ background:#f6f6f4; font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif; color:var(--ink); padding:26px 24px 30px; }
+  h1{ font-size:17px; font-weight:650; margin-bottom:2px;}
+  .sub{ font-size:12.5px; color:var(--dim); margin-bottom:24px;}
+  .row{ display:flex; gap:26px; align-items:flex-start; flex-wrap:wrap;}
+  .col{ width:390px;}
+  .cap{ font-size:12.5px; font-weight:650; margin-bottom:3px;}
+  .capsub{ font-size:11px; color:var(--dim); margin-bottom:10px; line-height:1.4; min-height:30px;}
+  .bar{ border:1px solid #e0ded7; border-radius:13px; background:#fff; padding:11px 14px; display:flex; gap:9px;}
+  .btn{ flex:1; text-align:center; font-size:15px; font-weight:560; padding:12px 0; border-radius:10px; background:#f0eee9;}
+  .btn.prom{ background:var(--accent); color:#fff;}
+  .btn.love{ background:#fdeceb; color:#c0392b;}
+  .btn.warn{ background:#f6f2ea; color:#8a6d2f;}
+  .arrowrow{ display:flex; align-items:center; gap:18px; margin:22px 0 10px;}
+  .arrow{ font-size:26px; color:var(--dim);}
+  .lab{ font-size:12px; color:var(--dim);}
+  .note{ margin-top:26px; font-size:12.5px; line-height:1.6; color:#3a3a3e; max-width:840px;}
+  .note b{ color:var(--ink);}
+  .slotmap{ margin-top:26px; border-collapse:collapse; font-size:13px;}
+  .slotmap th,.slotmap td{ border:1px solid #e0ded7; padding:9px 14px; text-align:left; background:#fff;}
+  .slotmap th{ background:#f2f0ea; font-weight:650;}
+  .q{ margin-top:24px; padding:13px 16px; border-left:3px solid var(--pin); background:#fff6f3; font-size:12.5px; line-height:1.6; max-width:840px;}
+</style></head><body>
+
+<h1>Action slots — three, fixed, morphing by state</h1>
+<div class="sub">Rob's ruling, 2026-07-19. The slot count never changes; the verbs upgrade.</div>
+
+<div class="row">
+  <div class="col">
+    <div class="cap">Before it is seen</div>
+    <div class="capsub">Hide is first-class and always present here. Love is not offered yet.</div>
+    <div class="bar">
+      <div class="btn">Save</div><div class="btn prom">Seen</div><div class="btn">Hide</div>
+    </div>
+  </div>
+
+  <div style="align-self:center; padding-top:38px;">
+    <div class="arrow">→</div>
+    <div class="lab">tap Seen</div>
+  </div>
+
+  <div class="col">
+    <div class="cap">After it is seen</div>
+    <div class="capsub">Slot 2 upgrades Seen → Love. Slot 3 becomes Un-see. Hide is gone: a seen place cannot be hidden.</div>
+    <div class="bar">
+      <div class="btn">Save</div><div class="btn love">Love</div><div class="btn warn">Un-see</div>
+    </div>
+  </div>
+</div>
+
+<table class="slotmap">
+  <tr><th>Slot</th><th>Before seen</th><th>After seen</th><th>Why</th></tr>
+  <tr><td>1</td><td>Save</td><td>Save</td><td>Independent of visit state. Never moves.</td></tr>
+  <tr><td>2</td><td><b>Seen</b> (prominent)</td><td><b>Love</b></td><td>The verb upgrades once the fact is recorded.</td></tr>
+  <tr><td>3</td><td><b>Hide</b></td><td><b>Un-see</b></td><td>Hide is only meaningful before you have been.</td></tr>
+</table>
+
+<div class="note">
+<b>Three consequences.</b><br>
+1 · <b>The reserved-slot problem disappears.</b> An earlier draft proposed reserving an empty cell for Love so the row would not re-flow under the user's thumb between finger-down and the database write returning. With a fixed three slots there is nothing to reserve — the slot is stable and only its label changes.<br>
+2 · <b>The two-tap Hide proposal is rejected.</b> An earlier draft moved Hide behind an overflow menu to fit five buttons. Three slots fit comfortably, so Hide stays one tap.<br>
+3 · <b>Add to list keeps its overflow home.</b> It is the only action not in the ruled set, and the list chips already open the list picker.
+</div>
+
+<div class="q">
+<b>One reading to confirm.</b> Rob wrote <i>"Love only comes after visited (not seen)"</i>. Read here as a terminology correction — the underlying fact is <i>visited</i>, and the button that records it is currently labelled <i>Seen</i>. If instead <i>visited</i> and <i>seen</i> are meant to be two distinct states, slot 2 needs a third step and this drawing is wrong.
+</div>
+
+</body></html>

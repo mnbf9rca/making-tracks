@@ -51,7 +51,35 @@ Apple publishes no minimum supported screen size. The HIG's only relevant guidan
 
 Sources are committed beside the images (`docs/design/card/wf-default.html`, `wf-ax.html`) so they can be re-rendered and edited rather than redrawn.
 
-## 4. What the pictures show
+## 4. The actions — ruled
+
+Rob, 2026-07-19, verbatim:
+
+> "where's hide? Hide is a first class action. Love only comes after visited (not seen). So - Save, Seen (change to loved on seen) Hide."
+
+> "Also on seen, change hide to unsee or something - you can't hide a seen item."
+
+![Action slots](../../design/card/card-actions.png)
+
+**Three slots. The count never changes; the verbs upgrade.**
+
+| Slot | Before seen | After seen | Why |
+|---|---|---|---|
+| 1 | Save | Save | Independent of visit state. Never moves. |
+| 2 | **Seen** (prominent) | **Love** | The verb upgrades once the fact is recorded. |
+| 3 | **Hide** | **Un-see** | Hide is only meaningful before you have been. |
+
+This settles three open items from the earlier drafts:
+
+- **Hide is first-class.** The proposal to move it behind an overflow — and with it the "Hide becomes two taps" ratification item — is rejected. Three slots fit comfortably.
+- **The reserved-slot problem dissolves.** An earlier draft proposed reserving an empty cell for Love so the row would not re-flow under the thumb between finger-down and the write returning. With a fixed three slots there is nothing to reserve: the slot is stable and only its label changes.
+- **Add to list keeps its overflow home.** It is the only action outside the ruled set, and the list chips already open the picker.
+
+**One reading to confirm rather than assume.** "Love only comes after visited (not seen)" is read here as a terminology correction — the underlying fact is *visited*, and the button that records it is currently labelled *Seen*. If instead *visited* and *seen* are meant as two distinct states, slot 2 needs a third step and the drawing above is wrong.
+
+**Data-layer note.** "You can't hide a seen item" is a rule about what the card offers, not a migration. Existing hidden-and-visited rows are legacy composition in the fade matrix and are unchanged by this.
+
+## 5. What the pictures show
 
 **Peek carries the decision.** Name, type, photo, one taster line. On the evidence of the default-size render, that is enough to decide "worth a look" without expanding. The map stays usable behind it.
 
@@ -61,15 +89,15 @@ Sources are committed beside the images (`docs/design/card/wf-default.html`, `wf
 
 This finding was first derived on the wrong canvas, and it survived the correction — but it was re-derived, not carried over. On the corrected canvas it is a closer call than it was.
 
-**Actions are drawn pinned in all four proposal panels.** That is one option, shown so it can be compared, not a conclusion. §6 prices it.
+**Actions are drawn pinned in all four proposal panels.** That is one option, shown so it can be compared, not a conclusion. §7 prices it.
 
-## 5. What the pictures cannot settle
+## 6. What the pictures cannot settle
 
 Panel 3 of the accessibility render approximates today's card. **It is not a measurement**, and in the wireframe the actions look reachable — which contradicts the UI test, where `scrollToExistence` is required for Save, Seen and Love at AXXXL.
 
 One of those is wrong and a mockup cannot say which. **Measure on a device before any decision that depends on it.** The first draft of this design built its entire argument on the test evidence without checking it against a rendering, which is how it reached a conclusion Rob rejected.
 
-## 6. Where the actions live — the open question
+## 7. Where the actions live — the open question
 
 Rob's list has six elements. Actions are not among them. So their placement is genuinely open, and the wireframes show only one answer.
 
@@ -79,15 +107,15 @@ Rob's list has six elements. Actions are not among them. So their placement is g
 
 **C. In peek only.** Actions live in the peek state, and the slid-up state is for reading. Matches "decide from the toast, expand to read". Costs: a user who expands to read then wants to act must collapse or scroll back.
 
-**Recommendation: A, conditional on the device measurement in §5.** If the measurement shows today's in-flow actions are reachable at AXXXL, B becomes defensible and the case for A weakens to "one order instead of two".
+**Recommendation: A, conditional on the device measurement in §6.** If the measurement shows today's in-flow actions are reachable at AXXXL, B becomes defensible and the case for A weakens to "one order instead of two".
 
-## 7. Constraints any option must answer
+## 8. Constraints any option must answer
 
 Carried from the research pass. These do not depend on which option wins.
 
 - **VoiceOver order.** A pinned bar reads last by default. Needs `accessibilitySortPriority`, or the accessibility story contradicts the visual one.
 - **Action completion is silent.** Every tap awaits a DB write with no optimistic update and no announcement. Pinning makes the latency more visible; it does not cause it.
-- **Love appears only after Seen**, so the row grows from three buttons to four. If actions are pinned, reserve Love's slot from first render — otherwise the button under the thumb can change identity between finger-down and write-return.
+- ~~Love's reserved slot~~ — resolved by the three-slot morph in §4. The row no longer grows.
 - **The photo is a hard 180pt** that does not scale with Dynamic Type, so it shrinks proportionally as text grows. The wireframes draw it scaled; the code does not do this today.
 - **The late-photo jump is block insertion, not byte arrival.** Bytes load into a fixed box with a spinner. The jump happens when `card.photo` flips nil to non-nil and the whole slot appears in an open card.
 - **Attribution has no outbound link.** The licence URL renders as inert plain text. This is the one item of Rob's original spec that never shipped. Making a data-supplied URL tappable touches `privacy.md`'s plain-text commitment and needs his ruling, not a layout sign-off.
@@ -95,17 +123,17 @@ Carried from the research pass. These do not depend on which option wins.
 - **No contrast test exists.** Any coloured text this design adds — the attribution link — is the first place the committed WCAG AA 4.5:1 is visibly on the line.
 - **`altNames` is decoded and never rendered.** Dead data either way.
 
-## 8. Test delta
+## 9. Test delta
 
 Unchanged from the analysis pass, and it only bites if option A wins.
 
 - Pinning inverts `chips < actions < attribution` in `testPlaceCardOverhaulRendersHierarchyAndHideAction`. That is a change to a hierarchy Rob signed off and needs saying, not absorbing.
-- Any move of Hide behind an overflow breaks `hideButton.exists` / `.tap()` in the same test, and turns a one-tap action into two.
+- The Hide-behind-overflow change is withdrawn (§4), so `hideButton.exists` / `.tap()` are unaffected. The test will need a post-seen case for the Un-see label.
 - The order test does not include `place-card.add-to-list` at all. That is how it drifted in unnoticed after #231, and it should be added regardless of which option wins.
 
 The six content elements keep their order in every option. Only the actions move.
 
-## 9. What was withdrawn from the first draft
+## 10. What was withdrawn from the first draft
 
 Recorded so it is not re-derived.
 
