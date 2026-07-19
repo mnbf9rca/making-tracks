@@ -6,68 +6,77 @@
   body{ background:#f6f6f4; font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif; color:var(--ink); padding:26px 24px 30px; }
   h1{ font-size:17px; font-weight:650; margin-bottom:2px;}
   .sub{ font-size:12.5px; color:var(--dim); margin-bottom:24px;}
-  .row{ display:flex; gap:26px; align-items:flex-start; flex-wrap:wrap;}
-  .col{ width:390px;}
+  .row{ display:flex; gap:14px; align-items:flex-start;}
+  .col{ width:330px;}
   .cap{ font-size:12.5px; font-weight:650; margin-bottom:3px;}
-  .capsub{ font-size:11px; color:var(--dim); margin-bottom:10px; line-height:1.4; min-height:30px;}
-  .bar{ border:1px solid #e0ded7; border-radius:13px; background:#fff; padding:11px 14px; display:flex; gap:9px;}
-  .btn{ flex:1; text-align:center; font-size:15px; font-weight:560; padding:12px 0; border-radius:10px; background:#f0eee9;}
+  .capsub{ font-size:11px; color:var(--dim); margin-bottom:10px; line-height:1.4; min-height:44px;}
+  .bar{ border:1px solid #e0ded7; border-radius:13px; background:#fff; padding:11px 13px; display:flex; gap:8px;}
+  .btn{ flex:1; text-align:center; font-size:14px; font-weight:560; padding:12px 0; border-radius:10px; background:#f0eee9;}
   .btn.prom{ background:var(--accent); color:#fff;}
   .btn.love{ background:#fdeceb; color:#c0392b;}
   .btn.warn{ background:#f6f2ea; color:#8a6d2f;}
-  .arrowrow{ display:flex; align-items:center; gap:18px; margin:22px 0 10px;}
-  .arrow{ font-size:26px; color:var(--dim);}
-  .lab{ font-size:12px; color:var(--dim);}
-  .note{ margin-top:26px; font-size:12.5px; line-height:1.6; color:#3a3a3e; max-width:840px;}
+  .btn.off{ background:#f7f6f4; color:#c8c5be; border:1px dashed #ded9d0;}
+  .arrow{ align-self:center; padding-top:52px; text-align:center; width:52px;}
+  .ar{ font-size:22px; color:var(--dim); line-height:1.1;}
+  .lab{ font-size:10.5px; color:var(--dim); margin-top:2px;}
+  table{ margin-top:26px; border-collapse:collapse; font-size:13px;}
+  th,td{ border:1px solid #e0ded7; padding:9px 14px; text-align:left; background:#fff;}
+  th{ background:#f2f0ea; font-weight:650;}
+  td.dis{ color:#a8a5a0; font-style:italic;}
+  .note{ margin-top:24px; font-size:12.5px; line-height:1.65; color:#3a3a3e; max-width:900px;}
   .note b{ color:var(--ink);}
-  .slotmap{ margin-top:26px; border-collapse:collapse; font-size:13px;}
-  .slotmap th,.slotmap td{ border:1px solid #e0ded7; padding:9px 14px; text-align:left; background:#fff;}
-  .slotmap th{ background:#f2f0ea; font-weight:650;}
-  .q{ margin-top:24px; padding:13px 16px; border-left:3px solid var(--pin); background:#fff6f3; font-size:12.5px; line-height:1.6; max-width:840px;}
+  .edge{ margin-top:20px; padding:13px 16px; border-left:3px solid var(--accent); background:#f1f7f5; font-size:12.5px; line-height:1.65; max-width:900px;}
 </style></head><body>
 
-<h1>Action slots — three, fixed, morphing by state</h1>
-<div class="sub">Rob's ruling, 2026-07-19. The slot count never changes; the verbs upgrade.</div>
+<h1>Action slots — three states, three fixed slots</h1>
+<div class="sub">From Rob's state diagram, 2026-07-19. The slot count never changes; the verbs change with state.</div>
 
 <div class="row">
   <div class="col">
-    <div class="cap">Before it is seen</div>
-    <div class="capsub">Hide is first-class and always present here. Love is not offered yet.</div>
+    <div class="cap">Unseen</div>
+    <div class="capsub">The starting state. Hide is first-class and only offered here.</div>
     <div class="bar">
       <div class="btn">Save</div><div class="btn prom">Seen</div><div class="btn">Hide</div>
     </div>
   </div>
 
-  <div style="align-self:center; padding-top:38px;">
-    <div class="arrow">→</div>
-    <div class="lab">tap Seen</div>
-  </div>
+  <div class="arrow"><div class="ar">⇄</div><div class="lab">Seen /<br>Un-see</div></div>
 
   <div class="col">
-    <div class="cap">After it is seen</div>
-    <div class="capsub">Slot 2 upgrades Seen → Love. Slot 3 becomes Un-see. Hide is gone: a seen place cannot be hidden.</div>
+    <div class="cap">Seen</div>
+    <div class="capsub">Slot 2 upgrades to Love. Slot 3 becomes Un-see — a seen place cannot be hidden.</div>
     <div class="bar">
       <div class="btn">Save</div><div class="btn love">Love</div><div class="btn warn">Un-see</div>
     </div>
   </div>
+
+  <div class="arrow"><div class="ar">⇄</div><div class="lab">Love /<br>Unlove</div></div>
+
+  <div class="col">
+    <div class="cap">Loved</div>
+    <div class="capsub">Slot 3 is disabled: there is no Loved → Unseen edge. Un-seeing a loved place takes two steps.</div>
+    <div class="bar">
+      <div class="btn">Save</div><div class="btn love">Unlove</div><div class="btn off">Un-see</div>
+    </div>
+  </div>
 </div>
 
-<table class="slotmap">
-  <tr><th>Slot</th><th>Before seen</th><th>After seen</th><th>Why</th></tr>
-  <tr><td>1</td><td>Save</td><td>Save</td><td>Independent of visit state. Never moves.</td></tr>
-  <tr><td>2</td><td><b>Seen</b> (prominent)</td><td><b>Love</b></td><td>The verb upgrades once the fact is recorded.</td></tr>
-  <tr><td>3</td><td><b>Hide</b></td><td><b>Un-see</b></td><td>Hide is only meaningful before you have been.</td></tr>
+<table>
+  <tr><th>Slot</th><th>Unseen</th><th>Seen</th><th>Loved</th></tr>
+  <tr><td>1</td><td>Save</td><td>Save</td><td>Save</td></tr>
+  <tr><td>2</td><td><b>Seen</b> (prominent)</td><td><b>Love</b></td><td><b>Unlove</b></td></tr>
+  <tr><td>3</td><td><b>Hide</b></td><td><b>Un-see</b></td><td class="dis">disabled</td></tr>
 </table>
 
-<div class="note">
-<b>Three consequences.</b><br>
-1 · <b>The reserved-slot problem disappears.</b> An earlier draft proposed reserving an empty cell for Love so the row would not re-flow under the user's thumb between finger-down and the database write returning. With a fixed three slots there is nothing to reserve — the slot is stable and only its label changes.<br>
-2 · <b>The two-tap Hide proposal is rejected.</b> An earlier draft moved Hide behind an overflow menu to fit five buttons. Three slots fit comfortably, so Hide stays one tap.<br>
-3 · <b>Add to list keeps its overflow home.</b> It is the only action not in the ruled set, and the list chips already open the list picker.
+<div class="edge">
+<b>Two edges the diagram deliberately omits, and what they mean on the card.</b><br>
+<b>No Loved → Unseen.</b> Slot 3 is disabled in the Loved state. Un-seeing a loved place is two deliberate steps: unlove, then un-see. You cannot discard the stronger record in one tap.<br>
+<b>No Hide → Seen.</b> Unhiding returns a place to Unseen, never straight to Seen. Hiding is not a way to record having been somewhere.
 </div>
 
-<div class="q">
-<b>One reading to confirm.</b> Rob wrote <i>"Love only comes after visited (not seen)"</i>. Read here as a terminology correction — the underlying fact is <i>visited</i>, and the button that records it is currently labelled <i>Seen</i>. If instead <i>visited</i> and <i>seen</i> are meant to be two distinct states, slot 2 needs a third step and this drawing is wrong.
+<div class="note">
+<b>What this settles.</b> The slot count is constant at three, so the row never re-flows under the user's thumb and there is no empty cell to reserve. Hide stays one tap. Add to list is the only action outside the ruled set and keeps its overflow home; the list chips already open the picker.<br>
+<b>Terminology, resolved.</b> There is one ladder — Unseen ⇄ Seen ⇄ Loved — with Hide as a side branch off Unseen. There is no separate "visited" state distinct from "seen".
 </div>
 
 </body></html>

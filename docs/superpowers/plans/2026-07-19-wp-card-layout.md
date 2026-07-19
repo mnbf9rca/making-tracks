@@ -53,31 +53,51 @@ Sources are committed beside the images (`docs/design/card/wf-default.html`, `wf
 
 ## 4. The actions — ruled
 
-Rob, 2026-07-19, verbatim:
+Rob, 2026-07-19:
 
 > "where's hide? Hide is a first class action. Love only comes after visited (not seen). So - Save, Seen (change to loved on seen) Hide."
 
 > "Also on seen, change hide to unsee or something - you can't hide a seen item."
 
+And the state machine, authored by Rob, verbatim:
+
+```mermaid
+stateDiagram
+[*] --> Unseen
+Unseen --> Seen
+Unseen --> Hide
+Seen --> Unseen
+Seen --> Loved
+Loved --> Seen
+Hide --> Unseen
+```
+
 ![Action slots](../../design/card/card-actions.png)
 
-**Three slots. The count never changes; the verbs upgrade.**
+**Three fixed slots across three states. The count never changes; the verbs do.**
 
-| Slot | Before seen | After seen | Why |
+| Slot | Unseen | Seen | Loved |
 |---|---|---|---|
-| 1 | Save | Save | Independent of visit state. Never moves. |
-| 2 | **Seen** (prominent) | **Love** | The verb upgrades once the fact is recorded. |
-| 3 | **Hide** | **Un-see** | Hide is only meaningful before you have been. |
+| 1 | Save | Save | Save |
+| 2 | **Seen** (prominent) | **Love** | **Unlove** |
+| 3 | **Hide** | **Un-see** | *disabled* |
 
-This settles three open items from the earlier drafts:
+### The two edges the diagram omits
 
-- **Hide is first-class.** The proposal to move it behind an overflow — and with it the "Hide becomes two taps" ratification item — is rejected. Three slots fit comfortably.
-- **The reserved-slot problem dissolves.** An earlier draft proposed reserving an empty cell for Love so the row would not re-flow under the thumb between finger-down and the write returning. With a fixed three slots there is nothing to reserve: the slot is stable and only its label changes.
-- **Add to list keeps its overflow home.** It is the only action outside the ruled set, and the list chips already open the picker.
+These are the load-bearing part, and they are omissions rather than statements — easy to miss and easy to violate by accident.
 
-**One reading to confirm rather than assume.** "Love only comes after visited (not seen)" is read here as a terminology correction — the underlying fact is *visited*, and the button that records it is currently labelled *Seen*. If instead *visited* and *seen* are meant as two distinct states, slot 2 needs a third step and the drawing above is wrong.
+**There is no `Loved --> Unseen`.** So slot 3 is disabled in the Loved state. Un-seeing a loved place takes two deliberate steps: unlove, then un-see. A single tap cannot discard the stronger record.
 
-**Data-layer note.** "You can't hide a seen item" is a rule about what the card offers, not a migration. Existing hidden-and-visited rows are legacy composition in the fade matrix and are unchanged by this.
+**There is no `Hide --> Seen`.** Unhiding returns a place to Unseen, never straight to Seen. Hiding is not a route to recording that you have been somewhere.
+
+### What this settles
+
+- **Terminology.** One ladder — Unseen ⇄ Seen ⇄ Loved — with Hide as a side branch off Unseen. There is no separate *visited* state distinct from *seen*. The question raised in the previous revision is answered.
+- **Hide is first-class.** The proposal to move it behind an overflow, and the "Hide becomes two taps" ratification item, are withdrawn.
+- **The reserved-slot problem dissolves.** An earlier draft reserved an empty cell so the row would not re-flow under the thumb between finger-down and the write returning. With a constant three slots there is nothing to reserve.
+- **Add to list** is the only action outside the ruled set and keeps its overflow home; the list chips already open the picker.
+
+**Data-layer note.** "You can't hide a seen item" governs what the card offers, not a migration. Existing hidden-and-visited rows are legacy composition in the fade matrix and are unchanged.
 
 ## 5. What the pictures show
 
@@ -128,7 +148,8 @@ Carried from the research pass. These do not depend on which option wins.
 Unchanged from the analysis pass, and it only bites if option A wins.
 
 - Pinning inverts `chips < actions < attribution` in `testPlaceCardOverhaulRendersHierarchyAndHideAction`. That is a change to a hierarchy Rob signed off and needs saying, not absorbing.
-- The Hide-behind-overflow change is withdrawn (§4), so `hideButton.exists` / `.tap()` are unaffected. The test will need a post-seen case for the Un-see label.
+- The Hide-behind-overflow change is withdrawn (§4), so `hideButton.exists` / `.tap()` are unaffected.
+- New cases owed by the state machine: slot 2 reads Seen / Love / Unlove across the three states; slot 3 reads Hide / Un-see / disabled. The disabled case is the one worth teeth — a test that Un-see cannot be invoked from Loved, which goes red if someone "helpfully" adds the missing `Loved --> Unseen` edge.
 - The order test does not include `place-card.add-to-list` at all. That is how it drifted in unnoticed after #231, and it should be added regardless of which option wins.
 
 The six content elements keep their order in every option. Only the actions move.
