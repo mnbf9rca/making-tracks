@@ -64,6 +64,14 @@ def test_search_index_splits_oversize_full_shards(monkeypatch):
         for index in range(12)
     ]
     monkeypatch.setattr(search_index.caps, "MAX_SEARCH_INDEX_BYTES", 1000)
+    validated_shards: list[str | None] = []
+    original_validate = search_index.validate_instance
+
+    def spy_validate(name, payload):
+        validated_shards.append(payload.get("shard_key"))
+        original_validate(name, payload)
+
+    monkeypatch.setattr(search_index, "validate_instance", spy_validate)
 
     result = search_index.emit_search_indexes(
         places,
@@ -75,6 +83,7 @@ def test_search_index_splits_oversize_full_shards(monkeypatch):
 
     shard_keys = {artifact.shard_key for artifact in result.full_artifacts}
     assert "st" not in shard_keys
+    assert "st" not in validated_shards
     assert "st_a" not in shard_keys
     assert any(
         key and key.startswith(f"{split_shard_key_for_token('station', A)}_h")

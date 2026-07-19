@@ -229,8 +229,9 @@ def _full_artifacts_for_shard(
         shard_key=shard_key,
         entries=entries,
     )
-    body = _artifact_bytes(payload)
+    body = _json_bytes(payload)
     if len(body) <= caps.MAX_SEARCH_INDEX_BYTES:
+        validate_instance("search-index", payload)
         return (_artifact_from_payload(payload, body),)
     return tuple(
         artifact
@@ -261,8 +262,9 @@ def _bounded_split_artifacts(
         shard_key=shard_key,
         entries=entries,
     )
-    body = _artifact_bytes(payload)
+    body = _json_bytes(payload)
     if len(body) <= caps.MAX_SEARCH_INDEX_BYTES:
+        validate_instance("search-index", payload)
         return (_artifact_from_payload(payload, body),)
     return tuple(
         _artifact(
@@ -334,18 +336,18 @@ def _index_payload(
 
 
 def _artifact(payload: dict[str, Any]) -> SearchIndexArtifact:
-    body = _artifact_bytes(payload)
+    body = _json_bytes(payload)
     if len(body) > caps.MAX_SEARCH_INDEX_BYTES:
         shard = payload.get("shard_key")
         raise ValueError(
             f"search-index artifact exceeds {caps.MAX_SEARCH_INDEX_BYTES} bytes: "
             f"kind={payload.get('index_kind')} shard={shard!r}"
         )
+    validate_instance("search-index", payload)
     return _artifact_from_payload(payload, body)
 
 
-def _artifact_bytes(payload: dict[str, Any]) -> bytes:
-    validate_instance("search-index", payload)
+def _json_bytes(payload: dict[str, Any]) -> bytes:
     return json.dumps(
         payload,
         sort_keys=True,
