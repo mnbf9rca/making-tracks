@@ -51,6 +51,7 @@ public func saturation(hex: String) -> Double {
 public struct MapTheme: Sendable {
     public var id: String
     public var displayName: String
+    public var freshPhrase: String
     public var background: String
     public var land: String
     public var parks: String
@@ -67,6 +68,7 @@ public struct MapTheme: Sendable {
     public init(
         id: String,
         displayName: String,
+        freshPhrase: String,
         background: String,
         land: String,
         parks: String,
@@ -82,6 +84,7 @@ public struct MapTheme: Sendable {
     ) {
         self.id = id
         self.displayName = displayName
+        self.freshPhrase = freshPhrase
         self.background = background
         self.land = land
         self.parks = parks
@@ -99,6 +102,7 @@ public struct MapTheme: Sendable {
     public static let snow = MapTheme(
         id: "snow",
         displayName: "Snow",
+        freshPhrase: "Fresh snow",
         background: "#F4F1EA",
         land: "#ECE8DD",
         parks: "#E4E8D8",
@@ -116,6 +120,7 @@ public struct MapTheme: Sendable {
     public static let definedPaper = MapTheme(
         id: "defined-paper",
         displayName: "Defined Paper",
+        freshPhrase: "Unmarked paper",
         background: "#F3EFE5",
         land: "#EAE4D3",
         parks: "#DCE6CF",
@@ -133,6 +138,7 @@ public struct MapTheme: Sendable {
     public static let streetContrast = MapTheme(
         id: "street-contrast",
         displayName: "Street Contrast",
+        freshPhrase: "Open streets",
         background: "#F2EEE6",
         land: "#EDE8DC",
         parks: "#D8E4C8",
@@ -150,6 +156,7 @@ public struct MapTheme: Sendable {
     public static let verdantKL = MapTheme(
         id: "verdant-kl",
         displayName: "Verdant KL",
+        freshPhrase: "Virgin forest",
         background: "#F1EDDF",
         land: "#ECE5D2",
         parks: "#CFE1BC",

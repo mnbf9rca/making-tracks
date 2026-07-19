@@ -312,7 +312,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let tracksLayerButton = app.buttons["map.list-mode.tracks"]
         XCTAssertTrue(freshLayerButton.waitForExistence(timeout: 5))
         XCTAssertTrue(tracksLayerButton.waitForExistence(timeout: 5))
-        XCTAssertEqual(freshLayerButton.label, "Defined Paper")
+        XCTAssertEqual(freshLayerButton.label, "Unmarked paper")
         XCTAssertEqual(freshLayerButton.value as? String, "Not selected")
         XCTAssertEqual(tracksLayerButton.label, "My tracks")
         XCTAssertEqual(tracksLayerButton.value as? String, "Selected")
@@ -339,7 +339,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(freshLayerButton.value as? String, "Selected")
 
         app.buttons["map.list-mode.back"].tap()
-        XCTAssertTrue(app.buttons["map.menu"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["KL walk"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         XCTAssertTrue(waitForNonExistence(of: app.staticTexts["map.list-mode.title"], timeout: 5))
     }
 
@@ -451,6 +452,31 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "track-replay-pin-arrival")
     }
 
+    func testListMapBackReturnsToSeededListDetail() {
+        let app = launch(reset: true, pinDiagnostics: true, seedTrackList: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["Track pair"].tap()
+        XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["map.list-mode.title"].label, "Track pair")
+
+        app.buttons["map.list-mode.back"].tap()
+
+        XCTAssertTrue(app.staticTexts["Track pair"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["map.list-mode.title"].label, "Track pair")
+        XCTAssertFalse(app.staticTexts["Lists"].exists)
+    }
+
     func testMyTracksSystemListDrawsWholeLogTrackWithoutStoredListMembership() {
         let app = launch(reset: true, pinDiagnostics: true, seedBurstTrackVisits: true)
 
@@ -466,10 +492,41 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.staticTexts["map.track-connection-readout"].waitForExistence(timeout: 2))
         XCTAssertTrue(waitForSourceFeatureCount(2, in: app))
         XCTAssertTrue(waitForTrackSegmentCount(1, in: app))
-        attachScreenshot(named: "my-tracks-burst-readout")
+        XCTAssertFalse(app.staticTexts["map.track-connection-readout"].exists)
+        attachScreenshot(named: "my-tracks-continuous-line")
+    }
+
+    func testListMapCameraFitsSpreadListMembers() {
+        let app = launch(reset: true, pinDiagnostics: true, seedSpreadList: true, startupViewport: "kl-street")
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["Spread walk"].tap()
+        XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForSourceFeatureCount(5, in: app))
+        XCTAssertTrue(waitForProjectedFixturePinCount(5, in: app))
+        for pin in app.staticTexts.matching(identifierPrefix: "map.fixture-pin.").allElementsBoundByIndex {
+            XCTAssertEqual(pin.label, "hit")
+            guard let value = pin.value as? String else {
+                return XCTFail("missing normalized coordinates for \(pin.identifier)")
+            }
+            let normalized = normalizedPoint(from: value)
+            XCTAssertGreaterThan(normalized.x, 0.04, pin.identifier)
+            XCTAssertLessThan(normalized.x, 0.96, pin.identifier)
+            XCTAssertGreaterThan(normalized.y, 0.08, pin.identifier)
+            XCTAssertLessThan(normalized.y, 0.92, pin.identifier)
+        }
+        attachScreenshot(named: "list-map-spread-fit")
     }
 
     func testHiddenToastAutoDismissesWithoutUnhidingPlace() {
@@ -1083,6 +1140,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         pinDiagnostics: Bool = false,
         seedTrackVisits: Bool = false,
         seedBurstTrackVisits: Bool = false,
+        seedSpreadList: Bool = false,
         seedTrackList: Bool = false,
         seedMultiDayTrackList: Bool = false,
         coverageBBoxes: [String] = [],
@@ -1146,6 +1204,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         if seedBurstTrackVisits {
             app.launchArguments.append("--ui-testing-seed-burst-track-visits")
+        }
+        if seedSpreadList {
+            app.launchArguments.append("--ui-testing-seed-spread-list")
         }
         if seedTrackList {
             app.launchArguments.append("--ui-testing-seed-track-list")
@@ -1506,6 +1567,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         return false
     }
 
+    private func normalizedPoint(from value: String) -> (x: Double, y: Double) {
+        let parts = value.split(separator: " ")
+        let values = Dictionary(uniqueKeysWithValues: parts.compactMap { part -> (String, Double)? in
+            let pair = part.split(separator: ":")
+            guard pair.count == 2, let value = Double(pair[1]) else { return nil }
+            return (String(pair[0]), value)
+        })
+        return (values["x"] ?? -1, values["y"] ?? -1)
+    }
+
     private func attachScreenshot(named name: String) {
         let screenshot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
@@ -1678,6 +1749,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "credits-a11y": "credits-a11y",
         "tracks-static-geometry": "tracks-static-geometry",
         "list-map-polished-chrome": "list-map-polished-chrome",
+        "list-map-spread-fit": "list-map-spread-fit",
         "my-tracks-burst-readout": "my-tracks-burst-readout",
         "track-replay-pin-arrival": "track-replay-pin-arrival",
         "pin-defined-paper-min": "pin-defined-paper-min",

@@ -229,9 +229,6 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         map.showsUserLocation = showsUserLocation
         map.userTrackingMode = userTrackingMode
         map.setCenter(startupViewport.center, zoomLevel: Double(startupViewport.zoom), animated: false)
-        if let cameraRequest {
-            context.coordinator.markCameraRequestApplied(cameraRequest.id)
-        }
         let container = MapAccessibilityContainerView(mapView: map)
         container.onLayout = { [weak coordinator = context.coordinator, weak map] in
             guard let coordinator, let map else { return }
@@ -280,7 +277,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         map.userTrackingMode = userTrackingMode
         if let cameraRequest,
            context.coordinator.consumeCameraRequest(cameraRequest.id) {
-            map.setCenter(cameraRequest.viewport.center, zoomLevel: Double(cameraRequest.viewport.zoom), animated: true)
+            context.coordinator.applyCameraRequest(cameraRequest, on: map)
         }
 
         let styleReload = context.coordinator.prepareStyleReload(
@@ -443,14 +440,33 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             currentThemeID = reload.themeID
         }
 
-        func markCameraRequestApplied(_ id: Int) {
-            lastAppliedCameraRequestID = id
-        }
-
         func consumeCameraRequest(_ id: Int) -> Bool {
             guard lastAppliedCameraRequestID != id else { return false }
             lastAppliedCameraRequestID = id
             return true
+        }
+
+        func applyCameraRequest(_ request: ViewportCameraRequest, on map: MLNMapView) {
+            guard request.fitBounds else {
+                map.setCenter(request.viewport.center, zoomLevel: Double(request.viewport.zoom), animated: true)
+                return
+            }
+            let bounds = MLNCoordinateBounds(
+                sw: CLLocationCoordinate2D(
+                    latitude: request.viewport.bbox.minLat,
+                    longitude: request.viewport.bbox.minLon
+                ),
+                ne: CLLocationCoordinate2D(
+                    latitude: request.viewport.bbox.maxLat,
+                    longitude: request.viewport.bbox.maxLon
+                )
+            )
+            map.setVisibleCoordinateBounds(
+                bounds,
+                edgePadding: UIEdgeInsets(top: 92, left: 28, bottom: 132, right: 28),
+                animated: true,
+                completionHandler: nil
+            )
         }
 
         func styleURL(

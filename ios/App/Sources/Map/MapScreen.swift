@@ -408,10 +408,18 @@ struct ViewportSeed: Sendable, Equatable {
 struct ViewportCameraRequest: Sendable, Equatable {
     let id: Int
     let viewport: ViewportSeed
+    let fitBounds: Bool
+
+    init(id: Int, viewport: ViewportSeed, fitBounds: Bool = false) {
+        self.id = id
+        self.viewport = viewport
+        self.fitBounds = fitBounds
+    }
 }
 
 enum MenuDestination: Hashable {
     case lists
+    case listDetail(Int64)
     case tracks
     case offlineMaps
     case settings
@@ -459,6 +467,11 @@ struct DeferredOfflineMaintenanceDownloadRoute {
 final class AppShellModel {
     var isMenuPresented = false
     var deepLinkPath: MenuDestination?
+
+    func openListDetailDeepLink(listID: Int64) {
+        deepLinkPath = .listDetail(listID)
+        isMenuPresented = true
+    }
 }
 
 struct ListsCopy {
@@ -487,7 +500,7 @@ enum ListMapModeCopy {
     static let tracksLayerTitle = "My tracks"
 
     static func freshLayerTitle(theme: MapTheme) -> String {
-        theme.id == MapTheme.snow.id ? "Fresh snow" : theme.displayName
+        theme.freshPhrase
     }
 }
 
@@ -972,6 +985,75 @@ struct ViewportRefreshTracker: Equatable {
     mutating func complete(requestID: Int) {
         guard requestID == latestRequestID else { return }
         inFlightRequestID = nil
+    }
+}
+
+enum ListMapViewport {
+    static func viewport(for places: [MapPlace]) -> ViewportSeed? {
+        guard let first = places.first else { return nil }
+        var minLat = first.lat
+        var maxLat = first.lat
+        var longitudes = [first.lon]
+        for place in places.dropFirst() {
+            longitudes.append(place.lon)
+            minLat = min(minLat, place.lat)
+            maxLat = max(maxLat, place.lat)
+        }
+        let lonBounds = shortestLongitudeBounds(for: longitudes)
+        let lonSpan = lonBounds.max - lonBounds.min
+        let lonPad = max(lonSpan * 0.18, 0.01)
+        let latPad = max((maxLat - minLat) * 0.18, 0.01)
+        return ViewportSeed(
+            bbox: BBox(
+                minLon: lonBounds.min - lonPad,
+                minLat: minLat - latPad,
+                maxLon: lonBounds.max + lonPad,
+                maxLat: maxLat + latPad
+            ),
+            zoom: places.count == 1 ? 14 : 12
+        )
+    }
+
+    private static func shortestLongitudeBounds(for longitudes: [Double]) -> (min: Double, max: Double) {
+        let sorted = longitudes.map(normalizeLongitude).sorted()
+        guard sorted.count > 1 else {
+            let lon = sorted.first ?? 0
+            return (lon, lon)
+        }
+
+        var largestGap = -Double.infinity
+        var largestGapIndex = 0
+        for index in sorted.indices {
+            let nextIndex = sorted.index(after: index)
+            let next = nextIndex == sorted.endIndex ? sorted[sorted.startIndex] + 360 : sorted[nextIndex]
+            let gap = next - sorted[index]
+            if gap > largestGap {
+                largestGap = gap
+                largestGapIndex = index
+            }
+        }
+
+        let startIndex = sorted.index(after: largestGapIndex) == sorted.endIndex ? sorted.startIndex : sorted.index(after: largestGapIndex)
+        let start = sorted[startIndex]
+        let end = sorted[largestGapIndex] < start ? sorted[largestGapIndex] + 360 : sorted[largestGapIndex]
+        return (start, end)
+    }
+
+    private static func normalizeLongitude(_ longitude: Double) -> Double {
+        var value = longitude.truncatingRemainder(dividingBy: 360)
+        if value < -180 {
+            value += 360
+        } else if value >= 180 {
+            value -= 360
+        }
+        return value
+    }
+}
+
+extension BBox {
+    func contains(lon: Double, lat: Double) -> Bool {
+        let normalizedLon = lon < minLon ? lon + 360 : lon
+        return (minLon...maxLon).contains(normalizedLon) && (minLat...maxLat).contains(lat)
     }
 }
 
@@ -1891,10 +1973,13 @@ struct MapScreen: View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 Task { @MainActor in
+                    let returnListID = list.listID
                     activeListMap = nil
                     listCameraRequest = nil
                     clearTrackReplay()
                     await refreshCurrentViewport()
+                    await refreshTrackGeometry()
+                    appShell.openListDetailDeepLink(listID: returnListID)
                 }
             } label: {
                 Label("Back", systemImage: "chevron.left")
@@ -2787,10 +2872,9 @@ struct MapScreen: View {
             clearTrackReplay()
         }
         stateEpoch += 1
-        if updateCamera, let viewport = Self.viewport(for: next.map(\.0)) {
+        if updateCamera, let viewport = ListMapViewport.viewport(for: next.map(\.0)) {
             nextListCameraRequestID += 1
-            listCameraRequest = ViewportCameraRequest(id: nextListCameraRequestID, viewport: viewport)
-            currentViewport = viewport
+            listCameraRequest = ViewportCameraRequest(id: nextListCameraRequestID, viewport: viewport, fitBounds: true)
         }
     }
 
@@ -2812,31 +2896,6 @@ struct MapScreen: View {
         listCameraRequest = nil
         clearTrackReplay()
         await refreshCurrentViewport()
-    }
-
-    private static func viewport(for places: [MapPlace]) -> ViewportSeed? {
-        guard let first = places.first else { return nil }
-        var minLon = first.lon
-        var maxLon = first.lon
-        var minLat = first.lat
-        var maxLat = first.lat
-        for place in places.dropFirst() {
-            minLon = min(minLon, place.lon)
-            maxLon = max(maxLon, place.lon)
-            minLat = min(minLat, place.lat)
-            maxLat = max(maxLat, place.lat)
-        }
-        let lonPad = max((maxLon - minLon) * 0.18, 0.01)
-        let latPad = max((maxLat - minLat) * 0.18, 0.01)
-        return ViewportSeed(
-            bbox: BBox(
-                minLon: minLon - lonPad,
-                minLat: minLat - latPad,
-                maxLon: maxLon + lonPad,
-                maxLat: maxLat + latPad
-            ),
-            zoom: places.count == 1 ? 14 : 12
-        )
     }
 
     private struct NearbyPromptCandidate {
@@ -2934,6 +2993,31 @@ struct MapScreen: View {
                 fetchedAt: Date(timeIntervalSince1970: 0),
                 rawJSON: """
                 {"blurb":"Fixture pin for tier/zoom density screenshots.","category":"\(category)","lat":\(lat),"lon":\(lon),"name":"\(name)","place_id":"\(placeID)","score":0.5,"source_refs":["osm:node/\(10_000 + index)"],"tier":\(tier)}
+                """
+            )
+        }
+    }()
+
+    static let spreadFixturePlaces: [PlaceRef] = {
+        let fixtures: [(id: String, name: String, lat: Double, lon: Double, category: String)] = [
+            ("mt1_S0000000000000000000000001", "Spread West", 3.12, 101.60, "museum"),
+            ("mt1_S0000000000000000000000002", "Spread East", 3.20, 101.78, "historic_building"),
+            ("mt1_S0000000000000000000000003", "Spread South", 3.06, 101.70, "artwork"),
+            ("mt1_S0000000000000000000000004", "Spread North", 3.24, 101.68, "memorial"),
+            ("mt1_S0000000000000000000000005", "Spread Middle", 3.16, 101.69, "attraction"),
+        ]
+        return fixtures.map { fixture in
+            try! PlaceRef(
+                placeID: fixture.id,
+                name: fixture.name,
+                lat: fixture.lat,
+                lon: fixture.lon,
+                category: fixture.category,
+                tier: 2,
+                schemaVersion: 1,
+                fetchedAt: Date(timeIntervalSince1970: 0),
+                rawJSON: """
+                {"blurb":"Fixture pin for list-map camera fitting.","category":"\(fixture.category)","lat":\(fixture.lat),"lon":\(fixture.lon),"name":"\(fixture.name)","place_id":"\(fixture.id)","score":0.5,"source_refs":["osm:node/\(fixture.id.suffix(1))"],"tier":2}
                 """
             )
         }
@@ -3235,6 +3319,13 @@ private struct AppMenuSheet: View {
                 onListRenamed: onListRenamed,
                 onListDeleted: onListDeleted
             ))
+        case let .listDetail(listID):
+            destinationWithDone(ListDetailDeepLinkView(
+                model: model,
+                listID: listID,
+                onShowOnMap: showListOnMapAndDismiss,
+                onListRenamed: onListRenamed
+            ))
         case .tracks:
             destinationWithDone(TracksView(model: model))
         case .offlineMaps:
@@ -3278,7 +3369,12 @@ private struct AppMenuSheet: View {
             }
             return
         }
-        path = [destination]
+        switch destination {
+        case let .listDetail(listID):
+            path = [.lists, .listDetail(listID)]
+        default:
+            path = [destination]
+        }
         shell.deepLinkPath = nil
     }
 
@@ -3291,6 +3387,46 @@ private struct AppMenuSheet: View {
         shell.isMenuPresented = false
         dismiss()
         onShowListOnMap(list)
+    }
+}
+
+private struct ListDetailDeepLinkView: View {
+    let model: MapScreenModel?
+    let listID: Int64
+    let onShowOnMap: @MainActor (PlaceList) -> Void
+    let onListRenamed: @MainActor (PlaceList) -> Void
+
+    @State private var list: PlaceList?
+    @State private var didLoad = false
+
+    var body: some View {
+        Group {
+            if let list {
+                ListDetailView(
+                    model: model,
+                    list: list,
+                    onChanged: {},
+                    onShowOnMap: onShowOnMap,
+                    onListRenamed: onListRenamed
+                )
+            } else if didLoad {
+                ContentUnavailableView("List not found", systemImage: "list.bullet")
+            } else {
+                ProgressView()
+                    .accessibilityIdentifier("lists.detail.loading")
+            }
+        }
+        .task { await load() }
+    }
+
+    @MainActor
+    private func load() async {
+        guard let model else {
+            didLoad = true
+            return
+        }
+        list = await model.lists().first { $0.id == listID }
+        didLoad = true
     }
 }
 

@@ -421,8 +421,8 @@ final class PinLayersTests: XCTestCase {
             trackVisit(id: 1, placeID: "a", seconds: 0, lat: 0, lon: 0),
             trackVisit(id: 2, placeID: "b", seconds: 300, lat: 0, lon: 1),
             trackVisit(id: 3, placeID: "c", seconds: 330, lat: 1, lon: 1),
-            trackVisit(id: 4, placeID: "d", seconds: 7_200, lat: 1, lon: 2),
-            trackVisit(id: 5, placeID: "e", seconds: 7_500, lat: 2, lon: 2),
+            trackVisit(id: 4, placeID: "d", seconds: 86_400, lat: 1, lon: 2),
+            trackVisit(id: 5, placeID: "e", seconds: 86_430, lat: 2, lon: 2),
         ]
 
         let features = FeatureEncoding.trackSegmentFeatures(
@@ -614,6 +614,7 @@ final class PinLayersTests: XCTestCase {
         )
 
         XCTAssertEqual(summary.features.count, 1)
+        XCTAssertEqual(summary.suppressedBurstConnectorCount, 0)
         XCTAssertEqual(summary.connectableVisitCount, 2)
     }
 

@@ -9,9 +9,9 @@ public enum TrackLayers {
     public static let lineOpacity = 0.82
     public static let lineDashPatternValues = [1.6, 1.2]
     public static let lineDashPattern: JSONValue = .array(lineDashPatternValues.map(JSONValue.double))
-    // Superseded by #257/#265 continuity; retained so older callers compile while all consecutive visits connect.
+    // Retained for slice-3 animation pacing; drawn track lines connect every consecutive visit by Rob's ruling.
     public static let defaultMaxConnectorGap: TimeInterval = 12 * 60 * 60
-    // Superseded by #257/#265 continuity; retained so older callers compile while all consecutive visits connect.
+    // Retained for slice-3 animation pacing; not used to suppress drawn connectors.
     public static let defaultBurstWindow: TimeInterval = 5 * 60
     // Tunable per B6 §7.3; fixed bend ratio keeps every connector visibly abstract without encoding route knowledge.
     public static let arcBendRatio = 0.12
