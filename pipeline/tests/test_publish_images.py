@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 
@@ -18,13 +19,13 @@ def _fixture_license_url(license_short_name: str) -> str:
     if normalized in {"0", "cc0"}:
         return "https://creativecommons.org/publicdomain/zero/1.0/"
     if normalized in {"public-domain", "pd"}:
-        return "https://commons.wikimedia.org/wiki/Commons:Copyright_tags/Public_domain"
+        return "https://creativecommons.org/publicdomain/mark/1.0/"
     return f"https://creativecommons.org/licenses/{normalized}"
 
 
 def _expected_license_url_for_code(code: str) -> str:
     if code == "PD":
-        return "https://commons.wikimedia.org/wiki/Commons:Copyright_tags/Public_domain"
+        return "https://creativecommons.org/publicdomain/mark/1.0/"
     if code == "CC0-1.0":
         return "https://creativecommons.org/publicdomain/zero/1.0/"
     family = code.removeprefix("CC-").casefold()
@@ -189,6 +190,26 @@ def test_commons_license_accepts_deed_url_without_trailing_slash():
     )
 
 
+@pytest.mark.parametrize(
+    "license_url",
+    [
+        "http://creativecommons.org/licenses/by/4.0/",
+        "https://creativecommons.org/licenses/by/4.0/deed.en",
+        "https://creativecommons.org/licenses/by/4.0/legalcode",
+    ],
+)
+def test_commons_license_rejects_noncanonical_deed_urls(license_url):
+    decision = images.metadata_from_commons_imageinfo(
+        _imageinfo(
+            license_short_name="CC BY 4.0",
+            license_url=license_url,
+        )
+    )
+
+    assert decision.accepted is False
+    assert decision.reason in {"license_url_invalid", "license_url_mismatch"}
+
+
 def test_commons_license_rejects_deed_url_for_different_port():
     decision = images.metadata_from_commons_imageinfo(
         _imageinfo(
@@ -199,6 +220,17 @@ def test_commons_license_rejects_deed_url_for_different_port():
 
     assert decision.accepted is False
     assert decision.reason == "license_url_mismatch"
+
+
+def test_public_domain_license_emits_canonical_creative_commons_mark_url():
+    decision = images.metadata_from_commons_imageinfo(
+        _imageinfo(license_short_name="Public domain")
+    )
+
+    assert decision.accepted is True
+    assert decision.metadata.attribution.license_url == (
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+    )
 
 
 def test_commons_license_classifies_only_machine_readable_license_field():
@@ -319,6 +351,37 @@ def test_emit_image_indexes_groups_by_tile_and_counts_thumb_bytes(tmp_path):
     assert thumb_arts[0].byte_len == len(b"thumb")
 
 
+def test_emit_image_artifacts_accepts_emitted_public_domain_mark_url_through_schema():
+    records = [
+        images.PlaceImage(
+            place_id="mt1_00000000000000000000000001",
+            lat=51.5,
+            lon=-0.1,
+            thumb_sha256=hashlib.sha256(b"thumb").hexdigest(),
+            thumb_bytes=b"thumb",
+            width=320,
+            height=240,
+            attribution=images.ImageAttribution(
+                creator=None,
+                license_code="PD",
+                license_name="Public domain",
+                license_url="https://creativecommons.org/publicdomain/mark/1.0/",
+                source_url="https://commons.wikimedia.org/wiki/File:Fort.jpg",
+                modified=True,
+            ),
+        )
+    ]
+
+    index_arts, thumb_arts = images.emit_image_artifacts(records)
+
+    assert len(index_arts) == 1
+    assert len(thumb_arts) == 1
+    payload = json.loads(index_arts[0].json_bytes)
+    assert payload["places"][0]["attribution"]["license_url"] == (
+        "https://creativecommons.org/publicdomain/mark/1.0/"
+    )
+
+
 def test_select_image_candidates_is_score_ordered_tier_agnostic_and_deterministic():
     rows = [
         (
@@ -430,6 +493,352 @@ def test_build_place_images_fetches_filters_downloads_and_caches_thumb(tmp_path,
     assert metadata_calls == [["Fort.jpg"]]
     assert len(downloads) == 1
     assert len(transcodes) == 1
+
+
+def test_build_place_images_from_audit_reuses_place_id_rows_without_fetching(
+    tmp_path, monkeypatch, capsys
+):
+    thumb = b"audited-thumb"
+    thumb_sha = hashlib.sha256(thumb).hexdigest()
+    cache = tmp_path / "audit-cache"
+    (cache / "thumbs" / thumb_sha[:2]).mkdir(parents=True)
+    (cache / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp").write_bytes(thumb)
+    completed = tmp_path / "completed.jsonl"
+    completed.write_text(
+        json.dumps(
+            {
+                "place_id": "mt1_00000000000000000000000001",
+                "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Old.jpg",
+                "thumb_sha256": thumb_sha,
+                "width": 320,
+                "height": 240,
+                "attribution": {
+                    "creator": "Jane Example",
+                    "license_code": "CC-BY-4.0",
+                    "license_name": "Creative Commons Attribution 4.0",
+                    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                    "source_url": "https://commons.wikimedia.org/wiki/File:Old.jpg",
+                    "modified": True,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    candidates = [
+        images.ImageCandidate(
+            place_id="mt1_00000000000000000000000001",
+            lat=51.5,
+            lon=-0.1,
+            image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/New.jpg",
+        ),
+        images.ImageCandidate(
+            place_id="mt1_00000000000000000000000002",
+            lat=51.6,
+            lon=-0.2,
+            image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Missing.jpg",
+        ),
+    ]
+
+    monkeypatch.setattr(
+        images,
+        "fetch_commons_imageinfo_batch",
+        lambda _filenames: (_ for _ in ()).throw(AssertionError("metadata fetched")),
+    )
+    monkeypatch.setattr(
+        images.fetch,
+        "get_to_file",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("downloaded")),
+    )
+
+    out = images.build_place_images_from_audit(
+        candidates,
+        completed_jsonl=completed,
+        audited_cache_dir=cache,
+    )
+
+    assert [(item.place_id, item.thumb_sha256, item.thumb_bytes) for item in out] == [
+        ("mt1_00000000000000000000000001", thumb_sha, thumb)
+    ]
+    assert "AUDITED_IMAGE_REUSE candidates=2 selected=1 missing_skipped=1 audited_total=1" in capsys.readouterr().out
+
+
+def test_build_place_images_from_audit_fails_on_missing_or_mismatched_thumb(tmp_path):
+    thumb_sha = hashlib.sha256(b"expected").hexdigest()
+    cache = tmp_path / "audit-cache"
+    completed = tmp_path / "completed.jsonl"
+    completed.write_text(
+        json.dumps(
+            {
+                "place_id": "mt1_00000000000000000000000001",
+                "thumb_sha256": thumb_sha,
+                "width": 320,
+                "height": 240,
+                "attribution": {
+                    "creator": None,
+                    "license_code": "CC0-1.0",
+                    "license_name": "CC0",
+                    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+                    "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+                    "modified": True,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+    )
+
+    with pytest.raises(images.AuditedImageReuseError, match="referenced thumb missing"):
+        images.build_place_images_from_audit(
+            [candidate],
+            completed_jsonl=completed,
+            audited_cache_dir=cache,
+        )
+
+    (cache / "thumbs" / thumb_sha[:2]).mkdir(parents=True)
+    (cache / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp").write_bytes(b"actual")
+
+    with pytest.raises(images.AuditedImageReuseError, match="thumb content hash mismatch"):
+        images.build_place_images_from_audit(
+            [candidate],
+            completed_jsonl=completed,
+            audited_cache_dir=cache,
+        )
+
+
+@pytest.mark.parametrize(
+    "attribution_patch,match",
+    [
+        ({"creator": None}, "creator"),
+        ({"modified": False}, "modified"),
+        ({"source_url": "https://example.com/wiki/File:Example.jpg"}, "source_url"),
+        ({"source_url": "https://commons.wikimedia.org/wiki/File:Folder/Example.jpg"}, "source_url"),
+    ],
+)
+def test_build_place_images_from_audit_rejects_rows_the_image_schema_would_reject(
+    tmp_path, attribution_patch, match
+):
+    thumb = b"audited-thumb"
+    thumb_sha = hashlib.sha256(thumb).hexdigest()
+    cache = tmp_path / "audit-cache"
+    (cache / "thumbs" / thumb_sha[:2]).mkdir(parents=True)
+    (cache / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp").write_bytes(thumb)
+    attribution = {
+        "creator": "Jane Example",
+        "license_code": "CC-BY-4.0",
+        "license_name": "Creative Commons Attribution 4.0",
+        "license_url": "https://creativecommons.org/licenses/by/4.0/",
+        "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+        "modified": True,
+    }
+    attribution.update(attribution_patch)
+    completed = tmp_path / "completed.jsonl"
+    completed.write_text(
+        json.dumps(
+            {
+                "place_id": "mt1_00000000000000000000000001",
+                "thumb_sha256": thumb_sha,
+                "width": 320,
+                "height": 240,
+                "attribution": attribution,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+    )
+
+    with pytest.raises(images.AuditedImageReuseError, match=match):
+        images.build_place_images_from_audit(
+            [candidate],
+            completed_jsonl=completed,
+            audited_cache_dir=cache,
+        )
+
+
+def test_build_place_images_from_audit_rejects_oversized_thumb_before_read(tmp_path):
+    thumb_sha = "a" * 64
+    cache = tmp_path / "audit-cache"
+    thumb_path = cache / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp"
+    thumb_path.parent.mkdir(parents=True)
+    thumb_path.write_bytes(b"x" * (images.MAX_AUDITED_THUMB_BYTES + 1))
+    completed = tmp_path / "completed.jsonl"
+    completed.write_text(
+        json.dumps(
+            {
+                "place_id": "mt1_00000000000000000000000001",
+                "thumb_sha256": thumb_sha,
+                "width": 320,
+                "height": 240,
+                "attribution": {
+                    "creator": None,
+                    "license_code": "CC0-1.0",
+                    "license_name": "CC0",
+                    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+                    "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+                    "modified": True,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+    )
+
+    with pytest.raises(images.AuditedImageReuseError, match="thumb exceeds"):
+        images.build_place_images_from_audit(
+            [candidate],
+            completed_jsonl=completed,
+            audited_cache_dir=cache,
+        )
+
+
+def test_build_place_images_from_audit_rejects_duplicate_place_id_rows(tmp_path):
+    completed = tmp_path / "completed.jsonl"
+    row = {
+        "place_id": "mt1_00000000000000000000000001",
+        "thumb_sha256": "a" * 64,
+        "width": 320,
+        "height": 240,
+        "attribution": {
+            "creator": None,
+            "license_code": "CC0-1.0",
+            "license_name": "CC0",
+            "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+            "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+            "modified": True,
+        },
+    }
+    completed.write_text(
+        json.dumps(row, sort_keys=True) + "\n" + json.dumps(row, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(images.AuditedImageReuseError, match="duplicate place_id"):
+        images.build_place_images_from_audit(
+            [],
+            completed_jsonl=completed,
+            audited_cache_dir=tmp_path / "audit-cache",
+        )
+
+
+@pytest.mark.parametrize(
+    "license_url",
+    [
+        "http://creativecommons.org/licenses/by/4.0/",
+        "https://creativecommons.org/licenses/by/4.0/deed.en",
+        "https://creativecommons.org/licenses/by/4.0/legalcode",
+        "https://creativecommons.org/licenses/by-sa/4.0/",
+    ],
+)
+def test_build_place_images_from_audit_rejects_noncanonical_or_mismatched_license_url(
+    tmp_path, license_url
+):
+    thumb = b"audited-thumb"
+    thumb_sha = hashlib.sha256(thumb).hexdigest()
+    cache = tmp_path / "audit-cache"
+    (cache / "thumbs" / thumb_sha[:2]).mkdir(parents=True)
+    (cache / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp").write_bytes(thumb)
+    completed = tmp_path / "completed.jsonl"
+    completed.write_text(
+        json.dumps(
+            {
+                "place_id": "mt1_00000000000000000000000001",
+                "thumb_sha256": thumb_sha,
+                "width": 320,
+                "height": 240,
+                "attribution": {
+                    "creator": "Jane Example",
+                    "license_code": "CC-BY-4.0",
+                    "license_name": "Creative Commons Attribution 4.0",
+                    "license_url": license_url,
+                    "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+                    "modified": True,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+    )
+
+    with pytest.raises(images.AuditedImageReuseError, match="license_url"):
+        images.build_place_images_from_audit(
+            [candidate],
+            completed_jsonl=completed,
+            audited_cache_dir=cache,
+        )
+
+
+def test_build_place_images_from_audit_rejects_unknown_license_code_url_mismatch(
+    tmp_path,
+):
+    thumb = b"audited-thumb"
+    thumb_sha = hashlib.sha256(thumb).hexdigest()
+    cache = tmp_path / "audit-cache"
+    (cache / "thumbs" / thumb_sha[:2]).mkdir(parents=True)
+    (cache / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp").write_bytes(thumb)
+    completed = tmp_path / "completed.jsonl"
+    completed.write_text(
+        json.dumps(
+            {
+                "place_id": "mt1_00000000000000000000000001",
+                "thumb_sha256": thumb_sha,
+                "width": 320,
+                "height": 240,
+                "attribution": {
+                    "creator": "Jane Example",
+                    "license_code": "CC-BY-ND-4.0",
+                    "license_name": "Creative Commons Attribution-NoDerivatives 4.0",
+                    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                    "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+                    "modified": True,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+    )
+
+    with pytest.raises(images.AuditedImageReuseError, match="license_url"):
+        images.build_place_images_from_audit(
+            [candidate],
+            completed_jsonl=completed,
+            audited_cache_dir=cache,
+        )
 
 
 def test_build_place_images_falls_back_to_original_after_prescaled_download_failure(

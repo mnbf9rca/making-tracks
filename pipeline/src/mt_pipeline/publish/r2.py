@@ -92,6 +92,15 @@ class PublishResult:
 
 
 @dataclass(frozen=True)
+class ThumbReuseStats:
+    staged: int
+    existing: int
+    missing: int
+    uploaded: int
+    skipped: int
+
+
+@dataclass(frozen=True)
 class PreparedPublishResult:
     target_results: tuple[PublishResult, ...]
     region_index_result: PublishResult
@@ -296,6 +305,7 @@ def publish_prepared_to_r2(
     layout: Mapping[str, Any],
     *,
     client=None,
+    reuse_existing_thumbs: bool = False,
 ) -> PreparedPublishResult:
     plan_list = list(plans)
     if not plan_list:
@@ -332,6 +342,16 @@ def publish_prepared_to_r2(
         thumb_content = _dedupe_ops_by_bucket_key(
             op for plan in plan_list for op in plan.ops if op.kind == "thumb"
         )
+        if reuse_existing_thumbs:
+            thumb_content, stats = _reuse_existing_thumb_ops(
+                client, layout, thumb_content
+            )
+            print(
+                "THUMB_UPLOAD_REUSE "
+                f"staged={stats.staged} existing={stats.existing} "
+                f"missing={stats.missing} uploaded={stats.uploaded} "
+                f"skipped={stats.skipped}"
+            )
         public_content = [
             op
             for plan in plan_list
@@ -766,6 +786,46 @@ def _dedupe_ops_by_bucket_key(ops: Iterable[PublishOp]) -> list[PublishOp]:
     for op in ops:
         by_key.setdefault((op.bucket, op.key), op)
     return [by_key[key] for key in sorted(by_key)]
+
+
+def _reuse_existing_thumb_ops(
+    client,
+    layout: Mapping[str, Any],
+    thumb_ops: Iterable[PublishOp],
+) -> tuple[list[PublishOp], ThumbReuseStats]:
+    ops = list(thumb_ops)
+    for op in ops:
+        _validate_thumb_body(op.key, _op_body_bytes(op))
+    existing_keys = _existing_public_thumb_keys(client, layout)
+    missing = [op for op in ops if op.key not in existing_keys]
+    existing_count = len(ops) - len(missing)
+    return missing, ThumbReuseStats(
+        staged=len(ops),
+        existing=existing_count,
+        missing=len(missing),
+        uploaded=len(missing),
+        skipped=existing_count,
+    )
+
+
+def _existing_public_thumb_keys(client, layout: Mapping[str, Any]) -> set[str]:
+    bucket = str(layout["public_bucket"])
+    keys: set[str] = set()
+    token: str | None = None
+    while True:
+        kwargs = {"Bucket": bucket, "Prefix": "thumbs/"}
+        if token is not None:
+            kwargs["ContinuationToken"] = token
+        response = client.list_objects_v2(**kwargs)
+        for item in response.get("Contents", ()):
+            key = item.get("Key") if isinstance(item, Mapping) else None
+            if isinstance(key, str):
+                keys.add(key)
+        if not response.get("IsTruncated"):
+            return keys
+        token = response.get("NextContinuationToken")
+        if not isinstance(token, str) or not token:
+            return keys
 
 
 def require_boto3() -> None:

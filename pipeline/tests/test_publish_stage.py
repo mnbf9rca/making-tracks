@@ -235,6 +235,46 @@ def test_publish_stage_fails_when_configured_zone_levels_have_no_boundaries(
         )
 
 
+def test_publish_stage_no_zone_catalog_skips_materialization_per_invocation(
+    conn, tmp_path, monkeypatch, capsys
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn, seed_zone_boundaries=False)
+    _write_malaysia_registry(tmp_path)
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename=f'{region_config["region_id"]}.pmtiles',
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    def fail_materialize(*_args, **_kwargs):
+        raise AssertionError("zone catalog materialized")
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+    monkeypatch.setattr(P.zone_catalog, "materialize_catalogs", fail_materialize)
+
+    result = P.run(
+        conn,
+        "malaysia-singapore-brunei",
+        publish_version="20260715T120000Z",
+        generated_at="2026-07-15T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+        no_zone_catalog=True,
+    )
+
+    assert not (result.staging_dir / "zone-catalog.proposal.json").exists()
+    assert not (result.staging_dir / "zone-catalog.json").exists()
+    assert "zone_catalog" not in {op.kind for op in result.publish_result.plan.ops}
+    assert "NOZONE_DISABLE region=malaysia-singapore-brunei previous_zone_levels=[2, 4] previous_allowlist=0" in capsys.readouterr().out
+
+
 def test_publish_stage_manifest_includes_osm_attribution_for_basemap_without_osm_places(
     conn, tmp_path, monkeypatch
 ):
@@ -439,6 +479,141 @@ def test_publish_stage_emits_image_sidecars_from_shipped_wikidata_images(
         + result.image_index_bytes
         + result.thumb_bytes
     )
+
+
+def test_publish_stage_uses_audited_images_and_can_disable_fetch(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    conn.execute(
+        "UPDATE source_records SET props_json = ? WHERE source_ref = ?",
+        (
+            json.dumps(
+                {
+                    "classes": ["Q839954"],
+                    "image": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+                },
+                sort_keys=True,
+            ),
+            "wd:Q100",
+        ),
+    )
+    conn.commit()
+    _write_malaysia_registry(tmp_path)
+    completed = tmp_path / "completed.jsonl"
+    audit_cache = tmp_path / "audit-cache"
+    seen = []
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename=f'{region_config["region_id"]}.pmtiles',
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    def fake_audited(candidates, *, completed_jsonl, audited_cache_dir):
+        seen.append((list(candidates), completed_jsonl, audited_cache_dir))
+        return [
+            P.images.PlaceImage(
+                place_id=A,
+                lat=3.10,
+                lon=101.70,
+                thumb_sha256=hashlib.sha256(b"thumb").hexdigest(),
+                thumb_bytes=b"thumb",
+                width=320,
+                height=240,
+                attribution=P.images.ImageAttribution(
+                    creator="Jane Example",
+                    license_code="CC-BY-4.0",
+                    license_name="Creative Commons Attribution 4.0",
+                    license_url="https://creativecommons.org/licenses/by/4.0/",
+                    source_url="https://commons.wikimedia.org/wiki/File:Fort.jpg",
+                    modified=True,
+                ),
+            )
+        ]
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+    monkeypatch.setattr(P.images, "build_place_images_from_audit", fake_audited)
+    monkeypatch.setattr(
+        P.images,
+        "build_place_images",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("normal image fetch used")),
+    )
+
+    result = P.run(
+        conn,
+        "malaysia-singapore-brunei",
+        publish_version="20260717T120000Z",
+        generated_at="2026-07-17T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+        audited_image_completed_jsonl=completed,
+        audited_image_cache_dir=audit_cache,
+        no_image_fetch=True,
+    )
+
+    assert seen[0][1:] == (completed, audit_cache)
+    assert [candidate.place_id for candidate in seen[0][0]] == [A]
+    assert sorted(result.staging_dir.glob("images/10/*/*.json"))
+
+
+def test_publish_stage_no_image_fetch_without_audit_emits_no_images(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    conn.execute(
+        "UPDATE source_records SET props_json = ? WHERE source_ref = ?",
+        (
+            json.dumps(
+                {
+                    "classes": ["Q839954"],
+                    "image": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+                },
+                sort_keys=True,
+            ),
+            "wd:Q100",
+        ),
+    )
+    conn.commit()
+    _write_malaysia_registry(tmp_path)
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename=f'{region_config["region_id"]}.pmtiles',
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+    monkeypatch.setattr(
+        P.images,
+        "build_place_images",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("normal image fetch used")),
+    )
+
+    result = P.run(
+        conn,
+        "malaysia-singapore-brunei",
+        publish_version="20260717T120000Z",
+        generated_at="2026-07-17T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+        no_image_fetch=True,
+    )
+
+    assert not sorted(result.staging_dir.glob("images/10/*/*.json"))
+    assert result.thumb_bytes == 0
 
 
 def test_publish_stage_emits_description_sidecars_from_shipped_wikipedia_extracts(
@@ -776,6 +951,73 @@ def test_publish_stage_upload_builds_all_targets_before_any_upload(
         )
 
     assert calls == []
+
+
+def test_publish_stage_upload_passes_reuse_existing_thumbs_to_prepared_upload(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    _write_malaysia_registry(tmp_path)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+    monkeypatch.setattr(P.r2, "_import_module", lambda name: object())
+    monkeypatch.setenv("R2_S3_ENDPOINT", "https://example.r2.cloudflarestorage.com")
+    monkeypatch.setenv("R2_ACCESS_KEY_ID", "access")
+    monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "secret")
+    calls = []
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename=out_path.name,
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    def fake_publish_prepared_to_r2(plans, region_index_path, layout, **kwargs):
+        plan_list = list(plans)
+        calls.append((plan_list, region_index_path, layout, kwargs))
+        return P.r2.PreparedPublishResult(
+            target_results=tuple(
+                P.r2.PublishResult(plan=plan, uploaded=len(plan.ops), dry_run=False)
+                for plan in plan_list
+            ),
+            region_index_result=P.r2.PublishResult(
+                plan=P.r2.PublishPlan(
+                    layout=layout,
+                    region="regions",
+                    publish_version="20260717T120000Z",
+                    ops=(
+                        P.r2.PublishOp(
+                            kind="region_index",
+                            bucket=str(layout["public_bucket"]),
+                            key="regions.json",
+                            body=b"{}",
+                        ),
+                    ),
+                ),
+                uploaded=1,
+                dry_run=False,
+            ),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.r2, "publish_prepared_to_r2", fake_publish_prepared_to_r2)
+
+    P.run(
+        conn,
+        "malaysia-singapore-brunei",
+        publish_version="20260717T120000Z",
+        generated_at="2026-07-17T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        upload=True,
+        staging_root=tmp_path / "stage",
+        reuse_existing_thumbs=True,
+    )
+
+    assert calls[0][3]["reuse_existing_thumbs"] is True
 
 
 def test_subregion_bbox_filter_excludes_invalid_coordinates():

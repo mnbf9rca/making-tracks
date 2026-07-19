@@ -28,7 +28,7 @@ COMMONS_API_HOST = "commons.wikimedia.org"
 UPLOAD_HOST = "upload.wikimedia.org"
 USER_AGENT = "MakingTracksPipeline/0.1 (https://making-tracks.app; rob@making-tracks.app)"
 ACCEPTED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
-PUBLIC_DOMAIN_LICENSE_URL = "https://commons.wikimedia.org/wiki/Commons:Copyright_tags/General_public_domain"
+PUBLIC_DOMAIN_LICENSE_URL = "https://creativecommons.org/publicdomain/mark/1.0/"
 CC0_LICENSE_URL = "https://creativecommons.org/publicdomain/zero/1.0/"
 CC_LICENSE_RE = re.compile(
     r"^cc-by(?P<nc>-nc)?(?P<sa>-sa)?-"
@@ -48,6 +48,14 @@ COMMONS_METADATA_BATCH_SIZE = 50
 WIKIMEDIA_RETRY_ATTEMPTS = 4
 IMAGE_WORKER_TIMEOUT_SECONDS = 30
 TRANSIENT_REJECT_REASONS = frozenset({"metadata_fetch_failed", "download_failed"})
+MAX_AUDITED_IMAGE_ROWS = 1_000_000
+MAX_AUDITED_IMAGE_JSONL_BYTES = 512 * 1024 * 1024
+MAX_AUDITED_THUMB_BYTES = 1_048_576
+_HEX_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_CC_BY_LICENSE_CODE_RE = re.compile(
+    r"^CC-BY(-SA)?-(1\.0|2\.0|2\.1|2\.5|3\.0|4\.0)(-[A-Z]{2}(_[A-Z]+)?|-IGO)?$"
+)
+_COMMONS_FILE_PATH_RE = re.compile(r"^/wiki/File:(?!.*(?:\.\.|/))[^?#\s]+$")
 
 
 @dataclass(frozen=True)
@@ -127,6 +135,10 @@ class PurgeResult:
 class GCResult:
     thumbs_removed: int
     bytes_removed: int
+
+
+class AuditedImageReuseError(ValueError):
+    """Raised when an audited image row or referenced thumb is unsafe."""
 
 
 class _TextExtractor(HTMLParser):
@@ -424,6 +436,198 @@ def build_place_images(
         _write_accepted(accepted_dir / f"{candidate.place_id}.json", candidate, place_image)
         out.append(place_image)
     return out
+
+
+def build_place_images_from_audit(
+    candidates: list[ImageCandidate],
+    *,
+    completed_jsonl,
+    audited_cache_dir,
+) -> list[PlaceImage]:
+    audited_rows = _load_audited_image_rows(pathlib.Path(completed_jsonl))
+    cache_root = pathlib.Path(audited_cache_dir)
+    out: list[PlaceImage] = []
+    seen_place_ids: set[str] = set()
+    missing = 0
+    for candidate in sorted(candidates, key=lambda item: item.place_id):
+        if candidate.place_id in seen_place_ids:
+            continue
+        seen_place_ids.add(candidate.place_id)
+        row = audited_rows.get(candidate.place_id)
+        if row is None:
+            missing += 1
+            continue
+        out.append(_place_image_from_audited_row(candidate, row, cache_root=cache_root))
+    print(
+        "AUDITED_IMAGE_REUSE "
+        f"candidates={len(candidates)} selected={len(out)} "
+        f"missing_skipped={missing} audited_total={len(audited_rows)}"
+    )
+    return out
+
+
+def _load_audited_image_rows(path: pathlib.Path) -> dict[str, dict[str, Any]]:
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise AuditedImageReuseError(f"audited image JSONL is not readable: {path}") from exc
+    if size > MAX_AUDITED_IMAGE_JSONL_BYTES:
+        raise AuditedImageReuseError(f"audited image JSONL too large: {path}")
+    rows: dict[str, dict[str, Any]] = {}
+    with path.open(encoding="utf-8") as handle:
+        for lineno, line in enumerate(handle, start=1):
+            if lineno > MAX_AUDITED_IMAGE_ROWS:
+                raise AuditedImageReuseError("audited image JSONL has too many rows")
+            if not line.strip():
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise AuditedImageReuseError(
+                    f"invalid audited image JSONL at line {lineno}: {exc}"
+                ) from exc
+            if not isinstance(payload, dict):
+                raise AuditedImageReuseError(
+                    f"audited image row {lineno} must be an object"
+                )
+            place_id = payload.get("place_id")
+            if not isinstance(place_id, str) or not place_id:
+                raise AuditedImageReuseError(
+                    f"audited image row {lineno} has invalid place_id"
+                )
+            if place_id in rows:
+                raise AuditedImageReuseError(
+                    f"audited image JSONL has duplicate place_id at line {lineno}: {place_id}"
+                )
+            rows[place_id] = payload
+    return rows
+
+
+def _place_image_from_audited_row(
+    candidate: ImageCandidate,
+    row: dict[str, Any],
+    *,
+    cache_root: pathlib.Path,
+) -> PlaceImage:
+    thumb_sha = row.get("thumb_sha256")
+    if not isinstance(thumb_sha, str) or _HEX_SHA256_RE.fullmatch(thumb_sha) is None:
+        raise AuditedImageReuseError(
+            f"audited image row has invalid thumb_sha256 for {candidate.place_id}"
+        )
+    thumb_path = cache_root / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp"
+    if not thumb_path.exists():
+        raise AuditedImageReuseError(
+            f"referenced thumb missing for {candidate.place_id}: {thumb_path}"
+        )
+    if thumb_path.stat().st_size > MAX_AUDITED_THUMB_BYTES:
+        raise AuditedImageReuseError(
+            f"audited thumb exceeds {MAX_AUDITED_THUMB_BYTES} bytes for "
+            f"{candidate.place_id}: {thumb_path}"
+        )
+    thumb_bytes = thumb_path.read_bytes()
+    if hashlib.sha256(thumb_bytes).hexdigest() != thumb_sha:
+        raise AuditedImageReuseError(
+            f"thumb content hash mismatch for {candidate.place_id}: {thumb_path}"
+        )
+    width = _positive_int(row.get("width"), label="width", place_id=candidate.place_id)
+    height = _positive_int(row.get("height"), label="height", place_id=candidate.place_id)
+    attribution = _audited_attribution(row.get("attribution"), place_id=candidate.place_id)
+    image_url = row.get("image_url")
+    if image_url is not None and _https_url(image_url) is None:
+        raise AuditedImageReuseError(
+            f"audited image_url is not safe HTTPS for {candidate.place_id}"
+        )
+    return PlaceImage(
+        place_id=candidate.place_id,
+        lat=candidate.lat,
+        lon=candidate.lon,
+        thumb_sha256=thumb_sha,
+        thumb_bytes=thumb_bytes,
+        width=width,
+        height=height,
+        attribution=attribution,
+    )
+
+
+def _positive_int(value: object, *, label: str, place_id: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise AuditedImageReuseError(
+            f"audited image {label} must be a positive integer for {place_id}"
+        )
+    return value
+
+
+def _audited_attribution(value: object, *, place_id: str) -> ImageAttribution:
+    if not isinstance(value, dict):
+        raise AuditedImageReuseError(f"audited image attribution missing for {place_id}")
+    creator = value.get("creator")
+    if creator is not None:
+        if not isinstance(creator, str) or _unsafe_text(creator, max_length=256):
+            raise AuditedImageReuseError(
+                f"audited image creator is unsafe for {place_id}"
+            )
+    license_code = _safe_text_field(value, "license_code", 64, place_id=place_id)
+    if _CC_BY_LICENSE_CODE_RE.fullmatch(license_code) is not None and creator is None:
+        raise AuditedImageReuseError(
+            f"audited image creator is required for {license_code} at {place_id}"
+        )
+    license_name = _safe_text_field(value, "license_name", 128, place_id=place_id)
+    raw_license_url = _safe_text_field(value, "license_url", 512, place_id=place_id)
+    license_url, license_url_reason = _license_url(raw_license_url, license_code)
+    if license_url is None:
+        raise AuditedImageReuseError(
+            f"audited image license_url rejected for {place_id}: {license_url_reason}"
+        )
+    source_url = _safe_commons_file_url(value, "source_url", place_id=place_id)
+    modified = value.get("modified")
+    if modified is not True:
+        raise AuditedImageReuseError(
+            f"audited image modified must be true for {place_id}"
+        )
+    return ImageAttribution(
+        creator=creator,
+        license_code=license_code,
+        license_name=license_name,
+        license_url=license_url,
+        source_url=source_url,
+        modified=modified,
+    )
+
+
+def _safe_text_field(
+    value: dict[str, Any], key: str, limit: int, *, place_id: str
+) -> str:
+    raw = value.get(key)
+    if not isinstance(raw, str) or _unsafe_text(raw, max_length=limit):
+        raise AuditedImageReuseError(f"audited image {key} is unsafe for {place_id}")
+    return raw
+
+
+def _safe_https_field(value: dict[str, Any], key: str, *, place_id: str) -> str:
+    raw = _safe_text_field(value, key, 512, place_id=place_id)
+    safe = _https_url(raw)
+    if safe is None:
+        raise AuditedImageReuseError(
+            f"audited image {key} is not safe HTTPS for {place_id}"
+        )
+    return safe
+
+
+def _safe_commons_file_url(value: dict[str, Any], key: str, *, place_id: str) -> str:
+    raw = _safe_text_field(value, key, 1024, place_id=place_id)
+    parsed = urlparse(raw)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "commons.wikimedia.org"
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or _COMMONS_FILE_PATH_RE.fullmatch(parsed.path) is None
+    ):
+        raise AuditedImageReuseError(
+            f"audited image {key} is not a safe Commons File URL for {place_id}"
+        )
+    return raw
 
 
 def transcode_to_webp_thumb(path) -> ThumbTranscode:
@@ -810,10 +1014,7 @@ def _license_url(value: str | None, code: str) -> tuple[str | None, str]:
         return CC0_LICENSE_URL, ""
     expected = _cc_license_url_for_code(code)
     if expected is None:
-        url = _https_url(
-            value, host=None, allowed_hosts={"creativecommons.org", "commons.wikimedia.org"}
-        )
-        return (url, "") if url is not None else (None, "license_url_invalid")
+        return None, "license_url_mismatch"
     if value is None or not value.strip():
         return expected, ""
     url = _https_url(value, host=None, allowed_hosts={"creativecommons.org"})

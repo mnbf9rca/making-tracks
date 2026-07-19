@@ -58,6 +58,22 @@ def test_image_index_allows_cc0_without_creator():
     validate_instance("image-index", inst)
 
 
+def test_image_index_allows_pd_mark_not_stale_commons_public_domain_url():
+    inst = copy.deepcopy(VALID_INDEX)
+    attr = inst["places"][0]["attribution"]
+    attr["creator"] = None
+    attr["license_code"] = "PD"
+    attr["license_name"] = "Public domain"
+    attr["license_url"] = "https://creativecommons.org/publicdomain/mark/1.0/"
+
+    validate_instance("image-index", inst)
+
+    attr["license_url"] = (
+        "https://commons.wikimedia.org/wiki/Commons:Copyright_tags/General_public_domain"
+    )
+    assert not is_valid("image-index", inst)
+
+
 def test_image_index_allows_exact_older_by_sa_version():
     inst = copy.deepcopy(VALID_INDEX)
     attr = inst["places"][0]["attribution"]

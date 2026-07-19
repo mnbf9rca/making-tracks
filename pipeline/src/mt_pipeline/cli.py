@@ -136,6 +136,33 @@ def _build_parser() -> argparse.ArgumentParser:
         help="for publish, cap image candidates after score-ordered image-candidate selection",
     )
     parser.add_argument(
+        "--audited-image-completed-jsonl",
+        type=pathlib.Path,
+        help="for publish, reuse audited image rows from completed.jsonl instead of fetching image metadata",
+    )
+    parser.add_argument(
+        "--audited-image-cache-dir",
+        type=pathlib.Path,
+        help="for publish, audited image cache root containing thumbs/<sha-prefix>/<sha>.webp",
+    )
+    parser.add_argument(
+        "--no-image-fetch",
+        action="store_true",
+        help="for publish, do not fetch Commons metadata or image bytes",
+    )
+    parser.add_argument(
+        "--no-zone-catalog",
+        action="store_true",
+        help="for publish, skip zone catalog materialization for this invocation",
+    )
+    parser.add_argument(
+        "--reuse-existing-thumbs",
+        "--skip-existing-thumbs",
+        dest="reuse_existing_thumbs",
+        action="store_true",
+        help="for publish upload, skip content-addressed thumbnail objects already present in R2",
+    )
+    parser.add_argument(
         "--upload",
         action="store_true",
         help="upload staged publish artifacts to R2 after local staging",
@@ -1907,6 +1934,11 @@ def main(argv=None) -> int:
             upload=args.upload,
             staging_root=args.staging_dir,
             image_candidate_limit=args.image_candidate_limit,
+            audited_image_completed_jsonl=args.audited_image_completed_jsonl,
+            audited_image_cache_dir=args.audited_image_cache_dir,
+            no_image_fetch=args.no_image_fetch,
+            no_zone_catalog=args.no_zone_catalog,
+            reuse_existing_thumbs=args.reuse_existing_thumbs,
             fingerprint_inputs=fingerprint_inputs,
             force=args.force,
         )
