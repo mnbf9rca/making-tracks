@@ -7,10 +7,10 @@
   h1{ font-size:17px; font-weight:650; margin-bottom:2px; }
   .sub{ font-size:12.5px; color:var(--dim); margin-bottom:22px; }
   .row{ display:flex; gap:30px; align-items:flex-start; }
-  .col{ width:375px; }
+  .col{ width:390px; }
   .cap{ font-size:12px; font-weight:650; margin-bottom:3px; }
   .capsub{ font-size:11px; color:var(--dim); margin-bottom:9px; line-height:1.35; min-height:42px;}
-  .phone{ width:375px; height:667px; border:1px solid #c9c6bd; border-radius:26px; overflow:hidden; position:relative; background:var(--paper); box-shadow:0 2px 10px rgba(0,0,0,.09); }
+  .phone{ width:390px; height:844px; border:1px solid #c9c6bd; border-radius:26px; overflow:hidden; position:relative; background:var(--paper); box-shadow:0 2px 10px rgba(0,0,0,.09); }
   .map{ position:absolute; inset:0; }
   .road{ position:absolute; background:#e6e2d4; }
   .pin{ position:absolute; width:15px; height:15px; border-radius:50%; background:var(--pin); border:2px solid #fff; }
@@ -44,22 +44,22 @@
 </style></head><body>
 
 <h1>Place card — accessibility text size (AXXXL), same three states</h1>
-<div class="sub">iPhone SE, 375&times;667. Panels 1 and 2 are the proposal. Panel 3 approximates today for comparison — it is not a measurement.</div>
+<div class="sub">iPhone 17e, 390&times;844 — the design canvas (smallest device Apple currently sells). Panels 1 and 2 are the proposal; panel 3 approximates today.</div>
 
 <div class="row">
 
   <!-- PEEK AX -->
   <div class="col">
     <div class="cap">1 · Peek</div>
-    <div class="capsub">Name, type and actions only. The photo does not fit alongside them at this text size — it waits for the slide-up.</div>
+    <div class="capsub">Still no photo in peek at this text size, even on the larger canvas. A two-line name, type and three stacked buttons fill it. Fitting the photo needs peek at ~85% of the screen, which is no longer a peek.</div>
     <div class="phone">
       <div class="map">
-        <div class="road" style="left:0;top:120px;width:375px;height:9px"></div>
+        <div class="road" style="left:0;top:120px;width:390px;height:9px"></div>
         <div class="road" style="left:110px;top:0;width:9px;height:300px"></div>
         <div class="pin" style="left:60px;top:70px"></div>
         <div class="pin sel" style="left:171px;top:186px"></div>
       </div>
-      <div class="sheet" style="height:420px">
+      <div class="sheet" style="height:486px">
         <div class="badge ok">actions reachable, no scroll</div>
         <div class="grab"></div>
         <div class="ovf">⋯</div>
@@ -72,8 +72,8 @@
           <div class="btn prom">Seen</div><div class="btn">Save</div><div class="btn ghost">Love</div>
         </div>
       </div>
-      <div class="fold" style="bottom:420px"></div>
-      <div class="foldlab" style="bottom:424px">peek edge</div>
+      <div class="fold" style="bottom:486px"></div>
+      <div class="foldlab" style="bottom:490px">peek edge</div>
     </div>
   </div>
 
@@ -83,7 +83,7 @@
     <div class="capsub">Content scrolls; the action bar does not. Name and type still visible above it.</div>
     <div class="phone">
       <div class="map"><div class="pin sel" style="left:171px;top:14px"></div></div>
-      <div class="sheet" style="height:620px">
+      <div class="sheet" style="height:790px">
         <div class="badge ok">actions reachable, no scroll</div>
         <div class="grab"></div>
         <div class="ovf">⋯</div>
@@ -111,7 +111,7 @@
     <div class="capsub">Today's structure, approximated. Actions sit in the scroll flow, hoisted above the description. The UI test needs <code>scrollToExistence</code> to reach them; this wireframe cannot settle that — measure on a device.</div>
     <div class="phone bad" style="border-width:2px">
       <div class="map"><div class="pin sel" style="left:171px;top:8px"></div></div>
-      <div class="sheet" style="height:632px">
+      <div class="sheet" style="height:800px">
         <div class="badge no">needs device measurement</div>
         <div class="grab"></div>
         <div class="clip">
