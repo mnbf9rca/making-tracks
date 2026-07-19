@@ -11,7 +11,7 @@ final class MigrationsTests: XCTestCase {
             }
 
             XCTAssertEqual(try cols("visits"), ["id", "place_id", "visited_at", "verdict", "created_at"])
-            XCTAssertEqual(try cols("lists"), ["id", "name", "is_system", "created_at"])
+            XCTAssertEqual(try cols("lists"), ["id", "name", "is_system", "created_at", "list_kind"])
             XCTAssertEqual(try cols("list_items"), ["list_id", "place_id", "added_at"])
             XCTAssertEqual(try cols("hidden_places"), ["place_id", "hidden_at"])
             XCTAssertEqual(
@@ -70,7 +70,7 @@ final class MigrationsTests: XCTestCase {
         XCTAssertEqual(n, 1)
     }
 
-    func testV1DatabaseMigratesToV2WithoutLosingUserRows() throws {
+    func testV1DatabaseMigratesToCurrentSchemaWithoutLosingUserRows() throws {
         let queue = try DatabaseQueue()
         let timestamp = Date(timeIntervalSince1970: 12)
         try queue.write { db in
@@ -120,20 +120,84 @@ final class MigrationsTests: XCTestCase {
 
         let db = try AppDatabase(queue, now: { Date(timeIntervalSince1970: 100) })
 
-        XCTAssertEqual(try db.appliedMigrations, ["v1", "v2"])
+        XCTAssertEqual(try db.appliedMigrations, ["v1", "v2", "v3"])
         XCTAssertEqual(try db.viewportState(["p1"])["p1"], PinState(saved: true, visit: .loved, hidden: false))
         XCTAssertEqual(try db.hiddenPlaceIDs(), [])
         XCTAssertEqual(try db.snapshot(for: "p1")?.name, "Ghost Sign")
+        let listKind = try db.dbQueue.read {
+            try String.fetchOne($0, sql: "SELECT list_kind FROM lists WHERE id = 1")
+        }
+        XCTAssertEqual(listKind, PlaceList.defaultKind)
+    }
+
+    func testV2DatabaseMigratesToCurrentSchemaWithoutLosingHiddenOrCustomListRows() throws {
+        let queue = try DatabaseQueue()
+        let timestamp = Date(timeIntervalSince1970: 12)
+        try queue.write { db in
+            try db.execute(sql: "CREATE TABLE grdb_migrations (identifier TEXT NOT NULL PRIMARY KEY)")
+            try db.execute(sql: "INSERT INTO grdb_migrations (identifier) VALUES ('v1'), ('v2')")
+            try db.create(table: "visits") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("place_id", .text).notNull()
+                t.column("visited_at", .datetime).notNull()
+                t.column("verdict", .text)
+                t.column("created_at", .datetime).notNull()
+            }
+            try db.create(index: "idx_visits_place", on: "visits", columns: ["place_id"])
+            try db.create(table: "lists") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("is_system", .boolean).notNull().defaults(to: false)
+                t.column("created_at", .datetime).notNull()
+            }
+            try db.create(table: "list_items") { t in
+                t.column("list_id", .integer).notNull().references("lists", onDelete: .cascade)
+                t.column("place_id", .text).notNull()
+                t.column("added_at", .datetime).notNull()
+                t.primaryKey(["list_id", "place_id"])
+            }
+            try db.create(index: "idx_list_items_place", on: "list_items", columns: ["place_id"])
+            try db.create(table: "place_snapshots") { t in
+                t.column("place_id", .text).primaryKey()
+                t.column("name", .text).notNull()
+                t.column("lat", .double).notNull()
+                t.column("lon", .double).notNull()
+                t.column("category", .text).notNull()
+                t.column("tier", .integer).notNull()
+                t.column("snapshot_json", .text).notNull()
+                t.column("snapshot_schema_version", .integer).notNull()
+                t.column("fetched_at", .datetime).notNull()
+            }
+            try db.create(table: "hidden_places") { t in
+                t.column("place_id", .text).primaryKey()
+                t.column("hidden_at", .datetime).notNull()
+            }
+            try db.execute(sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (1, 'Want to go', 1, ?), (2, 'KL trip', 0, ?)", arguments: [timestamp, timestamp])
+            try db.execute(sql: "INSERT INTO hidden_places (place_id, hidden_at) VALUES ('p1', ?)", arguments: [timestamp])
+            try db.execute(sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (2, 'p1', ?)", arguments: [timestamp])
+        }
+
+        let db = try AppDatabase(queue, now: { Date(timeIntervalSince1970: 100) })
+
+        XCTAssertEqual(try db.appliedMigrations, ["v1", "v2", "v3"])
+        XCTAssertEqual(try db.hiddenPlaceIDs(), ["p1"])
+        let rows = try db.dbQueue.read {
+            try Row.fetchAll($0, sql: "SELECT id, name, is_system, list_kind FROM lists ORDER BY id")
+        }
+        XCTAssertEqual(rows.map { $0["name"] as String }, ["Want to go", "KL trip"])
+        XCTAssertEqual(rows.map { $0["list_kind"] as String }, [PlaceList.defaultKind, PlaceList.defaultKind])
+        XCTAssertEqual(try db.listMemberships(containing: "p1"), [2])
     }
 
     func testSeedsWantToGoSystemListExactlyOnce() throws {
         let db = try AppDatabase.inMemory()
         let rows = try db.dbQueue.read {
-            try Row.fetchAll($0, sql: "SELECT name, is_system FROM lists")
+            try Row.fetchAll($0, sql: "SELECT name, is_system, list_kind FROM lists")
         }
         XCTAssertEqual(rows.count, 1)
         XCTAssertEqual(rows[0]["name"], "Want to go")
         XCTAssertEqual(rows[0]["is_system"], true)
+        XCTAssertEqual(rows[0]["list_kind"], PlaceList.defaultKind)
     }
 
     func testRefusesDatabaseFromNewerAppVersion() throws {

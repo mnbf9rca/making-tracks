@@ -66,6 +66,7 @@ final class ModelsTests: XCTestCase {
                 id: nil,
                 name: "KL trip",
                 isSystem: false,
+                kind: "track",
                 createdAt: Date(timeIntervalSince1970: 1)
             )
             try list.insert(d)
@@ -84,10 +85,15 @@ final class ModelsTests: XCTestCase {
         }
         XCTAssertEqual(l?.name, "KL trip")
         XCTAssertEqual(l?.isSystem, false)
+        XCTAssertEqual(l?.kind, "track")
         XCTAssertEqual(i?.placeID, "p1")
-        let cols = try db.dbQueue.read {
-            try Row.fetchOne($0, sql: "SELECT list_id, added_at FROM list_items")
+        let cols = try db.dbQueue.read { db in
+            (
+                try Row.fetchOne(db, sql: "SELECT list_kind FROM lists WHERE is_system = 0"),
+                try Row.fetchOne(db, sql: "SELECT list_id, added_at FROM list_items")
+            )
         }
-        XCTAssertNotNil(cols)
+        XCTAssertEqual(cols.0?["list_kind"] as String?, "track")
+        XCTAssertNotNil(cols.1)
     }
 }

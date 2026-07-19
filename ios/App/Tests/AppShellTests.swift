@@ -38,6 +38,24 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(shell.deepLinkPath, .offlineMaps)
     }
 
+    func testAppShellModelCanRouteListsDeepLink() {
+        let shell = AppShellModel()
+
+        shell.openListsDeepLink()
+
+        XCTAssertTrue(shell.isMenuPresented)
+        XCTAssertEqual(shell.deepLinkPath, .lists)
+    }
+
+    func testListProgressCopyLeadsWithVisitedAndRemainingCounts() {
+        XCTAssertEqual(
+            ListsCopy.progress(visited: 3, total: 10),
+            "you've been to 3 of these · 7 to go"
+        )
+        XCTAssertEqual(ListsCopy.progress(visited: 0, total: 0), "No places yet")
+        XCTAssertEqual(ListsCopy.progress(visited: 2, total: 2), "you've been to 2 of these · all seen")
+    }
+
     func testUpdateRequiredSurfaceBlocksOnlyFreshTooOldReaderState() throws {
         let surface = try XCTUnwrap(MapBlockingSurface.resolve(loadState: .updateRequired))
 
@@ -115,6 +133,80 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(surface.primaryActionTitle, "Offline maps")
         XCTAssertNil(MapEmptyRegionSurface.unsupportedRegion.primaryActionTitle)
         XCTAssertNil(MapEmptyRegionSurface.noPlaces.primaryActionTitle)
+    }
+
+    func testDatabaseStartupFailurePreservesHistoryAndSurfacesRecoveryState() {
+        let result = DatabaseStartupPolicy.open(
+            fixture: false,
+            resetFixtureStore: {},
+            openFixtureStore: { throw AppDatabaseError.unreadableDatabase },
+            openLiveStore: { throw AppDatabaseError.unreadableDatabase },
+            seedFixtureUserList: nil
+        )
+
+        guard case .failed(let surface) = result else {
+            return XCTFail("expected startup failure surface")
+        }
+        XCTAssertEqual(surface.title, "History recovery needed")
+        XCTAssertEqual(surface.reasonLabel, "database-unavailable")
+        XCTAssertTrue(surface.message.contains("saved places, lists, and visits have not been erased"))
+        XCTAssertTrue(surface.recoveryHint.contains("Do not delete or reinstall"))
+        XCTAssertFalse(surface.recoveryHint.contains("Update Making Tracks"))
+    }
+
+    func testDatabaseStartupFailureForNewerDatabaseTellsUserToUpdate() {
+        let result = DatabaseStartupPolicy.open(
+            fixture: false,
+            resetFixtureStore: {},
+            openFixtureStore: { throw AppDatabaseError.unreadableDatabase },
+            openLiveStore: { throw AppDatabaseError.databaseFromNewerAppVersion(unknown: ["v99"]) },
+            seedFixtureUserList: nil
+        )
+
+        guard case .failed(let surface) = result else {
+            return XCTFail("expected startup failure surface")
+        }
+        XCTAssertEqual(surface.reasonLabel, "database-from-newer-app-version")
+        XCTAssertTrue(surface.message.contains("newer app version"))
+        XCTAssertTrue(surface.recoveryHint.contains("Update Making Tracks"))
+    }
+
+    func testListMapFeatureFilterKeepsHiddenMembersAndFiltersOnlyVisitedState() {
+        let fresh = MapPlace(id: "fresh", lat: 51.49, lon: -0.12, tier: 1, category: "history")
+        let visited = MapPlace(id: "visited", lat: 51.50, lon: -0.13, tier: 2, category: "museum")
+        let hiddenFresh = MapPlace(id: "hidden-fresh", lat: 51.51, lon: -0.14, tier: 2, category: "artwork")
+        let hiddenVisited = MapPlace(id: "hidden-visited", lat: 51.52, lon: -0.15, tier: 3, category: "viewpoint")
+        let features = [
+            (fresh, PinState(saved: false, visit: .none, hidden: false)),
+            (visited, PinState(saved: false, visit: .visited, hidden: false)),
+            (hiddenFresh, PinState(saved: false, visit: .none, hidden: true)),
+            (hiddenVisited, PinState(saved: false, visit: .loved, hidden: true)),
+        ]
+
+        XCTAssertEqual(
+            ListMapFeatureFilter.visibleFeatures(features, showVisited: false).map(\.0.id),
+            ["fresh", "hidden-fresh"]
+        )
+        XCTAssertEqual(
+            ListMapFeatureFilter.visibleFeatures(features, showVisited: true).map(\.0.id),
+            ["fresh", "visited", "hidden-fresh", "hidden-visited"]
+        )
+    }
+
+    func testListMapCategoryVisibilityIgnoresDiscoveryCategoryToggles() {
+        XCTAssertNil(
+            ListMapCategoryVisibility.visibleCategories(
+                discoveryVisibleCategories: ["history"],
+                isListMapActive: true
+            )
+        )
+        XCTAssertEqual(
+            ListMapCategoryVisibility.visibleCategories(
+                discoveryVisibleCategories: ["history"],
+                isListMapActive: false
+            ),
+            ["history"]
+        )
     }
 
     func testViewportRefreshTrackerSuppressesEmptySurfaceUntilLatestRefreshCompletes() {

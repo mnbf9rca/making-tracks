@@ -48,7 +48,7 @@ final class DerivationsTests: XCTestCase {
         XCTAssertEqual(try db.seen(among: ["p_seen", "p_unseen"]), ["p_seen"])
     }
 
-    func testListProgressCountsVisitedOfTotal() throws {
+    func testListProgressCountsSnapshotBackedRowsShownByTheList() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
         try db.dbQueue.write { d in
             for p in ["a", "b", "c"] {
@@ -57,10 +57,21 @@ final class DerivationsTests: XCTestCase {
                     arguments: [p]
                 )
             }
+            for p in ["a", "b"] {
+                try d.execute(
+                    sql: """
+                        INSERT INTO place_snapshots
+                        (place_id, name, lat, lon, category, tier, snapshot_json, snapshot_schema_version, fetched_at)
+                        VALUES (?, ?, 51.5, -0.12, 'history', 1, '{}', 1, 0)
+                        """,
+                    arguments: [p, p.uppercased()]
+                )
+            }
             try d.execute(sql: "INSERT INTO visits (place_id, visited_at, created_at) VALUES ('a', 1, 1)")
+            try d.execute(sql: "INSERT INTO visits (place_id, visited_at, created_at) VALUES ('c', 1, 1)")
         }
         let p = try db.listProgress(listID: 1)
-        XCTAssertEqual(p.total, 3)
+        XCTAssertEqual(p.total, 2)
         XCTAssertEqual(p.visited, 1)
     }
 

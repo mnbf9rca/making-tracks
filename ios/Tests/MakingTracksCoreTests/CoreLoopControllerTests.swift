@@ -155,6 +155,26 @@ final class CoreLoopControllerTests: XCTestCase {
             PinState(saved: true, visit: .none)
         )
     }
+
+    func testCustomListMembershipChangesEmitChangedPlaceIDs() async throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let controller = CoreLoopController(database: db)
+        var changes = controller.changes.makeAsyncIterator()
+        let list = try db.createList(named: "KL trip")
+        let place = try makePlace("p_custom_membership")
+
+        try controller.addToList(place, listID: list.id!)
+
+        let addedChange = await changes.next()
+        XCTAssertEqual(addedChange, ["p_custom_membership"])
+        XCTAssertEqual(try db.listItems(listID: list.id!).map(\.placeID), ["p_custom_membership"])
+
+        try controller.removeFromList(placeID: "p_custom_membership", listID: list.id!)
+
+        let removedChange = await changes.next()
+        XCTAssertEqual(removedChange, ["p_custom_membership"])
+        XCTAssertEqual(try db.listItems(listID: list.id!).map(\.placeID), [])
+    }
 }
 
 private struct StubTileResolver: TileResolving {

@@ -48,28 +48,39 @@ struct MakingTracksApp: App {
         MakingTracksLog.startup.info("app init finished fixture=\(fixture, privacy: .public)")
     }
 
-    private let database: AppDatabase = {
+    private let databaseStartup: DatabaseStartup = {
         let fixture = isFixtureMap
         MakingTracksLog.startup.info("store init started fixture=\(fixture, privacy: .public)")
-        do {
-            try resetUITestingDatabaseIfNeeded()
-            if isFixtureMap {
-                let database = try AppDatabase.uiTesting()
+        let startup = DatabaseStartupPolicy.open(
+            fixture: isFixtureMap,
+            resetFixtureStore: {
+                try resetUITestingDatabaseIfNeeded()
+            },
+            openFixtureStore: {
+                try AppDatabase.uiTesting()
+            },
+            openLiveStore: {
+                try AppDatabase.live()
+            },
+            seedFixtureUserList: { database in
 #if DEBUG
                 if seedFixtureUserList {
                     try database.seedUITestingUserList(named: "Date night", containingPlaceID: Self.primaryFixturePlaceID)
                 }
 #endif
-                MakingTracksLog.startup.info("store init finished fixture=true")
-                return database
             }
-            let database = try AppDatabase.live()
-            MakingTracksLog.startup.info("store init finished fixture=false")
-            return database
-        } catch {
-            MakingTracksLog.startup.error("store init failed fixture=\(fixture, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
-            fatalError("Making Tracks database unavailable")
+        )
+        switch startup {
+        case .available:
+            if isFixtureMap {
+                MakingTracksLog.startup.info("store init finished fixture=true")
+            } else {
+                MakingTracksLog.startup.info("store init finished fixture=false")
+            }
+        case .failed(let surface):
+            MakingTracksLog.startup.error("store init failed fixture=\(fixture, privacy: .public) reason=\(surface.reasonLabel, privacy: .public)")
         }
+        return startup
     }()
 
     private let locationManager: AppLocationManager = {
@@ -92,16 +103,21 @@ struct MakingTracksApp: App {
 
     var body: some Scene {
         WindowGroup {
-            MakingTracksRootView(
-                database: database,
-                startupViewportArgument: Self.startupViewportArgument,
-                isFixtureMap: Self.isFixtureMap,
-                debugInstallOfflineRegion: Self.debugInstallOfflineRegion,
-                debugForceTileNetworkOffline: Self.debugForceTileNetworkOffline,
-                offlineDownloadProgress: Self.offlineDownloadProgress,
-                debugExposeFixturePinDiagnostics: Self.debugExposeFixturePinDiagnostics,
-                locationManager: locationManager
-            )
+            switch databaseStartup {
+            case .available(let database):
+                MakingTracksRootView(
+                    database: database,
+                    startupViewportArgument: Self.startupViewportArgument,
+                    isFixtureMap: Self.isFixtureMap,
+                    debugInstallOfflineRegion: Self.debugInstallOfflineRegion,
+                    debugForceTileNetworkOffline: Self.debugForceTileNetworkOffline,
+                    offlineDownloadProgress: Self.offlineDownloadProgress,
+                    debugExposeFixturePinDiagnostics: Self.debugExposeFixturePinDiagnostics,
+                    locationManager: locationManager
+                )
+            case .failed(let surface):
+                DatabaseRecoveryView(surface: surface)
+            }
         }
     }
 
@@ -164,6 +180,83 @@ struct MakingTracksApp: App {
             || UserDefaults.standard.string(forKey: OnboardingStorage.chosenRegionKey) == nil {
             UserDefaults.standard.set(OnboardingRegionChoice.malaysia.rawValue, forKey: OnboardingStorage.chosenRegionKey)
         }
+    }
+}
+
+enum DatabaseStartup {
+    case available(AppDatabase)
+    case failed(DatabaseStartupFailureSurface)
+}
+
+enum DatabaseStartupPolicy {
+    static func open(
+        fixture: Bool,
+        resetFixtureStore: () throws -> Void,
+        openFixtureStore: () throws -> AppDatabase,
+        openLiveStore: () throws -> AppDatabase,
+        seedFixtureUserList: ((AppDatabase) throws -> Void)?
+    ) -> DatabaseStartup {
+        do {
+            if fixture {
+                try resetFixtureStore()
+                let database = try openFixtureStore()
+                try seedFixtureUserList?(database)
+                return .available(database)
+            }
+            return .available(try openLiveStore())
+        } catch {
+            return .failed(DatabaseStartupFailureSurface.resolve(error: error))
+        }
+    }
+}
+
+struct DatabaseStartupFailureSurface: Equatable {
+    let reasonLabel: String
+    let title: String
+    let message: String
+    let recoveryHint: String
+
+    static func resolve(error: Error) -> DatabaseStartupFailureSurface {
+        let reasonLabel: String
+        let message: String
+        let recoveryHint: String
+        if case AppDatabaseError.databaseFromNewerAppVersion = error {
+            reasonLabel = "database-from-newer-app-version"
+            message = "Making Tracks could not open your on-device history because it was written by a newer app version. Your saved places, lists, and visits have not been erased."
+            recoveryHint = "Do not delete or reinstall the app if you want to preserve your history. Update Making Tracks, then try opening it again."
+        } else {
+            reasonLabel = "database-unavailable"
+            message = "Making Tracks could not open your on-device history. Your saved places, lists, and visits have not been erased."
+            recoveryHint = "Do not delete or reinstall the app if you want to preserve your history. Try opening Making Tracks again later."
+        }
+        return DatabaseStartupFailureSurface(
+            reasonLabel: reasonLabel,
+            title: "History recovery needed",
+            message: message,
+            recoveryHint: recoveryHint
+        )
+    }
+}
+
+struct DatabaseRecoveryView: View {
+    let surface: DatabaseStartupFailureSurface
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(surface.title)
+                .font(.title2.weight(.semibold))
+                .accessibilityIdentifier("database-recovery.title")
+            Text(surface.message)
+                .font(.body)
+                .accessibilityIdentifier("database-recovery.message")
+            Text(surface.recoveryHint)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("database-recovery.hint")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .padding(24)
+        .background(Color(.systemBackground))
     }
 }
 

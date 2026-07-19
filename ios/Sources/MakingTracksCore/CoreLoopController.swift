@@ -24,6 +24,16 @@ public final class CoreLoopController: Sendable {
         emit(place.placeID)
     }
 
+    public func addToList(_ place: PlaceRef, listID: Int64) throws {
+        try database.addToList(place, listID: listID)
+        emit(place.placeID)
+    }
+
+    public func removeFromList(placeID: String, listID: Int64) throws {
+        try database.removeFromList(placeID: placeID, listID: listID)
+        emit(placeID)
+    }
+
     public func setVisited(_ place: PlaceRef, _ visited: Bool) throws {
         if visited {
             _ = try database.recordVisit(place)

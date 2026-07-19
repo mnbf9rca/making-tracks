@@ -118,6 +118,102 @@ final class InteractionsTests: XCTestCase {
         XCTAssertNil(try db.snapshot(for: "missing"))
     }
 
+    func testCustomListCRUDTrimsBoundsAndProtectsSystemList() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+
+        let created = try db.createList(named: "  Date night  ")
+        XCTAssertEqual(created.name, "Date night")
+        XCTAssertFalse(created.isSystem)
+        XCTAssertEqual(created.createdAt, Date(timeIntervalSince1970: 100))
+
+        let renamed = try db.renameList(id: created.id!, name: "Architecture\u{0007}")
+        XCTAssertEqual(renamed.name, "Architecture")
+
+        XCTAssertThrowsError(try db.createList(named: "   ")) { error in
+            XCTAssertEqual(error as? AppDatabaseError, .invalidListName)
+        }
+        XCTAssertThrowsError(try db.createList(named: String(repeating: "x", count: 81))) { error in
+            XCTAssertEqual(error as? AppDatabaseError, .invalidListName)
+        }
+        XCTAssertThrowsError(try db.renameList(id: try db.wantToGoListID(), name: "Trips")) { error in
+            XCTAssertEqual(error as? AppDatabaseError, .systemListIsProtected)
+        }
+        XCTAssertThrowsError(try db.deleteList(id: try db.wantToGoListID())) { error in
+            XCTAssertEqual(error as? AppDatabaseError, .systemListIsProtected)
+        }
+
+        try db.deleteList(id: created.id!)
+        XCTAssertFalse(try db.lists().contains { $0.id == created.id })
+    }
+
+    func testListMembershipRowsAndSnapshotBackedMapFeaturesStayListExclusive() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let custom = try db.createList(named: "KL trip")
+        let customPlace = try ref("p_custom", name: "Custom Place")
+        let wantPlace = try ref("p_want", name: "Want Place")
+
+        try db.addToList(customPlace, listID: custom.id!)
+        try db.addToList(wantPlace, listID: try db.wantToGoListID())
+        try db.setHidden(customPlace, true)
+        _ = try db.recordVisit(customPlace)
+
+        let rows = try db.listItems(listID: custom.id!)
+        XCTAssertEqual(rows.map(\.placeID), ["p_custom"])
+        XCTAssertEqual(rows[0].name, "Custom Place")
+        XCTAssertEqual(rows[0].pinState, PinState(saved: false, visit: .visited, hidden: true))
+
+        let features = try db.listMapFeatures(listID: custom.id!)
+        XCTAssertEqual(features.map(\.0.id), ["p_custom"])
+        XCTAssertEqual(features[0].0.lat, customPlace.lat)
+        XCTAssertEqual(features[0].1, PinState(saved: false, visit: .visited, hidden: true))
+    }
+
+    func testListMembershipLookupUsesExactRowsNotDisplayFeed() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let custom = try db.createList(named: "KL trip")
+        let futureSnapshotPlace = try ref("p_future_snapshot", schemaVersion: 99)
+
+        try db.addToList(futureSnapshotPlace, listID: custom.id!)
+        try db.dbQueue.write { d in
+            try d.execute(
+                sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (?, ?, ?)",
+                arguments: [custom.id!, "p_missing_snapshot", Date(timeIntervalSince1970: 99)]
+            )
+        }
+
+        XCTAssertEqual(try db.listMemberships(containing: "p_future_snapshot"), [custom.id!])
+        XCTAssertEqual(try db.listMemberships(containing: "p_missing_snapshot"), [custom.id!])
+        XCTAssertEqual(try db.listItems(listID: custom.id!).map(\.placeID), ["p_future_snapshot"])
+    }
+
+    func testListRowsSanitizeSnapshotFallbackTextWithoutDroppingHistory() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let custom = try db.createList(named: "KL trip")
+        try db.dbQueue.write { d in
+            try d.execute(
+                sql: """
+                    INSERT INTO place_snapshots
+                    (place_id, name, lat, lon, category, tier, snapshot_json, snapshot_schema_version, fetched_at)
+                    VALUES (?, ?, 51.5, -0.12, ?, 2, '{}', 99, ?)
+                    """,
+                arguments: ["p_unsafe_snapshot", "Safe\u{202E}evil", "category\u{202E}", Date(timeIntervalSince1970: 50)]
+            )
+            try d.execute(
+                sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (?, ?, ?)",
+                arguments: [custom.id!, "p_unsafe_snapshot", Date(timeIntervalSince1970: 100)]
+            )
+        }
+
+        let rows = try db.listItems(listID: custom.id!)
+        let features = try db.listMapFeatures(listID: custom.id!)
+
+        XCTAssertEqual(rows.map(\.placeID), ["p_unsafe_snapshot"])
+        XCTAssertEqual(rows[0].name, "Unnamed place")
+        XCTAssertEqual(rows[0].category, "place")
+        XCTAssertEqual(features.map(\.0.id), ["p_unsafe_snapshot"])
+        XCTAssertEqual(features[0].0.category, "place")
+    }
+
     func testRemoveFromListClearsSavedWithoutDeletingSnapshotOrVisits() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         let place = try ref("p_unsave")

@@ -219,6 +219,51 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
     }
 
+    func testCustomListCanBeCreatedBrowsedAndShownOnMap() {
+        let app = launch(reset: true, pinDiagnostics: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+        openFixtureCard(in: map, app: app)
+
+        app.buttons["place-card.add-to-list"].tap()
+        XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
+        app.textFields["list-picker.new-name"].tap()
+        app.textFields["list-picker.new-name"].typeText("KL walk")
+        app.buttons["list-picker.create"].tap()
+        XCTAssertTrue(app.buttons.matching(identifierPrefix: "list-picker.row.").firstMatch.waitForExistence(timeout: 5))
+        app.buttons["list-picker.done"].tap()
+
+        let listChips = element(identifier: "place-card.list-chips", in: app)
+        XCTAssertTrue(listChips.waitForExistence(timeout: 5))
+        XCTAssertTrue(listChips.label.contains("KL walk"))
+        app.buttons["place-card.visited"].tap()
+        app.buttons["place-card.close"].tap()
+
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["KL walk"].waitForExistence(timeout: 5))
+        app.staticTexts["KL walk"].tap()
+
+        XCTAssertTrue(app.staticTexts["lists.detail.progress"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["lists.detail.progress"].label, "you've been to 1 of these · all seen")
+        XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["map.list-mode.title"].label, "KL walk")
+        XCTAssertTrue(app.buttons["map.list-mode.close"].exists)
+        XCTAssertTrue(waitForSourceFeatureCount(1, in: app))
+
+        let listModeToggle = app.segmentedControls["map.list-mode.toggle"]
+        XCTAssertTrue(listModeToggle.waitForExistence(timeout: 5))
+        listModeToggle.buttons["Fresh snow"].tap()
+        XCTAssertTrue(waitForSourceFeatureCount(0, in: app))
+    }
+
     func testHiddenToastAutoDismissesWithoutUnhidingPlace() {
         let app = launch(reset: true)
 
@@ -533,12 +578,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     func testPlaceCardStacksActionsAtAccessibilityTextSize() {
-        let app = launch(reset: true, accessibilityTextSize: true)
+        let app = launch(reset: true, accessibilityTextSize: true, pinDiagnostics: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
-        tapFixturePin(in: map)
+        let openFixture = app.buttons["debug.open-fixture"]
+        XCTAssertTrue(openFixture.waitForExistence(timeout: 5))
+        openFixture.tap()
         XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
 
         let saveButton = app.buttons["place-card.save"]

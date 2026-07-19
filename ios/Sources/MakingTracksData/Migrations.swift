@@ -62,6 +62,12 @@ extension AppDatabase {
             }
         }
 
+        register("v3") { db in
+            try db.alter(table: "lists") { t in
+                t.add(column: "list_kind", .text).notNull().defaults(to: "collection")
+            }
+        }
+
         return (migrator, identifiers)
     }
 
