@@ -178,7 +178,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(element(identifier: "place-card.description", in: app).exists)
         let sourceArticle = app.buttons["place-card.source-article"]
         XCTAssertTrue(sourceArticle.exists)
-        XCTAssertEqual(sourceArticle.value as? String, "https://www.openstreetmap.org/node/2")
+        XCTAssertTrue(sourceArticle.isHittable)
+        XCTAssertFalse((sourceArticle.value as? String ?? "").hasPrefix("https://"))
         attachScreenshot(named: "card-switched-to-art-deco-cinema")
 
         app.buttons["place-card.close"].tap()
@@ -210,7 +211,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
         XCTAssertTrue(sourceArticle.waitForExistence(timeout: 5))
         XCTAssertEqual(sourceArticle.label, "Source article")
-        XCTAssertEqual(sourceArticle.value as? String, "https://en.wikipedia.org/?curid=12345")
+        XCTAssertTrue(sourceArticle.isHittable)
+        XCTAssertFalse((sourceArticle.value as? String ?? "").hasPrefix("https://"))
         XCTAssertTrue(expandPlaceCardSheet(in: app))
 
         XCTAssertTrue(photo.waitForExistence(timeout: 5))

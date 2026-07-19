@@ -4712,7 +4712,6 @@ private struct PlaceCardSheet: View {
                     .font(.callout.weight(.medium))
             }
             .accessibilityIdentifier("place-card.source-article")
-            .accessibilityValue(link.url.absoluteString)
         }
     }
 
