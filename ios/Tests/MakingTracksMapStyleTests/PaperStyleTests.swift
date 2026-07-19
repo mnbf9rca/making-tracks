@@ -172,6 +172,51 @@ final class PaperStyleTests: XCTestCase {
         XCTAssertEqual(paintValue("line-color", in: layer(id: "region-boundaries", in: layers)), .string(MapTheme.definedPaper.boundaries))
     }
 
+    func testCoverageMaskHolesOutEveryInstalledPackAboveWorldAndBelowRegionLayers() throws {
+        for theme in MapTheme.allCandidates {
+            let style = paperBasemapStyle(
+                worldPMTilesURL: "pmtiles://https://tiles.making-tracks.app/global/protomaps-20260714-z0-6.pmtiles",
+                regionPMTilesURL: "pmtiles://https://tiles.making-tracks.app/malaysia/20260716T155409Z/malaysia.pmtiles",
+                coverageBBoxes: [
+                    CoverageBBox(minLon: -8.65, minLat: 49.84, maxLon: 1.77, maxLat: 60.86),
+                    CoverageBBox(minLon: 99.60, minLat: 0.80, maxLon: 119.30, maxLat: 7.60),
+                ],
+                theme: theme
+            )
+            guard case let .object(root) = style,
+                  case let .object(sources) = root["sources"],
+                  case let .object(maskSource) = sources["coverage-mask"],
+                  case let .object(data) = maskSource["data"],
+                  case let .array(features) = data["features"],
+                  case let .object(feature) = features.first,
+                  case let .object(geometry) = feature["geometry"],
+                  case let .array(coordinates) = geometry["coordinates"],
+                  case let .array(layers) = root["layers"]
+            else { return XCTFail("coverage mask style shape for \(theme.id)") }
+
+            XCTAssertEqual(maskSource["type"], .string("geojson"), theme.id)
+            XCTAssertEqual(geometry["type"], .string("Polygon"), theme.id)
+            XCTAssertEqual(coordinates.count, 3, theme.id)
+            XCTAssertLessThan(
+                layerIDs(in: layers).firstIndex(of: "coverage-mask-fill") ?? .max,
+                layerIDs(in: layers).firstIndex(of: "region-earth") ?? .max,
+                theme.id
+            )
+            XCTAssertGreaterThan(
+                layerIDs(in: layers).firstIndex(of: "coverage-mask-fill") ?? .min,
+                layerIDs(in: layers).firstIndex(of: "world-boundaries") ?? .min,
+                theme.id
+            )
+            XCTAssertEqual(paintValue("fill-color", in: layer(id: "coverage-mask-fill", in: layers)), .string(theme.background), theme.id)
+            XCTAssertEqual(paintValue("fill-opacity", in: layer(id: "coverage-mask-fill", in: layers)), .double(0.46), theme.id)
+            XCTAssertEqual(paintValue("line-color", in: layer(id: "coverage-mask-edge", in: layers)), .string(theme.boundaries), theme.id)
+            XCTAssertEqual(paintValue("line-opacity", in: layer(id: "coverage-mask-edge", in: layers)), .double(0.22), theme.id)
+            XCTAssertEqual(layer(id: "coverage-mask-fill", in: layers)?["minzoom"], .double(7), theme.id)
+            XCTAssertEqual(layer(id: "coverage-mask-edge", in: layers)?["minzoom"], .double(7), theme.id)
+            XCTAssertNoThrow(try style.jsonString(), theme.id)
+        }
+    }
+
     func testEveryPaletteColourIsMutedAndPinIsSaturated() {
         for theme in MapTheme.allCandidates {
             for hex in [theme.background, theme.land, theme.parks, theme.water, theme.roads, theme.boundaries, theme.labels, theme.labelHalo] {

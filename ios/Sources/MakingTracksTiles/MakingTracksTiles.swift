@@ -100,6 +100,15 @@ public protocol ConnectivityWaitingOfflineRegionFetching: OfflineRegionFetching 
     ) async throws -> URL
 }
 
+public protocol ProgressReportingOfflineRegionFetching: ConnectivityWaitingOfflineRegionFetching {
+    func download(
+        _ url: URL,
+        connectivityWaiting: (@Sendable () -> Void)?,
+        connectivityAvailable: (@Sendable () -> Void)?,
+        progress: (@Sendable (_ totalBytesWritten: Int64, _ totalBytesExpectedToWrite: Int64) -> Void)?
+    ) async throws -> URL
+}
+
 extension ConnectivityWaitingOfflineRegionFetching {
     func fetch(_ url: URL, connectivityWaiting: (@Sendable () -> Void)?) async throws -> Data {
         try await fetch(
@@ -140,7 +149,7 @@ public enum TileError: Error, Equatable {
     case downloadAlreadyInProgress
 }
 
-public final class HTTPTileFetcher: ConnectivityWaitingOfflineRegionFetching, @unchecked Sendable {
+public final class HTTPTileFetcher: ProgressReportingOfflineRegionFetching, @unchecked Sendable {
     public static let trustedHost = "tiles.making-tracks.app"
     private let delegate: RedirectDelegate
     private let session: URLSession
@@ -226,6 +235,20 @@ public final class HTTPTileFetcher: ConnectivityWaitingOfflineRegionFetching, @u
         connectivityWaiting: (@Sendable () -> Void)?,
         connectivityAvailable: (@Sendable () -> Void)?
     ) async throws -> URL {
+        try await download(
+            url,
+            connectivityWaiting: connectivityWaiting,
+            connectivityAvailable: connectivityAvailable,
+            progress: nil
+        )
+    }
+
+    public func download(
+        _ url: URL,
+        connectivityWaiting: (@Sendable () -> Void)?,
+        connectivityAvailable: (@Sendable () -> Void)?,
+        progress: (@Sendable (_ totalBytesWritten: Int64, _ totalBytesExpectedToWrite: Int64) -> Void)?
+    ) async throws -> URL {
         try Self.validateOrigin(url)
         let kind = configurationIdentifier == nil ? "foreground" : "background"
         let identifier = configurationIdentifier ?? "foreground"
@@ -236,7 +259,8 @@ public final class HTTPTileFetcher: ConnectivityWaitingOfflineRegionFetching, @u
             request,
             on: session,
             connectivityWaiting: connectivityWaiting,
-            connectivityAvailable: connectivityAvailable
+            connectivityAvailable: connectivityAvailable,
+            progress: progress
         )
         MakingTracksLog.downloads.debug("download finished session=\(kind, privacy: .public) discretionary=\(discretionary, privacy: .public) identifier=\(identifier, privacy: .private(mask: .hash)) host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
         return fileURL
@@ -318,6 +342,7 @@ final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDe
         let continuation: CheckedContinuation<URL, Error>
         let connectivityWaiting: (@Sendable () -> Void)?
         let connectivityAvailable: (@Sendable () -> Void)?
+        let progress: (@Sendable (_ totalBytesWritten: Int64, _ totalBytesExpectedToWrite: Int64) -> Void)?
         var stagedURL: URL?
         var response: URLResponse?
         var stagingError: Error?
@@ -399,7 +424,8 @@ final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDe
         _ request: URLRequest,
         on session: URLSession,
         connectivityWaiting: (@Sendable () -> Void)? = nil,
-        connectivityAvailable: (@Sendable () -> Void)? = nil
+        connectivityAvailable: (@Sendable () -> Void)? = nil,
+        progress: (@Sendable (_ totalBytesWritten: Int64, _ totalBytesExpectedToWrite: Int64) -> Void)? = nil
     ) async throws -> URL {
         if let identifier = session.configuration.identifier,
            let url = request.url,
@@ -412,7 +438,8 @@ final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDe
                 request: request,
                 on: session,
                 connectivityWaiting: connectivityWaiting,
-                connectivityAvailable: connectivityAvailable
+                connectivityAvailable: connectivityAvailable,
+                progress: progress
             )
         }
         let cancellation = CancellationBox()
@@ -429,6 +456,7 @@ final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDe
                         continuation: continuation,
                         connectivityWaiting: connectivityWaiting,
                         connectivityAvailable: connectivityAvailable,
+                        progress: progress,
                         stagedURL: nil,
                         response: nil,
                         stagingError: nil,
@@ -501,7 +529,8 @@ final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDe
         request: URLRequest,
         on session: URLSession,
         connectivityWaiting: (@Sendable () -> Void)? = nil,
-        connectivityAvailable: (@Sendable () -> Void)? = nil
+        connectivityAvailable: (@Sendable () -> Void)? = nil,
+        progress: (@Sendable (_ totalBytesWritten: Int64, _ totalBytesExpectedToWrite: Int64) -> Void)? = nil
     ) async throws -> URL {
         let cancellation = CancellationBox()
         return try await withTaskCancellationHandler {
@@ -511,6 +540,7 @@ final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDe
                         continuation: continuation,
                         connectivityWaiting: connectivityWaiting,
                         connectivityAvailable: connectivityAvailable,
+                        progress: progress,
                         stagedURL: nil,
                         response: nil,
                         stagingError: nil,
@@ -615,14 +645,15 @@ final class RedirectDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDe
         totalBytesExpectedToWrite: Int64
     ) {
         guard bytesWritten > 0 else { return }
-        let handler = lock.withLock {
-            guard var state = downloads[downloadTask.taskIdentifier] else { return nil as (@Sendable () -> Void)? }
+        let callbacks = lock.withLock { () -> ((@Sendable () -> Void)?, (@Sendable (_ totalBytesWritten: Int64, _ totalBytesExpectedToWrite: Int64) -> Void)?)? in
+            guard var state = downloads[downloadTask.taskIdentifier] else { return nil }
             let handler = state.didReportConnectivityAvailable ? nil : state.connectivityAvailable
             state.didReportConnectivityAvailable = true
             downloads[downloadTask.taskIdentifier] = state
-            return handler
+            return (handler, state.progress)
         }
-        handler?()
+        callbacks?.0?()
+        callbacks?.1?(totalBytesWritten, totalBytesExpectedToWrite)
     }
 
     func urlSession(
@@ -1462,6 +1493,13 @@ public final class ManifestClient: @unchecked Sendable {
         self.region = region
         self.fetcher = fetcher
         self.cache = cache
+    }
+
+    public static func currentPublishVersion(region: String, fetcher: TileFetching) async throws -> String {
+        guard region.matches("^[a-z][a-z0-9_]*$") else {
+            throw TileError.invalidOfflinePack
+        }
+        return try decodeCurrent(await fetcher.fetch(try trustedURL("\(region)/current.json")))
     }
 
     public func refresh() async -> ManifestPinResult {
@@ -2557,35 +2595,23 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             store.releaseDownloadLease(region: region)
             MakingTracksLog.downloads.debug("region download lease released region=\(regionID, privacy: .private(mask: .hash))")
         }
-        var allowPendingPublish = true
-        var didAbandonPendingPublish = false
-        while true {
-            let target: TargetPublish
-            do {
-                target = try await targetPublish(
-                    allowPending: allowPendingPublish,
-                    resumingPausedDownload: resumingPausedDownload,
-                    progress: progress
-                )
-            } catch {
-                MakingTracksLog.downloads.error("region metadata failed region=\(regionID, privacy: .private(mask: .hash)) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
-                throw error
-            }
-            do {
-                return try await download(
-                    target: target,
-                    startedAt: startedAt,
-                    control: control,
-                    progress: progress
-                )
-            } catch let error where target.source == .pending && !didAbandonPendingPublish && isMissingManifestObject(error) {
-                didAbandonPendingPublish = true
-                allowPendingPublish = false
-                MakingTracksLog.downloads.info("region pending download abandoned region=\(regionID, privacy: .private(mask: .hash)) version=\(target.publish.publishVersion, privacy: .public) reason=object-404")
-                try store.discardDownload(region: region, publishVersion: target.publish.publishVersion)
-                continue
-            }
+        let target: TargetPublish
+        do {
+            target = try await targetPublish(
+                allowPending: true,
+                resumingPausedDownload: resumingPausedDownload,
+                progress: progress
+            )
+        } catch {
+            MakingTracksLog.downloads.error("region metadata failed region=\(regionID, privacy: .private(mask: .hash)) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            throw error
         }
+        return try await download(
+            target: target,
+            startedAt: startedAt,
+            control: control,
+            progress: progress
+        )
     }
 
     private func download(
@@ -2639,11 +2665,28 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
                     isWaitingForConnectivity: false
                 )
                 do {
+                    let objectStartBytes = completedBytes
+                    let objectStartCount = completedObjectCount
                     fileURL = try await downloadObject(
                         try trustedURL("\(region)/\(publishVersion)/tiles/10/\(item.coordinate.x)/\(item.coordinate.y).json.gz"),
                         control: control,
                         connectivityWaiting: { progress?(waitingProgress) },
-                        connectivityAvailable: { progress?(availableProgress) }
+                        connectivityAvailable: { progress?(availableProgress) },
+                        progress: { totalBytesWritten, totalBytesExpectedToWrite in
+                            let objectBytes = Self.completedObjectBytes(
+                                totalBytesWritten: totalBytesWritten,
+                                totalBytesExpectedToWrite: totalBytesExpectedToWrite,
+                                expectedObjectBytes: item.bytes
+                            )
+                            progress?(OfflineRegionDownloadProgress(
+                                region: regionID,
+                                publishVersion: publishVersion,
+                                completedBytes: objectStartBytes + objectBytes,
+                                totalBytes: totalBytes,
+                                completedObjectCount: objectStartCount,
+                                totalObjectCount: totalObjectCount
+                            ))
+                        }
                     )
                     defer { try? FileManager.default.removeItem(at: fileURL) }
                     try store.stageDownloadedTileObject(fileURL, sha256: item.sha256, bytes: item.bytes)
@@ -2690,11 +2733,28 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
                     isWaitingForConnectivity: false
                 )
                 do {
+                    let objectStartBytes = completedBytes
+                    let objectStartCount = completedObjectCount
                     fileURL = try await downloadObject(
                         try trustedURL("\(region)/\(publishVersion)/\(manifest.basemap.filename)"),
                         control: control,
                         connectivityWaiting: { progress?(waitingProgress) },
-                        connectivityAvailable: { progress?(availableProgress) }
+                        connectivityAvailable: { progress?(availableProgress) },
+                        progress: { totalBytesWritten, totalBytesExpectedToWrite in
+                            let objectBytes = Self.completedObjectBytes(
+                                totalBytesWritten: totalBytesWritten,
+                                totalBytesExpectedToWrite: totalBytesExpectedToWrite,
+                                expectedObjectBytes: manifest.basemap.bytes
+                            )
+                            progress?(OfflineRegionDownloadProgress(
+                                region: regionID,
+                                publishVersion: publishVersion,
+                                completedBytes: objectStartBytes + objectBytes,
+                                totalBytes: totalBytes,
+                                completedObjectCount: objectStartCount,
+                                totalObjectCount: totalObjectCount
+                            ))
+                        }
                     )
                     defer { try? FileManager.default.removeItem(at: fileURL) }
                     try store.stageDownloadedBasemapObject(fileURL, sha256: manifest.basemap.sha256, bytes: manifest.basemap.bytes)
@@ -2856,7 +2916,8 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
         _ url: URL,
         control: OfflineRegionDownloadControl,
         connectivityWaiting: (@Sendable () -> Void)? = nil,
-        connectivityAvailable: (@Sendable () -> Void)? = nil
+        connectivityAvailable: (@Sendable () -> Void)? = nil,
+        progress: (@Sendable (_ totalBytesWritten: Int64, _ totalBytesExpectedToWrite: Int64) -> Void)? = nil
     ) async throws -> URL {
         try control.checkpoint()
         let backgroundIdentifier = OfflineDownloadSession.backgroundIdentifier(region: region)
@@ -2877,6 +2938,14 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
         MakingTracksLog.downloads.debug("object task spawning host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
         let downloadTask = Task {
             if let waitingFetcher = objectFetcher as? ConnectivityWaitingOfflineRegionFetching {
+                if let progressFetcher = waitingFetcher as? ProgressReportingOfflineRegionFetching {
+                    return try await progressFetcher.download(
+                        url,
+                        connectivityWaiting: connectivityWaiting,
+                        connectivityAvailable: connectivityAvailable,
+                        progress: progress
+                    )
+                }
                 return try await waitingFetcher.download(
                     url,
                     connectivityWaiting: connectivityWaiting,
@@ -2915,6 +2984,20 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             throw error
         }
     }
+
+    private static func completedObjectBytes(
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64,
+        expectedObjectBytes: Int
+    ) -> Int {
+        guard expectedObjectBytes >= 0 else { return 0 }
+        let upperBound = Int64(expectedObjectBytes)
+        let expected = totalBytesExpectedToWrite > 0
+            ? min(totalBytesExpectedToWrite, upperBound)
+            : upperBound
+        let clamped = min(max(totalBytesWritten, 0), expected, upperBound)
+        return Int(clamped)
+    }
 }
 
 private func isOutOfSpace(_ error: Error) -> Bool {
@@ -2927,13 +3010,6 @@ private func isOutOfSpace(_ error: Error) -> Bool {
     }
     if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
         return isOutOfSpace(underlying)
-    }
-    return false
-}
-
-private func isMissingManifestObject(_ error: Error) -> Bool {
-    if case TileError.httpStatus(404) = error {
-        return true
     }
     return false
 }

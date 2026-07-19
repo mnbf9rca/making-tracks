@@ -546,6 +546,34 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
     }
 
+    func testCoverageEdgeScreenshotsAcrossThemes() {
+        let coverageBBox = "101.640,3.090,101.690,3.190"
+        let diagnosticApp = launch(
+            reset: true,
+            resetTheme: true,
+            theme: "defined-paper",
+            pinDiagnostics: true,
+            coverageBBoxes: [coverageBBox]
+        )
+        XCTAssertTrue(diagnosticApp.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: diagnosticApp))
+        XCTAssertEqual(diagnosticApp.staticTexts["map.debug-coverage"].label, "coverage-bboxes:1")
+        diagnosticApp.terminate()
+
+        for themeID in ["defined-paper", "snow", "street-contrast", "verdant-kl"] {
+            let app = launch(
+                reset: true,
+                resetTheme: true,
+                theme: themeID,
+                coverageBBoxes: [coverageBBox]
+            )
+            XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10), themeID)
+            XCTAssertTrue(waitForMapTheme(themeID, in: app), themeID)
+            attachScreenshot(named: "coverage-edge-\(themeID)")
+            app.terminate()
+        }
+    }
+
     func testPinSizeSliderUpdatesLiveMapLayers() {
         let app = launch(
             reset: true,
@@ -686,6 +714,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         theme: String? = nil,
         pinSizeMultiplier: Double? = nil,
         pinDiagnostics: Bool = false,
+        coverageBBoxes: [String] = [],
         resetOnboarding: Bool = false,
         forceDarkAppearance: Bool = false
     ) -> XCUIApplication {
@@ -740,6 +769,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         if let pinSizeMultiplier {
             app.launchArguments.append("--ui-testing-pin-size-multiplier")
             app.launchArguments.append(String(pinSizeMultiplier))
+        }
+        for bbox in coverageBBoxes {
+            app.launchArguments.append("--ui-testing-coverage-bbox")
+            app.launchArguments.append(bbox)
         }
         if resetOnboarding {
             app.launchArguments.append("--ui-testing-reset-onboarding")
@@ -1084,6 +1117,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "pin-snow-min": "pin-snow-min",
         "pin-snow-default": "pin-snow-default",
         "pin-snow-max": "pin-snow-max",
+        "coverage-edge-defined-paper": "coverage-edge-defined-paper",
+        "coverage-edge-snow": "coverage-edge-snow",
+        "coverage-edge-street-contrast": "coverage-edge-street-contrast",
+        "coverage-edge-verdant-kl": "coverage-edge-verdant-kl",
     ]
 }
 

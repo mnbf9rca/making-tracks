@@ -75,6 +75,22 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(pin.publish?.basemapIntegrity?.bytes, 1234)
     }
 
+    func testManifestCurrentPublishVersionFetchesOnlyCurrentPointer() async throws {
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/malaysia/current.json": jsonData([
+                "schema_version": 1,
+                "publish_version": "20260716T155035Z",
+            ]),
+        ])
+
+        let version = try await ManifestClient.currentPublishVersion(region: "malaysia", fetcher: fetcher)
+
+        XCTAssertEqual(version, "20260716T155035Z")
+        XCTAssertEqual(fetcher.requestedURLs, [
+            "https://tiles.making-tracks.app/malaysia/current.json",
+        ])
+    }
+
     func testManifestRefusesAttributionAllOfViolationAndColdInvalidIsUnavailable() async throws {
         let fetcher = StubFetcher(routes: [
             "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
@@ -1142,6 +1158,53 @@ final class MakingTracksTilesTests: XCTestCase {
 
         let transition = recorder.events.map(\.isWaitingForConnectivity)
         XCTAssertEqual(Array(transition.prefix(4)), [true, false, true, false])
+    }
+
+    func testOfflineDownloaderReportsBytesDuringLargeObjectTransfer() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let basemap = Data(repeating: 0x42, count: 1_000)
+        let tileSHA = sha256(tile)
+        let basemapSHA = sha256(basemap)
+        let manifest = manifestObject(
+            publishVersion: "20260717T000000Z",
+            tileSHA: tileSHA,
+            tileBytes: tile.count,
+            basemapSHA: basemapSHA,
+            basemapBytes: basemap.count,
+            attributionSources: []
+        )
+        let fetcher = ProgressReportingFetcher(
+            routes: [
+                "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
+                "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json": jsonData(manifest),
+                "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz": tile,
+                "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles": basemap,
+            ],
+            downloadProgress: [
+                "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles": [250, 500, 750],
+            ]
+        )
+        let recorder = ProgressRecorder()
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 10_000_000_000 })
+
+        _ = try await downloader.downloadCurrentRegion { progress in
+            recorder.append(progress)
+        }
+
+        let totalBytes = tile.count + basemap.count
+        XCTAssertTrue(recorder.events.contains {
+            $0.completedBytes == tile.count + 250
+                && $0.totalBytes == totalBytes
+                && $0.completedObjectCount == 1
+                && $0.totalObjectCount == 2
+        })
+        XCTAssertTrue(recorder.events.contains {
+            $0.completedBytes == tile.count + 750
+                && $0.fractionComplete < 1
+        })
+        XCTAssertEqual(recorder.events.last?.completedBytes, totalBytes)
     }
 
     func testOfflineBackgroundFetcherUsesBackgroundConfigurationIdentifier() {
@@ -3929,7 +3992,7 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(try store.installedPublish(region: "uk")?.publishVersion, "20260717T000000Z")
     }
 
-    func testOfflineDownloaderAbandonsPendingPublishOnObject404AndRepinsCurrent() async throws {
+    func testOfflineDownloaderSurfacesPendingPublishObject404WithoutRepinningCurrent() async throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)
         let oldTile = try gzipJSON(tileObject(places: [validPlace()]))
@@ -3985,21 +4048,21 @@ final class MakingTracksTilesTests: XCTestCase {
             availableBytes: { 10_000_000_000 }
         )
 
-        let result = try await downloader.downloadCurrentRegion()
+        do {
+            _ = try await downloader.downloadCurrentRegion()
+            XCTFail("download unexpectedly repinned current after pending object 404")
+        } catch TileError.httpStatus(404) {
+        } catch {
+            XCTFail("expected pending object 404, got \(error)")
+        }
 
-        XCTAssertEqual(result.publish.publishVersion, "20260718T000000Z")
-        XCTAssertEqual(try store.installedPublish(region: "uk")?.publishVersion, "20260718T000000Z")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
-        XCTAssertEqual(metadataFetcher.requestedURLs, [
-            "https://tiles.making-tracks.app/uk/current.json",
-            "https://tiles.making-tracks.app/uk/20260718T000000Z/manifest.json",
-        ])
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: offlineInProgressIndexURL(root: root, region: "uk", publishVersion: "20260717T000000Z").path))
+        XCTAssertEqual(metadataFetcher.requestedURLs, [])
         XCTAssertEqual(objectFetcher.requestedURLs, [
             oldTileURL,
-            "https://tiles.making-tracks.app/uk/20260718T000000Z/tiles/10/512/340.json.gz",
-            "https://tiles.making-tracks.app/uk/20260718T000000Z/uk.pmtiles",
         ])
-        XCTAssertNil(OfflineDownloadSession.consumeCompletedDownload(identifier: identifier, url: completedURL))
+        XCTAssertNotNil(OfflineDownloadSession.consumeCompletedDownload(identifier: identifier, url: completedURL))
     }
 
     func testOfflineStoreDeletePurgesCompletedBackgroundDownloadsForRegion() throws {
@@ -4290,6 +4353,68 @@ private final class ConnectivityWaitingFetcher: ConnectivityWaitingOfflineRegion
         connectivityWaiting?()
         connectivityAvailable?()
         return try await download(url)
+    }
+}
+
+private final class ProgressReportingFetcher: ProgressReportingOfflineRegionFetching, @unchecked Sendable {
+    private let routes: [String: Data]
+    private let downloadProgress: [String: [Int64]]
+
+    init(routes: [String: Data], downloadProgress: [String: [Int64]]) {
+        self.routes = routes
+        self.downloadProgress = downloadProgress
+    }
+
+    func fetch(_ url: URL) async throws -> Data {
+        guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
+        return data
+    }
+
+    func fetch(
+        _ url: URL,
+        connectivityWaiting: (@Sendable () -> Void)?,
+        connectivityAvailable: (@Sendable () -> Void)?
+    ) async throws -> Data {
+        try await fetch(url)
+    }
+
+    func download(_ url: URL) async throws -> URL {
+        try await download(
+            url,
+            connectivityWaiting: nil,
+            connectivityAvailable: nil,
+            progress: nil
+        )
+    }
+
+    func download(
+        _ url: URL,
+        connectivityWaiting: (@Sendable () -> Void)?,
+        connectivityAvailable: (@Sendable () -> Void)?
+    ) async throws -> URL {
+        try await download(
+            url,
+            connectivityWaiting: connectivityWaiting,
+            connectivityAvailable: connectivityAvailable,
+            progress: nil
+        )
+    }
+
+    func download(
+        _ url: URL,
+        connectivityWaiting: (@Sendable () -> Void)?,
+        connectivityAvailable: (@Sendable () -> Void)?,
+        progress: (@Sendable (_ totalBytesWritten: Int64, _ totalBytesExpectedToWrite: Int64) -> Void)?
+    ) async throws -> URL {
+        connectivityAvailable?()
+        guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
+        for bytes in downloadProgress[url.absoluteString] ?? [] {
+            progress?(bytes, Int64(data.count))
+        }
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MakingTracksProgressReportingDownload-\(UUID().uuidString)")
+        try data.write(to: fileURL, options: .atomic)
+        return fileURL
     }
 }
 

@@ -8,7 +8,6 @@ struct LocationSessionPolicies {
         authorizationStatus: CLAuthorizationStatus,
         userTrackingMode: MLNUserTrackingMode
     ) -> Bool {
-        guard userTrackingMode != .none else { return false }
         switch authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse:
             return true
