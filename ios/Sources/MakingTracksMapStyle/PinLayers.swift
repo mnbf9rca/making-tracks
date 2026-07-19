@@ -113,6 +113,14 @@ public enum PinLayers {
         return categoryFilter
     }
 
+    public static func isCategoryVisible(_ category: String, visibleCategories: Set<String>?) -> Bool {
+        guard let visibleCategories else { return true }
+        if categoryIconNames.keys.contains(category) {
+            return visibleCategories.contains(category)
+        }
+        return visibleCategories.contains(fallbackCategoryID)
+    }
+
     public static func combinedFilter(_ filters: [JSONValue?]) -> JSONValue? {
         let activeFilters = filters.compactMap { $0 }
         guard !activeFilters.isEmpty else { return nil }

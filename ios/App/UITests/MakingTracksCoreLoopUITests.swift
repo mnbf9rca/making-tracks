@@ -26,6 +26,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["place-card.close"].tap()
 
         XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
+        XCTAssertTrue(waitForAccessibilityPin(
+            in: app,
+            placeID: placeID,
+            label: "Ghost Sign, Attraction, loved, saved"
+        ))
         attachScreenshot(named: "map-after-visited-fade")
 
         app.terminate()
@@ -139,21 +144,31 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     func testTappingAnotherPinSwitchesOpenCard() throws {
-        try XCTSkipIf(true, "Skipped pending #180: XCTest synthetic taps reach MapLibre's MTKView but do not invoke the app tap recognizer.")
-
         let app = launch(reset: true, pinDiagnostics: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
 
-        XCTAssertTrue(tapProjectedFixturePin(in: map, app: app, placeID: placeID, title: "Ghost Sign"))
+        XCTAssertTrue(activateFixturePin(
+            in: map,
+            app: app,
+            placeID: placeID,
+            title: "Ghost Sign",
+            expectedLabel: "Ghost Sign, Attraction, not visited"
+        ))
         XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
         let sheet = app.scrollViews.matching(identifierPrefix: "place-card.instance.").firstMatch
         XCTAssertTrue(sheet.waitForExistence(timeout: 5))
         let sheetInstanceIdentifier = sheet.identifier
 
-        XCTAssertTrue(tapProjectedFixturePin(in: map, app: app, placeID: "mt1_00000000000000000000000001", title: "Art Deco Cinema"))
+        XCTAssertTrue(activateFixturePin(
+            in: map,
+            app: app,
+            placeID: "mt1_00000000000000000000000001",
+            title: "Art Deco Cinema",
+            expectedLabel: "Art Deco Cinema, Historic Building, not visited"
+        ))
         XCTAssertTrue(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.scrollViews[sheetInstanceIdentifier].exists)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].exists)
@@ -342,6 +357,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         tapSwitch(historicBuildings, expectedValue: "0")
         app.buttons["map.layers.done"].tap()
 
+        XCTAssertTrue(waitForNonExistence(
+            of: app.buttons["map.pin.mt1_00000000000000000000000001"],
+            timeout: 5
+        ))
         tapSecondFixturePin(in: map)
         XCTAssertFalse(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 2))
 
@@ -349,6 +368,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(historicBuildings.waitForExistence(timeout: 5))
         tapSwitch(historicBuildings, expectedValue: "1")
         app.buttons["map.layers.done"].tap()
+        XCTAssertTrue(waitForAccessibilityPin(
+            in: app,
+            placeID: "mt1_00000000000000000000000001",
+            label: "Art Deco Cinema, Historic Building, not visited"
+        ))
 
         openSecondFixtureCard(in: map, app: app)
         app.buttons["place-card.close"].tap()
@@ -803,6 +827,57 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     @discardableResult
+    private func activateFixturePin(
+        in map: XCUIElement,
+        app: XCUIApplication,
+        placeID: String,
+        title: String,
+        expectedLabel: String
+    ) -> Bool {
+        let marker = app.staticTexts["map.fixture-pin.\(placeID)"]
+        guard marker.waitForExistence(timeout: 10),
+              waitForFixturePinToBecomeHitTestable(marker)
+        else {
+            XCTFail("Rendered fixture pin \(placeID) did not become hit-testable")
+            return false
+        }
+        guard waitForAccessibilityPin(in: app, placeID: placeID, label: expectedLabel) else { return false }
+        let pin = app.buttons["map.pin.\(placeID)"]
+        guard let projectedPoint = projectedScreenPoint(from: marker, through: map, in: app) else {
+            XCTFail(
+                "Could not resolve projected point for \(placeID); map frame \(map.frame); app frame \(app.frame); marker value \(marker.value ?? "nil")"
+            )
+            return false
+        }
+        XCTAssertTrue(
+            pin.frame.insetBy(dx: -2, dy: -2).contains(projectedPoint),
+            "Accessibility pin \(placeID) frame \(pin.frame) did not contain projected point \(projectedPoint); map frame \(map.frame); marker value \(marker.value ?? "nil")"
+        )
+        pin.tap()
+        if app.staticTexts[title].waitForExistence(timeout: 5) {
+            return true
+        }
+        XCTFail("Activating accessibility pin \(placeID) did not open \(title)")
+        return false
+    }
+
+    @discardableResult
+    private func waitForAccessibilityPin(in app: XCUIApplication, placeID: String, label: String) -> Bool {
+        let pin = app.buttons["map.pin.\(placeID)"]
+        guard pin.waitForExistence(timeout: 10) else {
+            XCTFail("Accessibility pin \(placeID) did not appear")
+            return false
+        }
+        let predicate = NSPredicate(format: "label == %@", label)
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: pin)], timeout: 5)
+        if result == .completed {
+            return true
+        }
+        XCTFail("Accessibility pin \(placeID) label was \(pin.label), expected \(label)")
+        return false
+    }
+
+    @discardableResult
     private func tapProjectedFixturePin(
         in map: XCUIElement,
         app: XCUIApplication,
@@ -867,15 +942,30 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     private func tapProjectedFixtureMarker(_ marker: XCUIElement, through map: XCUIElement, in app: XCUIApplication) -> Bool {
-        guard let offset = projectedOffset(from: marker) else { return false }
+        guard let point = projectedScreenPoint(from: marker, through: map, in: app) else { return false }
+        let appFrame = app.frame
+        guard appFrame.width > 0, appFrame.height > 0 else { return false }
+        app.coordinate(withNormalizedOffset: CGVector(
+            dx: (point.x - appFrame.minX) / appFrame.width,
+            dy: (point.y - appFrame.minY) / appFrame.height
+        )).tap()
+        return true
+    }
+
+    private func projectedScreenPoint(from marker: XCUIElement, through map: XCUIElement, in app: XCUIApplication) -> CGPoint? {
+        guard let offset = projectedOffset(from: marker) else { return nil }
         let mapFrame = map.frame
         let appFrame = app.frame
-        guard mapFrame.width > 0, mapFrame.height > 0, appFrame.width > 0, appFrame.height > 0 else { return false }
-        let appX = (mapFrame.minX + (offset.dx * mapFrame.width) - appFrame.minX) / appFrame.width
-        let appY = (mapFrame.minY + (offset.dy * mapFrame.height) - appFrame.minY) / appFrame.height
-        guard (0...1).contains(appX), (0...1).contains(appY) else { return false }
-        app.coordinate(withNormalizedOffset: CGVector(dx: appX, dy: appY)).tap()
-        return true
+        guard appFrame.width > 0, appFrame.height > 0 else { return nil }
+        let referenceFrame = mapFrame.width.isFinite && mapFrame.height.isFinite && mapFrame.width > 0 && mapFrame.height > 0
+            ? mapFrame
+            : appFrame
+        let point = CGPoint(
+            x: referenceFrame.minX + (offset.dx * referenceFrame.width),
+            y: referenceFrame.minY + (offset.dy * referenceFrame.height)
+        )
+        guard appFrame.contains(point) else { return nil }
+        return point
     }
 
     private func projectedOffset(from marker: XCUIElement) -> CGVector? {
