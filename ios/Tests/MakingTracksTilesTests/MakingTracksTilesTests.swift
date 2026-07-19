@@ -1183,7 +1183,7 @@ final class MakingTracksTilesTests: XCTestCase {
                 "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles": basemap,
             ],
             downloadProgress: [
-                "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles": [250, 500, 750],
+                "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles": [250, 500, 750, Int64(basemap.count + 1_000)],
             ]
         )
         let recorder = ProgressRecorder()
@@ -1204,6 +1204,7 @@ final class MakingTracksTilesTests: XCTestCase {
             $0.completedBytes == tile.count + 750
                 && $0.fractionComplete < 1
         })
+        XCTAssertFalse(recorder.events.contains { $0.completedBytes > totalBytes })
         XCTAssertEqual(recorder.events.last?.completedBytes, totalBytes)
     }
 
@@ -1889,6 +1890,34 @@ final class MakingTracksTilesTests: XCTestCase {
 
         XCTAssertEqual(String(data: data, encoding: .utf8), "offline body")
         XCTAssertEqual(availability.count, 1)
+    }
+
+    func testOfflineFetcherDownloadReportsDelegateByteProgress() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RedirectURLProtocol.self]
+        let fetcher = HTTPTileFetcher(configuration: configuration)
+        let progress = ByteProgressRecorder()
+        let body = Data(repeating: 0x5a, count: 64 * 1024)
+        RedirectURLProtocol.reset()
+        RedirectURLProtocol.mode = .status(200, location: nil)
+        RedirectURLProtocol.responseBody = body
+        defer { RedirectURLProtocol.reset() }
+
+        let fileURL = try await fetcher.download(
+            URL(string: "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles")!,
+            connectivityWaiting: nil,
+            connectivityAvailable: nil,
+            progress: { totalBytesWritten, totalBytesExpectedToWrite in
+                progress.append(totalBytesWritten, expected: totalBytesExpectedToWrite)
+            }
+        )
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        XCTAssertEqual(try Data(contentsOf: fileURL), body)
+        XCTAssertTrue(progress.events.contains { written, expected in
+            written > 0 && expected == Int64(body.count)
+        })
+        XCTAssertEqual(progress.events.last?.written, Int64(body.count))
     }
 
     func testOfflineFetcherDownloadTaskPathRejectsRedirectCallbacks() async throws {
@@ -4464,6 +4493,21 @@ private final class ProgressRecorder: @unchecked Sendable {
     }
 }
 
+private final class ByteProgressRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [(written: Int64, expected: Int64)] = []
+
+    var events: [(written: Int64, expected: Int64)] {
+        lock.withLock { recorded }
+    }
+
+    func append(_ written: Int64, expected: Int64) {
+        lock.withLock {
+            recorded.append((written, expected))
+        }
+    }
+}
+
 private final class CallbackCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var value = 0
@@ -4567,6 +4611,7 @@ private final class RedirectURLProtocol: URLProtocol, @unchecked Sendable {
         if let location {
             headers["Location"] = location
         }
+        headers["Content-Length"] = "\(Self.responseBody.count)"
         return HTTPURLResponse(
             url: request.url!,
             statusCode: status,

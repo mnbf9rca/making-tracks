@@ -2207,6 +2207,39 @@ struct StorageMenuStatus: Equatable, Sendable {
     }
 }
 
+struct OfflineMapsLocalState: Equatable, Sendable {
+    let installed: [String: String]
+    let pausedRegions: Set<String>
+    let quarantines: [OfflinePackQuarantine]
+    let storageStatus: StorageMenuStatus
+
+    static let unavailable = OfflineMapsLocalState(
+        installed: [:],
+        pausedRegions: [],
+        quarantines: [],
+        storageStatus: .unavailable
+    )
+}
+
+enum OfflineMapsRefreshCoordinator {
+    @MainActor
+    static func refresh(
+        loadLocalState: @MainActor () async -> OfflineMapsLocalState,
+        loadAvailableVersions: @escaping @MainActor (_ installedRegions: Set<String>) async -> [String: String],
+        applyLocalState: @MainActor (OfflineMapsLocalState) -> Void,
+        applyAvailableVersions: @escaping @MainActor (_ versions: [String: String], _ installedRegions: Set<String>) -> Void
+    ) async -> Task<Void, Never> {
+        let localState = await loadLocalState()
+        applyLocalState(localState)
+        let installedRegions = Set(localState.installed.keys)
+        return Task { @MainActor in
+            let versions = await loadAvailableVersions(installedRegions)
+            guard !Task.isCancelled else { return }
+            applyAvailableVersions(versions, installedRegions)
+        }
+    }
+}
+
 private extension StorageMenuStatus.Kind {
     var logLabel: String {
         switch self {
@@ -2844,6 +2877,7 @@ private struct OfflineMapsView: View {
     @State private var statusMessage: String?
     @State private var pendingDeleteRegion: String?
     @State private var pendingDeleteRegionName: String?
+    @State private var availabilityRefreshTask: Task<Void, Never>?
     @AppStorage(OfflineDownloadSettings.allowsCellularDownloadsKey) private var allowsCellularDownloads = OfflineDownloadSettings.defaultAllowsCellularDownloads
 
     init(
@@ -2907,6 +2941,9 @@ private struct OfflineMapsView: View {
         }
         .refreshable {
             await refresh()
+        }
+        .onDisappear {
+            availabilityRefreshTask?.cancel()
         }
         .confirmationDialog(
             pendingDeleteRegionName.map { "Delete \($0)?" } ?? "Delete downloaded map?",
@@ -3175,26 +3212,43 @@ private struct OfflineMapsView: View {
 
     private func refresh() async {
         guard let model else {
-            installed = [:]
+            availabilityRefreshTask?.cancel()
             availablePublishVersions = [:]
-            pausedRegions = []
-            quarantines = []
-            storageStatus = .unavailable
+            applyLocalState(.unavailable)
             MakingTracksLog.startup.info("offline rows state=unavailable")
             return
         }
-        installed = await model.installedOfflinePublishVersions(for: catalog)
-        availablePublishVersions = await model.availableOfflinePublishVersions(
-            for: catalog,
-            installedRegions: Set(installed.keys),
-            allowsCellularDownloads: allowsCellularDownloads
+        availabilityRefreshTask?.cancel()
+        availabilityRefreshTask = await OfflineMapsRefreshCoordinator.refresh(
+            loadLocalState: {
+                await model.offlineMapsLocalState(for: catalog)
+            },
+            loadAvailableVersions: { installedRegions in
+                await model.availableOfflinePublishVersions(
+                    for: catalog,
+                    installedRegions: installedRegions,
+                    allowsCellularDownloads: allowsCellularDownloads
+                )
+            },
+            applyLocalState: { localState in
+                availablePublishVersions = [:]
+                applyLocalState(localState)
+                let installedCount = localState.installed.count
+                let quarantineCount = localState.quarantines.count
+                MakingTracksLog.startup.info("offline rows refreshed installed=\(installedCount, privacy: .public) quarantines=\(quarantineCount, privacy: .public)")
+            },
+            applyAvailableVersions: { versions, refreshedInstalledRegions in
+                guard Set(installed.keys) == refreshedInstalledRegions else { return }
+                availablePublishVersions = versions
+            }
         )
-        pausedRegions = await model.pausedOfflineDownloadRegions(for: catalog)
-        quarantines = model.offlinePackQuarantines()
-        storageStatus = await model.storageMenuStatus()
-        let installedCount = installed.count
-        let quarantineCount = quarantines.count
-        MakingTracksLog.startup.info("offline rows refreshed installed=\(installedCount, privacy: .public) quarantines=\(quarantineCount, privacy: .public)")
+    }
+
+    private func applyLocalState(_ localState: OfflineMapsLocalState) {
+        installed = localState.installed
+        pausedRegions = localState.pausedRegions
+        quarantines = localState.quarantines
+        storageStatus = localState.storageStatus
     }
 
     private func quarantineDetail(_ quarantine: OfflinePackQuarantine) -> String {
@@ -4426,6 +4480,19 @@ private final class MapScreenModel {
         }.value
     }
 
+    func offlineMapsLocalState(for catalog: OfflineRegionCatalog) async -> OfflineMapsLocalState {
+        async let installed = installedOfflinePublishVersions(for: catalog)
+        async let pausedRegions = pausedOfflineDownloadRegions(for: catalog)
+        async let storageStatus = storageMenuStatus()
+        let quarantines = offlinePackQuarantines()
+        return await OfflineMapsLocalState(
+            installed: installed,
+            pausedRegions: pausedRegions,
+            quarantines: quarantines,
+            storageStatus: storageStatus
+        )
+    }
+
     func availableOfflinePublishVersions(
         for catalog: OfflineRegionCatalog,
         installedRegions: Set<String>,
@@ -4441,7 +4508,7 @@ private final class MapScreenModel {
                     do {
                         let version = try await ManifestClient.currentPublishVersion(
                             region: regionID,
-                            fetcher: HTTPTileFetcher.offlineForeground(
+                            fetcher: HTTPTileFetcher.offlineAvailabilityProbe(
                                 allowsCellularDownloads: allowsCellularDownloads
                             )
                         )

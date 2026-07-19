@@ -151,6 +151,8 @@ public enum TileError: Error, Equatable {
 
 public final class HTTPTileFetcher: ProgressReportingOfflineRegionFetching, @unchecked Sendable {
     public static let trustedHost = "tiles.making-tracks.app"
+    // Tunable UI freshness cap: offline catalog availability must not block local state while connectivity is absent.
+    private static let availabilityProbeTimeoutSeconds: TimeInterval = 8
     private let delegate: RedirectDelegate
     private let session: URLSession
     let configurationIdentifier: String?
@@ -161,6 +163,17 @@ public final class HTTPTileFetcher: ProgressReportingOfflineRegionFetching, @unc
 
     public static func offlineForeground(allowsCellularDownloads: Bool = false) -> HTTPTileFetcher {
         HTTPTileFetcher(configuration: OfflineDownloadSession.foregroundConfiguration(allowsCellularDownloads: allowsCellularDownloads))
+    }
+
+    public static func offlineAvailabilityProbe(allowsCellularDownloads: Bool = false) -> HTTPTileFetcher {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = false
+        configuration.timeoutIntervalForRequest = availabilityProbeTimeoutSeconds
+        configuration.timeoutIntervalForResource = availabilityProbeTimeoutSeconds
+        configuration.allowsExpensiveNetworkAccess = allowsCellularDownloads
+        configuration.allowsConstrainedNetworkAccess = allowsCellularDownloads
+        OfflineDownloadSession.harden(configuration)
+        return HTTPTileFetcher(configuration: configuration)
     }
 
     public static func offlineBackground(identifier: String, allowsCellularDownloads: Bool = false) -> HTTPTileFetcher {
@@ -2105,7 +2118,7 @@ public enum OfflineDownloadSession {
         return configuration
     }
 
-    private static func harden(_ configuration: URLSessionConfiguration) {
+    static func harden(_ configuration: URLSessionConfiguration) {
         configuration.httpAdditionalHeaders = nil
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false

@@ -748,6 +748,59 @@ final class AppShellTests: XCTestCase {
         XCTAssertTrue(updatedRows.first { $0.zone.id == "malaysia" }?.allowsDelete == true)
     }
 
+    @MainActor
+    func testOfflineMapsRefreshPublishesLocalRowsBeforeAvailabilityCompletes() async {
+        let catalog = OfflineRegionCatalog.debugFixture
+        let localApplied = expectation(description: "local offline map rows applied")
+        var observedRows: [OfflineRegionCatalogRow] = []
+
+        let availabilityTask = await OfflineMapsRefreshCoordinator.refresh(
+            loadLocalState: {
+                OfflineMapsLocalState(
+                    installed: [
+                        "uk": "20260718T000000Z",
+                        "uk_london": "20260717T000000Z",
+                    ],
+                    pausedRegions: ["malaysia"],
+                    quarantines: [
+                        OfflinePackQuarantine(
+                            region: "uk_london",
+                            publishVersion: "20260717T000000Z",
+                            coordinates: [TileCoordinate(z: 10, x: 511, y: 340)]
+                        ),
+                    ],
+                    storageStatus: .ready(totalBytes: 1_024, regions: [], failedRegions: [])
+                )
+            },
+            loadAvailableVersions: { _ in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(10))
+                }
+                return [:]
+            },
+            applyLocalState: { localState in
+                observedRows = catalog.rows(
+                    installed: localState.installed,
+                    availablePublishVersions: [:],
+                    activeProgress: nil,
+                    pausedRegions: localState.pausedRegions,
+                    quarantines: localState.quarantines
+                )
+                localApplied.fulfill()
+            },
+            applyAvailableVersions: { _, _ in
+                XCTFail("availability fetch must not finish in this test")
+            }
+        )
+        defer { availabilityTask.cancel() }
+
+        await fulfillment(of: [localApplied], timeout: 1)
+
+        XCTAssertEqual(observedRows.first { $0.zone.id == "uk" }?.state, .installed(publishVersion: "20260718T000000Z"))
+        XCTAssertEqual(observedRows.first { $0.zone.id == "uk_london" }?.state, .unavailable)
+        XCTAssertEqual(observedRows.first { $0.zone.id == "malaysia" }?.state, .paused(OfflineDownloadProgress(region: "malaysia", fractionComplete: 0)))
+    }
+
     func testOfflineRegionRowsSurfacePausedProgressSeparatelyFromActiveProgress() {
         let catalog = OfflineRegionCatalog.debugFixture
         let paused = OfflineDownloadProgress(
