@@ -42,6 +42,26 @@ Rule: `AGENTS.md` → **Disk hygiene (mandatory)**, both laws.
 
 ---
 
+## Poisoned simulator state looked like branch failures
+
+**2026-07-19.** Several iOS branches saw batches of UI tests fail with `Test crashed with signal kill`.
+The failures moved between tests, and isolated reruns alternated between accessibility snapshot errors and
+signal kills. A clean `origin/ios` baseline reproduced the same failure on the designated simulator, while
+the same baseline and same test passed on a freshly-created simulator of the same device type/runtime.
+
+The actual kill signature was not an app crash, jetsam, or watchdog: no fresh `.ips` appeared, and simulator
+unified logs showed `SIGTERM(15)` sent by `xcodebuild`. Erasing the single designated simulator under the
+fleet lock restored the baseline repro and the blocked app gate.
+
+The same response window exposed a second failure mode: two agents independently used the retired
+`/tmp/agent-ios-sim.lock` path while the canonical `/private/tmp/making-tracks-ios-tests.lock` was empty.
+That made the device appear free to any agent using the correct script. Muscle memory beat the written law;
+the script and explicit lock-holder checks are the durable carrier.
+
+Rule: `AGENTS.md` → **iOS simulator**, and `docs/process/ios-simulator.md` → **Device poisoning**.
+
+---
+
 ## Dead worktrees accumulated 25 G
 
 **2026-07-18.** Merged branches' worktrees were left in `.worktrees/` for a later sweep. They reached 25 G on

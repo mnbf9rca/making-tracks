@@ -28,6 +28,12 @@ Boot with `xcrun simctl bootstatus "$UDID" -b` — idempotent and blocking. **Do
 scripts**; it returns before the device is usable.
 
 The fleet lock is `/private/tmp/making-tracks-ios-tests.lock`. `flock` is at `/opt/homebrew/bin/flock`.
+The retired lock path `/tmp/agent-ios-sim.lock` does **not** serialize fleet work; do not use it. If there is
+any doubt about who holds the simulator, check the canonical lock directly before starting work:
+
+```bash
+lsof /private/tmp/making-tracks-ios-tests.lock
+```
 
 Add a second simulator only if lock waits become a *measured* bottleneck. One simulator plus `flock` is the
 policy.
@@ -117,7 +123,54 @@ xcrun simctl --set testing list
 
 ---
 
-## 7. Weekly cleanup
+## 7. Device poisoning
+
+A simulator can become poisoned even when the app is correct. The known signature is:
+
+- app or UI test failures report `Test crashed with signal kill`
+- no fresh app `.ips` crash report appears under `~/Library/Logs/DiagnosticReports`
+- simulator unified logs show `launchd_sim` / RunningBoard app exits as `SIGTERM(15)` sent by `xcodebuild`
+- there is no jetsam, watchdog / `0x8BADF00D`, or app assertion/crash evidence
+- the same clean-baseline test passes on a freshly-created simulator of the same device type/runtime
+
+Do not bisect code until the environment axis is isolated. The discriminator is a same-baseline, same-test
+run on a temporary fresh device:
+
+```bash
+flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
+  TMP_UDID=$(xcrun simctl create mt-poison-check "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-26-2)
+  trap "xcrun simctl delete \"$TMP_UDID\"" EXIT
+  xcrun simctl bootstatus "$TMP_UDID" -b
+  xcodebuild \
+    -project ios/App/MakingTracks.xcodeproj \
+    -scheme MakingTracks \
+    -destination "platform=iOS Simulator,id=$TMP_UDID" \
+    -parallel-testing-enabled NO \
+    -disable-concurrent-destination-testing \
+    -only-testing:<target>/<suite>/<test> \
+    test
+'
+```
+
+If the temporary device passes and the designated device fails with the signature above, repair the designated
+device under the same canonical lock:
+
+```bash
+flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
+  UDID=C4A64D49-24A2-4429-B6E2-AD9A14142A99
+  xcrun simctl shutdown "$UDID" || true
+  xcrun simctl erase "$UDID"
+  xcrun simctl bootstatus "$UDID" -b
+'
+```
+
+Then rerun the original repro on the designated device before releasing the lock or starting a full gate.
+Heavy multi-suite days may warrant a scheduled single-device erase under the lock. Never erase by symptom
+alone: collect the kill signature and run the fresh-device discriminator first.
+
+---
+
+## 8. Weekly cleanup
 
 Takes the fleet lock, so cleanup cannot race an active run:
 
