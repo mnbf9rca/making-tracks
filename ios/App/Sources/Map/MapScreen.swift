@@ -36,6 +36,7 @@ struct OfflineRegionCatalogZone: Identifiable, Hashable, Sendable {
         }
         return "\(Int((Double(bytes) / 1_000_000.0).rounded())) MB"
     }
+
 }
 
 struct OfflineRegionCatalog: Sendable, Equatable {
@@ -349,6 +350,7 @@ struct ViewportCameraRequest: Sendable, Equatable {
 
 enum MenuDestination: Hashable {
     case lists
+    case tracks
     case offlineMaps
     case settings
     case about
@@ -405,6 +407,17 @@ struct ListsCopy {
             return "you've been to \(visited) of these · all seen"
         }
         return "you've been to \(visited) of these · \(remaining) to go"
+    }
+}
+
+struct TracksCopy {
+    static func summary(visible: Int, total: Int, lovedOnly: Bool) -> String {
+        guard total > 0 else { return "No visits yet" }
+        let noun = visible == 1 ? "visit" : "visits"
+        let prefix = lovedOnly ? "\(visible) \(noun) for loved places" : "\(visible) \(noun)"
+        let hidden = max(total - visible, 0)
+        guard hidden > 0 else { return prefix }
+        return "\(prefix) · \(hidden) hidden by filter"
     }
 }
 
@@ -541,6 +554,11 @@ enum MapEmptyRegionSurface: Equatable {
 extension AppShellModel {
     func openListsDeepLink() {
         deepLinkPath = .lists
+        isMenuPresented = true
+    }
+
+    func openTracksDeepLink() {
+        deepLinkPath = .tracks
         isMenuPresented = true
     }
 
@@ -2441,6 +2459,8 @@ private struct AppMenuSheet: View {
                 onListRenamed: onListRenamed,
                 onListDeleted: onListDeleted
             ))
+        case .tracks:
+            destinationWithDone(TracksView(model: model))
         case .offlineMaps:
 #if DEBUG
             destinationWithDone(OfflineMapsView(
@@ -2493,6 +2513,7 @@ private struct AppMenuSheet: View {
 
 private struct AppMenuRootView: View {
     @Binding var path: [MenuDestination]
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         List {
@@ -2503,6 +2524,14 @@ private struct AppMenuRootView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("menu.row.lists")
+
+            Button {
+                path.append(.tracks)
+            } label: {
+                menuRow(title: "Tracks", subtitle: "Places you've seen", systemImage: "clock.arrow.circlepath")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("menu.row.tracks")
 
             Button {
                 path.append(.offlineMaps)
@@ -2539,14 +2568,145 @@ private struct AppMenuRootView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.body)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .contentShape(Rectangle())
         .foregroundStyle(.primary)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(dynamicTypeSize.isAccessibilitySize ? subtitle : "")
+    }
+}
+
+private struct TracksView: View {
+    let model: MapScreenModel?
+
+    @State private var visits: [TrackVisit] = []
+    @State private var lovedOnly = false
+    @State private var actionError: String?
+
+    private var visibleVisits: [TrackVisit] {
+        TracksVisitFilter.visibleVisits(visits, lovedOnly: lovedOnly)
+    }
+
+    var body: some View {
+        List {
+            Section {
+                Toggle(isOn: $lovedOnly) {
+                    Label("Show loved only", systemImage: lovedOnly ? "heart.fill" : "heart")
+                }
+                .accessibilityIdentifier("tracks.filter.loved")
+
+                Text(verbatim: TracksCopy.summary(
+                    visible: visibleVisits.count,
+                    total: visits.count,
+                    lovedOnly: lovedOnly
+                ))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("tracks.summary")
+
+                if let actionError {
+                    Label(actionError, systemImage: "exclamationmark.triangle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .accessibilityIdentifier("tracks.error")
+                }
+            }
+
+            Section {
+                if visibleVisits.isEmpty {
+                    ContentUnavailableView(
+                        lovedOnly ? "No loved visits yet" : "No visits yet",
+                        systemImage: lovedOnly ? "heart.slash" : "point.topleft.down.curvedto.point.bottomright.up"
+                    )
+                } else {
+                    ForEach(visibleVisits) { visit in
+                        trackVisitRow(visit)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Tracks")
+        .task { await reload() }
+        .refreshable { await reload() }
+        .toolbar {
+            Button {
+                Task { await reload() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .accessibilityLabel("Refresh tracks")
+        }
+    }
+
+    private func trackVisitRow(_ visit: TrackVisit) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "mappin.circle.fill")
+                .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: visit.name)
+                    .font(.body)
+                Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitedAt(visit))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .layoutPriority(1)
+            Spacer()
+            Button {
+                Task { await setLoved(visit) }
+            } label: {
+                Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
+            }
+            .buttonStyle(.bordered)
+            .fixedSize()
+            .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
+            .accessibilityIdentifier("tracks.row.loved.\(visit.id)")
+        }
+        .frame(minHeight: 44, alignment: .leading)
+        .accessibilityIdentifier("tracks.row.\(visit.id)")
+    }
+
+    @MainActor
+    private func reload() async {
+        guard let model else { return }
+        visits = await model.trackVisits()
+    }
+
+    @MainActor
+    private func setLoved(_ visit: TrackVisit) async {
+        guard let model else { return }
+        do {
+            try await model.setVisitLoved(visitID: visit.id, loved: visit.verdict != .loved)
+            actionError = nil
+            await reload()
+        } catch {
+            actionError = "Could not update that visit."
+        }
+    }
+
+    private func categoryLabel(_ raw: String) -> String {
+        raw.split(separator: "_")
+            .map { part in
+                guard let first = part.first else { return "" }
+                return first.uppercased() + part.dropFirst()
+            }
+            .joined(separator: " ")
+    }
+
+    private func formattedVisitedAt(_ visit: TrackVisit) -> String {
+        visit.visitedAt.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private func lovedButtonAccessibilityLabel(for visit: TrackVisit) -> String {
+        let action = visit.verdict == .loved ? "Remove loved from" : "Mark loved for"
+        return "\(action) \(visit.name), \(formattedVisitedAt(visit))"
     }
 }
 
@@ -4438,6 +4598,16 @@ enum ListMapPinAccessibilityNames {
     }
 }
 
+enum TracksVisitFilter {
+    static func visibleVisits(_ visits: [TrackVisit], lovedOnly: Bool) -> [TrackVisit] {
+        guard lovedOnly else { return visits }
+        let lovedPlaceIDs = Set(visits.compactMap { visit in
+            visit.verdict == .loved ? visit.placeID : nil
+        })
+        return visits.filter { lovedPlaceIDs.contains($0.placeID) }
+    }
+}
+
 @MainActor
 private final class MapScreenModel {
     private let database: AppDatabase
@@ -4922,6 +5092,13 @@ private final class MapScreenModel {
         return ListMapPinAccessibilityNames.names(from: items, visiblePlaceIDs: visiblePlaceIDs)
     }
 
+    func trackVisits() async -> [TrackVisit] {
+        let db = database
+        return await Task.detached {
+            (try? db.trackVisits()) ?? []
+        }.value
+    }
+
     func createList(named name: String) async throws -> PlaceList {
         let db = database
         return try await Task.detached {
@@ -5014,6 +5191,10 @@ private final class MapScreenModel {
 
     func setLoved(placeID: String, loved: Bool) async throws {
         try coreLoop.setLoved(placeID: placeID, loved)
+    }
+
+    func setVisitLoved(visitID: Int64, loved: Bool) async throws {
+        try coreLoop.setVisitVerdict(id: visitID, loved ? .loved : nil)
     }
 
     func setHidden(placeID: String, hidden: Bool) async throws {

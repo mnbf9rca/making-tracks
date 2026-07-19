@@ -279,6 +279,29 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForSourceFeatureCount(0, in: app))
     }
 
+    func testTracksMenuShowsVisitedRowsAndLovedFilter() {
+        let app = launch(reset: true, pinDiagnostics: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+        openFixtureCard(in: map, app: app)
+
+        app.buttons["place-card.visited"].tap()
+        XCTAssertTrue(app.buttons["place-card.close"].waitForExistence(timeout: 5))
+        app.buttons["place-card.close"].tap()
+
+        openAppMenu(in: app)
+        XCTAssertTrue(app.buttons["menu.row.tracks"].waitForExistence(timeout: 5))
+        app.buttons["menu.row.tracks"].tap()
+
+        XCTAssertTrue(app.staticTexts["Tracks"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.switches["tracks.filter.loved"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["tracks.summary"].label, "1 visit")
+        XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifierPrefix: "tracks.row.").firstMatch.exists)
+    }
+
     func testHiddenToastAutoDismissesWithoutUnhidingPlace() {
         let app = launch(reset: true)
 

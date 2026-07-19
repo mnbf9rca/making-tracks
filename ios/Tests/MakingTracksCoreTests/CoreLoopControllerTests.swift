@@ -175,6 +175,29 @@ final class CoreLoopControllerTests: XCTestCase {
         XCTAssertEqual(removedChange, ["p_custom_membership"])
         XCTAssertEqual(try db.listItems(listID: list.id!).map(\.placeID), [])
     }
+
+    func testRowScopedVisitVerdictEmitsChangedPlaceID() async throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let controller = CoreLoopController(database: db)
+        var changes = controller.changes.makeAsyncIterator()
+        let place = try makePlace("p_row_emit")
+        let first = try db.recordVisit(place)
+        let second = try db.recordVisit(place)
+
+        try controller.setVisitVerdict(id: first, .loved)
+
+        let lovedChange = await changes.next()
+        XCTAssertEqual(lovedChange, ["p_row_emit"])
+        let visits = try await db.dbQueue.read {
+            try Visit.fetchAll($0, sql: "SELECT * FROM visits WHERE place_id = ? ORDER BY id", arguments: ["p_row_emit"])
+        }
+        XCTAssertEqual(visits.map(\.verdict), [.loved, nil])
+
+        try controller.setVisitVerdict(id: second, .loved)
+
+        let secondLovedChange = await changes.next()
+        XCTAssertEqual(secondLovedChange, ["p_row_emit"])
+    }
 }
 
 private struct StubTileResolver: TileResolving {

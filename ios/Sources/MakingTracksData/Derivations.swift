@@ -86,6 +86,23 @@ extension AppDatabase {
         }
     }
 
+    public func trackVisits() throws -> [TrackVisit] {
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT v.id, v.place_id, v.visited_at, v.verdict,
+                           s.name, s.category, s.tier
+                    FROM visits v
+                    JOIN place_snapshots s ON s.place_id = v.place_id
+                    WHERE v.place_id NOT IN (SELECT place_id FROM hidden_places)
+                    ORDER BY v.visited_at ASC, v.id ASC
+                    """
+            )
+            return rows.compactMap(Self.trackVisitRow)
+        }
+    }
+
     private static func listSnapshotRow(_ row: Row) -> ListSnapshotRow? {
         let placeID: String = row["place_id"]
         let name: String = row["name"]
@@ -106,6 +123,29 @@ extension AppDatabase {
             name: safeListSnapshotText(name, max: PlaceRef.maxNameLength) ?? "Unnamed place",
             lat: lat,
             lon: lon,
+            category: safeListSnapshotText(category, max: PlaceRef.maxCategoryLength) ?? "place",
+            tier: tier
+        )
+    }
+
+    private static func trackVisitRow(_ row: Row) -> TrackVisit? {
+        let id: Int64 = row["id"]
+        let placeID: String = row["place_id"]
+        let visitedAt: Date = row["visited_at"]
+        let rawVerdict: String? = row["verdict"]
+        let name: String = row["name"]
+        let category: String = row["category"]
+        let tier: Int = row["tier"]
+        guard placeID.count <= PlaceRef.maxPlaceIDLength,
+              (1...4).contains(tier)
+        else { return nil }
+
+        return TrackVisit(
+            id: id,
+            placeID: placeID,
+            visitedAt: visitedAt,
+            verdict: rawVerdict.flatMap(Verdict.init(rawValue:)),
+            name: safeListSnapshotText(name, max: PlaceRef.maxNameLength) ?? "Unnamed place",
             category: safeListSnapshotText(category, max: PlaceRef.maxCategoryLength) ?? "place",
             tier: tier
         )

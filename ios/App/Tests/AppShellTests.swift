@@ -47,6 +47,15 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(shell.deepLinkPath, .lists)
     }
 
+    func testAppShellModelCanRouteTracksDeepLink() {
+        let shell = AppShellModel()
+
+        shell.openTracksDeepLink()
+
+        XCTAssertTrue(shell.isMenuPresented)
+        XCTAssertEqual(shell.deepLinkPath, .tracks)
+    }
+
     func testListProgressCopyLeadsWithVisitedAndRemainingCounts() {
         XCTAssertEqual(
             ListsCopy.progress(visited: 3, total: 10),
@@ -54,6 +63,51 @@ final class AppShellTests: XCTestCase {
         )
         XCTAssertEqual(ListsCopy.progress(visited: 0, total: 0), "No places yet")
         XCTAssertEqual(ListsCopy.progress(visited: 2, total: 2), "you've been to 2 of these · all seen")
+    }
+
+    func testTracksCopySummarizesVisibleVisitCounts() {
+        XCTAssertEqual(TracksCopy.summary(visible: 0, total: 0, lovedOnly: false), "No visits yet")
+        XCTAssertEqual(TracksCopy.summary(visible: 2, total: 2, lovedOnly: false), "2 visits")
+        XCTAssertEqual(TracksCopy.summary(visible: 1, total: 3, lovedOnly: true), "1 visit for loved places · 2 hidden by filter")
+    }
+
+    func testTracksVisitFilterKeepsLovedRowsByPerPlaceLovedState() {
+        let plain = TrackVisit(
+            id: 1,
+            placeID: "plain",
+            visitedAt: Date(timeIntervalSince1970: 1),
+            verdict: nil,
+            name: "Plain",
+            category: "history",
+            tier: 2
+        )
+        let lovedOlder = TrackVisit(
+            id: 2,
+            placeID: "loved",
+            visitedAt: Date(timeIntervalSince1970: 2),
+            verdict: .loved,
+            name: "Loved",
+            category: "history",
+            tier: 2
+        )
+        let lovedNewerPlain = TrackVisit(
+            id: 3,
+            placeID: "loved",
+            visitedAt: Date(timeIntervalSince1970: 3),
+            verdict: nil,
+            name: "Loved",
+            category: "history",
+            tier: 2
+        )
+
+        XCTAssertEqual(
+            TracksVisitFilter.visibleVisits([plain, lovedOlder, lovedNewerPlain], lovedOnly: false).map(\.id),
+            [1, 2, 3]
+        )
+        XCTAssertEqual(
+            TracksVisitFilter.visibleVisits([plain, lovedOlder, lovedNewerPlain], lovedOnly: true).map(\.id),
+            [2, 3]
+        )
     }
 
     func testUpdateRequiredSurfaceBlocksOnlyFreshTooOldReaderState() throws {

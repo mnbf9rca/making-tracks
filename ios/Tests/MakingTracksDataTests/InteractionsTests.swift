@@ -250,6 +250,29 @@ final class InteractionsTests: XCTestCase {
         XCTAssertEqual(try db.viewportState(["p_loved"])["p_loved"], PinState(saved: false, visit: .visited))
     }
 
+    func testSetVisitVerdictOnlyChangesTheRequestedVisitRow() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_row_loved")
+        let older = try db.recordVisit(place)
+        let newer = try db.recordVisit(place)
+
+        try db.setVisitVerdict(id: older, .loved)
+
+        var visits = try db.dbQueue.read {
+            try Visit.fetchAll($0, sql: "SELECT * FROM visits WHERE place_id = ? ORDER BY id", arguments: ["p_row_loved"])
+        }
+        XCTAssertEqual(visits.map(\.verdict), [.loved, nil])
+        XCTAssertEqual(try db.viewportState(["p_row_loved"])["p_row_loved"], PinState(saved: false, visit: .loved))
+
+        try db.setVisitVerdict(id: older, nil)
+        try db.setVisitVerdict(id: newer, .loved)
+
+        visits = try db.dbQueue.read {
+            try Visit.fetchAll($0, sql: "SELECT * FROM visits WHERE place_id = ? ORDER BY id", arguments: ["p_row_loved"])
+        }
+        XCTAssertEqual(visits.map(\.verdict), [nil, .loved])
+    }
+
     func testDeleteVisitsClearsAllVisitStateForPlaceButKeepsSavedAxis() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         let place = try ref("p_unvisit")
