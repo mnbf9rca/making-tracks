@@ -1,283 +1,87 @@
 # WP-CARD-LAYOUT — place card
 
-## 1. The spec, unchanged
+**Status: DESIGN. Visual pass, for Rob's read.** Supersedes the first attempt, whose premise he rejected.
 
-Rob, issue #171:
+## 1. The model
+
+Rob's hierarchy, from #171:
 
 > "prominent name / type / description / photo / lists; attribution small at bottom + outbound link."
 
-That order is still right. This design keeps all six elements in that order and does not move any of them.
+Rob's interaction model, 2026-07-19:
 
-What the research changed is the diagnosis. The commission assumed photos, descriptions, chips and verdicts are now competing for vertical space. Two of those four are not competing today, and the thing that is actually broken is something else.
+> "whats wrong with scrolling the card? Get a proper visual/IA design done first but seems reasonable? The toast shows the photo, a taster etc then you slide up to full screen then scroll if needed."
 
-## 2. Lead finding: the core loop is below the fold
+Three states: **peek → slide up → scroll**. Scrolling is not a defect. The first draft of this design treated it as one and argued the core loop must never be scrolled to. That was a product judgement Rob had not made, and it is withdrawn.
 
-**The description does not render in production.** The card reads `card.blurb` (MapScreen.swift:3948). The publisher emits `{place_id, name, lat, lon, category, tier, score, source_refs}` and no blurb key. The descriptions sidecar is published and contracted but the app does not consume it; WP-BLURB-B is not commissioned. The only blurbs in existence are the two UI-test fixtures at MapScreen.swift:2128 and 2141. So the description block is invisible to every real user. Anything this design does about description length is contingency for work that has not been ordered.
+## 2. The wireframes
 
-**The real failure is reachability, not competition.** At AXXXL the UI test has to call `scrollToExistence` for Save, Seen and Love. The card already hoists actions above the description at accessibility sizes (MapScreen.swift:3945) and sets the detent to `.large` (line 3980), and the primary actions are *still* off screen. The one thing a tourist opens this card to do needs a scroll.
+### Default text size
 
-**The hoist bought a second hierarchy and did not fix the problem.** `actionButtons(card)` is called twice: at position 4 when `dynamicTypeSize.isAccessibilitySize`, at position 9 otherwise (lines 3945 and 3962). There are two element orders shipping today. Rob specified one.
+![Place card at default text size](../../design/card/card-default.png)
 
-Those two facts set the whole design. Actions are not content, they were never in Rob's list, and they are the only thing on the card that must never require a scroll. So they leave the scroll flow. Everything else keeps Rob's order, at every text size, with no branch.
+### Accessibility text size (AXXXL)
 
-## 3. Mockups
+![Place card at accessibility text size](../../design/card/card-ax.png)
 
-### Default text size, iPhone SE (375×667), `.medium` detent
+Sources are committed beside the images (`docs/design/card/wf-default.html`, `wf-ax.html`) so they can be re-rendered and edited rather than redrawn.
 
-```
-┌──────────────────────────────────────┐
-│           ▁▁▁▁▁▁▁▁                   │  drag indicator (NEW)
-│                          ⋯    Close  │  overlay, not a spine row
-│                                      │
-│  Ghost Sign                          │  1  name  .title2 semibold
-│  ⛩  Attraction                       │  2  type
-│                                      │
-│  A hand-painted sign still visible   │  3  description
-│  above the old shopfront.            │     (renders for nobody today)
-│                                      │
-│  ┌────────────────────────────────┐  │  4  photo
-│  │                                │  │
-│  │            photo               │  │
-├──╫────────────────────────────────╫──┤ ◀── fold
-│  └────────────────────────────────┘  │
-│                                      │
-│  ( Date night )   ( Weekend )        │  5  list chips
-│                                      │
-│  Photo: J. Bloggs · CC BY-SA 4.0 ↗   │  6  attribution, licence is a Link
-│░░░░░░░ scroll-edge fade ░░░░░░░░░░░░░│
-├══════════════════════════════════════┤
-│   [  Seen  ]  [ Save ]  [  Love  ]   │  PINNED — outside the ScrollView
-└──────────────────────────────────────┘
-                                          map interactive behind sheet
-```
+## 3. What the pictures show
 
-The fold line is where the `.medium` detent clips scroll content. The pinned bar sits below it on screen and is **not** scroll content: it is visible at every scroll offset, always.
+**Peek carries the decision.** Name, type, photo, one taster line. On the evidence of the default-size render, that is enough to decide "worth a look" without expanding. The map stays usable behind it.
 
-`⋯` holds Add to list and Hide/Unhide.
+**Slid up, with a short description, the sheet is mostly empty.** Panel 2 at default size is honest about this: the content does not fill the height. That is an argument for the peek doing the work, not against the model. It also means the slide-up earns its place only when there is something to reveal — which is the case once full descriptions ship.
 
-### AXXXL, iPhone SE, `.large` detent
+**At accessibility sizes the photo does not fit in peek.** Name and type alone consume the peek height. The photo waits for the slide-up. That is a real consequence of Rob's model at large text and it should be a conscious choice, not a surprise.
 
-```
-┌──────────────────────────────────────┐
-│           ▁▁▁▁▁▁▁▁                   │
-│                          ⋯    Close  │
-│                                      │
-│  Ghost                               │  1  name wraps
-│  Sign                                │
-│                                      │
-│  ⛩  Attraction                       │  2  type
-│                                      │
-│  A hand-painted                      │  3  description, NOT clamped
-│  sign still visible                  │     at accessibility sizes
-│  above the old                       │
-├──────────────────────────────────────┤ ◀── fold
-│  shopfront.                          │
-│                                      │
-│  ┌────────────────────────────────┐  │  4  photo, grows with text,
-│  │            photo               │  │     capped as a fraction of
-│  └────────────────────────────────┘  │     the content viewport
-│                                      │
-│  ( Date night )                      │  5  chips, one per row
-│  ( Weekend )                         │
-│                                      │
-│  Photo: J. Bloggs ·                  │  6  attribution wraps
-│  CC BY-SA 4.0 ↗                      │
-│░░░░░░░ scroll-edge fade ░░░░░░░░░░░░░│
-├══════════════════════════════════════┤
-│  [           Seen            ]       │  PINNED, FlowLayout wraps
-│  [           Save            ]       │  to as many rows as needed
-│  [           Love            ]       │  no nested scroll, ever
-└──────────────────────────────────────┘
-```
+**Actions are drawn pinned in all four proposal panels.** That is one option, shown so it can be compared, not a conclusion. §5 prices it.
 
-Same content order as default size. Nothing is hoisted, because nothing needs to be. All three primary actions are hittable at scroll offset zero.
+## 4. What the pictures cannot settle
 
-### Before Seen is tapped
+Panel 3 of the accessibility render approximates today's card. **It is not a measurement**, and in the wireframe the actions look reachable — which contradicts the UI test, where `scrollToExistence` is required for Save, Seen and Love at AXXXL.
 
-```
-│   [  Seen  ]  [ Save ]  [░░░░░░░░]   │  Love's slot is reserved and
-                             ▲           empty. Tapping Seen fills the
-                             │           gap. The row never re-flows
-                    reserved, not drawn  under the thumb.
-```
+One of those is wrong and a mockup cannot say which. **Measure on a device before any decision that depends on it.** The first draft of this design built its entire argument on the test evidence without checking it against a rendering, which is how it reached a conclusion Rob rejected.
 
-Every action awaits a DB write and a refetch with no optimistic update. Without a reserved slot, the button under the finger can become a different button between finger-down and write-return.
+## 5. Where the actions live — the open question
 
-## 4. What is recommended
+Rob's list has six elements. Actions are not among them. So their placement is genuinely open, and the wireframes show only one answer.
 
-**Winner: content-first.** Rob's order was right. The execution failed. Fix the execution.
+**A. Pinned below the content** (as drawn). Reachable in every state at every text size by construction. Costs: the bar is always present even when the user is reading; it inverts `chips < actions < attribution` in the order-teeth test; and a `safeAreaInset` bar reads **last** in the VoiceOver tree by default, so without an explicit sort priority the design's own claim is false for VoiceOver users.
 
-1. **Pin the primary actions.** `.safeAreaInset(edge: .bottom)` on the card's ScrollView. This deletes both `isAccessibilitySize` call sites of `actionButtons` and the two-hierarchy problem with them. It also yields the bottom content inset for free, so attribution can still scroll clear of the bar. Actions become unreachable-by-scroll by construction, not by budget.
-2. **Three fixed slots: Seen, Save, Love.** Love's slot is reserved from first render. Seen keeps `.borderedProminent`. Seen is never demoted anywhere, at any size.
-3. **Add to list and Hide move to a `⋯` overflow beside Close.** Five text buttons across 375pt is roughly 65pt per cell; "Add to list" does not fit. Hide is destructive-ish and does not belong under the thumb next to Seen. This costs one extra tap for both actions and is a real Principle 3 regression — see Open choice B.
-4. **The bar uses `FlowLayout`** (already in the codebase at MapScreen.swift:4022, used for chips). It wraps to as many rows as it needs at any text size. Three slots means the AXXXL worst case is three stacked rows. There is no height cap, no demotion rule, and no scroll region inside the bar.
-5. **Close moves to a top-trailing overlay** with a drag indicator. It currently owns a whole row at the top of the reading order (MapScreen.swift:3931-3938) for chrome.
-6. **Attribution's licence becomes a Link.** See §6.
-7. **Photo height stops being a hard-coded 180pt.** See §5.
-8. **Description is not clamped.** The block renders for nobody. Clamping is a contingency to specify when WP-BLURB-B is commissioned, not a shipped affordance sitting on an empty block.
+**B. In the scroll flow, as today.** Preserves the ratified order and the test as written. Costs: the current two-position hoist (position 4 at accessibility sizes, position 9 otherwise) stays, so two element orders continue to ship where Rob specified one.
 
-### Grafted from the runners-up
+**C. In peek only.** Actions live in the peek state, and the slid-up state is for reading. Matches "decide from the toast, expand to read". Costs: a user who expands to read then wants to act must collapse or scroll back.
 
-| Graft | From | Why |
-|---|---|---|
-| Fixed slot count, Love's cell reserved from first render | pinned-actions | Connects "no optimistic update" to "the button under the thumb must not move". Real mis-tap class, cheapest possible fix. |
-| Add to list and Hide out of the primary bar | pinned-actions | Resolves the 65pt-cell problem the winner filed as an open parameter. |
-| Seen is never demoted, at any size | adaptive | Principle 3 and 4 invariant, stated as a rule rather than a preference. |
-| Scroll-edge fade above the bar | pinned-actions | A pinned bar makes a truncated card look complete. The fade says there is more. |
-| `FlowLayout` for the action bar instead of a grid or `ViewThatFits` | two-detent | Deletes the AX layout branch instead of rewriting it. No truncation, no cap parameter, no nested scroll. |
-| Photo height as a scaled metric capped by viewport fraction | adaptive | The fixed 180pt is proportionally tiny at AXXXL. |
-| A test guarding the no-prefetch law | adaptive | Standing law on #171 with nothing enforcing it. |
+**Recommendation: A, conditional on the device measurement in §4.** If the measurement shows today's in-flow actions are reachable at AXXXL, B becomes defensible and the case for A weakens to "one order instead of two".
 
-## 5. Photo
+## 6. Constraints any option must answer
 
-**Correction to the brief.** `PlaceCardPhotoSlot` (MapScreen.swift:4254) already draws a fixed 180pt box with a `ProgressView` while bytes load. Late-arriving *bytes* cause no jump. The live jump is presence-driven: `observeImageChanges()` → `refreshCard()` (lines 4157-4171) replaces `card` and `card.photo` flips nil → non-nil, at which point the whole 180pt block is **inserted** into an open card and everything below it moves.
+Carried from the research pass. These do not depend on which option wins.
 
-Two ways to fix that, and they are Rob's call (Open choice D):
-
-- Reserve the slot at first render whenever the place is known to have a photo record, before bytes exist. Nothing below moves.
-- Animate the insertion and accept a bounded, visible growth.
-
-Note `PlaceCardPhoto.width` and `.height` are `Int?` and nil on the no-image init, so an aspect-derived height needs a default path anyway, and per-place variable height fights the viewport cap. Recommend a single computed height, not per-place aspect.
-
-**Sizing.** Replace the hard 180pt with a height expressed as a scaled metric so it grows with Dynamic Type, clamped to a maximum fraction of the content viewport. Text wins the tie. Values open.
-
-**No photo record.** No slot, no empty box, no apology. Chips move up. That is the offline case today, since photos are not in packs (WP-IMG-B2 not started).
-
-**Standing law.** Fetching stays strictly viewport/card-driven. No launch prefetch, no cache warming. Reserving a slot is layout, not fetching, and must not be allowed to grow into speculative decoding. There is no test guarding this today; this design adds one (§7).
-
-## 6. Attribution
-
-Stays last, stays `.caption2`, stays below the fold at `.medium` on SE. Attribution is a presence obligation. It is satisfied by being present and reachable.
-
-Today `attributionParts` (MapScreen.swift:4241) appends `photo.attribution`, which is `PlaceImageAttribution.displayText`, which ends with `licenseURL.absoluteString` (MakingTracksTiles.swift:1750-1759). A full raw CC URL renders as inert plain text. It is the longest thing on the line, it is unreadable, and tapping it does nothing. VoiceOver reads the URL out character by character.
-
-Proposed: `Photo: J. Bloggs · CC BY-SA 4.0 ↗` where the licence name is a `Link` carrying `licenseURL`. Separator changes from `" / "` to `·` because a slash next to a URL reads as a path. The full string stays in the `accessibilityLabel`. Give the row a real hit area with padding.
-
-**This is not free.** `PlaceCardPhoto` flattens attribution into one `String` (PlaceCardModel.swift:168). Carrying `licenseName` and `licenseURL` through to the card is a Core model change plus a rewrite of `attributionParts`. It is still no new *data*: `licenseURL` is already decoded, already host-allowlisted to creativecommons.org, and already checked against the licence code (MakingTracksTiles.swift:1867-1868).
-
-**Flag for Rob, not a decision this design makes.** `docs/privacy.md:84` says source data is shown as plain text. Making a data-supplied URL tappable is a change to that commitment, even with the existing allowlist. The OSS credits screen already applies an `https` scheme guard to link targets; the same guard applies here. If Rob reads privacy.md:84 as binding, the link does not ship and §6 reduces to shortening the line.
-
-Source names carry no URLs, so Rob's outbound link lands for the photo licence only.
+- **VoiceOver order.** A pinned bar reads last by default. Needs `accessibilitySortPriority`, or the accessibility story contradicts the visual one.
+- **Action completion is silent.** Every tap awaits a DB write with no optimistic update and no announcement. Pinning makes the latency more visible; it does not cause it.
+- **Love appears only after Seen**, so the row grows from three buttons to four. If actions are pinned, reserve Love's slot from first render — otherwise the button under the thumb can change identity between finger-down and write-return.
+- **The photo is a hard 180pt** that does not scale with Dynamic Type, so it shrinks proportionally as text grows. The wireframes draw it scaled; the code does not do this today.
+- **The late-photo jump is block insertion, not byte arrival.** Bytes load into a fixed box with a spinner. The jump happens when `card.photo` flips nil to non-nil and the whole slot appears in an open card.
+- **Attribution has no outbound link.** The licence URL renders as inert plain text. This is the one item of Rob's original spec that never shipped. Making a data-supplied URL tappable touches `privacy.md`'s plain-text commitment and needs his ruling, not a layout sign-off.
+- **List chips are ~26–28pt against a 44pt tap target**, and there is no tap-target rule anywhere in this codebase to point at.
+- **No contrast test exists.** Any coloured text this design adds — the attribution link — is the first place the committed WCAG AA 4.5:1 is visibly on the line.
+- **`altNames` is decoded and never rendered.** Dead data either way.
 
 ## 7. Test delta
 
-### What the order-teeth test forbids today
+Unchanged from the analysis pass, and it only bites if option A wins.
 
-`testPlaceCardOverhaulRendersHierarchyAndHideAction` (UITests/MakingTracksCoreLoopUITests.swift:181) ends with:
+- Pinning inverts `chips < actions < attribution` in `testPlaceCardOverhaulRendersHierarchyAndHideAction`. That is a change to a hierarchy Rob signed off and needs saying, not absorbing.
+- Any move of Hide behind an overflow breaks `hideButton.exists` / `.tap()` in the same test, and turns a one-tap action into two.
+- The order test does not include `place-card.add-to-list` at all. That is how it drifted in unnoticed after #231, and it should be added regardless of which option wins.
 
-```swift
-assertVerticallyOrdered([
-    ("title", title), ("type", typeLabel), ("description", description),
-    ("photo", photo), ("chips", chips), ("actions", saveButton),
-    ("attribution", attribution),
-])
-```
+The six content elements keep their order in every option. Only the actions move.
 
-Strict `minY` ordering across seven elements, adjacent pairs. No two elements may share a baseline. No photo beside the title, no chips inline with the type row.
+## 8. What was withdrawn from the first draft
 
-### What breaks, and needs ratification
+Recorded so it is not re-derived.
 
-**RATIFICATION ITEM 1 — actions leave the ordering assertions.** Pinning puts the bar below attribution in screen coordinates, so `chips < actions < attribution` inverts. This is a change to a hierarchy Rob specified and signed off. It is not an implementation detail.
-
-The case to put: Rob's list has six elements and actions is not one of them. All six keep their exact relative order. The shipped card invented a position for actions, then invented a second one when the first turned out to be unreachable. Removing them from the spine removes the need for both.
-
-Replaced by a **stronger** assertion, not a weaker one: with the card just opened and no scrolling, Save, Seen and (after tapping Seen) Love are hittable, asserted at default size **and** at AXXXL. `scrollToExistence` must not appear. Today's test passes while the core loop is unreachable at AXXXL. The replacement cannot.
-
-**RATIFICATION ITEM 2 — `hideButton.exists` and `hideButton.tap()` break** (test lines 209, 228). Hide is behind the `⋯` overflow. The test must open the menu first. The hidden/undo assertions that follow are unaffected. This is a product change, not just a test change: Hide goes from one tap to two.
-
-**RATIFICATION ITEM 3 — the attribution assertion changes.** `attribution.label.contains("Fixture photo")` (line 218) breaks once the line is a composed element with a Link inside it.
-
-### Remaining teeth, tightened
-
-Six content elements, asserted at **both** text sizes as the same sequence:
-
-```
-title < type < description < photo < chips < attribution
-```
-
-Today the suite cannot assert one order because there is not one. This is a tightening.
-
-### New tests owed
-
-1. **Reachability.** All three primary actions hittable with zero scrolling, at default and AXXXL. Neuter: remove the `safeAreaInset` so actions return to the ScrollView, the AXXXL assertion goes red.
-2. **Bar geometry stability.** Capture the bar frame, tap Seen, wait for the refetch to settle, assert the frame is unchanged. Neuter: restore the conditional Love slot, goes red. Must wait on settled state, not a timeout, or it will flake against the un-optimistic write.
-3. **Close the gap in the teeth.** `place-card.add-to-list` is absent from the current test entirely. That is how it drifted. Add it to the existence assertions in its new home.
-4. **Attribution Link exists and carries the expected URL** (if Open choice E lands).
-5. **Photo slot stability** — frames below the photo do not move between the no-photo and photo-present states (if Open choice D lands as reserve-early).
-6. **No-prefetch guard** — no image fetch is issued before a card is opened. This needs network instrumentation that does not exist in the UITest target. Sizeable, unbudgeted, and the standing law has nothing enforcing it today. Recommend it lands as its own work package rather than riding on this one.
-
-### Not a delta
-
-Close moving to an overlay (not in the teeth). Drag indicator. Attribution shortening. Chip tap-target height. Photo height changes.
-
-## 8. Open choices for Rob
-
-All thresholds and point values stay open. This design does not pick numbers.
-
-**A. Detent set.** Keep `[.medium]` (and `[.large]` at AX), or adopt `[.medium, .large]` with a visible drag indicator.
-*Recommendation: adopt both.* The card is not resizable today, so a user who wants the attribution has no gesture that reveals it and no affordance suggesting the sheet scrolls. Pinning makes the fold permanent unless the user can resize.
-*Tradeoff:* `.presentationBackgroundInteraction` can only stay enabled up through `.medium`, so expanding makes the map inert until the user drags back down. It also reopens a decision already made.
-
-**B. Add to list and Hide behind `⋯`.**
-*Recommendation: yes, as designed.* It is the only way three legible slots fit on a 375pt screen.
-*Tradeoff:* two shipped one-tap actions become two-tap. That is a direct Principle 3 cost. If the answer is "Hide is never buried", the alternatives are dropping Save from the bar instead, or a four-slot bar with icon-plus-text labels — both worse.
-
-**C. Photo height metric and cap.** The base scaled metric and the maximum fraction of content viewport.
-*Recommendation: cap it low enough that name, type and the first lines of description always clear the fold at default size.*
-*Tradeoff:* a smaller photo at default size than today's 180pt. The photo is the tourist's main decide-input.
-
-**D. Late-photo jump.** Reserve the slot before bytes exist, or animate the insertion.
-*Recommendation: reserve.* It is the only option where nothing below the photo moves.
-*Tradeoff:* on a card whose place has no photo record decided later, a reserved box that never fills is worse than no box. Needs a rule for when reservation is triggered.
-
-**E. Attribution Link.** Ship it, or keep plain text per privacy.md:84.
-*Recommendation: ship it, with the existing `https` and host allowlist guards.* It is the one line of #171 that never landed, and it shortens the longest element on the card.
-*Tradeoff:* it is a change to a written privacy commitment and needs a §9-style decision, not a layout sign-off. It is also the card's first coloured text and therefore the first place the committed WCAG AA 4.5:1 is visibly on the line, with no contrast test and no colour tokens behind it.
-
-**F. Chip tap target.** Chips are `Button`s, not labels (MapScreen.swift:4022-4041), roughly 26-28pt tall, all eight invoking the same `showListPicker = true`.
-*Recommendation: give them a 44pt hit area without visually inflating the capsule, and label them so VoiceOver says what activation does.*
-*Tradeoff:* there is no minimum-tap-target rule anywhere in this codebase. Adopting 44pt means writing the rule down and testing it, which is scope. Doing nothing ships eight sub-minimum controls that all do the same thing.
-
-**G. VoiceOver order of the pinned bar.** A `safeAreaInset` bar reads **last** in the accessibility tree by default. A VoiceOver user would swipe past description, photo, chips and attribution before reaching Seen.
-*Recommendation: set `accessibilitySortPriority` so traversal is name, type, actions, then content.* Without this the design's central claim is untrue for the users it most affects.
-*Tradeoff:* traversal order then differs from visual order. That is the correct trade here, but it is a choice.
-
-**H. Action completion feedback.** Every tap awaits a DB write and a refetch. Nothing announces. A VoiceOver user taps Seen and hears nothing, then a Love button appears in the tree unannounced.
-*Recommendation: add an announcement on completion.* Small, and pinning makes the latency more conspicuous because the bar is permanently on screen.
-*Tradeoff:* the real fix is optimistic update, which is out of scope here and which this design raises the value of.
-
-**I. Description clamp.** Specify one now, or wait for WP-BLURB-B.
-*Recommendation: wait.* Clamping a block that renders for nobody, validated against two fixtures, is speculative. Specify the clamp when a real 500-char excerpt exists to test it against.
-*Tradeoff:* whoever lands WP-BLURB-B inherits the fold problem.
-
-**J. altNames.** Decoded, capped at 8, never rendered (PlaceCardModel.swift:12).
-*Recommendation: delete it from the model, or render one truncated line under the name.* Either is fine. Dead decoded data is not.
-*Tradeoff:* rendering it adds a tooth between title and type and pushes everything down. Deleting it is a Core change for no user-visible gain.
-
-## 9. Alternatives considered
-
-Four layouts were designed and judged against four lenses (core loop, accessibility, engineering, fidelity to #171), 10 points each.
-
-| Layout | Score | Why it lost |
-|---|---|---|
-| **content-first** (recommended) | 29 | Won. Its own weak points — the 5-cell bar geometry and the description clamp — are the two things this document changed. |
-| pinned-actions | 27.5 | Same pinned bar, but it spent design effort on a photo loader and an attribution model that do not exist in the app layer, and it proposed making Love imply Seen to keep the row geometry stable. That is a layout constraint rewriting a product rule. Its AXXXL fallback was a scroll region inside the pinned bar, which reintroduces the exact failure the bar exists to remove. |
-| adaptive (density tiers) | 25.5 | A density tier derived from measured content height, inside a sheet whose height is animated by a detent drag, with the pinned bar's own height inside the measurement. That cycle has no fixed point. It also demoted actions to an overflow at AXXXL only, which is a capability cut aimed at large-text users. |
-| two-detent (progressive disclosure) | 18 | Its discovery affordance was a clipped first line of description. There is no description in production, so the compact detent ends at a clean edge that reads as "that is all there is", with the photo hidden behind a mode nobody knows exists. Its accessibility argument also rested on chips being labels; they are Buttons. |
-
-Ideas taken from the losers are listed in §4.
-
-## 10. Pre-existing defects
-
-| Defect | Fixed here? |
-|---|---|
-| No outbound attribution link (#171 spec item that never shipped) | **Yes**, subject to Open choice E. Needs a Core model change; no new data. |
-| Chips below 44pt tap target, and all eight fire the same action | **Open choice F.** There is no tap-target rule in this codebase to point at. |
-| altNames decoded and never rendered | **Open choice J.** Not fixed by default. |
-| Raw placeID rendered on the failure state (MapScreen.swift:3969-3972) | **No.** Out of scope. It is a debug affordance in a user-facing string and should be its own ticket. |
-| No WCAG AA 4.5:1 contrast test, no colour tokens | **No.** This design adds the card's first coloured text and therefore makes the gap worse. Flagged, not solved. |
-| Late-photo layout jump | **Yes**, subject to Open choice D. Note the brief's diagnosis was wrong — the jump is block insertion, not byte arrival. |
-| Order test missing the Add-to-list button | **Yes.** Added to the existence assertions in §7. |
-| No test guarding the no-prefetch law | **Recommended, not committed.** It needs network instrumentation the UITest target does not have. Should be its own work package. |
-| Two element orders shipping at once | **Yes.** Both `isAccessibilitySize` branches around `actionButtons` are deleted. |
-| Primary actions below the fold at AXXXL | **Yes.** This is the point of the design. |
+- **"The core loop is below the fold, therefore ceremony."** The observation stands; the verdict does not. Principle 3 says one tap, no ceremony. It does not say zero scroll.
+- **The pinned bar as the thesis.** Demoted to one option among three.
+- **The panel's ranking.** The four-layout analysis scored progressive disclosure last, at 18/40 — and progressive disclosure is Rob's model. The judges' main objection was that the compact state ends at a clean edge because no description renders in production. That was true on the day and is expiring: blurb emission is now commissioned. The brief fed the panel a temporary constraint without marking it temporary, so the panel optimised against a data gap. The analysis is retained in the PR history as evidence, not as the deliverable.
