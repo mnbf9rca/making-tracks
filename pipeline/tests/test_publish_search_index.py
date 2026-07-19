@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sqlite3
 
@@ -93,6 +94,46 @@ def test_search_index_splits_oversize_full_shards(monkeypatch):
         artifact.byte_len <= search_index.caps.MAX_SEARCH_INDEX_BYTES
         for artifact in result.full_artifacts
     )
+
+
+def test_search_index_recursively_hash_splits_short_token_shards(monkeypatch):
+    places = [
+        _place(
+            place_id=place_id,
+            name="Of",
+            tier=3,
+        )
+        for place_id in _place_ids_with_same_first_hash_prefix(10)
+    ]
+    monkeypatch.setattr(search_index.caps, "MAX_SEARCH_INDEX_BYTES", 1_300)
+
+    result = search_index.emit_search_indexes(
+        places,
+        source_props_by_ref={},
+        region="malaysia-singapore-brunei",
+        publish_version="20260719T100000Z",
+        generated_at="2026-07-19T10:00:00Z",
+    )
+
+    shard_keys = {artifact.shard_key for artifact in result.full_artifacts}
+    assert "of" not in shard_keys
+    assert any(key and key.count("_") >= 2 for key in shard_keys)
+    assert all(
+        artifact.byte_len <= search_index.caps.MAX_SEARCH_INDEX_BYTES
+        for artifact in result.full_artifacts
+    )
+
+
+def _place_ids_with_same_first_hash_prefix(count: int) -> list[str]:
+    by_first: dict[str, dict[str, str]] = {}
+    for index in range(10_000):
+        place_id = "mt1_" + f"{index:026d}"
+        digest = hashlib.sha256(place_id.encode("utf-8")).hexdigest()
+        by_second = by_first.setdefault(digest[0], {})
+        by_second.setdefault(digest[1], place_id)
+        if len(by_second) >= count:
+            return [by_second[key] for key in sorted(by_second)[:count]]
+    raise AssertionError("could not find enough test place IDs")
 
 
 def test_source_props_loader_only_reads_requested_shipped_refs():

@@ -1,4 +1,4 @@
-from mt_contracts.search import split_shard_key_for_token
+from mt_contracts.search import hash_split_shard_key, split_shard_key_for_token
 from mt_contracts.validation import is_valid, validate_instance
 from mt_contracts.versions import SCHEMA_VERSIONS
 
@@ -85,6 +85,15 @@ def test_search_index_accepts_split_full_shard_key():
         "kellie",
         inst["entries"][0]["place_id"],
     )
+    validate_instance("search-index", inst)
+
+
+def test_search_index_accepts_nested_hash_split_full_shard_key():
+    inst = _valid_search_index()
+    shard_key = split_shard_key_for_token("kellie", inst["entries"][0]["place_id"])
+    shard_key = hash_split_shard_key(shard_key, inst["entries"][0]["place_id"])
+    shard_key = hash_split_shard_key(shard_key, inst["entries"][0]["place_id"])
+    inst["shard_key"] = shard_key
     validate_instance("search-index", inst)
 
 

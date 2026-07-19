@@ -12,7 +12,11 @@ from typing import Any
 
 import mt_contracts
 from mt_contracts import caps
-from mt_contracts.search import hash_split_shard_key, shard_key_for_token
+from mt_contracts.search import (
+    MAX_HASH_SPLIT_DEPTH,
+    hash_split_shard_key,
+    shard_key_for_token,
+)
 from mt_contracts.search import split_shard_key_for_token
 from mt_contracts.validation import validate_instance
 from mt_contracts.versions import SCHEMA_VERSIONS
@@ -266,18 +270,18 @@ def _bounded_split_artifacts(
     if len(body) <= caps.MAX_SEARCH_INDEX_BYTES:
         validate_instance("search-index", payload)
         return (_artifact_from_payload(payload, body),)
+    if shard_key.count("_h") >= MAX_HASH_SPLIT_DEPTH:
+        return (_artifact(payload),)
     return tuple(
-        _artifact(
-            _index_payload(
-                region=region,
-                publish_version=publish_version,
-                generated_at=generated_at,
-                index_kind="full",
-                shard_key=hash_key,
-                entries=hash_entries,
-            )
-        )
+        artifact
         for hash_key, hash_entries in _hash_split_shards(shard_key, entries)
+        for artifact in _bounded_split_artifacts(
+            region=region,
+            publish_version=publish_version,
+            generated_at=generated_at,
+            shard_key=hash_key,
+            entries=hash_entries,
+        )
     )
 
 

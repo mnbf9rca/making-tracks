@@ -24,7 +24,7 @@
     "shard_key": {
       "anyOf": [
         {"type": "null"},
-        {"type": "string", "minLength": 1, "maxLength": 16, "pattern": "^[a-z0-9_]+$"}
+        {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9_]+$"}
       ]
     },
     "entries": {
