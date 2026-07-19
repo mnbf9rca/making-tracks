@@ -291,3 +291,6 @@ ios/.build/
 # Agent worktrees
 .worktrees/
 wt/
+
+# Playwright MCP artifacts (agent tooling)
+.playwright-mcp/
