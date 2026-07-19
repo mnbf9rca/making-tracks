@@ -43,7 +43,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
 
     static let debugFixture = OfflineRegionCatalog(zones: [
         OfflineRegionCatalogZone(
-            id: "uk",
+            id: MapRegion.unitedKingdom.rawValue,
             displayName: "United Kingdom",
             parentID: nil,
             publishVersion: "20260718T000000Z",
@@ -53,7 +53,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         OfflineRegionCatalogZone(
             id: "uk_london",
             displayName: "London",
-            parentID: "uk",
+            parentID: MapRegion.unitedKingdom.rawValue,
             publishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 842_000_000,
             bytesWithThumbnails: 1_160_000_000
@@ -61,13 +61,13 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         OfflineRegionCatalogZone(
             id: "uk_south_east",
             displayName: "South East England",
-            parentID: "uk",
+            parentID: MapRegion.unitedKingdom.rawValue,
             publishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 1_120_000_000,
             bytesWithThumbnails: 1_410_000_000
         ),
         OfflineRegionCatalogZone(
-            id: "malaysia",
+            id: MapRegion.malaysiaSingaporeBrunei.rawValue,
             displayName: "Malaysia",
             parentID: nil,
             publishVersion: "20260718T000000Z",
@@ -77,7 +77,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         OfflineRegionCatalogZone(
             id: "malaysia_kl",
             displayName: "Kuala Lumpur",
-            parentID: "malaysia",
+            parentID: MapRegion.malaysiaSingaporeBrunei.rawValue,
             publishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 610_000_000,
             bytesWithThumbnails: 915_000_000
@@ -85,7 +85,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         OfflineRegionCatalogZone(
             id: "malaysia_penang",
             displayName: "Penang",
-            parentID: "malaysia",
+            parentID: MapRegion.malaysiaSingaporeBrunei.rawValue,
             publishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 520_000_000,
             bytesWithThumbnails: 760_000_000
@@ -1501,9 +1501,15 @@ struct MapScreen: View {
         storageMenuStatus = .loading
         MakingTracksLog.startup.debug("storage status state=loading")
         async let nextStorageMenuStatus = model.storageMenuStatus()
+#if DEBUG
         async let nextInstalledCoverageBBoxes = model.installedOfflineCoverageBBoxes(for: OfflineRegionCatalog.debugFixture)
+#endif
         storageMenuStatus = await nextStorageMenuStatus
+#if DEBUG
         installedCoverageBBoxes = debugCoverageBBoxes + (await nextInstalledCoverageBBoxes)
+#else
+        installedCoverageBBoxes = debugCoverageBBoxes
+#endif
         let statusKind = storageMenuStatus.kind.logLabel
         let regionCount = storageMenuStatus.regions.count
         let failedCount = storageMenuStatus.failedRegions.count
@@ -4442,7 +4448,7 @@ private final class MapScreenModel {
     private let fixturePlaces: [String: PlaceRef]
     private let coreLoop: CoreLoopController
     private var tileClients: [MapRegion: TileClient] = [:]
-    private var selectedRegion: MapRegion = .malaysia
+    private var selectedRegion: MapRegion = .malaysiaSingaporeBrunei
     private var hiddenTracker: HiddenMembershipTracker
     private var showHiddenPlaces = false
 
@@ -4567,7 +4573,7 @@ private final class MapScreenModel {
 
     func installedOfflinePublishVersions(for catalog: OfflineRegionCatalog) async -> [String: String] {
         guard let offlineStore else { return [:] }
-        let regionIDs = catalog.zones.map(\.id)
+        let regionIDs = catalog.zones.compactMap { MapRegion(rawValue: $0.id)?.rawValue }
         return await Task.detached {
             var installed: [String: String] = [:]
             for regionID in regionIDs {
@@ -4624,10 +4630,9 @@ private final class MapScreenModel {
         installedRegions: Set<String>,
         allowsCellularDownloads: Bool
     ) async -> [String: String] {
-        let regionIDs: [String] = catalog.zones.compactMap { zone in
-            guard installedRegions.contains(zone.id) else { return nil }
-            return MapRegion(rawValue: zone.id)?.rawValue
-        }
+        let regionIDs = catalog.zones
+            .compactMap { MapRegion(rawValue: $0.id)?.rawValue }
+            .filter { installedRegions.contains($0) }
         return await withTaskGroup(of: (String, String)?.self) { group in
             for regionID in regionIDs {
                 group.addTask {

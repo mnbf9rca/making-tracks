@@ -218,7 +218,7 @@ struct MakingTracksRootView: View {
                     appropriateFor: nil,
                     create: true
                 )
-                let backgroundIdentifier = OfflineDownloadSession.backgroundIdentifier(region: region.mapRegion.rawValue)
+                let backgroundIdentifier = OfflineDownloadSession.backgroundIdentifier(region: region.publishRegionID)
                 await OfflineDownloadSession.prepareBackgroundSessionForPolicyChange(
                     identifier: backgroundIdentifier,
                     allowsCellularDownloads: downloadAllowsCellular
@@ -227,7 +227,7 @@ struct MakingTracksRootView: View {
                     identifier: backgroundIdentifier
                 ) {
                     let downloader = OfflineRegionDownloader(
-                        region: region.mapRegion.rawValue,
+                        region: region.publishRegionID,
                         metadataFetcher: HTTPTileFetcher.offlineForeground(
                             allowsCellularDownloads: downloadAllowsCellular
                         ),
@@ -279,7 +279,7 @@ struct MakingTracksRootView: View {
             create: true
         ).appendingPathComponent("MakingTracks/OnboardingManifest", isDirectory: true)
         let cache = try TileCache(directory: cacheRoot)
-        let client = ManifestClient(region: region.mapRegion.rawValue, fetcher: HTTPTileFetcher(), cache: cache)
+        let client = ManifestClient(region: region.publishRegionID, fetcher: HTTPTileFetcher(), cache: cache)
         let result = await client.refresh()
         let elapsedMS = Int(Date().timeIntervalSince(startedAt) * 1000)
         MakingTracksLog.startup.info("onboarding manifest polled region=\(region.rawValue, privacy: .private(mask: .hash)) state=\(result.state.rawValue, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
@@ -312,12 +312,12 @@ enum OnboardingRegionChoice: String, CaseIterable, Sendable, Equatable, Identifi
         }
     }
 
-    var mapRegion: MapRegion {
+    var publishRegionID: String {
         switch self {
         case .uk:
-            return .uk
+            return MapRegion.unitedKingdom.rawValue
         case .malaysia:
-            return .malaysia
+            return MapRegion.malaysiaSingaporeBrunei.rawValue
         }
     }
 
