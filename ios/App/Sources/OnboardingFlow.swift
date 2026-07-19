@@ -13,6 +13,7 @@ struct MakingTracksRootView: View {
     let offlineDownloadProgress: OfflineDownloadProgress?
     let debugCoverageBBoxes: [CoverageBBox]
     let debugExposeFixturePinDiagnostics: Bool
+    let debugUseDenseFixturePins: Bool
     let locationManager: AppLocationManager
 
     @AppStorage(OnboardingStorage.hasCompletedOnboardingKey) private var hasCompletedOnboarding = false
@@ -33,6 +34,7 @@ struct MakingTracksRootView: View {
         offlineDownloadProgress: OfflineDownloadProgress?,
         debugCoverageBBoxes: [CoverageBBox] = [],
         debugExposeFixturePinDiagnostics: Bool,
+        debugUseDenseFixturePins: Bool = false,
         locationManager: AppLocationManager
     ) {
         self.database = database
@@ -43,6 +45,7 @@ struct MakingTracksRootView: View {
         self.offlineDownloadProgress = offlineDownloadProgress
         self.debugCoverageBBoxes = debugCoverageBBoxes
         self.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
+        self.debugUseDenseFixturePins = debugUseDenseFixturePins
         self.locationManager = locationManager
         _locationPermission = StateObject(wrappedValue: LocationPermission(manager: locationManager))
     }
@@ -72,6 +75,7 @@ struct MakingTracksRootView: View {
             offlineDownloadProgress: offlineDownloadProgress,
             debugCoverageBBoxes: debugCoverageBBoxes,
             debugExposeFixturePinDiagnostics: debugExposeFixturePinDiagnostics,
+            debugUseDenseFixturePins: debugUseDenseFixturePins,
             locationManager: locationManager,
             locationPermission: locationPermission,
             cameraRequest: cameraRequest,
