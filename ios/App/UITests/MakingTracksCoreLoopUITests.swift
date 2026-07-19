@@ -627,6 +627,21 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["menu.done"].tap()
     }
 
+    func testSettingsStorageRowNavigatesToOfflineMaps() {
+        let app = launch(reset: true)
+
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+
+        openAppMenu(in: app)
+        app.buttons["menu.row.settings"].tap()
+        XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
+        let storageRow = app.buttons["settings.storage.manage"]
+        XCTAssertTrue(scrollToHittable(storageRow, in: app))
+        storageRow.tap()
+
+        XCTAssertTrue(app.staticTexts["Offline maps"].waitForExistence(timeout: 5))
+    }
+
     func testMapHomeChromeHitTargetsAndThemeScreenshots() {
         let app = launch(reset: true, resetTheme: true, forceDarkAppearance: true)
 
@@ -642,6 +657,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(menuButton.frame.height, 44)
         XCTAssertGreaterThanOrEqual(layersButton.frame.width, 44)
         XCTAssertGreaterThanOrEqual(layersButton.frame.height, 44)
+        XCTAssertGreaterThan(menuButton.frame.minY, 50)
+        XCTAssertLessThan(menuButton.frame.minY, 120)
+        XCTAssertLessThan(layersButton.frame.minY, 180)
+        XCTAssertGreaterThan(layersButton.frame.minY, menuButton.frame.maxY)
         attachScreenshot(named: "map-home-chrome-defined-paper")
 
         for themeID in ["snow", "street-contrast", "verdant-kl"] {
@@ -661,6 +680,30 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(map.waitForExistence(timeout: 5))
         XCTAssertTrue(waitForMapTheme("snow", in: app))
         attachScreenshot(named: "map-home-chrome-snow-filtered")
+    }
+
+    func testCoverageShadingToggleIsDisplayOnlyLayerState() {
+        let app = launch(reset: true, coverageBBoxes: ["101.640,3.090,101.690,3.190"])
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        let layersButton = app.buttons["map.layers"]
+        XCTAssertTrue(layersButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(layersButton.value as? String, "Default")
+
+        openLayers(in: app)
+        let coverageShading = app.switches["map.layers.coverage-shading"]
+        XCTAssertTrue(coverageShading.waitForExistence(timeout: 5))
+        tapSwitch(coverageShading, expectedValue: "0")
+        app.buttons["map.layers.done"].tap()
+
+        XCTAssertEqual(layersButton.value as? String, "Default")
+
+        openLayers(in: app)
+        XCTAssertTrue(coverageShading.waitForExistence(timeout: 5))
+        tapSwitch(coverageShading, expectedValue: "1")
+        app.buttons["map.layers.done"].tap()
+        XCTAssertEqual(layersButton.value as? String, "Default")
     }
 
     func testPinSizeScreenshotsAcrossThemes() {
@@ -973,6 +1016,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
         app.launchArguments.append("--ui-testing-reset-pin-size")
+        app.launchArguments.append("--ui-testing-reset-coverage-shading")
         if densePins {
             app.launchArguments.append("--ui-testing-dense-pins")
         }
@@ -1132,11 +1176,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             pin.frame.insetBy(dx: -2, dy: -2).contains(projectedPoint),
             "Accessibility pin \(placeID) frame \(pin.frame) did not contain projected point \(projectedPoint); map frame \(map.frame); marker value \(marker.value ?? "nil")"
         )
-        pin.tap()
+        guard tapProjectedFixtureMarker(marker, through: map, in: app) else { return false }
+        waitForTapStatusToChange(in: app)
         if app.staticTexts[title].waitForExistence(timeout: 5) {
             return true
         }
-        XCTFail("Activating accessibility pin \(placeID) did not open \(title)")
+        let tapStatus = app.staticTexts["map.debug-tap-status"]
+        let tap = tapStatus.exists ? tapStatus.label : "tap-status-missing"
+        XCTFail("Activating accessibility pin \(placeID) did not open \(title); \(tap)")
         return false
     }
 

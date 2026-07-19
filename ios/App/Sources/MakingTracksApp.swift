@@ -19,6 +19,7 @@ struct MakingTracksApp: App {
     private static let debugInstallOfflineRegion = argumentValue("--debug-install-offline-region")
     private static let debugForceTileNetworkOffline = arguments.contains("--debug-force-tile-network-offline")
 #if DEBUG
+    private static let forceFirstRunOnboarding = isFixtureMap && arguments.contains("--ui-testing-reset-onboarding")
     private static let isLocationNotDeterminedFixture = arguments.contains("--ui-testing-location-not-determined")
     private static let isLocationDeniedFixture = arguments.contains("--ui-testing-location-denied")
     private static let isLocationAuthorizedFixture = arguments.contains("--ui-testing-location-authorized")
@@ -33,6 +34,7 @@ struct MakingTracksApp: App {
     private static let debugUseDenseFixturePins = arguments.contains("--ui-testing-dense-pins")
     private static let primaryFixturePlaceID = "mt1_00000000000000000000000000"
 #else
+    private static let forceFirstRunOnboarding = false
     private static let isLocationNotDeterminedFixture = false
     private static let isLocationDeniedFixture = false
     private static let isLocationAuthorizedFixture = false
@@ -52,6 +54,7 @@ struct MakingTracksApp: App {
         MakingTracksLog.startup.info("app init started fixture=\(fixture, privacy: .public)")
         Self.resetUITestingThemeIfNeeded()
         Self.resetUITestingPinSizeIfNeeded()
+        Self.resetUITestingCoverageShadingIfNeeded()
         Self.applyUITestingThemeIfNeeded()
         Self.applyUITestingPinSizeIfNeeded()
         Self.resetUITestingOnboardingIfNeeded()
@@ -133,6 +136,7 @@ struct MakingTracksApp: App {
                     debugCoverageBBoxes: Self.uiTestingCoverageBBoxes,
                     debugExposeFixturePinDiagnostics: Self.debugExposeFixturePinDiagnostics,
                     debugUseDenseFixturePins: Self.debugUseDenseFixturePins,
+                    forceFirstRunOnboarding: Self.forceFirstRunOnboarding,
                     locationManager: locationManager
                 )
             case .failed(let surface):
@@ -199,6 +203,11 @@ struct MakingTracksApp: App {
     private static func resetUITestingPinSizeIfNeeded() {
         guard isFixtureMap, arguments.contains("--ui-testing-reset-pin-size") else { return }
         UserDefaults.standard.removeObject(forKey: MapScreen.pinSizeMultiplierStorageKey)
+    }
+
+    private static func resetUITestingCoverageShadingIfNeeded() {
+        guard isFixtureMap, arguments.contains("--ui-testing-reset-coverage-shading") else { return }
+        UserDefaults.standard.removeObject(forKey: MapScreen.coverageShadingStorageKey)
     }
 
     private static func applyUITestingThemeIfNeeded() {
