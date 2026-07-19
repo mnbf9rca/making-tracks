@@ -12,7 +12,7 @@ public enum PinLayers {
     public static let baseCategoryIconScale = 0.72
     public static let baseBadgeIconScale = 1.0
     public static let categorySymbolPointSize = 17.0
-    public static let fallbackCategoryID = "__other__"
+    public static let fallbackCategoryID = "uncategorized"
     public static let fallbackCategoryIconName = "pin-category-uncategorized"
     public static let hiddenIconName = "pin-hidden"
     public static let categoryIconNames: [String: String] = [
