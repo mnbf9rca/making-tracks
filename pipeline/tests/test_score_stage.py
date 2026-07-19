@@ -14,10 +14,10 @@ STALE = "mt1_" + "2" * 26
 
 def test_score_stage_writes_real_scores_that_eval_dump_accepts(conn):
     _seed_score_inputs(conn)
-    store.mark_stage_complete(conn, "malaysia", "extract", "r1", "2026-07-15T00:00:00Z")
-    store.mark_stage_complete(conn, "malaysia", "reconcile", "r1", "2026-07-15T00:00:00Z")
+    store.mark_stage_complete(conn, "malaysia-singapore-brunei", "extract", "r1", "2026-07-15T00:00:00Z")
+    store.mark_stage_complete(conn, "malaysia-singapore-brunei", "reconcile", "r1", "2026-07-15T00:00:00Z")
 
-    stages.run_stage(conn, "malaysia", "score", run_id="score1")
+    stages.run_stage(conn, "malaysia-singapore-brunei", "score", run_id="score1")
 
     rows = conn.execute(
         """
@@ -26,10 +26,10 @@ def test_score_stage_writes_real_scores_that_eval_dump_accepts(conn):
         WHERE region = ?
         ORDER BY score DESC, place_id
         """,
-        ("malaysia",),
+        ("malaysia-singapore-brunei",),
     ).fetchall()
     assert [row[0] for row in rows] == [A, B]
-    assert all(row[1] == "malaysia" and row[2] == "score1" for row in rows)
+    assert all(row[1] == "malaysia-singapore-brunei" and row[2] == "score1" for row in rows)
     assert all(row[3] in (1, 2, 3, 4) and 0.0 <= row[4] <= 1.0 for row in rows)
 
     signals = {
@@ -66,9 +66,9 @@ def test_score_stage_writes_real_scores_that_eval_dump_accepts(conn):
         WHERE region = ?
         ORDER BY place_id
         """,
-        ("malaysia",),
+        ("malaysia-singapore-brunei",),
     ).fetchall()
-    stages.run_stage(conn, "malaysia", "score", run_id="score1")
+    stages.run_stage(conn, "malaysia-singapore-brunei", "score", run_id="score1")
     second_rows = conn.execute(
         """
         SELECT place_id, region, run_id, tier, score, signals_json
@@ -76,7 +76,7 @@ def test_score_stage_writes_real_scores_that_eval_dump_accepts(conn):
         WHERE region = ?
         ORDER BY place_id
         """,
-        ("malaysia",),
+        ("malaysia-singapore-brunei",),
     ).fetchall()
     assert second_rows == first_rows
 
@@ -93,20 +93,20 @@ def test_score_stage_replaces_existing_region_scores_and_emits_progress(
         INSERT INTO place_scores (place_id, region, score, tier, signals_json, run_id)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (STALE, "malaysia", 0.9, 1, json.dumps({"article": 0.9}), "old"),
+        (STALE, "malaysia-singapore-brunei", 0.9, 1, json.dumps({"article": 0.9}), "old"),
     )
     conn.execute(
         """
         INSERT INTO place_scores (place_id, region, score, tier, signals_json, run_id)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
-        ("other-region", "uk", 0.9, 1, json.dumps({"article": 0.9}), "old"),
+        ("other-region", "united-kingdom", 0.9, 1, json.dumps({"article": 0.9}), "old"),
     )
     conn.commit()
-    store.mark_stage_complete(conn, "malaysia", "extract", "r1", "2026-07-15T00:00:00Z")
-    store.mark_stage_complete(conn, "malaysia", "reconcile", "r1", "2026-07-15T00:00:00Z")
+    store.mark_stage_complete(conn, "malaysia-singapore-brunei", "extract", "r1", "2026-07-15T00:00:00Z")
+    store.mark_stage_complete(conn, "malaysia-singapore-brunei", "reconcile", "r1", "2026-07-15T00:00:00Z")
 
-    stages.run_stage(conn, "malaysia", "score", run_id="score2")
+    stages.run_stage(conn, "malaysia-singapore-brunei", "score", run_id="score2")
 
     rows = conn.execute(
         """
@@ -117,9 +117,9 @@ def test_score_stage_replaces_existing_region_scores_and_emits_progress(
     ).fetchall()
     assert rows == [(A, "score2"), (B, "score2"), ("other-region", "old")]
     captured = capsys.readouterr()
-    assert "PHASE START score.run region=malaysia places=2" in captured.err
-    assert "PHASE HEARTBEAT score.run region=malaysia processed=1/2" in captured.err
-    assert "PHASE DONE score.run region=malaysia processed=2/2" in captured.err
+    assert "PHASE START score.run region=malaysia-singapore-brunei places=2" in captured.err
+    assert "PHASE HEARTBEAT score.run region=malaysia-singapore-brunei processed=1/2" in captured.err
+    assert "PHASE DONE score.run region=malaysia-singapore-brunei processed=2/2" in captured.err
 
 
 def test_score_stage_rejects_corrupt_member_refs(conn):
@@ -133,13 +133,13 @@ def test_score_stage_rejects_corrupt_member_refs(conn):
         ("not-json", A),
     )
     conn.commit()
-    store.mark_stage_complete(conn, "malaysia", "extract", "r1", "2026-07-15T00:00:00Z")
-    store.mark_stage_complete(conn, "malaysia", "reconcile", "r1", "2026-07-15T00:00:00Z")
+    store.mark_stage_complete(conn, "malaysia-singapore-brunei", "extract", "r1", "2026-07-15T00:00:00Z")
+    store.mark_stage_complete(conn, "malaysia-singapore-brunei", "reconcile", "r1", "2026-07-15T00:00:00Z")
 
     with pytest.raises(stages.StageOrderError, match="member_refs_json"):
-        stages.run_stage(conn, "malaysia", "score", run_id="score1")
+        stages.run_stage(conn, "malaysia-singapore-brunei", "score", run_id="score1")
 
-    assert not store.stage_completed(conn, "malaysia", "score")
+    assert not store.stage_completed(conn, "malaysia-singapore-brunei", "score")
 
 
 def test_score_stage_rejects_missing_member_source_record(conn):
@@ -152,13 +152,13 @@ def test_score_stage_rejects_missing_member_source_record(conn):
         ("hehle:100",),
     )
     conn.commit()
-    store.mark_stage_complete(conn, "malaysia", "extract", "r1", "2026-07-15T00:00:00Z")
-    store.mark_stage_complete(conn, "malaysia", "reconcile", "r1", "2026-07-15T00:00:00Z")
+    store.mark_stage_complete(conn, "malaysia-singapore-brunei", "extract", "r1", "2026-07-15T00:00:00Z")
+    store.mark_stage_complete(conn, "malaysia-singapore-brunei", "reconcile", "r1", "2026-07-15T00:00:00Z")
 
     with pytest.raises(stages.StageOrderError, match="missing source record"):
-        stages.run_stage(conn, "malaysia", "score", run_id="score1")
+        stages.run_stage(conn, "malaysia-singapore-brunei", "score", run_id="score1")
 
-    assert not store.stage_completed(conn, "malaysia", "score")
+    assert not store.stage_completed(conn, "malaysia-singapore-brunei", "score")
 
 
 def test_score_stage_rejects_corrupt_source_props(conn):
@@ -172,13 +172,13 @@ def test_score_stage_rejects_corrupt_source_props(conn):
         ("not-json", "wd:Q100"),
     )
     conn.commit()
-    store.mark_stage_complete(conn, "malaysia", "extract", "r1", "2026-07-15T00:00:00Z")
-    store.mark_stage_complete(conn, "malaysia", "reconcile", "r1", "2026-07-15T00:00:00Z")
+    store.mark_stage_complete(conn, "malaysia-singapore-brunei", "extract", "r1", "2026-07-15T00:00:00Z")
+    store.mark_stage_complete(conn, "malaysia-singapore-brunei", "reconcile", "r1", "2026-07-15T00:00:00Z")
 
     with pytest.raises(stages.StageOrderError, match="props_json"):
-        stages.run_stage(conn, "malaysia", "score", run_id="score1")
+        stages.run_stage(conn, "malaysia-singapore-brunei", "score", run_id="score1")
 
-    assert not store.stage_completed(conn, "malaysia", "score")
+    assert not store.stage_completed(conn, "malaysia-singapore-brunei", "score")
 
 
 def _seed_score_inputs(conn):
@@ -244,12 +244,12 @@ def _seed_score_inputs(conn):
     for source, source_ref, name, lat, lon, props in records:
         source_record.persist(
             conn,
-            source_record.parse("malaysia", source, source_ref, name, lat, lon, props),
+            source_record.parse("malaysia-singapore-brunei", source, source_ref, name, lat, lon, props),
             run_id="extract1",
         )
     store.replace_places(
         conn,
-        region="malaysia",
+        region="malaysia-singapore-brunei",
         places=[
             {
                 "place_id": A,
@@ -285,6 +285,6 @@ def _insert_categories(conn, *, run_id: str) -> None:
         INSERT INTO place_categories (place_id, region, category, run_id)
         VALUES (?, ?, ?, ?)
         """,
-        [(A, "malaysia", "history", run_id), (B, "malaysia", "misc", run_id)],
+        [(A, "malaysia-singapore-brunei", "history", run_id), (B, "malaysia-singapore-brunei", "misc", run_id)],
     )
     conn.commit()

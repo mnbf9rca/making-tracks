@@ -23,7 +23,7 @@ def _snap(tmp_path, obj):
 def test_emits_wp_pageid_refs_skips_malformed(tmp_path):
     conn = _db(tmp_path)
     count = wikipedia.WikipediaExtractor({"en"}).extract(
-        "uk", FIX, conn, run_id="r1"
+        "united-kingdom", FIX, conn, run_id="r1"
     )
     rows = conn.execute(
         "SELECT source_ref FROM source_records ORDER BY source_ref"
@@ -34,7 +34,7 @@ def test_emits_wp_pageid_refs_skips_malformed(tmp_path):
 
 def test_valid_qid_rides_in_props_null_and_garbage_do_not(tmp_path):
     conn = _db(tmp_path)
-    wikipedia.WikipediaExtractor({"en"}).extract("uk", FIX, conn, run_id="r1")
+    wikipedia.WikipediaExtractor({"en"}).extract("united-kingdom", FIX, conn, run_id="r1")
     p1 = json.loads(
         conn.execute(
             "SELECT props_json FROM source_records WHERE source_ref='wp:12345'"
@@ -67,7 +67,7 @@ def test_garbage_qid_dropped_but_record_kept(tmp_path):
             ],
         },
     )
-    wikipedia.WikipediaExtractor({"en"}).extract("uk", snap, conn, run_id="r1")
+    wikipedia.WikipediaExtractor({"en"}).extract("united-kingdom", snap, conn, run_id="r1")
     props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
     assert "wikidata" not in props
 
@@ -82,7 +82,7 @@ def test_oversized_lang_does_not_nuke_all_records(tmp_path):
         },
     )
     assert wikipedia.WikipediaExtractor({"en"}).extract(
-        "uk", snap, conn, run_id="r1"
+        "united-kingdom", snap, conn, run_id="r1"
     ) == 0
 
 
@@ -97,7 +97,7 @@ def test_extract_length_bounded(tmp_path):
             ],
         },
     )
-    wikipedia.WikipediaExtractor({"en"}).extract("uk", snap, conn, run_id="r1")
+    wikipedia.WikipediaExtractor({"en"}).extract("united-kingdom", snap, conn, run_id="r1")
     props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
     assert len(props["extract"]) <= wikipedia.MAX_EXTRACT_LEN
 
@@ -115,7 +115,7 @@ def test_description_extract_preserves_longer_snapshot_text_for_publish(tmp_path
         },
     )
 
-    wikipedia.WikipediaExtractor({"en"}).extract("uk", snap, conn, run_id="r1")
+    wikipedia.WikipediaExtractor({"en"}).extract("united-kingdom", snap, conn, run_id="r1")
     props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
 
     assert len(props["extract"]) <= wikipedia.MAX_EXTRACT_LEN
@@ -151,7 +151,7 @@ def test_pageviews_are_materialized_from_cache_when_threaded(tmp_path):
     )
 
     wikipedia.WikipediaExtractor({"en"}).extract(
-        "uk",
+        "united-kingdom",
         snap,
         conn,
         run_id="r1",
@@ -199,7 +199,7 @@ def test_pageview_cache_title_normalization_matches_materialization(tmp_path):
     )
 
     wikipedia.WikipediaExtractor({"en"}).extract(
-        "uk",
+        "united-kingdom",
         snap,
         conn,
         run_id="r1",
@@ -223,7 +223,7 @@ def test_emits_in_stable_lexical_source_ref_order(tmp_path):
             ],
         },
     )
-    wikipedia.WikipediaExtractor({"en"}).extract("uk", snap, conn, run_id="r1")
+    wikipedia.WikipediaExtractor({"en"}).extract("united-kingdom", snap, conn, run_id="r1")
     order = [
         row[0]
         for row in conn.execute("SELECT source_ref FROM source_records ORDER BY id")
@@ -234,4 +234,4 @@ def test_emits_in_stable_lexical_source_ref_order(tmp_path):
 def test_malformed_pages_container_is_dropped_cleanly(tmp_path):
     conn = _db(tmp_path)
     snap = _snap(tmp_path, {"lang": "en", "pages": None})
-    assert wikipedia.WikipediaExtractor({"en"}).extract("uk", snap, conn, run_id="r1") == 0
+    assert wikipedia.WikipediaExtractor({"en"}).extract("united-kingdom", snap, conn, run_id="r1") == 0

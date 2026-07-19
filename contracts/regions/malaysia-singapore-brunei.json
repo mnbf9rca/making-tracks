@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "region_id": "malaysia",
-  "display_name": "Malaysia",
+  "region_id": "malaysia-singapore-brunei",
+  "display_name": "Malaysia, Singapore, and Brunei",
   "bbox": [99.64, 0.85, 119.27, 7.36],
   "languages": ["en"],
   "sources": {

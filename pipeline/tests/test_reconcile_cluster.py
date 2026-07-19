@@ -297,11 +297,11 @@ def test_spatial_fuzzy_emits_phase_telemetry(capsys):
     C.fuzzy_defer(
         clusters,
         FUZZY,
-        telemetry_region="uk",
+        telemetry_region="united-kingdom",
         heartbeat_every_pairs=1,
     )
 
     err = capsys.readouterr().err
-    assert "PHASE START reconcile.fuzzy_defer region=uk candidate_pairs=1" in err
-    assert "PHASE HEARTBEAT reconcile.fuzzy_defer region=uk processed=1/1" in err
-    assert "PHASE DONE reconcile.fuzzy_defer region=uk processed=1/1" in err
+    assert "PHASE START reconcile.fuzzy_defer region=united-kingdom candidate_pairs=1" in err
+    assert "PHASE HEARTBEAT reconcile.fuzzy_defer region=united-kingdom processed=1/1" in err
+    assert "PHASE DONE reconcile.fuzzy_defer region=united-kingdom processed=1/1" in err

@@ -8,7 +8,7 @@ from mt_pipeline.publish import basemap as B
 
 def _cfg(source, size_budget_bytes=3_000_000_000, measured_archive_bytes=3):
     return {
-        "region": "uk",
+        "region": "united-kingdom",
         "basemap": {
             "source_pmtiles": str(source),
             "maxzoom": 14,

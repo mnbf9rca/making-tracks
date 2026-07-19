@@ -28,9 +28,9 @@ def _test_probe(origin_place_id: str, *, direction: str = "inflation", suffix: s
 
 def test_cli_runs_a_stage(tmp_path):
     db = tmp_path / "w.db"
-    assert cli.main(["--region", "uk", "extract", "--db", str(db)]) == 0
+    assert cli.main(["--region", "united-kingdom", "extract", "--db", str(db)]) == 0
     conn = store.connect(db)
-    assert store.stage_completed(conn, "uk", "extract")
+    assert store.stage_completed(conn, "united-kingdom", "extract")
 
 
 def test_cli_rejects_unknown_region_without_traceback(tmp_path, capsys):
@@ -40,7 +40,7 @@ def test_cli_rejects_unknown_region_without_traceback(tmp_path, capsys):
 
 
 def test_cli_enforces_stage_order(tmp_path, capsys):
-    rc = cli.main(["--region", "uk", "publish", "--db", str(tmp_path / "w.db")])
+    rc = cli.main(["--region", "united-kingdom", "publish", "--db", str(tmp_path / "w.db")])
     assert rc == 1
     assert "categorize" in capsys.readouterr().err
 
@@ -50,7 +50,7 @@ def test_cli_publish_missing_pmtiles_is_clean_error(tmp_path, capsys, monkeypatc
     conn = store.connect(db)
     store.init_schema(conn)
     store.mark_stage_complete(
-        conn, "malaysia", "categorize", "cat1", "2026-07-15T00:00:00Z"
+        conn, "malaysia-singapore-brunei", "categorize", "cat1", "2026-07-15T00:00:00Z"
     )
     conn.close()
     monkeypatch.setenv("PATH", "")
@@ -58,7 +58,7 @@ def test_cli_publish_missing_pmtiles_is_clean_error(tmp_path, capsys, monkeypatc
     rc = cli.main(
         [
             "--region",
-            "malaysia",
+            "malaysia-singapore-brunei",
             "publish",
             "--db",
             str(db),
@@ -83,7 +83,7 @@ def test_cli_publish_upload_missing_boto3_is_clean_error(tmp_path, capsys, monke
     conn = store.connect(db)
     store.init_schema(conn)
     store.mark_stage_complete(
-        conn, "malaysia", "categorize", "cat1", "2026-07-15T00:00:00Z"
+        conn, "malaysia-singapore-brunei", "categorize", "cat1", "2026-07-15T00:00:00Z"
     )
     conn.close()
     monkeypatch.setattr(publish_stage.basemap, "require_pmtiles", lambda: "pmtiles")
@@ -98,7 +98,7 @@ def test_cli_publish_upload_missing_boto3_is_clean_error(tmp_path, capsys, monke
     rc = cli.main(
         [
             "--region",
-            "malaysia",
+            "malaysia-singapore-brunei",
             "publish",
             "--db",
             str(db),
@@ -124,7 +124,7 @@ def test_cli_publish_upload_missing_r2_env_is_clean_error(tmp_path, capsys, monk
     conn = store.connect(db)
     store.init_schema(conn)
     store.mark_stage_complete(
-        conn, "malaysia", "categorize", "cat1", "2026-07-15T00:00:00Z"
+        conn, "malaysia-singapore-brunei", "categorize", "cat1", "2026-07-15T00:00:00Z"
     )
     conn.close()
     monkeypatch.setattr(publish_stage.basemap, "require_pmtiles", lambda: "pmtiles")
@@ -137,7 +137,7 @@ def test_cli_publish_upload_missing_r2_env_is_clean_error(tmp_path, capsys, monk
     rc = cli.main(
         [
             "--region",
-            "malaysia",
+            "malaysia-singapore-brunei",
             "publish",
             "--db",
             str(db),
@@ -166,7 +166,7 @@ def test_cli_publish_passes_image_candidate_limit(tmp_path, monkeypatch):
     conn = store.connect(db)
     store.init_schema(conn)
     store.mark_stage_complete(
-        conn, "malaysia", "categorize", "cat1", "2026-07-15T00:00:00Z"
+        conn, "malaysia-singapore-brunei", "categorize", "cat1", "2026-07-15T00:00:00Z"
     )
     conn.close()
     calls = []
@@ -179,7 +179,7 @@ def test_cli_publish_passes_image_candidate_limit(tmp_path, monkeypatch):
     rc = cli.main(
         [
             "--region",
-            "malaysia",
+            "malaysia-singapore-brunei",
             "publish",
             "--db",
             str(db),
@@ -202,10 +202,10 @@ def test_cli_reconcile_requires_version(tmp_path, capsys):
     db = tmp_path / "w.db"
     conn = store.connect(db)
     store.init_schema(conn)
-    store.mark_stage_complete(conn, "uk", "extract", "r1", "2026-07-15T00:00:00Z")
+    store.mark_stage_complete(conn, "united-kingdom", "extract", "r1", "2026-07-15T00:00:00Z")
     conn.close()
 
-    rc = cli.main(["--region", "uk", "reconcile", "--db", str(db), "--run-id", "r1"])
+    rc = cli.main(["--region", "united-kingdom", "reconcile", "--db", str(db), "--run-id", "r1"])
 
     assert rc == 1
     assert "--version" in capsys.readouterr().err
@@ -215,7 +215,7 @@ def test_cli_rejects_bad_reconcile_version(tmp_path, capsys):
     rc = cli.main(
         [
             "--region",
-            "uk",
+            "united-kingdom",
             "reconcile",
             "--db",
             str(tmp_path / "w.db"),
@@ -230,7 +230,7 @@ def test_cli_rejects_bad_reconcile_version(tmp_path, capsys):
 
 def test_cli_maps_db_open_failure_to_clean_error(tmp_path, capsys):
     bad = tmp_path / "no_such_dir" / "w.db"
-    rc = cli.main(["--region", "uk", "extract", "--db", str(bad)])
+    rc = cli.main(["--region", "united-kingdom", "extract", "--db", str(bad)])
     assert rc == 3
     assert "database" in capsys.readouterr().err.lower()
 
@@ -243,7 +243,7 @@ def test_cli_maps_stage_write_failure_to_clean_error(monkeypatch, tmp_path, caps
 
     monkeypatch.setattr(store, "mark_stage_complete_no_commit", fail_mark_stage_complete)
 
-    rc = cli.main(["--region", "uk", "extract", "--db", str(tmp_path / "w.db")])
+    rc = cli.main(["--region", "united-kingdom", "extract", "--db", str(tmp_path / "w.db")])
 
     assert rc == 3
     err = capsys.readouterr().err.lower()
@@ -255,7 +255,7 @@ def test_cli_run_id_is_parameterized(tmp_path):
     db = tmp_path / "w.db"
     hostile = "r1'); DROP TABLE stage_runs;--"
 
-    assert cli.main(["--region", "uk", "extract", "--db", str(db), "--run-id", hostile]) == 0
+    assert cli.main(["--region", "united-kingdom", "extract", "--db", str(db), "--run-id", hostile]) == 0
 
     conn = store.connect(db)
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -272,16 +272,16 @@ def test_cli_audit_outputs_report_without_marking_stage(tmp_path, capsys):
         """
         INSERT INTO source_records
             (region, source, source_ref, name, lat, lon, props_json, run_id)
-        VALUES ('uk', 'wd', 'wd:Q1', 'A', 1, 1, '{"p31":"Q16970"}', 'r')
+        VALUES ('united-kingdom', 'wd', 'wd:Q1', 'A', 1, 1, '{"p31":"Q16970"}', 'r')
         """
     )
     conn.commit()
 
-    rc = cli.main(["--region", "uk", "audit", "--db", str(db), "--audit-format", "json"])
+    rc = cli.main(["--region", "united-kingdom", "audit", "--db", str(db), "--audit-format", "json"])
 
     assert rc == 0
-    assert '"region": "uk"' in capsys.readouterr().out
-    assert store.stage_completed(conn, "uk", "audit") is False
+    assert '"region": "united-kingdom"' in capsys.readouterr().out
+    assert store.stage_completed(conn, "united-kingdom", "audit") is False
 
 
 def test_cli_accepts_audit_subcommand_shape(tmp_path, capsys):
@@ -292,15 +292,15 @@ def test_cli_accepts_audit_subcommand_shape(tmp_path, capsys):
         """
         INSERT INTO source_records
             (region, source, source_ref, name, lat, lon, props_json, run_id)
-        VALUES ('uk', 'wd', 'wd:Q1', 'A', 1, 1, '{"p31":"Q16970"}', 'r')
+        VALUES ('united-kingdom', 'wd', 'wd:Q1', 'A', 1, 1, '{"p31":"Q16970"}', 'r')
         """
     )
     conn.commit()
 
-    rc = cli.main(["audit", "uk", "--db", str(db), "--audit-format", "json"])
+    rc = cli.main(["audit", "united-kingdom", "--db", str(db), "--audit-format", "json"])
 
     assert rc == 0
-    assert '"region": "uk"' in capsys.readouterr().out
+    assert '"region": "united-kingdom"' in capsys.readouterr().out
 
 
 def test_cli_accepts_audit_subcommand_shape_from_console_argv(monkeypatch, tmp_path, capsys):
@@ -311,20 +311,20 @@ def test_cli_accepts_audit_subcommand_shape_from_console_argv(monkeypatch, tmp_p
         """
         INSERT INTO source_records
             (region, source, source_ref, name, lat, lon, props_json, run_id)
-        VALUES ('uk', 'wd', 'wd:Q1', 'A', 1, 1, '{"p31":"Q16970"}', 'r')
+        VALUES ('united-kingdom', 'wd', 'wd:Q1', 'A', 1, 1, '{"p31":"Q16970"}', 'r')
         """
     )
     conn.commit()
     monkeypatch.setattr(
         cli.sys,
         "argv",
-        ["mt", "audit", "uk", "--db", str(db), "--audit-format", "json"],
+        ["mt", "audit", "united-kingdom", "--db", str(db), "--audit-format", "json"],
     )
 
     rc = cli.main()
 
     assert rc == 0
-    assert '"region": "uk"' in capsys.readouterr().out
+    assert '"region": "united-kingdom"' in capsys.readouterr().out
 
 
 def test_cli_categorize_allows_empty_a2_places_table(tmp_path, capsys):
@@ -332,13 +332,13 @@ def test_cli_categorize_allows_empty_a2_places_table(tmp_path, capsys):
     conn = store.connect(db)
     store.init_schema(conn)
     for stage in ("extract", "reconcile", "score"):
-        store.mark_stage_complete(conn, "uk", stage, "r1", "2026-07-15T00:00:00Z")
+        store.mark_stage_complete(conn, "united-kingdom", stage, "r1", "2026-07-15T00:00:00Z")
 
-    rc = cli.main(["--region", "uk", "categorize", "--db", str(db), "--run-id", "cat1"])
+    rc = cli.main(["--region", "united-kingdom", "categorize", "--db", str(db), "--run-id", "cat1"])
 
     assert rc == 0
     out = capsys.readouterr().out
-    assert "categorize complete for uk" in out
+    assert "categorize complete for united-kingdom" in out
 
 
 def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path):
@@ -388,7 +388,7 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
     rc = cli.main(
         [
             "--region",
-            "malaysia",
+            "malaysia-singapore-brunei",
             "extract",
             "--db",
             str(db),
@@ -404,7 +404,7 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
     )
 
     assert rc == 0
-    assert captured["region"] == "malaysia"
+    assert captured["region"] == "malaysia-singapore-brunei"
     assert captured["snapshots"]["wikidata"] == snapshot_dir / "wikidata.snapshot.json"
     assert captured["snapshots"]["wikipedia"] == snapshot_dir / "wikipedia.snapshot.json"
     assert captured["snapshots"]["osm"] == snapshot_dir / "osm.osm.pbf"
@@ -421,9 +421,9 @@ def test_cli_extract_uses_snapshot_dir_and_osm_index_type(monkeypatch, tmp_path)
         }
     }
     conn = store.connect(db)
-    assert store.stage_completed(conn, "malaysia", "extract")
-    assert store.load_extract_run_metadata(conn, region="malaysia", run_id="real") == {
-        "region": "malaysia",
+    assert store.stage_completed(conn, "malaysia-singapore-brunei", "extract")
+    assert store.load_extract_run_metadata(conn, region="malaysia-singapore-brunei", run_id="real") == {
+        "region": "malaysia-singapore-brunei",
         "run_id": "real",
         "wikidata_snapshot_date": "2026-07-15T00:00:00Z",
         "source_statuses": {
@@ -481,7 +481,7 @@ def test_cli_extract_threads_pageview_options_for_wikipedia_only(monkeypatch, tm
     rc = cli.main(
         [
             "--region",
-            "malaysia",
+            "malaysia-singapore-brunei",
             "extract",
             "--db",
             str(tmp_path / "w.db"),
@@ -514,7 +514,7 @@ def test_extract_fingerprint_inputs_thread_pageview_window_and_selected_cache_fi
         snapshot_dir / "pageviews",
         ("2025-07-15", "2026-07-15"),
     )
-    region = cli.config.load("malaysia")
+    region = cli.config.load("malaysia-singapore-brunei")
 
     inputs = cli._extract_fingerprint_inputs(
         region,
@@ -557,7 +557,7 @@ def test_cli_extract_rejects_mismatched_pageview_manifest(monkeypatch, tmp_path,
     rc = cli.main(
         [
             "--region",
-            "malaysia",
+            "malaysia-singapore-brunei",
             "extract",
             "--db",
             str(tmp_path / "w.db"),
@@ -589,11 +589,11 @@ def test_cli_extract_skips_matching_stage_fingerprint(monkeypatch, tmp_path, cap
     db = tmp_path / "w.db"
     conn = store.connect(db)
     store.init_schema(conn)
-    region = cli.config.load("malaysia")
+    region = cli.config.load("malaysia-singapore-brunei")
     snapshots = cli.acquire.snapshot_paths(snapshot_dir)
     fp = fingerprint.stage_fingerprint(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         "extract",
         inputs=cli._extract_fingerprint_inputs(
             region,
@@ -603,21 +603,21 @@ def test_cli_extract_skips_matching_stage_fingerprint(monkeypatch, tmp_path, cap
     )
     fingerprint.record(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         "extract",
         fp,
         completed_at="2026-07-15T00:00:00Z",
     )
     store.record_extract_run_metadata(
         conn,
-        region="malaysia",
+        region="malaysia-singapore-brunei",
         run_id="old",
         wikidata_snapshot_date="2026-07-15T00:00:00Z",
         source_statuses={"wikidata": {"status": "success", "count": 1}},
     )
     store.mark_stage_complete(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         "extract",
         run_id="old",
         completed_at="2026-07-15T00:00:00Z",
@@ -627,7 +627,7 @@ def test_cli_extract_skips_matching_stage_fingerprint(monkeypatch, tmp_path, cap
     rc = cli.main(
         [
             "--region",
-            "malaysia",
+            "malaysia-singapore-brunei",
             "extract",
             "--db",
             str(db),
@@ -642,11 +642,11 @@ def test_cli_extract_skips_matching_stage_fingerprint(monkeypatch, tmp_path, cap
 
     assert rc == 0
     captured = capsys.readouterr()
-    assert "extract skipped for malaysia" in captured.out
-    assert "SKIP stage=extract region=malaysia fingerprint=" in captured.err
+    assert "extract skipped for malaysia-singapore-brunei" in captured.out
+    assert "SKIP stage=extract region=malaysia-singapore-brunei fingerprint=" in captured.err
     conn = store.connect(db)
-    assert store.load_extract_run_metadata(conn, region="malaysia", run_id="real") == {
-        "region": "malaysia",
+    assert store.load_extract_run_metadata(conn, region="malaysia-singapore-brunei", run_id="real") == {
+        "region": "malaysia-singapore-brunei",
         "run_id": "real",
         "wikidata_snapshot_date": "2026-07-15T00:00:00Z",
         "source_statuses": {"wikidata": {"status": "success", "count": 1}},
@@ -660,7 +660,7 @@ def test_reconcile_fingerprint_inputs_intersect_successes_with_enabled_sources(
     store.init_schema(conn)
     store.record_extract_run_metadata(
         conn,
-        region="uk",
+        region="united-kingdom",
         run_id="r1",
         wikidata_snapshot_date="2026-07-15T00:00:00Z",
         source_statuses={
@@ -669,8 +669,8 @@ def test_reconcile_fingerprint_inputs_intersect_successes_with_enabled_sources(
         },
     )
     region = dataclasses.replace(
-        cli.config.load("uk"),
-        sources={**cli.config.load("uk").sources, "osm": False},
+        cli.config.load("united-kingdom"),
+        sources={**cli.config.load("united-kingdom").sources, "osm": False},
     )
 
     inputs = cli._stage_fingerprint_inputs(
@@ -703,7 +703,7 @@ def test_cli_extract_fails_early_when_snapshot_sidecar_has_no_payload(
     rc = cli.main(
         [
             "--region",
-            "malaysia",
+            "malaysia-singapore-brunei",
             "extract",
             "--db",
             str(tmp_path / "w.db"),
@@ -745,7 +745,7 @@ def test_cli_full_extract_fails_early_when_selected_snapshot_sidecar_has_no_payl
     rc = cli.main(
         [
             "--region",
-            "malaysia",
+            "malaysia-singapore-brunei",
             "extract",
             "--db",
             str(tmp_path / "w.db"),
@@ -805,7 +805,7 @@ def test_cli_extract_ignores_sidecars_for_disabled_sources(
     rc = cli.main(
         [
             "--region",
-            "malaysia",
+            "malaysia-singapore-brunei",
             "extract",
             "--db",
             str(tmp_path / "w.db"),
@@ -859,14 +859,14 @@ def test_cli_only_source_osm_preserves_previous_wikidata_date_without_wikidata_p
     store.init_schema(conn)
     store.record_extract_run_metadata(
         conn,
-        region="malaysia",
+        region="malaysia-singapore-brunei",
         run_id="old",
         wikidata_snapshot_date="2026-07-15T00:00:00Z",
         source_statuses={"wikidata": {"status": "success", "count": 1}},
     )
     store.mark_stage_complete(
         conn,
-        "malaysia",
+        "malaysia-singapore-brunei",
         "extract",
         run_id="old",
         completed_at="2026-07-15T00:00:00Z",
@@ -876,7 +876,7 @@ def test_cli_only_source_osm_preserves_previous_wikidata_date_without_wikidata_p
     rc = cli.main(
         [
             "--region",
-            "malaysia",
+            "malaysia-singapore-brunei",
             "extract",
             "--db",
             str(db),
@@ -891,7 +891,7 @@ def test_cli_only_source_osm_preserves_previous_wikidata_date_without_wikidata_p
 
     assert rc == 0
     conn = store.connect(db)
-    assert store.load_extract_run_metadata(conn, region="malaysia", run_id="real")[
+    assert store.load_extract_run_metadata(conn, region="malaysia-singapore-brunei", run_id="real")[
         "wikidata_snapshot_date"
     ] == "2026-07-15T00:00:00Z"
 
@@ -986,7 +986,7 @@ def test_cli_parallel_extract_rolls_back_merge_metadata_and_stage_together(
     rc = cli.main(
         [
             "--region",
-            "malaysia",
+            "malaysia-singapore-brunei",
             "extract",
             "--db",
             str(db),
@@ -1004,10 +1004,10 @@ def test_cli_parallel_extract_rolls_back_merge_metadata_and_stage_together(
     conn = store.connect(db)
     assert conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0] == 0
     assert (
-        store.load_extract_run_metadata(conn, region="malaysia", run_id="real")
+        store.load_extract_run_metadata(conn, region="malaysia-singapore-brunei", run_id="real")
         is None
     )
-    assert not store.stage_completed(conn, "malaysia", "extract")
+    assert not store.stage_completed(conn, "malaysia-singapore-brunei", "extract")
 
 
 def test_cli_eval_report_reads_labeled_tsv_and_config(monkeypatch, tmp_path, capsys):

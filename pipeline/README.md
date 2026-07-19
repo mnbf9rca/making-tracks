@@ -19,7 +19,7 @@ Run commands and tests with `uv run` so the workspace `mt-contracts` dependency 
 ```bash
 cd pipeline
 uv run --extra dev python -m pytest -q
-uv run mt-pipeline --region uk extract
+uv run mt-pipeline --region united-kingdom extract
 ```
 
 No-uv fallback for a Python 3.11 environment:
@@ -32,11 +32,11 @@ python -m pytest pipeline/tests -q
 ## CLI
 
 ```bash
-uv run mt-pipeline --region uk extract --db work.db
-uv run mt-pipeline --region uk reconcile --db work.db
-uv run mt-pipeline --region uk score --db work.db
-uv run mt-pipeline --region uk categorize --db work.db
-uv run mt-pipeline --region uk publish --db work.db
+uv run mt-pipeline --region united-kingdom extract --db work.db
+uv run mt-pipeline --region united-kingdom reconcile --db work.db
+uv run mt-pipeline --region united-kingdom score --db work.db
+uv run mt-pipeline --region united-kingdom categorize --db work.db
+uv run mt-pipeline --region united-kingdom publish --db work.db
 ```
 
 Every stage after `extract` requires its immediate predecessor to have completed for the same region. A skipped predecessor fails loudly and names the stage to run first.

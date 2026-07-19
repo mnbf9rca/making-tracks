@@ -20,7 +20,7 @@ FIX = pathlib.Path(__file__).parent / "fixtures/registers/he_sample.geojson"
 def test_extracts_point_and_polygon_centroid_with_grade(tmp_path):
     conn = _db(tmp_path / "w")
 
-    count = he.HistoricEnglandExtractor().extract("uk", FIX, conn, run_id="r1")
+    count = he.HistoricEnglandExtractor().extract("united-kingdom", FIX, conn, run_id="r1")
     rows = conn.execute(
         "SELECT source_ref, name, lat, lon FROM source_records ORDER BY source_ref"
     ).fetchall()
@@ -37,7 +37,7 @@ def test_extracts_point_and_polygon_centroid_with_grade(tmp_path):
 def test_grade_rides_in_props_as_the_heritage_signal(tmp_path):
     conn = _db(tmp_path / "w")
 
-    he.HistoricEnglandExtractor().extract("uk", FIX, conn, run_id="r1")
+    he.HistoricEnglandExtractor().extract("united-kingdom", FIX, conn, run_id="r1")
     props = json.loads(
         conn.execute(
             "SELECT props_json FROM source_records WHERE source_ref='hehle:1000001'"
@@ -57,7 +57,7 @@ def test_numeric_list_entry_stringifies_to_digits(tmp_path):
     path.write_text('{"type":"FeatureCollection","features":[' + feature + "]}")
     conn = _db(tmp_path / "num")
 
-    assert he.HistoricEnglandExtractor().extract("uk", path, conn, run_id="r1") == 1
+    assert he.HistoricEnglandExtractor().extract("united-kingdom", path, conn, run_id="r1") == 1
     assert (
         conn.execute("SELECT source_ref FROM source_records").fetchone()[0]
         == "hehle:1000005"
@@ -88,7 +88,7 @@ def test_corrupt_geojson_is_a_loud_typed_error(tmp_path):
     bad.write_text('{"type":"FeatureCollection","features":[ NOT JSON')
 
     with pytest.raises(he._snapshot.SnapshotParseError):
-        he.HistoricEnglandExtractor().extract("uk", bad, _db(tmp_path / "b"), run_id="r1")
+        he.HistoricEnglandExtractor().extract("united-kingdom", bad, _db(tmp_path / "b"), run_id="r1")
 
 
 def test_wrong_shape_valid_json_is_a_loud_typed_error(tmp_path):
@@ -96,7 +96,7 @@ def test_wrong_shape_valid_json_is_a_loud_typed_error(tmp_path):
     bad.write_text('{"type":"Topology","objects":{}}')
 
     with pytest.raises(he._snapshot.SnapshotParseError):
-        he.HistoricEnglandExtractor().extract("uk", bad, _db(tmp_path / "w"), run_id="r1")
+        he.HistoricEnglandExtractor().extract("united-kingdom", bad, _db(tmp_path / "w"), run_id="r1")
 
 
 def test_non_array_features_is_a_loud_typed_error(tmp_path):
@@ -104,7 +104,7 @@ def test_non_array_features_is_a_loud_typed_error(tmp_path):
     bad.write_text('{"type":"FeatureCollection","features":{}}')
 
     with pytest.raises(he._snapshot.SnapshotParseError):
-        he.HistoricEnglandExtractor().extract("uk", bad, _db(tmp_path / "f"), run_id="r1")
+        he.HistoricEnglandExtractor().extract("united-kingdom", bad, _db(tmp_path / "f"), run_id="r1")
 
 
 def test_arcgis_exceeded_transfer_limit_is_rejected(tmp_path):
@@ -115,7 +115,7 @@ def test_arcgis_exceeded_transfer_limit_is_rejected(tmp_path):
     )
 
     with pytest.raises(he._snapshot.SnapshotParseError, match="exceededTransferLimit"):
-        he.HistoricEnglandExtractor().extract("uk", bad, _db(tmp_path / "p"), run_id="r1")
+        he.HistoricEnglandExtractor().extract("united-kingdom", bad, _db(tmp_path / "p"), run_id="r1")
 
 
 def test_multipoint_uses_mean_coordinate(tmp_path):
@@ -127,7 +127,7 @@ def test_multipoint_uses_mean_coordinate(tmp_path):
     path.write_text(_geojson([feature]))
     conn = _db(tmp_path / "mp")
 
-    assert he.HistoricEnglandExtractor().extract("uk", path, conn, run_id="r1") == 1
+    assert he.HistoricEnglandExtractor().extract("united-kingdom", path, conn, run_id="r1") == 1
     lat, lon = conn.execute("SELECT lat, lon FROM source_records").fetchone()
     assert abs(lat - 52.0) < 1e-9
     assert abs(lon + 3.0) < 1e-9
@@ -148,7 +148,7 @@ def test_live_he_wgs84_multipoint_shape_is_accepted(tmp_path):
     )
     conn = _db(tmp_path / "live")
 
-    assert he.HistoricEnglandExtractor().extract("uk", path, conn, run_id="r1") == 1
+    assert he.HistoricEnglandExtractor().extract("united-kingdom", path, conn, run_id="r1") == 1
     lat, lon = conn.execute("SELECT lat, lon FROM source_records").fetchone()
     assert abs(lat - 51.19883105846) < 1e-12
     assert abs(lon + 2.23911708088334) < 1e-12
@@ -168,7 +168,7 @@ def test_epsg_27700_snapshot_is_transformed_to_wgs84(tmp_path):
     )
     conn = _db(tmp_path / "bng")
 
-    assert he.HistoricEnglandExtractor().extract("uk", path, conn, run_id="r1") == 1
+    assert he.HistoricEnglandExtractor().extract("united-kingdom", path, conn, run_id="r1") == 1
     lat, lon = conn.execute("SELECT lat, lon FROM source_records").fetchone()
     assert abs(lat - 51.19883105846) < 0.00001
     assert abs(lon + 2.23911708088334) < 0.00001
@@ -213,7 +213,7 @@ def test_unknown_declared_crs_is_rejected_loudly(tmp_path):
 
     with pytest.raises(he._snapshot.SnapshotParseError, match="EPSG:3857"):
         he.HistoricEnglandExtractor().extract(
-            "uk", path, _db(tmp_path / "unknown-crs"), run_id="r1"
+            "united-kingdom", path, _db(tmp_path / "unknown-crs"), run_id="r1"
         )
 
 
@@ -227,7 +227,7 @@ def test_hostile_huge_grade_does_not_crash_record_kept(tmp_path):
     path.write_text(_geojson([feature]))
     conn = _db(tmp_path / "g")
 
-    assert he.HistoricEnglandExtractor().extract("uk", path, conn, run_id="r1") == 1
+    assert he.HistoricEnglandExtractor().extract("united-kingdom", path, conn, run_id="r1") == 1
     props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
     assert len(props["grade"]) == 300
 
@@ -246,7 +246,7 @@ def test_oversized_ring_feature_is_skipped_not_crashed(tmp_path):
     path.write_text(_geojson([bad, good]))
     conn = _db(tmp_path / "r")
 
-    assert he.HistoricEnglandExtractor().extract("uk", path, conn, run_id="r1") == 1
+    assert he.HistoricEnglandExtractor().extract("united-kingdom", path, conn, run_id="r1") == 1
 
 
 def test_malformed_geometry_feature_is_skipped_not_crashed(tmp_path):
@@ -262,7 +262,7 @@ def test_malformed_geometry_feature_is_skipped_not_crashed(tmp_path):
     path.write_text(_geojson([bad, good]))
     conn = _db(tmp_path / "m")
 
-    assert he.HistoricEnglandExtractor().extract("uk", path, conn, run_id="r1") == 1
+    assert he.HistoricEnglandExtractor().extract("united-kingdom", path, conn, run_id="r1") == 1
 
 
 def test_polygon_centroid_is_arithmetic_mean_not_bbox(tmp_path):
@@ -275,7 +275,7 @@ def test_polygon_centroid_is_arithmetic_mean_not_bbox(tmp_path):
     path.write_text(_geojson([feature]))
     conn = _db(tmp_path / "p")
 
-    he.HistoricEnglandExtractor().extract("uk", path, conn, run_id="r1")
+    he.HistoricEnglandExtractor().extract("united-kingdom", path, conn, run_id="r1")
     lon = conn.execute(
         "SELECT lon FROM source_records WHERE source_ref='hehle:1000012'"
     ).fetchone()[0]
@@ -286,8 +286,8 @@ def test_deterministic_same_file_same_records(tmp_path):
     first = _db(tmp_path / "a")
     second = _db(tmp_path / "b")
 
-    he.HistoricEnglandExtractor().extract("uk", FIX, first, run_id="r1")
-    he.HistoricEnglandExtractor().extract("uk", FIX, second, run_id="r2")
+    he.HistoricEnglandExtractor().extract("united-kingdom", FIX, first, run_id="r1")
+    he.HistoricEnglandExtractor().extract("united-kingdom", FIX, second, run_id="r2")
     query = "SELECT source_ref, lat, lon FROM source_records ORDER BY id"
 
     assert first.execute(query).fetchall() == second.execute(query).fetchall()

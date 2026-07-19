@@ -4,15 +4,15 @@
   "source_build": "https://build.protomaps.com/20260714.pmtiles",
   "method": "pmtiles extract --minzoom=0 --maxzoom=Z --bbox=... . exact=true rows are real on-disk extract byte counts; exact=false are the tool's rounded dry-run archive-size report.",
   "measurements": [
-    {"region": "uk", "maxzoom": 11, "archive_bytes": 147000000, "exact": false},
-    {"region": "uk", "maxzoom": 12, "archive_bytes": 341000000, "exact": false},
-    {"region": "uk", "maxzoom": 13, "archive_bytes": 730000000, "exact": false},
-    {"region": "uk", "maxzoom": 14, "archive_bytes": 1463177229, "exact": true},
-    {"region": "uk", "maxzoom": 15, "archive_bytes": 3000000000, "exact": false},
-    {"region": "malaysia", "maxzoom": 11, "archive_bytes": 21000000, "exact": false},
-    {"region": "malaysia", "maxzoom": 12, "archive_bytes": 52000000, "exact": false},
-    {"region": "malaysia", "maxzoom": 13, "archive_bytes": 112289127, "exact": true},
-    {"region": "malaysia", "maxzoom": 14, "archive_bytes": 223155574, "exact": true},
-    {"region": "malaysia", "maxzoom": 15, "archive_bytes": 447000000, "exact": false}
+    {"region": "united-kingdom", "maxzoom": 11, "archive_bytes": 147000000, "exact": false},
+    {"region": "united-kingdom", "maxzoom": 12, "archive_bytes": 341000000, "exact": false},
+    {"region": "united-kingdom", "maxzoom": 13, "archive_bytes": 730000000, "exact": false},
+    {"region": "united-kingdom", "maxzoom": 14, "archive_bytes": 1463177229, "exact": true},
+    {"region": "united-kingdom", "maxzoom": 15, "archive_bytes": 3000000000, "exact": false},
+    {"region": "malaysia-singapore-brunei", "maxzoom": 11, "archive_bytes": 21000000, "exact": false},
+    {"region": "malaysia-singapore-brunei", "maxzoom": 12, "archive_bytes": 52000000, "exact": false},
+    {"region": "malaysia-singapore-brunei", "maxzoom": 13, "archive_bytes": 112289127, "exact": true},
+    {"region": "malaysia-singapore-brunei", "maxzoom": 14, "archive_bytes": 223155574, "exact": true},
+    {"region": "malaysia-singapore-brunei", "maxzoom": 15, "archive_bytes": 447000000, "exact": false}
   ]
 }

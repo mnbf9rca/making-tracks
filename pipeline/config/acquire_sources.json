@@ -5,7 +5,7 @@
     "allowed_hosts": ["query.wikidata.org"],
     "max_bytes": 33554432,
     "region_overrides": {
-      "uk": {
+      "united-kingdom": {
         "tile_degrees": 0.5
       }
     }
@@ -27,14 +27,14 @@
     "polite_interval_seconds": 0.1
   },
   "osm": {
-    "malaysia": {
+    "malaysia-singapore-brunei": {
       "url": "https://download.geofabrik.de/asia/malaysia-singapore-brunei-latest.osm.pbf",
       "md5_url": "https://download.geofabrik.de/asia/malaysia-singapore-brunei-latest.osm.pbf.md5",
       "allowed_hosts": ["download.geofabrik.de"],
       "geofabrik_date": null,
       "max_bytes": 1500000000
     },
-    "uk": {
+    "united-kingdom": {
       "url": "https://download.geofabrik.de/europe/united-kingdom-latest.osm.pbf",
       "md5_url": "https://download.geofabrik.de/europe/united-kingdom-latest.osm.pbf.md5",
       "allowed_hosts": ["download.geofabrik.de"],

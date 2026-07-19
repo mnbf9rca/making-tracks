@@ -371,7 +371,7 @@ def test_acquire_all_applies_region_wikidata_tile_override(tmp_path, monkeypatch
                     "endpoint": "https://query.wikidata.org/sparql",
                     "allowed_hosts": ["query.wikidata.org"],
                     "max_bytes": 1234,
-                    "region_overrides": {"uk": {"tile_degrees": 0.5}},
+                    "region_overrides": {"united-kingdom": {"tile_degrees": 0.5}},
                 },
                 "wikipedia": {
                     "endpoint": "https://en.wikipedia.org/w/api.php",
@@ -382,7 +382,7 @@ def test_acquire_all_applies_region_wikidata_tile_override(tmp_path, monkeypatch
         )
     )
     region_config = types.SimpleNamespace(
-        region_id="uk",
+        region_id="united-kingdom",
         bbox=(-1.0, 50.0, 1.0, 51.0),
         languages=["en"],
         sources={"wikidata": True, "wikipedia": False, "osm": False},
@@ -443,7 +443,7 @@ def test_acquire_all_runs_pageviews_when_region_opts_in(tmp_path, monkeypatch):
         )
     )
     region_config = types.SimpleNamespace(
-        region_id="malaysia",
+        region_id="malaysia-singapore-brunei",
         bbox=(100.0, 1.0, 101.0, 2.0),
         languages=["en"],
         sources={"wikidata": False, "wikipedia": True, "osm": False},
@@ -517,7 +517,7 @@ def test_acquire_all_skips_pageviews_when_region_opts_out(tmp_path, monkeypatch)
         )
     )
     region_config = types.SimpleNamespace(
-        region_id="uk",
+        region_id="united-kingdom",
         bbox=(100.0, 1.0, 101.0, 2.0),
         languages=["en"],
         sources={"wikidata": False, "wikipedia": True, "osm": False},

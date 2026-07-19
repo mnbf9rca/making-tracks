@@ -6,7 +6,7 @@ from mt_contracts.validation import is_valid, validate_instance
 
 
 def test_valid_manifest_passes(contracts_root):
-    inst = json.loads((contracts_root / "fixtures/manifest/valid/uk.json").read_text())
+    inst = json.loads((contracts_root / "fixtures/manifest/valid/united-kingdom.json").read_text())
     validate_instance("manifest", inst)
 
 
@@ -39,13 +39,13 @@ def test_manifest_traversal_filename_fails(contracts_root):
 
 
 def test_manifest_rejects_non_v1_basemap_maxzoom(contracts_root):
-    inst = json.loads((contracts_root / "fixtures/manifest/valid/uk.json").read_text())
+    inst = json.loads((contracts_root / "fixtures/manifest/valid/united-kingdom.json").read_text())
     inst["basemap"]["maxzoom"] = 15
     assert not is_valid("manifest", inst)
 
 
 def test_manifest_with_attribution_requires_reader_v2(contracts_root):
-    inst = json.loads((contracts_root / "fixtures/manifest/valid/uk.json").read_text())
+    inst = json.loads((contracts_root / "fixtures/manifest/valid/united-kingdom.json").read_text())
     inst["min_reader_version"] = 1
     inst["attribution"] = [
         {

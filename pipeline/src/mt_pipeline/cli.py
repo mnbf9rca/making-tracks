@@ -54,7 +54,11 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="mt-pipeline",
         description="Making Tracks data pipeline.",
     )
-    parser.add_argument("--region", required=True, help="region id, e.g. uk")
+    parser.add_argument(
+        "--region",
+        required=True,
+        help="region id, e.g. united-kingdom",
+    )
     parser.add_argument("stage", choices=_COMMANDS, help="pipeline stage or acquisition step")
     parser.add_argument("--db", default="work.db", help="path to the SQLite store")
     parser.add_argument("--run-id", default=_DEFAULT_RUN_ID, help="run metadata tag")

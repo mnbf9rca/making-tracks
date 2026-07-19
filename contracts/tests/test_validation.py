@@ -54,8 +54,8 @@ def test_built_wheel_contains_machine_readable_contract_assets(
     assert "mt_contracts/versions.json" in names
     assert "mt_contracts/schemas/place.schema.json" in names
     assert "mt_contracts/schemas/registry-record.schema.json" in names
-    assert "mt_contracts/regions/uk.json" in names
-    assert "mt_contracts/regions/malaysia.json" in names
+    assert "mt_contracts/regions/united-kingdom.json" in names
+    assert "mt_contracts/regions/malaysia-singapore-brunei.json" in names
     assert "mt_contracts/basemap-budget.json" in names
 
 
@@ -71,9 +71,9 @@ import mt_contracts
 from mt_contracts.validation import load_schema
 from mt_contracts.versions import SCHEMA_VERSIONS
 
-assert mt_contracts.available_regions() == ["malaysia", "uk"]
-cfg = mt_contracts.load_region_config("malaysia")
-assert cfg["region_id"] == "malaysia"
+assert mt_contracts.available_regions() == ["malaysia-singapore-brunei", "united-kingdom"]
+cfg = mt_contracts.load_region_config("malaysia-singapore-brunei")
+assert cfg["region_id"] == "malaysia-singapore-brunei"
 assert set(cfg) == {"schema_version", "region_id", "display_name", "bbox", "languages", "sources", "pageviews", "zone_levels", "zone_allowlist", "basemap"}
 assert SCHEMA_VERSIONS["region_config"] == 1
 assert load_schema("region-config")["title"] == "RegionConfig"

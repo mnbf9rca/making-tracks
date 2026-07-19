@@ -28,12 +28,12 @@
           "bytes_with_thumbs"
         ],
         "properties": {
-          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 129},
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$", "maxLength": 129},
           "display_name": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u200b\\u200c\\u200d\\u2028\\u2029\\u202a-\\u202e\\u2060\\u2066-\\u2069\\ufeff]*$"},
           "parent": {
             "anyOf": [
               {"type": "null"},
-              {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 129}
+              {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$", "maxLength": 129}
             ]
           },
           "bbox": {

@@ -2,7 +2,7 @@ from mt_pipeline import config
 
 
 def test_region_config_loads_zone_levels_and_prune_list():
-    cfg = config.load("uk")
+    cfg = config.load("united-kingdom")
     assert cfg.zone_levels == {2: "country", 4: "region", 6: "county"}
     assert cfg.zone_allowlist == ()
 

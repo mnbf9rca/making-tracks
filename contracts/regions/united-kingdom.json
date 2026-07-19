@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "region_id": "uk",
+  "region_id": "united-kingdom",
   "display_name": "United Kingdom",
   "bbox": [-8.65, 49.84, 1.77, 60.86],
   "languages": ["en"],

@@ -50,7 +50,7 @@ A region manifest contains schema version, reader floor, publish version, tile i
 
 ## Region Config
 
-Region IDs and source keys are lowercase additive identifiers, not enums. Sources are optional per region; no source or region is load-bearing. Region config includes `region_id`, `display_name`, `bbox`, `languages`, `sources`, and `basemap`. `source_pmtiles` is HTTPS-only and control/whitespace-free. A1 reads configs through `available_regions()` and `load_region_config(region_id)`.
+Region IDs and source keys are lowercase additive identifiers, not enums. Top-level region IDs are deterministic slugs derived from the source extract path: strip the Geofabrik continent directory and `-latest.osm.pbf` suffix, then use the remaining lowercase hyphenated basename unchanged (`europe/united-kingdom-latest.osm.pbf` -> `united-kingdom`; `asia/malaysia-singapore-brunei-latest.osm.pbf` -> `malaysia-singapore-brunei`). The region config filename must be `{region_id}.json`, and `load_region_config` rejects filename/content mismatches. Display names are taken from the extract source metadata, not hand-authored labels; for Geofabrik extracts, use the proper extract name published by Geofabrik. The pre-release legacy IDs `uk` and `malaysia` are not aliases; a cutover to new region IDs must be paired with the app-side hardcoded region-list update in the same release. Sources are optional per region; no source or region is load-bearing. Region config includes `region_id`, `display_name`, `bbox`, `languages`, `sources`, and `basemap`. `source_pmtiles` is HTTPS-only and control/whitespace-free. A1 reads configs through `available_regions()` and `load_region_config(region_id)`.
 
 ## Basemap Pack Budget
 
@@ -60,8 +60,8 @@ Measured z14 pack sizes:
 
 | Region | z14 bytes | Decision |
 |---|---:|---|
-| UK | 1,463,177,229 | Country pack viable |
-| Malaysia | 223,155,574 | Country pack viable |
+| United Kingdom | 1,463,177,229 | Country pack viable |
+| Malaysia, Singapore, and Brunei | 223,155,574 | Country pack viable |
 
 These rows are exact real extract sizes and are mirrored in `basemap-budget.json` and `regions/*.json`.
 
