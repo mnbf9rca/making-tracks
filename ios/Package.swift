@@ -52,7 +52,7 @@ let package = Package(
         ),
         .testTarget(
             name: "MakingTracksCoreTests",
-            dependencies: ["MakingTracksCore"],
+            dependencies: ["MakingTracksCore", "MakingTracksData"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
     ]
