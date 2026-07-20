@@ -121,6 +121,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         installed: [String: String],
         installedStorageBytes: [String: Int] = [:],
         availablePublishVersions: [String: String] = [:],
+        availableStorageBytes: [String: Int] = [:],
         activeProgress: OfflineDownloadProgress?,
         pausedProgress: OfflineDownloadProgress? = nil,
         pausedRegions: Set<String> = [],
@@ -136,6 +137,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
                 installed: installed,
                 installedStorageBytes: installedStorageBytes,
                 availablePublishVersions: availablePublishVersions,
+                availableStorageBytes: availableStorageBytes,
                 activeProgress: activeProgress,
                 pausedProgress: pausedProgress,
                 pausedRegions: pausedRegions,
@@ -159,6 +161,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         installed: [String: String],
         installedStorageBytes: [String: Int],
         availablePublishVersions: [String: String],
+        availableStorageBytes: [String: Int],
         activeProgress: OfflineDownloadProgress?,
         pausedProgress: OfflineDownloadProgress?,
         pausedRegions: Set<String>,
@@ -200,7 +203,8 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             knownByteSize: knownByteSize(
                 for: zone.id,
                 state: state,
-                installedStorageBytes: installedStorageBytes
+                installedStorageBytes: installedStorageBytes,
+                availableStorageBytes: availableStorageBytes
             ),
             hasUnavailableLocalData: hasUnavailableLocalData,
             hasUnavailablePausedDownload: hasUnavailablePausedDownload
@@ -212,6 +216,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
                 installed: installed,
                 installedStorageBytes: installedStorageBytes,
                 availablePublishVersions: availablePublishVersions,
+                availableStorageBytes: availableStorageBytes,
                 activeProgress: activeProgress,
                 pausedProgress: pausedProgress,
                 pausedRegions: pausedRegions,
@@ -260,7 +265,8 @@ struct OfflineRegionCatalog: Sendable, Equatable {
     private func knownByteSize(
         for region: String,
         state: OfflineRegionCatalogRow.State,
-        installedStorageBytes: [String: Int]
+        installedStorageBytes: [String: Int],
+        availableStorageBytes: [String: Int]
     ) -> Int? {
         switch state {
         case let .downloading(progress), let .paused(progress):
@@ -271,7 +277,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         case .installed, .unavailable, .quarantined:
             return installedStorageBytes[region]
         case .notInstalled, .updateAvailable:
-            return nil
+            return availableStorageBytes[region]
         }
     }
 
@@ -858,6 +864,16 @@ struct OfflineDownloadProgress: Sendable, Equatable {
         return min(max(fractionComplete, 0), 1)
     }
 
+    private var floorFraction: Double {
+        if let totalBytes {
+            guard totalBytes > 0 else { return 0 }
+            if let completedBytes {
+                return min(max(Double(completedBytes) / Double(totalBytes), 0), 1)
+            }
+        }
+        return boundedFraction
+    }
+
     var statusText: String {
         if isWaitingForConnectivity {
             return "Waiting for Wi-Fi"
@@ -873,14 +889,14 @@ struct OfflineDownloadProgress: Sendable, Equatable {
     func floored(by previous: OfflineDownloadProgress?) -> OfflineDownloadProgress {
         guard let previous,
               previous.region == nil || region == nil || previous.region == region,
-              previous.fractionComplete > fractionComplete
+              previous.floorFraction > floorFraction
         else { return self }
         return OfflineDownloadProgress(
             region: region ?? previous.region,
             publishVersion: publishVersion ?? previous.publishVersion,
             completedBytes: maxOptional(completedBytes, previous.completedBytes),
             totalBytes: totalBytes ?? previous.totalBytes,
-            fractionComplete: previous.fractionComplete,
+            fractionComplete: previous.floorFraction,
             isWaitingForConnectivity: isWaitingForConnectivity
         )
     }
@@ -3194,26 +3210,51 @@ struct OfflineMapsLocalState: Equatable, Sendable {
     )
 }
 
+struct OfflineMapsAvailability: Equatable, Sendable {
+    let publishVersions: [String: String]
+    let storageBytes: [String: Int]
+
+    static let empty = OfflineMapsAvailability(publishVersions: [:], storageBytes: [:])
+}
+
 enum OfflineMapsRefreshCoordinator {
     @MainActor
     static func refresh(
         loadLocalState: @MainActor () async -> OfflineMapsLocalState,
-        loadAvailableVersions: @escaping @MainActor (_ installedRegions: Set<String>) async -> [String: String],
+        loadAvailability: @escaping @MainActor (_ installedRegions: Set<String>) async -> OfflineMapsAvailability,
         applyLocalState: @MainActor (OfflineMapsLocalState) -> Void,
-        applyAvailableVersions: @escaping @MainActor (_ versions: [String: String], _ installedRegions: Set<String>) -> Void
+        applyAvailability: @escaping @MainActor (_ availability: OfflineMapsAvailability, _ installedRegions: Set<String>) -> Void
     ) async -> Task<Void, Never> {
         let localState = await loadLocalState()
         applyLocalState(localState)
         let installedRegions = Set(localState.installed.keys)
         return Task { @MainActor in
-            let versions = await loadAvailableVersions(installedRegions)
+            let availability = await loadAvailability(installedRegions)
             guard !Task.isCancelled else { return }
-            applyAvailableVersions(versions, installedRegions)
+            applyAvailability(availability, installedRegions)
         }
     }
 }
 
 enum OfflinePublishAvailability {
+    static func currentAvailability(
+        for catalog: OfflineRegionCatalog,
+        installedRegions: Set<String>,
+        fetcher: TileFetching
+    ) async throws -> OfflineMapsAvailability {
+        let regionIDs = catalog.zones
+            .compactMap { MapRegion(rawValue: $0.id)?.rawValue }
+        async let versions = currentPublishVersionsOrEmpty(
+            regions: regionIDs.filter { installedRegions.contains($0) },
+            fetcher: fetcher
+        )
+        async let storageBytes = currentStorageBytesOrEmpty(for: regionIDs, fetcher: fetcher)
+        return await OfflineMapsAvailability(
+            publishVersions: versions,
+            storageBytes: storageBytes
+        )
+    }
+
     static func currentPublishVersions(
         for catalog: OfflineRegionCatalog,
         installedRegions: Set<String>,
@@ -3223,6 +3264,43 @@ enum OfflinePublishAvailability {
             .compactMap { MapRegion(rawValue: $0.id)?.rawValue }
             .filter { installedRegions.contains($0) }
         return try await ManifestClient.currentPublishVersions(regions: regionIDs, fetcher: fetcher)
+    }
+
+    private static func currentStorageBytes(
+        for regionIDs: [String],
+        fetcher: TileFetching
+    ) async throws -> [String: Int] {
+        guard let url = URL(string: "https://\(HTTPTileFetcher.trustedHost)/regions.json") else {
+            throw TileError.invalidURL
+        }
+        try HTTPTileFetcher.validateOrigin(url)
+        let data: Data
+        if let boundedFetcher = fetcher as? BoundedTileFetching {
+            data = try await boundedFetcher.fetch(url, maxBytes: RegionIndex.maxBytes)
+        } else {
+            data = try await fetcher.fetch(url)
+        }
+        guard data.count <= RegionIndex.maxBytes else { throw TileError.responseTooLarge }
+        let index = try RegionIndex.decode(data)
+        let supportedRegions = Set(regionIDs)
+        return index.regions.reduce(into: [String: Int]()) { bytes, entry in
+            guard supportedRegions.contains(entry.id) else { return }
+            bytes[entry.id] = entry.bytesWithoutThumbnails
+        }
+    }
+
+    private static func currentPublishVersionsOrEmpty(
+        regions: [String],
+        fetcher: TileFetching
+    ) async -> [String: String] {
+        (try? await ManifestClient.currentPublishVersions(regions: regions, fetcher: fetcher)) ?? [:]
+    }
+
+    private static func currentStorageBytesOrEmpty(
+        for regionIDs: [String],
+        fetcher: TileFetching
+    ) async -> [String: Int] {
+        (try? await currentStorageBytes(for: regionIDs, fetcher: fetcher)) ?? [:]
     }
 }
 
@@ -4362,6 +4440,7 @@ private struct OfflineMapsView: View {
     private let catalog = OfflineRegionCatalog.debugFixture
     @State private var installed: [String: String] = [:]
     @State private var availablePublishVersions: [String: String] = [:]
+    @State private var availableStorageBytes: [String: Int] = [:]
     @State private var pausedRegions: Set<String> = []
     @State private var quarantines: [OfflinePackQuarantine] = []
     @State private var storageStatus: StorageMenuStatus
@@ -4398,6 +4477,7 @@ private struct OfflineMapsView: View {
             installed: installed,
             installedStorageBytes: installedStorageBytes,
             availablePublishVersions: availablePublishVersions,
+            availableStorageBytes: availableStorageBytes,
             activeProgress: activeProgress,
             pausedProgress: pausedProgress,
             pausedRegions: pausedRegions,
@@ -4710,6 +4790,7 @@ private struct OfflineMapsView: View {
         guard let model else {
             availabilityRefreshTask?.cancel()
             availablePublishVersions = [:]
+            availableStorageBytes = [:]
             applyLocalState(.unavailable)
             MakingTracksLog.startup.info("offline rows state=unavailable")
             return
@@ -4719,8 +4800,8 @@ private struct OfflineMapsView: View {
             loadLocalState: {
                 await model.offlineMapsLocalState(for: catalog)
             },
-            loadAvailableVersions: { installedRegions in
-                await model.availableOfflinePublishVersions(
+            loadAvailability: { installedRegions in
+                await model.availableOfflineAvailability(
                     for: catalog,
                     installedRegions: installedRegions,
                     allowsCellularDownloads: allowsCellularDownloads
@@ -4728,14 +4809,16 @@ private struct OfflineMapsView: View {
             },
             applyLocalState: { localState in
                 availablePublishVersions = [:]
+                availableStorageBytes = [:]
                 applyLocalState(localState)
                 let installedCount = localState.installed.count
                 let quarantineCount = localState.quarantines.count
                 MakingTracksLog.startup.info("offline rows refreshed installed=\(installedCount, privacy: .public) quarantines=\(quarantineCount, privacy: .public)")
             },
-            applyAvailableVersions: { versions, refreshedInstalledRegions in
+            applyAvailability: { availability, refreshedInstalledRegions in
                 guard Set(installed.keys) == refreshedInstalledRegions else { return }
-                availablePublishVersions = versions
+                availablePublishVersions = availability.publishVersions
+                availableStorageBytes = availability.storageBytes
             }
         )
     }
@@ -6372,6 +6455,29 @@ final class MapScreenModel {
         } catch {
             MakingTracksLog.downloads.error("offline catalog current failed regions=\(installedRegions.count, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
             return [:]
+        }
+    }
+
+    func availableOfflineAvailability(
+        for catalog: OfflineRegionCatalog,
+        installedRegions: Set<String>,
+        allowsCellularDownloads: Bool,
+        availabilityFetcher: TileFetching? = nil
+    ) async -> OfflineMapsAvailability {
+        let availabilityFetcher = availabilityFetcher ?? HTTPTileFetcher.offlineAvailabilityProbe(
+            allowsCellularDownloads: allowsCellularDownloads
+        )
+        do {
+            let availability = try await OfflinePublishAvailability.currentAvailability(
+                for: catalog,
+                installedRegions: installedRegions,
+                fetcher: availabilityFetcher
+            )
+            MakingTracksLog.downloads.info("offline catalog current fetched regions=\(availability.publishVersions.count, privacy: .public) bytes=\(availability.storageBytes.count, privacy: .public)")
+            return availability
+        } catch {
+            MakingTracksLog.downloads.error("offline catalog current failed regions=\(installedRegions.count, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            return .empty
         }
     }
 
