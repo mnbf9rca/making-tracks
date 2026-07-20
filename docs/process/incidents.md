@@ -134,3 +134,26 @@ never chain an irreversible action past a check, and verify from the artifact ra
 The agent had re-stated the second of those in the same pull request it was writing at the time.
 
 → *A mutation is a bare single call* (Workflow); *Worktree discipline* (Workflow).
+
+## A hand-checked lock erased a running gate
+
+**2026-07-20.** A coordinator checked the simulator lock file by hand to see whether the designated device
+was free. The check reported idle, so the simulator was erased. A gate was running against it at the time
+and lost its device mid-run.
+
+The reading was not wrong about the lock. It was wrong about the question. The holder was working through
+the retired lock path, so nothing appeared against the canonical file — and a lock file records who holds
+the lock, not who is using the simulator. Those are different facts and only one of them was being checked.
+
+This was the fourth failure in the same family. Three earlier regressions came from the lock path itself
+splitting between a canonical and a retired name; this one came from reading the surviving path correctly
+and drawing the wrong conclusion.
+
+The fix removes the hand-check rather than improving it: `scripts/sim-lock.sh` is the only thing that
+touches the simulator, `--status` consults the process table as well as the lock, destructive operations
+refuse when the device is in use, and the retired path is asserted as a symlink on every invocation so it
+cannot silently split again after a reboot clears it.
+
+The runbook had told agents to `lsof` the lock file when in doubt. That instruction is gone.
+
+→ *iOS simulator* (AGENTS.md); *docs/process/ios-simulator.md*.
