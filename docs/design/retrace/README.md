@@ -31,6 +31,9 @@ Validation notes:
 - The dashed connection line is scaffolding: it stays behind the places, avoids
   the default navigation accent, and never dominates coloured pins.
 - Same-day reordering is represented as a continuous track.
+- Autoplay advances one visit at a time with a uniform cadence and equal dwell
+  per item. It is not derived from `visited_at` gaps or real-world temporal
+  spacing.
 - The AXXXL render deliberately drops endpoint time labels from the slider row
   so the event control remains reachable and unclipped at the largest text size.
 - Each phone-frame source includes a subtle fold/safe-area marker so reviewers
