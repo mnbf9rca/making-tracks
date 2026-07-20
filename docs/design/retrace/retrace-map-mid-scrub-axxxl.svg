@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-label="Retrace map mid-scrub at accessibility extra extra extra large text size">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f5f2e8"/>
+      <stop offset=".64" stop-color="#e9f0e8"/>
+      <stop offset="1" stop-color="#e2eceb"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#1c2421" flood-opacity="0.24"/>
+    </filter>
+    <filter id="pinShadow" x="-40%" y="-30%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#28312d" flood-opacity="0.28"/>
+    </filter>
+    <symbol id="pinRed" viewBox="0 0 36 46"><path d="M18 44C10 33 4 25 4 16 4 7 10 1 18 1s14 6 14 15c0 9-6 17-14 28z" fill="#d64b3c" stroke="#fffaf2" stroke-width="3"/><circle cx="18" cy="16" r="5.5" fill="#fffaf2"/></symbol>
+    <symbol id="pinTeal" viewBox="0 0 36 46"><path d="M18 44C10 33 4 25 4 16 4 7 10 1 18 1s14 6 14 15c0 9-6 17-14 28z" fill="#247b74" stroke="#fffaf2" stroke-width="3"/><circle cx="18" cy="16" r="5.5" fill="#fffaf2"/></symbol>
+    <symbol id="pinGold" viewBox="0 0 36 46"><path d="M18 44C10 33 4 25 4 16 4 7 10 1 18 1s14 6 14 15c0 9-6 17-14 28z" fill="#d6aa2f" stroke="#fffaf2" stroke-width="3"/><circle cx="18" cy="16" r="5.5" fill="#fffaf2"/></symbol>
+    <style>
+      .label { font-family: Helvetica; letter-spacing: 0; }
+      .road { fill: none; stroke: #fffdf7; stroke-width: 10; stroke-linecap: round; stroke-linejoin: round; }
+      .road-line { fill: none; stroke: #d9ddd3; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+      .visited-arc { fill: none; stroke: #2d8c83; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; opacity: .72; }
+      .active-arc { fill: none; stroke: #db5344; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+      .tick { stroke: #6f7c74; stroke-width: 2; stroke-linecap: round; opacity: .78; }
+    </style>
+  </defs>
+
+  <rect width="390" height="844" rx="42" fill="#101514"/>
+  <rect x="12" y="12" width="366" height="820" rx="34" fill="url(#paper)"/>
+
+  <g clip-path="inset(12 round 34)">
+    <rect x="12" y="12" width="366" height="820" fill="#f3f0e7"/>
+    <path d="M250 0c25 58 34 112 11 157-18 34-55 54-73 87-25 45-8 93-28 132-24 46-87 54-104 100-19 53 23 96 7 153-12 45-51 76-53 132h368V0z" fill="#b8d7dc" opacity=".8"/>
+    <path d="M18 91c48-33 97-28 126-3 23 20 21 54-7 74-42 29-93 20-119 3z" fill="#cfe0c9"/>
+    <path d="M53 588c60-29 119-13 135 30 15 39-21 76-81 75-49 0-84-24-89-57-4-22 9-37 35-48z" fill="#cfe0c9"/>
+
+    <path class="road" d="M-24 248C51 226 83 205 149 214c60 8 92 56 158 51 55-5 87-27 130-60"/>
+    <path class="road-line" d="M-24 248C51 226 83 205 149 214c60 8 92 56 158 51 55-5 87-27 130-60"/>
+    <path class="road" d="M47 20c35 68 57 126 53 189-4 66-42 106-35 173 8 72 62 104 70 170 7 63-26 105-61 164"/>
+    <path class="road-line" d="M47 20c35 68 57 126 53 189-4 66-42 106-35 173 8 72 62 104 70 170 7 63-26 105-61 164"/>
+    <path class="road" d="M-10 466c66-24 132-27 197-8 78 22 125 76 213 69"/>
+    <path class="road-line" d="M-10 466c66-24 132-27 197-8 78 22 125 76 213 69"/>
+
+    <path class="visited-arc" d="M95 226C132 178 177 172 211 204"/>
+    <path class="visited-arc" d="M211 204C240 224 260 243 277 280"/>
+    <path class="active-arc" d="M277 280C254 337 226 386 240 462"/>
+    <circle cx="240" cy="462" r="26" fill="none" stroke="#db5344" stroke-width="3" opacity=".28"/>
+    <circle cx="240" cy="462" r="38" fill="none" stroke="#db5344" stroke-width="2" opacity=".14"/>
+
+    <g filter="url(#pinShadow)">
+      <use href="#pinRed" x="77" y="196" width="40" height="51"/>
+      <use href="#pinTeal" x="191" y="171" width="40" height="51"/>
+      <use href="#pinGold" x="257" y="247" width="40" height="51"/>
+      <use href="#pinRed" x="220" y="429" width="40" height="51"/>
+    </g>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="24" y="54" width="342" height="86" rx="28" fill="#fffdf8"/>
+    <path d="M50 83l-10 10 10 10" fill="none" stroke="#3d4842" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="label" x="70" y="88" style="font-size:28px;font-weight:780">Retrace</text>
+    <text class="label" x="70" y="118" style="font-size:18px;font-weight:700" fill="#637069">Sat 18 Jul - 14 places</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="20" y="604" width="350" height="190" rx="32" fill="#fffdf8"/>
+    <circle cx="58" cy="668" r="24" fill="#20312c"/>
+    <path d="M54 655l18 13-18 13z" fill="#f8efe3"/>
+    <text class="label" x="96" y="650" style="font-size:19px;font-weight:760">14:20</text>
+    <text class="label" x="96" y="684" style="font-size:27px;font-weight:790">Old market</text>
+    <text class="label" x="96" y="718" style="font-size:27px;font-weight:790">arcade</text>
+    <text class="label" x="34" y="750" style="font-size:17px;font-weight:720" fill="#64716a">Drag to retrace - visit 4 of 14</text>
+    <line x1="42" y1="774" x2="348" y2="774" stroke="#d8ded7" stroke-width="11" stroke-linecap="round"/>
+    <line x1="42" y1="774" x2="182" y2="774" stroke="#2d8c83" stroke-width="11" stroke-linecap="round"/>
+    <line x1="182" y1="774" x2="224" y2="774" stroke="#db5344" stroke-width="11" stroke-linecap="round"/>
+    <line class="tick" x1="42" y1="755" x2="42" y2="793"/>
+    <line class="tick" x1="96" y1="761" x2="96" y2="787"/>
+    <line class="tick" x1="144" y1="761" x2="144" y2="787"/>
+    <line class="tick" x1="182" y1="752" x2="182" y2="796"/>
+    <line class="tick" x1="224" y1="761" x2="224" y2="787"/>
+    <line class="tick" x1="286" y1="761" x2="286" y2="787"/>
+    <line class="tick" x1="348" y1="755" x2="348" y2="793"/>
+    <rect x="201" y="751" width="46" height="46" rx="23" fill="#fffdf8" stroke="#db5344" stroke-width="4"/>
+    <circle cx="224" cy="774" r="7" fill="#db5344"/>
+  </g>
+
+  <rect x="154" y="24" width="82" height="5" rx="2.5" fill="#0f1412" opacity=".86"/>
+  <line x1="24" y1="812" x2="366" y2="812" stroke="#20312c" stroke-width="1" stroke-dasharray="4 7" opacity=".22"/>
+</svg>
