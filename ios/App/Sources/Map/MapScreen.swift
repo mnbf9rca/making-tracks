@@ -467,8 +467,16 @@ struct DeferredOfflineMaintenanceDownloadRoute {
 final class AppShellModel {
     var isMenuPresented = false
     var deepLinkPath: MenuDestination?
+    var tracksFocusPlaceID: String?
+
+    func openMenu() {
+        tracksFocusPlaceID = nil
+        deepLinkPath = nil
+        isMenuPresented = true
+    }
 
     func openListDetailDeepLink(listID: Int64) {
+        tracksFocusPlaceID = nil
         deepLinkPath = .listDetail(listID)
         isMenuPresented = true
     }
@@ -953,16 +961,19 @@ enum MapEmptyRegionSurface: Equatable {
 
 extension AppShellModel {
     func openListsDeepLink() {
+        tracksFocusPlaceID = nil
         deepLinkPath = .lists
         isMenuPresented = true
     }
 
-    func openTracksDeepLink() {
+    func openTracksDeepLink(focusingPlaceID placeID: String? = nil) {
+        tracksFocusPlaceID = placeID
         deepLinkPath = .tracks
         isMenuPresented = true
     }
 
     func openOfflineMapsDeepLink() {
+        tracksFocusPlaceID = nil
         deepLinkPath = .offlineMaps
         isMenuPresented = true
     }
@@ -1641,6 +1652,9 @@ struct MapScreen: View {
                 onHide: { placeID, name in
                     showHiddenToast(placeID: placeID, name: name)
                 },
+                onManageVisits: { placeID in
+                    appShell.openTracksDeepLink(focusingPlaceID: placeID)
+                },
                 showHiddenMode: layerVisibility.showHiddenPlaces
             )
         }
@@ -1928,8 +1942,7 @@ struct MapScreen: View {
                 listMapNavigationChrome(activeListMap)
             } else {
                 Button {
-                    appShell.deepLinkPath = nil
-                    appShell.isMenuPresented = true
+                    appShell.openMenu()
                 } label: {
                     Image(systemName: MapHomeChromeSpec.menuSymbolName)
                         .font(.system(size: MapHomeChromeSpec.menuGlyphPointSize, weight: .bold))
@@ -1945,8 +1958,7 @@ struct MapScreen: View {
 
                 if let offlineDownloadProgress = currentOfflineDownloadProgress {
                     Button {
-                        appShell.deepLinkPath = .offlineMaps
-                        appShell.isMenuPresented = true
+                        appShell.openOfflineMapsDeepLink()
                     } label: {
                         Label(
                             offlineDownloadProgress.isWaitingForConnectivity
@@ -3327,7 +3339,7 @@ private struct AppMenuSheet: View {
                 onListRenamed: onListRenamed
             ))
         case .tracks:
-            destinationWithDone(TracksView(model: model))
+            destinationWithDone(TracksView(model: model, focusPlaceID: shell.tracksFocusPlaceID))
         case .offlineMaps:
 #if DEBUG
             destinationWithDone(OfflineMapsView(
@@ -3368,6 +3380,9 @@ private struct AppMenuSheet: View {
                 path = []
             }
             return
+        }
+        if destination != .tracks {
+            shell.tracksFocusPlaceID = nil
         }
         switch destination {
         case let .listDetail(listID):
@@ -3504,21 +3519,41 @@ private struct AppMenuRootView: View {
 
 private struct TracksView: View {
     let model: MapScreenModel?
+    let focusPlaceID: String?
 
     @State private var visits: [TrackVisit] = []
     @State private var lovedOnly = false
+    @State private var isEditingVisits: Bool
     @State private var selectedTimelineEventIndex: Int?
     @State private var isAutoplaying = false
     @State private var arrivalPulseVisitID: Int64?
     @State private var autoplayTask: Task<Void, Never>?
     @State private var actionError: String?
 
+    private var scopedVisits: [TrackVisit] {
+        guard let focusPlaceID else { return visits }
+        return visits.filter { $0.placeID == focusPlaceID }
+    }
+
     private var visibleVisits: [TrackVisit] {
-        TracksVisitFilter.visibleVisits(visits, lovedOnly: lovedOnly)
+        TracksVisitFilter.visibleVisits(scopedVisits, lovedOnly: lovedOnly)
+    }
+
+    private var focusedVisitCount: Int {
+        guard focusPlaceID != nil else { return 0 }
+        return scopedVisits.count
+    }
+
+    private var canReorderVisits: Bool {
+        focusPlaceID == nil && !lovedOnly
     }
 
     private var timeline: TrackTimelineModel {
         TrackTimelineModel(visits: visibleVisits)
+    }
+
+    private var calendar: Calendar {
+        Calendar(identifier: .gregorian)
     }
 
     var body: some View {
@@ -3531,14 +3566,23 @@ private struct TracksView: View {
 
                 Text(verbatim: TracksCopy.summary(
                     visible: visibleVisits.count,
-                    total: visits.count,
+                    total: scopedVisits.count,
                     lovedOnly: lovedOnly
                 ))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("tracks.summary")
 
-                if MapScreen.TrackReplayControlVisibility.showInTracksDrawer(timeline: timeline) {
+                if focusPlaceID != nil,
+                   focusedVisitCount > 1 {
+                    Label("Multiple visits to this place", systemImage: "mappin.and.ellipse")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("tracks.focus-message")
+                }
+
+                if !isEditingVisits,
+                   MapScreen.TrackReplayControlVisibility.showInTracksDrawer(timeline: timeline) {
                     trackTimelineControls(timeline)
                 }
 
@@ -3575,6 +3619,11 @@ private struct TracksView: View {
             selectedTimelineEventIndex = nil
             arrivalPulseVisitID = nil
         }
+        .onChange(of: isEditingVisits) {
+            stopAutoplay()
+            selectedTimelineEventIndex = nil
+            arrivalPulseVisitID = nil
+        }
         .onChange(of: visibleVisits.map(\.id)) {
             stopAutoplay()
             selectedTimelineEventIndex = clampedSelectedTimelineIndex(selectedTimelineEventIndex, in: timeline)
@@ -3583,13 +3632,26 @@ private struct TracksView: View {
             stopAutoplay()
         }
         .toolbar {
-            Button {
-                Task { await reload() }
-            } label: {
-                Image(systemName: "arrow.clockwise")
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button(isEditingVisits ? "Done" : "Edit") {
+                    isEditingVisits.toggle()
+                }
+                .accessibilityIdentifier("tracks.edit")
+
+                Button {
+                    Task { await reload() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .accessibilityLabel("Refresh tracks")
             }
-            .accessibilityLabel("Refresh tracks")
         }
+    }
+
+    init(model: MapScreenModel?, focusPlaceID: String? = nil) {
+        self.model = model
+        self.focusPlaceID = focusPlaceID
+        _isEditingVisits = State(initialValue: focusPlaceID != nil)
     }
 
     private var selectedVisitID: Int64? {
@@ -3634,33 +3696,92 @@ private struct TracksView: View {
     }
 
     private func trackVisitRow(_ visit: TrackVisit, isSelected: Bool, isPulsing: Bool) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "mappin.circle.fill")
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                .scaleEffect(isPulsing ? 1.22 : 1.0)
-                .animation(.spring(response: 0.22, dampingFraction: 0.45), value: isPulsing)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(verbatim: visit.name)
-                    .font(.body)
-                Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitedAt(visit))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: "mappin.circle.fill")
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .scaleEffect(isPulsing ? 1.22 : 1.0)
+                    .animation(.spring(response: 0.22, dampingFraction: 0.45), value: isPulsing)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(verbatim: visit.name)
+                        .font(.body)
+                    Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitedAt(visit))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .layoutPriority(1)
+                Spacer()
+                Button {
+                    Task { await setLoved(visit) }
+                } label: {
+                    Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
+                }
+                .buttonStyle(.bordered)
+                .fixedSize()
+                .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
+                .accessibilityIdentifier("tracks.row.loved.\(visit.id)")
             }
-            .layoutPriority(1)
-            Spacer()
-            Button {
-                Task { await setLoved(visit) }
-            } label: {
-                Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
+
+            if isEditingVisits {
+                visitEditControls(visit)
             }
-            .buttonStyle(.bordered)
-            .fixedSize()
-            .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
-            .accessibilityIdentifier("tracks.row.loved.\(visit.id)")
         }
         .frame(minHeight: 44, alignment: .leading)
-        .accessibilityIdentifier("tracks.row.\(visit.id)")
+    }
+
+    @ViewBuilder
+    private func visitEditControls(_ visit: TrackVisit) -> some View {
+        VStack(spacing: 6) {
+            DatePicker(
+                "Visit date",
+                selection: Binding(
+                    get: { visit.visitedAt },
+                    set: { day in
+                        Task { await updateVisitDate(visit, toDayContaining: day) }
+                    }
+                ),
+                displayedComponents: .date
+            )
+            .datePickerStyle(.compact)
+            .labelsHidden()
+            .accessibilityLabel("Visit date for \(visit.name), \(formattedVisitedAt(visit))")
+            .accessibilityIdentifier("tracks.row.date.\(visit.id)")
+
+            HStack(spacing: 6) {
+                if canReorderVisits {
+                    Button {
+                        Task { await moveVisit(visit, offset: -1) }
+                    } label: {
+                        Image(systemName: "arrow.up")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!canMoveVisit(visit, offset: -1))
+                    .accessibilityLabel("Move \(visit.name), \(formattedVisitedAt(visit)), earlier that day")
+                    .accessibilityIdentifier("tracks.row.move-up.\(visit.id)")
+
+                    Button {
+                        Task { await moveVisit(visit, offset: 1) }
+                    } label: {
+                        Image(systemName: "arrow.down")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!canMoveVisit(visit, offset: 1))
+                    .accessibilityLabel("Move \(visit.name), \(formattedVisitedAt(visit)), later that day")
+                    .accessibilityIdentifier("tracks.row.move-down.\(visit.id)")
+                }
+
+                Button(role: .destructive) {
+                    Task { await deleteVisit(visit) }
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Delete \(visit.name), \(formattedVisitedAt(visit))")
+                .accessibilityIdentifier("tracks.row.delete.\(visit.id)")
+            }
+        }
+        .fixedSize()
     }
 
     private func toggleAutoplay(_ timeline: TrackTimelineModel) {
@@ -3742,6 +3863,57 @@ private struct TracksView: View {
         } catch {
             actionError = "Could not update that visit."
         }
+    }
+
+    @MainActor
+    private func updateVisitDate(_ visit: TrackVisit, toDayContaining day: Date) async {
+        guard let model else { return }
+        do {
+            try await model.updateVisitDate(visitID: visit.id, toDayContaining: day)
+            actionError = nil
+            await reload()
+        } catch {
+            actionError = "Could not update that visit."
+        }
+    }
+
+    @MainActor
+    private func moveVisit(_ visit: TrackVisit, offset: Int) async {
+        guard let model,
+              let order = reorderedVisitIDs(moving: visit, offset: offset)
+        else { return }
+        do {
+            try await model.reorderVisitsWithinDay(order, dayContaining: visit.visitedAt)
+            actionError = nil
+            await reload()
+        } catch {
+            actionError = "Could not reorder that day."
+        }
+    }
+
+    @MainActor
+    private func deleteVisit(_ visit: TrackVisit) async {
+        guard let model else { return }
+        do {
+            try await model.deleteVisit(visitID: visit.id)
+            actionError = nil
+            await reload()
+        } catch {
+            actionError = "Could not delete that visit."
+        }
+    }
+
+    private func canMoveVisit(_ visit: TrackVisit, offset: Int) -> Bool {
+        reorderedVisitIDs(moving: visit, offset: offset) != nil
+    }
+
+    private func reorderedVisitIDs(moving visit: TrackVisit, offset: Int) -> [Int64]? {
+        var dayVisits = visibleVisits.filter { calendar.isDate($0.visitedAt, inSameDayAs: visit.visitedAt) }
+        guard let index = dayVisits.firstIndex(where: { $0.id == visit.id }) else { return nil }
+        let nextIndex = index + offset
+        guard dayVisits.indices.contains(nextIndex) else { return nil }
+        dayVisits.swapAt(index, nextIndex)
+        return dayVisits.map(\.id)
     }
 
     private func categoryLabel(_ raw: String) -> String {
@@ -5286,6 +5458,7 @@ private struct PlaceCardSheet: View {
     let placeID: String
     let model: MapScreenModel?
     let onHide: (String, String) -> Void
+    let onManageVisits: (String) -> Void
     let showHiddenMode: Bool
 
     @State private var sheetInstanceID = UUID().uuidString
@@ -5633,6 +5806,16 @@ private struct PlaceCardSheet: View {
     }
 
     private func setVisited(_ visited: Bool) async {
+        if !visited, (await model?.visitCount(placeID: placeID) ?? 0) > 1 {
+            // #217: Rob has not fixed the stale single-visit threshold yet, so
+            // only the unambiguous multi-visit case routes to row selection here.
+            await MainActor.run {
+                isPerformingAction = false
+                dismiss()
+                onManageVisits(placeID)
+            }
+            return
+        }
         await performAction {
             try await model?.setVisited(placeID: placeID, visited: visited)
         }
@@ -6544,6 +6727,18 @@ private final class MapScreenModel {
 
     func setVisitLoved(visitID: Int64, loved: Bool) async throws {
         try coreLoop.setVisitVerdict(id: visitID, loved ? .loved : nil)
+    }
+
+    func updateVisitDate(visitID: Int64, toDayContaining day: Date) async throws {
+        try coreLoop.updateVisitDate(id: visitID, toDayContaining: day)
+    }
+
+    func reorderVisitsWithinDay(_ visitIDs: [Int64], dayContaining day: Date) async throws {
+        try coreLoop.reorderVisitsWithinDay(visitIDs, dayContaining: day)
+    }
+
+    func deleteVisit(visitID: Int64) async throws {
+        try coreLoop.deleteVisit(id: visitID)
     }
 
     func setHidden(placeID: String, hidden: Bool) async throws {

@@ -55,6 +55,24 @@ public final class CoreLoopController: Sendable {
         emit(placeID)
     }
 
+    public func updateVisitDate(id: Int64, toDayContaining day: Date) throws {
+        guard let visit = try database.visit(id: id) else { return }
+        try database.updateVisitDate(id: id, toDayContaining: day)
+        emit(visit.placeID)
+    }
+
+    public func reorderVisitsWithinDay(_ orderedIDs: [Int64], dayContaining day: Date) throws {
+        let placeIDs = try database.placeIDs(forVisitIDs: orderedIDs)
+        try database.reorderVisitsWithinDay(orderedIDs, dayContaining: day)
+        emit(placeIDs)
+    }
+
+    public func deleteVisit(id: Int64) throws {
+        guard let visit = try database.visit(id: id) else { return }
+        try database.deleteVisit(id: id)
+        emit(visit.placeID)
+    }
+
     public func setHidden(_ place: PlaceRef, _ hidden: Bool) throws {
         try database.setHidden(place, hidden)
         emit(place.placeID)
@@ -62,5 +80,9 @@ public final class CoreLoopController: Sendable {
 
     private func emit(_ placeID: String) {
         continuation.yield([placeID])
+    }
+
+    private func emit(_ placeIDs: Set<String>) {
+        continuation.yield(placeIDs)
     }
 }

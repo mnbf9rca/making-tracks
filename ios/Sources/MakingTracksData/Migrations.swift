@@ -88,6 +88,12 @@ extension AppDatabase {
             )
         }
 
+        register("v5") { db in
+            try db.alter(table: "visits") { t in
+                t.add(column: "visit_order", .integer).notNull().defaults(to: 0)
+            }
+        }
+
         return (migrator, identifiers)
     }
 

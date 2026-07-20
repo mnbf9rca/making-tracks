@@ -105,6 +105,23 @@ extension AppDatabase {
         try trackGeometryContext(listID: listID).visits
     }
 
+    public func visit(id: Int64) throws -> Visit? {
+        try dbQueue.read { db in
+            try Visit.fetchOne(db, key: id)
+        }
+    }
+
+    public func placeIDs(forVisitIDs ids: [Int64]) throws -> Set<String> {
+        guard !ids.isEmpty else { return [] }
+        return try dbQueue.read { db in
+            try Set(String.fetchAll(
+                db,
+                sql: "SELECT DISTINCT place_id FROM visits WHERE id IN (\(databaseQuestionMarks(count: ids.count)))",
+                arguments: StatementArguments(ids)
+            ))
+        }
+    }
+
     public func filteredTrackBridgeCount(listID: Int64) throws -> Int {
         try trackGeometryContext(listID: listID).filteredBridgeCount
     }
@@ -139,14 +156,21 @@ extension AppDatabase {
         let rows = try Row.fetchAll(
             db,
             sql: """
-                SELECT v.id, v.place_id, v.visited_at, v.verdict,
+                SELECT v.id, v.place_id, v.visited_at, v.visit_order, v.verdict,
                        s.name, s.category, s.tier, s.lat, s.lon
                 FROM visits v
                 JOIN place_snapshots s ON s.place_id = v.place_id
-                ORDER BY v.visited_at ASC, v.id ASC
                 """
         )
-        let validVisits = rows.compactMap(Self.trackVisitRow)
+        let rawVisits = rows.compactMap(Self.trackVisitRow)
+        let lovedPlaceIDs = Set(rawVisits.compactMap { visit in
+            visit.verdict == .loved ? visit.placeID : nil
+        })
+        let validVisits = rawVisits
+            .map { visit in
+                lovedPlaceIDs.contains(visit.placeID) ? visit.withVerdict(.loved) : visit
+            }
+            .sorted(by: Self.trackVisitSortIsBefore)
         let rendered = validVisits.enumerated().compactMap { index, visit -> (TrackVisit, Int)? in
             guard !hiddenPlaceIDs.contains(visit.placeID) else { return nil }
             guard isTrackList || listPlaceIDs.contains(visit.placeID) else { return nil }
@@ -187,6 +211,7 @@ extension AppDatabase {
         let id: Int64 = row["id"]
         let placeID: String = row["place_id"]
         let visitedAt: Date = row["visited_at"]
+        let visitOrder: Int = row["visit_order"]
         let rawVerdict: String? = row["verdict"]
         let name: String = row["name"]
         let category: String = row["category"]
@@ -205,6 +230,7 @@ extension AppDatabase {
             id: id,
             placeID: placeID,
             visitedAt: visitedAt,
+            visitOrder: visitOrder,
             verdict: rawVerdict.flatMap(Verdict.init(rawValue:)),
             name: safeListSnapshotText(name, max: PlaceRef.maxNameLength) ?? "Unnamed place",
             category: safeListSnapshotText(category, max: PlaceRef.maxCategoryLength) ?? "place",
@@ -212,6 +238,16 @@ extension AppDatabase {
             lat: lat,
             lon: lon
         )
+    }
+
+    private static func trackVisitSortIsBefore(_ lhs: TrackVisit, _ rhs: TrackVisit) -> Bool {
+        let calendar = visitEditCalendar
+        let leftDay = calendar.startOfDay(for: lhs.visitedAt)
+        let rightDay = calendar.startOfDay(for: rhs.visitedAt)
+        if leftDay != rightDay { return leftDay < rightDay }
+        if lhs.visitOrder != rhs.visitOrder { return lhs.visitOrder < rhs.visitOrder }
+        if lhs.visitedAt != rhs.visitedAt { return lhs.visitedAt < rhs.visitedAt }
+        return lhs.id < rhs.id
     }
 
     private static func safeListSnapshotText(_ text: String, max: Int) -> String? {
@@ -272,15 +308,7 @@ extension AppDatabase {
     public func listProgress(listID: Int64) throws -> (visited: Int, total: Int) {
         try dbQueue.read { db in
             if try Self.isTrackList(listID: listID, db) {
-                let total = try Int.fetchOne(
-                    db,
-                    sql: """
-                        SELECT COUNT(DISTINCT v.place_id)
-                        FROM visits v
-                        JOIN place_snapshots ps ON ps.place_id = v.place_id
-                        WHERE v.place_id NOT IN (SELECT place_id FROM hidden_places)
-                        """
-                ) ?? 0
+                let total = try Self.trackListSnapshots(db).count
                 return (total, total)
             }
             let total = try Int.fetchOne(
@@ -338,21 +366,33 @@ extension AppDatabase {
         let rows = try Row.fetchAll(
             db,
             sql: """
-                SELECT ps.place_id, ps.name, ps.lat, ps.lon, ps.category, ps.tier
+                SELECT v.id, v.place_id, v.visited_at, v.visit_order, v.verdict,
+                       ps.name, ps.category, ps.tier, ps.lat, ps.lon
                 FROM visits v
                 JOIN place_snapshots ps ON ps.place_id = v.place_id
-                WHERE v.id = (
-                    SELECT v2.id
-                    FROM visits v2
-                    WHERE v2.place_id = v.place_id
-                    ORDER BY v2.visited_at DESC, v2.id DESC
-                    LIMIT 1
-                )
-                AND v.place_id NOT IN (SELECT place_id FROM hidden_places)
-                ORDER BY v.visited_at DESC, v.id DESC, ps.name COLLATE NOCASE, ps.place_id
+                WHERE v.place_id NOT IN (SELECT place_id FROM hidden_places)
                 """
         )
-        return rows.compactMap(Self.listSnapshotRow)
+        let latestVisits = Dictionary(grouping: rows.compactMap(Self.trackVisitRow), by: \.placeID)
+            .compactMap { _, visits in visits.max(by: Self.trackVisitSortIsBefore) }
+            .sorted { lhs, rhs in
+                if Self.trackVisitSortIsBefore(lhs, rhs) { return false }
+                if Self.trackVisitSortIsBefore(rhs, lhs) { return true }
+                if lhs.name != rhs.name { return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending }
+                return lhs.placeID < rhs.placeID
+            }
+        return latestVisits.map(Self.listSnapshotRow)
+    }
+
+    private static func listSnapshotRow(_ visit: TrackVisit) -> ListSnapshotRow {
+        ListSnapshotRow(
+            placeID: visit.placeID,
+            name: visit.name,
+            lat: visit.lat,
+            lon: visit.lon,
+            category: visit.category,
+            tier: visit.tier
+        )
     }
 
     public func userListNames(containing placeID: String) throws -> [String] {

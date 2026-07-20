@@ -315,7 +315,7 @@ final class InteractionsTests: XCTestCase {
         XCTAssertEqual(try db.viewportState(["p_loved"])["p_loved"], PinState(saved: false, visit: .visited))
     }
 
-    func testSetVisitVerdictOnlyChangesTheRequestedVisitRow() throws {
+    func testSetVisitVerdictUsesVisitIDToFindPlaceAndThenUpdatesEveryRowForThatPlace() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         let place = try ref("p_row_loved")
         let older = try db.recordVisit(place)
@@ -326,7 +326,7 @@ final class InteractionsTests: XCTestCase {
         var visits = try db.dbQueue.read {
             try Visit.fetchAll($0, sql: "SELECT * FROM visits WHERE place_id = ? ORDER BY id", arguments: ["p_row_loved"])
         }
-        XCTAssertEqual(visits.map(\.verdict), [.loved, nil])
+        XCTAssertEqual(visits.map(\.verdict), [.loved, .loved])
         XCTAssertEqual(try db.viewportState(["p_row_loved"])["p_row_loved"], PinState(saved: false, visit: .loved))
 
         try db.setVisitVerdict(id: older, nil)
@@ -335,7 +335,46 @@ final class InteractionsTests: XCTestCase {
         visits = try db.dbQueue.read {
             try Visit.fetchAll($0, sql: "SELECT * FROM visits WHERE place_id = ? ORDER BY id", arguments: ["p_row_loved"])
         }
-        XCTAssertEqual(visits.map(\.verdict), [nil, .loved])
+        XCTAssertEqual(visits.map(\.verdict), [.loved, .loved])
+    }
+
+    func testUpdateVisitDateTargetsOneVisitRowAndPreservesTimeOfDay() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_date_edit")
+        let first = try db.recordVisit(place)
+        let second = try db.recordVisit(place)
+        let calendar = Calendar(identifier: .gregorian)
+        let targetDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 14)))
+
+        try db.updateVisitDate(id: first, toDayContaining: targetDay, calendar: calendar)
+
+        let visits = try db.dbQueue.read {
+            try Visit.fetchAll($0, sql: "SELECT * FROM visits WHERE place_id = ? ORDER BY id", arguments: ["p_date_edit"])
+        }
+        XCTAssertEqual(visits.map(\.id), [first, second])
+        XCTAssertEqual(calendar.component(.year, from: visits[0].visitedAt), 2026)
+        XCTAssertEqual(calendar.component(.month, from: visits[0].visitedAt), 7)
+        XCTAssertEqual(calendar.component(.day, from: visits[0].visitedAt), 14)
+        XCTAssertEqual(calendar.component(.hour, from: visits[0].visitedAt), calendar.component(.hour, from: Date(timeIntervalSince1970: 100)))
+        XCTAssertEqual(calendar.component(.minute, from: visits[0].visitedAt), calendar.component(.minute, from: Date(timeIntervalSince1970: 100)))
+        XCTAssertEqual(visits[1].visitedAt, Date(timeIntervalSince1970: 100))
+    }
+
+    func testReorderVisitsWithinDayUsesVisitIDsNotPlaceIDs() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let day = Date(timeIntervalSince1970: 60 * 60 * 24 * 10)
+        let first = try db.recordVisit(ref("p_repeat", name: "Repeat"), at: day.addingTimeInterval(60))
+        let other = try db.recordVisit(ref("p_other", name: "Other"), at: day.addingTimeInterval(120))
+        let repeatAgain = try db.recordVisit(ref("p_repeat", name: "Repeat"), at: day.addingTimeInterval(180))
+
+        try db.reorderVisitsWithinDay([repeatAgain, first, other], dayContaining: day)
+
+        XCTAssertEqual(try db.trackVisits().map(\.id), [repeatAgain, first, other])
+        let rows = try db.dbQueue.read {
+            try Row.fetchAll($0, sql: "SELECT id, visit_order FROM visits ORDER BY visit_order, id")
+        }
+        XCTAssertEqual(rows.map { $0["id"] as Int64 }, [repeatAgain, first, other])
+        XCTAssertEqual(rows.map { $0["visit_order"] as Int }, [0, 1, 2])
     }
 
     func testDeleteLatestVisitRemovesOnlyNewestVisitForPlace() throws {

@@ -91,15 +91,22 @@ extension AppDatabase {
 
     @discardableResult
     public func recordVisit(_ place: PlaceRef, verdict: Verdict? = nil) throws -> Int64 {
+        try recordVisit(place, at: now(), verdict: verdict)
+    }
+
+    @discardableResult
+    public func recordVisit(_ place: PlaceRef, at visitedAt: Date, verdict: Verdict? = nil) throws -> Int64 {
         try dbQueue.write { db in
             try snapshotIfNeeded(place, db)
-            let timestamp = now()
+            let createdAt = now()
+            let order = try nextVisitOrder(onDayContaining: visitedAt, calendar: Self.visitEditCalendar, db)
             var visit = Visit(
                 id: nil,
                 placeID: place.placeID,
-                visitedAt: timestamp,
+                visitedAt: visitedAt,
                 verdict: verdict,
-                createdAt: timestamp
+                createdAt: createdAt,
+                visitOrder: order
             )
             try visit.insert(db)
             return visit.id!
@@ -126,16 +133,12 @@ extension AppDatabase {
     @discardableResult
     public func deleteLatestVisit(placeID: String) throws -> Bool {
         try dbQueue.write { db in
-            guard let id = try Int64.fetchOne(
+            let visits = try Visit.fetchAll(
                 db,
-                sql: """
-                    SELECT id FROM visits
-                    WHERE place_id = ?
-                    ORDER BY visited_at DESC, id DESC
-                    LIMIT 1
-                    """,
+                sql: "SELECT * FROM visits WHERE place_id = ?",
                 arguments: [placeID]
-            ) else {
+            )
+            guard let id = visits.sorted(by: Self.visitSortIsBefore).last?.id else {
                 return false
             }
             _ = try Visit.deleteOne(db, key: id)
@@ -181,16 +184,7 @@ extension AppDatabase {
         try dbQueue.write { db in
             if loved {
                 try db.execute(
-                    sql: """
-                        UPDATE visits
-                        SET verdict = ?
-                        WHERE id = (
-                            SELECT id FROM visits
-                            WHERE place_id = ?
-                            ORDER BY visited_at DESC, id DESC
-                            LIMIT 1
-                        )
-                        """,
+                    sql: "UPDATE visits SET verdict = ? WHERE place_id = ?",
                     arguments: [Verdict.loved.rawValue, placeID]
                 )
             } else {
@@ -212,10 +206,57 @@ extension AppDatabase {
             )
             guard let placeID else { return nil }
             try db.execute(
-                sql: "UPDATE visits SET verdict = ? WHERE id = ?",
-                arguments: [verdict?.rawValue, id]
+                sql: "UPDATE visits SET verdict = ? WHERE place_id = ?",
+                arguments: [verdict?.rawValue, placeID]
             )
             return placeID
+        }
+    }
+
+    public func updateVisitDate(
+        id: Int64,
+        toDayContaining targetDay: Date,
+        calendar: Calendar = Calendar(identifier: .gregorian)
+    ) throws {
+        try dbQueue.write { db in
+            guard let existing = try Visit.fetchOne(db, key: id),
+                  let movedAt = Self.replacingDay(of: existing.visitedAt, withDayContaining: targetDay, calendar: calendar)
+            else {
+                throw AppDatabaseError.unreadableDatabase
+            }
+            let oldDay = calendar.startOfDay(for: existing.visitedAt)
+            let newDay = calendar.startOfDay(for: movedAt)
+            let nextOrder = oldDay == newDay
+                ? existing.visitOrder
+                : try nextVisitOrder(onDayContaining: movedAt, calendar: calendar, db)
+            try db.execute(
+                sql: "UPDATE visits SET visited_at = ?, visit_order = ? WHERE id = ?",
+                arguments: [movedAt, nextOrder, id]
+            )
+        }
+    }
+
+    public func reorderVisitsWithinDay(
+        _ orderedIDs: [Int64],
+        dayContaining day: Date,
+        calendar: Calendar = Calendar(identifier: .gregorian)
+    ) throws {
+        try dbQueue.write { db in
+            let bounds = Self.dayBounds(containing: day, calendar: calendar)
+            let idsInDay = try Set(Int64.fetchAll(
+                db,
+                sql: "SELECT id FROM visits WHERE visited_at >= ? AND visited_at < ?",
+                arguments: [bounds.start, bounds.end]
+            ))
+            guard idsInDay == Set(orderedIDs), orderedIDs.count == idsInDay.count else {
+                throw AppDatabaseError.unreadableDatabase
+            }
+            for (index, id) in orderedIDs.enumerated() {
+                try db.execute(
+                    sql: "UPDATE visits SET visit_order = ? WHERE id = ?",
+                    arguments: [index, id]
+                )
+            }
         }
     }
 
@@ -270,6 +311,51 @@ extension AppDatabase {
             sql: "SELECT EXISTS(SELECT 1 FROM lists WHERE id = ? AND is_system = 1 AND list_kind = ?)",
             arguments: [listID, PlaceList.trackKind]
         ) ?? false
+    }
+
+    static var visitEditCalendar: Calendar {
+        Calendar(identifier: .gregorian)
+    }
+
+    static func dayBounds(containing day: Date, calendar: Calendar) -> (start: Date, end: Date) {
+        let start = calendar.startOfDay(for: day)
+        return (start, calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(60 * 60 * 24))
+    }
+
+    private func nextVisitOrder(onDayContaining day: Date, calendar: Calendar, _ db: Database) throws -> Int {
+        let bounds = Self.dayBounds(containing: day, calendar: calendar)
+        let maxOrder = try Int.fetchOne(
+            db,
+            sql: "SELECT MAX(visit_order) FROM visits WHERE visited_at >= ? AND visited_at < ?",
+            arguments: [bounds.start, bounds.end]
+        )
+        return (maxOrder ?? -1) + 1
+    }
+
+    private static func replacingDay(of original: Date, withDayContaining targetDay: Date, calendar: Calendar) -> Date? {
+        let day = calendar.dateComponents([.era, .year, .month, .day], from: targetDay)
+        let time = calendar.dateComponents([.hour, .minute, .second, .nanosecond], from: original)
+        var moved = DateComponents()
+        moved.calendar = calendar
+        moved.era = day.era
+        moved.year = day.year
+        moved.month = day.month
+        moved.day = day.day
+        moved.hour = time.hour
+        moved.minute = time.minute
+        moved.second = time.second
+        moved.nanosecond = time.nanosecond
+        return calendar.date(from: moved)
+    }
+
+    private static func visitSortIsBefore(_ lhs: Visit, _ rhs: Visit) -> Bool {
+        let calendar = visitEditCalendar
+        let leftDay = calendar.startOfDay(for: lhs.visitedAt)
+        let rightDay = calendar.startOfDay(for: rhs.visitedAt)
+        if leftDay != rightDay { return leftDay < rightDay }
+        if lhs.visitOrder != rhs.visitOrder { return lhs.visitOrder < rhs.visitOrder }
+        if lhs.visitedAt != rhs.visitedAt { return lhs.visitedAt < rhs.visitedAt }
+        return (lhs.id ?? 0) < (rhs.id ?? 0)
     }
 
     public func snapshot(for placeID: String) throws -> PlaceSnapshot? {

@@ -11,6 +11,7 @@ public struct Visit: Codable, Sendable, FetchableRecord, MutablePersistableRecor
     public var visitedAt: Date
     public var verdict: Verdict?
     public var createdAt: Date
+    public var visitOrder: Int
 
     public static let databaseTableName = "visits"
 
@@ -20,6 +21,7 @@ public struct Visit: Codable, Sendable, FetchableRecord, MutablePersistableRecor
         case visitedAt = "visited_at"
         case verdict
         case createdAt = "created_at"
+        case visitOrder = "visit_order"
     }
 
     public init(
@@ -27,13 +29,15 @@ public struct Visit: Codable, Sendable, FetchableRecord, MutablePersistableRecor
         placeID: String,
         visitedAt: Date,
         verdict: Verdict?,
-        createdAt: Date
+        createdAt: Date,
+        visitOrder: Int = 0
     ) {
         self.id = id
         self.placeID = placeID
         self.visitedAt = visitedAt
         self.verdict = verdict
         self.createdAt = createdAt
+        self.visitOrder = visitOrder
     }
 
     public init(row: Row) throws {
@@ -43,6 +47,7 @@ public struct Visit: Codable, Sendable, FetchableRecord, MutablePersistableRecor
         let rawVerdict: String? = row["verdict"]
         verdict = rawVerdict.flatMap(Verdict.init(rawValue:))
         createdAt = row["created_at"]
+        visitOrder = row["visit_order"]
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) {

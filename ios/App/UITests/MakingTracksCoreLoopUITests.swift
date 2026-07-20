@@ -365,6 +365,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["tracks.summary"].label, "1 visit")
         XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any).matching(identifierPrefix: "tracks.row.").firstMatch.exists)
+
+        app.buttons["tracks.edit"].tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifierPrefix: "tracks.row.date.").firstMatch.waitForExistence(timeout: 5))
+        let deleteVisit = app.buttons.matching(identifierPrefix: "tracks.row.delete.").firstMatch
+        XCTAssertTrue(deleteVisit.exists)
+        XCTAssertTrue(deleteVisit.label.contains("Ghost Sign"))
+        XCTAssertTrue(app.buttons.matching(identifierPrefix: "tracks.row.move-up.").firstMatch.exists)
+        XCTAssertTrue(app.buttons.matching(identifierPrefix: "tracks.row.move-down.").firstMatch.exists)
     }
 
     func testTrackGeometryDrawsConnectorFromSeededFixtureVisits() {
