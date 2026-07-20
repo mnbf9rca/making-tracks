@@ -100,6 +100,10 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(TracksCopy.summary(visible: 1, total: 3, lovedOnly: true), "1 visit for loved places · 2 hidden by filter")
     }
 
+    func testTracksCopyLabelsSortDirection() {
+        XCTAssertEqual(TracksCopy.sortDirectionLabel, "Oldest first")
+    }
+
     func testListMapModeCopyUsesThemeSpecificFreshPhrases() {
         XCTAssertEqual(ListMapModeCopy.freshLayerTitle(theme: .snow), "Fresh snow")
         XCTAssertEqual(ListMapModeCopy.freshLayerTitle(theme: .definedPaper), "Unmarked paper")

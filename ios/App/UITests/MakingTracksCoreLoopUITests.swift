@@ -362,9 +362,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Tracks"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.switches["tracks.filter.loved"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["tracks.sort-direction"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["tracks.sort-direction"].label, "Oldest first")
         XCTAssertEqual(app.staticTexts["tracks.summary"].label, "1 visit")
         XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any).matching(identifierPrefix: "tracks.row.").firstMatch.exists)
+        XCTAssertEqual(screenshotExportNames["tracks-sort-direction-affordance"], "tracks-sort-direction-affordance")
+        attachScreenshot(named: "tracks-sort-direction-affordance")
 
         app.buttons["tracks.edit"].tap()
         XCTAssertTrue(app.descendants(matching: .any).matching(identifierPrefix: "tracks.row.date.").firstMatch.waitForExistence(timeout: 5))
@@ -1810,6 +1814,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "place-card-a11y": "place-card-a11y",
         "credits-a11y": "credits-a11y",
         "tracks-static-geometry": "tracks-static-geometry",
+        "tracks-sort-direction-affordance": "tracks-sort-direction-affordance",
         "list-map-polished-chrome": "list-map-polished-chrome",
         "list-map-spread-fit": "list-map-spread-fit",
         "my-tracks-burst-readout": "my-tracks-burst-readout",

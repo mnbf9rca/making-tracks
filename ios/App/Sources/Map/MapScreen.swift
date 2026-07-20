@@ -494,6 +494,8 @@ struct ListsCopy {
 }
 
 struct TracksCopy {
+    static let sortDirectionLabel = "Oldest first"
+
     static func summary(visible: Int, total: Int, lovedOnly: Bool) -> String {
         guard total > 0 else { return "No visits yet" }
         let noun = visible == 1 ? "visit" : "visits"
@@ -3576,6 +3578,15 @@ private struct TracksView: View {
                     Label("Show loved only", systemImage: lovedOnly ? "heart.fill" : "heart")
                 }
                 .accessibilityIdentifier("tracks.filter.loved")
+
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down")
+                        .accessibilityHidden(true)
+                    Text(verbatim: TracksCopy.sortDirectionLabel)
+                        .accessibilityIdentifier("tracks.sort-direction")
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
 
                 Text(verbatim: TracksCopy.summary(
                     visible: visibleVisits.count,
