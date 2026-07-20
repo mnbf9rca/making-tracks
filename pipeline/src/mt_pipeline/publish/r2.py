@@ -14,10 +14,10 @@ from typing import Any
 from urllib.parse import urlparse
 
 
-_REGION_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+_REGION_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _PUBLISH_VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 _PRIVATE_KINDS = {"registry", "cache", "feedback", "lock"}
-_PUBLIC_KINDS = {"tile", "basemap", "manifest", "current"}
+_PUBLIC_KINDS = {"tile", "basemap", "manifest", "current", "catalog_current"}
 _R2_UPLOAD_ENV_VARS = ("R2_S3_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY")
 
 
@@ -122,6 +122,7 @@ class PublishPlan:
                 key=f"{region}/{publish_version}/manifest.json",
             )
         )
+        ops.append(_current_catalog_op(layout, {region: publish_version}))
         ops.append(
             PublishOp(
                 kind="current",
@@ -202,7 +203,13 @@ def publish_to_r2(
     publish_version = staging.name
     validate_path_components(region, publish_version)
     tile_ops, basemap_op, manifest_op = _ops_from_staging(staging, layout, region, publish_version)
-    ops = [*tile_ops, basemap_op, manifest_op, _current_op(layout, region, publish_version)]
+    content_ops = [*tile_ops, basemap_op, manifest_op]
+    catalog_versions = {region: publish_version}
+    ops = [
+        *content_ops,
+        _current_catalog_op(layout, catalog_versions),
+        _current_op(layout, region, publish_version),
+    ]
     if registry_blob is not None:
         ops.append(
             PublishOp(
@@ -232,15 +239,45 @@ def publish_to_r2(
     lock_etag = _acquire_lock(client, layout, region, publish_version, lock_key)
     uploaded = 0
     try:
-        for op in plan.ops:
-            if op.body is not None:
-                client.put_object(Bucket=op.bucket, Key=op.key, Body=op.body)
-            else:
-                if op.source_path is None:
-                    raise ValueError(f"publish op {op.kind!r} has no body or source_path")
-                with op.source_path.open("rb") as body:
-                    client.put_object(Bucket=op.bucket, Key=op.key, Body=body)
-            uploaded += 1
+        catalog_lock_key = "catalog/publish.lock"
+        catalog_lock_etag = _acquire_lock(
+            client, layout, "catalog", publish_version, catalog_lock_key
+        )
+        try:
+            catalog_versions = _merged_current_catalog(client, layout, region, publish_version)
+            ops = [
+                *content_ops,
+                _current_catalog_op(layout, catalog_versions),
+                _current_op(layout, region, publish_version),
+            ]
+            if registry_blob is not None:
+                ops.append(
+                    PublishOp(
+                        kind="registry",
+                        bucket=str(layout["private_bucket"]),
+                        key=f"{layout.get('private_prefixes', {}).get('registry', 'registry/')}{region}.jsonl",
+                        body=registry_blob,
+                    )
+                )
+            plan = PublishPlan(
+                layout=layout,
+                region=region,
+                publish_version=publish_version,
+                ops=tuple(ops),
+            )
+            _validate_layout(layout)
+            plan._assert_bucket_invariants()
+            for op in plan.ops:
+                if op.body is not None:
+                    client.put_object(Bucket=op.bucket, Key=op.key, Body=op.body)
+                else:
+                    if op.source_path is None:
+                        raise ValueError(f"publish op {op.kind!r} has no body or source_path")
+                    with op.source_path.open("rb") as body:
+                        client.put_object(Bucket=op.bucket, Key=op.key, Body=body)
+                uploaded += 1
+        finally:
+            _release_lock(client, layout, catalog_lock_key, catalog_lock_etag)
     finally:
         _release_lock(client, layout, lock_key, lock_etag)
     return PublishResult(plan=plan, uploaded=uploaded, dry_run=False)
@@ -270,6 +307,58 @@ def _current_op(layout: Mapping[str, Any], region: str, publish_version: str) ->
         key=f"{region}/current.json",
         body=_json_bytes({"schema_version": 1, "publish_version": publish_version}),
     )
+
+
+def _current_catalog_op(layout: Mapping[str, Any], publish_versions: Mapping[str, str]) -> PublishOp:
+    return PublishOp(
+        kind="catalog_current",
+        bucket=str(layout["public_bucket"]),
+        key="catalog/current.json",
+        body=_json_bytes({"schema_version": 1, "publish_versions": dict(publish_versions)}),
+    )
+
+
+def _merged_current_catalog(
+    client, layout: Mapping[str, Any], region: str, publish_version: str
+) -> dict[str, str]:
+    versions = _read_current_catalog(client, layout)
+    versions[region] = publish_version
+    if len(versions) > 1024:
+        raise CurrentPointerUnavailable("current catalog has too many regions")
+    return versions
+
+
+def _read_current_catalog(client, layout: Mapping[str, Any]) -> dict[str, str]:
+    try:
+        obj = client.get_object(Bucket=layout["public_bucket"], Key="catalog/current.json")
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        if _is_missing_key(exc):
+            return {}
+        raise CurrentPointerUnavailable("could not read current catalog pointer") from exc
+    try:
+        catalog = json.loads(obj["Body"].read())
+        if (
+            not isinstance(catalog, dict)
+            or set(catalog) != {"schema_version", "publish_versions"}
+            or catalog["schema_version"] != 1
+            or not isinstance(catalog["publish_versions"], dict)
+        ):
+            raise ValueError("invalid current catalog")
+        versions: dict[str, str] = {}
+        for catalog_region, catalog_version in catalog["publish_versions"].items():
+            if (
+                not isinstance(catalog_region, str)
+                or not _REGION_RE.fullmatch(catalog_region)
+                or not isinstance(catalog_version, str)
+                or not _PUBLISH_VERSION_RE.fullmatch(catalog_version)
+            ):
+                raise ValueError("invalid current catalog")
+            versions[catalog_region] = catalog_version
+        return versions
+    except Exception as exc:
+        raise CurrentPointerUnavailable("invalid current catalog pointer") from exc
 
 
 def _ops_from_staging(

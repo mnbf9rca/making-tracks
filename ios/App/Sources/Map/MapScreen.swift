@@ -3144,6 +3144,19 @@ enum OfflineMapsRefreshCoordinator {
     }
 }
 
+enum OfflinePublishAvailability {
+    static func currentPublishVersions(
+        for catalog: OfflineRegionCatalog,
+        installedRegions: Set<String>,
+        fetcher: TileFetching
+    ) async throws -> [String: String] {
+        let regionIDs = catalog.zones
+            .compactMap { MapRegion(rawValue: $0.id)?.rawValue }
+            .filter { installedRegions.contains($0) }
+        return try await ManifestClient.currentPublishVersions(regions: regionIDs, fetcher: fetcher)
+    }
+}
+
 private extension StorageMenuStatus.Kind {
     var logLabel: String {
         switch self {
@@ -5926,7 +5939,7 @@ enum TracksVisitFilter {
 }
 
 @MainActor
-private final class MapScreenModel {
+final class MapScreenModel {
     private let database: AppDatabase
     private let tileCache: TileCache?
     private let thumbnailLoader: ThumbnailLoader?
@@ -6088,36 +6101,23 @@ private final class MapScreenModel {
     func availableOfflinePublishVersions(
         for catalog: OfflineRegionCatalog,
         installedRegions: Set<String>,
-        allowsCellularDownloads: Bool
+        allowsCellularDownloads: Bool,
+        availabilityFetcher: TileFetching? = nil
     ) async -> [String: String] {
-        let regionIDs = catalog.zones
-            .compactMap { MapRegion(rawValue: $0.id)?.rawValue }
-            .filter { installedRegions.contains($0) }
-        return await withTaskGroup(of: (String, String)?.self) { group in
-            let availabilityFetcher = HTTPTileFetcher.offlineAvailabilityProbe(
-                allowsCellularDownloads: allowsCellularDownloads
+        let availabilityFetcher = availabilityFetcher ?? HTTPTileFetcher.offlineAvailabilityProbe(
+            allowsCellularDownloads: allowsCellularDownloads
+        )
+        do {
+            let versions = try await OfflinePublishAvailability.currentPublishVersions(
+                for: catalog,
+                installedRegions: installedRegions,
+                fetcher: availabilityFetcher
             )
-            for regionID in regionIDs {
-                group.addTask {
-                    do {
-                        let version = try await ManifestClient.currentPublishVersion(
-                            region: regionID,
-                            fetcher: availabilityFetcher
-                        )
-                        MakingTracksLog.downloads.info("offline catalog current fetched region=\(regionID, privacy: .private(mask: .hash)) version=\(version, privacy: .public)")
-                        return (regionID, version)
-                    } catch {
-                        MakingTracksLog.downloads.error("offline catalog current failed region=\(regionID, privacy: .private(mask: .hash)) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
-                        return nil
-                    }
-                }
-            }
-            var versions: [String: String] = [:]
-            for await result in group {
-                guard let (regionID, version) = result else { continue }
-                versions[regionID] = version
-            }
+            MakingTracksLog.downloads.info("offline catalog current fetched regions=\(versions.count, privacy: .public)")
             return versions
+        } catch {
+            MakingTracksLog.downloads.error("offline catalog current failed regions=\(installedRegions.count, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            return [:]
         }
     }
 

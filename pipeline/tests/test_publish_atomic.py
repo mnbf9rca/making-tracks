@@ -36,10 +36,12 @@ def test_unsafe_region_or_version_is_refused_before_any_path_is_built():
         ("../../mt-state", "20260715T120000Z"),
         ("uk", "../current"),
         ("UK", "20260715T120000Z"),
+        ("bad region", "20260715T120000Z"),
     ]:
         with pytest.raises(R.UnsafePathComponent):
             R.validate_path_components(region, version)
     R.validate_path_components("uk", "20260715T120000Z")
+    R.validate_path_components("malaysia-singapore-brunei", "20260715T120000Z")
 
 
 def test_build_staging_writes_the_public_r2_shape(tmp_path):
@@ -72,7 +74,22 @@ def test_manifest_is_the_LAST_content_op_then_current_flip():
     manifest_index = plan.manifest_index()
     assert all(op.kind in ("tile", "basemap") for op in plan.ops[:manifest_index])
     assert plan.ops[manifest_index].kind == "manifest"
-    assert plan.ops[manifest_index + 1].kind == "current"
+    assert plan.ops[manifest_index + 1].kind == "catalog_current"
+    assert plan.ops[manifest_index + 2].kind == "current"
+
+
+def test_publish_plan_emits_shared_catalog_current_pointer():
+    plan = R.PublishPlan.for_version(
+        _layout(), "united-kingdom", "20260715T120000Z", _arts(), basemap=True
+    )
+    op = next(op for op in plan.ops if op.kind == "catalog_current")
+
+    assert op.bucket == "making-tracks-tiles"
+    assert op.key == "catalog/current.json"
+    assert json.loads(op.body) == {
+        "schema_version": 1,
+        "publish_versions": {"united-kingdom": "20260715T120000Z"},
+    }
 
 
 def test_all_private_kind_ops_target_the_private_bucket_and_layout_is_distinct():
@@ -89,7 +106,7 @@ def test_all_private_kind_ops_target_the_private_bucket_and_layout_is_distinct()
     for op in plan.ops:
         if op.kind in ("registry", "cache", "feedback"):
             assert op.bucket == layout["private_bucket"]
-        if op.kind in ("tile", "basemap", "manifest", "current"):
+        if op.kind in ("tile", "basemap", "manifest", "current", "catalog_current"):
             assert op.bucket == layout["public_bucket"]
 
     bad = {**layout, "private_bucket": layout["public_bucket"]}
@@ -171,7 +188,7 @@ def test_upload_path_locks_uploads_content_manifest_current_then_private_registr
             if hasattr(Body, "read"):
                 Body.read()
             self.puts.append((Bucket, Key, IfNoneMatch))
-            if Key == "uk/publish.lock":
+            if Key in {"uk/publish.lock", "catalog/publish.lock"}:
                 return {"ETag": '"lock-etag"'}
             return {"ETag": '"content-etag"'}
 
@@ -190,15 +207,187 @@ def test_upload_path_locks_uploads_content_manifest_current_then_private_registr
     assert result.dry_run is False
     keys = [key for _bucket, key, _if_none_match in client.puts]
     assert keys[0] == "uk/publish.lock"
-    assert keys[1:] == [
+    assert keys[1] == "catalog/publish.lock"
+    assert keys[2:] == [
         "uk/20260715T120000Z/tiles/10/1/2.json.gz",
         "uk/20260715T120000Z/uk.pmtiles",
         "uk/20260715T120000Z/manifest.json",
+        "catalog/current.json",
         "uk/current.json",
         "registry/uk.jsonl",
     ]
     assert client.puts[0][2] == "*"
-    assert client.deleted == [("making-tracks-state", "uk/publish.lock", '"lock-etag"')]
+    assert client.puts[1][2] == "*"
+    assert client.deleted == [
+        ("making-tracks-state", "catalog/publish.lock", '"lock-etag"'),
+        ("making-tracks-state", "uk/publish.lock", '"lock-etag"'),
+    ]
+
+
+def test_upload_bootstraps_shared_catalog_when_r2_reports_missing_key(tmp_path):
+    version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
+    (version_root / "tiles/10").mkdir(parents=True)
+    (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    (version_root / "manifest.json").write_text("{}")
+
+    class MissingKey(Exception):
+        response = {"Error": {"Code": "NoSuchKey"}}
+
+    class MissingCatalogClient:
+        def __init__(self):
+            self.catalog_body = None
+
+        def get_object(self, *, Bucket, Key):
+            raise MissingKey(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            if Key == "catalog/current.json":
+                self.catalog_body = Body
+            return {"ETag": '"etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            pass
+
+    client = MissingCatalogClient()
+
+    R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+
+    assert json.loads(client.catalog_body) == {
+        "schema_version": 1,
+        "publish_versions": {"uk": "20260715T120000Z"},
+    }
+
+
+def test_upload_does_not_flip_region_current_before_shared_catalog_succeeds(tmp_path):
+    version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
+    (version_root / "tiles/10").mkdir(parents=True)
+    (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    (version_root / "manifest.json").write_text("{}")
+
+    class CatalogFailureClient:
+        def __init__(self):
+            self.put_keys = []
+
+        def get_object(self, *, Bucket, Key):
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            self.put_keys.append(Key)
+            if Key == "catalog/current.json":
+                raise RuntimeError("catalog upload failed")
+            return {"ETag": '"etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            pass
+
+    client = CatalogFailureClient()
+
+    with pytest.raises(RuntimeError, match="catalog upload failed"):
+        R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+
+    assert "catalog/current.json" in client.put_keys
+    assert "uk/current.json" not in client.put_keys
+
+
+def test_upload_merges_shared_current_catalog_without_dropping_other_regions(tmp_path):
+    version_root = tmp_path / "stage" / "united-kingdom" / "20260715T120000Z"
+    (version_root / "tiles/10").mkdir(parents=True)
+    (version_root / "united-kingdom.pmtiles").write_bytes(b"basemap")
+    (version_root / "manifest.json").write_text("{}")
+
+    class ExistingCatalogUploadClient:
+        def __init__(self):
+            self.catalog_body = None
+
+        def get_object(self, *, Bucket, Key):
+            if Key == "united-kingdom/current.json":
+                raise FileNotFoundError(Key)
+            if Key == "catalog/current.json":
+                return {
+                    "Body": BytesIO(
+                        b'{"schema_version":1,"publish_versions":{"malaysia-singapore-brunei":"20260714T000000Z"}}'
+                    )
+                }
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            if Key == "catalog/current.json":
+                self.catalog_body = Body
+            if Key == "united-kingdom/publish.lock":
+                return {"ETag": '"lock-etag"'}
+            return {"ETag": '"content-etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            pass
+
+    client = ExistingCatalogUploadClient()
+
+    R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+
+    assert json.loads(client.catalog_body) == {
+        "schema_version": 1,
+        "publish_versions": {
+            "malaysia-singapore-brunei": "20260714T000000Z",
+            "united-kingdom": "20260715T120000Z",
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "catalog_body",
+    [
+        b'{"schema_version":1}',
+        b'{"schema_version":1,"publish_versions":{},"extra":true}',
+        b'{"schema_version":2,"publish_versions":{}}',
+        b'{"schema_version":1,"publish_versions":[]}',
+        b'{"schema_version":1,"publish_versions":{"bad region":"20260714T000000Z"}}',
+        b'{"schema_version":1,"publish_versions":{"uk":"latest"}}',
+    ],
+)
+def test_upload_rejects_malformed_shared_current_catalog_before_public_writes(
+    tmp_path, catalog_body
+):
+    version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
+    (version_root / "tiles/10").mkdir(parents=True)
+    (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    (version_root / "manifest.json").write_text("{}")
+
+    class MalformedCatalogClient:
+        def __init__(self):
+            self.put_keys = []
+
+        def get_object(self, *, Bucket, Key):
+            if Key == "uk/current.json":
+                raise FileNotFoundError(Key)
+            if Key == "catalog/current.json":
+                return {"Body": BytesIO(catalog_body)}
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            self.put_keys.append(Key)
+            return {"ETag": '"etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            pass
+
+    client = MalformedCatalogClient()
+
+    with pytest.raises(R.CurrentPointerUnavailable):
+        R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+
+    assert client.put_keys == ["uk/publish.lock", "catalog/publish.lock"]
 
 
 def test_default_client_uses_committed_r2_s3_endpoint_contract(monkeypatch):
@@ -326,7 +515,7 @@ def test_upload_recovers_a_stale_publish_lock(tmp_path):
             self.deleted = []
 
         def get_object(self, *, Bucket, Key):
-            if Key == "uk/current.json":
+            if Key in {"uk/current.json", "catalog/current.json"}:
                 raise FileNotFoundError(Key)
             return {"Body": BytesIO(b'{"expires_at":0}'), "ETag": '"stale-etag"'}
 
@@ -450,7 +639,7 @@ def test_file_body_is_closed_when_upload_fails(tmp_path):
             return {"KeyCount": 0}
 
         def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
-            if Key == "uk/publish.lock":
+            if Key in {"uk/publish.lock", "catalog/publish.lock"}:
                 return {"ETag": '"lock-etag"'}
             if Key == "uk/20260715T120000Z/tiles/10/1/2.json.gz":
                 self.tile_body = Body
@@ -467,7 +656,10 @@ def test_file_body_is_closed_when_upload_fails(tmp_path):
 
     assert client.tile_body is not None
     assert client.tile_body.closed is True
-    assert client.deleted == [("making-tracks-state", "uk/publish.lock", '"lock-etag"')]
+    assert client.deleted == [
+        ("making-tracks-state", "catalog/publish.lock", '"lock-etag"'),
+        ("making-tracks-state", "uk/publish.lock", '"lock-etag"'),
+    ]
 
 
 def test_the_real_r2_layout_config_has_two_distinct_buckets():

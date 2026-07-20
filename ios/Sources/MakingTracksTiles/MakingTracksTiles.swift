@@ -1571,6 +1571,7 @@ public struct ManifestPinResult: Sendable, Equatable {
 }
 
 public final class ManifestClient: @unchecked Sendable {
+    private static let maxCurrentCatalogBytes = 256 * 1024
     private let region: String
     private let fetcher: TileFetching
     private let cache: TileCache
@@ -1586,6 +1587,24 @@ public final class ManifestClient: @unchecked Sendable {
             throw TileError.invalidOfflinePack
         }
         return try decodeCurrent(await fetcher.fetch(try trustedURL("\(region)/current.json")))
+    }
+
+    public static func currentPublishVersions(regions: [String], fetcher: TileFetching) async throws -> [String: String] {
+        guard regions.allSatisfy({ $0.matches(regionIDPattern) }) else {
+            throw TileError.invalidOfflinePack
+        }
+        guard regions.isEmpty == false else { return [:] }
+
+        // One shared pointer prevents cold-start update checks from restating the user's installed
+        // zone inventory through region-named URLs visible to our first-party CDN vantage point.
+        let currentCatalogURL = try trustedURL("catalog/current.json")
+        let data: Data
+        if let boundedFetcher = fetcher as? BoundedTileFetching {
+            data = try await boundedFetcher.fetch(currentCatalogURL, maxBytes: maxCurrentCatalogBytes)
+        } else {
+            data = try await fetcher.fetch(currentCatalogURL)
+        }
+        return try decodeCurrentCatalog(data, requestedRegions: Set(regions))
     }
 
     public func refresh() async -> ManifestPinResult {
@@ -1650,6 +1669,31 @@ public final class ManifestClient: @unchecked Sendable {
               publishVersion.matches("^[0-9]{8}T[0-9]{6}Z$")
         else { throw TileError.invalidCurrent }
         return publishVersion
+    }
+
+    static func decodeCurrentCatalog(_ data: Data, requestedRegions: Set<String>) throws -> [String: String] {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["schema_version", "publish_versions"],
+              let schemaVersion = object["schema_version"] as? Int,
+              schemaVersion == 1,
+              let rawVersions = object["publish_versions"] as? [String: Any],
+              rawVersions.count <= 1024
+        else { throw TileError.invalidCurrent }
+
+        var versions: [String: String] = [:]
+        for (region, rawVersion) in rawVersions {
+            guard region.matches(regionIDPattern),
+                  let publishVersion = rawVersion as? String,
+                  publishVersion.matches("^[0-9]{8}T[0-9]{6}Z$")
+            else { throw TileError.invalidCurrent }
+            versions[region] = publishVersion
+        }
+
+        return requestedRegions.reduce(into: [String: String]()) { selected, region in
+            if let publishVersion = versions[region] {
+                selected[region] = publishVersion
+            }
+        }
     }
 }
 

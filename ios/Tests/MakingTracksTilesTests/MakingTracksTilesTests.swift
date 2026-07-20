@@ -175,6 +175,72 @@ final class MakingTracksTilesTests: XCTestCase {
         ])
     }
 
+    func testManifestCurrentPublishVersionsUsesSharedCatalogPointerWithoutRegionFanout() async throws {
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/catalog/current.json": jsonData([
+                "schema_version": 1,
+                "publish_versions": [
+                    "united-kingdom": "20260718T000000Z",
+                    "united-kingdom_london": "20260717T000000Z",
+                    "malaysia-singapore-brunei": "20260716T155035Z",
+                ],
+            ]),
+        ])
+
+        let versions = try await ManifestClient.currentPublishVersions(
+            regions: ["united-kingdom", "united-kingdom_london"],
+            fetcher: fetcher
+        )
+
+        XCTAssertEqual(versions, [
+            "united-kingdom": "20260718T000000Z",
+            "united-kingdom_london": "20260717T000000Z",
+        ])
+        XCTAssertEqual(fetcher.requestedURLs, [
+            "https://tiles.making-tracks.app/catalog/current.json",
+        ])
+        XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/united-kingdom/current.json"))
+        XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/united-kingdom_london/current.json"))
+    }
+
+    func testManifestCurrentPublishVersionsDoesNotFetchForEmptyRegionSet() async throws {
+        let fetcher = StubFetcher(routes: [:])
+
+        let versions = try await ManifestClient.currentPublishVersions(regions: [], fetcher: fetcher)
+
+        XCTAssertEqual(versions, [:])
+        XCTAssertEqual(fetcher.requestedURLs, [])
+    }
+
+    func testManifestCurrentPublishVersionsRejectsMalformedCatalogPointers() async throws {
+        var oversizedVersions: [String: String] = [:]
+        for index in 0..<1025 {
+            oversizedVersions["region_\(index)"] = "20260718T000000Z"
+        }
+        let malformedCatalogs: [[String: Any]] = [
+            ["schema_version": 1],
+            ["schema_version": 1, "publish_versions": [:], "extra": true],
+            ["schema_version": 2, "publish_versions": [:]],
+            ["schema_version": 1, "publish_versions": []],
+            ["schema_version": 1, "publish_versions": ["bad region": "20260718T000000Z"]],
+            ["schema_version": 1, "publish_versions": ["united-kingdom": "latest"]],
+            ["schema_version": 1, "publish_versions": oversizedVersions],
+        ]
+
+        for catalog in malformedCatalogs {
+            let fetcher = StubFetcher(routes: [
+                "https://tiles.making-tracks.app/catalog/current.json": jsonData(catalog),
+            ])
+            do {
+                _ = try await ManifestClient.currentPublishVersions(regions: ["united-kingdom"], fetcher: fetcher)
+                XCTFail("malformed catalog unexpectedly decoded: \(catalog)")
+            } catch TileError.invalidCurrent {
+            } catch {
+                XCTFail("expected invalidCurrent, got \(error)")
+            }
+        }
+    }
+
     func testManifestRefusesAttributionAllOfViolationAndColdInvalidIsUnavailable() async throws {
         let fetcher = StubFetcher(routes: [
             "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),

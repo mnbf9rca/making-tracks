@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 import MakingTracksData
 import MakingTracksMapStyle
@@ -1319,6 +1320,67 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(observedRows.first { $0.zone.id == "malaysia-singapore-brunei" }?.state, .paused(OfflineDownloadProgress(region: "malaysia-singapore-brunei", fractionComplete: 0)))
     }
 
+    func testOfflineAvailabilityUsesSharedCatalogPointerWithoutInstalledRegionFanout() async throws {
+        let fetcher = AppStubFetcher(routes: [
+            "https://tiles.making-tracks.app/catalog/current.json": try appJSONData([
+                "schema_version": 1,
+                "publish_versions": [
+                    "united-kingdom": "20260718T000000Z",
+                    "united-kingdom_london": "20260717T000000Z",
+                    "malaysia-singapore-brunei": "20260716T155035Z",
+                ],
+            ]),
+        ])
+
+        let versions = try await OfflinePublishAvailability.currentPublishVersions(
+            for: .debugFixture,
+            installedRegions: ["united-kingdom", "united-kingdom_london", "malaysia-singapore-brunei"],
+            fetcher: fetcher
+        )
+
+        XCTAssertEqual(versions, [
+            "united-kingdom": "20260718T000000Z",
+            "malaysia-singapore-brunei": "20260716T155035Z",
+        ])
+        XCTAssertEqual(fetcher.requestedURLs, [
+            "https://tiles.making-tracks.app/catalog/current.json",
+        ])
+        XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/united-kingdom/current.json"))
+        XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/malaysia-singapore-brunei/current.json"))
+    }
+
+    @MainActor
+    func testMapScreenModelOfflineAvailabilityUsesSharedCatalogPointerWithoutInstalledRegionFanout() async throws {
+        let fetcher = AppStubFetcher(routes: [
+            "https://tiles.making-tracks.app/catalog/current.json": try appJSONData([
+                "schema_version": 1,
+                "publish_versions": [
+                    "united-kingdom": "20260718T000000Z",
+                    "united-kingdom_london": "20260717T000000Z",
+                    "malaysia-singapore-brunei": "20260716T155035Z",
+                ],
+            ]),
+        ])
+        let model = try MapScreenModel(database: try AppDatabase.inMemory())
+
+        let versions = await model.availableOfflinePublishVersions(
+            for: .debugFixture,
+            installedRegions: ["united-kingdom", "united-kingdom_london", "malaysia-singapore-brunei"],
+            allowsCellularDownloads: false,
+            availabilityFetcher: fetcher
+        )
+
+        XCTAssertEqual(versions, [
+            "united-kingdom": "20260718T000000Z",
+            "malaysia-singapore-brunei": "20260716T155035Z",
+        ])
+        XCTAssertEqual(fetcher.requestedURLs, [
+            "https://tiles.making-tracks.app/catalog/current.json",
+        ])
+        XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/united-kingdom/current.json"))
+        XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/malaysia-singapore-brunei/current.json"))
+    }
+
     func testOfflineRegionRowsSurfacePausedProgressSeparatelyFromActiveProgress() {
         let catalog = OfflineRegionCatalog.debugFixture
         let paused = OfflineDownloadProgress(
@@ -1676,4 +1738,23 @@ final class AppShellTests: XCTestCase {
             onMapLoadFailed: {}
         )
     }
+}
+
+private final class AppStubFetcher: TileFetching, @unchecked Sendable {
+    let routes: [String: Data]
+    private(set) var requestedURLs: [String] = []
+
+    init(routes: [String: Data]) {
+        self.routes = routes
+    }
+
+    func fetch(_ url: URL) async throws -> Data {
+        requestedURLs.append(url.absoluteString)
+        guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
+        return data
+    }
+}
+
+private func appJSONData(_ object: Any) throws -> Data {
+    try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
 }
