@@ -342,6 +342,26 @@ def candidates_from_source_records(
     return candidates
 
 
+def exclude_cached_rejects(
+    candidates: list[ImageCandidate],
+    *,
+    cache_dir,
+) -> list[ImageCandidate]:
+    reject_dir = pathlib.Path(cache_dir) / "rejects"
+    out = [
+        candidate
+        for candidate in candidates
+        if not _cached_reject_matches(reject_dir / f"{candidate.place_id}.json", candidate)
+    ]
+    excluded = len(candidates) - len(out)
+    if excluded:
+        print(
+            "AUDITED_IMAGE_REJECT_FILTER "
+            f"candidates={len(candidates)} excluded={excluded} selected={len(out)}"
+        )
+    return out
+
+
 def build_place_images(
     candidates: list[ImageCandidate],
     *,
@@ -1065,7 +1085,11 @@ def _license_url(value: str | None, code: str) -> tuple[str | None, str]:
         return None, "license_url_mismatch"
     if value is None or not value.strip():
         return expected, ""
-    url = _https_url(value, host=None, allowed_hosts={"creativecommons.org"})
+    url_value = value.strip()
+    parsed = urlparse(url_value)
+    if parsed.scheme == "http" and parsed.hostname == "creativecommons.org":
+        url_value = "https://" + url_value[len("http://") :]
+    url = _https_url(url_value, host=None, allowed_hosts={"creativecommons.org"})
     if url is None:
         return None, "license_url_invalid"
     if url.rstrip("/") != expected.rstrip("/"):

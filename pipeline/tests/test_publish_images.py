@@ -193,7 +193,6 @@ def test_commons_license_accepts_deed_url_without_trailing_slash():
 @pytest.mark.parametrize(
     "license_url",
     [
-        "http://creativecommons.org/licenses/by/4.0/",
         "https://creativecommons.org/licenses/by/4.0/deed.en",
         "https://creativecommons.org/licenses/by/4.0/legalcode",
     ],
@@ -208,6 +207,20 @@ def test_commons_license_rejects_noncanonical_deed_urls(license_url):
 
     assert decision.accepted is False
     assert decision.reason in {"license_url_invalid", "license_url_mismatch"}
+
+
+def test_commons_license_canonicalizes_http_creative_commons_url():
+    decision = images.metadata_from_commons_imageinfo(
+        _imageinfo(
+            license_short_name="CC BY 4.0",
+            license_url="http://creativecommons.org/licenses/by/4.0/",
+        )
+    )
+
+    assert decision.accepted is True
+    assert decision.metadata.attribution.license_url == (
+        "https://creativecommons.org/licenses/by/4.0/"
+    )
 
 
 def test_commons_license_rejects_deed_url_for_different_port():
@@ -979,7 +992,6 @@ def test_build_place_images_from_audit_rejects_duplicate_place_id_rows(tmp_path)
 @pytest.mark.parametrize(
     "license_url",
     [
-        "http://creativecommons.org/licenses/by/4.0/",
         "https://creativecommons.org/licenses/by/4.0/deed.en",
         "https://creativecommons.org/licenses/by/4.0/legalcode",
         "https://creativecommons.org/licenses/by-sa/4.0/",
@@ -1028,6 +1040,61 @@ def test_build_place_images_from_audit_rejects_noncanonical_or_mismatched_licens
             completed_jsonl=completed,
             audited_cache_dir=cache,
         )
+
+
+def test_build_place_images_from_audit_canonicalizes_http_creative_commons_license_url(
+    tmp_path, monkeypatch
+):
+    thumb = b"audited-thumb"
+    thumb_sha = hashlib.sha256(thumb).hexdigest()
+    cache = tmp_path / "audit-cache"
+    (cache / "thumbs" / thumb_sha[:2]).mkdir(parents=True)
+    (cache / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp").write_bytes(thumb)
+    original_path = cache / "raw" / "mt1_00000000000000000000000001.source"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original-image")
+    completed = tmp_path / "completed.jsonl"
+    completed.write_text(
+        json.dumps(
+            {
+                "place_id": "mt1_00000000000000000000000001",
+                "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+                "thumb_sha256": thumb_sha,
+                "width": 320,
+                "height": 240,
+                "attribution": {
+                    "creator": "Jane Example",
+                    "license_code": "CC-BY-4.0",
+                    "license_name": "Creative Commons Attribution 4.0",
+                    "license_url": "http://creativecommons.org/licenses/by/4.0/",
+                    "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+                    "modified": True,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+    )
+    monkeypatch.setattr(
+        images,
+        "transcode_to_webp_thumb",
+        lambda _path: images.ThumbTranscode(webp_bytes=b"new-thumb", width=256, height=192),
+    )
+
+    out = images.build_place_images_from_audit(
+        [candidate],
+        completed_jsonl=completed,
+        audited_cache_dir=cache,
+    )
+
+    assert out[0].attribution.license_url == "https://creativecommons.org/licenses/by/4.0/"
 
 
 def test_build_place_images_from_audit_rejects_unknown_license_code_url_mismatch(
