@@ -79,20 +79,31 @@ final class PinLayersTests: XCTestCase {
 
     func testPinSubstrateIsShapeSourcePlusStyleLayersNotAnnotations() {
         let layers = PinLayers.pinLayers()
+        let clusterCircle = layer(id: "pin-clusters-circle", in: layers)
+        let clusterCount = layer(id: "pin-clusters-count", in: layers)
         let circle = layer(id: "pins-circle", in: layers)
         let icon = layer(id: "pins-icon", in: layers)
         let bookmark = layer(id: "pins-bookmark", in: layers)
         let heart = layer(id: "pins-heart", in: layers)
 
+        XCTAssertEqual(clusterCircle?["type"], .string("circle"), "cluster bubble layer")
+        XCTAssertEqual(clusterCount?["type"], .string("symbol"), "cluster count layer")
         XCTAssertEqual(circle?["type"], .string("circle"), "circle pin layer")
         XCTAssertEqual(icon?["type"], .string("symbol"), "category icon symbol layer")
         XCTAssertEqual(bookmark?["type"], .string("symbol"), "bookmark badge symbol layer")
         XCTAssertEqual(heart?["type"], .string("symbol"), "heart badge symbol layer")
-        XCTAssertEqual(layers.count, 4, "circle + category icon + bookmark/heart badges")
-        for layer in [circle, icon, bookmark, heart] {
+        XCTAssertEqual(layers.count, 6, "cluster bubble/count + circle/category icon + bookmark/heart badges")
+        for layer in [clusterCircle, clusterCount, circle, icon, bookmark, heart] {
             XCTAssertEqual(layer?["source"], .string(PinLayers.sourceID))
         }
         XCTAssertNotEqual(PinLayers.bookmarkOffset, PinLayers.heartOffset, "badges would collide at one anchor")
+
+        XCTAssertEqual(clusterCircle?["filter"], PinLayers.clusterFilter())
+        XCTAssertEqual(clusterCount?["filter"], PinLayers.clusterFilter())
+        XCTAssertEqual(circle?["filter"], PinLayers.singlePinFilter())
+        XCTAssertEqual(icon?["filter"], PinLayers.singlePinFilter())
+        XCTAssertEqual(layoutValue("text-field", in: clusterCount), .array([.string("get"), .string("point_count_abbreviated")]))
+        XCTAssertEqual(layoutValue("text-size", in: clusterCount), .double(PinLayers.clusterCountTextSize(pinSize: PinSize())))
 
         if case let .object(paint)? = circle?["paint"] {
             XCTAssertEqual(paint["circle-color"], PinLayers.pinColorExpression())
@@ -384,7 +395,7 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(array[1] as? Double, 2)
         XCTAssertEqual(CFGetTypeID(array[2] as! NSNumber), CFBooleanGetTypeID())
         XCTAssertTrue(array[3] is NSNull)
-        XCTAssertEqual(filter.count, 3)
+        XCTAssertEqual(filter.count, 4)
     }
 
     func testFeatureIsGeoJSONPointWithLonLatOrder() {

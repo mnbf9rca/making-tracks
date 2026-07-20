@@ -24,6 +24,7 @@
 		AE9F899F811FE6AD774A0F38 /* OSSCredits.json in Resources */ = {isa = PBXBuildFile; fileRef = 1CB5F787D9335E6F6658C952 /* OSSCredits.json */; };
 		AF3142C210A9AC6EE4DBDB9C /* LocationPermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E7EFD1E5877507BEC18A82D /* LocationPermission.swift */; };
 		B4249A1E5E8913E54631AA6C /* MapLayerVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB76FBD716ED22CC65743413 /* MapLayerVisibilityTests.swift */; };
+		BD3B48BA68DDA464148316E0 /* NativeClusteringSpikeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14A314C56A67C5475B3FF04E /* NativeClusteringSpikeTests.swift */; };
 		D723B8F7C4E54215817261EA /* MLNMapViewRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DE03FCA363155B0C5A81CE1 /* MLNMapViewRepresentable.swift */; };
 		D9BF447A005052495B5FAA51 /* MakingTracksTiles in Frameworks */ = {isa = PBXBuildFile; productRef = 4F393EE9E72B3705269D6DE4 /* MakingTracksTiles */; };
 		E205428A35137AEC62A677DE /* MakingTracksApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8165BC8A095352568E0849A6 /* MakingTracksApp.swift */; };
@@ -54,6 +55,7 @@
 		03EE350163E06CF06F16086F /* ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ios; path = ..; sourceTree = SOURCE_ROOT; };
 		0B6E6A8728A3BBF7FBCF25B9 /* AppLocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocationManager.swift; sourceTree = "<group>"; };
 		0ED60266EB41A05525C52E2E /* MapLayerVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapLayerVisibility.swift; sourceTree = "<group>"; };
+		14A314C56A67C5475B3FF04E /* NativeClusteringSpikeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeClusteringSpikeTests.swift; sourceTree = "<group>"; };
 		1CB5F787D9335E6F6658C952 /* OSSCredits.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = OSSCredits.json; sourceTree = "<group>"; };
 		1E19C34E0B445601AD8B5A35 /* WorldBasemap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorldBasemap.swift; sourceTree = "<group>"; };
 		2B2C08C6EC4CC9B925C76CEC /* LocationSessionPoliciesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationSessionPoliciesTests.swift; sourceTree = "<group>"; };
@@ -113,6 +115,7 @@
 				AB44B483382C7266D1246E92 /* HiddenMembershipTrackerTests.swift */,
 				2B2C08C6EC4CC9B925C76CEC /* LocationSessionPoliciesTests.swift */,
 				EB76FBD716ED22CC65743413 /* MapLayerVisibilityTests.swift */,
+				14A314C56A67C5475B3FF04E /* NativeClusteringSpikeTests.swift */,
 				3AA103E16EBCD9EF3DABC9BB /* PinCategorySymbolTests.swift */,
 				5A925CD29D8E1456B66E9F7B /* WorldBasemapTests.swift */,
 			);
@@ -391,6 +394,7 @@
 				A0A4BEB6C707F68791895112 /* HiddenMembershipTrackerTests.swift in Sources */,
 				E33AAF4D7C085C6FBE57C261 /* LocationSessionPoliciesTests.swift in Sources */,
 				B4249A1E5E8913E54631AA6C /* MapLayerVisibilityTests.swift in Sources */,
+				BD3B48BA68DDA464148316E0 /* NativeClusteringSpikeTests.swift in Sources */,
 				78489B6DB316892B50A97831 /* PinCategorySymbolTests.swift in Sources */,
 				FAED196EEC3399D466D1AE9E /* WorldBasemapTests.swift in Sources */,
 			);

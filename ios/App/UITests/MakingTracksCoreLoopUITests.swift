@@ -878,13 +878,19 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
     }
 
-    func testPinThinningScreenshotsCompareCityAndStreetZoomDensity() {
+    func testPinClusteringScreenshotsCompareCityAndStreetZoomDensity() {
         let cityApp = launch(reset: true, pinDiagnostics: true, densePins: true, startupViewport: "kl")
         XCTAssertTrue(cityApp.otherElements["map.surface"].waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: cityApp))
         XCTAssertTrue(waitForSourceFeatureCount(10, in: cityApp))
-        XCTAssertTrue(waitForProjectedFixturePinCount(10, in: cityApp))
-        attachScreenshot(named: "pin-thinning-city")
+        XCTAssertTrue(waitForClusterCount(atLeast: 1, in: cityApp))
+        XCTAssertEqual(clusteredPlaceCount(in: cityApp), 10)
+        let cluster = cityApp.buttons.matching(identifierPrefix: "map.cluster.").firstMatch
+        attachScreenshot(named: "pin-clustering-city")
+        cluster.tap()
+        XCTAssertTrue(waitForClusterCount(0, in: cityApp))
+        XCTAssertTrue(waitForHitProjectedFixturePinCount(atLeast: 10, in: cityApp))
+        attachScreenshot(named: "pin-clustering-expanded")
         cityApp.terminate()
 
         let streetApp = launch(reset: true, pinDiagnostics: true, densePins: true, startupViewport: "kl-street")
@@ -892,7 +898,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForMapToFinishLoading(in: streetApp))
         XCTAssertTrue(waitForSourceFeatureCount(24, in: streetApp))
         XCTAssertTrue(waitForProjectedFixturePinCount(24, in: streetApp))
-        attachScreenshot(named: "pin-thinning-street")
+        XCTAssertTrue(waitForClusterCount(0, in: streetApp))
+        attachScreenshot(named: "pin-clustering-street")
         streetApp.terminate()
     }
 
@@ -1575,6 +1582,53 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         return false
     }
 
+    private func waitForHitProjectedFixturePinCount(atLeast count: Int, in app: XCUIApplication) -> Bool {
+        let deadline = Date().addingTimeInterval(10)
+        let pins = app.staticTexts.matching(identifierPrefix: "map.fixture-pin.")
+        while Date() < deadline {
+            let hitCount = pins.allElementsBoundByIndex.filter { $0.label == "hit" }.count
+            if hitCount >= count {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        let hitCount = pins.allElementsBoundByIndex.filter { $0.label == "hit" }.count
+        XCTFail("Expected at least \(count) hit-testable projected fixture pins, got \(hitCount)")
+        return false
+    }
+
+    private func waitForClusterCount(_ count: Int, in app: XCUIApplication) -> Bool {
+        let deadline = Date().addingTimeInterval(10)
+        let clusters = app.buttons.matching(identifierPrefix: "map.cluster.")
+        while Date() < deadline {
+            if clusters.count == count {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        XCTFail("Expected \(count) clusters, got \(clusters.count)")
+        return false
+    }
+
+    private func waitForClusterCount(atLeast count: Int, in app: XCUIApplication) -> Bool {
+        let deadline = Date().addingTimeInterval(10)
+        let clusters = app.buttons.matching(identifierPrefix: "map.cluster.")
+        while Date() < deadline {
+            if clusters.count >= count {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        XCTFail("Expected at least \(count) clusters, got \(clusters.count)")
+        return false
+    }
+
+    private func clusteredPlaceCount(in app: XCUIApplication) -> Int {
+        app.buttons.matching(identifierPrefix: "map.cluster.").allElementsBoundByIndex.reduce(0) { total, element in
+            total + (Int(element.label.split(separator: " ").first ?? "") ?? 0)
+        }
+    }
+
     private func normalizedPoint(from value: String) -> (x: Double, y: Double) {
         let parts = value.split(separator: " ")
         let values = Dictionary(uniqueKeysWithValues: parts.compactMap { part -> (String, Double)? in
@@ -1766,8 +1820,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "pin-snow-min": "pin-snow-min",
         "pin-snow-default": "pin-snow-default",
         "pin-snow-max": "pin-snow-max",
-        "pin-thinning-city": "pin-thinning-city",
-        "pin-thinning-street": "pin-thinning-street",
+        "pin-clustering-city": "pin-clustering-city",
+        "pin-clustering-expanded": "pin-clustering-expanded",
+        "pin-clustering-street": "pin-clustering-street",
         "coverage-edge-defined-paper": "coverage-edge-defined-paper",
         "coverage-edge-snow": "coverage-edge-snow",
         "coverage-edge-street-contrast": "coverage-edge-street-contrast",
