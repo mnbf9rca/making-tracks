@@ -157,3 +157,23 @@ cannot silently split again after a reboot clears it.
 The runbook had told agents to `lsof` the lock file when in doubt. That instruction is gone.
 
 → *iOS simulator* (AGENTS.md); *docs/process/ios-simulator.md*.
+
+## A display change merged on host tests alone
+
+**2026-07-20.** A sparse-tier fallback altering the map display path merged after host-only Swift package
+tests passed. The judgement at the time was that no simulator was needed, which was true of compilation and
+false of coverage: the change legitimately altered what the default low-zoom viewport renders, and a UI test
+asserting a singleton pin began failing on the tip.
+
+Nothing about the change was wrong. The gate that would have caught the stale test was the one skipped as
+unnecessary.
+
+The cost fell on other people. Every subsequent PR on that branch inherited a red full gate until a later PR
+fixed a test unrelated to its own work — the failure was cheap to make, invisible to the person making it,
+and expensive for everyone downstream.
+
+Both the builder and the reviewer who accepted the gate missed it, which is the useful part: the reasoning
+("host tests pass, no simulator API touched, therefore no simulator run") is sound-sounding enough to
+survive a second pair of eyes.
+
+→ *Do not oversell what a host test proves* (gate-lessons); *Review gates* (AGENTS.md).

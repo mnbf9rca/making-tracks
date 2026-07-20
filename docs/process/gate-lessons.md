@@ -109,6 +109,20 @@ constants can drift between the host-tested path and the live one.
 own expectation proves self-consistency, not that it matches the real engine. State the split and gate a
 read-back for the untestable half.
 
+**A change to what the app renders runs the full release gate, even when host tests pass and the simulator
+looks unnecessary.** "No simulator needed" is a statement about *compilation*, not about *coverage*. Host
+package tests prove the code builds and its pure logic holds; they cannot prove the rendered output is
+unchanged, because they never render anything.
+
+The trap is that the reasoning sounds right at the moment it is made. A display-path change that compiles
+clean, passes every host test, and touches no simulator-only API still alters what appears on screen — and
+the tests that would have caught it are the ones being skipped as unnecessary. Ask what the change makes the
+app *show*, not what it makes the compiler *accept*.
+
+Cost when it slips: a display change that breaks a UI test lands green, and every subsequent PR on that
+branch inherits a red gate until someone fixes a test unrelated to their own work.
+(Incidents → *A display change merged on host tests alone*.)
+
 ---
 
 ## 6. Gate conduct
