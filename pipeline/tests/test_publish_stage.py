@@ -851,7 +851,39 @@ def test_publish_stage_uses_audited_images_and_can_disable_fetch(
     _write_malaysia_registry(tmp_path)
     completed = tmp_path / "completed.jsonl"
     audit_cache = tmp_path / "audit-cache"
-    seen = []
+    old_thumb = b"old-thumb"
+    old_thumb_sha = hashlib.sha256(old_thumb).hexdigest()
+    old_thumb_path = audit_cache / "thumbs" / old_thumb_sha[:2] / f"{old_thumb_sha}.webp"
+    old_thumb_path.parent.mkdir(parents=True)
+    old_thumb_path.write_bytes(old_thumb)
+    original_path = audit_cache / "raw" / f"{A}.source"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original-image")
+    completed.write_text(
+        json.dumps(
+            {
+                "place_id": A,
+                "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+                "thumb_sha256": old_thumb_sha,
+                "width": 320,
+                "height": 240,
+                "attribution": {
+                    "creator": "Jane Example",
+                    "license_code": "CC-BY-4.0",
+                    "license_name": "Creative Commons Attribution 4.0",
+                    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                    "source_url": "https://commons.wikimedia.org/wiki/File:Fort.jpg",
+                    "modified": True,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    new_thumb = b"reencoded-thumb"
+    new_thumb_sha = hashlib.sha256(new_thumb).hexdigest()
+    transcodes = []
 
     def fake_cut_basemap(region_config, out_path):
         out_path.write_bytes(b"basemap")
@@ -863,31 +895,13 @@ def test_publish_stage_uses_audited_images_and_can_disable_fetch(
             bbox=list(region_config["basemap"]["bbox"]),
         )
 
-    def fake_audited(candidates, *, completed_jsonl, audited_cache_dir, require_complete=False):
-        seen.append((list(candidates), completed_jsonl, audited_cache_dir, require_complete))
-        return [
-            P.images.PlaceImage(
-                place_id=A,
-                lat=3.10,
-                lon=101.70,
-                thumb_sha256=hashlib.sha256(b"thumb").hexdigest(),
-                thumb_bytes=b"thumb",
-                width=320,
-                height=240,
-                attribution=P.images.ImageAttribution(
-                    creator="Jane Example",
-                    license_code="CC-BY-4.0",
-                    license_name="Creative Commons Attribution 4.0",
-                    license_url="https://creativecommons.org/licenses/by/4.0/",
-                    source_url="https://commons.wikimedia.org/wiki/File:Fort.jpg",
-                    modified=True,
-                ),
-            )
-        ]
+    def fake_transcode(path):
+        transcodes.append(path)
+        return P.images.ThumbTranscode(webp_bytes=new_thumb, width=256, height=192)
 
     monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
     monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
-    monkeypatch.setattr(P.images, "build_place_images_from_audit", fake_audited)
+    monkeypatch.setattr(P.images, "transcode_to_webp_thumb", fake_transcode)
     monkeypatch.setattr(
         P.images,
         "build_place_images",
@@ -906,9 +920,18 @@ def test_publish_stage_uses_audited_images_and_can_disable_fetch(
         no_image_fetch=True,
     )
 
-    assert seen[0][1:] == (completed, audit_cache, False)
-    assert [candidate.place_id for candidate in seen[0][0]] == [A]
-    assert sorted(result.staging_dir.glob("images/10/*/*.json"))
+    assert transcodes == [original_path]
+    assert old_thumb_path.read_bytes() == old_thumb
+    image_files = sorted(result.staging_dir.glob("images/10/*/*.json"))
+    assert image_files
+    image_index = json.loads(image_files[0].read_text())
+    assert image_index["places"][0]["place_id"] == A
+    assert image_index["places"][0]["thumb_sha256"] == new_thumb_sha
+    assert image_index["places"][0]["width"] == 256
+    assert image_index["places"][0]["height"] == 192
+    assert (
+        tmp_path / "stage/thumbs" / new_thumb_sha[:2] / f"{new_thumb_sha}.webp"
+    ).read_bytes() == new_thumb
 
 
 def test_publish_stage_no_image_fetch_without_audit_emits_no_images(

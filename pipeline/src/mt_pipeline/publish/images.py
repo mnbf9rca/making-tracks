@@ -464,7 +464,7 @@ def build_place_images_from_audit(
             f"audited image reuse missing {missing} of {len(candidates)} candidates"
         )
     print(
-        "AUDITED_IMAGE_REUSE "
+        "AUDITED_IMAGE_REENCODE "
         f"candidates={len(candidates)} selected={len(out)} "
         f"missing_skipped={missing} audited_total={len(audited_rows)}"
     )
@@ -519,39 +519,82 @@ def _place_image_from_audited_row(
         raise AuditedImageReuseError(
             f"audited image row has invalid thumb_sha256 for {candidate.place_id}"
         )
-    thumb_path = cache_root / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp"
-    if not thumb_path.exists():
-        raise AuditedImageReuseError(
-            f"referenced thumb missing for {candidate.place_id}: {thumb_path}"
-        )
-    if thumb_path.stat().st_size > MAX_AUDITED_THUMB_BYTES:
-        raise AuditedImageReuseError(
-            f"audited thumb exceeds {MAX_AUDITED_THUMB_BYTES} bytes for "
-            f"{candidate.place_id}: {thumb_path}"
-        )
-    thumb_bytes = thumb_path.read_bytes()
-    if hashlib.sha256(thumb_bytes).hexdigest() != thumb_sha:
-        raise AuditedImageReuseError(
-            f"thumb content hash mismatch for {candidate.place_id}: {thumb_path}"
-        )
-    width = _positive_int(row.get("width"), label="width", place_id=candidate.place_id)
-    height = _positive_int(row.get("height"), label="height", place_id=candidate.place_id)
+    _verify_retained_audited_thumb(thumb_sha, cache_root=cache_root, place_id=candidate.place_id)
+    _positive_int(row.get("width"), label="width", place_id=candidate.place_id)
+    _positive_int(row.get("height"), label="height", place_id=candidate.place_id)
     attribution = _audited_attribution(row.get("attribution"), place_id=candidate.place_id)
     image_url = row.get("image_url")
-    if image_url is not None and _https_url(image_url) is None:
+    if not isinstance(image_url, str):
+        raise AuditedImageReuseError(
+            f"audited image_url is required for {candidate.place_id}"
+        )
+    if _https_url(image_url) is None:
         raise AuditedImageReuseError(
             f"audited image_url is not safe HTTPS for {candidate.place_id}"
         )
+    if image_url != candidate.image_url:
+        raise AuditedImageReuseError(
+            f"audited image_url drift for {candidate.place_id}: "
+            f"{image_url!r} != {candidate.image_url!r}"
+        )
+    original_path = cache_root / "raw" / f"{candidate.place_id}.source"
+    if not original_path.exists():
+        raise AuditedImageReuseError(
+            f"referenced original missing for {candidate.place_id}: {original_path}"
+        )
+    if original_path.stat().st_size > MAX_ORIGINAL_IMAGE_BYTES:
+        raise AuditedImageReuseError(
+            f"audited original exceeds {MAX_ORIGINAL_IMAGE_BYTES} bytes for "
+            f"{candidate.place_id}: {original_path}"
+        )
+    try:
+        thumb = transcode_to_webp_thumb(original_path)
+    except Exception as exc:
+        raise AuditedImageReuseError(
+            f"audited original decode failed for {candidate.place_id}: {original_path}"
+        ) from exc
+    if len(thumb.webp_bytes) > MAX_AUDITED_THUMB_BYTES:
+        raise AuditedImageReuseError(
+            f"audited reencoded thumb exceeds {MAX_AUDITED_THUMB_BYTES} bytes for "
+            f"{candidate.place_id}: {original_path}"
+        )
+    thumb_sha = hashlib.sha256(thumb.webp_bytes).hexdigest()
+    thumb_path = cache_root / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp"
+    thumb_path.parent.mkdir(parents=True, exist_ok=True)
+    thumb_path.write_bytes(thumb.webp_bytes)
     return PlaceImage(
         place_id=candidate.place_id,
         lat=candidate.lat,
         lon=candidate.lon,
         thumb_sha256=thumb_sha,
-        thumb_bytes=thumb_bytes,
-        width=width,
-        height=height,
+        thumb_bytes=thumb.webp_bytes,
+        width=thumb.width,
+        height=thumb.height,
         attribution=attribution,
     )
+
+
+def _verify_retained_audited_thumb(
+    thumb_sha: str,
+    *,
+    cache_root: pathlib.Path,
+    place_id: str,
+) -> None:
+    thumb_path = cache_root / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp"
+    if not thumb_path.exists():
+        raise AuditedImageReuseError(
+            f"referenced thumb missing for {place_id}: {thumb_path}"
+        )
+    if thumb_path.stat().st_size > MAX_AUDITED_THUMB_BYTES:
+        raise AuditedImageReuseError(
+            f"audited thumb exceeds {MAX_AUDITED_THUMB_BYTES} bytes for "
+            f"{place_id}: {thumb_path}"
+        )
+    thumb_bytes = thumb_path.read_bytes()
+    if hashlib.sha256(thumb_bytes).hexdigest() != thumb_sha:
+        raise AuditedImageReuseError(
+            f"thumb content hash mismatch for {place_id}: {thumb_path}"
+        )
 
 
 def _positive_int(value: object, *, label: str, place_id: str) -> int:

@@ -27,9 +27,12 @@ _DEFAULT_GOLDEN_AREAS = _PIPELINE_ROOT / "config" / "golden_areas.json"
 _DEFAULT_LLM_MODELS = _PIPELINE_ROOT / "config" / "llm_models.json"
 _DEFAULT_LLM_PRICING = _PIPELINE_ROOT / "config" / "llm_pricing.json"
 _DEFAULT_EVAL_OUT_DIR = _PIPELINE_ROOT.parent / "docs" / "superpowers" / "eval"
+_DEFAULT_PIPELINE_LOG_DIR = pathlib.Path("/data/mt-data/logs")
+_PIPELINE_LOG_DIR_ENV = "MT_PIPELINE_LOG_DIR"
 _MAX_JSON_BYTES = 1_000_000
 _MAX_TSV_BYTES = 10_000_000
 _SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+_SAFE_LOG_TOKEN_RE = re.compile(r"[^A-Za-z0-9._-]+")
 _VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 
 
@@ -62,6 +65,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("stage", choices=_COMMANDS, help="pipeline stage or acquisition step")
     parser.add_argument("--db", default="work.db", help="path to the SQLite store")
     parser.add_argument("--run-id", default=_DEFAULT_RUN_ID, help="run metadata tag")
+    parser.add_argument(
+        "--log-dir",
+        type=pathlib.Path,
+        help=(
+            "directory for pipeline-owned log files; defaults to MT_PIPELINE_LOG_DIR, "
+            "or /data/mt-data/logs when the VPS data root exists"
+        ),
+    )
     parser.add_argument(
         "--data-dir",
         default=".mt-data",
@@ -178,6 +189,81 @@ def _normalize_argv(argv: Sequence[str] | None) -> list[str]:
     if len(args) >= 2 and args[0] == "audit" and not args[1].startswith("-"):
         return ["--region", args[1], "audit", *args[2:]]
     return args
+
+
+class _TeeTextIO:
+    def __init__(self, primary, secondary) -> None:
+        self._primary = primary
+        self._secondary = secondary
+        self.encoding = getattr(primary, "encoding", "utf-8")
+
+    def write(self, text: str) -> int:
+        self._primary.write(text)
+        self._secondary.write(text)
+        return len(text)
+
+    def flush(self) -> None:
+        self._primary.flush()
+        self._secondary.flush()
+
+    def isatty(self) -> bool:
+        return bool(getattr(self._primary, "isatty", lambda: False)())
+
+
+def _configured_pipeline_log_dir(args) -> pathlib.Path | None:
+    if args.log_dir is not None:
+        return pathlib.Path(args.log_dir)
+    env_path = os.environ.get(_PIPELINE_LOG_DIR_ENV)
+    if env_path:
+        return pathlib.Path(env_path)
+    if _DEFAULT_PIPELINE_LOG_DIR.parent.exists():
+        return _DEFAULT_PIPELINE_LOG_DIR
+    return None
+
+
+def _safe_log_token(value: object) -> str:
+    token = _SAFE_LOG_TOKEN_RE.sub("_", str(value)).strip("._-")
+    return token or "unknown"
+
+
+def _pipeline_log_path(log_dir: pathlib.Path, args) -> pathlib.Path:
+    timestamp = _safe_log_token(stages._completed_at())
+    region = _safe_log_token(args.region)
+    stage = _safe_log_token(args.stage)
+    stem = f"{timestamp}-{region}-{stage}-pid{os.getpid()}"
+    first = log_dir / f"{stem}.log"
+    if not first.exists():
+        return first
+    for counter in range(1, 1000):
+        candidate = log_dir / f"{stem}-{counter}.log"
+        if not candidate.exists():
+            return candidate
+    raise RuntimeError(f"could not allocate pipeline log path under {log_dir}")
+
+
+@contextmanager
+def _pipeline_file_log(args):
+    log_dir = _configured_pipeline_log_dir(args)
+    if log_dir is None:
+        yield None
+        return
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = _pipeline_log_path(log_dir, args)
+    with log_path.open("x", encoding="utf-8") as log_file:
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        sys.stdout = _TeeTextIO(old_stdout, log_file)
+        sys.stderr = _TeeTextIO(old_stderr, log_file)
+        try:
+            from .ergonomics import telemetry
+
+            telemetry.emit(telemetry.report_log_path(log_path))
+            yield log_path
+        finally:
+            sys.stdout.flush()
+            sys.stderr.flush()
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
 
 
 def _build_eval_parser() -> argparse.ArgumentParser:
@@ -1692,6 +1778,11 @@ def main(argv=None) -> int:
         return _run_llm(argv[1:])
 
     args = _build_parser().parse_args(argv)
+    with _pipeline_file_log(args):
+        return _run_pipeline_command(args)
+
+
+def _run_pipeline_command(args) -> int:
     if args.version is not None and not _VERSION_RE.fullmatch(args.version):
         print("--version must match YYYYMMDDThhmmssZ", file=sys.stderr)
         return 2
