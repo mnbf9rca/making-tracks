@@ -7,11 +7,11 @@ Operational facts agents need and cannot derive from the tree. Secrets handling 
 
 ## 1. SSH and commit signing route through 1Password
 
-On Rob's Mac, `~/.ssh/config` sets `IdentityAgent` to the 1Password agent socket under `Host *`. **All** ssh
-authenticates through it regardless of any `-i` flag — VPS access and GitHub push alike. The launchd
-`SSH_AUTH_SOCK` agent holds no identities. Git commit signing also goes through 1Password.
+On Rob's Mac, `~/.ssh/config` sets `IdentityAgent` to the 1Password agent socket under `Host *`. A plain
+`ssh` command can authenticate through it even when an `-i` identity file is present; verify with `ssh -v`
+before assuming which key was used. GitHub push and commit signing also go through 1Password.
 
-The VPS key is passphrase-protected with the passphrase in the macOS keychain (`UseKeychain yes`).
+The launchd `SSH_AUTH_SOCK` agent holds no identities.
 
 **Consequence: they fail together.** When the Mac locks, 1Password locks and keychain passphrase release
 stops, so VPS ssh, GitHub push and commit signing all break at once with
@@ -36,7 +36,7 @@ symptom as a locked Mac. Probe before concluding — see
 - Lost VPS monitoring is lost **visibility**, not a failed run. Detached runs continue.
 - Sanctioned degraded mode: unsigned commits on feature branches via `git -c commit.gpgsign=false`, declared
   in the PR body as "commits unsigned (signer unavailable)". Pushes queue until unlock.
-- **Never sign with the VPS agent key** (`~/.ssh/id_ed25519_for_agent`). GitHub does not recognise it, so it
+- **Never sign with the VPS agent key** (`~/.ssh/id_ed25519_for_agent`). GitHub does not recognize it, so it
   produces bad-signature commits — worse than unsigned ones. This is a standing prohibition.
 
 ---
@@ -48,11 +48,28 @@ there; the Mac is for iteration. Unattended and long-running work authenticates 
 account rather than Rob's desktop 1Password, which needs him present. Interactive `op run` on the Mac is
 sanctioned and routine — see [`SECRETS.md`](SECRETS.md) §1 for both auth paths.
 
-⚠️ **Unverified from the repo.** The following came from an agent's operational memory and could not be
-checked against the tree or the host. Confirm before relying on them, and correct this file in place:
+### VPS Operator Path
 
-- Keep at least 10 GB free on `/data`.
-- Non-interactive ssh needs `export PATH="$HOME/.local/bin:$PATH"` for `uv` to resolve.
+Verified 2026-07-20 from the agent harness:
+
+- Canonical invocation from Rob: `ssh -i ~/.ssh/id_ed25519_for_agent agent@making-tracks-dev.cynexia.net`.
+  Use the hostname, not the raw IP, for VPS operator work.
+- Sandbox-default egress is blocked: `nc 62.238.55.235 22` and `ssh ...` fail with
+  `Operation not permitted` unless the command runs with escalated network execution.
+- The intended VPS operator key is `~/.ssh/id_ed25519_for_agent`, fingerprint
+  `SHA256:GIxKIdcjeL3sF+TDYJ3QH02iaIq3iww95jwhiVAa8w8`.
+- Do **not** use this key for GitHub commit signing. It is authorized for the VPS `agent` account only.
+- Do **not** treat a successful default SSH connection as an agent-key receipt. With the current `Host *`
+  `IdentityAgent`, `ssh -v -i ~/.ssh/id_ed25519_for_agent agent@making-tracks-dev.cynexia.net exit`
+  authenticates with Rob's 1Password key `SHA256:1X7YuLyK1iIuA/rZoKqk2kKjQBeagTfAl+QuUv6fsnU`, not the
+  on-disk agent key.
+- True agent-key verification must show the `GIxK...` fingerprint in the accepted and authenticated lines.
+  The 2026-07-20 non-interactive receipt used
+  `ssh -v -o IdentityAgent=none -o IdentitiesOnly=yes -o BatchMode=yes -i ~/.ssh/id_ed25519_for_agent agent@making-tracks-dev.cynexia.net exit`
+  and authenticated with `SHA256:GIxKIdcjeL3sF+TDYJ3QH02iaIq3iww95jwhiVAa8w8`.
+- Non-interactive ssh on the VPS does not include `~/.local/bin` in `PATH`; run
+  `export PATH="$HOME/.local/bin:$PATH"` before commands that need `uv`.
+- `/data` is the heavy-run volume. Keep at least 10 GB free; the 2026-07-20 probe showed 17 GB free.
 
 ---
 
