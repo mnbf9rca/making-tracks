@@ -81,6 +81,7 @@ public struct DiagnosticLogArtifact: Equatable, Sendable {
     public var summaryURL: URL
     public var logURL: URL
     public var decodeTableURL: URL
+    public var byteCount: Int
     public var preview: String
 }
 
@@ -172,17 +173,20 @@ public final class DiagnosticLogStore {
         fields: [DiagnosticLogField]
     ) throws {
         let timestamp = Self.timestampFormatter().string(from: now())
+        var objectDecodeEntries: [String: String] = [:]
         let renderedFields = fields.map { field in
             switch field {
             case let .public(name, value):
                 return "\(name)=\(Self.sanitizePublicValue(value))"
             case let .object(name, value):
-                return "\(name)=\(hashObject(value))"
+                let hash = hashObject(value)
+                objectDecodeEntries[hash] = Self.sanitizePublicValue(value)
+                return "\(name)=\(hash)"
             }
         }
         let line = ([timestamp, category.rawValue, level.rawValue, message] + renderedFields)
             .joined(separator: " ")
-        try appendRawLine(line)
+        try appendRawLine(line, objectDecodeEntries: objectDecodeEntries)
     }
 
     public func hashObject(_ value: String) -> String {
@@ -221,14 +225,24 @@ public final class DiagnosticLogStore {
     }
 
     func appendRawLineForTesting(_ line: String) throws {
-        try appendRawLine(line)
+        try appendRawLine(line, objectDecodeEntries: [:])
+    }
+
+    func snapshotObjectDecodeEntries() throws -> [String: String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return try readObjectDecodeEntries()
     }
 
     private var logURL: URL {
         root.appendingPathComponent("making-tracks.log", isDirectory: false)
     }
 
-    private func appendRawLine(_ line: String) throws {
+    private var objectDecodeURL: URL {
+        root.appendingPathComponent("object-decode.tsv", isDirectory: false)
+    }
+
+    private func appendRawLine(_ line: String, objectDecodeEntries: [String: String]) throws {
         lock.lock()
         defer { lock.unlock() }
         try createDirectoryIfNeeded(root)
@@ -242,6 +256,33 @@ public final class DiagnosticLogStore {
             try output.write(to: logURL, atomically: true, encoding: .utf8)
             try Self.setDiagnosticsResourceValues(logURL)
         }
+        if objectDecodeEntries.isEmpty == false {
+            try mergeObjectDecodeEntries(objectDecodeEntries)
+        }
+    }
+
+    private func readObjectDecodeEntries() throws -> [String: String] {
+        guard fileManager.fileExists(atPath: objectDecodeURL.path) else { return [:] }
+        let text = try String(contentsOf: objectDecodeURL, encoding: .utf8)
+        return text
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .dropFirst()
+            .reduce(into: [String: String]()) { entries, line in
+                let parts = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
+                guard parts.count == 2 else { return }
+                entries[String(parts[0])] = String(parts[1])
+            }
+    }
+
+    private func mergeObjectDecodeEntries(_ newEntries: [String: String]) throws {
+        var entries = try readObjectDecodeEntries()
+        for (hash, plaintext) in newEntries {
+            entries[hash] = plaintext
+        }
+        var lines = ["hash\tplaintext"]
+        lines.append(contentsOf: entries.sorted { $0.key < $1.key }.map { "\($0.key)\t\($0.value)" })
+        try (lines.joined(separator: "\n") + "\n").write(to: objectDecodeURL, atomically: true, encoding: .utf8)
+        try Self.setDiagnosticsResourceValues(objectDecodeURL)
     }
 
     private func createDirectoryIfNeeded(_ url: URL) throws {
@@ -280,35 +321,39 @@ public struct DiagnosticLogExporter {
     private let metadata: DiagnosticLogMetadata
     private let knownObjects: [String]
     private let fileManager: FileManager
+    private let exportedAt: @Sendable () -> Date
 
     public init(
         store: DiagnosticLogStore,
         metadata: DiagnosticLogMetadata,
         knownObjects: [String],
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        exportedAt: @escaping @Sendable () -> Date = Date.init
     ) {
         self.store = store
         self.metadata = metadata
         self.knownObjects = knownObjects
         self.fileManager = fileManager
+        self.exportedAt = exportedAt
     }
 
     public func prepare(window: DiagnosticLogWindow, stagingRoot: URL) throws -> DiagnosticLogArtifact {
         if fileManager.fileExists(atPath: stagingRoot.path) {
             try fileManager.removeItem(at: stagingRoot)
         }
-        let directory = stagingRoot.appendingPathComponent("MakingTracksDiagnostics", isDirectory: true)
+        let exportTimestamp = Self.filenameTimestampFormatter().string(from: exportedAt())
+        let directory = stagingRoot.appendingPathComponent("MakingTracksDiagnostics-\(exportTimestamp)", isDirectory: true)
         do {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
             try DiagnosticLogStore.setDiagnosticsResourceValuesForExporter(directory)
 
-            let summaryURL = directory.appendingPathComponent("summary.txt")
-            let logURL = directory.appendingPathComponent("diagnostic-log.txt")
-            let decodeTableURL = directory.appendingPathComponent("decode-table.tsv")
+            let summaryURL = directory.appendingPathComponent("summary-\(exportTimestamp).txt")
+            let logURL = directory.appendingPathComponent("diagnostic-log-\(exportTimestamp).txt")
+            let decodeTableURL = directory.appendingPathComponent("decode-table-\(exportTimestamp).tsv")
 
             let summary = renderSummary()
             let log = try store.snapshotLines(window: window).joined(separator: "\n") + "\n"
-            let decodeTable = renderDecodeTable()
+            let decodeTable = try renderDecodeTable(log: log)
             let scrubText = [summary, log, decodeTable].joined(separator: "\n")
             guard Self.passesPrivacyScrub(scrubText) else {
                 throw DiagnosticLogExportError.privacyScrubFailed
@@ -317,7 +362,8 @@ public struct DiagnosticLogExporter {
             try summary.write(to: summaryURL, atomically: true, encoding: .utf8)
             try log.write(to: logURL, atomically: true, encoding: .utf8)
             try decodeTable.write(to: decodeTableURL, atomically: true, encoding: .utf8)
-            let archiveURL = try makeArchive(directory: directory, stagingRoot: stagingRoot)
+            let archiveURL = try makeArchive(directory: directory, stagingRoot: stagingRoot, exportTimestamp: exportTimestamp)
+            let byteCount = try archiveByteCount(archiveURL)
             let preview = renderPreview(summary: summary, log: log, decodeTable: decodeTable)
 
             return DiagnosticLogArtifact(
@@ -326,6 +372,7 @@ public struct DiagnosticLogExporter {
                 summaryURL: summaryURL,
                 logURL: logURL,
                 decodeTableURL: decodeTableURL,
+                byteCount: byteCount,
                 preview: preview
             )
         } catch {
@@ -336,8 +383,8 @@ public struct DiagnosticLogExporter {
         }
     }
 
-    private func makeArchive(directory: URL, stagingRoot: URL) throws -> URL {
-        let destination = stagingRoot.appendingPathComponent("MakingTracksDiagnostics.zip", isDirectory: false)
+    private func makeArchive(directory: URL, stagingRoot: URL, exportTimestamp: String) throws -> URL {
+        let destination = stagingRoot.appendingPathComponent("MakingTracksDiagnostics-\(exportTimestamp).zip", isDirectory: false)
         if fileManager.fileExists(atPath: destination.path) {
             try fileManager.removeItem(at: destination)
         }
@@ -363,6 +410,12 @@ public struct DiagnosticLogExporter {
         return destination
     }
 
+    private func archiveByteCount(_ archiveURL: URL) throws -> Int {
+        let attributes = try fileManager.attributesOfItem(atPath: archiveURL.path)
+        guard let size = attributes[.size] as? NSNumber else { return 0 }
+        return max(0, size.intValue)
+    }
+
     private func renderSummary() -> String {
         var lines = [
             "Making Tracks diagnostics",
@@ -377,10 +430,18 @@ public struct DiagnosticLogExporter {
         return lines.joined(separator: "\n") + "\n"
     }
 
-    private func renderDecodeTable() -> String {
-        var lines = ["hash\tplaintext"]
+    private func renderDecodeTable(log: String) throws -> String {
+        var entries: [String: String] = [:]
         let values = Set(knownObjects + metadata.installedPacks.flatMap { [$0.id, "\($0.id)/\($0.publishVersion)"] })
-        lines.append(contentsOf: values.sorted().map { "\(store.hashObject($0))\t\($0)" })
+        for value in values {
+            entries[store.hashObject(value)] = value
+        }
+        let logHashes = Self.objectHashes(in: log)
+        for (hash, plaintext) in try store.snapshotObjectDecodeEntries() where logHashes.contains(hash) {
+            entries[hash] = plaintext
+        }
+        var lines = ["hash\tplaintext"]
+        lines.append(contentsOf: entries.sorted { $0.key < $1.key }.map { "\($0.key)\t\($0.value)" })
         return lines.joined(separator: "\n") + "\n"
     }
 
@@ -406,6 +467,20 @@ public struct DiagnosticLogExporter {
         return forbiddenPatterns.allSatisfy { pattern in
             text.range(of: pattern, options: .regularExpression) == nil
         }
+    }
+
+    private static func objectHashes(in log: String) -> Set<String> {
+        let matches = log.matches(of: /h:[0-9a-f]{16}/)
+        return Set(matches.map { String($0.output) })
+    }
+
+    private static func filenameTimestampFormatter() -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        return formatter
     }
 }
 
