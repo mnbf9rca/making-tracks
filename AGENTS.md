@@ -94,6 +94,10 @@ The body is where Rob looks. A stack of appended comments makes him reconstruct 
 
 **Labels.** Issues get a **track** label (`track-a-pipeline` / `track-b-ios` / `track-c-services`) plus a **type** label (`bug` / `enhancement` / `design` / `question`). `sourcery-review` and `greptile-review` are PR review triggers — never put them on an issue.
 
+An issue whose work touches a user-facing surface also gets **`requires-mockups`**. That label is how the mockup rule is found: it turns "UI design ships with mockups" from something an agent has to remember into something the tracker can be queried for.
+
+**Every PR body names the issue or issues it serves.** A PR that names none orphans its own rationale — the issue is the record, so a change that does not point at one leaves a reader with the diff and nothing else. If a PR genuinely has no owning issue, name what prompted it: the PR, incident or ruling it came from.
+
 ## Worktree discipline
 
 **One git worktree per agent, always.** Never work in the repo root checkout and never switch its branch — multiple agents share this machine, and an uncommitted edit in a shared checkout gets stranded or destroyed when another agent switches branches. Start every assignment by setting up your isolated workspace: use the `superpowers:using-git-worktrees` skill if your harness has it (the project-standard mechanism), otherwise `git worktree add .worktrees/<branch> -b <branch>` inside the repo (`.worktrees/` is gitignored; verify with `git check-ignore .worktrees/` — the trailing slash matters, without it the check fails until the directory exists). Do all work there. Never create sibling directories outside the repo.
