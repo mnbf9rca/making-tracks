@@ -7,8 +7,8 @@ Rob's accepted direction:
 
 - Retrace opens as a map view, not a hidden list state.
 - Visited places remain individual pins.
-- Scrubbing time makes connection arcs glide across the map.
-- Pins pop into colour as the scrubber reaches each visit.
+- Scrubbing time makes dashed connection arcs glide across the map.
+- Pins appear with a pulse as the scrubber reaches each visit.
 - The slider must read as a real time slider, with Google Photos-style temporal
   affordance rather than a generic progress bar.
 - The entry point must be obvious from the map.
@@ -28,9 +28,11 @@ Validation notes:
   mapless Tracks drawer should not survive as a separate replay surface.
 - Retrace does not show unreached or hidden places as faded tappable pins, and
   it does not expose hidden-place counts.
-- The connection line is scaffolding: it stays behind the places, avoids system
-  blue, and never dominates coloured pins.
+- The dashed connection line is scaffolding: it stays behind the places, avoids
+  the default navigation accent, and never dominates coloured pins.
 - Same-day reordering is represented as a continuous track.
+- The AXXXL render deliberately drops endpoint time labels from the slider row
+  so the event control remains reachable and unclipped at the largest text size.
 - Each phone-frame source includes a subtle fold/safe-area marker so reviewers
   can judge what remains visible without scrolling.
 

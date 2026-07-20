@@ -27,7 +27,7 @@
     <path d="M54 185l17 10-17 10z" fill="#f8efe3"/>
     <text class="label" x="94" y="188" style="font-size:12px;font-weight:700">14:20</text>
     <text class="label" x="94" y="212" style="font-size:24px;font-weight:790">Old market arcade</text>
-    <text class="label small" x="94" y="234" fill="#627069">Pin bursts into colour at this visit</text>
+    <text class="label small" x="94" y="234" fill="#627069">Pin appears at this visit</text>
 
     <line x1="46" y1="280" x2="344" y2="280" stroke="#d9dfd8" stroke-width="12" stroke-linecap="round"/>
     <line x1="46" y1="280" x2="184" y2="280" stroke="#2d8c83" stroke-width="12" stroke-linecap="round"/>

@@ -18,8 +18,8 @@
       .label { font-family: Helvetica; letter-spacing: 0; }
       .road { fill: none; stroke: #fffdf7; stroke-width: 10; stroke-linecap: round; stroke-linejoin: round; }
       .road-line { fill: none; stroke: #d9ddd3; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
-      .visited-arc { fill: none; stroke: #2d8c83; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; opacity: .72; }
-      .active-arc { fill: none; stroke: #db5344; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+      .visited-arc { fill: none; stroke: #2d8c83; stroke-width: 4.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 10; opacity: .58; }
+      .active-arc { fill: none; stroke: #db5344; stroke-width: 4.8; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 10; opacity: .72; }
       .tick { stroke: #6f7c74; stroke-width: 2; stroke-linecap: round; opacity: .78; }
     </style>
   </defs>
@@ -68,19 +68,19 @@
     <text class="label" x="96" y="650" style="font-size:19px;font-weight:760">14:20</text>
     <text class="label" x="96" y="684" style="font-size:27px;font-weight:790">Old market</text>
     <text class="label" x="96" y="718" style="font-size:27px;font-weight:790">arcade</text>
-    <text class="label" x="34" y="750" style="font-size:17px;font-weight:720" fill="#64716a">Drag to retrace - visit 4 of 14</text>
-    <line x1="42" y1="774" x2="348" y2="774" stroke="#d8ded7" stroke-width="11" stroke-linecap="round"/>
-    <line x1="42" y1="774" x2="182" y2="774" stroke="#2d8c83" stroke-width="11" stroke-linecap="round"/>
-    <line x1="182" y1="774" x2="224" y2="774" stroke="#db5344" stroke-width="11" stroke-linecap="round"/>
-    <line class="tick" x1="42" y1="755" x2="42" y2="793"/>
-    <line class="tick" x1="96" y1="761" x2="96" y2="787"/>
-    <line class="tick" x1="144" y1="761" x2="144" y2="787"/>
-    <line class="tick" x1="182" y1="752" x2="182" y2="796"/>
-    <line class="tick" x1="224" y1="761" x2="224" y2="787"/>
-    <line class="tick" x1="286" y1="761" x2="286" y2="787"/>
-    <line class="tick" x1="348" y1="755" x2="348" y2="793"/>
-    <rect x="201" y="751" width="46" height="46" rx="23" fill="#fffdf8" stroke="#db5344" stroke-width="4"/>
-    <circle cx="224" cy="774" r="7" fill="#db5344"/>
+    <text class="label" x="34" y="746" style="font-size:17px;font-weight:720" fill="#64716a">Drag to retrace - visit 4 of 14</text>
+    <line x1="42" y1="766" x2="348" y2="766" stroke="#d8ded7" stroke-width="11" stroke-linecap="round"/>
+    <line x1="42" y1="766" x2="182" y2="766" stroke="#2d8c83" stroke-width="11" stroke-linecap="round"/>
+    <line x1="182" y1="766" x2="224" y2="766" stroke="#db5344" stroke-width="11" stroke-linecap="round"/>
+    <line class="tick" x1="42" y1="748" x2="42" y2="784"/>
+    <line class="tick" x1="96" y1="755" x2="96" y2="778"/>
+    <line class="tick" x1="144" y1="755" x2="144" y2="778"/>
+    <line class="tick" x1="182" y1="745" x2="182" y2="787"/>
+    <line class="tick" x1="224" y1="755" x2="224" y2="778"/>
+    <line class="tick" x1="286" y1="755" x2="286" y2="778"/>
+    <line class="tick" x1="348" y1="748" x2="348" y2="784"/>
+    <rect x="201" y="743" width="46" height="46" rx="23" fill="#fffdf8" stroke="#db5344" stroke-width="4"/>
+    <circle cx="224" cy="766" r="7" fill="#db5344"/>
   </g>
 
   <rect x="154" y="24" width="82" height="5" rx="2.5" fill="#0f1412" opacity=".86"/>
