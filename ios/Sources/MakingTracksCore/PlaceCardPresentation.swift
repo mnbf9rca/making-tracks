@@ -41,6 +41,6 @@ public struct PlaceCardPresentation: Sendable, Equatable {
 
 public enum PlaceCardDetentPolicy {
     public static func identifiers(isAccessibilitySize: Bool) -> [String] {
-        isAccessibilitySize ? ["large"] : ["medium", "large"]
+        ["medium", "large"]
     }
 }

@@ -26,7 +26,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["place-card.loved"].tap()
         XCTAssertTrue(app.buttons["place-card.loved"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["place-card.loved"].label, "Unlove")
-        app.buttons["place-card.close"].tap()
+        closePlaceCard(in: app)
 
         XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
         XCTAssertTrue(waitForAccessibilityPin(
@@ -176,6 +176,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews[sheetInstanceIdentifier].exists)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].exists)
         XCTAssertFalse(element(identifier: "place-card.description", in: app).exists)
+        let placeholder = element(identifier: "place-card.photo.placeholder", in: app)
+        XCTAssertTrue(placeholder.waitForExistence(timeout: 5))
+        XCTAssertEqual(placeholder.label, "No photo available for Art Deco Cinema")
         let sourceArticle = app.buttons["place-card.source-article"]
         XCTAssertTrue(sourceArticle.exists)
         XCTAssertEqual(sourceArticle.label, "OpenStreetMap source article")
@@ -183,7 +186,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         assertDoesNotExposeURL(sourceArticle)
         attachScreenshot(named: "card-switched-to-art-deco-cinema")
 
-        app.buttons["place-card.close"].tap()
+        closePlaceCard(in: app)
         XCTAssertFalse(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 2))
     }
 
@@ -228,6 +231,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(saveButton.exists)
         XCTAssertTrue(seenButton.exists)
         XCTAssertTrue(hideButton.exists)
+        XCTAssertTrue(app.buttons["place-card.more"].exists)
+        app.buttons["place-card.more"].tap()
+        let addToListButton = app.buttons["place-card.add-to-list"]
+        XCTAssertTrue(addToListButton.waitForExistence(timeout: 5))
+        addToListButton.tap()
+        XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
+        app.buttons["list-picker.done"].tap()
         XCTAssertFalse(app.buttons["place-card.add-to-list"].exists)
         XCTAssertEqual(seenButton.label, "Seen")
         XCTAssertEqual(hideButton.label, "Hide")
@@ -241,9 +251,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         assertVerticallyOrdered([
             ("title", title),
             ("type", typeLabel),
+            ("photo", photo),
             ("description", description),
             ("sourceArticle", sourceArticle),
-            ("photo", photo),
             ("chips", chips),
             ("attribution", attribution),
         ])
@@ -286,7 +296,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(listChips.waitForExistence(timeout: 5))
         XCTAssertTrue(listChips.label.contains("KL walk"))
         XCTAssertFalse(listChips.label.contains("Want to go"))
-        app.buttons["place-card.close"].tap()
+        closePlaceCard(in: app)
 
         openAppMenu(in: app)
         app.buttons["menu.row.lists"].tap()
@@ -353,8 +363,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openFixtureCard(in: map, app: app)
 
         app.buttons["place-card.visited"].tap()
-        XCTAssertTrue(app.buttons["place-card.close"].waitForExistence(timeout: 5))
-        app.buttons["place-card.close"].tap()
+        closePlaceCard(in: app)
 
         openAppMenu(in: app)
         XCTAssertTrue(app.buttons["menu.row.tracks"].waitForExistence(timeout: 5))
@@ -579,7 +588,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
         openFixtureCard(in: map, app: app)
-        app.buttons["place-card.close"].tap()
+        closePlaceCard(in: app)
         app.buttons["debug.hide-fixture"].tap()
         XCTAssertTrue(waitForFixtureHidden(true, in: app))
 
@@ -637,7 +646,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         ))
 
         openSecondFixtureCard(in: map, app: app)
-        app.buttons["place-card.close"].tap()
+        closePlaceCard(in: app)
 
         openFixtureCard(in: map, app: app)
     }
@@ -669,7 +678,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["map.layers.done"].tap()
 
         openFixtureCard(in: map, app: app)
-        app.buttons["place-card.close"].tap()
+        closePlaceCard(in: app)
         openSecondFixtureCard(in: map, app: app)
     }
 
@@ -696,7 +705,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         app.buttons["place-card.unhide"].tap()
         XCTAssertFalse(app.buttons["place-card.unhide"].waitForExistence(timeout: 2))
-        app.buttons["place-card.close"].tap()
+        closePlaceCard(in: app)
         openFixtureCard(in: map, app: app)
     }
 
@@ -1057,7 +1066,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             simulatedLocationAuthorization: true,
             simulatedLatitude: 3.1402,
             simulatedLongitude: 101.6902,
-            pinDiagnostics: true
+            pinDiagnostics: true,
+            startupViewport: "kl-street"
         )
 
         let map = app.otherElements["map.surface"]
@@ -1078,7 +1088,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         ))
         XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
         app.buttons["place-card.visited"].tap()
-        app.buttons["place-card.close"].tap()
+        closePlaceCard(in: app)
 
         XCTAssertFalse(nearbyPrompt.waitForExistence(timeout: 2))
         XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
@@ -1311,6 +1321,15 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         menuButton.tap()
     }
 
+    private func closePlaceCard(in app: XCUIApplication) {
+        let sheet = app.scrollViews.matching(identifierPrefix: "place-card.instance.").firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+        let start = sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95))
+        start.press(forDuration: 0.1, thenDragTo: end)
+        XCTAssertTrue(waitForNonExistence(of: sheet, timeout: 5))
+    }
+
     private func tapFixturePin(in map: XCUIElement) {
         map.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
@@ -1342,8 +1361,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             pin.frame.insetBy(dx: -2, dy: -2).contains(projectedPoint),
             "Accessibility pin \(placeID) frame \(pin.frame) did not contain projected point \(projectedPoint); map frame \(map.frame); marker value \(marker.value ?? "nil")"
         )
-        guard tapProjectedFixtureMarker(marker, through: map, in: app) else { return false }
-        waitForTapStatusToChange(in: app)
+        pin.tap()
         if app.staticTexts[title].waitForExistence(timeout: 5) {
             return true
         }

@@ -9,7 +9,7 @@ final class PlaceCardPresentationTests: XCTestCase {
         )
         XCTAssertEqual(
             PlaceCardDetentPolicy.identifiers(isAccessibilitySize: true),
-            ["large"]
+            ["medium", "large"]
         )
     }
 
