@@ -54,6 +54,34 @@ final class AppShellTests: XCTestCase {
 
         XCTAssertTrue(shell.isMenuPresented)
         XCTAssertEqual(shell.deepLinkPath, .tracks)
+        XCTAssertNil(shell.tracksFocusPlaceID)
+    }
+
+    func testAppShellModelCanRouteTracksDeepLinkWithFocusedPlace() {
+        let shell = AppShellModel()
+
+        shell.openTracksDeepLink(focusingPlaceID: "p_repeat")
+
+        XCTAssertTrue(shell.isMenuPresented)
+        XCTAssertEqual(shell.deepLinkPath, .tracks)
+        XCTAssertEqual(shell.tracksFocusPlaceID, "p_repeat")
+    }
+
+    func testAppShellModelClearsTracksFocusForNormalMenuAndOtherDeepLinks() {
+        let shell = AppShellModel()
+        shell.openTracksDeepLink(focusingPlaceID: "p_repeat")
+
+        shell.openMenu()
+
+        XCTAssertTrue(shell.isMenuPresented)
+        XCTAssertNil(shell.deepLinkPath)
+        XCTAssertNil(shell.tracksFocusPlaceID)
+
+        shell.openTracksDeepLink(focusingPlaceID: "p_repeat")
+        shell.openOfflineMapsDeepLink()
+
+        XCTAssertEqual(shell.deepLinkPath, .offlineMaps)
+        XCTAssertNil(shell.tracksFocusPlaceID)
     }
 
     func testListProgressCopyLeadsWithVisitedAndRemainingCounts() {

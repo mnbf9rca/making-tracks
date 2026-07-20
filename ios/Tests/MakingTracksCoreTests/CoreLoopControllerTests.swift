@@ -195,7 +195,7 @@ final class CoreLoopControllerTests: XCTestCase {
         XCTAssertEqual(try db.listItems(listID: list.id!).map(\.placeID), [])
     }
 
-    func testRowScopedVisitVerdictEmitsChangedPlaceID() async throws {
+    func testVisitVerdictUsesVisitIDToFindPlaceAndEmitsChangedPlaceID() async throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         let controller = CoreLoopController(database: db)
         var changes = controller.changes.makeAsyncIterator()
@@ -210,12 +210,39 @@ final class CoreLoopControllerTests: XCTestCase {
         let visits = try await db.dbQueue.read {
             try Visit.fetchAll($0, sql: "SELECT * FROM visits WHERE place_id = ? ORDER BY id", arguments: ["p_row_emit"])
         }
-        XCTAssertEqual(visits.map(\.verdict), [.loved, nil])
+        XCTAssertEqual(visits.map(\.verdict), [.loved, .loved])
 
         try controller.setVisitVerdict(id: second, .loved)
 
         let secondLovedChange = await changes.next()
         XCTAssertEqual(secondLovedChange, ["p_row_emit"])
+    }
+
+    func testVisitEditingOperationsEmitChangedPlaceIDsByVisitIdentity() async throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let controller = CoreLoopController(database: db)
+        var changes = controller.changes.makeAsyncIterator()
+        let day = Date(timeIntervalSince1970: 60 * 60 * 24 * 10)
+        let firstPlace = try makePlace("p_edit_first")
+        let secondPlace = try makePlace("p_edit_second")
+        let first = try db.recordVisit(firstPlace, at: day.addingTimeInterval(60))
+        let second = try db.recordVisit(secondPlace, at: day.addingTimeInterval(120))
+
+        try controller.reorderVisitsWithinDay([second, first], dayContaining: day)
+
+        let reorderChange = await changes.next()
+        XCTAssertEqual(reorderChange, ["p_edit_first", "p_edit_second"])
+
+        try controller.updateVisitDate(id: first, toDayContaining: day.addingTimeInterval(60 * 60 * 24))
+
+        let dateChange = await changes.next()
+        XCTAssertEqual(dateChange, ["p_edit_first"])
+
+        try controller.deleteVisit(id: second)
+
+        let deleteChange = await changes.next()
+        XCTAssertEqual(deleteChange, ["p_edit_second"])
+        XCTAssertEqual(try db.trackVisits().map(\.id), [first])
     }
 
     func testUnseeingFromPlaceCardDeletesOnlyLatestVisitEvent() async throws {

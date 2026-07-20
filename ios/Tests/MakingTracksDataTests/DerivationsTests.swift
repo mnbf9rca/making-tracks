@@ -118,6 +118,33 @@ final class DerivationsTests: XCTestCase {
         XCTAssertEqual(visits.map(\.id), visits.map(\.id).sorted())
     }
 
+    func testTrackVisitsHonorManualOrderWithinSameDayBeforeTimestamp() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        let day = Date(timeIntervalSince1970: 60 * 60 * 24 * 10)
+        try db.dbQueue.write { d in
+            try insertSnapshot(d, placeID: "first", name: "First", category: "history", lat: 51.50, lon: -0.12, tier: 2)
+            try insertSnapshot(d, placeID: "second", name: "Second", category: "architecture", lat: 51.51, lon: -0.13, tier: 2)
+            try insertSnapshot(d, placeID: "third", name: "Third", category: "oddity", lat: 51.52, lon: -0.14, tier: 2)
+            try insertVisit(d, placeID: "first", timestamp: day.addingTimeInterval(60), order: 2)
+            try insertVisit(d, placeID: "second", timestamp: day.addingTimeInterval(120), order: 0)
+            try insertVisit(d, placeID: "third", timestamp: day.addingTimeInterval(180), order: 1)
+        }
+
+        XCTAssertEqual(try db.trackVisits().map(\.placeID), ["second", "third", "first"])
+    }
+
+    func testTrackVisitsRenderLovedAsPlaceLevelAcrossRepeatedRows() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        try db.dbQueue.write { d in
+            try insertSnapshot(d, placeID: "repeat", name: "Repeat", category: "history", lat: 51.50, lon: -0.12, tier: 2)
+            try insertVisit(d, placeID: "repeat", timestamp: Date(timeIntervalSince1970: 10), verdict: nil)
+            try insertVisit(d, placeID: "repeat", timestamp: Date(timeIntervalSince1970: 20), verdict: .loved)
+            try insertVisit(d, placeID: "repeat", timestamp: Date(timeIntervalSince1970: 30), verdict: nil)
+        }
+
+        XCTAssertEqual(try db.trackVisits().map(\.verdict), [.loved, .loved, .loved])
+    }
+
     func testTrackVisitsCanBeScopedToAListWithoutLeakingOtherVisitedPlaces() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
         try db.dbQueue.write { d in
@@ -170,6 +197,46 @@ final class DerivationsTests: XCTestCase {
         XCTAssertEqual(try db.listItems(listID: myTracksID).map(\.placeID), ["p_b", "p_a"])
         XCTAssertTrue(try db.deleteLatestVisit(placeID: "p_a"))
         XCTAssertEqual(try db.listItems(listID: myTracksID).map(\.placeID), ["p_b"])
+    }
+
+    func testMyTracksListHonorsManualVisitOrderWithinSameDay() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        let myTracks = try XCTUnwrap(try db.lists().first { $0.kind == PlaceList.trackKind })
+        let myTracksID = try XCTUnwrap(myTracks.id)
+        let day = Date(timeIntervalSince1970: 60 * 60 * 24 * 10)
+        try db.dbQueue.write { d in
+            try insertSnapshot(d, placeID: "timestamp_later", name: "A Later Clock", category: "history", lat: 51.50, lon: -0.12, tier: 2)
+            try insertSnapshot(d, placeID: "manual_later", name: "B Manual Later", category: "architecture", lat: 51.52, lon: -0.14, tier: 1)
+            try insertVisit(d, placeID: "timestamp_later", timestamp: day.addingTimeInterval(60 * 60 * 15), order: 0)
+            try insertVisit(d, placeID: "manual_later", timestamp: day.addingTimeInterval(60 * 60 * 9), order: 1)
+        }
+
+        XCTAssertEqual(try db.listItems(listID: myTracksID).map(\.placeID), ["manual_later", "timestamp_later"])
+        XCTAssertEqual(try db.listMapFeatures(listID: myTracksID).map(\.0.id), ["manual_later", "timestamp_later"])
+    }
+
+    func testMyTracksProgressCountsOnlyValidatedRenderedRows() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        let myTracks = try XCTUnwrap(try db.lists().first { $0.kind == PlaceList.trackKind })
+        let myTracksID = try XCTUnwrap(myTracks.id)
+        try db.dbQueue.write { d in
+            try insertSnapshot(d, placeID: "valid", name: "Valid", category: "history", lat: 51.50, lon: -0.12, tier: 2)
+            try d.execute(
+                sql: """
+                    INSERT INTO place_snapshots
+                    (place_id, name, lat, lon, category, tier, snapshot_json, snapshot_schema_version, fetched_at)
+                    VALUES ('invalid', 'Invalid', 200, -0.12, 'history', 2, '{}', 1, 0)
+                    """
+            )
+            try insertVisit(d, placeID: "valid", timestamp: Date(timeIntervalSince1970: 10))
+            try insertVisit(d, placeID: "invalid", timestamp: Date(timeIntervalSince1970: 20))
+        }
+
+        XCTAssertEqual(try db.listItems(listID: myTracksID).map(\.placeID), ["valid"])
+        XCTAssertEqual(try db.listMapFeatures(listID: myTracksID).map(\.0.id), ["valid"])
+        let progress = try db.listProgress(listID: myTracksID)
+        XCTAssertEqual(progress.visited, 1)
+        XCTAssertEqual(progress.total, 1)
     }
 
     func testMyTracksListTrackVisitsDrawOneConnectorThroughVirtualMembership() throws {
@@ -266,10 +333,16 @@ final class DerivationsTests: XCTestCase {
         )
     }
 
-    private func insertVisit(_ db: Database, placeID: String, timestamp: Date, verdict: Verdict? = nil) throws {
+    private func insertVisit(
+        _ db: Database,
+        placeID: String,
+        timestamp: Date,
+        verdict: Verdict? = nil,
+        order: Int = 0
+    ) throws {
         try db.execute(
-            sql: "INSERT INTO visits (place_id, visited_at, verdict, created_at) VALUES (?, ?, ?, ?)",
-            arguments: [placeID, timestamp, verdict?.rawValue, timestamp]
+            sql: "INSERT INTO visits (place_id, visited_at, verdict, created_at, visit_order) VALUES (?, ?, ?, ?, ?)",
+            arguments: [placeID, timestamp, verdict?.rawValue, timestamp, order]
         )
     }
 }

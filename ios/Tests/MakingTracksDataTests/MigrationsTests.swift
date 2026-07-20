@@ -10,7 +10,7 @@ final class MigrationsTests: XCTestCase {
                 Set(try d.columns(in: t).map(\.name))
             }
 
-            XCTAssertEqual(try cols("visits"), ["id", "place_id", "visited_at", "verdict", "created_at"])
+            XCTAssertEqual(try cols("visits"), ["id", "place_id", "visited_at", "verdict", "created_at", "visit_order"])
             XCTAssertEqual(try cols("lists"), ["id", "name", "is_system", "created_at", "list_kind"])
             XCTAssertEqual(try cols("list_items"), ["list_id", "place_id", "added_at"])
             XCTAssertEqual(try cols("hidden_places"), ["place_id", "hidden_at"])
@@ -120,10 +120,14 @@ final class MigrationsTests: XCTestCase {
 
         let db = try AppDatabase(queue, now: { Date(timeIntervalSince1970: 100) })
 
-        XCTAssertEqual(try db.appliedMigrations, ["v1", "v2", "v3", "v4"])
+        XCTAssertEqual(try db.appliedMigrations, ["v1", "v2", "v3", "v4", "v5"])
         XCTAssertEqual(try db.viewportState(["p1"])["p1"], PinState(saved: true, visit: .loved, hidden: false))
         XCTAssertEqual(try db.hiddenPlaceIDs(), [])
         XCTAssertEqual(try db.snapshot(for: "p1")?.name, "Ghost Sign")
+        let visitOrder = try db.dbQueue.read {
+            try Int.fetchOne($0, sql: "SELECT visit_order FROM visits WHERE place_id = 'p1'")
+        }
+        XCTAssertEqual(visitOrder, 0)
         let listKind = try db.dbQueue.read {
             try String.fetchOne($0, sql: "SELECT list_kind FROM lists WHERE id = 1")
         }
@@ -179,7 +183,7 @@ final class MigrationsTests: XCTestCase {
 
         let db = try AppDatabase(queue, now: { Date(timeIntervalSince1970: 100) })
 
-        XCTAssertEqual(try db.appliedMigrations, ["v1", "v2", "v3", "v4"])
+        XCTAssertEqual(try db.appliedMigrations, ["v1", "v2", "v3", "v4", "v5"])
         XCTAssertEqual(try db.hiddenPlaceIDs(), ["p1"])
         let rows = try db.dbQueue.read {
             try Row.fetchAll($0, sql: "SELECT id, name, is_system, list_kind FROM lists ORDER BY id")
