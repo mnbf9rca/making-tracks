@@ -16,6 +16,8 @@ REQUIRED_KEYS = {
     "manifest",
     "image_index",
     "description_index",
+    "current",
+    "current_catalog",
     "pack_descriptor",
     "region_index",
     "region_config",

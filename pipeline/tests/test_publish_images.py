@@ -579,6 +579,14 @@ def test_build_place_images_from_audit_reencodes_originals_without_fetching_meta
     assert (cache / "thumbs" / new_thumb_sha[:2] / f"{new_thumb_sha}.webp").read_bytes() == new_thumb
     assert "AUDITED_IMAGE_REENCODE candidates=2 selected=1 missing_skipped=1 audited_total=1" in capsys.readouterr().out
 
+    with pytest.raises(images.AuditedImageReuseError, match="missing 1 of 2"):
+        images.build_place_images_from_audit(
+            candidates,
+            completed_jsonl=completed,
+            audited_cache_dir=cache,
+            require_complete=True,
+        )
+
 
 def test_build_place_images_from_audit_requires_original_for_reencode(tmp_path):
     thumb_sha = hashlib.sha256(b"old-thumb").hexdigest()

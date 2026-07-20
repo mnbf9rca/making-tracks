@@ -443,6 +443,7 @@ def build_place_images_from_audit(
     *,
     completed_jsonl,
     audited_cache_dir,
+    require_complete: bool = False,
 ) -> list[PlaceImage]:
     audited_rows = _load_audited_image_rows(pathlib.Path(completed_jsonl))
     cache_root = pathlib.Path(audited_cache_dir)
@@ -458,6 +459,10 @@ def build_place_images_from_audit(
             missing += 1
             continue
         out.append(_place_image_from_audited_row(candidate, row, cache_root=cache_root))
+    if require_complete and missing:
+        raise AuditedImageReuseError(
+            f"audited image reuse missing {missing} of {len(candidates)} candidates"
+        )
     print(
         "AUDITED_IMAGE_REENCODE "
         f"candidates={len(candidates)} selected={len(out)} "

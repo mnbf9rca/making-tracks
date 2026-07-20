@@ -68,15 +68,35 @@ Work packages (spec §8) are designed one at a time (design agent) and built one
 
 **Policy-document law** (`privacy.md`, `docs/PRINCIPLES.md`, `docs/threat-model.md` and their kin): a policy doc states **commitments that constrain what future features may do**, not a snapshot of what the app does today. Write the ground rules that hold regardless of features, then what they mean for each known roadmap item — accounts, sharing, feedback — with the hard lines drawn now. A doc that only describes today is obsolete at the next feature. Never add a disclaimer demoting the document ("this isn't the real policy yet"); its authority is the whole point. Rob ratifies these before they land.
 
+**UI design ships with mockups.** This is a visual app; a UI design doc is not complete as prose. Every work package with a user-facing surface carries **rendered mockups**, and they are authored by a **build agent**, not by the designer.
+
+This binds **amendments as much as new designs**. A PR that changes how a surface looks or behaves carries the renders that show it, in the PR itself — not on a branch a reader would have to go and find. If the renders are not merged yet, the design change waits for them rather than going ahead alone. A reviewer opening a UI change and seeing only prose cannot review it.
+
+**Renders are integrated into the related issue's body, not only the PR.** Edit the body so the renders sit where they belong in its story — beside the decision they settle, not appended at the end and never as a comment. A PR is a moment; the issue body is the record.
+
+The split is the point: the **build agent renders**, the **design agent validates the renders against the design**, and **Rob rules on taste**. A designer validating their own mockup is not a gate. Design-correctness and taste are separate judgements and are made by separate parties.
+
+Renders go to Rob only after design validation. Anything the mockup shows that the design does not specify is either a gap in the design or an invention in the render — name which, rather than letting it pass because it looks fine.
+
+The pipeline is the one from the place-card design: HTML wireframes rendered to PNG, **committed with their sources** so they can be re-rendered rather than redrawn, at the ruled design canvas (390×844) with an accessibility-size variant. Mark the fold. See `docs/design/card/` for the worked example.
+
 ## Reporting, issues and labels
 
 **Blocked ≠ done.** A `gh`/connector 403 in an agent harness is a sandbox denial, not expired auth. Escalate the exact command in your harness, or relay the exact operation (base/head/title/labels) to fable as an action request; never report blocked and wait. Relays confirm back: whoever unblocks an agent confirms on that agent's thread — an agent that does not know it has been unblocked is still blocked.
 
 **Issue-closing discipline.** GitHub's `closes #N` keywords only fire on merges to the default branch (`main`), and our PRs merge to `develop`, so they never auto-close anything. When a WP's implementation PR merges, the merger closes the issue explicitly (`gh issue close N --comment ...`) and ticks the tracker (#25) checkbox. Never report an issue as closed without verifying its actual state (`gh issue view N`).
 
-**Keep the issue body current.** When a decision is put to Rob, or a ruling lands, edit the body (`gh issue edit N`) — Request / Status / Open questions. Comments carry point-in-time evidence: findings, measurements, test output. The body carries current state, and it is where Rob looks. Never let a work package's state accumulate only as a stack of appended comments.
+**An issue is a single coherent story, told in its body.** Not a conversation. When a decision is put to Rob, or a ruling lands, edit the body (`gh issue edit N`) so the whole thing still reads as one account of what this work is and where it stands — Request / Status / Open questions. Rewrite rather than append; a body that grew by accretion is a transcript wearing a body's clothes.
+
+Comments carry point-in-time evidence only: findings, measurements, test output, a render that has just been produced. **Comments are never the record.** Anything that changes what the issue *is* goes into the body, and if a comment ends up carrying state, move it and delete it.
+
+The body is where Rob looks. A stack of appended comments makes him reconstruct the story himself, which is the thing he is asking us not to do.
 
 **Labels.** Issues get a **track** label (`track-a-pipeline` / `track-b-ios` / `track-c-services`) plus a **type** label (`bug` / `enhancement` / `design` / `question`). `sourcery-review` and `greptile-review` are PR review triggers — never put them on an issue.
+
+An issue whose work touches a user-facing surface also gets **`requires-mockups`**. That label is how the mockup rule is found: it turns "UI design ships with mockups" from something an agent has to remember into something the tracker can be queried for.
+
+**Every PR body names the issue or issues it serves.** A PR that names none orphans its own rationale — the issue is the record, so a change that does not point at one leaves a reader with the diff and nothing else. If a PR genuinely has no owning issue, name what prompted it: the PR, incident or ruling it came from.
 
 ## Worktree discipline
 
@@ -90,7 +110,9 @@ Host-only package tests do not use the simulator: for `/ios` Swift package work 
 
 Simulator-backed work is a shared-machine resource and uses **one designated simulator**, `agent-ios-tests` (UDID `C4A64D49-24A2-4429-B6E2-AD9A14142A99`), driving the app project `ios/App/MakingTracks.xcodeproj`, scheme `MakingTracks`.
 
-**Every `xcodebuild` invocation against it — build OR test — must hold `flock` on `/private/tmp/making-tracks-ios-tests.lock` around the whole boot-and-run sequence.** This is one fleet-wide lock serializing all simulator-backed work across every agent; a Release build contends for the same simulator state as a test run, so builds take it too. Use exactly one destination, by UDID, with parallel and concurrent-destination testing disabled — those are the paths that spawn simulator clones.
+**Nothing touches the designated simulator except through `scripts/sim-lock.sh`.** It owns the fleet lock and is the only thing that takes it — build, test, boot, shutdown, erase, delete. This binds coordinators exactly as it binds builders: a maintenance command run by hand is still a second thing touching the simulator. A Release build contends for the same simulator state as a test run, so builds go through it too. Use exactly one destination, by UDID, with parallel and concurrent-destination testing disabled — those are the paths that spawn simulator clones.
+
+**Never read the lock file to decide whether the simulator is free.** It records who holds the lock, not who is using the simulator, and work that never took the lock leaves it looking idle. Use `sim-lock.sh --status`, which checks the lock and the process table and reports HELD if either fires. Acting on a bare `lsof` reading is how a running gate lost its simulator (incidents → *A hand-checked lock erased a running gate*).
 
 Boot with `xcrun simctl bootstatus "$UDID" -b` — idempotent and blocking. **Never use `simctl boot` in agent scripts**, and **never put `simctl delete all` or `simctl shutdown all` in a shared script** — unscoped, those destroy or disrupt Rob's simulators and every other agent's.
 

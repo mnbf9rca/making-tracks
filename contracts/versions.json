@@ -4,6 +4,8 @@
   "manifest": 1,
   "image_index": 1,
   "description_index": 1,
+  "current": 1,
+  "current_catalog": 1,
   "search_index": 1,
   "pack_descriptor": 1,
   "region_index": 3,
