@@ -44,6 +44,11 @@ Validation notes:
 - The dotted connection line is scaffolding: it stays behind the places, avoids
   the default navigation accent, stays bold/clear enough to read as one nice arc,
   and never dominates coloured pins.
+- The mid-scrub render draws the visited arc at opacity 0.76. The **shipped**
+  line opacity is **1.0**, ruled after this render against the paper-theme
+  contrast floor (SC 1.4.11, 3:1); see wp-b6-tracks §1c. Hue (`#2d8c83`), width
+  (6.2) and the dotted pattern are unchanged. The render is not re-cut for the
+  alpha because the hierarchy it demonstrates is unaffected.
 - Same-day reordering is represented as a continuous track.
 - Autoplay advances one visit at a time with a uniform cadence and equal dwell
   per item. It is not derived from `visited_at` gaps or real-world temporal
