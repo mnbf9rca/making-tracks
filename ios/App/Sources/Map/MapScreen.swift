@@ -492,16 +492,138 @@ enum ListMapModeCopy {
 }
 
 enum TrackConnectionReadout {
-    static func message(
-        segmentCount: Int,
-        suppressedBurstConnectorCount: Int,
-        connectableVisitCount: Int
-    ) -> String? {
-        guard segmentCount == 0,
-              suppressedBurstConnectorCount > 0,
-              connectableVisitCount >= 2
-        else { return nil }
-        return "\(connectableVisitCount) visits too close together to connect"
+    static func message(filteredBridgeCount: Int) -> String? {
+        guard filteredBridgeCount > 0 else { return nil }
+        let noun = filteredBridgeCount == 1 ? "visit" : "visits"
+        return "\(filteredBridgeCount) \(noun) hidden from this track"
+    }
+}
+
+struct TrackTimelineDateMarker: Equatable, Sendable {
+    let eventIndex: Int
+    let position: Double
+    let label: String
+}
+
+enum TrackTimelineAutoplayStep: Equatable, Sendable {
+    case event(index: Int)
+    case finished
+}
+
+extension Calendar {
+    static var gregorianUTC: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        return calendar
+    }
+}
+
+struct TrackTimelineModel: Equatable, Sendable {
+    // Tunable per #257; autoplay is event-paced, not derived from visit timestamps or slider distance.
+    static let autoplayBeatDuration: TimeInterval = 0.85
+
+    let visits: [TrackVisit]
+    let dateMarkers: [TrackTimelineDateMarker]
+
+    init(visits: [TrackVisit], calendar: Calendar = .gregorianUTC) {
+        self.visits = visits
+        var seenDays = Set<DateComponents>()
+        dateMarkers = visits.enumerated().compactMap { index, visit in
+            let components = calendar.dateComponents([.year, .month, .day], from: visit.visitedAt)
+            guard seenDays.insert(components).inserted else { return nil }
+            return TrackTimelineDateMarker(
+                eventIndex: index,
+                position: Self.normalizedPosition(eventIndex: index, eventCount: visits.count),
+                label: Self.dateLabel(for: visit.visitedAt, calendar: calendar)
+            )
+        }
+    }
+
+    var sliderRange: ClosedRange<Double> {
+        0...Double(max(visits.count - 1, 0))
+    }
+
+    func eventIndex(forSliderValue value: Double) -> Int {
+        guard !visits.isEmpty else { return 0 }
+        let rounded = Int(value.rounded())
+        return min(max(rounded, 0), visits.count - 1)
+    }
+
+    func autoplayStep(after index: Int?) -> TrackTimelineAutoplayStep {
+        let next = (index ?? -1) + 1
+        guard next < visits.count else { return .finished }
+        return .event(index: next)
+    }
+
+    func shouldPulseArrival(previousIndex: Int?, nextIndex: Int) -> Bool {
+        previousIndex != nextIndex && visits.indices.contains(nextIndex)
+    }
+
+    func visitsThroughEvent(index: Int?) -> [TrackVisit] {
+        guard let index, visits.indices.contains(index) else { return [] }
+        return Array(visits.prefix(index + 1))
+    }
+
+    func selectedVisit(after index: Int?) -> TrackVisit? {
+        guard let index, visits.indices.contains(index) else { return nil }
+        return visits[index]
+    }
+
+    func accessibilityValue(for index: Int?) -> String {
+        guard !visits.isEmpty else { return "No visits" }
+        let eventIndex = eventIndex(forSliderValue: Double(index ?? 0))
+        let visit = visits[eventIndex]
+        let loved = visit.verdict == .loved ? ", loved" : ""
+        return "Visit \(eventIndex + 1) of \(visits.count), \(visit.name), \(visit.visitedAt.formatted(date: .abbreviated, time: .shortened))\(loved)"
+    }
+
+    private static func normalizedPosition(eventIndex: Int, eventCount: Int) -> Double {
+        guard eventCount > 1 else { return 0 }
+        return Double(eventIndex) / Double(eventCount - 1)
+    }
+
+    private static func dateLabel(for date: Date, calendar: Calendar) -> String {
+        let components = calendar.dateComponents([.day, .month], from: date)
+        let month = components.month.flatMap(Self.monthLabel) ?? ""
+        return "\(components.day ?? 1) \(month)"
+    }
+
+    private static func monthLabel(_ month: Int) -> String? {
+        let labels = [
+            1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
+            7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
+        ]
+        return labels[month]
+    }
+}
+
+private struct TrackTimelineDateMarkersView: View {
+    let markers: [TrackTimelineDateMarker]
+
+    private static let markerWidth: CGFloat = 56 // Tunable UI slot width for abbreviated dates near slider edges.
+    private static let markerHeight: CGFloat = 14
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                ForEach(markers, id: \.eventIndex) { marker in
+                    Text(verbatim: marker.label)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .frame(width: Self.markerWidth, alignment: marker.position < 0.5 ? .leading : .trailing)
+                        .offset(x: xOffset(for: marker, width: proxy.size.width))
+                }
+            }
+        }
+        .frame(height: Self.markerHeight)
+        .accessibilityHidden(true)
+    }
+
+    private func xOffset(for marker: TrackTimelineDateMarker, width: CGFloat) -> CGFloat {
+        guard width > Self.markerWidth else { return 0 }
+        let centered = width * CGFloat(marker.position) - Self.markerWidth / 2
+        return min(max(centered, 0), width - Self.markerWidth)
     }
 }
 
@@ -892,6 +1014,11 @@ struct MapScreen: View {
     @State private var features: [(MapPlace, PinState)] = []
     @State private var sourceFeatureCount = 0
     @State private var trackSourceSnapshot = TrackSourceSnapshot.empty
+    @State private var trackReplayContext = TrackGeometryContext.empty
+    @State private var selectedTrackReplayEventIndex: Int?
+    @State private var isTrackReplayAutoplaying = false
+    @State private var trackReplayArrivalPulseVisitID: Int64?
+    @State private var trackReplayAutoplayTask: Task<Void, Never>?
     @State private var regionPMTilesURL: String?
     @State private var installedCoverageBBoxes: [CoverageBBox] = []
     @State private var attribution: [Attribution] = []
@@ -1325,6 +1452,7 @@ struct MapScreen: View {
         }
         .onDisappear {
             cancelHiddenToastDismissTask()
+            stopMapTrackAutoplay()
         }
     }
 
@@ -1653,8 +1781,8 @@ struct MapScreen: View {
                 Task { @MainActor in
                     activeListMap = nil
                     listCameraRequest = nil
+                    clearTrackReplay()
                     await refreshCurrentViewport()
-                    await refreshTrackGeometry()
                 }
             } label: {
                 Label("Back", systemImage: "chevron.left")
@@ -1680,6 +1808,10 @@ struct MapScreen: View {
                     .padding(.vertical, 6)
                     .background(.regularMaterial, in: Capsule())
                     .accessibilityIdentifier("map.track-connection-readout")
+            }
+
+            if list.showVisited, !trackReplayContext.visits.isEmpty {
+                mapTrackReplayControls(trackReplayTimeline)
             }
         }
     }
@@ -1728,6 +1860,138 @@ struct MapScreen: View {
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
     }
 
+    private func mapTrackReplayControls(_ timeline: TrackTimelineModel) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Button {
+                    toggleMapTrackAutoplay(timeline)
+                } label: {
+                    Image(systemName: isTrackReplayAutoplaying ? "pause.fill" : "play.fill")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel(isTrackReplayAutoplaying ? "Pause track replay" : "Play track replay")
+                .accessibilityIdentifier("map.track-replay.play")
+
+                Slider(
+                    value: Binding(
+                        get: { Double(clampedSelectedTrackReplayIndex(selectedTrackReplayEventIndex, in: timeline) ?? 0) },
+                        set: { value in
+                            stopMapTrackAutoplay()
+                            setSelectedTrackReplayEventIndex(timeline.eventIndex(forSliderValue: value), timeline: timeline)
+                        }
+                    ),
+                    in: timeline.sliderRange,
+                    step: 1
+                )
+                .accessibilityLabel("Track replay")
+                .accessibilityValue(timeline.accessibilityValue(for: selectedTrackReplayEventIndex))
+                .accessibilityIdentifier("map.track-replay.slider")
+            }
+
+            TrackTimelineDateMarkersView(markers: timeline.dateMarkers)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("map.track-replay.date-markers")
+
+            if let visit = timeline.selectedVisit(after: selectedTrackReplayEventIndex) {
+                HStack(spacing: 6) {
+                    Image(systemName: "mappin.circle.fill")
+                        .foregroundStyle(Color.accentColor)
+                        .scaleEffect(trackReplayArrivalPulseVisitID == visit.id ? 1.22 : 1.0)
+                        .animation(.spring(response: 0.22, dampingFraction: 0.45), value: trackReplayArrivalPulseVisitID)
+                        .accessibilityHidden(true)
+                    Text(verbatim: visit.name)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .accessibilityLabel(timeline.accessibilityValue(for: selectedTrackReplayEventIndex))
+                .accessibilityIdentifier("map.track-replay.arrival")
+            }
+        }
+        .frame(width: 280)
+        .padding(10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func toggleMapTrackAutoplay(_ timeline: TrackTimelineModel) {
+        if isTrackReplayAutoplaying {
+            stopMapTrackAutoplay()
+        } else {
+            startMapTrackAutoplay(timeline)
+        }
+    }
+
+    private func startMapTrackAutoplay(_ timeline: TrackTimelineModel) {
+        guard !timeline.visits.isEmpty else { return }
+        trackReplayAutoplayTask?.cancel()
+        isTrackReplayAutoplaying = true
+        let startIndex = selectedTrackReplayEventIndex == timeline.visits.indices.last ? nil : selectedTrackReplayEventIndex
+        trackReplayAutoplayTask = Task { @MainActor in
+            var currentIndex = startIndex
+            while isTrackReplayAutoplaying, !Task.isCancelled {
+                switch timeline.autoplayStep(after: currentIndex) {
+                case .event(let nextIndex):
+                    setSelectedTrackReplayEventIndex(nextIndex, timeline: timeline)
+                    currentIndex = nextIndex
+                    try? await Task.sleep(for: .seconds(TrackTimelineModel.autoplayBeatDuration))
+                case .finished:
+                    stopMapTrackAutoplay()
+                }
+            }
+        }
+    }
+
+    private func stopMapTrackAutoplay() {
+        trackReplayAutoplayTask?.cancel()
+        trackReplayAutoplayTask = nil
+        isTrackReplayAutoplaying = false
+    }
+
+    private func setSelectedTrackReplayEventIndex(_ nextIndex: Int, timeline: TrackTimelineModel) {
+        let previousIndex = selectedTrackReplayEventIndex
+        let clampedIndex = clampedSelectedTrackReplayIndex(nextIndex, in: timeline)
+        selectedTrackReplayEventIndex = clampedIndex
+        trackSourceSnapshot = TrackSourceSnapshot.make(
+            context: trackReplayContext.clipped(throughEventIndex: clampedIndex)
+        )
+        if let clampedIndex,
+           timeline.shouldPulseArrival(previousIndex: previousIndex, nextIndex: clampedIndex),
+           timeline.visits.indices.contains(clampedIndex) {
+            let visitID = timeline.visits[clampedIndex].id
+            trackReplayArrivalPulseVisitID = visitID
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(260))
+                if trackReplayArrivalPulseVisitID == visitID {
+                    trackReplayArrivalPulseVisitID = nil
+                }
+            }
+        }
+    }
+
+    private func clampedSelectedTrackReplayIndex(_ index: Int?, in timeline: TrackTimelineModel) -> Int? {
+        guard !timeline.visits.isEmpty else { return nil }
+        return min(max(index ?? timeline.visits.count - 1, 0), timeline.visits.count - 1)
+    }
+
+    private func applyTrackReplayContext(_ context: TrackGeometryContext) {
+        stopMapTrackAutoplay()
+        trackReplayContext = context
+        let timeline = TrackTimelineModel(visits: context.visits)
+        selectedTrackReplayEventIndex = clampedSelectedTrackReplayIndex(selectedTrackReplayEventIndex, in: timeline)
+        trackReplayArrivalPulseVisitID = nil
+        trackSourceSnapshot = TrackSourceSnapshot.make(
+            context: context.clipped(throughEventIndex: selectedTrackReplayEventIndex)
+        )
+    }
+
+    private func clearTrackReplay() {
+        stopMapTrackAutoplay()
+        trackReplayContext = .empty
+        selectedTrackReplayEventIndex = nil
+        trackReplayArrivalPulseVisitID = nil
+        trackSourceSnapshot = .empty
+    }
+
     private var listMapShowVisitedBinding: Binding<Bool> {
         Binding(
             get: { activeListMap?.showVisited ?? true },
@@ -1747,6 +2011,10 @@ struct MapScreen: View {
         return trackSourceSnapshot
     }
 
+    private var trackReplayTimeline: TrackTimelineModel {
+        TrackTimelineModel(visits: trackReplayContext.visits)
+    }
+
     private var pinPresentation: PinPresentation {
         ListMapPinPresentation.presentation(showVisited: activeListMap?.showVisited == true)
     }
@@ -1754,9 +2022,7 @@ struct MapScreen: View {
     private var trackConnectionReadoutMessage: String? {
         guard activeListMap?.showVisited == true else { return nil }
         return TrackConnectionReadout.message(
-            segmentCount: trackSourceSnapshot.segmentCount,
-            suppressedBurstConnectorCount: trackSourceSnapshot.suppressedBurstConnectorCount,
-            connectableVisitCount: trackSourceSnapshot.connectableVisitCount
+            filteredBridgeCount: trackSourceSnapshot.filteredBridgeCount
         )
     }
 
@@ -2309,10 +2575,10 @@ struct MapScreen: View {
     private func refreshTrackGeometry() async {
         guard let model else { return }
         guard let list = activeListMap, list.showVisited else {
-            trackSourceSnapshot = .empty
+            clearTrackReplay()
             return
         }
-        trackSourceSnapshot = await model.trackFeatureCollectionSnapshot(listID: list.listID)
+        applyTrackReplayContext(await model.trackGeometryContext(listID: list.listID))
     }
 
     private func refreshFixtureVisitCount() async {
@@ -2354,10 +2620,10 @@ struct MapScreen: View {
             listID: list.listID,
             visiblePlaceIDs: Set(next.map(\.0.id))
         )
-        let nextTrackSourceSnapshot = if list.showVisited {
-            await model.trackFeatureCollectionSnapshot(listID: list.listID)
+        let nextTrackContext = if list.showVisited {
+            await model.trackGeometryContext(listID: list.listID)
         } else {
-            TrackSourceSnapshot.empty
+            TrackGeometryContext.empty
         }
         guard let currentList = activeListMap,
               currentList.listID == list.listID,
@@ -2368,7 +2634,11 @@ struct MapScreen: View {
         nearbyPromptNames = [:]
         sourceFeatureCount = next.count
         listMapPinNames = nextNames
-        trackSourceSnapshot = nextTrackSourceSnapshot
+        if list.showVisited {
+            applyTrackReplayContext(nextTrackContext)
+        } else {
+            clearTrackReplay()
+        }
         stateEpoch += 1
         if updateCamera, let viewport = Self.viewport(for: next.map(\.0)) {
             nextListCameraRequestID += 1
@@ -2392,6 +2662,7 @@ struct MapScreen: View {
         guard activeListMap?.listID == listID else { return }
         activeListMap = nil
         listCameraRequest = nil
+        clearTrackReplay()
         await refreshCurrentViewport()
     }
 
@@ -2931,10 +3202,18 @@ private struct TracksView: View {
 
     @State private var visits: [TrackVisit] = []
     @State private var lovedOnly = false
+    @State private var selectedTimelineEventIndex: Int?
+    @State private var isAutoplaying = false
+    @State private var arrivalPulseVisitID: Int64?
+    @State private var autoplayTask: Task<Void, Never>?
     @State private var actionError: String?
 
     private var visibleVisits: [TrackVisit] {
         TracksVisitFilter.visibleVisits(visits, lovedOnly: lovedOnly)
+    }
+
+    private var timeline: TrackTimelineModel {
+        TrackTimelineModel(visits: visibleVisits)
     }
 
     var body: some View {
@@ -2954,6 +3233,10 @@ private struct TracksView: View {
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("tracks.summary")
 
+                if !visibleVisits.isEmpty {
+                    trackTimelineControls(timeline)
+                }
+
                 if let actionError {
                     Label(actionError, systemImage: "exclamationmark.triangle.fill")
                         .font(.subheadline)
@@ -2970,7 +3253,11 @@ private struct TracksView: View {
                     )
                 } else {
                     ForEach(visibleVisits) { visit in
-                        trackVisitRow(visit)
+                        trackVisitRow(
+                            visit,
+                            isSelected: selectedVisitID == visit.id,
+                            isPulsing: arrivalPulseVisitID == visit.id
+                        )
                     }
                 }
             }
@@ -2978,6 +3265,18 @@ private struct TracksView: View {
         .navigationTitle("Tracks")
         .task { await reload() }
         .refreshable { await reload() }
+        .onChange(of: lovedOnly) {
+            stopAutoplay()
+            selectedTimelineEventIndex = nil
+            arrivalPulseVisitID = nil
+        }
+        .onChange(of: visibleVisits.map(\.id)) {
+            stopAutoplay()
+            selectedTimelineEventIndex = clampedSelectedTimelineIndex(selectedTimelineEventIndex, in: timeline)
+        }
+        .onDisappear {
+            stopAutoplay()
+        }
         .toolbar {
             Button {
                 Task { await reload() }
@@ -2988,10 +3287,53 @@ private struct TracksView: View {
         }
     }
 
-    private func trackVisitRow(_ visit: TrackVisit) -> some View {
+    private var selectedVisitID: Int64? {
+        guard let selectedTimelineEventIndex,
+              visibleVisits.indices.contains(selectedTimelineEventIndex)
+        else { return nil }
+        return visibleVisits[selectedTimelineEventIndex].id
+    }
+
+    private func trackTimelineControls(_ timeline: TrackTimelineModel) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Button {
+                    toggleAutoplay(timeline)
+                } label: {
+                    Image(systemName: isAutoplaying ? "pause.fill" : "play.fill")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel(isAutoplaying ? "Pause track replay" : "Play track replay")
+                .accessibilityIdentifier("tracks.timeline.play")
+
+                Slider(
+                    value: Binding(
+                        get: { Double(selectedTimelineEventIndex ?? 0) },
+                        set: { value in
+                            stopAutoplay()
+                            setSelectedTimelineEventIndex(timeline.eventIndex(forSliderValue: value))
+                        }
+                    ),
+                    in: timeline.sliderRange,
+                    step: 1
+                )
+                .accessibilityLabel("Track timeline")
+                .accessibilityValue(timelineAccessibilityValue(timeline))
+                .accessibilityIdentifier("tracks.timeline.slider")
+            }
+
+            TrackTimelineDateMarkersView(markers: timeline.dateMarkers)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("tracks.timeline.date-markers")
+        }
+    }
+
+    private func trackVisitRow(_ visit: TrackVisit, isSelected: Bool, isPulsing: Bool) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "mappin.circle.fill")
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                .scaleEffect(isPulsing ? 1.22 : 1.0)
+                .animation(.spring(response: 0.22, dampingFraction: 0.45), value: isPulsing)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(verbatim: visit.name)
@@ -3016,10 +3358,72 @@ private struct TracksView: View {
         .accessibilityIdentifier("tracks.row.\(visit.id)")
     }
 
+    private func toggleAutoplay(_ timeline: TrackTimelineModel) {
+        if isAutoplaying {
+            stopAutoplay()
+        } else {
+            startAutoplay(timeline)
+        }
+    }
+
+    private func startAutoplay(_ timeline: TrackTimelineModel) {
+        guard !timeline.visits.isEmpty else { return }
+        autoplayTask?.cancel()
+        isAutoplaying = true
+        autoplayTask = Task { @MainActor in
+            var currentIndex = selectedTimelineEventIndex
+            while isAutoplaying, !Task.isCancelled {
+                switch timeline.autoplayStep(after: currentIndex) {
+                case .event(let nextIndex):
+                    setSelectedTimelineEventIndex(nextIndex)
+                    currentIndex = nextIndex
+                    try? await Task.sleep(for: .seconds(TrackTimelineModel.autoplayBeatDuration))
+                case .finished:
+                    stopAutoplay()
+                }
+            }
+        }
+    }
+
+    private func stopAutoplay() {
+        autoplayTask?.cancel()
+        autoplayTask = nil
+        isAutoplaying = false
+    }
+
+    private func setSelectedTimelineEventIndex(_ nextIndex: Int) {
+        let previousIndex = selectedTimelineEventIndex
+        let clampedIndex = clampedSelectedTimelineIndex(nextIndex, in: timeline)
+        selectedTimelineEventIndex = clampedIndex
+        if let clampedIndex,
+           timeline.shouldPulseArrival(previousIndex: previousIndex, nextIndex: clampedIndex),
+           visibleVisits.indices.contains(clampedIndex) {
+            let visitID = visibleVisits[clampedIndex].id
+            arrivalPulseVisitID = visitID
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(260))
+                if arrivalPulseVisitID == visitID {
+                    arrivalPulseVisitID = nil
+                }
+            }
+        }
+    }
+
+    private func clampedSelectedTimelineIndex(_ index: Int?, in timeline: TrackTimelineModel) -> Int? {
+        guard !timeline.visits.isEmpty else { return nil }
+        return min(max(index ?? 0, 0), timeline.visits.count - 1)
+    }
+
+    private func timelineAccessibilityValue(_ timeline: TrackTimelineModel) -> String {
+        timeline.accessibilityValue(for: selectedTimelineEventIndex)
+    }
+
     @MainActor
     private func reload() async {
         guard let model else { return }
+        stopAutoplay()
         visits = await model.trackVisits()
+        selectedTimelineEventIndex = clampedSelectedTimelineIndex(selectedTimelineEventIndex, in: timeline)
     }
 
     @MainActor
@@ -5724,18 +6128,17 @@ private final class MapScreenModel {
         }.value
     }
 
+    func trackGeometryContext(listID: Int64) async -> TrackGeometryContext {
+        let db = database
+        return await Task.detached {
+            (try? db.trackGeometryContext(listID: listID)) ?? .empty
+        }.value
+    }
+
     func trackFeatureCollectionSnapshot(listID: Int64) async -> TrackSourceSnapshot {
         let db = database
         return await Task.detached {
-            let visits = (try? db.trackVisits(listID: listID)) ?? []
-            let summary = FeatureEncoding.trackSegmentSummary(visits)
-            return TrackSourceSnapshot(
-                featureCollectionJSON: (try? FeatureEncoding.featureCollection(summary.features).jsonString())
-                    ?? TrackSourceSnapshot.emptyFeatureCollectionJSON,
-                segmentCount: summary.features.count,
-                suppressedBurstConnectorCount: summary.suppressedBurstConnectorCount,
-                connectableVisitCount: summary.connectableVisitCount
-            )
+            TrackSourceSnapshot.make(context: (try? db.trackGeometryContext(listID: listID)) ?? .empty)
         }.value
     }
 

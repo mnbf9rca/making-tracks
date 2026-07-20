@@ -27,27 +27,38 @@ struct TrackSourceSnapshot: Sendable {
     static let empty = TrackSourceSnapshot(
         featureCollectionJSON: emptyFeatureCollectionJSON,
         segmentCount: 0,
-        suppressedBurstConnectorCount: 0,
+        filteredBridgeCount: 0,
         connectableVisitCount: 0
     )
 
     let signature: String
     let segmentCount: Int
-    let suppressedBurstConnectorCount: Int
+    let filteredBridgeCount: Int
     let connectableVisitCount: Int
     let data: Data
 
     init(
         featureCollectionJSON: String,
         segmentCount: Int,
-        suppressedBurstConnectorCount: Int = 0,
+        filteredBridgeCount: Int = 0,
         connectableVisitCount: Int = 0
     ) {
         signature = featureCollectionJSON
         self.segmentCount = segmentCount
-        self.suppressedBurstConnectorCount = suppressedBurstConnectorCount
+        self.filteredBridgeCount = filteredBridgeCount
         self.connectableVisitCount = connectableVisitCount
         data = Data(featureCollectionJSON.utf8)
+    }
+
+    static func make(context: TrackGeometryContext) -> TrackSourceSnapshot {
+        let summary = FeatureEncoding.trackSegmentSummary(context.visits)
+        return TrackSourceSnapshot(
+            featureCollectionJSON: (try? FeatureEncoding.featureCollection(summary.features).jsonString())
+                ?? TrackSourceSnapshot.emptyFeatureCollectionJSON,
+            segmentCount: summary.features.count,
+            filteredBridgeCount: context.filteredBridgeCount,
+            connectableVisitCount: summary.connectableVisitCount
+        )
     }
 }
 

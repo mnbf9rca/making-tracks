@@ -199,6 +199,37 @@ final class DerivationsTests: XCTestCase {
         XCTAssertEqual(geometry["type"], .string("LineString"))
     }
 
+    func testFilteredTrackBridgeCountIncludesListScopeAndHiddenOmissions() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        try db.dbQueue.write { d in
+            try d.execute(sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (42, 'Weekend', 0, 0)")
+            for index in 0..<5 {
+                let placeID = "p_\(index)"
+                try insertSnapshot(
+                    d,
+                    placeID: placeID,
+                    name: placeID,
+                    category: "history",
+                    lat: 51.50 + Double(index) * 0.01,
+                    lon: -0.12,
+                    tier: 2
+                )
+                try insertVisit(d, placeID: placeID, timestamp: Date(timeIntervalSince1970: Double(index + 1)))
+            }
+            try d.execute(sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (42, 'p_0', 0)")
+            try d.execute(sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (42, 'p_2', 0)")
+            try d.execute(sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (42, 'p_4', 0)")
+            try d.execute(sql: "INSERT INTO hidden_places (place_id, hidden_at) VALUES ('p_2', 0)")
+        }
+
+        let context = try db.trackGeometryContext(listID: 42)
+
+        XCTAssertEqual(context.visits.map(\.placeID), ["p_0", "p_4"])
+        XCTAssertEqual(context.sourceIndices, [0, 4])
+        XCTAssertEqual(context.filteredBridgeCount, 3)
+        XCTAssertEqual(try db.filteredTrackBridgeCount(listID: 42), 3)
+    }
+
     func testNonSystemTrackKindRowsUseStoredMembershipNotVirtualTracks() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
         try db.dbQueue.write { d in

@@ -1,6 +1,37 @@
 import Foundation
 import GRDB
 
+public struct TrackGeometryContext: Sendable, Equatable {
+    public static let empty = TrackGeometryContext(visits: [], sourceIndices: [])
+
+    public let visits: [TrackVisit]
+    public let sourceIndices: [Int]
+    public let filteredBridgeCount: Int
+
+    public init(visits: [TrackVisit], sourceIndices: [Int]) {
+        self.visits = visits
+        self.sourceIndices = Array(sourceIndices.prefix(visits.count))
+        filteredBridgeCount = Self.bridgeCount(sourceIndices: self.sourceIndices)
+    }
+
+    public func clipped(throughEventIndex index: Int?) -> TrackGeometryContext {
+        guard let index else { return self }
+        guard index >= 0 else { return .empty }
+        let count = min(index + 1, visits.count)
+        return TrackGeometryContext(
+            visits: Array(visits.prefix(count)),
+            sourceIndices: Array(sourceIndices.prefix(count))
+        )
+    }
+
+    private static func bridgeCount(sourceIndices: [Int]) -> Int {
+        guard sourceIndices.count >= 2 else { return 0 }
+        return zip(sourceIndices, sourceIndices.dropFirst()).reduce(0) { count, pair in
+            count + max(pair.1 - pair.0 - 1, 0)
+        }
+    }
+}
+
 extension AppDatabase {
     public func lists() throws -> [PlaceList] {
         try dbQueue.read { db in
@@ -71,31 +102,60 @@ extension AppDatabase {
     }
 
     public func trackVisits(listID: Int64? = nil) throws -> [TrackVisit] {
-        return try dbQueue.read { db in
-            let listScopeJoin: String
-            let arguments: StatementArguments
-            if let listID, try !Self.isTrackList(listID: listID, db) {
-                listScopeJoin = "JOIN list_items li ON li.place_id = v.place_id AND li.list_id = ?"
-                arguments = [listID]
-            } else {
-                listScopeJoin = ""
-                arguments = []
-            }
-            let rows = try Row.fetchAll(
-                db,
-                sql: """
-                    SELECT v.id, v.place_id, v.visited_at, v.verdict,
-                           s.name, s.category, s.tier, s.lat, s.lon
-                    FROM visits v
-                    JOIN place_snapshots s ON s.place_id = v.place_id
-                    \(listScopeJoin)
-                    WHERE v.place_id NOT IN (SELECT place_id FROM hidden_places)
-                    ORDER BY v.visited_at ASC, v.id ASC
-                    """,
-                arguments: arguments
-            )
-            return rows.compactMap(Self.trackVisitRow)
+        try trackGeometryContext(listID: listID).visits
+    }
+
+    public func filteredTrackBridgeCount(listID: Int64) throws -> Int {
+        try trackGeometryContext(listID: listID).filteredBridgeCount
+    }
+
+    public func trackGeometryContext(listID: Int64? = nil) throws -> TrackGeometryContext {
+        try dbQueue.read { db in
+            try Self.trackGeometryContext(listID: listID, db)
         }
+    }
+
+    private static func trackGeometryContext(listID: Int64?, _ db: Database) throws -> TrackGeometryContext {
+        let isTrackList: Bool
+        if let listID {
+            isTrackList = try Self.isTrackList(listID: listID, db)
+        } else {
+            isTrackList = true
+        }
+
+        let listPlaceIDs: Set<String>
+        if let listID, !isTrackList {
+            listPlaceIDs = Set(try String.fetchAll(
+                db,
+                sql: "SELECT place_id FROM list_items WHERE list_id = ?",
+                arguments: [listID]
+            ))
+        } else {
+            listPlaceIDs = []
+        }
+        let hiddenPlaceIDs = Set(try String.fetchAll(db, sql: "SELECT place_id FROM hidden_places"))
+        // #257/#265: scoped tracks deliberately connect the rendered visit sequence continuously;
+        // callers pair this with `filteredBridgeCount` when list scope or hiding removed visits.
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+                SELECT v.id, v.place_id, v.visited_at, v.verdict,
+                       s.name, s.category, s.tier, s.lat, s.lon
+                FROM visits v
+                JOIN place_snapshots s ON s.place_id = v.place_id
+                ORDER BY v.visited_at ASC, v.id ASC
+                """
+        )
+        let validVisits = rows.compactMap(Self.trackVisitRow)
+        let rendered = validVisits.enumerated().compactMap { index, visit -> (TrackVisit, Int)? in
+            guard !hiddenPlaceIDs.contains(visit.placeID) else { return nil }
+            guard isTrackList || listPlaceIDs.contains(visit.placeID) else { return nil }
+            return (visit, index)
+        }
+        return TrackGeometryContext(
+            visits: rendered.map(\.0),
+            sourceIndices: rendered.map(\.1)
+        )
     }
 
     private static func listSnapshotRow(_ row: Row) -> ListSnapshotRow? {
