@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="390" height="390" viewBox="0 0 390 390" role="img" aria-label="Close-up of Retrace event-indexed time slider">
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="640" viewBox="0 0 390 640" role="img" aria-label="Retrace slider showing fast coarse year scrubbing and slowed zoomed visit scrubbing">
   <defs>
     <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
       <feDropShadow dx="0" dy="9" stdDeviation="13" flood-color="#1c2421" flood-opacity="0.24"/>
@@ -8,51 +8,85 @@
       .small { font-size: 12px; font-weight: 650; }
       .micro { font-size: 10px; font-weight: 650; }
       .event { stroke: #6e7b74; stroke-width: 2.2; stroke-linecap: round; }
+      .minor { stroke: #9da7a1; stroke-width: 1.5; stroke-linecap: round; opacity: .64; }
     </style>
   </defs>
 
-  <rect width="390" height="390" fill="#e7eee8"/>
-  <path d="M0 86c58-26 112-18 168 13 72 40 124 42 222-5v296H0z" fill="#c1d8d5" opacity=".42"/>
-  <path d="M0 49c88 45 167 42 237 4 51-28 98-29 153 0" fill="none" stroke="#fffdf7" stroke-width="18" stroke-linecap="round"/>
-  <path d="M0 49c88 45 167 42 237 4 51-28 98-29 153 0" fill="none" stroke="#d5ddd4" stroke-width="1.4" stroke-linecap="round"/>
+  <rect width="390" height="640" fill="#e7eee8"/>
+  <path d="M0 86c58-26 112-18 168 13 72 40 124 42 222-5v546H0z" fill="#c1d8d5" opacity=".42"/>
+  <path d="M0 48c88 45 167 42 237 4 51-28 98-29 153 0" fill="none" stroke="#fffdf7" stroke-width="18" stroke-linecap="round"/>
+  <path d="M0 48c88 45 167 42 237 4 51-28 98-29 153 0" fill="none" stroke="#d5ddd4" stroke-width="1.4" stroke-linecap="round"/>
 
   <g filter="url(#shadow)">
-    <rect x="20" y="91" width="350" height="232" rx="32" fill="#fffdf8"/>
-    <text class="label" x="38" y="128" style="font-size:20px;font-weight:780">Retrace</text>
-    <text class="label small" x="38" y="149" fill="#627069">Saturday, 18 July</text>
-    <rect x="270" y="112" width="62" height="30" rx="15" fill="#edf3ec"/>
-    <text class="label micro" x="287" y="132" fill="#53615a">4 / 14</text>
+    <rect x="20" y="78" width="350" height="228" rx="32" fill="#fffdf8"/>
+    <text class="label" x="38" y="114" style="font-size:20px;font-weight:780">Fast scrub</text>
+    <text class="label small" x="38" y="136" fill="#627069">Coarse across scoped years; labels decimate</text>
+    <rect x="262" y="98" width="76" height="30" rx="15" fill="#edf3ec"/>
+    <text class="label micro" x="282" y="118" fill="#53615a">168 visits</text>
 
-    <circle cx="58" cy="195" r="22" fill="#20312c"/>
-    <path d="M54 185l17 10-17 10z" fill="#f8efe3"/>
-    <text class="label" x="94" y="188" style="font-size:12px;font-weight:700">14:20</text>
-    <text class="label" x="94" y="212" style="font-size:24px;font-weight:790">Old market arcade</text>
-    <text class="label small" x="94" y="234" fill="#627069">Pin appears at this visit</text>
+    <circle cx="58" cy="181" r="20" fill="#20312c"/>
+    <path d="M55 171l15 10-15 10z" fill="#f8efe3"/>
+    <text class="label" x="94" y="174" style="font-size:12px;font-weight:700">2019</text>
+    <text class="label" x="94" y="198" style="font-size:22px;font-weight:790">Six years, Historic</text>
+    <text class="label small" x="94" y="220" fill="#627069">Fast movement jumps by event clusters</text>
 
-    <line x1="46" y1="280" x2="344" y2="280" stroke="#d9dfd8" stroke-width="12" stroke-linecap="round"/>
-    <line x1="46" y1="280" x2="184" y2="280" stroke="#2d8c83" stroke-width="12" stroke-linecap="round"/>
-    <line x1="184" y1="280" x2="224" y2="280" stroke="#db5344" stroke-width="12" stroke-linecap="round"/>
+    <line x1="46" y1="262" x2="344" y2="262" stroke="#d9dfd8" stroke-width="12" stroke-linecap="round"/>
+    <line x1="46" y1="262" x2="183" y2="262" stroke="#2d8c83" stroke-width="12" stroke-linecap="round"/>
+    <line x1="183" y1="262" x2="222" y2="262" stroke="#db5344" stroke-width="12" stroke-linecap="round"/>
+    <line class="event" x1="46" y1="239" x2="46" y2="286"/>
+    <line class="event" x1="95" y1="247" x2="95" y2="278"/>
+    <line class="event" x1="145" y1="247" x2="145" y2="278"/>
+    <line class="event" x1="183" y1="236" x2="183" y2="290"/>
+    <line class="event" x1="222" y1="247" x2="222" y2="278"/>
+    <line class="event" x1="274" y1="247" x2="274" y2="278"/>
+    <line class="event" x1="344" y1="239" x2="344" y2="286"/>
+    <rect x="199" y="239" width="46" height="46" rx="23" fill="#fffdf8" stroke="#db5344" stroke-width="4"/>
+    <circle cx="222" cy="262" r="7" fill="#db5344"/>
+    <text class="label micro" x="38" y="232" fill="#627069">2017</text>
+    <text class="label micro" x="170" y="234" fill="#627069">2019</text>
+    <text class="label micro" x="316" y="232" fill="#627069">2026</text>
+  </g>
 
+  <g filter="url(#shadow)">
+    <rect x="20" y="340" width="350" height="244" rx="32" fill="#fffdf8"/>
+    <text class="label" x="38" y="376" style="font-size:20px;font-weight:780">Slow scrub</text>
+    <text class="label small" x="38" y="398" fill="#627069">Slowing zooms filtered event scale</text>
+    <rect x="270" y="360" width="62" height="30" rx="15" fill="#edf3ec"/>
+    <text class="label micro" x="287" y="380" fill="#53615a">4 / 11</text>
+
+    <circle cx="58" cy="449" r="22" fill="#20312c"/>
+    <path d="M54 439l17 10-17 10z" fill="#f8efe3"/>
+    <text class="label" x="94" y="442" style="font-size:12px;font-weight:700">14:20</text>
+    <text class="label" x="94" y="466" style="font-size:23px;font-weight:790">Old market arcade</text>
+    <text class="label small" x="94" y="488" fill="#627069">Pin appears at this visit</text>
+
+    <line x1="46" y1="536" x2="344" y2="536" stroke="#d9dfd8" stroke-width="12" stroke-linecap="round"/>
+    <line x1="46" y1="536" x2="184" y2="536" stroke="#2d8c83" stroke-width="12" stroke-linecap="round"/>
+    <line x1="184" y1="536" x2="224" y2="536" stroke="#db5344" stroke-width="12" stroke-linecap="round"/>
     <g opacity=".82">
-      <line class="event" x1="46" y1="258" x2="46" y2="302"/>
-      <line class="event" x1="83" y1="264" x2="83" y2="296"/>
-      <line class="event" x1="117" y1="266" x2="117" y2="294"/>
-      <line class="event" x1="145" y1="264" x2="145" y2="296"/>
-      <line class="event" x1="184" y1="254" x2="184" y2="306"/>
-      <line class="event" x1="224" y1="264" x2="224" y2="296"/>
-      <line class="event" x1="257" y1="266" x2="257" y2="294"/>
-      <line class="event" x1="281" y1="266" x2="281" y2="294"/>
-      <line class="event" x1="318" y1="264" x2="318" y2="296"/>
-      <line class="event" x1="344" y1="258" x2="344" y2="302"/>
+      <line class="event" x1="46" y1="514" x2="46" y2="558"/>
+      <line class="minor" x1="66" y1="521" x2="66" y2="552"/>
+      <line class="event" x1="83" y1="520" x2="83" y2="552"/>
+      <line class="minor" x1="101" y1="521" x2="101" y2="552"/>
+      <line class="event" x1="117" y1="520" x2="117" y2="552"/>
+      <line class="event" x1="145" y1="520" x2="145" y2="552"/>
+      <line class="event" x1="184" y1="510" x2="184" y2="562"/>
+      <line class="event" x1="224" y1="520" x2="224" y2="552"/>
+      <line class="minor" x1="242" y1="521" x2="242" y2="552"/>
+      <line class="event" x1="257" y1="520" x2="257" y2="552"/>
+      <line class="minor" x1="272" y1="521" x2="272" y2="552"/>
+      <line class="event" x1="281" y1="520" x2="281" y2="552"/>
+      <line class="event" x1="318" y1="520" x2="318" y2="552"/>
+      <line class="event" x1="344" y1="514" x2="344" y2="558"/>
     </g>
-
-    <rect x="201" y="257" width="46" height="46" rx="23" fill="#fffdf8" stroke="#db5344" stroke-width="4"/>
-    <circle cx="224" cy="280" r="7" fill="#db5344"/>
-    <rect x="194" y="244" width="60" height="30" rx="15" fill="#db5344"/>
-    <text class="label" x="206" y="265" style="font-size:12px;font-weight:760" fill="#fffaf2">14:20</text>
-
-    <text class="label micro" x="38" y="251" fill="#627069">10:05</text>
-    <text class="label micro" x="313" y="251" fill="#627069">17:40</text>
-    <text class="label micro" x="171" y="317" fill="#627069">Event spacing follows visits</text>
+    <rect x="201" y="513" width="46" height="46" rx="23" fill="#fffdf8" stroke="#db5344" stroke-width="4"/>
+    <circle cx="224" cy="536" r="7" fill="#db5344"/>
+    <rect x="194" y="500" width="60" height="30" rx="15" fill="#db5344"/>
+    <text class="label" x="206" y="521" style="font-size:12px;font-weight:760" fill="#fffaf2">14:20</text>
+    <text class="label micro" x="38" y="507" fill="#627069">10:05</text>
+    <text class="label micro" x="112" y="507" fill="#627069">12:40</text>
+    <text class="label micro" x="171" y="500" fill="#627069">14:20</text>
+    <text class="label micro" x="313" y="507" fill="#627069">17:40</text>
+    <text class="label micro" x="118" y="576" fill="#627069">Equal event spacing, expanded locally</text>
   </g>
 </svg>

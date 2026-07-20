@@ -68,14 +68,16 @@
   </g>
 
   <g filter="url(#shadow)">
-    <rect x="26" y="54" width="206" height="58" rx="23" fill="#fffdf8"/>
+    <rect x="26" y="54" width="206" height="92" rx="23" fill="#fffdf8"/>
     <text class="label title" x="58" y="82">Retrace</text>
     <text class="label small" x="58" y="99" fill="#637069">Sat 18 Jul</text>
     <path d="M45 73l-9 9 9 9" fill="none" stroke="#3d4842" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="label" x="58" y="119" style="font-size:10px;font-weight:740" fill="#27312d">Scope: KL walk, Historic</text>
+    <text class="label" x="58" y="133" style="font-size:10px;font-weight:680" fill="#64716a">Filtered track - 11 visits</text>
     <rect x="244" y="61" width="120" height="44" rx="22" fill="#20312c"/>
     <circle cx="265" cy="83" r="7" fill="none" stroke="#f8efe3" stroke-width="2"/>
     <path d="M265 79v5l4 2" stroke="#f8efe3" stroke-width="2" stroke-linecap="round"/>
-    <text class="label small" x="281" y="88" fill="#f8efe3">14 places</text>
+    <text class="label small" x="281" y="88" fill="#f8efe3">11 places</text>
   </g>
 
   <g filter="url(#shadow)">
@@ -84,7 +86,7 @@
     <path d="M54 695l15 9-15 9z" fill="#f8efe3"/>
     <text class="label" x="88" y="693" style="font-size:13px;font-weight:700">14:20</text>
     <text class="label" x="88" y="712" style="font-size:20px;font-weight:780">Old market arcade</text>
-    <text class="label small" x="88" y="731" fill="#64716a">Drag to retrace - visit 4 of 14</text>
+    <text class="label small" x="88" y="731" fill="#64716a">Drag to retrace - visit 4 of 11</text>
     <line x1="48" y1="754" x2="342" y2="754" stroke="#d8ded7" stroke-width="9" stroke-linecap="round"/>
     <line x1="48" y1="754" x2="183" y2="754" stroke="#2d8c83" stroke-width="9" stroke-linecap="round"/>
     <line x1="183" y1="754" x2="223" y2="754" stroke="#db5344" stroke-width="9" stroke-linecap="round"/>

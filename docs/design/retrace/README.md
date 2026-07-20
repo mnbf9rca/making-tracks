@@ -11,6 +11,11 @@ Rob's accepted direction:
 - Pins appear with a pulse as the scrubber reaches each visit.
 - The slider must read as a real time slider, with Google Photos-style temporal
   affordance rather than a generic progress bar.
+- The slider must scale to years of visits: fast scrubbing moves coarsely across
+  years, then slowing zooms the timeline for fine positioning around nearby
+  visits.
+- Retrace can be filtered by list or lists and by place type. A filtered view is
+  a shorter continuous track over the filtered visit set.
 - The entry point must be obvious from the map.
 
 Files:
@@ -20,12 +25,19 @@ Files:
   and the active time slider.
 - `retrace-map-mid-scrub-axxxl.svg` / `.png` - same state at an accessibility
   text size, preserving the map and slider hierarchy.
-- `retrace-slider-detail.svg` / `.png` - close-up of the event-indexed slider.
+- `retrace-slider-detail.svg` / `.png` - close-up of coarse and zoomed slider
+  states for years of visits.
 
 Validation notes:
 
 - The map entry card treats Retrace as the primary destination; the old
   mapless Tracks drawer should not survive as a separate replay surface.
+- The Retrace map has a visible filter affordance for list and place-type
+  filtering, with active filters reflected as chips on the map surface.
+- Active filters are presented as scope, not omissions. Filtered-out visits
+  contribute no beats, no markers, no dwell, and no gap readout.
+- Hidden places are still bridged silently and never surfaced as markers or
+  counts.
 - Retrace does not show unreached or hidden places as faded tappable pins, and
   it does not expose hidden-place counts.
 - The dashed connection line is scaffolding: it stays behind the places, avoids
@@ -34,6 +46,16 @@ Validation notes:
 - Autoplay advances one visit at a time with a uniform cadence and equal dwell
   per item. It is not derived from `visited_at` gaps or real-world temporal
   spacing.
+- Manual scrubbing is velocity-sensitive: coarse movement jumps across a
+  year-scale event axis; slowing down expands the local visit cluster for precise
+  selection without changing the event order.
+- Timeline zoom changes events per pixel, never the spacing rule: adjacent
+  visits remain equally spaced whether they are minutes or months apart.
+- Under filters, the timeline is re-indexed to only the filtered visit set:
+  counters, markers, autoplay steps, dwell, and consecutive arcs all operate
+  within that scoped set.
+- Date labels decimate by available width. Coarse year-scale scrubbing shows
+  sparse labels; the zoomed state can show more local labels.
 - The AXXXL render deliberately drops endpoint time labels from the slider row
   so the event control remains reachable and unclipped at the largest text size.
 - Each phone-frame source includes a subtle fold/safe-area marker so reviewers
@@ -45,5 +67,5 @@ Render command, from repo root:
 '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --disable-background-networking --disable-component-update --disable-sync --no-first-run --no-default-browser-check --user-data-dir=/private/tmp/chrome-retrace-entry --screenshot=docs/design/retrace/retrace-entry-point.png --window-size=390,844 file://$PWD/docs/design/retrace/retrace-entry-point.svg
 '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --disable-background-networking --disable-component-update --disable-sync --no-first-run --no-default-browser-check --user-data-dir=/private/tmp/chrome-retrace-mid --screenshot=docs/design/retrace/retrace-map-mid-scrub.png --window-size=390,844 file://$PWD/docs/design/retrace/retrace-map-mid-scrub.svg
 '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --disable-background-networking --disable-component-update --disable-sync --no-first-run --no-default-browser-check --user-data-dir=/private/tmp/chrome-retrace-axxxl --screenshot=docs/design/retrace/retrace-map-mid-scrub-axxxl.png --window-size=390,844 file://$PWD/docs/design/retrace/retrace-map-mid-scrub-axxxl.svg
-'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --disable-background-networking --disable-component-update --disable-sync --no-first-run --no-default-browser-check --user-data-dir=/private/tmp/chrome-retrace-slider --screenshot=docs/design/retrace/retrace-slider-detail.png --window-size=390,390 file://$PWD/docs/design/retrace/retrace-slider-detail.svg
+'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --disable-background-networking --disable-component-update --disable-sync --no-first-run --no-default-browser-check --user-data-dir=/private/tmp/chrome-retrace-slider --screenshot=docs/design/retrace/retrace-slider-detail.png --window-size=390,640 file://$PWD/docs/design/retrace/retrace-slider-detail.svg
 ```
