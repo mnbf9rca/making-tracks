@@ -44,6 +44,18 @@ happens to want.
 **Prefer a critic that compiles or runs the code** over one that reads the plan text. A read-only critic
 believes a claimed fix.
 
+**A delegated read returns evidence and inference — only the quoted block is evidence.** When a subagent
+reports on the tree, its excerpts are the finding; the prose around them is the agent's gloss, and the gloss
+arrives wearing the authority of a fresh read. What a gloss collapses is exactly what a checklist cares
+about: adjacent keys, sibling version numbers, similarly-named fields, a clause that says the opposite of
+the summary sitting beside it. Read the excerpt and ask whether it supports the sentence next to it. Where
+the report has no excerpt, it has no finding.
+
+**Open the file before reversing a ruling on a delegated finding.** Relaying a wrong finding costs a
+correction; withdrawing a correct one costs the builder a reversal and re-reversal, and teaches them the
+ruling is unstable. That is the moment a read is cheapest relative to the churn it prevents. A critic that
+reads the tree is worth nothing if the reader of its report treats the gloss as the finding.
+
 ---
 
 ## 3. Traps that produce green-but-wrong
