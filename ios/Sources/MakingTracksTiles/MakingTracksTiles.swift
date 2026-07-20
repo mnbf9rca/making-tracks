@@ -2914,7 +2914,7 @@ public struct OfflineRegionDownloadProgress: Sendable, Equatable {
     }
 
     public var fractionComplete: Double {
-        guard totalBytes > 0 else { return 1 }
+        guard totalBytes > 0 else { return 0 }
         return min(max(Double(completedBytes) / Double(totalBytes), 0), 1)
     }
 }

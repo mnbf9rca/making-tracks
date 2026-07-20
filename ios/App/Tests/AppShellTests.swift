@@ -923,6 +923,29 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(session.liveProgress?.fractionComplete, 0.8)
     }
 
+    @MainActor
+    func testOfflineDownloadSessionDoesNotFloorByteProgressBehindZeroTotalMetadataProgress() {
+        let session = OfflineRegionDownloadSession()
+
+        session.begin(region: "malaysia-singapore-brunei", control: OfflineRegionDownloadControl(), downloadID: UUID())
+        session.update(OfflineDownloadProgress(
+            region: "malaysia-singapore-brunei",
+            completedBytes: 0,
+            totalBytes: 0,
+            fractionComplete: 1
+        ))
+        session.update(OfflineDownloadProgress(
+            region: "malaysia-singapore-brunei",
+            completedBytes: 23_300_000,
+            totalBytes: 233_000_000,
+            fractionComplete: 0.1
+        ))
+
+        XCTAssertEqual(session.liveProgress?.percentComplete, 10)
+        XCTAssertEqual(session.liveProgress?.completedBytes, 23_300_000)
+        XCTAssertEqual(session.liveProgress?.totalBytes, 233_000_000)
+    }
+
     func testOfflineInstall404UsesUnavailableAreaCopy() {
         XCTAssertEqual(
             offlineInstallFailureMessage(for: TileError.httpStatus(404)),
@@ -1280,6 +1303,22 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(malaysia?.sizeLabel(includeThumbnails: false), "1.4 GB")
     }
 
+    func testOfflineRegionRowsUseAvailableCatalogBytesBeforeDownloadStarts() {
+        let catalog = OfflineRegionCatalog.debugFixture
+
+        let rows = catalog.rows(
+            installed: [:],
+            availablePublishVersions: ["malaysia-singapore-brunei": "20260719T125813Z"],
+            availableStorageBytes: ["malaysia-singapore-brunei": 233_000_000],
+            activeProgress: nil,
+            quarantines: []
+        )
+        let malaysia = rows.first { $0.zone.id == "malaysia-singapore-brunei" }
+
+        XCTAssertEqual(malaysia?.state, .notInstalled)
+        XCTAssertEqual(malaysia?.sizeLabel(includeThumbnails: false), "233 MB")
+    }
+
     func testOfflineRegionRowsDoNotOfferSubregionDownloads() {
         let catalog = OfflineRegionCatalog.debugFixture
         let quarantine = OfflinePackQuarantine(
@@ -1440,11 +1479,11 @@ final class AppShellTests: XCTestCase {
                     )
                 )
             },
-            loadAvailableVersions: { _ in
+            loadAvailability: { _ in
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(10))
                 }
-                return [:]
+                return .empty
             },
             applyLocalState: { localState in
                 observedRows = catalog.rows(
@@ -1457,7 +1496,7 @@ final class AppShellTests: XCTestCase {
                 )
                 localApplied.fulfill()
             },
-            applyAvailableVersions: { _, _ in
+            applyAvailability: { _, _ in
                 XCTFail("availability fetch must not finish in this test")
             }
         )
@@ -1530,6 +1569,106 @@ final class AppShellTests: XCTestCase {
         ])
         XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/united-kingdom/current.json"))
         XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/malaysia-singapore-brunei/current.json"))
+    }
+
+    @MainActor
+    func testMapScreenModelOfflineAvailabilityLoadsRegionIndexBytes() async throws {
+        let fetcher = AppStubFetcher(routes: [
+            "https://tiles.making-tracks.app/catalog/current.json": try appJSONData([
+                "schema_version": 1,
+                "publish_versions": [
+                    "malaysia-singapore-brunei": "20260719T125813Z",
+                ],
+            ]),
+            "https://tiles.making-tracks.app/regions.json": try appJSONData([
+                "schema_version": 2,
+                "min_reader_version": 1,
+                "generated_at": "2026-07-20T12:00:00Z",
+                "regions": [
+                    [
+                        "id": "malaysia-singapore-brunei",
+                        "display_name": "Malaysia, Singapore, and Brunei",
+                        "parent": NSNull(),
+                        "bbox": [99.0, -1.5, 120.0, 7.5],
+                        "publish_version": "20260719T125813Z",
+                        "basemap_bytes": 4_000_000,
+                        "tile_count": 12,
+                        "bytes_without_thumbnails": 233_000_000,
+                        "bytes_with_thumbnails": 311_000_000,
+                    ],
+                    [
+                        "id": "malaysia-singapore-brunei_kl",
+                        "display_name": "Kuala Lumpur",
+                        "parent": "malaysia-singapore-brunei",
+                        "bbox": [101.4, 2.8, 101.9, 3.4],
+                        "publish_version": "20260719T125813Z",
+                        "basemap_bytes": 1_000_000,
+                        "tile_count": 4,
+                        "bytes_without_thumbnails": 33_000_000,
+                        "bytes_with_thumbnails": 41_000_000,
+                    ],
+                ],
+            ]),
+        ])
+        let model = try MapScreenModel(database: try AppDatabase.inMemory())
+
+        let availability = await model.availableOfflineAvailability(
+            for: .debugFixture,
+            installedRegions: ["malaysia-singapore-brunei"],
+            allowsCellularDownloads: false,
+            availabilityFetcher: fetcher
+        )
+
+        XCTAssertEqual(availability.publishVersions, [
+            "malaysia-singapore-brunei": "20260719T125813Z",
+        ])
+        XCTAssertEqual(availability.storageBytes, [
+            "malaysia-singapore-brunei": 233_000_000,
+        ])
+        XCTAssertTrue(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/catalog/current.json"))
+        XCTAssertTrue(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/regions.json"))
+    }
+
+    @MainActor
+    func testMapScreenModelOfflineAvailabilityKeepsRegionIndexBytesWhenCurrentCatalogFails() async throws {
+        let fetcher = AppStubFetcher(routes: [
+            "https://tiles.making-tracks.app/catalog/current.json": try appJSONData([
+                "schema_version": 2,
+                "publish_versions": [
+                    "malaysia-singapore-brunei": "20260719T125813Z",
+                ],
+            ]),
+            "https://tiles.making-tracks.app/regions.json": try appJSONData([
+                "schema_version": 2,
+                "min_reader_version": 1,
+                "regions": [
+                    [
+                        "id": "malaysia-singapore-brunei",
+                        "display_name": "Malaysia, Singapore, and Brunei",
+                        "parent": NSNull(),
+                        "bbox": [99.0, -1.5, 120.0, 7.5],
+                        "publish_version": "20260719T125813Z",
+                        "basemap_bytes": 4_000_000,
+                        "tile_count": 12,
+                        "bytes_without_thumbnails": 233_000_000,
+                        "bytes_with_thumbnails": 311_000_000,
+                    ],
+                ],
+            ]),
+        ])
+        let model = try MapScreenModel(database: try AppDatabase.inMemory())
+
+        let availability = await model.availableOfflineAvailability(
+            for: .debugFixture,
+            installedRegions: ["malaysia-singapore-brunei"],
+            allowsCellularDownloads: false,
+            availabilityFetcher: fetcher
+        )
+
+        XCTAssertEqual(availability.publishVersions, [:])
+        XCTAssertEqual(availability.storageBytes, [
+            "malaysia-singapore-brunei": 233_000_000,
+        ])
     }
 
     @MainActor
