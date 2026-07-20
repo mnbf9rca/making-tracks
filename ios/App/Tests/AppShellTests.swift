@@ -368,6 +368,63 @@ final class AppShellTests: XCTestCase {
         ))
     }
 
+    func testActiveListMapFeatureFilteringUsesAnyActiveTrackVisitFilter() {
+        let features: [(MapPlace, PinState)] = [
+            (MapPlace(id: "kept", lat: 51.50, lon: -0.12, tier: 2, category: "history"), .init(saved: false, visit: .visited)),
+            (MapPlace(id: "filtered", lat: 51.51, lon: -0.13, tier: 2, category: "history"), .init(saved: false, visit: .visited)),
+        ]
+        let context = TrackGeometryContext(visits: [
+            trackVisit(id: 1, placeID: "kept", seconds: 0),
+        ])
+
+        XCTAssertEqual(
+            ListMapFilteredFeatures.visibleFeatures(
+                features,
+                showVisited: true,
+                visitFilter: TracksVisitFilter(listIDs: [77]),
+                context: context
+            ).map(\.0.id),
+            ["kept"]
+        )
+        XCTAssertEqual(
+            ListMapFilteredFeatures.visibleFeatures(
+                features,
+                showVisited: true,
+                visitFilter: .all,
+                context: context
+            ).map(\.0.id),
+            ["kept", "filtered"]
+        )
+        XCTAssertEqual(
+            ListMapFilteredFeatures.visibleFeatures(
+                features,
+                showVisited: false,
+                visitFilter: TracksVisitFilter(listIDs: [77]),
+                context: context
+            ).map(\.0.id),
+            ["kept", "filtered"]
+        )
+    }
+
+    func testListMapFilterChipsExposeActiveLovedListsAndCategories() {
+        let chips = ListMapFilterChips.chips(
+            for: TracksVisitFilter(
+                lovedOnly: true,
+                listIDs: [88, 77],
+                categories: ["history", "architecture"]
+            )
+        )
+
+        XCTAssertEqual(chips.map(\.title), ["Loved", "2 lists", "architecture", "history"])
+        XCTAssertEqual(chips.map(\.accessibilityIdentifier), [
+            "map.list-mode.filter.loved",
+            "map.list-mode.filter.lists",
+            "map.list-mode.filter.category.architecture",
+            "map.list-mode.filter.category.history",
+        ])
+        XCTAssertEqual(chips.map(\.isToggle), [true, false, false, false])
+    }
+
     func testTrackTimelineDateMarkersThinByAvailableWidth() {
         let visits = (0..<6).map { index in
             trackVisit(

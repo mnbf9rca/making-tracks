@@ -161,6 +161,59 @@ final class DerivationsTests: XCTestCase {
         XCTAssertEqual(visits.map(\.verdict), [.loved, .loved])
     }
 
+    func testCombinedTrackVisitFilterScopesBeforeReplayUniverse() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        try db.dbQueue.write { d in
+            try d.execute(sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (77, 'Weekend', 0, 0)")
+            try d.execute(sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (88, 'Heritage', 0, 0)")
+            try insertSnapshot(d, placeID: "not_loved", name: "Not Loved", category: "history", lat: 51.50, lon: -0.12, tier: 2)
+            try insertSnapshot(d, placeID: "in_weekend", name: "Weekend", category: "history", lat: 51.51, lon: -0.13, tier: 2)
+            try insertSnapshot(d, placeID: "wrong_category", name: "Wrong Category", category: "architecture", lat: 51.52, lon: -0.14, tier: 2)
+            try insertSnapshot(d, placeID: "in_heritage", name: "Heritage", category: "history", lat: 51.53, lon: -0.15, tier: 2)
+            try insertSnapshot(d, placeID: "outside_lists", name: "Outside Lists", category: "history", lat: 51.54, lon: -0.16, tier: 2)
+            try d.execute(sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (77, 'not_loved', 0)")
+            try d.execute(sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (77, 'in_weekend', 0)")
+            try d.execute(sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (88, 'wrong_category', 0)")
+            try d.execute(sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (88, 'in_heritage', 0)")
+            try insertVisit(d, placeID: "not_loved", timestamp: Date(timeIntervalSince1970: 10))
+            try insertVisit(d, placeID: "in_weekend", timestamp: Date(timeIntervalSince1970: 20), verdict: .loved)
+            try insertVisit(d, placeID: "wrong_category", timestamp: Date(timeIntervalSince1970: 30), verdict: .loved)
+            try insertVisit(d, placeID: "in_heritage", timestamp: Date(timeIntervalSince1970: 40), verdict: .loved)
+            try insertVisit(d, placeID: "outside_lists", timestamp: Date(timeIntervalSince1970: 50), verdict: .loved)
+        }
+
+        let filter = TracksVisitFilter(lovedOnly: true, listIDs: [77, 88], categories: ["history"])
+        let context = try db.trackGeometryContext(filter: filter)
+        let summary = FeatureEncoding.trackSegmentSummary(context.visits)
+
+        XCTAssertEqual(context.visits.map(\.placeID), ["in_weekend", "in_heritage"])
+        XCTAssertEqual(summary.features.count, 1)
+        XCTAssertEqual(summary.connectableVisitCount, 2)
+    }
+
+    func testComposedLovedAndListFilterKeepsRepeatedLovedPlaceVisitsOnlyInsideSelectedLists() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        try db.dbQueue.write { d in
+            try d.execute(sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (77, 'Weekend', 0, 0)")
+            try insertSnapshot(d, placeID: "repeat_in", name: "Repeat In", category: "history", lat: 51.50, lon: -0.12, tier: 2)
+            try insertSnapshot(d, placeID: "repeat_out", name: "Repeat Out", category: "history", lat: 51.51, lon: -0.13, tier: 2)
+            try insertSnapshot(d, placeID: "ordinary_in", name: "Ordinary In", category: "history", lat: 51.52, lon: -0.14, tier: 2)
+            try d.execute(sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (77, 'repeat_in', 0)")
+            try d.execute(sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (77, 'ordinary_in', 0)")
+            try insertVisit(d, placeID: "repeat_in", timestamp: Date(timeIntervalSince1970: 10), verdict: nil)
+            try insertVisit(d, placeID: "repeat_out", timestamp: Date(timeIntervalSince1970: 15), verdict: .loved)
+            try insertVisit(d, placeID: "ordinary_in", timestamp: Date(timeIntervalSince1970: 20), verdict: nil)
+            try insertVisit(d, placeID: "repeat_in", timestamp: Date(timeIntervalSince1970: 25), verdict: .loved)
+            try insertVisit(d, placeID: "repeat_out", timestamp: Date(timeIntervalSince1970: 30), verdict: nil)
+            try insertVisit(d, placeID: "repeat_in", timestamp: Date(timeIntervalSince1970: 35), verdict: nil)
+        }
+
+        let visits = try db.trackVisits(filter: TracksVisitFilter(lovedOnly: true, listIDs: [77]))
+
+        XCTAssertEqual(visits.map(\.placeID), ["repeat_in", "repeat_in", "repeat_in"])
+        XCTAssertEqual(visits.map(\.verdict), [.loved, .loved, .loved])
+    }
+
     func testTrackVisitsCanBeScopedToAListWithoutLeakingOtherVisitedPlaces() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
         try db.dbQueue.write { d in
