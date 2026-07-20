@@ -28,6 +28,12 @@ Files:
   text size, preserving the map and slider hierarchy.
 - `retrace-slider-detail.svg` / `.png` - close-up of coarse and zoomed slider
   states for a separate long-history scoped track.
+- `retrace-line-opacity-comparison.svg` / `.png` - visited-track opacity
+  comparison against the proposed 3:1 non-text contrast floor, with pins shown.
+- `retrace-list-filter-picker.svg` / `.png` - proposed list-detail All/Loved
+  segmented filter beside the ratified map chip vocabulary.
+- `retrace-list-filter-picker-axxxl.svg` / `.png` - same list-detail filter
+  decision at an accessibility text size.
 
 Validation notes:
 
@@ -74,4 +80,7 @@ Render command, from repo root:
 '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --disable-background-networking --disable-component-update --disable-sync --no-first-run --no-default-browser-check --user-data-dir=/private/tmp/chrome-retrace-mid --screenshot=docs/design/retrace/retrace-map-mid-scrub.png --window-size=390,844 file://$PWD/docs/design/retrace/retrace-map-mid-scrub.svg
 '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --disable-background-networking --disable-component-update --disable-sync --no-first-run --no-default-browser-check --user-data-dir=/private/tmp/chrome-retrace-axxxl --screenshot=docs/design/retrace/retrace-map-mid-scrub-axxxl.png --window-size=390,844 file://$PWD/docs/design/retrace/retrace-map-mid-scrub-axxxl.svg
 '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --disable-background-networking --disable-component-update --disable-sync --no-first-run --no-default-browser-check --user-data-dir=/private/tmp/chrome-retrace-slider --screenshot=docs/design/retrace/retrace-slider-detail.png --window-size=390,640 file://$PWD/docs/design/retrace/retrace-slider-detail.svg
+'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --disable-background-networking --disable-component-update --disable-sync --no-first-run --no-default-browser-check --user-data-dir=/private/tmp/chrome-retrace-opacity --screenshot=docs/design/retrace/retrace-line-opacity-comparison.png --window-size=1170,844 file://$PWD/docs/design/retrace/retrace-line-opacity-comparison.svg
+'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --disable-background-networking --disable-component-update --disable-sync --no-first-run --no-default-browser-check --user-data-dir=/private/tmp/chrome-retrace-filter-picker --screenshot=docs/design/retrace/retrace-list-filter-picker.png --window-size=390,844 file://$PWD/docs/design/retrace/retrace-list-filter-picker.svg
+'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --disable-background-networking --disable-component-update --disable-sync --no-first-run --no-default-browser-check --user-data-dir=/private/tmp/chrome-retrace-filter-picker-axxxl --screenshot=docs/design/retrace/retrace-list-filter-picker-axxxl.png --window-size=390,844 file://$PWD/docs/design/retrace/retrace-list-filter-picker-axxxl.svg
 ```

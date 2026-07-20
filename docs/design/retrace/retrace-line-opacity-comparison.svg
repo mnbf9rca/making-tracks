@@ -1,0 +1,220 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1170" height="844" viewBox="0 0 1170 844" role="img" aria-label="Retrace line opacity comparison at 0.76, 0.88, and 1.00">
+  <defs>
+    <style>
+      .label { font-family: Helvetica, Arial, sans-serif; letter-spacing: 0; fill: #24302c; }
+      .title { font-size: 30px; font-weight: 780; }
+      .subtitle { font-size: 16px; font-weight: 650; fill: #56635d; }
+      .panel-title { font-size: 24px; font-weight: 780; }
+      .body { font-size: 15px; font-weight: 650; }
+      .small { font-size: 13px; font-weight: 620; fill: #5f6a64; }
+      .ratio { font-size: 17px; font-weight: 760; }
+      .pass { font-size: 11px; font-weight: 780; fill: #0f766b; }
+      .fail { font-size: 11px; font-weight: 780; fill: #a9342d; }
+      .arc { fill: none; stroke: #2d8c83; stroke-width: 6.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 9; }
+      .road { fill: none; stroke: #fffdf7; stroke-width: 16; stroke-linecap: round; stroke-linejoin: round; opacity: .9; }
+      .road-line { fill: none; stroke: #d5d5ca; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; opacity: .75; }
+      .divider { stroke: #d8ddd4; stroke-width: 1; }
+    </style>
+    <filter id="softShadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#1c2421" flood-opacity="0.16"/>
+    </filter>
+    <filter id="pinShadow" x="-40%" y="-30%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#28312d" flood-opacity="0.28"/>
+    </filter>
+    <symbol id="pinRed" viewBox="0 0 36 46"><path d="M18 44C10 33 4 25 4 16 4 7 10 1 18 1s14 6 14 15c0 9-6 17-14 28z" fill="#d64b3c" stroke="#fffaf2" stroke-width="3"/><circle cx="18" cy="16" r="5.5" fill="#fffaf2"/></symbol>
+    <symbol id="pinTeal" viewBox="0 0 36 46"><path d="M18 44C10 33 4 25 4 16 4 7 10 1 18 1s14 6 14 15c0 9-6 17-14 28z" fill="#247b74" stroke="#fffaf2" stroke-width="3"/><circle cx="18" cy="16" r="5.5" fill="#fffaf2"/></symbol>
+    <symbol id="pinGold" viewBox="0 0 36 46"><path d="M18 44C10 33 4 25 4 16 4 7 10 1 18 1s14 6 14 15c0 9-6 17-14 28z" fill="#d6aa2f" stroke="#fffaf2" stroke-width="3"/><circle cx="18" cy="16" r="5.5" fill="#fffaf2"/></symbol>
+  </defs>
+
+  <rect width="1170" height="844" fill="#e9ede7"/>
+  <text class="label title" x="48" y="64">Retrace line opacity comparison</text>
+  <text class="label subtitle" x="48" y="91">Ratified teal #2d8c83, width 6.2, dash 1 9. Contrast ratios are measured after alpha compositing over each paper sample.</text>
+
+  <g transform="translate(36 130)">
+    <g filter="url(#softShadow)">
+      <rect x="0" y="0" width="350" height="650" rx="24" fill="#fffdf8"/>
+      <text class="label panel-title" x="28" y="46">Opacity 0.76</text>
+      <text class="label small" x="28" y="70">Ratified visited-arc opacity</text>
+
+      <g transform="translate(28 104)">
+        <rect width="294" height="86" rx="16" fill="#F4F1EA"/>
+        <path class="road" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="road-line" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="arc" opacity=".76" d="M30 62C89 18 159 15 205 45c28 18 46 15 68-16"/>
+        <g filter="url(#pinShadow)"><use href="#pinRed" x="12" y="38" width="24" height="31"/><use href="#pinTeal" x="190" y="21" width="24" height="31"/><use href="#pinGold" x="260" y="8" width="24" height="31"/></g>
+        <text class="label body" x="18" y="24">Snow</text>
+        <text class="label ratio" x="208" y="72">2.56:1</text>
+        <text class="label fail" x="260" y="72">FAIL</text>
+      </g>
+
+      <g transform="translate(28 210)">
+        <rect width="294" height="86" rx="16" fill="#F3EFE5"/>
+        <path class="road" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="road-line" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="arc" opacity=".76" d="M30 62C89 18 159 15 205 45c28 18 46 15 68-16"/>
+        <g filter="url(#pinShadow)"><use href="#pinRed" x="12" y="38" width="24" height="31"/><use href="#pinTeal" x="190" y="21" width="24" height="31"/><use href="#pinGold" x="260" y="8" width="24" height="31"/></g>
+        <text class="label body" x="18" y="24">Defined Paper</text>
+        <text class="label ratio" x="208" y="72">2.53:1</text>
+        <text class="label fail" x="260" y="72">FAIL</text>
+      </g>
+
+      <g transform="translate(28 316)">
+        <rect width="294" height="86" rx="16" fill="#F2EEE6"/>
+        <path class="road" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="road-line" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="arc" opacity=".76" d="M30 62C89 18 159 15 205 45c28 18 46 15 68-16"/>
+        <g filter="url(#pinShadow)"><use href="#pinRed" x="12" y="38" width="24" height="31"/><use href="#pinTeal" x="190" y="21" width="24" height="31"/><use href="#pinGold" x="260" y="8" width="24" height="31"/></g>
+        <text class="label body" x="18" y="24">Street Contrast</text>
+        <text class="label ratio" x="208" y="72">2.52:1</text>
+        <text class="label fail" x="260" y="72">FAIL</text>
+      </g>
+
+      <g transform="translate(28 422)">
+        <rect width="294" height="86" rx="16" fill="#F1EDDF"/>
+        <path class="road" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="road-line" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="arc" opacity=".76" d="M30 62C89 18 159 15 205 45c28 18 46 15 68-16"/>
+        <g filter="url(#pinShadow)"><use href="#pinRed" x="12" y="38" width="24" height="31"/><use href="#pinTeal" x="190" y="21" width="24" height="31"/><use href="#pinGold" x="260" y="8" width="24" height="31"/></g>
+        <text class="label body" x="18" y="24">Verdant KL</text>
+        <text class="label ratio" x="208" y="72">2.50:1</text>
+        <text class="label fail" x="260" y="72">FAIL</text>
+      </g>
+
+      <g transform="translate(28 528)">
+        <rect width="294" height="86" rx="16" fill="#fffdf8"/>
+        <path class="road" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="road-line" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="arc" opacity=".76" d="M30 62C89 18 159 15 205 45c28 18 46 15 68-16"/>
+        <g filter="url(#pinShadow)"><use href="#pinRed" x="12" y="38" width="24" height="31"/><use href="#pinTeal" x="190" y="21" width="24" height="31"/><use href="#pinGold" x="260" y="8" width="24" height="31"/></g>
+        <text class="label body" x="18" y="24">Mockup card</text>
+        <text class="label ratio" x="208" y="72">2.74:1</text>
+        <text class="label fail" x="260" y="72">FAIL</text>
+      </g>
+    </g>
+
+    <g transform="translate(374 0)" filter="url(#softShadow)">
+      <rect x="0" y="0" width="350" height="650" rx="24" fill="#fffdf8"/>
+      <text class="label panel-title" x="28" y="46">Opacity 0.88</text>
+      <text class="label small" x="28" y="70">Existing active-arc vocabulary</text>
+
+      <g transform="translate(28 104)">
+        <rect width="294" height="86" rx="16" fill="#F4F1EA"/>
+        <path class="road" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="road-line" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="arc" opacity=".88" d="M30 62C89 18 159 15 205 45c28 18 46 15 68-16"/>
+        <g filter="url(#pinShadow)"><use href="#pinRed" x="12" y="38" width="24" height="31"/><use href="#pinTeal" x="190" y="21" width="24" height="31"/><use href="#pinGold" x="260" y="8" width="24" height="31"/></g>
+        <text class="label body" x="18" y="24">Snow</text>
+        <text class="label ratio" x="208" y="72">3.03:1</text>
+        <text class="label pass" x="260" y="72">PASS</text>
+      </g>
+
+      <g transform="translate(28 210)">
+        <rect width="294" height="86" rx="16" fill="#F3EFE5"/>
+        <path class="road" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="road-line" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="arc" opacity=".88" d="M30 62C89 18 159 15 205 45c28 18 46 15 68-16"/>
+        <g filter="url(#pinShadow)"><use href="#pinRed" x="12" y="38" width="24" height="31"/><use href="#pinTeal" x="190" y="21" width="24" height="31"/><use href="#pinGold" x="260" y="8" width="24" height="31"/></g>
+        <text class="label body" x="18" y="24">Defined Paper</text>
+        <text class="label ratio" x="208" y="72">2.98:1</text>
+        <text class="label fail" x="260" y="72">FAIL</text>
+      </g>
+
+      <g transform="translate(28 316)">
+        <rect width="294" height="86" rx="16" fill="#F2EEE6"/>
+        <path class="road" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="road-line" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="arc" opacity=".88" d="M30 62C89 18 159 15 205 45c28 18 46 15 68-16"/>
+        <g filter="url(#pinShadow)"><use href="#pinRed" x="12" y="38" width="24" height="31"/><use href="#pinTeal" x="190" y="21" width="24" height="31"/><use href="#pinGold" x="260" y="8" width="24" height="31"/></g>
+        <text class="label body" x="18" y="24">Street Contrast</text>
+        <text class="label ratio" x="208" y="72">2.96:1</text>
+        <text class="label fail" x="260" y="72">FAIL</text>
+      </g>
+
+      <g transform="translate(28 422)">
+        <rect width="294" height="86" rx="16" fill="#F1EDDF"/>
+        <path class="road" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="road-line" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="arc" opacity=".88" d="M30 62C89 18 159 15 205 45c28 18 46 15 68-16"/>
+        <g filter="url(#pinShadow)"><use href="#pinRed" x="12" y="38" width="24" height="31"/><use href="#pinTeal" x="190" y="21" width="24" height="31"/><use href="#pinGold" x="260" y="8" width="24" height="31"/></g>
+        <text class="label body" x="18" y="24">Verdant KL</text>
+        <text class="label ratio" x="208" y="72">2.93:1</text>
+        <text class="label fail" x="260" y="72">FAIL</text>
+      </g>
+
+      <g transform="translate(28 528)">
+        <rect width="294" height="86" rx="16" fill="#fffdf8"/>
+        <path class="road" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="road-line" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="arc" opacity=".88" d="M30 62C89 18 159 15 205 45c28 18 46 15 68-16"/>
+        <g filter="url(#pinShadow)"><use href="#pinRed" x="12" y="38" width="24" height="31"/><use href="#pinTeal" x="190" y="21" width="24" height="31"/><use href="#pinGold" x="260" y="8" width="24" height="31"/></g>
+        <text class="label body" x="18" y="24">Mockup card</text>
+        <text class="label ratio" x="208" y="72">3.30:1</text>
+        <text class="label pass" x="260" y="72">PASS</text>
+      </g>
+    </g>
+
+    <g transform="translate(748 0)" filter="url(#softShadow)">
+      <rect x="0" y="0" width="350" height="650" rx="24" fill="#fffdf8"/>
+      <text class="label panel-title" x="28" y="46">Opacity 1.00</text>
+      <text class="label small" x="28" y="70">Full-strength ratified hue</text>
+
+      <g transform="translate(28 104)">
+        <rect width="294" height="86" rx="16" fill="#F4F1EA"/>
+        <path class="road" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="road-line" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="arc" opacity="1" d="M30 62C89 18 159 15 205 45c28 18 46 15 68-16"/>
+        <g filter="url(#pinShadow)"><use href="#pinRed" x="12" y="38" width="24" height="31"/><use href="#pinTeal" x="190" y="21" width="24" height="31"/><use href="#pinGold" x="260" y="8" width="24" height="31"/></g>
+        <text class="label body" x="18" y="24">Snow</text>
+        <text class="label ratio" x="208" y="72">3.59:1</text>
+        <text class="label pass" x="260" y="72">PASS</text>
+      </g>
+
+      <g transform="translate(28 210)">
+        <rect width="294" height="86" rx="16" fill="#F3EFE5"/>
+        <path class="road" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="road-line" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="arc" opacity="1" d="M30 62C89 18 159 15 205 45c28 18 46 15 68-16"/>
+        <g filter="url(#pinShadow)"><use href="#pinRed" x="12" y="38" width="24" height="31"/><use href="#pinTeal" x="190" y="21" width="24" height="31"/><use href="#pinGold" x="260" y="8" width="24" height="31"/></g>
+        <text class="label body" x="18" y="24">Defined Paper</text>
+        <text class="label ratio" x="208" y="72">3.52:1</text>
+        <text class="label pass" x="260" y="72">PASS</text>
+      </g>
+
+      <g transform="translate(28 316)">
+        <rect width="294" height="86" rx="16" fill="#F2EEE6"/>
+        <path class="road" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="road-line" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="arc" opacity="1" d="M30 62C89 18 159 15 205 45c28 18 46 15 68-16"/>
+        <g filter="url(#pinShadow)"><use href="#pinRed" x="12" y="38" width="24" height="31"/><use href="#pinTeal" x="190" y="21" width="24" height="31"/><use href="#pinGold" x="260" y="8" width="24" height="31"/></g>
+        <text class="label body" x="18" y="24">Street Contrast</text>
+        <text class="label ratio" x="208" y="72">3.50:1</text>
+        <text class="label pass" x="260" y="72">PASS</text>
+      </g>
+
+      <g transform="translate(28 422)">
+        <rect width="294" height="86" rx="16" fill="#F1EDDF"/>
+        <path class="road" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="road-line" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="arc" opacity="1" d="M30 62C89 18 159 15 205 45c28 18 46 15 68-16"/>
+        <g filter="url(#pinShadow)"><use href="#pinRed" x="12" y="38" width="24" height="31"/><use href="#pinTeal" x="190" y="21" width="24" height="31"/><use href="#pinGold" x="260" y="8" width="24" height="31"/></g>
+        <text class="label body" x="18" y="24">Verdant KL</text>
+        <text class="label ratio" x="208" y="72">3.45:1</text>
+        <text class="label pass" x="260" y="72">PASS</text>
+      </g>
+
+      <g transform="translate(28 528)">
+        <rect width="294" height="86" rx="16" fill="#fffdf8"/>
+        <path class="road" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="road-line" d="M18 56C78 28 140 24 184 48c32 18 56 20 92-8"/>
+        <path class="arc" opacity="1" d="M30 62C89 18 159 15 205 45c28 18 46 15 68-16"/>
+        <g filter="url(#pinShadow)"><use href="#pinRed" x="12" y="38" width="24" height="31"/><use href="#pinTeal" x="190" y="21" width="24" height="31"/><use href="#pinGold" x="260" y="8" width="24" height="31"/></g>
+        <text class="label body" x="18" y="24">Mockup card</text>
+        <text class="label ratio" x="208" y="72">3.98:1</text>
+        <text class="label pass" x="260" y="72">PASS</text>
+      </g>
+    </g>
+  </g>
+
+  <line class="divider" x1="36" y1="812" x2="1134" y2="812"/>
+  <text class="label small" x="48" y="824">Decision target: pick the visited-track opacity. 3:1 is the proposed non-text contrast floor; 4.5:1 remains a text threshold, not a line threshold.</text>
+</svg>

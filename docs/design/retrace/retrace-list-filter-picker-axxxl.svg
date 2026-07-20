@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-label="My tracks list detail filter picker at accessibility extra extra extra large text size">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#1c2421" flood-opacity="0.14"/>
+    </filter>
+    <filter id="pinShadow" x="-40%" y="-30%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#28312d" flood-opacity="0.24"/>
+    </filter>
+    <symbol id="pinRed" viewBox="0 0 36 46"><path d="M18 44C10 33 4 25 4 16 4 7 10 1 18 1s14 6 14 15c0 9-6 17-14 28z" fill="#d64b3c" stroke="#fffaf2" stroke-width="3"/><circle cx="18" cy="16" r="5.5" fill="#fffaf2"/></symbol>
+    <symbol id="pinTeal" viewBox="0 0 36 46"><path d="M18 44C10 33 4 25 4 16 4 7 10 1 18 1s14 6 14 15c0 9-6 17-14 28z" fill="#247b74" stroke="#fffaf2" stroke-width="3"/><circle cx="18" cy="16" r="5.5" fill="#fffaf2"/></symbol>
+    <style>
+      .label { font-family: Helvetica; letter-spacing: 0; }
+      .primary { fill: #23221f; }
+      .secondary { fill: #686158; }
+      .caption { fill: #7b7469; font-size: 15px; font-weight: 760; }
+      .screen { fill: #f7f3e8; }
+      .nav { fill: #fbf8ee; }
+      .row { fill: #fffaf0; }
+      .accent { fill: #0f766b; }
+      .hairline { stroke: #d8d0c0; stroke-width: 1; }
+      .icon { fill: none; stroke: #6d665c; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+      .heart { fill: #b8322d; stroke: #b8322d; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .road { fill: none; stroke: #fffdf7; stroke-width: 9; stroke-linecap: round; stroke-linejoin: round; }
+      .road-line { fill: none; stroke: #d9ddd3; stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
+      .visited-arc { fill: none; stroke: #2d8c83; stroke-width: 4.4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 7; opacity: .76; }
+    </style>
+  </defs>
+
+  <rect class="screen" width="390" height="844"/>
+  <rect class="nav" x="0" y="0" width="390" height="108"/>
+  <line class="hairline" x1="0" y1="108" x2="390" y2="108"/>
+  <text class="label" x="22" y="66" font-size="24" font-weight="700" fill="#0f766b">&lt; Lists</text>
+  <text class="label primary" x="242" y="66" font-size="22" font-weight="780" text-anchor="middle">My tracks</text>
+
+  <g filter="url(#shadow)">
+    <rect class="row" x="16" y="132" width="358" height="236" rx="8"/>
+  </g>
+  <text class="label primary" x="32" y="171" font-size="21" font-weight="760">Oldest first</text>
+  <text class="label primary" x="32" y="209" font-size="27" font-weight="780">2 visits for</text>
+  <text class="label primary" x="32" y="241" font-size="27" font-weight="780">loved places</text>
+  <g transform="translate(32 260)">
+    <rect x="0" y="0" width="326" height="44" rx="10" fill="#e7dfcf"/>
+    <rect x="164" y="2" width="160" height="40" rx="9" fill="#ffffff" stroke="#d8d0c0"/>
+    <text class="label secondary" x="82" y="29" font-size="19" font-weight="760" text-anchor="middle">All</text>
+    <text class="label primary" x="244" y="29" font-size="19" font-weight="780" text-anchor="middle">Loved</text>
+  </g>
+  <g transform="translate(32 324)">
+    <rect class="accent" x="0" y="0" width="326" height="44" rx="8"/>
+    <text class="label" x="163" y="29" fill="#fffdf8" font-size="20" font-weight="780" text-anchor="middle">Show on map</text>
+  </g>
+
+  <text class="label caption" x="20" y="406">LOVED PLACES</text>
+
+  <g transform="translate(16 426)">
+    <rect class="row" x="0" y="0" width="358" height="136" rx="8"/>
+    <circle cx="32" cy="34" r="14" fill="#e6dfcf" stroke="#9c9384"/>
+    <path class="icon" d="M32 25c5 0 9 4 9 9 0 8-9 16-9 16s-9-8-9-16c0-5 4-9 9-9z"/>
+    <text class="label primary" x="62" y="36" font-size="22">Blue Mansion</text>
+    <text class="label secondary" x="62" y="64" font-size="17">12 Jul 2026</text>
+    <path class="heart" d="M326 31c0-6 8-9 14-3 6-6 14-3 14 3 0 9-14 17-14 17s-14-8-14-17z"/>
+    <line class="hairline" x1="62" y1="80" x2="342" y2="80"/>
+    <rect x="62" y="94" width="92" height="32" rx="8" fill="#f2eadb" stroke="#d0c6b5"/>
+    <text class="label secondary" x="108" y="116" font-size="15" font-weight="720" text-anchor="middle">12 Jul</text>
+    <rect x="166" y="94" width="42" height="32" rx="8" fill="#f2eadb" stroke="#d0c6b5"/>
+    <path class="icon" d="M178 116l9-10 9 10"/>
+    <rect x="220" y="94" width="42" height="32" rx="8" fill="#f2eadb" stroke="#d0c6b5"/>
+    <path class="icon" d="M232 106l9 10 9-10"/>
+    <rect x="308" y="94" width="34" height="32" rx="8" fill="#f2eadb" stroke="#d0c6b5"/>
+    <path class="icon" d="M319 105h12M321 105l1 14h5l1-14M318 101h14"/>
+  </g>
+
+  <g transform="translate(16 596)" filter="url(#shadow)">
+    <rect x="0" y="0" width="358" height="160" rx="18" fill="#f3f0e7"/>
+    <path class="road" d="M18 108C73 87 117 82 159 93c46 12 83 45 139 34"/>
+    <path class="road-line" d="M18 108C73 87 117 82 159 93c46 12 83 45 139 34"/>
+    <path class="visited-arc" d="M54 114C105 74 167 71 206 96c23 15 40 13 58-10"/>
+    <g filter="url(#pinShadow)">
+      <use href="#pinRed" x="40" y="89" width="28" height="36"/>
+      <use href="#pinTeal" x="192" y="73" width="28" height="36"/>
+      <use href="#pinRed" x="250" y="61" width="28" height="36"/>
+    </g>
+    <rect x="22" y="18" width="176" height="36" rx="18" fill="#20312c"/>
+    <text class="label" x="41" y="42" font-size="15" font-weight="760" fill="#fffdf8">Scope: KL walk</text>
+    <rect x="210" y="18" width="112" height="36" rx="18" fill="#20312c"/>
+    <text class="label" x="231" y="42" font-size="15" font-weight="760" fill="#fffdf8">Historic</text>
+  </g>
+
+  <line x1="24" y1="812" x2="366" y2="812" stroke="#20312c" stroke-width="1" stroke-dasharray="4 7" opacity=".22"/>
+  <rect x="121" y="824" width="148" height="5" rx="2.5" fill="#1b1b1b" opacity="0.85"/>
+</svg>

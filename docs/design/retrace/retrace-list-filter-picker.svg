@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-label="My tracks list detail with All and Loved segmented filter beside the ratified map chip treatment">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#1c2421" flood-opacity="0.14"/>
+    </filter>
+    <filter id="pinShadow" x="-40%" y="-30%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#28312d" flood-opacity="0.24"/>
+    </filter>
+    <symbol id="pinRed" viewBox="0 0 36 46"><path d="M18 44C10 33 4 25 4 16 4 7 10 1 18 1s14 6 14 15c0 9-6 17-14 28z" fill="#d64b3c" stroke="#fffaf2" stroke-width="3"/><circle cx="18" cy="16" r="5.5" fill="#fffaf2"/></symbol>
+    <symbol id="pinTeal" viewBox="0 0 36 46"><path d="M18 44C10 33 4 25 4 16 4 7 10 1 18 1s14 6 14 15c0 9-6 17-14 28z" fill="#247b74" stroke="#fffaf2" stroke-width="3"/><circle cx="18" cy="16" r="5.5" fill="#fffaf2"/></symbol>
+    <style>
+      .label { font-family: Helvetica; letter-spacing: 0; }
+      .primary { fill: #23221f; }
+      .secondary { fill: #686158; }
+      .caption { fill: #7b7469; font-size: 12px; font-weight: 700; }
+      .screen { fill: #f7f3e8; }
+      .nav { fill: #fbf8ee; }
+      .row { fill: #fffaf0; }
+      .muted { fill: #eee7d8; }
+      .accent { fill: #0f766b; }
+      .hairline { stroke: #d8d0c0; stroke-width: 1; }
+      .icon { fill: none; stroke: #6d665c; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .heart { fill: #b8322d; stroke: #b8322d; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .road { fill: none; stroke: #fffdf7; stroke-width: 9; stroke-linecap: round; stroke-linejoin: round; }
+      .road-line { fill: none; stroke: #d9ddd3; stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
+      .visited-arc { fill: none; stroke: #2d8c83; stroke-width: 4.4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 7; opacity: .76; }
+    </style>
+  </defs>
+
+  <rect class="screen" width="390" height="844"/>
+  <rect class="nav" x="0" y="0" width="390" height="96"/>
+  <line class="hairline" x1="0" y1="96" x2="390" y2="96"/>
+  <text class="label" x="22" y="59" font-size="17" font-weight="650" fill="#0f766b">&lt; Lists</text>
+  <text class="label primary" x="195" y="59" font-size="17" font-weight="700" text-anchor="middle">My tracks</text>
+  <path class="icon" d="M342 50h18M342 57h18M342 64h18"/>
+
+  <g filter="url(#shadow)">
+    <rect class="row" x="16" y="118" width="358" height="186" rx="8"/>
+  </g>
+  <text class="label primary" x="32" y="152" font-size="15" font-weight="700">Oldest first</text>
+  <text class="label primary" x="32" y="184" font-size="20" font-weight="760">2 visits for loved places</text>
+  <g transform="translate(32 205)">
+    <rect x="0" y="0" width="326" height="34" rx="8" fill="#e7dfcf"/>
+    <rect x="164" y="2" width="160" height="30" rx="7" fill="#ffffff" stroke="#d8d0c0"/>
+    <text class="label secondary" x="82" y="22" font-size="14" font-weight="700" text-anchor="middle">All</text>
+    <text class="label primary" x="244" y="22" font-size="14" font-weight="700" text-anchor="middle">Loved</text>
+  </g>
+  <g transform="translate(32 259)">
+    <rect class="accent" x="0" y="0" width="326" height="44" rx="8"/>
+    <path d="M105 15l18-6 18 6-18 7zM105 15v16l18 7 18-7V15" fill="none" stroke="#fffdf8" stroke-width="2" stroke-linejoin="round"/>
+    <text class="label" x="150" y="28" fill="#fffdf8" font-size="16" font-weight="740">Show on map</text>
+  </g>
+
+  <text class="label caption" x="20" y="336">LOVED PLACES</text>
+
+  <g transform="translate(16 356)">
+    <rect class="row" x="0" y="0" width="358" height="116" rx="8"/>
+    <circle cx="31" cy="28" r="12" fill="#e6dfcf" stroke="#9c9384"/>
+    <path class="icon" d="M31 20c4 0 7 3 7 7 0 6-7 13-7 13s-7-7-7-13c0-4 3-7 7-7z"/>
+    <text class="label primary" x="58" y="32" font-size="16">Blue Mansion</text>
+    <text class="label secondary" x="58" y="54" font-size="13">Architecture - 12 Jul 2026</text>
+    <path class="heart" d="M328 25c0-5 7-8 12-3 5-5 12-2 12 3 0 8-12 15-12 15s-12-7-12-15z"/>
+    <line class="hairline" x1="58" y1="70" x2="342" y2="70"/>
+    <rect x="58" y="82" width="72" height="28" rx="7" fill="#f2eadb" stroke="#d0c6b5"/>
+    <text class="label secondary" x="94" y="101" font-size="12" font-weight="700" text-anchor="middle">12 Jul</text>
+    <rect x="138" y="82" width="38" height="28" rx="7" fill="#f2eadb" stroke="#d0c6b5"/>
+    <path class="icon" d="M149 99l8-8 8 8"/>
+    <rect x="184" y="82" width="38" height="28" rx="7" fill="#f2eadb" stroke="#d0c6b5"/>
+    <path class="icon" d="M195 92l8 8 8-8"/>
+    <rect x="312" y="82" width="30" height="28" rx="7" fill="#f2eadb" stroke="#d0c6b5"/>
+    <path class="icon" d="M322 91h10M324 91l1 12h4l1-12M321 88h12"/>
+  </g>
+
+  <g transform="translate(16 484)">
+    <rect class="row" x="0" y="0" width="358" height="116" rx="8"/>
+    <circle cx="31" cy="28" r="12" fill="#e6dfcf" stroke="#9c9384"/>
+    <path class="icon" d="M31 20c4 0 7 3 7 7 0 6-7 13-7 13s-7-7-7-13c0-4 3-7 7-7z"/>
+    <text class="label primary" x="58" y="32" font-size="16">Riverside Warehouse</text>
+    <text class="label secondary" x="58" y="54" font-size="13">History - 18 Jul 2026</text>
+    <path class="heart" d="M328 25c0-5 7-8 12-3 5-5 12-2 12 3 0 8-12 15-12 15s-12-7-12-15z"/>
+    <line class="hairline" x1="58" y1="70" x2="342" y2="70"/>
+    <rect x="58" y="82" width="72" height="28" rx="7" fill="#f2eadb" stroke="#d0c6b5"/>
+    <text class="label secondary" x="94" y="101" font-size="12" font-weight="700" text-anchor="middle">18 Jul</text>
+    <rect x="138" y="82" width="38" height="28" rx="7" fill="#f2eadb" stroke="#d0c6b5"/>
+    <path class="icon" d="M149 99l8-8 8 8"/>
+    <rect x="184" y="82" width="38" height="28" rx="7" fill="#f2eadb" stroke="#d0c6b5"/>
+    <path class="icon" d="M195 92l8 8 8-8"/>
+    <rect x="312" y="82" width="30" height="28" rx="7" fill="#f2eadb" stroke="#d0c6b5"/>
+    <path class="icon" d="M322 91h10M324 91l1 12h4l1-12M321 88h12"/>
+  </g>
+
+  <g transform="translate(16 628)" filter="url(#shadow)">
+    <rect x="0" y="0" width="358" height="128" rx="18" fill="#f3f0e7"/>
+    <path class="road" d="M18 82C73 61 117 56 159 67c46 12 83 45 139 34"/>
+    <path class="road-line" d="M18 82C73 61 117 56 159 67c46 12 83 45 139 34"/>
+    <path class="visited-arc" d="M54 88C105 48 167 45 206 70c23 15 40 13 58-10"/>
+    <g filter="url(#pinShadow)">
+      <use href="#pinRed" x="40" y="63" width="28" height="36"/>
+      <use href="#pinTeal" x="192" y="47" width="28" height="36"/>
+      <use href="#pinRed" x="250" y="35" width="28" height="36"/>
+    </g>
+    <rect x="22" y="18" width="156" height="30" rx="15" fill="#20312c"/>
+    <text class="label" x="39" y="38" font-size="12" font-weight="740" fill="#fffdf8">Scope: KL walk</text>
+    <rect x="186" y="18" width="100" height="30" rx="15" fill="#20312c"/>
+    <text class="label" x="204" y="38" font-size="12" font-weight="740" fill="#fffdf8">Historic</text>
+  </g>
+
+  <line x1="24" y1="812" x2="366" y2="812" stroke="#20312c" stroke-width="1" stroke-dasharray="4 7" opacity=".22"/>
+  <rect x="121" y="824" width="148" height="5" rx="2.5" fill="#1b1b1b" opacity="0.85"/>
+</svg>
