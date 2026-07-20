@@ -10,6 +10,7 @@ These are the project's non-negotiables. Every design and every PR is checked ag
 4. **Seen is a fact about the world, not about a document.** Seen-state is global per user, stored as a visit-event log. Presentation varies per context (discovery fades; lists show progress); the stored fact never fragments.
 5. **Nothing is consumed silently.** No auto-marking from geolocation. Location may prompt; the user decides.
 6. **The app must never look like a route recorder.** "Tracks" invites that misreading; every screenshot, subtitle, and screen must correct it.
+7. **The app shows every place; it never editorialises which pins you see.** Pin visibility is not a curation surface. The app must never hide, thin, or sample places by tier, fame, importance, or zoom level — the map renders everything that passes the *user's own intent*: not hidden, and inside the filters the user chose (lists, types, loved). Density is the user's to manage: they zoom in, or filter down. Crowding is answered by **clustering** — numbered bubbles that still represent every pin and expand on tap — never by dropping pins from the data. Any performance cost of showing everything is solved **below the waterline** (fetch strategy, clustering efficiency, overview tiles), never by making a place invisible the user did not choose to remove; a perf problem returns as numbers, not as a quieter map. `tier` in the pin code is a ranking input, never a visibility gate.
 
 ## Data
 
