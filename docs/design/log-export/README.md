@@ -23,3 +23,4 @@ Validation notes:
 - Raw preview keeps object identifiers hashed and includes the decode table in the bundle.
 - The not-included privacy promise is identical in default and accessibility-size renders.
 - Scrub failure is a user-visible, fail-closed state.
+- Plaintext pack metadata in the header is deliberate: the header is generated at export time and lists installed packs with publish versions, while the hashed log line represents the at-rest file sink. Different artifacts, different moments.

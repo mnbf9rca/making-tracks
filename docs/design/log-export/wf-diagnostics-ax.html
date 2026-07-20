@@ -162,11 +162,12 @@
       text-align: center;
     }
     .btn.primary { background: var(--accent); color: white; }
+    .textlink { color: var(--accent); flex: none; font-size: 18px; font-weight: 600; min-height: 34px; padding: 6px 8px; text-align: center; }
     .clip { bottom: 128px; left: 0; overflow: hidden; position: absolute; right: 0; top: 99px; }
     .fade { background: linear-gradient(to bottom, rgba(255,253,247,0), rgba(255,253,247,.98)); bottom: 128px; height: 32px; left: 0; position: absolute; right: 0; }
     .badge { background: #e6f2ee; border-radius: 4px; color: var(--accent); font-size: 10px; font-weight: 700; left: 12px; padding: 3px 7px; position: absolute; top: 106px; }
     .fold { border-top: 2px dashed #c0392b; bottom: 128px; left: 0; position: absolute; right: 0; }
-    .foldlab { background: rgba(255,255,255,.92); border-radius: 3px; bottom: 133px; color: #c0392b; font-size: 9.5px; font-weight: 650; padding: 1px 4px; position: absolute; right: 6px; }
+    .foldlab { background: rgba(255,255,255,.92); border-radius: 3px; bottom: 156px; color: #c0392b; font-size: 9.5px; font-weight: 650; padding: 1px 4px; position: absolute; right: 6px; }
     .fold.settings { bottom: 0; }
     .foldlab.settings { bottom: 5px; }
     .failure { background: #f6f2ea; border-left: 4px solid var(--warn); }
@@ -257,7 +258,10 @@ decode:
         </div>
         <div class="panel not">
           <h3>Share boundary</h3>
-          <div class="bullet"><span class="dot">•</span><span>The next screen is the system share sheet.</span></div>
+          <div class="bullets">
+            <div class="bullet"><span class="dot">•</span><span>The next screen is the system share sheet.</span></div>
+            <div class="bullet"><span class="dot">•</span><span>The app still has no upload endpoint.</span></div>
+          </div>
         </div>
       </div>
       <div class="fade"></div>
@@ -278,7 +282,10 @@ decode:
         </div>
         <div class="panel failure">
           <h3>Nothing was shared</h3>
-          <div class="bullet"><span class="dot">•</span><span>No archive was created and staged files were deleted.</span></div>
+          <div class="bullets">
+            <div class="bullet"><span class="dot">•</span><span>No archive was created and staged files were deleted.</span></div>
+            <div class="bullet"><span class="dot">•</span><span>Retry with a shorter window, or send a screenshot of this screen.</span></div>
+          </div>
         </div>
         <div class="panel not">
           <h3>Blocked pattern</h3>
@@ -289,7 +296,7 @@ decode:
       </div>
       <div class="fade"></div>
       <div class="fold"></div><div class="foldlab">fixed action</div>
-      <div class="bar"><div class="btn">Back</div><div class="btn primary">Delete diagnostics</div></div>
+      <div class="bar"><div class="btn">Back</div><div class="btn primary">Try 15 min</div><div class="textlink">Delete diagnostics</div></div>
     </div>
   </div>
 </div>

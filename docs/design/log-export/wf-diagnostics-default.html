@@ -162,7 +162,8 @@
     }
     .btn.primary { background: var(--accent); color: white; }
     .fold { border-top: 2px dashed #c0392b; bottom: 76px; left: 0; position: absolute; right: 0; }
-    .foldlab { background: rgba(255,255,255,.92); border-radius: 3px; bottom: 81px; color: #c0392b; font-size: 9.5px; font-weight: 650; padding: 1px 4px; position: absolute; right: 6px; }
+    .foldlab { background: rgba(255,255,255,.92); border-radius: 3px; bottom: 104px; color: #c0392b; font-size: 9.5px; font-weight: 650; padding: 1px 4px; position: absolute; right: 6px; }
+    .textlink { align-self: center; color: var(--accent); flex: none; font-size: 13px; font-weight: 600; padding: 12px 2px; text-align: center; }
     .fold.settings { bottom: 0; }
     .foldlab.settings { bottom: 5px; }
     .failure { background: #f6f2ea; border-left: 4px solid var(--warn); }
@@ -275,7 +276,7 @@ decode-table:
         <h3>Nothing was shared</h3>
         <div class="bullets">
           <div class="bullet"><span class="dot">•</span><span>No archive was created and the staged files were deleted.</span></div>
-          <div class="bullet"><span class="dot">•</span><span>Try again after deleting diagnostics, or send a screenshot of this screen.</span></div>
+          <div class="bullet"><span class="dot">•</span><span>Retry with a shorter window, or send a screenshot of this screen.</span></div>
         </div>
       </div>
       <div class="panel not">
@@ -285,7 +286,7 @@ decode-table:
   action=staging-deleted</div>
       </div>
       <div class="fold"></div><div class="foldlab">fixed action</div>
-      <div class="bar"><div class="btn">Back</div><div class="btn primary">Delete diagnostics</div></div>
+      <div class="bar"><div class="btn">Back</div><div class="btn primary">Try 15 min</div><div class="textlink">Delete diagnostics</div></div>
     </div>
   </div>
 </div>
