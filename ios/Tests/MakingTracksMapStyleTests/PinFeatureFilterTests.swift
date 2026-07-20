@@ -3,7 +3,7 @@ import MakingTracksData
 @testable import MakingTracksMapStyle
 
 final class PinFeatureFilterTests: XCTestCase {
-    func testTierZoomGateShowsOnlyLandmarksAndHighlightsAtCityZoom() {
+    func testDiscoveryFeaturesDoNotCuratePinsByTier() {
         let features = [
             (MapPlace(id: "t1", lat: 51.5, lon: -0.12, tier: 1, category: "attraction"), PinState(saved: false, visit: .none)),
             (MapPlace(id: "t2", lat: 51.6, lon: -0.11, tier: 2, category: "museum"), PinState(saved: false, visit: .none)),
@@ -12,16 +12,12 @@ final class PinFeatureFilterTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: false, zoom: 11).map(\.0.id),
-            ["t1", "t2"]
-        )
-        XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: false, zoom: 14).map(\.0.id),
+            PinFeatureFilter.discoveryFeatures(features, showHidden: false).map(\.0.id),
             ["t1", "t2", "t3", "t4"]
         )
     }
 
-    func testSparseTierFallbackKeepsOverviewFromGoingBlank() {
+    func testOverviewKeepsVisiblePinsWithoutSparseTierFallback() {
         let visibleOddity = MapPlace(id: "visible-t4", lat: 3.14, lon: 101.69, tier: 4, category: "attraction")
         let hiddenOddity = MapPlace(id: "hidden-t4", lat: 3.15, lon: 101.70, tier: 4, category: "museum")
         let features = [
@@ -30,20 +26,12 @@ final class PinFeatureFilterTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: false, zoom: 11).map(\.0.id),
-            []
-        )
-        XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: false, zoom: 11, allowSparseTierFallback: true).map(\.0.id),
+            PinFeatureFilter.discoveryFeatures(features, showHidden: false).map(\.0.id),
             ["visible-t4"]
-        )
-        XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: false, zoom: 9, allowSparseTierFallback: true).map(\.0.id),
-            []
         )
     }
 
-    func testTierZoomGateStillAppliesWhenShowHiddenIsEnabled() {
+    func testShowHiddenDoesNotReintroduceTierCuration() {
         let hiddenHighlight = MapPlace(id: "hidden-t2", lat: 51.6, lon: -0.11, tier: 2, category: "attraction")
         let hiddenOddity = MapPlace(id: "hidden-t4", lat: 51.7, lon: -0.10, tier: 4, category: "attraction")
         let visibleOddity = MapPlace(id: "visible-t4", lat: 51.7, lon: -0.10, tier: 4, category: "attraction")
@@ -54,8 +42,8 @@ final class PinFeatureFilterTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: true, zoom: 11).map(\.0.id),
-            ["hidden-t2"]
+            PinFeatureFilter.discoveryFeatures(features, showHidden: true).map(\.0.id),
+            ["hidden-t2", "hidden-t4", "visible-t4"]
         )
     }
 
