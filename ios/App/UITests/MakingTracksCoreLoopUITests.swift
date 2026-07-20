@@ -386,6 +386,71 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "tracks-static-geometry")
     }
 
+    func testTrackReplaySliderAndAutoplayDriveMapPins() {
+        let app = launch(
+            reset: true,
+            pinDiagnostics: true,
+            seedMultiDayTrackList: true,
+            densePins: true,
+            startupViewport: "kl-street",
+            trackReplayBeatDuration: 5
+        )
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["Replay week"].tap()
+        XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForSourceFeatureCount(6, in: app))
+        XCTAssertTrue(waitForTrackSegmentCount(5, in: app))
+        XCTAssertTrue(waitForAccessibilityPin(
+            in: app,
+            placeID: "mt1_D0000000000000000000000001",
+            label: "Dense Pin 1, Attraction, visited"
+        ))
+        XCTAssertTrue(waitForAccessibilityPin(
+            in: app,
+            placeID: "mt1_D0000000000000000000000002",
+            label: "Dense Pin 2, Historic Building, visited"
+        ))
+
+        let slider = app.sliders["map.track-replay.slider"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 5))
+        slider.adjust(toNormalizedSliderPosition: 0.0)
+        XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
+        XCTAssertTrue(waitForAccessibilityPin(
+            in: app,
+            placeID: "mt1_D0000000000000000000000001",
+            label: "Dense Pin 1, Attraction, visited"
+        ))
+        XCTAssertTrue(waitForAccessibilityPin(
+            in: app,
+            placeID: "mt1_D0000000000000000000000002",
+            label: "Dense Pin 2, Historic Building, not visited"
+        ))
+
+        let play = app.buttons["map.track-replay.play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 5))
+        play.tap()
+        XCTAssertTrue(waitForTrackSegmentCount(1, in: app))
+        XCTAssertTrue(waitForAccessibilityPin(
+            in: app,
+            placeID: "mt1_D0000000000000000000000002",
+            label: "Dense Pin 2, Historic Building, visited"
+        ))
+        XCTAssertEqual(play.label, "Pause track replay")
+        play.tap()
+        XCTAssertEqual(play.label, "Play track replay")
+        attachScreenshot(named: "track-replay-pin-arrival")
+    }
+
     func testMyTracksSystemListDrawsWholeLogTrackWithoutStoredListMembership() {
         let app = launch(reset: true, pinDiagnostics: true, seedBurstTrackVisits: true)
 
@@ -401,10 +466,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["map.track-connection-readout"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["map.track-connection-readout"].label, "2 visits too close together to connect")
+        XCTAssertFalse(app.staticTexts["map.track-connection-readout"].waitForExistence(timeout: 2))
         XCTAssertTrue(waitForSourceFeatureCount(2, in: app))
-        XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
+        XCTAssertTrue(waitForTrackSegmentCount(1, in: app))
         attachScreenshot(named: "my-tracks-burst-readout")
     }
 
@@ -1020,11 +1084,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         seedTrackVisits: Bool = false,
         seedBurstTrackVisits: Bool = false,
         seedTrackList: Bool = false,
+        seedMultiDayTrackList: Bool = false,
         coverageBBoxes: [String] = [],
         resetOnboarding: Bool = false,
         forceDarkAppearance: Bool = false,
         densePins: Bool = false,
-        startupViewport: String? = nil
+        startupViewport: String? = nil,
+        trackReplayBeatDuration: Double? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
@@ -1036,6 +1102,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         if let startupViewport {
             app.launchArguments.append("--ui-testing-map-state")
             app.launchArguments.append(startupViewport)
+        }
+        if let trackReplayBeatDuration {
+            app.launchArguments.append("--ui-testing-track-replay-beat-duration")
+            app.launchArguments.append(String(trackReplayBeatDuration))
         }
         if pinDiagnostics {
             app.launchArguments.append("--ui-testing-pin-diagnostics")
@@ -1079,6 +1149,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         if seedTrackList {
             app.launchArguments.append("--ui-testing-seed-track-list")
+        }
+        if seedMultiDayTrackList {
+            app.launchArguments.append("--ui-testing-seed-multiday-track-list")
         }
         if let offlineProgress {
             app.launchArguments.append("--ui-testing-offline-progress")
@@ -1606,6 +1679,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "tracks-static-geometry": "tracks-static-geometry",
         "list-map-polished-chrome": "list-map-polished-chrome",
         "my-tracks-burst-readout": "my-tracks-burst-readout",
+        "track-replay-pin-arrival": "track-replay-pin-arrival",
         "pin-defined-paper-min": "pin-defined-paper-min",
         "pin-defined-paper-default": "pin-defined-paper-default",
         "pin-defined-paper-max": "pin-defined-paper-max",

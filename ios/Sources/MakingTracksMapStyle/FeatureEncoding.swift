@@ -4,6 +4,7 @@ import MakingTracksData
 public enum PinPresentation: String, Sendable {
     case discovery
     case tracks
+    case trackReplay
 }
 
 public struct TrackSegmentSummary: Sendable, Equatable {
@@ -26,22 +27,29 @@ public enum FeatureEncoding {
 
     public static func featureProperties(
         _ state: PinState,
-        pinPresentation: PinPresentation = .discovery
+        pinPresentation: PinPresentation = .discovery,
+        trackReplayPulse: Bool = false
     ) -> [String: JSONValue] {
         [
             "visit": .string(visitTag(state.visit)),
             "saved": .bool(state.saved),
             "hidden": .bool(state.hidden),
             "pin_presentation": .string(pinPresentation.rawValue),
+            "track_replay_pulse": .bool(trackReplayPulse),
         ]
     }
 
     public static func feature(
         _ place: MapPlace,
         _ state: PinState,
-        pinPresentation: PinPresentation = .discovery
+        pinPresentation: PinPresentation = .discovery,
+        trackReplayPulse: Bool = false
     ) -> JSONValue {
-        var props = featureProperties(state, pinPresentation: pinPresentation)
+        var props = featureProperties(
+            state,
+            pinPresentation: pinPresentation,
+            trackReplayPulse: trackReplayPulse
+        )
         props["place_id"] = .string(place.id)
         props["tier"] = .double(Double(place.tier))
         props["category"] = .string(place.category)

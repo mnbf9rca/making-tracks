@@ -14,6 +14,14 @@ public enum Expression {
         case "==":
             guard items.count == 3 else { return .bool(false) }
             return .bool(evaluate(items[1], props) == evaluate(items[2], props))
+        case "*":
+            guard items.count >= 2 else { return .null }
+            return items.dropFirst().reduce(.double(1.0)) { partial, expression in
+                guard case let .double(lhs) = partial,
+                      case let .double(rhs) = evaluate(expression, props)
+                else { return .null }
+                return .double(lhs * rhs)
+            }
         case "!":
             guard items.count == 2, case let .bool(value) = evaluate(items[1], props) else { return .bool(false) }
             return .bool(!value)

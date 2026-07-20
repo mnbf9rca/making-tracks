@@ -40,6 +40,43 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(Expression.evaluate(PinLayers.heartFilter(), lovedProps), .bool(true))
     }
 
+    func testTrackReplayPresentationFadesUnreachedPinsAndFullStrengthReachedPins() {
+        let unreached = FeatureEncoding.featureProperties(
+            PinState(saved: false, visit: .none),
+            pinPresentation: .trackReplay
+        )
+        let reached = FeatureEncoding.featureProperties(
+            PinState(saved: false, visit: .visited),
+            pinPresentation: .trackReplay
+        )
+        let loved = FeatureEncoding.featureProperties(
+            PinState(saved: true, visit: .loved),
+            pinPresentation: .trackReplay
+        )
+
+        XCTAssertEqual(Expression.evaluate(PinLayers.fadeOpacityExpression(), unreached), .double(FADED_OPACITY))
+        XCTAssertEqual(Expression.evaluate(PinLayers.fadeOpacityExpression(), reached), .double(FULL_OPACITY))
+        XCTAssertEqual(Expression.evaluate(PinLayers.fadeOpacityExpression(), loved), .double(FULL_OPACITY))
+        XCTAssertEqual(Expression.evaluate(PinLayers.bookmarkFilter(), loved), .bool(true))
+        XCTAssertEqual(Expression.evaluate(PinLayers.heartFilter(), loved), .bool(true))
+    }
+
+    func testTrackReplayPulseScalesCircleAndCategoryIconOnlyWhenFlagged() {
+        let base = JSONValue.double(10)
+        let inactive = FeatureEncoding.featureProperties(PinState(saved: false, visit: .visited), pinPresentation: .trackReplay)
+        let active = FeatureEncoding.featureProperties(
+            PinState(saved: false, visit: .visited),
+            pinPresentation: .trackReplay,
+            trackReplayPulse: true
+        )
+
+        XCTAssertEqual(Expression.evaluate(PinLayers.trackReplayPulseExpression(base: base), inactive), .double(10))
+        XCTAssertEqual(
+            Expression.evaluate(PinLayers.trackReplayPulseExpression(base: base), active),
+            .double(10 * PinLayers.trackReplayPulseScale)
+        )
+    }
+
     func testPinSubstrateIsShapeSourcePlusStyleLayersNotAnnotations() {
         let layers = PinLayers.pinLayers()
         let circle = layer(id: "pins-circle", in: layers)
@@ -60,7 +97,10 @@ final class PinLayersTests: XCTestCase {
         if case let .object(paint)? = circle?["paint"] {
             XCTAssertEqual(paint["circle-color"], PinLayers.pinColorExpression())
             XCTAssertEqual(paint["circle-opacity"], PinLayers.fadeOpacityExpression())
-            XCTAssertEqual(paint["circle-radius"], PinSize().circleRadiusExpression)
+            XCTAssertEqual(
+                paint["circle-radius"],
+                PinLayers.trackReplayPulseExpression(base: PinSize().circleRadiusExpression)
+            )
         } else {
             XCTFail("pin circle paint")
         }
@@ -70,7 +110,10 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(layoutValue("icon-image", in: icon), PinLayers.categoryIconExpression())
         XCTAssertEqual(layoutValue("icon-allow-overlap", in: icon), .bool(true))
         XCTAssertEqual(layoutValue("icon-ignore-placement", in: icon), .bool(true))
-        XCTAssertEqual(layoutValue("icon-size", in: icon), PinSize().categoryIconScaleExpression)
+        XCTAssertEqual(
+            layoutValue("icon-size", in: icon),
+            PinLayers.trackReplayPulseExpression(base: PinSize().categoryIconScaleExpression)
+        )
         XCTAssertEqual(layoutValue("icon-image", in: bookmark), .string("badge-bookmark"))
         XCTAssertEqual(layoutValue("icon-image", in: heart), .string("badge-heart"))
         XCTAssertEqual(layoutValue("icon-allow-overlap", in: bookmark), .bool(true))
@@ -142,11 +185,17 @@ final class PinLayersTests: XCTestCase {
         let defaultSize = PinSize()
 
         if case let .object(paint)? = circle?["paint"] {
-            XCTAssertEqual(paint["circle-radius"], defaultSize.circleRadiusExpression)
+            XCTAssertEqual(
+                paint["circle-radius"],
+                PinLayers.trackReplayPulseExpression(base: defaultSize.circleRadiusExpression)
+            )
         } else {
             XCTFail("pin circle paint")
         }
-        XCTAssertEqual(layoutValue("icon-size", in: icon), defaultSize.categoryIconScaleExpression)
+        XCTAssertEqual(
+            layoutValue("icon-size", in: icon),
+            PinLayers.trackReplayPulseExpression(base: defaultSize.categoryIconScaleExpression)
+        )
         XCTAssertEqual(layoutValue("icon-size", in: bookmark), defaultSize.badgeIconScaleExpression)
         XCTAssertEqual(layoutValue("icon-size", in: heart), defaultSize.badgeIconScaleExpression)
         XCTAssertEqual(layoutValue("icon-offset", in: bookmark), defaultSize.bookmarkOffset)
@@ -157,11 +206,17 @@ final class PinLayersTests: XCTestCase {
         let maximumCircle = layer(id: "pins-circle", in: maximumLayers)
         let maximumIcon = layer(id: "pins-icon", in: maximumLayers)
         if case let .object(paint)? = maximumCircle?["paint"] {
-            XCTAssertEqual(paint["circle-radius"], maximumSize.circleRadiusExpression)
+            XCTAssertEqual(
+                paint["circle-radius"],
+                PinLayers.trackReplayPulseExpression(base: maximumSize.circleRadiusExpression)
+            )
         } else {
             XCTFail("maximum pin circle paint")
         }
-        XCTAssertEqual(layoutValue("icon-size", in: maximumIcon), maximumSize.categoryIconScaleExpression)
+        XCTAssertEqual(
+            layoutValue("icon-size", in: maximumIcon),
+            PinLayers.trackReplayPulseExpression(base: maximumSize.categoryIconScaleExpression)
+        )
         XCTAssertNotEqual(defaultSize.circleRadiusExpression, maximumSize.circleRadiusExpression)
         XCTAssertTrue(isZoomInterpolation(defaultSize.circleRadiusExpression))
         XCTAssertTrue(isZoomInterpolation(defaultSize.categoryIconScaleExpression))

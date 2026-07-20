@@ -511,21 +511,104 @@ enum TrackTimelineAutoplayStep: Equatable, Sendable {
 }
 
 extension Calendar {
-    static var gregorianUTC: Calendar {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
-        return calendar
+    static var gregorianCurrentTimeZone: Calendar {
+        Calendar(identifier: .gregorian)
     }
+}
+
+enum TrackReplayPinPresentation {
+    static func features(
+        _ features: [(MapPlace, PinState)],
+        context: TrackGeometryContext,
+        throughEventIndex index: Int?
+    ) -> [(MapPlace, PinState)] {
+        guard !context.visits.isEmpty else { return features }
+        let replayPlaceIDs = Set(context.visits.map(\.placeID))
+        let reachedVisitStateByPlaceID = context.clipped(throughEventIndex: index).visits.reduce(into: [String: VisitState]()) { states, visit in
+            states[visit.placeID] = visit.verdict == .loved ? .loved : .visited
+        }
+        return features.map { place, state in
+            guard replayPlaceIDs.contains(place.id) else { return (place, state) }
+            return (
+                place,
+                PinState(
+                    saved: state.saved,
+                    visit: reachedVisitStateByPlaceID[place.id] ?? .none,
+                    hidden: state.hidden
+                )
+            )
+        }
+    }
+
+    static func pulsePlaceID(context: TrackGeometryContext, throughEventIndex index: Int?) -> String? {
+        guard let index,
+              context.visits.indices.contains(index)
+        else { return nil }
+        return context.visits[index].placeID
+    }
+
+    static func pulsePlaceIDs(
+        context: TrackGeometryContext,
+        throughEventIndex index: Int?,
+        isArrivalPulsing: Bool
+    ) -> Set<String> {
+        guard isArrivalPulsing,
+              let placeID = pulsePlaceID(context: context, throughEventIndex: index)
+        else { return [] }
+        return [placeID]
+    }
+}
+
+struct TrackReplaySnapshotCache: Sendable {
+    static let empty = TrackReplaySnapshotCache(context: .empty)
+
+    private let snapshots: [TrackSourceSnapshot]
+
+    init(context: TrackGeometryContext) {
+        snapshots = context.visits.indices.map { index in
+            TrackSourceSnapshot.make(context: context.clipped(throughEventIndex: index))
+        }
+    }
+
+    func snapshot(throughEventIndex index: Int?) -> TrackSourceSnapshot {
+        guard let index else { return snapshots.last ?? .empty }
+        guard index >= 0 else { return .empty }
+        guard snapshots.indices.contains(index) else { return snapshots.last ?? .empty }
+        return snapshots[index]
+    }
+}
+
+enum TrackTimelineDateMarkerLayout {
+    static let markerSlotWidth: CGFloat = 56 // Tunable UI slot width for abbreviated dates near slider edges.
 }
 
 struct TrackTimelineModel: Equatable, Sendable {
     // Tunable per #257; autoplay is event-paced, not derived from visit timestamps or slider distance.
-    static let autoplayBeatDuration: TimeInterval = 0.85
+    static var autoplayBeatDuration: TimeInterval {
+#if DEBUG
+        if let override = debugAutoplayBeatDuration {
+            return override
+        }
+#endif
+        return 0.85
+    }
+
+#if DEBUG
+    private static var debugAutoplayBeatDuration: TimeInterval? {
+        guard let index = CommandLine.arguments.firstIndex(of: "--ui-testing-track-replay-beat-duration"),
+              CommandLine.arguments.indices.contains(index + 1),
+              let value = TimeInterval(CommandLine.arguments[index + 1]),
+              value.isFinite,
+              value > 0
+        else { return nil }
+        return value
+    }
+#endif
 
     let visits: [TrackVisit]
     let dateMarkers: [TrackTimelineDateMarker]
 
-    init(visits: [TrackVisit], calendar: Calendar = .gregorianUTC) {
+    init(visits: [TrackVisit], calendar: Calendar = .gregorianCurrentTimeZone) {
         self.visits = visits
         var seenDays = Set<DateComponents>()
         dateMarkers = visits.enumerated().compactMap { index, visit in
@@ -541,6 +624,10 @@ struct TrackTimelineModel: Equatable, Sendable {
 
     var sliderRange: ClosedRange<Double> {
         0...Double(max(visits.count - 1, 0))
+    }
+
+    var hasInteractiveReplayControls: Bool {
+        visits.count > 1
     }
 
     func eventIndex(forSliderValue value: Double) -> Int {
@@ -564,6 +651,27 @@ struct TrackTimelineModel: Equatable, Sendable {
         return Array(visits.prefix(index + 1))
     }
 
+    func dateMarkers(availableWidth: Double) -> [TrackTimelineDateMarker] {
+        guard dateMarkers.count > 2 else { return dateMarkers }
+        let maxMarkerCount = Self.maxDateMarkerCount(availableWidth: availableWidth)
+        guard dateMarkers.count > maxMarkerCount else { return dateMarkers }
+        guard maxMarkerCount > 2 else {
+            return [dateMarkers[0], dateMarkers[dateMarkers.count - 1]]
+        }
+        let stride = Double(dateMarkers.count - 1) / Double(maxMarkerCount - 1)
+        var selected: [TrackTimelineDateMarker] = []
+        var selectedEventIndices = Set<Int>()
+        for slot in 0..<maxMarkerCount {
+            let markerIndex = Int((Double(slot) * stride).rounded())
+            let clampedIndex = min(max(markerIndex, 0), dateMarkers.count - 1)
+            let marker = dateMarkers[clampedIndex]
+            if selectedEventIndices.insert(marker.eventIndex).inserted {
+                selected.append(marker)
+            }
+        }
+        return selected
+    }
+
     func selectedVisit(after index: Int?) -> TrackVisit? {
         guard let index, visits.indices.contains(index) else { return nil }
         return visits[index]
@@ -582,6 +690,10 @@ struct TrackTimelineModel: Equatable, Sendable {
         return Double(eventIndex) / Double(eventCount - 1)
     }
 
+    private static func maxDateMarkerCount(availableWidth: Double) -> Int {
+        max(Int(availableWidth / Double(TrackTimelineDateMarkerLayout.markerSlotWidth)), 2)
+    }
+
     private static func dateLabel(for date: Date, calendar: Calendar) -> String {
         let components = calendar.dateComponents([.day, .month], from: date)
         let month = components.month.flatMap(Self.monthLabel) ?? ""
@@ -598,20 +710,19 @@ struct TrackTimelineModel: Equatable, Sendable {
 }
 
 private struct TrackTimelineDateMarkersView: View {
-    let markers: [TrackTimelineDateMarker]
+    let timeline: TrackTimelineModel
 
-    private static let markerWidth: CGFloat = 56 // Tunable UI slot width for abbreviated dates near slider edges.
     private static let markerHeight: CGFloat = 14
 
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
-                ForEach(markers, id: \.eventIndex) { marker in
+                ForEach(timeline.dateMarkers(availableWidth: proxy.size.width), id: \.eventIndex) { marker in
                     Text(verbatim: marker.label)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .frame(width: Self.markerWidth, alignment: marker.position < 0.5 ? .leading : .trailing)
+                        .frame(width: TrackTimelineDateMarkerLayout.markerSlotWidth, alignment: marker.position < 0.5 ? .leading : .trailing)
                         .offset(x: xOffset(for: marker, width: proxy.size.width))
                 }
             }
@@ -621,9 +732,9 @@ private struct TrackTimelineDateMarkersView: View {
     }
 
     private func xOffset(for marker: TrackTimelineDateMarker, width: CGFloat) -> CGFloat {
-        guard width > Self.markerWidth else { return 0 }
-        let centered = width * CGFloat(marker.position) - Self.markerWidth / 2
-        return min(max(centered, 0), width - Self.markerWidth)
+        guard width > TrackTimelineDateMarkerLayout.markerSlotWidth else { return 0 }
+        let centered = width * CGFloat(marker.position) - TrackTimelineDateMarkerLayout.markerSlotWidth / 2
+        return min(max(centered, 0), width - TrackTimelineDateMarkerLayout.markerSlotWidth)
     }
 }
 
@@ -1015,6 +1126,7 @@ struct MapScreen: View {
     @State private var sourceFeatureCount = 0
     @State private var trackSourceSnapshot = TrackSourceSnapshot.empty
     @State private var trackReplayContext = TrackGeometryContext.empty
+    @State private var trackReplaySnapshotCache = TrackReplaySnapshotCache.empty
     @State private var selectedTrackReplayEventIndex: Int?
     @State private var isTrackReplayAutoplaying = false
     @State private var trackReplayArrivalPulseVisitID: Int64?
@@ -1109,8 +1221,9 @@ struct MapScreen: View {
                 showsCoverageShading: layerVisibility.showCoverageShading,
                 theme: selectedTheme,
                 startupViewport: startupViewport,
-                features: features,
+                features: visibleMapFeatures,
                 pinPresentation: pinPresentation,
+                trackReplayPulsePlaceIDs: trackReplayPulsePlaceIDs,
                 trackSourceSnapshot: visibleTrackSourceSnapshot,
                 pinAccessibilityNames: pinAccessibilityNames,
                 visibleCategories: ListMapCategoryVisibility.visibleCategories(
@@ -1366,7 +1479,6 @@ struct MapScreen: View {
                 onOfflineMapsChanged: refreshAfterOfflineMapsChanged,
                 onShowListOnMap: { list in
                     Task { @MainActor in
-                        appShell.isMenuPresented = false
                         await showListOnMap(list)
                     }
                 },
@@ -1460,7 +1572,7 @@ struct MapScreen: View {
         var names = nearbyPromptNames
         names.merge(listMapPinNames) { _, listName in listName }
         if isFixtureMap {
-            for fixturePlace in Self.selectedFixturePlaces(dense: debugUseDenseFixturePins) {
+            for fixturePlace in Self.uiTestingFixturePlaces(dense: debugUseDenseFixturePins) {
                 names[fixturePlace.placeID] = fixturePlace.name
             }
         }
@@ -1810,7 +1922,7 @@ struct MapScreen: View {
                     .accessibilityIdentifier("map.track-connection-readout")
             }
 
-            if list.showVisited, !trackReplayContext.visits.isEmpty {
+            if TrackReplayControlVisibility.showOnMap(list: list, timeline: trackReplayTimeline) {
                 mapTrackReplayControls(trackReplayTimeline)
             }
         }
@@ -1888,7 +2000,7 @@ struct MapScreen: View {
                 .accessibilityIdentifier("map.track-replay.slider")
             }
 
-            TrackTimelineDateMarkersView(markers: timeline.dateMarkers)
+            TrackTimelineDateMarkersView(timeline: timeline)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("map.track-replay.date-markers")
 
@@ -1951,9 +2063,7 @@ struct MapScreen: View {
         let previousIndex = selectedTrackReplayEventIndex
         let clampedIndex = clampedSelectedTrackReplayIndex(nextIndex, in: timeline)
         selectedTrackReplayEventIndex = clampedIndex
-        trackSourceSnapshot = TrackSourceSnapshot.make(
-            context: trackReplayContext.clipped(throughEventIndex: clampedIndex)
-        )
+        trackSourceSnapshot = trackReplaySnapshotCache.snapshot(throughEventIndex: clampedIndex)
         if let clampedIndex,
            timeline.shouldPulseArrival(previousIndex: previousIndex, nextIndex: clampedIndex),
            timeline.visits.indices.contains(clampedIndex) {
@@ -1976,17 +2086,26 @@ struct MapScreen: View {
     private func applyTrackReplayContext(_ context: TrackGeometryContext) {
         stopMapTrackAutoplay()
         trackReplayContext = context
+        trackReplaySnapshotCache = TrackReplaySnapshotCache(context: context)
         let timeline = TrackTimelineModel(visits: context.visits)
         selectedTrackReplayEventIndex = clampedSelectedTrackReplayIndex(selectedTrackReplayEventIndex, in: timeline)
         trackReplayArrivalPulseVisitID = nil
-        trackSourceSnapshot = TrackSourceSnapshot.make(
-            context: context.clipped(throughEventIndex: selectedTrackReplayEventIndex)
-        )
+        trackSourceSnapshot = trackReplaySnapshotCache.snapshot(throughEventIndex: selectedTrackReplayEventIndex)
+    }
+
+    private func applyStaticTrackContext(_ context: TrackGeometryContext) {
+        stopMapTrackAutoplay()
+        trackReplayContext = .empty
+        trackReplaySnapshotCache = .empty
+        selectedTrackReplayEventIndex = nil
+        trackReplayArrivalPulseVisitID = nil
+        trackSourceSnapshot = TrackSourceSnapshot.make(context: context)
     }
 
     private func clearTrackReplay() {
         stopMapTrackAutoplay()
         trackReplayContext = .empty
+        trackReplaySnapshotCache = .empty
         selectedTrackReplayEventIndex = nil
         trackReplayArrivalPulseVisitID = nil
         trackSourceSnapshot = .empty
@@ -2011,12 +2130,33 @@ struct MapScreen: View {
         return trackSourceSnapshot
     }
 
+    private var visibleMapFeatures: [(MapPlace, PinState)] {
+        guard activeListMap?.usesTrackReplay == true else { return features }
+        return TrackReplayPinPresentation.features(
+            features,
+            context: trackReplayContext,
+            throughEventIndex: selectedTrackReplayEventIndex
+        )
+    }
+
     private var trackReplayTimeline: TrackTimelineModel {
         TrackTimelineModel(visits: trackReplayContext.visits)
     }
 
     private var pinPresentation: PinPresentation {
-        ListMapPinPresentation.presentation(showVisited: activeListMap?.showVisited == true)
+        if activeListMap?.usesTrackReplay == true,
+           !trackReplayContext.visits.isEmpty {
+            return .trackReplay
+        }
+        return ListMapPinPresentation.presentation(showVisited: activeListMap?.showVisited == true)
+    }
+
+    private var trackReplayPulsePlaceIDs: Set<String> {
+        TrackReplayPinPresentation.pulsePlaceIDs(
+            context: trackReplayContext,
+            throughEventIndex: selectedTrackReplayEventIndex,
+            isArrivalPulsing: activeListMap?.usesTrackReplay == true && trackReplayArrivalPulseVisitID != nil
+        )
     }
 
     private var trackConnectionReadoutMessage: String? {
@@ -2335,7 +2475,7 @@ struct MapScreen: View {
         if model == nil {
             model = try? MapScreenModel(
                 database: database,
-                fixturePlaces: isFixtureMap ? Self.selectedFixturePlaces(dense: debugUseDenseFixturePins) : [],
+                fixturePlaces: isFixtureMap ? Self.uiTestingFixturePlaces(dense: debugUseDenseFixturePins) : [],
                 forceTileNetworkOffline: debugForceTileNetworkOffline
             )
             let hasModel = model != nil
@@ -2578,7 +2718,12 @@ struct MapScreen: View {
             clearTrackReplay()
             return
         }
-        applyTrackReplayContext(await model.trackGeometryContext(listID: list.listID))
+        let context = await model.trackGeometryContext(listID: list.listID)
+        if list.usesTrackReplay {
+            applyTrackReplayContext(context)
+        } else {
+            applyStaticTrackContext(context)
+        }
     }
 
     private func refreshFixtureVisitCount() async {
@@ -2605,7 +2750,7 @@ struct MapScreen: View {
     @MainActor
     private func showListOnMap(_ list: PlaceList) async {
         guard let id = list.id else { return }
-        activeListMap = ActiveListMap(listID: id, name: list.name, showVisited: true)
+        activeListMap = ActiveListMap(listID: id, name: list.name, kind: list.kind, showVisited: true)
         await refreshActiveListMap(updateCamera: true)
     }
 
@@ -2634,8 +2779,10 @@ struct MapScreen: View {
         nearbyPromptNames = [:]
         sourceFeatureCount = next.count
         listMapPinNames = nextNames
-        if list.showVisited {
+        if list.usesTrackReplay {
             applyTrackReplayContext(nextTrackContext)
+        } else if list.showVisited {
+            applyStaticTrackContext(nextTrackContext)
         } else {
             clearTrackReplay()
         }
@@ -2654,6 +2801,7 @@ struct MapScreen: View {
               active.listID == id
         else { return }
         active.name = list.name
+        active.kind = list.kind
         activeListMap = active
     }
 
@@ -2703,10 +2851,25 @@ struct MapScreen: View {
         let name: String
     }
 
-    private struct ActiveListMap: Equatable {
+    struct ActiveListMap: Equatable {
         let listID: Int64
         var name: String
+        var kind: String
         var showVisited: Bool
+
+        var usesTrackReplay: Bool {
+            showVisited && kind == PlaceList.trackKind
+        }
+    }
+
+    enum TrackReplayControlVisibility {
+        static func showOnMap(list: ActiveListMap, timeline: TrackTimelineModel) -> Bool {
+            list.usesTrackReplay && timeline.hasInteractiveReplayControls
+        }
+
+        static func showInTracksDrawer(timeline: TrackTimelineModel) -> Bool {
+            timeline.hasInteractiveReplayControls
+        }
     }
 
     static let fixturePlaces = [
@@ -2738,7 +2901,7 @@ struct MapScreen: View {
         ),
     ]
 
-    private static func selectedFixturePlaces(dense: Bool) -> [PlaceRef] {
+    static func uiTestingFixturePlaces(dense: Bool) -> [PlaceRef] {
         dense ? denseFixturePlaces : fixturePlaces
     }
 
@@ -2781,7 +2944,7 @@ struct MapScreen: View {
     }
 
     private static func initialFixtureFeatures(dense: Bool) -> [(MapPlace, PinState)] {
-        selectedFixturePlaces(dense: dense).map { fixturePlace in
+        uiTestingFixturePlaces(dense: dense).map { fixturePlace in
             (
                 MapPlace(
                     id: fixturePlace.placeID,
@@ -3068,7 +3231,7 @@ private struct AppMenuSheet: View {
         case .lists:
             destinationWithDone(ListsView(
                 model: model,
-                onShowOnMap: onShowListOnMap,
+                onShowOnMap: showListOnMapAndDismiss,
                 onListRenamed: onListRenamed,
                 onListDeleted: onListDeleted
             ))
@@ -3122,6 +3285,12 @@ private struct AppMenuSheet: View {
     private func replayOnboardingAndDismiss() {
         dismiss()
         replayOnboarding()
+    }
+
+    private func showListOnMapAndDismiss(_ list: PlaceList) {
+        shell.isMenuPresented = false
+        dismiss()
+        onShowListOnMap(list)
     }
 }
 
@@ -3233,7 +3402,7 @@ private struct TracksView: View {
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("tracks.summary")
 
-                if !visibleVisits.isEmpty {
+                if MapScreen.TrackReplayControlVisibility.showInTracksDrawer(timeline: timeline) {
                     trackTimelineControls(timeline)
                 }
 
@@ -3308,7 +3477,7 @@ private struct TracksView: View {
 
                 Slider(
                     value: Binding(
-                        get: { Double(selectedTimelineEventIndex ?? 0) },
+                        get: { Double(clampedSelectedTimelineIndex(selectedTimelineEventIndex, in: timeline) ?? 0) },
                         set: { value in
                             stopAutoplay()
                             setSelectedTimelineEventIndex(timeline.eventIndex(forSliderValue: value))
@@ -3322,7 +3491,7 @@ private struct TracksView: View {
                 .accessibilityIdentifier("tracks.timeline.slider")
             }
 
-            TrackTimelineDateMarkersView(markers: timeline.dateMarkers)
+            TrackTimelineDateMarkersView(timeline: timeline)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityIdentifier("tracks.timeline.date-markers")
         }
@@ -3370,8 +3539,9 @@ private struct TracksView: View {
         guard !timeline.visits.isEmpty else { return }
         autoplayTask?.cancel()
         isAutoplaying = true
+        let startIndex = selectedTimelineEventIndex == timeline.visits.indices.last ? nil : selectedTimelineEventIndex
         autoplayTask = Task { @MainActor in
-            var currentIndex = selectedTimelineEventIndex
+            var currentIndex = startIndex
             while isAutoplaying, !Task.isCancelled {
                 switch timeline.autoplayStep(after: currentIndex) {
                 case .event(let nextIndex):
@@ -3411,7 +3581,7 @@ private struct TracksView: View {
 
     private func clampedSelectedTimelineIndex(_ index: Int?, in timeline: TrackTimelineModel) -> Int? {
         guard !timeline.visits.isEmpty else { return nil }
-        return min(max(index ?? 0, 0), timeline.visits.count - 1)
+        return min(max(index ?? timeline.visits.count - 1, 0), timeline.visits.count - 1)
     }
 
     private func timelineAccessibilityValue(_ timeline: TrackTimelineModel) -> String {
