@@ -492,6 +492,65 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "track-replay-pin-arrival")
     }
 
+    func testLovedTrackChipDrivesMapSource() {
+        let app = launch(
+            reset: true,
+            pinDiagnostics: true,
+            seedMultiDayTrackList: true,
+            densePins: true,
+            startupViewport: "kl-street"
+        )
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["Replay week"].tap()
+
+        XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+
+        var lovedFilter = element(identifier: "map.list-mode.filter.loved", in: app)
+        XCTAssertTrue(lovedFilter.waitForExistence(timeout: 5))
+        XCTAssertEqual(lovedFilter.value as? String, "Not selected")
+        lovedFilter.tap()
+        XCTAssertEqual(lovedFilter.value as? String, "Selected")
+        XCTAssertTrue(waitForSourceFeatureCount(0, in: app))
+        XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
+
+        app.terminate()
+
+        let lovedApp = launch(
+            reset: true,
+            pinDiagnostics: true,
+            seedMultiDayTrackList: true,
+            seedTrackListLovedVisit: true,
+            densePins: true,
+            startupViewport: "kl-street"
+        )
+        XCTAssertTrue(lovedApp.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: lovedApp))
+
+        openAppMenu(in: lovedApp)
+        lovedApp.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(lovedApp.staticTexts["Lists"].waitForExistence(timeout: 5))
+        lovedApp.staticTexts["Replay week"].tap()
+        XCTAssertTrue(lovedApp.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
+        lovedApp.buttons["lists.detail.show-map"].tap()
+
+        XCTAssertTrue(lovedApp.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+        lovedFilter = element(identifier: "map.list-mode.filter.loved", in: lovedApp)
+        XCTAssertTrue(lovedFilter.waitForExistence(timeout: 5))
+        lovedFilter.tap()
+        XCTAssertTrue(waitForSourceFeatureCount(1, in: lovedApp))
+        XCTAssertTrue(waitForTrackSegmentCount(0, in: lovedApp))
+        attachScreenshot(named: "track-loved-filter-map-source")
+    }
+
     func testListMapBackReturnsToSeededListDetail() {
         let app = launch(reset: true, pinDiagnostics: true, seedTrackList: true)
 
@@ -1191,6 +1250,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         seedSpreadList: Bool = false,
         seedTrackList: Bool = false,
         seedMultiDayTrackList: Bool = false,
+        seedTrackListLovedVisit: Bool = false,
         coverageBBoxes: [String] = [],
         resetOnboarding: Bool = false,
         forceDarkAppearance: Bool = false,
@@ -1261,6 +1321,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         if seedMultiDayTrackList {
             app.launchArguments.append("--ui-testing-seed-multiday-track-list")
+        }
+        if seedTrackListLovedVisit {
+            app.launchArguments.append("--ui-testing-seed-track-list-loved-visit")
         }
         if let offlineProgress {
             app.launchArguments.append("--ui-testing-offline-progress")

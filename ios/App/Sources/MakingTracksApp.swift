@@ -28,6 +28,7 @@ struct MakingTracksApp: App {
     private static let seedFixtureBurstTrackVisits = arguments.contains("--ui-testing-seed-burst-track-visits")
     private static let seedFixtureTrackList = arguments.contains("--ui-testing-seed-track-list")
     private static let seedFixtureMultiDayTrackList = arguments.contains("--ui-testing-seed-multiday-track-list")
+    private static let seedFixtureTrackListLovedVisit = arguments.contains("--ui-testing-seed-track-list-loved-visit")
     private static let seedFixtureSpreadList = arguments.contains("--ui-testing-seed-spread-list")
     private static let simulatedLatitude = argumentValue("--ui-testing-location-latitude").flatMap(Double.init)
     private static let simulatedLongitude = argumentValue("--ui-testing-location-longitude").flatMap(Double.init)
@@ -45,6 +46,7 @@ struct MakingTracksApp: App {
     private static let seedFixtureBurstTrackVisits = false
     private static let seedFixtureTrackList = false
     private static let seedFixtureMultiDayTrackList = false
+    private static let seedFixtureTrackListLovedVisit = false
     private static let seedFixtureSpreadList = false
     private static let simulatedLatitude: Double? = nil
     private static let simulatedLongitude: Double? = nil
@@ -98,7 +100,11 @@ struct MakingTracksApp: App {
                 }
                 let fixturePlaces = MapScreen.uiTestingFixturePlaces(dense: Self.debugUseDenseFixturePins)
                 if seedFixtureMultiDayTrackList {
-                    try database.seedUITestingMultiDayTrackList(named: "Replay week", places: fixturePlaces)
+                    try database.seedUITestingMultiDayTrackList(
+                        named: "Replay week",
+                        places: fixturePlaces,
+                        lovedVisitIndex: seedFixtureTrackListLovedVisit ? 0 : nil
+                    )
                 } else if seedFixtureTrackList {
                     try database.seedUITestingTrackList(named: "Track pair", places: fixturePlaces)
                 } else if seedFixtureSpreadList {

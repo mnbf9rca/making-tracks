@@ -133,9 +133,10 @@ final class AppShellTests: XCTestCase {
     }
 
     func testTracksCopySummarizesVisibleVisitCounts() {
-        XCTAssertEqual(TracksCopy.summary(visible: 0, total: 0, lovedOnly: false), "No visits yet")
-        XCTAssertEqual(TracksCopy.summary(visible: 2, total: 2, lovedOnly: false), "2 visits")
-        XCTAssertEqual(TracksCopy.summary(visible: 1, total: 3, lovedOnly: true), "1 visit for loved places · 2 hidden by filter")
+        XCTAssertEqual(TracksCopy.summary(visible: 0, lovedOnly: false), "No visits yet")
+        XCTAssertEqual(TracksCopy.summary(visible: 0, lovedOnly: true), "No loved visits yet")
+        XCTAssertEqual(TracksCopy.summary(visible: 2, lovedOnly: false), "2 visits")
+        XCTAssertEqual(TracksCopy.summary(visible: 1, lovedOnly: true), "1 visit for loved places")
     }
 
     func testTracksCopyLabelsSortDirection() {
@@ -222,20 +223,18 @@ final class AppShellTests: XCTestCase {
         ]).hasInteractiveReplayControls)
     }
 
-    func testTrackReplaySnapshotUsesEventPrefixAndPrefixBridgeCount() {
+    func testTrackReplaySnapshotUsesEventPrefix() {
         let visits = [
             trackVisit(id: 1, seconds: 0),
             trackVisit(id: 2, seconds: 60),
             trackVisit(id: 3, seconds: 120),
         ]
-        let context = TrackGeometryContext(visits: visits, sourceIndices: [0, 2, 4])
+        let context = TrackGeometryContext(visits: visits)
         let prefix = context.clipped(throughEventIndex: 1)
         let snapshot = TrackSourceSnapshot.make(context: prefix)
 
         XCTAssertEqual(prefix.visits.map(\.id), [1, 2])
-        XCTAssertEqual(prefix.filteredBridgeCount, 1)
         XCTAssertEqual(snapshot.segmentCount, 1)
-        XCTAssertEqual(snapshot.filteredBridgeCount, 1)
     }
 
     func testTrackReplayPinsBeyondSelectedEventRenderAsUnvisitedUntilArrival() {
@@ -252,7 +251,7 @@ final class AppShellTests: XCTestCase {
 
         let replayed = TrackReplayPinPresentation.features(
             features,
-            context: TrackGeometryContext(visits: visits, sourceIndices: [0, 1, 2]),
+            context: TrackGeometryContext(visits: visits),
             throughEventIndex: 1
         )
 
@@ -269,7 +268,7 @@ final class AppShellTests: XCTestCase {
             trackVisit(id: 1, placeID: "p1", seconds: 0, verdict: nil),
             trackVisit(id: 2, placeID: "p1", seconds: 60, verdict: .loved),
         ]
-        let context = TrackGeometryContext(visits: visits, sourceIndices: [0, 1])
+        let context = TrackGeometryContext(visits: visits)
 
         let firstArrival = TrackReplayPinPresentation.features(
             features,
@@ -286,13 +285,31 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(lovedArrival[0].1.visit, .loved)
     }
 
+    func testTrackMapFeatureFilterUsesOnlyFilteredReplayContextPlaces() {
+        let features = [
+            (MapPlace(id: "loved", lat: 51.501, lon: -0.101, tier: 2, category: "history"), PinState(saved: false, visit: .loved)),
+            (MapPlace(id: "ordinary", lat: 51.502, lon: -0.102, tier: 2, category: "history"), PinState(saved: false, visit: .visited)),
+            (MapPlace(id: "repeat", lat: 51.503, lon: -0.103, tier: 2, category: "history"), PinState(saved: true, visit: .loved)),
+        ]
+        let context = TrackGeometryContext(
+            visits: [
+                trackVisit(id: 1, placeID: "loved", seconds: 0, verdict: .loved),
+                trackVisit(id: 2, placeID: "repeat", seconds: 60, verdict: .loved),
+                trackVisit(id: 3, placeID: "repeat", seconds: 120, verdict: .loved),
+            ]
+        )
+
+        let visible = TrackMapFeatureFilter.visibleFeatures(features, context: context)
+
+        XCTAssertEqual(visible.map(\.0.id), ["loved", "repeat"])
+    }
+
     func testTrackReplayPulsePlaceIDsOnlyExposeCurrentArrival() {
         let context = TrackGeometryContext(
             visits: [
                 trackVisit(id: 1, placeID: "p1", seconds: 0),
                 trackVisit(id: 2, placeID: "p2", seconds: 60),
-            ],
-            sourceIndices: [0, 1]
+            ]
         )
 
         XCTAssertEqual(
@@ -318,12 +335,14 @@ final class AppShellTests: XCTestCase {
             listID: 42,
             name: "KL walk",
             kind: PlaceList.defaultKind,
+            visitFilter: .all,
             showVisited: true
         )
         let track = MapScreen.ActiveListMap(
             listID: 1,
             name: "My tracks",
             kind: PlaceList.trackKind,
+            visitFilter: .all,
             showVisited: true
         )
 
@@ -368,8 +387,7 @@ final class AppShellTests: XCTestCase {
                 trackVisit(id: 1, seconds: 0),
                 trackVisit(id: 2, seconds: 60),
                 trackVisit(id: 3, seconds: 120),
-            ],
-            sourceIndices: [0, 2, 4]
+            ]
         )
         let cache = TrackReplaySnapshotCache(context: context)
 
@@ -377,7 +395,6 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(cache.snapshot(throughEventIndex: 1).segmentCount, 1)
         XCTAssertEqual(cache.snapshot(throughEventIndex: 2).segmentCount, 2)
         XCTAssertEqual(cache.snapshot(throughEventIndex: -1).segmentCount, 0)
-        XCTAssertEqual(cache.snapshot(throughEventIndex: 1).filteredBridgeCount, 1)
     }
 
     func testListMapViewportFitsAllMembersWithPadding() throws {
@@ -418,51 +435,6 @@ final class AppShellTests: XCTestCase {
     func testListMapPinPresentationTracksModeUsesFullStrengthPins() {
         XCTAssertEqual(ListMapPinPresentation.presentation(showVisited: true), .tracks)
         XCTAssertEqual(ListMapPinPresentation.presentation(showVisited: false), .discovery)
-    }
-
-    func testTracksVisitFilterKeepsLovedRowsByPerPlaceLovedState() {
-        let plain = TrackVisit(
-            id: 1,
-            placeID: "plain",
-            visitedAt: Date(timeIntervalSince1970: 1),
-            verdict: nil,
-            name: "Plain",
-            category: "history",
-            tier: 2,
-            lat: 51.50,
-            lon: -0.12
-        )
-        let lovedOlder = TrackVisit(
-            id: 2,
-            placeID: "loved",
-            visitedAt: Date(timeIntervalSince1970: 2),
-            verdict: .loved,
-            name: "Loved",
-            category: "history",
-            tier: 2,
-            lat: 51.51,
-            lon: -0.13
-        )
-        let lovedNewerPlain = TrackVisit(
-            id: 3,
-            placeID: "loved",
-            visitedAt: Date(timeIntervalSince1970: 3),
-            verdict: nil,
-            name: "Loved",
-            category: "history",
-            tier: 2,
-            lat: 51.52,
-            lon: -0.14
-        )
-
-        XCTAssertEqual(
-            TracksVisitFilter.visibleVisits([plain, lovedOlder, lovedNewerPlain], lovedOnly: false).map(\.id),
-            [1, 2, 3]
-        )
-        XCTAssertEqual(
-            TracksVisitFilter.visibleVisits([plain, lovedOlder, lovedNewerPlain], lovedOnly: true).map(\.id),
-            [2, 3]
-        )
     }
 
     private func trackVisit(
@@ -2126,14 +2098,22 @@ final class AppShellTests: XCTestCase {
 
 private final class AppStubFetcher: TileFetching, @unchecked Sendable {
     let routes: [String: Data]
-    private(set) var requestedURLs: [String] = []
+    private let lock = NSLock()
+    private var requestedURLStorage: [String] = []
+    var requestedURLs: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return requestedURLStorage
+    }
 
     init(routes: [String: Data]) {
         self.routes = routes
     }
 
     func fetch(_ url: URL) async throws -> Data {
-        requestedURLs.append(url.absoluteString)
+        lock.withLock {
+            requestedURLStorage.append(url.absoluteString)
+        }
         guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
         return data
     }
