@@ -145,6 +145,22 @@ final class DerivationsTests: XCTestCase {
         XCTAssertEqual(try db.trackVisits().map(\.verdict), [.loved, .loved, .loved])
     }
 
+    func testLovedTrackFilterKeepsEveryVisitForALovedPlace() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        try db.dbQueue.write { d in
+            try insertSnapshot(d, placeID: "repeat", name: "Repeat", category: "history", lat: 51.50, lon: -0.12, tier: 2)
+            try insertSnapshot(d, placeID: "ordinary", name: "Ordinary", category: "architecture", lat: 51.51, lon: -0.13, tier: 2)
+            try insertVisit(d, placeID: "repeat", timestamp: Date(timeIntervalSince1970: 10), verdict: nil)
+            try insertVisit(d, placeID: "ordinary", timestamp: Date(timeIntervalSince1970: 15), verdict: nil)
+            try insertVisit(d, placeID: "repeat", timestamp: Date(timeIntervalSince1970: 20), verdict: .loved)
+        }
+
+        let visits = try db.trackVisits(filter: .loved)
+
+        XCTAssertEqual(visits.map(\.placeID), ["repeat", "repeat"])
+        XCTAssertEqual(visits.map(\.verdict), [.loved, .loved])
+    }
+
     func testTrackVisitsCanBeScopedToAListWithoutLeakingOtherVisitedPlaces() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
         try db.dbQueue.write { d in
@@ -266,7 +282,33 @@ final class DerivationsTests: XCTestCase {
         XCTAssertEqual(geometry["type"], .string("LineString"))
     }
 
-    func testFilteredTrackBridgeCountIncludesListScopeAndHiddenOmissions() throws {
+    func testLovedTrackFilterReIndexesTheReplayUniverse() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        try db.dbQueue.write { d in
+            for index in 0..<6 {
+                let placeID = "p_\(index)"
+                try insertSnapshot(
+                    d,
+                    placeID: placeID,
+                    name: placeID,
+                    category: "history",
+                    lat: 51.50 + Double(index) * 0.01,
+                    lon: -0.12,
+                    tier: 2
+                )
+                try insertVisit(d, placeID: placeID, timestamp: Date(timeIntervalSince1970: Double(index + 1)))
+            }
+            try d.execute(sql: "UPDATE visits SET verdict = 'loved' WHERE place_id IN ('p_1', 'p_4')")
+        }
+
+        let context = try db.trackGeometryContext(filter: .loved)
+        let summary = FeatureEncoding.trackSegmentSummary(context.visits)
+
+        XCTAssertEqual(context.visits.map(\.placeID), ["p_1", "p_4"])
+        XCTAssertEqual(summary.features.count, 1)
+    }
+
+    func testHiddenAndListScopeOmissionsBridgeSilently() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
         try db.dbQueue.write { d in
             try d.execute(sql: "INSERT INTO lists (id, name, is_system, created_at) VALUES (42, 'Weekend', 0, 0)")
@@ -290,11 +332,11 @@ final class DerivationsTests: XCTestCase {
         }
 
         let context = try db.trackGeometryContext(listID: 42)
+        let summary = FeatureEncoding.trackSegmentSummary(context.visits)
 
         XCTAssertEqual(context.visits.map(\.placeID), ["p_0", "p_4"])
-        XCTAssertEqual(context.sourceIndices, [0, 4])
-        XCTAssertEqual(context.filteredBridgeCount, 3)
-        XCTAssertEqual(try db.filteredTrackBridgeCount(listID: 42), 3)
+        XCTAssertEqual(summary.features.count, 1)
+        XCTAssertEqual(summary.connectableVisitCount, 2)
     }
 
     func testNonSystemTrackKindRowsUseStoredMembershipNotVirtualTracks() throws {
