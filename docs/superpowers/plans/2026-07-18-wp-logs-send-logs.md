@@ -54,8 +54,13 @@ The boundary is **events, not inventory** — the session's actions, never a dum
 - User action events: love / unlove / hide / unhide / save / add-to-list / remove-from-list, as
   transitions (place id + timestamp), not as a dump of the whole saved/loved/hidden corpus.
 - Navigation flow: screens and sheets opened, the tap sequence.
-- Viewport extent: bbox / centre / zoom. (Diagnostic for the map and tile pipeline, e.g. #275; it is
-  app-state the user drove, not an ambient sensor read.)
+- Viewport **scale**: zoom, tile-Z, tile counts (covered / blocked / requests), and region. (Diagnostic
+  for the map and tile pipeline, e.g. #275.) **NOT absolute geographic coordinates** — no centre lat/lon,
+  no bbox corners, no absolute tile X/Y. Those are the excluded precise-location class arriving by another
+  route: a viewport centre at street zoom is the user's location as surely as a GPS fix. Region + zoom +
+  scale honours "the map areas you viewed"; the coordinate would break "your exact location is not
+  included". (Correction 2026-07-20: an earlier draft of this line said "bbox / centre / zoom" — that
+  shipped the locating coordinate; scale-not-coordinates is the coherent line.)
 - Search events and responses: that a search ran, the result count, and which result (place id) was
   tapped — **without the query text** (see Out).
 - Everything from the original §1 system line: app version and build, OS version, device model, installed
@@ -65,8 +70,10 @@ The boundary is **events, not inventory** — the session's actions, never a dum
 **Out — exactly three classes, and this is the whole exclusion-lint set:**
 - **Device name** (`UIDevice.name`) — identity, often the user's real name, zero diagnostic value over
   device model.
-- **Precise device location** (GPS lat/lon). Permission state and the fact that location centred the map
-  are in; the viewport is in; the precise fix is out.
+- **Precise geographic location** — any absolute lat/lon, whatever its source: the GPS fix AND the
+  viewport centre/bbox/absolute tile X/Y (they resolve to the same point). Permission state and the fact
+  that location centred the map are in; viewport **scale** is in (see above); any absolute coordinate is
+  out.
 - **Raw search query strings.** The search event, result count, and tapped result are in; the wording is
   out. This holds **WP-B9's "queries never leave the device" property (§2, D2) unamended** — Rob ruled the
   strings out precisely so that property stands.
