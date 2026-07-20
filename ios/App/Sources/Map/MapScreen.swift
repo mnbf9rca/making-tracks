@@ -119,6 +119,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
 
     func rows(
         installed: [String: String],
+        installedStorageBytes: [String: Int] = [:],
         availablePublishVersions: [String: String] = [:],
         activeProgress: OfflineDownloadProgress?,
         pausedProgress: OfflineDownloadProgress? = nil,
@@ -133,6 +134,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
                 for: $0,
                 depth: 0,
                 installed: installed,
+                installedStorageBytes: installedStorageBytes,
                 availablePublishVersions: availablePublishVersions,
                 activeProgress: activeProgress,
                 pausedProgress: pausedProgress,
@@ -143,6 +145,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         return catalogRows + unavailableLocalRows(
             knownZoneIDs: Set(zones.map(\.id)),
             installed: installed,
+            installedStorageBytes: installedStorageBytes,
             activeProgress: activeProgress,
             pausedProgress: pausedProgress,
             pausedRegions: pausedRegions,
@@ -154,6 +157,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         for zone: OfflineRegionCatalogZone,
         depth: Int,
         installed: [String: String],
+        installedStorageBytes: [String: Int],
         availablePublishVersions: [String: String],
         activeProgress: OfflineDownloadProgress?,
         pausedProgress: OfflineDownloadProgress?,
@@ -193,6 +197,11 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             zone: zone,
             depth: depth,
             state: state,
+            knownByteSize: knownByteSize(
+                for: zone.id,
+                state: state,
+                installedStorageBytes: installedStorageBytes
+            ),
             hasUnavailableLocalData: hasUnavailableLocalData,
             hasUnavailablePausedDownload: hasUnavailablePausedDownload
         )
@@ -201,6 +210,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
                 for: $0,
                 depth: depth + 1,
                 installed: installed,
+                installedStorageBytes: installedStorageBytes,
                 availablePublishVersions: availablePublishVersions,
                 activeProgress: activeProgress,
                 pausedProgress: pausedProgress,
@@ -213,6 +223,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
     private func unavailableLocalRows(
         knownZoneIDs: Set<String>,
         installed: [String: String],
+        installedStorageBytes: [String: Int],
         activeProgress: OfflineDownloadProgress?,
         pausedProgress: OfflineDownloadProgress?,
         pausedRegions: Set<String>,
@@ -237,12 +248,31 @@ struct OfflineRegionCatalog: Sendable, Equatable {
                     ),
                     depth: 0,
                     state: .unavailable,
+                    knownByteSize: installedStorageBytes[regionID],
                     hasUnavailableLocalData: installed[regionID] != nil || quarantines[regionID] != nil,
                     hasUnavailablePausedDownload: activeProgress?.region == regionID
                         || pausedProgress?.region == regionID
                         || pausedRegions.contains(regionID)
                 )
             }
+    }
+
+    private func knownByteSize(
+        for region: String,
+        state: OfflineRegionCatalogRow.State,
+        installedStorageBytes: [String: Int]
+    ) -> Int? {
+        switch state {
+        case let .downloading(progress), let .paused(progress):
+            if progress.region == region, let totalBytes = progress.totalBytes, totalBytes > 0 {
+                return totalBytes
+            }
+            return installedStorageBytes[region]
+        case .installed, .unavailable, .quarantined:
+            return installedStorageBytes[region]
+        case .notInstalled, .updateAvailable:
+            return nil
+        }
     }
 
     private func zoneSort(_ lhs: OfflineRegionCatalogZone, _ rhs: OfflineRegionCatalogZone) -> Bool {
@@ -267,6 +297,7 @@ struct OfflineRegionCatalogRow: Identifiable, Sendable, Equatable {
     let zone: OfflineRegionCatalogZone
     let depth: Int
     let state: State
+    let knownByteSize: Int?
     let hasUnavailableLocalData: Bool
     let hasUnavailablePausedDownload: Bool
 
@@ -274,17 +305,26 @@ struct OfflineRegionCatalogRow: Identifiable, Sendable, Equatable {
         zone: OfflineRegionCatalogZone,
         depth: Int,
         state: State,
+        knownByteSize: Int? = nil,
         hasUnavailableLocalData: Bool = false,
         hasUnavailablePausedDownload: Bool = false
     ) {
         self.zone = zone
         self.depth = depth
         self.state = state
+        self.knownByteSize = knownByteSize
         self.hasUnavailableLocalData = hasUnavailableLocalData
         self.hasUnavailablePausedDownload = hasUnavailablePausedDownload
     }
 
     var id: String { zone.id }
+
+    func sizeLabel(includeThumbnails: Bool) -> String {
+        if let knownByteSize {
+            return ByteCountFormatter.string(fromByteCount: Int64(max(knownByteSize, 0)), countStyle: .file)
+        }
+        return zone.sizeLabel(includeThumbnails: includeThumbnails)
+    }
 
     var statusLabel: String {
         switch state {
@@ -297,7 +337,7 @@ struct OfflineRegionCatalogRow: Identifiable, Sendable, Equatable {
         case .updateAvailable:
             "Update available"
         case let .downloading(progress):
-            progress.isWaitingForConnectivity ? progress.statusText : "Downloading \(progress.percentComplete)%"
+            progress.isWaitingForConnectivity ? progress.statusText : progress.isComplete ? "Installing" : "Downloading \(progress.percentComplete)%"
         case let .paused(progress):
             "Paused at \(progress.percentComplete)%"
         case .quarantined:
@@ -801,7 +841,16 @@ struct OfflineDownloadProgress: Sendable, Equatable {
     }
 
     var percentComplete: Int {
-        Int((boundedFraction * 100).rounded())
+        if let totalBytes, totalBytes <= 0 { return 0 }
+        if boundedFraction >= 1 { return 100 }
+        return Int((boundedFraction * 100).rounded(.down))
+    }
+
+    var isComplete: Bool {
+        if let totalBytes {
+            return totalBytes > 0 && (completedBytes ?? 0) >= totalBytes
+        }
+        return boundedFraction >= 1
     }
 
     private var boundedFraction: Double {
@@ -3116,6 +3165,12 @@ struct StorageMenuStatus: Equatable, Sendable {
         )
     }
 
+    var installedStorageBytes: [String: Int] {
+        regions.reduce(into: [:]) { summary, region in
+            summary[region.region] = region.bytes
+        }
+    }
+
     var totalBytesText: String {
         Self.formatBytes(totalBytes)
     }
@@ -4341,12 +4396,17 @@ private struct OfflineMapsView: View {
     private var rows: [OfflineRegionCatalogRow] {
         catalog.rows(
             installed: installed,
+            installedStorageBytes: installedStorageBytes,
             availablePublishVersions: availablePublishVersions,
             activeProgress: activeProgress,
             pausedProgress: pausedProgress,
             pausedRegions: pausedRegions,
             quarantines: quarantines
         )
+    }
+
+    private var installedStorageBytes: [String: Int] {
+        storageStatus.installedStorageBytes
     }
 
     var body: some View {
@@ -4455,7 +4515,7 @@ private struct OfflineMapsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(verbatim: row.zone.displayName)
                     .font(row.depth == 0 ? .headline : .body)
-                Text(verbatim: "\(row.zone.sizeLabel(includeThumbnails: false)) · \(row.statusLabel)")
+                Text(verbatim: "\(row.sizeLabel(includeThumbnails: false)) · \(row.statusLabel)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
