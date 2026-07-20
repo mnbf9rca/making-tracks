@@ -20,6 +20,8 @@ This privacy policy governs how we design and build the app. If a feature can't 
 
 Your visits, saves, and lists live in a database on your phone, and that database never leaves your phone except if you share a list (see below).
 
+If you hit a problem, you can choose to send a diagnostic log to someone helping you — usually us, when you ask for help. That file records what you did in the app and how it responded during a short window you pick, so the problem can be understood. Nothing is collected or sent automatically: you choose when to share it and who to send it to, and the screen shows you what it contains first. It does not include your device's name, your exact location, or the words you typed into search.
+
 ## Backups and device sync
 
 If you use Apple's iCloud device backup, your backup includes this data just like your other apps, but we cannot see it.

@@ -7,6 +7,88 @@ in question.
 Builds on WP-LOGGING (#204), which gives structured `os.Logger`, sanitizer helpers, and a lint over what may
 be logged.
 
+> **Amendment 2026-07-20 — the posture moved. Read §0 first; it supersedes §1's content line and §2's
+> hashing mechanism.** The original design hashed identifiers at rest and shipped a decode table, and drew
+> a narrow content line. Rob has since ruled both differently. §1 and §2 are kept for the reasoning trail;
+> where they conflict with §0, §0 wins.
+
+---
+
+## 0. Amendment — sharing is the consent; the log reconstructs the session
+
+Two rulings, 2026-07-20, that reshape this WP.
+
+**The posture.** Rob:
+
+> "users chosing to share the logs expect that they can be used for diagnostics."
+
+The deliberate, per-export act of sharing IS the consent that matters. So the shared file may carry the
+app-and-user flow needed to reconstruct what happened — his MVP bar: the log must "contain the full flow of
+the app as it happened, not just error codes" and "can directly be used to understand what a user did in the
+app, and how the app behaved." The consent screen's job flips from **promising exclusions** to **honestly
+disclosing inclusion**.
+
+This changes what a user's export contains. It does **not** change the app's boundary: still no server, no
+upload, no telemetry (the header holds). Data leaves only because the user hand-carries the file — the same
+"nothing leaves unless you choose to share it" frame `privacy.md` already states. A companion `privacy.md`
+line names this new user-chosen share channel (drafted with this amendment; ratified as a policy change).
+
+**The hashing is deleted.** Rob:
+
+> "i didnt chose the hashing. you did — you said that it was important to protect the logs on the device from
+> other applications. I feel that apple's sandboxing is sufficient — this is ALREADY COVERED BY THE THREAT
+> MODEL."
+
+The salt, the at-rest hashing, and the decode table (§2) are removed. They defended only the on-device file
+against an attacker the threat model already excludes via OS sandboxing (`docs/threat-model.md` §6 — defences
+must cite an in-scope vector). The file sink writes plaintext; the log is directly readable, which is the
+better decoding the posture ruling requires.
+
+### The content line (supersedes §1)
+
+The log is the session's **event stream within the chosen window** (§5 bounds: 15 min / hour / everything).
+The boundary is **events, not inventory** — the session's actions, never a dump of the on-device database.
+
+**In (the flow):**
+- Place identity — id and name — for places viewed, tapped, or acted on.
+- User action events: love / unlove / hide / unhide / save / add-to-list / remove-from-list, as
+  transitions (place id + timestamp), not as a dump of the whole saved/loved/hidden corpus.
+- Navigation flow: screens and sheets opened, the tap sequence.
+- Viewport extent: bbox / centre / zoom. (Diagnostic for the map and tile pipeline, e.g. #275; it is
+  app-state the user drove, not an ambient sensor read.)
+- Search events and responses: that a search ran, the result count, and which result (place id) was
+  tapped — **without the query text** (see Out).
+- Everything from the original §1 system line: app version and build, OS version, device model, installed
+  packs and publish versions, download/install states, error codes, timings, and our object URLs — now
+  **plaintext**, no hashing.
+
+**Out — exactly three classes, and this is the whole exclusion-lint set:**
+- **Device name** (`UIDevice.name`) — identity, often the user's real name, zero diagnostic value over
+  device model.
+- **Precise device location** (GPS lat/lon). Permission state and the fact that location centred the map
+  are in; the viewport is in; the precise fix is out.
+- **Raw search query strings.** The search event, result count, and tapped result are in; the wording is
+  out. This holds **WP-B9's "queries never leave the device" property (§2, D2) unamended** — Rob ruled the
+  strings out precisely so that property stands.
+
+### Consent copy (honest disclosure, not a promise of protection)
+
+> **Send a diagnostic log**
+> This file records what you did in the app and how it responded, during the window you choose above — the
+> places you opened and saved, the actions you took, the map you browsed, and what the app fetched, showed,
+> or failed to show. It is meant to let someone helping you see exactly what happened. Nothing is sent
+> automatically; you choose where it goes.
+>
+> **Included:** your app version and device model; the places and actions in your session; the map areas you
+> viewed; what the app fetched, and any errors and timings.
+>
+> **Not included:** your device's name; your exact location; your search wording.
+>
+> **This file describes your session. Share it only with someone you trust to help you.**
+
+The footer is load-bearing: the file is now genuinely revealing, so the consent screen's real work is the
+informed half of informed consent — "you are choosing to share this; here is what it is."
+
 ---
 
 ## 1. The ruling this is built to
