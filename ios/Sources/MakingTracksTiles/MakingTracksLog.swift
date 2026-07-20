@@ -3,6 +3,7 @@ import OSLog
 
 public enum MakingTracksLog {
     public static let subsystem = "app.making-tracks"
+    private static let diagnosticSink = DiagnosticLogSinkRegistry()
 
     public static let downloads = Logger(subsystem: subsystem, category: "downloads")
     public static let gc = Logger(subsystem: subsystem, category: "gc")
@@ -34,6 +35,12 @@ public enum MakingTracksLog {
         return "unknown"
     }
 
+    public static func objectPath(_ url: URL) -> String {
+        guard url.host == "tiles.making-tracks.app" else { return "unknown" }
+        let path = url.path
+        return path.isEmpty ? "/" : path
+    }
+
     public static func errorLabel(_ error: Error) -> String {
         if let tileError = error as? TileError {
             return tileError.logLabel
@@ -42,6 +49,42 @@ public enum MakingTracksLog {
             return "url-\(urlError.code.rawValue)"
         }
         return String(describing: type(of: error))
+    }
+
+    public static func configureDiagnosticLogStore(_ store: DiagnosticLogStore?) {
+        diagnosticSink.configure(store)
+    }
+
+    public static func file(
+        category: DiagnosticLogCategory,
+        level: DiagnosticLogLevel,
+        _ message: String,
+        fields: [DiagnosticLogField]
+    ) {
+        diagnosticSink.append(category: category, level: level, message: message, fields: fields)
+    }
+}
+
+private final class DiagnosticLogSinkRegistry: @unchecked Sendable {
+    private let lock = NSLock()
+    private var store: DiagnosticLogStore?
+
+    func configure(_ store: DiagnosticLogStore?) {
+        lock.lock()
+        self.store = store
+        lock.unlock()
+    }
+
+    func append(
+        category: DiagnosticLogCategory,
+        level: DiagnosticLogLevel,
+        message: String,
+        fields: [DiagnosticLogField]
+    ) {
+        lock.lock()
+        let currentStore = store
+        lock.unlock()
+        try? currentStore?.append(category: category, level: level, message: message, fields: fields)
     }
 }
 
