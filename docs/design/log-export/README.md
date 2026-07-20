@@ -23,4 +23,4 @@ Validation notes:
 - Raw preview shows a plaintext session flow; no decode table is present.
 - The not-included privacy promise is exactly device name, exact location and search wording in default and accessibility-size renders.
 - Scrub failure is a user-visible, fail-closed state.
-- Plaintext pack metadata, place identity, viewport extent and object URLs are deliberate: the user chooses to share a file that reconstructs the session flow.
+- Plaintext pack metadata, place identity, viewport scale and object URLs are deliberate: the user chooses to share a file that reconstructs the session flow without exact coordinates.
