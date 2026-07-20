@@ -14,10 +14,10 @@ from typing import Any
 from urllib.parse import urlparse
 
 
-_REGION_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+_REGION_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _PUBLISH_VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 _PRIVATE_KINDS = {"registry", "cache", "feedback", "lock"}
-_PUBLIC_KINDS = {"tile", "basemap", "manifest", "current"}
+_PUBLIC_KINDS = {"tile", "basemap", "manifest", "current", "catalog_current"}
 _R2_UPLOAD_ENV_VARS = ("R2_S3_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY")
 
 
@@ -27,10 +27,6 @@ class UnsafePathComponent(ValueError):
 
 class LayoutInvalid(ValueError):
     """Raised when the public/private R2 layout violates invariants."""
-
-
-class VersionAlreadyLive(ValueError):
-    """Raised when upload would overwrite the currently visible version."""
 
 
 class ExistingVersionPrefix(ValueError):
@@ -134,6 +130,7 @@ class PublishPlan:
                 ).encode("utf-8"),
             )
         )
+        ops.append(_current_catalog_op(layout))
         prefixes = layout.get("private_prefixes", {})
         if registry_blob is not None:
             ops.append(
@@ -202,7 +199,12 @@ def publish_to_r2(
     publish_version = staging.name
     validate_path_components(region, publish_version)
     tile_ops, basemap_op, manifest_op = _ops_from_staging(staging, layout, region, publish_version)
-    ops = [*tile_ops, basemap_op, manifest_op, _current_op(layout, region, publish_version)]
+    content_ops = [*tile_ops, basemap_op, manifest_op]
+    ops = [
+        *content_ops,
+        _current_op(layout, region, publish_version),
+        _current_catalog_op(layout),
+    ]
     if registry_blob is not None:
         ops.append(
             PublishOp(
@@ -226,13 +228,49 @@ def publish_to_r2(
     if client is None:
         client = _default_client()
 
-    _assert_not_live(client, layout, region, publish_version)
-    _assert_prefix_absent(client, layout, region, publish_version)
+    live_version = _current_publish_version(client, layout, region)
+    repair_only = live_version == publish_version
+    if repair_only:
+        _assert_manifest_available(client, layout, region, publish_version)
+    else:
+        _assert_prefix_absent(client, layout, region, publish_version)
     lock_key = f"{region}/publish.lock"
     lock_etag = _acquire_lock(client, layout, region, publish_version, lock_key)
     uploaded = 0
     try:
-        for op in plan.ops:
+        if repair_only:
+            repair_ops = [_current_catalog_op(layout)]
+            if registry_blob is not None:
+                repair_ops.append(
+                    PublishOp(
+                        kind="registry",
+                        bucket=str(layout["private_bucket"]),
+                        key=f"{layout.get('private_prefixes', {}).get('registry', 'registry/')}{region}.jsonl",
+                        body=registry_blob,
+                    )
+                )
+            plan = PublishPlan(
+                layout=layout,
+                region=region,
+                publish_version=publish_version,
+                ops=tuple(repair_ops),
+            )
+            _validate_layout(layout)
+            plan._assert_bucket_invariants()
+            uploaded += _upload_catalog_current_locked(
+                client, layout, region, publish_version
+            )
+            if registry_blob is not None:
+                registry_op = repair_ops[-1]
+                client.put_object(Bucket=registry_op.bucket, Key=registry_op.key, Body=registry_op.body)
+                uploaded += 1
+            return PublishResult(plan=plan, uploaded=uploaded, dry_run=False)
+
+        ops = [
+            *content_ops,
+            _current_op(layout, region, publish_version),
+        ]
+        for op in ops:
             if op.body is not None:
                 client.put_object(Bucket=op.bucket, Key=op.key, Body=op.body)
             else:
@@ -241,6 +279,30 @@ def publish_to_r2(
                 with op.source_path.open("rb") as body:
                     client.put_object(Bucket=op.bucket, Key=op.key, Body=body)
             uploaded += 1
+
+        catalog_uploaded = _upload_catalog_current_locked(
+            client, layout, region, publish_version
+        )
+        uploaded += catalog_uploaded
+        ops.append(_current_catalog_op(layout))
+        if registry_blob is not None:
+            registry_op = PublishOp(
+                kind="registry",
+                bucket=str(layout["private_bucket"]),
+                key=f"{layout.get('private_prefixes', {}).get('registry', 'registry/')}{region}.jsonl",
+                body=registry_blob,
+            )
+            client.put_object(Bucket=registry_op.bucket, Key=registry_op.key, Body=registry_op.body)
+            uploaded += 1
+            ops.append(registry_op)
+        plan = PublishPlan(
+            layout=layout,
+            region=region,
+            publish_version=publish_version,
+            ops=tuple(ops),
+        )
+        _validate_layout(layout)
+        plan._assert_bucket_invariants()
     finally:
         _release_lock(client, layout, lock_key, lock_etag)
     return PublishResult(plan=plan, uploaded=uploaded, dry_run=False)
@@ -270,6 +332,131 @@ def _current_op(layout: Mapping[str, Any], region: str, publish_version: str) ->
         key=f"{region}/current.json",
         body=_json_bytes({"schema_version": 1, "publish_version": publish_version}),
     )
+
+
+def _current_catalog_op(
+    layout: Mapping[str, Any], publish_versions: Mapping[str, str] | None = None
+) -> PublishOp:
+    return PublishOp(
+        kind="catalog_current",
+        bucket=str(layout["public_bucket"]),
+        key="catalog/current.json",
+        body=(
+            None
+            if publish_versions is None
+            else _json_bytes({"schema_version": 1, "publish_versions": dict(publish_versions)})
+        ),
+    )
+
+
+def _upload_catalog_current_locked(
+    client, layout: Mapping[str, Any], region: str, publish_version: str
+) -> int:
+    catalog_lock_key = "catalog/publish.lock"
+    catalog_lock_etag = _acquire_lock(
+        client, layout, "catalog", publish_version, catalog_lock_key
+    )
+    try:
+        catalog_versions = _merged_current_catalog(client, layout, region, publish_version)
+        op = _current_catalog_op(layout, catalog_versions)
+        client.put_object(Bucket=op.bucket, Key=op.key, Body=op.body)
+        return 1
+    finally:
+        _release_lock(client, layout, catalog_lock_key, catalog_lock_etag)
+
+
+def _merged_current_catalog(
+    client, layout: Mapping[str, Any], region: str, publish_version: str
+) -> dict[str, str]:
+    versions = _read_current_catalog(client, layout)
+    for legacy_region, legacy_version in _read_region_current_pointers(client, layout).items():
+        versions[legacy_region] = legacy_version
+    versions[region] = publish_version
+    if len(versions) > 1024:
+        raise CurrentPointerUnavailable("current catalog has too many regions")
+    return versions
+
+
+def _read_region_current_pointers(client, layout: Mapping[str, Any]) -> dict[str, str]:
+    versions: dict[str, str] = {}
+    kwargs: dict[str, Any] = {
+        "Bucket": layout["public_bucket"],
+        "Prefix": "",
+        "MaxKeys": 1024,
+        "Delimiter": "/",
+    }
+    while True:
+        response = client.list_objects_v2(**kwargs)
+        for item in response.get("CommonPrefixes", []):
+            prefix = item.get("Prefix") if isinstance(item, Mapping) else None
+            if not isinstance(prefix, str) or not prefix.endswith("/"):
+                continue
+            region = prefix.removesuffix("/")
+            if "/" in region or not _REGION_RE.fullmatch(region):
+                continue
+            key = f"{prefix}current.json"
+            try:
+                obj = client.get_object(Bucket=layout["public_bucket"], Key=key)
+            except Exception as exc:
+                if _is_missing_key(exc):
+                    continue
+                raise CurrentPointerUnavailable(
+                    f"could not backfill current pointer for {region}"
+                ) from exc
+            try:
+                versions[region] = _decode_region_current(obj["Body"].read())
+            except Exception:
+                continue
+        token = response.get("NextContinuationToken")
+        if not response.get("IsTruncated") or not isinstance(token, str) or token == "":
+            break
+        kwargs["ContinuationToken"] = token
+    return versions
+
+
+def _assert_manifest_available(
+    client, layout: Mapping[str, Any], region: str, publish_version: str
+) -> None:
+    try:
+        client.head_object(
+            Bucket=layout["public_bucket"],
+            Key=f"{region}/{publish_version}/manifest.json",
+        )
+    except Exception as exc:
+        raise CurrentPointerUnavailable("could not verify repaired manifest") from exc
+
+
+def _read_current_catalog(client, layout: Mapping[str, Any]) -> dict[str, str]:
+    try:
+        obj = client.get_object(Bucket=layout["public_bucket"], Key="catalog/current.json")
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        if _is_missing_key(exc):
+            return {}
+        raise CurrentPointerUnavailable("could not read current catalog pointer") from exc
+    try:
+        catalog = json.loads(obj["Body"].read())
+        if (
+            not isinstance(catalog, dict)
+            or set(catalog) != {"schema_version", "publish_versions"}
+            or catalog["schema_version"] != 1
+            or not isinstance(catalog["publish_versions"], dict)
+        ):
+            raise ValueError("invalid current catalog")
+        versions: dict[str, str] = {}
+        for catalog_region, catalog_version in catalog["publish_versions"].items():
+            if (
+                not isinstance(catalog_region, str)
+                or not _REGION_RE.fullmatch(catalog_region)
+                or not isinstance(catalog_version, str)
+                or not _PUBLISH_VERSION_RE.fullmatch(catalog_version)
+            ):
+                raise ValueError("invalid current catalog")
+            versions[catalog_region] = catalog_version
+        return versions
+    except Exception as exc:
+        raise CurrentPointerUnavailable("invalid current catalog pointer") from exc
 
 
 def _ops_from_staging(
@@ -351,19 +538,32 @@ def _default_client():
     )
 
 
-def _assert_not_live(client, layout: Mapping[str, Any], region: str, publish_version: str) -> None:
+def _current_publish_version(client, layout: Mapping[str, Any], region: str) -> str | None:
     try:
         obj = client.get_object(Bucket=layout["public_bucket"], Key=f"{region}/current.json")
     except FileNotFoundError:
-        return
+        return None
     except Exception as exc:
         if _is_missing_key(exc):
-            return
+            return None
         raise CurrentPointerUnavailable("could not read current publish pointer") from exc
-    body = obj["Body"].read()
+    try:
+        return _decode_region_current(obj["Body"].read())
+    except Exception as exc:
+        raise CurrentPointerUnavailable("invalid current publish pointer") from exc
+
+
+def _decode_region_current(body: bytes) -> str:
     current = json.loads(body)
-    if current.get("publish_version") == publish_version:
-        raise VersionAlreadyLive(publish_version)
+    if (
+        not isinstance(current, dict)
+        or set(current) != {"schema_version", "publish_version"}
+        or current["schema_version"] != 1
+        or not isinstance(current["publish_version"], str)
+        or not _PUBLISH_VERSION_RE.fullmatch(current["publish_version"])
+    ):
+        raise ValueError("invalid current pointer")
+    return current["publish_version"]
 
 
 def _assert_prefix_absent(
@@ -473,7 +673,11 @@ def _error_code(exc: Exception) -> str | None:
 
 
 def _is_missing_key(exc: Exception) -> bool:
-    return _error_code(exc) in {"NoSuchKey", "404", "NotFound"}
+    return isinstance(exc, FileNotFoundError) or _error_code(exc) in {
+        "NoSuchKey",
+        "404",
+        "NotFound",
+    }
 
 
 def _is_precondition_failed(exc: Exception) -> bool:
