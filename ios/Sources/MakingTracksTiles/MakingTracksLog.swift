@@ -17,6 +17,7 @@ public enum MakingTracksLog {
 
     public static func objectKind(_ url: URL) -> String {
         let last = url.lastPathComponent
+        let components = publicObjectPathComponents(url)
         if last == "current.json" {
             return "current"
         }
@@ -32,6 +33,18 @@ public enum MakingTracksLog {
         if last.hasSuffix(".json.gz") {
             return "tile"
         }
+        if components.count >= 5, components[2] == "images", last.hasSuffix(".json") {
+            return "image-index"
+        }
+        if components.count >= 5, components[2] == "descriptions", last.hasSuffix(".json") {
+            return "description-index"
+        }
+        if components.count >= 3, components[0] == "thumbs", last.hasSuffix(".webp") {
+            return "thumbnail"
+        }
+        if components.count >= 4, components[2] == "search", last == "compact.json" {
+            return "search-compact"
+        }
         return "unknown"
     }
 
@@ -39,6 +52,23 @@ public enum MakingTracksLog {
         guard url.host == "tiles.making-tracks.app" else { return "unknown" }
         let path = url.path
         return path.isEmpty ? "/" : path
+    }
+
+    public static func objectPublishVersion(_ url: URL) -> String {
+        let components = publicObjectPathComponents(url)
+        guard components.count >= 2,
+              isPublishVersion(components[1])
+        else { return "none" }
+        return components[1]
+    }
+
+    public static func objectTileZ(_ url: URL) -> String {
+        let components = publicObjectPathComponents(url)
+        guard components.count >= 5,
+              ["tiles", "images", "descriptions"].contains(components[2]),
+              components[3].allSatisfy(\.isNumber)
+        else { return "none" }
+        return components[3]
     }
 
     public static func errorLabel(_ error: Error) -> String {
@@ -62,6 +92,20 @@ public enum MakingTracksLog {
         fields: [DiagnosticLogField]
     ) {
         diagnosticSink.append(category: category, level: level, message: message, fields: fields)
+    }
+
+    private static func publicObjectPathComponents(_ url: URL) -> [String] {
+        guard url.host == "tiles.making-tracks.app" else { return [] }
+        return url.path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+    }
+
+    private static func isPublishVersion(_ value: String) -> Bool {
+        guard value.count == "20260719T125813Z".count else { return false }
+        let chars = Array(value)
+        guard chars[8] == "T", chars[15] == "Z" else { return false }
+        return chars.enumerated().allSatisfy { index, character in
+            index == 8 || index == 15 || character.isNumber
+        }
     }
 }
 

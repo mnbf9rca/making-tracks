@@ -266,6 +266,8 @@ public final class HTTPTileFetcher: ProgressReportingOfflineRegionFetching, Boun
                 fields: [
                     .public("host", MakingTracksLog.host(url)),
                     .public("kind", MakingTracksLog.objectKind(url)),
+                    .public("publishVersion", MakingTracksLog.objectPublishVersion(url)),
+                    .public("tileZ", MakingTracksLog.objectTileZ(url)),
                     .public("status", statusLabel),
                     .object("object", MakingTracksLog.objectPath(url)),
                 ]

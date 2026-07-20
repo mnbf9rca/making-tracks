@@ -98,6 +98,71 @@ final class LoggingPrivacyTests: XCTestCase {
         }
     }
 
+    func testLoggingSanitizersClassifySidecarObjectsWithoutRawPaths() throws {
+        let imageURL = try XCTUnwrap(URL(string: "https://tiles.making-tracks.app/malaysia-singapore-brunei/20260719T125813Z/images/10/795/493.json"))
+        let descriptionURL = try XCTUnwrap(URL(string: "https://tiles.making-tracks.app/malaysia-singapore-brunei/20260719T125813Z/descriptions/10/795/493.json"))
+        let thumbnailURL = try XCTUnwrap(URL(string: "https://tiles.making-tracks.app/thumbs/ab/abcdef.webp"))
+        let searchURL = try XCTUnwrap(URL(string: "https://tiles.making-tracks.app/malaysia-singapore-brunei/20260719T125813Z/search/compact.json"))
+
+        XCTAssertEqual(MakingTracksLog.objectKind(imageURL), "image-index")
+        XCTAssertEqual(MakingTracksLog.objectKind(descriptionURL), "description-index")
+        XCTAssertEqual(MakingTracksLog.objectKind(thumbnailURL), "thumbnail")
+        XCTAssertEqual(MakingTracksLog.objectKind(searchURL), "search-compact")
+        XCTAssertEqual(MakingTracksLog.objectPublishVersion(imageURL), "20260719T125813Z")
+        XCTAssertEqual(MakingTracksLog.objectTileZ(imageURL), "10")
+        XCTAssertEqual(MakingTracksLog.objectPublishVersion(thumbnailURL), "none")
+        XCTAssertEqual(MakingTracksLog.objectTileZ(thumbnailURL), "none")
+
+        let sanitizerOutputs = [
+            MakingTracksLog.objectKind(imageURL),
+            MakingTracksLog.objectPublishVersion(imageURL),
+            MakingTracksLog.objectTileZ(imageURL),
+        ]
+        for output in sanitizerOutputs {
+            XCTAssertFalse(output.contains("malaysia-singapore-brunei"), output)
+            XCTAssertFalse(output.contains("795"), output)
+            XCTAssertFalse(output.contains("493"), output)
+            XCTAssertFalse(output.contains("/"), output)
+        }
+    }
+
+    func testHTTPFetchFailureDiagnosticIncludesClassifyingFields() async throws {
+        let fixtureRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LoggingPrivacyTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+        let store = DiagnosticLogStore(
+            root: fixtureRoot.appendingPathComponent("logs", isDirectory: true),
+            salt: Data("test-install-salt".utf8)
+        )
+        MakingTracksLog.configureDiagnosticLogStore(store)
+        defer { MakingTracksLog.configureDiagnosticLogStore(nil) }
+
+        LoggingPrivacyURLProtocol.reset()
+        LoggingPrivacyURLProtocol.statusCode = 404
+        defer { LoggingPrivacyURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LoggingPrivacyURLProtocol.self]
+        let fetcher = HTTPTileFetcher(configuration: configuration)
+        let url = try XCTUnwrap(URL(string: "https://tiles.making-tracks.app/malaysia-singapore-brunei/20260719T125813Z/images/10/795/493.json"))
+
+        do {
+            _ = try await fetcher.fetch(url)
+            XCTFail("fetch unexpectedly succeeded")
+        } catch TileError.httpStatus(404) {
+        } catch {
+            XCTFail("expected http 404, got \(error)")
+        }
+
+        let log = try store.snapshotLines(window: .everything).joined(separator: "\n")
+        XCTAssertTrue(log.contains("kind=image-index"), log)
+        XCTAssertTrue(log.contains("publishVersion=20260719T125813Z"), log)
+        XCTAssertTrue(log.contains("tileZ=10"), log)
+        XCTAssertTrue(log.contains("status=http-404"), log)
+        XCTAssertTrue(log.contains("object=\(store.hashObject("/malaysia-singapore-brunei/20260719T125813Z/images/10/795/493.json"))"), log)
+        XCTAssertFalse(log.contains("/malaysia-singapore-brunei/"), log)
+        XCTAssertFalse(log.contains("795/493"), log)
+    }
+
     func testOSLogUsageRoutesThroughSharedFacade() throws {
         let root = try packageRoot()
         let sourceRoots = [
@@ -296,4 +361,34 @@ final class LoggingPrivacyTests: XCTestCase {
             return values.isRegularFile == true ? url : nil
         }
     }
+}
+
+private final class LoggingPrivacyURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var statusCode = 200
+
+    static func reset() {
+        statusCode = 200
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: Self.statusCode,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data())
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
