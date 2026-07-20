@@ -1,4 +1,5 @@
 import asyncio
+import argparse
 import dataclasses
 import json
 from pathlib import Path
@@ -50,6 +51,18 @@ def test_cli_writes_reported_file_log_when_log_dir_is_configured(tmp_path, capsy
     log_text = log_path.read_text(encoding="utf-8")
     assert log_lines[0] in log_text
     assert captured.out.strip() in log_text
+
+
+def test_pipeline_log_path_sanitizes_filename_tokens(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli.stages, "_completed_at", lambda: "2026/07/20 16:00:00Z")
+    args = argparse.Namespace(region="../malaysia/singapore", stage="publish/../../images")
+
+    log_path = cli._pipeline_log_path(tmp_path, args)
+
+    assert log_path.parent == tmp_path
+    assert "/" not in log_path.name
+    assert "malaysia_singapore" in log_path.name
+    assert "publish_.._.._images" in log_path.name
 
 
 def test_cli_rejects_unknown_region_without_traceback(tmp_path, capsys):

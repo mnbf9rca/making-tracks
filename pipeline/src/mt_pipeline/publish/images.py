@@ -524,16 +524,19 @@ def _place_image_from_audited_row(
     _positive_int(row.get("height"), label="height", place_id=candidate.place_id)
     attribution = _audited_attribution(row.get("attribution"), place_id=candidate.place_id)
     image_url = row.get("image_url")
-    if image_url is not None:
-        if _https_url(image_url) is None:
-            raise AuditedImageReuseError(
-                f"audited image_url is not safe HTTPS for {candidate.place_id}"
-            )
-        if image_url != candidate.image_url:
-            raise AuditedImageReuseError(
-                f"audited image_url drift for {candidate.place_id}: "
-                f"{image_url!r} != {candidate.image_url!r}"
-            )
+    if not isinstance(image_url, str):
+        raise AuditedImageReuseError(
+            f"audited image_url is required for {candidate.place_id}"
+        )
+    if _https_url(image_url) is None:
+        raise AuditedImageReuseError(
+            f"audited image_url is not safe HTTPS for {candidate.place_id}"
+        )
+    if image_url != candidate.image_url:
+        raise AuditedImageReuseError(
+            f"audited image_url drift for {candidate.place_id}: "
+            f"{image_url!r} != {candidate.image_url!r}"
+        )
     original_path = cache_root / "raw" / f"{candidate.place_id}.source"
     if not original_path.exists():
         raise AuditedImageReuseError(
