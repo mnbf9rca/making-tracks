@@ -50,26 +50,26 @@ sanctioned and routine — see [`SECRETS.md`](SECRETS.md) §1 for both auth path
 
 ### VPS Operator Path
 
-Verified 2026-07-20 from the agent harness:
+Operator requirements:
 
-- Canonical invocation from Rob: `ssh -i ~/.ssh/id_ed25519_for_agent agent@making-tracks-dev.cynexia.net`.
+- Canonical VPS operator invocation: `ssh -i ~/.ssh/id_ed25519_for_agent agent@making-tracks-dev.cynexia.net`.
   Use the hostname, not the raw IP, for VPS operator work.
 - Sandbox-default egress is blocked: `nc 62.238.55.235 22` and `ssh ...` fail with
   `Operation not permitted` unless the command runs with escalated network execution.
 - The intended VPS operator key is `~/.ssh/id_ed25519_for_agent`, fingerprint
   `SHA256:GIxKIdcjeL3sF+TDYJ3QH02iaIq3iww95jwhiVAa8w8`.
 - Do **not** use this key for GitHub commit signing. It is authorized for the VPS `agent` account only.
-- Do **not** treat a successful default SSH connection as an agent-key receipt. With the current `Host *`
+- Do **not** treat a successful default SSH connection as an agent-key receipt. Because `Host *` sets
   `IdentityAgent`, `ssh -v -i ~/.ssh/id_ed25519_for_agent agent@making-tracks-dev.cynexia.net exit`
   authenticates with Rob's 1Password key `SHA256:1X7YuLyK1iIuA/rZoKqk2kKjQBeagTfAl+QuUv6fsnU`, not the
   on-disk agent key.
 - True agent-key verification must show the `GIxK...` fingerprint in the accepted and authenticated lines.
-  The 2026-07-20 non-interactive receipt used
+  Use
   `ssh -v -o IdentityAgent=none -o IdentitiesOnly=yes -o BatchMode=yes -i ~/.ssh/id_ed25519_for_agent agent@making-tracks-dev.cynexia.net exit`
-  and authenticated with `SHA256:GIxKIdcjeL3sF+TDYJ3QH02iaIq3iww95jwhiVAa8w8`.
+  when producing that receipt.
 - Non-interactive ssh on the VPS does not include `~/.local/bin` in `PATH`; run
   `export PATH="$HOME/.local/bin:$PATH"` before commands that need `uv`.
-- `/data` is the heavy-run volume. Keep at least 10 GB free; the 2026-07-20 probe showed 17 GB free.
+- `/data` is the heavy-run volume. Keep at least 10 GB free.
 
 ---
 
