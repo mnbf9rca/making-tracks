@@ -8,8 +8,11 @@ public enum PinPresentation: String, Sendable {
 }
 
 public struct TrackSegmentSummary: Sendable, Equatable {
+    /// Drawn connector features. Current continuity rules connect every valid consecutive visit.
     public let features: [JSONValue]
+    /// Compatibility field for pre-continuity callers. Burst connectors are no longer suppressed, so this is fixed at 0.
     public let suppressedBurstConnectorCount: Int
+    /// Count of visits participating in at least one drawable connector.
     public let connectableVisitCount: Int
 }
 
@@ -70,6 +73,9 @@ public enum FeatureEncoding {
         ])
     }
 
+    /// Encodes abstract track connector features using the current continuity rule.
+    /// `maxConnectorGap` and `burstWindow` are retained for source compatibility
+    /// with older callers and do not affect connector suppression.
     public static func trackSegmentFeatures(
         _ visits: [TrackVisit],
         maxConnectorGap: TimeInterval = TrackLayers.defaultMaxConnectorGap,
@@ -82,11 +88,18 @@ public enum FeatureEncoding {
         ).features
     }
 
+    /// Summarizes abstract track connectors using the current continuity rule:
+    /// every valid consecutive visit pair is connected. `maxConnectorGap` and
+    /// `burstWindow` are retained for source compatibility with older callers
+    /// and do not affect connector suppression.
     public static func trackSegmentSummary(
         _ visits: [TrackVisit],
         maxConnectorGap: TimeInterval = TrackLayers.defaultMaxConnectorGap,
         burstWindow: TimeInterval = TrackLayers.defaultBurstWindow
     ) -> TrackSegmentSummary {
+        // Gap and burst thresholds are retained for callers while continuity now connects every valid consecutive visit.
+        _ = maxConnectorGap
+        _ = burstWindow
         guard visits.count >= 2 else {
             return TrackSegmentSummary(
                 features: [],
@@ -95,6 +108,7 @@ public enum FeatureEncoding {
             )
         }
         var features: [JSONValue] = []
+        let suppressedBurstConnectorCount = 0
         var connectableVisitIDs = Set<Int64>()
         for (from, to) in zip(visits, visits.dropFirst()) {
             guard let gap = connectorGap(from: from, to: to),
@@ -108,7 +122,7 @@ public enum FeatureEncoding {
         }
         return TrackSegmentSummary(
             features: features,
-            suppressedBurstConnectorCount: 0,
+            suppressedBurstConnectorCount: suppressedBurstConnectorCount,
             connectableVisitCount: connectableVisitIDs.count
         )
     }

@@ -28,6 +28,7 @@ struct MakingTracksApp: App {
     private static let seedFixtureBurstTrackVisits = arguments.contains("--ui-testing-seed-burst-track-visits")
     private static let seedFixtureTrackList = arguments.contains("--ui-testing-seed-track-list")
     private static let seedFixtureMultiDayTrackList = arguments.contains("--ui-testing-seed-multiday-track-list")
+    private static let seedFixtureSpreadList = arguments.contains("--ui-testing-seed-spread-list")
     private static let simulatedLatitude = argumentValue("--ui-testing-location-latitude").flatMap(Double.init)
     private static let simulatedLongitude = argumentValue("--ui-testing-location-longitude").flatMap(Double.init)
     private static let uiTestingOfflineProgress = argumentValue("--ui-testing-offline-progress").flatMap(Double.init)
@@ -44,6 +45,7 @@ struct MakingTracksApp: App {
     private static let seedFixtureBurstTrackVisits = false
     private static let seedFixtureTrackList = false
     private static let seedFixtureMultiDayTrackList = false
+    private static let seedFixtureSpreadList = false
     private static let simulatedLatitude: Double? = nil
     private static let simulatedLongitude: Double? = nil
     private static let uiTestingOfflineProgress: Double? = nil
@@ -88,6 +90,8 @@ struct MakingTracksApp: App {
                     try database.seedUITestingMultiDayTrackList(named: "Replay week", places: fixturePlaces)
                 } else if seedFixtureTrackList {
                     try database.seedUITestingTrackList(named: "Track pair", places: fixturePlaces)
+                } else if seedFixtureSpreadList {
+                    try database.seedUITestingTrackList(named: "Spread walk", places: MapScreen.spreadFixturePlaces)
                 } else if seedFixtureBurstTrackVisits {
                     try database.seedUITestingBurstTrackVisits(fixturePlaces)
                 } else if seedFixtureTrackVisits {

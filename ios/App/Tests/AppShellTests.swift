@@ -71,9 +71,14 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(TracksCopy.summary(visible: 1, total: 3, lovedOnly: true), "1 visit for loved places · 2 hidden by filter")
     }
 
-    func testListMapModeCopyUsesThemeNameForFreshLayer() {
+    func testListMapModeCopyUsesThemeSpecificFreshPhrases() {
         XCTAssertEqual(ListMapModeCopy.freshLayerTitle(theme: .snow), "Fresh snow")
-        XCTAssertEqual(ListMapModeCopy.freshLayerTitle(theme: .definedPaper), "Defined Paper")
+        XCTAssertEqual(ListMapModeCopy.freshLayerTitle(theme: .definedPaper), "Unmarked paper")
+        XCTAssertEqual(ListMapModeCopy.freshLayerTitle(theme: .streetContrast), "Open streets")
+        XCTAssertEqual(ListMapModeCopy.freshLayerTitle(theme: .verdantKL), "Virgin forest")
+        XCTAssertFalse(MapTheme.allCandidates.contains { theme in
+            ListMapModeCopy.freshLayerTitle(theme: theme) == theme.displayName
+        })
         XCTAssertEqual(ListMapModeCopy.tracksLayerTitle, "My tracks")
     }
 
@@ -317,6 +322,41 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(cache.snapshot(throughEventIndex: 2).segmentCount, 2)
         XCTAssertEqual(cache.snapshot(throughEventIndex: -1).segmentCount, 0)
         XCTAssertEqual(cache.snapshot(throughEventIndex: 1).filteredBridgeCount, 1)
+    }
+
+    func testListMapViewportFitsAllMembersWithPadding() throws {
+        let places = [
+            MapPlace(id: "west", lat: 3.12, lon: 101.60, tier: 2, category: "museum"),
+            MapPlace(id: "east", lat: 3.20, lon: 101.78, tier: 2, category: "museum"),
+            MapPlace(id: "south", lat: 3.06, lon: 101.70, tier: 2, category: "museum"),
+            MapPlace(id: "north", lat: 3.24, lon: 101.68, tier: 2, category: "museum"),
+            MapPlace(id: "middle", lat: 3.16, lon: 101.69, tier: 2, category: "museum"),
+        ]
+
+        let viewport = try XCTUnwrap(ListMapViewport.viewport(for: places))
+
+        XCTAssertLessThan(viewport.bbox.minLon, 101.60)
+        XCTAssertGreaterThan(viewport.bbox.maxLon, 101.78)
+        XCTAssertLessThan(viewport.bbox.minLat, 3.06)
+        XCTAssertGreaterThan(viewport.bbox.maxLat, 3.24)
+        for place in places {
+            XCTAssertTrue(viewport.bbox.contains(lon: place.lon, lat: place.lat), place.id)
+        }
+    }
+
+    func testListMapViewportFitsAntimeridianMembersWithoutWorldSpan() throws {
+        let places = [
+            MapPlace(id: "west", lat: 0.0, lon: 179.8, tier: 2, category: "museum"),
+            MapPlace(id: "east", lat: 0.1, lon: -179.7, tier: 2, category: "museum"),
+            MapPlace(id: "middle", lat: -0.1, lon: -179.9, tier: 2, category: "museum"),
+        ]
+
+        let viewport = try XCTUnwrap(ListMapViewport.viewport(for: places))
+
+        XCTAssertLessThan(viewport.bbox.maxLon - viewport.bbox.minLon, 2.0)
+        for place in places {
+            XCTAssertTrue(viewport.bbox.contains(lon: place.lon, lat: place.lat), place.id)
+        }
     }
 
     func testListMapPinPresentationTracksModeUsesFullStrengthPins() {
