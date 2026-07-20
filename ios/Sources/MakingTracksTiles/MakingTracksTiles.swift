@@ -70,6 +70,24 @@ public struct TileCoordinate: Codable, Sendable, Hashable {
     }
 }
 
+public struct ViewportFlowMetrics: Sendable, Equatable {
+    public let region: String
+    public let zoom: Int
+    public let tileZ: Int
+    public let covered: Int
+    public let requests: Int
+    public let blocked: Int
+
+    public init(region: String, zoom: Int, tileZ: Int, covered: Int, requests: Int, blocked: Int) {
+        self.region = region
+        self.zoom = zoom
+        self.tileZ = tileZ
+        self.covered = covered
+        self.requests = requests
+        self.blocked = blocked
+    }
+}
+
 public struct Attribution: Codable, Sendable, Equatable {
     public let source: String
     public let license: String
@@ -5950,6 +5968,10 @@ public actor TileClient {
         return viewportPlaces.values.map(\.mapPlace).sorted(by: { $0.id < $1.id })
     }
 
+    public func viewportFlowMetrics(in bbox: BBox, zoom: Int) -> ViewportFlowMetrics? {
+        makeViewportFlowMetrics(in: bbox, zoom: zoom)
+    }
+
     public func isPresentInCurrentTiles(_ placeID: String) async -> Bool {
         loadedPlaces[placeID] != nil
     }
@@ -6271,6 +6293,32 @@ public actor TileClient {
             ($0.coordinate.x, $0.coordinate.y, $0.region, $0.publishVersion) <
                 ($1.coordinate.x, $1.coordinate.y, $1.region, $1.publishVersion)
         })
+    }
+
+    private func makeViewportFlowMetrics(in bbox: BBox, zoom: Int) -> ViewportFlowMetrics? {
+        let coveredCoordinates = Set(TileCoverage.tiles(for: bbox))
+        let offlineResolution: OfflinePackResolution
+        do {
+            offlineResolution = try offlineStore?.installedTileResolution(intersecting: bbox)
+                ?? OfflinePackResolution(tiles: [], quarantinedPacks: [])
+        } catch {
+            return nil
+        }
+        let blockedCoordinates = offlineResolution.blockedCoordinates.intersection(coveredCoordinates)
+        let requests = tileRequests(
+            installedTiles: offlineResolution.tiles,
+            fallback: pin,
+            coveredCoordinates: coveredCoordinates,
+            blockedFallbackCoordinates: blockedCoordinates
+        )
+        return ViewportFlowMetrics(
+            region: region,
+            zoom: zoom,
+            tileZ: requests.first?.coordinate.z ?? pin?.manifest.tileZ ?? 10,
+            covered: coveredCoordinates.count,
+            requests: requests.count,
+            blocked: blockedCoordinates.count
+        )
     }
 
     private func mergedAttribution(from requests: [PublishTileRequest]) -> [Attribution] {

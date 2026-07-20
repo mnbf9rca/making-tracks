@@ -14,14 +14,16 @@ final class LoggingPrivacyTests: XCTestCase {
 
     func testPrivacyLintAllowsRuledSessionFlowFields() {
         let allowedSource = #"""
-        func logFlow(place: PlaceRef, bbox: BBox, tile: TileCoordinate) {
+        func logFlow(place: PlaceRef) {
             MakingTracksLog.file(category: .flow, level: .info, "place viewed", fields: [
                 .object("placeID", place.placeID),
                 .object("placeName", place.name),
-                .public("viewportBbox", bbox.logDescription),
-                .public("viewportCenter", bbox.center.logDescription),
-                .public("tileX", "\(tile.x)"),
-                .public("tileY", "\(tile.y)")
+                .public("region", "malaysia-singapore-brunei"),
+                .public("zoom", "14"),
+                .public("tileZ", "10"),
+                .public("covered", "12"),
+                .public("requests", "9"),
+                .public("blocked", "3")
             ])
         }
         """#
@@ -53,6 +55,31 @@ final class LoggingPrivacyTests: XCTestCase {
                 #"""
                 MakingTracksLog.file(category: .flow, level: .info, "search", fields: [
                     .object("queryText", searchQuery)
+                ])
+                """#
+            ),
+            (
+                "viewport center coordinate",
+                #"""
+                MakingTracksLog.file(category: .flow, level: .info, "viewport", fields: [
+                    .public("viewportCenter", bbox.center.logDescription)
+                ])
+                """#
+            ),
+            (
+                "viewport bbox coordinate",
+                #"""
+                MakingTracksLog.file(category: .flow, level: .info, "viewport", fields: [
+                    .public("viewportBbox", bbox.logDescription)
+                ])
+                """#
+            ),
+            (
+                "absolute tile coordinate",
+                #"""
+                MakingTracksLog.file(category: .flow, level: .info, "viewport", fields: [
+                    .public("tileX", "\(tile.x)"),
+                    .public("tileY", "\(tile.y)")
                 ])
                 """#
             ),
@@ -256,6 +283,8 @@ final class LoggingPrivacyTests: XCTestCase {
             #"UIDevice\s*\.\s*current\s*\.\s*name"#, #"(?i)\bdeviceName\b"#,
             #"(?i)\bgps[A-Za-z]*(lat|lon|latitude|longitude)\b"#,
             #"(?i)\blocation\s*\.\s*coordinate\s*\.\s*(latitude|longitude)"#,
+            #"(?i)\bviewport(Center|Bbox)\b"#, #"(?i)\bbbox\b"#, #"(?i)\bcenter\b"#,
+            #"(?i)\btile[XY]\b"#,
             #"(?i)\braw(Search)?Query\b"#, #"(?i)\bsearchQuery\b"#, #"(?i)\bqueryText\b"#,
             #"(?i)absoluteString"#, #"(?i)path:"#, #"(?i)url:"#, #"URL\("#,
             #"\\\(url(?:[,)]|\s)"#,

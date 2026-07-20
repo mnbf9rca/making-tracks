@@ -60,8 +60,12 @@ final class DiagnosticLogExportTests: XCTestCase {
             ]
         )
         MakingTracksLog.viewportFlowEvent(
-            bbox: BBox(minLon: 100.282, minLat: 5.440, maxLon: 100.306, maxLat: 5.464),
+            region: "malaysia-singapore-brunei",
             zoom: 14,
+            tileZ: 10,
+            covered: 12,
+            requests: 9,
+            blocked: 3,
             source: "pan"
         )
 
@@ -69,7 +73,9 @@ final class DiagnosticLogExportTests: XCTestCase {
 
         XCTAssertTrue(log.contains("flow info place viewed placeID=mt1_00000000000000000000000001 placeName=Cheong Fatt Tze Mansion source=card"), log)
         XCTAssertTrue(log.contains("flow info verdict changed placeID=mt1_00000000000000000000000001 action=love state=on"), log)
-        XCTAssertTrue(log.contains("flow info viewport browsed bbox=100.28200,5.44000,100.30600,5.46400 center=100.29400,5.45200 zoom=14 source=pan"), log)
+        XCTAssertTrue(log.contains("flow info viewport browsed region=malaysia-singapore-brunei zoom=14 tileZ=10 covered=12 requests=9 blocked=3 source=pan"), log)
+        XCTAssertFalse(log.contains("bbox="), log)
+        XCTAssertFalse(log.contains("center="), log)
     }
 
     func testExportDoesNotCreateDecodeTable() throws {
@@ -163,11 +169,11 @@ final class DiagnosticLogExportTests: XCTestCase {
         XCTAssertGreaterThan(artifact.byteCount, 0)
     }
 
-    func testExportAllowsRuledFlowPlaceAndViewportContent() throws {
+    func testExportAllowsRuledFlowPlaceAndViewportScaleContent() throws {
         let fixture = try makeFixture()
         let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
         try store.appendRawLineForTesting("2026-07-19T12:58:13Z flow info place viewed placeID=mt1_00000000000000000000000001 placeName=Blue Mansion")
-        try store.appendRawLineForTesting("2026-07-19T12:58:14Z flow info viewport browsed bbox=100.28200,5.44000,100.30600,5.46400 center=100.29400,5.45200 zoom=14")
+        try store.appendRawLineForTesting("2026-07-19T12:58:14Z flow info viewport browsed region=malaysia-singapore-brunei zoom=14 tileZ=10 covered=12 requests=9 blocked=3")
 
         let artifact = try DiagnosticLogExporter(
             store: store,
@@ -178,7 +184,10 @@ final class DiagnosticLogExportTests: XCTestCase {
 
         XCTAssertTrue(log.contains("placeID=mt1_00000000000000000000000001"))
         XCTAssertTrue(log.contains("placeName=Blue Mansion"))
-        XCTAssertTrue(log.contains("bbox=100.28200,5.44000,100.30600,5.46400"))
+        XCTAssertTrue(log.contains("region=malaysia-singapore-brunei"))
+        XCTAssertTrue(log.contains("covered=12"))
+        XCTAssertFalse(log.contains("bbox="))
+        XCTAssertFalse(log.contains("center="))
     }
 
     func testExportScrubFailsClosedForFixedExcludedClasses() throws {
@@ -187,6 +196,9 @@ final class DiagnosticLogExportTests: XCTestCase {
             "2026-07-19T12:58:13Z flow info device deviceName=Rob's iPhone",
             "2026-07-19T12:58:13Z flow info located gpsLatitude=51.50740 gpsLongitude=-0.12780",
             "2026-07-19T12:58:13Z flow info search queryText=private medical search",
+            "2026-07-19T12:58:13Z flow info viewport browsed viewportCenter=100.29400,5.45200",
+            "2026-07-19T12:58:13Z flow info viewport browsed bbox=100.28200,5.44000,100.30600,5.46400",
+            "2026-07-19T12:58:13Z flow info viewport browsed tileX=795 tileY=493",
         ]
 
         for line in excludedLines {

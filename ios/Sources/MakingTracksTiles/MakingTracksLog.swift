@@ -99,13 +99,24 @@ public enum MakingTracksLog {
         file(category: .flow, level: .info, message, fields: fields)
     }
 
-    public static func viewportFlowEvent(bbox: BBox, zoom: Int, source: String) {
+    public static func viewportFlowEvent(
+        region: String,
+        zoom: Int,
+        tileZ: Int,
+        covered: Int,
+        requests: Int,
+        blocked: Int,
+        source: String
+    ) {
         flowEvent(
             "viewport browsed",
             fields: [
-                .public("bbox", formattedBBox(bbox)),
-                .public("center", formattedCoordinate(lon: bbox.center.lon, lat: bbox.center.lat)),
+                .object("region", region),
                 .public("zoom", String(zoom)),
+                .public("tileZ", String(tileZ)),
+                .public("covered", String(covered)),
+                .public("requests", String(requests)),
+                .public("blocked", String(blocked)),
                 .public("source", source),
             ]
         )
@@ -114,23 +125,6 @@ public enum MakingTracksLog {
     private static func publicObjectPathComponents(_ url: URL) -> [String] {
         guard url.host == "tiles.making-tracks.app" else { return [] }
         return url.path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
-    }
-
-    private static func formattedBBox(_ bbox: BBox) -> String {
-        [
-            bbox.minLon,
-            bbox.minLat,
-            bbox.maxLon,
-            bbox.maxLat,
-        ].map { formattedDecimal($0) }.joined(separator: ",")
-    }
-
-    private static func formattedCoordinate(lon: Double, lat: Double) -> String {
-        "\(formattedDecimal(lon)),\(formattedDecimal(lat))"
-    }
-
-    private static func formattedDecimal(_ value: Double) -> String {
-        String(format: "%.5f", value)
     }
 
     private static func isPublishVersion(_ value: String) -> Bool {

@@ -2984,7 +2984,17 @@ struct MapScreen: View {
             let featureCount = next.count
             let hasRegionalBasemap = nextRegionPMTilesURL != nil
             MakingTracksLog.resolution.info("viewport refresh finished request=\(requestID, privacy: .public) state=\(stateLabel, privacy: .public) features=\(featureCount, privacy: .public) regionalBasemap=\(hasRegionalBasemap, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
-            MakingTracksLog.viewportFlowEvent(bbox: bbox, zoom: zoom, source: "camera-idle")
+            if let flowMetrics = viewportFeatures.flowMetrics {
+                MakingTracksLog.viewportFlowEvent(
+                    region: flowMetrics.region,
+                    zoom: flowMetrics.zoom,
+                    tileZ: flowMetrics.tileZ,
+                    covered: flowMetrics.covered,
+                    requests: flowMetrics.requests,
+                    blocked: flowMetrics.blocked,
+                    source: "camera-idle"
+                )
+            }
         }
     }
 
@@ -7142,6 +7152,7 @@ final class MapScreenModel {
         let display: [(MapPlace, PinState)]
         let nearbyPrompt: [(MapPlace, PinState)]
         let sourceCount: Int
+        let flowMetrics: ViewportFlowMetrics?
     }
 
     func viewportFeatures(in bbox: BBox, zoom: Int, allowManifestRefresh: Bool = true) async -> ViewportFeatures {
@@ -7161,13 +7172,15 @@ final class MapScreenModel {
             return ViewportFeatures(
                 display: PinFeatureFilter.discoveryFeatures(sourceFeatures, showHidden: showHiddenPlaces, zoom: zoom),
                 nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures),
-                sourceCount: sourceFeatures.count
+                sourceCount: sourceFeatures.count,
+                flowMetrics: nil
             )
         }
         guard let client = await selectClient(for: bbox, allowManifestRefresh: allowManifestRefresh) else {
-            return ViewportFeatures(display: [], nearbyPrompt: [], sourceCount: 0)
+            return ViewportFeatures(display: [], nearbyPrompt: [], sourceCount: 0, flowMetrics: nil)
         }
         let places = await client.places(inViewport: bbox, zoom: zoom, allowManifestRefresh: allowManifestRefresh)
+        let flowMetrics = await client.viewportFlowMetrics(in: bbox, zoom: zoom)
         let ids = places.map(\.id)
         let states = await states(for: Set(ids))
         let sourceFeatures = places.map { ($0, states[$0.id] ?? PinState(saved: false, visit: .none)) }
@@ -7179,7 +7192,8 @@ final class MapScreenModel {
                 allowSparseTierFallback: true
             ),
             nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures),
-            sourceCount: sourceFeatures.count
+            sourceCount: sourceFeatures.count,
+            flowMetrics: flowMetrics
         )
     }
 
