@@ -5,18 +5,22 @@ Operational facts agents need and cannot derive from the tree. Secrets handling 
 
 ---
 
-## 1. SSH and commit signing route through 1Password
+## 1. Raw SSH and commit signing route through 1Password
 
 On Rob's Mac, `~/.ssh/config` sets `IdentityAgent` to the 1Password agent socket under `Host *`. A plain
-`ssh` command can authenticate through it even when an `-i` identity file is present; verify with `ssh -v`
-before assuming which key was used. GitHub push and commit signing also go through 1Password.
+non-VPS `ssh` diagnostic can authenticate through it even when an `-i` identity file is present; verify
+with `ssh -v` before assuming which key was used. GitHub push and commit signing also go through
+1Password.
 
 The launchd `SSH_AUTH_SOCK` agent holds no identities.
 
-**Consequence: they fail together.** When the Mac locks, 1Password locks and keychain passphrase release
-stops, so VPS ssh, GitHub push and commit signing all break at once with
+**Consequence: raw SSH and GitHub signing fail together.** When the Mac locks, 1Password locks and keychain passphrase release
+stops, so raw SSH attempts, GitHub push and commit signing all break at once with
 `communication with agent failed` or `Permission denied (publickey)`. That is expected behaviour, not an
 incident.
+
+VPS operator work does not use raw `ssh`. Use the wrapper in **VPS Operator Path**; it disables the
+1Password agent path and pins the VPS service identity.
 
 ### Do not diagnose a lock from the symptom alone
 
@@ -33,7 +37,8 @@ symptom as a locked Mac. Probe before concluding — see
 
 ### When the signer is unavailable
 
-- Lost VPS monitoring is lost **visibility**, not a failed run. Detached runs continue.
+- VPS operator access through the wrapper is separate from GitHub commit signing. Lost monitoring from any
+  non-wrapper path is lost **visibility**, not a failed run. Detached runs continue.
 - Sanctioned degraded mode: unsigned commits on feature branches via `git -c commit.gpgsign=false`, declared
   in the PR body as "commits unsigned (signer unavailable)". Pushes queue until unlock.
 - **Never sign with the VPS agent key** (`~/.ssh/id_ed25519_for_agent`). GitHub does not recognize it, so it
@@ -52,23 +57,30 @@ sanctioned and routine — see [`SECRETS.md`](SECRETS.md) §1 for both auth path
 
 Operator requirements:
 
-- Canonical VPS operator invocation: `ssh -i ~/.ssh/id_ed25519_for_agent agent@making-tracks-dev.cynexia.net`.
-  Use the hostname, not the raw IP, for VPS operator work.
-- Sandbox-default egress is blocked: `nc 62.238.55.235 22` and `ssh ...` fail with
+- Required VPS operator entry point: `/Users/rob/.local/bin/making-tracks-vps`. The connectivity receipt is
+  `/Users/rob/.local/bin/making-tracks-vps making-tracks-dev.cynexia.net true`. Pass the remote command
+  after the hostname for operator work. Use the hostname, not the raw IP, for VPS operator work.
+- The wrapper also accepts `62.238.55.235` for host-resolution diagnostics. Do not use the raw IP for normal
+  operator work.
+- The wrapper is the only sanctioned VPS entry point for agents. It allowlists the VPS host, selects the
+  `agent` account, disables the 1Password `IdentityAgent`, forces `IdentitiesOnly`, disables agent
+  forwarding, and uses the on-disk VPS service key.
+- Sandbox-default egress is blocked: `nc 62.238.55.235 22`, raw `ssh ...`, and the wrapper's underlying SSH
+  connection fail with
   `Operation not permitted` unless the command runs with escalated network execution.
 - The intended VPS operator key is `~/.ssh/id_ed25519_for_agent`, fingerprint
   `SHA256:GIxKIdcjeL3sF+TDYJ3QH02iaIq3iww95jwhiVAa8w8`.
 - Do **not** use this key for GitHub commit signing. It is authorized for the VPS `agent` account only.
 - Do **not** treat a successful default SSH connection as an agent-key receipt. Because `Host *` sets
-  `IdentityAgent`, `ssh -v -i ~/.ssh/id_ed25519_for_agent agent@making-tracks-dev.cynexia.net exit`
+  `IdentityAgent`, a raw default `ssh -v -i ~/.ssh/id_ed25519_for_agent agent@making-tracks-dev.cynexia.net exit`
   authenticates with Rob's 1Password key `SHA256:1X7YuLyK1iIuA/rZoKqk2kKjQBeagTfAl+QuUv6fsnU`, not the
   on-disk agent key.
-- True agent-key verification must show the `GIxK...` fingerprint in the accepted and authenticated lines.
-  Use
-  `ssh -v -o IdentityAgent=none -o IdentitiesOnly=yes -o BatchMode=yes -i ~/.ssh/id_ed25519_for_agent agent@making-tracks-dev.cynexia.net exit`
-  when producing that receipt.
-- Non-interactive ssh on the VPS does not include `~/.local/bin` in `PATH`; run
-  `export PATH="$HOME/.local/bin:$PATH"` before commands that need `uv`.
+- True agent-key verification must show the `GIxK...` fingerprint in the accepted and authenticated lines;
+  the wrapper is built to produce that path. When a fingerprint receipt is needed, run the wrapper with SSH
+  verbosity added inside the wrapper by a human, or have a human produce the receipt with the same wrapper
+  options. Do not bypass the wrapper from an agent to produce it.
+- Non-interactive commands on the VPS do not include `~/.local/bin` in `PATH`; include
+  `export PATH="$HOME/.local/bin:$PATH"` in the same remote command before commands that need `uv`.
 - `/data` is the heavy-run volume. Keep at least 10 GB free.
 
 ---
