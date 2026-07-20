@@ -1,0 +1,61 @@
+# Making Tracks VPS access. The wrapper is outside agent-writable roots and
+# hardcodes the only permitted account, identity, and destinations.
+prefix_rule(
+    pattern = ["/Users/rob/.local/bin/making-tracks-vps"],
+    decision = "allow",
+    justification = "Dedicated Making Tracks VPS operator",
+    match = [
+        "/Users/rob/.local/bin/making-tracks-vps making-tracks-dev.cynexia.net true",
+        "/Users/rob/.local/bin/making-tracks-vps 62.238.55.235 true",
+    ],
+)
+
+for pattern in [
+    ["ssh"],
+    ["/usr/bin/ssh"],
+    ["env", "ssh"],
+    ["/usr/bin/env", "ssh"],
+]:
+    prefix_rule(
+        pattern = pattern,
+        decision = "forbidden",
+        justification = "Use /Users/rob/.local/bin/making-tracks-vps",
+    )
+
+# The designated simulator has one entry point. Routine operations run under
+# its lock; erase remains approval-bound because it is destructive.
+prefix_rule(
+    pattern = ["./scripts/sim-lock.sh", "xcodebuild"],
+    decision = "allow",
+    justification = "Run Making Tracks Xcode builds under the simulator lock",
+)
+
+prefix_rule(
+    pattern = ["./scripts/sim-lock.sh", "./scripts/release-gate.sh"],
+    decision = "allow",
+    justification = "Run the Making Tracks release gate under the simulator lock",
+)
+
+for verb in [
+    "list",
+    "bootstatus",
+    "launch",
+    "terminate",
+    "install",
+    "uninstall",
+    "io",
+    "get_app_container",
+    "spawn",
+]:
+    prefix_rule(
+        pattern = ["./scripts/sim-lock.sh", "xcrun", "simctl", verb],
+        decision = "allow",
+        justification = "Run routine simulator operations under the Making Tracks lock",
+    )
+
+for operation in ["--status", "--boot", "--shutdown"]:
+    prefix_rule(
+        pattern = ["./scripts/sim-lock.sh", operation],
+        decision = "allow",
+        justification = "Use the guarded Making Tracks simulator operation",
+    )
