@@ -6536,7 +6536,12 @@ final class MapScreenModel {
         let states = await states(for: Set(ids))
         let sourceFeatures = places.map { ($0, states[$0.id] ?? PinState(saved: false, visit: .none)) }
         return ViewportFeatures(
-            display: PinFeatureFilter.discoveryFeatures(sourceFeatures, showHidden: showHiddenPlaces, zoom: zoom),
+            display: PinFeatureFilter.discoveryFeatures(
+                sourceFeatures,
+                showHidden: showHiddenPlaces,
+                zoom: zoom,
+                allowSparseTierFallback: true
+            ),
             nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures),
             sourceCount: sourceFeatures.count
         )

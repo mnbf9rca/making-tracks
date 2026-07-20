@@ -26,13 +26,27 @@ public enum PinFeatureFilter {
     public static func discoveryFeatures(
         _ features: [(MapPlace, PinState)],
         showHidden: Bool,
-        zoom: Int? = nil
+        zoom: Int? = nil,
+        allowSparseTierFallback: Bool = false
     ) -> [(MapPlace, PinState)] {
         let maximumTier = maximumVisibleTier(at: zoom)
-        return features.filter { _, state in
+        let hiddenFiltered = features.filter { _, state in
             showHidden || !state.hidden
-        }.filter { place, state in
+        }
+        let tierFiltered = hiddenFiltered.filter { place, _ in
             place.tier <= maximumTier
+        }
+        guard allowSparseTierFallback, tierFiltered.isEmpty, hiddenFiltered.isEmpty == false else {
+            return tierFiltered
+        }
+        guard let zoom, zoom >= cityZoom else {
+            return tierFiltered
+        }
+        guard let fallbackTier = hiddenFiltered.map(\.0.tier).min() else {
+            return tierFiltered
+        }
+        return hiddenFiltered.filter { place, _ in
+            place.tier == fallbackTier
         }
     }
 }
