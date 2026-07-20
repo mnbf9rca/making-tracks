@@ -973,9 +973,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let cityApp = launch(reset: true, pinDiagnostics: true, densePins: true, startupViewport: "kl")
         XCTAssertTrue(cityApp.otherElements["map.surface"].waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: cityApp))
-        XCTAssertTrue(waitForSourceFeatureCount(10, in: cityApp))
+        XCTAssertTrue(waitForSourceFeatureCount(24, in: cityApp))
         XCTAssertTrue(waitForClusterCount(atLeast: 1, in: cityApp))
-        XCTAssertEqual(clusteredPlaceCount(in: cityApp), 10)
+        XCTAssertEqual(clusteredPlaceCount(in: cityApp), 24)
         let cluster = cityApp.buttons.matching(identifierPrefix: "map.cluster.").firstMatch
         attachScreenshot(named: "pin-clustering-city")
         cluster.tap()
@@ -1172,7 +1172,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
     }
 
-    func testLocateMePromptsForNearbyTierHiddenByCityZoomThinning() {
+    func testLocateMePromptsForNearbyPinWithAllDenseTiersVisible() {
         let app = launch(
             reset: true,
             simulatedLocationAuthorization: true,
@@ -1185,8 +1185,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
-        XCTAssertTrue(waitForSourceFeatureCount(10, in: app))
-        XCTAssertFalse(app.staticTexts["map.fixture-pin.mt1_D000000000000000000000000H"].exists)
+        XCTAssertTrue(waitForSourceFeatureCount(24, in: app))
+        XCTAssertTrue(app.staticTexts["map.fixture-pin.mt1_D000000000000000000000000H"].exists)
 
         app.buttons["map.locate-me"].tap()
 
