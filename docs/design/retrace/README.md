@@ -7,13 +7,14 @@ Rob's accepted direction:
 
 - Retrace opens as a map view, not a hidden list state.
 - Visited places remain individual pins.
-- Scrubbing time makes dashed connection arcs glide across the map.
+- Scrubbing time makes dotted connection arcs glide across the map.
 - Pins appear with a pulse as the scrubber reaches each visit.
 - The slider must read as a real time slider, with Google Photos-style temporal
   affordance rather than a generic progress bar.
 - The slider must scale to years of visits: fast scrubbing moves coarsely across
   years, then slowing zooms the timeline for fine positioning around nearby
-  visits.
+  visits. Fast scrub advances through many visits per step and slow scrub advances
+  through fewer; neither mode skips the arc drawing or pin arrival animation.
 - Retrace can be filtered by list or lists and by place type. A filtered view is
   a shorter continuous track over the filtered visit set.
 - The entry point must be obvious from the map.
@@ -40,15 +41,17 @@ Validation notes:
   counts.
 - Retrace does not show unreached or hidden places as faded tappable pins, and
   it does not expose hidden-place counts.
-- The dashed connection line is scaffolding: it stays behind the places, avoids
-  the default navigation accent, and never dominates coloured pins.
+- The dotted connection line is scaffolding: it stays behind the places, avoids
+  the default navigation accent, stays bold/clear enough to read as one nice arc,
+  and never dominates coloured pins.
 - Same-day reordering is represented as a continuous track.
 - Autoplay advances one visit at a time with a uniform cadence and equal dwell
   per item. It is not derived from `visited_at` gaps or real-world temporal
   spacing.
-- Manual scrubbing is velocity-sensitive: coarse movement jumps across a
-  year-scale event axis; slowing down expands the local visit cluster for precise
-  selection without changing the event order.
+- Manual scrubbing is velocity-sensitive: coarse movement advances through many
+  visits on a year-scale event axis; slowing down expands the local visit cluster
+  for precise selection without changing the event order. In both modes, reached
+  paths still draw and pins still animate; fast scrub must not teleport state.
 - Timeline zoom changes events per pixel, never the spacing rule: adjacent
   visits remain equally spaced whether they are minutes or months apart.
 - Under filters, the timeline is re-indexed to only the filtered visit set:

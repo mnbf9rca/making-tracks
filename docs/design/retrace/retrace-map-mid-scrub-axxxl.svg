@@ -18,8 +18,8 @@
       .label { font-family: Helvetica; letter-spacing: 0; }
       .road { fill: none; stroke: #fffdf7; stroke-width: 10; stroke-linecap: round; stroke-linejoin: round; }
       .road-line { fill: none; stroke: #d9ddd3; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
-      .visited-arc { fill: none; stroke: #2d8c83; stroke-width: 4.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 10; opacity: .58; }
-      .active-arc { fill: none; stroke: #db5344; stroke-width: 4.8; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 10; opacity: .72; }
+      .visited-arc { fill: none; stroke: #2d8c83; stroke-width: 6.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 9; opacity: .76; }
+      .active-arc { fill: none; stroke: #db5344; stroke-width: 7.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 9; opacity: .88; }
       .tick { stroke: #6f7c74; stroke-width: 2; stroke-linecap: round; opacity: .78; }
     </style>
   </defs>
@@ -70,7 +70,7 @@
     <text class="label" x="96" y="650" style="font-size:19px;font-weight:760">14:20</text>
     <text class="label" x="96" y="684" style="font-size:27px;font-weight:790">Old market</text>
     <text class="label" x="96" y="718" style="font-size:27px;font-weight:790">arcade</text>
-    <text class="label" x="34" y="746" style="font-size:17px;font-weight:720" fill="#64716a">Drag to retrace - visit 4 of 11</text>
+    <text class="label" x="34" y="746" style="font-size:17px;font-weight:720" fill="#64716a">Visit 4 of 11</text>
     <line x1="42" y1="766" x2="348" y2="766" stroke="#d8ded7" stroke-width="11" stroke-linecap="round"/>
     <line x1="42" y1="766" x2="182" y2="766" stroke="#2d8c83" stroke-width="11" stroke-linecap="round"/>
     <line x1="182" y1="766" x2="224" y2="766" stroke="#db5344" stroke-width="11" stroke-linecap="round"/>

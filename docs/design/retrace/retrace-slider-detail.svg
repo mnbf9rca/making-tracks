@@ -28,7 +28,7 @@
     <path d="M55 171l15 10-15 10z" fill="#f8efe3"/>
     <text class="label" x="94" y="174" style="font-size:12px;font-weight:700">2019</text>
     <text class="label" x="94" y="198" style="font-size:22px;font-weight:790">Six years, 168 visits</text>
-    <text class="label small" x="94" y="220" fill="#627069">Fast movement crosses the full span</text>
+    <text class="label small" x="94" y="220" fill="#627069">Many visits animate per step</text>
 
     <line x1="46" y1="262" x2="344" y2="262" stroke="#d9dfd8" stroke-width="12" stroke-linecap="round"/>
     <line x1="46" y1="262" x2="183" y2="262" stroke="#2d8c83" stroke-width="12" stroke-linecap="round"/>
@@ -58,7 +58,7 @@
     <path d="M54 439l17 10-17 10z" fill="#f8efe3"/>
     <text class="label" x="94" y="442" style="font-size:12px;font-weight:700">14:20</text>
     <text class="label" x="94" y="466" style="font-size:23px;font-weight:790">Old market arcade</text>
-    <text class="label small" x="94" y="488" fill="#627069">Pin appears at this visit</text>
+    <text class="label small" x="94" y="488" fill="#627069">Few visits animate per step</text>
 
     <line x1="46" y1="536" x2="344" y2="536" stroke="#d9dfd8" stroke-width="12" stroke-linecap="round"/>
     <line x1="46" y1="536" x2="184" y2="536" stroke="#2d8c83" stroke-width="12" stroke-linecap="round"/>
