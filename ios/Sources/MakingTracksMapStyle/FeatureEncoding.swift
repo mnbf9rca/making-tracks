@@ -66,6 +66,40 @@ public enum FeatureEncoding {
         ])
     }
 
+    public static func clusterFeature(_ cluster: PinCluster) -> JSONValue {
+        .object([
+            "type": .string("Feature"),
+            "geometry": .object([
+                "type": .string("Point"),
+                "coordinates": .array([.double(cluster.lon), .double(cluster.lat)]),
+            ]),
+            "properties": .object([
+                "cluster": .bool(true),
+                "cluster_id": .string(cluster.id),
+                "point_count": .double(Double(cluster.count)),
+                "point_count_abbreviated": .string(abbreviatedCount(cluster.count)),
+            ]),
+        ])
+    }
+
+    public static func renderFeature(
+        _ renderFeature: PinRenderFeature,
+        pinPresentation: PinPresentation = .discovery,
+        trackReplayPulsePlaceIDs: Set<String> = []
+    ) -> JSONValue {
+        switch renderFeature {
+        case let .cluster(cluster):
+            return clusterFeature(cluster)
+        case let .singleton(place, state):
+            return feature(
+                place,
+                state,
+                pinPresentation: pinPresentation,
+                trackReplayPulse: trackReplayPulsePlaceIDs.contains(place.id)
+            )
+        }
+    }
+
     public static func featureCollection(_ features: [JSONValue]) -> JSONValue {
         .object([
             "type": .string("FeatureCollection"),
@@ -212,5 +246,12 @@ public enum FeatureEncoding {
             && visit.lon.isFinite
             && (-90.0...90.0).contains(visit.lat)
             && (-180.0...180.0).contains(visit.lon)
+    }
+
+    private static func abbreviatedCount(_ count: Int) -> String {
+        if count >= 1_000 {
+            return "\(count / 1_000)k"
+        }
+        return "\(count)"
     }
 }

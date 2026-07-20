@@ -301,7 +301,9 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                 on: map,
                 features: features,
                 pinPresentation: pinPresentation,
-                trackReplayPulsePlaceIDs: trackReplayPulsePlaceIDs
+                trackReplayPulsePlaceIDs: trackReplayPulsePlaceIDs,
+                visibleCategories: visibleCategories,
+                pinSize: PinSize(multiplier: pinSizeMultiplier)
             )
             context.coordinator.updateTrackSource(on: map, snapshot: trackSourceSnapshot)
         }
@@ -338,6 +340,34 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             }
         }
 
+        private final class ClusterAccessibilityElement: UIAccessibilityElement {
+            let clusterID: String
+            weak var viewContainer: UIView?
+            var activate: ((String) -> Void)?
+
+            init(clusterID: String, container: MapAccessibilityContainerView) {
+                self.clusterID = clusterID
+                viewContainer = container
+                super.init(accessibilityContainer: container)
+            }
+
+            func configure(cluster: PinCluster, frame: CGRect) {
+                accessibilityIdentifier = "map.cluster.\(cluster.id)"
+                accessibilityLabel = "\(cluster.count) places"
+                accessibilityHint = "Zooms in to expand the cluster"
+                accessibilityTraits = [.button]
+                accessibilityFrameInContainerSpace = frame
+                if let viewContainer {
+                    accessibilityFrame = UIAccessibility.convertToScreenCoordinates(frame, in: viewContainer)
+                }
+            }
+
+            override func accessibilityActivate() -> Bool {
+                activate?(clusterID)
+                return true
+            }
+        }
+
         var onCameraIdle: (BBox, Int) -> Void
         var onUserPanned: () -> Void
         var onTapPlace: (String) -> Void
@@ -368,9 +398,11 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var pendingTrackReplayPulsePlaceIDs: Set<String> = []
         var pendingTrackSourceSnapshot = TrackSourceSnapshot.empty
         var renderedFeatures: [(MapPlace, PinState)] = []
+        var renderedClusters: [String: PinCluster] = [:]
         var renderedTrackSignature: String?
         var pinAccessibilityNames: [String: String] = [:]
         private var pinAccessibilityElements: [String: PinAccessibilityElement] = [:]
+        private var clusterAccessibilityElements: [String: ClusterAccessibilityElement] = [:]
 #if DEBUG
         private var needsProjectedDiagnosticsRenderSample = false
 #endif
@@ -506,7 +538,9 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             }
             let pinSize = PinSize(multiplier: desiredPinSizeMultiplier)
 
+            addClusterLayers(source: source, style: style, pinSize: pinSize, theme: MapTheme.named(currentThemeID))
             let circle = MLNCircleStyleLayer(identifier: "pins-circle", source: source)
+            circle.predicate = NSPredicate(mglJSONObject: PinLayers.singlePinFilter().foundationObject)
             circle.circleOpacity = NSExpression(mglJSONObject: PinLayers.fadeOpacityExpression().foundationObject)
             circle.circleColor = NSExpression(mglJSONObject: PinLayers.pinColorExpression().foundationObject)
             circle.circleRadius = Self.mapExpression(PinLayers.trackReplayPulseExpression(base: pinSize.circleRadiusExpression))
@@ -526,7 +560,9 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                 on: mapView,
                 features: pendingFeatures,
                 pinPresentation: pendingPinPresentation,
-                trackReplayPulsePlaceIDs: pendingTrackReplayPulsePlaceIDs
+                trackReplayPulsePlaceIDs: pendingTrackReplayPulsePlaceIDs,
+                visibleCategories: desiredVisibleCategories,
+                pinSize: pinSize
             )
             renderedTrackSignature = nil
             updateTrackSource(on: mapView, snapshot: pendingTrackSourceSnapshot)
@@ -553,6 +589,14 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             if reason.contains(.gesturePan) || reason.contains(.gestureRotate) {
                 onUserPanned()
             }
+            updateSource(
+                on: mapView,
+                features: pendingFeatures,
+                pinPresentation: pendingPinPresentation,
+                trackReplayPulsePlaceIDs: pendingTrackReplayPulsePlaceIDs,
+                visibleCategories: desiredVisibleCategories,
+                pinSize: currentPinSize ?? PinSize(multiplier: desiredPinSizeMultiplier)
+            )
             updatePinAccessibilityElements(on: mapView)
             reportViewport(mapView)
         }
@@ -561,26 +605,39 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             on map: MLNMapView,
             features: [(MapPlace, PinState)],
             pinPresentation: PinPresentation,
-            trackReplayPulsePlaceIDs: Set<String>
+            trackReplayPulsePlaceIDs: Set<String>,
+            visibleCategories: Set<String>?,
+            pinSize: PinSize
         ) {
+            pendingFeatures = features
+            pendingPinPresentation = pinPresentation
+            pendingTrackReplayPulsePlaceIDs = trackReplayPulsePlaceIDs
             guard let style = map.style else {
                 renderedFeatures = []
+                renderedClusters = [:]
                 debugReportMapUpdateStatus("source no-style features:\(features.count)")
                 updatePinAccessibilityElements(on: map)
                 return
             }
             guard let source = style.source(withIdentifier: PinLayers.sourceID) as? MLNShapeSource else {
                 renderedFeatures = []
+                renderedClusters = [:]
                 debugReportMapUpdateStatus("source no-pin-source features:\(features.count)")
                 updatePinAccessibilityElements(on: map)
                 return
             }
-            let collection = FeatureEncoding.featureCollection(features.map {
-                FeatureEncoding.feature(
-                    $0.0,
-                    $0.1,
+            let snapshot = renderSnapshot(
+                features: features,
+                pinPresentation: pinPresentation,
+                visibleCategories: visibleCategories,
+                pinSize: pinSize,
+                zoom: Int(floor(map.zoomLevel))
+            )
+            let collection = FeatureEncoding.featureCollection(snapshot.renderFeatures.map {
+                FeatureEncoding.renderFeature(
+                    $0,
                     pinPresentation: pinPresentation,
-                    trackReplayPulse: trackReplayPulsePlaceIDs.contains($0.0.id)
+                    trackReplayPulsePlaceIDs: trackReplayPulsePlaceIDs
                 )
             })
             guard let json = try? collection.jsonString(),
@@ -590,7 +647,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                 return
             }
             source.shape = shape
-            renderedFeatures = features
+            renderedFeatures = snapshot.singletons
+            renderedClusters = Dictionary(uniqueKeysWithValues: snapshot.clusters.map { ($0.id, $0) })
             debugReportMapUpdateStatus("source applied features:\(features.count)")
             updatePinAccessibilityElements(on: map)
             if !features.isEmpty {
@@ -608,6 +666,25 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             }
         }
 
+        private func renderSnapshot(
+            features: [(MapPlace, PinState)],
+            pinPresentation: PinPresentation,
+            visibleCategories: Set<String>?,
+            pinSize: PinSize,
+            zoom: Int
+        ) -> PinRenderSnapshot {
+            let maximumClusterZoom = pinPresentation == .trackReplay ? -1 : PinLayers.maximumClusterZoom
+            return PinClusterer.renderFeatures(
+                features,
+                options: PinClusterer.Options(
+                    zoom: zoom,
+                    radiusPoints: PinLayers.clusterRadius(pinSize: pinSize),
+                    maximumClusterZoom: maximumClusterZoom,
+                    visibleCategories: visibleCategories
+                )
+            )
+        }
+
         func updateLayerFilters(on map: MLNMapView, visibleCategories: Set<String>?) {
             guard currentVisibleCategories != visibleCategories,
                   let style = map.style
@@ -615,8 +692,10 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             currentVisibleCategories = visibleCategories
 
             let categoryFilter = PinLayers.categoryVisibilityFilter(visibleCategories: visibleCategories)
-            setPredicate(PinLayers.combinedFilter([categoryFilter]), on: "pins-circle", in: style)
-            setPredicate(PinLayers.combinedFilter([categoryFilter]), on: "pins-icon", in: style)
+            setPredicate(PinLayers.clusterFilter(), on: "pin-clusters-circle", in: style)
+            setPredicate(PinLayers.clusterFilter(), on: "pin-clusters-count", in: style)
+            setPredicate(PinLayers.combinedFilter([PinLayers.singlePinFilter(), categoryFilter]), on: "pins-circle", in: style)
+            setPredicate(PinLayers.combinedFilter([PinLayers.singlePinFilter(), categoryFilter]), on: "pins-icon", in: style)
             setPredicate(PinLayers.combinedFilter([categoryFilter, PinLayers.bookmarkFilter()]), on: "pins-bookmark", in: style)
             setPredicate(PinLayers.combinedFilter([categoryFilter, PinLayers.heartFilter()]), on: "pins-heart", in: style)
             updatePinAccessibilityElements(on: map)
@@ -649,6 +728,12 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                   let style = map.style
             else { return }
             currentPinSize = pinSize
+            if let clusterCircle = style.layer(withIdentifier: "pin-clusters-circle") as? MLNCircleStyleLayer {
+                clusterCircle.circleRadius = NSExpression(forConstantValue: PinLayers.clusterBubbleRadius(pinSize: pinSize))
+            }
+            if let clusterCount = style.layer(withIdentifier: "pin-clusters-count") as? MLNSymbolStyleLayer {
+                clusterCount.textFontSize = NSExpression(forConstantValue: PinLayers.clusterCountTextSize(pinSize: pinSize))
+            }
             if let circle = style.layer(withIdentifier: "pins-circle") as? MLNCircleStyleLayer {
                 circle.circleRadius = Self.mapExpression(PinLayers.trackReplayPulseExpression(base: pinSize.circleRadiusExpression))
             }
@@ -677,7 +762,9 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
 
             let pinSize = currentPinSize ?? PinSize(multiplier: desiredPinSizeMultiplier)
             let targetSide = Self.pinAccessibilityTargetSide(pinSize)
+            let clusterTargetSide = max(targetSide, CGFloat((PinLayers.clusterBubbleRadius(pinSize: pinSize) * 2) + 12))
             var visibleIDs = Set<String>()
+            var visibleClusterIDs = Set<String>()
             let candidates = renderedFeatures
                 .filter { feature in Self.isCategoryVisuallyExposed(feature.0.category, visibleCategories: currentVisibleCategories) }
                 .compactMap { place, state -> (String, MapPinAccessibilityContent, CGRect)? in
@@ -698,6 +785,29 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                     return (place.id, content, frame)
                 }
             var accessibilityElements: [Any] = []
+            for cluster in renderedClusters.values.sorted(by: { $0.id < $1.id }) {
+                let coordinate = CLLocationCoordinate2D(latitude: cluster.lat, longitude: cluster.lon)
+                let point = map.convert(coordinate, toPointTo: container)
+                let frame = CGRect(
+                    x: point.x - clusterTargetSide / 2,
+                    y: point.y - clusterTargetSide / 2,
+                    width: clusterTargetSide,
+                    height: clusterTargetSide
+                )
+                guard frame.intersects(container.bounds) else { continue }
+                visibleClusterIDs.insert(cluster.id)
+                let element = clusterAccessibilityElements[cluster.id] ?? {
+                    let next = ClusterAccessibilityElement(clusterID: cluster.id, container: container)
+                    next.activate = { [weak self, weak map] clusterID in
+                        guard let self, let map else { return }
+                        self.zoomToCluster(clusterID, on: map)
+                    }
+                    clusterAccessibilityElements[cluster.id] = next
+                    return next
+                }()
+                element.configure(cluster: cluster, frame: frame)
+                accessibilityElements.append(element)
+            }
             for (placeID, content, frame) in candidates {
                 visibleIDs.insert(placeID)
                 let element = pinAccessibilityElements[placeID] ?? {
@@ -713,6 +823,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             }
             accessibilityElements.append(container.surfaceAccessibilityView)
             pinAccessibilityElements = pinAccessibilityElements.filter { visibleIDs.contains($0.key) }
+            clusterAccessibilityElements = clusterAccessibilityElements.filter { visibleClusterIDs.contains($0.key) }
             container.accessibilityElements = accessibilityElements
         }
 
@@ -732,10 +843,71 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             if let id = hits.lazy.compactMap({ $0.attribute(forKey: "place_id") as? String }).first {
                 debugReportTapStatus("tap hit \(id) at \(Int(point.x)),\(Int(point.y))")
                 onTapPlace(id)
-            } else {
-                debugReportTapStatus("tap empty at \(Int(point.x)),\(Int(point.y))")
-                onTapEmpty()
+                return
             }
+            if let clusterID = clusterHitID(at: point, on: map),
+               zoomToCluster(clusterID, on: map) {
+                debugReportTapStatus("tap cluster \(clusterID) at \(Int(point.x)),\(Int(point.y))")
+                return
+            }
+            debugReportTapStatus("tap empty at \(Int(point.x)),\(Int(point.y))")
+            onTapEmpty()
+        }
+
+        private func clusterHitID(at point: CGPoint, on map: MLNMapView) -> String? {
+            let clusterHits = map.visibleFeatures(at: point, styleLayerIdentifiers: ["pin-clusters-circle", "pin-clusters-count"])
+            if let clusterID = clusterHits.lazy.compactMap({ $0.attribute(forKey: "cluster_id") as? String }).first {
+                return clusterID
+            }
+            let pinSize = currentPinSize ?? PinSize(multiplier: desiredPinSizeMultiplier)
+            let targetRadius = max(
+                Self.pinAccessibilityTargetSide(pinSize),
+                CGFloat((PinLayers.clusterBubbleRadius(pinSize: pinSize) * 2) + 12)
+            ) / 2
+            return renderedClusters.values
+                .compactMap { cluster -> (String, CGFloat)? in
+                    let coordinate = CLLocationCoordinate2D(latitude: cluster.lat, longitude: cluster.lon)
+                    let clusterPoint = map.convert(coordinate, toPointTo: map)
+                    let distance = hypot(clusterPoint.x - point.x, clusterPoint.y - point.y)
+                    guard distance <= targetRadius else { return nil }
+                    return (cluster.id, distance)
+                }
+                .sorted { lhs, rhs in
+                    if lhs.1 == rhs.1 {
+                        return lhs.0 < rhs.0
+                    }
+                    return lhs.1 < rhs.1
+                }
+                .first?.0
+        }
+
+        @discardableResult
+        private func zoomToCluster(_ clusterID: String, on map: MLNMapView) -> Bool {
+            guard let cluster = renderedClusters[clusterID] else { return false }
+            let center = CLLocationCoordinate2D(latitude: cluster.lat, longitude: cluster.lon)
+            let padding = UIEdgeInsets(top: 96, left: 48, bottom: 132, right: 48)
+            if cluster.minLat == cluster.maxLat, cluster.minLon == cluster.maxLon {
+                map.setCenter(center, zoomLevel: Double(PinFeatureFilter.streetZoom), animated: false)
+            } else {
+                let bounds = MLNCoordinateBounds(
+                    sw: CLLocationCoordinate2D(latitude: cluster.minLat, longitude: cluster.minLon),
+                    ne: CLLocationCoordinate2D(latitude: cluster.maxLat, longitude: cluster.maxLon)
+                )
+                map.setVisibleCoordinateBounds(bounds, edgePadding: padding, animated: false, completionHandler: nil)
+                if Int(floor(map.zoomLevel)) <= PinLayers.maximumClusterZoom {
+                    map.setCenter(center, zoomLevel: Double(PinLayers.maximumClusterZoom + 1), animated: false)
+                }
+            }
+            updateSource(
+                on: map,
+                features: pendingFeatures,
+                pinPresentation: pendingPinPresentation,
+                trackReplayPulsePlaceIDs: pendingTrackReplayPulsePlaceIDs,
+                visibleCategories: desiredVisibleCategories,
+                pinSize: currentPinSize ?? PinSize(multiplier: desiredPinSizeMultiplier)
+            )
+            UIAccessibility.post(notification: .layoutChanged, argument: container?.surfaceAccessibilityView ?? map)
+            return true
         }
 
         private func reportViewport(_ map: MLNMapView) {
@@ -751,12 +923,35 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
 
         private func addCategoryIcon(source: MLNShapeSource, style: MLNStyle, pinSize: PinSize) {
             let layer = MLNSymbolStyleLayer(identifier: "pins-icon", source: source)
+            layer.predicate = NSPredicate(mglJSONObject: PinLayers.singlePinFilter().foundationObject)
             layer.iconImageName = NSExpression(mglJSONObject: PinLayers.categoryIconExpression().foundationObject)
             layer.iconAllowsOverlap = NSExpression(forConstantValue: true)
             layer.iconIgnoresPlacement = NSExpression(forConstantValue: true)
             layer.iconScale = Self.mapExpression(PinLayers.trackReplayPulseExpression(base: pinSize.categoryIconScaleExpression))
             layer.iconOpacity = NSExpression(mglJSONObject: PinLayers.fadeOpacityExpression().foundationObject)
             style.addLayer(layer)
+        }
+
+        private func addClusterLayers(source: MLNShapeSource, style: MLNStyle, pinSize: PinSize, theme: MapTheme) {
+            let circle = MLNCircleStyleLayer(identifier: "pin-clusters-circle", source: source)
+            circle.predicate = NSPredicate(mglJSONObject: PinLayers.clusterFilter().foundationObject)
+            circle.circleColor = NSExpression(forConstantValue: MapThemeColor.uiColor(hex: PinLayers.pinColor))
+            circle.circleOpacity = NSExpression(forConstantValue: 0.92)
+            circle.circleRadius = NSExpression(forConstantValue: PinLayers.clusterBubbleRadius(pinSize: pinSize))
+            circle.circleStrokeColor = NSExpression(forConstantValue: MapThemeColor.uiColor(hex: theme.background))
+            circle.circleStrokeWidth = NSExpression(forConstantValue: 1.5)
+            style.addLayer(circle)
+
+            let count = MLNSymbolStyleLayer(identifier: "pin-clusters-count", source: source)
+            count.predicate = NSPredicate(mglJSONObject: PinLayers.clusterFilter().foundationObject)
+            count.text = NSExpression(forKeyPath: "point_count_abbreviated")
+            count.textFontSize = NSExpression(forConstantValue: PinLayers.clusterCountTextSize(pinSize: pinSize))
+            count.textColor = NSExpression(forConstantValue: UIColor.white)
+            count.textHaloColor = NSExpression(forConstantValue: MapThemeColor.uiColor(hex: theme.labelHalo))
+            count.textHaloWidth = NSExpression(forConstantValue: 0.4)
+            count.textAllowsOverlap = NSExpression(forConstantValue: true)
+            count.textIgnoresPlacement = NSExpression(forConstantValue: true)
+            style.addLayer(count)
         }
 
         private func addTrackLine(style: MLNStyle) {

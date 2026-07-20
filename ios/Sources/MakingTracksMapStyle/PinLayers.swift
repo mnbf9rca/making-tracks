@@ -9,6 +9,12 @@ public enum PinLayers {
     public static let heartOffset: JSONValue = .array([.double(-baseBadgeOffset), .double(-baseBadgeOffset)])
     // Tuned from device-representative fixture screenshots so category glyphs stay legible.
     public static let baseCircleRadius = 6.5
+    // Tunable fallback-clustering radius: scaled with pin size so larger pins also get wider decluttering.
+    public static let baseClusterRadiusPoints = 44.0
+    public static let minimumClusterPointCount = 2
+    public static let maximumClusterZoom = PinFeatureFilter.streetZoom - 1
+    public static let baseClusterBubbleRadius = 14.0
+    public static let baseClusterCountTextSize = 12.0
     public static let baseCategoryIconScale = 0.72
     public static let baseBadgeIconScale = 1.0
     public static let trackReplayPulseProperty = "track_replay_pulse"
@@ -113,12 +119,20 @@ public enum PinLayers {
         .array([.string("=="), .array([.string("get"), .string("hidden")]), .bool(true)])
     }
 
+    public static func clusterFilter() -> JSONValue {
+        .array([.string("=="), .array([.string("get"), .string("cluster")]), .bool(true)])
+    }
+
+    public static func singlePinFilter() -> JSONValue {
+        .array([.string("!"), clusterFilter()])
+    }
+
     public static func bookmarkFilter() -> JSONValue {
-        .array([.string("all"), notHiddenFilter(), .array([.string("=="), .array([.string("get"), .string("saved")]), .bool(true)])])
+        .array([.string("all"), singlePinFilter(), notHiddenFilter(), .array([.string("=="), .array([.string("get"), .string("saved")]), .bool(true)])])
     }
 
     public static func heartFilter() -> JSONValue {
-        .array([.string("all"), notHiddenFilter(), .array([.string("=="), .array([.string("get"), .string("visit")]), .string("loved")])])
+        .array([.string("all"), singlePinFilter(), notHiddenFilter(), .array([.string("=="), .array([.string("get"), .string("visit")]), .string("loved")])])
     }
 
     public static func categoryIconExpression() -> JSONValue {
@@ -170,12 +184,51 @@ public enum PinLayers {
         return .array([.string("all")] + activeFilters)
     }
 
+    public static func clusterRadius(pinSize: PinSize) -> Double {
+        baseClusterRadiusPoints * pinSize.multiplier / PinSize.defaultMultiplier
+    }
+
+    public static func clusterBubbleRadius(pinSize: PinSize) -> Double {
+        baseClusterBubbleRadius * pinSize.multiplier / PinSize.defaultMultiplier
+    }
+
+    public static func clusterCountTextSize(pinSize: PinSize) -> Double {
+        baseClusterCountTextSize * pinSize.multiplier / PinSize.defaultMultiplier
+    }
+
     public static func pinLayers(pinSize: PinSize = PinSize()) -> [JSONValue] {
         [
+            .object([
+                "id": .string("pin-clusters-circle"),
+                "type": .string("circle"),
+                "source": .string(sourceID),
+                "filter": clusterFilter(),
+                "paint": .object([
+                    "circle-color": .string(pinColor),
+                    "circle-opacity": .double(0.92),
+                    "circle-radius": .double(clusterBubbleRadius(pinSize: pinSize)),
+                ]),
+            ]),
+            .object([
+                "id": .string("pin-clusters-count"),
+                "type": .string("symbol"),
+                "source": .string(sourceID),
+                "filter": clusterFilter(),
+                "layout": .object([
+                    "text-field": .array([.string("get"), .string("point_count_abbreviated")]),
+                    "text-size": .double(clusterCountTextSize(pinSize: pinSize)),
+                    "text-allow-overlap": .bool(true),
+                    "text-ignore-placement": .bool(true),
+                ]),
+                "paint": .object([
+                    "text-color": .string("#FFFFFF"),
+                ]),
+            ]),
             .object([
                 "id": .string("pins-circle"),
                 "type": .string("circle"),
                 "source": .string(sourceID),
+                "filter": singlePinFilter(),
                 "paint": .object([
                     "circle-color": pinColorExpression(),
                     "circle-opacity": fadeOpacityExpression(),
@@ -186,6 +239,7 @@ public enum PinLayers {
                 "id": .string("pins-icon"),
                 "type": .string("symbol"),
                 "source": .string(sourceID),
+                "filter": singlePinFilter(),
                 "paint": .object([
                     "icon-opacity": fadeOpacityExpression(),
                 ]),
