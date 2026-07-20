@@ -73,11 +73,7 @@ struct MakingTracksApp: App {
         let bundleIdentifier = Bundle.main.bundleIdentifier ?? "app.making-tracks.MakingTracks"
         do {
             let root = try DiagnosticLogStore.defaultRoot(bundleIdentifier: bundleIdentifier)
-            let salt = try DiagnosticLogSalt.loadOrCreate(
-                service: bundleIdentifier,
-                account: "diagnostic-log-hash-salt"
-            )
-            MakingTracksLog.configureDiagnosticLogStore(DiagnosticLogStore(root: root, salt: salt))
+            MakingTracksLog.configureDiagnosticLogStore(DiagnosticLogStore(root: root))
         } catch {
             MakingTracksLog.configureDiagnosticLogStore(nil)
         }

@@ -1,9 +1,8 @@
-import CryptoKit
 import Foundation
-import Security
 
 public enum DiagnosticLogCategory: String, Sendable {
     case downloads
+    case flow
     case gc
     case install
     case resolution
@@ -80,7 +79,7 @@ public struct DiagnosticLogArtifact: Equatable, Sendable {
     public var archiveURL: URL
     public var summaryURL: URL
     public var logURL: URL
-    public var decodeTableURL: URL
+    public var byteCount: Int
     public var preview: String
 }
 
@@ -88,67 +87,18 @@ public enum DiagnosticLogExportError: Error, Equatable {
     case privacyScrubFailed
 }
 
-public enum DiagnosticLogSalt {
-    public static func loadOrCreate(service: String, account: String, length: Int = 32) throws -> Data {
-        precondition(length > 0)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var result: CFTypeRef?
-        let readStatus = SecItemCopyMatching(query as CFDictionary, &result)
-        if readStatus == errSecSuccess, let data = result as? Data {
-            return data
-        }
-        if readStatus != errSecItemNotFound {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(readStatus))
-        }
-
-        var bytes = Data(count: length)
-        let randomStatus = bytes.withUnsafeMutableBytes { buffer in
-            guard let baseAddress = buffer.baseAddress else { return errSecParam }
-            return SecRandomCopyBytes(kSecRandomDefault, length, baseAddress)
-        }
-        guard randomStatus == errSecSuccess else {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(randomStatus))
-        }
-
-        let addQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-            kSecValueData as String: bytes,
-        ]
-        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
-        guard addStatus == errSecSuccess || addStatus == errSecDuplicateItem else {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(addStatus))
-        }
-        if addStatus == errSecDuplicateItem {
-            return try loadOrCreate(service: service, account: account, length: length)
-        }
-        return bytes
-    }
-}
-
 public final class DiagnosticLogStore {
     public let root: URL
-    private let salt: Data
     private let now: @Sendable () -> Date
     private let fileManager: FileManager
     private let lock = NSLock()
 
     public init(
         root: URL,
-        salt: Data,
         now: @escaping @Sendable () -> Date = Date.init,
         fileManager: FileManager = .default
     ) {
         self.root = root
-        self.salt = salt
         self.now = now
         self.fileManager = fileManager
     }
@@ -177,20 +127,12 @@ public final class DiagnosticLogStore {
             case let .public(name, value):
                 return "\(name)=\(Self.sanitizePublicValue(value))"
             case let .object(name, value):
-                return "\(name)=\(hashObject(value))"
+                return "\(name)=\(Self.sanitizePublicValue(value))"
             }
         }
         let line = ([timestamp, category.rawValue, level.rawValue, message] + renderedFields)
             .joined(separator: " ")
         try appendRawLine(line)
-    }
-
-    public func hashObject(_ value: String) -> String {
-        var data = Data()
-        data.append(salt)
-        data.append(Data(value.utf8))
-        let digest = SHA256.hash(data: data)
-        return "h:" + digest.map { String(format: "%02x", $0) }.joined().prefix(16)
     }
 
     public func deleteDiagnostics(stagingRoot: URL) throws {
@@ -278,54 +220,53 @@ public final class DiagnosticLogStore {
 public struct DiagnosticLogExporter {
     private let store: DiagnosticLogStore
     private let metadata: DiagnosticLogMetadata
-    private let knownObjects: [String]
     private let fileManager: FileManager
+    private let exportedAt: @Sendable () -> Date
 
     public init(
         store: DiagnosticLogStore,
         metadata: DiagnosticLogMetadata,
-        knownObjects: [String],
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        exportedAt: @escaping @Sendable () -> Date = Date.init
     ) {
         self.store = store
         self.metadata = metadata
-        self.knownObjects = knownObjects
         self.fileManager = fileManager
+        self.exportedAt = exportedAt
     }
 
     public func prepare(window: DiagnosticLogWindow, stagingRoot: URL) throws -> DiagnosticLogArtifact {
         if fileManager.fileExists(atPath: stagingRoot.path) {
             try fileManager.removeItem(at: stagingRoot)
         }
-        let directory = stagingRoot.appendingPathComponent("MakingTracksDiagnostics", isDirectory: true)
+        let exportTimestamp = Self.filenameTimestampFormatter().string(from: exportedAt())
+        let directory = stagingRoot.appendingPathComponent("MakingTracksDiagnostics-\(exportTimestamp)", isDirectory: true)
         do {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
             try DiagnosticLogStore.setDiagnosticsResourceValuesForExporter(directory)
 
-            let summaryURL = directory.appendingPathComponent("summary.txt")
-            let logURL = directory.appendingPathComponent("diagnostic-log.txt")
-            let decodeTableURL = directory.appendingPathComponent("decode-table.tsv")
+            let summaryURL = directory.appendingPathComponent("summary-\(exportTimestamp).txt")
+            let logURL = directory.appendingPathComponent("diagnostic-log-\(exportTimestamp).txt")
 
             let summary = renderSummary()
             let log = try store.snapshotLines(window: window).joined(separator: "\n") + "\n"
-            let decodeTable = renderDecodeTable()
-            let scrubText = [summary, log, decodeTable].joined(separator: "\n")
+            let scrubText = [summary, log].joined(separator: "\n")
             guard Self.passesPrivacyScrub(scrubText) else {
                 throw DiagnosticLogExportError.privacyScrubFailed
             }
 
             try summary.write(to: summaryURL, atomically: true, encoding: .utf8)
             try log.write(to: logURL, atomically: true, encoding: .utf8)
-            try decodeTable.write(to: decodeTableURL, atomically: true, encoding: .utf8)
-            let archiveURL = try makeArchive(directory: directory, stagingRoot: stagingRoot)
-            let preview = renderPreview(summary: summary, log: log, decodeTable: decodeTable)
+            let archiveURL = try makeArchive(directory: directory, stagingRoot: stagingRoot, exportTimestamp: exportTimestamp)
+            let byteCount = try archiveByteCount(archiveURL)
+            let preview = renderPreview(summary: summary, log: log)
 
             return DiagnosticLogArtifact(
                 directoryURL: directory,
                 archiveURL: archiveURL,
                 summaryURL: summaryURL,
                 logURL: logURL,
-                decodeTableURL: decodeTableURL,
+                byteCount: byteCount,
                 preview: preview
             )
         } catch {
@@ -336,8 +277,8 @@ public struct DiagnosticLogExporter {
         }
     }
 
-    private func makeArchive(directory: URL, stagingRoot: URL) throws -> URL {
-        let destination = stagingRoot.appendingPathComponent("MakingTracksDiagnostics.zip", isDirectory: false)
+    private func makeArchive(directory: URL, stagingRoot: URL, exportTimestamp: String) throws -> URL {
+        let destination = stagingRoot.appendingPathComponent("MakingTracksDiagnostics-\(exportTimestamp).zip", isDirectory: false)
         if fileManager.fileExists(atPath: destination.path) {
             try fileManager.removeItem(at: destination)
         }
@@ -363,6 +304,12 @@ public struct DiagnosticLogExporter {
         return destination
     }
 
+    private func archiveByteCount(_ archiveURL: URL) throws -> Int {
+        let attributes = try fileManager.attributesOfItem(atPath: archiveURL.path)
+        guard let size = attributes[.size] as? NSNumber else { return 0 }
+        return max(0, size.intValue)
+    }
+
     private func renderSummary() -> String {
         var lines = [
             "Making Tracks diagnostics",
@@ -373,39 +320,46 @@ public struct DiagnosticLogExporter {
         lines.append(contentsOf: metadata.installedPacks.map {
             "pack=\($0.id) publish=\($0.publishVersion) state=\($0.state)"
         })
-        lines.append("not-included=places-viewed,saved,loved,hidden,searches,lists,location,viewport,device-name")
+        lines.append("included=app-version,device-model,installed-packs,session-flow,object-urls,error-codes,timings")
+        lines.append("not-included=device-name,exact-location,search-wording")
         return lines.joined(separator: "\n") + "\n"
     }
 
-    private func renderDecodeTable() -> String {
-        var lines = ["hash\tplaintext"]
-        let values = Set(knownObjects + metadata.installedPacks.flatMap { [$0.id, "\($0.id)/\($0.publishVersion)"] })
-        lines.append(contentsOf: values.sorted().map { "\(store.hashObject($0))\t\($0)" })
-        return lines.joined(separator: "\n") + "\n"
-    }
-
-    private func renderPreview(summary: String, log: String, decodeTable: String) -> String {
+    private func renderPreview(summary: String, log: String) -> String {
         [
             "metadata:",
             summary.trimmingCharacters(in: .whitespacesAndNewlines),
             "log:",
             log.trimmingCharacters(in: .whitespacesAndNewlines),
-            "decode-table:",
-            decodeTable.trimmingCharacters(in: .whitespacesAndNewlines),
         ].joined(separator: "\n")
     }
 
     private static func passesPrivacyScrub(_ text: String) -> Bool {
         let forbiddenPatterns = [
-            #"\bmt[0-9a-zA-Z_]{20,}\b"#,
-            #"[-+]?\d{1,3}\.\d{4,}"#,
-            #"(?i)\bplace[_-]?id\b"#,
-            #"(?i)\blat(?:itude)?\b"#,
-            #"(?i)\blon(?:gitude)?\b"#,
+            #"(?i)\bdeviceName\b"#,
+            #"UIDevice\s*\.\s*current\s*\.\s*name"#,
+            #"(?i)\bgps[A-Za-z]*(lat|lon|latitude|longitude)\b"#,
+            #"(?i)\blocation\s*\.\s*coordinate\s*\.\s*(latitude|longitude)"#,
+            #"(?i)\bviewport(Center|Bbox)\b"#,
+            #"(?i)\bbbox\b"#,
+            #"(?i)\bcenter\b"#,
+            #"(?i)\btile[XY]\b"#,
+            #"(?i)\braw(Search)?Query\b"#,
+            #"(?i)\bsearchQuery\b"#,
+            #"(?i)\bqueryText\b"#,
         ]
         return forbiddenPatterns.allSatisfy { pattern in
             text.range(of: pattern, options: .regularExpression) == nil
         }
+    }
+
+    private static func filenameTimestampFormatter() -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        return formatter
     }
 }
 

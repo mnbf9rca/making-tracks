@@ -7,8 +7,86 @@ final class LoggingPrivacyTests: XCTestCase {
         let source = try sourceFile("Sources/MakingTracksTiles/MakingTracksLog.swift")
 
         XCTAssertTrue(source.contains(#"static let subsystem = "app.making-tracks""#))
-        for category in ["downloads", "gc", "install", "resolution", "startup"] {
+        for category in ["downloads", "flow", "gc", "install", "resolution", "startup"] {
             XCTAssertTrue(source.contains(#"Logger(subsystem: subsystem, category: "\#(category)")"#), category)
+        }
+    }
+
+    func testPrivacyLintAllowsRuledSessionFlowFields() {
+        let allowedSource = #"""
+        func logFlow(place: PlaceRef) {
+            MakingTracksLog.file(category: .flow, level: .info, "place viewed", fields: [
+                .object("placeID", place.placeID),
+                .object("placeName", place.name),
+                .public("region", "malaysia-singapore-brunei"),
+                .public("zoom", "14"),
+                .public("tileZ", "10"),
+                .public("covered", "12"),
+                .public("requests", "9"),
+                .public("blocked", "3")
+            ])
+        }
+        """#
+
+        XCTAssertTrue(privacyLintFindings(in: allowedSource).isEmpty)
+    }
+
+    func testPrivacyLintRejectsFixedExcludedClassesInFileSinkFields() {
+        let unsafeCases = [
+            (
+                "device name",
+                #"""
+                MakingTracksLog.file(category: .flow, level: .info, "device", fields: [
+                    .object("deviceName", UIDevice.current.name)
+                ])
+                """#
+            ),
+            (
+                "precise GPS coordinate",
+                #"""
+                MakingTracksLog.file(category: .flow, level: .info, "located", fields: [
+                    .public("gpsLatitude", "\(location.coordinate.latitude)"),
+                    .public("gpsLongitude", "\(location.coordinate.longitude)")
+                ])
+                """#
+            ),
+            (
+                "raw search query",
+                #"""
+                MakingTracksLog.file(category: .flow, level: .info, "search", fields: [
+                    .object("queryText", searchQuery)
+                ])
+                """#
+            ),
+            (
+                "viewport center coordinate",
+                #"""
+                MakingTracksLog.file(category: .flow, level: .info, "viewport", fields: [
+                    .public("viewportCenter", bbox.center.logDescription)
+                ])
+                """#
+            ),
+            (
+                "viewport bbox coordinate",
+                #"""
+                MakingTracksLog.file(category: .flow, level: .info, "viewport", fields: [
+                    .public("viewportBbox", bbox.logDescription)
+                ])
+                """#
+            ),
+            (
+                "absolute tile coordinate",
+                #"""
+                MakingTracksLog.file(category: .flow, level: .info, "viewport", fields: [
+                    .public("tileX", "\(tile.x)"),
+                    .public("tileY", "\(tile.y)")
+                ])
+                """#
+            ),
+        ]
+
+        for (label, source) in unsafeCases {
+            XCTAssertFalse(privacyLintFindings(in: source).isEmpty, label)
         }
     }
 
@@ -52,19 +130,19 @@ final class LoggingPrivacyTests: XCTestCase {
     func testPrivacyLintRejectsRepresentativeBypasses() {
         let unsafeLines = [
             #"MakingTracksLog.downloads.info("raw=\(url)")"#,
-            #"MakingTracksLog.downloads.info("place=\(place.name, privacy: .public)")"#,
-            #"MakingTracksLog.downloads.info("center=\(centerLatitude, privacy: .public)")"#,
+            #"MakingTracksLog.downloads.info("device=\(UIDevice.current.name, privacy: .public)")"#,
+            #"MakingTracksLog.downloads.info("gps=\(location.coordinate.latitude, privacy: .public)")"#,
             #"MakingTracksLog.downloads.info("detail=\(prebuilt)")"#,
         ]
         let forbiddenPatterns = [
-            #"(?i)latitude"#,
-            #"(?i)\bplace\."#,
+            #"UIDevice\s*\.\s*current\s*\.\s*name"#,
+            #"(?i)\blocation\s*\.\s*coordinate\s*\.\s*(latitude|longitude)"#,
             #"\\\(url(?:[,)]|\s)"#,
         ]
 
         XCTAssertFalse(logLineHasExplicitPrivacyAnnotations(unsafeLines[0]))
-        XCTAssertTrue(unsafeLines[1].range(of: forbiddenPatterns[1], options: .regularExpression) != nil)
-        XCTAssertTrue(unsafeLines[2].range(of: forbiddenPatterns[0], options: .regularExpression) != nil)
+        XCTAssertTrue(unsafeLines[1].range(of: forbiddenPatterns[0], options: .regularExpression) != nil)
+        XCTAssertTrue(unsafeLines[2].range(of: forbiddenPatterns[1], options: .regularExpression) != nil)
         XCTAssertFalse(logLineHasExplicitPrivacyAnnotations(unsafeLines[3]))
     }
 
@@ -95,6 +173,34 @@ final class LoggingPrivacyTests: XCTestCase {
             XCTAssertFalse(output.contains("lat"), output)
             XCTAssertFalse(output.contains("private/path"), output)
             XCTAssertFalse(output.contains("?"), output)
+        }
+    }
+
+    func testLoggingSanitizersClassifySidecarObjectsWithoutRawPaths() throws {
+        let imageURL = try XCTUnwrap(URL(string: "https://tiles.making-tracks.app/malaysia-singapore-brunei/20260719T125813Z/images/10/795/493.json"))
+        let descriptionURL = try XCTUnwrap(URL(string: "https://tiles.making-tracks.app/malaysia-singapore-brunei/20260719T125813Z/descriptions/10/795/493.json"))
+        let thumbnailURL = try XCTUnwrap(URL(string: "https://tiles.making-tracks.app/thumbs/ab/abcdef.webp"))
+        let searchURL = try XCTUnwrap(URL(string: "https://tiles.making-tracks.app/malaysia-singapore-brunei/20260719T125813Z/search/compact.json"))
+
+        XCTAssertEqual(MakingTracksLog.objectKind(imageURL), "image-index")
+        XCTAssertEqual(MakingTracksLog.objectKind(descriptionURL), "description-index")
+        XCTAssertEqual(MakingTracksLog.objectKind(thumbnailURL), "thumbnail")
+        XCTAssertEqual(MakingTracksLog.objectKind(searchURL), "search-compact")
+        XCTAssertEqual(MakingTracksLog.objectPublishVersion(imageURL), "20260719T125813Z")
+        XCTAssertEqual(MakingTracksLog.objectTileZ(imageURL), "10")
+        XCTAssertEqual(MakingTracksLog.objectPublishVersion(thumbnailURL), "none")
+        XCTAssertEqual(MakingTracksLog.objectTileZ(thumbnailURL), "none")
+
+        let sanitizerOutputs = [
+            MakingTracksLog.objectKind(imageURL),
+            MakingTracksLog.objectPublishVersion(imageURL),
+            MakingTracksLog.objectTileZ(imageURL),
+        ]
+        for output in sanitizerOutputs {
+            XCTAssertFalse(output.contains("malaysia-singapore-brunei"), output)
+            XCTAssertFalse(output.contains("795"), output)
+            XCTAssertFalse(output.contains("493"), output)
+            XCTAssertFalse(output.contains("/"), output)
         }
     }
 
@@ -131,6 +237,38 @@ final class LoggingPrivacyTests: XCTestCase {
         XCTAssertTrue(workflow.contains("swift test --filter LoggingPrivacyTests"))
     }
 
+    func testMapScreenEmitsRuledSessionFlowEvents() throws {
+        let source = try String(
+            contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+
+        for expected in [
+            #"MakingTracksLog.flowEvent("screen opened""#,
+            #"MakingTracksLog.flowEvent("sheet opened""#,
+            #"MakingTracksLog.flowEvent("place tapped""#,
+            #"MakingTracksLog.flowEvent("place viewed""#,
+            #"MakingTracksLog.flowEvent("verdict changed""#,
+            #"MakingTracksLog.viewportFlowEvent("#,
+        ] {
+            XCTAssertTrue(source.contains(expected), expected)
+        }
+    }
+
+    func testDiagnosticsConsentCopyMatchesFlowDisclosure() throws {
+        let source = try String(
+            contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("This file records what you did in the app and how it responded"))
+        XCTAssertTrue(source.contains("Your app version and device model; the places and actions in your session"))
+        XCTAssertTrue(source.contains("Your device's name; your exact location; your search wording."))
+        XCTAssertTrue(source.contains("This file describes your session. Share it only with someone you trust to help you."))
+        XCTAssertFalse(source.contains("Places you looked at, saved, loved, hid or visited."))
+        XCTAssertFalse(source.contains("Your searches, lists, location, viewport or device name."))
+    }
+
     private func logLineHasExplicitPrivacyAnnotations(_ line: String) -> Bool {
         for interpolation in logInterpolations(in: line) {
             if interpolation.range(of: #"privacy\s*:"#, options: .regularExpression) == nil {
@@ -142,9 +280,12 @@ final class LoggingPrivacyTests: XCTestCase {
 
     private func privacyLintFindings(in source: String) -> [String] {
         let forbiddenPatterns = [
-            #"(?i)\blat\b"#, #"(?i)latitude"#, #"(?i)\blon\b"#, #"(?i)longitude"#,
-            #"(?i)coordinate"#, #"(?i)\bbbox\b"#,
-            #"(?i)placeID"#, #"(?i)placeId"#, #"(?i)place_id"#, #"(?i)placeName"#, #"(?i)\bplace\."#, #"(?i)name:"#,
+            #"UIDevice\s*\.\s*current\s*\.\s*name"#, #"(?i)\bdeviceName\b"#,
+            #"(?i)\bgps[A-Za-z]*(lat|lon|latitude|longitude)\b"#,
+            #"(?i)\blocation\s*\.\s*coordinate\s*\.\s*(latitude|longitude)"#,
+            #"(?i)\bviewport(Center|Bbox)\b"#, #"(?i)\bbbox\b"#, #"(?i)\bcenter\b"#,
+            #"(?i)\btile[XY]\b"#,
+            #"(?i)\braw(Search)?Query\b"#, #"(?i)\bsearchQuery\b"#, #"(?i)\bqueryText\b"#,
             #"(?i)absoluteString"#, #"(?i)path:"#, #"(?i)url:"#, #"URL\("#,
             #"\\\(url(?:[,)]|\s)"#,
             #"(?i)\bregion=\\\([^)]*, privacy: \.public"#,
@@ -153,7 +294,8 @@ final class LoggingPrivacyTests: XCTestCase {
         ]
         var findings: [String] = []
         for call in logFacadeCalls(in: source) {
-            if !logLineHasExplicitPrivacyAnnotations(call) {
+            if !isClassifiedFileSinkCall(call),
+               !logLineHasExplicitPrivacyAnnotations(call) {
                 findings.append("log interpolation lacks explicit privacy annotation: \(call)")
             }
             for pattern in forbiddenPatterns where call.range(of: pattern, options: .regularExpression) != nil {
@@ -161,6 +303,12 @@ final class LoggingPrivacyTests: XCTestCase {
             }
         }
         return findings
+    }
+
+    private func isClassifiedFileSinkCall(_ call: String) -> Bool {
+        call.contains("MakingTracksLog.file(")
+            || call.contains("MakingTracksLog.flowEvent(")
+            || call.contains("MakingTracksLog.viewportFlowEvent(")
     }
 
     private func logFacadeCalls(in source: String) -> [String] {
