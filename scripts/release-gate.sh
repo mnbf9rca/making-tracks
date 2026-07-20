@@ -43,17 +43,17 @@ git merge-base --is-ancestor origin/ios HEAD ||
 mkdir -p "$RUN_DIR" "$DERIVED_DATA"
 rm -rf "$RESULT_BUNDLE"
 
-UDID="$UDID" DERIVED_DATA="$DERIVED_DATA" RESULT_BUNDLE="$RESULT_BUNDLE" sh -ec '
+UDID="$UDID" SCHEME="$SCHEME" DERIVED_DATA="$DERIVED_DATA" RESULT_BUNDLE="$RESULT_BUNDLE" sh -ec '
   xcrun simctl bootstatus "$UDID" -b
   xcodebuild build \
     -configuration Release \
     -project ios/App/MakingTracks.xcodeproj \
-    -scheme MakingTracks \
+    -scheme "$SCHEME" \
     -destination "platform=iOS Simulator,id=$UDID" \
     -derivedDataPath "$DERIVED_DATA"
   xcodebuild \
     -project ios/App/MakingTracks.xcodeproj \
-    -scheme MakingTracks \
+    -scheme "$SCHEME" \
     -destination "platform=iOS Simulator,id=$UDID" \
     -parallel-testing-enabled NO \
     -disable-concurrent-destination-testing \
