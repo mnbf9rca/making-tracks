@@ -1835,6 +1835,7 @@ public struct PlaceImage: Sendable, Equatable {
     public let width: Int
     public let height: Int
     public let attribution: PlaceImageAttribution
+    let offlineThumbnailData: Data?
 
     public init(
         placeID: String,
@@ -1844,12 +1845,33 @@ public struct PlaceImage: Sendable, Equatable {
         height: Int,
         attribution: PlaceImageAttribution
     ) {
+        self.init(
+            placeID: placeID,
+            thumbSHA256: thumbSHA256,
+            bytes: bytes,
+            width: width,
+            height: height,
+            attribution: attribution,
+            offlineThumbnailData: nil
+        )
+    }
+
+    init(
+        placeID: String,
+        thumbSHA256: String,
+        bytes: Int,
+        width: Int,
+        height: Int,
+        attribution: PlaceImageAttribution,
+        offlineThumbnailData: Data?
+    ) {
         self.placeID = placeID
         self.thumbSHA256 = thumbSHA256
         self.bytes = bytes
         self.width = width
         self.height = height
         self.attribution = attribution
+        self.offlineThumbnailData = offlineThumbnailData
     }
 
     public var thumbURL: URL {
@@ -2033,6 +2055,197 @@ public enum ImageIndexDecoder {
     }
 }
 
+struct PlaceDescription: Sendable, Equatable {
+    let placeID: String
+    let excerpt: String
+    let sourceRef: String
+    let sourceURL: URL
+    let wikipediaTitle: String?
+
+    init(placeID: String, excerpt: String, sourceRef: String, sourceURL: URL, wikipediaTitle: String?) {
+        self.placeID = placeID
+        self.excerpt = excerpt
+        self.sourceRef = sourceRef
+        self.sourceURL = sourceURL
+        self.wikipediaTitle = wikipediaTitle
+    }
+}
+
+private enum DescriptionPayloadLimits {
+    // Tunable sidecar cap: same order as image sidecars, bounded before JSON parsing.
+    static let maxDescriptionIndexBytes = 8 * 1024 * 1024
+}
+
+enum DescriptionIndexDecoder {
+    private static let maxPlaces = 4_000
+    private static let maxExcerptScalars = 600
+    private static let maxTitleScalars = 300
+    private static let maxLangScalars = 12
+    private static let maxURLScalars = 2_048
+
+    static func decode(_ data: Data, expected: TileCoordinate) throws -> [PlaceDescription] {
+        guard data.count <= DescriptionPayloadLimits.maxDescriptionIndexBytes,
+              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["schema_version", "min_reader_version", "z", "x", "y", "places"],
+              object["schema_version"] as? Int == 1,
+              let minReaderVersion = object["min_reader_version"] as? Int,
+              minReaderVersion <= VersionGate.readerVersion,
+              object["z"] as? Int == expected.z,
+              object["x"] as? Int == expected.x,
+              object["y"] as? Int == expected.y,
+              let places = object["places"] as? [[String: Any]],
+              places.count <= maxPlaces
+        else { throw TileError.invalidTile }
+
+        var decoded: [PlaceDescription] = []
+        var seen: Set<String> = []
+        for place in places {
+            guard let description = decodeDescription(place), !seen.contains(description.placeID) else { continue }
+            seen.insert(description.placeID)
+            decoded.append(description)
+        }
+        return decoded
+    }
+
+    private static func decodeDescription(_ object: [String: Any]) -> PlaceDescription? {
+        guard Set(object.keys) == [
+            "place_id", "excerpt", "excerpted", "license_code", "license_name", "license_url",
+            "modified", "source_ref", "source_url", "wikipedia_lang", "wikipedia_title",
+        ],
+              let placeID = object["place_id"] as? String,
+              placeID.matches("^mt1_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}$"),
+              let excerpt = object["excerpt"] as? String,
+              (1...maxExcerptScalars).contains(excerpt.scalarCount),
+              PlaceContentGuards.isSafeText(excerpt),
+              object["excerpted"] as? Bool == true,
+              let licenseCode = object["license_code"] as? String,
+              ["CC-BY-SA-4.0", "CC-BY-4.0"].contains(licenseCode),
+              let licenseName = object["license_name"] as? String,
+              (1...200).contains(licenseName.scalarCount),
+              PlaceContentGuards.isSafeText(licenseName),
+              let licenseURL = allowedURL(object["license_url"], hosts: ["creativecommons.org", "www.creativecommons.org"]),
+              isExpectedLicenseURL(licenseURL, for: licenseCode),
+              object["modified"] as? Bool == true,
+              let sourceRef = object["source_ref"] as? String,
+              PlaceContentGuards.isValidSourceRef(sourceRef),
+              let lang = object["wikipedia_lang"] as? String,
+              (1...maxLangScalars).contains(lang.scalarCount),
+              lang.matches("^[a-z][a-z0-9_-]{0,11}$"),
+              let sourceURL = allowedURL(object["source_url"], hosts: ["\(lang).wikipedia.org"])
+        else { return nil }
+
+        let wikipediaTitle: String?
+        if object["wikipedia_title"] is NSNull {
+            wikipediaTitle = nil
+        } else if let title = object["wikipedia_title"] as? String,
+                  (1...maxTitleScalars).contains(title.scalarCount),
+                  PlaceContentGuards.isSafeText(title) {
+            wikipediaTitle = title
+        } else {
+            return nil
+        }
+
+        return PlaceDescription(
+            placeID: placeID,
+            excerpt: excerpt,
+            sourceRef: sourceRef,
+            sourceURL: sourceURL,
+            wikipediaTitle: wikipediaTitle
+        )
+    }
+
+    private static func allowedURL(_ value: Any?, hosts: Set<String>) -> URL? {
+        guard let text = value as? String,
+              (1...maxURLScalars).contains(text.scalarCount),
+              PlaceContentGuards.isSafeURLString(text),
+              let url = URL(string: text),
+              url.scheme == "https",
+              hosts.contains(url.host ?? ""),
+              url.query == nil,
+              url.fragment == nil
+        else { return nil }
+        return url
+    }
+
+    private static func isExpectedLicenseURL(_ url: URL, for code: String) -> Bool {
+        let path = url.path.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        switch code.uppercased() {
+        case "CC-BY-SA-4.0":
+            return path == "licenses/by-sa/4.0"
+        case "CC-BY-4.0":
+            return path == "licenses/by/4.0"
+        default:
+            return false
+        }
+    }
+}
+
+struct OfflinePackContent: Sendable, Equatable {
+    static let empty = OfflinePackContent(imageIndexes: [:], descriptionIndexes: [:], thumbnails: [:])
+
+    let imageIndexes: [TileCoordinate: Data]
+    let descriptionIndexes: [TileCoordinate: Data]
+    let thumbnails: [String: Data]
+
+    init(
+        imageIndexes: [TileCoordinate: Data],
+        descriptionIndexes: [TileCoordinate: Data],
+        thumbnails: [String: Data]
+    ) {
+        self.imageIndexes = imageIndexes
+        self.descriptionIndexes = descriptionIndexes
+        self.thumbnails = thumbnails
+    }
+
+    var byteCount: Int? {
+        var total = 0
+        for data in imageIndexes.values {
+            let sum = total.addingReportingOverflow(data.count)
+            guard !sum.overflow else { return nil }
+            total = sum.partialValue
+        }
+        for data in descriptionIndexes.values {
+            let sum = total.addingReportingOverflow(data.count)
+            guard !sum.overflow else { return nil }
+            total = sum.partialValue
+        }
+        for data in thumbnails.values {
+            let sum = total.addingReportingOverflow(data.count)
+            guard !sum.overflow else { return nil }
+            total = sum.partialValue
+        }
+        return total
+    }
+
+    var objectCount: Int {
+        imageIndexes.count + descriptionIndexes.count + thumbnails.count
+    }
+}
+
+private struct OfflinePackContentBudget {
+    private var bytes = 0
+    private var objects = 0
+
+    mutating func addObject(bytes objectBytes: Int) throws {
+        let nextObjects = objects.addingReportingOverflow(1)
+        guard !nextObjects.overflow,
+              nextObjects.partialValue <= OfflinePackContentLimits.maxPackContentObjects
+        else { throw TileError.invalidOfflinePack }
+        let nextBytes = bytes.addingReportingOverflow(objectBytes)
+        guard !nextBytes.overflow,
+              nextBytes.partialValue <= OfflinePackContentLimits.maxPackContentBytes
+        else { throw TileError.invalidOfflinePack }
+        objects = nextObjects.partialValue
+        bytes = nextBytes.partialValue
+    }
+}
+
+private enum OfflinePackContentLimits {
+    // Tunable bundle cap for optional card content so polluted sidecars cannot grow a pack unbounded.
+    static let maxPackContentBytes = 256 * 1024 * 1024
+    static let maxPackContentObjects = 25_000
+}
+
 public final class ThumbnailCache: @unchecked Sendable {
     /// Tunable budget for card thumbnails; offline packs own their own thumbnail storage later.
     public static let maxBytes = 64 * 1024 * 1024
@@ -2185,6 +2398,12 @@ public final class ThumbnailLoader: @unchecked Sendable {
         guard image.thumbSHA256.matches("^[0-9a-f]{64}$"),
               (1...ImagePayloadLimits.maxThumbnailBytes).contains(image.bytes)
         else { throw TileError.invalidImageIndex }
+
+        if let offline = image.offlineThumbnailData {
+            guard offline.count == image.bytes else { throw TileError.byteCountMismatch }
+            guard sha256(offline) == image.thumbSHA256 else { throw TileError.checksumMismatch }
+            return offline
+        }
 
         if let cached = cache.thumbnail(sha256: image.thumbSHA256),
            cached.count == image.bytes,
@@ -3315,7 +3534,11 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
                 ))
             }
             try control.checkpoint()
-            try store.install(publish: publish, tiles: [:], basemap: nil)
+            let content = try await downloadPackContent(
+                publish: publish,
+                control: control
+            )
+            try store.install(publish: publish, tiles: [:], basemap: nil, content: content)
         } catch TileError.downloadCancelled {
             MakingTracksLog.downloads.info("region download cancelled region=\(regionID, privacy: .private(mask: .hash)) version=\(publishVersion, privacy: .public)")
             try? store.discardDownload(region: region, publishVersion: publishVersion)
@@ -3447,6 +3670,112 @@ public final class OfflineRegionDownloader: @unchecked Sendable {
             )
         }
         return try await metadataFetcher.fetch(url)
+    }
+
+    private func downloadPackContent(
+        publish: PinnedPublish,
+        control: OfflineRegionDownloadControl
+    ) async throws -> OfflinePackContent {
+        var imageIndexes: [TileCoordinate: Data] = [:]
+        var descriptionIndexes: [TileCoordinate: Data] = [:]
+        var thumbnails: [String: Data] = [:]
+        var referencedThumbnails: [String: Int] = [:]
+        var budget = OfflinePackContentBudget()
+
+        for tile in publish.manifest.tiles {
+            try control.checkpoint()
+            let coordinate = TileCoordinate(z: publish.manifest.tileZ, x: tile.x, y: tile.y)
+            if let imageIndex = try await downloadOptionalContentIndex(
+                try trustedURL("\(publish.region)/\(publish.publishVersion)/images/10/\(tile.x)/\(tile.y).json"),
+                maxBytes: ImagePayloadLimits.maxImageIndexBytes,
+                control: control
+            ) {
+                let images = try ImageIndexDecoder.decode(imageIndex, expected: coordinate)
+                try budget.addObject(bytes: imageIndex.count)
+                imageIndexes[coordinate] = imageIndex
+                for image in images {
+                    if let bytes = referencedThumbnails[image.thumbSHA256], bytes != image.bytes {
+                        throw TileError.invalidOfflinePack
+                    }
+                    referencedThumbnails[image.thumbSHA256] = image.bytes
+                }
+            }
+
+            if let descriptionIndex = try await downloadOptionalContentIndex(
+                try trustedURL("\(publish.region)/\(publish.publishVersion)/descriptions/10/\(tile.x)/\(tile.y).json"),
+                maxBytes: DescriptionPayloadLimits.maxDescriptionIndexBytes,
+                control: control
+            ) {
+                _ = try DescriptionIndexDecoder.decode(descriptionIndex, expected: coordinate)
+                try budget.addObject(bytes: descriptionIndex.count)
+                descriptionIndexes[coordinate] = descriptionIndex
+            }
+        }
+
+        for (sha, bytes) in referencedThumbnails.sorted(by: { $0.key < $1.key }) {
+            try control.checkpoint()
+            let thumbnail = try await downloadDataObject(
+                try trustedURL("thumbs/\(String(sha.prefix(2)))/\(sha).webp"),
+                maxBytes: bytes,
+                control: control
+            )
+            guard thumbnail.count == bytes,
+                  sha256(thumbnail) == sha
+            else { throw TileError.invalidOfflinePack }
+            try budget.addObject(bytes: thumbnail.count)
+            thumbnails[sha] = thumbnail
+        }
+
+        let content = OfflinePackContent(
+            imageIndexes: imageIndexes,
+            descriptionIndexes: descriptionIndexes,
+            thumbnails: thumbnails
+        )
+        guard let contentBytes = content.byteCount,
+              content.objectCount <= OfflinePackContentLimits.maxPackContentObjects,
+              contentBytes <= OfflinePackContentLimits.maxPackContentBytes
+        else { throw TileError.invalidOfflinePack }
+        try ensureHeadroomForLargeObject(bytes: contentBytes)
+        MakingTracksLog.downloads.debug("content bundle fetched region=\(publish.region, privacy: .private(mask: .hash)) version=\(publish.publishVersion, privacy: .public) imageIndexes=\(imageIndexes.count, privacy: .public) descriptionIndexes=\(descriptionIndexes.count, privacy: .public) thumbnails=\(thumbnails.count, privacy: .public)")
+        return content
+    }
+
+    private func downloadOptionalContentIndex(
+        _ url: URL,
+        maxBytes: Int,
+        control: OfflineRegionDownloadControl
+    ) async throws -> Data? {
+        do {
+            return try await downloadDataObject(url, maxBytes: maxBytes, control: control)
+        } catch TileError.httpStatus(404) {
+            MakingTracksLog.downloads.debug("content index absent host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public)")
+            return nil
+        } catch TileError.downloadCancelled {
+            throw TileError.downloadCancelled
+        } catch TileError.downloadPaused {
+            throw TileError.downloadPaused
+        } catch {
+            MakingTracksLog.downloads.error("content index failed host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            throw error
+        }
+    }
+
+    private func downloadDataObject(
+        _ url: URL,
+        maxBytes: Int,
+        control: OfflineRegionDownloadControl
+    ) async throws -> Data {
+        try ensureHeadroomForSmallObject(bytes: maxBytes)
+        let fileURL = try await downloadObject(url, control: control)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        return try downloadedData(contentsOf: fileURL, maxBytes: maxBytes)
+    }
+
+    private func downloadedData(contentsOf url: URL, maxBytes: Int) throws -> Data {
+        guard maxBytes >= 0 else { throw TileError.responseTooLarge }
+        let values = try url.resourceValues(forKeys: [.fileSizeKey])
+        guard let bytes = values.fileSize, bytes <= maxBytes else { throw TileError.responseTooLarge }
+        return try Data(contentsOf: url)
     }
 
     private func downloadObject(
@@ -3615,9 +3944,22 @@ public final class OfflineRegionStore: @unchecked Sendable {
         return try OfflineRegionStore(root: documents.appendingPathComponent("MakingTracks/OfflineRegions", isDirectory: true))
     }
 
-    public func install(publish: PinnedPublish, tiles: [TileCoordinate: Data], basemap: Data?) throws {
+    public func install(
+        publish: PinnedPublish,
+        tiles: [TileCoordinate: Data],
+        basemap: Data?
+    ) throws {
+        try install(publish: publish, tiles: tiles, basemap: basemap, content: .empty)
+    }
+
+    func install(
+        publish: PinnedPublish,
+        tiles: [TileCoordinate: Data],
+        basemap: Data?,
+        content: OfflinePackContent
+    ) throws {
         try withLock {
-            try installLocked(publish: publish, tiles: tiles, basemap: basemap)
+            try installLocked(publish: publish, tiles: tiles, basemap: basemap, content: content)
         }
     }
 
@@ -3739,11 +4081,17 @@ public final class OfflineRegionStore: @unchecked Sendable {
         }
     }
 
-    private func installLocked(publish: PinnedPublish, tiles: [TileCoordinate: Data], basemap: Data?) throws {
+    private func installLocked(
+        publish: PinnedPublish,
+        tiles: [TileCoordinate: Data],
+        basemap: Data?,
+        content: OfflinePackContent
+    ) throws {
         try validatePublish(publish)
         MakingTracksLog.install.info("install started region=\(publish.region, privacy: .private(mask: .hash)) version=\(publish.publishVersion, privacy: .public) objects=\(publish.manifest.tiles.count + 1, privacy: .public)")
         let requiredCoordinates = Set(publish.manifest.tiles.map { TileCoordinate(z: publish.manifest.tileZ, x: $0.x, y: $0.y) })
         guard Set(tiles.keys).isSubset(of: requiredCoordinates) else { throw TileError.invalidOfflinePack }
+        try validatePackContent(content, requiredCoordinates: requiredCoordinates)
         if let basemap {
             guard basemap.count == publish.manifest.basemap.bytes,
                   sha256(basemap) == publish.manifest.basemap.sha256
@@ -3780,6 +4128,7 @@ public final class OfflineRegionStore: @unchecked Sendable {
             try fm.createDirectory(at: temp, withIntermediateDirectories: true)
             try JSONEncoder().encode(publish).write(to: temp.appendingPathComponent("manifest-snapshot.json"), options: .atomic)
             try JSONEncoder().encode(packIndex(for: publish)).write(to: temp.appendingPathComponent("pack-index.json"), options: .atomic)
+            try writePackContent(content, to: temp)
             try excludeFromBackup(temp)
             try fm.createDirectory(at: final.deletingLastPathComponent(), withIntermediateDirectories: true)
             if fm.fileExists(atPath: final.path) {
@@ -3972,13 +4321,15 @@ public final class OfflineRegionStore: @unchecked Sendable {
                     expectedBytes: pack.basemap.bytes
                 )
                 basemapBytesBySHA[pack.basemap.sha256] = basemapBytes
+                let contentBytes = try installedPackContentBytes(region: pack.region, publishVersion: pack.publishVersion)
+                let referencedBytes = try checkedAdd(try checkedAdd(tileBytes, basemapBytes), contentBytes)
                 packs.append(InstalledOfflinePackStorage(
                     region: pack.region,
                     publishVersion: pack.publishVersion,
                     tileCount: pack.tiles.count,
                     tileBytes: tileBytes,
                     basemapBytes: basemapBytes,
-                    referencedBytes: try checkedAdd(tileBytes, basemapBytes)
+                    referencedBytes: referencedBytes
                 ))
             } catch {
                 failedRegions.insert(pack.region)
@@ -3986,11 +4337,35 @@ public final class OfflineRegionStore: @unchecked Sendable {
         }
         let totalTileBytes = try checkedSum(tileBytesBySHA.values)
         let totalBasemapBytes = try checkedSum(basemapBytesBySHA.values)
+        let totalContentBytes = try checkedSum(packs.map { $0.referencedBytes - $0.tileBytes - $0.basemapBytes })
         return OfflinePackStorageSummary(
             packs: packs.sorted { $0.region < $1.region },
             failedRegions: failedRegions.sorted(),
-            totalBytes: try checkedAdd(totalTileBytes, totalBasemapBytes)
+            totalBytes: try checkedAdd(try checkedAdd(totalTileBytes, totalBasemapBytes), totalContentBytes)
         )
+    }
+
+    private func installedPackContentBytes(region: String, publishVersion: String) throws -> Int {
+        let packRoot = packURL(region: region, publishVersion: publishVersion)
+        var budget = OfflinePackContentBudget()
+        var total = 0
+        for directoryName in ["images", "descriptions", "thumbs"] {
+            let directory = packRoot.appendingPathComponent(directoryName, isDirectory: true)
+            guard fm.fileExists(atPath: directory.path) else { continue }
+            guard let enumerator = fm.enumerator(
+                at: directory,
+                includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+                options: [.skipsHiddenFiles]
+            ) else { throw TileError.invalidOfflinePack }
+            for case let url as URL in enumerator {
+                let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+                guard values.isRegularFile == true else { continue }
+                guard let fileSize = values.fileSize, fileSize >= 0 else { throw TileError.invalidOfflinePack }
+                try budget.addObject(bytes: fileSize)
+                total = try checkedAdd(total, fileSize)
+            }
+        }
+        return total
     }
 
     private func installedPackStorageSnapshotLocked() throws -> OfflinePackStorageSnapshot {
@@ -4328,6 +4703,45 @@ public final class OfflineRegionStore: @unchecked Sendable {
         }
     }
 
+    func imageIndex(region: String, publishVersion: String, coordinate: TileCoordinate) -> Data? {
+        withLock {
+            packContentDataLocked(
+                region: region,
+                publishVersion: publishVersion,
+                coordinate: coordinate,
+                kind: .imageIndex
+            )
+        }
+    }
+
+    func descriptionIndex(region: String, publishVersion: String, coordinate: TileCoordinate) -> Data? {
+        withLock {
+            packContentDataLocked(
+                region: region,
+                publishVersion: publishVersion,
+                coordinate: coordinate,
+                kind: .descriptionIndex
+            )
+        }
+    }
+
+    func thumbnail(region: String, publishVersion: String, sha256 expectedSHA256: String, bytes: Int) -> Data? {
+        withLock {
+            guard isValidRegion(region),
+                  isValidPublishVersion(publishVersion),
+                  expectedSHA256.matches("^[0-9a-f]{64}$"),
+                  fm.fileExists(atPath: packURL(region: region, publishVersion: publishVersion).path),
+                  (1...ImagePayloadLimits.maxThumbnailBytes).contains(bytes)
+            else { return nil }
+            let url = thumbnailURL(root: packURL(region: region, publishVersion: publishVersion), sha256: expectedSHA256)
+            guard let data = try? Data(contentsOf: url),
+                  data.count == bytes,
+                  sha256(data) == expectedSHA256
+            else { return nil }
+            return data
+        }
+    }
+
     private func basemapURLLocked(region: String, publishVersion: String, sha256: String, bytes: Int) -> URL? {
         guard isValidRegion(region),
               isValidPublishVersion(publishVersion),
@@ -4338,6 +4752,33 @@ public final class OfflineRegionStore: @unchecked Sendable {
               (try? verifyExistingBasemapObject(sha256: sha256, bytes: bytes)) != nil
         else { return nil }
         return basemapObjectURL(sha256: sha256)
+    }
+
+    private enum PackContentKind {
+        case imageIndex
+        case descriptionIndex
+    }
+
+    private func packContentDataLocked(
+        region: String,
+        publishVersion: String,
+        coordinate: TileCoordinate,
+        kind: PackContentKind
+    ) -> Data? {
+        guard isValidRegion(region),
+              isValidPublishVersion(publishVersion),
+              coordinate.z == 10,
+              (0...1023).contains(coordinate.x),
+              (0...1023).contains(coordinate.y),
+              fm.fileExists(atPath: packURL(region: region, publishVersion: publishVersion).path)
+        else { return nil }
+        let url: URL = switch kind {
+        case .imageIndex:
+            imageIndexURL(root: packURL(region: region, publishVersion: publishVersion), coordinate: coordinate)
+        case .descriptionIndex:
+            descriptionIndexURL(root: packURL(region: region, publishVersion: publishVersion), coordinate: coordinate)
+        }
+        return try? boundedData(contentsOf: url, maxBytes: contentMaxBytes(kind))
     }
 
     public func delete(region: String) throws {
@@ -4827,6 +5268,94 @@ public final class OfflineRegionStore: @unchecked Sendable {
         else { throw TileError.invalidOfflinePack }
     }
 
+    private func validatePackContent(
+        _ content: OfflinePackContent,
+        requiredCoordinates: Set<TileCoordinate>
+    ) throws {
+        guard Set(content.imageIndexes.keys).isSubset(of: requiredCoordinates),
+              Set(content.descriptionIndexes.keys).isSubset(of: requiredCoordinates)
+        else { throw TileError.invalidOfflinePack }
+
+        var referencedThumbnails: [String: Int] = [:]
+        var budget = OfflinePackContentBudget()
+        for (coordinate, data) in content.imageIndexes {
+            guard data.count <= ImagePayloadLimits.maxImageIndexBytes else { throw TileError.invalidOfflinePack }
+            let images = try ImageIndexDecoder.decode(data, expected: coordinate)
+            try budget.addObject(bytes: data.count)
+            for image in images {
+                if let existingBytes = referencedThumbnails[image.thumbSHA256], existingBytes != image.bytes {
+                    throw TileError.invalidOfflinePack
+                }
+                referencedThumbnails[image.thumbSHA256] = image.bytes
+            }
+        }
+        for (coordinate, data) in content.descriptionIndexes {
+            guard data.count <= DescriptionPayloadLimits.maxDescriptionIndexBytes else {
+                throw TileError.invalidOfflinePack
+            }
+            _ = try DescriptionIndexDecoder.decode(data, expected: coordinate)
+            try budget.addObject(bytes: data.count)
+        }
+        guard Set(content.thumbnails.keys) == Set(referencedThumbnails.keys) else {
+            throw TileError.invalidOfflinePack
+        }
+        for (sha, data) in content.thumbnails {
+            guard let bytes = referencedThumbnails[sha],
+                  data.count == bytes,
+                  sha256(data) == sha
+            else { throw TileError.invalidOfflinePack }
+            try budget.addObject(bytes: data.count)
+        }
+    }
+
+    private func writePackContent(_ content: OfflinePackContent, to packRoot: URL) throws {
+        for (coordinate, data) in content.imageIndexes {
+            let url = imageIndexURL(root: packRoot, coordinate: coordinate)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+        }
+        for (coordinate, data) in content.descriptionIndexes {
+            let url = descriptionIndexURL(root: packRoot, coordinate: coordinate)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+        }
+        for (sha, data) in content.thumbnails {
+            let url = thumbnailURL(root: packRoot, sha256: sha)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+        }
+    }
+
+    private func imageIndexURL(root: URL, coordinate: TileCoordinate) -> URL {
+        root
+            .appendingPathComponent("images/10")
+            .appendingPathComponent("\(coordinate.x)")
+            .appendingPathComponent("\(coordinate.y).json")
+    }
+
+    private func descriptionIndexURL(root: URL, coordinate: TileCoordinate) -> URL {
+        root
+            .appendingPathComponent("descriptions/10")
+            .appendingPathComponent("\(coordinate.x)")
+            .appendingPathComponent("\(coordinate.y).json")
+    }
+
+    private func thumbnailURL(root: URL, sha256: String) -> URL {
+        root
+            .appendingPathComponent("thumbs")
+            .appendingPathComponent(String(sha256.prefix(2)))
+            .appendingPathComponent("\(sha256).webp")
+    }
+
+    private func contentMaxBytes(_ kind: PackContentKind) -> Int {
+        switch kind {
+        case .imageIndex:
+            return ImagePayloadLimits.maxImageIndexBytes
+        case .descriptionIndex:
+            return DescriptionPayloadLimits.maxDescriptionIndexBytes
+        }
+    }
+
     private func packIndex(for publish: PinnedPublish) -> OfflinePackIndex {
         OfflinePackIndex(
             region: publish.region,
@@ -5118,6 +5647,7 @@ public actor TileClient {
     private var pin: PinnedPublish?
     private var state: TileLoadState = .unavailable
     private var loadedPlaces: [String: DecodedPlace] = [:]
+    private var loadedPlaceRequests: [String: PublishTileRequest] = [:]
     private var loadedImages: [String: PlaceImage] = [:]
     private var recentPlaceRefs: [String: PlaceRef] = [:]
     private var recentPlaceRefOrder: [String] = []
@@ -5191,6 +5721,7 @@ public actor TileClient {
                 ?? OfflinePackResolution(tiles: [], quarantinedPacks: [])
         } catch {
             loadedPlaces = [:]
+            loadedPlaceRequests = [:]
             loadedImages = [:]
             viewportBasemap = nil
             viewportAttribution = []
@@ -5212,6 +5743,7 @@ public actor TileClient {
         MakingTracksLog.resolution.debug("viewport planned region=\(regionID, privacy: .private(mask: .hash)) zoom=\(zoom, privacy: .public) covered=\(covered, privacy: .public) blocked=\(blocked, privacy: .public) installed=\(installedRequests, privacy: .public) fallback=\(fallbackRequests, privacy: .public) quarantines=\(offlineResolution.quarantinedPacks.count, privacy: .public)")
         guard !needed.isEmpty else {
             loadedPlaces = [:]
+            loadedPlaceRequests = [:]
             loadedImages = [:]
             viewportBasemap = nil
             viewportAttribution = []
@@ -5301,6 +5833,7 @@ public actor TileClient {
         guard generation == viewportGeneration else { return [] }
         if state == .manifestInvalid { return [] }
         loadedPlaces = viewportPlaces
+        loadedPlaceRequests = viewportRequests
         loadedImages = [:]
         if usedCache {
             state = .stale
@@ -5327,7 +5860,20 @@ public actor TileClient {
     }
 
     public func placeRef(for placeID: String) async -> PlaceRef? {
-        if let placeRef = loadedPlaces[placeID]?.placeRef {
+        if let loaded = loadedPlaces[placeID] {
+            let placeRef: PlaceRef
+            if let request = loadedPlaceRequests[placeID],
+               let enriched = await enrichedPlaceRef(for: loaded.placeRef, request: request) {
+                placeRef = enriched
+                loadedPlaces[placeID] = DecodedPlace(
+                    mapPlace: loaded.mapPlace,
+                    placeRef: enriched,
+                    imageURL: loaded.imageURL,
+                    sourceRefs: loaded.sourceRefs
+                )
+            } else {
+                placeRef = loaded.placeRef
+            }
             rememberRecentPlaceRef(placeRef)
             return placeRef
         }
@@ -5349,7 +5895,12 @@ public actor TileClient {
             for _ in 0..<TileFetchConcurrency.maxConcurrent {
                 guard let request = iterator.next() else { break }
                 group.addTask {
-                    await loadImageIndex(request: request.tile, placeIDs: request.placeIDs, fetcher: fetcher)
+                    await loadImageIndex(
+                        request: request.tile,
+                        placeIDs: request.placeIDs,
+                        fetcher: fetcher,
+                        offlineStore: self.offlineStore
+                    )
                 }
             }
             while let images = await group.next() {
@@ -5360,7 +5911,12 @@ public actor TileClient {
                 imagesByPlace.merge(images) { current, _ in current }
                 guard let request = iterator.next() else { continue }
                 group.addTask {
-                    await loadImageIndex(request: request.tile, placeIDs: request.placeIDs, fetcher: fetcher)
+                    await loadImageIndex(
+                        request: request.tile,
+                        placeIDs: request.placeIDs,
+                        fetcher: fetcher,
+                        offlineStore: self.offlineStore
+                    )
                 }
             }
         }
@@ -5385,6 +5941,7 @@ public actor TileClient {
 
     private func clearLoadedPlaceRefs() {
         loadedPlaces.removeAll()
+        loadedPlaceRequests.removeAll()
         loadedImages.removeAll()
         imageLoadTask?.cancel()
         imageLoadTask = nil
@@ -5508,6 +6065,37 @@ public actor TileClient {
             }
         }
         return bySource.values.sorted(by: { $0.source < $1.source })
+    }
+
+    private func enrichedPlaceRef(for placeRef: PlaceRef, request: PublishTileRequest) async -> PlaceRef? {
+        guard placeRef.needsDescriptionSidecar else { return placeRef }
+        guard let description = await loadDescription(request: request, placeID: placeRef.placeID) else {
+            return nil
+        }
+        return placeRef.merging(description: description)
+    }
+
+    private func loadDescription(request: PublishTileRequest, placeID: String) async -> PlaceDescription? {
+        do {
+            let data: Data
+            if request.source.isInstalled {
+                guard let offline = offlineStore?.descriptionIndex(
+                    region: request.region,
+                    publishVersion: request.publishVersion,
+                    coordinate: request.coordinate
+                ) else {
+                    return nil
+                }
+                data = offline
+            } else {
+                let url = try trustedURL("\(request.region)/\(request.publishVersion)/descriptions/10/\(request.coordinate.x)/\(request.coordinate.y).json")
+                data = try await fetchBounded(fetcher, url: url, maxBytes: DescriptionPayloadLimits.maxDescriptionIndexBytes)
+            }
+            return try DescriptionIndexDecoder.decode(data, expected: request.coordinate).first { $0.placeID == placeID }
+        } catch {
+            MakingTracksLog.resolution.debug("description index unavailable region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            return nil
+        }
     }
 }
 
@@ -5644,13 +6232,44 @@ private func loadTile(
 private func loadImageIndex(
     request: PublishTileRequest,
     placeIDs: Set<String>,
-    fetcher: TileFetching
+    fetcher: TileFetching,
+    offlineStore: OfflineRegionStore?
 ) async -> [String: PlaceImage] {
     do {
-        let url = try trustedURL("\(request.region)/\(request.publishVersion)/images/10/\(request.coordinate.x)/\(request.coordinate.y).json")
-        let data = try await fetchBounded(fetcher, url: url, maxBytes: ImagePayloadLimits.maxImageIndexBytes)
-        let images = try ImageIndexDecoder.decode(data, expected: request.coordinate)
+        let data: Data
+        if request.source.isInstalled {
+            guard let offline = offlineStore?.imageIndex(
+                region: request.region,
+                publishVersion: request.publishVersion,
+                coordinate: request.coordinate
+            ) else {
+                return [:]
+            }
+            data = offline
+        } else {
+            let url = try trustedURL("\(request.region)/\(request.publishVersion)/images/10/\(request.coordinate.x)/\(request.coordinate.y).json")
+            data = try await fetchBounded(fetcher, url: url, maxBytes: ImagePayloadLimits.maxImageIndexBytes)
+        }
+        let decoded = try ImageIndexDecoder.decode(data, expected: request.coordinate)
             .filter { placeIDs.contains($0.placeID) }
+        let images = decoded.compactMap { image -> PlaceImage? in
+            guard request.source.isInstalled else { return image }
+            guard let thumbnail = offlineStore?.thumbnail(
+                      region: request.region,
+                      publishVersion: request.publishVersion,
+                      sha256: image.thumbSHA256,
+                      bytes: image.bytes
+                  ) else { return nil }
+            return PlaceImage(
+                placeID: image.placeID,
+                thumbSHA256: image.thumbSHA256,
+                bytes: image.bytes,
+                width: image.width,
+                height: image.height,
+                attribution: image.attribution,
+                offlineThumbnailData: thumbnail
+            )
+        }
         MakingTracksLog.resolution.debug("image index decoded region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) images=\(images.count, privacy: .public)")
         return Dictionary(uniqueKeysWithValues: images.map { ($0.placeID, $0) })
     } catch {
@@ -5662,7 +6281,6 @@ private func loadImageIndex(
 private func imageIndexLoadRequests(from requestsByPlace: [String: PublishTileRequest]) -> [ImageIndexLoadRequest] {
     var requestsByKey: [String: ImageIndexLoadRequest] = [:]
     for (placeID, request) in requestsByPlace {
-        guard !request.source.isInstalled else { continue }
         let key = "\(request.region)/\(request.publishVersion)/\(request.coordinate.z)/\(request.coordinate.x)/\(request.coordinate.y)"
         if let existing = requestsByKey[key] {
             requestsByKey[key] = ImageIndexLoadRequest(tile: existing.tile, placeIDs: existing.placeIDs.union([placeID]))
@@ -5693,6 +6311,47 @@ private func tileRequest(_ candidate: PublishTileRequest, winsOver current: Publ
         return (candidate.coordinate.x, candidate.coordinate.y) < (current.coordinate.x, current.coordinate.y)
     }
     return candidate.region > current.region
+}
+
+private extension PlaceRef {
+    var needsDescriptionSidecar: Bool {
+        guard let data = rawJSON.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return false }
+        if object["blurb"] == nil || object["blurb"] is NSNull {
+            return true
+        }
+        if let blurb = object["blurb"] as? String {
+            return blurb.isEmpty
+        }
+        return false
+    }
+
+    func merging(description: PlaceDescription) -> PlaceRef? {
+        guard description.placeID == placeID,
+              let data = rawJSON.data(using: .utf8),
+              var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        if let existing = object["blurb"] as? String, !existing.isEmpty {
+            return self
+        }
+        object["blurb"] = description.excerpt
+        if object["wikipedia_title"] == nil || object["wikipedia_title"] is NSNull {
+            object["wikipedia_title"] = description.wikipediaTitle ?? NSNull()
+        }
+        guard let enrichedRawJSON = try? stableJSONString(object) else { return nil }
+        return try? PlaceRef(
+            placeID: placeID,
+            name: name,
+            lat: lat,
+            lon: lon,
+            category: category,
+            tier: tier,
+            schemaVersion: schemaVersion,
+            fetchedAt: fetchedAt,
+            rawJSON: enrichedRawJSON
+        )
+    }
 }
 
 func trustedURL(_ path: String) throws -> URL {

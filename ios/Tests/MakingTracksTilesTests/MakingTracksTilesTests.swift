@@ -942,6 +942,39 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(image?.thumbURL.absoluteString, "https://tiles.making-tracks.app/thumbs/ee/\(imageSHA).webp")
     }
 
+    func testTileClientEnrichesPlaceRefFromOnlineDescriptionSidecarOnCardPath() async throws {
+        let placeID = "mt1_00000000000000000000000000"
+        let tile = try gzipJSON(tileObject(places: [validPlace([
+            "place_id": placeID,
+            "blurb": NSNull(),
+        ])]))
+        let tileSHA = sha256(tile)
+        let descriptionURL = "https://tiles.making-tracks.app/uk/20260716T155409Z/descriptions/10/511/340.json"
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": manifestData(tileSHA: tileSHA, tileBytes: tile.count, attributionSources: []),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/511/340.json.gz": tile,
+            descriptionURL: jsonData(descriptionIndexObject(places: [validDescriptionEntry([
+                "place_id": placeID,
+                "excerpt": "Sidecar description for the card.",
+            ])])),
+        ])
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache())
+
+        try await client.refreshPin()
+        _ = await client.places(
+            inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51),
+            zoom: 16
+        )
+        let loadedPlaceRef = await client.placeRef(for: placeID)
+        let placeRef = try XCTUnwrap(loadedPlaceRef)
+        let rawData = try XCTUnwrap(placeRef.rawJSON.data(using: .utf8))
+        let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: rawData) as? [String: Any])
+
+        XCTAssertEqual(raw["blurb"] as? String, "Sidecar description for the card.")
+        XCTAssertTrue(fetcher.requestedURLs.contains(descriptionURL))
+    }
+
     func testLiveCapturedUKTileFixtureRoundTripsThroughCodecAndDecoder() throws {
         let gz = Data(base64Encoded: liveTile489310Base64)!
         let raw = try TileCodec.decode(
@@ -2837,12 +2870,80 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(attribution.map(\.source), ["osm"])
     }
 
-    func testTileClientSkipsImageSidecarsForInstalledOfflinePackTiles() async throws {
+    func testTileClientLoadsInstalledOfflinePackContentWithoutNetworkFetch() async throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)
         let placeID = "mt1_00000000000000000000000001"
         let tile = try gzipJSON(tileObject(places: [validPlace([
             "place_id": placeID,
+            "blurb": NSNull(),
+            "source_refs": ["osm:node/6"],
+        ])]))
+        let basemap = Data("offline-basemap".utf8)
+        let thumb = Data("offline-thumb".utf8)
+        let thumbSHA = sha256(thumb)
+        let imageIndex = jsonData(imageIndexObject(places: [validImageEntry([
+            "place_id": placeID,
+            "thumb_sha256": thumbSHA,
+            "bytes": thumb.count,
+        ])]))
+        let descriptionIndex = jsonData(descriptionIndexObject(places: [validDescriptionEntry([
+            "place_id": placeID,
+            "excerpt": "Offline bundle description for the card.",
+        ])]))
+        try store.install(
+            publish: cachedPublish(
+                "20260716T155409Z",
+                tileSHA: sha256(tile),
+                tileBytes: tile.count,
+                basemapSHA: sha256(basemap),
+                basemapBytes: basemap.count,
+                attributionSources: ["osm"]
+            ),
+            tiles: [TileCoordinate(z: 10, x: 511, y: 340): tile],
+            basemap: basemap,
+            content: OfflinePackContent(
+                imageIndexes: [TileCoordinate(z: 10, x: 511, y: 340): imageIndex],
+                descriptionIndexes: [TileCoordinate(z: 10, x: 511, y: 340): descriptionIndex],
+                thumbnails: [thumbSHA: thumb]
+            )
+        )
+        let imageSidecarURL = "https://tiles.making-tracks.app/uk/20260716T155409Z/images/10/511/340.json"
+        let descriptionSidecarURL = "https://tiles.making-tracks.app/uk/20260716T155409Z/descriptions/10/511/340.json"
+        let fetcher = StubFetcher(routes: [
+            imageSidecarURL: jsonData(imageIndexObject(places: [validImageEntry(["place_id": placeID])])),
+            descriptionSidecarURL: jsonData(descriptionIndexObject(places: [validDescriptionEntry(["place_id": placeID])])),
+        ])
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache(), offlineStore: store)
+
+        let places = await client.places(
+            inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51),
+            zoom: 16,
+            allowManifestRefresh: false
+        )
+
+        XCTAssertEqual(places.map(\.id), [placeID])
+        let image = try await waitForPlaceImage(client, placeID)
+        XCTAssertEqual(image?.thumbSHA256, thumbSHA)
+        XCTAssertEqual(image?.offlineThumbnailData, thumb)
+        let loadedPlaceRef = await client.placeRef(for: placeID)
+        let placeRef = try XCTUnwrap(loadedPlaceRef)
+        let rawData = try XCTUnwrap(placeRef.rawJSON.data(using: .utf8))
+        let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: rawData) as? [String: Any])
+        XCTAssertEqual(raw["blurb"] as? String, "Offline bundle description for the card.")
+        let didRequestSidecar = try await waitForRequestedURL(fetcher, imageSidecarURL)
+        XCTAssertFalse(didRequestSidecar)
+        let didRequestDescription = try await waitForRequestedURL(fetcher, descriptionSidecarURL)
+        XCTAssertFalse(didRequestDescription)
+    }
+
+    func testTileClientDoesNotFetchNetworkSidecarsForInstalledPackMissingContent() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let placeID = "mt1_00000000000000000000000001"
+        let tile = try gzipJSON(tileObject(places: [validPlace([
+            "place_id": placeID,
+            "blurb": NSNull(),
             "source_refs": ["osm:node/6"],
         ])]))
         let basemap = Data("offline-basemap".utf8)
@@ -2859,8 +2960,10 @@ final class MakingTracksTilesTests: XCTestCase {
             basemap: basemap
         )
         let imageSidecarURL = "https://tiles.making-tracks.app/uk/20260716T155409Z/images/10/511/340.json"
+        let descriptionSidecarURL = "https://tiles.making-tracks.app/uk/20260716T155409Z/descriptions/10/511/340.json"
         let fetcher = StubFetcher(routes: [
             imageSidecarURL: jsonData(imageIndexObject(places: [validImageEntry(["place_id": placeID])])),
+            descriptionSidecarURL: jsonData(descriptionIndexObject(places: [validDescriptionEntry(["place_id": placeID])])),
         ])
         let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache(), offlineStore: store)
 
@@ -2869,12 +2972,17 @@ final class MakingTracksTilesTests: XCTestCase {
             zoom: 16,
             allowManifestRefresh: false
         )
+        let image = await client.placeImage(for: placeID)
+        let loadedPlaceRef = await client.placeRef(for: placeID)
 
         XCTAssertEqual(places.map(\.id), [placeID])
-        let image = await client.placeImage(for: placeID)
         XCTAssertNil(image)
-        let didRequestSidecar = try await waitForRequestedURL(fetcher, imageSidecarURL)
-        XCTAssertFalse(didRequestSidecar)
+        let placeRef = try XCTUnwrap(loadedPlaceRef)
+        let rawData = try XCTUnwrap(placeRef.rawJSON.data(using: .utf8))
+        let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: rawData) as? [String: Any])
+        XCTAssertTrue(raw["blurb"] is NSNull)
+        XCTAssertFalse(fetcher.requestedURLs.contains(imageSidecarURL))
+        XCTAssertFalse(fetcher.requestedURLs.contains(descriptionSidecarURL))
     }
 
     func testTileClientDoesNotFetchParentTileCoveredByInstalledZonePack() async throws {
@@ -3345,6 +3453,47 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(summary.totalBytes, ukTile.count + londonTile.count + sharedBasemap.count)
     }
 
+    func testOfflineStoreIncludesPackContentInInstalledStorageSummary() throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()], x: 511, y: 340))
+        let basemap = Data("basemap".utf8)
+        let thumb = Data("summary-thumb".utf8)
+        let thumbSHA = sha256(thumb)
+        let imageIndex = jsonData(imageIndexObject(places: [validImageEntry([
+            "thumb_sha256": thumbSHA,
+            "bytes": thumb.count,
+        ])]))
+        let descriptionIndex = jsonData(descriptionIndexObject(places: [validDescriptionEntry()]))
+        let contentBytes = imageIndex.count + descriptionIndex.count + thumb.count
+
+        try store.install(
+            publish: cachedPublish(
+                "20260716T155409Z",
+                region: "uk",
+                tileX: 511,
+                tileY: 340,
+                tileSHA: sha256(tile),
+                tileBytes: tile.count,
+                basemapSHA: sha256(basemap),
+                basemapBytes: basemap.count,
+                attributionSources: []
+            ),
+            tiles: [TileCoordinate(z: 10, x: 511, y: 340): tile],
+            basemap: basemap,
+            content: OfflinePackContent(
+                imageIndexes: [TileCoordinate(z: 10, x: 511, y: 340): imageIndex],
+                descriptionIndexes: [TileCoordinate(z: 10, x: 511, y: 340): descriptionIndex],
+                thumbnails: [thumbSHA: thumb]
+            )
+        )
+
+        let summary = try store.installedPackStorageSummary()
+
+        XCTAssertEqual(summary.packs.map(\.referencedBytes), [tile.count + basemap.count + contentBytes])
+        XCTAssertEqual(summary.totalBytes, tile.count + basemap.count + contentBytes)
+    }
+
     func testOfflineStoreFlagsCorruptStorageRegionAndReportsOtherPacks() throws {
         let root = temporaryOfflineRoot()
         let store = try OfflineRegionStore(root: root)
@@ -3707,6 +3856,8 @@ final class MakingTracksTilesTests: XCTestCase {
         let manifestURL = "https://tiles.making-tracks.app/uk/20260717T000000Z/manifest.json"
         let tileURL = "https://tiles.making-tracks.app/uk/20260717T000000Z/tiles/10/511/340.json.gz"
         let basemapURL = "https://tiles.making-tracks.app/uk/20260717T000000Z/uk.pmtiles"
+        let imageIndexURL = "https://tiles.making-tracks.app/uk/20260717T000000Z/images/10/511/340.json"
+        let descriptionIndexURL = "https://tiles.making-tracks.app/uk/20260717T000000Z/descriptions/10/511/340.json"
         let metadataFetcher = StubFetcher(routes: [
             currentURL: jsonData(["schema_version": 1, "publish_version": "20260717T000000Z"]),
             manifestURL: manifestData(
@@ -3733,12 +3884,125 @@ final class MakingTracksTilesTests: XCTestCase {
         _ = try await downloader.downloadCurrentRegion()
 
         XCTAssertEqual(metadataFetcher.requestedURLs, [currentURL, manifestURL])
-        XCTAssertEqual(objectFetcher.requestedURLs, [tileURL, basemapURL])
+        XCTAssertEqual(objectFetcher.requestedURLs, [tileURL, basemapURL, imageIndexURL, descriptionIndexURL])
         XCTAssertFalse(objectFetcher.requestedURLs.contains(currentURL))
         XCTAssertFalse(objectFetcher.requestedURLs.contains(manifestURL))
         XCTAssertFalse(metadataFetcher.requestedURLs.contains(tileURL))
         XCTAssertFalse(metadataFetcher.requestedURLs.contains(basemapURL))
+        XCTAssertFalse(metadataFetcher.requestedURLs.contains(imageIndexURL))
+        XCTAssertFalse(metadataFetcher.requestedURLs.contains(descriptionIndexURL))
         XCTAssertEqual(try store.installedPublish(region: "uk")?.publishVersion, "20260717T000000Z")
+    }
+
+    func testOfflineDownloaderDoesNotPromotePackWhenContentSidecarTransportFails() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let tile = try gzipJSON(tileObject(places: [validPlace()]))
+        let basemap = Data("basemap".utf8)
+        let publishVersion = "20260717T000000Z"
+        let imageIndexURL = "https://tiles.making-tracks.app/uk/\(publishVersion)/images/10/511/340.json"
+        let fetcher = StubFetcher(
+            routes: [
+                "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": publishVersion]),
+                "https://tiles.making-tracks.app/uk/\(publishVersion)/manifest.json": manifestData(
+                    publishVersion: publishVersion,
+                    tileSHA: sha256(tile),
+                    tileBytes: tile.count,
+                    basemapSHA: sha256(basemap),
+                    basemapBytes: basemap.count,
+                    attributionSources: []
+                ),
+                "https://tiles.making-tracks.app/uk/\(publishVersion)/tiles/10/511/340.json.gz": tile,
+                "https://tiles.making-tracks.app/uk/\(publishVersion)/uk.pmtiles": basemap,
+            ],
+            errors: [imageIndexURL: URLError(.timedOut)]
+        )
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 10_000_000_000 })
+
+        do {
+            _ = try await downloader.downloadCurrentRegion()
+            XCTFail("download unexpectedly promoted pack")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .timedOut)
+        } catch {
+            XCTFail("expected timedOut, got \(error)")
+        }
+
+        XCTAssertNil(try store.installedPublish(region: "uk"))
+        XCTAssertTrue(fetcher.requestedURLs.contains(imageIndexURL))
+    }
+
+    func testOfflineDownloaderInstallsCardContentBundleForOfflineCards() async throws {
+        let root = temporaryOfflineRoot()
+        let store = try OfflineRegionStore(root: root)
+        let placeID = "mt1_00000000000000000000000000"
+        let tile = try gzipJSON(tileObject(places: [validPlace([
+            "place_id": placeID,
+            "blurb": NSNull(),
+        ])]))
+        let basemap = Data("basemap".utf8)
+        let thumb = Data("offline-downloaded-thumb".utf8)
+        let thumbSHA = sha256(thumb)
+        let imageIndex = jsonData(imageIndexObject(places: [validImageEntry([
+            "place_id": placeID,
+            "thumb_sha256": thumbSHA,
+            "bytes": thumb.count,
+        ])]))
+        let descriptionIndex = jsonData(descriptionIndexObject(places: [validDescriptionEntry([
+            "place_id": placeID,
+            "excerpt": "Downloaded offline description.",
+        ])]))
+        let publishVersion = "20260717T000000Z"
+        let tileURL = "https://tiles.making-tracks.app/uk/\(publishVersion)/tiles/10/511/340.json.gz"
+        let basemapURL = "https://tiles.making-tracks.app/uk/\(publishVersion)/uk.pmtiles"
+        let imageIndexURL = "https://tiles.making-tracks.app/uk/\(publishVersion)/images/10/511/340.json"
+        let descriptionIndexURL = "https://tiles.making-tracks.app/uk/\(publishVersion)/descriptions/10/511/340.json"
+        let thumbURL = "https://tiles.making-tracks.app/thumbs/\(String(thumbSHA.prefix(2)))/\(thumbSHA).webp"
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": publishVersion]),
+            "https://tiles.making-tracks.app/uk/\(publishVersion)/manifest.json": manifestData(
+                publishVersion: publishVersion,
+                tileSHA: sha256(tile),
+                tileBytes: tile.count,
+                basemapSHA: sha256(basemap),
+                basemapBytes: basemap.count,
+                attributionSources: []
+            ),
+            tileURL: tile,
+            basemapURL: basemap,
+            imageIndexURL: imageIndex,
+            descriptionIndexURL: descriptionIndex,
+            thumbURL: thumb,
+        ])
+        let downloader = OfflineRegionDownloader(region: "uk", fetcher: fetcher, store: store, availableBytes: { 10_000_000_000 })
+
+        _ = try await downloader.downloadCurrentRegion()
+        let offlineClient = TileClient(region: "uk", fetcher: StubFetcher(routes: [:]), cache: try temporaryCache(), offlineStore: store)
+        let places = await offlineClient.places(
+            inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51),
+            zoom: 16
+        )
+        let image = try await waitForPlaceImage(offlineClient, placeID)
+        let loadedPlaceRef = await offlineClient.placeRef(for: placeID)
+        let placeRef = try XCTUnwrap(loadedPlaceRef)
+        let rawData = try XCTUnwrap(placeRef.rawJSON.data(using: .utf8))
+        let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: rawData) as? [String: Any])
+
+        XCTAssertEqual(places.map(\.id), [placeID])
+        XCTAssertEqual(image?.offlineThumbnailData, thumb)
+        XCTAssertEqual(raw["blurb"] as? String, "Downloaded offline description.")
+        XCTAssertEqual(
+            store.imageIndex(region: "uk", publishVersion: publishVersion, coordinate: TileCoordinate(z: 10, x: 511, y: 340)),
+            imageIndex
+        )
+        XCTAssertEqual(
+            store.descriptionIndex(region: "uk", publishVersion: publishVersion, coordinate: TileCoordinate(z: 10, x: 511, y: 340)),
+            descriptionIndex
+        )
+        XCTAssertEqual(store.thumbnail(region: "uk", publishVersion: publishVersion, sha256: thumbSHA, bytes: thumb.count), thumb)
+        XCTAssertTrue(fetcher.requestedURLs.contains(imageIndexURL))
+        XCTAssertTrue(fetcher.requestedURLs.contains(descriptionIndexURL))
+        XCTAssertTrue(fetcher.requestedURLs.contains(thumbURL))
     }
 
     func testOfflineDownloaderPersistsVerifiedObjectsBeforeInstallAndResumeSkipsThem() async throws {
@@ -5019,20 +5283,28 @@ final class MakingTracksTilesTests: XCTestCase {
 
 private final class StubFetcher: OfflineRegionFetching, @unchecked Sendable {
     var routes: [String: Data]
+    var errors: [String: Error]
     private(set) var requestedURLs: [String] = []
 
-    init(routes: [String: Data]) {
+    init(routes: [String: Data], errors: [String: Error] = [:]) {
         self.routes = routes
+        self.errors = errors
     }
 
     func fetch(_ url: URL) async throws -> Data {
         requestedURLs.append(url.absoluteString)
+        if let error = errors[url.absoluteString] {
+            throw error
+        }
         if let data = routes[url.absoluteString] {
             return data
         }
         if url.absoluteString == "https://tiles.making-tracks.app/catalog/current.json",
            let catalog = synthesizedCurrentCatalog(from: routes) {
             return catalog
+        }
+        if isOptionalContentSidecarURL(url) {
+            throw TileError.httpStatus(404)
         }
         throw URLError(.notConnectedToInternet)
     }
@@ -5044,6 +5316,11 @@ private final class StubFetcher: OfflineRegionFetching, @unchecked Sendable {
         try data.write(to: fileURL, options: .atomic)
         return fileURL
     }
+}
+
+private func isOptionalContentSidecarURL(_ url: URL) -> Bool {
+    (url.path.contains("/images/10/") || url.path.contains("/descriptions/10/"))
+        && url.pathExtension == "json"
 }
 
 private func synthesizedCurrentCatalog(from routes: [String: Data]) -> Data? {
@@ -5170,7 +5447,12 @@ private final class SlowDownloadFetcher: OfflineRegionFetching, @unchecked Senda
     }
 
     func fetch(_ url: URL) async throws -> Data {
-        guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
+        guard let data = routes[url.absoluteString] else {
+            if isOptionalContentSidecarURL(url) {
+                throw TileError.httpStatus(404)
+            }
+            throw URLError(.notConnectedToInternet)
+        }
         return data
     }
 
@@ -5199,7 +5481,12 @@ private final class OutOfSpaceDownloadFetcher: OfflineRegionFetching, @unchecked
     }
 
     func fetch(_ url: URL) async throws -> Data {
-        guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
+        guard let data = routes[url.absoluteString] else {
+            if isOptionalContentSidecarURL(url) {
+                throw TileError.httpStatus(404)
+            }
+            throw URLError(.notConnectedToInternet)
+        }
         return data
     }
 
@@ -5216,7 +5503,12 @@ private final class ConnectivityWaitingFetcher: ConnectivityWaitingOfflineRegion
     }
 
     func fetch(_ url: URL) async throws -> Data {
-        guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
+        guard let data = routes[url.absoluteString] else {
+            if isOptionalContentSidecarURL(url) {
+                throw TileError.httpStatus(404)
+            }
+            throw URLError(.notConnectedToInternet)
+        }
         return data
     }
 
@@ -5308,7 +5600,12 @@ private final class ProgressReportingFetcher: ProgressReportingOfflineRegionFetc
         progress: (@Sendable (_ totalBytesWritten: Int64, _ totalBytesExpectedToWrite: Int64) -> Void)?
     ) async throws -> URL {
         connectivityAvailable?()
-        guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
+        guard let data = routes[url.absoluteString] else {
+            if isOptionalContentSidecarURL(url) {
+                throw TileError.httpStatus(404)
+            }
+            throw URLError(.notConnectedToInternet)
+        }
         for bytes in downloadProgress[url.absoluteString] ?? [] {
             progress?(bytes, Int64(data.count))
         }
@@ -5907,6 +6204,43 @@ private func imageIndexObject(
         "y": y,
         "places": places,
     ]
+}
+
+private func descriptionIndexObject(
+    z: Int = 10,
+    x: Int = 511,
+    y: Int = 340,
+    minReaderVersion: Int = 1,
+    places: [[String: Any]]
+) -> [String: Any] {
+    [
+        "schema_version": 1,
+        "min_reader_version": minReaderVersion,
+        "z": z,
+        "x": x,
+        "y": y,
+        "places": places,
+    ]
+}
+
+private func validDescriptionEntry(_ overrides: [String: Any] = [:]) -> [String: Any] {
+    var entry: [String: Any] = [
+        "place_id": "mt1_00000000000000000000000000",
+        "excerpt": "Description from a sidecar.",
+        "excerpted": true,
+        "license_code": "CC-BY-SA-4.0",
+        "license_name": "Creative Commons Attribution-ShareAlike 4.0",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "modified": true,
+        "source_ref": "wp:52146148",
+        "source_url": "https://en.wikipedia.org/wiki/Example",
+        "wikipedia_lang": "en",
+        "wikipedia_title": "Example",
+    ]
+    for (key, value) in overrides {
+        entry[key] = value
+    }
+    return entry
 }
 
 private func validImageEntry(_ overrides: [String: Any] = [:]) -> [String: Any] {
