@@ -90,7 +90,9 @@ Host-only package tests do not use the simulator: for `/ios` Swift package work 
 
 Simulator-backed work is a shared-machine resource and uses **one designated simulator**, `agent-ios-tests` (UDID `C4A64D49-24A2-4429-B6E2-AD9A14142A99`), driving the app project `ios/App/MakingTracks.xcodeproj`, scheme `MakingTracks`.
 
-**Every `xcodebuild` invocation against it — build OR test — must hold `flock` on `/private/tmp/making-tracks-ios-tests.lock` around the whole boot-and-run sequence.** This is one fleet-wide lock serializing all simulator-backed work across every agent; a Release build contends for the same simulator state as a test run, so builds take it too. Use exactly one destination, by UDID, with parallel and concurrent-destination testing disabled — those are the paths that spawn simulator clones.
+**Nothing touches the designated simulator except through `scripts/sim-lock.sh`.** It owns the fleet lock and is the only thing that takes it — build, test, boot, shutdown, erase, delete. This binds coordinators exactly as it binds builders: a maintenance command run by hand is still a second thing touching the simulator. A Release build contends for the same simulator state as a test run, so builds go through it too. Use exactly one destination, by UDID, with parallel and concurrent-destination testing disabled — those are the paths that spawn simulator clones.
+
+**Never read the lock file to decide whether the simulator is free.** It records who holds the lock, not who is using the simulator, and work that never took the lock leaves it looking idle. Use `sim-lock.sh --status`, which checks the lock and the process table and reports HELD if either fires. Acting on a bare `lsof` reading is how a running gate lost its simulator (incidents → *A hand-checked lock erased a running gate*).
 
 Boot with `xcrun simctl bootstatus "$UDID" -b` — idempotent and blocking. **Never use `simctl boot` in agent scripts**, and **never put `simctl delete all` or `simctl shutdown all` in a shared script** — unscoped, those destroy or disrupt Rob's simulators and every other agent's.
 

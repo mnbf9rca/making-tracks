@@ -27,16 +27,26 @@ xcrun simctl create agent-ios-tests "iPhone 17" com.apple.CoreSimulator.SimRunti
 Boot with `xcrun simctl bootstatus "$UDID" -b` — idempotent and blocking. **Do not use `simctl boot` in agent
 scripts**; it returns before the device is usable.
 
-The fleet lock is `/private/tmp/making-tracks-ios-tests.lock`. `flock` is at `/opt/homebrew/bin/flock`.
-The retired lock path `/tmp/agent-ios-sim.lock` does **not** serialize fleet work; do not use it. If there is
-any doubt about who holds the simulator, check the canonical lock directly before starting work:
+**Everything goes through `scripts/sim-lock.sh`.** It owns the lock, and it is the only thing that touches
+the designated simulator — build, test, boot, shutdown, erase.
 
 ```bash
-lsof /private/tmp/making-tracks-ios-tests.lock
+./scripts/sim-lock.sh <command>    # run under the lock
+./scripts/sim-lock.sh --status     # HELD or FREE (exit 0 = FREE)
+./scripts/sim-lock.sh --erase      # destructive ops, under the lock
 ```
 
-Add a second simulator only if lock waits become a *measured* bottleneck. One simulator plus `flock` is the
-policy.
+**Never `lsof` the lock file to decide whether the simulator is free.** The file records who holds the
+lock, not who is using the simulator, and those differ: work that never took the lock leaves the file
+looking idle. Acting on that reading is how a running gate lost its simulator (incidents → *A hand-checked
+lock erased a running gate*). `--status` checks the lock **and** the process table and reports HELD if
+either fires.
+
+The lock is `/private/tmp/making-tracks-ios-tests.lock`. The retired path `/tmp/agent-ios-sim.lock` is kept
+as a symlink to it, asserted on every `sim-lock.sh` run, so muscle memory cannot split the lock again.
+
+Add a second simulator only if lock waits become a *measured* bottleneck. One simulator plus one entry point
+is the policy.
 
 ---
 
@@ -62,7 +72,7 @@ the lock.
 One destination, addressed by UDID, with parallel and concurrent-destination testing disabled:
 
 ```bash
-flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
+./scripts/sim-lock.sh sh -ec '
   UDID=C4A64D49-24A2-4429-B6E2-AD9A14142A99
   xcrun simctl bootstatus "$UDID" -b
   xcodebuild \
@@ -80,7 +90,7 @@ flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
 Required once before any PR touching the iOS app target (`AGENTS.md` → **Review gates**):
 
 ```bash
-flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
+./scripts/sim-lock.sh sh -ec '
   UDID=C4A64D49-24A2-4429-B6E2-AD9A14142A99
   xcrun simctl bootstatus "$UDID" -b
   xcodebuild build \
@@ -137,7 +147,7 @@ Do not bisect code until the environment axis is isolated. The discriminator is 
 run on a temporary fresh device:
 
 ```bash
-flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
+./scripts/sim-lock.sh sh -ec '
   TMP_UDID=$(xcrun simctl create mt-poison-check "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-26-2)
   trap "xcrun simctl delete \"$TMP_UDID\"" EXIT
   xcrun simctl bootstatus "$TMP_UDID" -b
@@ -156,7 +166,7 @@ If the temporary device passes and the designated device fails with the signatur
 device under the same canonical lock:
 
 ```bash
-flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
+./scripts/sim-lock.sh sh -ec '
   UDID=C4A64D49-24A2-4429-B6E2-AD9A14142A99
   xcrun simctl shutdown "$UDID" || true
   xcrun simctl erase "$UDID"
@@ -175,7 +185,7 @@ alone: collect the kill signature and run the fresh-device discriminator first.
 Takes the fleet lock, so cleanup cannot race an active run:
 
 ```bash
-flock /private/tmp/making-tracks-ios-tests.lock sh -ec '
+./scripts/sim-lock.sh sh -ec '
   xcrun simctl --set testing delete all
   xcrun simctl delete unavailable
   find ~/Library/Developer/Xcode/DerivedData -mindepth 1 -maxdepth 1 -type d -mtime +14 \
