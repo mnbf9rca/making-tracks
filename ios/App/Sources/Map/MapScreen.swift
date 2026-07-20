@@ -115,8 +115,27 @@ struct OfflineRegionCatalogZone: Identifiable, Hashable, Sendable {
     let displayName: String
     let parentID: String?
     let publishVersion: String
+    let searchCompactPublishVersion: String?
     let bytesWithoutThumbnails: Int
     let bytesWithThumbnails: Int
+
+    init(
+        id: String,
+        displayName: String,
+        parentID: String?,
+        publishVersion: String,
+        searchCompactPublishVersion: String? = nil,
+        bytesWithoutThumbnails: Int,
+        bytesWithThumbnails: Int
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.parentID = parentID
+        self.publishVersion = publishVersion
+        self.searchCompactPublishVersion = searchCompactPublishVersion
+        self.bytesWithoutThumbnails = bytesWithoutThumbnails
+        self.bytesWithThumbnails = bytesWithThumbnails
+    }
 
     func sizeLabel(includeThumbnails: Bool) -> String {
         let bytes = includeThumbnails ? bytesWithThumbnails : bytesWithoutThumbnails
@@ -131,12 +150,16 @@ struct OfflineRegionCatalogZone: Identifiable, Hashable, Sendable {
 struct OfflineRegionCatalog: Sendable, Equatable {
     let zones: [OfflineRegionCatalogZone]
 
+    static let empty = OfflineRegionCatalog(zones: [])
+
+#if DEBUG
     static let debugFixture = OfflineRegionCatalog(zones: [
         OfflineRegionCatalogZone(
             id: MapRegion.unitedKingdom.rawValue,
             displayName: "United Kingdom",
             parentID: nil,
             publishVersion: "20260718T000000Z",
+            searchCompactPublishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 2_640_000_000,
             bytesWithThumbnails: 3_180_000_000
         ),
@@ -145,6 +168,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             displayName: "London",
             parentID: MapRegion.unitedKingdom.rawValue,
             publishVersion: "20260718T000000Z",
+            searchCompactPublishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 842_000_000,
             bytesWithThumbnails: 1_160_000_000
         ),
@@ -153,6 +177,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             displayName: "South East England",
             parentID: MapRegion.unitedKingdom.rawValue,
             publishVersion: "20260718T000000Z",
+            searchCompactPublishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 1_120_000_000,
             bytesWithThumbnails: 1_410_000_000
         ),
@@ -161,6 +186,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             displayName: "Malaysia, Singapore, and Brunei",
             parentID: nil,
             publishVersion: "20260718T000000Z",
+            searchCompactPublishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 1_420_000_000,
             bytesWithThumbnails: 1_980_000_000
         ),
@@ -169,6 +195,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             displayName: "Kuala Lumpur",
             parentID: MapRegion.malaysiaSingaporeBrunei.rawValue,
             publishVersion: "20260718T000000Z",
+            searchCompactPublishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 610_000_000,
             bytesWithThumbnails: 915_000_000
         ),
@@ -177,10 +204,57 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             displayName: "Penang",
             parentID: MapRegion.malaysiaSingaporeBrunei.rawValue,
             publishVersion: "20260718T000000Z",
+            searchCompactPublishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 520_000_000,
             bytesWithThumbnails: 760_000_000
         ),
     ])
+#endif
+
+    init(zones: [OfflineRegionCatalogZone]) {
+        self.zones = zones
+    }
+
+    init(regionIndex: RegionIndex) {
+        self.zones = regionIndex.regions.map { entry in
+            guard let searchPublishVersion = Self.publishVersion(fromSearchCompactPath: entry.searchCompact.path) else {
+                preconditionFailure("RegionIndex.decode must validate search_compact.path before catalog construction")
+            }
+            return OfflineRegionCatalogZone(
+                id: entry.id,
+                displayName: entry.displayName,
+                parentID: entry.parent,
+                publishVersion: searchPublishVersion,
+                searchCompactPublishVersion: searchPublishVersion,
+                bytesWithoutThumbnails: entry.bytesWithoutThumbnails,
+                bytesWithThumbnails: entry.bytesWithThumbnails
+            )
+        }
+    }
+
+    static func current(fetcher: TileFetching) async throws -> OfflineRegionCatalog {
+        guard let url = URL(string: "https://\(HTTPTileFetcher.trustedHost)/regions.json") else {
+            throw TileError.invalidURL
+        }
+        try HTTPTileFetcher.validateOrigin(url)
+        let data: Data
+        if let boundedFetcher = fetcher as? BoundedTileFetching {
+            data = try await boundedFetcher.fetch(url, maxBytes: RegionIndex.maxBytes)
+        } else {
+            data = try await fetcher.fetch(url)
+        }
+        guard data.count <= RegionIndex.maxBytes else { throw TileError.responseTooLarge }
+        return try OfflineRegionCatalog(regionIndex: RegionIndex.decode(data))
+    }
+
+    private static func publishVersion(fromSearchCompactPath path: String) -> String? {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count >= 4,
+              parts[parts.count - 2] == "search",
+              parts[parts.count - 1] == "compact.json"
+        else { return nil }
+        return String(parts[parts.count - 3])
+    }
 
     var rootZones: [OfflineRegionCatalogZone] {
         zones.filter { $0.parentID == nil }.sorted(by: zoneSort)
@@ -245,13 +319,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         quarantines: [String: OfflinePackQuarantine]
     ) -> [OfflineRegionCatalogRow] {
         let state: OfflineRegionCatalogRow.State
-        let isSupportedRegion = MapRegion(rawValue: zone.id) != nil
-        let hasUnavailableLocalData = !isSupportedRegion && (installed[zone.id] != nil || quarantines[zone.id] != nil)
-        let hasUnavailablePausedDownload = !isSupportedRegion
-            && (activeProgress?.region == zone.id || pausedProgress?.region == zone.id || pausedRegions.contains(zone.id))
-        if !isSupportedRegion {
-            state = .unavailable
-        } else if let quarantine = quarantines[zone.id] {
+        if let quarantine = quarantines[zone.id] {
             state = .quarantined(quarantine)
         } else if activeProgress?.region == zone.id {
             state = .downloading(activeProgress!)
@@ -271,7 +339,13 @@ struct OfflineRegionCatalog: Sendable, Equatable {
                 state = .installed(publishVersion: installedVersion)
             }
         } else {
-            state = .notInstalled
+            if let availablePublishVersion = availablePublishVersions[zone.id],
+               zone.searchCompactPublishVersion == availablePublishVersion
+            {
+                state = .notInstalled
+            } else {
+                state = .unavailable
+            }
         }
         let current = OfflineRegionCatalogRow(
             zone: zone,
@@ -283,8 +357,8 @@ struct OfflineRegionCatalog: Sendable, Equatable {
                 installedStorageBytes: installedStorageBytes,
                 availableStorageBytes: availableStorageBytes
             ),
-            hasUnavailableLocalData: hasUnavailableLocalData,
-            hasUnavailablePausedDownload: hasUnavailablePausedDownload
+            hasUnavailableLocalData: false,
+            hasUnavailablePausedDownload: false
         )
         return [current] + children(of: zone.id).flatMap {
             rows(
@@ -997,7 +1071,7 @@ func offlineInstallFailureDetail(for error: Error) -> String {
 }
 
 enum OfflineCoverageBBox {
-    static func coverage(fromManifestBasemapBBox bbox: [Double], for region: MapRegion) -> CoverageBBox? {
+    static func coverage(fromManifestBasemapBBox bbox: [Double]) -> CoverageBBox? {
         guard bbox.count == 4 else { return nil }
         let coverage = CoverageBBox(
             minLon: bbox[0],
@@ -1005,17 +1079,8 @@ enum OfflineCoverageBBox {
             maxLon: bbox[2],
             maxLat: bbox[3]
         )
-        guard coverage.isValid,
-              intersects(coverage, region.viewportBBox)
-        else { return nil }
+        guard coverage.isValid else { return nil }
         return coverage
-    }
-
-    private static func intersects(_ coverage: CoverageBBox, _ bbox: BBox) -> Bool {
-        !(coverage.maxLon < bbox.minLon
-            || bbox.maxLon < coverage.minLon
-            || coverage.maxLat < bbox.minLat
-            || bbox.maxLat < coverage.minLat)
     }
 }
 
@@ -2416,7 +2481,7 @@ struct MapScreen: View {
         storageMenuStatus = .loading
         MakingTracksLog.startup.debug("storage status state=loading")
         async let nextStorageMenuStatus = model.storageMenuStatus()
-        async let nextInstalledCoverageBBoxes = model.installedOfflineCoverageBBoxes(for: OfflineRegionCatalog.debugFixture)
+        async let nextInstalledCoverageBBoxes = model.installedOfflineCoverageBBoxes()
         storageMenuStatus = await nextStorageMenuStatus
         installedCoverageBBoxes = debugCoverageBBoxes + (await nextInstalledCoverageBBoxes)
         let statusKind = storageMenuStatus.kind.logLabel
@@ -3302,16 +3367,14 @@ enum OfflinePublishAvailability {
         installedRegions: Set<String>,
         fetcher: TileFetching
     ) async throws -> OfflineMapsAvailability {
-        let regionIDs = catalog.zones
-            .compactMap { MapRegion(rawValue: $0.id)?.rawValue }
-        async let versions = currentPublishVersionsOrEmpty(
-            regions: regionIDs.filter { installedRegions.contains($0) },
+        let regionIDs = catalog.zones.map(\.id)
+        let allVersions = await currentPublishVersionsOrEmpty(
+            regions: regionIDs,
             fetcher: fetcher
         )
-        async let storageBytes = currentStorageBytesOrEmpty(for: regionIDs, fetcher: fetcher)
-        return await OfflineMapsAvailability(
-            publishVersions: versions,
-            storageBytes: storageBytes
+        return OfflineMapsAvailability(
+            publishVersions: allVersions,
+            storageBytes: currentStorageBytes(for: catalog, currentPublishVersions: allVersions)
         )
     }
 
@@ -3321,31 +3384,20 @@ enum OfflinePublishAvailability {
         fetcher: TileFetching
     ) async throws -> [String: String] {
         let regionIDs = catalog.zones
-            .compactMap { MapRegion(rawValue: $0.id)?.rawValue }
+            .map(\.id)
             .filter { installedRegions.contains($0) }
         return try await ManifestClient.currentPublishVersions(regions: regionIDs, fetcher: fetcher)
     }
 
     private static func currentStorageBytes(
-        for regionIDs: [String],
-        fetcher: TileFetching
-    ) async throws -> [String: Int] {
-        guard let url = URL(string: "https://\(HTTPTileFetcher.trustedHost)/regions.json") else {
-            throw TileError.invalidURL
-        }
-        try HTTPTileFetcher.validateOrigin(url)
-        let data: Data
-        if let boundedFetcher = fetcher as? BoundedTileFetching {
-            data = try await boundedFetcher.fetch(url, maxBytes: RegionIndex.maxBytes)
-        } else {
-            data = try await fetcher.fetch(url)
-        }
-        guard data.count <= RegionIndex.maxBytes else { throw TileError.responseTooLarge }
-        let index = try RegionIndex.decode(data)
-        let supportedRegions = Set(regionIDs)
-        return index.regions.reduce(into: [String: Int]()) { bytes, entry in
-            guard supportedRegions.contains(entry.id) else { return }
-            bytes[entry.id] = entry.bytesWithoutThumbnails
+        for catalog: OfflineRegionCatalog,
+        currentPublishVersions: [String: String]
+    ) -> [String: Int] {
+        catalog.zones.reduce(into: [String: Int]()) { bytes, zone in
+            guard let currentPublishVersion = currentPublishVersions[zone.id],
+                  zone.searchCompactPublishVersion == currentPublishVersion
+            else { return }
+            bytes[zone.id] = zone.bytesWithoutThumbnails
         }
     }
 
@@ -3353,15 +3405,10 @@ enum OfflinePublishAvailability {
         regions: [String],
         fetcher: TileFetching
     ) async -> [String: String] {
+        // RegionIndex is capped at 512 entries; that cap bounds the fan-out behind this shared catalog probe.
         (try? await ManifestClient.currentPublishVersions(regions: regions, fetcher: fetcher)) ?? [:]
     }
 
-    private static func currentStorageBytesOrEmpty(
-        for regionIDs: [String],
-        fetcher: TileFetching
-    ) async -> [String: Int] {
-        (try? await currentStorageBytes(for: regionIDs, fetcher: fetcher)) ?? [:]
-    }
 }
 
 private extension StorageMenuStatus.Kind {
@@ -4376,7 +4423,7 @@ private struct OfflineMapsView: View {
     let downloadSession: OfflineRegionDownloadSession
     let onOfflineMapsChanged: @MainActor () async -> Void
 
-    private let catalog = OfflineRegionCatalog.debugFixture
+    @State private var catalog = OfflineRegionCatalog.empty
     @State private var installed: [String: String] = [:]
     @State private var availablePublishVersions: [String: String] = [:]
     @State private var availableStorageBytes: [String: Int] = [:]
@@ -4735,13 +4782,15 @@ private struct OfflineMapsView: View {
             return
         }
         availabilityRefreshTask?.cancel()
+        let refreshedCatalog = await model.offlineRegionCatalog(allowsCellularDownloads: allowsCellularDownloads)
+        catalog = refreshedCatalog
         availabilityRefreshTask = await OfflineMapsRefreshCoordinator.refresh(
             loadLocalState: {
-                await model.offlineMapsLocalState(for: catalog)
+                await model.offlineMapsLocalState(for: refreshedCatalog)
             },
             loadAvailability: { installedRegions in
                 await model.availableOfflineAvailability(
-                    for: catalog,
+                    for: refreshedCatalog,
                     installedRegions: installedRegions,
                     allowsCellularDownloads: allowsCellularDownloads
                 )
@@ -6768,13 +6817,30 @@ final class MapScreenModel {
         )
     }
 
+    func offlineRegionCatalog(
+        allowsCellularDownloads: Bool,
+        catalogFetcher: TileFetching? = nil
+    ) async -> OfflineRegionCatalog {
+        let catalogFetcher = catalogFetcher ?? offlineAvailabilityFetcher(
+            allowsCellularDownloads: allowsCellularDownloads
+        )
+        do {
+            let catalog = try await OfflineRegionCatalog.current(fetcher: catalogFetcher)
+            MakingTracksLog.downloads.info("offline regions index fetched regions=\(catalog.zones.count, privacy: .public)")
+            return catalog
+        } catch {
+            MakingTracksLog.downloads.error("offline regions index failed reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            return .empty
+        }
+    }
+
     func availableOfflinePublishVersions(
         for catalog: OfflineRegionCatalog,
         installedRegions: Set<String>,
         allowsCellularDownloads: Bool,
         availabilityFetcher: TileFetching? = nil
     ) async -> [String: String] {
-        let availabilityFetcher = availabilityFetcher ?? HTTPTileFetcher.offlineAvailabilityProbe(
+        let availabilityFetcher = availabilityFetcher ?? offlineAvailabilityFetcher(
             allowsCellularDownloads: allowsCellularDownloads
         )
         do {
@@ -6797,7 +6863,7 @@ final class MapScreenModel {
         allowsCellularDownloads: Bool,
         availabilityFetcher: TileFetching? = nil
     ) async -> OfflineMapsAvailability {
-        let availabilityFetcher = availabilityFetcher ?? HTTPTileFetcher.offlineAvailabilityProbe(
+        let availabilityFetcher = availabilityFetcher ?? offlineAvailabilityFetcher(
             allowsCellularDownloads: allowsCellularDownloads
         )
         do {
@@ -6814,12 +6880,22 @@ final class MapScreenModel {
         }
     }
 
+    private func offlineAvailabilityFetcher(allowsCellularDownloads: Bool) -> TileFetching {
+#if DEBUG
+        if forceTileNetworkOffline {
+            return OfflineProofFetcher()
+        }
+#endif
+        return HTTPTileFetcher.offlineAvailabilityProbe(
+            allowsCellularDownloads: allowsCellularDownloads
+        )
+    }
+
     func pausedOfflineDownloadRegions(for catalog: OfflineRegionCatalog) async -> Set<String> {
         guard let offlineStore else { return [] }
-        let validRegionIDs = Set(catalog.zones.map(\.id))
         return await Task.detached {
             let paused = (try? offlineStore.pausedPendingDownloadRegions()) ?? []
-            return Set(paused.filter { validRegionIDs.contains($0) })
+            return Set(paused)
         }.value
     }
 
@@ -6867,17 +6943,15 @@ final class MapScreenModel {
     }
 #endif
 
-    func installedOfflineCoverageBBoxes(for catalog: OfflineRegionCatalog) async -> [CoverageBBox] {
+    func installedOfflineCoverageBBoxes() async -> [CoverageBBox] {
         guard let offlineStore else { return [] }
-        let regionIDs = catalog.zones.compactMap { MapRegion(rawValue: $0.id)?.rawValue }
         return await Task.detached {
             var coverage: [CoverageBBox] = []
+            let regionIDs = (try? offlineStore.installedPackStorageSummary().packs.map(\.region)) ?? []
             for regionID in regionIDs {
-                guard let region = MapRegion(rawValue: regionID),
-                      let publish = try? offlineStore.installedPublish(region: regionID),
+                guard let publish = try? offlineStore.installedPublish(region: regionID),
                       let coverageBBox = OfflineCoverageBBox.coverage(
-                        fromManifestBasemapBBox: publish.manifest.basemap.bbox,
-                        for: region
+                        fromManifestBasemapBBox: publish.manifest.basemap.bbox
                       )
                 else { continue }
                 coverage.append(coverageBBox)

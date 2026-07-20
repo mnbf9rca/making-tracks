@@ -1192,15 +1192,26 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(status.failedRegions, [])
     }
 
-    func testOfflineRegionCatalogFixtureIsHierarchicalAndShowsBoundedSizes() {
-        let catalog = OfflineRegionCatalog.debugFixture
+    func testOfflineRegionCatalogDerivesRowsFromDecodedRegionIndex() throws {
+        let catalog = OfflineRegionCatalog(regionIndex: try RegionIndex.decode(appJSONData(appRegionIndexV3Object())))
 
-        XCTAssertEqual(catalog.rootZones.map(\.id), ["malaysia-singapore-brunei", "united-kingdom"])
-        XCTAssertEqual(catalog.children(of: "united-kingdom").map(\.id), ["united-kingdom_london", "united-kingdom_south_east"])
-        XCTAssertEqual(catalog.children(of: "malaysia-singapore-brunei").map(\.id), ["malaysia-singapore-brunei_kl", "malaysia-singapore-brunei_penang"])
-        XCTAssertEqual(catalog.zone(id: "united-kingdom_london")?.sizeLabel(includeThumbnails: false), "842 MB")
-        XCTAssertEqual(catalog.zone(id: "malaysia-singapore-brunei_kl")?.sizeLabel(includeThumbnails: true), "915 MB")
+        XCTAssertEqual(catalog.rootZones.map(\.id), ["malaysia-singapore-brunei"])
+        XCTAssertEqual(catalog.children(of: "malaysia-singapore-brunei").map(\.id), ["malaysia-singapore-brunei_kl"])
+        XCTAssertEqual(catalog.zone(id: "malaysia-singapore-brunei")?.sizeLabel(includeThumbnails: false), "229 MB")
+        XCTAssertEqual(catalog.zone(id: "malaysia-singapore-brunei_kl")?.sizeLabel(includeThumbnails: true), "41 MB")
         XCTAssertNil(catalog.zone(id: "not-a-zone"))
+
+        let rows = catalog.rows(
+            installed: [:],
+            availablePublishVersions: [
+                "malaysia-singapore-brunei": "20260719T125813Z",
+                "malaysia-singapore-brunei_kl": "20260719T125813Z",
+            ],
+            activeProgress: nil,
+            quarantines: []
+        )
+        XCTAssertEqual(rows.map(\.zone.id), ["malaysia-singapore-brunei", "malaysia-singapore-brunei_kl"])
+        XCTAssertEqual(rows.map(\.state), [.notInstalled, .notInstalled])
     }
 
     func testOfflineRegionRowsSurfaceProgressUpdatesAndQuarantines() {
@@ -1235,15 +1246,15 @@ final class AppShellTests: XCTestCase {
         let kl = rows.first { $0.zone.id == "malaysia-singapore-brunei_kl" }
 
         XCTAssertEqual(uk?.state, .downloading(progress))
-        XCTAssertEqual(london?.state, .unavailable)
-        XCTAssertEqual(southEast?.state, .unavailable)
+        XCTAssertEqual(london?.state, .installed(publishVersion: "20260717T000000Z"))
+        XCTAssertEqual(southEast?.state, .installed(publishVersion: "20260717T000000Z"))
         XCTAssertEqual(malaysia?.state, .quarantined(quarantine))
-        XCTAssertEqual(kl?.state, .unavailable)
+        XCTAssertEqual(kl?.state, .installed(publishVersion: "20260717T000000Z"))
         XCTAssertEqual(london?.depth, 1)
-        XCTAssertEqual(southEast?.statusLabel, "Not available")
+        XCTAssertEqual(southEast?.statusLabel, "Downloaded")
         XCTAssertEqual(malaysia?.statusLabel, "Quarantined pack")
-        XCTAssertEqual(kl?.statusLabel, "Not available")
-        XCTAssertTrue(kl?.hasUnavailableLocalData == true)
+        XCTAssertEqual(kl?.statusLabel, "Downloaded")
+        XCTAssertFalse(kl?.hasUnavailableLocalData == true)
     }
 
     func testOfflineRegionRowsLabelCompleteActiveProgressAsInstalling() {
@@ -1297,7 +1308,7 @@ final class AppShellTests: XCTestCase {
 
         let rows = catalog.rows(
             installed: [:],
-            availablePublishVersions: ["malaysia-singapore-brunei": "20260719T125813Z"],
+            availablePublishVersions: ["malaysia-singapore-brunei": "20260718T000000Z"],
             availableStorageBytes: ["malaysia-singapore-brunei": 233_000_000],
             activeProgress: nil,
             quarantines: []
@@ -1308,7 +1319,7 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(malaysia?.sizeLabel(includeThumbnails: false), "233 MB")
     }
 
-    func testOfflineRegionRowsDoNotOfferSubregionDownloads() {
+    func testOfflineRegionRowsOfferCatalogSubregionDownloads() {
         let catalog = OfflineRegionCatalog.debugFixture
         let quarantine = OfflinePackQuarantine(
             region: "malaysia-singapore-brunei_kl",
@@ -1321,6 +1332,12 @@ final class AppShellTests: XCTestCase {
                 "united-kingdom_london": "20260717T000000Z",
                 "malaysia-singapore-brunei_kl": "20260717T000000Z",
             ],
+            availablePublishVersions: [
+                "united-kingdom": "20260718T000000Z",
+                "united-kingdom_london": "20260718T000000Z",
+                "malaysia-singapore-brunei": "20260718T000000Z",
+                "malaysia-singapore-brunei_kl": "20260718T000000Z",
+            ],
             activeProgress: OfflineDownloadProgress(region: "united-kingdom_london", fractionComplete: 0.25),
             pausedProgress: OfflineDownloadProgress(region: "malaysia-singapore-brunei_kl", fractionComplete: 0.5),
             quarantines: [quarantine]
@@ -1328,10 +1345,10 @@ final class AppShellTests: XCTestCase {
 
         XCTAssertEqual(rows.first { $0.zone.id == "united-kingdom" }?.state, .notInstalled)
         XCTAssertEqual(rows.first { $0.zone.id == "malaysia-singapore-brunei" }?.state, .notInstalled)
-        XCTAssertEqual(rows.first { $0.zone.id == "united-kingdom_london" }?.state, .unavailable)
-        XCTAssertEqual(rows.first { $0.zone.id == "malaysia-singapore-brunei_kl" }?.statusLabel, "Not available")
-        XCTAssertTrue(rows.first { $0.zone.id == "united-kingdom_london" }?.hasUnavailableLocalData == true)
-        XCTAssertTrue(rows.first { $0.zone.id == "malaysia-singapore-brunei_kl" }?.hasUnavailableLocalData == true)
+        XCTAssertEqual(rows.first { $0.zone.id == "united-kingdom_london" }?.state, .downloading(OfflineDownloadProgress(region: "united-kingdom_london", fractionComplete: 0.25)))
+        XCTAssertEqual(rows.first { $0.zone.id == "malaysia-singapore-brunei_kl" }?.statusLabel, "Quarantined pack")
+        XCTAssertFalse(rows.first { $0.zone.id == "united-kingdom_london" }?.hasUnavailableLocalData == true)
+        XCTAssertFalse(rows.first { $0.zone.id == "malaysia-singapore-brunei_kl" }?.hasUnavailableLocalData == true)
     }
 
     func testOfflineRegionRowsSurfaceUnknownLocalRegionsForCleanup() {
@@ -1363,20 +1380,20 @@ final class AppShellTests: XCTestCase {
         XCTAssertTrue(quarantined?.allowsDelete == true)
     }
 
-    func testOfflineRegionRowsOfferCleanupForUnavailablePausedSubregion() {
+    func testOfflineRegionRowsOfferCleanupForUnavailablePausedUnknownRegion() {
         let catalog = OfflineRegionCatalog.debugFixture
 
         let rows = catalog.rows(
             installed: [:],
             activeProgress: nil,
-            pausedRegions: ["united-kingdom_london"],
+            pausedRegions: ["united-kingdom_unknown"],
             quarantines: []
         )
-        let london = rows.first { $0.zone.id == "united-kingdom_london" }
+        let london = rows.first { $0.zone.id == "united-kingdom_unknown" }
 
         XCTAssertEqual(london?.state, .unavailable)
         XCTAssertEqual(london?.statusLabel, "Not available")
-        XCTAssertEqual(london?.cancelRegion, "united-kingdom_london")
+        XCTAssertEqual(london?.cancelRegion, "united-kingdom_unknown")
         XCTAssertFalse(london?.hasUnavailableLocalData == true)
         XCTAssertTrue(london?.hasUnavailablePausedDownload == true)
     }
@@ -1495,7 +1512,11 @@ final class AppShellTests: XCTestCase {
 
         XCTAssertEqual(observedRows.first { $0.zone.id == "united-kingdom" }?.state, .installed(publishVersion: "20260718T000000Z"))
         XCTAssertEqual(observedRows.first { $0.zone.id == "united-kingdom" }?.sizeLabel(includeThumbnails: false), "223.4 MB")
-        XCTAssertEqual(observedRows.first { $0.zone.id == "united-kingdom_london" }?.state, .unavailable)
+        XCTAssertEqual(observedRows.first { $0.zone.id == "united-kingdom_london" }?.state, .quarantined(OfflinePackQuarantine(
+            region: "united-kingdom_london",
+            publishVersion: "20260717T000000Z",
+            coordinates: [TileCoordinate(z: 10, x: 511, y: 340)]
+        )))
         XCTAssertEqual(observedRows.first { $0.zone.id == "malaysia-singapore-brunei" }?.state, .paused(OfflineDownloadProgress(region: "malaysia-singapore-brunei", fractionComplete: 0)))
     }
 
@@ -1519,6 +1540,7 @@ final class AppShellTests: XCTestCase {
 
         XCTAssertEqual(versions, [
             "united-kingdom": "20260718T000000Z",
+            "united-kingdom_london": "20260717T000000Z",
             "malaysia-singapore-brunei": "20260716T155035Z",
         ])
         XCTAssertEqual(fetcher.requestedURLs, [
@@ -1551,6 +1573,7 @@ final class AppShellTests: XCTestCase {
 
         XCTAssertEqual(versions, [
             "united-kingdom": "20260718T000000Z",
+            "united-kingdom_london": "20260717T000000Z",
             "malaysia-singapore-brunei": "20260716T155035Z",
         ])
         XCTAssertEqual(fetcher.requestedURLs, [
@@ -1562,47 +1585,20 @@ final class AppShellTests: XCTestCase {
 
     @MainActor
     func testMapScreenModelOfflineAvailabilityLoadsRegionIndexBytes() async throws {
+        let catalog = OfflineRegionCatalog(regionIndex: try RegionIndex.decode(appJSONData(appRegionIndexV3Object())))
         let fetcher = AppStubFetcher(routes: [
             "https://tiles.making-tracks.app/catalog/current.json": try appJSONData([
                 "schema_version": 1,
                 "publish_versions": [
                     "malaysia-singapore-brunei": "20260719T125813Z",
-                ],
-            ]),
-            "https://tiles.making-tracks.app/regions.json": try appJSONData([
-                "schema_version": 2,
-                "min_reader_version": 1,
-                "generated_at": "2026-07-20T12:00:00Z",
-                "regions": [
-                    [
-                        "id": "malaysia-singapore-brunei",
-                        "display_name": "Malaysia, Singapore, and Brunei",
-                        "parent": NSNull(),
-                        "bbox": [99.0, -1.5, 120.0, 7.5],
-                        "publish_version": "20260719T125813Z",
-                        "basemap_bytes": 4_000_000,
-                        "tile_count": 12,
-                        "bytes_without_thumbnails": 233_000_000,
-                        "bytes_with_thumbnails": 311_000_000,
-                    ],
-                    [
-                        "id": "malaysia-singapore-brunei_kl",
-                        "display_name": "Kuala Lumpur",
-                        "parent": "malaysia-singapore-brunei",
-                        "bbox": [101.4, 2.8, 101.9, 3.4],
-                        "publish_version": "20260719T125813Z",
-                        "basemap_bytes": 1_000_000,
-                        "tile_count": 4,
-                        "bytes_without_thumbnails": 33_000_000,
-                        "bytes_with_thumbnails": 41_000_000,
-                    ],
+                    "malaysia-singapore-brunei_kl": "20260719T125813Z",
                 ],
             ]),
         ])
         let model = try MapScreenModel(database: try AppDatabase.inMemory())
 
         let availability = await model.availableOfflineAvailability(
-            for: .debugFixture,
+            for: catalog,
             installedRegions: ["malaysia-singapore-brunei"],
             allowsCellularDownloads: false,
             availabilityFetcher: fetcher
@@ -1610,54 +1606,110 @@ final class AppShellTests: XCTestCase {
 
         XCTAssertEqual(availability.publishVersions, [
             "malaysia-singapore-brunei": "20260719T125813Z",
+            "malaysia-singapore-brunei_kl": "20260719T125813Z",
         ])
         XCTAssertEqual(availability.storageBytes, [
-            "malaysia-singapore-brunei": 233_000_000,
+            "malaysia-singapore-brunei": 228_849_472,
+            "malaysia-singapore-brunei_kl": 33_000_000,
         ])
-        XCTAssertTrue(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/catalog/current.json"))
-        XCTAssertTrue(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/regions.json"))
+        XCTAssertEqual(fetcher.requestedURLs, [
+            "https://tiles.making-tracks.app/catalog/current.json",
+        ])
     }
 
     @MainActor
-    func testMapScreenModelOfflineAvailabilityKeepsRegionIndexBytesWhenCurrentCatalogFails() async throws {
+    func testMapScreenModelOfflineAvailabilityDropsStaleRegionIndexBytes() async throws {
+        let catalog = OfflineRegionCatalog(regionIndex: try RegionIndex.decode(appJSONData(appRegionIndexV3Object())))
         let fetcher = AppStubFetcher(routes: [
             "https://tiles.making-tracks.app/catalog/current.json": try appJSONData([
-                "schema_version": 2,
+                "schema_version": 1,
                 "publish_versions": [
-                    "malaysia-singapore-brunei": "20260719T125813Z",
-                ],
-            ]),
-            "https://tiles.making-tracks.app/regions.json": try appJSONData([
-                "schema_version": 2,
-                "min_reader_version": 1,
-                "regions": [
-                    [
-                        "id": "malaysia-singapore-brunei",
-                        "display_name": "Malaysia, Singapore, and Brunei",
-                        "parent": NSNull(),
-                        "bbox": [99.0, -1.5, 120.0, 7.5],
-                        "publish_version": "20260719T125813Z",
-                        "basemap_bytes": 4_000_000,
-                        "tile_count": 12,
-                        "bytes_without_thumbnails": 233_000_000,
-                        "bytes_with_thumbnails": 311_000_000,
-                    ],
+                    "malaysia-singapore-brunei": "20260720T000000Z",
+                    "malaysia-singapore-brunei_kl": "20260719T125813Z",
                 ],
             ]),
         ])
         let model = try MapScreenModel(database: try AppDatabase.inMemory())
 
         let availability = await model.availableOfflineAvailability(
-            for: .debugFixture,
+            for: catalog,
             installedRegions: ["malaysia-singapore-brunei"],
             allowsCellularDownloads: false,
             availabilityFetcher: fetcher
         )
 
-        XCTAssertEqual(availability.publishVersions, [:])
-        XCTAssertEqual(availability.storageBytes, [
-            "malaysia-singapore-brunei": 233_000_000,
+        XCTAssertEqual(availability.publishVersions, [
+            "malaysia-singapore-brunei": "20260720T000000Z",
+            "malaysia-singapore-brunei_kl": "20260719T125813Z",
         ])
+        XCTAssertEqual(availability.storageBytes, [
+            "malaysia-singapore-brunei_kl": 33_000_000,
+        ])
+
+        let rows = catalog.rows(
+            installed: [:],
+            availablePublishVersions: availability.publishVersions,
+            availableStorageBytes: availability.storageBytes,
+            activeProgress: nil,
+            quarantines: []
+        )
+        XCTAssertEqual(rows.first { $0.zone.id == "malaysia-singapore-brunei" }?.state, .unavailable)
+        XCTAssertEqual(rows.first { $0.zone.id == "malaysia-singapore-brunei" }?.knownByteSize, nil)
+        XCTAssertFalse(rows.first { $0.zone.id == "malaysia-singapore-brunei" }?.hasUnavailableLocalData == true)
+        XCTAssertNil(rows.first { $0.zone.id == "malaysia-singapore-brunei" }?.cancelRegion)
+        XCTAssertFalse(rows.first { $0.zone.id == "malaysia-singapore-brunei" }?.allowsDelete == true)
+        XCTAssertEqual(rows.first { $0.zone.id == "malaysia-singapore-brunei_kl" }?.knownByteSize, 33_000_000)
+    }
+
+    @MainActor
+    func testMapScreenModelOfflineAvailabilityFailsClosedForUninstalledStaleCatalogZones() async throws {
+        let catalog = OfflineRegionCatalog(regionIndex: try RegionIndex.decode(appJSONData(appRegionIndexV3Object())))
+        let fetcher = AppStubFetcher(routes: [
+            "https://tiles.making-tracks.app/catalog/current.json": try appJSONData([
+                "schema_version": 1,
+                "publish_versions": [
+                    "malaysia-singapore-brunei": "20260720T000000Z",
+                    "malaysia-singapore-brunei_kl": "20260719T125813Z",
+                ],
+            ]),
+        ])
+        let model = try MapScreenModel(database: try AppDatabase.inMemory())
+
+        let availability = await model.availableOfflineAvailability(
+            for: catalog,
+            installedRegions: [],
+            allowsCellularDownloads: false,
+            availabilityFetcher: fetcher
+        )
+        let rows = catalog.rows(
+            installed: [:],
+            availablePublishVersions: availability.publishVersions,
+            availableStorageBytes: availability.storageBytes,
+            activeProgress: nil,
+            quarantines: []
+        )
+
+        XCTAssertEqual(availability.publishVersions, [
+            "malaysia-singapore-brunei": "20260720T000000Z",
+            "malaysia-singapore-brunei_kl": "20260719T125813Z",
+        ])
+        XCTAssertEqual(rows.first { $0.zone.id == "malaysia-singapore-brunei" }?.state, .unavailable)
+        XCTAssertFalse(rows.first { $0.zone.id == "malaysia-singapore-brunei" }?.allowsDelete == true)
+        XCTAssertEqual(rows.first { $0.zone.id == "malaysia-singapore-brunei_kl" }?.state, .notInstalled)
+    }
+
+    func testOfflineRegionRowsFailClosedWhenCurrentPublishVersionIsUnknown() {
+        let catalog = OfflineRegionCatalog.debugFixture
+
+        let rows = catalog.rows(
+            installed: [:],
+            availablePublishVersions: [:],
+            activeProgress: nil,
+            quarantines: []
+        )
+
+        XCTAssertEqual(rows.first { $0.zone.id == "malaysia-singapore-brunei" }?.state, .unavailable)
+        XCTAssertFalse(rows.first { $0.zone.id == "malaysia-singapore-brunei" }?.allowsDelete == true)
     }
 
     @MainActor
@@ -1693,6 +1745,30 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(malformedVersions, [:])
         XCTAssertEqual(offlineVersions, [:])
         XCTAssertEqual(rows.first { $0.zone.id == "malaysia-singapore-brunei" }?.state, .installed(publishVersion: "20260716T155035Z"))
+    }
+
+    @MainActor
+    func testMapScreenModelForceOfflineDisablesOfflineCatalogProbes() async throws {
+        let model = try MapScreenModel(
+            database: try AppDatabase.inMemory(),
+            forceTileNetworkOffline: true
+        )
+
+        let catalog = await model.offlineRegionCatalog(allowsCellularDownloads: false)
+        let versions = await model.availableOfflinePublishVersions(
+            for: .debugFixture,
+            installedRegions: ["united-kingdom"],
+            allowsCellularDownloads: false
+        )
+        let availability = await model.availableOfflineAvailability(
+            for: .debugFixture,
+            installedRegions: ["united-kingdom"],
+            allowsCellularDownloads: false
+        )
+
+        XCTAssertEqual(catalog, .empty)
+        XCTAssertEqual(versions, [:])
+        XCTAssertEqual(availability, .empty)
     }
 
     func testOfflineRegionRowsSurfacePausedProgressSeparatelyFromActiveProgress() {
@@ -1806,18 +1882,12 @@ final class AppShellTests: XCTestCase {
     func testOfflineCoverageBBoxUsesManifestLonLatOrder() {
         XCTAssertEqual(
             OfflineCoverageBBox.coverage(
-                fromManifestBasemapBBox: [99.60, 0.80, 119.30, 7.60],
-                for: .malaysiaSingaporeBrunei
+                fromManifestBasemapBBox: [99.60, 0.80, 119.30, 7.60]
             ),
             CoverageBBox(minLon: 99.60, minLat: 0.80, maxLon: 119.30, maxLat: 7.60)
         )
         XCTAssertNil(OfflineCoverageBBox.coverage(
-            fromManifestBasemapBBox: [0.80, 99.60, 7.60, 119.30],
-            for: .malaysiaSingaporeBrunei
-        ))
-        XCTAssertNil(OfflineCoverageBBox.coverage(
-            fromManifestBasemapBBox: [49.84, -8.65, 60.86, 1.77],
-            for: .unitedKingdom
+            fromManifestBasemapBBox: [0.80, 99.60, 7.60, 119.30]
         ))
     }
 
@@ -2071,6 +2141,71 @@ private final class AppStubFetcher: TileFetching, @unchecked Sendable {
 
 private func appJSONData(_ object: Any) throws -> Data {
     try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+}
+
+private func appRegionIndexV3Object() -> [String: Any] {
+    [
+        "schema_version": 3,
+        "min_reader_version": 1,
+        "generated_at": "2026-07-20T12:00:00Z",
+        "regions": [
+            appRegionIndexV3Entry([
+                "id": "malaysia-singapore-brunei",
+                "display_name": "Malaysia, Singapore, and Brunei",
+                "bbox": [99.0, -1.5, 120.0, 7.5],
+                "basemap_bytes": 4_000_000,
+                "tile_count": 12,
+                "bytes_without_thumbs": 228_849_472,
+                "bytes_with_thumbs": 240_582_030,
+                "search_compact": [
+                    "path": "malaysia-singapore-brunei/20260719T125813Z/search/compact.json",
+                    "sha256": String(repeating: "a", count: 64),
+                    "bytes": 208,
+                    "schema_version": 1,
+                ],
+            ]),
+            appRegionIndexV3Entry([
+                "id": "malaysia-singapore-brunei_kl",
+                "display_name": "Kuala Lumpur",
+                "parent": "malaysia-singapore-brunei",
+                "bbox": [101.4, 2.8, 101.9, 3.4],
+                "basemap_bytes": 1_000_000,
+                "tile_count": 4,
+                "bytes_without_thumbs": 33_000_000,
+                "bytes_with_thumbs": 41_000_000,
+                "search_compact": [
+                    "path": "malaysia-singapore-brunei_kl/20260719T125813Z/search/compact.json",
+                    "sha256": String(repeating: "b", count: 64),
+                    "bytes": 197,
+                    "schema_version": 1,
+                ],
+            ]),
+        ],
+    ]
+}
+
+private func appRegionIndexV3Entry(_ overrides: [String: Any] = [:]) -> [String: Any] {
+    var entry: [String: Any] = [
+        "id": "malaysia-singapore-brunei",
+        "display_name": "Malaysia, Singapore, and Brunei",
+        "parent": NSNull(),
+        "bbox": [99.0, -1.5, 120.0, 7.5],
+        "publish_version": "20260719T125813Z",
+        "basemap_bytes": 4_000_000,
+        "tile_count": 12,
+        "bytes_without_thumbs": 228_849_472,
+        "bytes_with_thumbs": 240_582_030,
+        "search_compact": [
+            "path": "malaysia-singapore-brunei/20260719T125813Z/search/compact.json",
+            "sha256": String(repeating: "a", count: 64),
+            "bytes": 208,
+            "schema_version": 1,
+        ],
+    ]
+    for (key, value) in overrides {
+        entry[key] = value
+    }
+    return entry
 }
 
 private func assertColor(
