@@ -551,6 +551,73 @@ def test_catalog_current_repair_fails_on_invalid_region_current_pointer(tmp_path
         R.publish_to_r2(version_root, _layout(), client=InvalidRegionCurrentClient(), upload=True)
 
 
+def test_catalog_current_repair_drops_retired_legacy_region_ids(tmp_path):
+    version_root = tmp_path / "stage" / "malaysia-singapore-brunei" / "20260719T125813Z"
+    (version_root / "tiles/10").mkdir(parents=True)
+    (version_root / "malaysia-singapore-brunei.pmtiles").write_bytes(b"basemap")
+    _write_min_pack_descriptor(version_root)
+    (version_root / "manifest.json").write_text("{}")
+
+    class LegacyRegionClient:
+        def __init__(self):
+            self.catalog_body = None
+
+        def get_object(self, *, Bucket, Key):
+            if Key == "malaysia-singapore-brunei/current.json":
+                return {"Body": BytesIO(b'{"schema_version":1,"publish_version":"20260719T125813Z"}')}
+            if Key == "united-kingdom/current.json":
+                return {"Body": BytesIO(b'{"schema_version":1,"publish_version":"20260719T125813Z"}')}
+            if Key in {"malaysia/current.json", "uk/current.json"}:
+                return {"Body": BytesIO(b'{"schema_version":1,"publish_version":"20260717T181500Z"}')}
+            if Key == "catalog/current.json":
+                return {
+                    "Body": BytesIO(
+                        b'{"schema_version":1,"publish_versions":{'
+                        b'"malaysia":"20260717T181500Z",'
+                        b'"malaysia-singapore-brunei":"20260719T125813Z",'
+                        b'"uk":"20260717T181500Z",'
+                        b'"united-kingdom":"20260719T125813Z"}}'
+                    )
+                }
+            raise FileNotFoundError(Key)
+
+        def head_object(self, *, Bucket, Key):
+            if Key == "malaysia-singapore-brunei/20260719T125813Z/manifest.json":
+                return {}
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys, Delimiter=None):
+            return {
+                "CommonPrefixes": [
+                    {"Prefix": "malaysia/"},
+                    {"Prefix": "malaysia-singapore-brunei/"},
+                    {"Prefix": "uk/"},
+                    {"Prefix": "united-kingdom/"},
+                ],
+                "IsTruncated": False,
+            }
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            if Key == "catalog/current.json":
+                self.catalog_body = Body.read() if hasattr(Body, "read") else Body
+            return {"ETag": '"etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            pass
+
+    client = LegacyRegionClient()
+
+    R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+
+    assert json.loads(client.catalog_body) == {
+        "schema_version": SCHEMA_VERSIONS["current_catalog"],
+        "publish_versions": {
+            "malaysia-singapore-brunei": "20260719T125813Z",
+            "united-kingdom": "20260719T125813Z",
+        },
+    }
+
+
 def test_current_catalog_read_is_byte_bounded(tmp_path):
     version_root = tmp_path / "stage" / "malaysia-singapore-brunei" / "20260719T125813Z"
     (version_root / "tiles/10").mkdir(parents=True)
