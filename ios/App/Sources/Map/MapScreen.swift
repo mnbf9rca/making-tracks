@@ -638,14 +638,6 @@ enum ListMapModeCopy {
     }
 }
 
-enum TrackConnectionReadout {
-    static func message(filteredBridgeCount: Int) -> String? {
-        guard filteredBridgeCount > 0 else { return nil }
-        let noun = filteredBridgeCount == 1 ? "visit" : "visits"
-        return "\(filteredBridgeCount) \(noun) hidden from this track"
-    }
-}
-
 struct TrackTimelineDateMarker: Equatable, Sendable {
     let eventIndex: Int
     let position: Double
@@ -2155,15 +2147,6 @@ struct MapScreen: View {
                 .background(.regularMaterial, in: Capsule())
                 .accessibilityIdentifier("map.list-mode.title")
 
-            if let message = trackConnectionReadoutMessage {
-                Text(verbatim: message)
-                    .font(.caption2.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.regularMaterial, in: Capsule())
-                    .accessibilityIdentifier("map.track-connection-readout")
-            }
-
             if TrackReplayControlVisibility.showOnMap(list: list, timeline: trackReplayTimeline) {
                 mapTrackReplayControls(trackReplayTimeline)
             }
@@ -2398,13 +2381,6 @@ struct MapScreen: View {
             context: trackReplayContext,
             throughEventIndex: selectedTrackReplayEventIndex,
             isArrivalPulsing: activeListMap?.usesTrackReplay == true && trackReplayArrivalPulseVisitID != nil
-        )
-    }
-
-    private var trackConnectionReadoutMessage: String? {
-        guard activeListMap?.showVisited == true else { return nil }
-        return TrackConnectionReadout.message(
-            filteredBridgeCount: trackSourceSnapshot.filteredBridgeCount
         )
     }
 
@@ -3082,10 +3058,6 @@ struct MapScreen: View {
         static func showOnMap(list: ActiveListMap, timeline: TrackTimelineModel) -> Bool {
             list.usesTrackReplay && timeline.hasInteractiveReplayControls
         }
-
-        static func showInTracksDrawer(timeline: TrackTimelineModel) -> Bool {
-            timeline.hasInteractiveReplayControls
-        }
     }
 
     static let fixturePlaces = [
@@ -3575,7 +3547,12 @@ private struct AppMenuSheet: View {
                 onListRenamed: onListRenamed
             ))
         case .tracks:
-            destinationWithDone(TracksView(model: model, focusPlaceID: shell.tracksFocusPlaceID))
+            destinationWithDone(TrackListDetailDeepLinkView(
+                model: model,
+                focusPlaceID: shell.tracksFocusPlaceID,
+                onShowOnMap: showListOnMapAndDismiss,
+                onListRenamed: onListRenamed
+            ))
         case .offlineMaps:
 #if DEBUG
             destinationWithDone(OfflineMapsView(
@@ -3683,6 +3660,47 @@ private struct ListDetailDeepLinkView: View {
     }
 }
 
+private struct TrackListDetailDeepLinkView: View {
+    let model: MapScreenModel?
+    let focusPlaceID: String?
+    let onShowOnMap: @MainActor (PlaceList) -> Void
+    let onListRenamed: @MainActor (PlaceList) -> Void
+
+    @State private var list: PlaceList?
+    @State private var didLoad = false
+
+    var body: some View {
+        Group {
+            if let list {
+                ListDetailView(
+                    model: model,
+                    list: list,
+                    focusPlaceID: focusPlaceID,
+                    onChanged: {},
+                    onShowOnMap: onShowOnMap,
+                    onListRenamed: onListRenamed
+                )
+            } else if didLoad {
+                ContentUnavailableView("List not found", systemImage: "list.bullet")
+            } else {
+                ProgressView()
+                    .accessibilityIdentifier("lists.detail.loading")
+            }
+        }
+        .task { await load() }
+    }
+
+    @MainActor
+    private func load() async {
+        guard let model else {
+            didLoad = true
+            return
+        }
+        list = await model.lists().first { $0.isSystem && $0.kind == PlaceList.trackKind }
+        didLoad = true
+    }
+}
+
 private struct AppMenuRootView: View {
     @Binding var path: [MenuDestination]
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -3752,433 +3770,6 @@ private struct AppMenuRootView: View {
         .foregroundStyle(.primary)
         .accessibilityElement(children: .combine)
         .accessibilityHint(dynamicTypeSize.isAccessibilitySize ? subtitle : "")
-    }
-}
-
-private struct TracksView: View {
-    let model: MapScreenModel?
-    let focusPlaceID: String?
-
-    @State private var visits: [TrackVisit] = []
-    @State private var lovedOnly = false
-    @State private var isEditingVisits: Bool
-    @State private var selectedTimelineEventIndex: Int?
-    @State private var isAutoplaying = false
-    @State private var arrivalPulseVisitID: Int64?
-    @State private var autoplayTask: Task<Void, Never>?
-    @State private var actionError: String?
-
-    private var scopedVisits: [TrackVisit] {
-        guard let focusPlaceID else { return visits }
-        return visits.filter { $0.placeID == focusPlaceID }
-    }
-
-    private var visibleVisits: [TrackVisit] {
-        TracksVisitFilter.visibleVisits(scopedVisits, lovedOnly: lovedOnly)
-    }
-
-    private var focusedVisitCount: Int {
-        guard focusPlaceID != nil else { return 0 }
-        return scopedVisits.count
-    }
-
-    private var canReorderVisits: Bool {
-        focusPlaceID == nil && !lovedOnly
-    }
-
-    private var timeline: TrackTimelineModel {
-        TrackTimelineModel(visits: visibleVisits)
-    }
-
-    private var calendar: Calendar {
-        Calendar(identifier: .gregorian)
-    }
-
-    var body: some View {
-        List {
-            Section {
-                Toggle(isOn: $lovedOnly) {
-                    Label("Show loved only", systemImage: lovedOnly ? "heart.fill" : "heart")
-                }
-                .accessibilityIdentifier("tracks.filter.loved")
-
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.down")
-                        .accessibilityHidden(true)
-                    Text(verbatim: TracksCopy.sortDirectionLabel)
-                        .accessibilityIdentifier("tracks.sort-direction")
-                }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-
-                Text(verbatim: TracksCopy.summary(
-                    visible: visibleVisits.count,
-                    total: scopedVisits.count,
-                    lovedOnly: lovedOnly
-                ))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("tracks.summary")
-
-                if focusPlaceID != nil,
-                   focusedVisitCount > 1 {
-                    Label("Multiple visits to this place", systemImage: "mappin.and.ellipse")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("tracks.focus-message")
-                }
-
-                if !isEditingVisits,
-                   MapScreen.TrackReplayControlVisibility.showInTracksDrawer(timeline: timeline) {
-                    trackTimelineControls(timeline)
-                }
-
-                if let actionError {
-                    Label(actionError, systemImage: "exclamationmark.triangle.fill")
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-                        .accessibilityIdentifier("tracks.error")
-                }
-            }
-
-            Section {
-                if visibleVisits.isEmpty {
-                    ContentUnavailableView(
-                        lovedOnly ? "No loved visits yet" : "No visits yet",
-                        systemImage: lovedOnly ? "heart.slash" : "point.topleft.down.curvedto.point.bottomright.up"
-                    )
-                } else {
-                    ForEach(visibleVisits) { visit in
-                        trackVisitRow(
-                            visit,
-                            isSelected: selectedVisitID == visit.id,
-                            isPulsing: arrivalPulseVisitID == visit.id
-                        )
-                    }
-                }
-            }
-        }
-        .navigationTitle("Tracks")
-        .task { await reload() }
-        .refreshable { await reload() }
-        .onChange(of: lovedOnly) {
-            stopAutoplay()
-            selectedTimelineEventIndex = nil
-            arrivalPulseVisitID = nil
-        }
-        .onChange(of: isEditingVisits) {
-            stopAutoplay()
-            selectedTimelineEventIndex = nil
-            arrivalPulseVisitID = nil
-        }
-        .onChange(of: visibleVisits.map(\.id)) {
-            stopAutoplay()
-            selectedTimelineEventIndex = clampedSelectedTimelineIndex(selectedTimelineEventIndex, in: timeline)
-        }
-        .onDisappear {
-            stopAutoplay()
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button(isEditingVisits ? "Done" : "Edit") {
-                    isEditingVisits.toggle()
-                }
-                .accessibilityIdentifier("tracks.edit")
-
-                Button {
-                    Task { await reload() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .accessibilityLabel("Refresh tracks")
-            }
-        }
-    }
-
-    init(model: MapScreenModel?, focusPlaceID: String? = nil) {
-        self.model = model
-        self.focusPlaceID = focusPlaceID
-        _isEditingVisits = State(initialValue: focusPlaceID != nil)
-    }
-
-    private var selectedVisitID: Int64? {
-        guard let selectedTimelineEventIndex,
-              visibleVisits.indices.contains(selectedTimelineEventIndex)
-        else { return nil }
-        return visibleVisits[selectedTimelineEventIndex].id
-    }
-
-    private func trackTimelineControls(_ timeline: TrackTimelineModel) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                Button {
-                    toggleAutoplay(timeline)
-                } label: {
-                    Image(systemName: isAutoplaying ? "pause.fill" : "play.fill")
-                }
-                .buttonStyle(.bordered)
-                .accessibilityLabel(isAutoplaying ? "Pause track replay" : "Play track replay")
-                .accessibilityIdentifier("tracks.timeline.play")
-
-                Slider(
-                    value: Binding(
-                        get: { Double(clampedSelectedTimelineIndex(selectedTimelineEventIndex, in: timeline) ?? 0) },
-                        set: { value in
-                            stopAutoplay()
-                            setSelectedTimelineEventIndex(timeline.eventIndex(forSliderValue: value))
-                        }
-                    ),
-                    in: timeline.sliderRange,
-                    step: 1
-                )
-                .accessibilityLabel("Track timeline")
-                .accessibilityValue(timelineAccessibilityValue(timeline))
-                .accessibilityIdentifier("tracks.timeline.slider")
-            }
-
-            TrackTimelineDateMarkersView(timeline: timeline)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("tracks.timeline.date-markers")
-        }
-    }
-
-    private func trackVisitRow(_ visit: TrackVisit, isSelected: Bool, isPulsing: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                Image(systemName: "mappin.circle.fill")
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                    .scaleEffect(isPulsing ? 1.22 : 1.0)
-                    .animation(.spring(response: 0.22, dampingFraction: 0.45), value: isPulsing)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: visit.name)
-                        .font(.body)
-                    Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitedAt(visit))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .layoutPriority(1)
-                Spacer()
-                Button {
-                    Task { await setLoved(visit) }
-                } label: {
-                    Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
-                }
-                .buttonStyle(.bordered)
-                .fixedSize()
-                .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
-                .accessibilityIdentifier("tracks.row.loved.\(visit.id)")
-            }
-
-            if isEditingVisits {
-                visitEditControls(visit)
-            }
-        }
-        .frame(minHeight: 44, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private func visitEditControls(_ visit: TrackVisit) -> some View {
-        VStack(spacing: 6) {
-            DatePicker(
-                "Visit date",
-                selection: Binding(
-                    get: { visit.visitedAt },
-                    set: { day in
-                        Task { await updateVisitDate(visit, toDayContaining: day) }
-                    }
-                ),
-                displayedComponents: .date
-            )
-            .datePickerStyle(.compact)
-            .labelsHidden()
-            .accessibilityLabel("Visit date for \(visit.name), \(formattedVisitedAt(visit))")
-            .accessibilityIdentifier("tracks.row.date.\(visit.id)")
-
-            HStack(spacing: 6) {
-                if canReorderVisits {
-                    Button {
-                        Task { await moveVisit(visit, offset: -1) }
-                    } label: {
-                        Image(systemName: "arrow.up")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!canMoveVisit(visit, offset: -1))
-                    .accessibilityLabel("Move \(visit.name), \(formattedVisitedAt(visit)), earlier that day")
-                    .accessibilityIdentifier("tracks.row.move-up.\(visit.id)")
-
-                    Button {
-                        Task { await moveVisit(visit, offset: 1) }
-                    } label: {
-                        Image(systemName: "arrow.down")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!canMoveVisit(visit, offset: 1))
-                    .accessibilityLabel("Move \(visit.name), \(formattedVisitedAt(visit)), later that day")
-                    .accessibilityIdentifier("tracks.row.move-down.\(visit.id)")
-                }
-
-                Button(role: .destructive) {
-                    Task { await deleteVisit(visit) }
-                } label: {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.bordered)
-                .accessibilityLabel("Delete \(visit.name), \(formattedVisitedAt(visit))")
-                .accessibilityIdentifier("tracks.row.delete.\(visit.id)")
-            }
-        }
-        .fixedSize()
-    }
-
-    private func toggleAutoplay(_ timeline: TrackTimelineModel) {
-        if isAutoplaying {
-            stopAutoplay()
-        } else {
-            startAutoplay(timeline)
-        }
-    }
-
-    private func startAutoplay(_ timeline: TrackTimelineModel) {
-        guard !timeline.visits.isEmpty else { return }
-        autoplayTask?.cancel()
-        isAutoplaying = true
-        let startIndex = selectedTimelineEventIndex == timeline.visits.indices.last ? nil : selectedTimelineEventIndex
-        autoplayTask = Task { @MainActor in
-            var currentIndex = startIndex
-            while isAutoplaying, !Task.isCancelled {
-                switch timeline.autoplayStep(after: currentIndex) {
-                case .event(let nextIndex):
-                    setSelectedTimelineEventIndex(nextIndex)
-                    currentIndex = nextIndex
-                    try? await Task.sleep(for: .seconds(TrackTimelineModel.autoplayBeatDuration))
-                case .finished:
-                    stopAutoplay()
-                }
-            }
-        }
-    }
-
-    private func stopAutoplay() {
-        autoplayTask?.cancel()
-        autoplayTask = nil
-        isAutoplaying = false
-    }
-
-    private func setSelectedTimelineEventIndex(_ nextIndex: Int) {
-        let previousIndex = selectedTimelineEventIndex
-        let clampedIndex = clampedSelectedTimelineIndex(nextIndex, in: timeline)
-        selectedTimelineEventIndex = clampedIndex
-        if let clampedIndex,
-           timeline.shouldPulseArrival(previousIndex: previousIndex, nextIndex: clampedIndex),
-           visibleVisits.indices.contains(clampedIndex) {
-            let visitID = visibleVisits[clampedIndex].id
-            arrivalPulseVisitID = visitID
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(260))
-                if arrivalPulseVisitID == visitID {
-                    arrivalPulseVisitID = nil
-                }
-            }
-        }
-    }
-
-    private func clampedSelectedTimelineIndex(_ index: Int?, in timeline: TrackTimelineModel) -> Int? {
-        guard !timeline.visits.isEmpty else { return nil }
-        return min(max(index ?? timeline.visits.count - 1, 0), timeline.visits.count - 1)
-    }
-
-    private func timelineAccessibilityValue(_ timeline: TrackTimelineModel) -> String {
-        timeline.accessibilityValue(for: selectedTimelineEventIndex)
-    }
-
-    @MainActor
-    private func reload() async {
-        guard let model else { return }
-        stopAutoplay()
-        visits = await model.trackVisits()
-        selectedTimelineEventIndex = clampedSelectedTimelineIndex(selectedTimelineEventIndex, in: timeline)
-    }
-
-    @MainActor
-    private func setLoved(_ visit: TrackVisit) async {
-        guard let model else { return }
-        do {
-            try await model.setVisitLoved(visitID: visit.id, loved: visit.verdict != .loved)
-            actionError = nil
-            await reload()
-        } catch {
-            actionError = "Could not update that visit."
-        }
-    }
-
-    @MainActor
-    private func updateVisitDate(_ visit: TrackVisit, toDayContaining day: Date) async {
-        guard let model else { return }
-        do {
-            try await model.updateVisitDate(visitID: visit.id, toDayContaining: day)
-            actionError = nil
-            await reload()
-        } catch {
-            actionError = "Could not update that visit."
-        }
-    }
-
-    @MainActor
-    private func moveVisit(_ visit: TrackVisit, offset: Int) async {
-        guard let model,
-              let order = reorderedVisitIDs(moving: visit, offset: offset)
-        else { return }
-        do {
-            try await model.reorderVisitsWithinDay(order, dayContaining: visit.visitedAt)
-            actionError = nil
-            await reload()
-        } catch {
-            actionError = "Could not reorder that day."
-        }
-    }
-
-    @MainActor
-    private func deleteVisit(_ visit: TrackVisit) async {
-        guard let model else { return }
-        do {
-            try await model.deleteVisit(visitID: visit.id)
-            actionError = nil
-            await reload()
-        } catch {
-            actionError = "Could not delete that visit."
-        }
-    }
-
-    private func canMoveVisit(_ visit: TrackVisit, offset: Int) -> Bool {
-        reorderedVisitIDs(moving: visit, offset: offset) != nil
-    }
-
-    private func reorderedVisitIDs(moving visit: TrackVisit, offset: Int) -> [Int64]? {
-        var dayVisits = visibleVisits.filter { calendar.isDate($0.visitedAt, inSameDayAs: visit.visitedAt) }
-        guard let index = dayVisits.firstIndex(where: { $0.id == visit.id }) else { return nil }
-        let nextIndex = index + offset
-        guard dayVisits.indices.contains(nextIndex) else { return nil }
-        dayVisits.swapAt(index, nextIndex)
-        return dayVisits.map(\.id)
-    }
-
-    private func categoryLabel(_ raw: String) -> String {
-        raw.split(separator: "_")
-            .map { part in
-                guard let first = part.first else { return "" }
-                return first.uppercased() + part.dropFirst()
-            }
-            .joined(separator: " ")
-    }
-
-    private func formattedVisitedAt(_ visit: TrackVisit) -> String {
-        visit.visitedAt.formatted(date: .abbreviated, time: .shortened)
-    }
-
-    private func lovedButtonAccessibilityLabel(for visit: TrackVisit) -> String {
-        let action = visit.verdict == .loved ? "Remove loved from" : "Mark loved for"
-        return "\(action) \(visit.name), \(formattedVisitedAt(visit))"
     }
 }
 
@@ -4338,11 +3929,13 @@ private struct ListsView: View {
 private struct ListDetailView: View {
     let model: MapScreenModel?
     let list: PlaceList
+    let focusPlaceID: String?
     let onChanged: @MainActor () -> Void
     let onShowOnMap: @MainActor (PlaceList) -> Void
     let onListRenamed: @MainActor (PlaceList) -> Void
 
     @State private var items: [ListPlace] = []
+    @State private var trackVisits: [TrackVisit] = []
     @State private var progress = ListProgress(visited: 0, total: 0)
     @State private var currentList: PlaceList
     @State private var renameDraft: String
@@ -4351,12 +3944,14 @@ private struct ListDetailView: View {
     init(
         model: MapScreenModel?,
         list: PlaceList,
+        focusPlaceID: String? = nil,
         onChanged: @escaping @MainActor () -> Void,
         onShowOnMap: @escaping @MainActor (PlaceList) -> Void,
         onListRenamed: @escaping @MainActor (PlaceList) -> Void
     ) {
         self.model = model
         self.list = list
+        self.focusPlaceID = focusPlaceID
         self.onChanged = onChanged
         self.onShowOnMap = onShowOnMap
         self.onListRenamed = onListRenamed
@@ -4364,13 +3959,62 @@ private struct ListDetailView: View {
         _renameDraft = State(initialValue: list.name)
     }
 
+    private var isTrackListDetail: Bool {
+        ListDetailVisitActions.canEditTrackVisits(from: currentList)
+    }
+
+    private var visibleTrackVisits: [TrackVisit] {
+        guard let focusPlaceID else { return trackVisits }
+        return trackVisits.filter { $0.placeID == focusPlaceID }
+    }
+
+    private var focusedTrackVisitCount: Int {
+        guard focusPlaceID != nil else { return 0 }
+        return visibleTrackVisits.count
+    }
+
+    private var canReorderTrackVisits: Bool {
+        focusPlaceID == nil
+    }
+
+    private var calendar: Calendar {
+        Calendar(identifier: .gregorian)
+    }
+
     var body: some View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(verbatim: ListsCopy.progress(visited: progress.visited, total: progress.total))
+                    if isTrackListDetail {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.down")
+                                .accessibilityHidden(true)
+                            Text(verbatim: TracksCopy.sortDirectionLabel)
+                                .accessibilityIdentifier("lists.detail.track.sort-direction")
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+
+                        Text(verbatim: TracksCopy.summary(
+                            visible: visibleTrackVisits.count,
+                            total: visibleTrackVisits.count,
+                            lovedOnly: false
+                        ))
                         .font(.headline)
-                        .accessibilityIdentifier("lists.detail.progress")
+                        .accessibilityIdentifier("lists.detail.track.summary")
+
+                        if focusPlaceID != nil,
+                           focusedTrackVisitCount > 1 {
+                            Label("Multiple visits to this place", systemImage: "mappin.and.ellipse")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("lists.detail.track.focus-message")
+                        }
+                    } else {
+                        Text(verbatim: ListsCopy.progress(visited: progress.visited, total: progress.total))
+                            .font(.headline)
+                            .accessibilityIdentifier("lists.detail.progress")
+                    }
                     Button {
                         onShowOnMap(currentList)
                     } label: {
@@ -4399,7 +4043,15 @@ private struct ListDetailView: View {
             }
 
             Section {
-                if items.isEmpty {
+                if isTrackListDetail {
+                    if visibleTrackVisits.isEmpty {
+                        ContentUnavailableView("No visits yet", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+                    } else {
+                        ForEach(visibleTrackVisits) { visit in
+                            trackVisitRow(visit)
+                        }
+                    }
+                } else if items.isEmpty {
                     ContentUnavailableView("No places yet", systemImage: "mappin.slash")
                 } else {
                     ForEach(items) { item in
@@ -4418,8 +4070,21 @@ private struct ListDetailView: View {
             }
         }
         .navigationTitle(currentList.name)
+        .accessibilityIdentifier(isTrackListDetail ? "lists.detail.surface.track" : "lists.detail.surface.collection")
         .task { await reload() }
         .refreshable { await reload() }
+        .toolbar {
+            if isTrackListDetail {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        Task { await reload() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .accessibilityLabel("Refresh tracks")
+                }
+            }
+        }
     }
 
     private func listItemRow(_ item: ListPlace) -> some View {
@@ -4452,11 +4117,119 @@ private struct ListDetailView: View {
         .accessibilityIdentifier("lists.detail.item.\(item.placeID)")
     }
 
+    private func trackVisitRow(_ visit: TrackVisit) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: "mappin.circle.fill")
+                    .foregroundStyle(Color.secondary)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(verbatim: visit.name)
+                        .font(.body)
+                    Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitedAt(visit))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .layoutPriority(1)
+                Spacer()
+                Button {
+                    Task { await setLoved(visit) }
+                } label: {
+                    Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
+                }
+                .buttonStyle(.bordered)
+                .fixedSize()
+                .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
+                .accessibilityIdentifier("lists.detail.track.row.loved.\(visit.id)")
+            }
+
+            visitEditControls(visit)
+        }
+        .frame(minHeight: 44, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func visitEditControls(_ visit: TrackVisit) -> some View {
+        VStack(spacing: 6) {
+            Text("Visit date")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("lists.detail.track.row.date.\(visit.id).label")
+
+            DatePicker(
+                "Visit date",
+                selection: Binding(
+                    get: { visit.visitedAt },
+                    set: { day in
+                        Task { await updateVisitDate(visit, toDayContaining: day) }
+                    }
+                ),
+                displayedComponents: .date
+            )
+            .datePickerStyle(.compact)
+            .labelsHidden()
+            .accessibilityLabel("Visit date for \(visit.name), \(formattedVisitedAt(visit))")
+            .accessibilityIdentifier("lists.detail.track.row.date.\(visit.id)")
+            .background {
+                Color.clear
+                    .accessibilityIdentifier("lists.detail.track.row.date.\(visit.id)")
+            }
+
+            HStack(spacing: 6) {
+                if canReorderTrackVisits {
+                    Button {
+                        Task { await moveVisit(visit, offset: -1) }
+                    } label: {
+                        Image(systemName: "arrow.up")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!canMoveVisit(visit, offset: -1))
+                    .accessibilityLabel("Move \(visit.name), \(formattedVisitedAt(visit)), earlier that day")
+                    .accessibilityIdentifier("lists.detail.track.row.move-up.\(visit.id)")
+
+                    Button {
+                        Task { await moveVisit(visit, offset: 1) }
+                    } label: {
+                        Image(systemName: "arrow.down")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!canMoveVisit(visit, offset: 1))
+                    .accessibilityLabel("Move \(visit.name), \(formattedVisitedAt(visit)), later that day")
+                    .accessibilityIdentifier("lists.detail.track.row.move-down.\(visit.id)")
+                }
+
+                Button(role: .destructive) {
+                    Task { await deleteVisit(visit) }
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Delete \(visit.name), \(formattedVisitedAt(visit))")
+                .accessibilityIdentifier("lists.detail.track.row.delete.\(visit.id)")
+            }
+        }
+        .fixedSize()
+    }
+
     @MainActor
     private func reload() async {
         guard let model, let id = list.id else { return }
-        items = await model.listItems(listID: id)
-        progress = await model.listProgress(listID: id)
+        if isTrackListDetail {
+            let nextVisits = await model.trackVisits(listID: id)
+            let nextVisibleVisits = if let focusPlaceID {
+                nextVisits.filter { $0.placeID == focusPlaceID }
+            } else {
+                nextVisits
+            }
+            trackVisits = nextVisits
+            progress = ListProgress(visited: nextVisibleVisits.count, total: nextVisibleVisits.count)
+            items = []
+        } else {
+            items = await model.listItems(listID: id)
+            progress = await model.listProgress(listID: id)
+            trackVisits = []
+        }
     }
 
     @MainActor
@@ -4499,6 +4272,73 @@ private struct ListDetailView: View {
         }
     }
 
+    @MainActor
+    private func setLoved(_ visit: TrackVisit) async {
+        guard let model else { return }
+        do {
+            try await model.setVisitLoved(visitID: visit.id, loved: visit.verdict != .loved)
+            actionError = nil
+            await reload()
+            onChanged()
+        } catch {
+            actionError = "Could not update that visit."
+        }
+    }
+
+    @MainActor
+    private func updateVisitDate(_ visit: TrackVisit, toDayContaining day: Date) async {
+        guard let model else { return }
+        do {
+            try await model.updateVisitDate(visitID: visit.id, toDayContaining: day)
+            actionError = nil
+            await reload()
+            onChanged()
+        } catch {
+            actionError = "Could not update that visit."
+        }
+    }
+
+    @MainActor
+    private func moveVisit(_ visit: TrackVisit, offset: Int) async {
+        guard let model,
+              let order = reorderedVisitIDs(moving: visit, offset: offset)
+        else { return }
+        do {
+            try await model.reorderVisitsWithinDay(order, dayContaining: visit.visitedAt)
+            actionError = nil
+            await reload()
+            onChanged()
+        } catch {
+            actionError = "Could not reorder that day."
+        }
+    }
+
+    @MainActor
+    private func deleteVisit(_ visit: TrackVisit) async {
+        guard let model else { return }
+        do {
+            try await model.deleteVisit(visitID: visit.id)
+            actionError = nil
+            await reload()
+            onChanged()
+        } catch {
+            actionError = "Could not delete that visit."
+        }
+    }
+
+    private func canMoveVisit(_ visit: TrackVisit, offset: Int) -> Bool {
+        reorderedVisitIDs(moving: visit, offset: offset) != nil
+    }
+
+    private func reorderedVisitIDs(moving visit: TrackVisit, offset: Int) -> [Int64]? {
+        var dayVisits = visibleTrackVisits.filter { calendar.isDate($0.visitedAt, inSameDayAs: visit.visitedAt) }
+        guard let index = dayVisits.firstIndex(where: { $0.id == visit.id }) else { return nil }
+        let nextIndex = index + offset
+        guard dayVisits.indices.contains(nextIndex) else { return nil }
+        dayVisits.swapAt(index, nextIndex)
+        return dayVisits.map(\.id)
+    }
+
     private func categoryLabel(_ raw: String) -> String {
         raw
             .replacingOccurrences(of: "_", with: " ")
@@ -4506,6 +4346,15 @@ private struct ListDetailView: View {
             .split(separator: " ")
             .map { $0.prefix(1).uppercased() + $0.dropFirst() }
             .joined(separator: " ")
+    }
+
+    private func formattedVisitedAt(_ visit: TrackVisit) -> String {
+        visit.visitedAt.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private func lovedButtonAccessibilityLabel(for visit: TrackVisit) -> String {
+        let action = visit.verdict == .loved ? "Remove loved from" : "Mark loved for"
+        return "\(action) \(visit.name), \(formattedVisitedAt(visit))"
     }
 }
 
@@ -6743,6 +6592,12 @@ enum ListDetailItemActions {
     }
 }
 
+enum ListDetailVisitActions {
+    static func canEditTrackVisits(from list: PlaceList) -> Bool {
+        list.isSystem && list.kind == PlaceList.trackKind
+    }
+}
+
 enum TracksVisitFilter {
     static func visibleVisits(_ visits: [TrackVisit], lovedOnly: Bool) -> [TrackVisit] {
         guard lovedOnly else { return visits }
@@ -7271,9 +7126,13 @@ final class MapScreenModel {
     }
 
     func trackVisits() async -> [TrackVisit] {
+        await trackVisits(listID: nil)
+    }
+
+    func trackVisits(listID: Int64?) async -> [TrackVisit] {
         let db = database
         return await Task.detached {
-            (try? db.trackVisits()) ?? []
+            (try? db.trackVisits(listID: listID)) ?? []
         }.value
     }
 

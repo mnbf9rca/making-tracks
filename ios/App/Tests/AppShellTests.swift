@@ -153,18 +153,6 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(ListMapModeCopy.tracksLayerTitle, "My tracks")
     }
 
-    func testTrackConnectionReadoutExplainsFilteredBridges() {
-        XCTAssertEqual(
-            TrackConnectionReadout.message(filteredBridgeCount: 1),
-            "1 visit hidden from this track"
-        )
-        XCTAssertEqual(
-            TrackConnectionReadout.message(filteredBridgeCount: 3),
-            "3 visits hidden from this track"
-        )
-        XCTAssertNil(TrackConnectionReadout.message(filteredBridgeCount: 0))
-    }
-
     func testTrackTimelinePositionsAreVisitEventsNotElapsedTime() {
         let timeline = TrackTimelineModel(visits: [
             trackVisit(id: 1, seconds: 0),
@@ -358,9 +346,6 @@ final class AppShellTests: XCTestCase {
                 trackVisit(id: 1, seconds: 0),
                 trackVisit(id: 2, seconds: 60),
             ])
-        ))
-        XCTAssertFalse(MapScreen.TrackReplayControlVisibility.showInTracksDrawer(
-            timeline: TrackTimelineModel(visits: [trackVisit(id: 1, seconds: 0)])
         ))
     }
 
@@ -686,7 +671,7 @@ final class AppShellTests: XCTestCase {
         )
     }
 
-    func testListDetailRowsDoNotOfferStoredMembershipRemovalForTrackList() {
+    func testListDetailRowsBlockStoredMembershipRemovalButAllowTrackVisitEditing() {
         let collection = PlaceList(id: 10, name: "Date night", isSystem: false, createdAt: Date(timeIntervalSince1970: 0))
         let wantToGo = PlaceList(id: 1, name: "Want to go", isSystem: true, createdAt: Date(timeIntervalSince1970: 0))
         let myTracks = PlaceList(
@@ -708,6 +693,10 @@ final class AppShellTests: XCTestCase {
         XCTAssertTrue(ListDetailItemActions.canRemoveStoredMembership(from: wantToGo))
         XCTAssertFalse(ListDetailItemActions.canRemoveStoredMembership(from: myTracks))
         XCTAssertTrue(ListDetailItemActions.canRemoveStoredMembership(from: importedTrackKind))
+        XCTAssertFalse(ListDetailVisitActions.canEditTrackVisits(from: collection))
+        XCTAssertFalse(ListDetailVisitActions.canEditTrackVisits(from: wantToGo))
+        XCTAssertTrue(ListDetailVisitActions.canEditTrackVisits(from: myTracks))
+        XCTAssertFalse(ListDetailVisitActions.canEditTrackVisits(from: importedTrackKind))
     }
 
     func testListMapCategoryVisibilityIgnoresDiscoveryCategoryToggles() {
