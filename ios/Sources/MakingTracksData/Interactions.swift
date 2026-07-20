@@ -316,17 +316,25 @@ extension AppDatabase {
     }
 
     public func seedUITestingTrackList(named name: String, places: [PlaceRef]) throws {
+        try seedUITestingTrackList(named: name, places: places, spacing: 60 * 60)
+    }
+
+    public func seedUITestingMultiDayTrackList(named name: String, places: [PlaceRef]) throws {
+        try seedUITestingTrackList(named: name, places: Array(places.prefix(6)), spacing: 60 * 60 * 24)
+    }
+
+    private func seedUITestingTrackList(named name: String, places: [PlaceRef], spacing: TimeInterval) throws {
         let normalized = try Self.normalizedListName(name)
         try dbQueue.write { db in
             let seedStart = Date(timeIntervalSince1970: 1_000)
             try db.execute(
-                sql: "INSERT INTO lists (name, is_system, created_at) VALUES (?, ?, ?)",
-                arguments: [normalized, false, seedStart]
+                sql: "INSERT INTO lists (name, is_system, created_at, list_kind) VALUES (?, ?, ?, ?)",
+                arguments: [normalized, false, seedStart, PlaceList.trackKind]
             )
             let listID = db.lastInsertedRowID
             for (index, place) in places.enumerated() {
                 try snapshotIfNeeded(place, db)
-                let timestamp = seedStart.addingTimeInterval(Double(index) * 60 * 60)
+                let timestamp = seedStart.addingTimeInterval(Double(index) * spacing)
                 var visit = Visit(
                     id: nil,
                     placeID: place.placeID,

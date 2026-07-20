@@ -4,6 +4,7 @@ import MakingTracksData
 public enum PinPresentation: String, Sendable {
     case discovery
     case tracks
+    case trackReplay
 }
 
 public struct TrackSegmentSummary: Sendable, Equatable {
@@ -26,22 +27,29 @@ public enum FeatureEncoding {
 
     public static func featureProperties(
         _ state: PinState,
-        pinPresentation: PinPresentation = .discovery
+        pinPresentation: PinPresentation = .discovery,
+        trackReplayPulse: Bool = false
     ) -> [String: JSONValue] {
         [
             "visit": .string(visitTag(state.visit)),
             "saved": .bool(state.saved),
             "hidden": .bool(state.hidden),
             "pin_presentation": .string(pinPresentation.rawValue),
+            "track_replay_pulse": .bool(trackReplayPulse),
         ]
     }
 
     public static func feature(
         _ place: MapPlace,
         _ state: PinState,
-        pinPresentation: PinPresentation = .discovery
+        pinPresentation: PinPresentation = .discovery,
+        trackReplayPulse: Bool = false
     ) -> JSONValue {
-        var props = featureProperties(state, pinPresentation: pinPresentation)
+        var props = featureProperties(
+            state,
+            pinPresentation: pinPresentation,
+            trackReplayPulse: trackReplayPulse
+        )
         props["place_id"] = .string(place.id)
         props["tier"] = .double(Double(place.tier))
         props["category"] = .string(place.category)
@@ -87,7 +95,6 @@ public enum FeatureEncoding {
             )
         }
         var features: [JSONValue] = []
-        var suppressedBurstConnectorCount = 0
         var connectableVisitIDs = Set<Int64>()
         for (from, to) in zip(visits, visits.dropFirst()) {
             guard let gap = connectorGap(from: from, to: to),
@@ -95,20 +102,13 @@ public enum FeatureEncoding {
                   isValidCoordinate(to),
                   from.lat != to.lat || from.lon != to.lon
             else { continue }
-            if gap <= burstWindow {
-                suppressedBurstConnectorCount += 1
-                connectableVisitIDs.insert(from.id)
-                connectableVisitIDs.insert(to.id)
-                continue
-            }
-            guard gap <= maxConnectorGap else { continue }
             connectableVisitIDs.insert(from.id)
             connectableVisitIDs.insert(to.id)
             features.append(trackSegmentFeature(from: from, to: to, gap: gap))
         }
         return TrackSegmentSummary(
             features: features,
-            suppressedBurstConnectorCount: suppressedBurstConnectorCount,
+            suppressedBurstConnectorCount: 0,
             connectableVisitCount: connectableVisitIDs.count
         )
     }
@@ -133,26 +133,41 @@ public enum FeatureEncoding {
         let wrapsAntimeridian = abs(rawDX) > 180.0
         let dx = wrapsAntimeridian ? shortestLongitudeDelta(from: from.lon, to: to.lon) : rawDX
         let renderedToLon = wrapsAntimeridian ? from.lon + dx : to.lon
-        let dy = to.lat - from.lat
-        let distance = max((dx * dx + dy * dy).squareRoot(), 0.000_001)
-        // Dateline crossings render in one wrapped world copy so MapLibre draws the short connector.
-        let midpointLon = wrapsAntimeridian ? from.lon + (dx / 2) : (from.lon + to.lon) / 2
-        let midpointLat = (from.lat + to.lat) / 2
-        let normalLon = -dy / distance
-        let normalLat = dx / distance
-        let offset = distance * TrackLayers.arcBendRatio
-        let bentMidpointLon = midpointLon + normalLon * offset
-        let renderedMidpointLon = wrapsAntimeridian
-            ? bentMidpointLon
-            : clamped(bentMidpointLon, to: -180.0...180.0)
-        return [
-            coordinate(lon: from.lon, lat: from.lat),
-            coordinate(
-                lon: renderedMidpointLon,
-                lat: clamped(midpointLat + normalLat * offset, to: -90.0...90.0)
-            ),
-            coordinate(lon: renderedToLon, lat: to.lat),
-        ]
+        let referenceLatitude = clamped((from.lat + to.lat) / 2, to: -85.0...85.0)
+        let lonScale = max(abs(cos(referenceLatitude * .pi / 180)), 0.000_001)
+        let start = (x: from.lon * lonScale, y: from.lat)
+        let end = (x: renderedToLon * lonScale, y: to.lat)
+        let projectedDX = end.x - start.x
+        let projectedDY = end.y - start.y
+        let distance = max((projectedDX * projectedDX + projectedDY * projectedDY).squareRoot(), 0.000_001)
+        let midpoint = (x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+        let offset = distance * TrackLayers.arcBendRatio * 2
+        let control = (
+            x: midpoint.x + (-projectedDY / distance) * offset,
+            y: midpoint.y + (projectedDX / distance) * offset
+        )
+        let pointCount = max(TrackLayers.arcInterpolationPointCount, 3)
+        return (0..<pointCount).map { index in
+            if index == 0 {
+                return coordinate(lon: from.lon, lat: from.lat)
+            }
+            if index == pointCount - 1 {
+                return coordinate(lon: renderedToLon, lat: to.lat)
+            }
+            let t = Double(index) / Double(pointCount - 1)
+            let oneMinusT = 1 - t
+            let projectedX = (oneMinusT * oneMinusT * start.x)
+                + (2 * oneMinusT * t * control.x)
+                + (t * t * end.x)
+            let projectedY = (oneMinusT * oneMinusT * start.y)
+                + (2 * oneMinusT * t * control.y)
+                + (t * t * end.y)
+            let lon = projectedX / lonScale
+            return coordinate(
+                lon: wrapsAntimeridian ? lon : clamped(lon, to: -180.0...180.0),
+                lat: clamped(projectedY, to: -90.0...90.0)
+            )
+        }
     }
 
     private static func shortestLongitudeDelta(from: Double, to: Double) -> Double {

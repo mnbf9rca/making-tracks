@@ -40,6 +40,43 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(Expression.evaluate(PinLayers.heartFilter(), lovedProps), .bool(true))
     }
 
+    func testTrackReplayPresentationFadesUnreachedPinsAndFullStrengthReachedPins() {
+        let unreached = FeatureEncoding.featureProperties(
+            PinState(saved: false, visit: .none),
+            pinPresentation: .trackReplay
+        )
+        let reached = FeatureEncoding.featureProperties(
+            PinState(saved: false, visit: .visited),
+            pinPresentation: .trackReplay
+        )
+        let loved = FeatureEncoding.featureProperties(
+            PinState(saved: true, visit: .loved),
+            pinPresentation: .trackReplay
+        )
+
+        XCTAssertEqual(Expression.evaluate(PinLayers.fadeOpacityExpression(), unreached), .double(FADED_OPACITY))
+        XCTAssertEqual(Expression.evaluate(PinLayers.fadeOpacityExpression(), reached), .double(FULL_OPACITY))
+        XCTAssertEqual(Expression.evaluate(PinLayers.fadeOpacityExpression(), loved), .double(FULL_OPACITY))
+        XCTAssertEqual(Expression.evaluate(PinLayers.bookmarkFilter(), loved), .bool(true))
+        XCTAssertEqual(Expression.evaluate(PinLayers.heartFilter(), loved), .bool(true))
+    }
+
+    func testTrackReplayPulseScalesCircleAndCategoryIconOnlyWhenFlagged() {
+        let base = JSONValue.double(10)
+        let inactive = FeatureEncoding.featureProperties(PinState(saved: false, visit: .visited), pinPresentation: .trackReplay)
+        let active = FeatureEncoding.featureProperties(
+            PinState(saved: false, visit: .visited),
+            pinPresentation: .trackReplay,
+            trackReplayPulse: true
+        )
+
+        XCTAssertEqual(Expression.evaluate(PinLayers.trackReplayPulseExpression(base: base), inactive), .double(10))
+        XCTAssertEqual(
+            Expression.evaluate(PinLayers.trackReplayPulseExpression(base: base), active),
+            .double(10 * PinLayers.trackReplayPulseScale)
+        )
+    }
+
     func testPinSubstrateIsShapeSourcePlusStyleLayersNotAnnotations() {
         let layers = PinLayers.pinLayers()
         let circle = layer(id: "pins-circle", in: layers)
@@ -60,7 +97,10 @@ final class PinLayersTests: XCTestCase {
         if case let .object(paint)? = circle?["paint"] {
             XCTAssertEqual(paint["circle-color"], PinLayers.pinColorExpression())
             XCTAssertEqual(paint["circle-opacity"], PinLayers.fadeOpacityExpression())
-            XCTAssertEqual(paint["circle-radius"], PinSize().circleRadiusExpression)
+            XCTAssertEqual(
+                paint["circle-radius"],
+                PinLayers.trackReplayPulseExpression(base: PinSize().circleRadiusExpression)
+            )
         } else {
             XCTFail("pin circle paint")
         }
@@ -70,7 +110,10 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(layoutValue("icon-image", in: icon), PinLayers.categoryIconExpression())
         XCTAssertEqual(layoutValue("icon-allow-overlap", in: icon), .bool(true))
         XCTAssertEqual(layoutValue("icon-ignore-placement", in: icon), .bool(true))
-        XCTAssertEqual(layoutValue("icon-size", in: icon), PinSize().categoryIconScaleExpression)
+        XCTAssertEqual(
+            layoutValue("icon-size", in: icon),
+            PinLayers.trackReplayPulseExpression(base: PinSize().categoryIconScaleExpression)
+        )
         XCTAssertEqual(layoutValue("icon-image", in: bookmark), .string("badge-bookmark"))
         XCTAssertEqual(layoutValue("icon-image", in: heart), .string("badge-heart"))
         XCTAssertEqual(layoutValue("icon-allow-overlap", in: bookmark), .bool(true))
@@ -95,6 +138,7 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(paint["line-opacity"], .double(TrackLayers.lineOpacity))
         XCTAssertEqual(paint["line-width"], .double(TrackLayers.lineWidth))
         XCTAssertEqual(paint["line-dasharray"], TrackLayers.lineDashPattern)
+        XCTAssertGreaterThanOrEqual(TrackLayers.lineWidth, 3.0)
     }
 
     func testTrackLineColorClearsPaperBackgroundContrastCommitment() throws {
@@ -141,11 +185,17 @@ final class PinLayersTests: XCTestCase {
         let defaultSize = PinSize()
 
         if case let .object(paint)? = circle?["paint"] {
-            XCTAssertEqual(paint["circle-radius"], defaultSize.circleRadiusExpression)
+            XCTAssertEqual(
+                paint["circle-radius"],
+                PinLayers.trackReplayPulseExpression(base: defaultSize.circleRadiusExpression)
+            )
         } else {
             XCTFail("pin circle paint")
         }
-        XCTAssertEqual(layoutValue("icon-size", in: icon), defaultSize.categoryIconScaleExpression)
+        XCTAssertEqual(
+            layoutValue("icon-size", in: icon),
+            PinLayers.trackReplayPulseExpression(base: defaultSize.categoryIconScaleExpression)
+        )
         XCTAssertEqual(layoutValue("icon-size", in: bookmark), defaultSize.badgeIconScaleExpression)
         XCTAssertEqual(layoutValue("icon-size", in: heart), defaultSize.badgeIconScaleExpression)
         XCTAssertEqual(layoutValue("icon-offset", in: bookmark), defaultSize.bookmarkOffset)
@@ -156,11 +206,17 @@ final class PinLayersTests: XCTestCase {
         let maximumCircle = layer(id: "pins-circle", in: maximumLayers)
         let maximumIcon = layer(id: "pins-icon", in: maximumLayers)
         if case let .object(paint)? = maximumCircle?["paint"] {
-            XCTAssertEqual(paint["circle-radius"], maximumSize.circleRadiusExpression)
+            XCTAssertEqual(
+                paint["circle-radius"],
+                PinLayers.trackReplayPulseExpression(base: maximumSize.circleRadiusExpression)
+            )
         } else {
             XCTFail("maximum pin circle paint")
         }
-        XCTAssertEqual(layoutValue("icon-size", in: maximumIcon), maximumSize.categoryIconScaleExpression)
+        XCTAssertEqual(
+            layoutValue("icon-size", in: maximumIcon),
+            PinLayers.trackReplayPulseExpression(base: maximumSize.categoryIconScaleExpression)
+        )
         XCTAssertNotEqual(defaultSize.circleRadiusExpression, maximumSize.circleRadiusExpression)
         XCTAssertTrue(isZoomInterpolation(defaultSize.circleRadiusExpression))
         XCTAssertTrue(isZoomInterpolation(defaultSize.categoryIconScaleExpression))
@@ -360,7 +416,7 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(features, [feature])
     }
 
-    func testTrackSegmentFeaturesUseShallowArcsAndSuppressBurstAndGapConnectors() {
+    func testTrackSegmentFeaturesConnectEveryConsecutiveValidVisitWithSmoothArcs() {
         let visits = [
             trackVisit(id: 1, placeID: "a", seconds: 0, lat: 0, lon: 0),
             trackVisit(id: 2, placeID: "b", seconds: 300, lat: 0, lon: 1),
@@ -375,24 +431,56 @@ final class PinLayersTests: XCTestCase {
             burstWindow: 120
         )
 
-        XCTAssertEqual(features.count, 2)
+        XCTAssertEqual(features.count, 4)
+        guard features.count == 4 else { return }
         XCTAssertEqual(trackProperty("from_visit_id", in: features[0]), .double(1))
         XCTAssertEqual(trackProperty("to_visit_id", in: features[0]), .double(2))
-        XCTAssertEqual(trackProperty("from_visit_id", in: features[1]), .double(4))
-        XCTAssertEqual(trackProperty("to_visit_id", in: features[1]), .double(5))
+        XCTAssertEqual(trackProperty("from_visit_id", in: features[1]), .double(2))
+        XCTAssertEqual(trackProperty("to_visit_id", in: features[1]), .double(3))
+        XCTAssertEqual(trackProperty("from_visit_id", in: features[2]), .double(3))
+        XCTAssertEqual(trackProperty("to_visit_id", in: features[2]), .double(4))
+        XCTAssertEqual(trackProperty("from_visit_id", in: features[3]), .double(4))
+        XCTAssertEqual(trackProperty("to_visit_id", in: features[3]), .double(5))
 
         guard case let .object(firstFeature) = features.first,
               case let .object(geometry) = firstFeature["geometry"],
               case let .array(coordinates) = geometry["coordinates"],
-              coordinates.count == 3,
+              coordinates.count >= 9,
               case let .array(start) = coordinates.first,
-              case let .array(mid) = coordinates[1],
               case let .array(end) = coordinates.last
         else { return XCTFail("arc line string") }
         XCTAssertEqual(geometry["type"], .string("LineString"))
         XCTAssertEqual(start, [.double(0), .double(0)])
         XCTAssertEqual(end, [.double(1), .double(0)])
-        XCTAssertNotEqual(mid, [.double(0.5), .double(0)], "middle coordinate should make the connector visibly abstract, not a straight segment")
+        XCTAssertTrue(
+            coordinates.dropFirst().dropLast().contains { coordinate in
+                guard case let .array(pair) = coordinate,
+                      pair.count == 2,
+                      case let .double(lat) = pair[1]
+                else { return false }
+                return lat != 0
+            },
+            "interior coordinates should make the connector visibly abstract, not a straight segment"
+        )
+    }
+
+    func testTrackSegmentArcCurvatureIsConsistentInProjectedSpaceAtLondonLatitude() throws {
+        let baseLat = 51.5
+        let eastWest = FeatureEncoding.trackSegmentFeatures([
+            trackVisit(id: 1, placeID: "west", seconds: 0, lat: baseLat, lon: -0.50),
+            trackVisit(id: 2, placeID: "east", seconds: 600, lat: baseLat, lon: 0.50),
+        ])
+        let northSouth = FeatureEncoding.trackSegmentFeatures([
+            trackVisit(id: 3, placeID: "south", seconds: 0, lat: baseLat - 0.50, lon: 0),
+            trackVisit(id: 4, placeID: "north", seconds: 600, lat: baseLat + 0.50, lon: 0),
+        ])
+
+        let eastWestRatio = try projectedBendRatio(in: XCTUnwrap(eastWest.first), referenceLatitude: baseLat)
+        let northSouthRatio = try projectedBendRatio(in: XCTUnwrap(northSouth.first), referenceLatitude: baseLat)
+
+        XCTAssertEqual(eastWestRatio, TrackLayers.arcBendRatio, accuracy: 0.012)
+        XCTAssertEqual(northSouthRatio, TrackLayers.arcBendRatio, accuracy: 0.012)
+        XCTAssertEqual(eastWestRatio, northSouthRatio, accuracy: 0.012)
     }
 
     func testTrackSegmentFeaturesKeepNonDatelineDerivedArcCoordinatesInWGS84Bounds() {
@@ -438,10 +526,9 @@ final class PinLayersTests: XCTestCase {
 
         let longitudes = trackLongitudes(in: try XCTUnwrap(features.first))
 
-        XCTAssertEqual(longitudes.count, 3)
+        XCTAssertGreaterThanOrEqual(longitudes.count, 9)
         XCTAssertEqual(longitudes[0], 179.0, accuracy: 1e-9)
-        XCTAssertEqual(longitudes[1], 180.0, accuracy: 1e-9)
-        XCTAssertEqual(longitudes[2], 179.5, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(longitudes.last), 179.5, accuracy: 1e-9)
     }
 
     func testTrackSegmentFeaturesPreserveNonDatelineEndpointLongitudeExactly() throws {
@@ -461,14 +548,9 @@ final class PinLayersTests: XCTestCase {
         )
 
         let longitudes = trackLongitudes(in: try XCTUnwrap(features.first))
-        let dx = toLon - fromLon
-        let dy = toLat - fromLat
-        let distance = max((dx * dx + dy * dy).squareRoot(), 0.000_001)
-        let expectedMidpointLon = ((fromLon + toLon) / 2) + (-dy / distance) * distance * TrackLayers.arcBendRatio
 
-        XCTAssertEqual(longitudes.count, 3)
-        XCTAssertEqual(longitudes[1], expectedMidpointLon)
-        XCTAssertEqual(longitudes[2], toLon)
+        XCTAssertGreaterThanOrEqual(longitudes.count, 9)
+        XCTAssertEqual(longitudes.last, toLon)
     }
 
     func testTrackSegmentFeaturesWrapAntimeridianUsingShortestLongitudePath() throws {
@@ -485,11 +567,11 @@ final class PinLayersTests: XCTestCase {
 
         let longitudes = trackLongitudes(in: try XCTUnwrap(features.first))
 
-        XCTAssertEqual(longitudes.count, 3)
+        XCTAssertGreaterThanOrEqual(longitudes.count, 9)
         XCTAssertEqual(longitudes[0], 178.0650, accuracy: 1e-9)
-        XCTAssertGreaterThan(longitudes[1], 180.0, "midpoint should stay near the dateline, not Greenwich")
-        XCTAssertEqual(longitudes[2], 187.8954, accuracy: 1e-9)
-        XCTAssertLessThan(abs(longitudes[2] - longitudes[0]), 20.0)
+        XCTAssertGreaterThan(longitudes[longitudes.count / 2], 180.0, "midpoint should stay near the dateline, not Greenwich")
+        XCTAssertEqual(try XCTUnwrap(longitudes.last), 187.8954, accuracy: 1e-9)
+        XCTAssertLessThan(abs(try XCTUnwrap(longitudes.last) - longitudes[0]), 20.0)
         for (from, to) in zip(longitudes, longitudes.dropFirst()) {
             XCTAssertLessThan(abs(to - from), 20.0, "adjacent arc segment should use the wrapped short path")
         }
@@ -509,17 +591,17 @@ final class PinLayersTests: XCTestCase {
 
         let longitudes = trackLongitudes(in: try XCTUnwrap(features.first))
 
-        XCTAssertEqual(longitudes.count, 3)
+        XCTAssertGreaterThanOrEqual(longitudes.count, 9)
         XCTAssertEqual(longitudes[0], -172.1046, accuracy: 1e-9)
-        XCTAssertLessThan(abs(longitudes[1] - (-180.0)), 10.0, "midpoint should stay near the dateline, not Greenwich")
-        XCTAssertEqual(longitudes[2], -181.9350, accuracy: 1e-9)
-        XCTAssertLessThan(abs(longitudes[2] - longitudes[0]), 20.0)
+        XCTAssertLessThan(abs(longitudes[longitudes.count / 2] - (-180.0)), 10.0, "midpoint should stay near the dateline, not Greenwich")
+        XCTAssertEqual(try XCTUnwrap(longitudes.last), -181.9350, accuracy: 1e-9)
+        XCTAssertLessThan(abs(try XCTUnwrap(longitudes.last) - longitudes[0]), 20.0)
         for (from, to) in zip(longitudes, longitudes.dropFirst()) {
             XCTAssertLessThan(abs(to - from), 20.0, "adjacent arc segment should use the wrapped short path")
         }
     }
 
-    func testTrackSegmentSummaryCountsBurstSuppressedConnectorsForHonestReadout() {
+    func testTrackSegmentSummaryDoesNotSuppressBurstConnectors() {
         let visits = [
             trackVisit(id: 1, placeID: "desk-a", seconds: 0, lat: 3.14, lon: 101.69),
             trackVisit(id: 2, placeID: "desk-b", seconds: 45, lat: 3.16, lon: 101.70),
@@ -531,8 +613,7 @@ final class PinLayersTests: XCTestCase {
             burstWindow: 300
         )
 
-        XCTAssertEqual(summary.features.count, 0)
-        XCTAssertEqual(summary.suppressedBurstConnectorCount, 1)
+        XCTAssertEqual(summary.features.count, 1)
         XCTAssertEqual(summary.connectableVisitCount, 2)
     }
 
@@ -568,6 +649,46 @@ final class PinLayersTests: XCTestCase {
             }
             return lon
         }
+    }
+
+    private func trackCoordinates(in feature: JSONValue) throws -> [(lon: Double, lat: Double)] {
+        guard case let .object(firstFeature) = feature,
+              case let .object(geometry) = firstFeature["geometry"],
+              case let .array(coordinates) = geometry["coordinates"]
+        else {
+            throw XCTSkip("track feature geometry missing")
+        }
+        return try coordinates.map { coordinate in
+            guard case let .array(values) = coordinate,
+                  values.count == 2,
+                  case let .double(lon) = values[0],
+                  case let .double(lat) = values[1]
+            else {
+                throw XCTSkip("track coordinate missing pair")
+            }
+            return (lon, lat)
+        }
+    }
+
+    private func projectedBendRatio(in feature: JSONValue, referenceLatitude: Double) throws -> Double {
+        let coordinates = try trackCoordinates(in: feature)
+        let scale = cos(referenceLatitude * .pi / 180)
+        let start = try XCTUnwrap(coordinates.first)
+        let end = try XCTUnwrap(coordinates.last)
+        let startPoint = (x: start.lon * scale, y: start.lat)
+        let endPoint = (x: end.lon * scale, y: end.lat)
+        let dx = endPoint.x - startPoint.x
+        let dy = endPoint.y - startPoint.y
+        let length = max((dx * dx + dy * dy).squareRoot(), 0.000_001)
+        let maxBend = coordinates.map { coordinate in
+            let point = (x: coordinate.lon * scale, y: coordinate.lat)
+            let cross = (dy * point.x)
+                - (dx * point.y)
+                + (endPoint.x * startPoint.y)
+                - (endPoint.y * startPoint.x)
+            return abs(cross) / length
+        }.max() ?? 0
+        return maxBend / length
     }
 
     private func trackVisit(

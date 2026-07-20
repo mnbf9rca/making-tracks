@@ -27,27 +27,38 @@ struct TrackSourceSnapshot: Sendable {
     static let empty = TrackSourceSnapshot(
         featureCollectionJSON: emptyFeatureCollectionJSON,
         segmentCount: 0,
-        suppressedBurstConnectorCount: 0,
+        filteredBridgeCount: 0,
         connectableVisitCount: 0
     )
 
     let signature: String
     let segmentCount: Int
-    let suppressedBurstConnectorCount: Int
+    let filteredBridgeCount: Int
     let connectableVisitCount: Int
     let data: Data
 
     init(
         featureCollectionJSON: String,
         segmentCount: Int,
-        suppressedBurstConnectorCount: Int = 0,
+        filteredBridgeCount: Int = 0,
         connectableVisitCount: Int = 0
     ) {
         signature = featureCollectionJSON
         self.segmentCount = segmentCount
-        self.suppressedBurstConnectorCount = suppressedBurstConnectorCount
+        self.filteredBridgeCount = filteredBridgeCount
         self.connectableVisitCount = connectableVisitCount
         data = Data(featureCollectionJSON.utf8)
+    }
+
+    static func make(context: TrackGeometryContext) -> TrackSourceSnapshot {
+        let summary = FeatureEncoding.trackSegmentSummary(context.visits)
+        return TrackSourceSnapshot(
+            featureCollectionJSON: (try? FeatureEncoding.featureCollection(summary.features).jsonString())
+                ?? TrackSourceSnapshot.emptyFeatureCollectionJSON,
+            segmentCount: summary.features.count,
+            filteredBridgeCount: context.filteredBridgeCount,
+            connectableVisitCount: summary.connectableVisitCount
+        )
     }
 }
 
@@ -153,6 +164,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
     var startupViewport: ViewportSeed
     var features: [(MapPlace, PinState)]
     var pinPresentation: PinPresentation
+    var trackReplayPulsePlaceIDs: Set<String>
     var trackSourceSnapshot: TrackSourceSnapshot
     var pinAccessibilityNames: [String: String]
     var visibleCategories: Set<String>?
@@ -234,6 +246,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         }
         context.coordinator.pendingFeatures = features
         context.coordinator.pendingPinPresentation = pinPresentation
+        context.coordinator.pendingTrackReplayPulsePlaceIDs = trackReplayPulsePlaceIDs
         context.coordinator.pendingTrackSourceSnapshot = trackSourceSnapshot
         context.coordinator.pinAccessibilityNames = pinAccessibilityNames
         context.coordinator.desiredVisibleCategories = visibleCategories
@@ -257,6 +270,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         context.coordinator.debugReportPinLayerSize = debugReportPinLayerSize
         context.coordinator.pendingFeatures = features
         context.coordinator.pendingPinPresentation = pinPresentation
+        context.coordinator.pendingTrackReplayPulsePlaceIDs = trackReplayPulsePlaceIDs
         context.coordinator.pendingTrackSourceSnapshot = trackSourceSnapshot
         context.coordinator.pinAccessibilityNames = pinAccessibilityNames
         context.coordinator.desiredVisibleCategories = visibleCategories
@@ -286,7 +300,12 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         } else {
             context.coordinator.updatePinSize(on: map, multiplier: pinSizeMultiplier)
             context.coordinator.updateLayerFilters(on: map, visibleCategories: visibleCategories)
-            context.coordinator.updateSource(on: map, features: features, pinPresentation: pinPresentation)
+            context.coordinator.updateSource(
+                on: map,
+                features: features,
+                pinPresentation: pinPresentation,
+                trackReplayPulsePlaceIDs: trackReplayPulsePlaceIDs
+            )
             context.coordinator.updateTrackSource(on: map, snapshot: trackSourceSnapshot)
         }
         context.coordinator.updatePinAccessibilityElements(on: map)
@@ -349,6 +368,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var currentPinSize: PinSize?
         var pendingFeatures: [(MapPlace, PinState)] = []
         var pendingPinPresentation: PinPresentation = .discovery
+        var pendingTrackReplayPulsePlaceIDs: Set<String> = []
         var pendingTrackSourceSnapshot = TrackSourceSnapshot.empty
         var renderedFeatures: [(MapPlace, PinState)] = []
         var renderedTrackSignature: String?
@@ -473,7 +493,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             let circle = MLNCircleStyleLayer(identifier: "pins-circle", source: source)
             circle.circleOpacity = NSExpression(mglJSONObject: PinLayers.fadeOpacityExpression().foundationObject)
             circle.circleColor = NSExpression(mglJSONObject: PinLayers.pinColorExpression().foundationObject)
-            circle.circleRadius = Self.mapExpression(pinSize.circleRadiusExpression)
+            circle.circleRadius = Self.mapExpression(PinLayers.trackReplayPulseExpression(base: pinSize.circleRadiusExpression))
             style.addLayer(circle)
             addTrackLine(style: style)
 
@@ -486,7 +506,12 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             reportPinLayerSize(in: style, pinSize: pinSize)
 #endif
             updateLayerFilters(on: mapView, visibleCategories: desiredVisibleCategories)
-            updateSource(on: mapView, features: pendingFeatures, pinPresentation: pendingPinPresentation)
+            updateSource(
+                on: mapView,
+                features: pendingFeatures,
+                pinPresentation: pendingPinPresentation,
+                trackReplayPulsePlaceIDs: pendingTrackReplayPulsePlaceIDs
+            )
             renderedTrackSignature = nil
             updateTrackSource(on: mapView, snapshot: pendingTrackSourceSnapshot)
             updatePinAccessibilityElements(on: mapView)
@@ -519,7 +544,8 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         func updateSource(
             on map: MLNMapView,
             features: [(MapPlace, PinState)],
-            pinPresentation: PinPresentation
+            pinPresentation: PinPresentation,
+            trackReplayPulsePlaceIDs: Set<String>
         ) {
             guard let style = map.style else {
                 renderedFeatures = []
@@ -534,7 +560,12 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                 return
             }
             let collection = FeatureEncoding.featureCollection(features.map {
-                FeatureEncoding.feature($0.0, $0.1, pinPresentation: pinPresentation)
+                FeatureEncoding.feature(
+                    $0.0,
+                    $0.1,
+                    pinPresentation: pinPresentation,
+                    trackReplayPulse: trackReplayPulsePlaceIDs.contains($0.0.id)
+                )
             })
             guard let json = try? collection.jsonString(),
                   let shape = try? MLNShape(data: Data(json.utf8), encoding: String.Encoding.utf8.rawValue)
@@ -603,10 +634,10 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             else { return }
             currentPinSize = pinSize
             if let circle = style.layer(withIdentifier: "pins-circle") as? MLNCircleStyleLayer {
-                circle.circleRadius = Self.mapExpression(pinSize.circleRadiusExpression)
+                circle.circleRadius = Self.mapExpression(PinLayers.trackReplayPulseExpression(base: pinSize.circleRadiusExpression))
             }
             if let icon = style.layer(withIdentifier: "pins-icon") as? MLNSymbolStyleLayer {
-                icon.iconScale = Self.mapExpression(pinSize.categoryIconScaleExpression)
+                icon.iconScale = Self.mapExpression(PinLayers.trackReplayPulseExpression(base: pinSize.categoryIconScaleExpression))
             }
             if let bookmark = style.layer(withIdentifier: "pins-bookmark") as? MLNSymbolStyleLayer {
                 bookmark.iconScale = Self.mapExpression(pinSize.badgeIconScaleExpression)
@@ -707,7 +738,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             layer.iconImageName = NSExpression(mglJSONObject: PinLayers.categoryIconExpression().foundationObject)
             layer.iconAllowsOverlap = NSExpression(forConstantValue: true)
             layer.iconIgnoresPlacement = NSExpression(forConstantValue: true)
-            layer.iconScale = Self.mapExpression(pinSize.categoryIconScaleExpression)
+            layer.iconScale = Self.mapExpression(PinLayers.trackReplayPulseExpression(base: pinSize.categoryIconScaleExpression))
             layer.iconOpacity = NSExpression(mglJSONObject: PinLayers.fadeOpacityExpression().foundationObject)
             style.addLayer(layer)
         }
@@ -745,10 +776,12 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             let icon = style.layer(withIdentifier: "pins-icon") as? MLNSymbolStyleLayer
             let bookmark = style.layer(withIdentifier: "pins-bookmark") as? MLNSymbolStyleLayer
             let heart = style.layer(withIdentifier: "pins-heart") as? MLNSymbolStyleLayer
+            let expectedCircleRadius = PinLayers.trackReplayPulseExpression(base: pinSize.circleRadiusExpression)
+            let expectedIconScale = PinLayers.trackReplayPulseExpression(base: pinSize.categoryIconScaleExpression)
             debugReportPinLayerSize(
                 "pin-layer-size:\(pinSize.accessibilityValue) " +
-                    "circle:\(Self.expression(circle?.circleRadius, matches: pinSize.circleRadiusExpression)) " +
-                    "icon:\(Self.expression(icon?.iconScale, matches: pinSize.categoryIconScaleExpression)) " +
+                    "circle:\(Self.expression(circle?.circleRadius, matches: expectedCircleRadius)) " +
+                    "icon:\(Self.expression(icon?.iconScale, matches: expectedIconScale)) " +
                     "bookmark:\(Self.expression(bookmark?.iconScale, matches: pinSize.badgeIconScaleExpression)) " +
                     "heart:\(Self.expression(heart?.iconScale, matches: pinSize.badgeIconScaleExpression))"
             )

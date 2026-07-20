@@ -77,13 +77,246 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(ListMapModeCopy.tracksLayerTitle, "My tracks")
     }
 
-    func testTrackConnectionReadoutExplainsAllBurstSuppressedConnectors() {
+    func testTrackConnectionReadoutExplainsFilteredBridges() {
         XCTAssertEqual(
-            TrackConnectionReadout.message(segmentCount: 0, suppressedBurstConnectorCount: 1, connectableVisitCount: 2),
-            "2 visits too close together to connect"
+            TrackConnectionReadout.message(filteredBridgeCount: 1),
+            "1 visit hidden from this track"
         )
-        XCTAssertNil(TrackConnectionReadout.message(segmentCount: 1, suppressedBurstConnectorCount: 1, connectableVisitCount: 3))
-        XCTAssertNil(TrackConnectionReadout.message(segmentCount: 0, suppressedBurstConnectorCount: 0, connectableVisitCount: 2))
+        XCTAssertEqual(
+            TrackConnectionReadout.message(filteredBridgeCount: 3),
+            "3 visits hidden from this track"
+        )
+        XCTAssertNil(TrackConnectionReadout.message(filteredBridgeCount: 0))
+    }
+
+    func testTrackTimelinePositionsAreVisitEventsNotElapsedTime() {
+        let timeline = TrackTimelineModel(visits: [
+            trackVisit(id: 1, seconds: 0),
+            trackVisit(id: 2, seconds: 60),
+            trackVisit(id: 3, seconds: 60 * 60 * 24 * 12),
+        ])
+
+        XCTAssertEqual(timeline.sliderRange, 0...2)
+        XCTAssertEqual(timeline.eventIndex(forSliderValue: 0.0), 0)
+        XCTAssertEqual(timeline.eventIndex(forSliderValue: 1.0), 1)
+        XCTAssertEqual(timeline.eventIndex(forSliderValue: 2.0), 2)
+        XCTAssertEqual(timeline.eventIndex(forSliderValue: 1.6), 2)
+        XCTAssertEqual(timeline.dateMarkers.map(\.eventIndex), [0, 2])
+        XCTAssertEqual(timeline.dateMarkers.map(\.position), [0, 1])
+        XCTAssertEqual(timeline.dateMarkers.map(\.label), ["1 Jan", "13 Jan"])
+    }
+
+    func testTrackTimelineDateMarkersUseEventIndexPositions() {
+        let timeline = TrackTimelineModel(visits: [
+            trackVisit(id: 1, seconds: 0),
+            trackVisit(id: 2, seconds: 60 * 60 * 24),
+            trackVisit(id: 3, seconds: 60 * 60 * 24),
+            trackVisit(id: 4, seconds: 60 * 60 * 24),
+            trackVisit(id: 5, seconds: 60 * 60 * 24),
+            trackVisit(id: 6, seconds: 60 * 60 * 24),
+            trackVisit(id: 7, seconds: 60 * 60 * 24),
+            trackVisit(id: 8, seconds: 60 * 60 * 24),
+            trackVisit(id: 9, seconds: 60 * 60 * 24),
+            trackVisit(id: 10, seconds: 60 * 60 * 24 * 2),
+        ])
+
+        XCTAssertEqual(timeline.dateMarkers.map(\.eventIndex), [0, 1, 9])
+        XCTAssertEqual(timeline.dateMarkers.map(\.position), [0, 1.0 / 9.0, 1])
+    }
+
+    func testTrackTimelineAutoplayAdvancesByEventAndPulsesOnArrival() {
+        let timeline = TrackTimelineModel(visits: [
+            trackVisit(id: 1, seconds: 0),
+            trackVisit(id: 2, seconds: 60),
+            trackVisit(id: 3, seconds: 120),
+        ])
+
+        XCTAssertEqual(timeline.autoplayStep(after: nil), .event(index: 0))
+        XCTAssertEqual(timeline.autoplayStep(after: 0), .event(index: 1))
+        XCTAssertEqual(timeline.autoplayStep(after: 1), .event(index: 2))
+        XCTAssertEqual(timeline.autoplayStep(after: 2), .finished)
+        XCTAssertTrue(timeline.shouldPulseArrival(previousIndex: 0, nextIndex: 1))
+        XCTAssertFalse(timeline.shouldPulseArrival(previousIndex: 1, nextIndex: 1))
+    }
+
+    func testTrackTimelineAccessibilityNamesSelectedVisitAndLovedState() {
+        let timeline = TrackTimelineModel(visits: [
+            trackVisit(id: 1, seconds: 0),
+            trackVisit(id: 2, seconds: 60, verdict: .loved, name: "Blue Mansion"),
+        ])
+
+        XCTAssertTrue(timeline.accessibilityValue(for: 1).contains("Visit 2 of 2, Blue Mansion"))
+        XCTAssertTrue(timeline.accessibilityValue(for: 1).contains("loved"))
+    }
+
+    func testTrackTimelineRequiresAtLeastTwoVisitsForInteractiveReplayControls() {
+        XCTAssertFalse(TrackTimelineModel(visits: []).hasInteractiveReplayControls)
+        XCTAssertFalse(TrackTimelineModel(visits: [trackVisit(id: 1, seconds: 0)]).hasInteractiveReplayControls)
+        XCTAssertTrue(TrackTimelineModel(visits: [
+            trackVisit(id: 1, seconds: 0),
+            trackVisit(id: 2, seconds: 60),
+        ]).hasInteractiveReplayControls)
+    }
+
+    func testTrackReplaySnapshotUsesEventPrefixAndPrefixBridgeCount() {
+        let visits = [
+            trackVisit(id: 1, seconds: 0),
+            trackVisit(id: 2, seconds: 60),
+            trackVisit(id: 3, seconds: 120),
+        ]
+        let context = TrackGeometryContext(visits: visits, sourceIndices: [0, 2, 4])
+        let prefix = context.clipped(throughEventIndex: 1)
+        let snapshot = TrackSourceSnapshot.make(context: prefix)
+
+        XCTAssertEqual(prefix.visits.map(\.id), [1, 2])
+        XCTAssertEqual(prefix.filteredBridgeCount, 1)
+        XCTAssertEqual(snapshot.segmentCount, 1)
+        XCTAssertEqual(snapshot.filteredBridgeCount, 1)
+    }
+
+    func testTrackReplayPinsBeyondSelectedEventRenderAsUnvisitedUntilArrival() {
+        let features = [
+            (MapPlace(id: "p1", lat: 51.501, lon: -0.101, tier: 2, category: "history"), PinState(saved: false, visit: .visited)),
+            (MapPlace(id: "p2", lat: 51.502, lon: -0.102, tier: 2, category: "history"), PinState(saved: true, visit: .loved)),
+            (MapPlace(id: "p3", lat: 51.503, lon: -0.103, tier: 2, category: "history"), PinState(saved: false, visit: .visited, hidden: true)),
+        ]
+        let visits = [
+            trackVisit(id: 1, placeID: "p1", seconds: 0),
+            trackVisit(id: 2, placeID: "p2", seconds: 60, verdict: .loved),
+            trackVisit(id: 3, placeID: "p3", seconds: 120),
+        ]
+
+        let replayed = TrackReplayPinPresentation.features(
+            features,
+            context: TrackGeometryContext(visits: visits, sourceIndices: [0, 1, 2]),
+            throughEventIndex: 1
+        )
+
+        XCTAssertEqual(replayed.map(\.1.visit), [.visited, .loved, .none])
+        XCTAssertEqual(replayed.map(\.1.saved), [false, true, false])
+        XCTAssertEqual(replayed.map(\.1.hidden), [false, false, true])
+    }
+
+    func testTrackReplayRepeatedPlaceUsesLatestReachedEventStateOnly() {
+        let features = [
+            (MapPlace(id: "p1", lat: 51.501, lon: -0.101, tier: 2, category: "history"), PinState(saved: false, visit: .loved)),
+        ]
+        let visits = [
+            trackVisit(id: 1, placeID: "p1", seconds: 0, verdict: nil),
+            trackVisit(id: 2, placeID: "p1", seconds: 60, verdict: .loved),
+        ]
+        let context = TrackGeometryContext(visits: visits, sourceIndices: [0, 1])
+
+        let firstArrival = TrackReplayPinPresentation.features(
+            features,
+            context: context,
+            throughEventIndex: 0
+        )
+        let lovedArrival = TrackReplayPinPresentation.features(
+            features,
+            context: context,
+            throughEventIndex: 1
+        )
+
+        XCTAssertEqual(firstArrival[0].1.visit, .visited)
+        XCTAssertEqual(lovedArrival[0].1.visit, .loved)
+    }
+
+    func testTrackReplayPulsePlaceIDsOnlyExposeCurrentArrival() {
+        let context = TrackGeometryContext(
+            visits: [
+                trackVisit(id: 1, placeID: "p1", seconds: 0),
+                trackVisit(id: 2, placeID: "p2", seconds: 60),
+            ],
+            sourceIndices: [0, 1]
+        )
+
+        XCTAssertEqual(
+            TrackReplayPinPresentation.pulsePlaceIDs(
+                context: context,
+                throughEventIndex: 1,
+                isArrivalPulsing: true
+            ),
+            ["p2"]
+        )
+        XCTAssertEqual(
+            TrackReplayPinPresentation.pulsePlaceIDs(
+                context: context,
+                throughEventIndex: 1,
+                isArrivalPulsing: false
+            ),
+            []
+        )
+    }
+
+    func testCollectionListMapDoesNotUseTrackReplayPresentationOrControls() {
+        let collection = MapScreen.ActiveListMap(
+            listID: 42,
+            name: "KL walk",
+            kind: PlaceList.defaultKind,
+            showVisited: true
+        )
+        let track = MapScreen.ActiveListMap(
+            listID: 1,
+            name: "My tracks",
+            kind: PlaceList.trackKind,
+            showVisited: true
+        )
+
+        XCTAssertFalse(collection.usesTrackReplay)
+        XCTAssertTrue(track.usesTrackReplay)
+        XCTAssertFalse(MapScreen.TrackReplayControlVisibility.showOnMap(
+            list: collection,
+            timeline: TrackTimelineModel(visits: [
+                trackVisit(id: 1, seconds: 0),
+                trackVisit(id: 2, seconds: 60),
+            ])
+        ))
+        XCTAssertFalse(MapScreen.TrackReplayControlVisibility.showOnMap(
+            list: track,
+            timeline: TrackTimelineModel(visits: [trackVisit(id: 1, seconds: 0)])
+        ))
+        XCTAssertTrue(MapScreen.TrackReplayControlVisibility.showOnMap(
+            list: track,
+            timeline: TrackTimelineModel(visits: [
+                trackVisit(id: 1, seconds: 0),
+                trackVisit(id: 2, seconds: 60),
+            ])
+        ))
+        XCTAssertFalse(MapScreen.TrackReplayControlVisibility.showInTracksDrawer(
+            timeline: TrackTimelineModel(visits: [trackVisit(id: 1, seconds: 0)])
+        ))
+    }
+
+    func testTrackTimelineDateMarkersThinByAvailableWidth() {
+        let visits = (0..<6).map { index in
+            trackVisit(
+                id: Int64(index + 1),
+                seconds: TimeInterval(index) * 60 * 60 * 24
+            )
+        }
+        let timeline = TrackTimelineModel(visits: visits)
+
+        XCTAssertEqual(timeline.dateMarkers(availableWidth: 600).map(\.eventIndex), [0, 1, 2, 3, 4, 5])
+        XCTAssertEqual(timeline.dateMarkers(availableWidth: 150).map(\.eventIndex), [0, 5])
+    }
+
+    func testTrackReplaySnapshotCachePrecomputesEventPrefixes() {
+        let context = TrackGeometryContext(
+            visits: [
+                trackVisit(id: 1, seconds: 0),
+                trackVisit(id: 2, seconds: 60),
+                trackVisit(id: 3, seconds: 120),
+            ],
+            sourceIndices: [0, 2, 4]
+        )
+        let cache = TrackReplaySnapshotCache(context: context)
+
+        XCTAssertEqual(cache.snapshot(throughEventIndex: 0).segmentCount, 0)
+        XCTAssertEqual(cache.snapshot(throughEventIndex: 1).segmentCount, 1)
+        XCTAssertEqual(cache.snapshot(throughEventIndex: 2).segmentCount, 2)
+        XCTAssertEqual(cache.snapshot(throughEventIndex: -1).segmentCount, 0)
+        XCTAssertEqual(cache.snapshot(throughEventIndex: 1).filteredBridgeCount, 1)
     }
 
     func testListMapPinPresentationTracksModeUsesFullStrengthPins() {
@@ -133,6 +366,45 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(
             TracksVisitFilter.visibleVisits([plain, lovedOlder, lovedNewerPlain], lovedOnly: true).map(\.id),
             [2, 3]
+        )
+    }
+
+    private func trackVisit(
+        id: Int64,
+        seconds: TimeInterval,
+        verdict: Verdict? = nil,
+        name: String? = nil
+    ) -> TrackVisit {
+        TrackVisit(
+            id: id,
+            placeID: "p\(id)",
+            visitedAt: Date(timeIntervalSince1970: seconds),
+            verdict: verdict,
+            name: name ?? "Place \(id)",
+            category: "history",
+            tier: 2,
+            lat: 51.5 + (Double(id) * 0.001),
+            lon: -0.12
+        )
+    }
+
+    private func trackVisit(
+        id: Int64,
+        placeID: String,
+        seconds: TimeInterval,
+        verdict: Verdict? = nil,
+        name: String? = nil
+    ) -> TrackVisit {
+        TrackVisit(
+            id: id,
+            placeID: placeID,
+            visitedAt: Date(timeIntervalSince1970: seconds),
+            verdict: verdict,
+            name: name ?? "Place \(id)",
+            category: "history",
+            tier: 2,
+            lat: 51.5 + (Double(id) * 0.001),
+            lon: -0.12
         )
     }
 

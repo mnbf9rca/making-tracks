@@ -142,6 +142,23 @@ final class InteractionsTests: XCTestCase {
         XCTAssertEqual(try db.listItems(listID: 42).map(\.placeID), [place.placeID])
     }
 
+    func testUITestingTrackListSeedUsesTrackKind() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+
+        try db.seedUITestingMultiDayTrackList(
+            named: "Replay week",
+            places: [
+                ref("p_replay_1", name: "First"),
+                ref("p_replay_2", name: "Second"),
+            ]
+        )
+
+        let list = try XCTUnwrap(try db.lists().first { $0.name == "Replay week" })
+        XCTAssertFalse(list.isSystem)
+        XCTAssertEqual(list.kind, PlaceList.trackKind)
+        XCTAssertEqual(try db.listItems(listID: XCTUnwrap(list.id)).map(\.placeID), ["p_replay_2", "p_replay_1"])
+    }
+
     func testSnapshotLookupReturnsEquatableSnapshot() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         let place = try ref("p_snapshot", fetchedAt: Date(timeIntervalSince1970: 77))

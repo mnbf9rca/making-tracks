@@ -27,6 +27,7 @@ struct MakingTracksApp: App {
     private static let seedFixtureTrackVisits = arguments.contains("--ui-testing-seed-track-visits")
     private static let seedFixtureBurstTrackVisits = arguments.contains("--ui-testing-seed-burst-track-visits")
     private static let seedFixtureTrackList = arguments.contains("--ui-testing-seed-track-list")
+    private static let seedFixtureMultiDayTrackList = arguments.contains("--ui-testing-seed-multiday-track-list")
     private static let simulatedLatitude = argumentValue("--ui-testing-location-latitude").flatMap(Double.init)
     private static let simulatedLongitude = argumentValue("--ui-testing-location-longitude").flatMap(Double.init)
     private static let uiTestingOfflineProgress = argumentValue("--ui-testing-offline-progress").flatMap(Double.init)
@@ -42,6 +43,7 @@ struct MakingTracksApp: App {
     private static let seedFixtureTrackVisits = false
     private static let seedFixtureBurstTrackVisits = false
     private static let seedFixtureTrackList = false
+    private static let seedFixtureMultiDayTrackList = false
     private static let simulatedLatitude: Double? = nil
     private static let simulatedLongitude: Double? = nil
     private static let uiTestingOfflineProgress: Double? = nil
@@ -81,12 +83,15 @@ struct MakingTracksApp: App {
                 if seedFixtureUserList {
                     try database.seedUITestingUserList(named: "Date night", containingPlaceID: Self.primaryFixturePlaceID)
                 }
-                if seedFixtureTrackList {
-                    try database.seedUITestingTrackList(named: "Track pair", places: MapScreen.fixturePlaces)
+                let fixturePlaces = MapScreen.uiTestingFixturePlaces(dense: Self.debugUseDenseFixturePins)
+                if seedFixtureMultiDayTrackList {
+                    try database.seedUITestingMultiDayTrackList(named: "Replay week", places: fixturePlaces)
+                } else if seedFixtureTrackList {
+                    try database.seedUITestingTrackList(named: "Track pair", places: fixturePlaces)
                 } else if seedFixtureBurstTrackVisits {
-                    try database.seedUITestingBurstTrackVisits(MapScreen.fixturePlaces)
+                    try database.seedUITestingBurstTrackVisits(fixturePlaces)
                 } else if seedFixtureTrackVisits {
-                    try database.seedUITestingTrackVisits(MapScreen.fixturePlaces)
+                    try database.seedUITestingTrackVisits(fixturePlaces)
                 }
 #endif
             }

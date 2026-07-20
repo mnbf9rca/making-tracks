@@ -11,6 +11,9 @@ public enum PinLayers {
     public static let baseCircleRadius = 6.5
     public static let baseCategoryIconScale = 0.72
     public static let baseBadgeIconScale = 1.0
+    public static let trackReplayPulseProperty = "track_replay_pulse"
+    // Tunable per B6 replay; enough enlargement to read as an arrival ping without covering neighbors.
+    public static let trackReplayPulseScale = 1.28
     public static let categorySymbolPointSize = 17.0
     public static let fallbackCategoryID = "uncategorized"
     public static let fallbackCategoryIconName = "pin-category-uncategorized"
@@ -52,7 +55,44 @@ public enum PinLayers {
             .double(FULL_OPACITY),
             .array([.string("=="), .array([.string("get"), .string("pin_presentation")]), .string(PinPresentation.tracks.rawValue)]),
             .double(FULL_OPACITY),
+            .array([.string("=="), .array([.string("get"), .string("pin_presentation")]), .string(PinPresentation.trackReplay.rawValue)]),
+            .array([
+                .string("case"),
+                .array([.string("=="), .array([.string("get"), .string("visit")]), .string(FeatureEncoding.visitTag(.none))]),
+                .double(FADED_OPACITY),
+                .double(FULL_OPACITY),
+            ]),
             .array(expression),
+        ])
+    }
+
+    public static func trackReplayPulseExpression(base: JSONValue) -> JSONValue {
+        if case let .array(items) = base,
+           items.count >= 5,
+           case .string("interpolate") = items[0],
+           items.count.isMultiple(of: 2) == false {
+            var pulsedItems = Array(items.prefix(3))
+            var index = 3
+            while index + 1 < items.count {
+                pulsedItems.append(items[index])
+                pulsedItems.append(trackReplayPulseValueExpression(base: items[index + 1]))
+                index += 2
+            }
+            return .array(pulsedItems)
+        }
+        return trackReplayPulseValueExpression(base: base)
+    }
+
+    private static func trackReplayPulseValueExpression(base: JSONValue) -> JSONValue {
+        .array([
+            .string("*"),
+            base,
+            .array([
+                .string("case"),
+                .array([.string("=="), .array([.string("get"), .string(trackReplayPulseProperty)]), .bool(true)]),
+                .double(trackReplayPulseScale),
+                .double(1.0),
+            ]),
         ])
     }
 
@@ -139,7 +179,7 @@ public enum PinLayers {
                 "paint": .object([
                     "circle-color": pinColorExpression(),
                     "circle-opacity": fadeOpacityExpression(),
-                    "circle-radius": pinSize.circleRadiusExpression,
+                    "circle-radius": trackReplayPulseExpression(base: pinSize.circleRadiusExpression),
                 ]),
             ]),
             .object([
@@ -153,7 +193,7 @@ public enum PinLayers {
                     "icon-image": categoryIconExpression(),
                     "icon-allow-overlap": .bool(true),
                     "icon-ignore-placement": .bool(true),
-                    "icon-size": pinSize.categoryIconScaleExpression,
+                    "icon-size": trackReplayPulseExpression(base: pinSize.categoryIconScaleExpression),
                 ]),
             ]),
             .object([

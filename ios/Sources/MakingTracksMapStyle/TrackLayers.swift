@@ -4,16 +4,19 @@ public enum TrackLayers {
     public static let sourceID = "tracks"
     public static let lineLayerID = "tracks-line"
     public static let lineColor = "#315149"
-    public static let lineWidth = 2.0
+    // Tunable per #257; line weight is a legibility dial for dashed abstract connectors.
+    public static let lineWidth = 3.0
     public static let lineOpacity = 0.82
     public static let lineDashPatternValues = [1.6, 1.2]
     public static let lineDashPattern: JSONValue = .array(lineDashPatternValues.map(JSONValue.double))
-    // Tunable per B6 §7.3; suppresses connectors where the log has too large a time hole to imply continuity.
+    // Superseded by #257/#265 continuity; retained so older callers compile while all consecutive visits connect.
     public static let defaultMaxConnectorGap: TimeInterval = 12 * 60 * 60
-    // Tunable per B6 §7.3; short-window batch entries are clusters, not directed travel order.
+    // Superseded by #257/#265 continuity; retained so older callers compile while all consecutive visits connect.
     public static let defaultBurstWindow: TimeInterval = 5 * 60
     // Tunable per B6 §7.3; fixed bend ratio keeps every connector visibly abstract without encoding route knowledge.
     public static let arcBendRatio = 0.12
+    // Tunable per #257; enough samples to read as an arc rather than a round-joined angle.
+    public static let arcInterpolationPointCount = 9
 
     public static func trackLayers() -> [JSONValue] {
         [
