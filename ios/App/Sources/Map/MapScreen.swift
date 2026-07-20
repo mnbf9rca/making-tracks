@@ -779,6 +779,72 @@ enum TrackMapFeatureFilter {
     }
 }
 
+enum ListMapFilteredFeatures {
+    static func visibleFeatures(
+        _ features: [(MapPlace, PinState)],
+        showVisited: Bool,
+        visitFilter: TracksVisitFilter,
+        context: TrackGeometryContext
+    ) -> [(MapPlace, PinState)] {
+        guard showVisited, visitFilter.isActive else { return features }
+        return TrackMapFeatureFilter.visibleFeatures(features, context: context)
+    }
+}
+
+struct ListMapFilterChip: Equatable, Identifiable {
+    let id: String
+    let title: String
+    let systemImage: String?
+    let accessibilityIdentifier: String
+    let isToggle: Bool
+    let isSelected: Bool
+}
+
+enum ListMapFilterChips {
+    static func chips(for filter: TracksVisitFilter) -> [ListMapFilterChip] {
+        var chips: [ListMapFilterChip] = [
+            ListMapFilterChip(
+                id: "loved",
+                title: "Loved",
+                systemImage: "heart.fill",
+                accessibilityIdentifier: "map.list-mode.filter.loved",
+                isToggle: true,
+                isSelected: filter.lovedOnly
+            )
+        ]
+        if !filter.listIDs.isEmpty {
+            let count = filter.listIDs.count
+            chips.append(ListMapFilterChip(
+                id: "lists",
+                title: count == 1 ? "1 list" : "\(count) lists",
+                systemImage: "list.bullet",
+                accessibilityIdentifier: "map.list-mode.filter.lists",
+                isToggle: false,
+                isSelected: true
+            ))
+        }
+        for category in filter.categories.sorted() {
+            chips.append(ListMapFilterChip(
+                id: "category-\(identifierSuffix(for: category))",
+                title: category,
+                systemImage: "tag.fill",
+                accessibilityIdentifier: "map.list-mode.filter.category.\(identifierSuffix(for: category))",
+                isToggle: false,
+                isSelected: true
+            ))
+        }
+        return chips
+    }
+
+    private static func identifierSuffix(for value: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let scalars = value.lowercased().unicodeScalars.map { scalar in
+            allowed.contains(scalar) ? Character(scalar) : "-"
+        }
+        return String(scalars)
+    }
+}
+
 struct TrackReplaySnapshotCache: Sendable {
     static let empty = TrackReplaySnapshotCache(context: .empty)
 
@@ -2272,27 +2338,31 @@ struct MapScreen: View {
 
     private func listMapFilterChips(_ list: ActiveListMap) -> some View {
         HStack(spacing: 6) {
-            let isSelected = list.visitFilter == .loved
-            HStack(spacing: 5) {
-                Image(systemName: "heart.fill")
-                Text("Loved")
+            ForEach(ListMapFilterChips.chips(for: list.visitFilter)) { chip in
+                HStack(spacing: 5) {
+                    if let systemImage = chip.systemImage {
+                        Image(systemName: systemImage)
+                    }
+                    Text(verbatim: chip.title)
+                }
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .foregroundStyle(chip.isSelected ? Color(uiColor: .systemBackground) : Color(uiColor: .label))
+                .background(chip.isSelected ? Color(uiColor: .label) : Color.clear, in: Capsule())
+                .background(.regularMaterial, in: Capsule())
+                .contentShape(Capsule())
+                .onTapGesture {
+                    guard chip.isToggle else { return }
+                    toggleListMapLovedFilter()
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(chip.title)
+                .accessibilityIdentifier(chip.accessibilityIdentifier)
+                .accessibilityValue(chip.isSelected ? "Selected" : "Not selected")
+                .accessibilityAddTraits(chip.isToggle ? .isButton : .isStaticText)
             }
-            .font(.caption.weight(.semibold))
-            .lineLimit(1)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .foregroundStyle(isSelected ? Color(uiColor: .systemBackground) : Color(uiColor: .label))
-            .background(isSelected ? Color(uiColor: .label) : Color.clear, in: Capsule())
-            .background(.regularMaterial, in: Capsule())
-            .contentShape(Capsule())
-            .onTapGesture {
-                toggleListMapLovedFilter()
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Loved")
-            .accessibilityIdentifier("map.list-mode.filter.loved")
-            .accessibilityValue(isSelected ? "Selected" : "Not selected")
-            .accessibilityAddTraits(.isButton)
         }
     }
 
@@ -3100,11 +3170,12 @@ struct MapScreen: View {
         } else {
             TrackGeometryContext.empty
         }
-        let next = if list.showVisited && list.visitFilter == .loved {
-            TrackMapFeatureFilter.visibleFeatures(rawFeatures, context: nextTrackContext)
-        } else {
-            rawFeatures
-        }
+        let next = ListMapFilteredFeatures.visibleFeatures(
+            rawFeatures,
+            showVisited: list.showVisited,
+            visitFilter: list.visitFilter,
+            context: nextTrackContext
+        )
         let nextNames = await model.listMapPinAccessibilityNames(
             listID: list.listID,
             visiblePlaceIDs: Set(next.map(\.0.id))

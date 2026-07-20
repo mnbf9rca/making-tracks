@@ -142,6 +142,21 @@ extension AppDatabase {
         } else {
             listPlaceIDs = []
         }
+        let filterListPlaceIDs: Set<String>
+        if filter.listIDs.isEmpty {
+            filterListPlaceIDs = []
+        } else {
+            let sortedListIDs = filter.listIDs.sorted()
+            filterListPlaceIDs = Set(try String.fetchAll(
+                db,
+                sql: """
+                    SELECT DISTINCT place_id
+                    FROM list_items
+                    WHERE list_id IN (\(databaseQuestionMarks(count: sortedListIDs.count)))
+                    """,
+                arguments: StatementArguments(sortedListIDs)
+            ))
+        }
         let hiddenPlaceIDs = Set(try String.fetchAll(db, sql: "SELECT place_id FROM hidden_places"))
         let rows = try Row.fetchAll(
             db,
@@ -166,7 +181,9 @@ extension AppDatabase {
         let renderedVisits = validVisits.filter { visit in
             guard !hiddenPlaceIDs.contains(visit.placeID) else { return false }
             guard isTrackList || listPlaceIDs.contains(visit.placeID) else { return false }
-            guard filter == .all || visit.verdict == .loved else { return false }
+            guard !filter.lovedOnly || visit.verdict == .loved else { return false }
+            guard filter.listIDs.isEmpty || filterListPlaceIDs.contains(visit.placeID) else { return false }
+            guard filter.categories.isEmpty || filter.categories.contains(visit.category) else { return false }
             return true
         }
         return TrackGeometryContext(visits: renderedVisits)
