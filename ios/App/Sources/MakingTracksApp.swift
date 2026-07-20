@@ -54,6 +54,7 @@ struct MakingTracksApp: App {
 #endif
 
     init() {
+        Self.configureDiagnosticLogging()
         let fixture = Self.isFixtureMap
         MakingTracksLog.startup.info("app init started fixture=\(fixture, privacy: .public)")
         Self.resetUITestingThemeIfNeeded()
@@ -64,6 +65,20 @@ struct MakingTracksApp: App {
         Self.resetUITestingOnboardingIfNeeded()
         Self.completeUITestingOnboardingIfNeeded()
         MakingTracksLog.startup.info("app init finished fixture=\(fixture, privacy: .public)")
+    }
+
+    private static func configureDiagnosticLogging() {
+        let bundleIdentifier = Bundle.main.bundleIdentifier ?? "app.making-tracks.MakingTracks"
+        do {
+            let root = try DiagnosticLogStore.defaultRoot(bundleIdentifier: bundleIdentifier)
+            let salt = try DiagnosticLogSalt.loadOrCreate(
+                service: bundleIdentifier,
+                account: "diagnostic-log-hash-salt"
+            )
+            MakingTracksLog.configureDiagnosticLogStore(DiagnosticLogStore(root: root, salt: salt))
+        } catch {
+            MakingTracksLog.configureDiagnosticLogStore(nil)
+        }
     }
 
     private let databaseStartup: DatabaseStartup = {

@@ -257,7 +257,19 @@ public final class HTTPTileFetcher: ProgressReportingOfflineRegionFetching, Boun
               (200...299).contains(http.statusCode)
         else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let statusLabel = "http-\(status)"
             MakingTracksLog.resolution.error("fetch failed host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public) status=\(status, privacy: .public)")
+            MakingTracksLog.file(
+                category: .resolution,
+                level: .error,
+                "fetch failed",
+                fields: [
+                    .public("host", MakingTracksLog.host(url)),
+                    .public("kind", MakingTracksLog.objectKind(url)),
+                    .public("status", statusLabel),
+                    .object("object", MakingTracksLog.objectPath(url)),
+                ]
+            )
             throw TileError.httpStatus(status)
         }
         MakingTracksLog.resolution.debug("fetch finished host=\(MakingTracksLog.host(url), privacy: .public) kind=\(MakingTracksLog.objectKind(url), privacy: .public) bytes=\(data.count, privacy: .public)")

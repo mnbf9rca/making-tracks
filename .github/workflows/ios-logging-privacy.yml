@@ -1,0 +1,29 @@
+name: iOS Logging Privacy
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ios-logging-privacy.yml"
+      - "ios/Sources/**/*.swift"
+      - "ios/Tests/MakingTracksTilesTests/LoggingPrivacyTests.swift"
+      - "ios/Package.swift"
+      - "ios/Package.resolved"
+  push:
+    branches:
+      - ios
+      - "wp-log-*"
+    paths:
+      - ".github/workflows/ios-logging-privacy.yml"
+      - "ios/Sources/**/*.swift"
+      - "ios/Tests/MakingTracksTilesTests/LoggingPrivacyTests.swift"
+      - "ios/Package.swift"
+      - "ios/Package.resolved"
+
+jobs:
+  logging-privacy:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run logging privacy tests
+        run: swift test --filter LoggingPrivacyTests
+        working-directory: ios

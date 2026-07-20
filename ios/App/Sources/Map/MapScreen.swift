@@ -546,6 +546,7 @@ enum MenuDestination: Hashable {
     case tracks
     case offlineMaps
     case settings
+    case diagnostics
     case about
 }
 
@@ -3264,6 +3265,16 @@ struct StorageMenuStatus: Equatable, Sendable {
         }
     }
 
+    var diagnosticInstalledPacks: [DiagnosticInstalledPack] {
+        let installed = regions.map {
+            DiagnosticInstalledPack(id: $0.region, publishVersion: $0.publishVersion, state: "installed")
+        }
+        let failed = failedRegions.map {
+            DiagnosticInstalledPack(id: $0, publishVersion: "unknown", state: "failed")
+        }
+        return installed + failed
+    }
+
     var totalBytesText: String {
         Self.formatBytes(totalBytes)
     }
@@ -3587,6 +3598,8 @@ private struct AppMenuSheet: View {
                 openLocationSettings: openLocationSettings,
                 replayOnboarding: replayOnboardingAndDismiss
             ))
+        case .diagnostics:
+            destinationWithDone(DiagnosticsView(storageStatus: storageStatus))
         case .about:
             destinationWithDone(AboutView(attribution: attribution))
         }
@@ -5046,6 +5059,50 @@ private struct SettingsView: View {
                 .accessibilityIdentifier("settings.storage.manage")
             }
 
+            Section("Diagnostics") {
+                Button {
+                    path.append(.diagnostics)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.up.doc")
+                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Export diagnostic log")
+                                .foregroundStyle(.primary)
+                            Text("Review what is included before sharing.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings.diagnostics.export")
+
+                Button(role: .destructive) {
+                    deleteDiagnostics()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "xmark.bin")
+                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Delete diagnostics")
+                                .foregroundStyle(.primary)
+                            Text("Clears logs stored on this device.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings.diagnostics.delete")
+            }
+
             Section("Onboarding") {
                 Button(action: replayOnboarding) {
                     Text("Replay onboarding")
@@ -5068,6 +5125,278 @@ private struct SettingsView: View {
             get: { pinSize.multiplier },
             set: { pinSizeMultiplier = PinSize(multiplier: $0).multiplier }
         )
+    }
+
+    private func deleteDiagnostics() {
+        do {
+            let store = try DiagnosticsRuntime.makeStore()
+            try store.deleteDiagnostics(stagingRoot: DiagnosticsRuntime.stagingRoot())
+        } catch {
+            MakingTracksLog.startup.error("diagnostics delete failed reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+        }
+    }
+}
+
+private struct DiagnosticsView: View {
+    let storageStatus: StorageMenuStatus
+
+    @State private var selectedWindow = DiagnosticLogWindow.lastHour
+    @State private var artifact: DiagnosticLogArtifact?
+    @State private var scrubFailed = false
+    @State private var isPreparing = false
+    @State private var shareItem: DiagnosticsShareItem?
+
+    var body: some View {
+        List {
+            Section {
+                Picker("Time range", selection: $selectedWindow) {
+                    ForEach(DiagnosticLogWindow.settingsOptions, id: \.self) { window in
+                        Text(window.label).tag(window)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("settings.diagnostics.window")
+
+                LabeledContent("Local file", value: "Prepared on this phone")
+                LabeledContent("Share", value: "System share sheet")
+            } header: {
+                Text("Send a diagnostic log")
+            } footer: {
+                Text("Nothing is sent automatically. The app prepares a file on this phone, then you choose where it goes.")
+            }
+
+            Section("Included") {
+                diagnosticsBullet("App version, build, device model and iOS version.")
+                diagnosticsBullet("Installed map packs, publish versions and download states.")
+                diagnosticsBullet("Our object URLs, hosts, status codes, timings and error labels.")
+            }
+
+            Section("Not included") {
+                diagnosticsBullet("Places you looked at, saved, loved, hid or visited.")
+                diagnosticsBullet("Your searches, lists, location, viewport or device name.")
+            }
+
+            if let artifact {
+                Section("Preview") {
+                    ScrollView(.horizontal) {
+                        Text(verbatim: artifact.preview)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
+                    .accessibilityIdentifier("settings.diagnostics.preview")
+                }
+
+                Section("Share boundary") {
+                    diagnosticsBullet("The next screen is the system share sheet.")
+                    diagnosticsBullet("The app still has no upload endpoint.")
+                }
+            }
+
+            if scrubFailed {
+                Section("Nothing was shared") {
+                    diagnosticsBullet("No archive was created and staged files were deleted.")
+                    diagnosticsBullet("Retry with a shorter window, or send a screenshot of this screen.")
+                }
+
+                Section("Blocked pattern") {
+                    Text("privacy scrub failed: reason=place-identifier-shaped-content action=staging-deleted")
+                        .font(.system(.caption, design: .monospaced))
+                        .accessibilityIdentifier("settings.diagnostics.scrub-failed")
+                }
+            }
+        }
+        .navigationTitle("Diagnostics")
+        .safeAreaInset(edge: .bottom) {
+            actionBar
+        }
+        .sheet(item: $shareItem, onDismiss: cleanupPreparedArtifact) { item in
+            ActivityShareSheet(activityItems: [item.url])
+        }
+    }
+
+    @ViewBuilder
+    private var actionBar: some View {
+        HStack(spacing: 10) {
+            if scrubFailed {
+                Button("Try 15 min") {
+                    selectedWindow = .fifteenMinutes
+                    prepare()
+                }
+                .buttonStyle(.borderedProminent)
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("settings.diagnostics.retry-shorter")
+
+                Button("Delete diagnostics", role: .destructive) {
+                    deleteDiagnostics()
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("settings.diagnostics.delete")
+            } else if let artifact {
+                Button("Cancel") {
+                    cleanupPreparedArtifact()
+                }
+                .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("settings.diagnostics.cancel")
+
+                Button("Share") {
+                    shareItem = DiagnosticsShareItem(url: artifact.archiveURL)
+                }
+                .buttonStyle(.borderedProminent)
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("settings.diagnostics.share")
+            } else {
+                Button(isPreparing ? "Preparing" : "Prepare") {
+                    prepare()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isPreparing)
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("settings.diagnostics.prepare")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.bar)
+    }
+
+    private func diagnosticsBullet(_ text: String) -> some View {
+        Label(text, systemImage: "circle.fill")
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(.primary, Color.accentColor)
+    }
+
+    private func prepare() {
+        isPreparing = true
+        scrubFailed = false
+        artifact = nil
+        do {
+            let store = try DiagnosticsRuntime.makeStore()
+            artifact = try DiagnosticLogExporter(
+                store: store,
+                metadata: DiagnosticsRuntime.metadata(storageStatus: storageStatus),
+                knownObjects: DiagnosticsRuntime.knownObjects(storageStatus: storageStatus)
+            ).prepare(window: selectedWindow, stagingRoot: DiagnosticsRuntime.stagingRoot())
+        } catch DiagnosticLogExportError.privacyScrubFailed {
+            scrubFailed = true
+        } catch {
+            MakingTracksLog.startup.error("diagnostics export failed reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            scrubFailed = true
+        }
+        isPreparing = false
+    }
+
+    private func cleanupPreparedArtifact() {
+        let staging = try? DiagnosticsRuntime.stagingRoot()
+        if let staging, FileManager.default.fileExists(atPath: staging.path) {
+            try? FileManager.default.removeItem(at: staging)
+        }
+        artifact = nil
+        shareItem = nil
+    }
+
+    private func deleteDiagnostics() {
+        do {
+            let store = try DiagnosticsRuntime.makeStore()
+            try store.deleteDiagnostics(stagingRoot: DiagnosticsRuntime.stagingRoot())
+            artifact = nil
+            scrubFailed = false
+        } catch {
+            MakingTracksLog.startup.error("diagnostics delete failed reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+        }
+    }
+}
+
+private struct DiagnosticsShareItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct ActivityShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+private enum DiagnosticsRuntime {
+    static func makeStore() throws -> DiagnosticLogStore {
+        let bundleIdentifier = Self.bundleIdentifier
+        let root = try DiagnosticLogStore.defaultRoot(bundleIdentifier: bundleIdentifier)
+        let salt = try DiagnosticLogSalt.loadOrCreate(
+            service: bundleIdentifier,
+            account: "diagnostic-log-hash-salt"
+        )
+        return DiagnosticLogStore(root: root, salt: salt)
+    }
+
+    static func stagingRoot() throws -> URL {
+        let root = try DiagnosticLogStore.defaultRoot(bundleIdentifier: bundleIdentifier)
+        return root.deletingLastPathComponent().appendingPathComponent("DiagnosticExports", isDirectory: true)
+    }
+
+    @MainActor
+    static func metadata(storageStatus: StorageMenuStatus) -> DiagnosticLogMetadata {
+        DiagnosticLogMetadata(
+            appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
+            build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
+            commit: buildCommit(),
+            osVersion: "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)",
+            deviceModel: deviceModel(),
+            installedPacks: storageStatus.diagnosticInstalledPacks
+        )
+    }
+
+    static func knownObjects(storageStatus: StorageMenuStatus) -> [String] {
+        storageStatus.regions.flatMap { region in
+            [
+                region.region,
+                "\(region.region)/\(region.publishVersion)",
+                "/\(region.region)/\(region.publishVersion)/current.json",
+                "/\(region.region)/\(region.publishVersion)/manifest.json",
+            ]
+        }
+    }
+
+    private static var bundleIdentifier: String {
+        Bundle.main.bundleIdentifier ?? "app.making-tracks.MakingTracks"
+    }
+
+    private static func buildCommit() -> String {
+        guard let url = Bundle.main.url(forResource: "BuildInfo", withExtension: "plist"),
+              let data = try? Data(contentsOf: url),
+              let dictionary = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let commit = dictionary["GitCommit"] as? String
+        else { return "unknown" }
+        return commit
+    }
+
+    private static func deviceModel() -> String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        return withUnsafePointer(to: &systemInfo.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 1) {
+                String(validatingCString: $0) ?? "unknown"
+            }
+        }
+    }
+}
+
+private extension DiagnosticLogWindow {
+    static let settingsOptions: [DiagnosticLogWindow] = [.fifteenMinutes, .lastHour, .everything]
+
+    var label: String {
+        switch self {
+        case .fifteenMinutes:
+            return "15 min"
+        case .lastHour:
+            return "Last hour"
+        case .everything:
+            return "Everything"
+        }
     }
 }
 
