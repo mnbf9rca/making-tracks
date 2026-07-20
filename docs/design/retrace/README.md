@@ -26,7 +26,7 @@ Files:
 - `retrace-map-mid-scrub-axxxl.svg` / `.png` - same state at an accessibility
   text size, preserving the map and slider hierarchy.
 - `retrace-slider-detail.svg` / `.png` - close-up of coarse and zoomed slider
-  states for years of visits.
+  states for a separate long-history scoped track.
 
 Validation notes:
 
@@ -56,6 +56,9 @@ Validation notes:
   within that scoped set.
 - Date labels decimate by available width. Coarse year-scale scrubbing shows
   sparse labels; the zoomed state can show more local labels.
+- The slider-detail sheet intentionally uses a large long-history scope
+  (`84 / 168`) so the fast-versus-slow zoom behavior is necessary and visible;
+  the map mockups use a separate one-day filtered scope (`4 / 11`).
 - The AXXXL render deliberately drops endpoint time labels from the slider row
   so the event control remains reachable and unclipped at the largest text size.
 - Each phone-frame source includes a subtle fold/safe-area marker so reviewers

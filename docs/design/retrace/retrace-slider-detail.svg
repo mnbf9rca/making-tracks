@@ -22,12 +22,12 @@
     <text class="label" x="38" y="114" style="font-size:20px;font-weight:780">Fast scrub</text>
     <text class="label small" x="38" y="136" fill="#627069">Coarse across scoped years; labels decimate</text>
     <rect x="270" y="98" width="62" height="30" rx="15" fill="#edf3ec"/>
-    <text class="label micro" x="287" y="118" fill="#53615a">4 / 11</text>
+    <text class="label micro" x="282" y="118" fill="#53615a">84 / 168</text>
 
     <circle cx="58" cy="181" r="20" fill="#20312c"/>
     <path d="M55 171l15 10-15 10z" fill="#f8efe3"/>
     <text class="label" x="94" y="174" style="font-size:12px;font-weight:700">2019</text>
-    <text class="label" x="94" y="198" style="font-size:22px;font-weight:790">Six years, 11 visits</text>
+    <text class="label" x="94" y="198" style="font-size:22px;font-weight:790">Six years, 168 visits</text>
     <text class="label small" x="94" y="220" fill="#627069">Fast movement crosses the full span</text>
 
     <line x1="46" y1="262" x2="344" y2="262" stroke="#d9dfd8" stroke-width="12" stroke-linecap="round"/>
@@ -52,7 +52,7 @@
     <text class="label" x="38" y="376" style="font-size:20px;font-weight:780">Slow scrub</text>
     <text class="label small" x="38" y="398" fill="#627069">Slowing zooms filtered event scale</text>
     <rect x="270" y="360" width="62" height="30" rx="15" fill="#edf3ec"/>
-    <text class="label micro" x="287" y="380" fill="#53615a">4 / 11</text>
+    <text class="label micro" x="282" y="380" fill="#53615a">84 / 168</text>
 
     <circle cx="58" cy="449" r="22" fill="#20312c"/>
     <path d="M54 439l17 10-17 10z" fill="#f8efe3"/>
