@@ -75,6 +75,13 @@ def run(
 ) -> PublishStageResult:
     staging_root = pathlib.Path(staging_root)
     r2.validate_path_components(region, publish_version)
+    _assert_upload_content_scope(
+        upload=upload,
+        image_candidate_limit=image_candidate_limit,
+        audited_image_completed_jsonl=audited_image_completed_jsonl,
+        audited_image_cache_dir=audited_image_cache_dir,
+        no_image_fetch=no_image_fetch,
+    )
     basemap.require_pmtiles()
     if upload:
         r2.require_boto3()
@@ -122,6 +129,8 @@ def run(
         audited_image_completed_jsonl=audited_image_completed_jsonl,
         audited_image_cache_dir=audited_image_cache_dir,
         no_image_fetch=no_image_fetch,
+        require_complete_audit=upload,
+        require_complete_fetch=upload,
     )
     place_images_by_id = {item.place_id: item for item in place_images}
     source_search_rows = search_index.source_rows_from_db(
@@ -211,6 +220,7 @@ def run(
     region_index_publish_result = r2.publish_region_index(region_index_path, layout)
 
     if upload:
+        _assert_upload_sidecar_completeness(target_results)
         prepared = r2.publish_prepared_to_r2(
             [target.publish_result.plan for target in target_results],
             region_index_path,
@@ -257,6 +267,8 @@ def _build_place_images(
     audited_image_completed_jsonl: str | pathlib.Path | None,
     audited_image_cache_dir: str | pathlib.Path | None,
     no_image_fetch: bool,
+    require_complete_audit: bool = False,
+    require_complete_fetch: bool = False,
 ) -> list[images.PlaceImage]:
     audit_args = [audited_image_completed_jsonl, audited_image_cache_dir]
     if any(value is not None for value in audit_args):
@@ -271,6 +283,7 @@ def _build_place_images(
             selected_candidates,
             completed_jsonl=pathlib.Path(audited_image_completed_jsonl),
             audited_cache_dir=pathlib.Path(audited_image_cache_dir),
+            require_complete=require_complete_audit,
         )
     if no_image_fetch:
         print(
@@ -278,10 +291,63 @@ def _build_place_images(
             f"candidates={len(selected_candidates)} selected=0"
         )
         return []
-    return images.build_place_images(
+    place_images = images.build_place_images(
         selected_candidates,
         cache_dir=staging_root / ".image-cache",
     )
+    if require_complete_fetch:
+        expected = {candidate.place_id for candidate in selected_candidates}
+        actual = {place_image.place_id for place_image in place_images}
+        missing = sorted(expected - actual)
+        if missing:
+            raise PublishStageError(
+                "upload publish image fetch did not produce all scoped images: "
+                f"missing={len(missing)}"
+            )
+    return place_images
+
+
+def _assert_upload_sidecar_completeness(
+    target_results: list[PublishedTargetResult],
+) -> None:
+    dropped = [
+        (target.manifest["region"], target.description_index_dropped)
+        for target in target_results
+        if target.description_index_dropped
+    ]
+    if dropped:
+        detail = ", ".join(
+            f"{region}:{count}" for region, count in sorted(dropped)
+        )
+        raise PublishStageError(
+            "upload publish description sidecars dropped scoped blurbs: "
+            f"{detail}"
+        )
+
+
+def _assert_upload_content_scope(
+    *,
+    upload: bool,
+    image_candidate_limit: int | None,
+    audited_image_completed_jsonl: str | pathlib.Path | None,
+    audited_image_cache_dir: str | pathlib.Path | None,
+    no_image_fetch: bool,
+) -> None:
+    if not upload:
+        return
+    if image_candidate_limit is not None:
+        raise PublishStageError(
+            "upload publish must not use --image-candidate-limit; "
+            "offline bundles must include all image candidates in scope"
+        )
+    has_audit = (
+        audited_image_completed_jsonl is not None
+        and audited_image_cache_dir is not None
+    )
+    if no_image_fetch and not has_audit:
+        raise PublishStageError(
+            "upload publish must not use --no-image-fetch without complete audited image reuse"
+        )
 
 
 def _joined_places(conn, region: str) -> list[dict[str, Any]]:
