@@ -135,7 +135,7 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(layoutValue("icon-offset", in: heart), PinSize().heartOffset)
     }
 
-    func testTrackLayerUsesSeparateDashedLineSourceBelowPins() throws {
+    func testTrackLayerUsesSeparateDottedLineSourceBelowPins() throws {
         XCTAssertNotEqual(TrackLayers.sourceID, PinLayers.sourceID)
         let layer = try XCTUnwrap(layer(id: "tracks-line", in: TrackLayers.trackLayers()))
         XCTAssertEqual(layer["id"], .string("tracks-line"))
@@ -148,11 +148,18 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(paint["line-color"], .string(TrackLayers.lineColor))
         XCTAssertEqual(paint["line-opacity"], .double(TrackLayers.lineOpacity))
         XCTAssertEqual(paint["line-width"], .double(TrackLayers.lineWidth))
-        XCTAssertEqual(paint["line-dasharray"], TrackLayers.lineDashPattern)
-        XCTAssertGreaterThanOrEqual(TrackLayers.lineWidth, 3.0)
+        XCTAssertEqual(paint["line-dasharray"], .array(TrackLayers.lineDashPatternValues.map(JSONValue.double)))
+        XCTAssertEqual(TrackLayers.lineColor, "#2d8c83")
+        XCTAssertEqual(TrackLayers.lineWidth, 6.2, accuracy: 1e-9)
+        XCTAssertEqual(TrackLayers.lineOpacity, 1.00, accuracy: 1e-9)
+        XCTAssertEqual(TrackLayers.lineDotLength, 1.0, accuracy: 1e-9)
+        XCTAssertEqual(TrackLayers.lineDotGap, 9.0, accuracy: 1e-9)
+        XCTAssertEqual(TrackLayers.lineDashPatternValues.count, 2)
+        XCTAssertEqual(TrackLayers.lineDashPatternValues[0], 1.0 / TrackLayers.lineWidth, accuracy: 1e-9)
+        XCTAssertEqual(TrackLayers.lineDashPatternValues[1], 9.0 / TrackLayers.lineWidth, accuracy: 1e-9)
     }
 
-    func testTrackLineColorClearsPaperBackgroundContrastCommitment() throws {
+    func testTrackLineColorClearsPaperBackgroundSC1411NonTextContrastFloor() throws {
         for theme in MapTheme.allCandidates {
             XCTAssertGreaterThanOrEqual(
                 try contrastRatio(
@@ -163,10 +170,24 @@ final class PinLayersTests: XCTestCase {
                     ),
                     theme.background
                 ),
-                4.5,
+                3.0,
                 theme.id
             )
         }
+    }
+
+    func testTrackLineSharedStyleValuesBackTheJSONLayer() throws {
+        let style = TrackLayers.lineStyle
+        let layer = try XCTUnwrap(layer(id: TrackLayers.lineLayerID, in: TrackLayers.trackLayers()))
+
+        XCTAssertEqual(layoutValue("line-cap", in: layer), .string(style.cap))
+        XCTAssertEqual(layoutValue("line-join", in: layer), .string(style.join))
+
+        guard case let .object(paint)? = layer["paint"] else { return XCTFail("line paint") }
+        XCTAssertEqual(paint["line-color"], .string(style.color))
+        XCTAssertEqual(paint["line-opacity"], .double(style.opacity))
+        XCTAssertEqual(paint["line-width"], .double(style.width))
+        XCTAssertEqual(paint["line-dasharray"], .array(style.dashPattern.map(JSONValue.double)))
     }
 
     func testPinSizeMetricsScaleCircleCategoryIconAndBadgesTogether() {

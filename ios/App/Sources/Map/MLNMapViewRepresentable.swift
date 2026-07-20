@@ -987,12 +987,14 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
                   style.layer(withIdentifier: TrackLayers.lineLayerID) == nil
             else { return }
             let line = MLNLineStyleLayer(identifier: TrackLayers.lineLayerID, source: source)
-            line.lineCap = NSExpression(forConstantValue: "round")
-            line.lineJoin = NSExpression(forConstantValue: "round")
-            line.lineColor = NSExpression(forConstantValue: MapThemeColor.uiColor(hex: TrackLayers.lineColor))
-            line.lineOpacity = NSExpression(forConstantValue: TrackLayers.lineOpacity)
-            line.lineWidth = NSExpression(forConstantValue: TrackLayers.lineWidth)
-            line.lineDashPattern = NSExpression(forConstantValue: TrackLayers.lineDashPatternValues)
+            let trackStyle = TrackLayers.lineStyle
+            // JSON and live MapLibre layers share TrackLayers.lineStyle; this path only converts color to UIColor.
+            line.lineCap = NSExpression(forConstantValue: trackStyle.cap)
+            line.lineJoin = NSExpression(forConstantValue: trackStyle.join)
+            line.lineColor = NSExpression(forConstantValue: MapThemeColor.uiColor(hex: trackStyle.color))
+            line.lineOpacity = NSExpression(forConstantValue: trackStyle.opacity)
+            line.lineWidth = NSExpression(forConstantValue: trackStyle.width)
+            line.lineDashPattern = NSExpression(forConstantValue: trackStyle.dashPattern)
             if let circle = style.layer(withIdentifier: "pins-circle") {
                 style.insertLayer(line, below: circle)
             } else {
