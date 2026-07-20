@@ -266,6 +266,8 @@ public final class HTTPTileFetcher: ProgressReportingOfflineRegionFetching, Boun
                 fields: [
                     .public("host", MakingTracksLog.host(url)),
                     .public("kind", MakingTracksLog.objectKind(url)),
+                    .public("publishVersion", MakingTracksLog.objectPublishVersion(url)),
+                    .public("tileZ", MakingTracksLog.objectTileZ(url)),
                     .public("status", statusLabel),
                     .object("object", MakingTracksLog.objectPath(url)),
                 ]
@@ -5716,7 +5718,21 @@ public actor TileClient {
         let elapsedMS = Int(Date().timeIntervalSince(startedAt) * 1000)
         let stateLabel = state.rawValue
         let version = pin?.publishVersion ?? "none"
+        let elapsedText = String(elapsedMS)
+        let selectionSource = publishSelectionSource(remote: result, installed: installed, resolved: resolved)
         MakingTracksLog.resolution.info("pin refresh finished region=\(regionID, privacy: .private(mask: .hash)) state=\(stateLabel, privacy: .public) version=\(version, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
+        MakingTracksLog.file(
+            category: .resolution,
+            level: .info,
+            "publish selected",
+            fields: [
+                .object("region", regionID),
+                .public("state", stateLabel),
+                .public("publishVersion", version),
+                .public("source", selectionSource),
+                .public("durationMS", elapsedText),
+            ]
+        )
     }
 
     public func loadLocalPin() {
@@ -5769,6 +5785,31 @@ public actor TileClient {
         let installedRequests = needed.filter(\.source.isInstalled).count
         let fallbackRequests = needed.count - installedRequests
         MakingTracksLog.resolution.debug("viewport planned region=\(regionID, privacy: .private(mask: .hash)) zoom=\(zoom, privacy: .public) covered=\(covered, privacy: .public) blocked=\(blocked, privacy: .public) installed=\(installedRequests, privacy: .public) fallback=\(fallbackRequests, privacy: .public) quarantines=\(offlineResolution.quarantinedPacks.count, privacy: .public)")
+        let tileZLabel = String(needed.first?.coordinate.z ?? pin?.manifest.tileZ ?? 10)
+        let zoomText = String(zoom)
+        let coveredText = String(covered)
+        let requestText = String(needed.count)
+        let installedText = String(installedRequests)
+        let fallbackText = String(fallbackRequests)
+        let blockedText = String(blocked)
+        let quarantineText = String(offlineResolution.quarantinedPacks.count)
+        MakingTracksLog.file(
+            category: .resolution,
+            level: .info,
+            "viewport composed",
+            fields: [
+                .object("region", regionID),
+                .public("zoom", zoomText),
+                .public("tileZ", tileZLabel),
+                .public("covered", coveredText),
+                .public("requests", requestText),
+                .public("installed", installedText),
+                .public("fallback", fallbackText),
+                .public("blocked", blockedText),
+                .public("quarantines", quarantineText),
+            ]
+        )
+        logObjectRequestComposition(requests: needed, regionID: regionID)
         guard !needed.isEmpty else {
             loadedPlaces = [:]
             loadedPlaceRequests = [:]
@@ -5797,6 +5838,7 @@ public actor TileClient {
         var usedCache = false
         var trustedTile = false
         var missingTile = false
+        var missingTileCount = 0
 
         await withTaskGroup(of: TileLoadResult.self) { group in
             var iterator = needed.makeIterator()
@@ -5844,8 +5886,10 @@ public actor TileClient {
                     }
                 case .missing:
                     missingTile = true
+                    missingTileCount += 1
                 case .invalid:
                     missingTile = true
+                    missingTileCount += 1
                 }
                 guard let request = iterator.next() else { continue }
                 group.addTask {
@@ -5872,9 +5916,32 @@ public actor TileClient {
         }
         let elapsedMS = Int(Date().timeIntervalSince(startedAt) * 1000)
         let stateLabel = state.rawValue
+        let loadedText = String(viewportPlaces.count)
+        let missingText = String(missingTileCount)
+        let cacheText = String(usedCache)
+        let trustedText = String(trustedTile)
+        let elapsedText = String(elapsedMS)
         MakingTracksLog.resolution.info("viewport finished region=\(regionID, privacy: .private(mask: .hash)) state=\(stateLabel, privacy: .public) loaded=\(viewportPlaces.count, privacy: .public) requests=\(needed.count, privacy: .public) cache=\(usedCache, privacy: .public) trusted=\(trustedTile, privacy: .public) missing=\(missingTile, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
+        MakingTracksLog.file(
+            category: .resolution,
+            level: .info,
+            "viewport finished",
+            fields: [
+                .object("region", regionID),
+                .public("state", stateLabel),
+                .public("zoom", zoomText),
+                .public("tileZ", tileZLabel),
+                .public("loaded", loadedText),
+                .public("requests", requestText),
+                .public("missing", missingText),
+                .public("cache", cacheText),
+                .public("trusted", trustedText),
+                .public("durationMS", elapsedText),
+            ]
+        )
         let imageRequests = imageIndexLoadRequests(from: viewportRequests)
         if !imageRequests.isEmpty {
+            logSidecarPlan(kind: "image-index", requests: imageRequests.map(\.tile), regionID: regionID)
             let imageFetcher = fetcher
             imageLoadTask = Task {
                 await self.loadViewportImages(imageRequests, generation: generation, fetcher: imageFetcher)
@@ -5918,7 +5985,8 @@ public actor TileClient {
         fetcher: TileFetching
     ) async {
         var imagesByPlace: [String: PlaceImage] = [:]
-        await withTaskGroup(of: [String: PlaceImage].self) { group in
+        var http404Count = 0
+        await withTaskGroup(of: SidecarImageLoadResult.self) { group in
             var iterator = requests.makeIterator()
             for _ in 0..<TileFetchConcurrency.maxConcurrent {
                 guard let request = iterator.next() else { break }
@@ -5931,12 +5999,14 @@ public actor TileClient {
                     )
                 }
             }
-            while let images = await group.next() {
+            while let result = await group.next() {
                 if generation != viewportGeneration {
                     group.cancelAll()
                     return
                 }
+                let images = result.images
                 imagesByPlace.merge(images) { current, _ in current }
+                http404Count += result.http404Count
                 guard let request = iterator.next() else { continue }
                 group.addTask {
                     await loadImageIndex(
@@ -5952,8 +6022,111 @@ public actor TileClient {
         let currentPlaceIDs = Set(loadedPlaces.keys)
         loadedImages = imagesByPlace.filter { currentPlaceIDs.contains($0.key) }
         imageLoadTask = nil
+        logSidecarFinish(
+            kind: "image-index",
+            requests: requests.map(\.tile),
+            loadedCount: loadedImages.count,
+            http404Count: http404Count,
+            regionID: region
+        )
         if !loadedImages.isEmpty {
             imageChangeBroadcaster.yield(Set(loadedImages.keys))
+        }
+    }
+
+    private func logObjectRequestComposition(requests: [PublishTileRequest], regionID: String) {
+        let grouped = Dictionary(grouping: requests) { request in
+            ObjectRequestLogKey(
+                publishVersion: request.publishVersion,
+                tileZ: request.coordinate.z,
+                source: request.source.logLabel
+            )
+        }
+        for key in grouped.keys.sorted() {
+            let count = grouped[key]?.count ?? 0
+            let tileZText = String(key.tileZ)
+            let countText = String(count)
+            MakingTracksLog.file(
+                category: .resolution,
+                level: .info,
+                "object requests composed",
+                fields: [
+                    .object("region", regionID),
+                    .public("kind", "tile"),
+                    .public("publishVersion", key.publishVersion),
+                    .public("tileZ", tileZText),
+                    .public("source", key.source),
+                    .public("count", countText),
+                ]
+            )
+        }
+    }
+
+    private func logSidecarPlan(kind: String, requests: [PublishTileRequest], regionID: String) {
+        let grouped = Dictionary(grouping: requests) { request in
+            ObjectRequestLogKey(
+                publishVersion: request.publishVersion,
+                tileZ: request.coordinate.z,
+                source: request.source.logLabel
+            )
+        }
+        for key in grouped.keys.sorted() {
+            let count = grouped[key]?.count ?? 0
+            let tileZText = String(key.tileZ)
+            let countText = String(count)
+            let message = kind == "image-index" ? "sidecar image-index planned" : "sidecar description-index planned"
+            MakingTracksLog.file(
+                category: .resolution,
+                level: .info,
+                message,
+                fields: [
+                    .object("region", regionID),
+                    .public("kind", kind),
+                    .public("publishVersion", key.publishVersion),
+                    .public("tileZ", tileZText),
+                    .public("source", key.source),
+                    .public("count", countText),
+                ]
+            )
+        }
+    }
+
+    private func logSidecarFinish(
+        kind: String,
+        requests: [PublishTileRequest],
+        loadedCount: Int,
+        http404Count: Int,
+        regionID: String
+    ) {
+        let grouped = Dictionary(grouping: requests) { request in
+            ObjectRequestLogKey(
+                publishVersion: request.publishVersion,
+                tileZ: request.coordinate.z,
+                source: request.source.logLabel
+            )
+        }
+        for key in grouped.keys.sorted() {
+            let count = grouped[key]?.count ?? 0
+            let tileZText = String(key.tileZ)
+            let countText = String(count)
+            let loadedText = String(loadedCount)
+            let http404Text = String(http404Count)
+            let message = kind == "image-index" ? "sidecar image-index finished" : "sidecar description-index finished"
+            MakingTracksLog.file(
+                category: .resolution,
+                level: .info,
+                message,
+                fields: [
+                    .object("region", regionID),
+                    .public("kind", kind),
+                    .public("publishVersion", key.publishVersion),
+                    .public("tileZ", tileZText),
+                    .public("source", key.source),
+                    .public("count", countText),
+                    .public("loaded", loadedText),
+                    .public("http404", http404Text),
+                ]
+            )
         }
     }
 
@@ -6037,6 +6210,21 @@ public actor TileClient {
         return ManifestPinResult(publish: installed, state: .updateAvailable)
     }
 
+    private func publishSelectionSource(
+        remote: ManifestPinResult,
+        installed: PinnedPublish?,
+        resolved: ManifestPinResult
+    ) -> String {
+        guard let selected = resolved.publish else { return "none" }
+        if remote.publish?.publishVersion == selected.publishVersion {
+            return "catalog-current"
+        }
+        if installed?.publishVersion == selected.publishVersion {
+            return "installed"
+        }
+        return "fallback"
+    }
+
     private func tileRequests(
         installedTiles: [InstalledPackTile],
         fallback: PinnedPublish?,
@@ -6104,6 +6292,7 @@ public actor TileClient {
     }
 
     private func loadDescription(request: PublishTileRequest, placeID: String) async -> PlaceDescription? {
+        logSidecarPlan(kind: "description-index", requests: [request], regionID: region)
         do {
             let data: Data
             if request.source.isInstalled {
@@ -6112,6 +6301,13 @@ public actor TileClient {
                     publishVersion: request.publishVersion,
                     coordinate: request.coordinate
                 ) else {
+                    logSidecarFinish(
+                        kind: "description-index",
+                        requests: [request],
+                        loadedCount: 0,
+                        http404Count: 0,
+                        regionID: region
+                    )
                     return nil
                 }
                 data = offline
@@ -6119,9 +6315,25 @@ public actor TileClient {
                 let url = try trustedURL("\(request.region)/\(request.publishVersion)/descriptions/10/\(request.coordinate.x)/\(request.coordinate.y).json")
                 data = try await fetchBounded(fetcher, url: url, maxBytes: DescriptionPayloadLimits.maxDescriptionIndexBytes)
             }
-            return try DescriptionIndexDecoder.decode(data, expected: request.coordinate).first { $0.placeID == placeID }
+            let description = try DescriptionIndexDecoder.decode(data, expected: request.coordinate).first { $0.placeID == placeID }
+            logSidecarFinish(
+                kind: "description-index",
+                requests: [request],
+                loadedCount: description == nil ? 0 : 1,
+                http404Count: 0,
+                regionID: region
+            )
+            return description
         } catch {
             MakingTracksLog.resolution.debug("description index unavailable region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            let http404Count = (error as? TileError) == .httpStatus(404) ? 1 : 0
+            logSidecarFinish(
+                kind: "description-index",
+                requests: [request],
+                loadedCount: 0,
+                http404Count: http404Count,
+                regionID: region
+            )
             return nil
         }
     }
@@ -6143,10 +6355,25 @@ private struct ImageIndexLoadRequest: Sendable {
     let placeIDs: Set<String>
 }
 
+private struct ObjectRequestLogKey: Comparable, Hashable {
+    let publishVersion: String
+    let tileZ: Int
+    let source: String
+
+    static func < (lhs: ObjectRequestLogKey, rhs: ObjectRequestLogKey) -> Bool {
+        (lhs.publishVersion, lhs.tileZ, lhs.source) < (rhs.publishVersion, rhs.tileZ, rhs.source)
+    }
+}
+
 private struct LoadedTile: Sendable {
     let decoded: DecodedTile
     let source: TileLoadSource
     let request: PublishTileRequest
+}
+
+private struct SidecarImageLoadResult: Sendable {
+    let images: [String: PlaceImage]
+    let http404Count: Int
 }
 
 private enum TileRequestSource: Sendable, Equatable {
@@ -6164,6 +6391,17 @@ private enum TileRequestSource: Sendable, Equatable {
             packTileCount
         case .fallback:
             Int.max
+        }
+    }
+}
+
+private extension TileRequestSource {
+    var logLabel: String {
+        switch self {
+        case .installed:
+            return "installed"
+        case .fallback:
+            return "fallback"
         }
     }
 }
@@ -6262,7 +6500,7 @@ private func loadImageIndex(
     placeIDs: Set<String>,
     fetcher: TileFetching,
     offlineStore: OfflineRegionStore?
-) async -> [String: PlaceImage] {
+) async -> SidecarImageLoadResult {
     do {
         let data: Data
         if request.source.isInstalled {
@@ -6271,7 +6509,7 @@ private func loadImageIndex(
                 publishVersion: request.publishVersion,
                 coordinate: request.coordinate
             ) else {
-                return [:]
+                return SidecarImageLoadResult(images: [:], http404Count: 0)
             }
             data = offline
         } else {
@@ -6299,10 +6537,14 @@ private func loadImageIndex(
             )
         }
         MakingTracksLog.resolution.debug("image index decoded region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) images=\(images.count, privacy: .public)")
-        return Dictionary(uniqueKeysWithValues: images.map { ($0.placeID, $0) })
+        return SidecarImageLoadResult(
+            images: Dictionary(uniqueKeysWithValues: images.map { ($0.placeID, $0) }),
+            http404Count: 0
+        )
     } catch {
         MakingTracksLog.resolution.debug("image index unavailable region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
-        return [:]
+        let http404Count = (error as? TileError) == .httpStatus(404) ? 1 : 0
+        return SidecarImageLoadResult(images: [:], http404Count: http404Count)
     }
 }
 

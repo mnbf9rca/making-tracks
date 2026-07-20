@@ -98,6 +98,34 @@ final class LoggingPrivacyTests: XCTestCase {
         }
     }
 
+    func testLoggingSanitizersClassifySidecarObjectsWithoutRawPaths() throws {
+        let imageURL = try XCTUnwrap(URL(string: "https://tiles.making-tracks.app/malaysia-singapore-brunei/20260719T125813Z/images/10/795/493.json"))
+        let descriptionURL = try XCTUnwrap(URL(string: "https://tiles.making-tracks.app/malaysia-singapore-brunei/20260719T125813Z/descriptions/10/795/493.json"))
+        let thumbnailURL = try XCTUnwrap(URL(string: "https://tiles.making-tracks.app/thumbs/ab/abcdef.webp"))
+        let searchURL = try XCTUnwrap(URL(string: "https://tiles.making-tracks.app/malaysia-singapore-brunei/20260719T125813Z/search/compact.json"))
+
+        XCTAssertEqual(MakingTracksLog.objectKind(imageURL), "image-index")
+        XCTAssertEqual(MakingTracksLog.objectKind(descriptionURL), "description-index")
+        XCTAssertEqual(MakingTracksLog.objectKind(thumbnailURL), "thumbnail")
+        XCTAssertEqual(MakingTracksLog.objectKind(searchURL), "search-compact")
+        XCTAssertEqual(MakingTracksLog.objectPublishVersion(imageURL), "20260719T125813Z")
+        XCTAssertEqual(MakingTracksLog.objectTileZ(imageURL), "10")
+        XCTAssertEqual(MakingTracksLog.objectPublishVersion(thumbnailURL), "none")
+        XCTAssertEqual(MakingTracksLog.objectTileZ(thumbnailURL), "none")
+
+        let sanitizerOutputs = [
+            MakingTracksLog.objectKind(imageURL),
+            MakingTracksLog.objectPublishVersion(imageURL),
+            MakingTracksLog.objectTileZ(imageURL),
+        ]
+        for output in sanitizerOutputs {
+            XCTAssertFalse(output.contains("malaysia-singapore-brunei"), output)
+            XCTAssertFalse(output.contains("795"), output)
+            XCTAssertFalse(output.contains("493"), output)
+            XCTAssertFalse(output.contains("/"), output)
+        }
+    }
+
     func testOSLogUsageRoutesThroughSharedFacade() throws {
         let root = try packageRoot()
         let sourceRoots = [
