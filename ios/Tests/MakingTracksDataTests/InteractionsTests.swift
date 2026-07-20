@@ -121,6 +121,10 @@ final class InteractionsTests: XCTestCase {
         XCTAssertThrowsError(try db.removeFromList(placeID: place.placeID, listID: myTracksID)) { error in
             XCTAssertEqual(error as? AppDatabaseError, .systemListIsProtected)
         }
+        let visitID = try db.recordVisit(place)
+        try db.setVisitVerdict(id: visitID, .loved)
+        XCTAssertEqual(try db.trackVisits().first?.verdict, .loved)
+
         let rows = try db.dbQueue.read {
             try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM list_items WHERE list_id = ?", arguments: [myTracksID])
         }

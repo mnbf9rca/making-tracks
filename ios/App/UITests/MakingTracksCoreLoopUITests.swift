@@ -354,7 +354,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForNonExistence(of: app.staticTexts["map.list-mode.title"], timeout: 5))
     }
 
-    func testTracksMenuShowsVisitedRowsAndLovedFilter() {
+    func testTracksMenuOpensUnifiedMyTracksVisitEditor() {
         let app = launch(reset: true, pinDiagnostics: true)
 
         let map = app.otherElements["map.surface"]
@@ -369,23 +369,42 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.buttons["menu.row.tracks"].waitForExistence(timeout: 5))
         app.buttons["menu.row.tracks"].tap()
 
-        XCTAssertTrue(app.staticTexts["Tracks"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.switches["tracks.filter.loved"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["tracks.sort-direction"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["tracks.sort-direction"].label, "Oldest first")
-        XCTAssertEqual(app.staticTexts["tracks.summary"].label, "1 visit")
+        let trackDetail = app.collectionViews["lists.detail.surface.track"]
+        XCTAssertTrue(trackDetail.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["My tracks"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["lists.detail.track.sort-direction"].label, "Oldest first")
+        XCTAssertEqual(app.staticTexts["lists.detail.track.summary"].label, "1 visit")
         XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifierPrefix: "tracks.row.").firstMatch.exists)
-        XCTAssertEqual(screenshotExportNames["tracks-sort-direction-affordance"], "tracks-sort-direction-affordance")
-        attachScreenshot(named: "tracks-sort-direction-affordance")
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifierPrefix: "lists.detail.track.row.").firstMatch.exists)
+        XCTAssertFalse(app.sliders["tracks.timeline.slider"].exists)
+        trackDetail.swipeUp()
+        XCTAssertEqual(screenshotExportNames["tracks-unified-visit-editing"], "tracks-unified-visit-editing")
+        attachScreenshot(named: "tracks-unified-visit-editing")
 
-        app.buttons["tracks.edit"].tap()
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifierPrefix: "tracks.row.date.").firstMatch.waitForExistence(timeout: 5))
-        let deleteVisit = app.buttons.matching(identifierPrefix: "tracks.row.delete.").firstMatch
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifierPrefix: "lists.detail.track.row.date.").firstMatch.waitForExistence(timeout: 5))
+        let deleteVisit = app.buttons.matching(identifierPrefix: "lists.detail.track.row.delete.").firstMatch
         XCTAssertTrue(deleteVisit.exists)
         XCTAssertTrue(deleteVisit.label.contains("Ghost Sign"))
-        XCTAssertTrue(app.buttons.matching(identifierPrefix: "tracks.row.move-up.").firstMatch.exists)
-        XCTAssertTrue(app.buttons.matching(identifierPrefix: "tracks.row.move-down.").firstMatch.exists)
+        XCTAssertTrue(app.buttons.matching(identifierPrefix: "lists.detail.track.row.move-up.").firstMatch.exists)
+        XCTAssertTrue(app.buttons.matching(identifierPrefix: "lists.detail.track.row.move-down.").firstMatch.exists)
+    }
+
+    func testTracksMenuAndListsMyTracksReachSameScreenIdentity() {
+        let fromMenu = launch(reset: true, pinDiagnostics: true)
+        XCTAssertTrue(fromMenu.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: fromMenu))
+        openAppMenu(in: fromMenu)
+        fromMenu.buttons["menu.row.tracks"].tap()
+        XCTAssertTrue(fromMenu.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+
+        let fromLists = launch(reset: true, pinDiagnostics: true)
+        XCTAssertTrue(fromLists.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: fromLists))
+        openAppMenu(in: fromLists)
+        fromLists.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(fromLists.staticTexts["Lists"].waitForExistence(timeout: 5))
+        fromLists.staticTexts["My tracks"].tap()
+        XCTAssertTrue(fromLists.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
     }
 
     func testTrackGeometryDrawsConnectorFromSeededFixtureVisits() {
@@ -1832,7 +1851,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "place-card-a11y": "place-card-a11y",
         "credits-a11y": "credits-a11y",
         "tracks-static-geometry": "tracks-static-geometry",
-        "tracks-sort-direction-affordance": "tracks-sort-direction-affordance",
+        "tracks-unified-visit-editing": "tracks-unified-visit-editing",
         "list-map-polished-chrome": "list-map-polished-chrome",
         "list-map-spread-fit": "list-map-spread-fit",
         "my-tracks-burst-readout": "my-tracks-burst-readout",
