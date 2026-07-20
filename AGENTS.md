@@ -70,6 +70,8 @@ Work packages (spec §8) are designed one at a time (design agent) and built one
 
 **UI design ships with mockups.** This is a visual app; a UI design doc is not complete as prose. Every work package with a user-facing surface carries **rendered mockups**, and they are authored by a **build agent**, not by the designer.
 
+This binds **amendments as much as new designs**. A PR that changes how a surface looks or behaves carries the renders that show it, in the PR itself — not on a branch a reader would have to go and find. If the renders are not merged yet, the design change waits for them rather than going ahead alone. A reviewer opening a UI change and seeing only prose cannot review it.
+
 The split is the point: the **build agent renders**, the **design agent validates the renders against the design**, and **Rob rules on taste**. A designer validating their own mockup is not a gate. Design-correctness and taste are separate judgements and are made by separate parties.
 
 Renders go to Rob only after design validation. Anything the mockup shows that the design does not specify is either a gap in the design or an invention in the render — name which, rather than letting it pass because it looks fine.
