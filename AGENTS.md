@@ -26,8 +26,30 @@ The app-specific facts an agent needs are stated in `develop`'s file, in these s
   PRs into `ios`, never `develop`. Same gates, same labels.
 - **Workflow** → *Ground in the current tree*: ground app-code citations against `ios`. `develop` carries a
   lagging copy of `ios/`, so a `file:line` grounded against `develop` points at code that is not here.
-- **Review gates**, point 3: run `scripts/release-gate.sh` for the Release build and simulator test gate.
-  Warnings-as-errors is set on the app target in `ios/App/project.yml`, which lives on this branch.
+- **Review gates**, point 3: run the Release build and simulator test gate as
+  `./scripts/sim-lock.sh ./scripts/release-gate.sh`. Warnings-as-errors is set on the app target in
+  `ios/App/project.yml`, which lives on this branch.
+
+## The simulator has one entry point
+
+`scripts/sim-lock.sh` is the only thing that touches the designated simulator. Build, test, boot, shutdown,
+erase, delete — all of it goes through it, and it is the only thing that takes the lock.
+
+```bash
+./scripts/sim-lock.sh <command>    # run under the lock
+./scripts/sim-lock.sh --status     # HELD or FREE, checked two ways
+./scripts/sim-lock.sh --erase      # destructive ops, under the lock
+```
+
+**Never read the lock file by hand to decide whether the simulator is free.** The file tells you who holds
+the lock, not who is using the simulator, and those differ. `--status` checks both and reports HELD if
+either fires; a bare `lsof` on the lock reports FREE while a build is mid-flight without it.
+
+This applies to coordinators as much as builders. Running `simctl erase` because the lock looked free is the
+incident this exists to prevent (incidents → *A hand-checked lock erased a running gate*).
+
+`scripts/release-gate.sh` no longer takes the lock and refuses to run outside it. Two lock-takers is how the
+paths drifted apart.
 
 ## Adding to this file
 

@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
-# Runs the iOS release build and simulator UI suite under the shared simulator
-# lock. Successful runs remove this invocation's DerivedData after xcodebuild
-# has finished; failed runs keep DerivedData and the .xcresult for diagnosis.
+# Runs the iOS release build and simulator UI suite.
+#
+# MUST be invoked through scripts/sim-lock.sh, which owns the simulator lock:
+#
+#   ./scripts/sim-lock.sh ./scripts/release-gate.sh
+#
+# This script does not take the lock itself. Two lock-takers is how the lock
+# path drifted apart in the first place, so there is exactly one.
+#
+# Successful runs remove this invocation's DerivedData after xcodebuild has
+# finished; failed runs keep DerivedData and the .xcresult for diagnosis.
 set -euo pipefail
 
 PROJECT="ios/App/MakingTracks.xcodeproj"
 PBXPROJ="$PROJECT/project.pbxproj"
 SCHEME="MakingTracks"
 UDID="C4A64D49-24A2-4429-B6E2-AD9A14142A99"
-LOCK="/private/tmp/making-tracks-ios-tests.lock"
 RUN_DIR="${MT_RELEASE_GATE_RUN_DIR:-/private/tmp/release-gate-${AM_ME:-agent}}"
-FLOCK_BIN="/opt/homebrew/bin/flock"
 DERIVED_DATA="${MT_RELEASE_GATE_DERIVED_DATA:-$RUN_DIR/DerivedData}"
 RESULT_BUNDLE="$RUN_DIR/MakingTracksTests.xcresult"
 
@@ -31,18 +37,13 @@ grep -q 'PBXNativeTarget "MakingTracksTests"' "$PBXPROJ" ||
 git merge-base --is-ancestor origin/ios HEAD ||
   refuse "HEAD is not based on current origin/ios"
 
-if [ -n "${MT_RELEASE_GATE_FLOCK_BIN:-}" ]; then
-  [ "${MT_RELEASE_GATE_TEST_MODE:-}" = "1" ] ||
-    refuse "MT_RELEASE_GATE_FLOCK_BIN is only allowed in test mode"
-  FLOCK_BIN="$MT_RELEASE_GATE_FLOCK_BIN"
-fi
-
-[ -x "$FLOCK_BIN" ] || refuse "flock not executable at $FLOCK_BIN"
+[ "${MT_SIM_LOCK:-}" = "1" ] ||
+  refuse "must be run through scripts/sim-lock.sh (which holds the simulator lock)"
 
 mkdir -p "$RUN_DIR" "$DERIVED_DATA"
 rm -rf "$RESULT_BUNDLE"
 
-UDID="$UDID" DERIVED_DATA="$DERIVED_DATA" RESULT_BUNDLE="$RESULT_BUNDLE" "$FLOCK_BIN" "$LOCK" sh -ec '
+UDID="$UDID" DERIVED_DATA="$DERIVED_DATA" RESULT_BUNDLE="$RESULT_BUNDLE" sh -ec '
   xcrun simctl bootstatus "$UDID" -b
   xcodebuild build \
     -configuration Release \

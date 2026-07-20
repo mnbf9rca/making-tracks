@@ -8,7 +8,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "release-gate.sh"
 UDID = "C4A64D49-24A2-4429-B6E2-AD9A14142A99"
-LOCK = "/private/tmp/making-tracks-ios-tests.lock"
 
 
 def _run(args, cwd: Path, **kwargs):
@@ -67,14 +66,6 @@ def _fake_tools(tmp_path: Path) -> tuple[Path, Path]:
     fakebin = tmp_path / "fakebin"
     fakebin.mkdir()
     log = tmp_path / "release-gate.log"
-    flock = fakebin / "flock"
-    flock.write_text(
-        "#!/bin/sh\n"
-        'echo "flock:$1" >> "$MT_RELEASE_GATE_LOG"\n'
-        "shift\n"
-        'exec "$@"\n',
-        encoding="utf-8",
-    )
     xcrun = fakebin / "xcrun"
     xcrun.write_text(
         "#!/bin/sh\n"
@@ -88,7 +79,7 @@ def _fake_tools(tmp_path: Path) -> tuple[Path, Path]:
         'if [ "${MT_RELEASE_GATE_FAIL_XCODEBUILD:-}" = "1" ]; then exit 65; fi\n',
         encoding="utf-8",
     )
-    for path in (flock, xcrun, xcodebuild):
+    for path in (xcrun, xcodebuild):
         path.chmod(path.stat().st_mode | stat.S_IXUSR)
     return fakebin, log
 
@@ -97,7 +88,7 @@ def _env(fakebin: Path, log: Path) -> dict[str, str]:
     env = os.environ.copy()
     env["PATH"] = f"{fakebin}:{env['PATH']}"
     env["AM_ME"] = "test-agent"
-    env["MT_RELEASE_GATE_FLOCK_BIN"] = str(fakebin / "flock")
+    env["MT_SIM_LOCK"] = "1"
     env["MT_RELEASE_GATE_TEST_MODE"] = "1"
     env["MT_RELEASE_GATE_RUN_DIR"] = str(log.parent / "release-gate-run")
     env["MT_RELEASE_GATE_LOG"] = str(log)
@@ -131,22 +122,29 @@ def test_release_gate_refuses_when_head_is_not_current_ios_derived(tmp_path):
     assert not log.exists()
 
 
-def test_release_gate_refuses_flock_override_outside_test_mode(tmp_path):
+def test_release_gate_refuses_when_not_run_through_sim_lock(tmp_path):
+    """The gate must not take the lock itself, and must not run without it.
+
+    sim-lock.sh owns the lock and exports MT_SIM_LOCK. Without that marker the
+    gate would run against the shared simulator unserialised, which is the
+    regression the single-entry-point change exists to prevent.
+    """
     repo = _init_repo(tmp_path)
     fakebin, log = _fake_tools(tmp_path)
     env = _env(fakebin, log)
-    env.pop("MT_RELEASE_GATE_TEST_MODE")
+    env.pop("MT_SIM_LOCK")
 
     result = _run([str(SCRIPT)], repo, env=env)
 
     assert result.returncode == 1
     assert result.stderr.strip() == (
-        "release-gate: refused: MT_RELEASE_GATE_FLOCK_BIN is only allowed in test mode"
+        "release-gate: refused: must be run through scripts/sim-lock.sh "
+        "(which holds the simulator lock)"
     )
     assert not log.exists()
 
 
-def test_release_gate_runs_release_build_and_tests_under_canonical_lock(tmp_path):
+def test_release_gate_runs_release_build_and_tests(tmp_path):
     repo = _init_repo(tmp_path)
     fakebin, log = _fake_tools(tmp_path)
     stale_result_bundle = log.parent / "release-gate-run" / "MakingTracksTests.xcresult"
@@ -162,8 +160,10 @@ def test_release_gate_runs_release_build_and_tests_under_canonical_lock(tmp_path
     assert not stale_result_bundle.exists()
     assert not derived_data.exists()
     lines = log.read_text(encoding="utf-8").splitlines()
-    assert lines[0] == f"flock:{LOCK}"
-    assert lines[1] == f"xcrun:simctl bootstatus {UDID} -b"
+    assert not any(line.startswith("flock:") for line in lines), (
+        "release-gate must not take the lock; sim-lock.sh owns it"
+    )
+    assert lines[0] == f"xcrun:simctl bootstatus {UDID} -b"
     assert any(
         line.startswith("xcodebuild:build -configuration Release ")
         and "-project ios/App/MakingTracks.xcodeproj" in line
