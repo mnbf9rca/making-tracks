@@ -30,9 +30,46 @@ final class DiagnosticLogExportTests: XCTestCase {
         XCTAssertTrue(log.contains("status=http-404"))
         XCTAssertTrue(log.contains("object=\(objectPath)"))
         XCTAssertTrue(summary.contains("pack=malaysia-singapore-brunei publish=20260719T125813Z state=installed"))
+        XCTAssertTrue(summary.contains("included=app-version,device-model,installed-packs,session-flow,object-urls,error-codes,timings"))
+        XCTAssertTrue(summary.contains("not-included=device-name,exact-location,search-wording"))
         XCTAssertTrue(artifact.preview.contains("log:"))
         XCTAssertTrue(artifact.preview.contains(objectPath))
         XCTAssertFalse(artifact.preview.contains("decode-table:"))
+    }
+
+    func testFlowHelpersRenderReadableSessionEvents() throws {
+        let fixture = try makeFixture()
+        let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
+        MakingTracksLog.configureDiagnosticLogStore(store)
+        defer { MakingTracksLog.configureDiagnosticLogStore(nil) }
+
+        MakingTracksLog.flowEvent(
+            "place viewed",
+            fields: [
+                .object("placeID", "mt1_00000000000000000000000001"),
+                .object("placeName", "Cheong Fatt Tze Mansion"),
+                .public("source", "card"),
+            ]
+        )
+        MakingTracksLog.flowEvent(
+            "verdict changed",
+            fields: [
+                .object("placeID", "mt1_00000000000000000000000001"),
+                .public("action", "love"),
+                .public("state", "on"),
+            ]
+        )
+        MakingTracksLog.viewportFlowEvent(
+            bbox: BBox(minLon: 100.282, minLat: 5.440, maxLon: 100.306, maxLat: 5.464),
+            zoom: 14,
+            source: "pan"
+        )
+
+        let log = try store.snapshotLines(window: .everything).joined(separator: "\n")
+
+        XCTAssertTrue(log.contains("flow info place viewed placeID=mt1_00000000000000000000000001 placeName=Cheong Fatt Tze Mansion source=card"), log)
+        XCTAssertTrue(log.contains("flow info verdict changed placeID=mt1_00000000000000000000000001 action=love state=on"), log)
+        XCTAssertTrue(log.contains("flow info viewport browsed bbox=100.28200,5.44000,100.30600,5.46400 center=100.29400,5.45200 zoom=14 source=pan"), log)
     }
 
     func testExportDoesNotCreateDecodeTable() throws {
@@ -126,19 +163,48 @@ final class DiagnosticLogExportTests: XCTestCase {
         XCTAssertGreaterThan(artifact.byteCount, 0)
     }
 
-    func testExportScrubFailsClosedForPlaceIdentifiersAndCoordinates() throws {
+    func testExportAllowsRuledFlowPlaceAndViewportContent() throws {
         let fixture = try makeFixture()
         let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
-        try store.appendRawLineForTesting("2026-07-19T12:58:13Z resolution error place_id=mt1_00000000000000000000000001 lat=51.5074")
+        try store.appendRawLineForTesting("2026-07-19T12:58:13Z flow info place viewed placeID=mt1_00000000000000000000000001 placeName=Blue Mansion")
+        try store.appendRawLineForTesting("2026-07-19T12:58:14Z flow info viewport browsed bbox=100.28200,5.44000,100.30600,5.46400 center=100.29400,5.45200 zoom=14")
 
-        XCTAssertThrowsError(try DiagnosticLogExporter(
+        let artifact = try DiagnosticLogExporter(
             store: store,
             metadata: fixture.metadata
-        ).prepare(window: .everything, stagingRoot: fixture.staging)) { error in
-            XCTAssertEqual(error as? DiagnosticLogExportError, .privacyScrubFailed)
-        }
+        ).prepare(window: .everything, stagingRoot: fixture.staging)
 
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.staging.path))
+        let log = try String(contentsOf: artifact.logURL, encoding: .utf8)
+
+        XCTAssertTrue(log.contains("placeID=mt1_00000000000000000000000001"))
+        XCTAssertTrue(log.contains("placeName=Blue Mansion"))
+        XCTAssertTrue(log.contains("bbox=100.28200,5.44000,100.30600,5.46400"))
+    }
+
+    func testExportScrubFailsClosedForFixedExcludedClasses() throws {
+        let fixture = try makeFixture()
+        let excludedLines = [
+            "2026-07-19T12:58:13Z flow info device deviceName=Rob's iPhone",
+            "2026-07-19T12:58:13Z flow info located gpsLatitude=51.50740 gpsLongitude=-0.12780",
+            "2026-07-19T12:58:13Z flow info search queryText=private medical search",
+        ]
+
+        for line in excludedLines {
+            let store = DiagnosticLogStore(
+                root: fixture.logs.appendingPathComponent(UUID().uuidString, isDirectory: true),
+                now: { fixture.now }
+            )
+            try store.appendRawLineForTesting(line)
+            XCTAssertThrowsError(try DiagnosticLogExporter(
+                store: store,
+                metadata: fixture.metadata
+            ).prepare(
+                window: .everything,
+                stagingRoot: fixture.staging.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            )) { error in
+                XCTAssertEqual(error as? DiagnosticLogExportError, .privacyScrubFailed)
+            }
+        }
     }
 
     func testDeleteDiagnosticsClearsLogsAndStaging() throws {

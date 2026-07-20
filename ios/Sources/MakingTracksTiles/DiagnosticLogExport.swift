@@ -2,6 +2,7 @@ import Foundation
 
 public enum DiagnosticLogCategory: String, Sendable {
     case downloads
+    case flow
     case gc
     case install
     case resolution
@@ -319,7 +320,8 @@ public struct DiagnosticLogExporter {
         lines.append(contentsOf: metadata.installedPacks.map {
             "pack=\($0.id) publish=\($0.publishVersion) state=\($0.state)"
         })
-        lines.append("not-included=places-viewed,saved,loved,hidden,searches,lists,location,viewport,device-name")
+        lines.append("included=app-version,device-model,installed-packs,session-flow,object-urls,error-codes,timings")
+        lines.append("not-included=device-name,exact-location,search-wording")
         return lines.joined(separator: "\n") + "\n"
     }
 
@@ -334,11 +336,13 @@ public struct DiagnosticLogExporter {
 
     private static func passesPrivacyScrub(_ text: String) -> Bool {
         let forbiddenPatterns = [
-            #"\bmt[0-9a-zA-Z_]{20,}\b"#,
-            #"[-+]?\d{1,3}\.\d{4,}"#,
-            #"(?i)\bplace[_-]?id\b"#,
-            #"(?i)\blat(?:itude)?\b"#,
-            #"(?i)\blon(?:gitude)?\b"#,
+            #"(?i)\bdeviceName\b"#,
+            #"UIDevice\s*\.\s*current\s*\.\s*name"#,
+            #"(?i)\bgps[A-Za-z]*(lat|lon|latitude|longitude)\b"#,
+            #"(?i)\blocation\s*\.\s*coordinate\s*\.\s*(latitude|longitude)"#,
+            #"(?i)\braw(Search)?Query\b"#,
+            #"(?i)\bsearchQuery\b"#,
+            #"(?i)\bqueryText\b"#,
         ]
         return forbiddenPatterns.allSatisfy { pattern in
             text.range(of: pattern, options: .regularExpression) == nil

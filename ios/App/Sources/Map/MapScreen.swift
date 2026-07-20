@@ -1554,6 +1554,10 @@ struct MapScreen: View {
                 },
                 onTapPlace: { placeID in
                     Task { @MainActor in
+                        MakingTracksLog.flowEvent("place tapped", fields: [
+                            .object("placeID", placeID),
+                            .public("source", "map"),
+                        ])
                         cardPresentation.show(placeID: placeID)
                     }
                 },
@@ -1569,6 +1573,10 @@ struct MapScreen: View {
                         self.loadedThemeID = loadedThemeID
                         didMapLoadFail = false
                         MakingTracksLog.startup.info("overlay transition surface=map state=ready")
+                        MakingTracksLog.flowEvent("screen opened", fields: [
+                            .public("screen", "map"),
+                            .public("state", "ready"),
+                        ])
                         schedulePostFirstRenderManifestRefresh()
                         scheduleDeferredOfflineMaintenanceIfReady()
                     }
@@ -1846,6 +1854,9 @@ struct MapScreen: View {
                 visibility: $layerVisibility
             )
                 .presentationDetents([.medium, .large])
+                .onAppear {
+                    logSheetOpened("layers")
+                }
         }
         .sheet(item: cardPresentationItemBinding) { presentation in
             PlaceCardSheet(
@@ -1886,6 +1897,12 @@ struct MapScreen: View {
                 }
             }
         )
+    }
+
+    private func logSheetOpened(_ sheet: String) {
+        MakingTracksLog.flowEvent("sheet opened", fields: [
+            .public("sheet", sheet),
+        ])
     }
 
     private func showHiddenToast(placeID: String, name: String) {
@@ -2933,6 +2950,7 @@ struct MapScreen: View {
             let featureCount = next.count
             let hasRegionalBasemap = nextRegionPMTilesURL != nil
             MakingTracksLog.resolution.info("viewport refresh finished request=\(requestID, privacy: .public) state=\(stateLabel, privacy: .public) features=\(featureCount, privacy: .public) regionalBasemap=\(hasRegionalBasemap, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
+            MakingTracksLog.viewportFlowEvent(bbox: bbox, zoom: zoom, source: "camera-idle")
         }
     }
 
@@ -5060,18 +5078,21 @@ private struct DiagnosticsView: View {
             } header: {
                 Text("Send a diagnostic log")
             } footer: {
-                Text("Nothing is sent automatically. The app prepares a file on this phone, then you choose where it goes.")
+                Text("This file records what you did in the app and how it responded, during the window you choose above - the places you opened and saved, the actions you took, the map you browsed, and what the app fetched, showed, or failed to show. It is meant to let someone helping you see exactly what happened. Nothing is sent automatically; you choose where it goes.")
             }
 
             Section("Included") {
-                diagnosticsBullet("App version, build, device model and iOS version.")
-                diagnosticsBullet("Installed map packs, publish versions and download states.")
-                diagnosticsBullet("Our object URLs, hosts, status codes, timings and error labels.")
+                diagnosticsBullet("Your app version and device model; the places and actions in your session; the map areas you viewed; what the app fetched, and any errors and timings.")
             }
 
             Section("Not included") {
-                diagnosticsBullet("Places you looked at, saved, loved, hid or visited.")
-                diagnosticsBullet("Your searches, lists, location, viewport or device name.")
+                diagnosticsBullet("Your device's name; your exact location; your search wording.")
+            }
+
+            Section {
+                Text("This file describes your session. Share it only with someone you trust to help you.")
+                    .font(.callout.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let artifact {
@@ -6292,6 +6313,13 @@ private struct PlaceCardSheet: View {
         await MainActor.run {
             card = nextCard
             isLoading = false
+            if let nextCard {
+                MakingTracksLog.flowEvent("place viewed", fields: [
+                    .object("placeID", placeID),
+                    .object("placeName", nextCard.name),
+                    .public("source", "card"),
+                ])
+            }
         }
     }
 
@@ -7282,24 +7310,42 @@ final class MapScreenModel {
     func setSaved(placeID: String, saved: Bool) async throws {
         guard let placeRef = await actionPlaceRef(for: placeID) else { throw MapScreenActionError.placeUnavailable }
         try coreLoop.setSaved(placeRef, saved)
+        logVerdictChanged(placeRef: placeRef, action: "save", enabled: saved)
     }
 
     func addToList(placeID: String, listID: Int64) async throws {
         guard let placeRef = await actionPlaceRef(for: placeID) else { throw MapScreenActionError.placeUnavailable }
         try coreLoop.addToList(placeRef, listID: listID)
+        MakingTracksLog.flowEvent("verdict changed", fields: placeFields(placeRef) + [
+            .public("action", "add-to-list"),
+            .public("listID", String(listID)),
+        ])
     }
 
     func removeFromList(placeID: String, listID: Int64) async throws {
         try coreLoop.removeFromList(placeID: placeID, listID: listID)
+        MakingTracksLog.flowEvent("verdict changed", fields: [
+            .object("placeID", placeID),
+            .public("action", "remove-from-list"),
+            .public("listID", String(listID)),
+        ])
     }
 
     func setVisited(placeID: String, visited: Bool) async throws {
         guard let placeRef = await actionPlaceRef(for: placeID) else { throw MapScreenActionError.placeUnavailable }
         try coreLoop.setVisited(placeRef, visited)
+        logVerdictChanged(placeRef: placeRef, action: "visited", enabled: visited)
     }
 
     func setLoved(placeID: String, loved: Bool) async throws {
+        let placeRef = await actionPlaceRef(for: placeID)
         try coreLoop.setLoved(placeID: placeID, loved)
+        MakingTracksLog.flowEvent("verdict changed", fields: (placeRef.map(placeFields) ?? [
+            .object("placeID", placeID),
+        ]) + [
+            .public("action", "love"),
+            .public("state", loved ? "on" : "off"),
+        ])
     }
 
     func setVisitLoved(visitID: Int64, loved: Bool) async throws {
@@ -7323,10 +7369,25 @@ final class MapScreenModel {
         let rollback = hiddenTracker.beginSetHidden(placeID: placeID, hidden: hidden)
         do {
             try coreLoop.setHidden(placeRef, hidden)
+            logVerdictChanged(placeRef: placeRef, action: "hide", enabled: hidden)
         } catch {
             hiddenTracker.rollback(rollback)
             throw error
         }
+    }
+
+    private func logVerdictChanged(placeRef: PlaceRef, action: String, enabled: Bool) {
+        MakingTracksLog.flowEvent("verdict changed", fields: placeFields(placeRef) + [
+            .public("action", action),
+            .public("state", enabled ? "on" : "off"),
+        ])
+    }
+
+    private func placeFields(_ placeRef: PlaceRef) -> [DiagnosticLogField] {
+        [
+            .object("placeID", placeRef.placeID),
+            .object("placeName", placeRef.name),
+        ]
     }
 
     private func cardSource(for placeID: String) async -> CardSource? {

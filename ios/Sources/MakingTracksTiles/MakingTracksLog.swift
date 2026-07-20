@@ -6,6 +6,7 @@ public enum MakingTracksLog {
     private static let diagnosticSink = DiagnosticLogSinkRegistry()
 
     public static let downloads = Logger(subsystem: subsystem, category: "downloads")
+    public static let flow = Logger(subsystem: subsystem, category: "flow")
     public static let gc = Logger(subsystem: subsystem, category: "gc")
     public static let install = Logger(subsystem: subsystem, category: "install")
     public static let resolution = Logger(subsystem: subsystem, category: "resolution")
@@ -94,9 +95,42 @@ public enum MakingTracksLog {
         diagnosticSink.append(category: category, level: level, message: message, fields: fields)
     }
 
+    public static func flowEvent(_ message: String, fields: [DiagnosticLogField]) {
+        file(category: .flow, level: .info, message, fields: fields)
+    }
+
+    public static func viewportFlowEvent(bbox: BBox, zoom: Int, source: String) {
+        flowEvent(
+            "viewport browsed",
+            fields: [
+                .public("bbox", formattedBBox(bbox)),
+                .public("center", formattedCoordinate(lon: bbox.center.lon, lat: bbox.center.lat)),
+                .public("zoom", String(zoom)),
+                .public("source", source),
+            ]
+        )
+    }
+
     private static func publicObjectPathComponents(_ url: URL) -> [String] {
         guard url.host == "tiles.making-tracks.app" else { return [] }
         return url.path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+    }
+
+    private static func formattedBBox(_ bbox: BBox) -> String {
+        [
+            bbox.minLon,
+            bbox.minLat,
+            bbox.maxLon,
+            bbox.maxLat,
+        ].map { formattedDecimal($0) }.joined(separator: ",")
+    }
+
+    private static func formattedCoordinate(lon: Double, lat: Double) -> String {
+        "\(formattedDecimal(lon)),\(formattedDecimal(lat))"
+    }
+
+    private static func formattedDecimal(_ value: Double) -> String {
+        String(format: "%.5f", value)
     }
 
     private static func isPublishVersion(_ value: String) -> Bool {
