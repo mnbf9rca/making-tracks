@@ -66,7 +66,7 @@ The online no-pack search entry point is the notable compact index under:
 
 - `{region}/{publish_version}/search/compact.json`
 
-The compact object is not pack-scoped and is not listed in the pack descriptor. It is discovered from `regions.json` via required `search_compact: {path, sha256, bytes, schema_version}`. `validate_region_index` requires that path to match the same region id and `publish_version`, keeping `current.json`'s publish version as the single version authority. When upgrading a pre-search `regions.json`, the publisher must not synthesize compact URLs for old publish versions that do not contain the object; those legacy entries are omitted until republished with real compact metadata.
+The compact object is not pack-scoped and is not listed in the pack descriptor. It is discovered from `regions.json` via required `search_compact: {path, sha256, bytes, schema_version}`. `validate_region_index` requires that path to match the same region id and to carry a publish-version path segment, while readers still take the live publish version from `current.json` as the single version authority. A reader must reject or refetch an index entry whose `search_compact.path` publish-version segment differs from that region's current pointer; the path is checked against `current.json`, not trusted instead of it. When upgrading a pre-search `regions.json`, the publisher must not synthesize compact URLs for old publish versions that do not contain the object; those legacy entries are omitted until republished with real compact metadata.
 
 ## Region Config
 

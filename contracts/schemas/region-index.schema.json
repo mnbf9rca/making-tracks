@@ -21,7 +21,6 @@
           "display_name",
           "parent",
           "bbox",
-          "publish_version",
           "search_compact",
           "basemap_bytes",
           "tile_count",
@@ -48,7 +47,6 @@
               {"type": "number", "minimum": -90, "maximum": 90}
             ]
           },
-          "publish_version": {"type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z$"},
           "search_compact": {
             "type": "object",
             "additionalProperties": false,

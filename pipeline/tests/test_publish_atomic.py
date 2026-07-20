@@ -746,7 +746,6 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
                         "display_name": "United Kingdom",
                         "parent": None,
                         "bbox": [-8.65, 49.84, 1.77, 60.86],
-                        "publish_version": "20260715T120000Z",
                         "search_compact": _search_compact(
                             "united-kingdom", "20260715T120000Z", "1"
                         ),
@@ -760,7 +759,6 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
                         "display_name": "London",
                         "parent": "united-kingdom",
                         "bbox": [-0.5, 51.2, 0.3, 51.8],
-                        "publish_version": "20260715T120000Z",
                         "search_compact": _search_compact(
                             "united-kingdom_london", "20260715T120000Z", "2"
                         ),
@@ -923,7 +921,6 @@ def test_prepared_retry_of_live_regions_repairs_catalog_and_region_index_only(tm
                         "display_name": "United Kingdom",
                         "parent": None,
                         "bbox": [-8.65, 49.84, 1.77, 60.86],
-                        "publish_version": "20260715T120000Z",
                         "search_compact": _search_compact(
                             "united-kingdom", "20260715T120000Z", "1"
                         ),
@@ -937,7 +934,6 @@ def test_prepared_retry_of_live_regions_repairs_catalog_and_region_index_only(tm
                         "display_name": "London",
                         "parent": "united-kingdom",
                         "bbox": [-0.5, 51.2, 0.3, 51.8],
-                        "publish_version": "20260715T120000Z",
                         "search_compact": _search_compact(
                             "united-kingdom_london", "20260715T120000Z", "2"
                         ),
@@ -1044,7 +1040,6 @@ def test_region_index_dry_run_with_client_previews_merged_upload_body(tmp_path):
                         "display_name": "United Kingdom",
                         "parent": None,
                         "bbox": [-8.65, 49.84, 1.77, 60.86],
-                        "publish_version": "20260715T120000Z",
                         "search_compact": _search_compact(
                             "united-kingdom", "20260715T120000Z", "1"
                         ),
@@ -1091,6 +1086,134 @@ def test_region_index_dry_run_with_client_previews_merged_upload_body(tmp_path):
     assert [entry["id"] for entry in merged["regions"]] == ["united-kingdom"]
 
 
+def test_region_index_merge_strips_stale_v3_publish_version_fields(tmp_path):
+    layout = _layout()
+    region_index = tmp_path / "stage" / "regions.json"
+    region_index.parent.mkdir()
+    region_index.write_text(
+        json.dumps(
+            {
+                "schema_version": SCHEMA_VERSIONS["region_index"],
+                "min_reader_version": 1,
+                "generated_at": "2026-07-15T12:00:00Z",
+                "regions": [
+                    {
+                        "id": "united-kingdom",
+                        "display_name": "United Kingdom",
+                        "parent": None,
+                        "bbox": [-8.65, 49.84, 1.77, 60.86],
+                        "search_compact": _search_compact(
+                            "united-kingdom", "20260715T120000Z", "1"
+                        ),
+                        "basemap_bytes": 7,
+                        "tile_count": 1,
+                        "bytes_without_thumbs": 11,
+                        "bytes_with_thumbs": 11,
+                    }
+                ],
+            }
+        )
+    )
+    existing_index = {
+        "schema_version": SCHEMA_VERSIONS["region_index"],
+        "min_reader_version": 1,
+        "generated_at": "2026-07-14T12:00:00Z",
+        "regions": [
+            {
+                "id": "malaysia-singapore-brunei",
+                "display_name": "Malaysia",
+                "parent": None,
+                "bbox": [99.64, 0.85, 119.27, 7.36],
+                "publish_version": "20260714T120000Z",
+                "search_compact": _search_compact(
+                    "malaysia-singapore-brunei", "20260714T120000Z", "2"
+                ),
+                "basemap_bytes": 7,
+                "tile_count": 1,
+                "bytes_without_thumbs": 11,
+                "bytes_with_thumbs": 11,
+            }
+        ],
+    }
+
+    class RegionIndexClient:
+        def get_object(self, *, Bucket, Key):
+            assert (Bucket, Key) == ("making-tracks-tiles", "regions.json")
+            return {"Body": BytesIO(json.dumps(existing_index).encode("utf-8"))}
+
+    result = R.publish_region_index(
+        region_index, layout, client=RegionIndexClient(), upload=False
+    )
+
+    merged = json.loads(result.plan.ops[0].body)
+    assert [entry["id"] for entry in merged["regions"]] == [
+        "malaysia-singapore-brunei",
+        "united-kingdom",
+    ]
+    assert all("publish_version" not in entry for entry in merged["regions"])
+
+
+def test_region_index_merge_rejects_stale_v3_publish_version_path_mismatch(tmp_path):
+    layout = _layout()
+    region_index = tmp_path / "stage" / "regions.json"
+    region_index.parent.mkdir()
+    region_index.write_text(
+        json.dumps(
+            {
+                "schema_version": SCHEMA_VERSIONS["region_index"],
+                "min_reader_version": 1,
+                "generated_at": "2026-07-15T12:00:00Z",
+                "regions": [
+                    {
+                        "id": "united-kingdom",
+                        "display_name": "United Kingdom",
+                        "parent": None,
+                        "bbox": [-8.65, 49.84, 1.77, 60.86],
+                        "search_compact": _search_compact(
+                            "united-kingdom", "20260715T120000Z", "1"
+                        ),
+                        "basemap_bytes": 7,
+                        "tile_count": 1,
+                        "bytes_without_thumbs": 11,
+                        "bytes_with_thumbs": 11,
+                    }
+                ],
+            }
+        )
+    )
+    existing_index = {
+        "schema_version": SCHEMA_VERSIONS["region_index"],
+        "min_reader_version": 1,
+        "generated_at": "2026-07-14T12:00:00Z",
+        "regions": [
+            {
+                "id": "malaysia-singapore-brunei",
+                "display_name": "Malaysia",
+                "parent": None,
+                "bbox": [99.64, 0.85, 119.27, 7.36],
+                "publish_version": "20260713T120000Z",
+                "search_compact": _search_compact(
+                    "malaysia-singapore-brunei", "20260714T120000Z", "2"
+                ),
+                "basemap_bytes": 7,
+                "tile_count": 1,
+                "bytes_without_thumbs": 11,
+                "bytes_with_thumbs": 11,
+            }
+        ],
+    }
+
+    class RegionIndexClient:
+        def get_object(self, *, Bucket, Key):
+            assert (Bucket, Key) == ("making-tracks-tiles", "regions.json")
+            return {"Body": BytesIO(json.dumps(existing_index).encode("utf-8"))}
+
+    with pytest.raises(ValueError, match="publish_version does not match search_compact path"):
+        R.publish_region_index(
+            region_index, layout, client=RegionIndexClient(), upload=False
+        )
+
+
 def test_region_index_offline_dry_run_plan_serializes_the_planned_body(tmp_path):
     layout = _layout()
     region_index = tmp_path / "stage" / "regions.json"
@@ -1107,7 +1230,6 @@ def test_region_index_offline_dry_run_plan_serializes_the_planned_body(tmp_path)
                         "display_name": "United Kingdom",
                         "parent": None,
                         "bbox": [-8.65, 49.84, 1.77, 60.86],
-                        "publish_version": "20260715T120000Z",
                         "search_compact": _search_compact(
                             "united-kingdom", "20260715T120000Z", "1"
                         ),

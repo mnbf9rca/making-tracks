@@ -731,7 +731,10 @@ def test_publish_stage_emits_bbox_subregion_shard_without_subregion_registry(
     ]
     assert index["regions"][1]["parent"] == "malaysia-singapore-brunei"
     assert index["regions"][1]["display_name"] == "Central Malaysia"
-    assert index["regions"][1]["publish_version"] == "20260717T120000Z"
+    assert "publish_version" not in index["regions"][1]
+    assert index["regions"][1]["search_compact"]["path"] == (
+        "malaysia-singapore-brunei_central/20260717T120000Z/search/compact.json"
+    )
     assert index["regions"][1]["tile_count"] == len(sub.manifest["tiles"])
     assert isinstance(index["regions"][1]["bytes_without_thumbs"], int)
     assert (

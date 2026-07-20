@@ -491,9 +491,7 @@ def publish_region_index(
 ) -> PublishResult:
     region_index_path = Path(region_index_path)
     index_obj = _load_region_index(region_index_path)
-    publish_version = max(
-        str(entry["publish_version"]) for entry in index_obj["regions"]
-    )
+    publish_version = _region_index_publish_version(index_obj)
     _validate_layout(layout)
     if not upload:
         op = (
@@ -531,6 +529,23 @@ def _load_region_index(region_index_path: Path) -> dict[str, Any]:
     index_obj = json.loads(Path(region_index_path).read_text(encoding="utf-8"))
     validate_region_index(index_obj)
     return index_obj
+
+
+def _region_index_publish_version(index_obj: Mapping[str, Any]) -> str:
+    return max(_search_compact_publish_version(entry) for entry in index_obj["regions"])
+
+
+def _search_compact_publish_version(entry: Mapping[str, Any]) -> str:
+    region_id = str(entry["id"])
+    path = str(entry["search_compact"]["path"])
+    prefix = f"{region_id}/"
+    suffix = "/search/compact.json"
+    if not path.startswith(prefix) or not path.endswith(suffix):
+        raise ValueError(f"invalid search_compact path for {region_id}")
+    publish_version = path[len(prefix) : -len(suffix)]
+    if _PUBLISH_VERSION_RE.fullmatch(publish_version) is None:
+        raise ValueError(f"invalid search_compact publish version for {region_id}")
+    return publish_version
 
 
 def _validate_layout(layout: Mapping[str, Any]) -> None:
@@ -937,7 +952,7 @@ def _merge_region_indexes(
 def _validate_existing_region_index_for_merge(existing: Mapping[str, Any]) -> dict[str, Any]:
     current_version = SCHEMA_VERSIONS["region_index"]
     if int(existing.get("schema_version", 0)) == current_version:
-        normalised = dict(existing)
+        normalised = _drop_region_index_publish_versions(existing)
         validate_region_index(normalised)
         return normalised
     elif int(existing.get("schema_version", 0)) in {1, 2}:
@@ -946,6 +961,23 @@ def _validate_existing_region_index_for_merge(existing: Mapping[str, Any]) -> di
     else:
         normalised = dict(existing)
     return normalised
+
+
+def _drop_region_index_publish_versions(index_obj: Mapping[str, Any]) -> dict[str, Any]:
+    normalised = dict(index_obj)
+    normalised["regions"] = [
+        _drop_region_entry_publish_version(entry)
+        for entry in index_obj.get("regions", [])
+    ]
+    return normalised
+
+
+def _drop_region_entry_publish_version(entry: Mapping[str, Any]) -> dict[str, Any]:
+    entry_dict = dict(entry)
+    publish_version = entry_dict.pop("publish_version", None)
+    if publish_version is not None and publish_version != _search_compact_publish_version(entry):
+        raise ValueError("region-index publish_version does not match search_compact path")
+    return entry_dict
 
 
 def _is_legacy_region_id(region_id: str) -> bool:
