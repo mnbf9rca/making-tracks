@@ -751,6 +751,24 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(OfflineDownloadProgress(fractionComplete: 1.25).percentComplete, 100)
     }
 
+    func testOfflineDownloadProgressDoesNotRoundActiveDownloadsUpToComplete() {
+        let progress = OfflineDownloadProgress(fractionComplete: 0.996)
+
+        XCTAssertEqual(progress.percentComplete, 99)
+    }
+
+    func testOfflineDownloadProgressWithZeroTotalBytesIsNotComplete() {
+        let progress = OfflineDownloadProgress(
+            region: "malaysia-singapore-brunei",
+            completedBytes: 0,
+            totalBytes: 0,
+            fractionComplete: 1
+        )
+
+        XCTAssertEqual(progress.percentComplete, 0)
+        XCTAssertFalse(progress.isComplete)
+    }
+
     func testOnboardingStorageUsesFoldedDesignKeys() {
         XCTAssertEqual(OnboardingStorage.hasCompletedOnboardingKey, "hasCompletedOnboarding")
         XCTAssertEqual(OnboardingStorage.chosenRegionKey, "chosenRegion")
@@ -1178,6 +1196,52 @@ final class AppShellTests: XCTestCase {
         XCTAssertTrue(kl?.hasUnavailableLocalData == true)
     }
 
+    func testOfflineRegionRowsLabelCompleteActiveProgressAsInstalling() {
+        let catalog = OfflineRegionCatalog.debugFixture
+        let progress = OfflineDownloadProgress(
+            region: "malaysia-singapore-brunei",
+            publishVersion: "20260719T125813Z",
+            completedBytes: 223_400_000,
+            totalBytes: 223_400_000,
+            fractionComplete: 1
+        )
+
+        let rows = catalog.rows(installed: [:], activeProgress: progress, quarantines: [])
+        let malaysia = rows.first { $0.zone.id == "malaysia-singapore-brunei" }
+
+        XCTAssertEqual(malaysia?.statusLabel, "Installing")
+        XCTAssertEqual(malaysia?.sizeLabel(includeThumbnails: false), "223.4 MB")
+    }
+
+    func testOfflineRegionRowsDoNotRoundDisplayedActiveProgressUpToComplete() {
+        let catalog = OfflineRegionCatalog.debugFixture
+        let progress = OfflineDownloadProgress(
+            region: "malaysia-singapore-brunei",
+            fractionComplete: 0.996
+        )
+
+        let rows = catalog.rows(installed: [:], activeProgress: progress, quarantines: [])
+        let malaysia = rows.first { $0.zone.id == "malaysia-singapore-brunei" }
+
+        XCTAssertEqual(malaysia?.statusLabel, "Downloading 99%")
+    }
+
+    func testOfflineRegionRowsDoNotTreatZeroByteActiveProgressAsInstalling() {
+        let catalog = OfflineRegionCatalog.debugFixture
+        let progress = OfflineDownloadProgress(
+            region: "malaysia-singapore-brunei",
+            completedBytes: 0,
+            totalBytes: 0,
+            fractionComplete: 1
+        )
+
+        let rows = catalog.rows(installed: [:], activeProgress: progress, quarantines: [])
+        let malaysia = rows.first { $0.zone.id == "malaysia-singapore-brunei" }
+
+        XCTAssertEqual(malaysia?.statusLabel, "Downloading 0%")
+        XCTAssertEqual(malaysia?.sizeLabel(includeThumbnails: false), "1.4 GB")
+    }
+
     func testOfflineRegionRowsDoNotOfferSubregionDownloads() {
         let catalog = OfflineRegionCatalog.debugFixture
         let quarantine = OfflinePackQuarantine(
@@ -1258,6 +1322,9 @@ final class AppShellTests: XCTestCase {
             installed: [
                 "malaysia-singapore-brunei": "20260716T155035Z",
             ],
+            installedStorageBytes: [
+                "malaysia-singapore-brunei": 223_400_000,
+            ],
             activeProgress: nil,
             quarantines: []
         )
@@ -1265,6 +1332,7 @@ final class AppShellTests: XCTestCase {
 
         XCTAssertEqual(malaysia?.state, .installed(publishVersion: "20260716T155035Z"))
         XCTAssertEqual(malaysia?.statusLabel, "Downloaded")
+        XCTAssertEqual(malaysia?.sizeLabel(includeThumbnails: false), "223.4 MB")
     }
 
     func testOfflineRegionRowsUseFetchedCurrentForUpdateComparison() {
@@ -1320,7 +1388,18 @@ final class AppShellTests: XCTestCase {
                             coordinates: [TileCoordinate(z: 10, x: 511, y: 340)]
                         ),
                     ],
-                    storageStatus: .ready(totalBytes: 1_024, regions: [], failedRegions: [])
+                    storageStatus: .ready(
+                        totalBytes: 223_400_000,
+                        regions: [
+                            StorageMenuRegion(
+                                region: "united-kingdom",
+                                publishVersion: "20260718T000000Z",
+                                bytes: 223_400_000,
+                                tileCount: 42
+                            ),
+                        ],
+                        failedRegions: []
+                    )
                 )
             },
             loadAvailableVersions: { _ in
@@ -1332,6 +1411,7 @@ final class AppShellTests: XCTestCase {
             applyLocalState: { localState in
                 observedRows = catalog.rows(
                     installed: localState.installed,
+                    installedStorageBytes: localState.storageStatus.installedStorageBytes,
                     availablePublishVersions: [:],
                     activeProgress: nil,
                     pausedRegions: localState.pausedRegions,
@@ -1348,6 +1428,7 @@ final class AppShellTests: XCTestCase {
         await fulfillment(of: [localApplied], timeout: 1)
 
         XCTAssertEqual(observedRows.first { $0.zone.id == "united-kingdom" }?.state, .installed(publishVersion: "20260718T000000Z"))
+        XCTAssertEqual(observedRows.first { $0.zone.id == "united-kingdom" }?.sizeLabel(includeThumbnails: false), "223.4 MB")
         XCTAssertEqual(observedRows.first { $0.zone.id == "united-kingdom_london" }?.state, .unavailable)
         XCTAssertEqual(observedRows.first { $0.zone.id == "malaysia-singapore-brunei" }?.state, .paused(OfflineDownloadProgress(region: "malaysia-singapore-brunei", fractionComplete: 0)))
     }
