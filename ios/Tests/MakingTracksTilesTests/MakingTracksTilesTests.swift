@@ -1341,6 +1341,18 @@ final class MakingTracksTilesTests: XCTestCase {
         }
     }
 
+    func testRegionIndexFailsClosedOnFutureSchemaUntilProjectionLeverExists() throws {
+        for minReaderVersion in [1, VersionGate.readerVersion, VersionGate.readerVersion + 1] {
+            var object = regionIndexV3Object()
+            object["schema_version"] = VersionGate.regionIndexReaderSchemaVersion + 1
+            object["min_reader_version"] = minReaderVersion
+
+            XCTAssertThrowsError(try RegionIndex.decode(jsonData(object))) {
+                XCTAssertEqual($0 as? TileError, .invalidRegionIndex)
+            }
+        }
+    }
+
     func testRegionIndexToleratesOptionalPublishVersionButUsesV3Footprints() throws {
         var object = regionIndexV3Object()
         object["regions"] = [

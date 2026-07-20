@@ -2619,6 +2619,8 @@ public struct RegionIndex: Sendable, Equatable {
         let allowed: Set<String> = ["schema_version", "min_reader_version", "generated_at", "regions"]
         guard Set(object.keys).isSubset(of: allowed),
               let schemaVersion = object["schema_version"] as? Int,
+              // Future region-index projection is deferred to the first v4 WP. Per-field
+              // ignorability must be decided against real v4 additions, not assumed here.
               VersionGate.schema(readerMax: VersionGate.regionIndexReaderSchemaVersion, dataVersion: schemaVersion, minSupported: VersionGate.regionIndexReaderSchemaVersion) == .ok,
               let minReaderVersion = object["min_reader_version"] as? Int,
               minReaderVersion >= 1,
