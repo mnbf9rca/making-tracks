@@ -23,9 +23,10 @@
     h1 { font-size: 17px; font-weight: 650; margin-bottom: 2px; }
     .sub { color: var(--dim); font-size: 12.5px; margin-bottom: 22px; }
     .row { display: flex; gap: 30px; align-items: flex-start; }
-    .col { width: 390px; }
+    .col { width: 650px; }
     .cap { font-size: 12px; font-weight: 650; margin-bottom: 3px; }
     .capsub { color: var(--dim); font-size: 11px; line-height: 1.35; margin-bottom: 9px; min-height: 30px; }
+    .mock { align-items: flex-start; display: flex; gap: 16px; }
     .phone {
       background: var(--paper);
       border: 1px solid #c9c6bd;
@@ -98,16 +99,22 @@
     }
     .empty h2 { font-size: 16px; line-height: 1.25; margin-bottom: 5px; }
     .empty p { color: var(--dim); font-size: 13px; line-height: 1.4; }
-    .note {
+    .annotations {
+      color: #33312d;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 230px;
+    }
+    .annotation {
       background: #eef5f2;
       border-left: 4px solid var(--accent);
       border-radius: 8px;
-      color: #233b35;
       font-size: 12px;
       line-height: 1.35;
-      margin-top: 14px;
       padding: 10px 12px;
     }
+    .annotation strong { display: block; font-size: 11px; margin-bottom: 3px; text-transform: uppercase; }
     .fold { border-top: 2px dashed #c0392b; bottom: 0; left: 0; position: absolute; right: 0; }
     .foldlab { background: rgba(255,255,255,.92); border-radius: 3px; bottom: 5px; color: #c0392b; font-size: 9.5px; font-weight: 650; padding: 1px 4px; position: absolute; right: 6px; }
   </style>
@@ -120,6 +127,7 @@
   <div class="col">
     <div class="cap">Default text size</div>
     <div class="capsub">Storage still explains local packs. Named zones are empty because catalog membership is the support gate.</div>
+    <div class="mock">
     <div class="phone">
       <div class="status"><span>9:41</span><span>100%</span></div>
       <div class="nav"><div class="back">&#8249; Menu</div><div class="title">Offline maps</div></div>
@@ -129,8 +137,6 @@
           <h2>No region index available</h2>
           <p>Making Tracks cannot offer downloads until it has the production region list.</p>
         </div>
-
-        <div class="note">regions.json is the pruned production list; the app offers everything in it.</div>
 
         <div class="section-title">Storage</div>
         <div class="card">
@@ -146,7 +152,7 @@
             <div class="icon">M</div>
             <div class="texts">
               <div class="primary">Malaysia</div>
-              <div class="secondary">Installed pack - kept visible without the index</div>
+              <div class="secondary">Stored on this device</div>
             </div>
             <div class="badge">80 MB</div>
           </div>
@@ -154,7 +160,7 @@
             <div class="icon">K</div>
             <div class="texts">
               <div class="primary">Kuala Lumpur</div>
-              <div class="secondary">Installed pack - no update/delete zone action</div>
+              <div class="secondary">Stored on this device</div>
             </div>
             <div class="badge">34 MB</div>
           </div>
@@ -172,6 +178,12 @@
         </div>
       </div>
       <div class="fold"></div><div class="foldlab">fold</div>
+    </div>
+    <div class="annotations" aria-hidden="true">
+      <div class="annotation"><strong>Invariant</strong>regions.json is the pruned production list; the app offers everything in it.</div>
+      <div class="annotation"><strong>Storage rows</strong>Installed packs remain visible without the index; the row copy stays product-facing.</div>
+      <div class="annotation"><strong>Actions</strong>No named-zone update or delete affordance is shown when catalog membership is unavailable.</div>
+    </div>
     </div>
   </div>
 </div>
