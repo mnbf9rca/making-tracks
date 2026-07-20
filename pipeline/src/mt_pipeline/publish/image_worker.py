@@ -10,7 +10,8 @@ import warnings
 from pathlib import Path
 
 MAX_IMAGE_PIXELS = 16_000_000
-THUMB_MAX_EDGE = 512
+THUMB_MAX_EDGE = 256
+THUMB_WEBP_QUALITY = 50
 ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
 
 
@@ -45,7 +46,9 @@ def transcode(path: Path) -> dict[str, object]:
                 image.thumbnail((THUMB_MAX_EDGE, THUMB_MAX_EDGE))
                 final_width, final_height = image.size
                 out = io.BytesIO()
-                image.convert("RGB").save(out, format="WEBP", quality=82, method=6)
+                image.convert("RGB").save(
+                    out, format="WEBP", quality=THUMB_WEBP_QUALITY, method=6
+                )
     except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
         raise ValueError("image dimensions exceed decode cap") from exc
     return {

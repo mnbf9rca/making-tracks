@@ -495,21 +495,27 @@ def test_build_place_images_fetches_filters_downloads_and_caches_thumb(tmp_path,
     assert len(transcodes) == 1
 
 
-def test_build_place_images_from_audit_reuses_place_id_rows_without_fetching(
+def test_build_place_images_from_audit_reencodes_originals_without_fetching_metadata(
     tmp_path, monkeypatch, capsys
 ):
-    thumb = b"audited-thumb"
-    thumb_sha = hashlib.sha256(thumb).hexdigest()
+    old_thumb = b"audited-thumb"
+    old_thumb_sha = hashlib.sha256(old_thumb).hexdigest()
+    new_thumb = b"new-q50-256-thumb"
+    new_thumb_sha = hashlib.sha256(new_thumb).hexdigest()
     cache = tmp_path / "audit-cache"
-    (cache / "thumbs" / thumb_sha[:2]).mkdir(parents=True)
-    (cache / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp").write_bytes(thumb)
+    old_thumb_path = cache / "thumbs" / old_thumb_sha[:2] / f"{old_thumb_sha}.webp"
+    old_thumb_path.parent.mkdir(parents=True)
+    old_thumb_path.write_bytes(old_thumb)
+    original_path = cache / "raw" / "mt1_00000000000000000000000001.source"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original-image")
     completed = tmp_path / "completed.jsonl"
     completed.write_text(
         json.dumps(
             {
                 "place_id": "mt1_00000000000000000000000001",
-                "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Old.jpg",
-                "thumb_sha256": thumb_sha,
+                "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+                "thumb_sha256": old_thumb_sha,
                 "width": 320,
                 "height": 240,
                 "attribution": {
@@ -517,7 +523,7 @@ def test_build_place_images_from_audit_reuses_place_id_rows_without_fetching(
                     "license_code": "CC-BY-4.0",
                     "license_name": "Creative Commons Attribution 4.0",
                     "license_url": "https://creativecommons.org/licenses/by/4.0/",
-                    "source_url": "https://commons.wikimedia.org/wiki/File:Old.jpg",
+                    "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
                     "modified": True,
                 },
             },
@@ -531,7 +537,7 @@ def test_build_place_images_from_audit_reuses_place_id_rows_without_fetching(
             place_id="mt1_00000000000000000000000001",
             lat=51.5,
             lon=-0.1,
-            image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/New.jpg",
+            image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
         ),
         images.ImageCandidate(
             place_id="mt1_00000000000000000000000002",
@@ -551,6 +557,13 @@ def test_build_place_images_from_audit_reuses_place_id_rows_without_fetching(
         "get_to_file",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("downloaded")),
     )
+    transcodes = []
+
+    def fake_transcode(path):
+        transcodes.append(path)
+        return images.ThumbTranscode(webp_bytes=new_thumb, width=256, height=192)
+
+    monkeypatch.setattr(images, "transcode_to_webp_thumb", fake_transcode)
 
     out = images.build_place_images_from_audit(
         candidates,
@@ -559,20 +572,70 @@ def test_build_place_images_from_audit_reuses_place_id_rows_without_fetching(
     )
 
     assert [(item.place_id, item.thumb_sha256, item.thumb_bytes) for item in out] == [
-        ("mt1_00000000000000000000000001", thumb_sha, thumb)
+        ("mt1_00000000000000000000000001", new_thumb_sha, new_thumb)
     ]
-    assert "AUDITED_IMAGE_REUSE candidates=2 selected=1 missing_skipped=1 audited_total=1" in capsys.readouterr().out
+    assert transcodes == [original_path]
+    assert old_thumb_path.read_bytes() == old_thumb
+    assert (cache / "thumbs" / new_thumb_sha[:2] / f"{new_thumb_sha}.webp").read_bytes() == new_thumb
+    assert "AUDITED_IMAGE_REENCODE candidates=2 selected=1 missing_skipped=1 audited_total=1" in capsys.readouterr().out
 
 
-def test_build_place_images_from_audit_fails_on_missing_or_mismatched_thumb(tmp_path):
-    thumb_sha = hashlib.sha256(b"expected").hexdigest()
+def test_build_place_images_from_audit_requires_original_for_reencode(tmp_path):
+    thumb_sha = hashlib.sha256(b"old-thumb").hexdigest()
     cache = tmp_path / "audit-cache"
+    thumb_path = cache / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp"
+    thumb_path.parent.mkdir(parents=True)
+    thumb_path.write_bytes(b"old-thumb")
     completed = tmp_path / "completed.jsonl"
     completed.write_text(
         json.dumps(
             {
                 "place_id": "mt1_00000000000000000000000001",
                 "thumb_sha256": thumb_sha,
+                "width": 320,
+                "height": 240,
+                "attribution": {
+                    "creator": None,
+                    "license_code": "CC0-1.0",
+                    "license_name": "CC0",
+                    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+                    "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+                    "modified": True,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+    )
+
+    with pytest.raises(images.AuditedImageReuseError, match="referenced original missing"):
+        images.build_place_images_from_audit(
+            [candidate],
+            completed_jsonl=completed,
+            audited_cache_dir=cache,
+        )
+
+
+def test_build_place_images_from_audit_requires_retained_audited_thumb(tmp_path):
+    old_thumb_sha = hashlib.sha256(b"old-thumb").hexdigest()
+    cache = tmp_path / "audit-cache"
+    original_path = cache / "raw" / "mt1_00000000000000000000000001.source"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original-image")
+    completed = tmp_path / "completed.jsonl"
+    completed.write_text(
+        json.dumps(
+            {
+                "place_id": "mt1_00000000000000000000000001",
+                "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+                "thumb_sha256": old_thumb_sha,
                 "width": 320,
                 "height": 240,
                 "attribution": {
@@ -603,10 +666,48 @@ def test_build_place_images_from_audit_fails_on_missing_or_mismatched_thumb(tmp_
             audited_cache_dir=cache,
         )
 
-    (cache / "thumbs" / thumb_sha[:2]).mkdir(parents=True)
-    (cache / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp").write_bytes(b"actual")
 
-    with pytest.raises(images.AuditedImageReuseError, match="thumb content hash mismatch"):
+def test_build_place_images_from_audit_rejects_candidate_image_url_drift(tmp_path):
+    old_thumb = b"old-thumb"
+    old_thumb_sha = hashlib.sha256(old_thumb).hexdigest()
+    cache = tmp_path / "audit-cache"
+    old_thumb_path = cache / "thumbs" / old_thumb_sha[:2] / f"{old_thumb_sha}.webp"
+    old_thumb_path.parent.mkdir(parents=True)
+    old_thumb_path.write_bytes(old_thumb)
+    original_path = cache / "raw" / "mt1_00000000000000000000000001.source"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original-image")
+    completed = tmp_path / "completed.jsonl"
+    completed.write_text(
+        json.dumps(
+            {
+                "place_id": "mt1_00000000000000000000000001",
+                "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Audited.jpg",
+                "thumb_sha256": old_thumb_sha,
+                "width": 320,
+                "height": 240,
+                "attribution": {
+                    "creator": None,
+                    "license_code": "CC0-1.0",
+                    "license_name": "CC0",
+                    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+                    "source_url": "https://commons.wikimedia.org/wiki/File:Audited.jpg",
+                    "modified": True,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Current.jpg",
+    )
+
+    with pytest.raises(images.AuditedImageReuseError, match="image_url drift"):
         images.build_place_images_from_audit(
             [candidate],
             completed_jsonl=completed,
@@ -670,12 +771,18 @@ def test_build_place_images_from_audit_rejects_rows_the_image_schema_would_rejec
         )
 
 
-def test_build_place_images_from_audit_rejects_oversized_thumb_before_read(tmp_path):
-    thumb_sha = "a" * 64
+def test_build_place_images_from_audit_rejects_oversized_reencoded_thumb_before_write(
+    tmp_path, monkeypatch
+):
+    old_thumb = b"old-thumb"
+    thumb_sha = hashlib.sha256(old_thumb).hexdigest()
     cache = tmp_path / "audit-cache"
     thumb_path = cache / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp"
     thumb_path.parent.mkdir(parents=True)
-    thumb_path.write_bytes(b"x" * (images.MAX_AUDITED_THUMB_BYTES + 1))
+    thumb_path.write_bytes(old_thumb)
+    original_path = cache / "raw" / "mt1_00000000000000000000000001.source"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original-image")
     completed = tmp_path / "completed.jsonl"
     completed.write_text(
         json.dumps(
@@ -705,7 +812,70 @@ def test_build_place_images_from_audit_rejects_oversized_thumb_before_read(tmp_p
         image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
     )
 
+    monkeypatch.setattr(
+        images,
+        "transcode_to_webp_thumb",
+        lambda _path: images.ThumbTranscode(
+            webp_bytes=b"x" * (images.MAX_AUDITED_THUMB_BYTES + 1),
+            width=256,
+            height=256,
+        ),
+    )
+
     with pytest.raises(images.AuditedImageReuseError, match="thumb exceeds"):
+        images.build_place_images_from_audit(
+            [candidate],
+            completed_jsonl=completed,
+            audited_cache_dir=cache,
+        )
+
+
+def test_build_place_images_from_audit_wraps_original_decode_failure(tmp_path, monkeypatch):
+    old_thumb = b"old-thumb"
+    thumb_sha = hashlib.sha256(old_thumb).hexdigest()
+    cache = tmp_path / "audit-cache"
+    thumb_path = cache / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp"
+    thumb_path.parent.mkdir(parents=True)
+    thumb_path.write_bytes(old_thumb)
+    original_path = cache / "raw" / "mt1_00000000000000000000000001.source"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"not-an-image")
+    completed = tmp_path / "completed.jsonl"
+    completed.write_text(
+        json.dumps(
+            {
+                "place_id": "mt1_00000000000000000000000001",
+                "thumb_sha256": thumb_sha,
+                "width": 320,
+                "height": 240,
+                "attribution": {
+                    "creator": None,
+                    "license_code": "CC0-1.0",
+                    "license_name": "CC0",
+                    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+                    "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+                    "modified": True,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+    )
+
+    monkeypatch.setattr(
+        images,
+        "transcode_to_webp_thumb",
+        lambda _path: (_ for _ in ()).throw(RuntimeError("worker failed")),
+    )
+
+    with pytest.raises(images.AuditedImageReuseError, match="original decode failed"):
         images.build_place_images_from_audit(
             [candidate],
             completed_jsonl=completed,
@@ -1087,16 +1257,28 @@ def test_build_place_images_records_decode_failure_without_aborting(tmp_path, mo
     assert reject == {"image_url": candidate.image_url, "reason": "decode_failed"}
 
 
-def test_image_worker_transcodes_allowed_jpeg_to_bounded_webp(tmp_path):
+def test_image_worker_transcodes_allowed_jpeg_to_bounded_webp(tmp_path, monkeypatch):
     from PIL import Image
 
     src = tmp_path / "source.jpg"
     Image.new("RGB", (800, 400), color=(128, 64, 32)).save(src, format="JPEG")
+    saved_qualities = []
+    original_save = Image.Image.save
+
+    def save_spy(self, fp, format=None, **params):
+        if format == "WEBP":
+            saved_qualities.append(params.get("quality"))
+        return original_save(self, fp, format=format, **params)
+
+    monkeypatch.setattr(Image.Image, "save", save_spy)
 
     payload = image_worker.transcode(src)
 
-    assert payload["width"] == 512
-    assert payload["height"] == 256
+    assert image_worker.THUMB_MAX_EDGE == 256
+    assert image_worker.THUMB_WEBP_QUALITY == 50
+    assert saved_qualities == [50]
+    assert payload["width"] == 256
+    assert payload["height"] == 128
     assert isinstance(payload["webp_b64"], str)
 
 

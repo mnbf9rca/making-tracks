@@ -1,6 +1,7 @@
 import asyncio
 import dataclasses
 import json
+from pathlib import Path
 
 import pytest
 
@@ -31,6 +32,24 @@ def test_cli_runs_a_stage(tmp_path):
     assert cli.main(["--region", "united-kingdom", "extract", "--db", str(db)]) == 0
     conn = store.connect(db)
     assert store.stage_completed(conn, "united-kingdom", "extract")
+
+
+def test_cli_writes_reported_file_log_when_log_dir_is_configured(tmp_path, capsys, monkeypatch):
+    log_dir = tmp_path / "logs"
+    monkeypatch.setenv("MT_PIPELINE_LOG_DIR", str(log_dir))
+
+    rc = cli.main(["--region", "united-kingdom", "audit", "--db", str(tmp_path / "w.db")])
+
+    assert rc == 0
+    captured = capsys.readouterr()
+    log_lines = [line for line in captured.err.splitlines() if line.startswith("LOG path=")]
+    assert len(log_lines) == 1
+    log_path = Path(log_lines[0].removeprefix("LOG path="))
+    assert log_path.parent == log_dir
+    assert log_path.is_file()
+    log_text = log_path.read_text(encoding="utf-8")
+    assert log_lines[0] in log_text
+    assert captured.out.strip() in log_text
 
 
 def test_cli_rejects_unknown_region_without_traceback(tmp_path, capsys):
