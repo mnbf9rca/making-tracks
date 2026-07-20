@@ -72,7 +72,7 @@ Work packages (spec §8) are designed one at a time (design agent) and built one
 
 This binds **amendments as much as new designs**. A PR that changes how a surface looks or behaves carries the renders that show it, in the PR itself — not on a branch a reader would have to go and find. If the renders are not merged yet, the design change waits for them rather than going ahead alone. A reviewer opening a UI change and seeing only prose cannot review it.
 
-**Renders go in the related issues too, not only the PR.** An issue is where a decision is discussed and where someone arrives months later asking what was agreed; a PR is a moment. Post the renders on the issues the design serves, so the picture sits beside the discussion it settled.
+**Renders are integrated into the related issue's body, not only the PR.** Edit the body so the renders sit where they belong in its story — beside the decision they settle, not appended at the end and never as a comment. A PR is a moment; the issue body is the record.
 
 The split is the point: the **build agent renders**, the **design agent validates the renders against the design**, and **Rob rules on taste**. A designer validating their own mockup is not a gate. Design-correctness and taste are separate judgements and are made by separate parties.
 
@@ -86,7 +86,11 @@ The pipeline is the one from the place-card design: HTML wireframes rendered to 
 
 **Issue-closing discipline.** GitHub's `closes #N` keywords only fire on merges to the default branch (`main`), and our PRs merge to `develop`, so they never auto-close anything. When a WP's implementation PR merges, the merger closes the issue explicitly (`gh issue close N --comment ...`) and ticks the tracker (#25) checkbox. Never report an issue as closed without verifying its actual state (`gh issue view N`).
 
-**Keep the issue body current.** When a decision is put to Rob, or a ruling lands, edit the body (`gh issue edit N`) — Request / Status / Open questions. Comments carry point-in-time evidence: findings, measurements, test output. The body carries current state, and it is where Rob looks. Never let a work package's state accumulate only as a stack of appended comments.
+**An issue is a single coherent story, told in its body.** Not a conversation. When a decision is put to Rob, or a ruling lands, edit the body (`gh issue edit N`) so the whole thing still reads as one account of what this work is and where it stands — Request / Status / Open questions. Rewrite rather than append; a body that grew by accretion is a transcript wearing a body's clothes.
+
+Comments carry point-in-time evidence only: findings, measurements, test output, a render that has just been produced. **Comments are never the record.** Anything that changes what the issue *is* goes into the body, and if a comment ends up carrying state, move it and delete it.
+
+The body is where Rob looks. A stack of appended comments makes him reconstruct the story himself, which is the thing he is asking us not to do.
 
 **Labels.** Issues get a **track** label (`track-a-pipeline` / `track-b-ios` / `track-c-services`) plus a **type** label (`bug` / `enhancement` / `design` / `question`). `sourcery-review` and `greptile-review` are PR review triggers — never put them on an issue.
 
