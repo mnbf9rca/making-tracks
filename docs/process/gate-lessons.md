@@ -148,6 +148,11 @@ before opening the PR.
 
 **Where implementation and design diverge, flag it.** Do not silently conform the doc to the code.
 
+**A change that hides, thins, or samples map pins by tier, fame, importance, or zoom contradicts
+`PRINCIPLES.md` §Product 7 — set it aside.** `tier` in the pin code is a ranking input, never a visibility
+gate; crowding is clustering, and any perf cost returns as numbers, not a quieter map. This recurs because
+reviewers read `tier` as a knob; cite the principle by number rather than re-arguing it each time.
+
 **Before rebasing an old branch, run `git diff origin/<target>..branch`.** A large-deletion diff means the
 branch is stale and would regress shipped work. Argue to close it rather than rebasing.
 
