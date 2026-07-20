@@ -279,6 +279,10 @@ def _build_place_images(
             )
         assert audited_image_completed_jsonl is not None
         assert audited_image_cache_dir is not None
+        selected_candidates = images.exclude_cached_rejects(
+            selected_candidates,
+            cache_dir=pathlib.Path(audited_image_cache_dir),
+        )
         return images.build_place_images_from_audit(
             selected_candidates,
             completed_jsonl=pathlib.Path(audited_image_completed_jsonl),

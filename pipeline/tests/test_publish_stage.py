@@ -80,6 +80,58 @@ def test_upload_audited_reuse_requires_complete_candidate_coverage(tmp_path, mon
     ]
 
 
+def test_upload_audited_reuse_excludes_retained_rejects(tmp_path, monkeypatch):
+    accepted = P.images.ImageCandidate(
+        place_id=A,
+        lat=3.10,
+        lon=101.70,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+    )
+    rejected = P.images.ImageCandidate(
+        place_id=B,
+        lat=3.11,
+        lon=101.71,
+        image_url="https://commons.wikimedia.org/wiki/Special:FilePath/Rejected.jpg",
+    )
+    reject_dir = tmp_path / "audit-cache" / "rejects"
+    reject_dir.mkdir(parents=True)
+    (reject_dir / f"{B}.json").write_text(
+        json.dumps(
+            {
+                "image_url": rejected.image_url,
+                "reason": "license_url_invalid",
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    seen = []
+
+    def fake_audited(candidates, *, completed_jsonl, audited_cache_dir, require_complete=False):
+        seen.append((list(candidates), completed_jsonl, audited_cache_dir, require_complete))
+        return []
+
+    monkeypatch.setattr(P.images, "build_place_images_from_audit", fake_audited)
+
+    P._build_place_images(
+        [accepted, rejected],
+        staging_root=tmp_path / "stage",
+        audited_image_completed_jsonl=tmp_path / "completed.jsonl",
+        audited_image_cache_dir=tmp_path / "audit-cache",
+        no_image_fetch=True,
+        require_complete_audit=True,
+    )
+
+    assert seen == [
+        (
+            [accepted],
+            tmp_path / "completed.jsonl",
+            tmp_path / "audit-cache",
+            True,
+        )
+    ]
+
+
 def test_upload_image_fetch_requires_complete_candidate_coverage(tmp_path, monkeypatch):
     candidate = P.images.ImageCandidate(
         place_id=A,
