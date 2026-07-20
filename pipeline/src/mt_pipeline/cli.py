@@ -133,7 +133,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--image-candidate-limit",
         type=int,
-        help="for publish, cap image candidates after score-ordered image-candidate selection",
+        help="for local publish staging only, cap image candidates after score-ordered image-candidate selection",
     )
     parser.add_argument(
         "--audited-image-completed-jsonl",
@@ -148,7 +148,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--no-image-fetch",
         action="store_true",
-        help="for publish, do not fetch Commons metadata or image bytes",
+        help="for local publish staging only, do not fetch Commons metadata or image bytes",
     )
     parser.add_argument(
         "--no-zone-catalog",

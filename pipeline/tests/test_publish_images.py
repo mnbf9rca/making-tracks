@@ -563,6 +563,14 @@ def test_build_place_images_from_audit_reuses_place_id_rows_without_fetching(
     ]
     assert "AUDITED_IMAGE_REUSE candidates=2 selected=1 missing_skipped=1 audited_total=1" in capsys.readouterr().out
 
+    with pytest.raises(images.AuditedImageReuseError, match="missing 1 of 2"):
+        images.build_place_images_from_audit(
+            candidates,
+            completed_jsonl=completed,
+            audited_cache_dir=cache,
+            require_complete=True,
+        )
+
 
 def test_build_place_images_from_audit_fails_on_missing_or_mismatched_thumb(tmp_path):
     thumb_sha = hashlib.sha256(b"expected").hexdigest()

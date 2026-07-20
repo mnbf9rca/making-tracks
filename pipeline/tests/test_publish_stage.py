@@ -20,6 +20,116 @@ C = "mt1_" + "2" * 26
 D = "mt1_" + "3" * 26
 
 
+def test_upload_rejects_image_candidate_limit(conn, tmp_path):
+    with pytest.raises(P.PublishStageError, match="image-candidate-limit"):
+        P.run(
+            conn,
+            "malaysia-singapore-brunei",
+            publish_version="20260715T120000Z",
+            generated_at="2026-07-15T12:00:00Z",
+            upload=True,
+            image_candidate_limit=1,
+            staging_root=tmp_path / "stage",
+        )
+
+
+def test_upload_rejects_no_image_fetch_without_audited_reuse(conn, tmp_path):
+    with pytest.raises(P.PublishStageError, match="no-image-fetch"):
+        P.run(
+            conn,
+            "malaysia-singapore-brunei",
+            publish_version="20260715T120000Z",
+            generated_at="2026-07-15T12:00:00Z",
+            upload=True,
+            no_image_fetch=True,
+            staging_root=tmp_path / "stage",
+        )
+
+
+def test_upload_audited_reuse_requires_complete_candidate_coverage(tmp_path, monkeypatch):
+    candidate = P.images.ImageCandidate(
+        place_id=A,
+        lat=3.10,
+        lon=101.70,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+    )
+    seen = []
+
+    def fake_audited(candidates, *, completed_jsonl, audited_cache_dir, require_complete=False):
+        seen.append((list(candidates), completed_jsonl, audited_cache_dir, require_complete))
+        return []
+
+    monkeypatch.setattr(P.images, "build_place_images_from_audit", fake_audited)
+
+    P._build_place_images(
+        [candidate],
+        staging_root=tmp_path / "stage",
+        audited_image_completed_jsonl=tmp_path / "completed.jsonl",
+        audited_image_cache_dir=tmp_path / "audit-cache",
+        no_image_fetch=True,
+        require_complete_audit=True,
+    )
+
+    assert seen == [
+        (
+            [candidate],
+            tmp_path / "completed.jsonl",
+            tmp_path / "audit-cache",
+            True,
+        )
+    ]
+
+
+def test_upload_image_fetch_requires_complete_candidate_coverage(tmp_path, monkeypatch):
+    candidate = P.images.ImageCandidate(
+        place_id=A,
+        lat=3.10,
+        lon=101.70,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+    )
+    monkeypatch.setattr(P.images, "build_place_images", lambda *_args, **_kwargs: [])
+
+    with pytest.raises(P.PublishStageError, match="did not produce all scoped images"):
+        P._build_place_images(
+            [candidate],
+            staging_root=tmp_path / "stage",
+            audited_image_completed_jsonl=None,
+            audited_image_cache_dir=None,
+            no_image_fetch=False,
+            require_complete_fetch=True,
+        )
+
+
+def test_upload_rejects_description_sidecar_drops(tmp_path):
+    result = P.PublishedTargetResult(
+        staging_dir=tmp_path,
+        manifest={"region": "malaysia-singapore-brunei"},
+        counts=P.tiles.PublishCounts(
+            total_published=1,
+            by_tier=(0, 0, 1, 0),
+            uncategorized_excluded=0,
+            invalid_excluded=0,
+            non_winner_excluded=0,
+            overflow_dropped=0,
+        ),
+        publish_result=P.r2.PublishResult(
+            plan=P.r2.PublishPlan(
+                layout={
+                    "public_bucket": "making-tracks-tiles",
+                    "private_bucket": "making-tracks-state",
+                },
+                region="malaysia-singapore-brunei",
+                publish_version="20260715T120000Z",
+                ops=(),
+            )
+        ),
+        description_index_dropped=1,
+    )
+
+    with pytest.raises(P.PublishStageError, match="description sidecars dropped"):
+        P._assert_upload_sidecar_completeness([result])
+
+
 def test_publish_stage_builds_local_staging_and_marks_shipped(
     conn, tmp_path, monkeypatch
 ):
@@ -750,8 +860,8 @@ def test_publish_stage_uses_audited_images_and_can_disable_fetch(
             bbox=list(region_config["basemap"]["bbox"]),
         )
 
-    def fake_audited(candidates, *, completed_jsonl, audited_cache_dir):
-        seen.append((list(candidates), completed_jsonl, audited_cache_dir))
+    def fake_audited(candidates, *, completed_jsonl, audited_cache_dir, require_complete=False):
+        seen.append((list(candidates), completed_jsonl, audited_cache_dir, require_complete))
         return [
             P.images.PlaceImage(
                 place_id=A,
@@ -793,7 +903,7 @@ def test_publish_stage_uses_audited_images_and_can_disable_fetch(
         no_image_fetch=True,
     )
 
-    assert seen[0][1:] == (completed, audit_cache)
+    assert seen[0][1:] == (completed, audit_cache, False)
     assert [candidate.place_id for candidate in seen[0][0]] == [A]
     assert sorted(result.staging_dir.glob("images/10/*/*.json"))
 
