@@ -1285,9 +1285,9 @@ final class MakingTracksTilesTests: XCTestCase {
     }
 
     func testRegionIndexRejectsUnsafeIDsBeforeFetchPathComposition() throws {
-        var object = regionIndexObject()
+        var object = regionIndexV3Object()
         object["regions"] = [
-            regionIndexEntry(["id": "../uk"]),
+            regionIndexV3Entry(["id": "../uk"]),
         ]
 
         XCTAssertThrowsError(try RegionIndex.decode(jsonData(object))) {
@@ -1296,19 +1296,19 @@ final class MakingTracksTilesTests: XCTestCase {
     }
 
     func testRegionIndexRejectsHostileShapesAndFutureReaders() throws {
-        var duplicate = regionIndexObject()
-        duplicate["regions"] = [regionIndexEntry(), regionIndexEntry()]
-        var unknownKey = regionIndexObject()
+        var duplicate = regionIndexV3Object()
+        duplicate["regions"] = [regionIndexV3Entry(), regionIndexV3Entry()]
+        var unknownKey = regionIndexV3Object()
         unknownKey["extra"] = true
-        var badParent = regionIndexObject()
-        badParent["regions"] = [regionIndexEntry(["parent": "missing"])]
-        var badBBox = regionIndexObject()
-        badBBox["regions"] = [regionIndexEntry(["bbox": [1.0, 49.84, -8.65, 60.86]])]
-        var badNumbers = regionIndexObject()
-        badNumbers["regions"] = [regionIndexEntry(["bytes_with_thumbnails": 1_000_000])]
-        var unsafeText = regionIndexObject()
-        unsafeText["regions"] = [regionIndexEntry(["display_name": "United\u{202E}Kingdom"])]
-        var futureReader = regionIndexObject()
+        var badParent = regionIndexV3Object()
+        badParent["regions"] = [regionIndexV3Entry(["parent": "missing"])]
+        var badBBox = regionIndexV3Object()
+        badBBox["regions"] = [regionIndexV3Entry(["bbox": [1.0, 49.84, -8.65, 60.86]])]
+        var badNumbers = regionIndexV3Object()
+        badNumbers["regions"] = [regionIndexV3Entry(["bytes_with_thumbs": 1_000_000])]
+        var unsafeText = regionIndexV3Object()
+        unsafeText["regions"] = [regionIndexV3Entry(["display_name": "United\u{202E}Kingdom"])]
+        var futureReader = regionIndexV3Object()
         futureReader["min_reader_version"] = VersionGate.readerVersion + 1
 
         for object in [duplicate, unknownKey, badParent, badBBox, badNumbers, unsafeText, futureReader] {
@@ -1321,14 +1321,164 @@ final class MakingTracksTilesTests: XCTestCase {
         }
     }
 
-    func testRegionIndexAcceptsPublishVersionsAndBoundedFootprints() throws {
-        let index = try RegionIndex.decode(jsonData(regionIndexObject()))
+    func testRegionIndexAcceptsLiveV3Contract() throws {
+        let index = try RegionIndex.decode(jsonData(regionIndexV3Object()))
 
-        XCTAssertEqual(index.schemaVersion, 2)
-        XCTAssertEqual(index.regions.map(\.id), ["united-kingdom", "united-kingdom_london"])
-        XCTAssertEqual(index.regions.first?.publishVersion, "20260716T155409Z")
+        XCTAssertEqual(index.schemaVersion, 3)
+        XCTAssertEqual(index.minReaderVersion, 1)
+        XCTAssertEqual(index.regions.map(\.id), ["malaysia-singapore-brunei", "united-kingdom"])
+        XCTAssertEqual(index.regions.first?.bytesWithoutThumbnails, 228_849_472)
+        XCTAssertEqual(index.regions.first?.bytesWithThumbnails, 240_582_030)
+        XCTAssertEqual(index.regions.first?.publishVersion, "20260719T125813Z")
+        XCTAssertEqual(index.regions.last?.publishVersion, "20260719T125813Z")
+        XCTAssertEqual(index.regions.first?.searchCompact.path, "malaysia-singapore-brunei/20260719T125813Z/search/compact.json")
+        XCTAssertEqual(index.regions.first?.searchCompact.schemaVersion, 1)
+    }
+
+    func testRegionIndexRejectsV2PayloadsAsAbsentCatalogs() throws {
+        XCTAssertThrowsError(try RegionIndex.decode(jsonData(regionIndexObject()))) {
+            XCTAssertEqual($0 as? TileError, .invalidRegionIndex)
+        }
+    }
+
+    func testRegionIndexToleratesOptionalPublishVersionButUsesV3Footprints() throws {
+        var object = regionIndexV3Object()
+        object["regions"] = [
+            regionIndexV3Entry([
+                "publish_version": NSNull(),
+                "bytes_without_thumbs": 3_221_225_472,
+                "bytes_with_thumbs": 8_589_934_592,
+            ]),
+        ]
+
+        let index = try RegionIndex.decode(jsonData(object))
+
+        XCTAssertEqual(index.schemaVersion, 3)
+        XCTAssertEqual(index.regions.map(\.id), ["united-kingdom"])
+        XCTAssertNil(index.regions.first?.publishVersion)
         XCTAssertEqual(index.regions.first?.bbox, BBox(minLon: -8.65, minLat: 49.84, maxLon: 1.77, maxLat: 60.86))
-        XCTAssertEqual(index.regions.first?.bytesWithThumbnails, 2_500_000)
+        XCTAssertEqual(index.regions.first?.bytesWithoutThumbnails, 3_221_225_472)
+        XCTAssertEqual(index.regions.first?.bytesWithThumbnails, 8_589_934_592)
+    }
+
+    func testRegionIndexRejectsMissingSearchCompactAndLegacyByteKeys() throws {
+        var missingSearch = regionIndexV3Object()
+        var missingSearchEntry = regionIndexV3Entry()
+        missingSearchEntry.removeValue(forKey: "search_compact")
+        missingSearch["regions"] = [missingSearchEntry]
+
+        var legacyByteKeys = regionIndexV3Object()
+        var legacyEntry = regionIndexV3Entry()
+        legacyEntry.removeValue(forKey: "bytes_without_thumbs")
+        legacyEntry.removeValue(forKey: "bytes_with_thumbs")
+        legacyEntry["bytes_without_thumbnails"] = 2_000_000
+        legacyEntry["bytes_with_thumbnails"] = 2_500_000
+        legacyByteKeys["regions"] = [legacyEntry]
+
+        for object in [missingSearch, legacyByteKeys] {
+            XCTAssertThrowsError(try RegionIndex.decode(jsonData(object))) {
+                XCTAssertEqual($0 as? TileError, .invalidRegionIndex)
+            }
+        }
+    }
+
+    func testRegionIndexRejectsInvalidSearchCompactObjects() throws {
+        var absolutePath = regionIndexV3Object()
+        absolutePath["regions"] = [regionIndexV3Entry(["search_compact": [
+            "path": "/united-kingdom/20260719T125813Z/search/compact.json",
+            "sha256": String(repeating: "a", count: 64),
+            "bytes": 197,
+            "schema_version": 1,
+        ]])]
+        var traversalPath = regionIndexV3Object()
+        traversalPath["regions"] = [regionIndexV3Entry(["search_compact": [
+            "path": "united-kingdom/../20260719T125813Z/search/compact.json",
+            "sha256": String(repeating: "a", count: 64),
+            "bytes": 197,
+            "schema_version": 1,
+        ]])]
+        var wrongLeaf = regionIndexV3Object()
+        wrongLeaf["regions"] = [regionIndexV3Entry(["search_compact": [
+            "path": "united-kingdom/20260719T125813Z/search/index.json",
+            "sha256": String(repeating: "a", count: 64),
+            "bytes": 197,
+            "schema_version": 1,
+        ]])]
+        var badHash = regionIndexV3Object()
+        badHash["regions"] = [regionIndexV3Entry(["search_compact": [
+            "path": "united-kingdom/20260719T125813Z/search/compact.json",
+            "sha256": String(repeating: "A", count: 64),
+            "bytes": 197,
+            "schema_version": 1,
+        ]])]
+        var tooLarge = regionIndexV3Object()
+        tooLarge["regions"] = [regionIndexV3Entry(["search_compact": [
+            "path": "united-kingdom/20260719T125813Z/search/compact.json",
+            "sha256": String(repeating: "a", count: 64),
+            "bytes": 3_221_225_473,
+            "schema_version": 1,
+        ]])]
+        var badSchema = regionIndexV3Object()
+        badSchema["regions"] = [regionIndexV3Entry(["search_compact": [
+            "path": "united-kingdom/20260719T125813Z/search/compact.json",
+            "sha256": String(repeating: "a", count: 64),
+            "bytes": 197,
+            "schema_version": 0,
+        ]])]
+        var wrongRegionPath = regionIndexV3Object()
+        wrongRegionPath["regions"] = [regionIndexV3Entry(["search_compact": [
+            "path": "malaysia-singapore-brunei/20260719T125813Z/search/compact.json",
+            "sha256": String(repeating: "a", count: 64),
+            "bytes": 197,
+            "schema_version": 1,
+        ]])]
+        var badPublishPath = regionIndexV3Object()
+        badPublishPath["regions"] = [regionIndexV3Entry(["search_compact": [
+            "path": "united-kingdom/not-a-publish-version/search/compact.json",
+            "sha256": String(repeating: "a", count: 64),
+            "bytes": 197,
+            "schema_version": 1,
+        ]])]
+
+        for object in [absolutePath, traversalPath, wrongLeaf, badHash, tooLarge, badSchema, wrongRegionPath, badPublishPath] {
+            XCTAssertThrowsError(try RegionIndex.decode(jsonData(object))) {
+                XCTAssertEqual($0 as? TileError, .invalidRegionIndex)
+            }
+        }
+    }
+
+    func testRegionIndexAppliesV3StringAndCollectionBounds() throws {
+        let maxID = "r" + String(repeating: "a", count: 128)
+        let maxDisplayName = String(repeating: "A", count: 80)
+        var valid = regionIndexV3Object()
+        valid["regions"] = [regionIndexV3Entry([
+            "id": maxID,
+            "display_name": maxDisplayName,
+            "search_compact": [
+                "path": "\(maxID)/20260719T125813Z/search/compact.json",
+                "sha256": String(repeating: "a", count: 64),
+                "bytes": 197,
+                "schema_version": 1,
+            ],
+        ])]
+        XCTAssertNoThrow(try RegionIndex.decode(jsonData(valid)))
+
+        var tooLongID = regionIndexV3Object()
+        tooLongID["regions"] = [regionIndexV3Entry(["id": "r" + String(repeating: "a", count: 129)])]
+        var tooLongDisplayName = regionIndexV3Object()
+        tooLongDisplayName["regions"] = [regionIndexV3Entry(["display_name": String(repeating: "A", count: 81)])]
+        var emptyRegions = regionIndexV3Object()
+        emptyRegions["regions"] = []
+        var tooManyRegions = regionIndexV3Object()
+        tooManyRegions["regions"] = (0...RegionIndex.maxRegionCount).map { index in
+            regionIndexV3Entry(["id": "region-\(index)"])
+        }
+
+        for object in [tooLongID, tooLongDisplayName, emptyRegions, tooManyRegions] {
+            XCTAssertThrowsError(try RegionIndex.decode(jsonData(object))) {
+                XCTAssertEqual($0 as? TileError, .invalidRegionIndex)
+            }
+        }
     }
 
     func testOfflinePackInstallRejectsTileShaMismatchWithoutInstallingPack() throws {
@@ -6174,6 +6324,70 @@ private func regionIndexEntry(_ overrides: [String: Any] = [:]) -> [String: Any]
         "tile_count": 184,
         "bytes_without_thumbnails": 2_000_000,
         "bytes_with_thumbnails": 2_500_000,
+    ]
+    for (key, value) in overrides {
+        entry[key] = value
+    }
+    return entry
+}
+
+private func regionIndexV3Object() -> [String: Any] {
+    [
+        "schema_version": 3,
+        "min_reader_version": 1,
+        "generated_at": "2026-07-19T12:58:13Z",
+        "regions": [
+            regionIndexV3Entry([
+                "id": "malaysia-singapore-brunei",
+                "display_name": "Malaysia, Singapore, and Brunei",
+                "bbox": [99.64, 0.85, 119.27, 7.36],
+                "basemap_bytes": 223_155_574,
+                "tile_count": 207,
+                "bytes_without_thumbs": 228_849_472,
+                "bytes_with_thumbs": 240_582_030,
+                "search_compact": [
+                    "bytes": 208,
+                    "path": "malaysia-singapore-brunei/20260719T125813Z/search/compact.json",
+                    "schema_version": 1,
+                    "sha256": "2e1b9a48552dced6673988fb0a72da220dee0a05159247880d9851590f25b18a",
+                ],
+            ]),
+            regionIndexV3Entry([
+                "id": "united-kingdom",
+                "display_name": "United Kingdom",
+                "bbox": [-8.65, 49.84, 1.77, 60.86],
+                "basemap_bytes": 1_463_177_229,
+                "tile_count": 1_163,
+                "bytes_without_thumbs": 2_251_186_978,
+                "bytes_with_thumbs": 4_333_193_970,
+                "search_compact": [
+                    "bytes": 197,
+                    "path": "united-kingdom/20260719T125813Z/search/compact.json",
+                    "schema_version": 1,
+                    "sha256": "6b70bdce9768dfc052f51d5d738de5b7ea57c8ed62accf7ce288dd9cbc7ccdfb",
+                ],
+            ]),
+        ],
+    ]
+}
+
+private func regionIndexV3Entry(_ overrides: [String: Any] = [:]) -> [String: Any] {
+    var entry: [String: Any] = [
+        "id": "united-kingdom",
+        "display_name": "United Kingdom",
+        "parent": NSNull(),
+        "bbox": [-8.65, 49.84, 1.77, 60.86],
+        "publish_version": "20260719T125813Z",
+        "search_compact": [
+            "path": "united-kingdom/20260719T125813Z/search/compact.json",
+            "sha256": String(repeating: "a", count: 64),
+            "bytes": 197,
+            "schema_version": 1,
+        ],
+        "basemap_bytes": 1_463_177_229,
+        "tile_count": 1_163,
+        "bytes_without_thumbs": 2_251_186_978,
+        "bytes_with_thumbs": 4_333_193_970,
     ]
     for (key, value) in overrides {
         entry[key] = value

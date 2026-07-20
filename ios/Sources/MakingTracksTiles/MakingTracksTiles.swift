@@ -22,7 +22,7 @@ public enum SchemaCompatibility: Sendable, Equatable {
 public enum VersionGate {
     public static let readerVersion = 2
     public static let readerSchemaVersion = 1
-    public static let regionIndexReaderSchemaVersion = 2
+    public static let regionIndexReaderSchemaVersion = 3
     public static let minSupportedSchemaVersion = 1
 
     public static func schema(readerMax: Int, dataVersion: Int, minSupported: Int) -> SchemaCompatibility {
@@ -56,7 +56,7 @@ public struct BBox: Sendable, Equatable {
     }
 }
 
-private let regionIDPattern = "^[a-z][a-z0-9_-]{0,63}$"
+private let regionIDPattern = "^[a-z][a-z0-9_-]{0,128}$"
 
 public struct TileCoordinate: Codable, Sendable, Hashable {
     public let z: Int
@@ -2585,7 +2585,7 @@ public enum PrefetchRing {
 
 public struct RegionIndex: Sendable, Equatable {
     public static let maxBytes = 512 * 1024
-    public static let maxRegionCount = 10_000
+    public static let maxRegionCount = 512
 
     public let schemaVersion: Int
     public let minReaderVersion: Int
@@ -2598,10 +2598,18 @@ public struct RegionIndex: Sendable, Equatable {
         public let parent: String?
         public let bbox: BBox
         public let publishVersion: String?
+        public let searchCompact: SearchCompact
         public let basemapBytes: Int
         public let tileCount: Int
         public let bytesWithoutThumbnails: Int
         public let bytesWithThumbnails: Int
+    }
+
+    public struct SearchCompact: Sendable, Equatable {
+        public let path: String
+        public let sha256: String
+        public let bytes: Int
+        public let schemaVersion: Int
     }
 
     public static func decode(_ data: Data) throws -> RegionIndex {
@@ -2611,20 +2619,18 @@ public struct RegionIndex: Sendable, Equatable {
         let allowed: Set<String> = ["schema_version", "min_reader_version", "generated_at", "regions"]
         guard Set(object.keys).isSubset(of: allowed),
               let schemaVersion = object["schema_version"] as? Int,
-              VersionGate.schema(readerMax: VersionGate.regionIndexReaderSchemaVersion, dataVersion: schemaVersion, minSupported: VersionGate.minSupportedSchemaVersion) == .ok,
+              VersionGate.schema(readerMax: VersionGate.regionIndexReaderSchemaVersion, dataVersion: schemaVersion, minSupported: VersionGate.regionIndexReaderSchemaVersion) == .ok,
               let minReaderVersion = object["min_reader_version"] as? Int,
               minReaderVersion >= 1,
               VersionGate.reader(minReaderVersion: minReaderVersion, hasReadableCache: false) == .ok,
+              let generatedAt = object["generated_at"] as? String,
               let entries = object["regions"] as? [[String: Any]],
+              !entries.isEmpty,
               entries.count <= maxRegionCount
         else { throw TileError.invalidRegionIndex }
-        if let generatedAt = object["generated_at"] as? String {
-            guard generatedAt.count <= 32,
-                  generatedAt.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$")
-            else { throw TileError.invalidRegionIndex }
-        } else if object.keys.contains("generated_at"), !(object["generated_at"] is NSNull) {
-            throw TileError.invalidRegionIndex
-        }
+        guard generatedAt.count <= 32,
+              generatedAt.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$")
+        else { throw TileError.invalidRegionIndex }
         let regions = try entries.map(decodeEntry)
         guard Set(regions.map(\.id)).count == regions.count else { throw TileError.invalidRegionIndex }
         let knownIDs = Set(regions.map(\.id))
@@ -2634,7 +2640,7 @@ public struct RegionIndex: Sendable, Equatable {
         return RegionIndex(
             schemaVersion: schemaVersion,
             minReaderVersion: minReaderVersion,
-            generatedAt: object["generated_at"] as? String,
+            generatedAt: generatedAt,
             regions: regions
         )
     }
@@ -2642,25 +2648,27 @@ public struct RegionIndex: Sendable, Equatable {
     private static func decodeEntry(_ object: [String: Any]) throws -> Entry {
         let allowed: Set<String> = [
             "id", "display_name", "parent", "bbox", "publish_version",
-            "basemap_bytes", "tile_count", "bytes_without_thumbnails", "bytes_with_thumbnails",
+            "search_compact", "basemap_bytes", "tile_count", "bytes_without_thumbs", "bytes_with_thumbs",
         ]
         guard Set(object.keys).isSubset(of: allowed),
               let id = object["id"] as? String,
               id.matches(regionIDPattern),
               let displayName = object["display_name"] as? String,
-              (1...120).contains(displayName.scalarCount),
+              (1...80).contains(displayName.scalarCount),
               displayName.isSafeText,
               let bboxValues = object["bbox"] as? [Double],
               bboxValues.count == 4,
+              let searchCompactObject = object["search_compact"] as? [String: Any],
               let basemapBytes = object["basemap_bytes"] as? Int,
               (0...3_221_225_472).contains(basemapBytes),
               let tileCount = object["tile_count"] as? Int,
               (0...1_048_576).contains(tileCount),
-              let bytesWithoutThumbnails = object["bytes_without_thumbnails"] as? Int,
-              (0...20_000_000_000).contains(bytesWithoutThumbnails),
-              let bytesWithThumbnails = object["bytes_with_thumbnails"] as? Int,
-              (bytesWithoutThumbnails...20_000_000_000).contains(bytesWithThumbnails)
+              let bytesWithoutThumbnails = object["bytes_without_thumbs"] as? Int,
+              (0...3_221_225_472).contains(bytesWithoutThumbnails),
+              let bytesWithThumbnails = object["bytes_with_thumbs"] as? Int,
+              (bytesWithoutThumbnails...8_589_934_592).contains(bytesWithThumbnails)
         else { throw TileError.invalidRegionIndex }
+        let searchCompact = try decodeSearchCompact(searchCompactObject, regionID: id)
         let parent: String?
         if let value = object["parent"] as? String {
             guard value.matches(regionIDPattern) else { throw TileError.invalidRegionIndex }
@@ -2693,11 +2701,29 @@ public struct RegionIndex: Sendable, Equatable {
             parent: parent,
             bbox: bbox,
             publishVersion: publishVersion,
+            searchCompact: searchCompact,
             basemapBytes: basemapBytes,
             tileCount: tileCount,
             bytesWithoutThumbnails: bytesWithoutThumbnails,
             bytesWithThumbnails: bytesWithThumbnails
         )
+    }
+
+    private static func decodeSearchCompact(_ object: [String: Any], regionID: String) throws -> SearchCompact {
+        let allowed: Set<String> = ["path", "sha256", "bytes", "schema_version"]
+        let escapedRegionID = NSRegularExpression.escapedPattern(for: regionID)
+        guard Set(object.keys) == allowed,
+              let path = object["path"] as? String,
+              (1...512).contains(path.count),
+              path.matches("^\(escapedRegionID)/[0-9]{8}T[0-9]{6}Z/search/compact\\.json$"),
+              let sha256 = object["sha256"] as? String,
+              sha256.matches("^[0-9a-f]{64}$"),
+              let bytes = object["bytes"] as? Int,
+              (0...3_221_225_472).contains(bytes),
+              let schemaVersion = object["schema_version"] as? Int,
+              (1...100).contains(schemaVersion)
+        else { throw TileError.invalidRegionIndex }
+        return SearchCompact(path: path, sha256: sha256, bytes: bytes, schemaVersion: schemaVersion)
     }
 }
 
