@@ -1,4 +1,6 @@
 import Foundation
+import SwiftUI
+import UIKit
 import XCTest
 import MakingTracksData
 import MakingTracksMapStyle
@@ -6,6 +8,42 @@ import MakingTracksTiles
 @testable import MakingTracks
 
 final class AppShellTests: XCTestCase {
+    func testPlaceCardVisualSpecMatchesApprovedCardLayout() {
+        XCTAssertEqual(PlaceCardVisualSpec.closeSystemImageName, "ellipsis")
+        XCTAssertTrue(PlaceCardVisualSpec.showsMediaSlotWhenPhotoMissing)
+        XCTAssertEqual(PlaceCardVisualSpec.actionCornerRadius, 8)
+        XCTAssertEqual(PlaceCardVisualSpec.actionMinimumHeight, 44)
+        XCTAssertEqual(PlaceCardVisualSpec.mediaSlotHeight, 132)
+        XCTAssertEqual(PlaceCardVisualSpec.cardCornerRadius, 22)
+        XCTAssertEqual(PlaceCardVisualSpec.typeSwatchSide, 14)
+        XCTAssertEqual(PlaceCardVisualSpec.actionBarHorizontalPadding, 18)
+        assertColor(PlaceCardVisualSpec.cardBackground, red: 0.985, green: 0.98, blue: 0.95)
+        assertColor(PlaceCardVisualSpec.mediaBackground, red: 0.82, green: 0.79, blue: 0.70)
+        assertColor(PlaceCardVisualSpec.neutralActionBackground, red: 0.93, green: 0.92, blue: 0.88)
+        assertColor(PlaceCardVisualSpec.primaryActionBackground, red: 0.02, green: 0.46, blue: 0.39)
+        assertColor(PlaceCardVisualSpec.loveActionBackground, red: 0.99, green: 0.89, blue: 0.89)
+        assertColor(PlaceCardVisualSpec.warningActionBackground, red: 0.95, green: 0.91, blue: 0.82)
+        assertColor(PlaceCardVisualSpec.disabledActionBackground, red: 0.96, green: 0.95, blue: 0.91)
+        assertColor(PlaceCardVisualSpec.primaryText, red: 0.12, green: 0.12, blue: 0.11)
+        assertColor(PlaceCardVisualSpec.secondaryText, red: 0.43, green: 0.42, blue: 0.38)
+        assertColor(PlaceCardVisualSpec.linkText, red: 0.0, green: 0.43, blue: 0.37)
+        assertColor(PlaceCardVisualSpec.loveText, red: 0.77, green: 0.19, blue: 0.17)
+        assertColor(PlaceCardVisualSpec.warningText, red: 0.46, green: 0.34, blue: 0.12)
+        assertColor(PlaceCardVisualSpec.disabledText, red: 0.68, green: 0.66, blue: 0.61)
+    }
+
+    func testPlaceCardActionTonesFollowRuledSlotsWithoutDestructiveHide() {
+        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .save), .neutral)
+        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .seen), .primary)
+        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .hide), .neutral)
+        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .love), .love)
+        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .unlove), .love)
+        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .unsee(isEnabled: true)), .warning)
+        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .unsee(isEnabled: false)), .disabled)
+        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .seenDisabled), .disabled)
+        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .unhide), .neutral)
+    }
+
     func testMapHomeChromeUsesFilterGlyphAndChiplessMenuSpec() {
         XCTAssertEqual(MapHomeChromeSpec.layersSymbolName(isActive: false), "line.3.horizontal.decrease.circle")
         XCTAssertEqual(MapHomeChromeSpec.layersSymbolName(isActive: true), "line.3.horizontal.decrease.circle.fill")
@@ -2044,4 +2082,25 @@ private final class AppStubFetcher: TileFetching, @unchecked Sendable {
 
 private func appJSONData(_ object: Any) throws -> Data {
     try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+}
+
+private func assertColor(
+    _ color: Color,
+    red expectedRed: CGFloat,
+    green expectedGreen: CGFloat,
+    blue expectedBlue: CGFloat,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    let uiColor = UIColor(color)
+    var red: CGFloat = 0
+    var green: CGFloat = 0
+    var blue: CGFloat = 0
+    var alpha: CGFloat = 0
+
+    XCTAssertTrue(uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha), file: file, line: line)
+    XCTAssertEqual(red, expectedRed, accuracy: 0.001, file: file, line: line)
+    XCTAssertEqual(green, expectedGreen, accuracy: 0.001, file: file, line: line)
+    XCTAssertEqual(blue, expectedBlue, accuracy: 0.001, file: file, line: line)
+    XCTAssertEqual(alpha, 1, accuracy: 0.001, file: file, line: line)
 }

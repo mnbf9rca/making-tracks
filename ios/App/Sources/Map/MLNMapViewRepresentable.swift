@@ -312,26 +312,33 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, @preconcurrency MLNMapViewDelegate {
-        private final class PinAccessibilityElement: UIAccessibilityElement {
+        private final class PinHitTargetView: UIControl {
             let placeID: String
-            weak var viewContainer: UIView?
             var activate: ((String) -> Void)?
 
             init(placeID: String, container: MapAccessibilityContainerView) {
                 self.placeID = placeID
-                viewContainer = container
-                super.init(accessibilityContainer: container)
+                super.init(frame: .zero)
+                isAccessibilityElement = true
+                backgroundColor = .clear
+                addAction(UIAction { [weak self] _ in
+                    guard let self else { return }
+                    self.activate?(self.placeID)
+                }, for: .touchUpInside)
+                container.addSubview(self)
+            }
+
+            @available(*, unavailable)
+            required init?(coder: NSCoder) {
+                fatalError("init(coder:) has not been implemented")
             }
 
             func configure(content: MapPinAccessibilityContent, frame: CGRect) {
+                self.frame = frame
                 accessibilityIdentifier = content.identifier
                 accessibilityLabel = content.label
                 accessibilityHint = content.hint
                 accessibilityTraits = [.button]
-                accessibilityFrameInContainerSpace = frame
-                if let viewContainer {
-                    accessibilityFrame = UIAccessibility.convertToScreenCoordinates(frame, in: viewContainer)
-                }
             }
 
             override func accessibilityActivate() -> Bool {
@@ -401,8 +408,9 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         var renderedClusters: [String: PinCluster] = [:]
         var renderedTrackSignature: String?
         var pinAccessibilityNames: [String: String] = [:]
-        private var pinAccessibilityElements: [String: PinAccessibilityElement] = [:]
+        private var pinHitTargetViews: [String: PinHitTargetView] = [:]
         private var clusterAccessibilityElements: [String: ClusterAccessibilityElement] = [:]
+        private var needsPinAccessibilityRenderRefresh = false
 #if DEBUG
         private var needsProjectedDiagnosticsRenderSample = false
 #endif
@@ -574,16 +582,20 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             onMapLoadFailed()
         }
 
-#if DEBUG
         func mapViewDidFinishRenderingFrame(_ mapView: MLNMapView, fullyRendered: Bool) {
+            if needsPinAccessibilityRenderRefresh {
+                needsPinAccessibilityRenderRefresh = false
+                updatePinAccessibilityElements(on: mapView)
+            }
+#if DEBUG
             guard debugExposeFixturePinDiagnostics,
                   needsProjectedDiagnosticsRenderSample,
                   !pendingFeatures.isEmpty
             else { return }
             needsProjectedDiagnosticsRenderSample = false
             reportProjectedFeatureDiagnostics(on: mapView, features: pendingFeatures)
-        }
 #endif
+        }
 
         func mapView(_ mapView: MLNMapView, regionDidChangeWith reason: MLNCameraChangeReason, animated: Bool) {
             if reason.contains(.gesturePan) || reason.contains(.gestureRotate) {
@@ -650,6 +662,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             renderedFeatures = snapshot.singletons
             renderedClusters = Dictionary(uniqueKeysWithValues: snapshot.clusters.map { ($0.id, $0) })
             debugReportMapUpdateStatus("source applied features:\(features.count)")
+            needsPinAccessibilityRenderRefresh = true
             updatePinAccessibilityElements(on: map)
             if !features.isEmpty {
                 onFeaturesApplied()
@@ -768,21 +781,14 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             let candidates = renderedFeatures
                 .filter { feature in Self.isCategoryVisuallyExposed(feature.0.category, visibleCategories: currentVisibleCategories) }
                 .compactMap { place, state -> (String, MapPinAccessibilityContent, CGRect)? in
-                    let coordinate = CLLocationCoordinate2D(latitude: place.lat, longitude: place.lon)
-                    let point = map.convert(coordinate, toPointTo: container)
-                    let frame = CGRect(
-                        x: point.x - targetSide / 2,
-                        y: point.y - targetSide / 2,
-                        width: targetSide,
-                        height: targetSide
-                    )
-                    guard frame.intersects(container.bounds) else { return nil }
-                    let content = MapPinAccessibilityContent(
+                    guard let candidate = pinAccessibilityCandidate(
                         place: place,
                         state: state,
-                        name: pinAccessibilityNames[place.id]
-                    )
-                    return (place.id, content, frame)
+                        targetSide: targetSide,
+                        map: map,
+                        container: container
+                    ) else { return nil }
+                    return (place.id, candidate.0, candidate.1)
                 }
             var accessibilityElements: [Any] = []
             for cluster in renderedClusters.values.sorted(by: { $0.id < $1.id }) {
@@ -810,19 +816,22 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             }
             for (placeID, content, frame) in candidates {
                 visibleIDs.insert(placeID)
-                let element = pinAccessibilityElements[placeID] ?? {
-                    let next = PinAccessibilityElement(placeID: placeID, container: container)
+                let element = pinHitTargetViews[placeID] ?? {
+                    let next = PinHitTargetView(placeID: placeID, container: container)
                     next.activate = { [weak self] placeID in
                         self?.onTapPlace(placeID)
                     }
-                    pinAccessibilityElements[placeID] = next
+                    pinHitTargetViews[placeID] = next
                     return next
                 }()
                 element.configure(content: content, frame: frame)
                 accessibilityElements.append(element)
             }
             accessibilityElements.append(container.surfaceAccessibilityView)
-            pinAccessibilityElements = pinAccessibilityElements.filter { visibleIDs.contains($0.key) }
+            for (placeID, view) in pinHitTargetViews where !visibleIDs.contains(placeID) {
+                view.removeFromSuperview()
+            }
+            pinHitTargetViews = pinHitTargetViews.filter { visibleIDs.contains($0.key) }
             clusterAccessibilityElements = clusterAccessibilityElements.filter { visibleClusterIDs.contains($0.key) }
             container.accessibilityElements = accessibilityElements
         }
@@ -830,6 +839,30 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         private static func pinAccessibilityTargetSide(_ pinSize: PinSize) -> CGFloat {
             // Minimum tracks Apple's 44 pt control target; visual radius keeps larger pins' frames honest.
             max(44, CGFloat((pinSize.circleRadius * 2) + 12))
+        }
+
+        private func pinAccessibilityCandidate(
+            place: MapPlace,
+            state: PinState,
+            targetSide: CGFloat,
+            map: MLNMapView,
+            container: MapAccessibilityContainerView
+        ) -> (MapPinAccessibilityContent, CGRect)? {
+            let coordinate = CLLocationCoordinate2D(latitude: place.lat, longitude: place.lon)
+            let point = map.convert(coordinate, toPointTo: container)
+            let frame = CGRect(
+                x: point.x - targetSide / 2,
+                y: point.y - targetSide / 2,
+                width: targetSide,
+                height: targetSide
+            )
+            guard frame.intersects(container.bounds) else { return nil }
+            let content = MapPinAccessibilityContent(
+                place: place,
+                state: state,
+                name: pinAccessibilityNames[place.id]
+            )
+            return (content, frame)
         }
 
         private static func isCategoryVisuallyExposed(_ category: String, visibleCategories: Set<String>?) -> Bool {

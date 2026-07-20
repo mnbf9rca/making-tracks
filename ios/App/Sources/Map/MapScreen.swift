@@ -21,6 +21,83 @@ struct MapHomeChromeSpec {
     }
 }
 
+struct PlaceCardVisualSpec {
+    enum ActionTone: Equatable {
+        case primary
+        case neutral
+        case love
+        case warning
+        case disabled
+    }
+
+    static let closeSystemImageName = "ellipsis"
+    static let showsMediaSlotWhenPhotoMissing = true
+    static let actionCornerRadius: CGFloat = 8
+    static let actionMinimumHeight: CGFloat = 44
+    static let mediaSlotHeight: CGFloat = 132
+    static let cardCornerRadius: CGFloat = 22
+    static let typeSwatchSide: CGFloat = 14
+    static let actionBarHorizontalPadding: CGFloat = 18
+    static let cardBackground = Color(red: 0.985, green: 0.98, blue: 0.95)
+    static let mediaBackground = Color(red: 0.82, green: 0.79, blue: 0.70)
+    static let neutralActionBackground = Color(red: 0.93, green: 0.92, blue: 0.88)
+    static let primaryActionBackground = Color(red: 0.02, green: 0.46, blue: 0.39)
+    static let loveActionBackground = Color(red: 0.99, green: 0.89, blue: 0.89)
+    static let warningActionBackground = Color(red: 0.95, green: 0.91, blue: 0.82)
+    static let disabledActionBackground = Color(red: 0.96, green: 0.95, blue: 0.91)
+    static let primaryText = Color(red: 0.12, green: 0.12, blue: 0.11)
+    static let secondaryText = Color(red: 0.43, green: 0.42, blue: 0.38)
+    static let linkText = Color(red: 0.0, green: 0.43, blue: 0.37)
+    static let loveText = Color(red: 0.77, green: 0.19, blue: 0.17)
+    static let warningText = Color(red: 0.46, green: 0.34, blue: 0.12)
+    static let disabledText = Color(red: 0.68, green: 0.66, blue: 0.61)
+
+    static func tone(for action: PlaceCardAction) -> ActionTone {
+        switch action {
+        case .seen:
+            return .primary
+        case .love, .unlove:
+            return .love
+        case .unsee(isEnabled: true):
+            return .warning
+        case .unsee(isEnabled: false), .seenDisabled:
+            return .disabled
+        case .save, .hide, .unhide:
+            return .neutral
+        }
+    }
+
+    static func actionBackground(for tone: ActionTone) -> Color {
+        switch tone {
+        case .primary:
+            return primaryActionBackground
+        case .neutral:
+            return neutralActionBackground
+        case .love:
+            return loveActionBackground
+        case .warning:
+            return warningActionBackground
+        case .disabled:
+            return disabledActionBackground
+        }
+    }
+
+    static func actionForeground(for tone: ActionTone) -> Color {
+        switch tone {
+        case .primary:
+            return .white
+        case .neutral:
+            return primaryText
+        case .love:
+            return loveText
+        case .warning:
+            return warningText
+        case .disabled:
+            return disabledText
+        }
+    }
+}
+
 private enum MapOverlayChromeSpec {
     static let edgePadding: CGFloat = 16
     static let topPadding: CGFloat = 12
@@ -5642,7 +5719,8 @@ private struct PlaceCardSheet: View {
         ZStack(alignment: .bottom) {
             ScrollView {
                 cardContent
-                    .padding()
+                    .padding(.horizontal, 18)
+                    .padding(.top, 8)
                     .padding(.bottom, CGFloat(
                         PlaceCardOverlayMetrics.contentBottomPadding(actionBarHeight: Double(actionBarHeight))
                     ))
@@ -5666,7 +5744,11 @@ private struct PlaceCardSheet: View {
             }
         }
         .presentationDetents(cardDetents)
+        .presentationDragIndicator(.visible)
+        .presentationCornerRadius(PlaceCardVisualSpec.cardCornerRadius)
+        .presentationBackground(PlaceCardVisualSpec.cardBackground)
         .presentationBackgroundInteraction(.enabled(upThrough: dynamicTypeSize.isAccessibilitySize ? .large : .medium))
+        .preferredColorScheme(.light)
         .task(id: placeID) {
             await loadCard()
         }
@@ -5686,23 +5768,25 @@ private struct PlaceCardSheet: View {
 
     @ViewBuilder
     private var cardContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             if let card {
                 header
                 Text(verbatim: card.name)
-                    .font(.title2.weight(.semibold))
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(PlaceCardVisualSpec.primaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("place-card.title")
                 typeRow(card)
+                photoSlot(card)
                 if let blurb = card.blurb {
                     Text(verbatim: blurb)
                         .font(.body)
+                        .foregroundStyle(PlaceCardVisualSpec.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("place-card.description")
                 }
                 sourceArticleLink(card.sourceArticleLink)
-                photoSlot(card)
                 listChips(card.listNames)
                 attributionText(card)
             } else if isLoading {
@@ -5735,10 +5819,21 @@ private struct PlaceCardSheet: View {
         HStack {
             Spacer()
 
-            Button("Close") {
-                dismiss()
+            Menu {
+                Button("Add to list") {
+                    showListPicker = true
+                }
+                .accessibilityIdentifier("place-card.add-to-list")
+            } label: {
+                Image(systemName: PlaceCardVisualSpec.closeSystemImageName)
+                    .font(.subheadline.weight(.semibold))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
-            .accessibilityIdentifier("place-card.close")
+            .buttonStyle(.plain)
+            .foregroundStyle(PlaceCardVisualSpec.secondaryText)
+            .accessibilityLabel("More")
+            .accessibilityIdentifier("place-card.more")
         }
     }
 
@@ -5760,6 +5855,7 @@ private struct PlaceCardSheet: View {
             Link(destination: link.url) {
                 Text(verbatim: link.label)
                     .font(.callout.weight(.medium))
+                    .foregroundStyle(PlaceCardVisualSpec.linkText)
             }
             .accessibilityIdentifier("place-card.source-article")
             .accessibilityLabel(Text(verbatim: "\(link.sourceName) source article"))
@@ -5769,13 +5865,16 @@ private struct PlaceCardSheet: View {
     @ViewBuilder
     private func typeRow(_ card: PlaceCardModel) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: categorySymbolName(for: card.category))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(PlaceCardVisualSpec.mediaBackground)
+                .frame(
+                    width: PlaceCardVisualSpec.typeSwatchSide,
+                    height: PlaceCardVisualSpec.typeSwatchSide
+                )
                 .accessibilityHidden(true)
             Text(verbatim: categoryLabel(card.category))
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(PlaceCardVisualSpec.secondaryText)
                 .accessibilityIdentifier("place-card.type.label")
         }
         .accessibilityElement(children: .combine)
@@ -5785,6 +5884,8 @@ private struct PlaceCardSheet: View {
     private func photoSlot(_ card: PlaceCardModel) -> some View {
         if let photo = card.photo {
             PlaceCardPhotoSlot(photo: photo, model: model)
+        } else if PlaceCardVisualSpec.showsMediaSlotWhenPhotoMissing {
+            PlaceCardMissingPhotoSlot(placeName: card.name)
         }
     }
 
@@ -5798,9 +5899,10 @@ private struct PlaceCardSheet: View {
                     } label: {
                         Text(verbatim: name)
                             .font(.caption.weight(.medium))
+                            .foregroundStyle(PlaceCardVisualSpec.primaryText)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .background(.thinMaterial, in: Capsule())
+                            .background(PlaceCardVisualSpec.neutralActionBackground, in: Capsule())
                     }
                     .buttonStyle(.plain)
                 }
@@ -5815,7 +5917,7 @@ private struct PlaceCardSheet: View {
         if !parts.isEmpty {
             Text(verbatim: parts.joined(separator: " / "))
                 .font(.caption2)
-                .foregroundStyle(.primary)
+                .foregroundStyle(PlaceCardVisualSpec.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("place-card.attribution")
         }
@@ -5846,11 +5948,10 @@ private struct PlaceCardSheet: View {
             }
         }
         .disabled(isPerformingAction)
-        .padding(.horizontal)
+        .padding(.horizontal, PlaceCardVisualSpec.actionBarHorizontalPadding)
         .padding(.top, 10)
         .padding(.bottom, 12)
-        .background(Color(.systemBackground))
-        .overlay(Divider(), alignment: .top)
+        .background(PlaceCardVisualSpec.cardBackground)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("place-card.action-bar")
         .accessibilitySortPriority(10)
@@ -5862,39 +5963,49 @@ private struct PlaceCardSheet: View {
         case .save:
             saveButton(card)
         case .seen:
-            Button(action.title) {
+            Button {
                 startAction { await setVisited(true) }
+            } label: {
+                actionLabel(action)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.plain)
             .accessibilityIdentifier("place-card.visited")
             .accessibilityValue("Not seen")
         case .love:
-            Button(action.title) {
+            Button {
                 startAction { await setLoved(true) }
+            } label: {
+                actionLabel(action)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
             .accessibilityIdentifier("place-card.loved")
             .accessibilityValue("Not loved")
         case .unlove:
-            Button(action.title) {
+            Button {
                 startAction { await setLoved(false) }
+            } label: {
+                actionLabel(action)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
             .accessibilityIdentifier("place-card.loved")
             .accessibilityValue("Loved")
         case .hide:
             hideButton(card)
         case let .unsee(isEnabled):
-            Button(action.title) {
+            Button {
                 startAction { await setVisited(false) }
+            } label: {
+                actionLabel(action)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
             .accessibilityIdentifier("place-card.unsee")
             .accessibilityValue("Seen")
             .disabled(!isEnabled)
         case .seenDisabled:
-            Button(action.title) {}
-                .buttonStyle(.borderedProminent)
+            Button {} label: {
+                actionLabel(action)
+            }
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("place-card.visited")
                 .accessibilityValue("Hidden")
                 .disabled(true)
@@ -5904,8 +6015,10 @@ private struct PlaceCardSheet: View {
     }
 
     private func saveButton(_ card: PlaceCardModel) -> some View {
-        Button(card.pinState.saved ? "Saved" : "Save") {
+        Button {
             startAction { await setSaved(!card.pinState.saved) }
+        } label: {
+            actionLabel(.save, title: card.pinState.saved ? "Saved" : "Save")
         }
         .highPriorityGesture(
             LongPressGesture(minimumDuration: 0.5)
@@ -5913,28 +6026,49 @@ private struct PlaceCardSheet: View {
                     showListPicker = true
                 }
         )
-        .buttonStyle(.bordered)
+        .buttonStyle(.plain)
         .accessibilityIdentifier("place-card.save")
         .accessibilityValue(card.pinState.saved ? "Saved" : "Not saved")
         .accessibilityHint(PlaceCardAction.save.accessibilityHint(isSaved: card.pinState.saved) ?? "")
     }
 
     private func hideButton(_ card: PlaceCardModel) -> some View {
-        Button("Hide", role: .destructive) {
+        Button {
             startAction { await setHidden(card) }
+        } label: {
+            actionLabel(.hide)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.plain)
         .accessibilityIdentifier("place-card.hide")
         .accessibilityValue("Not hidden")
     }
 
     private func unhideButton() -> some View {
-        Button("Unhide") {
+        Button {
             startAction { await setHidden(false) }
+        } label: {
+            actionLabel(.unhide)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.plain)
         .accessibilityIdentifier("place-card.unhide")
         .accessibilityValue("Hidden")
+    }
+
+    private func actionLabel(_ action: PlaceCardAction, title: String? = nil) -> some View {
+        let tone = PlaceCardVisualSpec.tone(for: action)
+        return Text(verbatim: title ?? action.title)
+            .font(.headline.weight(.semibold))
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: PlaceCardVisualSpec.actionMinimumHeight)
+            .foregroundStyle(PlaceCardVisualSpec.actionForeground(for: tone))
+            .background(PlaceCardVisualSpec.actionBackground(for: tone))
+            .clipShape(RoundedRectangle(cornerRadius: PlaceCardVisualSpec.actionCornerRadius, style: .continuous))
+            .overlay {
+                if tone == .disabled {
+                    RoundedRectangle(cornerRadius: PlaceCardVisualSpec.actionCornerRadius, style: .continuous)
+                        .stroke(PlaceCardVisualSpec.disabledText.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                }
+            }
     }
 
     private func loadCard() async {
@@ -6052,11 +6186,6 @@ private struct PlaceCardSheet: View {
             .joined(separator: " ")
     }
 
-    private func categorySymbolName(for raw: String) -> String {
-        let iconName = PinLayers.categoryIconNames[raw.lowercased()] ?? PinLayers.fallbackCategoryIconName
-        return PinLayers.categorySymbolNames[iconName] ?? "mappin"
-    }
-
     private func attributionParts(_ card: PlaceCardModel) -> [String] {
         var parts: [String] = []
         if let photo = card.photo {
@@ -6075,6 +6204,26 @@ private struct PlaceCardActionBarHeightKey: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+private struct PlaceCardMissingPhotoSlot: View {
+    let placeName: String
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: PlaceCardVisualSpec.actionCornerRadius, style: .continuous)
+                .fill(PlaceCardVisualSpec.mediaBackground)
+            Image(systemName: "photo")
+                .font(.system(size: 30, weight: .regular))
+                .foregroundStyle(PlaceCardVisualSpec.secondaryText.opacity(0.8))
+                .accessibilityHidden(true)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: PlaceCardVisualSpec.mediaSlotHeight)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("No photo available for \(placeName)")
+        .accessibilityIdentifier("place-card.photo.placeholder")
     }
 }
 
@@ -6114,8 +6263,8 @@ private struct PlaceCardPhotoSlot: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 180)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .frame(height: PlaceCardVisualSpec.mediaSlotHeight)
+        .clipShape(RoundedRectangle(cornerRadius: PlaceCardVisualSpec.actionCornerRadius, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(slotAccessibilityLabel)
         .accessibilityIdentifier("place-card.photo")
@@ -6877,7 +7026,7 @@ final class MapScreenModel {
     }
 
     private func fixturePhoto(for placeID: String, name: String) -> PlaceCardPhoto? {
-        guard fixturePlaces[placeID] != nil else { return nil }
+        guard placeID == "mt1_00000000000000000000000000" else { return nil }
         return PlaceCardPhoto(
             accessibilityLabel: "Photo of \(name)",
             attribution: "Fixture photo"
