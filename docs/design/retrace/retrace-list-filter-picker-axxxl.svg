@@ -56,17 +56,18 @@
     <circle cx="32" cy="34" r="14" fill="#e6dfcf" stroke="#9c9384"/>
     <path class="icon" d="M32 25c5 0 9 4 9 9 0 8-9 16-9 16s-9-8-9-16c0-5 4-9 9-9z"/>
     <text class="label primary" x="62" y="36" font-size="22">Blue Mansion</text>
-    <text class="label secondary" x="62" y="64" font-size="17">12 Jul 2026</text>
+    <text class="label secondary" x="62" y="64" font-size="17">Architecture -</text>
+    <text class="label secondary" x="62" y="84" font-size="17">12 Jul 2026</text>
     <path class="heart" d="M326 31c0-6 8-9 14-3 6-6 14-3 14 3 0 9-14 17-14 17s-14-8-14-17z"/>
-    <line class="hairline" x1="62" y1="80" x2="342" y2="80"/>
-    <rect x="62" y="94" width="92" height="32" rx="8" fill="#f2eadb" stroke="#d0c6b5"/>
-    <text class="label secondary" x="108" y="116" font-size="15" font-weight="720" text-anchor="middle">12 Jul</text>
-    <rect x="166" y="94" width="42" height="32" rx="8" fill="#f2eadb" stroke="#d0c6b5"/>
-    <path class="icon" d="M178 116l9-10 9 10"/>
-    <rect x="220" y="94" width="42" height="32" rx="8" fill="#f2eadb" stroke="#d0c6b5"/>
-    <path class="icon" d="M232 106l9 10 9-10"/>
-    <rect x="308" y="94" width="34" height="32" rx="8" fill="#f2eadb" stroke="#d0c6b5"/>
-    <path class="icon" d="M319 105h12M321 105l1 14h5l1-14M318 101h14"/>
+    <line class="hairline" x1="62" y1="94" x2="342" y2="94"/>
+    <rect x="62" y="104" width="92" height="26" rx="8" fill="#f2eadb" stroke="#d0c6b5"/>
+    <text class="label secondary" x="108" y="122" font-size="14" font-weight="720" text-anchor="middle">12 Jul</text>
+    <rect x="166" y="104" width="42" height="26" rx="8" fill="#f2eadb" stroke="#d0c6b5"/>
+    <path class="icon" d="M178 123l9-10 9 10"/>
+    <rect x="220" y="104" width="42" height="26" rx="8" fill="#f2eadb" stroke="#d0c6b5"/>
+    <path class="icon" d="M232 113l9 10 9-10"/>
+    <rect x="308" y="104" width="34" height="26" rx="8" fill="#f2eadb" stroke="#d0c6b5"/>
+    <path class="icon" d="M319 113h12M321 113l1 12h5l1-12M318 110h14"/>
   </g>
 
   <g transform="translate(16 596)" filter="url(#shadow)">
