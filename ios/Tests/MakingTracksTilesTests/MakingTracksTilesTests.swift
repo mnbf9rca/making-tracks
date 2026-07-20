@@ -184,6 +184,29 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/uk/current.json"))
     }
 
+    func testManifestRefreshReturnsCachedPinWithoutManifestFetchWhenCatalogVersionMatchesCache() async throws {
+        let cache = try temporaryCache()
+        try cache.recordVerifiedPublish(
+            region: "uk",
+            publish: cachedPublish("20260716T155409Z", attributionSources: ["osm"])
+        )
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/catalog/current.json": jsonData([
+                "schema_version": 1,
+                "publish_versions": ["uk": "20260716T155409Z"],
+            ]),
+        ])
+        let client = ManifestClient(region: "uk", fetcher: fetcher, cache: cache)
+
+        let pin = await client.refresh()
+
+        XCTAssertEqual(pin.state, .ok)
+        XCTAssertEqual(pin.publish?.publishVersion, "20260716T155409Z")
+        XCTAssertEqual(fetcher.requestedURLs, [
+            "https://tiles.making-tracks.app/catalog/current.json",
+        ])
+    }
+
     func testManifestCurrentPublishVersionFetchesOnlyCurrentPointer() async throws {
         let fetcher = StubFetcher(routes: [
             "https://tiles.making-tracks.app/malaysia-singapore-brunei/current.json": jsonData([

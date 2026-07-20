@@ -1621,6 +1621,11 @@ public final class ManifestClient: @unchecked Sendable {
             } catch {
                 return fallback(for: error)
             }
+            if let cached = try? cache.lastVerifiedPublish(region: region),
+               cached.publishVersion == publishVersion
+            {
+                return ManifestPinResult(publish: cached, state: .ok)
+            }
             let manifestURL = try trustedURL("\(region)/\(publishVersion)/manifest.json")
             let manifestData: Data
             do {

@@ -29,10 +29,6 @@ class LayoutInvalid(ValueError):
     """Raised when the public/private R2 layout violates invariants."""
 
 
-class VersionAlreadyLive(ValueError):
-    """Raised when upload would overwrite the currently visible version."""
-
-
 class ExistingVersionPrefix(ValueError):
     """Raised when upload would mutate an existing non-identical version prefix."""
 
@@ -234,7 +230,9 @@ def publish_to_r2(
 
     live_version = _current_publish_version(client, layout, region)
     repair_only = live_version == publish_version
-    if not repair_only:
+    if repair_only:
+        _assert_manifest_available(client, layout, region, publish_version)
+    else:
         _assert_prefix_absent(client, layout, region, publish_version)
     lock_key = f"{region}/publish.lock"
     lock_etag = _acquire_lock(client, layout, region, publish_version, lock_key)
@@ -385,16 +383,18 @@ def _read_region_current_pointers(client, layout: Mapping[str, Any]) -> dict[str
         "Bucket": layout["public_bucket"],
         "Prefix": "",
         "MaxKeys": 1024,
+        "Delimiter": "/",
     }
     while True:
         response = client.list_objects_v2(**kwargs)
-        for item in response.get("Contents", []):
-            key = item.get("Key") if isinstance(item, Mapping) else None
-            if not isinstance(key, str) or not key.endswith("/current.json"):
+        for item in response.get("CommonPrefixes", []):
+            prefix = item.get("Prefix") if isinstance(item, Mapping) else None
+            if not isinstance(prefix, str) or not prefix.endswith("/"):
                 continue
-            region = key.removesuffix("/current.json")
+            region = prefix.removesuffix("/")
             if "/" in region or not _REGION_RE.fullmatch(region):
                 continue
+            key = f"{prefix}current.json"
             try:
                 obj = client.get_object(Bucket=layout["public_bucket"], Key=key)
             except Exception as exc:
@@ -412,6 +412,18 @@ def _read_region_current_pointers(client, layout: Mapping[str, Any]) -> dict[str
             break
         kwargs["ContinuationToken"] = token
     return versions
+
+
+def _assert_manifest_available(
+    client, layout: Mapping[str, Any], region: str, publish_version: str
+) -> None:
+    try:
+        client.head_object(
+            Bucket=layout["public_bucket"],
+            Key=f"{region}/{publish_version}/manifest.json",
+        )
+    except Exception as exc:
+        raise CurrentPointerUnavailable("could not verify repaired manifest") from exc
 
 
 def _read_current_catalog(client, layout: Mapping[str, Any]) -> dict[str, str]:
