@@ -192,6 +192,16 @@ Every security or privacy review finding must **name a specific in-scope attacke
 (§4) — is set aside as overreach. The same rule lives in `AGENTS.md`'s review gates (the §5.5
 security-posture hook).
 
+**The same test applies to defences, not only findings.** A mitigation, an added layer, a hardening step
+must also name the specific in-scope attacker it stops. A defence whose only beneficiary is an out-of-scope
+attacker (§4) is overreach in exactly the way an overreaching finding is — and its cost is not free: it is
+charged to usability, diagnosability or performance while buying nothing the model asks for. Before adding
+protection, name the vector; and if that vector is already handled elsewhere in this document — OS
+sandboxing, the untrusted-data posture, hash-verified downloads — the new protection is redundant, not
+prudent. The on-device `.none` file-protection example above is the worked case: the device-extraction
+attacker is out of scope, so a defence premised on it (hashing on-device files against other apps, say) adds
+cost without a vector and gets charged to the thing it obstructs.
+
 Findings about handling untrusted content — defensive parsing, size limits, `SAFE_TEXT`, plain-text
 rendering, URL allowlists, avoiding unescaped queries — name the **content-vandal attacker (§2)**,
 equivalently the untrusted-data posture (spec §5.5, PRINCIPLES §10). They never need a network attacker and
