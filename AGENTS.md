@@ -68,6 +68,14 @@ Work packages (spec §8) are designed one at a time (design agent) and built one
 
 **Policy-document law** (`privacy.md`, `docs/PRINCIPLES.md`, `docs/threat-model.md` and their kin): a policy doc states **commitments that constrain what future features may do**, not a snapshot of what the app does today. Write the ground rules that hold regardless of features, then what they mean for each known roadmap item — accounts, sharing, feedback — with the hard lines drawn now. A doc that only describes today is obsolete at the next feature. Never add a disclaimer demoting the document ("this isn't the real policy yet"); its authority is the whole point. Rob ratifies these before they land.
 
+**UI design ships with mockups.** This is a visual app; a UI design doc is not complete as prose. Every work package with a user-facing surface carries **rendered mockups**, and they are authored by a **build agent**, not by the designer.
+
+The split is the point: the **build agent renders**, the **design agent validates the renders against the design**, and **Rob rules on taste**. A designer validating their own mockup is not a gate. Design-correctness and taste are separate judgements and are made by separate parties.
+
+Renders go to Rob only after design validation. Anything the mockup shows that the design does not specify is either a gap in the design or an invention in the render — name which, rather than letting it pass because it looks fine.
+
+The pipeline is the one from the place-card design: HTML wireframes rendered to PNG, **committed with their sources** so they can be re-rendered rather than redrawn, at the ruled design canvas (390×844) with an accessibility-size variant. Mark the fold. See `docs/design/card/` for the worked example.
+
 ## Reporting, issues and labels
 
 **Blocked ≠ done.** A `gh`/connector 403 in an agent harness is a sandbox denial, not expired auth. Escalate the exact command in your harness, or relay the exact operation (base/head/title/labels) to fable as an action request; never report blocked and wait. Relays confirm back: whoever unblocks an agent confirms on that agent's thread — an agent that does not know it has been unblocked is still blocked.
