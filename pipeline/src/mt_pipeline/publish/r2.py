@@ -122,7 +122,6 @@ class PublishPlan:
                 key=f"{region}/{publish_version}/manifest.json",
             )
         )
-        ops.append(_current_catalog_op(layout, {region: publish_version}))
         ops.append(
             PublishOp(
                 kind="current",
@@ -135,6 +134,7 @@ class PublishPlan:
                 ).encode("utf-8"),
             )
         )
+        ops.append(_current_catalog_op(layout))
         prefixes = layout.get("private_prefixes", {})
         if registry_blob is not None:
             ops.append(
@@ -204,11 +204,10 @@ def publish_to_r2(
     validate_path_components(region, publish_version)
     tile_ops, basemap_op, manifest_op = _ops_from_staging(staging, layout, region, publish_version)
     content_ops = [*tile_ops, basemap_op, manifest_op]
-    catalog_versions = {region: publish_version}
     ops = [
         *content_ops,
-        _current_catalog_op(layout, catalog_versions),
         _current_op(layout, region, publish_version),
+        _current_catalog_op(layout),
     ]
     if registry_blob is not None:
         ops.append(
@@ -233,25 +232,18 @@ def publish_to_r2(
     if client is None:
         client = _default_client()
 
-    _assert_not_live(client, layout, region, publish_version)
-    _assert_prefix_absent(client, layout, region, publish_version)
+    live_version = _current_publish_version(client, layout, region)
+    repair_only = live_version == publish_version
+    if not repair_only:
+        _assert_prefix_absent(client, layout, region, publish_version)
     lock_key = f"{region}/publish.lock"
     lock_etag = _acquire_lock(client, layout, region, publish_version, lock_key)
     uploaded = 0
     try:
-        catalog_lock_key = "catalog/publish.lock"
-        catalog_lock_etag = _acquire_lock(
-            client, layout, "catalog", publish_version, catalog_lock_key
-        )
-        try:
-            catalog_versions = _merged_current_catalog(client, layout, region, publish_version)
-            ops = [
-                *content_ops,
-                _current_catalog_op(layout, catalog_versions),
-                _current_op(layout, region, publish_version),
-            ]
+        if repair_only:
+            repair_ops = [_current_catalog_op(layout)]
             if registry_blob is not None:
-                ops.append(
+                repair_ops.append(
                     PublishOp(
                         kind="registry",
                         bucket=str(layout["private_bucket"]),
@@ -263,21 +255,56 @@ def publish_to_r2(
                 layout=layout,
                 region=region,
                 publish_version=publish_version,
-                ops=tuple(ops),
+                ops=tuple(repair_ops),
             )
             _validate_layout(layout)
             plan._assert_bucket_invariants()
-            for op in plan.ops:
-                if op.body is not None:
-                    client.put_object(Bucket=op.bucket, Key=op.key, Body=op.body)
-                else:
-                    if op.source_path is None:
-                        raise ValueError(f"publish op {op.kind!r} has no body or source_path")
-                    with op.source_path.open("rb") as body:
-                        client.put_object(Bucket=op.bucket, Key=op.key, Body=body)
+            uploaded += _upload_catalog_current_locked(
+                client, layout, region, publish_version
+            )
+            if registry_blob is not None:
+                registry_op = repair_ops[-1]
+                client.put_object(Bucket=registry_op.bucket, Key=registry_op.key, Body=registry_op.body)
                 uploaded += 1
-        finally:
-            _release_lock(client, layout, catalog_lock_key, catalog_lock_etag)
+            return PublishResult(plan=plan, uploaded=uploaded, dry_run=False)
+
+        ops = [
+            *content_ops,
+            _current_op(layout, region, publish_version),
+        ]
+        for op in ops:
+            if op.body is not None:
+                client.put_object(Bucket=op.bucket, Key=op.key, Body=op.body)
+            else:
+                if op.source_path is None:
+                    raise ValueError(f"publish op {op.kind!r} has no body or source_path")
+                with op.source_path.open("rb") as body:
+                    client.put_object(Bucket=op.bucket, Key=op.key, Body=body)
+            uploaded += 1
+
+        catalog_uploaded = _upload_catalog_current_locked(
+            client, layout, region, publish_version
+        )
+        uploaded += catalog_uploaded
+        ops.append(_current_catalog_op(layout))
+        if registry_blob is not None:
+            registry_op = PublishOp(
+                kind="registry",
+                bucket=str(layout["private_bucket"]),
+                key=f"{layout.get('private_prefixes', {}).get('registry', 'registry/')}{region}.jsonl",
+                body=registry_blob,
+            )
+            client.put_object(Bucket=registry_op.bucket, Key=registry_op.key, Body=registry_op.body)
+            uploaded += 1
+            ops.append(registry_op)
+        plan = PublishPlan(
+            layout=layout,
+            region=region,
+            publish_version=publish_version,
+            ops=tuple(ops),
+        )
+        _validate_layout(layout)
+        plan._assert_bucket_invariants()
     finally:
         _release_lock(client, layout, lock_key, lock_etag)
     return PublishResult(plan=plan, uploaded=uploaded, dry_run=False)
@@ -309,22 +336,81 @@ def _current_op(layout: Mapping[str, Any], region: str, publish_version: str) ->
     )
 
 
-def _current_catalog_op(layout: Mapping[str, Any], publish_versions: Mapping[str, str]) -> PublishOp:
+def _current_catalog_op(
+    layout: Mapping[str, Any], publish_versions: Mapping[str, str] | None = None
+) -> PublishOp:
     return PublishOp(
         kind="catalog_current",
         bucket=str(layout["public_bucket"]),
         key="catalog/current.json",
-        body=_json_bytes({"schema_version": 1, "publish_versions": dict(publish_versions)}),
+        body=(
+            None
+            if publish_versions is None
+            else _json_bytes({"schema_version": 1, "publish_versions": dict(publish_versions)})
+        ),
     )
+
+
+def _upload_catalog_current_locked(
+    client, layout: Mapping[str, Any], region: str, publish_version: str
+) -> int:
+    catalog_lock_key = "catalog/publish.lock"
+    catalog_lock_etag = _acquire_lock(
+        client, layout, "catalog", publish_version, catalog_lock_key
+    )
+    try:
+        catalog_versions = _merged_current_catalog(client, layout, region, publish_version)
+        op = _current_catalog_op(layout, catalog_versions)
+        client.put_object(Bucket=op.bucket, Key=op.key, Body=op.body)
+        return 1
+    finally:
+        _release_lock(client, layout, catalog_lock_key, catalog_lock_etag)
 
 
 def _merged_current_catalog(
     client, layout: Mapping[str, Any], region: str, publish_version: str
 ) -> dict[str, str]:
     versions = _read_current_catalog(client, layout)
+    for legacy_region, legacy_version in _read_region_current_pointers(client, layout).items():
+        versions[legacy_region] = legacy_version
     versions[region] = publish_version
     if len(versions) > 1024:
         raise CurrentPointerUnavailable("current catalog has too many regions")
+    return versions
+
+
+def _read_region_current_pointers(client, layout: Mapping[str, Any]) -> dict[str, str]:
+    versions: dict[str, str] = {}
+    kwargs: dict[str, Any] = {
+        "Bucket": layout["public_bucket"],
+        "Prefix": "",
+        "MaxKeys": 1024,
+    }
+    while True:
+        response = client.list_objects_v2(**kwargs)
+        for item in response.get("Contents", []):
+            key = item.get("Key") if isinstance(item, Mapping) else None
+            if not isinstance(key, str) or not key.endswith("/current.json"):
+                continue
+            region = key.removesuffix("/current.json")
+            if "/" in region or not _REGION_RE.fullmatch(region):
+                continue
+            try:
+                obj = client.get_object(Bucket=layout["public_bucket"], Key=key)
+            except Exception as exc:
+                if _is_missing_key(exc):
+                    continue
+                raise CurrentPointerUnavailable(
+                    f"could not backfill current pointer for {region}"
+                ) from exc
+            try:
+                versions[region] = _decode_region_current(obj["Body"].read())
+            except Exception:
+                continue
+        token = response.get("NextContinuationToken")
+        if not response.get("IsTruncated") or not isinstance(token, str) or token == "":
+            break
+        kwargs["ContinuationToken"] = token
     return versions
 
 
@@ -440,19 +526,32 @@ def _default_client():
     )
 
 
-def _assert_not_live(client, layout: Mapping[str, Any], region: str, publish_version: str) -> None:
+def _current_publish_version(client, layout: Mapping[str, Any], region: str) -> str | None:
     try:
         obj = client.get_object(Bucket=layout["public_bucket"], Key=f"{region}/current.json")
     except FileNotFoundError:
-        return
+        return None
     except Exception as exc:
         if _is_missing_key(exc):
-            return
+            return None
         raise CurrentPointerUnavailable("could not read current publish pointer") from exc
-    body = obj["Body"].read()
+    try:
+        return _decode_region_current(obj["Body"].read())
+    except Exception as exc:
+        raise CurrentPointerUnavailable("invalid current publish pointer") from exc
+
+
+def _decode_region_current(body: bytes) -> str:
     current = json.loads(body)
-    if current.get("publish_version") == publish_version:
-        raise VersionAlreadyLive(publish_version)
+    if (
+        not isinstance(current, dict)
+        or set(current) != {"schema_version", "publish_version"}
+        or current["schema_version"] != 1
+        or not isinstance(current["publish_version"], str)
+        or not _PUBLISH_VERSION_RE.fullmatch(current["publish_version"])
+    ):
+        raise ValueError("invalid current pointer")
+    return current["publish_version"]
 
 
 def _assert_prefix_absent(
@@ -562,7 +661,11 @@ def _error_code(exc: Exception) -> str | None:
 
 
 def _is_missing_key(exc: Exception) -> bool:
-    return _error_code(exc) in {"NoSuchKey", "404", "NotFound"}
+    return isinstance(exc, FileNotFoundError) or _error_code(exc) in {
+        "NoSuchKey",
+        "404",
+        "NotFound",
+    }
 
 
 def _is_precondition_failed(exc: Exception) -> bool:

@@ -143,7 +143,10 @@ final class MakingTracksTilesTests: XCTestCase {
 
     func testManifestPinsCurrentAndExposesAttributionBasemapAndIntegrity() async throws {
         let fetcher = StubFetcher(routes: [
-            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+            "https://tiles.making-tracks.app/catalog/current.json": jsonData([
+                "schema_version": 1,
+                "publish_versions": ["uk": "20260716T155409Z"],
+            ]),
             "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": manifestData(attributionSources: ["osm"]),
         ])
         let cache = try temporaryCache()
@@ -157,6 +160,28 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(pin.publish?.basemapURL?.absoluteString, "https://tiles.making-tracks.app/uk/20260716T155409Z/uk.pmtiles")
         XCTAssertEqual(pin.publish?.basemapIntegrity?.sha256, String(repeating: "1", count: 64))
         XCTAssertEqual(pin.publish?.basemapIntegrity?.bytes, 1234)
+    }
+
+    func testManifestRefreshUsesSharedCatalogPointerWithoutRegionCurrentFanout() async throws {
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/catalog/current.json": jsonData([
+                "schema_version": 1,
+                "publish_versions": ["uk": "20260716T155409Z"],
+            ]),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": manifestData(attributionSources: ["osm"]),
+        ])
+        let cache = try temporaryCache()
+        let client = ManifestClient(region: "uk", fetcher: fetcher, cache: cache)
+
+        let pin = await client.refresh()
+
+        XCTAssertEqual(pin.state, .ok)
+        XCTAssertEqual(pin.publish?.publishVersion, "20260716T155409Z")
+        XCTAssertEqual(fetcher.requestedURLs, [
+            "https://tiles.making-tracks.app/catalog/current.json",
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json",
+        ])
+        XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/uk/current.json"))
     }
 
     func testManifestCurrentPublishVersionFetchesOnlyCurrentPointer() async throws {
@@ -203,6 +228,60 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/united-kingdom_london/current.json"))
     }
 
+    func testManifestCurrentPublishVersionsBoundsSharedCatalogFetch() async throws {
+        let fetcher = BoundedStubFetcher(routes: [
+            "https://tiles.making-tracks.app/catalog/current.json": jsonData([
+                "schema_version": 1,
+                "publish_versions": ["united-kingdom": "20260718T000000Z"],
+            ]),
+        ])
+
+        let versions = try await ManifestClient.currentPublishVersions(
+            regions: ["united-kingdom"],
+            fetcher: fetcher
+        )
+
+        XCTAssertEqual(versions, ["united-kingdom": "20260718T000000Z"])
+        XCTAssertEqual(fetcher.boundedRequests, [
+            BoundedRequest(url: "https://tiles.making-tracks.app/catalog/current.json", maxBytes: 256 * 1024),
+        ])
+        XCTAssertEqual(fetcher.requestedURLs, [])
+    }
+
+    func testManifestCurrentPublishVersionsRejectsOversizedCatalogFromUnboundedFetcher() async throws {
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/catalog/current.json": Data(repeating: 0x20, count: 256 * 1024 + 1),
+        ])
+
+        do {
+            _ = try await ManifestClient.currentPublishVersions(regions: ["united-kingdom"], fetcher: fetcher)
+            XCTFail("oversized current catalog unexpectedly decoded")
+        } catch TileError.responseTooLarge {
+        } catch {
+            XCTFail("expected responseTooLarge, got \(error)")
+        }
+    }
+
+    func testManifestCurrentPublishVersionsIgnoresMalformedEntriesWithoutFailingRequestedRegions() async throws {
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/catalog/current.json": jsonData([
+                "schema_version": 1,
+                "publish_versions": [
+                    "united-kingdom": "20260718T000000Z",
+                    "bad region": "20260717T000000Z",
+                    "malaysia-singapore-brunei": "latest",
+                ],
+            ]),
+        ])
+
+        let versions = try await ManifestClient.currentPublishVersions(
+            regions: ["united-kingdom", "malaysia-singapore-brunei"],
+            fetcher: fetcher
+        )
+
+        XCTAssertEqual(versions, ["united-kingdom": "20260718T000000Z"])
+    }
+
     func testManifestCurrentPublishVersionsDoesNotFetchForEmptyRegionSet() async throws {
         let fetcher = StubFetcher(routes: [:])
 
@@ -222,8 +301,6 @@ final class MakingTracksTilesTests: XCTestCase {
             ["schema_version": 1, "publish_versions": [:], "extra": true],
             ["schema_version": 2, "publish_versions": [:]],
             ["schema_version": 1, "publish_versions": []],
-            ["schema_version": 1, "publish_versions": ["bad region": "20260718T000000Z"]],
-            ["schema_version": 1, "publish_versions": ["united-kingdom": "latest"]],
             ["schema_version": 1, "publish_versions": oversizedVersions],
         ]
 
@@ -243,7 +320,10 @@ final class MakingTracksTilesTests: XCTestCase {
 
     func testManifestRefusesAttributionAllOfViolationAndColdInvalidIsUnavailable() async throws {
         let fetcher = StubFetcher(routes: [
-            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+            "https://tiles.making-tracks.app/catalog/current.json": jsonData([
+                "schema_version": 1,
+                "publish_versions": ["uk": "20260716T155409Z"],
+            ]),
             "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": manifestData(minReaderVersion: 1, attributionSources: ["osm"]),
         ])
         let client = ManifestClient(region: "uk", fetcher: fetcher, cache: try temporaryCache())
@@ -258,7 +338,10 @@ final class MakingTracksTilesTests: XCTestCase {
         let cache = try temporaryCache()
         try cache.recordVerifiedPublish(region: "uk", publish: cachedPublish("20260715T000000Z", attributionSources: ["osm"]))
         let fetcher = StubFetcher(routes: [
-            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+            "https://tiles.making-tracks.app/catalog/current.json": jsonData([
+                "schema_version": 1,
+                "publish_versions": ["uk": "20260716T155409Z"],
+            ]),
             "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": manifestData(minReaderVersion: 1, attributionSources: ["osm"]),
         ])
         let pin = await ManifestClient(region: "uk", fetcher: fetcher, cache: cache).refresh()
@@ -271,7 +354,10 @@ final class MakingTracksTilesTests: XCTestCase {
         let cache = try temporaryCache()
         try cache.recordVerifiedPublish(region: "uk", publish: cachedPublish("20260715T000000Z", attributionSources: ["osm"]))
         let fetcher = StubFetcher(routes: [
-            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+            "https://tiles.making-tracks.app/catalog/current.json": jsonData([
+                "schema_version": 1,
+                "publish_versions": ["uk": "20260716T155409Z"],
+            ]),
             "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": manifestData(minReaderVersion: 3, attributionSources: ["osm"]),
         ])
         let client = ManifestClient(region: "uk", fetcher: fetcher, cache: cache)
@@ -288,7 +374,10 @@ final class MakingTracksTilesTests: XCTestCase {
 
     func testManifestRefusesRegionPublishMismatchAndNestedSchemaExtras() async throws {
         let mismatch = ManifestClient(region: "uk", fetcher: StubFetcher(routes: [
-            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+            "https://tiles.making-tracks.app/catalog/current.json": jsonData([
+                "schema_version": 1,
+                "publish_versions": ["uk": "20260716T155409Z"],
+            ]),
             "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": manifestData(region: "malaysia", attributionSources: []),
         ]), cache: try temporaryCache())
         let mismatchResult = await mismatch.refresh()
@@ -4915,8 +5004,14 @@ private final class StubFetcher: OfflineRegionFetching, @unchecked Sendable {
 
     func fetch(_ url: URL) async throws -> Data {
         requestedURLs.append(url.absoluteString)
-        guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
-        return data
+        if let data = routes[url.absoluteString] {
+            return data
+        }
+        if url.absoluteString == "https://tiles.making-tracks.app/catalog/current.json",
+           let catalog = synthesizedCurrentCatalog(from: routes) {
+            return catalog
+        }
+        throw URLError(.notConnectedToInternet)
     }
 
     func download(_ url: URL) async throws -> URL {
@@ -4925,6 +5020,57 @@ private final class StubFetcher: OfflineRegionFetching, @unchecked Sendable {
             .appendingPathComponent("MakingTracksStubDownload-\(UUID().uuidString)")
         try data.write(to: fileURL, options: .atomic)
         return fileURL
+    }
+}
+
+private func synthesizedCurrentCatalog(from routes: [String: Data]) -> Data? {
+    var versions: [String: String] = [:]
+    for (route, data) in routes {
+        guard route.hasPrefix("https://tiles.making-tracks.app/"),
+              route.hasSuffix("/current.json")
+        else { continue }
+        let region = String(route
+            .dropFirst("https://tiles.making-tracks.app/".count)
+            .dropLast("/current.json".count))
+        guard region.contains("/") == false,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["schema_version"] as? Int == 1,
+              let publishVersion = object["publish_version"] as? String
+        else { continue }
+        versions[region] = publishVersion
+    }
+    guard versions.isEmpty == false else { return nil }
+    return try? JSONSerialization.data(
+        withJSONObject: ["schema_version": 1, "publish_versions": versions],
+        options: [.sortedKeys]
+    )
+}
+
+private struct BoundedRequest: Equatable {
+    let url: String
+    let maxBytes: Int
+}
+
+private final class BoundedStubFetcher: BoundedTileFetching, @unchecked Sendable {
+    let routes: [String: Data]
+    private(set) var requestedURLs: [String] = []
+    private(set) var boundedRequests: [BoundedRequest] = []
+
+    init(routes: [String: Data]) {
+        self.routes = routes
+    }
+
+    func fetch(_ url: URL) async throws -> Data {
+        requestedURLs.append(url.absoluteString)
+        guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
+        return data
+    }
+
+    func fetch(_ url: URL, maxBytes: Int) async throws -> Data {
+        boundedRequests.append(BoundedRequest(url: url.absoluteString, maxBytes: maxBytes))
+        guard let data = routes[url.absoluteString] else { throw URLError(.notConnectedToInternet) }
+        guard data.count <= maxBytes else { throw TileError.responseTooLarge }
+        return data
     }
 }
 
@@ -4965,6 +5111,11 @@ private final class DelayedSidecarFetcher: OfflineRegionFetching, @unchecked Sen
         let data = lock.withLock {
             requestedURLs.append(url.absoluteString)
             return routes[url.absoluteString]
+        }
+        if data == nil,
+           url.absoluteString == "https://tiles.making-tracks.app/catalog/current.json",
+           let catalog = synthesizedCurrentCatalog(from: routes) {
+            return catalog
         }
         if url.absoluteString == delayedURL {
             await gate.waitUntilReleased()

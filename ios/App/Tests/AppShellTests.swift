@@ -1381,6 +1381,41 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(fetcher.requestedURLs.contains("https://tiles.making-tracks.app/malaysia-singapore-brunei/current.json"))
     }
 
+    @MainActor
+    func testMapScreenModelOfflineAvailabilityGracefullyDegradesToNoUpdates() async throws {
+        let model = try MapScreenModel(database: try AppDatabase.inMemory())
+        let malformedFetcher = AppStubFetcher(routes: [
+            "https://tiles.making-tracks.app/catalog/current.json": try appJSONData([
+                "schema_version": 2,
+                "publish_versions": ["malaysia-singapore-brunei": "20260718T000000Z"],
+            ]),
+        ])
+        let offlineFetcher = AppStubFetcher(routes: [:])
+
+        let malformedVersions = await model.availableOfflinePublishVersions(
+            for: .debugFixture,
+            installedRegions: ["malaysia-singapore-brunei"],
+            allowsCellularDownloads: false,
+            availabilityFetcher: malformedFetcher
+        )
+        let offlineVersions = await model.availableOfflinePublishVersions(
+            for: .debugFixture,
+            installedRegions: ["malaysia-singapore-brunei"],
+            allowsCellularDownloads: false,
+            availabilityFetcher: offlineFetcher
+        )
+        let rows = OfflineRegionCatalog.debugFixture.rows(
+            installed: ["malaysia-singapore-brunei": "20260716T155035Z"],
+            availablePublishVersions: malformedVersions,
+            activeProgress: nil,
+            quarantines: []
+        )
+
+        XCTAssertEqual(malformedVersions, [:])
+        XCTAssertEqual(offlineVersions, [:])
+        XCTAssertEqual(rows.first { $0.zone.id == "malaysia-singapore-brunei" }?.state, .installed(publishVersion: "20260716T155035Z"))
+    }
+
     func testOfflineRegionRowsSurfacePausedProgressSeparatelyFromActiveProgress() {
         let catalog = OfflineRegionCatalog.debugFixture
         let paused = OfflineDownloadProgress(

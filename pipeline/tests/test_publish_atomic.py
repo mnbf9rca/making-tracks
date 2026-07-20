@@ -74,11 +74,11 @@ def test_manifest_is_the_LAST_content_op_then_current_flip():
     manifest_index = plan.manifest_index()
     assert all(op.kind in ("tile", "basemap") for op in plan.ops[:manifest_index])
     assert plan.ops[manifest_index].kind == "manifest"
-    assert plan.ops[manifest_index + 1].kind == "catalog_current"
-    assert plan.ops[manifest_index + 2].kind == "current"
+    assert plan.ops[manifest_index + 1].kind == "current"
+    assert plan.ops[manifest_index + 2].kind == "catalog_current"
 
 
-def test_publish_plan_emits_shared_catalog_current_pointer():
+def test_publish_plan_does_not_pin_clobbering_single_region_catalog_body():
     plan = R.PublishPlan.for_version(
         _layout(), "united-kingdom", "20260715T120000Z", _arts(), basemap=True
     )
@@ -86,10 +86,7 @@ def test_publish_plan_emits_shared_catalog_current_pointer():
 
     assert op.bucket == "making-tracks-tiles"
     assert op.key == "catalog/current.json"
-    assert json.loads(op.body) == {
-        "schema_version": 1,
-        "publish_versions": {"united-kingdom": "20260715T120000Z"},
-    }
+    assert op.body is None
 
 
 def test_all_private_kind_ops_target_the_private_bucket_and_layout_is_distinct():
@@ -207,17 +204,17 @@ def test_upload_path_locks_uploads_content_manifest_current_then_private_registr
     assert result.dry_run is False
     keys = [key for _bucket, key, _if_none_match in client.puts]
     assert keys[0] == "uk/publish.lock"
-    assert keys[1] == "catalog/publish.lock"
-    assert keys[2:] == [
+    assert keys[1:] == [
         "uk/20260715T120000Z/tiles/10/1/2.json.gz",
         "uk/20260715T120000Z/uk.pmtiles",
         "uk/20260715T120000Z/manifest.json",
-        "catalog/current.json",
         "uk/current.json",
+        "catalog/publish.lock",
+        "catalog/current.json",
         "registry/uk.jsonl",
     ]
     assert client.puts[0][2] == "*"
-    assert client.puts[1][2] == "*"
+    assert client.puts[5][2] == "*"
     assert client.deleted == [
         ("making-tracks-state", "catalog/publish.lock", '"lock-etag"'),
         ("making-tracks-state", "uk/publish.lock", '"lock-etag"'),
@@ -261,7 +258,7 @@ def test_upload_bootstraps_shared_catalog_when_r2_reports_missing_key(tmp_path):
     }
 
 
-def test_upload_does_not_flip_region_current_before_shared_catalog_succeeds(tmp_path):
+def test_upload_flips_region_current_before_shared_catalog_so_advertised_updates_are_fulfillable(tmp_path):
     version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
     (version_root / "tiles/10").mkdir(parents=True)
     (version_root / "uk.pmtiles").write_bytes(b"basemap")
@@ -291,8 +288,391 @@ def test_upload_does_not_flip_region_current_before_shared_catalog_succeeds(tmp_
     with pytest.raises(RuntimeError, match="catalog upload failed"):
         R.publish_to_r2(version_root, _layout(), client=client, upload=True)
 
-    assert "catalog/current.json" in client.put_keys
-    assert "uk/current.json" not in client.put_keys
+    assert client.put_keys.index("uk/current.json") < client.put_keys.index("catalog/current.json")
+
+
+def test_upload_bootstraps_missing_shared_catalog_from_existing_region_currents(tmp_path):
+    version_root = tmp_path / "stage" / "united-kingdom" / "20260715T120000Z"
+    (version_root / "tiles/10").mkdir(parents=True)
+    (version_root / "united-kingdom.pmtiles").write_bytes(b"basemap")
+    (version_root / "manifest.json").write_text("{}")
+
+    class BackfillCatalogClient:
+        def __init__(self):
+            self.catalog_body = None
+
+        def get_object(self, *, Bucket, Key):
+            if Key == "united-kingdom/current.json":
+                raise FileNotFoundError(Key)
+            if Key == "catalog/current.json":
+                raise FileNotFoundError(Key)
+            if Key == "malaysia-singapore-brunei/current.json":
+                return {"Body": BytesIO(b'{"schema_version":1,"publish_version":"20260714T000000Z"}')}
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            if Prefix == "united-kingdom/20260715T120000Z/":
+                return {"KeyCount": 0}
+            if Prefix == "":
+                return {
+                    "KeyCount": 2,
+                    "Contents": [
+                        {"Key": "malaysia-singapore-brunei/current.json"},
+                        {"Key": "assets/current.json"},
+                    ],
+                }
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            if Key == "catalog/current.json":
+                self.catalog_body = Body
+            return {"ETag": '"etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            pass
+
+    client = BackfillCatalogClient()
+
+    R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+
+    assert json.loads(client.catalog_body) == {
+        "schema_version": 1,
+        "publish_versions": {
+            "malaysia-singapore-brunei": "20260714T000000Z",
+            "united-kingdom": "20260715T120000Z",
+        },
+    }
+
+
+def test_upload_backfill_paginates_region_current_listing(tmp_path):
+    version_root = tmp_path / "stage" / "united-kingdom" / "20260715T120000Z"
+    (version_root / "tiles/10").mkdir(parents=True)
+    (version_root / "united-kingdom.pmtiles").write_bytes(b"basemap")
+    (version_root / "manifest.json").write_text("{}")
+
+    class PaginatedBackfillClient:
+        def __init__(self):
+            self.catalog_body = None
+            self.list_requests = []
+
+        def get_object(self, *, Bucket, Key):
+            if Key == "united-kingdom/current.json":
+                raise FileNotFoundError(Key)
+            if Key == "catalog/current.json":
+                raise FileNotFoundError(Key)
+            if Key == "malaysia-singapore-brunei/current.json":
+                return {"Body": BytesIO(b'{"schema_version":1,"publish_version":"20260714T000000Z"}')}
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, **kwargs):
+            self.list_requests.append(kwargs)
+            prefix = kwargs["Prefix"]
+            if prefix == "united-kingdom/20260715T120000Z/":
+                return {"KeyCount": 0}
+            if prefix == "" and "ContinuationToken" not in kwargs:
+                return {
+                    "KeyCount": 1024,
+                    "IsTruncated": True,
+                    "NextContinuationToken": "page-2",
+                    "Contents": [{"Key": f"united-kingdom/20260701T000000Z/tiles/10/0/{index}.json.gz"} for index in range(1024)],
+                }
+            if prefix == "" and kwargs.get("ContinuationToken") == "page-2":
+                return {
+                    "KeyCount": 1,
+                    "IsTruncated": False,
+                    "Contents": [{"Key": "malaysia-singapore-brunei/current.json"}],
+                }
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            if Key == "catalog/current.json":
+                self.catalog_body = Body
+            return {"ETag": '"etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            pass
+
+    client = PaginatedBackfillClient()
+
+    R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+
+    assert json.loads(client.catalog_body)["publish_versions"] == {
+        "malaysia-singapore-brunei": "20260714T000000Z",
+        "united-kingdom": "20260715T120000Z",
+    }
+    assert any(request.get("ContinuationToken") == "page-2" for request in client.list_requests)
+
+
+def test_upload_backfill_fails_closed_when_listed_region_current_is_unreadable(tmp_path):
+    version_root = tmp_path / "stage" / "united-kingdom" / "20260715T120000Z"
+    (version_root / "tiles/10").mkdir(parents=True)
+    (version_root / "united-kingdom.pmtiles").write_bytes(b"basemap")
+    (version_root / "manifest.json").write_text("{}")
+
+    class UnreadableBackfillClient:
+        def __init__(self):
+            self.put_keys = []
+
+        def get_object(self, *, Bucket, Key):
+            if Key == "united-kingdom/current.json":
+                raise FileNotFoundError(Key)
+            if Key == "catalog/current.json":
+                raise FileNotFoundError(Key)
+            if Key == "malaysia-singapore-brunei/current.json":
+                raise RuntimeError("transient read failure")
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            if Prefix == "united-kingdom/20260715T120000Z/":
+                return {"KeyCount": 0}
+            if Prefix == "":
+                return {"KeyCount": 1, "Contents": [{"Key": "malaysia-singapore-brunei/current.json"}]}
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            self.put_keys.append(Key)
+            return {"ETag": '"etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            pass
+
+    client = UnreadableBackfillClient()
+
+    with pytest.raises(R.CurrentPointerUnavailable, match="could not backfill current pointer"):
+        R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+
+    assert "catalog/current.json" not in client.put_keys
+
+
+def test_upload_repairs_partial_shared_catalog_from_existing_region_currents(tmp_path):
+    version_root = tmp_path / "stage" / "united-kingdom" / "20260715T120000Z"
+    (version_root / "tiles/10").mkdir(parents=True)
+    (version_root / "united-kingdom.pmtiles").write_bytes(b"basemap")
+    (version_root / "manifest.json").write_text("{}")
+
+    class PartialCatalogBackfillClient:
+        def __init__(self):
+            self.catalog_body = None
+
+        def get_object(self, *, Bucket, Key):
+            if Key == "united-kingdom/current.json":
+                raise FileNotFoundError(Key)
+            if Key == "catalog/current.json":
+                return {"Body": BytesIO(b'{"schema_version":1,"publish_versions":{"uk":"20260713T000000Z"}}')}
+            if Key == "malaysia-singapore-brunei/current.json":
+                return {"Body": BytesIO(b'{"schema_version":1,"publish_version":"20260714T000000Z"}')}
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            if Prefix == "united-kingdom/20260715T120000Z/":
+                return {"KeyCount": 0}
+            if Prefix == "":
+                return {"KeyCount": 1, "Contents": [{"Key": "malaysia-singapore-brunei/current.json"}]}
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            if Key == "catalog/current.json":
+                self.catalog_body = Body
+            return {"ETag": '"etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            pass
+
+    client = PartialCatalogBackfillClient()
+
+    R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+
+    assert json.loads(client.catalog_body) == {
+        "schema_version": 1,
+        "publish_versions": {
+            "malaysia-singapore-brunei": "20260714T000000Z",
+            "uk": "20260713T000000Z",
+            "united-kingdom": "20260715T120000Z",
+        },
+    }
+
+
+def test_upload_refreshes_stale_shared_catalog_entries_from_region_currents(tmp_path):
+    version_root = tmp_path / "stage" / "united-kingdom" / "20260715T120000Z"
+    (version_root / "tiles/10").mkdir(parents=True)
+    (version_root / "united-kingdom.pmtiles").write_bytes(b"basemap")
+    (version_root / "manifest.json").write_text("{}")
+
+    class StaleCatalogBackfillClient:
+        def __init__(self):
+            self.catalog_body = None
+
+        def get_object(self, *, Bucket, Key):
+            if Key == "united-kingdom/current.json":
+                raise FileNotFoundError(Key)
+            if Key == "catalog/current.json":
+                return {
+                    "Body": BytesIO(
+                        b'{"schema_version":1,"publish_versions":{"malaysia-singapore-brunei":"20260701T000000Z"}}'
+                    )
+                }
+            if Key == "malaysia-singapore-brunei/current.json":
+                return {"Body": BytesIO(b'{"schema_version":1,"publish_version":"20260714T000000Z"}')}
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            if Prefix == "united-kingdom/20260715T120000Z/":
+                return {"KeyCount": 0}
+            if Prefix == "":
+                return {"KeyCount": 1, "Contents": [{"Key": "malaysia-singapore-brunei/current.json"}]}
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            if Key == "catalog/current.json":
+                self.catalog_body = Body
+            return {"ETag": '"etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            pass
+
+    client = StaleCatalogBackfillClient()
+
+    R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+
+    assert json.loads(client.catalog_body) == {
+        "schema_version": 1,
+        "publish_versions": {
+            "malaysia-singapore-brunei": "20260714T000000Z",
+            "united-kingdom": "20260715T120000Z",
+        },
+    }
+
+
+def test_retry_of_live_region_repairs_missing_shared_catalog_without_reuploading_content(tmp_path):
+    version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
+    (version_root / "tiles/10/1").mkdir(parents=True)
+    (version_root / "tiles/10/1/2.json.gz").write_bytes(b"tile")
+    (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    (version_root / "manifest.json").write_text("{}")
+
+    class RepairCatalogClient:
+        def __init__(self):
+            self.put_keys = []
+
+        def get_object(self, *, Bucket, Key):
+            if Key == "uk/current.json":
+                return {"Body": BytesIO(b'{"schema_version":1,"publish_version":"20260715T120000Z"}')}
+            if Key == "catalog/current.json":
+                raise FileNotFoundError(Key)
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            if Prefix == "uk/20260715T120000Z/":
+                return {"KeyCount": 1, "Contents": [{"Key": "uk/20260715T120000Z/manifest.json"}]}
+            if Prefix == "":
+                return {"KeyCount": 1, "Contents": [{"Key": "uk/current.json"}]}
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            self.put_keys.append(Key)
+            return {"ETag": '"etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            pass
+
+    client = RepairCatalogClient()
+
+    R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+
+    assert client.put_keys == ["uk/publish.lock", "catalog/publish.lock", "catalog/current.json"]
+
+
+def test_retry_of_live_region_uploads_registry_blob_after_catalog_repair(tmp_path):
+    version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
+    (version_root / "tiles/10/1").mkdir(parents=True)
+    (version_root / "tiles/10/1/2.json.gz").write_bytes(b"tile")
+    (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    (version_root / "manifest.json").write_text("{}")
+
+    class RepairCatalogAndRegistryClient:
+        def __init__(self):
+            self.puts = []
+
+        def get_object(self, *, Bucket, Key):
+            if Key == "uk/current.json":
+                return {"Body": BytesIO(b'{"schema_version":1,"publish_version":"20260715T120000Z"}')}
+            if Key == "catalog/current.json":
+                raise FileNotFoundError(Key)
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            if Prefix == "uk/20260715T120000Z/":
+                return {"KeyCount": 1, "Contents": [{"Key": "uk/20260715T120000Z/manifest.json"}]}
+            if Prefix == "":
+                return {"KeyCount": 1, "Contents": [{"Key": "uk/current.json"}]}
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            self.puts.append((Bucket, Key, Body))
+            return {"ETag": '"etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            pass
+
+    client = RepairCatalogAndRegistryClient()
+
+    result = R.publish_to_r2(
+        version_root,
+        _layout(),
+        client=client,
+        upload=True,
+        registry_blob=b'{"place_id":"mt1"}\n',
+    )
+
+    assert [key for _bucket, key, _body in client.puts] == [
+        "uk/publish.lock",
+        "catalog/publish.lock",
+        "catalog/current.json",
+        "registry/uk.jsonl",
+    ]
+    assert client.puts[-1] == ("making-tracks-state", "registry/uk.jsonl", b'{"place_id":"mt1"}\n')
+    assert [op.kind for op in result.plan.ops] == ["catalog_current", "registry"]
+    assert result.uploaded == 2
+
+
+def test_catalog_lock_contention_does_not_block_content_or_region_current_upload(tmp_path):
+    version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
+    (version_root / "tiles/10/1").mkdir(parents=True)
+    (version_root / "tiles/10/1/2.json.gz").write_bytes(b"tile")
+    (version_root / "uk.pmtiles").write_bytes(b"basemap")
+    (version_root / "manifest.json").write_text("{}")
+
+    class PreconditionFailed(Exception):
+        response = {"Error": {"Code": "PreconditionFailed"}}
+
+    class CatalogLockHeldClient:
+        def __init__(self):
+            self.put_keys = []
+
+        def get_object(self, *, Bucket, Key):
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            self.put_keys.append(Key)
+            if Key == "catalog/publish.lock":
+                raise PreconditionFailed()
+            return {"ETag": '"etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            pass
+
+    client = CatalogLockHeldClient()
+
+    with pytest.raises(R.PublishLockUnavailable, match="publish lock is held"):
+        R.publish_to_r2(version_root, _layout(), client=client, upload=True)
+
+    assert "uk/20260715T120000Z/manifest.json" in client.put_keys
+    assert "uk/current.json" in client.put_keys
+    assert client.put_keys.index("uk/current.json") < client.put_keys.index("catalog/publish.lock")
+    assert "catalog/current.json" not in client.put_keys
 
 
 def test_upload_merges_shared_current_catalog_without_dropping_other_regions(tmp_path):
@@ -353,7 +733,7 @@ def test_upload_merges_shared_current_catalog_without_dropping_other_regions(tmp
         b'{"schema_version":1,"publish_versions":{"uk":"latest"}}',
     ],
 )
-def test_upload_rejects_malformed_shared_current_catalog_before_public_writes(
+def test_upload_rejects_malformed_shared_current_catalog_after_fulfillable_region_current(
     tmp_path, catalog_body
 ):
     version_root = tmp_path / "stage" / "uk" / "20260715T120000Z"
@@ -387,7 +767,9 @@ def test_upload_rejects_malformed_shared_current_catalog_before_public_writes(
     with pytest.raises(R.CurrentPointerUnavailable):
         R.publish_to_r2(version_root, _layout(), client=client, upload=True)
 
-    assert client.put_keys == ["uk/publish.lock", "catalog/publish.lock"]
+    assert "uk/current.json" in client.put_keys
+    assert "catalog/publish.lock" in client.put_keys
+    assert "catalog/current.json" not in client.put_keys
 
 
 def test_default_client_uses_committed_r2_s3_endpoint_contract(monkeypatch):
@@ -486,11 +868,31 @@ def test_live_current_and_unavailable_current_are_fail_closed(tmp_path):
     (version_root / "manifest.json").write_text("{}")
 
     class LiveCurrentClient:
-        def get_object(self, *, Bucket, Key):
-            return {"Body": BytesIO(b'{"schema_version":1,"publish_version":"20260715T120000Z"}')}
+        def __init__(self):
+            self.puts = []
 
-    with pytest.raises(R.VersionAlreadyLive):
-        R.publish_to_r2(version_root, _layout(), client=LiveCurrentClient(), upload=True)
+        def get_object(self, *, Bucket, Key):
+            if Key == "uk/current.json":
+                return {"Body": BytesIO(b'{"schema_version":1,"publish_version":"20260715T120000Z"}')}
+            if Key == "catalog/current.json":
+                raise FileNotFoundError(Key)
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys):
+            if Prefix == "":
+                return {"KeyCount": 1, "Contents": [{"Key": "uk/current.json"}]}
+            return {"KeyCount": 0}
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            self.puts.append(Key)
+            return {"ETag": '"etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            pass
+
+    live_client = LiveCurrentClient()
+    R.publish_to_r2(version_root, _layout(), client=live_client, upload=True)
+    assert live_client.puts == ["uk/publish.lock", "catalog/publish.lock", "catalog/current.json"]
 
     class BrokenCurrentClient:
         def get_object(self, *, Bucket, Key):
@@ -656,10 +1058,7 @@ def test_file_body_is_closed_when_upload_fails(tmp_path):
 
     assert client.tile_body is not None
     assert client.tile_body.closed is True
-    assert client.deleted == [
-        ("making-tracks-state", "catalog/publish.lock", '"lock-etag"'),
-        ("making-tracks-state", "uk/publish.lock", '"lock-etag"'),
-    ]
+    assert client.deleted == [("making-tracks-state", "uk/publish.lock", '"lock-etag"')]
 
 
 def test_the_real_r2_layout_config_has_two_distinct_buckets():

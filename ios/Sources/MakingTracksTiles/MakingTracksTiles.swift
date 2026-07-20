@@ -1604,6 +1604,7 @@ public final class ManifestClient: @unchecked Sendable {
         } else {
             data = try await fetcher.fetch(currentCatalogURL)
         }
+        guard data.count <= maxCurrentCatalogBytes else { throw TileError.responseTooLarge }
         return try decodeCurrentCatalog(data, requestedRegions: Set(regions))
     }
 
@@ -1612,14 +1613,14 @@ public final class ManifestClient: @unchecked Sendable {
             guard region.matches(regionIDPattern) else {
                 return ManifestPinResult(publish: nil, state: .unavailable)
             }
-            let currentURL = try trustedURL("\(region)/current.json")
-            let currentData: Data
+            let publishVersion: String
             do {
-                currentData = try await fetcher.fetch(currentURL)
+                let versions = try await Self.currentPublishVersions(regions: [region], fetcher: fetcher)
+                guard let version = versions[region] else { throw TileError.invalidCurrent }
+                publishVersion = version
             } catch {
                 return fallback(for: error)
             }
-            let publishVersion = try Self.decodeCurrent(currentData)
             let manifestURL = try trustedURL("\(region)/\(publishVersion)/manifest.json")
             let manifestData: Data
             do {
@@ -1685,7 +1686,7 @@ public final class ManifestClient: @unchecked Sendable {
             guard region.matches(regionIDPattern),
                   let publishVersion = rawVersion as? String,
                   publishVersion.matches("^[0-9]{8}T[0-9]{6}Z$")
-            else { throw TileError.invalidCurrent }
+            else { continue }
             versions[region] = publishVersion
         }
 
