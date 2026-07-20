@@ -31,10 +31,17 @@ def validate_region_index(instance: Mapping[str, Any]) -> None:
             raise RegionIndexInvalid(f"invalid bbox ordering for region {region_id}")
         compact = entry.get("search_compact")
         if compact is not None:
-            expected = f"{region_id}/{entry['publish_version']}/search/compact.json"
-            if compact.get("path") != expected:
+            path = compact.get("path")
+            if (
+                not isinstance(path, str)
+                or re.fullmatch(
+                    rf"{re.escape(region_id)}/[0-9]{{8}}T[0-9]{{6}}Z/search/compact\.json",
+                    path,
+                )
+                is None
+            ):
                 raise RegionIndexInvalid(
-                    f"search_compact path does not match region publish version for {region_id}"
+                    f"search_compact path does not match region id and publish version for {region_id}"
                 )
 
     for entry in regions:

@@ -16,7 +16,6 @@ def _valid_index():
                 "display_name": "Malaysia",
                 "parent": None,
                 "bbox": [99.64, 0.85, 119.27, 7.36],
-                "publish_version": "20260717T120000Z",
                 "search_compact": {
                     "path": "malaysia-singapore-brunei/20260717T120000Z/search/compact.json",
                     "sha256": "1" * 64,
@@ -33,7 +32,6 @@ def _valid_index():
                 "display_name": "Central Malaysia",
                 "parent": "malaysia-singapore-brunei",
                 "bbox": [101.6, 3.0, 101.8, 3.2],
-                "publish_version": "20260717T120000Z",
                 "search_compact": {
                     "path": "malaysia-singapore-brunei_central/20260717T120000Z/search/compact.json",
                     "sha256": "2" * 64,
@@ -59,6 +57,12 @@ def test_region_index_schema_version_matches_registry():
     inst = _valid_index()
     assert inst["schema_version"] == SCHEMA_VERSIONS["region_index"]
     inst["schema_version"] = SCHEMA_VERSIONS["region_index"] - 1
+    assert not is_valid("region-index", inst)
+
+
+def test_region_index_contract_rejects_per_region_publish_version():
+    inst = _valid_index()
+    inst["regions"][0]["publish_version"] = "20260717T120000Z"
     assert not is_valid("region-index", inst)
 
 
@@ -102,10 +106,19 @@ def test_region_index_contract_requires_search_compact_metadata():
     assert not is_valid("region-index", inst)
 
 
-def test_region_index_helper_rejects_search_compact_version_mismatch():
+def test_region_index_helper_rejects_search_compact_region_mismatch():
     inst = _valid_index()
     inst["regions"][0]["search_compact"]["path"] = (
-        "malaysia-singapore-brunei/20260718T120000Z/search/compact.json"
+        "other-region/20260717T120000Z/search/compact.json"
+    )
+    with pytest.raises(region_index.RegionIndexInvalid, match="search_compact path"):
+        region_index.validate_region_index(inst)
+
+
+def test_region_index_helper_requires_search_compact_path_publish_version_segment():
+    inst = _valid_index()
+    inst["regions"][0]["search_compact"]["path"] = (
+        "malaysia-singapore-brunei/search/compact.json"
     )
     with pytest.raises(region_index.RegionIndexInvalid, match="search_compact path"):
         region_index.validate_region_index(inst)

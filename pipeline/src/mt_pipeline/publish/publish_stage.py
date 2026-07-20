@@ -691,7 +691,6 @@ def _region_index(
                 "display_name": display_names[region],
                 "parent": parents.get(region),
                 "bbox": list(manifest_obj["basemap"]["bbox"]),
-                "publish_version": manifest_obj["publish_version"],
                 "search_compact": _search_compact_entry(target),
                 "basemap_bytes": basemap_bytes,
                 "tile_count": len(manifest_obj["tiles"]),
