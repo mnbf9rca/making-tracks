@@ -402,14 +402,28 @@ extension AppDatabase {
     }
 
     public func seedUITestingTrackList(named name: String, places: [PlaceRef]) throws {
-        try seedUITestingTrackList(named: name, places: places, spacing: 60 * 60)
+        try seedUITestingTrackList(named: name, places: places, spacing: 60 * 60, lovedVisitIndex: nil)
     }
 
-    public func seedUITestingMultiDayTrackList(named name: String, places: [PlaceRef]) throws {
-        try seedUITestingTrackList(named: name, places: Array(places.prefix(6)), spacing: 60 * 60 * 24)
+    public func seedUITestingMultiDayTrackList(
+        named name: String,
+        places: [PlaceRef],
+        lovedVisitIndex: Int? = nil
+    ) throws {
+        try seedUITestingTrackList(
+            named: name,
+            places: Array(places.prefix(6)),
+            spacing: 60 * 60 * 24,
+            lovedVisitIndex: lovedVisitIndex
+        )
     }
 
-    private func seedUITestingTrackList(named name: String, places: [PlaceRef], spacing: TimeInterval) throws {
+    private func seedUITestingTrackList(
+        named name: String,
+        places: [PlaceRef],
+        spacing: TimeInterval,
+        lovedVisitIndex: Int?
+    ) throws {
         let normalized = try Self.normalizedListName(name)
         try dbQueue.write { db in
             let seedStart = Date(timeIntervalSince1970: 1_000)
@@ -425,7 +439,7 @@ extension AppDatabase {
                     id: nil,
                     placeID: place.placeID,
                     visitedAt: timestamp,
-                    verdict: nil,
+                    verdict: lovedVisitIndex == index ? .loved : nil,
                     createdAt: timestamp
                 )
                 try visit.insert(db)
