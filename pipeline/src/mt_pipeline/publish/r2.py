@@ -768,7 +768,11 @@ def _merged_current_catalog(
     layout: Mapping[str, Any],
     publish_versions: Mapping[str, str],
 ) -> dict[str, str]:
-    versions = _read_current_catalog(client, layout)
+    versions = {
+        region: version
+        for region, version in _read_current_catalog(client, layout).items()
+        if not _is_legacy_region_id(region)
+    }
     versions.update(_read_region_current_pointers(client, layout))
     versions.update(publish_versions)
     if len(versions) > 1024:
@@ -826,6 +830,8 @@ def _read_region_current_pointers(client, layout: Mapping[str, Any]) -> dict[str
                 continue
             region = prefix.removesuffix("/")
             if "/" in region or not _REGION_RE.fullmatch(region):
+                continue
+            if _is_legacy_region_id(region):
                 continue
             try:
                 current_version = _current_publish_version(client, layout, region)
