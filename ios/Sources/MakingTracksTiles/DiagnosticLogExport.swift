@@ -1,6 +1,4 @@
-import CryptoKit
 import Foundation
-import Security
 
 public enum DiagnosticLogCategory: String, Sendable {
     case downloads
@@ -80,7 +78,6 @@ public struct DiagnosticLogArtifact: Equatable, Sendable {
     public var archiveURL: URL
     public var summaryURL: URL
     public var logURL: URL
-    public var decodeTableURL: URL
     public var byteCount: Int
     public var preview: String
 }
@@ -89,67 +86,18 @@ public enum DiagnosticLogExportError: Error, Equatable {
     case privacyScrubFailed
 }
 
-public enum DiagnosticLogSalt {
-    public static func loadOrCreate(service: String, account: String, length: Int = 32) throws -> Data {
-        precondition(length > 0)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var result: CFTypeRef?
-        let readStatus = SecItemCopyMatching(query as CFDictionary, &result)
-        if readStatus == errSecSuccess, let data = result as? Data {
-            return data
-        }
-        if readStatus != errSecItemNotFound {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(readStatus))
-        }
-
-        var bytes = Data(count: length)
-        let randomStatus = bytes.withUnsafeMutableBytes { buffer in
-            guard let baseAddress = buffer.baseAddress else { return errSecParam }
-            return SecRandomCopyBytes(kSecRandomDefault, length, baseAddress)
-        }
-        guard randomStatus == errSecSuccess else {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(randomStatus))
-        }
-
-        let addQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-            kSecValueData as String: bytes,
-        ]
-        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
-        guard addStatus == errSecSuccess || addStatus == errSecDuplicateItem else {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(addStatus))
-        }
-        if addStatus == errSecDuplicateItem {
-            return try loadOrCreate(service: service, account: account, length: length)
-        }
-        return bytes
-    }
-}
-
 public final class DiagnosticLogStore {
     public let root: URL
-    private let salt: Data
     private let now: @Sendable () -> Date
     private let fileManager: FileManager
     private let lock = NSLock()
 
     public init(
         root: URL,
-        salt: Data,
         now: @escaping @Sendable () -> Date = Date.init,
         fileManager: FileManager = .default
     ) {
         self.root = root
-        self.salt = salt
         self.now = now
         self.fileManager = fileManager
     }
@@ -173,28 +121,17 @@ public final class DiagnosticLogStore {
         fields: [DiagnosticLogField]
     ) throws {
         let timestamp = Self.timestampFormatter().string(from: now())
-        var objectDecodeEntries: [String: String] = [:]
         let renderedFields = fields.map { field in
             switch field {
             case let .public(name, value):
                 return "\(name)=\(Self.sanitizePublicValue(value))"
             case let .object(name, value):
-                let hash = hashObject(value)
-                objectDecodeEntries[hash] = Self.sanitizePublicValue(value)
-                return "\(name)=\(hash)"
+                return "\(name)=\(Self.sanitizePublicValue(value))"
             }
         }
         let line = ([timestamp, category.rawValue, level.rawValue, message] + renderedFields)
             .joined(separator: " ")
-        try appendRawLine(line, objectDecodeEntries: objectDecodeEntries)
-    }
-
-    public func hashObject(_ value: String) -> String {
-        var data = Data()
-        data.append(salt)
-        data.append(Data(value.utf8))
-        let digest = SHA256.hash(data: data)
-        return "h:" + digest.map { String(format: "%02x", $0) }.joined().prefix(16)
+        try appendRawLine(line)
     }
 
     public func deleteDiagnostics(stagingRoot: URL) throws {
@@ -225,24 +162,14 @@ public final class DiagnosticLogStore {
     }
 
     func appendRawLineForTesting(_ line: String) throws {
-        try appendRawLine(line, objectDecodeEntries: [:])
-    }
-
-    func snapshotObjectDecodeEntries() throws -> [String: String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return try readObjectDecodeEntries()
+        try appendRawLine(line)
     }
 
     private var logURL: URL {
         root.appendingPathComponent("making-tracks.log", isDirectory: false)
     }
 
-    private var objectDecodeURL: URL {
-        root.appendingPathComponent("object-decode.tsv", isDirectory: false)
-    }
-
-    private func appendRawLine(_ line: String, objectDecodeEntries: [String: String]) throws {
+    private func appendRawLine(_ line: String) throws {
         lock.lock()
         defer { lock.unlock() }
         try createDirectoryIfNeeded(root)
@@ -256,33 +183,6 @@ public final class DiagnosticLogStore {
             try output.write(to: logURL, atomically: true, encoding: .utf8)
             try Self.setDiagnosticsResourceValues(logURL)
         }
-        if objectDecodeEntries.isEmpty == false {
-            try mergeObjectDecodeEntries(objectDecodeEntries)
-        }
-    }
-
-    private func readObjectDecodeEntries() throws -> [String: String] {
-        guard fileManager.fileExists(atPath: objectDecodeURL.path) else { return [:] }
-        let text = try String(contentsOf: objectDecodeURL, encoding: .utf8)
-        return text
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .dropFirst()
-            .reduce(into: [String: String]()) { entries, line in
-                let parts = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
-                guard parts.count == 2 else { return }
-                entries[String(parts[0])] = String(parts[1])
-            }
-    }
-
-    private func mergeObjectDecodeEntries(_ newEntries: [String: String]) throws {
-        var entries = try readObjectDecodeEntries()
-        for (hash, plaintext) in newEntries {
-            entries[hash] = plaintext
-        }
-        var lines = ["hash\tplaintext"]
-        lines.append(contentsOf: entries.sorted { $0.key < $1.key }.map { "\($0.key)\t\($0.value)" })
-        try (lines.joined(separator: "\n") + "\n").write(to: objectDecodeURL, atomically: true, encoding: .utf8)
-        try Self.setDiagnosticsResourceValues(objectDecodeURL)
     }
 
     private func createDirectoryIfNeeded(_ url: URL) throws {
@@ -319,20 +219,17 @@ public final class DiagnosticLogStore {
 public struct DiagnosticLogExporter {
     private let store: DiagnosticLogStore
     private let metadata: DiagnosticLogMetadata
-    private let knownObjects: [String]
     private let fileManager: FileManager
     private let exportedAt: @Sendable () -> Date
 
     public init(
         store: DiagnosticLogStore,
         metadata: DiagnosticLogMetadata,
-        knownObjects: [String],
         fileManager: FileManager = .default,
         exportedAt: @escaping @Sendable () -> Date = Date.init
     ) {
         self.store = store
         self.metadata = metadata
-        self.knownObjects = knownObjects
         self.fileManager = fileManager
         self.exportedAt = exportedAt
     }
@@ -349,29 +246,25 @@ public struct DiagnosticLogExporter {
 
             let summaryURL = directory.appendingPathComponent("summary-\(exportTimestamp).txt")
             let logURL = directory.appendingPathComponent("diagnostic-log-\(exportTimestamp).txt")
-            let decodeTableURL = directory.appendingPathComponent("decode-table-\(exportTimestamp).tsv")
 
             let summary = renderSummary()
             let log = try store.snapshotLines(window: window).joined(separator: "\n") + "\n"
-            let decodeTable = try renderDecodeTable(log: log)
-            let scrubText = [summary, log, decodeTable].joined(separator: "\n")
+            let scrubText = [summary, log].joined(separator: "\n")
             guard Self.passesPrivacyScrub(scrubText) else {
                 throw DiagnosticLogExportError.privacyScrubFailed
             }
 
             try summary.write(to: summaryURL, atomically: true, encoding: .utf8)
             try log.write(to: logURL, atomically: true, encoding: .utf8)
-            try decodeTable.write(to: decodeTableURL, atomically: true, encoding: .utf8)
             let archiveURL = try makeArchive(directory: directory, stagingRoot: stagingRoot, exportTimestamp: exportTimestamp)
             let byteCount = try archiveByteCount(archiveURL)
-            let preview = renderPreview(summary: summary, log: log, decodeTable: decodeTable)
+            let preview = renderPreview(summary: summary, log: log)
 
             return DiagnosticLogArtifact(
                 directoryURL: directory,
                 archiveURL: archiveURL,
                 summaryURL: summaryURL,
                 logURL: logURL,
-                decodeTableURL: decodeTableURL,
                 byteCount: byteCount,
                 preview: preview
             )
@@ -430,29 +323,12 @@ public struct DiagnosticLogExporter {
         return lines.joined(separator: "\n") + "\n"
     }
 
-    private func renderDecodeTable(log: String) throws -> String {
-        var entries: [String: String] = [:]
-        let values = Set(knownObjects + metadata.installedPacks.flatMap { [$0.id, "\($0.id)/\($0.publishVersion)"] })
-        for value in values {
-            entries[store.hashObject(value)] = value
-        }
-        let logHashes = Self.objectHashes(in: log)
-        for (hash, plaintext) in try store.snapshotObjectDecodeEntries() where logHashes.contains(hash) {
-            entries[hash] = plaintext
-        }
-        var lines = ["hash\tplaintext"]
-        lines.append(contentsOf: entries.sorted { $0.key < $1.key }.map { "\($0.key)\t\($0.value)" })
-        return lines.joined(separator: "\n") + "\n"
-    }
-
-    private func renderPreview(summary: String, log: String, decodeTable: String) -> String {
+    private func renderPreview(summary: String, log: String) -> String {
         [
             "metadata:",
             summary.trimmingCharacters(in: .whitespacesAndNewlines),
             "log:",
             log.trimmingCharacters(in: .whitespacesAndNewlines),
-            "decode-table:",
-            decodeTable.trimmingCharacters(in: .whitespacesAndNewlines),
         ].joined(separator: "\n")
     }
 
@@ -467,11 +343,6 @@ public struct DiagnosticLogExporter {
         return forbiddenPatterns.allSatisfy { pattern in
             text.range(of: pattern, options: .regularExpression) == nil
         }
-    }
-
-    private static func objectHashes(in log: String) -> Set<String> {
-        let matches = log.matches(of: /h:[0-9a-f]{16}/)
-        return Set(matches.map { String($0.output) })
     }
 
     private static func filenameTimestampFormatter() -> DateFormatter {

@@ -5172,8 +5172,7 @@ private struct DiagnosticsView: View {
             let store = try DiagnosticsRuntime.makeStore()
             artifact = try DiagnosticLogExporter(
                 store: store,
-                metadata: DiagnosticsRuntime.metadata(storageStatus: storageStatus),
-                knownObjects: DiagnosticsRuntime.knownObjects(storageStatus: storageStatus)
+                metadata: DiagnosticsRuntime.metadata(storageStatus: storageStatus)
             ).prepare(window: selectedWindow, stagingRoot: DiagnosticsRuntime.stagingRoot())
         } catch DiagnosticLogExportError.privacyScrubFailed {
             scrubFailed = true
@@ -5224,11 +5223,7 @@ private enum DiagnosticsRuntime {
     static func makeStore() throws -> DiagnosticLogStore {
         let bundleIdentifier = Self.bundleIdentifier
         let root = try DiagnosticLogStore.defaultRoot(bundleIdentifier: bundleIdentifier)
-        let salt = try DiagnosticLogSalt.loadOrCreate(
-            service: bundleIdentifier,
-            account: "diagnostic-log-hash-salt"
-        )
-        return DiagnosticLogStore(root: root, salt: salt)
+        return DiagnosticLogStore(root: root)
     }
 
     static func stagingRoot() throws -> URL {
@@ -5246,17 +5241,6 @@ private enum DiagnosticsRuntime {
             deviceModel: deviceModel(),
             installedPacks: storageStatus.diagnosticInstalledPacks
         )
-    }
-
-    static func knownObjects(storageStatus: StorageMenuStatus) -> [String] {
-        storageStatus.regions.flatMap { region in
-            [
-                region.region,
-                "\(region.region)/\(region.publishVersion)",
-                "/\(region.region)/\(region.publishVersion)/current.json",
-                "/\(region.region)/\(region.publishVersion)/manifest.json",
-            ]
-        }
     }
 
     private static var bundleIdentifier: String {

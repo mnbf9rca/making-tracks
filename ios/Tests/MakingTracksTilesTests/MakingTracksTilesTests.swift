@@ -950,8 +950,7 @@ final class MakingTracksTilesTests: XCTestCase {
             .appendingPathComponent("TileClientDiagnosticBreadcrumbTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: fixtureRoot) }
         let store = DiagnosticLogStore(
-            root: fixtureRoot.appendingPathComponent("logs", isDirectory: true),
-            salt: Data("test-install-salt".utf8)
+            root: fixtureRoot.appendingPathComponent("logs", isDirectory: true)
         )
         MakingTracksLog.configureDiagnosticLogStore(store)
         defer { MakingTracksLog.configureDiagnosticLogStore(nil) }

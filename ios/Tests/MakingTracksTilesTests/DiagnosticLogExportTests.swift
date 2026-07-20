@@ -3,10 +3,10 @@ import XCTest
 @testable import MakingTracksTiles
 
 final class DiagnosticLogExportTests: XCTestCase {
-    func testExportNamesMalaysiaCurrent404ThroughHashDecodeTable() throws {
+    func testExportNamesMalaysiaCurrent404DirectlyInDiagnosticLog() throws {
         let fixture = try makeFixture()
         let objectPath = "/malaysia-singapore-brunei/20260719T125813Z/current.json"
-        let store = DiagnosticLogStore(root: fixture.logs, salt: fixture.salt, now: { fixture.now })
+        let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
         try store.append(
             category: .resolution,
             level: .error,
@@ -20,57 +20,44 @@ final class DiagnosticLogExportTests: XCTestCase {
 
         let artifact = try DiagnosticLogExporter(
             store: store,
-            metadata: fixture.metadata,
-            knownObjects: [objectPath]
+            metadata: fixture.metadata
         ).prepare(window: .everything, stagingRoot: fixture.staging)
 
         let log = try String(contentsOf: artifact.logURL, encoding: .utf8)
-        let decodeTable = try String(contentsOf: artifact.decodeTableURL, encoding: .utf8)
         let summary = try String(contentsOf: artifact.summaryURL, encoding: .utf8)
 
         XCTAssertTrue(log.contains("host=tiles.making-tracks.app"))
         XCTAssertTrue(log.contains("status=http-404"))
-        XCTAssertFalse(log.contains(objectPath), log)
-        XCTAssertTrue(decodeTable.contains("\(store.hashObject(objectPath))\t\(objectPath)"))
+        XCTAssertTrue(log.contains("object=\(objectPath)"))
         XCTAssertTrue(summary.contains("pack=malaysia-singapore-brunei publish=20260719T125813Z state=installed"))
-        XCTAssertTrue(artifact.preview.contains("decode-table:"))
-        XCTAssertTrue(artifact.preview.contains("malaysia-singapore-brunei"))
+        XCTAssertTrue(artifact.preview.contains("log:"))
+        XCTAssertTrue(artifact.preview.contains(objectPath))
+        XCTAssertFalse(artifact.preview.contains("decode-table:"))
     }
 
-    func testExportDecodesObjectHashesRecordedOnlyInTheLog() throws {
+    func testExportDoesNotCreateDecodeTable() throws {
         let fixture = try makeFixture()
-        let objectPath = "/malaysia-singapore-brunei/20260719T125813Z/descriptions/10/511/340.json"
-        let store = DiagnosticLogStore(root: fixture.logs, salt: fixture.salt, now: { fixture.now })
-        try store.append(
-            category: .resolution,
-            level: .error,
-            message: "fetch failed",
-            fields: [
-                .public("host", "tiles.making-tracks.app"),
-                .public("kind", "unknown"),
-                .public("status", "http-404"),
-                .object("object", objectPath),
-            ]
-        )
+        let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
+        try store.append(category: .startup, level: .info, message: "app init finished", fields: [])
 
         let artifact = try DiagnosticLogExporter(
             store: store,
             metadata: fixture.metadata,
-            knownObjects: [],
             exportedAt: { fixture.now }
         ).prepare(window: .everything, stagingRoot: fixture.staging)
 
-        let log = try String(contentsOf: artifact.logURL, encoding: .utf8)
-        let decodeTable = try String(contentsOf: artifact.decodeTableURL, encoding: .utf8)
+        let files = try FileManager.default.contentsOfDirectory(atPath: artifact.directoryURL.path)
 
-        XCTAssertTrue(log.contains("object=\(store.hashObject(objectPath))"))
-        XCTAssertFalse(log.contains(objectPath), log)
-        XCTAssertTrue(decodeTable.contains("\(store.hashObject(objectPath))\t\(objectPath)"))
+        XCTAssertEqual(Set(files), [
+            "diagnostic-log-20260719T121813Z.txt",
+            "summary-20260719T121813Z.txt",
+        ])
+        XCTAssertFalse(files.contains { $0.contains("decode-table") })
     }
 
     func testExportOmitsPromisedUserDataClasses() throws {
         let fixture = try makeFixture()
-        let store = DiagnosticLogStore(root: fixture.logs, salt: fixture.salt, now: { fixture.now })
+        let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
         try store.append(
             category: .downloads,
             level: .info,
@@ -83,16 +70,15 @@ final class DiagnosticLogExportTests: XCTestCase {
 
         let artifact = try DiagnosticLogExporter(
             store: store,
-            metadata: fixture.metadata,
-            knownObjects: ["malaysia-singapore-brunei"]
+            metadata: fixture.metadata
         ).prepare(window: .everything, stagingRoot: fixture.staging)
 
         let bundleText = try [
             artifact.summaryURL,
             artifact.logURL,
-            artifact.decodeTableURL,
         ].map { try String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
 
+        XCTAssertTrue(bundleText.contains("region=malaysia-singapore-brunei"))
         for forbidden in [
             "mt1_00000000000000000000000001",
             "Petronas Towers",
@@ -108,13 +94,12 @@ final class DiagnosticLogExportTests: XCTestCase {
 
     func testExportUsesTimestampedArchiveAndMemberNames() throws {
         let fixture = try makeFixture()
-        let store = DiagnosticLogStore(root: fixture.logs, salt: fixture.salt, now: { fixture.now })
+        let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
         try store.append(category: .startup, level: .info, message: "app init finished", fields: [])
 
         let artifact = try DiagnosticLogExporter(
             store: store,
             metadata: fixture.metadata,
-            knownObjects: [],
             exportedAt: { fixture.now }
         ).prepare(window: .everything, stagingRoot: fixture.staging)
 
@@ -122,18 +107,16 @@ final class DiagnosticLogExportTests: XCTestCase {
         XCTAssertEqual(artifact.archiveURL.lastPathComponent, "MakingTracksDiagnostics-20260719T121813Z.zip")
         XCTAssertEqual(artifact.summaryURL.lastPathComponent, "summary-20260719T121813Z.txt")
         XCTAssertEqual(artifact.logURL.lastPathComponent, "diagnostic-log-20260719T121813Z.txt")
-        XCTAssertEqual(artifact.decodeTableURL.lastPathComponent, "decode-table-20260719T121813Z.tsv")
     }
 
     func testPreparedArtifactReportsArchiveByteCount() throws {
         let fixture = try makeFixture()
-        let store = DiagnosticLogStore(root: fixture.logs, salt: fixture.salt, now: { fixture.now })
+        let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
         try store.append(category: .startup, level: .info, message: "app init finished", fields: [])
 
         let artifact = try DiagnosticLogExporter(
             store: store,
             metadata: fixture.metadata,
-            knownObjects: [],
             exportedAt: { fixture.now }
         ).prepare(window: .everything, stagingRoot: fixture.staging)
 
@@ -145,13 +128,12 @@ final class DiagnosticLogExportTests: XCTestCase {
 
     func testExportScrubFailsClosedForPlaceIdentifiersAndCoordinates() throws {
         let fixture = try makeFixture()
-        let store = DiagnosticLogStore(root: fixture.logs, salt: fixture.salt, now: { fixture.now })
+        let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
         try store.appendRawLineForTesting("2026-07-19T12:58:13Z resolution error place_id=mt1_00000000000000000000000001 lat=51.5074")
 
         XCTAssertThrowsError(try DiagnosticLogExporter(
             store: store,
-            metadata: fixture.metadata,
-            knownObjects: []
+            metadata: fixture.metadata
         ).prepare(window: .everything, stagingRoot: fixture.staging)) { error in
             XCTAssertEqual(error as? DiagnosticLogExportError, .privacyScrubFailed)
         }
@@ -161,7 +143,7 @@ final class DiagnosticLogExportTests: XCTestCase {
 
     func testDeleteDiagnosticsClearsLogsAndStaging() throws {
         let fixture = try makeFixture()
-        let store = DiagnosticLogStore(root: fixture.logs, salt: fixture.salt, now: { fixture.now })
+        let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
         try store.append(category: .startup, level: .info, message: "app init finished", fields: [])
         try FileManager.default.createDirectory(at: fixture.staging, withIntermediateDirectories: true)
         try "staged".write(to: fixture.staging.appendingPathComponent("old.txt"), atomically: true, encoding: .utf8)
@@ -192,20 +174,13 @@ final class DiagnosticLogExportTests: XCTestCase {
                 ),
             ]
         )
-        return Fixture(
-            logs: logs,
-            staging: staging,
-            salt: Data("test-install-salt".utf8),
-            now: now,
-            metadata: metadata
-        )
+        return Fixture(logs: logs, staging: staging, now: now, metadata: metadata)
     }
 }
 
 private struct Fixture {
     let logs: URL
     let staging: URL
-    let salt: Data
     let now: Date
     let metadata: DiagnosticLogMetadata
 }
