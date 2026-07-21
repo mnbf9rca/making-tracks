@@ -47,15 +47,124 @@ def cells_for_multipolygon(multipolygon: list) -> set[tuple[int, int]]:
         ring = polygon[0]
         if not ring:
             continue
-        xs = [float(point[0]) for point in ring]
-        ys = [float(point[1]) for point in ring]
-        min_x, min_y = lonlat_to_cell(min(xs), max(ys))
-        max_x, max_y = lonlat_to_cell(max(xs), min(ys))
-        for x in range(min(min_x, max_x), max(min_x, max_x) + 1):
-            for y in range(min(min_y, max_y), max(min_y, max_y) + 1):
-                if _polygon_intersects_bbox(polygon, cell_bbox(x, y)):
+        outer_cells = _cells_for_ring_area(ring)
+        for hole in polygon[1:]:
+            if hole:
+                outer_cells -= _cells_wholly_inside_hole(hole)
+        cells.update(outer_cells)
+    return cells
+
+
+def _cells_for_ring_area(ring: list) -> set[tuple[int, int]]:
+    min_x, max_x, min_y, max_y = _ring_cell_bounds(ring)
+    cells = _cells_for_ring_boundary(ring)
+    cells.update(_cells_for_ring_interior(ring, min_x, max_x, min_y, max_y))
+    return cells
+
+
+def _ring_cell_bounds(ring: list) -> tuple[int, int, int, int]:
+    xs = [float(point[0]) for point in ring]
+    ys = [float(point[1]) for point in ring]
+    min_x, min_y = lonlat_to_cell(min(xs), max(ys))
+    max_x, max_y = lonlat_to_cell(max(xs), min(ys))
+    return min(min_x, max_x), max(min_x, max_x), min(min_y, max_y), max(min_y, max_y)
+
+
+def _cells_for_ring_boundary(ring: list) -> set[tuple[int, int]]:
+    cells: set[tuple[int, int]] = set()
+    for start, end in _ring_edges(ring):
+        ax, ay = float(start[0]), float(start[1])
+        bx, by = float(end[0]), float(end[1])
+        start_x, start_y = lonlat_to_cell(ax, ay)
+        end_x, end_y = lonlat_to_cell(bx, by)
+        min_x, max_x = sorted((start_x, end_x))
+        min_y, max_y = sorted((start_y, end_y))
+        for x in range(min_x, max_x + 1):
+            for y in range(min_y, max_y + 1):
+                bbox = cell_bbox(x, y)
+                if _point_in_bbox(ax, ay, bbox) or _point_in_bbox(bx, by, bbox):
+                    cells.add((x, y))
+                elif _segment_intersects_bbox((ax, ay), (bx, by), bbox):
                     cells.add((x, y))
     return cells
+
+
+def _segment_intersects_bbox(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    bbox: tuple[float, float, float, float],
+) -> bool:
+    west, south, east, north = bbox
+    corners = [(west, south), (east, south), (east, north), (west, north)]
+    bbox_edges = list(
+        zip(corners, [corners[1], corners[2], corners[3], corners[0]], strict=True)
+    )
+    return any(
+        _segments_intersect(start, end, edge_start, edge_end)
+        for edge_start, edge_end in bbox_edges
+    )
+
+
+def _cells_for_ring_interior(
+    ring: list,
+    min_x: int,
+    max_x: int,
+    min_y: int,
+    max_y: int,
+) -> set[tuple[int, int]]:
+    cells: set[tuple[int, int]] = set()
+    center_lons = {x: _cell_center_lon(x) for x in range(min_x, max_x + 1)}
+    for y in range(min_y, max_y + 1):
+        center_lat = _cell_center_lat(y)
+        intersections = _ring_scanline_intersections(ring, center_lat)
+        if not intersections:
+            continue
+        if len(intersections) % 2 != 0:
+            cells.update(
+                (x, y)
+                for x, center_lon in center_lons.items()
+                if _point_in_polygon((center_lon, center_lat), ring)
+            )
+            continue
+        intervals = list(zip(intersections[0::2], intersections[1::2], strict=False))
+        for x, center_lon in center_lons.items():
+            if any(west <= center_lon <= east for west, east in intervals):
+                cells.add((x, y))
+    return cells
+
+
+def _cell_center_lon(x: int) -> float:
+    west, _, east, _ = cell_bbox(x, 0)
+    return (west + east) / 2.0
+
+
+def _cell_center_lat(y: int) -> float:
+    _, south, _, north = cell_bbox(0, y)
+    return (south + north) / 2.0
+
+
+def _ring_scanline_intersections(ring: list, lat: float) -> list[float]:
+    intersections = []
+    for start, end in _ring_edges(ring):
+        x1, y1 = float(start[0]), float(start[1])
+        x2, y2 = float(end[0]), float(end[1])
+        if (y1 > lat) == (y2 > lat):
+            continue
+        intersections.append(x1 + (lat - y1) * (x2 - x1) / (y2 - y1))
+    return sorted(intersections)
+
+
+def _ring_edges(ring: list):
+    yield from zip(ring, ring[1:], strict=False)
+    if len(ring) > 1 and ring[0] != ring[-1]:
+        yield ring[-1], ring[0]
+
+
+def _cells_wholly_inside_hole(ring: list) -> set[tuple[int, int]]:
+    min_x, max_x, min_y, max_y = _ring_cell_bounds(ring)
+    boundary = _cells_for_ring_boundary(ring)
+    interior = _cells_for_ring_interior(ring, min_x, max_x, min_y, max_y)
+    return interior - boundary
 
 
 def _polygon_intersects_bbox(polygon: list, bbox: tuple[float, float, float, float]) -> bool:
@@ -236,6 +345,7 @@ def _zone_entries(conn, region_config, publish_version: str, cell_sizes) -> list
                 "bbox": json.loads(row[6]),
                 "geometry": geometry["coordinates"],
                 "cells": cells,
+                "samples": _multipolygon_samples(geometry["coordinates"]),
             }
         )
     parents = _parents(raw)
@@ -276,11 +386,16 @@ def _parents(items: list[dict]) -> dict[str, str]:
         for parent in items:
             if parent["admin_level"] >= child["admin_level"]:
                 continue
-            containment = _multipolygon_containment_ratio(
-                child["geometry"], parent["geometry"]
-            )
-            if containment >= 0.5 and _multipolygon_has_strict_containment_sample(
-                child["geometry"], parent["geometry"]
+            if not _bboxes_intersect(child["bbox"], parent["bbox"]):
+                continue
+            containment = _cell_containment_ratio(child["cells"], parent["cells"])
+            if containment < 0.5:
+                continue
+            if _bboxes_have_strict_interior_overlap(
+                child["bbox"], parent["bbox"]
+            ) or _has_strict_containment_sample(
+                child["samples"],
+                parent["geometry"],
             ):
                 candidates.append((parent, containment))
         if candidates:
@@ -293,6 +408,36 @@ def _parents(items: list[dict]) -> dict[str, str]:
             )
             out[child["zone_id"]] = candidates[0][0]["zone_id"]
     return out
+
+
+def _bboxes_intersect(left: list[float], right: list[float]) -> bool:
+    left_west, left_south, left_east, left_north = [float(value) for value in left]
+    right_west, right_south, right_east, right_north = [float(value) for value in right]
+    return not (
+        left_east < right_west
+        or right_east < left_west
+        or left_north < right_south
+        or right_north < left_south
+    )
+
+
+def _bboxes_have_strict_interior_overlap(left: list[float], right: list[float]) -> bool:
+    left_west, left_south, left_east, left_north = [float(value) for value in left]
+    right_west, right_south, right_east, right_north = [float(value) for value in right]
+    return (
+        left_east > right_west
+        and right_east > left_west
+        and left_north > right_south
+        and right_north > left_south
+    )
+
+
+def _cell_containment_ratio(
+    child_cells: set[tuple[int, int]], parent_cells: set[tuple[int, int]]
+) -> float:
+    if not child_cells:
+        return 0.0
+    return len(child_cells.intersection(parent_cells)) / len(child_cells)
 
 
 def _assert_configured_levels_present(zones: list[dict], zone_levels: Mapping[int, str]) -> None:
@@ -319,6 +464,12 @@ def _assert_allowlist_present(zones: list[dict], allowlist: set[str]) -> None:
 
 def _multipolygon_containment_ratio(child: list, parent: list) -> float:
     samples = _multipolygon_samples(child)
+    return _containment_ratio_for_samples(samples, parent)
+
+
+def _containment_ratio_for_samples(
+    samples: list[tuple[float, float]], parent: list
+) -> float:
     if not samples:
         return 0.0
     contained = sum(1 for point in samples if _point_in_multipolygon(point, parent))
@@ -326,9 +477,15 @@ def _multipolygon_containment_ratio(child: list, parent: list) -> float:
 
 
 def _multipolygon_has_strict_containment_sample(child: list, parent: list) -> bool:
+    return _has_strict_containment_sample(_multipolygon_samples(child), parent)
+
+
+def _has_strict_containment_sample(
+    samples: list[tuple[float, float]], parent: list
+) -> bool:
     return any(
         _point_strictly_in_multipolygon(point, parent)
-        for point in _multipolygon_samples(child)
+        for point in samples
     )
 
 
