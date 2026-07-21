@@ -229,6 +229,19 @@ def run_stage(
     elif stage == "publish":
         from .publish import publish_stage
 
+        region_config = config.load(region)
+        if (
+            region_config.sources.get("wikipedia") is True
+            and not store.stage_completed(
+                conn,
+                region,
+                "acquire-wikipedia-sitelinks",
+            )
+        ):
+            raise StageOrderError(
+                "cannot run 'publish' for region "
+                f"{region!r}: run 'acquire-wikipedia-sitelinks' first"
+            )
         effective_version = publish_version or version
         if effective_version is None:
             raise StageVersionError("--publish-version is required for publish")

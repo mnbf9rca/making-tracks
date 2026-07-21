@@ -312,24 +312,48 @@ def candidates_from_source_records(
         (region,),
     )
     images_by_ref: dict[str, str] = {}
+    images_by_qid: dict[str, list[tuple[str, str]]] = {}
     wanted = set(source_refs)
     for source_ref, props_json in rows:
-        if source_ref not in wanted:
-            continue
         try:
             props = json.loads(props_json)
         except (ValueError, RecursionError):
             continue
         image_url = props.get("image") if isinstance(props, dict) else None
-        if isinstance(image_url, str) and commons_filename_from_upload_url(image_url):
-            images_by_ref[str(source_ref)] = image_url
+        if not (
+            isinstance(image_url, str)
+            and commons_filename_from_upload_url(image_url)
+        ):
+            continue
+        source_ref = str(source_ref)
+        if source_ref in wanted:
+            images_by_ref[source_ref] = image_url
+        qid = props.get("wikidata") if isinstance(props, dict) else None
+        if (
+            source_ref.startswith("wp:")
+            and isinstance(qid, str)
+            and re.fullmatch(r"Q[0-9]+", qid)
+        ):
+            images_by_qid.setdefault(qid, []).append((source_ref, image_url))
+    images_by_qid = {
+        qid: sorted(entries) for qid, entries in sorted(images_by_qid.items())
+    }
 
     candidates: list[ImageCandidate] = []
     for place in sorted(places, key=lambda item: str(item["place_id"])):
+        image_url = None
         for source_ref in sorted(place.get("source_refs", [])):
             image_url = images_by_ref.get(source_ref)
-            if image_url is None:
-                continue
+            if image_url is not None:
+                break
+        if image_url is None:
+            for qid in _retained_wikidata_qids(place):
+                entries = images_by_qid.get(qid)
+                if not entries:
+                    continue
+                image_url = entries[0][1]
+                break
+        if image_url is not None:
             candidates.append(
                 ImageCandidate(
                     place_id=str(place["place_id"]),
@@ -338,8 +362,15 @@ def candidates_from_source_records(
                     image_url=image_url,
                 )
             )
-            break
     return candidates
+
+
+def _retained_wikidata_qids(place: dict[str, Any]) -> list[str]:
+    return [
+        ref.split(":", 1)[1]
+        for ref in place.get("source_refs", ())
+        if isinstance(ref, str) and re.fullmatch(r"wd:Q[0-9]+", ref)
+    ]
 
 
 def exclude_cached_rejects(

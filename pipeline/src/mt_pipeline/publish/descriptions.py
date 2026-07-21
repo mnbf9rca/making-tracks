@@ -72,9 +72,10 @@ def descriptions_from_source_records(
         for row in source_rows
         if isinstance(row.get("source_ref"), str)
     }
+    rows_by_qid = _wikipedia_rows_by_qid(rows_by_ref.values())
     out: list[PlaceDescription] = []
     for place in sorted(places, key=lambda item: str(item["place_id"])):
-        for source_ref in _retained_wikipedia_refs(place):
+        for source_ref in _candidate_wikipedia_refs(place, rows_by_qid):
             row = rows_by_ref.get(source_ref)
             if row is None:
                 continue
@@ -290,6 +291,48 @@ def _retained_wikipedia_refs(place: Mapping[str, Any]) -> list[str]:
         for ref in place.get("source_refs", ())
         if isinstance(ref, str) and ref.startswith("wp:")
     ]
+
+
+def _candidate_wikipedia_refs(
+    place: Mapping[str, Any],
+    rows_by_qid: Mapping[str, list[str]],
+) -> list[str]:
+    refs = _retained_wikipedia_refs(place)
+    seen = set(refs)
+    for qid in _retained_wikidata_qids(place):
+        for source_ref in rows_by_qid.get(qid, ()):
+            if source_ref in seen:
+                continue
+            refs.append(source_ref)
+            seen.add(source_ref)
+    return refs
+
+
+def _retained_wikidata_qids(place: Mapping[str, Any]) -> list[str]:
+    return [
+        ref.split(":", 1)[1]
+        for ref in place.get("source_refs", ())
+        if isinstance(ref, str) and re.fullmatch(r"wd:Q[0-9]+", ref)
+    ]
+
+
+def _wikipedia_rows_by_qid(
+    rows: Iterable[Mapping[str, Any]],
+) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for row in rows:
+        source_ref = row.get("source_ref")
+        props = row.get("props")
+        if not (
+            isinstance(source_ref, str)
+            and source_ref.startswith("wp:")
+            and isinstance(props, Mapping)
+        ):
+            continue
+        qid = props.get("wikidata")
+        if isinstance(qid, str) and re.fullmatch(r"Q[0-9]+", qid):
+            out.setdefault(qid, []).append(source_ref)
+    return {qid: sorted(refs) for qid, refs in sorted(out.items())}
 
 
 def _safe_single_line(value: Any, *, max_chars: int) -> str | None:

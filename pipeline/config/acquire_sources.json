@@ -10,6 +10,11 @@
       }
     }
   },
+  "wikidata_entities": {
+    "endpoint": "https://www.wikidata.org/w/api.php",
+    "allowed_hosts": ["www.wikidata.org"],
+    "max_bytes": 33554432
+  },
   "wikipedia": {
     "endpoint": "https://en.wikipedia.org/w/api.php",
     "allowed_hosts": ["en.wikipedia.org"],

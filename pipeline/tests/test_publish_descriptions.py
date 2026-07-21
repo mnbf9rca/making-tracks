@@ -164,6 +164,28 @@ def test_description_extraction_uses_first_valid_retained_wikipedia_ref():
     assert descriptions[0].excerpt == "Valid extract."
 
 
+def test_description_extraction_uses_qid_sitelink_wikipedia_row_for_wd_only_place():
+    rows = [
+        {
+            "source_ref": "wp:12345",
+            "props": {
+                "lang": "en",
+                "title": "QID Article",
+                "description_extract": "QID-derived article extract.",
+                "wikidata": "Q42",
+            },
+        }
+    ]
+
+    descriptions = D.descriptions_from_source_records([_place(["wd:Q42"])], rows)
+
+    assert len(descriptions) == 1
+    assert descriptions[0].place_id == "mt1_" + "0" * 26
+    assert descriptions[0].source_ref == "wp:12345"
+    assert descriptions[0].wikipedia_title == "QID Article"
+    assert descriptions[0].excerpt == "QID-derived article extract."
+
+
 def test_emit_description_artifacts_validates_schema_and_keeps_tile_coordinates():
     descriptions = [
         _desc(

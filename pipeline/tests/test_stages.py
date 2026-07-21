@@ -109,6 +109,13 @@ def test_full_order_runs(conn):
             store.mark_stage_complete(conn, "united-kingdom", "reconcile", "r1", "2026-07-15T00:00:00Z")
             continue
         stages.run_stage(conn, "united-kingdom", stage, run_id="r1")
+    store.mark_stage_complete(
+        conn,
+        "united-kingdom",
+        "acquire-wikipedia-sitelinks",
+        "r1",
+        "2026-07-15T00:00:00Z",
+    )
     assert store.stage_completed(conn, "united-kingdom", "categorize")
     with pytest.raises(stages.StageVersionError, match="publish-version"):
         stages.run_stage(conn, "united-kingdom", "publish", run_id="r1")

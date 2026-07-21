@@ -4,7 +4,7 @@ import urllib.parse
 
 import pytest
 
-from mt_pipeline import acquire
+from mt_pipeline import acquire, store
 
 
 def _binding(qid: str, p31: str, lat: float = 1.2, lon: float = 101.3):
@@ -611,6 +611,296 @@ def test_wikipedia_acquisition_writes_complete_snapshot(tmp_path):
     assert [page["pageid"] for page in data["pages"]] == [10, 20]
     assert data["pages"][0]["wikidata"] == "Q10"
     assert len(calls) == 2
+
+
+def test_qid_sitelink_acquisition_augments_wikipedia_snapshot_with_verified_pages(tmp_path):
+    snapshot = tmp_path / "wikipedia.snapshot.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "_meta": {
+                    "complete": True,
+                    "retrieved_at": "2026-07-20T00:00:00Z",
+                    "segments": [],
+                },
+                "lang": "en",
+                "pages": [],
+            },
+            sort_keys=True,
+        )
+    )
+    calls = []
+
+    def fetch_json(url, *, expected_hosts, max_bytes, headers):
+        calls.append(url)
+        parsed = urllib.parse.urlparse(url)
+        params = urllib.parse.parse_qs(parsed.query)
+        assert headers["User-Agent"].startswith("MakingTracksBot/")
+        if parsed.netloc == "www.wikidata.org":
+            assert expected_hosts == {"www.wikidata.org"}
+            assert params["action"] == ["wbgetentities"]
+            assert params["ids"] == ["Q42|Q99"]
+            return {
+                "entities": {
+                    "Q42": {"sitelinks": {"enwiki": {"title": "QID Article"}}},
+                    "Q99": {"sitelinks": {"enwiki": {"title": "Wrong Article"}}},
+                }
+            }
+        assert expected_hosts == {"en.wikipedia.org"}
+        assert params["titles"] == ["QID Article|Wrong Article"]
+        assert params["prop"] == ["extracts|pageimages|pageprops"]
+        return {
+            "query": {
+                "pages": {
+                    "12345": {
+                        "pageid": 12345,
+                        "title": "QID Article",
+                        "extract": "Verified extract.",
+                        "pageprops": {"wikibase_item": "Q42"},
+                        "original": {
+                            "source": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg"
+                        },
+                    },
+                    "999": {
+                        "pageid": 999,
+                        "title": "Wrong Article",
+                        "extract": "Wrong extract.",
+                        "pageprops": {"wikibase_item": "Q100"},
+                    },
+                }
+            }
+        }
+
+    out = acquire.acquire_qid_sitelink_wikipedia(
+        snapshot,
+        seeds=[
+            {"qid": "Q99", "lat": 1.2, "lon": 100.2},
+            {"qid": "Q42", "lat": 3.1, "lon": 101.7},
+            {"qid": "not-a-qid", "lat": 0, "lon": 0},
+        ],
+        language="en",
+        wikidata_config={
+            "endpoint": "https://www.wikidata.org/w/api.php",
+            "allowed_hosts": ["www.wikidata.org"],
+        },
+        wikipedia_config={
+            "endpoint": "https://en.wikipedia.org/w/api.php",
+            "allowed_hosts": ["en.wikipedia.org"],
+        },
+        fetch_json=fetch_json,
+        sleep=lambda _seconds: None,
+        retrieved_at="2026-07-20T01:00:00Z",
+    )
+
+    data = json.loads(out.read_text())
+    assert out == snapshot
+    assert data["_meta"]["complete"] is True
+    assert data["_meta"]["qid_sitelink_retrieved_at"] == "2026-07-20T01:00:00Z"
+    assert data["qid_pages"] == [
+        {
+            "extract": "Verified extract.",
+            "image": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+            "owner_lat": 3.1,
+            "owner_lon": 101.7,
+            "pageid": 12345,
+            "qid": "Q42",
+            "title": "QID Article",
+            "wikibase_item": "Q42",
+        }
+    ]
+    assert len(calls) == 2
+
+
+def test_qid_sitelink_acquisition_skips_malformed_page_entries(tmp_path):
+    snapshot = tmp_path / "wikipedia.snapshot.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "_meta": {
+                    "complete": True,
+                    "retrieved_at": "2026-07-20T00:00:00Z",
+                    "segments": [],
+                },
+                "lang": "en",
+                "pages": [],
+            },
+            sort_keys=True,
+        )
+    )
+
+    def fetch_json(url, *, expected_hosts, max_bytes, headers):
+        parsed = urllib.parse.urlparse(url)
+        if parsed.netloc == "www.wikidata.org":
+            return {
+                "entities": {
+                    "Q42": {"sitelinks": {"enwiki": {"title": "Verified"}}},
+                    "Q43": {"sitelinks": {"enwiki": {"title": "Bad Props"}}},
+                }
+            }
+        return {
+            "query": {
+                "pages": {
+                    "not-numeric": {
+                        "pageid": "not-numeric",
+                        "title": "Verified",
+                        "pageprops": {"wikibase_item": "Q42"},
+                    },
+                    "43": {
+                        "pageid": 43,
+                        "title": "Bad Props",
+                        "pageprops": "not-an-object",
+                    },
+                    "42": {
+                        "pageid": 42,
+                        "title": "Verified",
+                        "extract": "Verified extract.",
+                        "pageprops": {"wikibase_item": "Q42"},
+                    },
+                }
+            }
+        }
+
+    out = acquire.acquire_qid_sitelink_wikipedia(
+        snapshot,
+        seeds=[
+            {"qid": "Q42", "lat": 3.1, "lon": 101.7},
+            {"qid": "Q43", "lat": 3.2, "lon": 101.8},
+        ],
+        language="en",
+        wikidata_config={
+            "endpoint": "https://www.wikidata.org/w/api.php",
+            "allowed_hosts": ["www.wikidata.org"],
+        },
+        wikipedia_config={
+            "endpoint": "https://en.wikipedia.org/w/api.php",
+            "allowed_hosts": ["en.wikipedia.org"],
+        },
+        fetch_json=fetch_json,
+        sleep=lambda _seconds: None,
+        retrieved_at="2026-07-20T01:00:00Z",
+    )
+
+    assert [item["pageid"] for item in json.loads(out.read_text())["qid_pages"]] == [42]
+
+
+def test_qid_sitelink_acquisition_rejects_malformed_response_containers(tmp_path):
+    snapshot = tmp_path / "wikipedia.snapshot.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "_meta": {
+                    "complete": True,
+                    "retrieved_at": "2026-07-20T00:00:00Z",
+                    "segments": [],
+                },
+                "lang": "en",
+                "pages": [],
+            },
+            sort_keys=True,
+        )
+    )
+
+    def fetch_json(url, *, expected_hosts, max_bytes, headers):
+        parsed = urllib.parse.urlparse(url)
+        if parsed.netloc == "www.wikidata.org":
+            return []
+        return {"query": []}
+
+    with pytest.raises(acquire.AcquireError, match="entities response"):
+        acquire.acquire_qid_sitelink_wikipedia(
+            snapshot,
+            seeds=[{"qid": "Q42", "lat": 3.1, "lon": 101.7}],
+            language="en",
+            wikidata_config={
+                "endpoint": "https://www.wikidata.org/w/api.php",
+                "allowed_hosts": ["www.wikidata.org"],
+            },
+            wikipedia_config={
+                "endpoint": "https://en.wikipedia.org/w/api.php",
+                "allowed_hosts": ["en.wikipedia.org"],
+            },
+            fetch_json=fetch_json,
+            sleep=lambda _seconds: None,
+            retrieved_at="2026-07-20T01:00:00Z",
+        )
+
+
+def test_qid_sitelink_acquisition_rejects_malformed_wikipedia_query(tmp_path):
+    snapshot = tmp_path / "wikipedia.snapshot.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "_meta": {
+                    "complete": True,
+                    "retrieved_at": "2026-07-20T00:00:00Z",
+                    "segments": [],
+                },
+                "lang": "en",
+                "pages": [],
+            },
+            sort_keys=True,
+        )
+    )
+
+    def fetch_json(url, *, expected_hosts, max_bytes, headers):
+        parsed = urllib.parse.urlparse(url)
+        if parsed.netloc == "www.wikidata.org":
+            return {"entities": {"Q42": {"sitelinks": {"enwiki": {"title": "Verified"}}}}}
+        return {"query": []}
+
+    with pytest.raises(acquire.AcquireError, match="pages response"):
+        acquire.acquire_qid_sitelink_wikipedia(
+            snapshot,
+            seeds=[{"qid": "Q42", "lat": 3.1, "lon": 101.7}],
+            language="en",
+            wikidata_config={
+                "endpoint": "https://www.wikidata.org/w/api.php",
+                "allowed_hosts": ["www.wikidata.org"],
+            },
+            wikipedia_config={
+                "endpoint": "https://en.wikipedia.org/w/api.php",
+                "allowed_hosts": ["en.wikipedia.org"],
+            },
+            fetch_json=fetch_json,
+            sleep=lambda _seconds: None,
+            retrieved_at="2026-07-20T01:00:00Z",
+        )
+
+
+def test_qid_sitelink_seeds_from_store_use_lowest_place_id_for_duplicate_qids(tmp_path):
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    store.replace_places(
+        conn,
+        region="malaysia-singapore-brunei",
+        places=[
+            {
+                "place_id": "place-z",
+                "name": "Later",
+                "lat": 9.0,
+                "lon": 109.0,
+                "refs": ["wd:Q42"],
+                "member_refs": ["osm:node/2"],
+                "status": "active",
+            },
+            {
+                "place_id": "place-a",
+                "name": "Earlier",
+                "lat": 1.0,
+                "lon": 101.0,
+                "refs": ["wd:Q42"],
+                "member_refs": ["osm:node/1"],
+                "status": "active",
+            },
+        ],
+    )
+    conn.execute("PRAGMA reverse_unordered_selects = ON")
+
+    assert acquire.qid_sitelink_seeds_from_store(
+        conn,
+        region="malaysia-singapore-brunei",
+    ) == [{"qid": "Q42", "lat": 1.0, "lon": 101.0}]
 
 
 def test_wikipedia_acquisition_fails_loudly_on_api_error(tmp_path):
