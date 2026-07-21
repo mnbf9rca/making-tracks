@@ -261,12 +261,64 @@ final class LoggingPrivacyTests: XCTestCase {
             encoding: .utf8
         )
 
-        XCTAssertTrue(source.contains("This file records what you did in the app and how it responded"))
-        XCTAssertTrue(source.contains("Your app version and device model; the places and actions in your session"))
-        XCTAssertTrue(source.contains("Your device's name; your exact location; your search wording."))
-        XCTAssertTrue(source.contains("This file describes your session. Share it only with someone you trust to help you."))
+        for expected in [
+            "Nothing is sent automatically. The app prepares a file on this phone",
+            "App version", "Device model", "Session flow", "Map packs",
+            "Object URLs", "Errors", "Timings", "Places/actions",
+            "Device name", "Exact location", "Search wording",
+        ] {
+            XCTAssertTrue(source.contains(expected), expected)
+        }
         XCTAssertFalse(source.contains("Places you looked at, saved, loved, hid or visited."))
         XCTAssertFalse(source.contains("Your searches, lists, location, viewport or device name."))
+    }
+
+    func testDiagnosticsRedesignKeepsDeleteInsideDiagnosticsContext() throws {
+        let source = try String(
+            contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+        let settingsSource = try XCTUnwrap(source.components(separatedBy: "private struct DiagnosticsView").first)
+
+        XCTAssertTrue(settingsSource.contains("Text(\"Diagnostic log\")"))
+        XCTAssertTrue(settingsSource.contains("Review, prepare, share, or delete local logs."))
+        XCTAssertFalse(settingsSource.contains("settings.diagnostics.delete"))
+        XCTAssertTrue(source.contains(".accessibilityIdentifier(\"settings.diagnostics.delete\")"))
+    }
+
+    func testDiagnosticsPreparedCopyUsesPlainConsentLanguage() throws {
+        let source = try String(
+            contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("Tap Share when you are ready to choose who gets it. Nothing leaves Making Tracks before then."))
+        XCTAssertTrue(source.contains("Making Tracks has no upload endpoint."))
+        XCTAssertFalse(source.contains("Share boundary"))
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("system share sheet"))
+    }
+
+    func testDiagnosticsPreviewGetsReadableScrollAreaForVerboseLogs() throws {
+        let source = try String(
+            contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("ScrollView([.horizontal, .vertical])"))
+        XCTAssertTrue(source.contains(".frame(minHeight: 220"))
+        XCTAssertTrue(source.contains(".font(.system(.footnote, design: .monospaced))"))
+    }
+
+    func testDiagnosticsDeleteRequiresConfirmation() throws {
+        let source = try String(
+            contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("@State private var showDeleteConfirmation = false"))
+        XCTAssertTrue(source.contains(".confirmationDialog(\"Delete diagnostic logs?\""))
+        XCTAssertTrue(source.contains("Button(\"Delete logs\", role: .destructive)"))
+        XCTAssertTrue(source.contains("showDeleteConfirmation = true"))
     }
 
     func testDiagnosticsPrepareDoesNotRunExporterSynchronouslyOnMainThread() throws {

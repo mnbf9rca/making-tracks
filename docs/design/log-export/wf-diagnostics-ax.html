@@ -10,8 +10,12 @@
       --dim: #64635d;
       --line: #ddd8ca;
       --accent: #0a6b5c;
-      --warn: #8a6d2f;
-      --good: #e8f2ee;
+      --accent-soft: #e4f1ed;
+      --warn: #8a4b2f;
+      --warn-soft: #f4e8df;
+      --danger: #b42318;
+      --danger-soft: #f8e7e4;
+      --charcoal: #2d2c29;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -74,13 +78,13 @@
     .rowitem:last-child { border-bottom: 0; }
     .icon {
       align-items: center;
-      background: var(--good);
+      background: var(--accent-soft);
       border-radius: 8px;
       color: var(--accent);
       display: flex;
       flex: none;
       font-size: 23px;
-      font-weight: 700;
+      font-weight: 750;
       height: 38px;
       justify-content: center;
       width: 38px;
@@ -89,6 +93,8 @@
     .primary { font-size: 22px; line-height: 1.18; }
     .secondary { color: var(--dim); font-size: 17px; line-height: 1.22; margin-top: 3px; }
     .chev { color: #aaa49a; font-size: 24px; margin-left: auto; }
+    .clip { bottom: 128px; left: 0; overflow: hidden; position: absolute; right: 0; top: 99px; }
+    .fade { background: linear-gradient(to bottom, rgba(255,253,247,0), rgba(255,253,247,.98)); bottom: 128px; height: 32px; left: 0; position: absolute; right: 0; }
     .hero {
       background: var(--sheet);
       border-bottom: 1px solid var(--line);
@@ -96,8 +102,6 @@
     }
     .hero h2 { font-size: 27px; line-height: 1.04; margin-bottom: 6px; }
     .hero p { color: #3a3a36; font-size: 16px; line-height: 1.18; max-width: 340px; }
-    .pillrow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
-    .pill { background: #f0eee8; border-radius: 18px; color: #44423d; font-size: 17px; padding: 8px 11px; }
     .segmented {
       background: #eeeae0;
       border-radius: 9px;
@@ -120,20 +124,59 @@
       box-shadow: 0 1px 3px rgba(0,0,0,.12);
       color: var(--ink);
     }
-    .panel { background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; margin: 8px 14px 0; padding: 10px; }
-    .panel h3 { font-size: 20px; margin-bottom: 6px; }
-    .bullets { display: grid; gap: 5px; }
-    .bullet { display: flex; gap: 8px; font-size: 15px; line-height: 1.12; }
-    .dot { color: var(--accent); font-weight: 800; }
-    .not .dot { color: var(--warn); }
+    .statusline {
+      align-items: flex-start;
+      background: #f3f0e7;
+      border: 1px solid #e2ddce;
+      border-radius: 9px;
+      display: flex;
+      gap: 9px;
+      margin-top: 10px;
+      padding: 8px 10px;
+    }
+    .statusline strong { display: block; font-size: 15px; line-height: 1.12; }
+    .statusline span { color: var(--dim); display: block; font-size: 13px; line-height: 1.12; margin-top: 2px; }
+    .panel { background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; margin: 6px 14px 0; padding: 8px 10px; }
+    .panel h3 { font-size: 18px; margin-bottom: 5px; }
+    .grid { display: grid; gap: 5px 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .consent {
+      align-items: flex-start;
+      display: grid;
+      gap: 6px;
+      grid-template-columns: 24px 1fr;
+      min-width: 0;
+    }
+    .mark {
+      align-items: center;
+      background: var(--accent-soft);
+      border-radius: 50%;
+      color: var(--accent);
+      display: flex;
+      font-size: 13px;
+      font-weight: 800;
+      height: 22px;
+      justify-content: center;
+      width: 22px;
+    }
+    .excluded .mark { background: var(--warn-soft); color: var(--warn); }
+    .consent strong { display: block; font-size: 13.4px; line-height: 1.05; }
+    .consent span { display: none; }
+    .note {
+      align-items: flex-start;
+      display: flex;
+      gap: 8px;
+      font-size: 15px;
+      line-height: 1.16;
+    }
+    .note .dot { color: var(--accent); font-weight: 800; }
     .preview {
-      background: #2d2c29;
+      background: var(--charcoal);
       border-radius: 8px;
       color: #f7f4ea;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 11.5px;
-      line-height: 1.25;
-      max-height: 238px;
+      font-size: 11.2px;
+      line-height: 1.22;
+      max-height: 318px;
       overflow: hidden;
       padding: 12px;
       white-space: pre-wrap;
@@ -153,150 +196,152 @@
     }
     .btn {
       background: #efede6;
-      border-radius: 8px;
+      border-radius: 9px;
       flex: 1;
       font-size: 24px;
-      font-weight: 600;
+      font-weight: 650;
       min-height: 50px;
       padding: 12px 8px;
       text-align: center;
     }
     .btn.primary { background: var(--accent); color: white; }
-    .textlink { color: var(--accent); flex: none; font-size: 18px; font-weight: 600; min-height: 34px; padding: 6px 8px; text-align: center; }
-    .clip { bottom: 128px; left: 0; overflow: hidden; position: absolute; right: 0; top: 99px; }
-    .fade { background: linear-gradient(to bottom, rgba(255,253,247,0), rgba(255,253,247,.98)); bottom: 128px; height: 32px; left: 0; position: absolute; right: 0; }
+    .btn.destructive { background: var(--danger-soft); color: var(--danger); }
+    .btn.neutral { background: #f4f2ec; color: #35342f; }
     .badge { background: #e6f2ee; border-radius: 4px; color: var(--accent); font-size: 10px; font-weight: 700; left: 12px; padding: 3px 7px; position: absolute; top: 106px; }
     .fold { border-top: 2px dashed #c0392b; bottom: 128px; left: 0; position: absolute; right: 0; }
     .foldlab { background: rgba(255,255,255,.92); border-radius: 3px; bottom: 156px; color: #c0392b; font-size: 9.5px; font-weight: 650; padding: 1px 4px; position: absolute; right: 6px; }
     .fold.settings { bottom: 0; }
     .foldlab.settings { bottom: 5px; }
-    .failure { background: #f6f2ea; border-left: 4px solid var(--warn); }
-    .failure h3 { color: #4b3613; }
+    .dangerpanel { background: #fff9f8; border-color: #e7c4bd; }
+    .dangerpanel h3 { color: var(--danger); }
   </style>
 </head>
 <body>
-<h1>Diagnostics export — accessibility text size</h1>
-<div class="sub">iPhone 17e, 390&times;844. Controls stack at large text and remain reachable without horizontal compression.</div>
+<h1>Diagnostics export - accessibility text size</h1>
+<div class="sub">iPhone 17e, 390x844. At AXXXL, layout collapses but class names and action hierarchy remain visible.</div>
 <div class="row">
   <div class="col">
-    <div class="cap">1 · Settings</div>
-    <div class="capsub">The row remains scannable; subtitle wraps instead of truncating the action name.</div>
+    <div class="cap">1 - Settings</div>
+    <div class="capsub">The Diagnostics row remains a single clear entry.</div>
     <div class="phone">
       <div class="status"><span>9:41</span><span>100%</span></div>
       <div class="nav"><div class="title">Settings</div></div>
       <div class="list">
         <div class="section-title">Storage</div>
-        <div class="card"><div class="rowitem"><div class="icon">▣</div><div class="texts"><div class="primary">Manage offline maps</div><div class="secondary">2 packs · 223 MB</div></div><div class="chev">›</div></div></div>
+        <div class="card"><div class="rowitem"><div class="icon">□</div><div class="texts"><div class="primary">Manage offline maps</div><div class="secondary">2 packs - 223 MB</div></div><div class="chev">&rsaquo;</div></div></div>
         <div class="section-title">Diagnostics</div>
         <div class="card">
-          <div class="rowitem"><div class="icon">↥</div><div class="texts"><div class="primary">Export diagnostic log</div><div class="secondary">Review what is included before sharing.</div></div><div class="chev">›</div></div>
-          <div class="rowitem"><div class="icon">⌫</div><div class="texts"><div class="primary">Delete diagnostics</div><div class="secondary">Clears logs stored on this device.</div></div></div>
+          <div class="rowitem"><div class="icon">↑</div><div class="texts"><div class="primary">Diagnostic log</div><div class="secondary">Review, prepare, share, or delete local logs.</div></div><div class="chev">&rsaquo;</div></div>
         </div>
       </div>
       <div class="fold settings"></div><div class="foldlab settings">fold</div>
     </div>
   </div>
+
   <div class="col">
-    <div class="cap">2 · Review</div>
-    <div class="capsub">The content scrolls; the bottom actions stack and stay pinned.</div>
+    <div class="cap">2 - Review</div>
+    <div class="capsub">Window honesty survives large type; classes are named, not only iconized.</div>
     <div class="phone">
       <div class="status"><span>9:41</span><span>100%</span></div>
-      <div class="nav"><div class="back">‹</div><div class="title">Diagnostics</div></div>
+      <div class="nav"><div class="back">&lsaquo;</div><div class="title">Diagnostics</div></div>
       <div class="clip">
         <div class="hero">
           <h2>Send a diagnostic log</h2>
-          <p>Nothing is sent automatically. The app prepares a file on this phone.</p>
+          <p>Nothing is sent automatically. The app prepares a file here; when you share, you pick who gets it.</p>
           <div class="segmented">
             <div class="segment">15 min</div>
             <div class="segment selected">Last hour</div>
             <div class="segment">Everything</div>
           </div>
-          <div class="pillrow"><span class="pill">Local file</span><span class="pill">System share sheet</span></div>
+          <div class="statusline">
+            <div class="icon">↑</div>
+            <div><strong>Showing last hour to include this session</strong><span>Estimated archive: 142 KB.</span></div>
+          </div>
         </div>
         <div class="panel">
           <h3>Included</h3>
-          <div class="bullets">
-            <div class="bullet"><span class="dot">•</span><span>App version, build, device model and iOS version.</span></div>
-            <div class="bullet"><span class="dot">•</span><span>Installed map packs, publish versions and download states.</span></div>
-            <div class="bullet"><span class="dot">•</span><span>Our object URLs, hosts, status codes, timings and error labels.</span></div>
+          <div class="grid">
+            <div class="consent"><div class="mark">&#10003;</div><div><strong>App version</strong><span>Build and app release.</span></div></div>
+            <div class="consent"><div class="mark">&#10003;</div><div><strong>Device model</strong><span>Model and iOS version.</span></div></div>
+            <div class="consent"><div class="mark">&#10003;</div><div><strong>Session flow</strong><span>Plaintext flow events.</span></div></div>
+            <div class="consent"><div class="mark">&#10003;</div><div><strong>Map packs</strong><span>Packs and publish versions.</span></div></div>
+            <div class="consent"><div class="mark">&#10003;</div><div><strong>Object URLs</strong><span>Our hosts and object paths.</span></div></div>
+            <div class="consent"><div class="mark">&#10003;</div><div><strong>Errors</strong><span>Status codes and labels.</span></div></div>
+            <div class="consent"><div class="mark">&#10003;</div><div><strong>Timings</strong><span>Fetch and decode timing.</span></div></div>
+            <div class="consent"><div class="mark">&#10003;</div><div><strong>Places/actions</strong><span>Session evidence for support.</span></div></div>
           </div>
         </div>
-        <div class="panel not">
-          <h3>Not included</h3>
-          <div class="bullets">
-            <div class="bullet"><span class="dot">•</span><span>Places you looked at, saved, loved, hid or visited.</span></div>
-            <div class="bullet"><span class="dot">•</span><span>Your searches, lists, location, viewport or device name.</span></div>
+        <div class="panel">
+          <h3>Excluded</h3>
+          <div class="grid">
+            <div class="consent excluded"><div class="mark">&#8725;</div><div><strong>Device name</strong><span>Personal device label.</span></div></div>
+            <div class="consent excluded"><div class="mark">&#8725;</div><div><strong>Exact location</strong><span>Coordinates never leave.</span></div></div>
+            <div class="consent excluded"><div class="mark">&#8725;</div><div><strong>Search wording</strong><span>Typed queries omitted.</span></div></div>
           </div>
         </div>
       </div>
       <div class="fade"></div>
       <div class="fold"></div><div class="foldlab">fixed action</div>
-      <div class="bar"><div class="btn primary">Prepare</div></div>
+      <div class="bar"><div class="btn primary">Prepare file</div></div>
     </div>
   </div>
+
   <div class="col">
-    <div class="cap">3 · Prepared</div>
-    <div class="capsub">The preview is bounded; the user can share without losing the included/not-included framing.</div>
+    <div class="cap">3 - Prepared</div>
+    <div class="capsub">Share consent and plaintext flow remain readable above fixed actions.</div>
     <div class="phone">
       <div class="status"><span>9:41</span><span>100%</span></div>
-      <div class="nav"><div class="back">‹</div><div class="title">Diagnostics</div></div>
+      <div class="nav"><div class="back">&lsaquo;</div><div class="title">Diagnostics</div></div>
       <div class="badge">actions reachable</div>
       <div class="clip">
         <div class="hero">
           <h2>Diagnostic file ready</h2>
-          <p>Review the preview, then choose where the archive goes.</p>
+          <p>142 KB archive prepared. Tap Share when you are ready to choose who gets it. Nothing leaves Making Tracks before then.</p>
         </div>
         <div class="panel">
           <h3>Preview</h3>
           <div class="preview">metadata: Making Tracks 1.0 (42), iPhone17,3
+window: last-hour session-covering
 pack: malaysia-singapore-brunei @ 20260719T125813Z
 log:
+  flow viewport browsed region=malaysia-singapore-brunei
+  flow offline download started region=malaysia-singapore-brunei
   fetch failed host=tiles.making-tracks.app
-  status=http-404 object=<span class="decode">h:7fc1...</span>
-decode:
-  h:7fc1... → /malaysia-singapore-brunei/catalog/current.json</div>
+  status=http-404 object=/malaysia-singapore-brunei/catalog/current.json</div>
         </div>
-        <div class="panel not">
-          <h3>Share boundary</h3>
-          <div class="bullets">
-            <div class="bullet"><span class="dot">•</span><span>The next screen is the system share sheet.</span></div>
-            <div class="bullet"><span class="dot">•</span><span>The app still has no upload endpoint.</span></div>
-          </div>
+        <div class="panel">
+          <div class="note"><span class="dot">&#10003;</span><span>You choose who gets the file. Making Tracks has no upload endpoint.</span></div>
         </div>
       </div>
       <div class="fade"></div>
-      <div class="fold"></div><div class="foldlab">fixed action</div>
-      <div class="bar"><div class="btn">Cancel</div><div class="btn primary">Share</div></div>
+      <div class="fold"></div><div class="foldlab">fixed actions</div>
+      <div class="bar"><div class="btn neutral">Cancel</div><div class="btn primary">Share</div></div>
     </div>
   </div>
+
   <div class="col">
-    <div class="cap">4 · Scrub blocked</div>
-    <div class="capsub">The privacy check is user-visible: if it finds forbidden content, export stops.</div>
+    <div class="cap">4 - Delete confirmation</div>
+    <div class="capsub">Delete is present but visually secondary to the recovery action.</div>
     <div class="phone">
       <div class="status"><span>9:41</span><span>100%</span></div>
-      <div class="nav"><div class="back">‹</div><div class="title">Diagnostics</div></div>
+      <div class="nav"><div class="back">&lsaquo;</div><div class="title">Delete logs</div></div>
       <div class="clip">
         <div class="hero">
-          <h2>Diagnostic export stopped</h2>
-          <p>The file was not prepared because the privacy check found content that should never leave the app.</p>
+          <h2>Delete diagnostic logs?</h2>
+          <p>This removes local logs and prepared files. It cannot delete anything you already shared.</p>
         </div>
-        <div class="panel failure">
-          <h3>Nothing was shared</h3>
-          <div class="bullets">
-            <div class="bullet"><span class="dot">•</span><span>No archive was created and staged files were deleted.</span></div>
-            <div class="bullet"><span class="dot">•</span><span>Retry with a shorter window, or send a screenshot of this screen.</span></div>
-          </div>
+        <div class="panel dangerpanel">
+          <h3>Local data only</h3>
+          <div class="note"><span class="dot">!</span><span>Stored logs: 318 KB. Prepared exports: 142 KB. Nothing is sent elsewhere.</span></div>
         </div>
-        <div class="panel not">
-          <h3>Blocked pattern</h3>
-          <div class="preview">privacy scrub failed:
-  reason=place-identifier-shaped-content
-  action=staging-deleted</div>
+        <div class="panel">
+          <h3>Recovery stays first</h3>
+          <div class="note"><span class="dot">&#10003;</span><span>For a scrub stop, retry with 15 min remains primary. Delete requires this confirmation.</span></div>
         </div>
       </div>
       <div class="fade"></div>
-      <div class="fold"></div><div class="foldlab">fixed action</div>
-      <div class="bar"><div class="btn">Back</div><div class="btn primary">Try 15 min</div><div class="textlink">Delete diagnostics</div></div>
+      <div class="fold"></div><div class="foldlab">fixed actions</div>
+      <div class="bar"><div class="btn primary">Try 15 min</div><div class="btn destructive">Delete logs</div></div>
     </div>
   </div>
 </div>
