@@ -46,8 +46,14 @@ struct TrackSourceSnapshot: Sendable {
         data = Data(featureCollectionJSON.utf8)
     }
 
-    static func make(context: TrackGeometryContext) -> TrackSourceSnapshot {
-        let summary = FeatureEncoding.trackSegmentSummary(context.visits)
+    static func make(
+        context: TrackGeometryContext,
+        activeToVisitID: Int64? = nil
+    ) -> TrackSourceSnapshot {
+        let summary = FeatureEncoding.trackSegmentSummary(
+            context.visits,
+            activeToVisitID: activeToVisitID
+        )
         return TrackSourceSnapshot(
             featureCollectionJSON: (try? FeatureEncoding.featureCollection(summary.features).jsonString())
                 ?? TrackSourceSnapshot.emptyFeatureCollectionJSON,
@@ -548,7 +554,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             circle.circleColor = NSExpression(mglJSONObject: PinLayers.pinColorExpression().foundationObject)
             circle.circleRadius = Self.mapExpression(PinLayers.trackReplayPulseExpression(base: pinSize.circleRadiusExpression))
             style.addLayer(circle)
-            addTrackLine(style: style)
+            addTrackLines(style: style)
 
             addCategoryIcon(source: source, style: style, pinSize: pinSize)
             addBadge(id: "pins-bookmark", icon: "badge-bookmark", filter: PinLayers.bookmarkFilter(), pinSize: pinSize, offset: pinSize.bookmarkOffset, source: source, style: style)
@@ -726,7 +732,9 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             source.shape = shape
             renderedTrackSignature = snapshot.signature
             debugReportTrackSourceStatus(
-                "track source applied segments:\(snapshot.segmentCount) layer:\(style.layer(withIdentifier: TrackLayers.lineLayerID) != nil)"
+                "track source applied segments:\(snapshot.segmentCount) " +
+                    "layer:\(style.layer(withIdentifier: TrackLayers.lineLayerID) != nil) " +
+                    "active-layer:\(style.layer(withIdentifier: TrackLayers.activeLineLayerID) != nil)"
             )
         }
 
@@ -983,24 +991,47 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             style.addLayer(count)
         }
 
-        private func addTrackLine(style: MLNStyle) {
+        private func addTrackLines(style: MLNStyle) {
             guard let source = style.source(withIdentifier: TrackLayers.sourceID) as? MLNShapeSource,
                   style.layer(withIdentifier: TrackLayers.lineLayerID) == nil
             else { return }
-            let line = MLNLineStyleLayer(identifier: TrackLayers.lineLayerID, source: source)
-            let trackStyle = TrackLayers.lineStyle
-            // JSON and live MapLibre layers share TrackLayers.lineStyle; this path only converts color to UIColor.
+            let visited = trackLineLayer(
+                id: TrackLayers.lineLayerID,
+                source: source,
+                style: TrackLayers.lineStyle,
+                filter: nil
+            )
+            let active = trackLineLayer(
+                id: TrackLayers.activeLineLayerID,
+                source: source,
+                style: TrackLayers.activeLineStyle,
+                filter: TrackLayers.activeArcFilter()
+            )
+            if let circle = style.layer(withIdentifier: "pins-circle") {
+                style.insertLayer(visited, below: circle)
+                style.insertLayer(active, below: circle)
+            } else {
+                style.addLayer(visited)
+                style.addLayer(active)
+            }
+        }
+
+        private func trackLineLayer(
+            id: String,
+            source: MLNSource,
+            style trackStyle: TrackLineStyle,
+            filter: JSONValue?
+        ) -> MLNLineStyleLayer {
+            let line = MLNLineStyleLayer(identifier: id, source: source)
+            // JSON and live MapLibre layers share TrackLineStyle; this path only converts color to UIColor.
+            line.predicate = filter.map { NSPredicate(mglJSONObject: $0.foundationObject) }
             line.lineCap = NSExpression(forConstantValue: trackStyle.cap)
             line.lineJoin = NSExpression(forConstantValue: trackStyle.join)
             line.lineColor = NSExpression(forConstantValue: MapThemeColor.uiColor(hex: trackStyle.color))
             line.lineOpacity = NSExpression(forConstantValue: trackStyle.opacity)
             line.lineWidth = NSExpression(forConstantValue: trackStyle.width)
             line.lineDashPattern = NSExpression(forConstantValue: trackStyle.dashPattern)
-            if let circle = style.layer(withIdentifier: "pins-circle") {
-                style.insertLayer(line, below: circle)
-            } else {
-                style.addLayer(line)
-            }
+            return line
         }
 
         private func setPredicate(_ filter: JSONValue?, on layerID: String, in style: MLNStyle) {

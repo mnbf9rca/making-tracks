@@ -1,0 +1,136 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  :root{ --ink:#1c1c1e; --dim:#5f5f64; --paper:#F1EDDF; --pin:#E4572E; --accent:#0a6b5c; }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{ background:#f6f6f4; font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif; color:var(--ink); padding:28px 24px 34px; }
+  h1{ font-size:17px; font-weight:650; margin-bottom:2px; }
+  .sub{ font-size:12.5px; color:var(--dim); margin-bottom:22px; }
+  .row{ display:flex; gap:30px; align-items:flex-start; }
+  .col{ width:390px; }
+  .cap{ font-size:12px; font-weight:650; margin-bottom:3px; }
+  .capsub{ font-size:11px; color:var(--dim); margin-bottom:9px; line-height:1.35; min-height:42px;}
+  .phone{ width:390px; height:844px; border:1px solid #c9c6bd; border-radius:26px; overflow:hidden; position:relative; background:var(--paper); box-shadow:0 2px 10px rgba(0,0,0,.09); }
+  .map{ position:absolute; inset:0; }
+  .road{ position:absolute; background:#e6e2d4; }
+  .pin{ position:absolute; width:15px; height:15px; border-radius:50%; background:var(--pin); border:2px solid #fff; }
+  .pin.sel{ width:21px; height:21px; box-shadow:0 0 0 4px rgba(228,87,46,.28); }
+  .sheet{ position:absolute; left:0; right:0; bottom:0; background:#fff; border-radius:15px 15px 0 0; box-shadow:0 -2px 14px rgba(0,0,0,.13); display:flex; flex-direction:column; overflow:hidden;}
+  .grab{ width:34px; height:4px; border-radius:2px; background:#d4d2cc; margin:7px auto 0; flex:none;}
+  .ovf{ position:absolute; top:8px; right:15px; font-size:19px; color:var(--dim); letter-spacing:2px;}
+  .pad{ padding:10px 17px 6px; }
+  /* AX metrics */
+  .name{ font-size:34px; font-weight:640; line-height:1.1; letter-spacing:-.5px;}
+  .type{ font-size:24px; color:var(--dim); margin-top:9px; display:flex; align-items:center; gap:8px; }
+  .gl{ width:24px; height:24px; border-radius:4px; background:#cfcbc0; flex:none;}
+  .full{ font-size:24px; line-height:1.34; margin-top:12px; color:#33333a;}
+  .photo{ margin-top:12px; height:150px; border-radius:9px; background:linear-gradient(150deg,#ded9cb,#cfc9b8); display:flex; align-items:center; justify-content:center; color:#8d887a; font-size:13px;}
+  .chips{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
+  .chip{ font-size:20px; padding:11px 16px; border-radius:26px; background:#f0eee9; color:#42424a; }
+  .attr{ font-size:18px; color:#5f5f64; margin-top:14px; line-height:1.35; padding-bottom:14px;}
+  .attr a{ color:inherit; text-decoration:none;}
+  .srclink{ color:var(--accent); text-decoration:underline;}
+  .acts{ box-shadow:0 -6px 10px -8px rgba(0,0,0,.22);  display:flex; flex-direction:column; gap:8px; padding:10px 17px 12px; border-top:1px solid #eceae4; background:#fff; flex:none;}
+  .btn{ text-align:center; font-size:24px; font-weight:560; padding:14px 0; border-radius:11px; background:#f0eee9;}
+  .btn.prom{ background:var(--accent); color:#fff;}
+  .btn.ghost{ background:#f7f6f3; color:#a9a6a0;}
+  .clip{ overflow:hidden; flex:1; position:relative;}
+  .cut{ position:absolute; left:0; right:0; bottom:0; height:34px; background:linear-gradient(to bottom,rgba(255,255,255,0),#fff);}
+  .fold{ position:absolute; left:0; right:0; border-top:2px dashed #c0392b;}
+  .foldlab{ position:absolute; right:5px; font-size:9.5px; color:#c0392b; font-weight:650; background:rgba(255,255,255,.92); padding:1px 4px; border-radius:3px;}
+  .bad{ border-color:#c0392b !important; }
+  .badge{ position:absolute; top:8px; left:12px; font-size:10px; font-weight:700; padding:3px 7px; border-radius:4px; }
+  .ok{ background:#e6f2ee; color:#0a6b5c; }
+  .no{ background:#fbe9e7; color:#c0392b; }
+</style></head><body>
+
+<h1>Place card — accessibility text size (AXXXL), same three states</h1>
+<div class="sub">iPhone 17e, 390&times;844 — the design canvas (smallest device Apple currently sells). Panels 1 and 2 are the proposal; panel 3 approximates today.</div>
+
+<div class="row">
+
+  <!-- PEEK AX -->
+  <div class="col">
+    <div class="cap">1 · Peek</div>
+    <div class="capsub">Still no photo in peek at this text size, even on the larger canvas. A two-line name, type and three stacked buttons fill it. Fitting the photo needs peek at ~85% of the screen, which is no longer a peek.</div>
+    <div class="phone">
+      <div class="map">
+        <div class="road" style="left:0;top:120px;width:390px;height:9px"></div>
+        <div class="road" style="left:110px;top:0;width:9px;height:300px"></div>
+        <div class="pin" style="left:60px;top:70px"></div>
+        <div class="pin sel" style="left:171px;top:186px"></div>
+      </div>
+      <div class="sheet" style="height:486px">
+        <div class="badge ok">actions reachable, no scroll</div>
+        <div class="grab"></div>
+        <div class="ovf">⋯</div>
+        <div class="pad" style="padding-top:26px">
+          <div class="name">Former Lipton&rsquo;s Tea Warehouse</div>
+          <div class="type"><span class="gl"></span>Attraction</div>
+        </div>
+        <div style="flex:1"></div>
+        <div class="acts">
+          <div class="btn">Save</div><div class="btn prom">Seen</div><div class="btn">Hide</div>
+        </div>
+      </div>
+      <div class="fold" style="bottom:486px"></div>
+      <div class="foldlab" style="bottom:490px">peek edge</div>
+    </div>
+  </div>
+
+  <!-- FULL AX -->
+  <div class="col">
+    <div class="cap">2 · Slid up</div>
+    <div class="capsub">Content slides up and scrolls behind the fixed bar, fading at its edge.</div>
+    <div class="phone">
+      <div class="map"><div class="pin sel" style="left:171px;top:14px"></div></div>
+      <div class="sheet" style="height:790px">
+        <div class="badge ok">actions reachable, no scroll</div>
+        <div class="grab"></div>
+        <div class="ovf">⋯</div>
+        <div class="clip">
+          <div class="pad" style="padding-top:26px">
+            <div class="name">Former Lipton&rsquo;s Tea Warehouse</div>
+            <div class="type"><span class="gl"></span>Attraction</div>
+            <div class="photo">photo</div>
+            <div class="full">A hand-painted advert still legible above the old shopfront, uncovered when the newer facade came down. <a class="srclink">Read more on Wikipedia ↗</a></div>
+            <div class="chips"><span class="chip">Date night</span><span class="chip">Weekend</span></div>
+            <div class="attr">Photo: J. Bloggs · CC BY-SA 4.0</div>
+          </div>
+          <div class="cut"></div>
+        </div>
+        <div class="acts">
+          <div class="btn">Save</div><div class="btn prom">Seen</div><div class="btn">Hide</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TODAY AX -->
+  <div class="col">
+    <div class="cap">3 · Today, for comparison</div>
+    <div class="capsub">Today's structure, approximated. Actions sit in the scroll flow, hoisted above the description. The UI test needs <code>scrollToExistence</code> to reach them; this wireframe cannot settle that — measure on a device.</div>
+    <div class="phone bad" style="border-width:2px">
+      <div class="map"><div class="pin sel" style="left:171px;top:8px"></div></div>
+      <div class="sheet" style="height:800px">
+        <div class="badge no">needs device measurement</div>
+        <div class="grab"></div>
+        <div class="clip">
+          <div class="pad" style="padding-top:26px">
+            <div style="text-align:right; font-size:22px; color:var(--accent); padding-bottom:6px;">Close</div>
+            <div class="name">Former Lipton&rsquo;s Tea Warehouse</div>
+            <div class="type"><span class="gl"></span>Attraction</div>
+            <div style="margin-top:14px; display:flex; flex-direction:column; gap:8px;">
+              <div class="btn">Save</div><div class="btn">Add to list</div><div class="btn prom">Seen</div>
+            </div>
+            <div class="full">A hand-painted advert still legible above the old shopfront, uncovered when the newer facade came down. <a class="srclink">Read more on Wikipedia ↗</a></div>
+          </div>
+          <div class="cut"></div>
+        </div>
+      </div>
+      <div class="fold" style="bottom:0"></div>
+    </div>
+  </div>
+
+</div>
+</body></html>

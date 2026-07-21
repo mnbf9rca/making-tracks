@@ -10,7 +10,7 @@ import MakingTracksTiles
 final class AppShellTests: XCTestCase {
     func testPlaceCardVisualSpecMatchesApprovedCardLayout() {
         XCTAssertEqual(PlaceCardVisualSpec.closeSystemImageName, "ellipsis")
-        XCTAssertTrue(PlaceCardVisualSpec.showsMediaSlotWhenPhotoMissing)
+        XCTAssertFalse(PlaceCardVisualSpec.showsMediaSlotWhenPhotoMissing)
         XCTAssertEqual(PlaceCardVisualSpec.actionCornerRadius, 8)
         XCTAssertEqual(PlaceCardVisualSpec.actionMinimumHeight, 44)
         XCTAssertEqual(PlaceCardVisualSpec.mediaSlotHeight, 132)
@@ -438,6 +438,17 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(timeline.dateMarkers(availableWidth: 150).map(\.eventIndex), [0, 5])
     }
 
+    func testTrackReplayScrubPathWalksEveryEventBetweenCurrentAndTarget() {
+        let timeline = TrackTimelineModel(visits: (0..<6).map {
+            trackVisit(id: Int64($0 + 1), seconds: TimeInterval($0 * 60))
+        })
+
+        XCTAssertEqual(timeline.scrubEventPath(from: 1, to: 5), [2, 3, 4, 5])
+        XCTAssertEqual(timeline.scrubEventPath(from: 5, to: 2), [4, 3, 2])
+        XCTAssertEqual(timeline.scrubEventPath(from: nil, to: 2), [0, 1, 2])
+        XCTAssertEqual(timeline.scrubEventPath(from: 2, to: 2), [2])
+    }
+
     func testTrackReplaySnapshotCachePrecomputesEventPrefixes() {
         let context = TrackGeometryContext(
             visits: [
@@ -452,6 +463,21 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(cache.snapshot(throughEventIndex: 1).segmentCount, 1)
         XCTAssertEqual(cache.snapshot(throughEventIndex: 2).segmentCount, 2)
         XCTAssertEqual(cache.snapshot(throughEventIndex: -1).segmentCount, 0)
+    }
+
+    func testTrackReplaySnapshotCacheMarksArrivingSegmentActive() throws {
+        let context = TrackGeometryContext(
+            visits: [
+                trackVisit(id: 1, seconds: 0),
+                trackVisit(id: 2, seconds: 60),
+                trackVisit(id: 3, seconds: 120),
+            ]
+        )
+        let cache = TrackReplaySnapshotCache(context: context)
+
+        XCTAssertEqual(try trackSegmentPhases(in: cache.snapshot(throughEventIndex: 0)), [])
+        XCTAssertEqual(try trackSegmentPhases(in: cache.snapshot(throughEventIndex: 1)), [TrackLayers.activeArcPhase])
+        XCTAssertEqual(try trackSegmentPhases(in: cache.snapshot(throughEventIndex: 2)), ["visited", TrackLayers.activeArcPhase])
     }
 
     func testListMapViewportFitsAllMembersWithPadding() throws {
@@ -531,6 +557,15 @@ final class AppShellTests: XCTestCase {
             lat: 51.5 + (Double(id) * 0.001),
             lon: -0.12
         )
+    }
+
+    private func trackSegmentPhases(in snapshot: TrackSourceSnapshot) throws -> [String] {
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: snapshot.data) as? [String: Any])
+        let features = try XCTUnwrap(root["features"] as? [[String: Any]])
+        return try features.map { feature in
+            let properties = try XCTUnwrap(feature["properties"] as? [String: Any])
+            return try XCTUnwrap(properties[TrackLayers.trackSegmentPhaseProperty] as? String)
+        }
     }
 
     func testUpdateRequiredSurfaceBlocksOnlyFreshTooOldReaderState() throws {

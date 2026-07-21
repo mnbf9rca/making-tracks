@@ -31,7 +31,7 @@ struct PlaceCardVisualSpec {
     }
 
     static let closeSystemImageName = "ellipsis"
-    static let showsMediaSlotWhenPhotoMissing = true
+    static let showsMediaSlotWhenPhotoMissing = false
     static let actionCornerRadius: CGFloat = 8
     static let actionMinimumHeight: CGFloat = 44
     static let mediaSlotHeight: CGFloat = 132
@@ -915,7 +915,10 @@ struct TrackReplaySnapshotCache: Sendable {
 
     init(context: TrackGeometryContext) {
         snapshots = context.visits.indices.map { index in
-            TrackSourceSnapshot.make(context: context.clipped(throughEventIndex: index))
+            TrackSourceSnapshot.make(
+                context: context.clipped(throughEventIndex: index),
+                activeToVisitID: index > 0 ? context.visits[index].id : nil
+            )
         }
     }
 
@@ -995,6 +998,15 @@ struct TrackTimelineModel: Equatable, Sendable {
         previousIndex != nextIndex && visits.indices.contains(nextIndex)
     }
 
+    func scrubEventPath(from currentIndex: Int?, to targetIndex: Int) -> [Int] {
+        guard !visits.isEmpty else { return [] }
+        let target = eventIndex(forSliderValue: Double(targetIndex))
+        let start = currentIndex.map { eventIndex(forSliderValue: Double($0)) } ?? -1
+        guard start != target else { return [target] }
+        let step = start < target ? 1 : -1
+        return stride(from: start + step, through: target, by: step).map { $0 }
+    }
+
     func visitsThroughEvent(index: Int?) -> [TrackVisit] {
         guard let index, visits.indices.contains(index) else { return [] }
         return Array(visits.prefix(index + 1))
@@ -1026,6 +1038,18 @@ struct TrackTimelineModel: Equatable, Sendable {
         return visits[index]
     }
 
+    func selectedTimeLabel(after index: Int?) -> String {
+        selectedVisit(after: index).map { Self.timeLabel(for: $0.visitedAt) } ?? ""
+    }
+
+    var startTimeLabel: String {
+        visits.first.map { Self.timeLabel(for: $0.visitedAt) } ?? ""
+    }
+
+    var endTimeLabel: String {
+        visits.last.map { Self.timeLabel(for: $0.visitedAt) } ?? ""
+    }
+
     func accessibilityValue(for index: Int?) -> String {
         guard !visits.isEmpty else { return "No visits" }
         let eventIndex = eventIndex(forSliderValue: Double(index ?? 0))
@@ -1047,6 +1071,10 @@ struct TrackTimelineModel: Equatable, Sendable {
         let components = calendar.dateComponents([.day, .month], from: date)
         let month = components.month.flatMap(Self.monthLabel) ?? ""
         return "\(components.day ?? 1) \(month)"
+    }
+
+    private static func timeLabel(for date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
     }
 
     private static func monthLabel(_ month: Int) -> String? {
@@ -1562,6 +1590,7 @@ struct MapScreen: View {
     @State private var isTrackReplayAutoplaying = false
     @State private var trackReplayArrivalPulseVisitID: Int64?
     @State private var trackReplayAutoplayTask: Task<Void, Never>?
+    @State private var trackReplayScrubTask: Task<Void, Never>?
     @State private var regionPMTilesURL: String?
     @State private var installedCoverageBBoxes: [CoverageBBox] = []
     @State private var attribution: [Attribution] = []
@@ -1880,11 +1909,17 @@ struct MapScreen: View {
                     .padding(.bottom, auxiliaryBottomChromePadding)
             }
             .overlay(alignment: .bottom) {
-                if let activeListMap {
-                    listMapModeChrome(activeListMap)
-                        .padding(.horizontal, MapOverlayChromeSpec.edgePadding)
-                        .padding(.bottom, MapOverlayChromeSpec.listModeControlBottomPadding)
+                Group {
+                    if let activeListMap {
+                        if TrackReplayControlVisibility.showOnMap(list: activeListMap, timeline: trackReplayTimeline) {
+                            mapTrackReplayControls(trackReplayTimeline)
+                        } else {
+                            listMapModeChrome(activeListMap)
+                        }
+                    }
                 }
+                .padding(.horizontal, MapOverlayChromeSpec.edgePadding)
+                .padding(.bottom, MapOverlayChromeSpec.listModeControlBottomPadding)
             }
             .overlay(alignment: .bottom) {
                 if let prompt = nearbyPromptCandidate {
@@ -2365,10 +2400,6 @@ struct MapScreen: View {
                 .padding(.vertical, 6)
                 .background(.regularMaterial, in: Capsule())
                 .accessibilityIdentifier("map.list-mode.title")
-
-            if TrackReplayControlVisibility.showOnMap(list: list, timeline: trackReplayTimeline) {
-                mapTrackReplayControls(trackReplayTimeline)
-            }
         }
     }
 
@@ -2447,7 +2478,9 @@ struct MapScreen: View {
     }
 
     private func mapTrackReplayControls(_ timeline: TrackTimelineModel) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let selectedIndex = clampedSelectedTrackReplayIndex(selectedTrackReplayEventIndex, in: timeline)
+        let selectedVisit = timeline.selectedVisit(after: selectedIndex)
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Button {
                     toggleMapTrackAutoplay(timeline)
@@ -2458,12 +2491,32 @@ struct MapScreen: View {
                 .accessibilityLabel(isTrackReplayAutoplaying ? "Pause track replay" : "Play track replay")
                 .accessibilityIdentifier("map.track-replay.play")
 
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: timeline.selectedTimeLabel(after: selectedIndex))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("map.track-replay.selected-time")
+                    Text(verbatim: selectedVisit?.name ?? "")
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(verbatim: "Visit \((selectedIndex ?? 0) + 1) of \(timeline.visits.count)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .accessibilityIdentifier("map.track-replay.counter")
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
                 Slider(
                     value: Binding(
-                        get: { Double(clampedSelectedTrackReplayIndex(selectedTrackReplayEventIndex, in: timeline) ?? 0) },
+                        get: { Double(selectedIndex ?? 0) },
                         set: { value in
-                            stopMapTrackAutoplay()
-                            setSelectedTrackReplayEventIndex(timeline.eventIndex(forSliderValue: value), timeline: timeline)
+                            scrubSelectedTrackReplayEventIndex(timeline.eventIndex(forSliderValue: value), timeline: timeline)
                         }
                     ),
                     in: timeline.sliderRange,
@@ -2472,13 +2525,24 @@ struct MapScreen: View {
                 .accessibilityLabel("Track replay")
                 .accessibilityValue(timeline.accessibilityValue(for: selectedTrackReplayEventIndex))
                 .accessibilityIdentifier("map.track-replay.slider")
+
+                HStack {
+                    Text(verbatim: timeline.startTimeLabel)
+                        .accessibilityIdentifier("map.track-replay.start-time")
+                    Spacer()
+                    Text(verbatim: timeline.endTimeLabel)
+                        .accessibilityIdentifier("map.track-replay.end-time")
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             }
 
             TrackTimelineDateMarkersView(timeline: timeline)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("map.track-replay.date-markers")
 
-            if let visit = timeline.selectedVisit(after: selectedTrackReplayEventIndex) {
+            if let visit = selectedVisit {
                 HStack(spacing: 6) {
                     Image(systemName: "mappin.circle.fill")
                         .foregroundStyle(Color.accentColor)
@@ -2494,15 +2558,20 @@ struct MapScreen: View {
                 .accessibilityIdentifier("map.track-replay.arrival")
             }
         }
-        .frame(width: 280)
-        .padding(10)
+        .frame(maxWidth: 360)
+        .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(uiColor: .separator), lineWidth: 1)
+        }
     }
 
     private func toggleMapTrackAutoplay(_ timeline: TrackTimelineModel) {
         if isTrackReplayAutoplaying {
             stopMapTrackAutoplay()
         } else {
+            stopMapTrackScrub()
             startMapTrackAutoplay(timeline)
         }
     }
@@ -2533,6 +2602,29 @@ struct MapScreen: View {
         isTrackReplayAutoplaying = false
     }
 
+    private func stopMapTrackScrub() {
+        trackReplayScrubTask?.cancel()
+        trackReplayScrubTask = nil
+    }
+
+    private func scrubSelectedTrackReplayEventIndex(_ nextIndex: Int, timeline: TrackTimelineModel) {
+        stopMapTrackAutoplay()
+        stopMapTrackScrub()
+        let path = timeline.scrubEventPath(from: selectedTrackReplayEventIndex, to: nextIndex)
+        guard path.count > 1 else {
+            setSelectedTrackReplayEventIndex(path.first ?? nextIndex, timeline: timeline)
+            return
+        }
+        trackReplayScrubTask = Task { @MainActor in
+            for index in path {
+                guard !Task.isCancelled else { return }
+                setSelectedTrackReplayEventIndex(index, timeline: timeline)
+                try? await Task.sleep(for: .milliseconds(32))
+            }
+            trackReplayScrubTask = nil
+        }
+    }
+
     private func setSelectedTrackReplayEventIndex(_ nextIndex: Int, timeline: TrackTimelineModel) {
         let previousIndex = selectedTrackReplayEventIndex
         let clampedIndex = clampedSelectedTrackReplayIndex(nextIndex, in: timeline)
@@ -2559,6 +2651,7 @@ struct MapScreen: View {
 
     private func applyTrackReplayContext(_ context: TrackGeometryContext) {
         stopMapTrackAutoplay()
+        stopMapTrackScrub()
         trackReplayContext = context
         trackReplaySnapshotCache = TrackReplaySnapshotCache(context: context)
         let timeline = TrackTimelineModel(visits: context.visits)
@@ -2569,6 +2662,7 @@ struct MapScreen: View {
 
     private func applyStaticTrackContext(_ context: TrackGeometryContext) {
         stopMapTrackAutoplay()
+        stopMapTrackScrub()
         trackReplayContext = .empty
         trackReplaySnapshotCache = .empty
         selectedTrackReplayEventIndex = nil
@@ -2578,6 +2672,7 @@ struct MapScreen: View {
 
     private func clearTrackReplay() {
         stopMapTrackAutoplay()
+        stopMapTrackScrub()
         trackReplayContext = .empty
         trackReplaySnapshotCache = .empty
         selectedTrackReplayEventIndex = nil
