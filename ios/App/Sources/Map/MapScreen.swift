@@ -708,6 +708,62 @@ struct TracksCopy {
     }
 }
 
+struct TrackVisitDaySection: Identifiable, Equatable {
+    let day: Date
+    let visits: [TrackVisit]
+
+    var id: Date { day }
+}
+
+enum TrackVisitReordering {
+    static func daySections(
+        for visits: [TrackVisit],
+        calendar: Calendar = Calendar(identifier: .gregorian)
+    ) -> [TrackVisitDaySection] {
+        visits.reduce(into: []) { sections, visit in
+            let day = calendar.startOfDay(for: visit.visitedAt)
+            if let index = sections.indices.last, sections[index].day == day {
+                sections[index] = TrackVisitDaySection(
+                    day: day,
+                    visits: sections[index].visits + [visit]
+                )
+            } else {
+                sections.append(TrackVisitDaySection(day: day, visits: [visit]))
+            }
+        }
+    }
+
+    static func reorderedIDs(
+        in visits: [TrackVisit],
+        fromOffsets source: IndexSet,
+        toOffset destination: Int
+    ) -> [Int64]? {
+        guard !source.isEmpty,
+              destination >= 0,
+              destination <= visits.count,
+              source.allSatisfy({ visits.indices.contains($0) })
+        else {
+            return nil
+        }
+
+        var nextVisits = visits
+        let movingVisits = source.sorted().map { visits[$0] }
+        for index in source.sorted(by: >) {
+            nextVisits.remove(at: index)
+        }
+
+        let removedBeforeDestination = source.filter { $0 < destination }.count
+        let insertionIndex = destination - removedBeforeDestination
+        guard insertionIndex >= 0, insertionIndex <= nextVisits.count else {
+            return nil
+        }
+
+        nextVisits.insert(contentsOf: movingVisits, at: insertionIndex)
+        let nextIDs = nextVisits.map(\.id)
+        return nextIDs == visits.map(\.id) ? nil : nextIDs
+    }
+}
+
 enum ListMapModeCopy {
     static let tracksLayerTitle = "My tracks"
 
@@ -4283,6 +4339,10 @@ private struct ListDetailView: View {
         focusPlaceID == nil
     }
 
+    private var visibleTrackVisitSections: [TrackVisitDaySection] {
+        TrackVisitReordering.daySections(for: visibleTrackVisits, calendar: calendar)
+    }
+
     private var calendar: Calendar {
         Calendar(identifier: .gregorian)
     }
@@ -4352,8 +4412,24 @@ private struct ListDetailView: View {
                     if visibleTrackVisits.isEmpty {
                         ContentUnavailableView("No visits yet", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
                     } else {
-                        ForEach(visibleTrackVisits) { visit in
-                            trackVisitRow(visit)
+                        ForEach(visibleTrackVisitSections) { section in
+                            Section {
+                                ForEach(section.visits) { visit in
+                                    trackVisitRow(visit)
+                                }
+                                .onMove { source, destination in
+                                    guard canReorderTrackVisits else { return }
+                                    Task {
+                                        await moveVisitsWithinDay(
+                                            section.visits,
+                                            fromOffsets: source,
+                                            toOffset: destination
+                                        )
+                                    }
+                                }
+                            } header: {
+                                Text(verbatim: formattedDay(section.day))
+                            }
                         }
                     }
                 } else if items.isEmpty {
@@ -4381,6 +4457,10 @@ private struct ListDetailView: View {
         .toolbar {
             if isTrackListDetail {
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    if canReorderTrackVisits {
+                        EditButton()
+                            .accessibilityIdentifier("lists.detail.track.edit-order")
+                    }
                     Button {
                         Task { await reload() }
                     } label: {
@@ -4485,28 +4565,6 @@ private struct ListDetailView: View {
             }
 
             HStack(spacing: 6) {
-                if canReorderTrackVisits {
-                    Button {
-                        Task { await moveVisit(visit, offset: -1) }
-                    } label: {
-                        Image(systemName: "arrow.up")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!canMoveVisit(visit, offset: -1))
-                    .accessibilityLabel("Move \(visit.name), \(formattedVisitedAt(visit)), earlier that day")
-                    .accessibilityIdentifier("lists.detail.track.row.move-up.\(visit.id)")
-
-                    Button {
-                        Task { await moveVisit(visit, offset: 1) }
-                    } label: {
-                        Image(systemName: "arrow.down")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!canMoveVisit(visit, offset: 1))
-                    .accessibilityLabel("Move \(visit.name), \(formattedVisitedAt(visit)), later that day")
-                    .accessibilityIdentifier("lists.detail.track.row.move-down.\(visit.id)")
-                }
-
                 Button(role: .destructive) {
                     Task { await deleteVisit(visit) }
                 } label: {
@@ -4608,12 +4666,21 @@ private struct ListDetailView: View {
     }
 
     @MainActor
-    private func moveVisit(_ visit: TrackVisit, offset: Int) async {
+    private func moveVisitsWithinDay(
+        _ dayVisits: [TrackVisit],
+        fromOffsets source: IndexSet,
+        toOffset destination: Int
+    ) async {
         guard let model,
-              let order = reorderedVisitIDs(moving: visit, offset: offset)
+              let day = dayVisits.first?.visitedAt,
+              let order = TrackVisitReordering.reorderedIDs(
+                in: dayVisits,
+                fromOffsets: source,
+                toOffset: destination
+              )
         else { return }
         do {
-            try await model.reorderVisitsWithinDay(order, dayContaining: visit.visitedAt)
+            try await model.reorderVisitsWithinDay(order, dayContaining: day)
             actionError = nil
             await reload()
             onChanged()
@@ -4635,19 +4702,6 @@ private struct ListDetailView: View {
         }
     }
 
-    private func canMoveVisit(_ visit: TrackVisit, offset: Int) -> Bool {
-        reorderedVisitIDs(moving: visit, offset: offset) != nil
-    }
-
-    private func reorderedVisitIDs(moving visit: TrackVisit, offset: Int) -> [Int64]? {
-        var dayVisits = visibleTrackVisits.filter { calendar.isDate($0.visitedAt, inSameDayAs: visit.visitedAt) }
-        guard let index = dayVisits.firstIndex(where: { $0.id == visit.id }) else { return nil }
-        let nextIndex = index + offset
-        guard dayVisits.indices.contains(nextIndex) else { return nil }
-        dayVisits.swapAt(index, nextIndex)
-        return dayVisits.map(\.id)
-    }
-
     private func categoryLabel(_ raw: String) -> String {
         raw
             .replacingOccurrences(of: "_", with: " ")
@@ -4659,6 +4713,10 @@ private struct ListDetailView: View {
 
     private func formattedVisitedAt(_ visit: TrackVisit) -> String {
         visit.visitedAt.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private func formattedDay(_ day: Date) -> String {
+        day.formatted(date: .abbreviated, time: .omitted)
     }
 
     private func lovedButtonAccessibilityLabel(for visit: TrackVisit) -> String {
