@@ -653,6 +653,346 @@ def test_build_place_images_from_audit_reencodes_originals_without_fetching_meta
         )
 
 
+def test_build_place_images_from_audit_reuses_memoized_unchanged_original(
+    tmp_path, monkeypatch, capsys
+):
+    retained_thumb = b"audited-thumb"
+    retained_thumb_sha = hashlib.sha256(retained_thumb).hexdigest()
+    reencoded_thumb = b"new-q50-256-thumb"
+    reencoded_thumb_sha = hashlib.sha256(reencoded_thumb).hexdigest()
+    cache = tmp_path / "audit-cache"
+    retained_thumb_path = cache / "thumbs" / retained_thumb_sha[:2] / f"{retained_thumb_sha}.webp"
+    retained_thumb_path.parent.mkdir(parents=True)
+    retained_thumb_path.write_bytes(retained_thumb)
+    original_path = cache / "raw" / "mt1_00000000000000000000000001.source"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original-image")
+    completed = tmp_path / "completed.jsonl"
+    completed.write_text(
+        json.dumps(
+            {
+                "place_id": "mt1_00000000000000000000000001",
+                "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+                "thumb_sha256": retained_thumb_sha,
+                "width": 320,
+                "height": 240,
+                "attribution": {
+                    "creator": "Jane Example",
+                    "license_code": "CC-BY-4.0",
+                    "license_name": "Creative Commons Attribution 4.0",
+                    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                    "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+                    "modified": True,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+    )
+    transcodes = []
+
+    def fake_transcode(path):
+        transcodes.append(path)
+        return images.ThumbTranscode(webp_bytes=reencoded_thumb, width=256, height=192)
+
+    monkeypatch.setattr(images, "transcode_to_webp_thumb", fake_transcode)
+
+    first = images.build_place_images_from_audit(
+        [candidate],
+        completed_jsonl=completed,
+        audited_cache_dir=cache,
+    )
+
+    assert [(item.thumb_sha256, item.thumb_bytes, item.width, item.height) for item in first] == [
+        (reencoded_thumb_sha, reencoded_thumb, 256, 192)
+    ]
+    assert transcodes == [original_path]
+
+    monkeypatch.setattr(
+        images,
+        "transcode_to_webp_thumb",
+        lambda _path: pytest.fail("unchanged audited image should reuse the memoized thumb"),
+    )
+
+    second = images.build_place_images_from_audit(
+        [candidate],
+        completed_jsonl=completed,
+        audited_cache_dir=cache,
+    )
+
+    assert [(item.thumb_sha256, item.thumb_bytes, item.width, item.height) for item in second] == [
+        (reencoded_thumb_sha, reencoded_thumb, 256, 192)
+    ]
+    log = capsys.readouterr().out
+    assert "memo_hits=1 memo_misses=0 memo_verification_failures=0 reencoded=0" in log
+    assert "elapsed=" in log
+
+
+def test_audited_thumb_encoder_identity_includes_runtime_encoder_versions():
+    identity = images.AUDITED_THUMB_ENCODER_IDENTITY
+
+    assert f"max_edge={images.image_worker.THUMB_MAX_EDGE}" in identity
+    assert f"quality={images.image_worker.THUMB_WEBP_QUALITY}" in identity
+    assert "pillow=" in identity
+    assert "webp=" in identity
+
+
+def test_build_place_images_from_audit_reencodes_when_original_hash_changes(
+    tmp_path, monkeypatch
+):
+    retained_thumb = b"audited-thumb"
+    retained_thumb_sha = hashlib.sha256(retained_thumb).hexdigest()
+    first_thumb = b"first-thumb"
+    first_thumb_sha = hashlib.sha256(first_thumb).hexdigest()
+    second_thumb = b"second-thumb"
+    second_thumb_sha = hashlib.sha256(second_thumb).hexdigest()
+    cache = tmp_path / "audit-cache"
+    retained_thumb_path = cache / "thumbs" / retained_thumb_sha[:2] / f"{retained_thumb_sha}.webp"
+    retained_thumb_path.parent.mkdir(parents=True)
+    retained_thumb_path.write_bytes(retained_thumb)
+    original_path = cache / "raw" / "mt1_00000000000000000000000001.source"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original-image-v1")
+    completed = tmp_path / "completed.jsonl"
+    completed.write_text(
+        json.dumps(
+            {
+                "place_id": "mt1_00000000000000000000000001",
+                "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+                "thumb_sha256": retained_thumb_sha,
+                "width": 320,
+                "height": 240,
+                "attribution": {
+                    "creator": "Jane Example",
+                    "license_code": "CC-BY-4.0",
+                    "license_name": "Creative Commons Attribution 4.0",
+                    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                    "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+                    "modified": True,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+    )
+    thumbs = iter([first_thumb, second_thumb])
+    transcodes = []
+
+    def fake_transcode(path):
+        transcodes.append(path.read_bytes())
+        return images.ThumbTranscode(webp_bytes=next(thumbs), width=256, height=192)
+
+    monkeypatch.setattr(images, "transcode_to_webp_thumb", fake_transcode)
+
+    first = images.build_place_images_from_audit(
+        [candidate],
+        completed_jsonl=completed,
+        audited_cache_dir=cache,
+    )
+    original_path.write_bytes(b"original-image-v2")
+    second = images.build_place_images_from_audit(
+        [candidate],
+        completed_jsonl=completed,
+        audited_cache_dir=cache,
+    )
+
+    assert [item.thumb_sha256 for item in first] == [first_thumb_sha]
+    assert [item.thumb_sha256 for item in second] == [second_thumb_sha]
+    assert transcodes == [b"original-image-v1", b"original-image-v2"]
+
+
+def test_build_place_images_from_audit_reencodes_when_encoder_identity_changes(
+    tmp_path, monkeypatch
+):
+    retained_thumb = b"audited-thumb"
+    retained_thumb_sha = hashlib.sha256(retained_thumb).hexdigest()
+    stale_thumb = b"stale-memo-thumb"
+    stale_thumb_sha = hashlib.sha256(stale_thumb).hexdigest()
+    new_thumb = b"new-encoder-thumb"
+    new_thumb_sha = hashlib.sha256(new_thumb).hexdigest()
+    cache = tmp_path / "audit-cache"
+    retained_thumb_path = cache / "thumbs" / retained_thumb_sha[:2] / f"{retained_thumb_sha}.webp"
+    retained_thumb_path.parent.mkdir(parents=True)
+    retained_thumb_path.write_bytes(retained_thumb)
+    stale_thumb_path = cache / "thumbs" / stale_thumb_sha[:2] / f"{stale_thumb_sha}.webp"
+    stale_thumb_path.parent.mkdir(parents=True)
+    stale_thumb_path.write_bytes(stale_thumb)
+    original_path = cache / "raw" / "mt1_00000000000000000000000001.source"
+    original_path.parent.mkdir(parents=True)
+    original_bytes = b"original-image"
+    original_path.write_bytes(original_bytes)
+    raw_sha = hashlib.sha256(original_bytes).hexdigest()
+    (cache / images.AUDITED_THUMB_MEMO_FILENAME).write_text(
+        json.dumps(
+            {
+                "encoder_identity": "old-encoder",
+                "entries": {
+                    raw_sha: {
+                        "height": 192,
+                        "thumb_sha256": stale_thumb_sha,
+                        "width": 256,
+                    }
+                },
+                "schema_version": images.AUDITED_THUMB_MEMO_SCHEMA_VERSION,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    completed = tmp_path / "completed.jsonl"
+    completed.write_text(
+        json.dumps(
+            {
+                "place_id": "mt1_00000000000000000000000001",
+                "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+                "thumb_sha256": retained_thumb_sha,
+                "width": 320,
+                "height": 240,
+                "attribution": {
+                    "creator": "Jane Example",
+                    "license_code": "CC-BY-4.0",
+                    "license_name": "Creative Commons Attribution 4.0",
+                    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                    "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+                    "modified": True,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+    )
+    transcodes = []
+
+    def fake_transcode(path):
+        transcodes.append(path)
+        return images.ThumbTranscode(webp_bytes=new_thumb, width=256, height=192)
+
+    monkeypatch.setattr(images, "transcode_to_webp_thumb", fake_transcode)
+
+    out = images.build_place_images_from_audit(
+        [candidate],
+        completed_jsonl=completed,
+        audited_cache_dir=cache,
+    )
+
+    assert [item.thumb_sha256 for item in out] == [new_thumb_sha]
+    assert transcodes == [original_path]
+
+
+def test_build_place_images_from_audit_reencodes_when_memo_thumb_hash_mismatches(
+    tmp_path, monkeypatch, capsys
+):
+    retained_thumb = b"audited-thumb"
+    retained_thumb_sha = hashlib.sha256(retained_thumb).hexdigest()
+    bad_thumb_sha = hashlib.sha256(b"expected-memo-thumb").hexdigest()
+    new_thumb = b"new-valid-thumb"
+    new_thumb_sha = hashlib.sha256(new_thumb).hexdigest()
+    cache = tmp_path / "audit-cache"
+    retained_thumb_path = cache / "thumbs" / retained_thumb_sha[:2] / f"{retained_thumb_sha}.webp"
+    retained_thumb_path.parent.mkdir(parents=True)
+    retained_thumb_path.write_bytes(retained_thumb)
+    bad_thumb_path = cache / "thumbs" / bad_thumb_sha[:2] / f"{bad_thumb_sha}.webp"
+    bad_thumb_path.parent.mkdir(parents=True)
+    bad_thumb_path.write_bytes(b"tampered-memo-thumb")
+    original_path = cache / "raw" / "mt1_00000000000000000000000001.source"
+    original_path.parent.mkdir(parents=True)
+    original_bytes = b"original-image"
+    original_path.write_bytes(original_bytes)
+    raw_sha = hashlib.sha256(original_bytes).hexdigest()
+    completed = tmp_path / "completed.jsonl"
+    completed.write_text(
+        json.dumps(
+            {
+                "place_id": "mt1_00000000000000000000000001",
+                "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+                "thumb_sha256": retained_thumb_sha,
+                "width": 320,
+                "height": 240,
+                "attribution": {
+                    "creator": "Jane Example",
+                    "license_code": "CC-BY-4.0",
+                    "license_name": "Creative Commons Attribution 4.0",
+                    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                    "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+                    "modified": True,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    audited_row = json.loads(completed.read_text(encoding="utf-8"))
+    audited_row_sha = hashlib.sha256(
+        json.dumps(audited_row, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    (cache / images.AUDITED_THUMB_MEMO_FILENAME).write_text(
+        json.dumps(
+            {
+                "encoder_identity": images.AUDITED_THUMB_ENCODER_IDENTITY,
+                "entries": {
+                    raw_sha: {
+                        "audited_row_sha256": audited_row_sha,
+                        "byte_len": len(b"expected-memo-thumb"),
+                        "height": 192,
+                        "thumb_sha256": bad_thumb_sha,
+                        "width": 256,
+                    }
+                },
+                "schema_version": images.AUDITED_THUMB_MEMO_SCHEMA_VERSION,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    candidate = images.ImageCandidate(
+        place_id="mt1_00000000000000000000000001",
+        lat=51.5,
+        lon=-0.1,
+        image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Example.jpg",
+    )
+    transcodes = []
+
+    def fake_transcode(path):
+        transcodes.append(path)
+        return images.ThumbTranscode(webp_bytes=new_thumb, width=256, height=192)
+
+    monkeypatch.setattr(images, "transcode_to_webp_thumb", fake_transcode)
+
+    out = images.build_place_images_from_audit(
+        [candidate],
+        completed_jsonl=completed,
+        audited_cache_dir=cache,
+    )
+
+    assert [item.thumb_sha256 for item in out] == [new_thumb_sha]
+    assert transcodes == [original_path]
+    assert "memo_verification_failures=1" in capsys.readouterr().out
+
+
 def test_build_place_images_from_audit_requires_original_for_reencode(tmp_path):
     thumb_sha = hashlib.sha256(b"old-thumb").hexdigest()
     cache = tmp_path / "audit-cache"
