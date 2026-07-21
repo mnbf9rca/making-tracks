@@ -10,7 +10,7 @@ import MakingTracksTiles
 final class AppShellTests: XCTestCase {
     func testPlaceCardVisualSpecMatchesApprovedCardLayout() {
         XCTAssertEqual(PlaceCardVisualSpec.closeSystemImageName, "ellipsis")
-        XCTAssertTrue(PlaceCardVisualSpec.showsMediaSlotWhenPhotoMissing)
+        XCTAssertFalse(PlaceCardVisualSpec.showsMediaSlotWhenPhotoMissing)
         XCTAssertEqual(PlaceCardVisualSpec.actionCornerRadius, 8)
         XCTAssertEqual(PlaceCardVisualSpec.actionMinimumHeight, 44)
         XCTAssertEqual(PlaceCardVisualSpec.mediaSlotHeight, 132)

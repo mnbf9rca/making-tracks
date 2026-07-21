@@ -31,7 +31,7 @@ struct PlaceCardVisualSpec {
     }
 
     static let closeSystemImageName = "ellipsis"
-    static let showsMediaSlotWhenPhotoMissing = true
+    static let showsMediaSlotWhenPhotoMissing = false
     static let actionCornerRadius: CGFloat = 8
     static let actionMinimumHeight: CGFloat = 44
     static let mediaSlotHeight: CGFloat = 132
