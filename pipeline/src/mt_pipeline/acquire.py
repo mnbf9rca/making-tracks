@@ -27,6 +27,7 @@ USER_AGENT = "MakingTracksBot/0.1 (https://making-tracks.app; data-acquisition)"
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 MAX_RETRY_AFTER_SECONDS = 300
 MAX_PAGEVIEW_TITLES = 50_000
+WIKIMEDIA_MAXLAG_SECONDS = 5
 _QID_RE = re.compile(r"Q[0-9]+")
 _POINT_RE = re.compile(r"Point\(([-0-9.]+) ([-0-9.]+)\)")
 
@@ -36,9 +37,16 @@ class AcquireError(RuntimeError):
 
 
 class RetryableAcquireError(AcquireError):
-    def __init__(self, message: str, *, status: int | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int | None = None,
+        retry_after: float | None = None,
+    ) -> None:
         super().__init__(message)
         self.status = status
+        self.retry_after = retry_after
 
 
 class SharedBackoff:
@@ -158,12 +166,14 @@ def _retry_json(
         try:
             if backoff is not None:
                 backoff.before_request()
-            return fetch_json(
+            data = fetch_json(
                 url,
                 expected_hosts=expected_hosts,
                 max_bytes=max_bytes,
                 headers=_headers(),
             )
+            _raise_for_wikimedia_maxlag(data)
+            return data
         except Exception as exc:
             if attempt >= retries or not _is_retryable(exc):
                 raise AcquireError(str(exc)) from exc
@@ -182,6 +192,20 @@ def _retry_json(
             else:
                 backoff.pause(delay)
     raise AcquireError("unreachable retry state")
+
+
+def _raise_for_wikimedia_maxlag(data: object) -> None:
+    if not isinstance(data, dict):
+        return
+    error = data.get("error")
+    if not isinstance(error, dict) or error.get("code") != "maxlag":
+        return
+    info = error.get("info")
+    detail = f": {info}" if isinstance(info, str) and info else ""
+    raise RetryableAcquireError(
+        f"Wikimedia maxlag{detail}",
+        retry_after=float(WIKIMEDIA_MAXLAG_SECONDS),
+    )
 
 
 def _endpoint_url(endpoint: str, params: dict[str, str]) -> str:
@@ -371,6 +395,7 @@ def _wiki_geosearch_url(endpoint: str, tile) -> str:
             "list": "geosearch",
             "gsbbox": f"{north}|{west}|{south}|{east}",
             "gslimit": "500",
+            "maxlag": str(WIKIMEDIA_MAXLAG_SECONDS),
         },
     )
 
@@ -444,6 +469,7 @@ def _wiki_pages_url(endpoint: str, pageids: list[int]) -> str:
             "exintro": "1",
             "exlimit": "max",
             "explaintext": "1",
+            "maxlag": str(WIKIMEDIA_MAXLAG_SECONDS),
             "pageids": "|".join(str(pageid) for pageid in pageids),
         },
     )
@@ -457,6 +483,7 @@ def _wikidata_entities_url(endpoint: str, qids: list[str], *, language: str) -> 
             "action": "wbgetentities",
             "format": "json",
             "ids": "|".join(qids),
+            "maxlag": str(WIKIMEDIA_MAXLAG_SECONDS),
             "props": "sitelinks",
             "sitefilter": site,
         },
@@ -473,6 +500,7 @@ def _wiki_pages_by_title_url(endpoint: str, titles: list[str]) -> str:
             "exintro": "1",
             "exlimit": "max",
             "explaintext": "1",
+            "maxlag": str(WIKIMEDIA_MAXLAG_SECONDS),
             "piprop": "original",
             "titles": "|".join(titles),
         },
