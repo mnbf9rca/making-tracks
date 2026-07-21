@@ -33,6 +33,34 @@ final class PinClustererTests: XCTestCase {
         XCTAssertEqual(snapshot.renderFeatures.count, features.count)
     }
 
+    func testDefaultRadiusLetsDenseMidZoomPinsRenderIndividually() {
+        let features = denseKualaLumpurGridFeatures()
+        let midZoom = PinClusterer.renderFeatures(
+            features,
+            options: PinClusterer.Options(
+                zoom: 13,
+                radiusPoints: PinLayers.clusterRadius(pinSize: PinSize()),
+                maximumClusterZoom: PinLayers.maximumClusterZoom
+            )
+        )
+
+        XCTAssertEqual(midZoom.clusters, [])
+        XCTAssertEqual(midZoom.singletons.map(\.0.id), features.map(\.0.id).sorted())
+        XCTAssertEqual(midZoom.renderFeatures.count, features.count)
+
+        let cityZoom = PinClusterer.renderFeatures(
+            features,
+            options: PinClusterer.Options(
+                zoom: 12,
+                radiusPoints: PinLayers.clusterRadius(pinSize: PinSize()),
+                maximumClusterZoom: PinLayers.maximumClusterZoom
+            )
+        )
+        XCTAssertEqual(cityZoom.clusters.map(\.count).sorted(), [2, 4, 4, 4, 9])
+        XCTAssertEqual(cityZoom.singletons.count, 1)
+        XCTAssertEqual(cityZoom.clusters.map(\.count).reduce(0, +) + cityZoom.singletons.count, features.count)
+    }
+
     func testCategoryVisibilityIsAppliedBeforeClusterCountsAreComputed() {
         let museumA = pin("museum-a", lat: 3.1400, lon: 101.6900, category: "museum")
         let museumB = pin("museum-b", lat: 3.1402, lon: 101.6902, category: "museum")
@@ -141,6 +169,17 @@ final class PinClustererTests: XCTestCase {
                 "kl-\(index)",
                 lat: 3.1400 + (Double(index) * 0.00008),
                 lon: 101.6900 + (Double(index) * 0.00008),
+                category: "museum"
+            )
+        }
+    }
+
+    private func denseKualaLumpurGridFeatures() -> [(MapPlace, PinState)] {
+        (0..<24).map { index in
+            pin(
+                "dense-kl-\(index)",
+                lat: 3.132 + (Double(index / 6) * 0.004),
+                lon: 101.682 + (Double(index % 6) * 0.004),
                 category: "museum"
             )
         }

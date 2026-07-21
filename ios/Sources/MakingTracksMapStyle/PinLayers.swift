@@ -9,8 +9,8 @@ public enum PinLayers {
     public static let heartOffset: JSONValue = .array([.double(-baseBadgeOffset), .double(-baseBadgeOffset)])
     // Tuned from device-representative fixture screenshots so category glyphs stay legible.
     public static let baseCircleRadius = 6.5
-    // Tunable fallback-clustering radius: scaled with pin size so larger pins also get wider decluttering.
-    public static let baseClusterRadiusPoints = 44.0
+    // Tunable fallback-clustering radius. Default-size dense comparisons: z12 groups, z13 shows individual pins.
+    public static let baseClusterRadiusPoints = 20.0
     public static let minimumClusterPointCount = 2
     public static let maximumClusterZoom = PinFeatureFilter.streetZoom - 1
     public static let baseClusterBubbleRadius = 14.0

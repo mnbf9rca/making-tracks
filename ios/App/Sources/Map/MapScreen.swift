@@ -534,6 +534,11 @@ struct ViewportSeed: Sendable, Equatable {
         zoom: 12
     )
 
+    static let klMid = ViewportSeed(
+        bbox: kl.bbox,
+        zoom: 13
+    )
+
     static let penang = ViewportSeed(
         bbox: BBox(minLon: 100.282, minLat: 5.440, maxLon: 100.306, maxLat: 5.464),
         zoom: 14
@@ -566,6 +571,8 @@ struct ViewportSeed: Sendable, Equatable {
 
     static func selected(_ value: String?) -> ViewportSeed {
         switch value {
+        case "kl-mid":
+            return .klMid
         case "kl-street":
             return .klStreet
         case "ocean":
