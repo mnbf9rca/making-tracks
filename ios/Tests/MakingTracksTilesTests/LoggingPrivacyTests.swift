@@ -269,6 +269,35 @@ final class LoggingPrivacyTests: XCTestCase {
         XCTAssertFalse(source.contains("Your searches, lists, location, viewport or device name."))
     }
 
+    func testDiagnosticsPrepareDoesNotRunExporterSynchronouslyOnMainThread() throws {
+        let source = try String(
+            contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("Task {"), "Prepare actions should enter Swift concurrency.")
+        XCTAssertTrue(source.contains("await prepare(coverCurrentSession:"), "Prepare actions should await the async prepare path.")
+        XCTAssertTrue(source.contains("private func prepare(coverCurrentSession: Bool) async"), "Diagnostics prepare should be async.")
+        XCTAssertTrue(source.contains("Task.detached(priority: .userInitiated)"), "Exporter work should run off the main actor.")
+        XCTAssertFalse(
+            source.contains("private func prepare() {\n        isPreparing = true"),
+            "Diagnostics prepare should not use the old synchronous body."
+        )
+    }
+
+    func testDiagnosticsNormalPrepareUsesSessionCoveringWindowButShortRetryStaysExplicit() throws {
+        let source = try String(
+            contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("await prepare(coverCurrentSession: true)"))
+        XCTAssertTrue(source.contains("await prepare(coverCurrentSession: false)"))
+        XCTAssertTrue(source.contains("private func prepare(coverCurrentSession: Bool) async"))
+        XCTAssertTrue(source.contains("prepareCoveringCurrentSession(preferredWindow: window"))
+        XCTAssertTrue(source.contains(".prepare(window: window"))
+    }
+
     private func logLineHasExplicitPrivacyAnnotations(_ line: String) -> Bool {
         for interpolation in logInterpolations(in: line) {
             if interpolation.range(of: #"privacy\s*:"#, options: .regularExpression) == nil {

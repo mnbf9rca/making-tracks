@@ -5288,7 +5288,9 @@ private struct DiagnosticsView: View {
             if scrubFailed {
                 Button("Try 15 min") {
                     selectedWindow = .fifteenMinutes
-                    prepare()
+                    Task {
+                        await prepare(coverCurrentSession: false)
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .frame(maxWidth: .infinity)
@@ -5315,7 +5317,9 @@ private struct DiagnosticsView: View {
                 .accessibilityIdentifier("settings.diagnostics.share")
             } else {
                 Button(isPreparing ? "Preparing" : "Prepare") {
-                    prepare()
+                    Task {
+                        await prepare(coverCurrentSession: true)
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isPreparing)
@@ -5334,16 +5338,19 @@ private struct DiagnosticsView: View {
             .foregroundStyle(.primary, Color.accentColor)
     }
 
-    private func prepare() {
+    private func prepare(coverCurrentSession: Bool) async {
+        guard !isPreparing else { return }
         isPreparing = true
         scrubFailed = false
         artifact = nil
+        let window = selectedWindow
+        let currentStorageStatus = storageStatus
         do {
-            let store = try DiagnosticsRuntime.makeStore()
-            artifact = try DiagnosticLogExporter(
-                store: store,
-                metadata: DiagnosticsRuntime.metadata(storageStatus: storageStatus)
-            ).prepare(window: selectedWindow, stagingRoot: DiagnosticsRuntime.stagingRoot())
+            artifact = try await DiagnosticsRuntime.prepareArtifact(
+                window: window,
+                storageStatus: currentStorageStatus,
+                coverCurrentSession: coverCurrentSession
+            )
         } catch DiagnosticLogExportError.privacyScrubFailed {
             scrubFailed = true
         } catch {
@@ -5411,6 +5418,26 @@ private enum DiagnosticsRuntime {
             deviceModel: deviceModel(),
             installedPacks: storageStatus.diagnosticInstalledPacks
         )
+    }
+
+    @MainActor
+    static func prepareArtifact(
+        window: DiagnosticLogWindow,
+        storageStatus: StorageMenuStatus,
+        coverCurrentSession: Bool
+    ) async throws -> DiagnosticLogArtifact {
+        let exportMetadata = metadata(storageStatus: storageStatus)
+        return try await Task.detached(priority: .userInitiated) {
+            let store = try makeStore()
+            let exporter = DiagnosticLogExporter(
+                store: store,
+                metadata: exportMetadata
+            )
+            if coverCurrentSession {
+                return try exporter.prepareCoveringCurrentSession(preferredWindow: window, stagingRoot: stagingRoot())
+            }
+            return try exporter.prepare(window: window, stagingRoot: stagingRoot())
+        }.value
     }
 
     private static var bundleIdentifier: String {
