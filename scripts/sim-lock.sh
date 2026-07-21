@@ -76,7 +76,21 @@ lock_holders() {
 
 udid_users() {
   # Excludes this script so a --status call never reports itself.
-  pgrep -f -- "$UDID" 2>/dev/null | grep -v -x -- "$$" || true
+  local pid
+  { pgrep -f -- "$UDID" 2>/dev/null || true; } | while IFS= read -r pid; do
+    [ "$pid" != "$$" ] || continue
+    process_is_idle_launchd_sim "$pid" && continue
+    echo "$pid"
+  done
+}
+
+process_is_idle_launchd_sim() {
+  local command
+  command="$(ps -p "$1" -o command= 2>/dev/null || true)"
+  case "$command" in
+    launchd_sim\ *|*/launchd_sim\ *) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # Exit 0 when FREE, 1 when HELD, so callers branch on the code rather than parse.
