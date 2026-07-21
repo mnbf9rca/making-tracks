@@ -1593,6 +1593,78 @@ def test_parallel_upload_heartbeats_while_workers_are_busy(tmp_path, capsys):
     assert "PUBLISH_UPLOAD DONE phase=publish.r2_upload_data region=united-kingdom objects_done=2/2" in err
 
 
+def test_parallel_upload_uses_bounded_put_workers(tmp_path):
+    ops = []
+    for index in range(4):
+        body = f"tile-{index}".encode()
+        path = tmp_path / f"{index}.json.gz"
+        path.write_bytes(body)
+        ops.append(
+            R.PublishOp(
+                kind="tile",
+                bucket="making-tracks-tiles",
+                key=f"united-kingdom/20260715T120000Z/tiles/10/1/{index}.json.gz",
+                source_path=path,
+            )
+        )
+
+    class Client:
+        def __init__(self):
+            self.active = 0
+            self.max_active = 0
+            self.put_keys = []
+            self.lock = threading.Lock()
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            assert Bucket == "making-tracks-tiles"
+            if hasattr(Body, "read"):
+                Body.read()
+            with self.lock:
+                self.active += 1
+                self.max_active = max(self.max_active, self.active)
+                self.put_keys.append(Key)
+            time.sleep(0.01)
+            with self.lock:
+                self.active -= 1
+            return {"ETag": '"etag"'}
+
+    client = Client()
+    uploaded = R._upload_ops_parallel(
+        client,
+        ops,
+        phase="publish.r2_upload_data",
+        region="united-kingdom",
+        upload_workers=2,
+        heartbeat_every_objects=100,
+        heartbeat_every_seconds=999,
+    )
+
+    assert uploaded == 4
+    assert sorted(client.put_keys) == sorted(op.key for op in ops)
+    assert client.max_active <= 2
+    assert client.max_active > 1
+
+
+def test_resolve_upload_workers_uses_env_default_and_validates_range(monkeypatch):
+    monkeypatch.delenv("MT_R2_UPLOAD_WORKERS", raising=False)
+    assert R.resolve_upload_workers() == 16
+
+    monkeypatch.setenv("MT_R2_UPLOAD_WORKERS", "")
+    assert R.resolve_upload_workers() == 16
+
+    monkeypatch.setenv("MT_R2_UPLOAD_WORKERS", "7")
+    assert R.resolve_upload_workers() == 7
+    assert R.resolve_upload_workers(3) == 3
+
+    monkeypatch.setenv("MT_R2_UPLOAD_WORKERS", "not-an-int")
+    with pytest.raises(ValueError, match="MT_R2_UPLOAD_WORKERS"):
+        R.resolve_upload_workers()
+
+    for value in (0, 65):
+        with pytest.raises(ValueError, match="between 1 and 64"):
+            R.resolve_upload_workers(value)
+
+
 def test_default_client_uses_committed_r2_s3_endpoint_contract(monkeypatch):
     calls = []
 
