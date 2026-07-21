@@ -1,0 +1,279 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --paper: #f1eddf;
+      --sheet: #fffdf7;
+      --ink: #1c1c1e;
+      --dim: #62615c;
+      --line: #ddd8ca;
+      --accent: #0a6b5c;
+      --accent-soft: #e3f0eb;
+      --blue: #2f5c8a;
+      --blue-soft: #e8eef5;
+      --danger: #b42318;
+      --danger-soft: #f8e7e4;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #f6f6f4;
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+      padding: 28px 24px 34px;
+      zoom: 1;
+    }
+    h1 { font-size: 18px; font-weight: 650; margin-bottom: 3px; }
+    .sub { color: var(--dim); font-size: 13px; margin-bottom: 22px; }
+    .row { display: flex; gap: 30px; align-items: flex-start; }
+    .col { width: 390px; }
+    .cap { font-size: 12px; font-weight: 650; margin-bottom: 3px; }
+    .capsub { color: var(--dim); font-size: 11px; line-height: 1.35; margin-bottom: 9px; min-height: 30px; }
+    .phone {
+      background: var(--paper);
+      border: 1px solid #c9c6bd;
+      border-radius: 26px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.09);
+      height: 844px;
+      overflow: hidden;
+      position: relative;
+      width: 390px;
+    }
+    .status { display: flex; justify-content: space-between; padding: 12px 20px 8px; font-size: 13px; font-weight: 650; }
+    .nav {
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      gap: 12px;
+      min-height: 52px;
+      padding: 0 18px;
+    }
+    .back { color: var(--accent); font-size: 17px; white-space: nowrap; }
+    .title { font-size: 19px; font-weight: 650; }
+    .navspacer { flex: 1; }
+    .navbtn { color: var(--accent); font-size: 17px; font-weight: 600; }
+    .list { padding: 16px 16px 92px; }
+    .summary {
+      background: var(--sheet);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      margin-bottom: 14px;
+      padding: 13px;
+    }
+    .summaryline { align-items: center; display: flex; gap: 7px; font-size: 15px; font-weight: 650; }
+    .summary h2 { font-size: 25px; line-height: 1.1; margin: 8px 0; }
+    .summary p { color: #3a3a36; font-size: 15px; line-height: 1.36; }
+    .section-title {
+      color: var(--dim);
+      font-size: 13px;
+      font-weight: 650;
+      letter-spacing: .3px;
+      margin: 14px 8px 8px;
+      text-transform: uppercase;
+    }
+    .visit {
+      background: var(--sheet);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      margin-bottom: 10px;
+      padding: 12px;
+    }
+    .visit-head { align-items: flex-start; display: flex; gap: 10px; }
+    .pin {
+      align-items: center;
+      background: var(--accent-soft);
+      border-radius: 8px;
+      color: var(--accent);
+      display: flex;
+      flex: none;
+      font-size: 12px;
+      font-weight: 750;
+      height: 32px;
+      justify-content: center;
+      width: 32px;
+    }
+    .pin.blue { background: var(--blue-soft); color: var(--blue); }
+    .visit-text { flex: 1; min-width: 0; }
+    .name { font-size: 18px; line-height: 1.18; }
+    .meta { color: var(--dim); font-size: 14px; line-height: 1.28; margin-top: 3px; }
+    .heart {
+      align-items: center;
+      border: 1px solid #ded5c8;
+      border-radius: 8px;
+      color: var(--danger);
+      display: flex;
+      flex: none;
+      font-size: 12px;
+      font-weight: 750;
+      height: 36px;
+      justify-content: center;
+      width: 42px;
+    }
+    .drag {
+      align-items: center;
+      color: #8f8a82;
+      display: flex;
+      flex: none;
+      font-size: 24px;
+      font-weight: 700;
+      height: 36px;
+      justify-content: center;
+      width: 28px;
+    }
+    .controls {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: 1fr;
+      margin-top: 11px;
+    }
+    .datebox {
+      border: 1px solid #e1dbcc;
+      border-radius: 8px;
+      padding: 9px 10px;
+    }
+    .datebox span { color: var(--dim); display: block; font-size: 11px; font-weight: 650; text-transform: uppercase; }
+    .datebox strong { display: block; font-size: 16px; margin-top: 2px; }
+    .moves { display: grid; gap: 7px; grid-template-columns: repeat(3, 1fr); }
+    .square {
+      align-items: center;
+      border: 1px solid #ded5c8;
+      border-radius: 8px;
+      color: #34332f;
+      display: flex;
+      font-size: 14px;
+      font-weight: 750;
+      min-height: 42px;
+      justify-content: center;
+    }
+    .square.off { color: #aaa49a; background: #f4f1e9; }
+    .square.trash { color: var(--danger); background: var(--danger-soft); border-color: #e8c8c1; }
+    .note {
+      background: #f4f2eb;
+      border: 1px solid #e2ddce;
+      border-radius: 9px;
+      color: #45423d;
+      font-size: 14px;
+      line-height: 1.35;
+      margin-top: 10px;
+      padding: 10px;
+    }
+    .bar {
+      background: rgba(255,253,247,.97);
+      border-top: 1px solid var(--line);
+      bottom: 0;
+      display: flex;
+      gap: 9px;
+      left: 0;
+      padding: 10px 16px 18px;
+      position: absolute;
+      right: 0;
+    }
+    .btn {
+      background: var(--accent);
+      border-radius: 9px;
+      color: white;
+      flex: 1;
+      font-size: 16px;
+      font-weight: 650;
+      min-height: 46px;
+      padding: 12px 8px;
+      text-align: center;
+    }
+    .fold { border-top: 2px dashed #c0392b; bottom: 76px; left: 0; position: absolute; right: 0; }
+    .foldlab { background: rgba(255,255,255,.92); border-radius: 3px; bottom: 104px; color: #c0392b; font-size: 9.5px; font-weight: 650; padding: 1px 4px; position: absolute; right: 6px; }
+  </style>
+</head>
+<body>
+<h1>Visits editing - accessibility text</h1>
+<div class="sub">Controls wrap instead of shrinking. Event identity and same-day order remain visible.</div>
+
+<div class="row">
+  <div class="col">
+    <div class="cap">1 - Full day sequence</div>
+    <div class="capsub">Rows stay readable; drag reorder is exposed only where the complete day is present.</div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>100%</span></div>
+      <div class="nav"><div class="back">&#8249; Menu</div><div class="title">My tracks</div><div class="navspacer"></div><div class="navbtn">Done</div></div>
+      <div class="list">
+        <div class="summary">
+          <div class="summaryline"><span>v</span><span>Oldest first</span></div>
+          <h2>6 visits</h2>
+          <p>Edit a row when the remembered day or order needs correcting.</p>
+        </div>
+
+        <div class="section-title">Today</div>
+        <div class="visit">
+          <div class="visit-head">
+            <div class="pin">pin</div>
+            <div class="visit-text"><div class="name">Ghost Sign</div><div class="meta">Attraction · Jul 21, 9:12 AM</div></div>
+            <div class="heart">heart</div>
+            <div class="drag">&#9776;</div>
+          </div>
+          <div class="controls">
+            <div class="datebox"><span>Visit date</span><strong>Jul 21, 2026</strong></div>
+            <div class="moves"><div class="square trash">delete</div></div>
+          </div>
+        </div>
+        <div class="visit">
+          <div class="visit-head">
+            <div class="pin blue">pin</div>
+            <div class="visit-text"><div class="name">Art Deco Cinema</div><div class="meta">Historic building · Jul 21, 9:12 AM</div></div>
+            <div class="heart">heart</div>
+            <div class="drag">&#9776;</div>
+          </div>
+          <div class="controls">
+            <div class="datebox"><span>Visit date</span><strong>Jul 21, 2026</strong></div>
+            <div class="moves"><div class="square trash">delete</div></div>
+          </div>
+        </div>
+        <div class="note">Same-day order uses visit_order. The timestamp display is not treated as truth for manual order.</div>
+      </div>
+      <div class="fold"></div><div class="foldlab">fold</div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="cap">2 - Focused delete path</div>
+    <div class="capsub">Place-card un-see can land on repeated visits; delete remains row-addressed.</div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>100%</span></div>
+      <div class="nav"><div class="back">&#8249; Ghost Sign</div><div class="title">Visits</div></div>
+      <div class="list">
+        <div class="summary">
+          <div class="summaryline"><span>pin</span><span>Multiple visits</span></div>
+          <h2>Choose the visit</h2>
+          <p>Delete only the row you mean to remove.</p>
+        </div>
+
+        <div class="section-title">Ghost Sign</div>
+        <div class="visit">
+          <div class="visit-head">
+            <div class="pin">pin</div>
+            <div class="visit-text"><div class="name">Ghost Sign</div><div class="meta">Attraction · Jul 20, 5:42 PM</div></div>
+            <div class="heart">heart</div>
+          </div>
+          <div class="controls">
+            <div class="datebox"><span>Visit date</span><strong>Jul 20, 2026</strong></div>
+            <div class="moves"><div class="square trash">delete</div></div>
+          </div>
+        </div>
+        <div class="visit">
+          <div class="visit-head">
+            <div class="pin blue">pin</div>
+            <div class="visit-text"><div class="name">Ghost Sign</div><div class="meta">Attraction · Jul 21, 9:12 AM</div></div>
+            <div class="heart">heart</div>
+          </div>
+          <div class="controls">
+            <div class="datebox"><span>Visit date</span><strong>Jul 21, 2026</strong></div>
+            <div class="moves"><div class="square trash">delete</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="bar"><div class="btn">Back to place</div></div>
+      <div class="fold"></div><div class="foldlab">fold</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

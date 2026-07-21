@@ -793,6 +793,35 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(ListDetailVisitActions.canEditTrackVisits(from: importedTrackKind))
     }
 
+    func testTrackVisitReorderingGroupsFullChronologicalRowsByLocalDay() {
+        let calendar = Calendar(identifier: .gregorian)
+        let visits = [
+            trackVisit(id: 1, seconds: 100),
+            trackVisit(id: 2, seconds: 200),
+            trackVisit(id: 3, seconds: 90_000),
+        ]
+
+        let sections = TrackVisitReordering.daySections(for: visits, calendar: calendar)
+
+        XCTAssertEqual(sections.map { $0.visits.map(\.id) }, [[1, 2], [3]])
+    }
+
+    func testTrackVisitReorderingMovesRowsWithinDayByVisitID() {
+        let visits = [
+            trackVisit(id: 1, seconds: 100),
+            trackVisit(id: 2, seconds: 200),
+            trackVisit(id: 3, seconds: 300),
+        ]
+
+        XCTAssertEqual(
+            TrackVisitReordering.reorderedIDs(in: visits, fromOffsets: IndexSet(integer: 0), toOffset: 3),
+            [2, 3, 1]
+        )
+        XCTAssertNil(
+            TrackVisitReordering.reorderedIDs(in: visits, fromOffsets: IndexSet(integer: 1), toOffset: 2)
+        )
+    }
+
     func testListMapCategoryVisibilityIgnoresDiscoveryCategoryToggles() {
         XCTAssertNil(
             ListMapCategoryVisibility.visibleCategories(
