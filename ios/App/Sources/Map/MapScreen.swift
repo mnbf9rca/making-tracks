@@ -5125,9 +5125,9 @@ private struct SettingsView: View {
                         Image(systemName: "arrow.up.doc")
                             .foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Export diagnostic log")
+                            Text("Diagnostic log")
                                 .foregroundStyle(.primary)
-                            Text("Review what is included before sharing.")
+                            Text("Review, prepare, share, or delete local logs.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -5140,25 +5140,6 @@ private struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("settings.diagnostics.export")
-
-                Button(role: .destructive) {
-                    deleteDiagnostics()
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "xmark.bin")
-                            .foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Delete diagnostics")
-                                .foregroundStyle(.primary)
-                            Text("Clears logs stored on this device.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("settings.diagnostics.delete")
             }
 
             Section("Onboarding") {
@@ -5185,14 +5166,6 @@ private struct SettingsView: View {
         )
     }
 
-    private func deleteDiagnostics() {
-        do {
-            let store = try DiagnosticsRuntime.makeStore()
-            try store.deleteDiagnostics(stagingRoot: DiagnosticsRuntime.stagingRoot())
-        } catch {
-            MakingTracksLog.startup.error("diagnostics delete failed reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
-        }
-    }
 }
 
 private struct DiagnosticsView: View {
@@ -5203,6 +5176,7 @@ private struct DiagnosticsView: View {
     @State private var scrubFailed = false
     @State private var isPreparing = false
     @State private var shareItem: DiagnosticsShareItem?
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         List {
@@ -5214,42 +5188,41 @@ private struct DiagnosticsView: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("settings.diagnostics.window")
-
-                LabeledContent("Local file", value: "Prepared on this phone")
-                LabeledContent("Share", value: "System share sheet")
             } header: {
                 Text("Send a diagnostic log")
             } footer: {
-                Text("This file records what you did in the app and how it responded, during the window you choose above - the places you opened and saved, the actions you took, the map you browsed, and what the app fetched, showed, or failed to show. It is meant to let someone helping you see exactly what happened. Nothing is sent automatically; you choose where it goes.")
+                Text("Nothing is sent automatically. The app prepares a file on this phone; when you share, you pick who gets it.")
             }
 
             Section("Included") {
-                diagnosticsBullet("Your app version and device model; the places and actions in your session; the map areas you viewed; what the app fetched, and any errors and timings.")
+                diagnosticsClassGrid(Self.includedDisclosureClasses, isIncluded: true)
             }
 
             Section("Not included") {
-                diagnosticsBullet("Your device's name; your exact location; your search wording.")
-            }
-
-            Section {
-                Text("This file describes your session. Share it only with someone you trust to help you.")
-                    .font(.callout.weight(.semibold))
-                    .fixedSize(horizontal: false, vertical: true)
+                diagnosticsClassGrid(Self.excludedDisclosureClasses, isIncluded: false)
             }
 
             if let artifact {
+                Section("Diagnostic file ready") {
+                    Text("\(formattedByteCount(artifact.byteCount)) archive is ready on this phone. Tap Share when you are ready to choose who gets it. Nothing leaves Making Tracks before then.")
+                        .font(.callout.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 Section("Preview") {
-                    ScrollView(.horizontal) {
+                    ScrollView([.horizontal, .vertical]) {
                         Text(verbatim: artifact.preview)
-                            .font(.system(.caption, design: .monospaced))
+                            .font(.system(.footnote, design: .monospaced))
                             .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
+                    .frame(minHeight: 220, maxHeight: 320, alignment: .topLeading)
                     .accessibilityIdentifier("settings.diagnostics.preview")
                 }
 
-                Section("Share boundary") {
-                    diagnosticsBullet("The next screen is the system share sheet.")
-                    diagnosticsBullet("The app still has no upload endpoint.")
+                Section("Before sharing") {
+                    diagnosticsBullet("You choose the person or app that gets the file.")
+                    diagnosticsBullet("Making Tracks has no upload endpoint.")
                 }
             }
 
@@ -5273,6 +5246,17 @@ private struct DiagnosticsView: View {
         .sheet(item: $shareItem, onDismiss: cleanupPreparedArtifact) { item in
             ActivityShareSheet(activityItems: [item.url])
         }
+        .confirmationDialog("Delete diagnostic logs?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete logs", role: .destructive) {
+                deleteDiagnostics()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes logs and prepared diagnostic files stored on this phone. It cannot delete anything you already shared.")
+        }
     }
 
     @ViewBuilder
@@ -5289,8 +5273,8 @@ private struct DiagnosticsView: View {
                 .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("settings.diagnostics.retry-shorter")
 
-                Button("Delete diagnostics", role: .destructive) {
-                    deleteDiagnostics()
+                Button("Delete logs", role: .destructive) {
+                    showDeleteConfirmation = true
                 }
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("settings.diagnostics.delete")
@@ -5331,6 +5315,37 @@ private struct DiagnosticsView: View {
             .foregroundStyle(.primary, Color.accentColor)
     }
 
+    private func diagnosticsClassGrid(_ classes: [DiagnosticsDisclosureClass], isIncluded: Bool) -> some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 10) {
+            ForEach(classes) { item in
+                diagnosticsClassTile(item, isIncluded: isIncluded)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func diagnosticsClassTile(_ item: DiagnosticsDisclosureClass, isIncluded: Bool) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: isIncluded ? "checkmark.circle.fill" : "slash.circle")
+                .foregroundStyle(isIncluded ? Color.accentColor : .secondary)
+                .imageScale(.medium)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(item.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func formattedByteCount(_ byteCount: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file)
+    }
+
     private func prepare(coverCurrentSession: Bool) async {
         guard !isPreparing else { return }
         isPreparing = true
@@ -5368,10 +5383,35 @@ private struct DiagnosticsView: View {
             try store.deleteDiagnostics(stagingRoot: DiagnosticsRuntime.stagingRoot())
             artifact = nil
             scrubFailed = false
+            showDeleteConfirmation = false
         } catch {
             MakingTracksLog.startup.error("diagnostics delete failed reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
         }
     }
+
+    private static let includedDisclosureClasses: [DiagnosticsDisclosureClass] = [
+        DiagnosticsDisclosureClass(title: "App version", detail: "Build number and app release."),
+        DiagnosticsDisclosureClass(title: "Device model", detail: "Model and iOS version."),
+        DiagnosticsDisclosureClass(title: "Session flow", detail: "Plaintext flow events."),
+        DiagnosticsDisclosureClass(title: "Map packs", detail: "Packs and publish versions."),
+        DiagnosticsDisclosureClass(title: "Object URLs", detail: "Our hosts and object paths."),
+        DiagnosticsDisclosureClass(title: "Errors", detail: "Status codes and labels."),
+        DiagnosticsDisclosureClass(title: "Timings", detail: "Fetch and decode timing."),
+        DiagnosticsDisclosureClass(title: "Places/actions", detail: "Session evidence for support."),
+    ]
+
+    private static let excludedDisclosureClasses: [DiagnosticsDisclosureClass] = [
+        DiagnosticsDisclosureClass(title: "Device name", detail: "Personal device label."),
+        DiagnosticsDisclosureClass(title: "Exact location", detail: "Coordinates are excluded."),
+        DiagnosticsDisclosureClass(title: "Search wording", detail: "Typed queries are omitted."),
+    ]
+}
+
+private struct DiagnosticsDisclosureClass: Identifiable {
+    let title: String
+    let detail: String
+
+    var id: String { title }
 }
 
 private struct DiagnosticsShareItem: Identifiable {

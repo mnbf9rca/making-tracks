@@ -27,8 +27,11 @@ Validation notes:
   Icons augment the class names rather than replacing them; the accessibility
   render drops supporting blurbs before it drops class names.
 - The "Share boundary" jargon is removed, but the consent beat remains: the
-  prepared state says the system share sheet opens and the user chooses the
-  recipient. The preview shows plaintext session flow and plaintext object
-  paths, matching the shipped export format.
+  prepared state says the user chooses who gets the file and nothing leaves
+  Making Tracks before then. The preview shows plaintext session flow and
+  plaintext object paths, matching the shipped export format.
+- Rob's taste ruling approved the share wireframes with two amendments folded
+  into this cut: make the verbose preview block larger, and make the prepared
+  share copy more user-friendly while preserving explicit consent.
 - Action styling follows the Making Tracks action-bar hierarchy. Recovery is
   primary; Delete logs is destructive-secondary and confirmation-gated.
