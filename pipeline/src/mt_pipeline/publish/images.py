@@ -22,7 +22,7 @@ from mt_contracts import strip_unsafe_text
 from mt_contracts.validation import validate_instance
 from mt_pipeline import fetch
 
-from . import partition
+from . import image_worker, partition
 
 COMMONS_API_HOST = "commons.wikimedia.org"
 UPLOAD_HOST = "upload.wikimedia.org"
@@ -51,11 +51,34 @@ TRANSIENT_REJECT_REASONS = frozenset({"metadata_fetch_failed", "download_failed"
 MAX_AUDITED_IMAGE_ROWS = 1_000_000
 MAX_AUDITED_IMAGE_JSONL_BYTES = 512 * 1024 * 1024
 MAX_AUDITED_THUMB_BYTES = 1_048_576
+AUDITED_THUMB_MEMO_SCHEMA_VERSION = 1
+AUDITED_THUMB_MEMO_FILENAME = "audited-thumb-memo.json"
 _HEX_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _CC_BY_LICENSE_CODE_RE = re.compile(
     r"^CC-BY(-SA)?-(1\.0|2\.0|2\.1|2\.5|3\.0|4\.0)(-[A-Z]{2}(_[A-Z]+)?|-IGO)?$"
 )
 _COMMONS_FILE_PATH_RE = re.compile(r"^/wiki/File:(?!.*(?:\.\.|/))[^?#\s]+$")
+
+
+def _audited_thumb_encoder_identity() -> str:
+    try:
+        from PIL import Image, features
+
+        pillow_version = getattr(Image, "__version__", "unknown")
+        webp_version = features.version("webp") if features.check("webp") else "unsupported"
+    except Exception as exc:
+        pillow_version = f"unavailable:{type(exc).__name__}"
+        webp_version = "unavailable"
+    return (
+        f"image_worker:webp:max_edge={image_worker.THUMB_MAX_EDGE}:"
+        f"quality={image_worker.THUMB_WEBP_QUALITY}:method=6:"
+        f"max_pixels={image_worker.MAX_IMAGE_PIXELS}:"
+        f"formats={','.join(sorted(image_worker.ALLOWED_FORMATS))}:"
+        f"pillow={pillow_version}:webp={webp_version}:v1"
+    )
+
+
+AUDITED_THUMB_ENCODER_IDENTITY = _audited_thumb_encoder_identity()
 
 
 @dataclass(frozen=True)
@@ -496,11 +519,16 @@ def build_place_images_from_audit(
     audited_cache_dir,
     require_complete: bool = False,
 ) -> list[PlaceImage]:
+    started = time.monotonic()
     audited_rows = _load_audited_image_rows(pathlib.Path(completed_jsonl))
     cache_root = pathlib.Path(audited_cache_dir)
     out: list[PlaceImage] = []
     seen_place_ids: set[str] = set()
     missing = 0
+    memo_hits = 0
+    memo_misses = 0
+    memo_verification_failures = 0
+    reencoded = 0
     for candidate in sorted(candidates, key=lambda item: item.place_id):
         if candidate.place_id in seen_place_ids:
             continue
@@ -509,7 +537,17 @@ def build_place_images_from_audit(
         if row is None:
             missing += 1
             continue
-        out.append(_place_image_from_audited_row(candidate, row, cache_root=cache_root))
+        place_image, reused_memo, memo_status = _place_image_from_audited_row(
+            candidate, row, cache_root=cache_root
+        )
+        out.append(place_image)
+        if reused_memo:
+            memo_hits += 1
+        else:
+            memo_misses += 1
+            if memo_status in {"thumb_missing", "thumb_hash_mismatch", "thumb_too_large"}:
+                memo_verification_failures += 1
+            reencoded += 1
     if require_complete and missing:
         raise AuditedImageReuseError(
             f"audited image reuse missing {missing} of {len(candidates)} candidates"
@@ -517,7 +555,10 @@ def build_place_images_from_audit(
     print(
         "AUDITED_IMAGE_REENCODE "
         f"candidates={len(candidates)} selected={len(out)} "
-        f"missing_skipped={missing} audited_total={len(audited_rows)}"
+        f"missing_skipped={missing} audited_total={len(audited_rows)} "
+        f"memo_hits={memo_hits} memo_misses={memo_misses} "
+        f"memo_verification_failures={memo_verification_failures} "
+        f"reencoded={reencoded} elapsed={time.monotonic() - started:.1f}s"
     )
     return out
 
@@ -564,7 +605,7 @@ def _place_image_from_audited_row(
     row: dict[str, Any],
     *,
     cache_root: pathlib.Path,
-) -> PlaceImage:
+) -> tuple[PlaceImage, bool, str]:
     thumb_sha = row.get("thumb_sha256")
     if not isinstance(thumb_sha, str) or _HEX_SHA256_RE.fullmatch(thumb_sha) is None:
         raise AuditedImageReuseError(
@@ -598,6 +639,17 @@ def _place_image_from_audited_row(
             f"audited original exceeds {MAX_ORIGINAL_IMAGE_BYTES} bytes for "
             f"{candidate.place_id}: {original_path}"
         )
+    raw_sha256 = _sha256_file(original_path)
+    row_identity = _audited_row_identity(row)
+    memoized, memo_status = _read_memoized_audited_thumb(
+        cache_root=cache_root,
+        raw_sha256=raw_sha256,
+        audited_row_sha256=row_identity,
+        candidate=candidate,
+        attribution=attribution,
+    )
+    if memoized is not None:
+        return memoized, True, memo_status
     try:
         thumb = transcode_to_webp_thumb(original_path)
     except Exception as exc:
@@ -613,6 +665,15 @@ def _place_image_from_audited_row(
     thumb_path = cache_root / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp"
     thumb_path.parent.mkdir(parents=True, exist_ok=True)
     thumb_path.write_bytes(thumb.webp_bytes)
+    _write_audited_thumb_memo(
+        cache_root=cache_root,
+        raw_sha256=raw_sha256,
+        audited_row_sha256=row_identity,
+        thumb_sha256=thumb_sha,
+        byte_len=len(thumb.webp_bytes),
+        width=thumb.width,
+        height=thumb.height,
+    )
     return PlaceImage(
         place_id=candidate.place_id,
         lat=candidate.lat,
@@ -622,7 +683,7 @@ def _place_image_from_audited_row(
         width=thumb.width,
         height=thumb.height,
         attribution=attribution,
-    )
+    ), False, memo_status
 
 
 def _verify_retained_audited_thumb(
@@ -630,7 +691,7 @@ def _verify_retained_audited_thumb(
     *,
     cache_root: pathlib.Path,
     place_id: str,
-) -> None:
+) -> bytes:
     thumb_path = cache_root / "thumbs" / thumb_sha[:2] / f"{thumb_sha}.webp"
     if not thumb_path.exists():
         raise AuditedImageReuseError(
@@ -646,6 +707,128 @@ def _verify_retained_audited_thumb(
         raise AuditedImageReuseError(
             f"thumb content hash mismatch for {place_id}: {thumb_path}"
         )
+    return thumb_bytes
+
+
+def _sha256_file(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _audited_row_identity(row: dict[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(row, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _audited_thumb_memo_path(cache_root: pathlib.Path) -> pathlib.Path:
+    return cache_root / AUDITED_THUMB_MEMO_FILENAME
+
+
+def _read_audited_thumb_memo(cache_root: pathlib.Path) -> dict[str, Any]:
+    path = _audited_thumb_memo_path(cache_root)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    if payload.get("schema_version") != AUDITED_THUMB_MEMO_SCHEMA_VERSION:
+        return {}
+    if payload.get("encoder_identity") != AUDITED_THUMB_ENCODER_IDENTITY:
+        return {}
+    entries = payload.get("entries")
+    if not isinstance(entries, dict):
+        return {}
+    return entries
+
+
+def _write_audited_thumb_memo(
+    *,
+    cache_root: pathlib.Path,
+    raw_sha256: str,
+    audited_row_sha256: str,
+    thumb_sha256: str,
+    byte_len: int,
+    width: int,
+    height: int,
+) -> None:
+    entries = dict(_read_audited_thumb_memo(cache_root))
+    entries[raw_sha256] = {
+        "audited_row_sha256": audited_row_sha256,
+        "byte_len": byte_len,
+        "height": height,
+        "thumb_sha256": thumb_sha256,
+        "width": width,
+    }
+    payload = {
+        "encoder_identity": AUDITED_THUMB_ENCODER_IDENTITY,
+        "entries": entries,
+        "schema_version": AUDITED_THUMB_MEMO_SCHEMA_VERSION,
+    }
+    path = _audited_thumb_memo_path(cache_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _read_memoized_audited_thumb(
+    *,
+    cache_root: pathlib.Path,
+    raw_sha256: str,
+    audited_row_sha256: str,
+    candidate: ImageCandidate,
+    attribution: ImageAttribution,
+) -> tuple[PlaceImage | None, str]:
+    entry = _read_audited_thumb_memo(cache_root).get(raw_sha256)
+    if not isinstance(entry, dict):
+        return None, "entry_missing"
+    if entry.get("audited_row_sha256") != audited_row_sha256:
+        return None, "audited_row_mismatch"
+    thumb_sha = entry.get("thumb_sha256")
+    if not isinstance(thumb_sha, str) or _HEX_SHA256_RE.fullmatch(thumb_sha) is None:
+        return None, "entry_invalid"
+    byte_len = entry.get("byte_len")
+    if not isinstance(byte_len, int) or isinstance(byte_len, bool) or byte_len <= 0:
+        return None, "entry_invalid"
+    width = entry.get("width")
+    height = entry.get("height")
+    if not isinstance(width, int) or isinstance(width, bool) or width <= 0:
+        return None, "entry_invalid"
+    if not isinstance(height, int) or isinstance(height, bool) or height <= 0:
+        return None, "entry_invalid"
+    try:
+        thumb_bytes = _verify_retained_audited_thumb(
+            thumb_sha, cache_root=cache_root, place_id=candidate.place_id
+        )
+    except AuditedImageReuseError as exc:
+        message = str(exc)
+        if "missing" in message:
+            return None, "thumb_missing"
+        if "too large" in message or "exceeds" in message:
+            return None, "thumb_too_large"
+        if "hash mismatch" in message:
+            return None, "thumb_hash_mismatch"
+        return None, "thumb_invalid"
+    if len(thumb_bytes) != byte_len:
+        return None, "thumb_hash_mismatch"
+    return PlaceImage(
+        place_id=candidate.place_id,
+        lat=candidate.lat,
+        lon=candidate.lon,
+        thumb_sha256=thumb_sha,
+        thumb_bytes=thumb_bytes,
+        width=width,
+        height=height,
+        attribution=attribution,
+    ), "hit"
 
 
 def _positive_int(value: object, *, label: str, place_id: str) -> int:
