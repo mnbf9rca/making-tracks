@@ -191,6 +191,10 @@ Acquisition config:
 - endpoint(s), allowed hosts, maximum bytes, cadence, retry/backoff policy,
   pagination/cursor rules, and whether the source may reuse the last complete
   snapshot if the current fetch fails.
+- resource identity and version token used as the adapter memo key. Every
+  adapter composes the shared conditional-fetch client where the protocol
+  supports it, and never reprocesses unchanged content. Correctness is by
+  content hash; HTTP `304 Not Modified` is only a bandwidth optimization.
 
 Link strategy config:
 
