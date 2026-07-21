@@ -216,6 +216,7 @@ public enum PinLayers {
                 "filter": clusterFilter(),
                 "layout": .object([
                     "text-field": .array([.string("get"), .string("point_count_abbreviated")]),
+                    "text-font": .array([.string("Noto Sans Regular")]),
                     "text-size": .double(clusterCountTextSize(pinSize: pinSize)),
                     "text-allow-overlap": .bool(true),
                     "text-ignore-placement": .bool(true),

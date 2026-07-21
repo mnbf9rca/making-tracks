@@ -103,6 +103,7 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(circle?["filter"], PinLayers.singlePinFilter())
         XCTAssertEqual(icon?["filter"], PinLayers.singlePinFilter())
         XCTAssertEqual(layoutValue("text-field", in: clusterCount), .array([.string("get"), .string("point_count_abbreviated")]))
+        XCTAssertEqual(layoutValue("text-font", in: clusterCount), .array([.string("Noto Sans Regular")]))
         XCTAssertEqual(layoutValue("text-size", in: clusterCount), .double(PinLayers.clusterCountTextSize(pinSize: PinSize())))
 
         if case let .object(paint)? = circle?["paint"] {

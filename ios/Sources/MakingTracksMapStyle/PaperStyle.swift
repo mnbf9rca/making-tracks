@@ -469,8 +469,6 @@ public func paperBasemapStyle(
         "sources": .object(sources),
         "layers": .array(layers),
     ]
-    if theme.showsLabels {
-        root["glyphs"] = .string(paperBasemapGlyphsURL)
-    }
+    root["glyphs"] = .string(paperBasemapGlyphsURL)
     return .object(root)
 }

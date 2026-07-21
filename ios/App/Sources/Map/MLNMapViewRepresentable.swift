@@ -973,6 +973,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             let count = MLNSymbolStyleLayer(identifier: "pin-clusters-count", source: source)
             count.predicate = NSPredicate(mglJSONObject: PinLayers.clusterFilter().foundationObject)
             count.text = NSExpression(forKeyPath: "point_count_abbreviated")
+            count.textFontNames = NSExpression(forConstantValue: ["Noto Sans Regular"])
             count.textFontSize = NSExpression(forConstantValue: PinLayers.clusterCountTextSize(pinSize: pinSize))
             count.textColor = NSExpression(forConstantValue: UIColor.white)
             count.textHaloColor = NSExpression(forConstantValue: MapThemeColor.uiColor(hex: theme.labelHalo))

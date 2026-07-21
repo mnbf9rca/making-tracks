@@ -7241,7 +7241,7 @@ final class MapScreenModel {
                 return (place, states[fixturePlace.placeID] ?? PinState(saved: false, visit: .none))
             }
             return ViewportFeatures(
-                display: PinFeatureFilter.discoveryFeatures(sourceFeatures, showHidden: showHiddenPlaces, zoom: zoom),
+                display: PinFeatureFilter.discoveryFeatures(sourceFeatures, showHidden: showHiddenPlaces),
                 nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures),
                 sourceCount: sourceFeatures.count,
                 flowMetrics: nil
@@ -7258,9 +7258,7 @@ final class MapScreenModel {
         return ViewportFeatures(
             display: PinFeatureFilter.discoveryFeatures(
                 sourceFeatures,
-                showHidden: showHiddenPlaces,
-                zoom: zoom,
-                allowSparseTierFallback: true
+                showHidden: showHiddenPlaces
             ),
             nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures),
             sourceCount: sourceFeatures.count,

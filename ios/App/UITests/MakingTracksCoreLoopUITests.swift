@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import XCTest
 
 @MainActor
@@ -973,9 +974,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let cityApp = launch(reset: true, pinDiagnostics: true, densePins: true, startupViewport: "kl")
         XCTAssertTrue(cityApp.otherElements["map.surface"].waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: cityApp))
-        XCTAssertTrue(waitForSourceFeatureCount(10, in: cityApp))
+        XCTAssertTrue(waitForSourceFeatureCount(24, in: cityApp))
         XCTAssertTrue(waitForClusterCount(atLeast: 1, in: cityApp))
-        XCTAssertEqual(clusteredPlaceCount(in: cityApp), 10)
+        XCTAssertEqual(clusteredPlaceCount(in: cityApp), 24)
         let cluster = cityApp.buttons.matching(identifierPrefix: "map.cluster.").firstMatch
         attachScreenshot(named: "pin-clustering-city")
         cluster.tap()
@@ -992,6 +993,23 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForClusterCount(0, in: streetApp))
         attachScreenshot(named: "pin-clustering-street")
         streetApp.terminate()
+    }
+
+    func testDenseClusterLayerRendersVisibleBubbleAtCityZoom() {
+        let app = launch(
+            reset: true,
+            resetTheme: true,
+            theme: "snow",
+            pinDiagnostics: true,
+            densePins: true,
+            startupViewport: "kl"
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+        XCTAssertTrue(waitForSourceFeatureCount(24, in: app))
+        XCTAssertTrue(waitForClusterCount(atLeast: 1, in: app))
+        XCTAssertEqual(clusteredPlaceCount(in: app), 24)
+        XCTAssertTrue(waitForClusterPinPixels(in: app))
     }
 
     func testCoverageEdgeScreenshotsAcrossThemes() {
@@ -1172,7 +1190,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
     }
 
-    func testLocateMePromptsForNearbyTierHiddenByCityZoomThinning() {
+    func testLocateMePromptsForNearbyPinWithAllDenseTiersVisible() {
         let app = launch(
             reset: true,
             simulatedLocationAuthorization: true,
@@ -1185,8 +1203,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
-        XCTAssertTrue(waitForSourceFeatureCount(10, in: app))
-        XCTAssertFalse(app.staticTexts["map.fixture-pin.mt1_D000000000000000000000000H"].exists)
+        XCTAssertTrue(waitForSourceFeatureCount(24, in: app))
+        XCTAssertTrue(app.staticTexts["map.fixture-pin.mt1_D000000000000000000000000H"].exists)
 
         app.buttons["map.locate-me"].tap()
 
@@ -1637,7 +1655,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     private func waitForSourceFeatureCount(_ count: Int, in app: XCUIApplication) -> Bool {
         let sourceStatus = app.staticTexts["map.debug-source-status"]
-        let predicate = NSPredicate(format: "label == %@", "source applied features:\(count)")
+        let predicate = NSPredicate(format: "label BEGINSWITH %@", "source applied features:\(count)")
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: sourceStatus)
         let result = XCTWaiter.wait(for: [expectation], timeout: 10)
         if result != .completed {
@@ -1724,6 +1742,80 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         }
         XCTFail("Expected at least \(count) clusters, got \(clusters.count)")
+        return false
+    }
+
+    private func waitForClusterPinPixels(in app: XCUIApplication) -> Bool {
+        let deadline = Date().addingTimeInterval(10)
+        let clusters = app.buttons.matching(identifierPrefix: "map.cluster.")
+        while Date() < deadline {
+            let cluster = clusters.firstMatch
+            if cluster.exists, screenshotContainsClusterPinPixels(around: cluster, in: app) {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = "cluster-pixel-miss"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTFail("Expected rendered orange cluster bubble pixels in the screenshot")
+        return false
+    }
+
+    private func screenshotContainsClusterPinPixels(around cluster: XCUIElement, in app: XCUIApplication) -> Bool {
+        let screenshot = XCUIScreen.main.screenshot()
+        guard let image = UIImage(data: screenshot.pngRepresentation)?.cgImage else { return false }
+
+        let appFrame = app.windows.firstMatch.exists ? app.windows.firstMatch.frame : app.frame
+        let sampleFrame = cluster.frame.insetBy(dx: -12, dy: -12).intersection(appFrame)
+        guard sampleFrame.width > 0, sampleFrame.height > 0, appFrame.width > 0, appFrame.height > 0 else {
+            return false
+        }
+
+        let width = image.width
+        let height = image.height
+        let scaleX = CGFloat(width) / appFrame.width
+        let scaleY = CGFloat(height) / appFrame.height
+        let minX = max(0, Int(((sampleFrame.minX - appFrame.minX) * scaleX).rounded(.down)))
+        let maxX = min(width - 1, Int(((sampleFrame.maxX - appFrame.minX) * scaleX).rounded(.up)))
+        let minY = max(0, Int(((sampleFrame.minY - appFrame.minY) * scaleY).rounded(.down)))
+        let maxY = min(height - 1, Int(((sampleFrame.maxY - appFrame.minY) * scaleY).rounded(.up)))
+        guard minX < maxX, minY < maxY else { return false }
+
+        let bytesPerPixel = 4
+        let bytesPerRow = width * bytesPerPixel
+        var pixels = [UInt8](repeating: 0, count: height * bytesPerRow)
+        guard let context = CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        ) else {
+            return false
+        }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        var orangePixelCount = 0
+        for y in minY...maxY {
+            for x in minX...maxX {
+                let index = y * bytesPerRow + x * bytesPerPixel
+                let red = Int(pixels[index])
+                let green = Int(pixels[index + 1])
+                let blue = Int(pixels[index + 2])
+                if red >= 175, green >= 45, green <= 130, blue <= 95, red - green >= 60 {
+                    orangePixelCount += 1
+                    if orangePixelCount >= 20 {
+                        return true
+                    }
+                }
+            }
+        }
         return false
     }
 
