@@ -16,6 +16,7 @@ PROJECT="ios/App/MakingTracks.xcodeproj"
 PBXPROJ="$PROJECT/project.pbxproj"
 SCHEME="MakingTracks"
 UDID="C4A64D49-24A2-4429-B6E2-AD9A14142A99"
+DESTINATION="${MT_RELEASE_GATE_DESTINATION:-platform=iOS Simulator,id=$UDID}"
 RUN_DIR="${MT_RELEASE_GATE_RUN_DIR:-/private/tmp/release-gate-${AM_ME:-agent}}"
 DERIVED_DATA="${MT_RELEASE_GATE_DERIVED_DATA:-$RUN_DIR/DerivedData}"
 RESULT_BUNDLE="$RUN_DIR/MakingTracksTests.xcresult"
@@ -73,6 +74,23 @@ phase() {
   return "$status"
 }
 
+destination_udid() {
+  case "$DESTINATION" in
+    *id=*)
+      value="${DESTINATION#*id=}"
+      echo "${value%%,*}"
+      ;;
+    *)
+      refuse "MT_RELEASE_GATE_DESTINATION must include id=<simulator-udid>"
+      ;;
+  esac
+}
+
+lock_is_satisfied() {
+  [ "${MT_SIM_LOCK:-}" = "1" ] && return 0
+  [ "${MT_RELEASE_GATE_SKIP_LOCK:-}" = "1" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]
+}
+
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || refuse "not inside a git worktree"
 cd "$REPO_ROOT"
 
@@ -85,7 +103,7 @@ grep -q 'PBXNativeTarget "MakingTracksTests"' "$PBXPROJ" ||
 git merge-base --is-ancestor origin/ios HEAD ||
   refuse "HEAD is not based on current origin/ios"
 
-[ "${MT_SIM_LOCK:-}" = "1" ] ||
+lock_is_satisfied ||
   refuse "must be run through scripts/sim-lock.sh (which holds the simulator lock)"
 
 mkdir -p "$RUN_DIR"
@@ -93,24 +111,24 @@ prune_derived_data_if_stale
 mkdir -p "$DERIVED_DATA"
 rm -rf "$RESULT_BUNDLE"
 
-phase "simulator boot" xcrun simctl bootstatus "$UDID" -b
+phase "simulator boot" xcrun simctl bootstatus "$(destination_udid)" -b
 phase "release build" xcodebuild build \
   -configuration Release \
   -project ios/App/MakingTracks.xcodeproj \
   -scheme "$SCHEME" \
-  -destination "platform=iOS Simulator,id=$UDID" \
+  -destination "$DESTINATION" \
   -derivedDataPath "$DERIVED_DATA"
 phase "debug build for testing" xcodebuild build-for-testing \
   -project ios/App/MakingTracks.xcodeproj \
   -scheme "$SCHEME" \
-  -destination "platform=iOS Simulator,id=$UDID" \
+  -destination "$DESTINATION" \
   -parallel-testing-enabled NO \
   -disable-concurrent-destination-testing \
   -derivedDataPath "$DERIVED_DATA"
 phase "tests without building" xcodebuild test-without-building \
   -project ios/App/MakingTracks.xcodeproj \
   -scheme "$SCHEME" \
-  -destination "platform=iOS Simulator,id=$UDID" \
+  -destination "$DESTINATION" \
   -parallel-testing-enabled NO \
   -disable-concurrent-destination-testing \
   -derivedDataPath "$DERIVED_DATA" \
