@@ -885,6 +885,26 @@ final class AppShellTests: XCTestCase {
         )
     }
 
+    func testTrackVisitReorderingRefusesCrossDayBlockMove() {
+        let calendar = Calendar(identifier: .gregorian)
+        let dayOne = Date(timeIntervalSince1970: 60 * 60 * 24 * 10)
+        let dayTwo = dayOne.addingTimeInterval(60 * 60 * 24)
+        let visits = [
+            trackVisit(id: 1, seconds: dayOne.timeIntervalSince1970 + 60),
+            trackVisit(id: 2, seconds: dayOne.timeIntervalSince1970 + 120),
+            trackVisit(id: 3, seconds: dayTwo.timeIntervalSince1970 + 60),
+        ]
+
+        XCTAssertNil(
+            TrackVisitReordering.movePlan(
+                in: visits,
+                fromOffsets: IndexSet([0, 1]),
+                toOffset: 3,
+                calendar: calendar
+            )
+        )
+    }
+
     func testListMapCategoryVisibilityIgnoresDiscoveryCategoryToggles() {
         XCTAssertNil(
             ListMapCategoryVisibility.visibleCategories(
