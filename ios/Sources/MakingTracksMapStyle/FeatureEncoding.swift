@@ -113,12 +113,14 @@ public enum FeatureEncoding {
     public static func trackSegmentFeatures(
         _ visits: [TrackVisit],
         activeToVisitID: Int64? = nil,
+        activeArcProgress: Double = 1.0,
         maxConnectorGap: TimeInterval = TrackLayers.defaultMaxConnectorGap,
         burstWindow: TimeInterval = TrackLayers.defaultBurstWindow
     ) -> [JSONValue] {
         trackSegmentSummary(
             visits,
             activeToVisitID: activeToVisitID,
+            activeArcProgress: activeArcProgress,
             maxConnectorGap: maxConnectorGap,
             burstWindow: burstWindow
         ).features
@@ -131,6 +133,7 @@ public enum FeatureEncoding {
     public static func trackSegmentSummary(
         _ visits: [TrackVisit],
         activeToVisitID: Int64? = nil,
+        activeArcProgress: Double = 1.0,
         maxConnectorGap: TimeInterval = TrackLayers.defaultMaxConnectorGap,
         burstWindow: TimeInterval = TrackLayers.defaultBurstWindow
     ) -> TrackSegmentSummary {
@@ -159,7 +162,8 @@ public enum FeatureEncoding {
                 from: from,
                 to: to,
                 gap: gap,
-                phase: to.id == activeToVisitID ? TrackLayers.activeArcPhase : "visited"
+                phase: to.id == activeToVisitID ? TrackLayers.activeArcPhase : "visited",
+                activeArcProgress: activeArcProgress
             ))
         }
         return TrackSegmentSummary(
@@ -173,13 +177,19 @@ public enum FeatureEncoding {
         from: TrackVisit,
         to: TrackVisit,
         gap: TimeInterval,
-        phase: String
+        phase: String,
+        activeArcProgress: Double
     ) -> JSONValue {
-        .object([
+        let coordinates = clippedActiveArcCoordinates(
+            trackArcCoordinates(from: from, to: to),
+            phase: phase,
+            progress: activeArcProgress
+        )
+        return .object([
             "type": .string("Feature"),
             "geometry": .object([
                 "type": .string("LineString"),
-                "coordinates": .array(trackArcCoordinates(from: from, to: to)),
+                "coordinates": .array(coordinates),
             ]),
             "properties": .object([
                 "from_visit_id": .double(Double(from.id)),
@@ -188,6 +198,18 @@ public enum FeatureEncoding {
                 TrackLayers.trackSegmentPhaseProperty: .string(phase),
             ]),
         ])
+    }
+
+    private static func clippedActiveArcCoordinates(
+        _ coordinates: [JSONValue],
+        phase: String,
+        progress: Double
+    ) -> [JSONValue] {
+        guard phase == TrackLayers.activeArcPhase else { return coordinates }
+        let clampedProgress = clamped(progress, to: 0.0...1.0)
+        guard clampedProgress < 1, coordinates.count > 2 else { return coordinates }
+        let visibleCount = max(2, Int((Double(coordinates.count - 1) * clampedProgress).rounded(.up)) + 1)
+        return Array(coordinates.prefix(min(visibleCount, coordinates.count)))
     }
 
     private static func trackArcCoordinates(from: TrackVisit, to: TrackVisit) -> [JSONValue] {
