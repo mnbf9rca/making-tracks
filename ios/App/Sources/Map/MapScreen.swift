@@ -1994,6 +1994,7 @@ struct MapScreen: View {
     var offlineDownloadProgress: OfflineDownloadProgress?
     var debugCoverageBBoxes: [CoverageBBox] = []
     var debugExposeFixturePinDiagnostics = false
+    var debugHideFixtureChrome = false
     var debugUseDenseFixturePins = false
     var onReplayOnboarding: @MainActor () -> Void = {}
     var cameraRequest: ViewportCameraRequest?
@@ -2078,6 +2079,7 @@ struct MapScreen: View {
         offlineDownloadProgress: OfflineDownloadProgress? = nil,
         debugCoverageBBoxes: [CoverageBBox] = [],
         debugExposeFixturePinDiagnostics: Bool = false,
+        debugHideFixtureChrome: Bool = false,
         debugUseDenseFixturePins: Bool = false,
         locationManager: AppLocationManager = AppLocationManager(),
         locationPermission: LocationPermission? = nil,
@@ -2092,6 +2094,7 @@ struct MapScreen: View {
         self.offlineDownloadProgress = offlineDownloadProgress
         self.debugCoverageBBoxes = debugCoverageBBoxes
         self.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
+        self.debugHideFixtureChrome = debugHideFixtureChrome
         self.debugUseDenseFixturePins = debugUseDenseFixturePins
         self.onReplayOnboarding = onReplayOnboarding
         self.cameraRequest = cameraRequest
@@ -2634,7 +2637,7 @@ struct MapScreen: View {
                     .background(.ultraThinMaterial, in: Capsule())
             }
 
-            if isFixtureMap {
+            if isFixtureMap && !debugHideFixtureChrome {
 #if DEBUG
                 Text(verbatim: "Startup region: \(startupViewport.fixtureRegionLabel)")
                     .font(.caption2)

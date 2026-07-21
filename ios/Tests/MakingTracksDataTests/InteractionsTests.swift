@@ -163,6 +163,28 @@ final class InteractionsTests: XCTestCase {
         XCTAssertEqual(try db.listItems(listID: XCTUnwrap(list.id)).map(\.placeID), ["p_replay_2", "p_replay_1"])
     }
 
+    func testUITestingMultiDayTrackListSeedUsesVisibleModernVariedTimestamps() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let places = try (1...6).map { try ref("p_replay_\($0)", name: "Replay \($0)") }
+
+        try db.seedUITestingMultiDayTrackList(named: "Replay week", places: places)
+
+        let visits = try db.dbQueue.read {
+            try Visit.fetchAll($0, sql: "SELECT * FROM visits ORDER BY visited_at")
+        }
+        let calendar = Calendar(identifier: .gregorian)
+        let years = visits.map { calendar.component(.year, from: $0.visitedAt) }
+        let days = Set(visits.map { calendar.startOfDay(for: $0.visitedAt) })
+        let timesOfDay = Set(visits.map {
+            calendar.component(.hour, from: $0.visitedAt) * 60 + calendar.component(.minute, from: $0.visitedAt)
+        })
+
+        XCTAssertEqual(visits.count, 6)
+        XCTAssertEqual(years, Array(repeating: 2026, count: 6))
+        XCTAssertGreaterThanOrEqual(days.count, 4)
+        XCTAssertGreaterThanOrEqual(timesOfDay.count, 4)
+    }
+
     func testSnapshotLookupReturnsEquatableSnapshot() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         let place = try ref("p_snapshot", fetchedAt: Date(timeIntervalSince1970: 77))

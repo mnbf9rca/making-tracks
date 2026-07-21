@@ -13,6 +13,7 @@ struct MakingTracksRootView: View {
     let offlineDownloadProgress: OfflineDownloadProgress?
     let debugCoverageBBoxes: [CoverageBBox]
     let debugExposeFixturePinDiagnostics: Bool
+    let debugHideFixtureChrome: Bool
     let debugUseDenseFixturePins: Bool
     let forceFirstRunOnboarding: Bool
     let locationManager: AppLocationManager
@@ -36,6 +37,7 @@ struct MakingTracksRootView: View {
         offlineDownloadProgress: OfflineDownloadProgress?,
         debugCoverageBBoxes: [CoverageBBox] = [],
         debugExposeFixturePinDiagnostics: Bool,
+        debugHideFixtureChrome: Bool = false,
         debugUseDenseFixturePins: Bool = false,
         forceFirstRunOnboarding: Bool = false,
         locationManager: AppLocationManager
@@ -48,6 +50,7 @@ struct MakingTracksRootView: View {
         self.offlineDownloadProgress = offlineDownloadProgress
         self.debugCoverageBBoxes = debugCoverageBBoxes
         self.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
+        self.debugHideFixtureChrome = debugHideFixtureChrome
         self.debugUseDenseFixturePins = debugUseDenseFixturePins
         self.forceFirstRunOnboarding = forceFirstRunOnboarding
         self.locationManager = locationManager
@@ -80,6 +83,7 @@ struct MakingTracksRootView: View {
             offlineDownloadProgress: offlineDownloadProgress,
             debugCoverageBBoxes: debugCoverageBBoxes,
             debugExposeFixturePinDiagnostics: debugExposeFixturePinDiagnostics,
+            debugHideFixtureChrome: debugHideFixtureChrome,
             debugUseDenseFixturePins: debugUseDenseFixturePins,
             locationManager: locationManager,
             locationPermission: locationPermission,

@@ -413,9 +413,32 @@ extension AppDatabase {
         try seedUITestingTrackList(
             named: name,
             places: Array(places.prefix(6)),
-            spacing: 60 * 60 * 24,
+            seedStart: Self.uiTestingMultiDayTrackSeedStart,
+            offsets: Self.uiTestingMultiDayTrackOffsets,
             lovedVisitIndex: lovedVisitIndex
         )
+    }
+
+    private static let uiTestingMultiDayTrackOffsets: [TimeInterval] = [
+        0,
+        (4 * 60 * 60) + (35 * 60),
+        (26 * 60 * 60) + (10 * 60),
+        (49 * 60 * 60) + (45 * 60),
+        (84 * 60 * 60) + (25 * 60),
+        (125 * 60 * 60) + (50 * 60),
+    ]
+
+    private static var uiTestingMultiDayTrackSeedStart: Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar.date(from: DateComponents(
+            timeZone: calendar.timeZone,
+            year: 2026,
+            month: 7,
+            day: 14,
+            hour: 9,
+            minute: 20
+        ))!
     }
 
     private func seedUITestingTrackList(
@@ -424,9 +447,24 @@ extension AppDatabase {
         spacing: TimeInterval,
         lovedVisitIndex: Int?
     ) throws {
+        try seedUITestingTrackList(
+            named: name,
+            places: places,
+            seedStart: Date(timeIntervalSince1970: 1_000),
+            offsets: places.indices.map { Double($0) * spacing },
+            lovedVisitIndex: lovedVisitIndex
+        )
+    }
+
+    private func seedUITestingTrackList(
+        named name: String,
+        places: [PlaceRef],
+        seedStart: Date,
+        offsets: [TimeInterval],
+        lovedVisitIndex: Int?
+    ) throws {
         let normalized = try Self.normalizedListName(name)
         try dbQueue.write { db in
-            let seedStart = Date(timeIntervalSince1970: 1_000)
             try db.execute(
                 sql: "INSERT INTO lists (name, is_system, created_at, list_kind) VALUES (?, ?, ?, ?)",
                 arguments: [normalized, false, seedStart, PlaceList.trackKind]
@@ -434,7 +472,7 @@ extension AppDatabase {
             let listID = db.lastInsertedRowID
             for (index, place) in places.enumerated() {
                 try snapshotIfNeeded(place, db)
-                let timestamp = seedStart.addingTimeInterval(Double(index) * spacing)
+                let timestamp = seedStart.addingTimeInterval(offsets[index])
                 var visit = Visit(
                     id: nil,
                     placeID: place.placeID,

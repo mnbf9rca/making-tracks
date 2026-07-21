@@ -34,6 +34,7 @@ struct MakingTracksApp: App {
     private static let simulatedLongitude = argumentValue("--ui-testing-location-longitude").flatMap(Double.init)
     private static let uiTestingOfflineProgress = argumentValue("--ui-testing-offline-progress").flatMap(Double.init)
     private static let uiTestingCoverageBBoxes = coverageBBoxArguments()
+    private static let debugHideFixtureChrome = arguments.contains("--ui-testing-hide-fixture-chrome")
     private static let debugUseDenseFixturePins = arguments.contains("--ui-testing-dense-pins")
     private static let primaryFixturePlaceID = "mt1_00000000000000000000000000"
 #else
@@ -52,6 +53,7 @@ struct MakingTracksApp: App {
     private static let simulatedLongitude: Double? = nil
     private static let uiTestingOfflineProgress: Double? = nil
     private static let uiTestingCoverageBBoxes: [CoverageBBox] = []
+    private static let debugHideFixtureChrome = false
     private static let debugUseDenseFixturePins = false
 #endif
 
@@ -161,6 +163,7 @@ struct MakingTracksApp: App {
                     offlineDownloadProgress: Self.offlineDownloadProgress,
                     debugCoverageBBoxes: Self.uiTestingCoverageBBoxes,
                     debugExposeFixturePinDiagnostics: Self.debugExposeFixturePinDiagnostics,
+                    debugHideFixtureChrome: Self.debugHideFixtureChrome,
                     debugUseDenseFixturePins: Self.debugUseDenseFixturePins,
                     forceFirstRunOnboarding: Self.forceFirstRunOnboarding,
                     locationManager: locationManager
