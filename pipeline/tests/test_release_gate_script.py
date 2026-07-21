@@ -144,7 +144,7 @@ def test_release_gate_refuses_when_not_run_through_sim_lock(tmp_path):
     assert not log.exists()
 
 
-def test_release_gate_runs_release_build_and_tests(tmp_path):
+def test_release_gate_runs_release_build_for_testing_and_tests_without_rebuilding(tmp_path):
     repo = _init_repo(tmp_path)
     fakebin, log = _fake_tools(tmp_path)
     stale_result_bundle = log.parent / "release-gate-run" / "MakingTracksTests.xcresult"
@@ -158,7 +158,8 @@ def test_release_gate_runs_release_build_and_tests(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert not stale_result_bundle.exists()
-    assert not derived_data.exists()
+    assert derived_data.exists()
+    assert (derived_data / "stale").exists()
     lines = log.read_text(encoding="utf-8").splitlines()
     assert not any(line.startswith("flock:") for line in lines), (
         "release-gate must not take the lock; sim-lock.sh owns it"
@@ -173,16 +174,60 @@ def test_release_gate_runs_release_build_and_tests(tmp_path):
         for line in lines
     )
     assert any(
-        line.startswith("xcodebuild:-project ios/App/MakingTracks.xcodeproj ")
+        line.startswith("xcodebuild:build-for-testing ")
+        and "-project ios/App/MakingTracks.xcodeproj" in line
+        and "-scheme MakingTracks" in line
+        and f"-destination platform=iOS Simulator,id={UDID}" in line
+        and "-parallel-testing-enabled NO" in line
+        and "-disable-concurrent-destination-testing" in line
+        and f"-derivedDataPath {log.parent}/release-gate-run/DerivedData" in line
+        for line in lines
+    )
+    assert any(
+        line.startswith("xcodebuild:test-without-building ")
+        and "-project ios/App/MakingTracks.xcodeproj" in line
         and "-scheme MakingTracks" in line
         and f"-destination platform=iOS Simulator,id={UDID}" in line
         and "-parallel-testing-enabled NO" in line
         and "-disable-concurrent-destination-testing" in line
         and f"-derivedDataPath {log.parent}/release-gate-run/DerivedData" in line
         and f"-resultBundlePath {log.parent}/release-gate-run/MakingTracksTests.xcresult" in line
-        and line.endswith(" test")
         for line in lines
     )
+
+
+def test_release_gate_prunes_stale_warm_derived_data_before_running(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    derived_data = log.parent / "release-gate-run" / "DerivedData"
+    stale = derived_data / "stale-cache"
+    stale.mkdir(parents=True)
+    old_timestamp = 1
+    os.utime(derived_data, (old_timestamp, old_timestamp))
+    os.utime(stale, (old_timestamp, old_timestamp))
+
+    result = _run([str(SCRIPT)], repo, env=_env(fakebin, log))
+
+    assert result.returncode == 0, result.stderr
+    assert derived_data.exists()
+    assert not stale.exists()
+
+
+def test_release_gate_clean_derived_data_override_prunes_warm_cache(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    derived_data = log.parent / "release-gate-run" / "DerivedData"
+    stale = derived_data / "stale-cache"
+    stale.mkdir(parents=True)
+    env = _env(fakebin, log)
+    env["MT_RELEASE_GATE_CLEAN_DERIVED_DATA"] = "1"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert derived_data.exists()
+    assert not stale.exists()
+    assert "MT_RELEASE_GATE_CLEAN_DERIVED_DATA=1" in result.stderr
 
 
 def test_release_gate_keeps_derived_data_when_xcodebuild_fails(tmp_path):
@@ -198,3 +243,16 @@ def test_release_gate_keeps_derived_data_when_xcodebuild_fails(tmp_path):
 
     assert result.returncode == 65
     assert derived_data.exists()
+
+
+def test_release_gate_logs_failed_phase_timing_before_exiting(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env["MT_RELEASE_GATE_FAIL_XCODEBUILD"] = "1"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 65
+    assert "release-gate: phase start: release build" in result.stderr
+    assert "release-gate: phase end: release build status=65 elapsed=" in result.stderr
