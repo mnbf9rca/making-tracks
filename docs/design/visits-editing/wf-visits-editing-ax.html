@@ -51,6 +51,8 @@
     }
     .back { color: var(--accent); font-size: 17px; white-space: nowrap; }
     .title { font-size: 19px; font-weight: 650; }
+    .navspacer { flex: 1; }
+    .navbtn { color: var(--accent); font-size: 17px; font-weight: 600; }
     .list { padding: 16px 16px 92px; }
     .summary {
       background: var(--sheet);
@@ -107,6 +109,17 @@
       height: 36px;
       justify-content: center;
       width: 42px;
+    }
+    .drag {
+      align-items: center;
+      color: #8f8a82;
+      display: flex;
+      flex: none;
+      font-size: 24px;
+      font-weight: 700;
+      height: 36px;
+      justify-content: center;
+      width: 28px;
     }
     .controls {
       display: grid;
@@ -178,10 +191,10 @@
 <div class="row">
   <div class="col">
     <div class="cap">1 - Full day sequence</div>
-    <div class="capsub">Rows stay readable; reorder is exposed only where the complete day is present.</div>
+    <div class="capsub">Rows stay readable; drag reorder is exposed only where the complete day is present.</div>
     <div class="phone">
       <div class="status"><span>9:41</span><span>100%</span></div>
-      <div class="nav"><div class="back">&#8249; Menu</div><div class="title">My tracks</div></div>
+      <div class="nav"><div class="back">&#8249; Menu</div><div class="title">My tracks</div><div class="navspacer"></div><div class="navbtn">Done</div></div>
       <div class="list">
         <div class="summary">
           <div class="summaryline"><span>v</span><span>Oldest first</span></div>
@@ -195,10 +208,11 @@
             <div class="pin">pin</div>
             <div class="visit-text"><div class="name">Ghost Sign</div><div class="meta">Attraction · Jul 21, 9:12 AM</div></div>
             <div class="heart">heart</div>
+            <div class="drag">&#9776;</div>
           </div>
           <div class="controls">
             <div class="datebox"><span>Visit date</span><strong>Jul 21, 2026</strong></div>
-            <div class="moves"><div class="square off">up</div><div class="square">down</div><div class="square trash">del</div></div>
+            <div class="moves"><div class="square trash">delete</div></div>
           </div>
         </div>
         <div class="visit">
@@ -206,10 +220,11 @@
             <div class="pin blue">pin</div>
             <div class="visit-text"><div class="name">Art Deco Cinema</div><div class="meta">Historic building · Jul 21, 9:12 AM</div></div>
             <div class="heart">heart</div>
+            <div class="drag">&#9776;</div>
           </div>
           <div class="controls">
             <div class="datebox"><span>Visit date</span><strong>Jul 21, 2026</strong></div>
-            <div class="moves"><div class="square">up</div><div class="square">down</div><div class="square trash">del</div></div>
+            <div class="moves"><div class="square trash">delete</div></div>
           </div>
         </div>
         <div class="note">Same-day order uses visit_order. The timestamp display is not treated as truth for manual order.</div>

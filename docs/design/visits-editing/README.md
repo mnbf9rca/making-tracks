@@ -24,9 +24,9 @@ Validation notes:
 - Date editing moves the visit to a local calendar day while preserving the
   recorded time-of-day display. It does not fabricate an exact time for the
   user's remembered order.
-- Reorder controls only appear in the full chronological event view. Focused or
-  filtered views can edit/delete rows, but do not pretend to own the full day's
-  sequence.
+- Drag reorder only appears in the full chronological event view, using the
+  standard iOS list drag handle. Focused or filtered views can edit/delete rows,
+  but do not pretend to own the full day's sequence.
 - Loved remains place-level for this build. The heart appears on each row for
   that place, and toggling it affects the place across its visit rows.
 - Delete is row-addressed and first-class for the #217 un-see fallback path.
