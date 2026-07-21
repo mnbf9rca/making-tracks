@@ -422,7 +422,37 @@ final class AppShellTests: XCTestCase {
             "map.list-mode.filter.category.architecture",
             "map.list-mode.filter.category.history",
         ])
-        XCTAssertEqual(chips.map(\.isToggle), [true, false, false, false])
+        XCTAssertEqual(chips.map(\.isToggle), [false, false, false, false])
+    }
+
+    func testTrackFilterPickerDraftComposesLovedListsAndTypesIntoVisitFilter() {
+        var draft = TrackFilterPickerDraft(
+            filter: TracksVisitFilter(lovedOnly: false, listIDs: [77], categories: ["history"])
+        )
+
+        draft.toggleLoved()
+        draft.toggleList(id: 88)
+        draft.toggleCategory("architecture")
+        draft.toggleCategory("history")
+
+        XCTAssertEqual(
+            draft.filter,
+            TracksVisitFilter(lovedOnly: true, listIDs: [77, 88], categories: ["architecture"])
+        )
+    }
+
+    func testTrackFilterPickerActionLabelReportsOnlyScopedVisitCount() {
+        XCTAssertEqual(TrackFilterPickerCopy.applyLabel(scopedVisitCount: 27), "Show 27 visits")
+        XCTAssertEqual(TrackFilterPickerCopy.applyLabel(scopedVisitCount: 1), "Show 1 visit")
+    }
+
+    func testTrackFilterPickerActiveChipsKeepLovedInOneFilterFamily() {
+        let chips = ListMapFilterChips.chips(
+            for: TracksVisitFilter(lovedOnly: true, listIDs: [77], categories: ["history"])
+        )
+
+        XCTAssertEqual(chips.map(\.title), ["Loved", "1 list", "history"])
+        XCTAssertEqual(chips.first?.isToggle, false)
     }
 
     func testTrackTimelineDateMarkersThinByAvailableWidth() {
