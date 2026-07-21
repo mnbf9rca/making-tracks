@@ -182,6 +182,38 @@ def test_retryable_wikidata_failures_backoff_then_succeed(tmp_path):
     assert sleeps == [1.0]
 
 
+def test_retry_json_retries_wikimedia_maxlag_error_body(tmp_path):
+    attempts = []
+    sleeps = []
+
+    def fetch_json(*_args, **_kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            return {
+                "error": {
+                    "code": "maxlag",
+                    "info": "Waiting for db101: 8 seconds lagged",
+                }
+            }
+        return {"query": {"geosearch": []}}
+
+    acquire.acquire_wikipedia(
+        tmp_path,
+        bbox=(100.0, 1.0, 101.0, 2.0),
+        language="en",
+        config={
+            "endpoint": "https://en.wikipedia.org/w/api.php",
+            "allowed_hosts": ["en.wikipedia.org"],
+        },
+        fetch_json=fetch_json,
+        sleep=sleeps.append,
+        retrieved_at="2026-07-15T00:00:00Z",
+    )
+
+    assert len(attempts) == 2
+    assert sleeps == [5.0]
+
+
 def test_wikidata_timeouts_are_retryable(tmp_path):
     attempts = []
 
@@ -559,6 +591,7 @@ def test_wikipedia_acquisition_writes_complete_snapshot(tmp_path):
         calls.append(url)
         parsed = urllib.parse.urlparse(url)
         params = urllib.parse.parse_qs(parsed.query)
+        assert params["maxlag"] == ["5"]
         assert expected_hosts == {"en.wikipedia.org"}
         assert headers["User-Agent"].startswith("MakingTracksBot/")
         if params.get("list") == ["geosearch"]:
@@ -572,6 +605,7 @@ def test_wikipedia_acquisition_writes_complete_snapshot(tmp_path):
             }
         assert params["pageids"] == ["10|20"]
         assert params["exlimit"] == ["max"]
+        assert params["maxlag"] == ["5"]
         return {
             "query": {
                 "pages": {
@@ -641,6 +675,7 @@ def test_qid_sitelink_acquisition_augments_wikipedia_snapshot_with_verified_page
             assert expected_hosts == {"www.wikidata.org"}
             assert params["action"] == ["wbgetentities"]
             assert params["ids"] == ["Q42|Q99"]
+            assert params["maxlag"] == ["5"]
             return {
                 "entities": {
                     "Q42": {"sitelinks": {"enwiki": {"title": "QID Article"}}},
@@ -651,6 +686,7 @@ def test_qid_sitelink_acquisition_augments_wikipedia_snapshot_with_verified_page
         assert params["titles"] == ["QID Article|Wrong Article"]
         assert params["prop"] == ["extracts|pageimages|pageprops"]
         assert params["exlimit"] == ["max"]
+        assert params["maxlag"] == ["5"]
         return {
             "query": {
                 "pages": {
@@ -747,6 +783,7 @@ def test_qid_sitelink_acquisition_refreshes_blank_accepted_extracts(tmp_path):
             return {"entities": {"Q42": {"sitelinks": {"enwiki": {"title": "QID Article"}}}}}
         params = urllib.parse.parse_qs(parsed.query)
         assert params["exlimit"] == ["max"]
+        assert params["maxlag"] == ["5"]
         wikipedia_calls += 1
         if wikipedia_calls == 1:
             return {
@@ -840,6 +877,7 @@ def test_qid_sitelink_blank_extract_refresh_skips_wikibase_mismatch(tmp_path):
             return {"entities": {"Q42": {"sitelinks": {"enwiki": {"title": "QID Article"}}}}}
         params = urllib.parse.parse_qs(parsed.query)
         assert params["exlimit"] == ["max"]
+        assert params["maxlag"] == ["5"]
         wikipedia_calls += 1
         return {
             "query": {
@@ -924,6 +962,7 @@ def test_blank_extract_refresh_falls_back_to_single_title_when_batch_stays_blank
     def fetch_json(url, *, expected_hosts, max_bytes, headers):
         parsed = urllib.parse.urlparse(url)
         params = urllib.parse.parse_qs(parsed.query)
+        assert params["maxlag"] == ["5"]
         titles = params["titles"][0]
         titles_seen.append(titles)
         pages = {
