@@ -84,6 +84,13 @@ def test_cli_publish_missing_pmtiles_is_clean_error(tmp_path, capsys, monkeypatc
     store.mark_stage_complete(
         conn, "malaysia-singapore-brunei", "categorize", "cat1", "2026-07-15T00:00:00Z"
     )
+    store.mark_stage_complete(
+        conn,
+        "malaysia-singapore-brunei",
+        "acquire-wikipedia-sitelinks",
+        "sitelinks1",
+        "2026-07-15T00:00:00Z",
+    )
     conn.close()
     monkeypatch.setenv("PATH", "")
 
@@ -116,6 +123,13 @@ def test_cli_publish_upload_missing_boto3_is_clean_error(tmp_path, capsys, monke
     store.init_schema(conn)
     store.mark_stage_complete(
         conn, "malaysia-singapore-brunei", "categorize", "cat1", "2026-07-15T00:00:00Z"
+    )
+    store.mark_stage_complete(
+        conn,
+        "malaysia-singapore-brunei",
+        "acquire-wikipedia-sitelinks",
+        "sitelinks1",
+        "2026-07-15T00:00:00Z",
     )
     conn.close()
     monkeypatch.setattr(publish_stage.basemap, "require_pmtiles", lambda: "pmtiles")
@@ -157,6 +171,13 @@ def test_cli_publish_upload_missing_r2_env_is_clean_error(tmp_path, capsys, monk
     store.init_schema(conn)
     store.mark_stage_complete(
         conn, "malaysia-singapore-brunei", "categorize", "cat1", "2026-07-15T00:00:00Z"
+    )
+    store.mark_stage_complete(
+        conn,
+        "malaysia-singapore-brunei",
+        "acquire-wikipedia-sitelinks",
+        "sitelinks1",
+        "2026-07-15T00:00:00Z",
     )
     conn.close()
     monkeypatch.setattr(publish_stage.basemap, "require_pmtiles", lambda: "pmtiles")
@@ -580,6 +601,156 @@ def test_cli_extract_threads_pageview_options_for_wikipedia_only(monkeypatch, tm
         "pageview_cache_dir": snapshot_dir / "pageviews",
         "pageview_window": ("2025-07-15", "2026-07-15"),
     }
+
+
+def test_cli_acquire_wikipedia_sitelinks_uses_place_qid_coordinates(
+    monkeypatch, tmp_path
+):
+    captured = {}
+    extract_calls = {}
+
+    def fake_acquire_qid_sitelink_wikipedia(snapshot_path, **kwargs):
+        captured["snapshot_path"] = snapshot_path
+        captured.update(kwargs)
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot_path.write_text(
+            '{"_meta":{"complete":true,"retrieved_at":"2026-07-15T00:00:00Z"},"lang":"en","pages":[],"qid_pages":[]}'
+        )
+        return snapshot_path
+
+    def fake_run_extract(*_args, **kwargs):
+        extract_calls.update(kwargs)
+        kwargs["status_recorder"]("wikipedia", {"status": "success", "count": 1})
+        return {"wikipedia": 1}
+
+    monkeypatch.setattr(
+        cli.acquire,
+        "acquire_qid_sitelink_wikipedia",
+        fake_acquire_qid_sitelink_wikipedia,
+    )
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fake_run_extract)
+
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    store.mark_stage_complete(
+        conn,
+        "malaysia-singapore-brunei",
+        "reconcile",
+        "reconcile-run",
+        "2026-07-15T00:00:00Z",
+    )
+    store.replace_places(
+        conn,
+        region="malaysia-singapore-brunei",
+        places=[
+            {
+                "place_id": "place-1",
+                "name": "Place",
+                "lat": 1.25,
+                "lon": 103.75,
+                "refs": ["osm:node/1", "wd:Q123"],
+                "member_refs": ["osm:node/1"],
+                "status": "active",
+            },
+        ],
+    )
+    conn.close()
+
+    snapshot_dir = tmp_path / "snapshots"
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia-singapore-brunei",
+            "acquire-wikipedia-sitelinks",
+            "--db",
+            str(db),
+            "--snapshot-dir",
+            str(snapshot_dir),
+        ]
+    )
+
+    assert rc == 0
+    assert captured["snapshot_path"] == snapshot_dir / "wikipedia.snapshot.json"
+    assert captured["language"] == "en"
+    assert captured["seeds"] == [{"lat": 1.25, "lon": 103.75, "qid": "Q123"}]
+    assert captured["wikidata_config"]["endpoint"] == "https://www.wikidata.org/w/api.php"
+    assert captured["wikipedia_config"]["endpoint"] == "https://en.wikipedia.org/w/api.php"
+    assert extract_calls["only_source"] == "wikipedia"
+    assert extract_calls["parallel"] is True
+    assert extract_calls["extractor_options"]["wikipedia"] == {
+        "pageview_cache_dir": snapshot_dir / "pageviews",
+        "pageview_window": ("2025-07-15", "2026-07-15"),
+    }
+    conn = store.connect(db)
+    assert store.stage_completed(
+        conn,
+        "malaysia-singapore-brunei",
+        "acquire-wikipedia-sitelinks",
+    )
+    conn.close()
+
+
+def test_cli_acquire_wikipedia_sitelinks_requires_reconcile(
+    monkeypatch, tmp_path, capsys
+):
+    def fail_acquire(*_args, **_kwargs):
+        raise AssertionError("sitelink acquisition should not run before reconcile")
+
+    monkeypatch.setattr(cli.acquire, "acquire_qid_sitelink_wikipedia", fail_acquire)
+
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    conn.close()
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia-singapore-brunei",
+            "acquire-wikipedia-sitelinks",
+            "--db",
+            str(db),
+            "--snapshot-dir",
+            str(tmp_path / "snapshots"),
+        ]
+    )
+
+    assert rc == 1
+    assert "run 'reconcile' first" in capsys.readouterr().err
+
+
+def test_cli_publish_requires_wikipedia_sitelink_enrichment_for_wikipedia_regions(
+    tmp_path, capsys
+):
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    store.mark_stage_complete(
+        conn,
+        "malaysia-singapore-brunei",
+        "categorize",
+        "cat-run",
+        "2026-07-15T00:00:00Z",
+    )
+    conn.close()
+
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia-singapore-brunei",
+            "publish",
+            "--db",
+            str(db),
+            "--publish-version",
+            "20260716T000000Z",
+            "--generated-at",
+            "2026-07-16T00:00:00Z",
+        ]
+    )
+
+    assert rc == 1
+    assert "acquire-wikipedia-sitelinks" in capsys.readouterr().err
 
 
 def test_extract_fingerprint_inputs_thread_pageview_window_and_selected_cache_files(tmp_path):

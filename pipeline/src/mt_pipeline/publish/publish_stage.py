@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
 import pathlib
-import hashlib
+import re
 import sys
 from dataclasses import dataclass, replace
 from typing import Any
@@ -366,7 +367,7 @@ def _joined_places(conn, region: str) -> list[dict[str, Any]]:
     phase.start()
     rows = conn.execute(
         """
-        SELECT p.place_id, p.name, p.lat, p.lon, p.member_refs_json,
+        SELECT p.place_id, p.name, p.lat, p.lon, p.refs_json, p.member_refs_json,
                c.category, s.tier, s.score
         FROM places p
         JOIN place_categories c
@@ -379,8 +380,24 @@ def _joined_places(conn, region: str) -> list[dict[str, Any]]:
     )
     out = []
     processed = 0
-    for place_id, name, lat, lon, member_refs_json, category, tier, score in rows:
+    for place_id, name, lat, lon, refs_json, member_refs_json, category, tier, score in rows:
         processed += 1
+        parsed_member_refs = _json_list(
+            member_refs_json,
+            region=region,
+            place_id=str(place_id),
+        )
+        parsed_refs = _json_list(
+            refs_json,
+            region=region,
+            place_id=str(place_id),
+            field_name="refs_json",
+        )
+        source_refs = (
+            []
+            if parsed_member_refs is None or parsed_refs is None
+            else _publish_source_refs(parsed_member_refs, parsed_refs)
+        )
         out.append(
             {
                 "place_id": place_id,
@@ -390,11 +407,7 @@ def _joined_places(conn, region: str) -> list[dict[str, Any]]:
                 "category": category,
                 "tier": tier,
                 "score": score,
-                "source_refs": _json_list(
-                    member_refs_json,
-                    region=region,
-                    place_id=str(place_id),
-                ),
+                "source_refs": source_refs,
             }
         )
         phase.tick(processed)
@@ -402,25 +415,43 @@ def _joined_places(conn, region: str) -> list[dict[str, Any]]:
     return out
 
 
-def _json_list(value: str, *, region: str, place_id: str) -> list[str]:
+def _publish_source_refs(member_refs: list[str], refs: list[str]) -> list[str]:
+    source_refs = list(member_refs)
+    seen = set(source_refs)
+    for ref in refs:
+        if re.fullmatch(r"wd:Q[0-9]+", ref) and ref not in seen:
+            source_refs.append(ref)
+            seen.add(ref)
+    return sorted(source_refs)
+
+
+def _json_list(
+    value: str,
+    *,
+    region: str,
+    place_id: str,
+    field_name: str = "member_refs_json",
+) -> list[str] | None:
     try:
         data = json.loads(value)
     except (ValueError, RecursionError):
         _LOGGER.warning(
-            "malformed member_refs_json (parse error) region=%s place_id=%s",
+            "malformed %s (parse error) region=%s place_id=%s",
+            field_name,
             region,
             place_id,
             exc_info=True,
         )
-        return []
+        return None
     if not isinstance(data, list) or not all(isinstance(item, str) for item in data):
         _LOGGER.warning(
-            "malformed member_refs_json (not list[str], got %s) region=%s place_id=%s",
+            "malformed %s (not list[str], got %s) region=%s place_id=%s",
+            field_name,
             type(data).__name__,
             region,
             place_id,
         )
-        return []
+        return None
     return data
 
 

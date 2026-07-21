@@ -21,7 +21,13 @@ from .llm import bakeoff, cache as llm_cache, costmodel, curiosity
 from .llm.providers.fake import FakeProvider
 
 _DEFAULT_RUN_ID = "manual"
-_COMMANDS = ("acquire", "acquire-redirects", "audit", *stages.STAGE_ORDER)
+_COMMANDS = (
+    "acquire",
+    "acquire-redirects",
+    "acquire-wikipedia-sitelinks",
+    "audit",
+    *stages.STAGE_ORDER,
+)
 _PIPELINE_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _DEFAULT_GOLDEN_AREAS = _PIPELINE_ROOT / "config" / "golden_areas.json"
 _DEFAULT_LLM_MODELS = _PIPELINE_ROOT / "config" / "llm_models.json"
@@ -1833,6 +1839,108 @@ def _run_pipeline_command(args) -> int:
             print(f"database error running {args.stage!r}: {exc}", file=sys.stderr)
             return 3
         print(f"wikidata_redirects: {path}")
+        return 0
+
+    if args.stage == "acquire-wikipedia-sitelinks":
+        if not store.stage_completed(conn, region.region_id, "reconcile"):
+            print(
+                "cannot run 'acquire-wikipedia-sitelinks' for region "
+                f"{region.region_id!r}: run 'reconcile' first",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            snap_dir = _snapshot_dir(args)
+            source_config = acquire.load_config()
+            path = acquire.acquire_qid_sitelink_wikipedia(
+                acquire.snapshot_paths(snap_dir)["wikipedia"],
+                seeds=acquire.qid_sitelink_seeds_from_store(
+                    conn,
+                    region=region.region_id,
+                ),
+                language=region.languages[0],
+                wikidata_config=source_config["wikidata_entities"],
+                wikipedia_config=source_config["wikipedia"],
+            )
+            snapshots = acquire.snapshot_paths(snap_dir)
+            statuses = _initial_extract_statuses(
+                region.sources,
+                only_source="wikipedia",
+            )
+            registry = extract_stage.build_registry(
+                acquire.DEFAULT_ALLOWLIST,
+                languages=set(region.languages),
+            )
+
+            def record_status(source, status):
+                statuses[source] = status
+
+            extract_transaction_open = False
+            if args.parallel:
+                conn.execute("BEGIN EXCLUSIVE")
+                extract_transaction_open = True
+            counts = extract_stage.run_extract(
+                conn,
+                region,
+                snapshots,
+                run_id=args.run_id,
+                registry=registry,
+                extractor_options=_extractor_options(
+                    region,
+                    snap_dir,
+                    osm_index_type=args.osm_index_type,
+                    only_source="wikipedia",
+                ),
+                status_recorder=record_status,
+                only_source="wikipedia",
+                parallel=args.parallel,
+                continue_on_source_failure=args.continue_on_source_failure,
+                staging_root=snap_dir.parent,
+                commit=not args.parallel,
+            )
+            _record_extract_metadata_no_commit(
+                conn,
+                region,
+                args.run_id,
+                snap_dir,
+                statuses,
+                only_source="wikipedia",
+            )
+            store.mark_stage_complete_no_commit(
+                conn,
+                region.region_id,
+                args.stage,
+                run_id=args.run_id,
+                completed_at=stages._completed_at(),
+            )
+            conn.commit()
+            extract_transaction_open = False
+        except KeyError as exc:
+            print(f"acquisition config missing {exc.args[0]!r}", file=sys.stderr)
+            return 1
+        except (
+            extract_stage.MissingSnapshotError,
+            extract_stage.UnregisteredEnabledSourceError,
+            extract_stage.DiskSpaceError,
+            SnapshotPayloadMissingError,
+            acquire.AcquireError,
+        ) as exc:
+            if "extract_transaction_open" in locals() and extract_transaction_open:
+                conn.rollback()
+            print(f"acquisition error: {exc}", file=sys.stderr)
+            return 1
+        except sqlite3.Error as exc:
+            if "extract_transaction_open" in locals() and extract_transaction_open:
+                conn.rollback()
+            print(f"database error running {args.stage!r}: {exc}", file=sys.stderr)
+            return 3
+        except Exception as exc:
+            if "extract_transaction_open" in locals() and extract_transaction_open:
+                conn.rollback()
+            print(f"acquisition error: {exc}", file=sys.stderr)
+            return 1
+        print(f"wikipedia_sitelinks: {path}")
+        print(f"wikipedia_extract: {counts}")
         return 0
 
     if args.stage == "audit":

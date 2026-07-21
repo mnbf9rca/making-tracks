@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from mt_pipeline import store
 from mt_pipeline.publish import images
 from mt_pipeline.publish import image_worker
 
@@ -94,6 +95,57 @@ def test_recover_commons_filename_from_upload_url():
         )
         == "Fort Knox.jpg"
     )
+
+
+def test_image_candidates_use_qid_sitelink_wikipedia_row_for_wd_only_place(tmp_path):
+    conn = store.connect(tmp_path / "work.db")
+    store.init_schema(conn)
+    conn.execute(
+        """
+        INSERT INTO source_records
+            (region, source, source_ref, name, lat, lon, props_json, run_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "malaysia-singapore-brunei",
+            "wp",
+            "wp:12345",
+            "QID Article",
+            0.0,
+            0.0,
+            json.dumps(
+                {
+                    "wikidata": "Q42",
+                    "image": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+                },
+                sort_keys=True,
+            ),
+            "r1",
+        ),
+    )
+    conn.commit()
+
+    candidates = images.candidates_from_source_records(
+        conn,
+        "malaysia-singapore-brunei",
+        [
+            {
+                "place_id": "mt1_00000000000000000000000001",
+                "lat": 3.1,
+                "lon": 101.7,
+                "source_refs": ["wd:Q42"],
+            }
+        ],
+    )
+
+    assert candidates == [
+        images.ImageCandidate(
+            place_id="mt1_00000000000000000000000001",
+            lat=3.1,
+            lon=101.7,
+            image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+        )
+    ]
 
 
 @pytest.mark.parametrize(

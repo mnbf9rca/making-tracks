@@ -1,6 +1,7 @@
 import gzip
 import hashlib
 import json
+import logging
 
 import pytest
 
@@ -726,6 +727,20 @@ def test_publish_stage_manifest_includes_osm_attribution_for_basemap_without_osm
 
     manifest = json.loads((result.staging_dir / "manifest.json").read_text())
     assert [attr["source"] for attr in manifest["attribution"]] == ["osm"]
+
+
+def test_joined_places_retains_qids_from_refs_json_even_when_member_refs_lack_qid(conn):
+    _seed_publish_inputs(conn)
+    conn.execute(
+        "UPDATE places SET member_refs_json = ? WHERE place_id = ?",
+        (json.dumps(["osm:node/100"], sort_keys=True), A),
+    )
+    conn.commit()
+
+    places = P._joined_places(conn, "malaysia-singapore-brunei")
+
+    place = next(item for item in places if item["place_id"] == A)
+    assert place["source_refs"] == ["osm:node/100", "wd:Q100"]
 
 
 def test_publish_stage_emits_bbox_subregion_shard_without_subregion_registry(
@@ -1585,6 +1600,13 @@ def test_publish_stage_reports_registry_load_progress_before_parse_error(
 
 def test_publish_stage_dispatch_requires_publish_version(conn):
     store.mark_stage_complete(conn, "malaysia-singapore-brunei", "categorize", "r1", "2026-07-15T00:00:00Z")
+    store.mark_stage_complete(
+        conn,
+        "malaysia-singapore-brunei",
+        "acquire-wikipedia-sitelinks",
+        "r1",
+        "2026-07-15T00:00:00Z",
+    )
 
     try:
         stages.run_stage(conn, "malaysia-singapore-brunei", "publish", run_id="r1")
@@ -2045,6 +2067,78 @@ def test_publish_stage_warns_on_non_list_member_refs_json(
         and "region=malaysia-singapore-brunei" in record.message
         and record.exc_info is None
         for record in caplog.records
+    )
+
+
+def test_publish_stage_quarantines_malformed_refs_json(
+    conn, tmp_path, monkeypatch, caplog
+):
+    result = _run_with_refs_json(
+        conn, tmp_path, monkeypatch, caplog, refs_json="not-json"
+    )
+
+    assert result.counts.invalid_excluded == 1
+    assert result.counts.total_published == 0
+    assert any(
+        "malformed refs_json (parse error)" in record.message
+        and "place_id=mt1_" in record.message
+        and "region=malaysia-singapore-brunei" in record.message
+        and record.exc_info is not None
+        for record in caplog.records
+    )
+
+
+def _run_with_refs_json(conn, tmp_path, monkeypatch, caplog, *, refs_json: str):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    conn.execute(
+        "UPDATE places SET refs_json = ? WHERE place_id = ?",
+        (refs_json, A),
+    )
+    conn.commit()
+    LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
+        [
+            RegistryRecord(
+                place_id=A,
+                refs={"wd:Q100", "osm:node/100"},
+                mint_anchor="wd:Q100",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+            RegistryRecord(
+                place_id=B,
+                refs={"wd:Q200"},
+                mint_anchor="wd:Q200",
+                status="live",
+                first_shipped_version="20260701T000000Z",
+                last_seen_version="20260701T000000Z",
+            ),
+        ]
+    )
+
+    def fake_cut_basemap(region_config, out_path):
+        out_path.write_bytes(b"basemap")
+        return basemap.BasemapArtifact(
+            filename=f'{region_config["region_id"]}.pmtiles',
+            maxzoom=14,
+            sha256="0" * 64,
+            bytes=7,
+            bbox=list(region_config["basemap"]["bbox"]),
+        )
+
+    monkeypatch.setattr(P.basemap, "cut_basemap", fake_cut_basemap)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", lambda: "pmtiles")
+
+    caplog.set_level(logging.WARNING, logger=P.__name__)
+
+    return P.run(
+        conn,
+        "malaysia-singapore-brunei",
+        publish_version="20260717T120000Z",
+        generated_at="2026-07-17T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
     )
 
 

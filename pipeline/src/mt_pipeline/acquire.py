@@ -448,6 +448,219 @@ def _wiki_pages_url(endpoint: str, pageids: list[int]) -> str:
     )
 
 
+def _wikidata_entities_url(endpoint: str, qids: list[str], *, language: str) -> str:
+    site = f"{language}wiki"
+    return _endpoint_url(
+        endpoint,
+        {
+            "action": "wbgetentities",
+            "format": "json",
+            "ids": "|".join(qids),
+            "props": "sitelinks",
+            "sitefilter": site,
+        },
+    )
+
+
+def _wiki_pages_by_title_url(endpoint: str, titles: list[str]) -> str:
+    return _endpoint_url(
+        endpoint,
+        {
+            "action": "query",
+            "format": "json",
+            "prop": "extracts|pageimages|pageprops",
+            "exintro": "1",
+            "explaintext": "1",
+            "piprop": "original",
+            "titles": "|".join(titles),
+        },
+    )
+
+
+def _commons_upload_url(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    parsed = urllib.parse.urlparse(value)
+    if (
+        parsed.scheme == "https"
+        and parsed.hostname == "upload.wikimedia.org"
+        and parsed.path.startswith("/wikipedia/commons/")
+        and parsed.path.rsplit("/", 1)[-1]
+    ):
+        return value
+    return None
+
+
+def _qid_seed_map(seeds: list[dict]) -> dict[str, tuple[float, float]]:
+    out: dict[str, tuple[float, float]] = {}
+    for seed in seeds:
+        if not isinstance(seed, dict):
+            continue
+        qid = seed.get("qid")
+        if not isinstance(qid, str) or _QID_RE.fullmatch(qid) is None:
+            continue
+        try:
+            out.setdefault(qid, (float(seed["lat"]), float(seed["lon"])))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return dict(sorted(out.items()))
+
+
+def _wikidata_sitelink_titles(
+    *,
+    qids: list[str],
+    language: str,
+    config: dict,
+    fetch_json,
+    qid_batch_size: int,
+    retries: int,
+    sleep,
+) -> dict[str, str]:
+    endpoint = config["endpoint"]
+    expected_hosts = set(config["allowed_hosts"])
+    max_bytes = int(config.get("max_bytes", fetch.MAX_RESPONSE_BYTES))
+    site = f"{language}wiki"
+    out: dict[str, str] = {}
+    for batch in _chunks(qids, qid_batch_size):
+        data = _retry_json(
+            _wikidata_entities_url(endpoint, batch, language=language),
+            expected_hosts=expected_hosts,
+            max_bytes=max_bytes,
+            fetch_json=fetch_json,
+            retries=retries,
+            sleep=sleep,
+        )
+        if not isinstance(data, dict):
+            raise AcquireError("Wikidata entities response missing entities object")
+        entities = data.get("entities", {})
+        if not isinstance(entities, dict):
+            raise AcquireError("Wikidata entities response missing entities object")
+        for qid in batch:
+            entity = entities.get(qid)
+            if not isinstance(entity, dict):
+                continue
+            sitelinks = entity.get("sitelinks")
+            page = sitelinks.get(site) if isinstance(sitelinks, dict) else None
+            title = page.get("title") if isinstance(page, dict) else None
+            if isinstance(title, str) and title:
+                out[qid] = title
+    return dict(sorted(out.items()))
+
+
+def acquire_qid_sitelink_wikipedia(
+    snapshot_path,
+    *,
+    seeds: list[dict],
+    language: str,
+    wikidata_config: dict,
+    wikipedia_config: dict,
+    fetch_json=fetch.get_json,
+    qid_batch_size: int = 50,
+    title_batch_size: int = 50,
+    retries: int = 6,
+    sleep=time.sleep,
+    retrieved_at: str | None = None,
+) -> pathlib.Path:
+    path = pathlib.Path(snapshot_path)
+    snapshot = _load_wikipedia_snapshot(path)
+    if snapshot.get("lang") != language:
+        raise AcquireError("wikipedia snapshot language does not match qid sitelink language")
+
+    seed_map = _qid_seed_map(seeds)
+    titles_by_qid = (
+        _wikidata_sitelink_titles(
+            qids=list(seed_map),
+            language=language,
+            config=wikidata_config,
+            fetch_json=fetch_json,
+            qid_batch_size=qid_batch_size,
+            retries=retries,
+            sleep=sleep,
+        )
+        if seed_map
+        else {}
+    )
+    qid_by_title: dict[str, str] = {}
+    for qid, title in titles_by_qid.items():
+        qid_by_title.setdefault(title, qid)
+
+    endpoint = wikipedia_config["endpoint"]
+    expected_hosts = set(wikipedia_config["allowed_hosts"])
+    max_bytes = int(wikipedia_config.get("max_bytes", fetch.MAX_RESPONSE_BYTES))
+    qid_pages: list[dict] = []
+    for title_batch in _chunks(sorted(qid_by_title), title_batch_size):
+        data = _retry_json(
+            _wiki_pages_by_title_url(endpoint, title_batch),
+            expected_hosts=expected_hosts,
+            max_bytes=max_bytes,
+            fetch_json=fetch_json,
+            retries=retries,
+            sleep=sleep,
+        )
+        if not isinstance(data, dict):
+            raise AcquireError("Wikipedia qid pages response missing pages object")
+        query = data.get("query", {})
+        if not isinstance(query, dict):
+            raise AcquireError("Wikipedia qid pages response missing pages object")
+        page_map = query.get("pages", {})
+        if not isinstance(page_map, dict):
+            raise AcquireError("Wikipedia qid pages response missing pages object")
+        parsed_pages: list[tuple[int, dict]] = []
+        for pageid_key, page in page_map.items():
+            if not isinstance(page, dict):
+                continue
+            try:
+                parsed_pages.append((int(pageid_key), page))
+            except (TypeError, ValueError):
+                continue
+        for _pageid_key, page in sorted(parsed_pages):
+            if not isinstance(page, dict):
+                continue
+            title = page.get("title")
+            qid = qid_by_title.get(title) if isinstance(title, str) else None
+            if qid is None:
+                continue
+            pageprops = page.get("pageprops", {})
+            wikibase_item = (
+                pageprops.get("wikibase_item")
+                if isinstance(pageprops, dict)
+                else None
+            )
+            if wikibase_item != qid:
+                continue
+            lat, lon = seed_map[qid]
+            try:
+                pageid = int(page["pageid"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            item = {
+                "extract": page.get("extract", ""),
+                "owner_lat": lat,
+                "owner_lon": lon,
+                "pageid": pageid,
+                "qid": qid,
+                "title": title,
+                "wikibase_item": wikibase_item,
+            }
+            original = page.get("original", {})
+            image = original.get("source") if isinstance(original, dict) else None
+            image_url = _commons_upload_url(image)
+            if image_url is not None:
+                item["image"] = image_url
+            qid_pages.append(item)
+
+    snapshot["qid_pages"] = sorted(
+        qid_pages, key=lambda item: (str(item["qid"]), int(item["pageid"]))
+    )
+    meta = snapshot.setdefault("_meta", {})
+    if not isinstance(meta, dict):
+        raise AcquireError("wikipedia snapshot metadata must be an object")
+    meta["qid_sitelink_retrieved_at"] = retrieved_at or _now()
+    meta["qid_sitelink_seed_count"] = len(seed_map)
+    meta["qid_sitelink_page_count"] = len(snapshot["qid_pages"])
+    return _atomic_write_json(path, snapshot)
+
+
 def acquire_wikipedia(
     dest_dir,
     *,
@@ -882,6 +1095,37 @@ def qids_from_store(conn, *, region: str) -> list[str]:
         if isinstance(value, str) and _QID_RE.fullmatch(value):
             qids.add(value)
     return sorted(qids)
+
+
+def qid_sitelink_seeds_from_store(conn, *, region: str) -> list[dict]:
+    seeds: dict[str, tuple[float, float]] = {}
+    rows = conn.execute(
+        """
+        SELECT refs_json, lat, lon
+        FROM places
+        WHERE region = ?
+        ORDER BY place_id
+        """,
+        (region,),
+    ).fetchall()
+    for refs_json, lat, lon in rows:
+        try:
+            refs = json.loads(refs_json)
+            seed_lat = float(lat)
+            seed_lon = float(lon)
+        except (TypeError, ValueError, RecursionError):
+            continue
+        if not isinstance(refs, list):
+            continue
+        for ref in refs:
+            if not isinstance(ref, str) or re.fullmatch(r"wd:Q[0-9]+", ref) is None:
+                continue
+            qid = ref.split(":", 1)[1]
+            seeds.setdefault(qid, (seed_lat, seed_lon))
+    return [
+        {"qid": qid, "lat": lat, "lon": lon}
+        for qid, (lat, lon) in sorted(seeds.items())
+    ]
 
 
 def _region_source_options(config: dict, region_id: str) -> dict:

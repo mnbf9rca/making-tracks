@@ -163,6 +163,146 @@ def test_pageviews_are_materialized_from_cache_when_threaded(tmp_path):
     assert props["pageviews"] == [5, 8, 13]
 
 
+def test_qid_sitelink_pages_use_owner_coordinates_and_verified_qid(tmp_path):
+    conn = _db(tmp_path)
+    snap = _snap(
+        tmp_path,
+        {
+            "lang": "en",
+            "pages": [],
+            "qid_pages": [
+                {
+                    "qid": "Q42",
+                    "pageid": 12345,
+                    "title": "QID Article",
+                    "owner_lat": 3.1,
+                    "owner_lon": 101.7,
+                    "extract": "QID-derived article extract.",
+                    "wikibase_item": "Q42",
+                    "image": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+                }
+            ],
+        },
+    )
+
+    count = wikipedia.WikipediaExtractor({"en"}).extract(
+        "malaysia-singapore-brunei", snap, conn, run_id="r1"
+    )
+
+    assert count == 1
+    row = conn.execute(
+        "SELECT source_ref, name, lat, lon, props_json FROM source_records"
+    ).fetchone()
+    props = json.loads(row[4])
+    assert row[:4] == ("wp:12345", "QID Article", 3.1, 101.7)
+    assert props["wikidata"] == "Q42"
+    assert props["title"] == "QID Article"
+    assert props["description_extract"] == "QID-derived article extract."
+    assert props["image"] == "https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg"
+
+
+def test_qid_sitelink_pages_merge_verified_props_into_existing_pageid(tmp_path):
+    conn = _db(tmp_path)
+    snap = _snap(
+        tmp_path,
+        {
+            "lang": "en",
+            "pages": [
+                {
+                    "pageid": 12345,
+                    "title": "Geosearch Article",
+                    "lat": 3.2,
+                    "lon": 101.8,
+                    "extract": "Base geosearch extract.",
+                }
+            ],
+            "qid_pages": [
+                {
+                    "qid": "Q42",
+                    "pageid": 12345,
+                    "title": "QID Article",
+                    "owner_lat": 3.1,
+                    "owner_lon": 101.7,
+                    "extract": "QID-derived article extract.",
+                    "wikibase_item": "Q42",
+                    "image": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
+                }
+            ],
+        },
+    )
+
+    count = wikipedia.WikipediaExtractor({"en"}).extract(
+        "malaysia-singapore-brunei", snap, conn, run_id="r1"
+    )
+
+    assert count == 1
+    row = conn.execute(
+        "SELECT name, lat, lon, props_json FROM source_records WHERE source_ref = 'wp:12345'"
+    ).fetchone()
+    props = json.loads(row[3])
+    assert row[:3] == ("Geosearch Article", 3.2, 101.8)
+    assert props["extract"] == "Base geosearch extract."
+    assert props["wikidata"] == "Q42"
+    assert props["image"] == "https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg"
+
+
+def test_qid_sitelink_pages_drop_non_commons_image_url(tmp_path):
+    conn = _db(tmp_path)
+    snap = _snap(
+        tmp_path,
+        {
+            "lang": "en",
+            "pages": [],
+            "qid_pages": [
+                {
+                    "qid": "Q42",
+                    "pageid": 12345,
+                    "title": "QID Article",
+                    "owner_lat": 3.1,
+                    "owner_lon": 101.7,
+                    "extract": "QID-derived article extract.",
+                    "wikibase_item": "Q42",
+                    "image": "https://example.com/not-commons.jpg",
+                }
+            ],
+        },
+    )
+
+    wikipedia.WikipediaExtractor({"en"}).extract(
+        "malaysia-singapore-brunei", snap, conn, run_id="r1"
+    )
+
+    props = json.loads(conn.execute("SELECT props_json FROM source_records").fetchone()[0])
+    assert props["wikidata"] == "Q42"
+    assert "image" not in props
+
+
+def test_qid_sitelink_pages_drop_mismatched_wikibase_item(tmp_path):
+    conn = _db(tmp_path)
+    snap = _snap(
+        tmp_path,
+        {
+            "lang": "en",
+            "pages": [],
+            "qid_pages": [
+                {
+                    "qid": "Q42",
+                    "pageid": 12345,
+                    "title": "Wrong Article",
+                    "owner_lat": 3.1,
+                    "owner_lon": 101.7,
+                    "extract": "Wrong extract.",
+                    "wikibase_item": "Q99",
+                }
+            ],
+        },
+    )
+
+    assert wikipedia.WikipediaExtractor({"en"}).extract(
+        "malaysia-singapore-brunei", snap, conn, run_id="r1"
+    ) == 0
+
+
 def test_pageview_cache_title_normalization_matches_materialization(tmp_path):
     conn = _db(tmp_path)
     long_title = "A" * 400

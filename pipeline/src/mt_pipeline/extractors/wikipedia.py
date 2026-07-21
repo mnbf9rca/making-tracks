@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import urllib.parse
 
 from .. import source_record
 from . import pageviews
@@ -14,6 +15,20 @@ MAX_TITLE_LEN = 300
 MAX_QID_LEN = 24
 MAX_LANG_LEN = 16
 _QID_RE = re.compile(r"Q[0-9]+")
+
+
+def _commons_upload_url(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    parsed = urllib.parse.urlparse(value)
+    if (
+        parsed.scheme == "https"
+        and parsed.hostname == "upload.wikimedia.org"
+        and parsed.path.startswith("/wikipedia/commons/")
+        and parsed.path.rsplit("/", 1)[-1]
+    ):
+        return value
+    return None
 
 
 class WikipediaExtractor:
@@ -74,6 +89,54 @@ class WikipediaExtractor:
                 }
             except (KeyError, ValueError, TypeError):
                 continue
+
+        qid_pages = snapshot.get("qid_pages", [])
+        if isinstance(qid_pages, list):
+            for page in qid_pages[:MAX_RECORDS_PER_SNAPSHOT]:
+                try:
+                    qid = page["qid"]
+                    wikibase_item = page["wikibase_item"]
+                    if (
+                        not isinstance(qid, str)
+                        or len(qid) > MAX_QID_LEN
+                        or _QID_RE.fullmatch(qid) is None
+                        or wikibase_item != qid
+                    ):
+                        continue
+                    pageid = int(page["pageid"])
+                    if pageid in projected:
+                        props = projected[pageid]["props"]
+                        props["wikidata"] = qid
+                        image = _commons_upload_url(page.get("image"))
+                        if image:
+                            props["image"] = image
+                        continue
+                    lat = float(page["owner_lat"])
+                    lon = float(page["owner_lon"])
+                    title = str(page.get("title", ""))[:MAX_TITLE_LEN]
+                    raw_extract = str(page.get("extract", ""))
+                    props = {
+                        "lang": lang,
+                        "title": title,
+                        "extract": raw_extract[:MAX_EXTRACT_LEN],
+                        "description_extract": raw_extract[:DESCRIPTION_EXTRACT_LEN],
+                        "wikidata": qid,
+                    }
+                    image = _commons_upload_url(page.get("image"))
+                    if image:
+                        props["image"] = image
+                    if pageview_cache_dir is not None and pageview_window is not None:
+                        daily = pageviews.read(pageview_cache_dir, title, pageview_window)
+                        if daily is not None:
+                            props["pageviews"] = daily
+                    projected[pageid] = {
+                        "lat": lat,
+                        "lon": lon,
+                        "title": title,
+                        "props": props,
+                    }
+                except (KeyError, ValueError, TypeError):
+                    continue
 
         count = 0
         for pageid in sorted(projected, key=lambda pid: f"wp:{pid}"):
