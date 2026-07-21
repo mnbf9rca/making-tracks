@@ -811,16 +811,24 @@ enum TrackVisitReordering {
             calendar.startOfDay(for: visit.visitedAt)
         }
 
+        let originalDays = Set(movingVisits.map(day))
+        let originalDay = originalDays.count == 1 ? originalDays.first : nil
+        let previousDay = insertionIndex > 0 ? day(for: nextVisits[insertionIndex - 1]) : nil
+        let nextIndex = insertionIndex + movingVisits.count
+        let nextDay = nextIndex < nextVisits.count ? day(for: nextVisits[nextIndex]) : nil
         let targetDay: Date
-        if insertionIndex < remainingVisits.count {
-            targetDay = day(for: remainingVisits[insertionIndex])
-        } else if let previous = remainingVisits.last {
-            targetDay = day(for: previous)
+        if let previousDay, previousDay == nextDay {
+            targetDay = previousDay
+        } else if let originalDay, previousDay == originalDay || nextDay == originalDay {
+            targetDay = originalDay
+        } else if let nextDay {
+            targetDay = nextDay
+        } else if let previousDay {
+            targetDay = previousDay
         } else {
             targetDay = day(for: movingVisits[0])
         }
 
-        let originalDays = Set(movingVisits.map(day))
         let movingIDs = Set(movingVisits.map(\.id))
         let targetDayOrderedIDs = nextVisits.compactMap { visit -> Int64? in
             movingIDs.contains(visit.id) || day(for: visit) == targetDay ? visit.id : nil
