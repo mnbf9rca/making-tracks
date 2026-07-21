@@ -1,0 +1,107 @@
+name: iOS Release Gate
+
+on:
+  pull_request:
+    branches: [ios]
+    paths:
+      - ".github/workflows/ios-gate.yml"
+      - "scripts/release-gate.sh"
+      - "ios/App/**"
+      - "ios/Sources/**"
+      - "ios/Tests/**"
+      - "ios/Package.swift"
+      - "ios/Package.resolved"
+  workflow_dispatch:
+
+concurrency:
+  group: ios-release-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios-release-gate:
+    name: ios-release-gate
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      MT_CI_SIMULATOR_NAME: iPhone 16
+      MT_RELEASE_GATE_RUN_DIR: ${{ runner.temp }}/release-gate
+      MT_RELEASE_GATE_DERIVED_DATA: ${{ runner.temp }}/release-gate/DerivedData
+      MT_RELEASE_GATE_SKIP_LOCK: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          if [ -n "${MT_CI_XCODE_PATH:-}" ]; then
+            sudo xcode-select -s "$MT_CI_XCODE_PATH"
+          fi
+          xcode-select -p
+          xcodebuild -version
+
+      - name: Cache SwiftPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/DerivedData/SourcePackages
+          key: ios-spm-${{ runner.os }}-${{ hashFiles('ios/Package.swift', 'ios/Package.resolved') }}
+          restore-keys: |
+            ios-spm-${{ runner.os }}-
+
+      - name: Resolve simulator destination
+        run: |
+          set -euo pipefail
+          mkdir -p "$MT_RELEASE_GATE_RUN_DIR"
+          receipt="$MT_RELEASE_GATE_RUN_DIR/environment.txt"
+          {
+            echo "git_sha=${GITHUB_SHA}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "xcode_path=$(xcode-select -p)"
+            xcodebuild -version
+            echo
+            xcrun simctl list runtimes
+          } > "$receipt"
+
+          runtime_id="$(
+            xcrun simctl list runtimes -j |
+            /usr/bin/python3 -c 'import json, sys; data = json.load(sys.stdin); candidates = [item for item in data.get("runtimes", []) if item.get("isAvailable") and str(item.get("identifier", "")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-")]; assert candidates, "no available iOS simulator runtime"; version_key = lambda item: tuple(int(part) for part in str(item.get("version", "0")).split(".") if part.isdigit()); print(max(candidates, key=version_key)["identifier"])'
+          )"
+          device_type="$(
+            xcrun simctl list devicetypes -j |
+            MT_CI_SIMULATOR_NAME="$MT_CI_SIMULATOR_NAME" /usr/bin/python3 -c 'import json, os, sys; data = json.load(sys.stdin); preferred = os.environ["MT_CI_SIMULATOR_NAME"]; devices = [item for item in data.get("devicetypes", []) if str(item.get("name", "")).startswith("iPhone")]; assert devices, "no available iPhone simulator device type"; by_name = {item.get("name"): item for item in devices}; chosen = by_name.get(preferred) or devices[-1]; print(chosen["identifier"])'
+          )"
+          udid="$(
+            xcrun simctl create "Making Tracks CI" "$device_type" "$runtime_id"
+          )"
+          echo "MT_CI_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+          echo "MT_RELEASE_GATE_DESTINATION=platform=iOS Simulator,id=$udid" >> "$GITHUB_ENV"
+          echo "simulator_name=$MT_CI_SIMULATOR_NAME" >> "$receipt"
+          echo "simulator_device_type=$device_type" >> "$receipt"
+          echo "simulator_runtime=$runtime_id" >> "$receipt"
+          echo "simulator_udid=$udid" >> "$receipt"
+          echo "destination=platform=iOS Simulator,id=$udid" >> "$receipt"
+
+      - name: Run release gate
+        run: ./scripts/release-gate.sh
+
+      - name: Capture simulator screenshot
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "$MT_RELEASE_GATE_RUN_DIR"
+          if [ -n "${MT_CI_SIMULATOR_UDID:-}" ]; then
+            xcrun simctl io "$MT_CI_SIMULATOR_UDID" screenshot "$MT_RELEASE_GATE_RUN_DIR/screenshot.png" || true
+          fi
+
+      - name: Upload release-gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release-gate-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/release-gate/environment.txt
+            ${{ runner.temp }}/release-gate/screenshot.png
+            ${{ runner.temp }}/release-gate/MakingTracksTests.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

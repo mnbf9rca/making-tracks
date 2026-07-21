@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = REPO_ROOT / "scripts" / "release-gate.sh"
+SCRIPT = Path(os.environ.get("MT_RELEASE_GATE_SCRIPT", REPO_ROOT / "scripts" / "release-gate.sh"))
 UDID = "C4A64D49-24A2-4429-B6E2-AD9A14142A99"
 
 
@@ -92,6 +92,8 @@ def _env(fakebin: Path, log: Path) -> dict[str, str]:
     env["MT_RELEASE_GATE_TEST_MODE"] = "1"
     env["MT_RELEASE_GATE_RUN_DIR"] = str(log.parent / "release-gate-run")
     env["MT_RELEASE_GATE_LOG"] = str(log)
+    env.pop("GITHUB_ACTIONS", None)
+    env.pop("MT_RELEASE_GATE_SKIP_LOCK", None)
     return env
 
 
@@ -142,6 +144,73 @@ def test_release_gate_refuses_when_not_run_through_sim_lock(tmp_path):
         "(which holds the simulator lock)"
     )
     assert not log.exists()
+
+
+def test_release_gate_skip_lock_refuses_outside_github_actions(tmp_path):
+    """An accidental local SKIP_LOCK must not drop the shared-simulator lock."""
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env.pop("MT_SIM_LOCK")
+    env["MT_RELEASE_GATE_SKIP_LOCK"] = "1"
+    env.pop("GITHUB_ACTIONS", None)
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 1
+    assert result.stderr.strip() == (
+        "release-gate: refused: must be run through scripts/sim-lock.sh "
+        "(which holds the simulator lock)"
+    )
+    assert not log.exists()
+
+
+def test_release_gate_github_actions_refuses_without_skip_lock(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env.pop("MT_SIM_LOCK")
+    env["GITHUB_ACTIONS"] = "true"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 1
+    assert result.stderr.strip() == (
+        "release-gate: refused: must be run through scripts/sim-lock.sh "
+        "(which holds the simulator lock)"
+    )
+    assert not log.exists()
+
+
+def test_release_gate_skip_lock_runs_only_inside_github_actions(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env.pop("MT_SIM_LOCK")
+    env["MT_RELEASE_GATE_SKIP_LOCK"] = "1"
+    env["GITHUB_ACTIONS"] = "true"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert log.exists()
+
+
+def test_release_gate_destination_override_replaces_all_udid_uses(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env["MT_RELEASE_GATE_DESTINATION"] = "platform=iOS Simulator,id=RUNNER-UDID"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    lines = log.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "xcrun:simctl bootstatus RUNNER-UDID -b"
+    destination_lines = [line for line in lines if "-destination" in line]
+    assert len(destination_lines) == 3
+    assert all("platform=iOS Simulator,id=RUNNER-UDID" in line for line in destination_lines)
+    assert not any(UDID in line for line in lines)
 
 
 def test_release_gate_runs_release_build_for_testing_and_tests_without_rebuilding(tmp_path):
