@@ -85,7 +85,16 @@ check "held when the sim is in use WITHOUT the lock" "HELD" "$(run_status)"
 kill "$fake_pid" 2>/dev/null
 wait 2>/dev/null
 
-# 4. The warning fires on the dangerous case specifically.
+# 4. CoreSimulator's idle launchd_sim process names the UDID but is not work.
+#    Treating it as a holder wedges the shared simulator after every boot.
+(exec -a "launchd_sim $FAKE_UDID" sleep 4) &
+launchd_pid=$!
+sleep 0.5
+check "free when only idle launchd_sim names the UDID" "FREE" "$(run_status)"
+kill "$launchd_pid" 2>/dev/null
+wait 2>/dev/null
+
+# 5. The warning fires on the dangerous case specifically.
 (exec -a "xcodebuild -destination platform=iOS Simulator,id=$FAKE_UDID" sleep 3) &
 warn_pid=$!
 sleep 0.5
@@ -100,7 +109,7 @@ fi
 kill "$warn_pid" 2>/dev/null
 wait 2>/dev/null
 
-# 5. Back to free once everything exits — proves the signals clear rather than
+# 6. Back to free once everything exits — proves the signals clear rather than
 #    latching, so a stale HELD cannot wedge the fleet.
 sleep 0.3
 check "free again after holders exit" "FREE" "$(run_status)"
@@ -108,7 +117,7 @@ check "free again after holders exit" "FREE" "$(run_status)"
 echo
 echo "sim-lock retired-path alias:"
 
-# 6. The alias is recreated when missing. /private/tmp clears on reboot, so a
+# 7. The alias is recreated when missing. /private/tmp clears on reboot, so a
 #    symlink made once does not survive; if it is not asserted the lock splits
 #    and the whole --status lock leg watches the wrong file.
 rm -f "$RETIRED"
@@ -119,7 +128,7 @@ else
   echo "  FAIL  recreates the retired alias when absent"; fail=$((fail+1))
 fi
 
-# 7. An idle regular file at the retired path is replaced, not tolerated.
+# 8. An idle regular file at the retired path is replaced, not tolerated.
 rm -f "$RETIRED"; touch "$RETIRED"
 run_locked true >/dev/null 2>&1 || true
 if [ -L "$RETIRED" ]; then
@@ -128,7 +137,7 @@ else
   echo "  FAIL  replaces an idle regular file at the retired path"; fail=$((fail+1))
 fi
 
-# 8. A BUSY regular file is refused rather than replaced — replacing it would
+# 9. A BUSY regular file is refused rather than replaced — replacing it would
 #    split the lock underneath the run that is holding it.
 rm -f "$RETIRED"; touch "$RETIRED"
 "$FLOCK_BIN" -x "$RETIRED" -c 'sleep 3' &
@@ -146,7 +155,7 @@ rm -f "$RETIRED"
 echo
 echo "sim-lock --erase pre-flight:"
 
-# 9. Erase refuses while the sim is in use without the lock — flock alone does
+# 10. Erase refuses while the sim is in use without the lock — flock alone does
 #    not protect against a lockless holder, which is the incident exactly.
 (exec -a "xcodebuild -destination platform=iOS Simulator,id=$FAKE_UDID" sleep 3) &
 erase_pid=$!
@@ -162,7 +171,7 @@ kill "$erase_pid" 2>/dev/null; wait 2>/dev/null
 echo
 echo "sim-lock re-entrancy:"
 
-# 10. A nested invocation must not re-flock, or it deadlocks on its own parent
+# 11. A nested invocation must not re-flock, or it deadlocks on its own parent
 #     with no output.
 out="$(MT_SIM_LOCK_TEST_MODE=1 MT_SIM_LOCK_TEST_LOCK="$LOCK" \
        MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" MT_SIM_LOCK_TEST_RETIRED_LOCK="$RETIRED" \
