@@ -20,15 +20,15 @@ concurrency:
 jobs:
   ios-release-gate:
     name: ios-release-gate
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 60
     env:
       MT_CI_SIMULATOR_NAME: iPhone 16
-      MT_RELEASE_GATE_RUN_DIR: ${{ runner.temp }}/release-gate
-      MT_RELEASE_GATE_DERIVED_DATA: ${{ runner.temp }}/release-gate/DerivedData
       MT_RELEASE_GATE_SKIP_LOCK: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Select Xcode
         run: |
@@ -39,8 +39,16 @@ jobs:
           xcode-select -p
           xcodebuild -version
 
+      - name: Configure release gate paths
+        run: |
+          set -euo pipefail
+          {
+            echo "MT_RELEASE_GATE_RUN_DIR=$RUNNER_TEMP/release-gate"
+            echo "MT_RELEASE_GATE_DERIVED_DATA=$RUNNER_TEMP/release-gate/DerivedData"
+          } >> "$GITHUB_ENV"
+
       - name: Cache SwiftPM dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6.1.0
         with:
           path: |
             ~/Library/Caches/org.swift.swiftpm
@@ -76,11 +84,13 @@ jobs:
           )"
           echo "MT_CI_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
           echo "MT_RELEASE_GATE_DESTINATION=platform=iOS Simulator,id=$udid" >> "$GITHUB_ENV"
-          echo "simulator_name=$MT_CI_SIMULATOR_NAME" >> "$receipt"
-          echo "simulator_device_type=$device_type" >> "$receipt"
-          echo "simulator_runtime=$runtime_id" >> "$receipt"
-          echo "simulator_udid=$udid" >> "$receipt"
-          echo "destination=platform=iOS Simulator,id=$udid" >> "$receipt"
+          {
+            echo "simulator_name=$MT_CI_SIMULATOR_NAME"
+            echo "simulator_device_type=$device_type"
+            echo "simulator_runtime=$runtime_id"
+            echo "simulator_udid=$udid"
+            echo "destination=platform=iOS Simulator,id=$udid"
+          } >> "$receipt"
 
       - name: Run release gate
         run: ./scripts/release-gate.sh
@@ -96,7 +106,7 @@ jobs:
 
       - name: Upload release-gate artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: ios-release-gate-${{ github.run_id }}
           path: |
