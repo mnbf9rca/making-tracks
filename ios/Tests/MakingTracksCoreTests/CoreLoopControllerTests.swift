@@ -238,11 +238,21 @@ final class CoreLoopControllerTests: XCTestCase {
         let dateChange = await changes.next()
         XCTAssertEqual(dateChange, ["p_edit_first"])
 
+        let nextDayFirst = try db.recordVisit(makePlace("p_next_first"), at: day.addingTimeInterval(60 * 60 * 24 + 60))
+        try controller.moveVisit(
+            id: first,
+            toDayContaining: day.addingTimeInterval(60 * 60 * 24),
+            targetDayOrderedIDs: [nextDayFirst, first]
+        )
+
+        let moveChange = await changes.next()
+        XCTAssertEqual(moveChange, ["p_edit_first", "p_next_first"])
+
         try controller.deleteVisit(id: second)
 
         let deleteChange = await changes.next()
         XCTAssertEqual(deleteChange, ["p_edit_second"])
-        XCTAssertEqual(try db.trackVisits().map(\.id), [first])
+        XCTAssertEqual(try db.trackVisits().map(\.id), [nextDayFirst, first])
     }
 
     func testUnseeingFromPlaceCardDeletesOnlyLatestVisitEvent() async throws {
