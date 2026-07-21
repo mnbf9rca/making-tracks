@@ -83,6 +83,15 @@ public struct DiagnosticLogArtifact: Equatable, Sendable {
     public var preview: String
 }
 
+struct DiagnosticLogSnapshot: Equatable, Sendable {
+    var totalLineCount: Int
+    var lines: [String]
+
+    var windowLineCount: Int {
+        lines.count
+    }
+}
+
 public enum DiagnosticLogExportError: Error, Equatable {
     case privacyScrubFailed
 }
@@ -148,18 +157,44 @@ public final class DiagnosticLogStore {
     }
 
     func snapshotLines(window: DiagnosticLogWindow) throws -> [String] {
+        try snapshot(window: window).lines
+    }
+
+    func sessionCoveringWindow(preferredWindow: DiagnosticLogWindow) throws -> DiagnosticLogWindow {
         lock.lock()
         defer { lock.unlock() }
         let current = logURL
-        guard fileManager.fileExists(atPath: current.path) else { return [] }
+        guard fileManager.fileExists(atPath: current.path) else {
+            return preferredWindow
+        }
         let text = try String(contentsOf: current, encoding: .utf8)
-        return text
+        let dates = text
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .compactMap { Self.dateFromLine(String($0)) }
+        guard !dates.isEmpty else { return preferredWindow }
+
+        return DiagnosticLogWindow.sessionCoveringCandidates(from: preferredWindow)
+            .first { candidate in
+                dates.allSatisfy { candidate.contains($0, relativeTo: now()) }
+            } ?? .everything
+    }
+
+    func snapshot(window: DiagnosticLogWindow) throws -> DiagnosticLogSnapshot {
+        lock.lock()
+        defer { lock.unlock() }
+        let current = logURL
+        guard fileManager.fileExists(atPath: current.path) else {
+            return DiagnosticLogSnapshot(totalLineCount: 0, lines: [])
+        }
+        let text = try String(contentsOf: current, encoding: .utf8)
+        let allLines = text
             .split(separator: "\n", omittingEmptySubsequences: true)
             .map(String.init)
-            .filter { line in
-                guard let date = Self.dateFromLine(line) else { return true }
-                return window.contains(date, relativeTo: now())
-            }
+        let windowLines = allLines.filter { line in
+            guard let date = Self.dateFromLine(line) else { return true }
+            return window.contains(date, relativeTo: now())
+        }
+        return DiagnosticLogSnapshot(totalLineCount: allLines.count, lines: windowLines)
     }
 
     func appendRawLineForTesting(_ line: String) throws {
@@ -248,18 +283,41 @@ public struct DiagnosticLogExporter {
             let summaryURL = directory.appendingPathComponent("summary-\(exportTimestamp).txt")
             let logURL = directory.appendingPathComponent("diagnostic-log-\(exportTimestamp).txt")
 
-            let summary = renderSummary()
-            let log = try store.snapshotLines(window: window).joined(separator: "\n") + "\n"
+            let snapshot = try store.snapshot(window: window)
+            let log = snapshot.lines.joined(separator: "\n") + "\n"
+            let summary = renderSummary(
+                window: window,
+                snapshot: snapshot,
+                scrubStatus: "pending",
+                previewLineCount: 0,
+                previewLogLineCount: 0
+            )
             let scrubText = [summary, log].joined(separator: "\n")
             guard Self.passesPrivacyScrub(scrubText) else {
                 throw DiagnosticLogExportError.privacyScrubFailed
             }
+            let previewLogLineCount = Self.lineCount(in: log)
+            let summaryForPreviewCounts = renderSummary(
+                window: window,
+                snapshot: snapshot,
+                scrubStatus: "passed",
+                previewLineCount: 0,
+                previewLogLineCount: previewLogLineCount
+            )
+            let previewLineCount = Self.lineCount(in: renderPreview(summary: summaryForPreviewCounts, log: log))
+            let exportedSummary = renderSummary(
+                window: window,
+                snapshot: snapshot,
+                scrubStatus: "passed",
+                previewLineCount: previewLineCount,
+                previewLogLineCount: previewLogLineCount
+            )
 
-            try summary.write(to: summaryURL, atomically: true, encoding: .utf8)
+            try exportedSummary.write(to: summaryURL, atomically: true, encoding: .utf8)
             try log.write(to: logURL, atomically: true, encoding: .utf8)
             let archiveURL = try makeArchive(directory: directory, stagingRoot: stagingRoot, exportTimestamp: exportTimestamp)
             let byteCount = try archiveByteCount(archiveURL)
-            let preview = renderPreview(summary: summary, log: log)
+            let preview = renderPreview(summary: exportedSummary, log: log)
 
             return DiagnosticLogArtifact(
                 directoryURL: directory,
@@ -275,6 +333,14 @@ public struct DiagnosticLogExporter {
             }
             throw error
         }
+    }
+
+    public func prepareCoveringCurrentSession(
+        preferredWindow: DiagnosticLogWindow,
+        stagingRoot: URL
+    ) throws -> DiagnosticLogArtifact {
+        let window = try store.sessionCoveringWindow(preferredWindow: preferredWindow)
+        return try prepare(window: window, stagingRoot: stagingRoot)
     }
 
     private func makeArchive(directory: URL, stagingRoot: URL, exportTimestamp: String) throws -> URL {
@@ -310,7 +376,13 @@ public struct DiagnosticLogExporter {
         return max(0, size.intValue)
     }
 
-    private func renderSummary() -> String {
+    private func renderSummary(
+        window: DiagnosticLogWindow,
+        snapshot: DiagnosticLogSnapshot,
+        scrubStatus: String,
+        previewLineCount: Int,
+        previewLogLineCount: Int
+    ) -> String {
         var lines = [
             "Making Tracks diagnostics",
             "app=\(metadata.appVersion) build=\(metadata.build) commit=\(metadata.commit)",
@@ -322,6 +394,10 @@ public struct DiagnosticLogExporter {
         })
         lines.append("included=app-version,device-model,installed-packs,session-flow,object-urls,error-codes,timings")
         lines.append("not-included=device-name,exact-location,search-wording")
+        lines.append("log-stage=raw lines=\(snapshot.totalLineCount)")
+        lines.append("log-stage=window input-lines=\(snapshot.totalLineCount) output-lines=\(snapshot.windowLineCount) window=\(window.exportLabel)")
+        lines.append("log-stage=scrub input-log-lines=\(snapshot.windowLineCount) output-log-lines=\(snapshot.windowLineCount) status=\(scrubStatus)")
+        lines.append("log-stage=preview lines=\(previewLineCount) log-lines=\(previewLogLineCount)")
         return lines.joined(separator: "\n") + "\n"
     }
 
@@ -353,6 +429,10 @@ public struct DiagnosticLogExporter {
         }
     }
 
+    private static func lineCount(in text: String) -> Int {
+        text.split(separator: "\n", omittingEmptySubsequences: true).count
+    }
+
     private static func filenameTimestampFormatter() -> DateFormatter {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -360,6 +440,30 @@ public struct DiagnosticLogExporter {
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
         return formatter
+    }
+}
+
+private extension DiagnosticLogWindow {
+    static func sessionCoveringCandidates(from preferredWindow: DiagnosticLogWindow) -> [DiagnosticLogWindow] {
+        switch preferredWindow {
+        case .fifteenMinutes:
+            return [.fifteenMinutes, .lastHour, .everything]
+        case .lastHour:
+            return [.lastHour, .everything]
+        case .everything:
+            return [.everything]
+        }
+    }
+
+    var exportLabel: String {
+        switch self {
+        case .fifteenMinutes:
+            return "fifteen-minutes"
+        case .lastHour:
+            return "last-hour"
+        case .everything:
+            return "everything"
+        }
     }
 }
 
