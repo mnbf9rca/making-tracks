@@ -24,6 +24,8 @@ jobs:
     timeout-minutes: 60
     env:
       MT_CI_SIMULATOR_NAME: iPhone 16
+      MT_CI_XCBEAUTIFY_SHA256: 87fdbe786f71d7b2ee28c5c1ca97087587292f2c5c6f9e721cf02db8b2a3c241
+      MT_CI_XCBEAUTIFY_VERSION: 3.2.1
       MT_RELEASE_GATE_SKIP_LOCK: "1"
     steps:
       - uses: actions/checkout@v7.0.1
@@ -56,6 +58,25 @@ jobs:
           key: ios-spm-${{ runner.os }}-${{ hashFiles('ios/Package.swift', 'ios/Package.resolved') }}
           restore-keys: |
             ios-spm-${{ runner.os }}-
+
+      - name: Install xcbeautify
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/xcbeautify.zip"
+          install_dir="$RUNNER_TEMP/xcbeautify"
+          curl -fsSLo "$archive" "https://github.com/cpisciotta/xcbeautify/releases/download/$MT_CI_XCBEAUTIFY_VERSION/xcbeautify-$MT_CI_XCBEAUTIFY_VERSION-universal-apple-macosx.zip"
+          echo "$MT_CI_XCBEAUTIFY_SHA256  $archive" | shasum -a 256 -c -
+          rm -rf "$install_dir"
+          mkdir -p "$install_dir"
+          unzip -q "$archive" -d "$install_dir"
+          xcbeautify_bin="$(find "$install_dir" -type f -name xcbeautify -print -quit)"
+          if [ -z "$xcbeautify_bin" ]; then
+            echo "xcbeautify binary missing from release archive" >&2
+            exit 1
+          fi
+          chmod +x "$xcbeautify_bin"
+          dirname "$xcbeautify_bin" >> "$GITHUB_PATH"
+          "$xcbeautify_bin" --version
 
       - name: Resolve simulator destination
         run: |
@@ -111,6 +132,7 @@ jobs:
           name: ios-release-gate-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/release-gate/environment.txt
+            ${{ runner.temp }}/release-gate/*.xcodebuild.log
             ${{ runner.temp }}/release-gate/screenshot.png
             ${{ runner.temp }}/release-gate/MakingTracksTests.xcresult
           if-no-files-found: ignore
