@@ -5655,6 +5655,17 @@ public enum TileFetchConcurrency {
     public static let maxConcurrent = 4
 }
 
+public enum ViewportFirstFetch {
+    /// Tunable first-paint cap: enough nearby z10 cells to populate low-zoom centers without country-scale fan-out.
+    public static let maxInitialTileRequests = 12
+}
+
+private func tileDistanceSquared(_ lhs: TileCoordinate, _ rhs: TileCoordinate) -> Int {
+    let dx = lhs.x - rhs.x
+    let dy = lhs.y - rhs.y
+    return dx * dx + dy * dy
+}
+
 private final class AsyncBroadcaster<Element: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var nextID = 0
@@ -5703,9 +5714,14 @@ public actor TileClient {
     private var viewportAttribution: [Attribution] = []
     private var viewportGeneration = 0
     private var imageLoadTask: Task<Void, Never>?
+    private var viewportPrefetchTask: Task<Void, Never>?
     private let imageChangeBroadcaster = AsyncBroadcaster<Set<String>>()
+    private let viewportChangeBroadcaster = AsyncBroadcaster<Void>()
     public nonisolated var imageChanges: AsyncStream<Set<String>> {
         imageChangeBroadcaster.stream()
+    }
+    public nonisolated var viewportChanges: AsyncStream<Void> {
+        viewportChangeBroadcaster.stream()
     }
 
     public init(region: String, fetcher: TileFetching, cache: TileCache, offlineStore: OfflineRegionStore? = nil) {
@@ -5792,21 +5808,25 @@ public actor TileClient {
             return []
         }
         let blockedCoordinates = offlineResolution.blockedCoordinates.intersection(coveredCoordinates)
-        let needed = tileRequests(
+        let allNeeded = tileRequests(
             installedTiles: offlineResolution.tiles,
             fallback: pin,
             coveredCoordinates: coveredCoordinates,
             blockedFallbackCoordinates: blockedCoordinates
         )
+        let needed = viewportFirstRequests(from: allNeeded, bbox: bbox)
+        let neededCoordinates = Set(needed.map(\.coordinate))
+        let deferredNeeded = allNeeded.filter { !neededCoordinates.contains($0.coordinate) }
         let covered = coveredCoordinates.count
         let blocked = blockedCoordinates.count
-        let installedRequests = needed.filter(\.source.isInstalled).count
-        let fallbackRequests = needed.count - installedRequests
+        let installedRequests = allNeeded.filter(\.source.isInstalled).count
+        let fallbackRequests = allNeeded.count - installedRequests
         MakingTracksLog.resolution.debug("viewport planned region=\(regionID, privacy: .private(mask: .hash)) zoom=\(zoom, privacy: .public) covered=\(covered, privacy: .public) blocked=\(blocked, privacy: .public) installed=\(installedRequests, privacy: .public) fallback=\(fallbackRequests, privacy: .public) quarantines=\(offlineResolution.quarantinedPacks.count, privacy: .public)")
-        let tileZLabel = String(needed.first?.coordinate.z ?? pin?.manifest.tileZ ?? 10)
+        let tileZLabel = String(allNeeded.first?.coordinate.z ?? pin?.manifest.tileZ ?? 10)
         let zoomText = String(zoom)
         let coveredText = String(covered)
-        let requestText = String(needed.count)
+        let initialRequestText = String(needed.count)
+        let totalRequestText = String(allNeeded.count)
         let installedText = String(installedRequests)
         let fallbackText = String(fallbackRequests)
         let blockedText = String(blocked)
@@ -5820,15 +5840,16 @@ public actor TileClient {
                 .public("zoom", zoomText),
                 .public("tileZ", tileZLabel),
                 .public("covered", coveredText),
-                .public("requests", requestText),
+                .public("initialRequests", initialRequestText),
+                .public("requests", totalRequestText),
                 .public("installed", installedText),
                 .public("fallback", fallbackText),
                 .public("blocked", blockedText),
                 .public("quarantines", quarantineText),
             ]
         )
-        logObjectRequestComposition(requests: needed, regionID: regionID)
-        guard !needed.isEmpty else {
+        logObjectRequestComposition(requests: allNeeded, regionID: regionID)
+        guard !allNeeded.isEmpty else {
             loadedPlaces = [:]
             loadedPlaceRequests = [:]
             loadedImages = [:]
@@ -5841,14 +5862,16 @@ public actor TileClient {
             MakingTracksLog.resolution.info("viewport empty region=\(regionID, privacy: .private(mask: .hash)) state=\(stateLabel, privacy: .public)")
             return []
         }
-        viewportBasemap = needed.reduce(nil as PublishTileRequest?) { current, request in
+        viewportBasemap = allNeeded.reduce(nil as PublishTileRequest?) { current, request in
             guard request.basemap != nil else { return current }
             return tileRequest(request, winsOver: current) ? request : current
         }?.basemap
-        viewportAttribution = mergedAttribution(from: needed)
+        viewportAttribution = mergedAttribution(from: allNeeded)
         viewportGeneration += 1
         imageLoadTask?.cancel()
         imageLoadTask = nil
+        viewportPrefetchTask?.cancel()
+        viewportPrefetchTask = nil
         let generation = viewportGeneration
 
         var viewportPlaces: [String: DecodedPlace] = [:]
@@ -5939,7 +5962,7 @@ public actor TileClient {
         let cacheText = String(usedCache)
         let trustedText = String(trustedTile)
         let elapsedText = String(elapsedMS)
-        MakingTracksLog.resolution.info("viewport finished region=\(regionID, privacy: .private(mask: .hash)) state=\(stateLabel, privacy: .public) loaded=\(viewportPlaces.count, privacy: .public) requests=\(needed.count, privacy: .public) cache=\(usedCache, privacy: .public) trusted=\(trustedTile, privacy: .public) missing=\(missingTile, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
+        MakingTracksLog.resolution.info("viewport finished region=\(regionID, privacy: .private(mask: .hash)) state=\(stateLabel, privacy: .public) loaded=\(viewportPlaces.count, privacy: .public) initialRequests=\(needed.count, privacy: .public) requests=\(allNeeded.count, privacy: .public) cache=\(usedCache, privacy: .public) trusted=\(trustedTile, privacy: .public) missing=\(missingTile, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
         MakingTracksLog.file(
             category: .resolution,
             level: .info,
@@ -5950,7 +5973,8 @@ public actor TileClient {
                 .public("zoom", zoomText),
                 .public("tileZ", tileZLabel),
                 .public("loaded", loadedText),
-                .public("requests", requestText),
+                .public("initialRequests", initialRequestText),
+                .public("requests", totalRequestText),
                 .public("missing", missingText),
                 .public("cache", cacheText),
                 .public("trusted", trustedText),
@@ -5965,6 +5989,12 @@ public actor TileClient {
                 await self.loadViewportImages(imageRequests, generation: generation, fetcher: imageFetcher)
             }
         }
+        if !deferredNeeded.isEmpty {
+            let deferred = deferredNeeded
+            viewportPrefetchTask = Task {
+                await self.prefetchViewportRequests(deferred, generation: generation)
+            }
+        }
         return viewportPlaces.values.map(\.mapPlace).sorted(by: { $0.id < $1.id })
     }
 
@@ -5974,6 +6004,10 @@ public actor TileClient {
 
     public func isPresentInCurrentTiles(_ placeID: String) async -> Bool {
         loadedPlaces[placeID] != nil
+    }
+
+    public func currentPlaces() -> [MapPlace] {
+        loadedPlaces.values.map(\.mapPlace).sorted(by: { $0.id < $1.id })
     }
 
     public func placeRef(for placeID: String) async -> PlaceRef? {
@@ -6053,6 +6087,78 @@ public actor TileClient {
         )
         if !loadedImages.isEmpty {
             imageChangeBroadcaster.yield(Set(loadedImages.keys))
+        }
+    }
+
+    private func prefetchViewportRequests(_ requests: [PublishTileRequest], generation: Int) async {
+        var loadedCount = 0
+        var prefetchedPlaces: [String: DecodedPlace] = [:]
+        var prefetchedRequests: [String: PublishTileRequest] = [:]
+        await withTaskGroup(of: TileLoadResult.self) { group in
+            var iterator = requests.makeIterator()
+            for _ in 0..<TileFetchConcurrency.maxConcurrent {
+                guard let request = iterator.next() else { break }
+                group.addTask {
+                    await loadTile(
+                        request: request,
+                        fetcher: self.fetcher,
+                        cache: self.cache,
+                        offlineStore: self.offlineStore
+                    )
+                }
+            }
+            while let result = await group.next() {
+                if Task.isCancelled || generation != viewportGeneration {
+                    group.cancelAll()
+                    return
+                }
+                if case .loaded(let loaded) = result {
+                    loadedCount += 1
+                    if !loaded.decoded.missingAttributionSources.isEmpty {
+                        cache.evictPublish(region: loaded.request.region, publishVersion: loaded.request.publishVersion)
+                        self.pin = nil
+                        clearLoadedPlaceRefs(cancelViewportPrefetch: false)
+                        viewportPrefetchTask = nil
+                        state = .manifestInvalid
+                        MakingTracksLog.resolution.error("viewport prefetch rejected region=\(self.region, privacy: .private(mask: .hash)) reason=missing-attribution sources=\(loaded.decoded.missingAttributionSources.count, privacy: .public)")
+                        viewportChangeBroadcaster.yield(())
+                        group.cancelAll()
+                        return
+                    }
+                    for place in loaded.decoded.places {
+                        let currentRequest = prefetchedRequests[place.mapPlace.id]
+                        if tileRequest(loaded.request, winsOver: currentRequest) {
+                            prefetchedPlaces[place.mapPlace.id] = place
+                            prefetchedRequests[place.mapPlace.id] = loaded.request
+                        }
+                    }
+                }
+                guard let request = iterator.next() else { continue }
+                group.addTask {
+                    await loadTile(
+                        request: request,
+                        fetcher: self.fetcher,
+                        cache: self.cache,
+                        offlineStore: self.offlineStore
+                    )
+                }
+            }
+        }
+        guard !Task.isCancelled, generation == viewportGeneration else { return }
+        var changedPlaceIDs = Set<String>()
+        for (placeID, place) in prefetchedPlaces {
+            guard let request = prefetchedRequests[placeID] else { continue }
+            let currentRequest = loadedPlaceRequests[placeID]
+            if tileRequest(request, winsOver: currentRequest) {
+                loadedPlaces[placeID] = place
+                loadedPlaceRequests[placeID] = request
+                changedPlaceIDs.insert(placeID)
+            }
+        }
+        viewportPrefetchTask = nil
+        MakingTracksLog.resolution.debug("viewport prefetch finished region=\(self.region, privacy: .private(mask: .hash)) loaded=\(loadedCount, privacy: .public) requests=\(requests.count, privacy: .public)")
+        if !changedPlaceIDs.isEmpty {
+            viewportChangeBroadcaster.yield(())
         }
     }
 
@@ -6162,12 +6268,16 @@ public actor TileClient {
         }
     }
 
-    private func clearLoadedPlaceRefs() {
+    private func clearLoadedPlaceRefs(cancelViewportPrefetch: Bool = true) {
         loadedPlaces.removeAll()
         loadedPlaceRequests.removeAll()
         loadedImages.removeAll()
         imageLoadTask?.cancel()
         imageLoadTask = nil
+        if cancelViewportPrefetch {
+            viewportPrefetchTask?.cancel()
+            viewportPrefetchTask = nil
+        }
         recentPlaceRefs.removeAll()
         recentPlaceRefOrder.removeAll()
     }
@@ -6293,6 +6403,29 @@ public actor TileClient {
             ($0.coordinate.x, $0.coordinate.y, $0.region, $0.publishVersion) <
                 ($1.coordinate.x, $1.coordinate.y, $1.region, $1.publishVersion)
         })
+    }
+
+    private func viewportFirstRequests(from requests: [PublishTileRequest], bbox: BBox) -> [PublishTileRequest] {
+        let coreCoordinates = Set(TileCoverage.tiles(for: bbox, prefetchRadius: 0))
+        let coreRequests = requests.filter { coreCoordinates.contains($0.coordinate) }
+        if !coreRequests.isEmpty,
+           coreRequests.count < requests.count,
+           coreRequests.count <= ViewportFirstFetch.maxInitialTileRequests {
+            return coreRequests.sorted(by: viewportFirstSort(center: bbox.center))
+        }
+        guard requests.count > ViewportFirstFetch.maxInitialTileRequests else { return requests }
+        return Array(requests.sorted(by: viewportFirstSort(center: bbox.center)).prefix(ViewportFirstFetch.maxInitialTileRequests))
+    }
+
+    private func viewportFirstSort(center: (lon: Double, lat: Double)) -> (PublishTileRequest, PublishTileRequest) -> Bool {
+        let centerCoordinate = TileCoverage.lonLatToZ10(lat: center.lat, lon: center.lon)
+        return { lhs, rhs in
+            let lhsDistance = tileDistanceSquared(lhs.coordinate, centerCoordinate)
+            let rhsDistance = tileDistanceSquared(rhs.coordinate, centerCoordinate)
+            if lhsDistance != rhsDistance { return lhsDistance < rhsDistance }
+            return (lhs.coordinate.x, lhs.coordinate.y, lhs.region, lhs.publishVersion) <
+                (rhs.coordinate.x, rhs.coordinate.y, rhs.region, rhs.publishVersion)
+        }
     }
 
     private func makeViewportFlowMetrics(in bbox: BBox, zoom: Int) -> ViewportFlowMetrics? {

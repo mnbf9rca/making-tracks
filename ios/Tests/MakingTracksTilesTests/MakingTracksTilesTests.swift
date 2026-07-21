@@ -942,6 +942,105 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(image?.thumbURL.absoluteString, "https://tiles.making-tracks.app/thumbs/ee/\(imageSHA).webp")
     }
 
+    func testTileClientReturnsVisibleCoreBeforePrefetchRingFinishes() async throws {
+        let coreID = "mt1_00000000000000000000000000"
+        let prefetchID = "mt1_00000000000000000000000001"
+        let coreTile = try gzipJSON(tileObject(places: [validPlace(["place_id": coreID])], x: 511, y: 340))
+        let prefetchTile = try gzipJSON(tileObject(places: [validPlace(["place_id": prefetchID])], x: 510, y: 339))
+        let coreSHA = sha256(coreTile)
+        let prefetchSHA = sha256(prefetchTile)
+        var manifest = manifestObject(tileSHA: coreSHA, tileBytes: coreTile.count, attributionSources: [])
+        manifest["tiles"] = [
+            ["x": 510, "y": 339, "sha256": prefetchSHA, "bytes": prefetchTile.count],
+            ["x": 511, "y": 340, "sha256": coreSHA, "bytes": coreTile.count],
+        ]
+        manifest["counts"] = ["total": 2, "by_tier": [2, 0, 0, 0]]
+        let prefetchURL = "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/510/339.json.gz"
+        let fetcher = DelayedSidecarFetcher(
+            delayedURL: prefetchURL,
+            routes: [
+                "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+                "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": jsonData(manifest),
+                "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/511/340.json.gz": coreTile,
+                prefetchURL: prefetchTile,
+            ]
+        )
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache())
+
+        try await client.refreshPin()
+        var viewportChanges = client.viewportChanges.makeAsyncIterator()
+        let viewportChangeTask = Task { await viewportChanges.next() }
+        let placesTask = Task {
+            await client.places(
+                inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51),
+                zoom: 16
+            )
+        }
+
+        let places = try await taskValue(placesTask, timeoutNanoseconds: 500_000_000)
+        XCTAssertEqual(places.map(\.id), [coreID])
+        let didRequestPrefetch = try await waitForRequestedURL(fetcher, prefetchURL)
+        XCTAssertTrue(didRequestPrefetch)
+
+        await fetcher.releaseDelayedFetch()
+        let viewportChange: Void? = try await taskValue(viewportChangeTask, timeoutNanoseconds: 1_000_000_000)
+        XCTAssertNotNil(viewportChange)
+        let currentPlaces = await client.currentPlaces()
+        XCTAssertEqual(currentPlaces.map(\.id), [coreID, prefetchID])
+    }
+
+    func testTileClientNotifiesWhenDeferredPrefetchInvalidatesManifest() async throws {
+        let coreID = "mt1_00000000000000000000000000"
+        let prefetchID = "mt1_00000000000000000000000001"
+        let coreTile = try gzipJSON(tileObject(places: [validPlace(["place_id": coreID])], x: 511, y: 340))
+        let prefetchTile = try gzipJSON(tileObject(
+            places: [validPlace(["place_id": prefetchID, "source_refs": ["osm:node/5"]])],
+            x: 510,
+            y: 339
+        ))
+        let coreSHA = sha256(coreTile)
+        let prefetchSHA = sha256(prefetchTile)
+        var manifest = manifestObject(tileSHA: coreSHA, tileBytes: coreTile.count, attributionSources: ["wd"])
+        manifest["tiles"] = [
+            ["x": 510, "y": 339, "sha256": prefetchSHA, "bytes": prefetchTile.count],
+            ["x": 511, "y": 340, "sha256": coreSHA, "bytes": coreTile.count],
+        ]
+        manifest["counts"] = ["total": 2, "by_tier": [2, 0, 0, 0]]
+        let prefetchURL = "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/510/339.json.gz"
+        let fetcher = DelayedSidecarFetcher(
+            delayedURL: prefetchURL,
+            routes: [
+                "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+                "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": jsonData(manifest),
+                "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/511/340.json.gz": coreTile,
+                prefetchURL: prefetchTile,
+            ]
+        )
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache())
+
+        try await client.refreshPin()
+        var viewportChanges = client.viewportChanges.makeAsyncIterator()
+        let viewportChangeTask = Task { await viewportChanges.next() }
+        let places = await client.places(
+            inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51),
+            zoom: 16
+        )
+
+        XCTAssertEqual(places.map(\.id), [coreID])
+        let currentBeforePrefetch = await client.currentPlaces()
+        XCTAssertEqual(currentBeforePrefetch.map(\.id), [coreID])
+        let didRequestPrefetch = try await waitForRequestedURL(fetcher, prefetchURL)
+        XCTAssertTrue(didRequestPrefetch)
+
+        await fetcher.releaseDelayedFetch()
+        let viewportChange: Void? = try await taskValue(viewportChangeTask, timeoutNanoseconds: 1_000_000_000)
+        XCTAssertNotNil(viewportChange)
+        let currentAfterPrefetch = await client.currentPlaces()
+        let stateAfterPrefetch = await client.loadState
+        XCTAssertEqual(currentAfterPrefetch, [])
+        XCTAssertEqual(stateAfterPrefetch, .manifestInvalid)
+    }
+
     func testTileClientWritesPrivacyScopedViewportBreadcrumbs() async throws {
         let placeID = "mt1_00000000000000000000000000"
         let tile = try gzipJSON(tileObject(places: [validPlace(["place_id": placeID])]))
@@ -6042,6 +6141,20 @@ private func waitForPlaceImage(
 
 private func waitForRequestedURL(
     _ fetcher: StubFetcher,
+    _ url: String,
+    attempts: Int = 40
+) async throws -> Bool {
+    for _ in 0..<attempts {
+        if fetcher.requestedURLs.contains(url) {
+            return true
+        }
+        try await Task.sleep(nanoseconds: 50_000_000)
+    }
+    return false
+}
+
+private func waitForRequestedURL(
+    _ fetcher: DelayedSidecarFetcher,
     _ url: String,
     attempts: Int = 40
 ) async throws -> Bool {
