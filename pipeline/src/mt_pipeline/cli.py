@@ -184,6 +184,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="upload staged publish artifacts to R2 after local staging",
     )
+    parser.add_argument(
+        "--upload-workers",
+        type=int,
+        help="bounded worker count for publish R2 validate/reuse and data-object upload; defaults to MT_R2_UPLOAD_WORKERS or 16",
+    )
     return parser
 
 def _normalize_argv(argv: Sequence[str] | None) -> list[str]:
@@ -2138,6 +2143,7 @@ def _run_pipeline_command(args) -> int:
             no_image_fetch=args.no_image_fetch,
             no_zone_catalog=args.no_zone_catalog,
             reuse_existing_thumbs=args.reuse_existing_thumbs,
+            upload_workers=args.upload_workers,
             fingerprint_inputs=fingerprint_inputs,
             force=args.force,
         )

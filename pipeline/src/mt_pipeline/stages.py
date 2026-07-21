@@ -184,6 +184,7 @@ def run_stage(
     no_image_fetch: bool = False,
     no_zone_catalog: bool = False,
     reuse_existing_thumbs: bool = False,
+    upload_workers: int | None = None,
     fingerprint_inputs=None,
     force: bool = False,
 ) -> None:
@@ -264,6 +265,7 @@ def run_stage(
                 no_image_fetch=no_image_fetch,
                 no_zone_catalog=no_zone_catalog,
                 reuse_existing_thumbs=reuse_existing_thumbs,
+                upload_workers=upload_workers,
                 **kwargs,
             )
         except (

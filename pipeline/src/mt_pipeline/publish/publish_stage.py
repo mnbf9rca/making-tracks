@@ -73,6 +73,7 @@ def run(
     no_image_fetch: bool = False,
     no_zone_catalog: bool = False,
     reuse_existing_thumbs: bool = False,
+    upload_workers: int | None = None,
 ) -> PublishStageResult:
     staging_root = pathlib.Path(staging_root)
     r2.validate_path_components(region, publish_version)
@@ -227,6 +228,7 @@ def run(
             region_index_path,
             layout,
             reuse_existing_thumbs=reuse_existing_thumbs,
+            upload_workers=upload_workers,
         )
         parent_result = replace(
             parent_result, publish_result=prepared.target_results[0]
