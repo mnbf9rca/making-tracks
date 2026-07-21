@@ -545,6 +545,34 @@ final class AppShellTests: XCTestCase {
         }
     }
 
+    func testListMapViewportUsesFilteredTrackContextWhenVisitFilterIsActive() {
+        let places = [
+            MapPlace(id: "kept", lat: 3.12, lon: 101.60, tier: 2, category: "museum"),
+            MapPlace(id: "nearby", lat: 3.13, lon: 101.61, tier: 2, category: "museum"),
+            MapPlace(id: "far", lat: 4.20, lon: 102.80, tier: 2, category: "museum"),
+        ]
+        let features = places.map { ($0, PinState(saved: false, visit: .visited)) }
+        let context = TrackGeometryContext(visits: [
+            trackVisit(id: 1, placeID: "kept", seconds: 0),
+        ])
+
+        let viewportPlaces = ListMapViewport.places(
+            for: features,
+            showVisited: true,
+            visitFilter: TracksVisitFilter(lovedOnly: true),
+            context: context
+        )
+
+        XCTAssertEqual(viewportPlaces.map(\.id), ["kept"])
+    }
+
+    func testTrackVisitRowsUseCompactInlineControls() {
+        XCTAssertTrue(TrackVisitRowDensitySpec.usesInlineEditControls)
+        XCTAssertFalse(TrackVisitRowDensitySpec.showsStandaloneDateLabel)
+        XCTAssertLessThanOrEqual(TrackVisitRowDensitySpec.verticalSpacing, 4)
+        XCTAssertLessThanOrEqual(TrackVisitRowDensitySpec.minimumHeight, 52)
+    }
+
     func testListMapPinPresentationTracksModeUsesFullStrengthPins() {
         XCTAssertEqual(ListMapPinPresentation.presentation(showVisited: true), .tracks)
         XCTAssertEqual(ListMapPinPresentation.presentation(showVisited: false), .discovery)

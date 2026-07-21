@@ -479,6 +479,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let slider = app.sliders["map.track-replay.slider"]
         XCTAssertTrue(slider.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(slider.frame.midY, map.frame.midY)
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifierPrefix: "place-card.").firstMatch.exists)
         XCTAssertTrue(app.staticTexts["map.track-replay.selected-time"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["map.track-replay.start-time"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["map.track-replay.end-time"].waitForExistence(timeout: 5))

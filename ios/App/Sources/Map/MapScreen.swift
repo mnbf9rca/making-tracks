@@ -708,6 +708,14 @@ struct TracksCopy {
     }
 }
 
+enum TrackVisitRowDensitySpec {
+    static let usesInlineEditControls = true
+    static let showsStandaloneDateLabel = false
+    static let verticalSpacing: CGFloat = 4
+    static let horizontalSpacing: CGFloat = 8
+    static let minimumHeight: CGFloat = 48
+}
+
 struct TrackVisitDaySection: Identifiable, Equatable {
     let day: Date
     let visits: [TrackVisit]
@@ -1414,6 +1422,19 @@ struct ViewportRefreshTracker: Equatable {
 }
 
 enum ListMapViewport {
+    static func places(
+        for features: [(MapPlace, PinState)],
+        showVisited: Bool,
+        visitFilter: TracksVisitFilter,
+        context: TrackGeometryContext
+    ) -> [MapPlace] {
+        guard showVisited, visitFilter.isActive else {
+            return features.map(\.0)
+        }
+        let filteredPlaceIDs = Set(context.visits.map(\.placeID))
+        return features.map(\.0).filter { filteredPlaceIDs.contains($0.id) }
+    }
+
     static func viewport(for places: [MapPlace]) -> ViewportSeed? {
         guard let first = places.first else { return nil }
         var minLat = first.lat
@@ -3477,13 +3498,14 @@ struct MapScreen: View {
         isTrackFilterPickerPresented = false
         stopMapTrackAutoplay()
         Task { @MainActor in
-            await refreshActiveListMap()
+            await refreshActiveListMap(updateCamera: true)
         }
     }
 
     @MainActor
     private func showListOnMap(_ list: PlaceList, filter: TracksVisitFilter = .all) async {
         guard let id = list.id else { return }
+        cardPresentation.dismiss()
         activeListMap = ActiveListMap(listID: id, name: list.name, kind: list.kind, visitFilter: filter, showVisited: true)
         await refreshActiveListMap(updateCamera: true)
     }
@@ -3528,7 +3550,13 @@ struct MapScreen: View {
             clearTrackReplay()
         }
         stateEpoch += 1
-        if updateCamera, let viewport = ListMapViewport.viewport(for: next.map(\.0)) {
+        let viewportPlaces = ListMapViewport.places(
+            for: next,
+            showVisited: list.showVisited,
+            visitFilter: list.visitFilter,
+            context: nextTrackContext
+        )
+        if updateCamera, let viewport = ListMapViewport.viewport(for: viewportPlaces) {
             nextListCameraRequestID += 1
             listCameraRequest = ViewportCameraRequest(id: nextListCameraRequestID, viewport: viewport, fitBounds: true)
         }
@@ -4647,48 +4675,33 @@ private struct ListDetailView: View {
     }
 
     private func trackVisitRow(_ visit: TrackVisit) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "mappin.circle.fill")
-                    .foregroundStyle(Color.secondary)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: visit.name)
-                        .font(.body)
-                    Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitedAt(visit))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
-                }
-                .layoutPriority(1)
-                Spacer()
-                Button {
-                    Task { await setLoved(visit) }
-                } label: {
-                    Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
-                }
-                .buttonStyle(.bordered)
-                .fixedSize()
-                .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
-                .accessibilityIdentifier("lists.detail.track.row.loved.\(visit.id)")
+        HStack(alignment: .center, spacing: TrackVisitRowDensitySpec.horizontalSpacing) {
+            Image(systemName: "mappin.circle.fill")
+                .foregroundStyle(Color.secondary)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: TrackVisitRowDensitySpec.verticalSpacing) {
+                Text(verbatim: visit.name)
+                    .font(.body)
+                    .lineLimit(1)
+                Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitedAt(visit))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
+            .layoutPriority(1)
+
+            Spacer(minLength: 4)
 
             visitEditControls(visit)
         }
-        .frame(minHeight: 44, alignment: .leading)
+        .frame(minHeight: TrackVisitRowDensitySpec.minimumHeight, alignment: .leading)
     }
 
     @ViewBuilder
     private func visitEditControls(_ visit: TrackVisit) -> some View {
-        VStack(spacing: 6) {
-            Text("Visit date")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("lists.detail.track.row.date.\(visit.id).label")
-
+        HStack(spacing: 6) {
             DatePicker(
                 "Visit date",
                 selection: Binding(
@@ -4708,17 +4721,28 @@ private struct ListDetailView: View {
                     .accessibilityIdentifier("lists.detail.track.row.date.\(visit.id)")
             }
 
-            HStack(spacing: 6) {
-                Button(role: .destructive) {
-                    Task { await deleteVisit(visit) }
-                } label: {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.bordered)
-                .accessibilityLabel("Delete \(visit.name), \(formattedVisitedAt(visit))")
-                .accessibilityIdentifier("lists.detail.track.row.delete.\(visit.id)")
+            Button {
+                Task { await setLoved(visit) }
+            } label: {
+                Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
             }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .fixedSize()
+            .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
+            .accessibilityIdentifier("lists.detail.track.row.loved.\(visit.id)")
+
+            Button(role: .destructive) {
+                Task { await deleteVisit(visit) }
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .accessibilityLabel("Delete \(visit.name), \(formattedVisitedAt(visit))")
+            .accessibilityIdentifier("lists.detail.track.row.delete.\(visit.id)")
         }
+        .controlSize(.small)
         .fixedSize()
     }
 
