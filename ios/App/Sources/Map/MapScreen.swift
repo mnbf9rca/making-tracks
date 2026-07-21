@@ -2076,10 +2076,16 @@ struct MapScreen: View {
             }
         }
         .task {
-            await start()
-            Task { await refreshStorageMenuStatus() }
+            ensureModel()
             if let model {
-                await observeChanges(from: model)
+                async let dataChanges: Void = observeChanges(from: model)
+                async let viewportChanges: Void = observeViewportChanges(from: model)
+                await start()
+                Task { await refreshStorageMenuStatus() }
+                _ = await (dataChanges, viewportChanges)
+            } else {
+                await start()
+                Task { await refreshStorageMenuStatus() }
             }
         }
         .onChange(of: appShell.isMenuPresented) { _, isPresented in
@@ -3113,15 +3119,7 @@ struct MapScreen: View {
         let startedAt = Date()
         let fixture = isFixtureMap
         MakingTracksLog.startup.info("map start started fixture=\(fixture, privacy: .public)")
-        if model == nil {
-            model = try? MapScreenModel(
-                database: database,
-                fixturePlaces: isFixtureMap ? Self.uiTestingFixturePlaces(dense: debugUseDenseFixturePins) : [],
-                forceTileNetworkOffline: debugForceTileNetworkOffline
-            )
-            let hasModel = model != nil
-            MakingTracksLog.startup.info("map model initialized available=\(hasModel, privacy: .public)")
-        }
+        ensureModel()
         model?.setShowHidden(layerVisibility.showHiddenPlaces)
         appliedShowHiddenPlaces = layerVisibility.showHiddenPlaces
 #if DEBUG
@@ -3167,6 +3165,18 @@ struct MapScreen: View {
         let finalState = loadState.rawValue
         let featureCount = features.count
         MakingTracksLog.startup.info("map start finished state=\(finalState, privacy: .public) features=\(featureCount, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
+    }
+
+    private func ensureModel() {
+        if model == nil {
+            model = try? MapScreenModel(
+                database: database,
+                fixturePlaces: isFixtureMap ? Self.uiTestingFixturePlaces(dense: debugUseDenseFixturePins) : [],
+                forceTileNetworkOffline: debugForceTileNetworkOffline
+            )
+            let hasModel = model != nil
+            MakingTracksLog.startup.info("map model initialized available=\(hasModel, privacy: .public)")
+        }
     }
 
     @MainActor
@@ -3360,6 +3370,37 @@ struct MapScreen: View {
             }
             await refreshTrackGeometry()
             await refreshFixtureVisitCount()
+        }
+    }
+
+    private func observeViewportChanges(from model: MapScreenModel) async {
+        for await _ in model.viewportChanges {
+            guard !Task.isCancelled else { return }
+            guard await MainActor.run(body: { activeListMap == nil }) else { continue }
+            let viewportFeatures = await model.currentViewportFeatures()
+            let next = viewportFeatures.display
+            let nextSourceFeatureCount = viewportFeatures.sourceCount
+            let nextNearbyPromptFeatures = viewportFeatures.nearbyPrompt
+            let nextRegionPMTilesURL = await model.pmtilesURL
+            let nextAttribution = await model.attribution
+            let nextLoadState = await model.loadState
+            var nextNearbyPromptNames: [String: String] = [:]
+            for (place, _) in nextNearbyPromptFeatures {
+                if let card = await model.cardModel(for: place.id) {
+                    nextNearbyPromptNames[place.id] = card.name
+                }
+            }
+            await MainActor.run {
+                guard activeListMap == nil else { return }
+                features = next
+                sourceFeatureCount = nextSourceFeatureCount
+                nearbyPromptFeatures = nextNearbyPromptFeatures
+                nearbyPromptNames = nextNearbyPromptNames
+                listMapPinNames = [:]
+                regionPMTilesURL = nextRegionPMTilesURL
+                attribution = nextAttribution
+                loadState = nextLoadState
+            }
         }
     }
 
@@ -6092,7 +6133,7 @@ private struct ListPickerView: View {
                 }
 
                 Section {
-                    ForEach(lists.filter { !$0.isSystem }) { list in
+                    ForEach(ListPickerTargetLists.options(from: lists)) { list in
                         Button {
                             Task { await toggle(list) }
                         } label: {
@@ -6146,8 +6187,14 @@ private struct ListPickerView: View {
     @MainActor
     private func createAndAdd() async {
         guard let model else { return }
+        actionError = nil
+        let trimmedName = newListName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            actionError = "Enter a list name."
+            return
+        }
         do {
-            let list = try await model.createList(named: newListName)
+            let list = try await model.createList(named: trimmedName)
             guard let id = list.id else { throw AppDatabaseError.unreadableDatabase }
             try await model.addToList(placeID: placeID, listID: id)
             newListName = ""
@@ -6840,7 +6887,11 @@ private struct PlaceCardSheet: View {
 
     private func saveButton(_ card: PlaceCardModel) -> some View {
         Button {
-            startAction { await setSaved(!card.pinState.saved) }
+            if card.pinState.saved {
+                startAction { await setSaved(false) }
+            } else {
+                showListPicker = true
+            }
         } label: {
             actionLabel(.save, title: card.pinState.saved ? "Saved" : "Save")
         }
@@ -7251,6 +7302,46 @@ enum ListDetailVisitActions {
     }
 }
 
+private final class MapScreenAsyncBroadcaster<Element: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var nextID = 0
+    private var continuations: [Int: AsyncStream<Element>.Continuation] = [:]
+
+    func stream() -> AsyncStream<Element> {
+        AsyncStream { continuation in
+            let id = lock.withLock {
+                let id = nextID
+                nextID += 1
+                continuations[id] = continuation
+                return id
+            }
+            continuation.onTermination = { [weak self] _ in
+                self?.lock.withLock {
+                    self?.continuations[id] = nil
+                }
+            }
+        }
+    }
+
+    func yield(_ value: Element) {
+        let snapshot = lock.withLock { Array(continuations.values) }
+        for continuation in snapshot {
+            continuation.yield(value)
+        }
+    }
+}
+
+enum ListPickerTargetLists {
+    static func options(from lists: [PlaceList]) -> [PlaceList] {
+        lists.filter(canStoreMembership)
+    }
+
+    private static func canStoreMembership(_ list: PlaceList) -> Bool {
+        if !list.isSystem { return true }
+        return list.kind == PlaceList.defaultKind && list.name == AppDatabase.wantToGoListName
+    }
+}
+
 @MainActor
 final class MapScreenModel {
     private let database: AppDatabase
@@ -7261,6 +7352,8 @@ final class MapScreenModel {
     private let fixturePlaces: [String: PlaceRef]
     private let coreLoop: CoreLoopController
     private var tileClients: [MapRegion: TileClient] = [:]
+    private var tileClientViewportTasks: [MapRegion: Task<Void, Never>] = [:]
+    private let viewportChangeBroadcaster = MapScreenAsyncBroadcaster<Void>()
     private var selectedRegion: MapRegion = .malaysiaSingaporeBrunei
     private var hiddenTracker: HiddenMembershipTracker
     private var showHiddenPlaces = false
@@ -7269,6 +7362,10 @@ final class MapScreenModel {
 
     var imageChanges: AsyncStream<Set<String>>? {
         tileClient(for: selectedRegion)?.imageChanges
+    }
+
+    var viewportChanges: AsyncStream<Void> {
+        viewportChangeBroadcaster.stream()
     }
 
     init(
@@ -7716,6 +7813,45 @@ final class MapScreenModel {
         )
     }
 
+    func currentViewportFeatures() async -> ViewportFeatures {
+        if !fixturePlaces.isEmpty {
+            let sortedFixtures = fixturePlaces.values.sorted { $0.placeID < $1.placeID }
+            let states = await states(for: Set(sortedFixtures.map(\.placeID)))
+            let sourceFeatures = sortedFixtures.map { fixturePlace in
+                let place = MapPlace(
+                    id: fixturePlace.placeID,
+                    lat: fixturePlace.lat,
+                    lon: fixturePlace.lon,
+                    tier: fixturePlace.tier,
+                    category: fixturePlace.category
+                )
+                return (place, states[fixturePlace.placeID] ?? PinState(saved: false, visit: .none))
+            }
+            return ViewportFeatures(
+                display: PinFeatureFilter.discoveryFeatures(sourceFeatures, showHidden: showHiddenPlaces),
+                nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures),
+                sourceCount: sourceFeatures.count,
+                flowMetrics: nil
+            )
+        }
+        guard let client = tileClient(for: selectedRegion) else {
+            return ViewportFeatures(display: [], nearbyPrompt: [], sourceCount: 0, flowMetrics: nil)
+        }
+        let places = await client.currentPlaces()
+        let ids = places.map(\.id)
+        let states = await states(for: Set(ids))
+        let sourceFeatures = places.map { ($0, states[$0.id] ?? PinState(saved: false, visit: .none)) }
+        return ViewportFeatures(
+            display: PinFeatureFilter.discoveryFeatures(
+                sourceFeatures,
+                showHidden: showHiddenPlaces
+            ),
+            nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures),
+            sourceCount: sourceFeatures.count,
+            flowMetrics: nil
+        )
+    }
+
     func setShowHidden(_ showHidden: Bool) {
         showHiddenPlaces = showHidden
     }
@@ -8061,6 +8197,16 @@ final class MapScreenModel {
             offlineStore: offlineStore
         )
         tileClients[region] = client
+        let viewportChanges = client.viewportChanges
+        tileClientViewportTasks[region]?.cancel()
+        tileClientViewportTasks[region] = Task { [weak self] in
+            for await _ in viewportChanges {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self?.viewportChangeBroadcaster.yield(())
+                }
+            }
+        }
         let regionID = region.rawValue
         let hasOfflineStore = offlineStore != nil
         MakingTracksLog.startup.info("tile client created region=\(regionID, privacy: .private(mask: .hash)) offlineStore=\(hasOfflineStore, privacy: .public)")

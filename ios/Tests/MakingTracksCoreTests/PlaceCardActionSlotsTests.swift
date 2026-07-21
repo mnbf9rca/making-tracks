@@ -29,7 +29,7 @@ final class PlaceCardActionSlotsTests: XCTestCase {
     func testSaveActionHintsSecondaryListPickerGesture() {
         XCTAssertEqual(
             PlaceCardAction.save.accessibilityHint(isSaved: false),
-            "Double-tap to save, double-tap and hold to choose list."
+            "Double-tap to choose list."
         )
         XCTAssertEqual(
             PlaceCardAction.save.accessibilityHint(isSaved: true),

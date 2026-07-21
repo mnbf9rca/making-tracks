@@ -21,6 +21,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "card-open")
 
         app.buttons["place-card.save"].tap()
+        XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
+        let wantToGoRow = app.buttons["Want to go"]
+        XCTAssertTrue(wantToGoRow.waitForExistence(timeout: 5))
+        wantToGoRow.tap()
+        app.buttons["list-picker.done"].tap()
         app.buttons["place-card.visited"].tap()
         XCTAssertTrue(app.buttons["place-card.loved"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["place-card.loved"].label, "Love")
@@ -285,10 +290,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(saveButton.waitForExistence(timeout: 5))
         saveButton.press(forDuration: 1.0)
         XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Want to go"].waitForExistence(timeout: 5))
+        app.buttons["list-picker.create"].tap()
+        let listPickerError = app.staticTexts["list-picker.error"]
+        XCTAssertTrue(listPickerError.waitForExistence(timeout: 5))
+        XCTAssertEqual(listPickerError.label, "Enter a list name.")
         app.textFields["list-picker.new-name"].tap()
         app.textFields["list-picker.new-name"].typeText("KL walk")
         app.buttons["list-picker.create"].tap()
         XCTAssertTrue(app.buttons.matching(identifierPrefix: "list-picker.row.").firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(listPickerError.exists)
         app.buttons["list-picker.done"].tap()
 
         let savedButton = app.otherElements["place-card.action-bar"].buttons["place-card.save"]
