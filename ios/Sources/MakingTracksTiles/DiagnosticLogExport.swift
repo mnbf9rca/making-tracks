@@ -92,6 +92,21 @@ struct DiagnosticLogSnapshot: Equatable, Sendable {
     }
 }
 
+struct DiagnosticLogWindowedSnapshot: Equatable, Sendable {
+    var window: DiagnosticLogWindow
+    var snapshot: DiagnosticLogSnapshot
+}
+
+struct DiagnosticVisiblePreview: Equatable, Sendable {
+    var text: String
+    var logLineCount: Int
+    var omittedLogLineCount: Int
+
+    var isCapped: Bool {
+        omittedLogLineCount > 0
+    }
+}
+
 public enum DiagnosticLogExportError: Error, Equatable {
     case privacyScrubFailed
 }
@@ -163,38 +178,23 @@ public final class DiagnosticLogStore {
     func sessionCoveringWindow(preferredWindow: DiagnosticLogWindow) throws -> DiagnosticLogWindow {
         lock.lock()
         defer { lock.unlock() }
-        let current = logURL
-        guard fileManager.fileExists(atPath: current.path) else {
-            return preferredWindow
-        }
-        let text = try String(contentsOf: current, encoding: .utf8)
-        let dates = text
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .compactMap { Self.dateFromLine(String($0)) }
-        guard !dates.isEmpty else { return preferredWindow }
-
-        return DiagnosticLogWindow.sessionCoveringCandidates(from: preferredWindow)
-            .first { candidate in
-                dates.allSatisfy { candidate.contains($0, relativeTo: now()) }
-            } ?? .everything
+        let allLines = try readAllLinesLocked()
+        return sessionCoveringWindowLocked(preferredWindow: preferredWindow, allLines: allLines)
     }
 
     func snapshot(window: DiagnosticLogWindow) throws -> DiagnosticLogSnapshot {
         lock.lock()
         defer { lock.unlock() }
-        let current = logURL
-        guard fileManager.fileExists(atPath: current.path) else {
-            return DiagnosticLogSnapshot(totalLineCount: 0, lines: [])
-        }
-        let text = try String(contentsOf: current, encoding: .utf8)
-        let allLines = text
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .map(String.init)
-        let windowLines = allLines.filter { line in
-            guard let date = Self.dateFromLine(line) else { return true }
-            return window.contains(date, relativeTo: now())
-        }
-        return DiagnosticLogSnapshot(totalLineCount: allLines.count, lines: windowLines)
+        let allLines = try readAllLinesLocked()
+        return snapshotLocked(window: window, allLines: allLines)
+    }
+
+    func snapshotCoveringCurrentSession(preferredWindow: DiagnosticLogWindow) throws -> DiagnosticLogWindowedSnapshot {
+        lock.lock()
+        defer { lock.unlock() }
+        let allLines = try readAllLinesLocked()
+        let window = sessionCoveringWindowLocked(preferredWindow: preferredWindow, allLines: allLines)
+        return DiagnosticLogWindowedSnapshot(window: window, snapshot: snapshotLocked(window: window, allLines: allLines))
     }
 
     func appendRawLineForTesting(_ line: String) throws {
@@ -203,6 +203,33 @@ public final class DiagnosticLogStore {
 
     private var logURL: URL {
         root.appendingPathComponent("making-tracks.log", isDirectory: false)
+    }
+
+    private func readAllLinesLocked() throws -> [String] {
+        let current = logURL
+        guard fileManager.fileExists(atPath: current.path) else { return [] }
+        let text = try String(contentsOf: current, encoding: .utf8)
+        return text
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map(String.init)
+    }
+
+    private func sessionCoveringWindowLocked(preferredWindow: DiagnosticLogWindow, allLines: [String]) -> DiagnosticLogWindow {
+        let dates = allLines.compactMap { Self.dateFromLine($0) }
+        guard !dates.isEmpty else { return preferredWindow }
+        return DiagnosticLogWindow.sessionCoveringCandidates(from: preferredWindow)
+            .first { candidate in
+                dates.allSatisfy { candidate.contains($0, relativeTo: now()) }
+            } ?? .everything
+    }
+
+    private func snapshotLocked(window: DiagnosticLogWindow, allLines: [String]) -> DiagnosticLogSnapshot {
+        let referenceNow = now()
+        let windowLines = allLines.filter { line in
+            guard let date = Self.dateFromLine(line) else { return true }
+            return window.contains(date, relativeTo: referenceNow)
+        }
+        return DiagnosticLogSnapshot(totalLineCount: allLines.count, lines: windowLines)
     }
 
     private func appendRawLine(_ line: String) throws {
@@ -253,6 +280,8 @@ public final class DiagnosticLogStore {
 }
 
 public struct DiagnosticLogExporter {
+    private static let maxVisiblePreviewLogLines = 100
+
     private let store: DiagnosticLogStore
     private let metadata: DiagnosticLogMetadata
     private let fileManager: FileManager
@@ -271,6 +300,10 @@ public struct DiagnosticLogExporter {
     }
 
     public func prepare(window: DiagnosticLogWindow, stagingRoot: URL) throws -> DiagnosticLogArtifact {
+        try prepare(windowedSnapshot: DiagnosticLogWindowedSnapshot(window: window, snapshot: store.snapshot(window: window)), stagingRoot: stagingRoot)
+    }
+
+    private func prepare(windowedSnapshot: DiagnosticLogWindowedSnapshot, stagingRoot: URL) throws -> DiagnosticLogArtifact {
         if fileManager.fileExists(atPath: stagingRoot.path) {
             try fileManager.removeItem(at: stagingRoot)
         }
@@ -283,41 +316,47 @@ public struct DiagnosticLogExporter {
             let summaryURL = directory.appendingPathComponent("summary-\(exportTimestamp).txt")
             let logURL = directory.appendingPathComponent("diagnostic-log-\(exportTimestamp).txt")
 
-            let snapshot = try store.snapshot(window: window)
+            let window = windowedSnapshot.window
+            let snapshot = windowedSnapshot.snapshot
             let log = snapshot.lines.joined(separator: "\n") + "\n"
             let summary = renderSummary(
                 window: window,
                 snapshot: snapshot,
                 scrubStatus: "pending",
                 previewLineCount: 0,
-                previewLogLineCount: 0
+                previewLogLineCount: 0,
+                omittedPreviewLogLineCount: 0
             )
             let scrubText = [summary, log].joined(separator: "\n")
             guard Self.passesPrivacyScrub(scrubText) else {
                 throw DiagnosticLogExportError.privacyScrubFailed
             }
             let previewLogLineCount = Self.lineCount(in: log)
+            let visiblePreview = renderVisiblePreview(summary: summary, logLines: snapshot.lines)
             let summaryForPreviewCounts = renderSummary(
                 window: window,
                 snapshot: snapshot,
                 scrubStatus: "passed",
                 previewLineCount: 0,
-                previewLogLineCount: previewLogLineCount
+                previewLogLineCount: previewLogLineCount,
+                omittedPreviewLogLineCount: visiblePreview.omittedLogLineCount
             )
-            let previewLineCount = Self.lineCount(in: renderPreview(summary: summaryForPreviewCounts, log: log))
+            let visiblePreviewForCounts = renderVisiblePreview(summary: summaryForPreviewCounts, logLines: snapshot.lines)
+            let previewLineCount = Self.lineCount(in: visiblePreviewForCounts.text)
             let exportedSummary = renderSummary(
                 window: window,
                 snapshot: snapshot,
                 scrubStatus: "passed",
                 previewLineCount: previewLineCount,
-                previewLogLineCount: previewLogLineCount
+                previewLogLineCount: previewLogLineCount,
+                omittedPreviewLogLineCount: visiblePreview.omittedLogLineCount
             )
+            let exportedVisiblePreview = renderVisiblePreview(summary: exportedSummary, logLines: snapshot.lines)
 
             try exportedSummary.write(to: summaryURL, atomically: true, encoding: .utf8)
             try log.write(to: logURL, atomically: true, encoding: .utf8)
             let archiveURL = try makeArchive(directory: directory, stagingRoot: stagingRoot, exportTimestamp: exportTimestamp)
             let byteCount = try archiveByteCount(archiveURL)
-            let preview = renderPreview(summary: exportedSummary, log: log)
 
             return DiagnosticLogArtifact(
                 directoryURL: directory,
@@ -325,7 +364,7 @@ public struct DiagnosticLogExporter {
                 summaryURL: summaryURL,
                 logURL: logURL,
                 byteCount: byteCount,
-                preview: preview
+                preview: exportedVisiblePreview.text
             )
         } catch {
             if fileManager.fileExists(atPath: stagingRoot.path) {
@@ -339,8 +378,8 @@ public struct DiagnosticLogExporter {
         preferredWindow: DiagnosticLogWindow,
         stagingRoot: URL
     ) throws -> DiagnosticLogArtifact {
-        let window = try store.sessionCoveringWindow(preferredWindow: preferredWindow)
-        return try prepare(window: window, stagingRoot: stagingRoot)
+        let snapshot = try store.snapshotCoveringCurrentSession(preferredWindow: preferredWindow)
+        return try prepare(windowedSnapshot: snapshot, stagingRoot: stagingRoot)
     }
 
     private func makeArchive(directory: URL, stagingRoot: URL, exportTimestamp: String) throws -> URL {
@@ -381,7 +420,8 @@ public struct DiagnosticLogExporter {
         snapshot: DiagnosticLogSnapshot,
         scrubStatus: String,
         previewLineCount: Int,
-        previewLogLineCount: Int
+        previewLogLineCount: Int,
+        omittedPreviewLogLineCount: Int
     ) -> String {
         var lines = [
             "Making Tracks diagnostics",
@@ -398,16 +438,28 @@ public struct DiagnosticLogExporter {
         lines.append("log-stage=window input-lines=\(snapshot.totalLineCount) output-lines=\(snapshot.windowLineCount) window=\(window.exportLabel)")
         lines.append("log-stage=scrub input-log-lines=\(snapshot.windowLineCount) output-log-lines=\(snapshot.windowLineCount) status=\(scrubStatus)")
         lines.append("log-stage=preview lines=\(previewLineCount) log-lines=\(previewLogLineCount)")
+        let visiblePreviewStatus = omittedPreviewLogLineCount > 0 ? "capped" : "complete"
+        lines.append("visible-preview=\(visiblePreviewStatus) max-log-lines=\(Self.maxVisiblePreviewLogLines) omitted-log-lines=\(omittedPreviewLogLineCount)")
         return lines.joined(separator: "\n") + "\n"
     }
 
-    private func renderPreview(summary: String, log: String) -> String {
-        [
+    private func renderVisiblePreview(summary: String, logLines: [String]) -> DiagnosticVisiblePreview {
+        let omittedLineCount = max(0, logLines.count - Self.maxVisiblePreviewLogLines)
+        let visibleLogLines = Array(logLines.suffix(Self.maxVisiblePreviewLogLines))
+        var parts = [
             "metadata:",
             summary.trimmingCharacters(in: .whitespacesAndNewlines),
             "log:",
-            log.trimmingCharacters(in: .whitespacesAndNewlines),
-        ].joined(separator: "\n")
+        ]
+        if omittedLineCount > 0 {
+            parts.append("preview capped: showing last \(visibleLogLines.count) of \(logLines.count) log lines; full log is in the archive.")
+        }
+        parts.append(visibleLogLines.joined(separator: "\n"))
+        return DiagnosticVisiblePreview(
+            text: parts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines),
+            logLineCount: visibleLogLines.count,
+            omittedLogLineCount: omittedLineCount
+        )
     }
 
     private static func passesPrivacyScrub(_ text: String) -> Bool {

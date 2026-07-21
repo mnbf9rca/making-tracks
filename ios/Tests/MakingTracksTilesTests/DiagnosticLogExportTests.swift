@@ -236,6 +236,37 @@ final class DiagnosticLogExportTests: XCTestCase {
         XCTAssertTrue(summary.contains("log-stage=window input-lines=1 output-lines=1 window=last-hour"), summary)
     }
 
+    func testLargeDeviceShapedExportCapsVisiblePreviewButKeepsFullArchiveLog() throws {
+        let fixture = try makeFixture()
+        let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
+        let lineCount = 2_500
+
+        for index in 0..<lineCount {
+            try store.appendRawLineForTesting(
+                "2026-07-19T12:05:13Z flow info place viewed placeID=mt1_000000000000000000\(String(format: "%06d", index)) placeName=Long Device Session Card \(index) source=card"
+            )
+        }
+
+        let artifact = try DiagnosticLogExporter(
+            store: store,
+            metadata: fixture.metadata,
+            exportedAt: { fixture.now }
+        ).prepare(window: .lastHour, stagingRoot: fixture.staging)
+
+        let log = try String(contentsOf: artifact.logURL, encoding: .utf8)
+        let summary = try String(contentsOf: artifact.summaryURL, encoding: .utf8)
+
+        XCTAssertTrue(log.contains("Long Device Session Card 0"), log)
+        XCTAssertTrue(log.contains("Long Device Session Card 2499"), log)
+        XCTAssertTrue(summary.contains("log-stage=raw lines=2500"), summary)
+        XCTAssertTrue(summary.contains("log-stage=window input-lines=2500 output-lines=2500 window=last-hour"), summary)
+        XCTAssertTrue(summary.contains("visible-preview=capped"), summary)
+        XCTAssertTrue(artifact.preview.contains("preview capped"), artifact.preview)
+        XCTAssertTrue(artifact.preview.contains("Long Device Session Card 2499"), artifact.preview)
+        XCTAssertFalse(artifact.preview.contains("Long Device Session Card 0"), artifact.preview)
+        XCTAssertLessThan(artifact.preview.count, log.count / 3)
+    }
+
     func testExportScrubFailsClosedForFixedExcludedClasses() throws {
         let fixture = try makeFixture()
         let excludedLines = [
