@@ -1,0 +1,319 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --paper: #f1eddf;
+      --sheet: #fffdf7;
+      --ink: #1c1c1e;
+      --dim: #64635d;
+      --line: #ddd8ca;
+      --accent: #0a6b5c;
+      --accent-soft: #e3f0eb;
+      --blue: #2f5c8a;
+      --blue-soft: #e8eef5;
+      --danger: #b42318;
+      --danger-soft: #f8e7e4;
+      --gold: #816018;
+      --gold-soft: #f3ead2;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #f6f6f4;
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+      padding: 28px 24px 34px;
+      zoom: 1;
+    }
+    h1 { font-size: 17px; font-weight: 650; margin-bottom: 2px; }
+    .sub { color: var(--dim); font-size: 12.5px; margin-bottom: 22px; }
+    .row { display: flex; gap: 30px; align-items: flex-start; }
+    .col { width: 390px; }
+    .cap { font-size: 12px; font-weight: 650; margin-bottom: 3px; }
+    .capsub { color: var(--dim); font-size: 11px; line-height: 1.35; margin-bottom: 9px; min-height: 30px; }
+    .phone {
+      background: var(--paper);
+      border: 1px solid #c9c6bd;
+      border-radius: 26px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.09);
+      height: 844px;
+      overflow: hidden;
+      position: relative;
+      width: 390px;
+    }
+    .status { display: flex; justify-content: space-between; padding: 12px 20px 8px; font-size: 12px; font-weight: 650; }
+    .nav {
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      gap: 12px;
+      min-height: 48px;
+      padding: 0 18px;
+    }
+    .back { color: var(--accent); font-size: 15px; white-space: nowrap; }
+    .title { font-size: 17px; font-weight: 650; }
+    .list { padding: 16px 16px 92px; }
+    .summary {
+      background: var(--sheet);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      margin-bottom: 14px;
+      padding: 13px;
+    }
+    .summaryline { align-items: center; display: flex; gap: 7px; font-size: 13px; font-weight: 650; }
+    .summary h2 { font-size: 22px; line-height: 1.1; margin: 7px 0 8px; }
+    .summary p { color: #3a3a36; font-size: 13px; line-height: 1.35; }
+    .buttonrow { display: flex; gap: 8px; margin-top: 11px; }
+    .btn {
+      background: #efede6;
+      border-radius: 9px;
+      color: #35342f;
+      flex: 1;
+      font-size: 13px;
+      font-weight: 650;
+      min-height: 40px;
+      padding: 11px 8px;
+      text-align: center;
+    }
+    .btn.primary { background: var(--accent); color: white; }
+    .btn.danger { background: var(--danger-soft); color: var(--danger); }
+    .section-title {
+      color: var(--dim);
+      font-size: 12px;
+      font-weight: 650;
+      letter-spacing: .3px;
+      margin: 14px 8px 7px;
+      text-transform: uppercase;
+    }
+    .visit {
+      background: var(--sheet);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      margin-bottom: 9px;
+      padding: 11px 12px 12px;
+    }
+    .visit-head { align-items: flex-start; display: flex; gap: 10px; }
+    .pin {
+      align-items: center;
+      background: var(--accent-soft);
+      border-radius: 8px;
+      color: var(--accent);
+      display: flex;
+      flex: none;
+      font-size: 12px;
+      font-weight: 750;
+      height: 30px;
+      justify-content: center;
+      width: 30px;
+    }
+    .pin.blue { background: var(--blue-soft); color: var(--blue); }
+    .pin.gold { background: var(--gold-soft); color: var(--gold); }
+    .visit-text { flex: 1; min-width: 0; }
+    .name { font-size: 15px; line-height: 1.22; }
+    .meta { color: var(--dim); font-size: 12px; line-height: 1.3; margin-top: 2px; }
+    .heart {
+      align-items: center;
+      border: 1px solid #ded5c8;
+      border-radius: 8px;
+      color: var(--danger);
+      display: flex;
+      flex: none;
+      font-size: 13px;
+      font-weight: 750;
+      height: 32px;
+      justify-content: center;
+      width: 36px;
+    }
+    .controls {
+      align-items: center;
+      display: grid;
+      gap: 8px;
+      grid-template-columns: 1fr auto;
+      margin-top: 10px;
+    }
+    .datebox {
+      border: 1px solid #e1dbcc;
+      border-radius: 8px;
+      padding: 8px 9px;
+    }
+    .datebox span { color: var(--dim); display: block; font-size: 10.5px; font-weight: 650; text-transform: uppercase; }
+    .datebox strong { display: block; font-size: 13px; margin-top: 1px; }
+    .moves { display: flex; gap: 6px; }
+    .square {
+      align-items: center;
+      border: 1px solid #ded5c8;
+      border-radius: 8px;
+      color: #34332f;
+      display: flex;
+      font-size: 13px;
+      font-weight: 750;
+      height: 36px;
+      justify-content: center;
+      width: 36px;
+    }
+    .square.off { color: #aaa49a; background: #f4f1e9; }
+    .square.trash { color: var(--danger); background: var(--danger-soft); border-color: #e8c8c1; }
+    .note {
+      background: #f4f2eb;
+      border: 1px solid #e2ddce;
+      border-radius: 9px;
+      color: #45423d;
+      font-size: 12px;
+      line-height: 1.35;
+      margin-top: 10px;
+      padding: 9px 10px;
+    }
+    .callout {
+      background: var(--blue-soft);
+      border: 1px solid #c9d9e9;
+      border-radius: 10px;
+      color: #283747;
+      font-size: 12.5px;
+      line-height: 1.35;
+      padding: 11px;
+    }
+    .callout strong { display: block; font-size: 13px; margin-bottom: 3px; }
+    .bar {
+      background: rgba(255,253,247,.97);
+      border-top: 1px solid var(--line);
+      bottom: 0;
+      display: flex;
+      gap: 9px;
+      left: 0;
+      padding: 10px 16px 18px;
+      position: absolute;
+      right: 0;
+    }
+    .fold { border-top: 2px dashed #c0392b; bottom: 76px; left: 0; position: absolute; right: 0; }
+    .foldlab { background: rgba(255,255,255,.92); border-radius: 3px; bottom: 104px; color: #c0392b; font-size: 9.5px; font-weight: 650; padding: 1px 4px; position: absolute; right: 6px; }
+  </style>
+</head>
+<body>
+<h1>Visits editing - event rows and same-day order</h1>
+<div class="sub">iPhone 17e, 390x844. My tracks keeps history as visit events; date edits and order edits do not fabricate exact times.</div>
+
+<div class="row">
+  <div class="col">
+    <div class="cap">1 - My tracks</div>
+    <div class="capsub">Full event view. Reorder controls appear because the complete day sequence is visible.</div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>100%</span></div>
+      <div class="nav"><div class="back">&#8249; Menu</div><div class="title">My tracks</div></div>
+      <div class="list">
+        <div class="summary">
+          <div class="summaryline"><span>v</span><span>Oldest first</span></div>
+          <h2>6 visits</h2>
+          <p>Your track is a sequence of visits you entered. Edit a row when the remembered day or order needs correcting.</p>
+          <div class="buttonrow"><div class="btn primary">Map</div><div class="btn">Refresh</div></div>
+        </div>
+
+        <div class="section-title">Today</div>
+        <div class="visit">
+          <div class="visit-head">
+            <div class="pin">pin</div>
+            <div class="visit-text"><div class="name">Ghost Sign</div><div class="meta">Attraction · Jul 21, 9:12 AM</div></div>
+            <div class="heart">heart</div>
+          </div>
+          <div class="controls">
+            <div class="datebox"><span>Visit date</span><strong>Jul 21, 2026</strong></div>
+            <div class="moves"><div class="square off">up</div><div class="square">down</div><div class="square trash">del</div></div>
+          </div>
+        </div>
+        <div class="visit">
+          <div class="visit-head">
+            <div class="pin blue">pin</div>
+            <div class="visit-text"><div class="name">Art Deco Cinema</div><div class="meta">Historic building · Jul 21, 9:12 AM</div></div>
+            <div class="heart">heart</div>
+          </div>
+          <div class="controls">
+            <div class="datebox"><span>Visit date</span><strong>Jul 21, 2026</strong></div>
+            <div class="moves"><div class="square">up</div><div class="square">down</div><div class="square trash">del</div></div>
+          </div>
+        </div>
+        <div class="note">Same timestamp, different order: the row sequence is driven by visit_order for this day.</div>
+      </div>
+      <div class="fold"></div><div class="foldlab">fold</div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="cap">2 - Change a day</div>
+    <div class="capsub">Moving a row to another local day appends it to that day's manual order.</div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>100%</span></div>
+      <div class="nav"><div class="back">&#8249; My tracks</div><div class="title">Visit date</div></div>
+      <div class="list">
+        <div class="summary">
+          <div class="summaryline"><span>pin</span><span>Art Deco Cinema</span></div>
+          <h2>Correct the day</h2>
+          <p>Choose the day this visit belongs to. Making Tracks keeps the visit as your own entry, not as a GPS trace.</p>
+        </div>
+
+        <div class="section-title">Selected visit</div>
+        <div class="visit">
+          <div class="visit-head">
+            <div class="pin blue">pin</div>
+            <div class="visit-text"><div class="name">Art Deco Cinema</div><div class="meta">Historic building · Visit row 128</div></div>
+            <div class="heart">heart</div>
+          </div>
+          <div class="controls">
+            <div class="datebox"><span>Visit date</span><strong>Jul 20, 2026</strong></div>
+            <div class="moves"><div class="square">cal</div><div class="square trash">del</div></div>
+          </div>
+          <div class="note">The exact time display can stay as recorded. Same-day truth comes from visit_order, not from inventing new times.</div>
+        </div>
+
+        <div class="section-title">After save</div>
+        <div class="callout"><strong>Added to Jul 20</strong>The visit moves to the end of that local day's order. You can move it earlier or later from the full My tracks list.</div>
+      </div>
+      <div class="bar"><div class="btn">Cancel</div><div class="btn primary">Save day</div></div>
+      <div class="fold"></div><div class="foldlab">fold</div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="cap">3 - Un-see fallback</div>
+    <div class="capsub">A place-card un-see with repeated visits lands on the relevant event rows instead of deleting blindly.</div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>100%</span></div>
+      <div class="nav"><div class="back">&#8249; Ghost Sign</div><div class="title">Visits</div></div>
+      <div class="list">
+        <div class="summary">
+          <div class="summaryline"><span>pin</span><span>Multiple visits to this place</span></div>
+          <h2>Choose the visit</h2>
+          <p>Ghost Sign appears more than once in your tracks. Delete only the row you mean to remove.</p>
+        </div>
+
+        <div class="section-title">Ghost Sign</div>
+        <div class="visit">
+          <div class="visit-head">
+            <div class="pin">pin</div>
+            <div class="visit-text"><div class="name">Ghost Sign</div><div class="meta">Attraction · Jul 20, 5:42 PM</div></div>
+            <div class="heart">heart</div>
+          </div>
+          <div class="controls">
+            <div class="datebox"><span>Visit date</span><strong>Jul 20, 2026</strong></div>
+            <div class="moves"><div class="square trash">del</div></div>
+          </div>
+        </div>
+        <div class="visit">
+          <div class="visit-head">
+            <div class="pin gold">pin</div>
+            <div class="visit-text"><div class="name">Ghost Sign</div><div class="meta">Attraction · Jul 21, 9:12 AM</div></div>
+            <div class="heart">heart</div>
+          </div>
+          <div class="controls">
+            <div class="datebox"><span>Visit date</span><strong>Jul 21, 2026</strong></div>
+            <div class="moves"><div class="square trash">del</div></div>
+          </div>
+        </div>
+        <div class="note">Focused mode can delete or edit these rows. Reorder waits for the full day view so no hidden visits are reordered by accident.</div>
+      </div>
+      <div class="bar"><div class="btn">Back</div><div class="btn danger">Delete selected</div></div>
+      <div class="fold"></div><div class="foldlab">fold</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
