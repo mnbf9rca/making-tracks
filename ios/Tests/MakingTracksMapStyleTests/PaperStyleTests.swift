@@ -47,7 +47,7 @@ final class PaperStyleTests: XCTestCase {
         guard case let .object(root) = style,
               case let .array(layers) = root["layers"]
         else { return XCTFail("no layers") }
-        XCTAssertNil(root["glyphs"])
+        XCTAssertEqual(root["glyphs"], .string(paperBasemapGlyphsURL))
         XCTAssertEqual(layerIDs(in: layers), ["background", "world-earth", "world-water", "world-waterways", "world-roads", "world-boundaries"])
         XCTAssertEqual(paintValue("background-color", in: layer(id: "background", in: layers)), .string(MapTheme.snow.background))
         XCTAssertEqual(paintValue("fill-color", in: layer(id: "world-earth", in: layers)), .string(MapTheme.snow.land))
@@ -73,11 +73,7 @@ final class PaperStyleTests: XCTestCase {
                   case let .array(layers) = root["layers"]
             else { return XCTFail("invalid root for theme \(theme.id)") }
 
-            if theme.showsLabels {
-                XCTAssertEqual(root["glyphs"], .string(paperBasemapGlyphsURL), theme.id)
-            } else {
-                XCTAssertNil(root["glyphs"], theme.id)
-            }
+            XCTAssertEqual(root["glyphs"], .string(paperBasemapGlyphsURL), theme.id)
             XCTAssertEqual(world["type"], .string("vector"), theme.id)
             XCTAssertEqual(world["url"], .string("pmtiles://https://tiles.making-tracks.app/malaysia/current.pmtiles"), theme.id)
 
