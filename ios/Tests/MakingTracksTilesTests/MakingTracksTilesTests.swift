@@ -942,6 +942,53 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(image?.thumbURL.absoluteString, "https://tiles.making-tracks.app/thumbs/ee/\(imageSHA).webp")
     }
 
+    func testTileClientWritesPrivacyScopedViewportBreadcrumbs() async throws {
+        let placeID = "mt1_00000000000000000000000000"
+        let tile = try gzipJSON(tileObject(places: [validPlace(["place_id": placeID])]))
+        let tileSHA = sha256(tile)
+        let fixtureRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TileClientDiagnosticBreadcrumbTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+        let store = DiagnosticLogStore(
+            root: fixtureRoot.appendingPathComponent("logs", isDirectory: true)
+        )
+        MakingTracksLog.configureDiagnosticLogStore(store)
+        defer { MakingTracksLog.configureDiagnosticLogStore(nil) }
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": manifestData(tileSHA: tileSHA, tileBytes: tile.count, attributionSources: []),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/511/340.json.gz": tile,
+        ])
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache())
+
+        try await client.refreshPin()
+        let places = await client.places(
+            inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51),
+            zoom: 16
+        )
+        XCTAssertEqual(places.map(\.id), [placeID])
+        let log = try await waitForLogLine(in: store, containing: "sidecar image-index finished")
+
+        XCTAssertTrue(log.contains("publish selected"), log)
+        XCTAssertTrue(log.contains("source=catalog-current"), log)
+        XCTAssertTrue(log.contains("viewport composed"), log)
+        XCTAssertTrue(log.contains("zoom=16"), log)
+        XCTAssertTrue(log.contains("tileZ=10"), log)
+        XCTAssertTrue(log.contains("object requests composed"), log)
+        XCTAssertTrue(log.contains("kind=tile"), log)
+        XCTAssertTrue(log.contains("source=fallback"), log)
+        XCTAssertTrue(log.contains("viewport finished"), log)
+        XCTAssertTrue(log.contains("loaded=1"), log)
+        XCTAssertTrue(log.contains("sidecar image-index planned"), log)
+        XCTAssertTrue(log.contains("sidecar image-index finished"), log)
+        XCTAssertTrue(log.contains("http404=1"), log)
+        XCTAssertFalse(log.contains("minLon"), log)
+        XCTAssertFalse(log.contains("-0.13"), log)
+        XCTAssertFalse(log.contains("511/340"), log)
+        XCTAssertFalse(log.contains("/uk/"), log)
+        XCTAssertFalse(log.contains(placeID), log)
+    }
+
     func testTileClientEnrichesPlaceRefFromOnlineDescriptionSidecarOnCardPath() async throws {
         let placeID = "mt1_00000000000000000000000000"
         let tile = try gzipJSON(tileObject(places: [validPlace([
@@ -6005,6 +6052,21 @@ private func waitForRequestedURL(
         try await Task.sleep(nanoseconds: 50_000_000)
     }
     return false
+}
+
+private func waitForLogLine(
+    in store: DiagnosticLogStore,
+    containing marker: String,
+    attempts: Int = 40
+) async throws -> String {
+    for _ in 0..<attempts {
+        let log = try store.snapshotLines(window: .everything).joined(separator: "\n")
+        if log.contains(marker) {
+            return log
+        }
+        try await Task.sleep(nanoseconds: 50_000_000)
+    }
+    return try store.snapshotLines(window: .everything).joined(separator: "\n")
 }
 
 private func nextImageChange(from stream: AsyncStream<Set<String>>) async -> Set<String>? {
