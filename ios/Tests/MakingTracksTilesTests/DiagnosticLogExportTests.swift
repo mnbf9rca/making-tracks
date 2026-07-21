@@ -190,6 +190,52 @@ final class DiagnosticLogExportTests: XCTestCase {
         XCTAssertFalse(log.contains("center="))
     }
 
+    func testBrowsedSessionExportsNonEmptyPreviewAndStageCountsForSelectedWindow() throws {
+        let fixture = try makeFixture()
+        let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
+        try store.appendRawLineForTesting("2026-07-19T10:58:13Z flow info place viewed placeID=mt1_00000000000000000000000099 placeName=Old Card")
+        try store.appendRawLineForTesting("2026-07-19T12:05:13Z flow info viewport browsed region=malaysia-singapore-brunei zoom=14 tileZ=10 covered=12 requests=9 blocked=3 source=camera-idle")
+        try store.appendRawLineForTesting("2026-07-19T12:06:13Z downloads info region download finished region=malaysia-singapore-brunei bytes=1200")
+
+        let artifact = try DiagnosticLogExporter(
+            store: store,
+            metadata: fixture.metadata,
+            exportedAt: { fixture.now }
+        ).prepare(window: .lastHour, stagingRoot: fixture.staging)
+
+        let log = try String(contentsOf: artifact.logURL, encoding: .utf8)
+        let summary = try String(contentsOf: artifact.summaryURL, encoding: .utf8)
+
+        XCTAssertTrue(log.contains("viewport browsed"), log)
+        XCTAssertTrue(log.contains("region download finished"), log)
+        XCTAssertFalse(log.contains("Old Card"), log)
+        XCTAssertTrue(artifact.preview.contains("viewport browsed"), artifact.preview)
+        XCTAssertTrue(summary.contains("log-stage=raw lines=3"), summary)
+        XCTAssertTrue(summary.contains("log-stage=window input-lines=3 output-lines=2 window=last-hour"), summary)
+        XCTAssertTrue(summary.contains("log-stage=scrub input-log-lines=2 output-log-lines=2 status=passed"), summary)
+        XCTAssertTrue(summary.contains("log-stage=preview lines="), summary)
+        XCTAssertTrue(summary.contains("log-lines=2"), summary)
+    }
+
+    func testSessionCoveringExportPromotesShortWindowThatWouldZeroPreview() throws {
+        let fixture = try makeFixture()
+        let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
+        try store.appendRawLineForTesting("2026-07-19T11:55:13Z flow info viewport browsed region=malaysia-singapore-brunei zoom=14 tileZ=10 covered=12 requests=9 blocked=3 source=camera-idle")
+
+        let artifact = try DiagnosticLogExporter(
+            store: store,
+            metadata: fixture.metadata,
+            exportedAt: { fixture.now }
+        ).prepareCoveringCurrentSession(preferredWindow: .fifteenMinutes, stagingRoot: fixture.staging)
+
+        let log = try String(contentsOf: artifact.logURL, encoding: .utf8)
+        let summary = try String(contentsOf: artifact.summaryURL, encoding: .utf8)
+
+        XCTAssertTrue(log.contains("viewport browsed"), log)
+        XCTAssertTrue(artifact.preview.contains("viewport browsed"), artifact.preview)
+        XCTAssertTrue(summary.contains("log-stage=window input-lines=1 output-lines=1 window=last-hour"), summary)
+    }
+
     func testExportScrubFailsClosedForFixedExcludedClasses() throws {
         let fixture = try makeFixture()
         let excludedLines = [
