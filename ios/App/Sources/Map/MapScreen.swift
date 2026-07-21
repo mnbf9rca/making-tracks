@@ -6092,7 +6092,7 @@ private struct ListPickerView: View {
                 }
 
                 Section {
-                    ForEach(lists.filter { !$0.isSystem }) { list in
+                    ForEach(ListPickerTargetLists.options(from: lists)) { list in
                         Button {
                             Task { await toggle(list) }
                         } label: {
@@ -6146,8 +6146,14 @@ private struct ListPickerView: View {
     @MainActor
     private func createAndAdd() async {
         guard let model else { return }
+        actionError = nil
+        let trimmedName = newListName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            actionError = "Enter a list name."
+            return
+        }
         do {
-            let list = try await model.createList(named: newListName)
+            let list = try await model.createList(named: trimmedName)
             guard let id = list.id else { throw AppDatabaseError.unreadableDatabase }
             try await model.addToList(placeID: placeID, listID: id)
             newListName = ""
@@ -6840,7 +6846,11 @@ private struct PlaceCardSheet: View {
 
     private func saveButton(_ card: PlaceCardModel) -> some View {
         Button {
-            startAction { await setSaved(!card.pinState.saved) }
+            if card.pinState.saved {
+                startAction { await setSaved(false) }
+            } else {
+                showListPicker = true
+            }
         } label: {
             actionLabel(.save, title: card.pinState.saved ? "Saved" : "Save")
         }
@@ -7248,6 +7258,17 @@ enum ListDetailItemActions {
 enum ListDetailVisitActions {
     static func canEditTrackVisits(from list: PlaceList) -> Bool {
         list.isSystem && list.kind == PlaceList.trackKind
+    }
+}
+
+enum ListPickerTargetLists {
+    static func options(from lists: [PlaceList]) -> [PlaceList] {
+        lists.filter(canStoreMembership)
+    }
+
+    private static func canStoreMembership(_ list: PlaceList) -> Bool {
+        if !list.isSystem { return true }
+        return list.kind == PlaceList.defaultKind && list.name == AppDatabase.wantToGoListName
     }
 }
 

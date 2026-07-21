@@ -793,6 +793,23 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(ListDetailVisitActions.canEditTrackVisits(from: importedTrackKind))
     }
 
+    func testListPickerTargetsIncludeWantToGoAndCustomListsButExcludeMyTracks() {
+        let collection = PlaceList(id: 10, name: "Date night", isSystem: false, createdAt: Date(timeIntervalSince1970: 0))
+        let wantToGo = PlaceList(id: 1, name: "Want to go", isSystem: true, createdAt: Date(timeIntervalSince1970: 0))
+        let myTracks = PlaceList(
+            id: 2,
+            name: "My tracks",
+            isSystem: true,
+            kind: PlaceList.trackKind,
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+
+        XCTAssertEqual(
+            ListPickerTargetLists.options(from: [myTracks, collection, wantToGo]).map(\.name),
+            ["Date night", "Want to go"]
+        )
+    }
+
     func testTrackVisitReorderingGroupsFullChronologicalRowsByLocalDay() {
         let calendar = Calendar(identifier: .gregorian)
         let visits = [
