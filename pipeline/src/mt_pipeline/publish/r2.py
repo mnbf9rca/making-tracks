@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections import Counter
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 import json
 import os
 import re
+import sys
 import time
 import hashlib
 from importlib import import_module as _import_module
@@ -43,6 +46,23 @@ _PUBLIC_KINDS = {
 _NON_REGION_ROOT_PREFIXES = frozenset({"catalog", "regions", "thumbs"})
 _CURRENT_POINTER_MAX_BYTES = 256 * 1024
 _R2_UPLOAD_ENV_VARS = ("R2_S3_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY")
+_UPLOAD_WORKERS_ENV = "MT_R2_UPLOAD_WORKERS"
+_DEFAULT_UPLOAD_WORKERS = 16
+_MAX_UPLOAD_WORKERS = 64
+_UPLOAD_HEARTBEAT_EVERY_OBJECTS = 1_000
+_UPLOAD_HEARTBEAT_EVERY_SECONDS = 30.0
+_PARALLEL_DATA_KINDS = {
+    "thumb",
+    "image",
+    "description",
+    "tile",
+    "basemap",
+    "zone_catalog_proposal",
+    "zone_catalog",
+    "search_index",
+    "search_compact",
+}
+_DESCRIPTOR_KINDS = {"pack_descriptor", "manifest"}
 
 
 class UnsafePathComponent(ValueError):
@@ -299,6 +319,9 @@ def publish_to_r2(
     client=None,
     upload: bool = False,
     registry_blob: bytes | None = None,
+    upload_workers: int | None = None,
+    heartbeat_every_objects: int = _UPLOAD_HEARTBEAT_EVERY_OBJECTS,
+    heartbeat_every_seconds: float = _UPLOAD_HEARTBEAT_EVERY_SECONDS,
 ) -> PublishResult:
     staging = Path(staging)
     region = staging.parent.name
@@ -312,6 +335,7 @@ def publish_to_r2(
 
     if client is None:
         client = _default_client()
+    worker_count = resolve_upload_workers(upload_workers)
 
     live_version = _current_publish_version(client, layout, region)
     repair_only = live_version == publish_version
@@ -356,9 +380,29 @@ def publish_to_r2(
             return PublishResult(plan=repair_plan, uploaded=uploaded, dry_run=False)
 
         _assert_prefix_absent(client, layout, region, publish_version)
-        for op in _ordered_ops_for_visibility(plan.ops):
-            if op.kind == "catalog_current":
-                continue
+        ordered_ops = [
+            op
+            for op in _ordered_ops_for_visibility(plan.ops)
+            if op.kind != "catalog_current"
+        ]
+        data_ops = [op for op in ordered_ops if op.kind in _PARALLEL_DATA_KINDS]
+        descriptor_ops = [op for op in ordered_ops if op.kind in _DESCRIPTOR_KINDS]
+        private_ops = [op for op in ordered_ops if op.kind in _PRIVATE_KINDS]
+        current_ops = [op for op in ordered_ops if op.kind == "current"]
+        uploaded += _upload_ops_parallel(
+            client,
+            data_ops,
+            phase="publish.r2_upload_data",
+            region=region,
+            upload_workers=worker_count,
+            heartbeat_every_objects=heartbeat_every_objects,
+            heartbeat_every_seconds=heartbeat_every_seconds,
+        )
+        for op in [*descriptor_ops, *private_ops]:
+            _upload_op(client, op)
+            uploaded += 1
+        _assert_descriptors_available(client, descriptor_ops)
+        for op in current_ops:
             _upload_op(client, op)
             uploaded += 1
         uploaded += _upload_catalog_current_locked(
@@ -376,6 +420,9 @@ def publish_prepared_to_r2(
     *,
     client=None,
     reuse_existing_thumbs: bool = False,
+    upload_workers: int | None = None,
+    heartbeat_every_objects: int = _UPLOAD_HEARTBEAT_EVERY_OBJECTS,
+    heartbeat_every_seconds: float = _UPLOAD_HEARTBEAT_EVERY_SECONDS,
 ) -> PreparedPublishResult:
     plan_list = list(plans)
     if not plan_list:
@@ -385,6 +432,7 @@ def publish_prepared_to_r2(
         plan._assert_bucket_invariants()
     if client is None:
         client = _default_client()
+    worker_count = resolve_upload_workers(upload_workers)
 
     _prepared_repair_regions(client, layout, plan_list)
 
@@ -413,7 +461,12 @@ def publish_prepared_to_r2(
         )
         if reuse_existing_thumbs:
             thumb_content, stats = _reuse_existing_thumb_ops(
-                client, layout, thumb_content
+                client,
+                layout,
+                thumb_content,
+                upload_workers=worker_count,
+                heartbeat_every_objects=heartbeat_every_objects,
+                heartbeat_every_seconds=heartbeat_every_seconds,
             )
             print(
                 "THUMB_UPLOAD_REUSE "
@@ -439,13 +492,27 @@ def publish_prepared_to_r2(
                 "manifest",
             }
         ]
+        public_data = [op for op in public_content if op.kind in _PARALLEL_DATA_KINDS]
+        descriptor_ops = [op for op in public_content if op.kind in _DESCRIPTOR_KINDS]
         current_ops = [
             op for plan in upload_plans for op in plan.ops if op.kind == "current"
         ]
         private_ops = [
             op for plan in upload_plans for op in plan.ops if op.kind in _PRIVATE_KINDS
         ]
-        for op in [*thumb_content, *public_content, *private_ops, *current_ops]:
+        _upload_ops_parallel(
+            client,
+            [*thumb_content, *public_data],
+            phase="publish.r2_upload_data",
+            region="prepared",
+            upload_workers=worker_count,
+            heartbeat_every_objects=heartbeat_every_objects,
+            heartbeat_every_seconds=heartbeat_every_seconds,
+        )
+        for op in [*descriptor_ops, *private_ops]:
+            _upload_op(client, op)
+        _assert_descriptors_available(client, descriptor_ops)
+        for op in current_ops:
             _upload_op(client, op)
         _upload_catalog_current_locked(
             client,
@@ -581,6 +648,208 @@ def _upload_op(client, op: PublishOp) -> None:
             Body=body,
             **_immutable_write_kwargs(op),
         )
+
+
+def resolve_upload_workers(upload_workers: int | None = None) -> int:
+    if upload_workers is None:
+        raw = os.environ.get(_UPLOAD_WORKERS_ENV)
+        if raw is None or raw.strip() == "":
+            return _DEFAULT_UPLOAD_WORKERS
+        try:
+            upload_workers = int(raw)
+        except ValueError as exc:
+            raise ValueError(
+                f"{_UPLOAD_WORKERS_ENV} must be an integer between 1 and {_MAX_UPLOAD_WORKERS}"
+            ) from exc
+    if not 1 <= upload_workers <= _MAX_UPLOAD_WORKERS:
+        raise ValueError(
+            f"upload worker count must be between 1 and {_MAX_UPLOAD_WORKERS}"
+        )
+    return upload_workers
+
+
+class _UploadProgress:
+    def __init__(
+        self,
+        *,
+        phase: str,
+        region: str,
+        ops: list[PublishOp],
+        workers: int,
+        heartbeat_every_objects: int,
+        heartbeat_every_seconds: float,
+    ) -> None:
+        self.phase = phase
+        self.region = region
+        self.total_objects = len(ops)
+        self.total_bytes = sum(_op_size(op) for op in ops)
+        self.workers = workers
+        self.heartbeat_every_objects = max(1, heartbeat_every_objects)
+        self.heartbeat_every_seconds = heartbeat_every_seconds
+        self.started = time.monotonic()
+        self.last_heartbeat = self.started
+        self.objects_done = 0
+        self.bytes_done = 0
+        self.kind_counts: Counter[str] = Counter()
+
+    def start(self) -> None:
+        print(
+            f"PUBLISH_UPLOAD START phase={self.phase} region={self.region} "
+            f"objects_total={self.total_objects} bytes_total={self.total_bytes} "
+            f"workers={self.workers}",
+            file=sys.stderr,
+        )
+
+    def tick(self, op: PublishOp, *, force: bool = False) -> None:
+        self.objects_done += 1
+        self.bytes_done += _op_size(op)
+        self.kind_counts[op.kind] += 1
+        now = time.monotonic()
+        if (
+            force
+            or self.objects_done == self.total_objects
+            or self.objects_done % self.heartbeat_every_objects == 0
+            or now - self.last_heartbeat >= self.heartbeat_every_seconds
+        ):
+            self.last_heartbeat = now
+            self._print("HEARTBEAT", now, op)
+
+    def heartbeat_if_due(self) -> None:
+        now = time.monotonic()
+        if now - self.last_heartbeat >= self.heartbeat_every_seconds:
+            self.last_heartbeat = now
+            self._print("HEARTBEAT", now, None)
+
+    def done(self) -> None:
+        self._print("DONE", time.monotonic(), None)
+
+    def _print(self, label: str, now: float, op: PublishOp | None) -> None:
+        elapsed = now - self.started
+        object_rate = self.objects_done / elapsed if elapsed > 0 else 0.0
+        byte_rate = self.bytes_done / elapsed if elapsed > 0 else 0.0
+        current_kind = "none" if op is None else op.kind
+        current_key_class = "none" if op is None else _key_class(op.key)
+        kind_counts = ",".join(
+            f"{kind}:{self.kind_counts[kind]}" for kind in sorted(self.kind_counts)
+        )
+        print(
+            f"PUBLISH_UPLOAD {label} phase={self.phase} region={self.region} "
+            f"objects_done={self.objects_done}/{self.total_objects} "
+            f"bytes_done={self.bytes_done}/{self.total_bytes} "
+            f"objects_rate={object_rate:.1f}/s bytes_rate={byte_rate:.1f}/s "
+            f"elapsed={elapsed:.1f}s workers={self.workers} "
+            f"current_kind={current_kind} current_key_class={current_key_class} "
+            f"kind_counts={kind_counts}",
+            file=sys.stderr,
+        )
+
+
+def _upload_ops_parallel(
+    client,
+    ops: Iterable[PublishOp],
+    *,
+    phase: str,
+    region: str,
+    upload_workers: int,
+    heartbeat_every_objects: int,
+    heartbeat_every_seconds: float,
+) -> int:
+    op_list = list(ops)
+    if not op_list:
+        return 0
+    workers = min(upload_workers, len(op_list))
+    progress = _UploadProgress(
+        phase=phase,
+        region=region,
+        ops=op_list,
+        workers=workers,
+        heartbeat_every_objects=heartbeat_every_objects,
+        heartbeat_every_seconds=heartbeat_every_seconds,
+    )
+    progress.start()
+    _parallel_map_ops(
+        op_list,
+        lambda op: _upload_op(client, op),
+        upload_workers=workers,
+        progress=progress,
+    )
+    progress.done()
+    return len(op_list)
+
+
+def _parallel_map_ops(
+    ops: list[PublishOp],
+    fn,
+    *,
+    upload_workers: int,
+    progress: _UploadProgress,
+) -> list[Any]:
+    executor = ThreadPoolExecutor(max_workers=upload_workers)
+    future_to_index: dict[Future, tuple[int, PublishOp]] = {
+        executor.submit(fn, op): (index, op)
+        for index, op in enumerate(ops)
+    }
+    results: list[Any] = [None] * len(ops)
+    pending = set(future_to_index)
+    try:
+        while pending:
+            done, pending = wait(
+                pending,
+                timeout=progress.heartbeat_every_seconds,
+                return_when=FIRST_COMPLETED,
+            )
+            if not done:
+                progress.heartbeat_if_due()
+                continue
+            for future in done:
+                index, op = future_to_index[future]
+                try:
+                    results[index] = future.result()
+                except Exception:
+                    for waiting_future in pending:
+                        waiting_future.cancel()
+                    raise
+                progress.tick(op)
+        return results
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
+
+
+def _assert_descriptors_available(client, descriptor_ops: Iterable[PublishOp]) -> None:
+    for op in descriptor_ops:
+        client.head_object(Bucket=op.bucket, Key=op.key)
+
+
+def _op_size(op: PublishOp) -> int:
+    if op.body is not None:
+        return len(op.body)
+    if op.source_path is not None:
+        return op.source_path.stat().st_size
+    return 0
+
+
+def _key_class(key: str) -> str:
+    if key.startswith("thumbs/"):
+        return "thumbs"
+    for marker, label in (
+        ("/images/", "images"),
+        ("/descriptions/", "descriptions"),
+        ("/tiles/", "tiles"),
+        ("/search/", "search"),
+    ):
+        if marker in key:
+            return label
+    if key.endswith(".pmtiles"):
+        return "basemap"
+    if key.endswith("/zone-catalog.json") or key.endswith("/zone-catalog.proposal.json"):
+        return "zone_catalog"
+    if key.endswith("/pack-descriptor.json"):
+        return "pack_descriptor"
+    if key.endswith("/manifest.json"):
+        return "manifest"
+    if key.endswith("/current.json"):
+        return "current"
+    return key.split("/", 1)[0]
 
 
 def _immutable_write_kwargs(op: PublishOp) -> dict[str, str]:
@@ -1135,12 +1404,35 @@ def _reuse_existing_thumb_ops(
     client,
     layout: Mapping[str, Any],
     thumb_ops: Iterable[PublishOp],
+    *,
+    upload_workers: int | None = None,
+    heartbeat_every_objects: int = _UPLOAD_HEARTBEAT_EVERY_OBJECTS,
+    heartbeat_every_seconds: float = _UPLOAD_HEARTBEAT_EVERY_SECONDS,
 ) -> tuple[list[PublishOp], ThumbReuseStats]:
     ops = list(thumb_ops)
-    for op in ops:
-        _validate_thumb_body(op.key, _op_body_bytes(op))
-    existing_keys = _existing_public_thumb_keys(client, layout)
-    missing = [op for op in ops if op.key not in existing_keys]
+    worker_count = resolve_upload_workers(upload_workers)
+    progress = _UploadProgress(
+        phase="publish.r2_validate_reuse",
+        region="thumbs",
+        ops=ops,
+        workers=min(worker_count, len(ops)) if ops else worker_count,
+        heartbeat_every_objects=heartbeat_every_objects,
+        heartbeat_every_seconds=heartbeat_every_seconds,
+    )
+    if ops:
+        progress.start()
+    exists_results = _parallel_map_ops(
+        ops,
+        lambda op: _thumb_exists(client, op),
+        upload_workers=min(worker_count, len(ops)) if ops else worker_count,
+        progress=progress,
+    )
+    if ops:
+        progress.done()
+    missing = [
+        op for op, exists in zip(ops, exists_results, strict=True)
+        if not bool(exists)
+    ]
     existing_count = len(ops) - len(missing)
     return missing, ThumbReuseStats(
         staged=len(ops),
@@ -1149,6 +1441,19 @@ def _reuse_existing_thumb_ops(
         uploaded=len(missing),
         skipped=existing_count,
     )
+
+
+def _thumb_exists(client, op: PublishOp) -> bool:
+    _validate_thumb_body(op.key, _op_body_bytes(op))
+    try:
+        client.head_object(Bucket=op.bucket, Key=op.key)
+    except FileNotFoundError:
+        return False
+    except Exception as exc:
+        if _is_missing_key(exc):
+            return False
+        raise
+    return True
 
 
 def _existing_public_thumb_keys(client, layout: Mapping[str, Any]) -> set[str]:

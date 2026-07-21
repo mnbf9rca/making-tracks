@@ -1,6 +1,8 @@
 import json
 import pathlib
 import hashlib
+import threading
+import time
 from io import BytesIO
 
 import pytest
@@ -340,6 +342,11 @@ def test_upload_path_locks_uploads_content_manifest_private_registry_then_curren
         def list_objects_v2(self, *, Bucket, Prefix, MaxKeys, Delimiter=None):
             return {"KeyCount": 0}
 
+        def head_object(self, *, Bucket, Key):
+            if Key.endswith("/pack-descriptor.json") or Key.endswith("/manifest.json"):
+                return {}
+            raise FileNotFoundError(Key)
+
         def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
             if hasattr(Body, "read"):
                 Body.read()
@@ -363,12 +370,15 @@ def test_upload_path_locks_uploads_content_manifest_private_registry_then_curren
     assert result.dry_run is False
     keys = [key for _bucket, key, _if_none_match in client.puts]
     assert keys[0] == "united-kingdom/publish.lock"
-    assert keys[1:] == [
+    data_keys = {
         f"thumbs/{thumb_sha[:2]}/{thumb_sha}.webp",
         "united-kingdom/20260715T120000Z/images/10/1/2.json",
         "united-kingdom/20260715T120000Z/descriptions/10/1/2.json",
         "united-kingdom/20260715T120000Z/tiles/10/1/2.json.gz",
         "united-kingdom/20260715T120000Z/united-kingdom.pmtiles",
+    }
+    assert set(keys[1:6]) == data_keys
+    assert keys[6:] == [
         "united-kingdom/20260715T120000Z/pack-descriptor.json",
         "united-kingdom/20260715T120000Z/manifest.json",
         "registry/united-kingdom.jsonl",
@@ -827,6 +837,11 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
         def list_objects_v2(self, *, Bucket, Prefix, MaxKeys, Delimiter=None):
             return {"KeyCount": 0}
 
+        def head_object(self, *, Bucket, Key):
+            if Key.endswith("/pack-descriptor.json") or Key.endswith("/manifest.json"):
+                return {}
+            raise FileNotFoundError(Key)
+
         def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
             body = Body.read() if hasattr(Body, "read") else Body
             self.puts.append((Bucket, Key, body, IfNoneMatch))
@@ -848,7 +863,7 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
         for _bucket, key, _body, _if_none_match in client.puts
         if not key.endswith("/publish.lock")
     ]
-    assert keys == [
+    data_keys = {
         f"thumbs/{thumb_sha[:2]}/{thumb_sha}.webp",
         "united-kingdom/20260715T120000Z/images/10/1/2.json",
         "united-kingdom/20260715T120000Z/descriptions/10/1/2.json",
@@ -856,12 +871,15 @@ def test_prepared_multi_region_upload_flips_currents_then_merges_region_index(tm
         "united-kingdom/20260715T120000Z/united-kingdom.pmtiles",
         "united-kingdom/20260715T120000Z/zone-catalog.proposal.json",
         "united-kingdom/20260715T120000Z/zone-catalog.json",
-        "united-kingdom/20260715T120000Z/pack-descriptor.json",
-        "united-kingdom/20260715T120000Z/manifest.json",
         "united-kingdom_london/20260715T120000Z/images/10/1/2.json",
         "united-kingdom_london/20260715T120000Z/descriptions/10/1/2.json",
         "united-kingdom_london/20260715T120000Z/tiles/10/1/2.json.gz",
         "united-kingdom_london/20260715T120000Z/united-kingdom_london.pmtiles",
+    }
+    assert set(keys[:11]) == data_keys
+    assert keys[11:] == [
+        "united-kingdom/20260715T120000Z/pack-descriptor.json",
+        "united-kingdom/20260715T120000Z/manifest.json",
         "united-kingdom_london/20260715T120000Z/pack-descriptor.json",
         "united-kingdom_london/20260715T120000Z/manifest.json",
         "registry/united-kingdom.jsonl",
@@ -1331,13 +1349,14 @@ def test_reuse_existing_thumbs_filters_existing_keys_but_uploads_missing(tmp_pat
 
     class Client:
         def __init__(self):
-            self.list_calls = []
+            self.head_calls = []
 
-        def list_objects_v2(self, **kwargs):
-            self.list_calls.append(kwargs)
-            assert kwargs["Bucket"] == "making-tracks-tiles"
-            assert kwargs["Prefix"] == "thumbs/"
-            return {"Contents": [{"Key": existing.key}]}
+        def head_object(self, *, Bucket, Key):
+            self.head_calls.append((Bucket, Key))
+            assert Bucket == "making-tracks-tiles"
+            if Key == existing.key:
+                return {}
+            raise FileNotFoundError(Key)
 
     filtered, stats = R._reuse_existing_thumb_ops(
         Client(),
@@ -1347,6 +1366,65 @@ def test_reuse_existing_thumbs_filters_existing_keys_but_uploads_missing(tmp_pat
 
     assert filtered == [missing]
     assert stats == R.ThumbReuseStats(staged=2, existing=1, missing=1, uploaded=1, skipped=1)
+
+
+def test_reuse_existing_thumbs_uses_bounded_parallel_head_checks(tmp_path, capsys):
+    bodies = [f"thumb-{index}".encode() for index in range(4)]
+    ops = []
+    for body in bodies:
+        sha = hashlib.sha256(body).hexdigest()
+        path = tmp_path / f"{sha}.webp"
+        path.write_bytes(body)
+        ops.append(
+            R.PublishOp(
+                kind="thumb",
+                bucket="making-tracks-tiles",
+                key=f"thumbs/{sha[:2]}/{sha}.webp",
+                source_path=path,
+            )
+        )
+    existing_keys = {ops[0].key, ops[2].key}
+
+    class Client:
+        def __init__(self):
+            self.active = 0
+            self.max_active = 0
+            self.head_keys = []
+            self.lock = threading.Lock()
+
+        def head_object(self, *, Bucket, Key):
+            assert Bucket == "making-tracks-tiles"
+            with self.lock:
+                self.active += 1
+                self.max_active = max(self.max_active, self.active)
+                self.head_keys.append(Key)
+            time.sleep(0.01)
+            with self.lock:
+                self.active -= 1
+            if Key not in existing_keys:
+                raise FileNotFoundError(Key)
+            return {}
+
+    client = Client()
+    filtered, stats = R._reuse_existing_thumb_ops(
+        client,
+        _layout(),
+        ops,
+        upload_workers=2,
+        heartbeat_every_objects=1,
+        heartbeat_every_seconds=999,
+    )
+
+    assert [op.key for op in filtered] == [ops[1].key, ops[3].key]
+    assert stats == R.ThumbReuseStats(staged=4, existing=2, missing=2, uploaded=2, skipped=2)
+    assert sorted(client.head_keys) == sorted(op.key for op in ops)
+    assert client.max_active <= 2
+    assert client.max_active > 1
+    err = capsys.readouterr().err
+    assert "PUBLISH_UPLOAD START phase=publish.r2_validate_reuse region=thumbs objects_total=4" in err
+    assert "workers=2" in err
+    assert "objects_done=4/4" in err
+    assert "kind_counts=thumb:4" in err
 
 
 def test_reuse_existing_thumbs_still_validates_content_addressed_thumb_keys(tmp_path):
@@ -1365,6 +1443,226 @@ def test_reuse_existing_thumbs_still_validates_content_addressed_thumb_keys(tmp_
 
     with pytest.raises(ValueError, match="invalid thumb key"):
         R._reuse_existing_thumb_ops(Client(), _layout(), [bad])
+
+
+def test_prepared_upload_validates_descriptors_before_pointer_ops(tmp_path, capsys):
+    layout = _layout()
+    root = tmp_path / "stage" / "united-kingdom" / "20260715T120000Z"
+    (root / "tiles/10/1").mkdir(parents=True)
+    (root / "images/10/1").mkdir(parents=True)
+    (root / "tiles/10/1/2.json.gz").write_bytes(b"tile")
+    (root / "images/10/1/2.json").write_bytes(b"image")
+    (root / "united-kingdom.pmtiles").write_bytes(b"basemap")
+    _write_min_pack_descriptor(root)
+    (root / "manifest.json").write_text("{}")
+    region_index = tmp_path / "stage" / "regions.json"
+    region_index.write_text(
+        json.dumps(
+            {
+                "schema_version": SCHEMA_VERSIONS["region_index"],
+                "min_reader_version": 1,
+                "generated_at": "2026-07-15T12:00:00Z",
+                "regions": [
+                    {
+                        "id": "united-kingdom",
+                        "display_name": "United Kingdom",
+                        "parent": None,
+                        "bbox": [-8.65, 49.84, 1.77, 60.86],
+                        "search_compact": _search_compact(
+                            "united-kingdom", "20260715T120000Z"
+                        ),
+                        "basemap_bytes": 7,
+                        "tile_count": 1,
+                        "bytes_without_thumbs": 11,
+                        "bytes_with_thumbs": 11,
+                    }
+                ],
+            },
+            sort_keys=True,
+        )
+    )
+
+    class Client:
+        def __init__(self):
+            self.events = []
+
+        def get_object(self, *, Bucket, Key):
+            raise FileNotFoundError(Key)
+
+        def list_objects_v2(self, *, Bucket, Prefix, MaxKeys, Delimiter=None):
+            return {"KeyCount": 0}
+
+        def head_object(self, *, Bucket, Key):
+            self.events.append(("head", Key))
+            if Key in {
+                "united-kingdom/20260715T120000Z/pack-descriptor.json",
+                "united-kingdom/20260715T120000Z/manifest.json",
+            }:
+                return {}
+            raise FileNotFoundError(Key)
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            if hasattr(Body, "read"):
+                Body.read()
+            self.events.append(("put", Key))
+            return {"ETag": '"etag"'}
+
+        def delete_object(self, *, Bucket, Key, IfMatch=None):
+            self.events.append(("delete", Key))
+
+    client = Client()
+    plan = R.publish_to_r2(root, layout, upload=False).plan
+
+    R.publish_prepared_to_r2(
+        [plan],
+        region_index,
+        layout,
+        client=client,
+        upload_workers=2,
+        heartbeat_every_objects=1,
+        heartbeat_every_seconds=999,
+    )
+
+    events = client.events
+    data_put_indexes = [
+        index
+        for index, event in enumerate(events)
+        if event
+        in {
+            ("put", "united-kingdom/20260715T120000Z/images/10/1/2.json"),
+            ("put", "united-kingdom/20260715T120000Z/tiles/10/1/2.json.gz"),
+            ("put", "united-kingdom/20260715T120000Z/united-kingdom.pmtiles"),
+        }
+    ]
+    descriptor_put_indexes = [
+        events.index(("put", "united-kingdom/20260715T120000Z/pack-descriptor.json")),
+        events.index(("put", "united-kingdom/20260715T120000Z/manifest.json")),
+    ]
+    descriptor_head_indexes = [
+        events.index(("head", "united-kingdom/20260715T120000Z/pack-descriptor.json")),
+        events.index(("head", "united-kingdom/20260715T120000Z/manifest.json")),
+    ]
+    pointer_indexes = [
+        events.index(("put", "united-kingdom/current.json")),
+        events.index(("put", "catalog/current.json")),
+        events.index(("put", "regions.json")),
+    ]
+
+    assert max(data_put_indexes) < min(descriptor_put_indexes)
+    assert max(descriptor_put_indexes) < min(descriptor_head_indexes)
+    assert max(descriptor_head_indexes) < min(pointer_indexes)
+    err = capsys.readouterr().err
+    assert "PUBLISH_UPLOAD START phase=publish.r2_upload_data region=prepared objects_total=3" in err
+    assert "PUBLISH_UPLOAD DONE phase=publish.r2_upload_data region=prepared objects_done=3/3" in err
+
+
+def test_parallel_upload_heartbeats_while_workers_are_busy(tmp_path, capsys):
+    body = b"tile"
+    ops = []
+    for index in range(2):
+        path = tmp_path / f"{index}.json.gz"
+        path.write_bytes(body)
+        ops.append(
+            R.PublishOp(
+                kind="tile",
+                bucket="making-tracks-tiles",
+                key=f"united-kingdom/20260715T120000Z/tiles/10/1/{index}.json.gz",
+                source_path=path,
+            )
+        )
+
+    class SlowClient:
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            if hasattr(Body, "read"):
+                Body.read()
+            time.sleep(0.03)
+            return {"ETag": '"etag"'}
+
+    R._upload_ops_parallel(
+        SlowClient(),
+        ops,
+        phase="publish.r2_upload_data",
+        region="united-kingdom",
+        upload_workers=2,
+        heartbeat_every_objects=100,
+        heartbeat_every_seconds=0.01,
+    )
+
+    err = capsys.readouterr().err
+    assert "objects_done=0/2" in err
+    assert "PUBLISH_UPLOAD DONE phase=publish.r2_upload_data region=united-kingdom objects_done=2/2" in err
+
+
+def test_parallel_upload_uses_bounded_put_workers(tmp_path):
+    ops = []
+    for index in range(4):
+        body = f"tile-{index}".encode()
+        path = tmp_path / f"{index}.json.gz"
+        path.write_bytes(body)
+        ops.append(
+            R.PublishOp(
+                kind="tile",
+                bucket="making-tracks-tiles",
+                key=f"united-kingdom/20260715T120000Z/tiles/10/1/{index}.json.gz",
+                source_path=path,
+            )
+        )
+
+    class Client:
+        def __init__(self):
+            self.active = 0
+            self.max_active = 0
+            self.put_keys = []
+            self.lock = threading.Lock()
+
+        def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            assert Bucket == "making-tracks-tiles"
+            if hasattr(Body, "read"):
+                Body.read()
+            with self.lock:
+                self.active += 1
+                self.max_active = max(self.max_active, self.active)
+                self.put_keys.append(Key)
+            time.sleep(0.01)
+            with self.lock:
+                self.active -= 1
+            return {"ETag": '"etag"'}
+
+    client = Client()
+    uploaded = R._upload_ops_parallel(
+        client,
+        ops,
+        phase="publish.r2_upload_data",
+        region="united-kingdom",
+        upload_workers=2,
+        heartbeat_every_objects=100,
+        heartbeat_every_seconds=999,
+    )
+
+    assert uploaded == 4
+    assert sorted(client.put_keys) == sorted(op.key for op in ops)
+    assert client.max_active <= 2
+    assert client.max_active > 1
+
+
+def test_resolve_upload_workers_uses_env_default_and_validates_range(monkeypatch):
+    monkeypatch.delenv("MT_R2_UPLOAD_WORKERS", raising=False)
+    assert R.resolve_upload_workers() == 16
+
+    monkeypatch.setenv("MT_R2_UPLOAD_WORKERS", "")
+    assert R.resolve_upload_workers() == 16
+
+    monkeypatch.setenv("MT_R2_UPLOAD_WORKERS", "7")
+    assert R.resolve_upload_workers() == 7
+    assert R.resolve_upload_workers(3) == 3
+
+    monkeypatch.setenv("MT_R2_UPLOAD_WORKERS", "not-an-int")
+    with pytest.raises(ValueError, match="MT_R2_UPLOAD_WORKERS"):
+        R.resolve_upload_workers()
+
+    for value in (0, 65):
+        with pytest.raises(ValueError, match="between 1 and 64"):
+            R.resolve_upload_workers(value)
 
 
 def test_default_client_uses_committed_r2_s3_endpoint_contract(monkeypatch):
@@ -1526,6 +1824,11 @@ def test_direct_upload_allows_forward_publish_over_older_current(tmp_path):
         def list_objects_v2(self, *, Bucket, Prefix, MaxKeys, Delimiter=None):
             return {"KeyCount": 0}
 
+        def head_object(self, *, Bucket, Key):
+            if Key.endswith("/pack-descriptor.json") or Key.endswith("/manifest.json"):
+                return {}
+            raise FileNotFoundError(Key)
+
         def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
             self.put_keys.append(Key)
             return {"ETag": '"etag"'}
@@ -1564,6 +1867,11 @@ def test_upload_recovers_a_stale_publish_lock(tmp_path):
 
         def list_objects_v2(self, *, Bucket, Prefix, MaxKeys, Delimiter=None):
             return {"KeyCount": 0}
+
+        def head_object(self, *, Bucket, Key):
+            if Key.endswith("/pack-descriptor.json") or Key.endswith("/manifest.json"):
+                return {}
+            raise FileNotFoundError(Key)
 
         def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
             if Key == "united-kingdom/publish.lock":
@@ -1678,6 +1986,7 @@ def test_file_body_is_closed_when_upload_fails(tmp_path):
     class FailingUploadClient:
         def __init__(self):
             self.tile_body = None
+            self.put_keys = []
             self.deleted = []
 
         def get_object(self, *, Bucket, Key):
@@ -1687,6 +1996,7 @@ def test_file_body_is_closed_when_upload_fails(tmp_path):
             return {"KeyCount": 0}
 
         def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+            self.put_keys.append(Key)
             if Key == "united-kingdom/publish.lock":
                 return {"ETag": '"lock-etag"'}
             if Key == "united-kingdom/20260715T120000Z/tiles/10/1/2.json.gz":
@@ -1704,6 +2014,9 @@ def test_file_body_is_closed_when_upload_fails(tmp_path):
 
     assert client.tile_body is not None
     assert client.tile_body.closed is True
+    assert "united-kingdom/current.json" not in client.put_keys
+    assert "catalog/publish.lock" not in client.put_keys
+    assert "catalog/current.json" not in client.put_keys
     assert client.deleted == [("making-tracks-state", "united-kingdom/publish.lock", '"lock-etag"')]
 
 
