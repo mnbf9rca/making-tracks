@@ -117,6 +117,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="for extract, merge successful sources while recording failed sources",
     )
     parser.add_argument(
+        "--refresh-blank-extracts-only",
+        action="store_true",
+        help=(
+            "for acquire-wikipedia-sitelinks, refetch only accepted sitelink "
+            "pages whose extract fields are blank before re-extracting Wikipedia"
+        ),
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="ignore matching stage fingerprints and rerun the requested stage",
@@ -364,6 +372,18 @@ def _snapshot_dir(args) -> pathlib.Path:
     if args.snapshot_dir:
         return pathlib.Path(args.snapshot_dir)
     return pathlib.Path(args.data_dir) / args.region
+
+
+def _qid_sitelink_blank_extract_refresh_stats(snapshot_path) -> dict | None:
+    try:
+        data = json.loads(pathlib.Path(snapshot_path).read_text())
+    except (OSError, ValueError, RecursionError):
+        return None
+    meta = data.get("_meta")
+    if not isinstance(meta, dict):
+        return None
+    stats = meta.get("qid_sitelink_blank_extract_refresh")
+    return stats if isinstance(stats, dict) else None
 
 
 def _initial_extract_statuses(sources: dict, *, only_source: str | None = None) -> dict:
@@ -1857,16 +1877,23 @@ def _run_pipeline_command(args) -> int:
         try:
             snap_dir = _snapshot_dir(args)
             source_config = acquire.load_config()
-            path = acquire.acquire_qid_sitelink_wikipedia(
-                acquire.snapshot_paths(snap_dir)["wikipedia"],
-                seeds=acquire.qid_sitelink_seeds_from_store(
-                    conn,
-                    region=region.region_id,
-                ),
-                language=region.languages[0],
-                wikidata_config=source_config["wikidata_entities"],
-                wikipedia_config=source_config["wikipedia"],
-            )
+            if args.refresh_blank_extracts_only:
+                path = acquire.refresh_blank_qid_page_extracts(
+                    acquire.snapshot_paths(snap_dir)["wikipedia"],
+                    language=region.languages[0],
+                    wikipedia_config=source_config["wikipedia"],
+                )
+            else:
+                path = acquire.acquire_qid_sitelink_wikipedia(
+                    acquire.snapshot_paths(snap_dir)["wikipedia"],
+                    seeds=acquire.qid_sitelink_seeds_from_store(
+                        conn,
+                        region=region.region_id,
+                    ),
+                    language=region.languages[0],
+                    wikidata_config=source_config["wikidata_entities"],
+                    wikipedia_config=source_config["wikipedia"],
+                )
             snapshots = acquire.snapshot_paths(snap_dir)
             statuses = _initial_extract_statuses(
                 region.sources,
@@ -1944,7 +1971,13 @@ def _run_pipeline_command(args) -> int:
                 conn.rollback()
             print(f"acquisition error: {exc}", file=sys.stderr)
             return 1
+        refresh_stats = _qid_sitelink_blank_extract_refresh_stats(path)
         print(f"wikipedia_sitelinks: {path}")
+        if refresh_stats is not None:
+            print(
+                "wikipedia_blank_extract_refresh: "
+                f"{json.dumps(refresh_stats, sort_keys=True)}"
+            )
         print(f"wikipedia_extract: {counts}")
         return 0
 

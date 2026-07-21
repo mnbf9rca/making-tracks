@@ -571,6 +571,7 @@ def test_wikipedia_acquisition_writes_complete_snapshot(tmp_path):
                 }
             }
         assert params["pageids"] == ["10|20"]
+        assert params["exlimit"] == ["max"]
         return {
             "query": {
                 "pages": {
@@ -649,6 +650,7 @@ def test_qid_sitelink_acquisition_augments_wikipedia_snapshot_with_verified_page
         assert expected_hosts == {"en.wikipedia.org"}
         assert params["titles"] == ["QID Article|Wrong Article"]
         assert params["prop"] == ["extracts|pageimages|pageprops"]
+        assert params["exlimit"] == ["max"]
         return {
             "query": {
                 "pages": {
@@ -709,6 +711,275 @@ def test_qid_sitelink_acquisition_augments_wikipedia_snapshot_with_verified_page
         }
     ]
     assert len(calls) == 2
+
+
+def test_qid_sitelink_acquisition_refreshes_blank_accepted_extracts(tmp_path):
+    snapshot = tmp_path / "wikipedia.snapshot.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "_meta": {
+                    "complete": True,
+                    "retrieved_at": "2026-07-20T00:00:00Z",
+                    "segments": [],
+                },
+                "lang": "en",
+                "pages": [
+                    {
+                        "extract": "",
+                        "lat": 3.1,
+                        "lon": 101.7,
+                        "pageid": 12345,
+                        "title": "QID Article",
+                        "wikidata": "Q42",
+                    }
+                ],
+            },
+            sort_keys=True,
+        )
+    )
+    wikipedia_calls = 0
+
+    def fetch_json(url, *, expected_hosts, max_bytes, headers):
+        nonlocal wikipedia_calls
+        parsed = urllib.parse.urlparse(url)
+        if parsed.netloc == "www.wikidata.org":
+            return {"entities": {"Q42": {"sitelinks": {"enwiki": {"title": "QID Article"}}}}}
+        params = urllib.parse.parse_qs(parsed.query)
+        assert params["exlimit"] == ["max"]
+        wikipedia_calls += 1
+        if wikipedia_calls == 1:
+            return {
+                "query": {
+                    "pages": {
+                        "12345": {
+                            "pageid": 12345,
+                            "title": "QID Article",
+                            "extract": "",
+                            "pageprops": {"wikibase_item": "Q42"},
+                        }
+                    }
+                }
+            }
+        return {
+            "query": {
+                "pages": {
+                    "12345": {
+                        "pageid": 12345,
+                        "title": "QID Article",
+                        "extract": "Recovered extract.",
+                        "pageprops": {"wikibase_item": "Q42"},
+                    }
+                }
+            }
+        }
+
+    out = acquire.acquire_qid_sitelink_wikipedia(
+        snapshot,
+        seeds=[{"qid": "Q42", "lat": 3.1, "lon": 101.7}],
+        language="en",
+        wikidata_config={
+            "endpoint": "https://www.wikidata.org/w/api.php",
+            "allowed_hosts": ["www.wikidata.org"],
+        },
+        wikipedia_config={
+            "endpoint": "https://en.wikipedia.org/w/api.php",
+            "allowed_hosts": ["en.wikipedia.org"],
+        },
+        fetch_json=fetch_json,
+        sleep=lambda _seconds: None,
+        retrieved_at="2026-07-20T01:00:00Z",
+    )
+
+    data = json.loads(out.read_text())
+    assert wikipedia_calls == 2
+    assert data["qid_pages"][0]["extract"] == "Recovered extract."
+    assert data["pages"][0]["extract"] == "Recovered extract."
+    assert data["_meta"]["qid_sitelink_blank_extract_refresh"] == {
+        "accepted_pages": 1,
+        "blank_before": 1,
+        "content_sha256_after": data["_meta"]["qid_sitelink_blank_extract_refresh"][
+            "content_sha256_after"
+        ],
+        "content_sha256_before": data["_meta"]["qid_sitelink_blank_extract_refresh"][
+            "content_sha256_before"
+        ],
+        "recovered": 1,
+        "skipped_mismatch": 0,
+        "single_title_fallbacks": 0,
+        "still_blank": 0,
+    }
+    assert (
+        data["_meta"]["qid_sitelink_blank_extract_refresh"]["content_sha256_before"]
+        != data["_meta"]["qid_sitelink_blank_extract_refresh"]["content_sha256_after"]
+    )
+
+
+def test_qid_sitelink_blank_extract_refresh_skips_wikibase_mismatch(tmp_path):
+    snapshot = tmp_path / "wikipedia.snapshot.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "_meta": {
+                    "complete": True,
+                    "retrieved_at": "2026-07-20T00:00:00Z",
+                    "segments": [],
+                },
+                "lang": "en",
+                "pages": [],
+            },
+            sort_keys=True,
+        )
+    )
+    wikipedia_calls = 0
+
+    def fetch_json(url, *, expected_hosts, max_bytes, headers):
+        nonlocal wikipedia_calls
+        parsed = urllib.parse.urlparse(url)
+        if parsed.netloc == "www.wikidata.org":
+            return {"entities": {"Q42": {"sitelinks": {"enwiki": {"title": "QID Article"}}}}}
+        params = urllib.parse.parse_qs(parsed.query)
+        assert params["exlimit"] == ["max"]
+        wikipedia_calls += 1
+        return {
+            "query": {
+                "pages": {
+                    "12345": {
+                        "pageid": 12345,
+                        "title": "QID Article",
+                        "extract": "" if wikipedia_calls == 1 else "Wrong QID extract.",
+                        "pageprops": {
+                            "wikibase_item": "Q42" if wikipedia_calls == 1 else "Q999"
+                        },
+                    }
+                }
+            }
+        }
+
+    out = acquire.acquire_qid_sitelink_wikipedia(
+        snapshot,
+        seeds=[{"qid": "Q42", "lat": 3.1, "lon": 101.7}],
+        language="en",
+        wikidata_config={
+            "endpoint": "https://www.wikidata.org/w/api.php",
+            "allowed_hosts": ["www.wikidata.org"],
+        },
+        wikipedia_config={
+            "endpoint": "https://en.wikipedia.org/w/api.php",
+            "allowed_hosts": ["en.wikipedia.org"],
+        },
+        fetch_json=fetch_json,
+        sleep=lambda _seconds: None,
+        retrieved_at="2026-07-20T01:00:00Z",
+    )
+
+    data = json.loads(out.read_text())
+    assert wikipedia_calls == 2
+    assert data["qid_pages"][0]["extract"] == ""
+    assert data["_meta"]["qid_sitelink_blank_extract_refresh"]["recovered"] == 0
+    assert data["_meta"]["qid_sitelink_blank_extract_refresh"]["skipped_mismatch"] == 1
+    assert data["_meta"]["qid_sitelink_blank_extract_refresh"]["still_blank"] == 1
+
+
+def test_blank_extract_refresh_falls_back_to_single_title_when_batch_stays_blank(
+    tmp_path,
+):
+    snapshot = tmp_path / "wikipedia.snapshot.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "_meta": {
+                    "complete": True,
+                    "retrieved_at": "2026-07-20T00:00:00Z",
+                    "segments": [],
+                },
+                "lang": "en",
+                "pages": [],
+                "qid_pages": [
+                    {
+                        "extract": "",
+                        "owner_lat": 3.1,
+                        "owner_lon": 101.7,
+                        "pageid": 42,
+                        "qid": "Q42",
+                        "title": "QID Article",
+                        "wikibase_item": "Q42",
+                    },
+                    {
+                        "extract": "",
+                        "owner_lat": 3.2,
+                        "owner_lon": 101.8,
+                        "pageid": 43,
+                        "qid": "Q43",
+                        "title": "Other Article",
+                        "wikibase_item": "Q43",
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+    )
+    titles_seen = []
+
+    def fetch_json(url, *, expected_hosts, max_bytes, headers):
+        parsed = urllib.parse.urlparse(url)
+        params = urllib.parse.parse_qs(parsed.query)
+        titles = params["titles"][0]
+        titles_seen.append(titles)
+        pages = {
+            "42": {
+                "pageid": 42,
+                "title": "QID Article",
+                "extract": "",
+                "pageprops": {"wikibase_item": "Q42"},
+            },
+            "43": {
+                "pageid": 43,
+                "title": "Other Article",
+                "extract": "",
+                "pageprops": {"wikibase_item": "Q43"},
+            },
+        }
+        if titles == "QID Article":
+            pages = {
+                "42": {
+                    "pageid": 42,
+                    "title": "QID Article",
+                    "extract": "Single-title recovered extract.",
+                    "pageprops": {"wikibase_item": "Q42"},
+                }
+            }
+        elif titles == "Other Article":
+            pages = {
+                "43": {
+                    "pageid": 43,
+                    "title": "Other Article",
+                    "extract": "",
+                    "pageprops": {"wikibase_item": "Q43"},
+                }
+            }
+        return {"query": {"pages": pages}}
+
+    out = acquire.refresh_blank_qid_page_extracts(
+        snapshot,
+        language="en",
+        wikipedia_config={
+            "endpoint": "https://en.wikipedia.org/w/api.php",
+            "allowed_hosts": ["en.wikipedia.org"],
+        },
+        fetch_json=fetch_json,
+        sleep=lambda _seconds: None,
+        refreshed_at="2026-07-20T02:00:00Z",
+    )
+
+    data = json.loads(out.read_text())
+    by_qid = {page["qid"]: page for page in data["qid_pages"]}
+    assert titles_seen == ["Other Article|QID Article", "Other Article", "QID Article"]
+    assert by_qid["Q42"]["extract"] == "Single-title recovered extract."
+    assert by_qid["Q43"]["extract"] == ""
+    assert data["_meta"]["qid_sitelink_blank_extract_refresh"]["recovered"] == 1
+    assert data["_meta"]["qid_sitelink_blank_extract_refresh"]["single_title_fallbacks"] == 2
+    assert data["_meta"]["qid_sitelink_blank_extract_refresh"]["still_blank"] == 1
 
 
 def test_qid_sitelink_acquisition_skips_malformed_page_entries(tmp_path):

@@ -45,6 +45,19 @@ Every stage after `extract` requires its immediate predecessor to have completed
 
 `mt_pipeline.source_record.parse()` is the single defensive boundary every extractor will call. It delegates source-ref grammar and unsafe-text stripping to `mt_contracts`, bounds finite coordinates, and bounds plus cleans opaque `props`. `props` is intentionally opaque here: URL validation belongs to extractors when they map a known URL field, and A0 remains the final publish gate.
 
+## Wikipedia Blurb Coverage QA
+
+When a shipped place has a Wikipedia sitelink but no card blurb, trace one QID end to end before changing the pipeline:
+
+1. Retained refs: find the shipped `place_id`, `refs_json`, and `member_refs_json`; confirm the expected `wd:Q...` is retained.
+2. Sitelink acquisition: find the matching `wp:` source row by `props.wikidata`; confirm title, pageid/source_ref, run id, and coordinates.
+3. Snapshot content: inspect `wikipedia.snapshot.json` for the page in `pages` and `qid_pages`; record `extract_len`, image, and `wikibase_item`.
+4. Extracted DB props: confirm `extract` and `description_extract` in `source_records.props_json`; distinguish blank upstream text from sanitizer or persist failures.
+5. Description publish bridge: verify retained `wd:` refs can bridge to `wp:` rows by QID, then identify the specific drop reason.
+6. Published artifacts: inspect the z10 tile plus matching `images/` and `descriptions/` sidecars; compare live CDN and staged SHA when serving behavior matters.
+
+Use `acquire-wikipedia-sitelinks --refresh-blank-extracts-only` to refetch only accepted sitelink pages whose extract fields are blank, then re-extract Wikipedia rows into the working DB.
+
 ## Working Store
 
 The SQLite working store is ephemeral between-stage state, recreated per run. It has a `meta(schema_version)` row so stale-shaped databases fail loudly, but it is not a published cross-boundary artifact. All source-derived values are written with parameterized SQL.

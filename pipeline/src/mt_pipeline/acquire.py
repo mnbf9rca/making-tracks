@@ -442,6 +442,7 @@ def _wiki_pages_url(endpoint: str, pageids: list[int]) -> str:
             "format": "json",
             "prop": "extracts|pageprops|coordinates",
             "exintro": "1",
+            "exlimit": "max",
             "explaintext": "1",
             "pageids": "|".join(str(pageid) for pageid in pageids),
         },
@@ -470,11 +471,219 @@ def _wiki_pages_by_title_url(endpoint: str, titles: list[str]) -> str:
             "format": "json",
             "prop": "extracts|pageimages|pageprops",
             "exintro": "1",
+            "exlimit": "max",
             "explaintext": "1",
             "piprop": "original",
             "titles": "|".join(titles),
         },
     )
+
+
+def _qid_pages_content_sha256(qid_pages: list[dict]) -> str:
+    data = json.dumps(
+        qid_pages,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
+
+
+def _has_extract(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _accepted_blank_qid_pages(qid_pages: list[dict]) -> list[dict]:
+    out = []
+    for page in qid_pages:
+        qid = page.get("qid")
+        title = page.get("title")
+        wikibase_item = page.get("wikibase_item")
+        try:
+            int(page["pageid"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if (
+            isinstance(qid, str)
+            and _QID_RE.fullmatch(qid)
+            and isinstance(title, str)
+            and title
+            and wikibase_item == qid
+            and not _has_extract(page.get("extract"))
+        ):
+            out.append(page)
+    return out
+
+
+def _refresh_matching_snapshot_pages(
+    snapshot: dict,
+    *,
+    pageid: int,
+    extract: str,
+) -> None:
+    pages = snapshot.get("pages", [])
+    if not isinstance(pages, list):
+        return
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        try:
+            candidate_pageid = int(page["pageid"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if candidate_pageid == pageid and not _has_extract(page.get("extract")):
+            page["extract"] = extract
+
+
+def _parsed_wikipedia_pages(data: dict, *, context: str) -> list[tuple[int, dict]]:
+    if not isinstance(data, dict):
+        raise AcquireError(f"Wikipedia {context} response missing pages object")
+    query = data.get("query", {})
+    if not isinstance(query, dict):
+        raise AcquireError(f"Wikipedia {context} response missing pages object")
+    page_map = query.get("pages", {})
+    if not isinstance(page_map, dict):
+        raise AcquireError(f"Wikipedia {context} response missing pages object")
+    parsed_pages: list[tuple[int, dict]] = []
+    for pageid_key, page in page_map.items():
+        if not isinstance(page, dict):
+            continue
+        try:
+            parsed_pages.append((int(pageid_key), page))
+        except (TypeError, ValueError):
+            continue
+    return sorted(parsed_pages)
+
+
+def _apply_refreshed_qid_pages(
+    snapshot: dict,
+    parsed_pages: list[tuple[int, dict]],
+    blank_by_title: dict[str, dict],
+) -> tuple[int, int, set[str]]:
+    recovered = 0
+    skipped_mismatch = 0
+    mismatched_titles: set[str] = set()
+    for _pageid_key, refreshed_page in parsed_pages:
+        title = refreshed_page.get("title")
+        target = blank_by_title.get(title) if isinstance(title, str) else None
+        if target is None:
+            continue
+        qid = target["qid"]
+        pageprops = refreshed_page.get("pageprops", {})
+        wikibase_item = (
+            pageprops.get("wikibase_item") if isinstance(pageprops, dict) else None
+        )
+        try:
+            refreshed_pageid = int(refreshed_page["pageid"])
+            target_pageid = int(target["pageid"])
+        except (KeyError, TypeError, ValueError):
+            skipped_mismatch += 1
+            mismatched_titles.add(str(title))
+            continue
+        if wikibase_item != qid or refreshed_pageid != target_pageid:
+            skipped_mismatch += 1
+            mismatched_titles.add(str(title))
+            continue
+        extract = refreshed_page.get("extract")
+        if not _has_extract(extract):
+            continue
+        target["extract"] = extract
+        _refresh_matching_snapshot_pages(
+            snapshot,
+            pageid=target_pageid,
+            extract=extract,
+        )
+        recovered += 1
+    return recovered, skipped_mismatch, mismatched_titles
+
+
+def _refresh_blank_qid_page_extracts(
+    snapshot: dict,
+    *,
+    wikipedia_config: dict,
+    fetch_json,
+    title_batch_size: int,
+    retries: int,
+    sleep,
+) -> dict[str, object]:
+    qid_pages = snapshot.get("qid_pages", [])
+    if not isinstance(qid_pages, list):
+        qid_pages = []
+    qid_pages = [page for page in qid_pages if isinstance(page, dict)]
+    content_sha256_before = _qid_pages_content_sha256(qid_pages)
+    blanks = _accepted_blank_qid_pages(qid_pages)
+    blank_by_title: dict[str, dict] = {}
+    for page in blanks:
+        blank_by_title.setdefault(str(page["title"]), page)
+
+    endpoint = wikipedia_config["endpoint"]
+    expected_hosts = set(wikipedia_config["allowed_hosts"])
+    max_bytes = int(wikipedia_config.get("max_bytes", fetch.MAX_RESPONSE_BYTES))
+    recovered = 0
+    skipped_mismatch = 0
+    single_title_fallbacks = 0
+    mismatched_titles: set[str] = set()
+    for title_batch in _chunks(sorted(blank_by_title), title_batch_size):
+        data = _retry_json(
+            _wiki_pages_by_title_url(endpoint, title_batch),
+            expected_hosts=expected_hosts,
+            max_bytes=max_bytes,
+            fetch_json=fetch_json,
+            retries=retries,
+            sleep=sleep,
+        )
+        (
+            batch_recovered,
+            batch_skipped_mismatch,
+            batch_mismatched_titles,
+        ) = _apply_refreshed_qid_pages(
+            snapshot,
+            _parsed_wikipedia_pages(data, context="blank extract refresh"),
+            blank_by_title,
+        )
+        recovered += batch_recovered
+        skipped_mismatch += batch_skipped_mismatch
+        mismatched_titles.update(batch_mismatched_titles)
+
+    for page in sorted(
+        _accepted_blank_qid_pages(qid_pages), key=lambda item: str(item["title"])
+    ):
+        title = str(page["title"])
+        if title in mismatched_titles:
+            continue
+        data = _retry_json(
+            _wiki_pages_by_title_url(endpoint, [title]),
+            expected_hosts=expected_hosts,
+            max_bytes=max_bytes,
+            fetch_json=fetch_json,
+            retries=retries,
+            sleep=sleep,
+        )
+        (
+            single_recovered,
+            single_skipped_mismatch,
+            single_mismatched_titles,
+        ) = _apply_refreshed_qid_pages(
+            snapshot,
+            _parsed_wikipedia_pages(data, context="single-title blank extract refresh"),
+            {title: page},
+        )
+        single_title_fallbacks += 1
+        recovered += single_recovered
+        skipped_mismatch += single_skipped_mismatch
+        mismatched_titles.update(single_mismatched_titles)
+
+    still_blank = len(_accepted_blank_qid_pages(qid_pages))
+    return {
+        "accepted_pages": len(qid_pages),
+        "blank_before": len(blanks),
+        "content_sha256_before": content_sha256_before,
+        "content_sha256_after": _qid_pages_content_sha256(qid_pages),
+        "recovered": recovered,
+        "skipped_mismatch": skipped_mismatch,
+        "single_title_fallbacks": single_title_fallbacks,
+        "still_blank": still_blank,
+    }
 
 
 def _commons_upload_url(value: object) -> str | None:
@@ -652,12 +861,55 @@ def acquire_qid_sitelink_wikipedia(
     snapshot["qid_pages"] = sorted(
         qid_pages, key=lambda item: (str(item["qid"]), int(item["pageid"]))
     )
+    blank_extract_refresh = _refresh_blank_qid_page_extracts(
+        snapshot,
+        wikipedia_config=wikipedia_config,
+        fetch_json=fetch_json,
+        title_batch_size=title_batch_size,
+        retries=retries,
+        sleep=sleep,
+    )
     meta = snapshot.setdefault("_meta", {})
     if not isinstance(meta, dict):
         raise AcquireError("wikipedia snapshot metadata must be an object")
     meta["qid_sitelink_retrieved_at"] = retrieved_at or _now()
     meta["qid_sitelink_seed_count"] = len(seed_map)
     meta["qid_sitelink_page_count"] = len(snapshot["qid_pages"])
+    meta["qid_sitelink_blank_extract_refreshed_at"] = meta[
+        "qid_sitelink_retrieved_at"
+    ]
+    meta["qid_sitelink_blank_extract_refresh"] = blank_extract_refresh
+    return _atomic_write_json(path, snapshot)
+
+
+def refresh_blank_qid_page_extracts(
+    snapshot_path,
+    *,
+    language: str,
+    wikipedia_config: dict,
+    fetch_json=fetch.get_json,
+    title_batch_size: int = 50,
+    retries: int = 6,
+    sleep=time.sleep,
+    refreshed_at: str | None = None,
+) -> pathlib.Path:
+    path = pathlib.Path(snapshot_path)
+    snapshot = _load_wikipedia_snapshot(path)
+    if snapshot.get("lang") != language:
+        raise AcquireError("wikipedia snapshot language does not match qid sitelink language")
+    blank_extract_refresh = _refresh_blank_qid_page_extracts(
+        snapshot,
+        wikipedia_config=wikipedia_config,
+        fetch_json=fetch_json,
+        title_batch_size=title_batch_size,
+        retries=retries,
+        sleep=sleep,
+    )
+    meta = snapshot.setdefault("_meta", {})
+    if not isinstance(meta, dict):
+        raise AcquireError("wikipedia snapshot metadata must be an object")
+    meta["qid_sitelink_blank_extract_refreshed_at"] = refreshed_at or _now()
+    meta["qid_sitelink_blank_extract_refresh"] = blank_extract_refresh
     return _atomic_write_json(path, snapshot)
 
 

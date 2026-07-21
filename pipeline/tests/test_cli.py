@@ -729,6 +729,96 @@ def test_cli_acquire_wikipedia_sitelinks_uses_place_qid_coordinates(
     conn.close()
 
 
+def test_cli_acquire_wikipedia_sitelinks_can_refresh_blank_extracts_only(
+    monkeypatch, tmp_path, capsys
+):
+    captured = {}
+    extract_calls = {}
+
+    def fail_full_acquire(*_args, **_kwargs):
+        raise AssertionError("full sitelink acquisition should not run")
+
+    def fake_refresh_blank_qid_page_extracts(snapshot_path, **kwargs):
+        captured["snapshot_path"] = snapshot_path
+        captured.update(kwargs)
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot_path.write_text(
+            json.dumps(
+                {
+                    "_meta": {
+                        "complete": True,
+                        "retrieved_at": "2026-07-15T00:00:00Z",
+                        "qid_sitelink_blank_extract_refresh": {
+                            "accepted_pages": 2,
+                            "blank_before": 1,
+                            "content_sha256_after": "b" * 64,
+                            "content_sha256_before": "a" * 64,
+                            "recovered": 1,
+                            "skipped_mismatch": 0,
+                            "still_blank": 0,
+                        },
+                    },
+                    "lang": "en",
+                    "pages": [],
+                    "qid_pages": [],
+                }
+            )
+        )
+        return snapshot_path
+
+    def fake_run_extract(*_args, **kwargs):
+        extract_calls.update(kwargs)
+        kwargs["status_recorder"]("wikipedia", {"status": "success", "count": 1})
+        return {"wikipedia": 1}
+
+    monkeypatch.setattr(
+        cli.acquire,
+        "acquire_qid_sitelink_wikipedia",
+        fail_full_acquire,
+    )
+    monkeypatch.setattr(
+        cli.acquire,
+        "refresh_blank_qid_page_extracts",
+        fake_refresh_blank_qid_page_extracts,
+    )
+    monkeypatch.setattr(cli.extract_stage, "run_extract", fake_run_extract)
+
+    db = tmp_path / "w.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    store.mark_stage_complete(
+        conn,
+        "malaysia-singapore-brunei",
+        "reconcile",
+        "reconcile-run",
+        "2026-07-15T00:00:00Z",
+    )
+    conn.close()
+
+    snapshot_dir = tmp_path / "snapshots"
+    rc = cli.main(
+        [
+            "--region",
+            "malaysia-singapore-brunei",
+            "acquire-wikipedia-sitelinks",
+            "--refresh-blank-extracts-only",
+            "--db",
+            str(db),
+            "--snapshot-dir",
+            str(snapshot_dir),
+        ]
+    )
+
+    assert rc == 0
+    assert captured["snapshot_path"] == snapshot_dir / "wikipedia.snapshot.json"
+    assert captured["language"] == "en"
+    assert captured["wikipedia_config"]["endpoint"] == "https://en.wikipedia.org/w/api.php"
+    assert extract_calls["only_source"] == "wikipedia"
+    out = capsys.readouterr().out
+    assert "wikipedia_blank_extract_refresh:" in out
+    assert '"recovered": 1' in out
+
+
 def test_cli_acquire_wikipedia_sitelinks_requires_reconcile(
     monkeypatch, tmp_path, capsys
 ):
