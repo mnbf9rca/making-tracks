@@ -177,6 +177,23 @@ final class PinLayersTests: XCTestCase {
         }
     }
 
+    func testTrackReplayActiveArcClearsPaperBackgroundSC1411NonTextContrastFloor() throws {
+        for theme in MapTheme.allCandidates {
+            XCTAssertGreaterThanOrEqual(
+                try contrastRatio(
+                    compositedHex(
+                        foreground: TrackLayers.activeLineColor,
+                        alpha: TrackLayers.activeLineOpacity,
+                        background: theme.background
+                    ),
+                    theme.background
+                ),
+                3.0,
+                theme.id
+            )
+        }
+    }
+
     func testTrackLineSharedStyleValuesBackTheJSONLayer() throws {
         let style = TrackLayers.lineStyle
         let layer = try XCTUnwrap(layer(id: TrackLayers.lineLayerID, in: TrackLayers.trackLayers()))
@@ -189,6 +206,33 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(paint["line-opacity"], .double(style.opacity))
         XCTAssertEqual(paint["line-width"], .double(style.width))
         XCTAssertEqual(paint["line-dasharray"], .array(style.dashPattern.map(JSONValue.double)))
+    }
+
+    func testTrackReplayActiveArcUsesBookedTwoToneLayerAboveVisitedArc() throws {
+        let layers = TrackLayers.trackLayers()
+        XCTAssertNotNil(layer(id: TrackLayers.lineLayerID, in: layers))
+        let active = try XCTUnwrap(layer(id: TrackLayers.activeLineLayerID, in: layers))
+        let visitedIndex = try XCTUnwrap(layerIndex(id: TrackLayers.lineLayerID, in: layers))
+        let activeIndex = try XCTUnwrap(layerIndex(id: TrackLayers.activeLineLayerID, in: layers))
+
+        XCTAssertLessThan(visitedIndex, activeIndex)
+        XCTAssertEqual(active["type"], .string("line"))
+        XCTAssertEqual(active["source"], .string(TrackLayers.sourceID))
+        XCTAssertEqual(layoutValue("line-cap", in: active), .string("round"))
+        XCTAssertEqual(layoutValue("line-join", in: active), .string("round"))
+        XCTAssertEqual(active["filter"], TrackLayers.activeArcFilter())
+
+        guard case let .object(paint)? = active["paint"] else { return XCTFail("active line paint") }
+        XCTAssertEqual(paint["line-color"], .string(TrackLayers.activeLineColor))
+        XCTAssertEqual(paint["line-opacity"], .double(TrackLayers.activeLineOpacity))
+        XCTAssertEqual(paint["line-width"], .double(TrackLayers.activeLineWidth))
+        XCTAssertEqual(paint["line-dasharray"], .array(TrackLayers.activeLineDashPatternValues.map(JSONValue.double)))
+        XCTAssertEqual(TrackLayers.lineColor, "#2d8c83")
+        XCTAssertEqual(TrackLayers.lineWidth, 6.2, accuracy: 1e-9)
+        XCTAssertEqual(TrackLayers.lineOpacity, 1.0, accuracy: 1e-9)
+        XCTAssertEqual(TrackLayers.activeLineColor, "#db5344")
+        XCTAssertEqual(TrackLayers.activeLineWidth, 7.2, accuracy: 1e-9)
+        XCTAssertEqual(TrackLayers.activeLineOpacity, 0.90, accuracy: 1e-9)
     }
 
     func testPinSizeMetricsScaleCircleCategoryIconAndBadgesTogether() {
@@ -651,11 +695,32 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(summary.connectableVisitCount, 2)
     }
 
+    func testTrackSegmentSummaryMarksOnlyArrivingConnectorAsActiveForReplay() {
+        let visits = [
+            trackVisit(id: 1, placeID: "a", seconds: 0, lat: 0, lon: 0),
+            trackVisit(id: 2, placeID: "b", seconds: 300, lat: 0, lon: 1),
+            trackVisit(id: 3, placeID: "c", seconds: 600, lat: 1, lon: 1),
+        ]
+
+        let summary = FeatureEncoding.trackSegmentSummary(visits, activeToVisitID: 3)
+
+        XCTAssertEqual(summary.features.count, 2)
+        XCTAssertEqual(trackProperty(TrackLayers.trackSegmentPhaseProperty, in: summary.features[0]), .string("visited"))
+        XCTAssertEqual(trackProperty(TrackLayers.trackSegmentPhaseProperty, in: summary.features[1]), .string(TrackLayers.activeArcPhase))
+    }
+
     private func layer(id: String, in layers: [JSONValue]) -> [String: JSONValue]? {
         for case let .object(layer) in layers where layer["id"] == .string(id) {
             return layer
         }
         return nil
+    }
+
+    private func layerIndex(id: String, in layers: [JSONValue]) -> Int? {
+        layers.firstIndex { value in
+            guard case let .object(layer) = value else { return false }
+            return layer["id"] == .string(id)
+        }
     }
 
     private func trackProperty(_ key: String, in feature: JSONValue) -> JSONValue? {

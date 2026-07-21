@@ -465,6 +465,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         let slider = app.sliders["map.track-replay.slider"]
         XCTAssertTrue(slider.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(slider.frame.midY, map.frame.midY)
+        XCTAssertTrue(app.staticTexts["map.track-replay.selected-time"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["map.track-replay.start-time"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["map.track-replay.end-time"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["map.track-replay.counter"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.otherElements["map.list-mode.control"].exists)
         slider.adjust(toNormalizedSliderPosition: 0.0)
         XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
         XCTAssertTrue(waitForAccessibilityPin(
@@ -480,6 +486,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         let play = app.buttons["map.track-replay.play"]
         XCTAssertTrue(play.waitForExistence(timeout: 5))
+        attachScreenshot(named: "track-replay-scrub-frame-00")
         play.tap()
         XCTAssertTrue(waitForTrackSegmentCount(1, in: app))
         XCTAssertTrue(waitForAccessibilityPin(
@@ -490,6 +497,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(play.label, "Pause track replay")
         play.tap()
         XCTAssertEqual(play.label, "Play track replay")
+
+        for eventIndex in 1...5 {
+            slider.adjust(toNormalizedSliderPosition: Double(eventIndex) / 5.0)
+            XCTAssertTrue(waitForTrackSegmentCount(eventIndex, in: app))
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+            attachScreenshot(named: "track-replay-scrub-frame-0\(eventIndex)")
+        }
         attachScreenshot(named: "track-replay-pin-arrival")
     }
 
@@ -1667,11 +1681,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     private func waitForTrackSegmentCount(_ count: Int, in app: XCUIApplication) -> Bool {
         let sourceStatus = app.staticTexts["map.debug-track-source-status"]
-        let predicate = NSPredicate(format: "label == %@", "track source applied segments:\(count) layer:true")
+        let expectedStatus = "track source applied segments:\(count) layer:true active-layer:true"
+        let predicate = NSPredicate(format: "label == %@", expectedStatus)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: sourceStatus)
         let result = XCTWaiter.wait(for: [expectation], timeout: 10)
         if result != .completed {
-            XCTFail("Expected track source applied segments:\(count) layer:true, got \(sourceStatus.exists ? sourceStatus.label : "missing track source status")")
+            XCTFail("Expected \(expectedStatus), got \(sourceStatus.exists ? sourceStatus.label : "missing track source status")")
             return false
         }
         return true
@@ -2011,6 +2026,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "list-map-spread-fit": "list-map-spread-fit",
         "my-tracks-burst-readout": "my-tracks-burst-readout",
         "track-replay-pin-arrival": "track-replay-pin-arrival",
+        "track-replay-scrub-frame-00": "track-replay-scrub-frame-00",
+        "track-replay-scrub-frame-01": "track-replay-scrub-frame-01",
+        "track-replay-scrub-frame-02": "track-replay-scrub-frame-02",
+        "track-replay-scrub-frame-03": "track-replay-scrub-frame-03",
+        "track-replay-scrub-frame-04": "track-replay-scrub-frame-04",
+        "track-replay-scrub-frame-05": "track-replay-scrub-frame-05",
         "pin-defined-paper-min": "pin-defined-paper-min",
         "pin-defined-paper-default": "pin-defined-paper-default",
         "pin-defined-paper-max": "pin-defined-paper-max",
