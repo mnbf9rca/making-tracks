@@ -8,8 +8,8 @@
 # This script does not take the lock itself. Two lock-takers is how the lock
 # path drifted apart in the first place, so there is exactly one.
 #
-# Successful runs remove this invocation's DerivedData after xcodebuild has
-# finished; failed runs keep DerivedData and the .xcresult for diagnosis.
+# Successful runs keep this invocation's DerivedData warm; failed runs keep
+# DerivedData and the .xcresult for diagnosis.
 set -euo pipefail
 
 PROJECT="ios/App/MakingTracks.xcodeproj"
@@ -19,10 +19,58 @@ UDID="C4A64D49-24A2-4429-B6E2-AD9A14142A99"
 RUN_DIR="${MT_RELEASE_GATE_RUN_DIR:-/private/tmp/release-gate-${AM_ME:-agent}}"
 DERIVED_DATA="${MT_RELEASE_GATE_DERIVED_DATA:-$RUN_DIR/DerivedData}"
 RESULT_BUNDLE="$RUN_DIR/MakingTracksTests.xcresult"
+DERIVED_DATA_MAX_AGE_SECONDS="${MT_RELEASE_GATE_DERIVED_DATA_MAX_AGE_SECONDS:-604800}"
 
 refuse() {
   echo "release-gate: refused: $1" >&2
   exit 1
+}
+
+mtime_seconds() {
+  stat -f %m "$1" 2>/dev/null || echo 0
+}
+
+prune_derived_data_if_stale() {
+  if [ ! -d "$DERIVED_DATA" ]; then
+    return
+  fi
+
+  if [ "${MT_RELEASE_GATE_CLEAN_DERIVED_DATA:-}" = "1" ]; then
+    echo "release-gate: pruning DerivedData because MT_RELEASE_GATE_CLEAN_DERIVED_DATA=1" >&2
+    rm -rf "$DERIVED_DATA"
+    return
+  fi
+
+  if [ "$DERIVED_DATA_MAX_AGE_SECONDS" = "0" ]; then
+    return
+  fi
+
+  now="$(date +%s)"
+  mtime="$(mtime_seconds "$DERIVED_DATA")"
+  age=$((now - mtime))
+  if [ "$age" -gt "$DERIVED_DATA_MAX_AGE_SECONDS" ]; then
+    echo "release-gate: pruning DerivedData older than ${DERIVED_DATA_MAX_AGE_SECONDS}s" >&2
+    rm -rf "$DERIVED_DATA"
+  fi
+}
+
+phase() {
+  local label
+  local start
+  local status
+  local end
+
+  label="$1"
+  shift
+  start="$(date +%s)"
+  echo "release-gate: phase start: $label" >&2
+  set +e
+  "$@"
+  status=$?
+  set -e
+  end="$(date +%s)"
+  echo "release-gate: phase end: $label status=$status elapsed=$((end - start))s" >&2
+  return "$status"
 }
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || refuse "not inside a git worktree"
@@ -40,26 +88,32 @@ git merge-base --is-ancestor origin/ios HEAD ||
 [ "${MT_SIM_LOCK:-}" = "1" ] ||
   refuse "must be run through scripts/sim-lock.sh (which holds the simulator lock)"
 
-mkdir -p "$RUN_DIR" "$DERIVED_DATA"
+mkdir -p "$RUN_DIR"
+prune_derived_data_if_stale
+mkdir -p "$DERIVED_DATA"
 rm -rf "$RESULT_BUNDLE"
 
-UDID="$UDID" SCHEME="$SCHEME" DERIVED_DATA="$DERIVED_DATA" RESULT_BUNDLE="$RESULT_BUNDLE" sh -ec '
-  xcrun simctl bootstatus "$UDID" -b
-  xcodebuild build \
-    -configuration Release \
-    -project ios/App/MakingTracks.xcodeproj \
-    -scheme "$SCHEME" \
-    -destination "platform=iOS Simulator,id=$UDID" \
-    -derivedDataPath "$DERIVED_DATA"
-  xcodebuild \
-    -project ios/App/MakingTracks.xcodeproj \
-    -scheme "$SCHEME" \
-    -destination "platform=iOS Simulator,id=$UDID" \
-    -parallel-testing-enabled NO \
-    -disable-concurrent-destination-testing \
-    -derivedDataPath "$DERIVED_DATA" \
-    -resultBundlePath "$RESULT_BUNDLE" \
-    test
-'
+phase "simulator boot" xcrun simctl bootstatus "$UDID" -b
+phase "release build" xcodebuild build \
+  -configuration Release \
+  -project ios/App/MakingTracks.xcodeproj \
+  -scheme "$SCHEME" \
+  -destination "platform=iOS Simulator,id=$UDID" \
+  -derivedDataPath "$DERIVED_DATA"
+phase "debug build for testing" xcodebuild build-for-testing \
+  -project ios/App/MakingTracks.xcodeproj \
+  -scheme "$SCHEME" \
+  -destination "platform=iOS Simulator,id=$UDID" \
+  -parallel-testing-enabled NO \
+  -disable-concurrent-destination-testing \
+  -derivedDataPath "$DERIVED_DATA"
+phase "tests without building" xcodebuild test-without-building \
+  -project ios/App/MakingTracks.xcodeproj \
+  -scheme "$SCHEME" \
+  -destination "platform=iOS Simulator,id=$UDID" \
+  -parallel-testing-enabled NO \
+  -disable-concurrent-destination-testing \
+  -derivedDataPath "$DERIVED_DATA" \
+  -resultBundlePath "$RESULT_BUNDLE"
 
-rm -rf "$DERIVED_DATA"
+touch "$DERIVED_DATA"
