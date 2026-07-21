@@ -135,6 +135,20 @@ Cost when it slips: a display change that breaks a UI test lands green, and ever
 branch inherits a red gate until someone fixes a test unrelated to their own work.
 (Incidents → *A display change merged on host tests alone*.)
 
+**A render-query API is not a reliable oracle for "did it draw."** `queryRenderedFeatures` and its kin can
+report zero while the app renders fine, and — worse for debugging — report zero *identically* whether the
+source is empty, the query mistimed the render pass, or the layer genuinely failed to draw. It cannot tell
+you which. A map/UI test that asks "does X appear" must assert on the rendered **pixels**: capture the
+screenshot, scope the scan to the element's frame (not the whole screen), match its colour with tolerance,
+and threshold the pixel count so a stray pixel cannot pass. Asserting on the query is the simulator-side
+version of trusting the compiler — it observes a proxy, not the drawn thing.
+
+The corollary is a debugging rule, not just a test rule: **when several hypotheses die with an identical
+signature, question the premise they share before generating the next one.** A whole run of "why is the
+source empty" theories can share one unexamined assumption — that a zero from the render query *means* empty
+— and every one dies against it because the premise is false and the real fault (a missing glyph pipeline
+for a symbol layer, say) is elsewhere. Reclassify with the pixels before drilling further.
+
 ---
 
 ## 6. Gate conduct
