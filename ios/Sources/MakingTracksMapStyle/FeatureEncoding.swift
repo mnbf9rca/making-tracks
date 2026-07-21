@@ -112,11 +112,13 @@ public enum FeatureEncoding {
     /// with older callers and do not affect connector suppression.
     public static func trackSegmentFeatures(
         _ visits: [TrackVisit],
+        activeToVisitID: Int64? = nil,
         maxConnectorGap: TimeInterval = TrackLayers.defaultMaxConnectorGap,
         burstWindow: TimeInterval = TrackLayers.defaultBurstWindow
     ) -> [JSONValue] {
         trackSegmentSummary(
             visits,
+            activeToVisitID: activeToVisitID,
             maxConnectorGap: maxConnectorGap,
             burstWindow: burstWindow
         ).features
@@ -128,6 +130,7 @@ public enum FeatureEncoding {
     /// and do not affect connector suppression.
     public static func trackSegmentSummary(
         _ visits: [TrackVisit],
+        activeToVisitID: Int64? = nil,
         maxConnectorGap: TimeInterval = TrackLayers.defaultMaxConnectorGap,
         burstWindow: TimeInterval = TrackLayers.defaultBurstWindow
     ) -> TrackSegmentSummary {
@@ -152,7 +155,12 @@ public enum FeatureEncoding {
             else { continue }
             connectableVisitIDs.insert(from.id)
             connectableVisitIDs.insert(to.id)
-            features.append(trackSegmentFeature(from: from, to: to, gap: gap))
+            features.append(trackSegmentFeature(
+                from: from,
+                to: to,
+                gap: gap,
+                phase: to.id == activeToVisitID ? TrackLayers.activeArcPhase : "visited"
+            ))
         }
         return TrackSegmentSummary(
             features: features,
@@ -161,7 +169,12 @@ public enum FeatureEncoding {
         )
     }
 
-    private static func trackSegmentFeature(from: TrackVisit, to: TrackVisit, gap: TimeInterval) -> JSONValue {
+    private static func trackSegmentFeature(
+        from: TrackVisit,
+        to: TrackVisit,
+        gap: TimeInterval,
+        phase: String
+    ) -> JSONValue {
         .object([
             "type": .string("Feature"),
             "geometry": .object([
@@ -172,6 +185,7 @@ public enum FeatureEncoding {
                 "from_visit_id": .double(Double(from.id)),
                 "to_visit_id": .double(Double(to.id)),
                 "gap_seconds": .double(gap),
+                TrackLayers.trackSegmentPhaseProperty: .string(phase),
             ]),
         ])
     }
