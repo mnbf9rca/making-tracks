@@ -535,6 +535,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(lovedFilter.waitForExistence(timeout: 5))
         XCTAssertEqual(lovedFilter.value as? String, "Not selected")
         lovedFilter.tap()
+        XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["track-filter-picker.loved"].value as? String, "Not selected")
+        app.buttons["track-filter-picker.loved"].tap()
+        XCTAssertEqual(app.buttons["track-filter-picker.loved"].value as? String, "Selected")
+        XCTAssertTrue(waitForButtonLabel("Show 0 visits", identifier: "track-filter-picker.apply", in: app))
+        app.buttons["track-filter-picker.apply"].tap()
         XCTAssertEqual(lovedFilter.value as? String, "Selected")
         XCTAssertTrue(waitForSourceFeatureCount(0, in: app))
         XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
@@ -563,6 +569,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         lovedFilter = element(identifier: "map.list-mode.filter.loved", in: lovedApp)
         XCTAssertTrue(lovedFilter.waitForExistence(timeout: 5))
         lovedFilter.tap()
+        XCTAssertTrue(lovedApp.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "track-filter-picker-open")
+        XCTAssertEqual(lovedApp.buttons["track-filter-picker.loved"].value as? String, "Not selected")
+        lovedApp.buttons["track-filter-picker.loved"].tap()
+        XCTAssertEqual(lovedApp.buttons["track-filter-picker.loved"].value as? String, "Selected")
+        XCTAssertTrue(waitForButtonLabel("Show 1 visit", identifier: "track-filter-picker.apply", in: lovedApp))
+        lovedApp.buttons["track-filter-picker.apply"].tap()
         XCTAssertTrue(waitForSourceFeatureCount(1, in: lovedApp))
         XCTAssertTrue(waitForTrackSegmentCount(0, in: lovedApp))
         attachScreenshot(named: "track-loved-filter-map-source")
@@ -1704,6 +1717,18 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         return true
     }
 
+    private func waitForButtonLabel(_ label: String, identifier: String, in app: XCUIApplication) -> Bool {
+        let button = app.buttons[identifier]
+        let predicate = NSPredicate(format: "exists == true AND label == %@", label)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: button)
+        let result = XCTWaiter.wait(for: [expectation], timeout: 10)
+        if result != .completed {
+            XCTFail("Expected \(identifier) label \(label), got \(button.exists ? button.label : "missing button")")
+            return false
+        }
+        return true
+    }
+
     private func assertNoFrameIntersection(
         _ first: XCUIElement,
         _ second: XCUIElement,
@@ -2037,6 +2062,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "list-map-polished-chrome": "list-map-polished-chrome",
         "list-map-spread-fit": "list-map-spread-fit",
         "my-tracks-burst-readout": "my-tracks-burst-readout",
+        "track-filter-picker-open": "track-filter-picker-open",
         "track-replay-pin-arrival": "track-replay-pin-arrival",
         "track-replay-scrub-frame-00": "track-replay-scrub-frame-00",
         "track-replay-scrub-frame-01": "track-replay-scrub-frame-01",
