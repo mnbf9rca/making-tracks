@@ -896,6 +896,12 @@ final class AppShellTests: XCTestCase {
             OnboardingStorage.startupViewport(argumentSeed: "penang-mid", chosenRegionRawValue: "uk"),
             .penangMid
         )
+        XCTAssertEqual(
+            OnboardingStorage.startupViewport(argumentSeed: "kl-mid", chosenRegionRawValue: "uk"),
+            .klMid
+        )
+        XCTAssertEqual(ViewportSeed.klMid.bbox, ViewportSeed.kl.bbox)
+        XCTAssertEqual(ViewportSeed.klMid.zoom, 13)
         XCTAssertEqual(ViewportSeed.penang.bbox, BBox(minLon: 100.282, minLat: 5.440, maxLon: 100.306, maxLat: 5.464))
         XCTAssertEqual(ViewportSeed.penang.zoom, 14)
         XCTAssertEqual(ViewportSeed.penangWide.bbox, BBox(minLon: 100.264, minLat: 5.422, maxLon: 100.324, maxLat: 5.482))
