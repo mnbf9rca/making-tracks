@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-label="Accessibility-size Retrace filter picker showing list and type selection">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6f3ea"/>
+      <stop offset=".62" stop-color="#e9f0e8"/>
+      <stop offset="1" stop-color="#dfeceb"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#1c2421" flood-opacity=".24"/>
+    </filter>
+    <style>
+      .label { font-family: Helvetica, Arial, sans-serif; letter-spacing: 0; }
+      .title { font-size: 26px; font-weight: 780; fill: #24302b; }
+      .body { font-size: 18px; font-weight: 700; fill: #24302b; }
+      .small { font-size: 15px; font-weight: 680; }
+      .tiny { font-size: 12px; font-weight: 720; }
+      .muted { fill: #65736b; }
+      .map-label { font-size: 11px; font-weight: 590; fill: #68756f; }
+      .road { fill: none; stroke: #fffdf7; stroke-width: 10; stroke-linecap: round; stroke-linejoin: round; }
+      .road-line { fill: none; stroke: #d9ddd3; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+      .visited-arc { fill: none; stroke: #2d8c83; stroke-width: 6.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 9; opacity: 1; }
+      .active-arc { fill: none; stroke: #dd6354; stroke-width: 7.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 9; opacity: .90; }
+      .check { fill: none; stroke: #fffaf2; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .empty-check { fill: none; stroke: #7c8981; stroke-width: 2; }
+    </style>
+  </defs>
+
+  <rect width="390" height="844" rx="42" fill="#101514"/>
+  <rect x="12" y="12" width="366" height="820" rx="34" fill="url(#paper)"/>
+
+  <g clip-path="inset(12 round 34)">
+    <rect x="12" y="12" width="366" height="820" fill="#f3f0e7"/>
+    <path d="M250 0c25 58 34 112 11 157-18 34-55 54-73 87-25 45-8 93-28 132-24 46-87 54-104 100-19 53 23 96 7 153-12 45-51 76-53 132h368V0z" fill="#b8d7dc" opacity=".8"/>
+    <path d="M18 91c48-33 97-28 126-3 23 20 21 54-7 74-42 29-93 20-119 3z" fill="#cfe0c9"/>
+    <path class="road" d="M-24 248C51 226 83 205 149 214c60 8 92 56 158 51 55-5 87-27 130-60"/>
+    <path class="road-line" d="M-24 248C51 226 83 205 149 214c60 8 92 56 158 51 55-5 87-27 130-60"/>
+    <path class="road" d="M47 20c35 68 57 126 53 189-4 66-42 106-35 173 8 72 62 104 70 170 7 63-26 105-61 164"/>
+    <path class="road-line" d="M47 20c35 68 57 126 53 189-4 66-42 106-35 173 8 72 62 104 70 170 7 63-26 105-61 164"/>
+    <text class="label map-label" x="130" y="236" transform="rotate(8 130 236)">High Street</text>
+    <path class="visited-arc" d="M95 226C132 178 177 172 211 204"/>
+    <path class="visited-arc" d="M211 204C240 224 260 243 277 280"/>
+    <path class="active-arc" d="M277 280C254 337 226 386 240 462"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="24" y="54" width="342" height="146" rx="26" fill="#fffdf8"/>
+    <text class="label title" x="58" y="88">Retrace</text>
+    <path d="M45 74l-9 9 9 9" fill="none" stroke="#3d4842" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="label small muted" x="58" y="114">27 visits</text>
+    <rect x="36" y="132" width="100" height="38" rx="19" fill="#20312c"/>
+    <text class="label tiny" x="56" y="156" fill="#f8efe3">KL walk</text>
+    <rect x="144" y="132" width="112" height="38" rx="19" fill="#20312c"/>
+    <text class="label tiny" x="164" y="156" fill="#f8efe3">Weekend</text>
+    <rect x="264" y="132" width="72" height="38" rx="19" fill="#edf3ec"/>
+    <text class="label tiny" x="283" y="156" fill="#33413b">More</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="18" y="244" width="354" height="548" rx="34" fill="#fffdf8"/>
+    <rect x="160" y="260" width="70" height="5" rx="2.5" fill="#c6cec7"/>
+    <text class="label title" x="36" y="304">Filter retrace</text>
+    <text class="label small muted" x="36" y="332">27 visits in scope</text>
+
+    <rect x="36" y="356" width="132" height="44" rx="22" fill="#20312c"/>
+    <text class="label tiny" x="57" y="383" fill="#f8efe3">KL walk</text>
+    <rect x="176" y="356" width="148" height="44" rx="22" fill="#20312c"/>
+    <text class="label tiny" x="197" y="383" fill="#f8efe3">Weekend</text>
+
+    <text class="label tiny muted" x="36" y="432">LISTS</text>
+    <rect x="36" y="452" width="318" height="66" rx="18" fill="#f2f6f0"/>
+    <circle cx="64" cy="485" r="13" fill="#20312c"/>
+    <path class="check" d="M57 485l5 5 10-12"/>
+    <text class="label body" x="91" y="480">KL walk</text>
+    <text class="label tiny muted" x="91" y="500">11 visits</text>
+
+    <rect x="36" y="528" width="318" height="66" rx="18" fill="#fffdf8"/>
+    <circle class="empty-check" cx="64" cy="561" r="13"/>
+    <text class="label body" x="91" y="556">Coffee crawl</text>
+    <text class="label tiny muted" x="91" y="576">8 visits</text>
+
+    <text class="label tiny muted" x="36" y="626">PLACE TYPES</text>
+    <rect x="36" y="646" width="132" height="46" rx="23" fill="#20312c"/>
+    <circle cx="62" cy="669" r="6" fill="#d6aa2f"/>
+    <text class="label tiny" x="78" y="674" fill="#f8efe3">Historic</text>
+    <rect x="178" y="646" width="94" height="46" rx="23" fill="#edf3ec"/>
+    <circle cx="204" cy="669" r="6" fill="#d64b3c"/>
+    <text class="label tiny" x="220" y="674" fill="#33413b">Cafe</text>
+    <rect x="36" y="702" width="104" height="46" rx="23" fill="#edf3ec"/>
+    <circle cx="62" cy="725" r="6" fill="#247b74"/>
+    <text class="label tiny" x="78" y="730" fill="#33413b">Park</text>
+
+    <rect x="36" y="754" width="318" height="36" rx="18" fill="#20312c"/>
+    <text class="label tiny" x="136" y="777" fill="#f8efe3">Show 27 visits</text>
+  </g>
+
+  <rect x="154" y="24" width="82" height="5" rx="2.5" fill="#0f1412" opacity=".86"/>
+  <line x1="24" y1="812" x2="366" y2="812" stroke="#20312c" stroke-width="1" stroke-dasharray="4 7" opacity=".22"/>
+</svg>
