@@ -177,9 +177,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews[sheetInstanceIdentifier].exists)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].exists)
         XCTAssertFalse(element(identifier: "place-card.description", in: app).exists)
+        let mediaSlot = element(identifier: "place-card.photo", in: app)
+        XCTAssertFalse(mediaSlot.waitForExistence(timeout: 1))
         let placeholder = element(identifier: "place-card.photo.placeholder", in: app)
-        XCTAssertTrue(placeholder.waitForExistence(timeout: 5))
-        XCTAssertEqual(placeholder.label, "No photo available for Art Deco Cinema")
+        XCTAssertFalse(placeholder.waitForExistence(timeout: 1))
         let sourceArticle = app.buttons["place-card.source-article"]
         XCTAssertTrue(sourceArticle.exists)
         XCTAssertEqual(sourceArticle.label, "OpenStreetMap source article")
