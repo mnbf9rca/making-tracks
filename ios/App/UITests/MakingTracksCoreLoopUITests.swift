@@ -355,11 +355,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         wantToGoRow.tap()
         app.buttons["list-picker.done"].tap()
         app.buttons["place-card.visited"].tap()
-        XCTAssertTrue(app.buttons["place-card.loved"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.buttons["place-card.loved"].label, "Love")
+        XCTAssertTrue(waitForButtonLabel("Love", identifier: "place-card.loved", in: app))
         app.buttons["place-card.loved"].tap()
-        XCTAssertTrue(app.buttons["place-card.loved"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.buttons["place-card.loved"].label, "Unlove")
+        XCTAssertTrue(waitForButtonLabel("Unlove", identifier: "place-card.loved", in: app))
         closePlaceCard(in: app)
 
         XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
@@ -379,8 +377,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         tapFixturePin(in: relaunchedMap)
         XCTAssertTrue(relaunched.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
         XCTAssertEqual(relaunched.buttons["place-card.save"].label, "Saved")
-        XCTAssertTrue(relaunched.buttons["place-card.loved"].waitForExistence(timeout: 5))
-        XCTAssertEqual(relaunched.buttons["place-card.loved"].label, "Unlove")
+        XCTAssertTrue(waitForButtonLabel("Unlove", identifier: "place-card.loved", in: relaunched))
     }
 
     func testFirstRunOnboardingPersistsRegionAndCompletesBeforeRelaunch() {
@@ -469,13 +466,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertTrue(app.buttons["onboarding.next"].waitForExistence(timeout: 5))
         app.buttons["onboarding.next"].tap()
-        XCTAssertTrue(app.buttons["onboarding.next"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Where places come from"].waitForExistence(timeout: 5))
         app.buttons["onboarding.next"].tap()
+        XCTAssertTrue(app.staticTexts["Choose your first region"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["onboarding.region.uk"].waitForExistence(timeout: 5))
         app.buttons["onboarding.region.uk"].tap()
-        XCTAssertTrue(app.buttons["onboarding.next"].isEnabled)
+        XCTAssertTrue(waitForButtonEnabled(true, identifier: "onboarding.next", in: app))
         app.buttons["onboarding.next"].tap()
-        XCTAssertTrue(app.buttons["onboarding.next"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Download UK"].waitForExistence(timeout: 5))
         app.buttons["onboarding.next"].tap()
         XCTAssertTrue(app.buttons["onboarding.location.skip"].waitForExistence(timeout: 5))
     }
@@ -943,12 +941,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(lovedFilter.value as? String, "Not selected")
         lovedFilter.tap()
         XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.buttons["track-filter-picker.loved"].value as? String, "Not selected")
+        XCTAssertTrue(waitForElementValue("Not selected", identifier: "track-filter-picker.loved", in: app))
         app.buttons["track-filter-picker.loved"].tap()
-        XCTAssertEqual(app.buttons["track-filter-picker.loved"].value as? String, "Selected")
+        XCTAssertTrue(waitForElementValue("Selected", identifier: "track-filter-picker.loved", in: app))
         XCTAssertTrue(waitForButtonLabel("Show 0 visits", identifier: "track-filter-picker.apply", in: app))
         app.buttons["track-filter-picker.apply"].tap()
-        XCTAssertEqual(lovedFilter.value as? String, "Selected")
+        XCTAssertTrue(waitForElementValue("Selected", identifier: "map.list-mode.filter.loved", in: app))
         XCTAssertTrue(waitForSourceFeatureCount(0, in: app))
         XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
 
@@ -978,9 +976,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         lovedFilter.tap()
         XCTAssertTrue(lovedApp.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
         attachScreenshot(named: "track-filter-picker-open")
-        XCTAssertEqual(lovedApp.buttons["track-filter-picker.loved"].value as? String, "Not selected")
+        XCTAssertTrue(waitForElementValue("Not selected", identifier: "track-filter-picker.loved", in: lovedApp))
         lovedApp.buttons["track-filter-picker.loved"].tap()
-        XCTAssertEqual(lovedApp.buttons["track-filter-picker.loved"].value as? String, "Selected")
+        XCTAssertTrue(waitForElementValue("Selected", identifier: "track-filter-picker.loved", in: lovedApp))
         XCTAssertTrue(waitForButtonLabel("Show 1 visit", identifier: "track-filter-picker.apply", in: lovedApp))
         lovedApp.buttons["track-filter-picker.apply"].tap()
         XCTAssertTrue(waitForSourceFeatureCount(1, in: lovedApp))
@@ -1177,7 +1175,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(scrollToHittable(toggleAll, in: app))
         XCTAssertEqual(toggleAll.label, "Hide all categories")
         toggleAll.tap()
-        XCTAssertEqual(toggleAll.label, "Show all categories")
+        XCTAssertTrue(waitForButtonLabel("Show all categories", identifier: "map.layers.show-all-categories", in: app))
         app.buttons["map.layers.done"].tap()
 
         tapFixturePin(in: map)
@@ -1187,9 +1185,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         openLayers(in: app)
         XCTAssertTrue(scrollToHittable(toggleAll, in: app))
-        XCTAssertEqual(toggleAll.label, "Show all categories")
+        XCTAssertTrue(waitForButtonLabel("Show all categories", identifier: "map.layers.show-all-categories", in: app))
         toggleAll.tap()
-        XCTAssertEqual(toggleAll.label, "Hide all categories")
+        XCTAssertTrue(waitForButtonLabel("Hide all categories", identifier: "map.layers.show-all-categories", in: app))
         app.buttons["map.layers.done"].tap()
 
         openFixtureCard(in: map, app: app)
@@ -1287,14 +1285,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["settings.theme.selected"].exists)
         XCTAssertTrue(app.buttons["settings.theme.defined-paper"].exists)
-        XCTAssertEqual(app.buttons["settings.theme.defined-paper"].value as? String, "Selected")
-        XCTAssertEqual(app.buttons["settings.theme.snow"].value as? String, "Not selected")
+        XCTAssertTrue(waitForElementValue("Selected", identifier: "settings.theme.defined-paper", in: app))
+        XCTAssertTrue(waitForElementValue("Not selected", identifier: "settings.theme.snow", in: app))
 
         let snowThemeButton = app.buttons["settings.theme.snow"]
         XCTAssertTrue(scrollToHittable(snowThemeButton, in: app))
         snowThemeButton.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
-        XCTAssertEqual(snowThemeButton.value as? String, "Selected")
-        XCTAssertEqual(app.buttons["settings.theme.defined-paper"].value as? String, "Not selected")
+        XCTAssertTrue(waitForElementValue("Selected", identifier: "settings.theme.snow", in: app))
+        XCTAssertTrue(waitForElementValue("Not selected", identifier: "settings.theme.defined-paper", in: app))
         app.buttons["menu.done"].tap()
     }
 
@@ -1548,16 +1546,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(lovedButton.waitForExistence(timeout: 5))
         XCTAssertTrue(unseeButton.waitForExistence(timeout: 5))
         XCTAssertEqual(actionBar.buttons.count, 3)
-        XCTAssertEqual(lovedButton.label, "Love")
-        XCTAssertEqual(unseeButton.label, "Un-see")
-        XCTAssertTrue(unseeButton.isEnabled)
+        XCTAssertTrue(waitForButtonLabel("Love", identifier: "place-card.loved", in: app))
+        XCTAssertTrue(waitForButtonLabel("Un-see", identifier: "place-card.unsee", in: app))
+        XCTAssertTrue(waitForButtonEnabled(true, identifier: "place-card.unsee", in: app))
 
         lovedButton.tap()
-        XCTAssertTrue(lovedButton.waitForExistence(timeout: 5))
-        XCTAssertTrue(unseeButton.waitForExistence(timeout: 5))
         XCTAssertEqual(actionBar.buttons.count, 3)
-        XCTAssertEqual(lovedButton.label, "Unlove")
-        XCTAssertFalse(unseeButton.isEnabled)
+        XCTAssertTrue(waitForButtonLabel("Unlove", identifier: "place-card.loved", in: app))
+        XCTAssertTrue(waitForButtonEnabled(false, identifier: "place-card.unsee", in: app))
         XCTAssertFalse(actionBar.buttons["place-card.hide"].exists)
     }
 
@@ -1834,7 +1830,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let themeButton = app.buttons["settings.theme.\(themeID)"]
         XCTAssertTrue(scrollToHittable(themeButton, in: app))
         themeButton.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
-        XCTAssertEqual(themeButton.value as? String, "Selected")
+        XCTAssertTrue(waitForElementValue("Selected", identifier: "settings.theme.\(themeID)", in: app))
         app.buttons["menu.done"].tap()
         XCTAssertTrue(waitForNonExistence(of: app.staticTexts["Settings"], timeout: 5))
         XCTAssertTrue(waitForMapTheme(themeID, in: app))
@@ -2260,6 +2256,32 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let result = XCTWaiter.wait(for: [expectation], timeout: 10)
         if result != .completed {
             XCTFail("Expected \(identifier) label \(label), got \(button.exists ? button.label : "missing button")")
+            return false
+        }
+        return true
+    }
+
+    private func waitForButtonEnabled(_ enabled: Bool, identifier: String, in app: XCUIApplication) -> Bool {
+        let button = app.buttons[identifier]
+        let predicate = NSPredicate(format: "exists == true AND enabled == %@", NSNumber(value: enabled))
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: button)
+        let result = XCTWaiter.wait(for: [expectation], timeout: 10)
+        if result != .completed {
+            XCTFail("Expected \(identifier) enabled \(enabled), got \(button.exists ? String(button.isEnabled) : "missing button")")
+            return false
+        }
+        return true
+    }
+
+    private func waitForElementValue(_ value: String, identifier: String, in app: XCUIApplication) -> Bool {
+        let result = AXValueWaiter.wait(expected: value, timeout: 10) {
+            AXElementReadback.value(for: identifier) {
+                let current = element(identifier: $0, in: app)
+                return (exists: current.exists, value: { current.value as? String })
+            }
+        }
+        if !result.matched {
+            XCTFail("Expected \(identifier) value \(value), got \(result.observed ?? "missing element")")
             return false
         }
         return true

@@ -88,6 +88,8 @@ jobs:
           python3 scripts/ios-test-shards.py validate-static \
             --source ios/App/UITests/MakingTracksCoreLoopUITests.swift \
             --manifest .github/ios-ui-test-shards.json
+          python3 scripts/ios-test-shards.py validate-ax-waits \
+            --source ios/App/UITests/MakingTracksCoreLoopUITests.swift
 
       - name: Resolve simulator destination
         run: |

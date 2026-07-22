@@ -50,6 +50,69 @@ def test_static_validation_fails_with_missing_test_name(tmp_path):
     assert "testTwo" in result.stderr
 
 
+def test_decoy_accessibility_wait_validation_flags_same_identifier_label_read(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """
+        final class MakingTracksCoreLoopUITests: XCTestCase {
+            func testDecoyWait() {
+                XCTAssertTrue(app.buttons["place-card.loved"].waitForExistence(timeout: 5))
+                XCTAssertEqual(app.buttons["place-card.loved"].label, "Love")
+            }
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 1
+    assert "decoy accessibility waits:" in result.stderr
+    assert "place-card.loved" in result.stderr
+    assert ".label" in result.stderr
+
+
+def test_decoy_accessibility_wait_validation_flags_same_identifier_value_read(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """
+        final class MakingTracksCoreLoopUITests: XCTestCase {
+            func testDecoyWait() {
+                XCTAssertTrue(app.buttons["track-filter-picker.loved"].waitForExistence(timeout: 5))
+                XCTAssertEqual(app.buttons["track-filter-picker.loved"].value as? String, "Selected")
+            }
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 1
+    assert "track-filter-picker.loved" in result.stderr
+    assert ".value" in result.stderr
+
+
+def test_decoy_accessibility_wait_validation_accepts_property_specific_wait(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """
+        final class MakingTracksCoreLoopUITests: XCTestCase {
+            func testSpecificWait() {
+                XCTAssertTrue(waitForButtonLabel("Love", identifier: "place-card.loved", in: app))
+                XCTAssertTrue(waitForElementValue("Selected", identifier: "track-filter-picker.loved", in: app))
+            }
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 0, result.stderr
+    assert "accessibility wait guard found no decoys" in result.stdout
+
+
 def test_write_only_testing_outputs_full_xcode_identifiers(tmp_path):
     manifest = tmp_path / "manifest.json"
     output = tmp_path / "only-testing.txt"
