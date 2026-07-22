@@ -7,6 +7,11 @@ private struct AXSampleMatch: Equatable {
     var observed: String?
 }
 
+private struct AXExistenceMatch: Equatable {
+    var matched: Bool
+    var observedExists: Bool
+}
+
 private struct AXStubElement {
     var exists: Bool
     var label: String
@@ -88,6 +93,70 @@ private enum AXValueWaiter {
 
         let attempts = max(1, Int(ceil(timeout / interval)))
         return wait(matching: predicate, attempts: attempts, interval: interval, sample: sample)
+    }
+}
+
+private enum AXExistenceWaiter {
+    static func waitForAbsence(
+        attempts: Int,
+        interval: TimeInterval = 0,
+        exists: () -> Bool
+    ) -> AXExistenceMatch {
+        precondition(attempts > 0, "AX existence wait must make at least one sample")
+
+        var observed = true
+        for attempt in 0..<attempts {
+            observed = exists()
+            if !observed {
+                return AXExistenceMatch(matched: true, observedExists: observed)
+            }
+            if interval > 0, attempt < attempts - 1 {
+                RunLoop.current.run(until: Date().addingTimeInterval(interval))
+            }
+        }
+        return AXExistenceMatch(matched: false, observedExists: observed)
+    }
+
+    static func waitForAbsence(
+        timeout: TimeInterval,
+        interval: TimeInterval = 0.1,
+        exists: () -> Bool
+    ) -> AXExistenceMatch {
+        precondition(interval > 0, "AX existence wait interval must be positive")
+
+        let attempts = max(1, Int(ceil(timeout / interval)))
+        return waitForAbsence(attempts: attempts, interval: interval, exists: exists)
+    }
+
+    static func confirmContinuousAbsence(
+        attempts: Int,
+        interval: TimeInterval = 0,
+        exists: () -> Bool
+    ) -> AXExistenceMatch {
+        precondition(attempts > 0, "AX existence wait must make at least one sample")
+
+        var observed = false
+        for attempt in 0..<attempts {
+            observed = exists()
+            if observed {
+                return AXExistenceMatch(matched: false, observedExists: observed)
+            }
+            if interval > 0, attempt < attempts - 1 {
+                RunLoop.current.run(until: Date().addingTimeInterval(interval))
+            }
+        }
+        return AXExistenceMatch(matched: true, observedExists: observed)
+    }
+
+    static func confirmContinuousAbsence(
+        timeout: TimeInterval,
+        interval: TimeInterval = 0.1,
+        exists: () -> Bool
+    ) -> AXExistenceMatch {
+        precondition(interval > 0, "AX existence wait interval must be positive")
+
+        let attempts = max(1, Int(ceil(timeout / interval)))
+        return confirmContinuousAbsence(attempts: attempts, interval: interval, exists: exists)
     }
 }
 
@@ -218,6 +287,51 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(result.matched)
         XCTAssertEqual(result.observed, "source applied features:24 layer:true")
         XCTAssertTrue(samples.isEmpty)
+    }
+
+    func testAXExistenceWaiterWaitsThroughTransientPresence() {
+        var samples = [true, true, false]
+
+        let result = AXExistenceWaiter.waitForAbsence(attempts: 3, interval: 0) {
+            samples.removeFirst()
+        }
+
+        XCTAssertTrue(result.matched)
+        XCTAssertEqual(result.observedExists, false)
+        XCTAssertTrue(samples.isEmpty)
+    }
+
+    func testAXExistenceWaiterReportsStillPresentWhenElementNeverDisappears() {
+        let result = AXExistenceWaiter.waitForAbsence(attempts: 2, interval: 0) {
+            true
+        }
+
+        XCTAssertFalse(result.matched)
+        XCTAssertEqual(result.observedExists, true)
+    }
+
+    func testAXExistenceWaiterConfirmsContinuousAbsence() {
+        var samples = [false, false, false]
+
+        let result = AXExistenceWaiter.confirmContinuousAbsence(attempts: 3, interval: 0) {
+            samples.removeFirst()
+        }
+
+        XCTAssertTrue(result.matched)
+        XCTAssertEqual(result.observedExists, false)
+        XCTAssertTrue(samples.isEmpty)
+    }
+
+    func testAXExistenceWaiterFailsContinuousAbsenceOnFirstObservedPresence() {
+        var samples = [false, true, false]
+
+        let result = AXExistenceWaiter.confirmContinuousAbsence(attempts: 3, interval: 0) {
+            samples.removeFirst()
+        }
+
+        XCTAssertFalse(result.matched)
+        XCTAssertEqual(result.observedExists, true)
+        XCTAssertEqual(samples, [false])
     }
 
     func testAXSliderUpperEdgePositionsAvoidTrueEdgeUntilLastAttempt() {
@@ -1349,7 +1463,6 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(diagnosticApp.otherElements["map.surface"].waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: diagnosticApp))
         XCTAssertEqual(diagnosticApp.staticTexts["map.debug-coverage"].label, "coverage-bboxes:1")
-        diagnosticApp.terminate()
 
         for themeID in ["defined-paper", "snow", "street-contrast", "verdant-kl"] {
             let app = launch(
@@ -1361,7 +1474,6 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10), themeID)
             XCTAssertTrue(waitForMapTheme(themeID, in: app), themeID)
             attachScreenshot(named: "coverage-edge-\(themeID)")
-            app.terminate()
         }
     }
 
@@ -1512,7 +1624,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["place-card.visited"].tap()
         closePlaceCard(in: app)
 
-        XCTAssertFalse(nearbyPrompt.waitForExistence(timeout: 2))
+        XCTAssertTrue(confirmPromptRemainsAbsent("map.nearby-prompt", in: app, timeout: 2))
         XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
     }
 
@@ -2083,6 +2195,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             return false
         }
         return true
+    }
+
+    private func confirmPromptRemainsAbsent(_ identifier: String, in app: XCUIApplication, timeout: TimeInterval) -> Bool {
+        let result = AXExistenceWaiter.confirmContinuousAbsence(timeout: timeout, interval: 0.25) {
+            app.otherElements[identifier].exists
+        }
+        if result.matched {
+            return true
+        }
+
+        let prompt = app.otherElements[identifier]
+        let description = prompt.exists ? prompt.debugDescription : "prompt was observed during polling but is no longer present"
+        XCTFail("Expected \(identifier) to remain absent; observedExists=\(result.observedExists); \(description)")
+        return false
     }
 
     private func waitForTrackSegmentCount(_ count: Int, in app: XCUIApplication) -> Bool {
