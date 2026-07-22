@@ -112,6 +112,8 @@ populate_only_testing_args() {
     refuse "MT_RELEASE_GATE_ONLY_TESTING_FILE does not exist: $ONLY_TESTING_FILE"
 
   while IFS= read -r line || [ -n "$line" ]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
     case "$line" in
       ""|\#*) continue ;;
     esac

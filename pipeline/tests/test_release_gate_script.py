@@ -291,8 +291,9 @@ def test_release_gate_test_mode_skips_builds_and_uses_only_testing_file(tmp_path
     only_testing.write_text(
         "\n".join(
             [
-                "MakingTracksUITests/MakingTracksCoreLoopUITests/testOne",
-                "MakingTracksUITests/MakingTracksCoreLoopUITests/testTwo",
+                "# generated shard",
+                "  MakingTracksUITests/MakingTracksCoreLoopUITests/testOne  ",
+                "\tMakingTracksUITests/MakingTracksCoreLoopUITests/testTwo\t",
             ]
         )
         + "\n",
@@ -316,6 +317,10 @@ def test_release_gate_test_mode_skips_builds_and_uses_only_testing_file(tmp_path
     assert "-xctestrun " + str(tmp_path / "MakingTracks.xctestrun") in test_lines[0]
     assert "-only-testing:MakingTracksUITests/MakingTracksCoreLoopUITests/testOne" in test_lines[0]
     assert "-only-testing:MakingTracksUITests/MakingTracksCoreLoopUITests/testTwo" in test_lines[0]
+    assert "-only-testing:  MakingTracksUITests/MakingTracksCoreLoopUITests/testOne" not in test_lines[0]
+    assert "testOne  " not in test_lines[0]
+    assert "-only-testing:\tMakingTracksUITests/MakingTracksCoreLoopUITests/testTwo" not in test_lines[0]
+    assert "testTwo\t" not in test_lines[0]
     assert "-resultBundlePath " + str(tmp_path / "Shard.xcresult") in test_lines[0]
 
 
