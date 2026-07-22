@@ -113,6 +113,7 @@ private enum AXSliderUpperEdgeAdjuster {
     static func normalizedPositions(attempts: Int) -> [Double] {
         precondition(attempts > 0, "AX slider adjustment must make at least one attempt")
 
+        // Work around the unresolved max-edge drag dismissal tracked in #407.
         let preferred = [0.99, 0.995, 1.0]
         if attempts <= preferred.count {
             return Array(preferred.prefix(attempts))
