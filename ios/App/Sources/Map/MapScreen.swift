@@ -3742,6 +3742,7 @@ struct MapScreen: View {
         }
     }
 
+    @MainActor
     @discardableResult
     private func setNearbyPromptSuppressed(placeID: String, suppressed: Bool) -> Bool {
         if suppressed {
@@ -7112,7 +7113,7 @@ private struct PlaceCardSheet: View {
     let model: MapScreenModel?
     let onHide: (String, String) -> Void
     let onManageVisits: (String) -> Void
-    let setNearbyPromptSuppressed: (String, Bool) -> Bool
+    let setNearbyPromptSuppressed: @MainActor (String, Bool) -> Bool
     let showHiddenMode: Bool
 
     @State private var sheetInstanceID = UUID().uuidString
@@ -7610,27 +7611,21 @@ private struct PlaceCardSheet: View {
         guard let action,
               NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: action)
         else { return false }
-        return await MainActor.run {
-            setNearbyPromptSuppressed(placeID, true)
-        }
+        return setNearbyPromptSuppressed(placeID, true)
     }
 
     private func clearNearbyPromptSuppressionIfNeeded(for action: PlaceCardAction?) async {
         guard let action,
               NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: action)
         else { return }
-        await MainActor.run {
-            _ = setNearbyPromptSuppressed(placeID, false)
-        }
+        _ = setNearbyPromptSuppressed(placeID, false)
     }
 
     private func rollbackNearbyPromptSuppressionIfNeeded(_ insertedSuppression: Bool) async {
         guard insertedSuppression else { return }
         // Correct while startAction serialises card actions; concurrent suppressing actions would need per-action
         // contribution tracking instead of this single inserted/not-inserted rollback flag.
-        await MainActor.run {
-            _ = setNearbyPromptSuppressed(placeID, false)
-        }
+        _ = setNearbyPromptSuppressed(placeID, false)
     }
 
     private func categoryLabel(_ raw: String) -> String {
