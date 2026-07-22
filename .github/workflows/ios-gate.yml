@@ -21,7 +21,7 @@ jobs:
   ios-release-gate:
     name: ios-release-gate
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 105
     env:
       MT_CI_SIMULATOR_NAME: iPhone 16
       MT_CI_XCBEAUTIFY_SHA256: 87fdbe786f71d7b2ee28c5c1ca97087587292f2c5c6f9e721cf02db8b2a3c241
