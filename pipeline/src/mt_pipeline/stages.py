@@ -6,7 +6,7 @@ import json
 import pathlib
 import re
 
-from . import config, runtime_paths, store
+from . import config, fetch, runtime_paths, store
 from .reconcile import cluster, reconcile as reconcile_core, redirects, refs, review
 from .reconcile.registry_file import LocalRegistryStore
 
@@ -271,8 +271,10 @@ def run_stage(
         except (
             publish_stage.PublishStageError,
             publish_stage.basemap.BasemapMeasurementMismatch,
+            publish_stage.basemap.BasemapRetainedCutMismatch,
             publish_stage.basemap.BasemapOverBudget,
             publish_stage.basemap.PmtilesUnavailable,
+            fetch.FetchError,
             publish_stage.r2.Boto3Unavailable,
             publish_stage.r2.R2EnvironmentUnavailable,
             publish_stage.images.AuditedImageReuseError,

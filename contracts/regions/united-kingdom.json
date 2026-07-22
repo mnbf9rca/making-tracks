@@ -23,6 +23,8 @@
   "zone_allowlist": [],
   "basemap": {
     "source_pmtiles": "https://build.protomaps.com/20260714.pmtiles",
+    "retained_cut_pmtiles": "https://tiles.making-tracks.app/united-kingdom/20260721T215612Z/united-kingdom.pmtiles",
+    "retained_cut_sha256": "87b6db0f7a516a3340b5f0f848f826228c15245813f308d6ee4d5e21e5673fbc",
     "maxzoom": 14,
     "pack_granularity": "country",
     "size_budget_bytes": 2000000000,

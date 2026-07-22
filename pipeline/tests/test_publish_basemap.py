@@ -43,6 +43,81 @@ def test_within_budget_produces_one_basemap_matching_the_manifest_shape(
     assert art.bbox == [-8.6, 49.8, 1.8, 60.9]
 
 
+def test_retained_cut_is_reused_from_controlled_storage_without_pmtiles(
+    tmp_path, monkeypatch
+):
+    out = tmp_path / "uk.pmtiles"
+    body = b"retained cut"
+    cfg = _cfg(
+        "https://build.protomaps.com/20260714.pmtiles",
+        measured_archive_bytes=len(body),
+    )
+    cfg["basemap"]["retained_cut_pmtiles"] = (
+        "https://tiles.making-tracks.app/united-kingdom/"
+        "20260721T215612Z/united-kingdom.pmtiles"
+    )
+    cfg["basemap"]["retained_cut_sha256"] = B.hashlib.sha256(body).hexdigest()
+
+    def fake_get_to_file(url, dest, *, expected_hosts, max_bytes, headers):
+        assert url == cfg["basemap"]["retained_cut_pmtiles"]
+        assert expected_hosts == {"tiles.making-tracks.app"}
+        assert max_bytes == cfg["basemap"]["size_budget_bytes"]
+        assert headers["User-Agent"].startswith("MakingTracksBot/")
+        dest.write_bytes(body)
+        return len(body)
+
+    monkeypatch.setattr(B.fetch, "get_to_file", fake_get_to_file)
+    monkeypatch.setattr(
+        B,
+        "require_pmtiles",
+        lambda: (_ for _ in ()).throw(AssertionError("pmtiles should not run")),
+    )
+
+    art = B.cut_basemap(cfg, out)
+
+    assert out.read_bytes() == body
+    assert art.sha256 == cfg["basemap"]["retained_cut_sha256"]
+    assert art.bytes == len(body)
+
+
+def test_retained_cut_hash_mismatch_fails_before_pmtiles_extract(tmp_path, monkeypatch):
+    out = tmp_path / "uk.pmtiles"
+    cfg = _cfg(
+        "https://build.protomaps.com/20260714.pmtiles",
+        measured_archive_bytes=3,
+    )
+    cfg["basemap"]["retained_cut_pmtiles"] = (
+        "https://tiles.making-tracks.app/united-kingdom/"
+        "20260721T215612Z/united-kingdom.pmtiles"
+    )
+    cfg["basemap"]["retained_cut_sha256"] = "0" * 64
+
+    def fake_get_to_file(_url, dest, *, expected_hosts, max_bytes, headers):
+        dest.write_bytes(b"cut")
+        return 3
+
+    monkeypatch.setattr(B.fetch, "get_to_file", fake_get_to_file)
+    monkeypatch.setattr(
+        B,
+        "require_pmtiles",
+        lambda: (_ for _ in ()).throw(AssertionError("pmtiles should not run")),
+    )
+
+    with pytest.raises(B.BasemapRetainedCutMismatch, match="sha256"):
+        B.cut_basemap(cfg, out)
+
+    assert not out.exists()
+
+
+def test_retained_cut_must_be_from_controlled_storage(tmp_path):
+    cfg = _cfg("https://build.protomaps.com/20260714.pmtiles")
+    cfg["basemap"]["retained_cut_pmtiles"] = "https://example.com/united-kingdom.pmtiles"
+    cfg["basemap"]["retained_cut_sha256"] = "0" * 64
+
+    with pytest.raises(ValueError, match="retained_cut_pmtiles"):
+        B.cut_basemap(cfg, tmp_path / "uk.pmtiles")
+
+
 def test_over_budget_region_fails_loud_directing_ops_to_subregion_configs(
     tmp_path, monkeypatch
 ):

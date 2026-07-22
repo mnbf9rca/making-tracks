@@ -21,6 +21,19 @@ C = "mt1_" + "2" * 26
 D = "mt1_" + "3" * 26
 
 
+def _force_source_basemap_path(monkeypatch):
+    real_target_docs = P._target_region_docs
+
+    def source_docs(region_config):
+        docs = real_target_docs(region_config)
+        for doc in docs.values():
+            doc["basemap"].pop("retained_cut_pmtiles", None)
+            doc["basemap"].pop("retained_cut_sha256", None)
+        return docs
+
+    monkeypatch.setattr(P, "_target_region_docs", source_docs)
+
+
 def test_upload_rejects_image_candidate_limit(conn, tmp_path):
     with pytest.raises(P.PublishStageError, match="image-candidate-limit"):
         P.run(
@@ -1557,6 +1570,7 @@ def test_publish_stage_emits_phase_heartbeats_for_slow_publish_steps(
 def test_publish_stage_reports_registry_load_progress_before_parse_error(
     conn, tmp_path, monkeypatch, capsys
 ):
+    _force_source_basemap_path(monkeypatch)
     monkeypatch.setattr(P, "_HEARTBEAT_EVERY_RECORDS", 1, raising=False)
     _seed_publish_inputs(conn)
     registry_path = tmp_path / "registry/malaysia-singapore-brunei.jsonl"
@@ -1617,6 +1631,7 @@ def test_publish_stage_dispatch_requires_publish_version(conn):
 
 
 def test_publish_stage_checks_pmtiles_before_staging(conn, tmp_path, monkeypatch):
+    _force_source_basemap_path(monkeypatch)
     monkeypatch.setenv("PATH", "")
 
     with pytest.raises(basemap.PmtilesUnavailable):
@@ -1630,6 +1645,57 @@ def test_publish_stage_checks_pmtiles_before_staging(conn, tmp_path, monkeypatch
         )
 
     assert not (tmp_path / "stage").exists()
+
+
+def test_publish_stage_retained_cut_preflight_skips_pmtiles_and_registry(
+    conn, tmp_path, monkeypatch
+):
+    def fail_pmtiles():
+        raise AssertionError("retained cut publish should not require pmtiles")
+
+    def fail_registry_path(_conn, _region):
+        raise AssertionError("retained cut preflight should run before registry work")
+
+    def fail_cut_basemap(region_config, _out_path):
+        assert "retained_cut_pmtiles" in region_config["basemap"]
+        raise basemap.BasemapRetainedCutMismatch("retained cut sha256 mismatch")
+
+    monkeypatch.setattr(P.basemap, "require_pmtiles", fail_pmtiles)
+    monkeypatch.setattr(P.basemap, "cut_basemap", fail_cut_basemap)
+    monkeypatch.setattr(P, "_registry_path", fail_registry_path)
+
+    with pytest.raises(basemap.BasemapRetainedCutMismatch, match="sha256"):
+        P.run(
+            conn,
+            "malaysia-singapore-brunei",
+            publish_version="20260715T120000Z",
+            generated_at="2026-07-15T12:00:00Z",
+            scoring_config_version="scoring-v1",
+            staging_root=tmp_path / "stage",
+        )
+
+
+def test_subregion_doc_does_not_inherit_parent_retained_country_cut():
+    region_config = P.config.load("malaysia-singapore-brunei")
+    subregion = P.config.SubregionConfig(
+        region_id="malaysia-singapore-brunei_central",
+        id="central",
+        display_name="Central",
+        bbox=(101.6, 3.0, 101.8, 3.2),
+        size_budget_bytes=None,
+        measured_archive_bytes=12345,
+    )
+
+    doc = P._region_doc(
+        region_config,
+        target_region=subregion.region_id,
+        bbox=subregion.bbox,
+        subregion=subregion,
+    )
+
+    assert "retained_cut_pmtiles" not in doc["basemap"]
+    assert "retained_cut_sha256" not in doc["basemap"]
+    assert doc["basemap"]["measured_archive_bytes"] == 12345
 
 
 def test_publish_stage_checks_boto3_before_staging_when_upload_requested(
@@ -1756,6 +1822,7 @@ def test_publish_stage_resolves_relative_registry_path_beside_db(
 
 
 def test_publish_stage_requires_registry_before_basemap_cut(conn, tmp_path, monkeypatch):
+    _force_source_basemap_path(monkeypatch)
     _seed_publish_inputs(conn)
     called = False
 
@@ -1785,6 +1852,7 @@ def test_publish_stage_requires_registry_before_basemap_cut(conn, tmp_path, monk
 def test_publish_stage_checks_registry_coverage_before_basemap_cut(
     conn, tmp_path, monkeypatch
 ):
+    _force_source_basemap_path(monkeypatch)
     _seed_publish_inputs(conn)
     LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
@@ -1828,6 +1896,7 @@ def test_publish_stage_checks_registry_coverage_before_basemap_cut(
 def test_publish_stage_checks_joined_db_inputs_before_basemap_cut(
     conn, tmp_path, monkeypatch
 ):
+    _force_source_basemap_path(monkeypatch)
     store.replace_places(
         conn,
         region="malaysia-singapore-brunei",
@@ -1882,6 +1951,7 @@ def test_publish_stage_checks_joined_db_inputs_before_basemap_cut(
 def test_publish_stage_requires_scores_for_all_live_places_before_basemap_cut(
     conn, tmp_path, monkeypatch
 ):
+    _force_source_basemap_path(monkeypatch)
     _seed_publish_inputs(conn)
     conn.execute(
         "DELETE FROM place_scores WHERE region = ? AND place_id = ?",
@@ -1935,6 +2005,7 @@ def test_publish_stage_requires_scores_for_all_live_places_before_basemap_cut(
 def test_publish_stage_rejects_non_live_registry_for_live_db_place_before_basemap_cut(
     conn, tmp_path, monkeypatch
 ):
+    _force_source_basemap_path(monkeypatch)
     _seed_publish_inputs(conn)
     LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [
@@ -1986,6 +2057,7 @@ def test_publish_stage_rejects_non_live_registry_for_live_db_place_before_basema
 def test_publish_stage_requires_registry_ref_coverage_before_basemap_cut(
     conn, tmp_path, monkeypatch
 ):
+    _force_source_basemap_path(monkeypatch)
     _seed_publish_inputs(conn)
     LocalRegistryStore(tmp_path / "registry/malaysia-singapore-brunei.jsonl").save(
         [

@@ -52,6 +52,49 @@ def test_summarizes_200_followup_by_content_hash():
     assert changed.hash_verdict == "changed"
 
 
+def test_summarizes_non_2xx_initial_status_separately_from_missing_validators():
+    initial = probe.FetchObservation(
+        status=404,
+        etag=None,
+        last_modified=None,
+        sha256="a" * 64,
+        bytes_read=12,
+    )
+
+    result = probe.summarize_pair(initial, None)
+
+    assert result.outcome == "unprobed_initial_status_404"
+    assert result.hash_verdict == "not_checked"
+
+
+def test_probe_target_does_not_follow_up_after_non_2xx_initial_status(monkeypatch):
+    target = probe.ProbeTarget(
+        upstream_class="protomaps_build",
+        label="configured build prefix",
+        url="https://build.protomaps.com/20260714.pmtiles",
+        expected_hosts=("build.protomaps.com",),
+    )
+    calls = []
+
+    def fake_fetch_observation(target, *, conditional=None):
+        calls.append(conditional)
+        return probe.FetchObservation(
+            status=404,
+            etag='"missing"',
+            last_modified="Tue, 21 Jul 2026 12:00:00 GMT",
+            sha256="a" * 64,
+            bytes_read=12,
+        )
+
+    monkeypatch.setattr(probe, "fetch_observation", fake_fetch_observation)
+
+    result = probe.probe_target(target)
+
+    assert calls == [None]
+    assert result.followup is None
+    assert result.summary.outcome == "unprobed_initial_status_404"
+
+
 def test_default_probe_inventory_covers_required_upstream_classes():
     classes = {item.upstream_class for item in probe.default_probes()}
 

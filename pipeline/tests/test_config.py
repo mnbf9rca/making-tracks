@@ -12,6 +12,19 @@ def test_load_known_region_returns_structurally_valid_config():
     assert cfg.raw["region_id"] == "united-kingdom"
 
 
+def test_live_region_basemaps_have_retained_controlled_cut_pins():
+    for region_id in ("united-kingdom", "malaysia-singapore-brunei"):
+        cfg = config.load(region_id)
+        basemap = cfg.basemap
+
+        assert basemap["source_pmtiles"] == "https://build.protomaps.com/20260714.pmtiles"
+        assert basemap["retained_cut_pmtiles"].startswith(
+            f"https://tiles.making-tracks.app/{region_id}/"
+        )
+        assert basemap["retained_cut_pmtiles"].endswith(f"/{region_id}.pmtiles")
+        assert len(basemap["retained_cut_sha256"]) == 64
+
+
 def test_region_id_is_carried_through_not_hardcoded():
     assert config.load("malaysia-singapore-brunei").region_id == "malaysia-singapore-brunei"
 

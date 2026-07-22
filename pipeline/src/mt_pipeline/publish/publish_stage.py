@@ -84,7 +84,6 @@ def run(
         audited_image_cache_dir=audited_image_cache_dir,
         no_image_fetch=no_image_fetch,
     )
-    basemap.require_pmtiles()
     if upload:
         r2.require_boto3()
         r2.require_upload_environment()
@@ -92,12 +91,17 @@ def run(
 
     config.assert_global_region_ids()
     region_config = config.load(region)
-    target_region_ids = [region_config.region_id]
-    target_region_ids.extend(
-        subregion.region_id for subregion in region_config.subregions
-    )
+    target_docs = _target_region_docs(region_config)
+    if any("retained_cut_pmtiles" not in doc["basemap"] for doc in target_docs.values()):
+        basemap.require_pmtiles()
+    target_region_ids = list(target_docs)
     for removed_path in staging.prune_run_staging(staging_root, target_region_ids):
         print(f"PUBLISH_STAGING_PRUNE removed={removed_path}", file=sys.stderr)
+    prepared_basemaps = _prepare_retained_basemaps(
+        target_docs,
+        staging_root=staging_root,
+        publish_version=publish_version,
+    )
     registry_path = _registry_path(conn, region)
     registry_store = LocalRegistryStore(registry_path)
     registry_records = _load_registry(registry_store, region)
@@ -169,6 +173,7 @@ def run(
         place_images_by_id=place_images_by_id,
         source_description_rows=source_description_rows,
         source_search_rows=source_search_rows,
+        prepared_basemap=prepared_basemaps.get(region),
         conn=conn,
         no_zone_catalog=no_zone_catalog,
     )
@@ -197,6 +202,7 @@ def run(
             source_description_rows=source_description_rows,
             source_search_rows=source_search_rows,
             subregion=subregion,
+            prepared_basemap=prepared_basemaps.get(subregion.region_id),
             no_zone_catalog=no_zone_catalog,
         )
         subregion_results.append(sub_result)
@@ -503,21 +509,25 @@ def _publish_target(
     source_description_rows: list[dict[str, Any]],
     source_search_rows: dict[str, dict[str, Any]],
     subregion: config.SubregionConfig | None = None,
+    prepared_basemap: tuple[pathlib.Path, basemap.BasemapArtifact] | None = None,
     conn=None,
     no_zone_catalog: bool = False,
 ) -> PublishedTargetResult:
     work_root = pathlib.Path(staging_root) / ".work" / target_region / publish_version
     work_root.mkdir(parents=True, exist_ok=True)
     basemap_path = work_root / f"{target_region}.pmtiles"
-    basemap_art = basemap.cut_basemap(
-        _region_doc(
-            region_config,
-            target_region=target_region,
-            bbox=bbox,
-            subregion=subregion,
-        ),
-        basemap_path,
-    )
+    if prepared_basemap is None:
+        basemap_art = basemap.cut_basemap(
+            _region_doc(
+                region_config,
+                target_region=target_region,
+                bbox=bbox,
+                subregion=subregion,
+            ),
+            basemap_path,
+        )
+    else:
+        basemap_path, basemap_art = prepared_basemap
     shipped_places = _places_from_tiles(tile_arts)
     shipped_place_images = [
         place_images_by_id[str(place["place_id"])]
@@ -661,12 +671,57 @@ def _region_doc(
     basemap_cfg = dict(data["basemap"])
     basemap_cfg["bbox"] = list(bbox or region_config.bbox)
     if subregion is not None:
+        basemap_cfg.pop("retained_cut_pmtiles", None)
+        basemap_cfg.pop("retained_cut_sha256", None)
         if subregion.size_budget_bytes is not None:
             basemap_cfg["size_budget_bytes"] = subregion.size_budget_bytes
         if subregion.measured_archive_bytes is not None:
             basemap_cfg["measured_archive_bytes"] = subregion.measured_archive_bytes
     data["basemap"] = basemap_cfg
     return data
+
+
+def _target_region_docs(region_config: config.RegionConfig) -> dict[str, dict[str, Any]]:
+    docs = {
+        region_config.region_id: _region_doc(
+            region_config,
+            target_region=region_config.region_id,
+            bbox=region_config.bbox,
+        )
+    }
+    for subregion in region_config.subregions:
+        docs[subregion.region_id] = _region_doc(
+            region_config,
+            target_region=subregion.region_id,
+            bbox=subregion.bbox,
+            subregion=subregion,
+        )
+    return docs
+
+
+def _prepare_retained_basemaps(
+    target_docs: dict[str, dict[str, Any]],
+    *,
+    staging_root: pathlib.Path,
+    publish_version: str,
+) -> dict[str, tuple[pathlib.Path, basemap.BasemapArtifact]]:
+    prepared = {}
+    for target_region, doc in target_docs.items():
+        if "retained_cut_pmtiles" not in doc["basemap"]:
+            continue
+        basemap_path = (
+            pathlib.Path(staging_root)
+            / ".work"
+            / target_region
+            / publish_version
+            / f"{target_region}.pmtiles"
+        )
+        basemap_path.parent.mkdir(parents=True, exist_ok=True)
+        prepared[target_region] = (
+            basemap_path,
+            basemap.cut_basemap(doc, basemap_path),
+        )
+    return prepared
 
 
 def _filter_places_to_bbox(

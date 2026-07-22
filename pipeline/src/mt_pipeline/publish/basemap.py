@@ -10,8 +10,10 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from mt_contracts.caps import BASEMAP_MAXZOOM, PACK_BUDGET_CEILING_BYTES
+from mt_pipeline import acquire, fetch
 
 PMTILES_TOOL = "pmtiles"
 PMTILES_REQUIRED_VERSION = "v1.31.1"
@@ -35,6 +37,10 @@ class BasemapOverBudget(ValueError):
 
 class BasemapMeasurementMismatch(ValueError):
     """Raised when a cut basemap differs from its exact measured contract size."""
+
+
+class BasemapRetainedCutMismatch(ValueError):
+    """Raised when a retained basemap cut differs from its pinned contract."""
 
 
 class PmtilesUnavailable(RuntimeError):
@@ -128,6 +134,9 @@ def cut_basemap(region_config: dict[str, Any], out_path: Path) -> BasemapArtifac
         raise ValueError(f"{region} basemap maxzoom must be {BASEMAP_MAXZOOM}")
 
     out_path = Path(out_path)
+    if "retained_cut_pmtiles" in cfg:
+        return _reuse_retained_cut(region, cfg, out_path)
+
     pmtiles = require_pmtiles()
     argv, bbox = _pmtiles_extract_argv(
         pmtiles,
@@ -161,6 +170,50 @@ def cut_basemap(region_config: dict[str, Any], out_path: Path) -> BasemapArtifac
     )
 
 
+def _reuse_retained_cut(region: str, cfg: dict[str, Any], out_path: Path) -> BasemapArtifact:
+    output = Path(_validate_output_path(out_path))
+    source = _validate_retained_cut_url(str(cfg["retained_cut_pmtiles"]))
+    expected_sha = _validate_sha256(str(cfg.get("retained_cut_sha256", "")))
+    bbox = _validate_bbox(cfg["bbox"])
+    budget = min(int(cfg["size_budget_bytes"]), PACK_BUDGET_CEILING_BYTES)
+    measured_size = int(cfg["measured_archive_bytes"])
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fetch.get_to_file(
+        source,
+        output,
+        expected_hosts={"tiles.making-tracks.app"},
+        max_bytes=budget,
+        headers={"User-Agent": acquire.USER_AGENT},
+    )
+
+    size = output.stat().st_size
+    if size > budget:
+        output.unlink(missing_ok=True)
+        raise BasemapOverBudget(
+            f"{region} retained basemap is {size} bytes, over budget {budget}"
+        )
+    if size != measured_size:
+        output.unlink(missing_ok=True)
+        raise BasemapRetainedCutMismatch(
+            f"{region} retained basemap is {size} bytes, expected exact measured size "
+            f"{measured_size}"
+        )
+    observed_sha = _sha256_file(output)
+    if observed_sha != expected_sha:
+        output.unlink(missing_ok=True)
+        raise BasemapRetainedCutMismatch(
+            f"{region} retained basemap sha256 {observed_sha}, expected {expected_sha}"
+        )
+    return BasemapArtifact(
+        filename=output.name,
+        maxzoom=BASEMAP_MAXZOOM,
+        sha256=observed_sha,
+        bytes=size,
+        bbox=bbox,
+    )
+
+
 def _pmtiles_extract_argv(
     pmtiles: str,
     *,
@@ -188,6 +241,23 @@ def _pmtiles_extract_argv(
 def _validate_source_pmtiles(value: str) -> str:
     if len(value) > 2048 or not _HTTPS_URL_RE.fullmatch(value):
         raise ValueError("source_pmtiles must be an https URL without whitespace/control chars")
+    return value
+
+
+def _validate_retained_cut_url(value: str) -> str:
+    if len(value) > 2048 or not _HTTPS_URL_RE.fullmatch(value):
+        raise ValueError(
+            "retained_cut_pmtiles must be an https URL without whitespace/control chars"
+        )
+    parsed = urlparse(value)
+    if parsed.hostname != "tiles.making-tracks.app" or not parsed.path.endswith(".pmtiles"):
+        raise ValueError("retained_cut_pmtiles must point at controlled PMTiles storage")
+    return value
+
+
+def _validate_sha256(value: str) -> str:
+    if not re.fullmatch(r"[0-9a-f]{64}", value):
+        raise ValueError("retained_cut_sha256 must be a lowercase hex sha256")
     return value
 
 

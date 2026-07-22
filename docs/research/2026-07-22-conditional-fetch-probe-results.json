@@ -77,11 +77,11 @@
     "followup": null,
     "has_last_modified": false,
     "initial": {
-      "bytes_read": 140,
+      "bytes_read": 476,
       "error": null,
       "etag": null,
       "last_modified": null,
-      "sha256": "94bed59f007a1a37e9328d47d7e45640412d0b5bcd38a745448ee3658355526a",
+      "sha256": "3244ccc97355c513a814c38e43915f899e253939222fc3d0086f95298078b185",
       "status": 200
     },
     "label": "Wikidata wbgetentities sitelink API",
@@ -162,7 +162,7 @@
     "range": "bytes=0-65535",
     "summary": {
       "hash_verdict": "not_checked",
-      "outcome": "no_validators"
+      "outcome": "unprobed_initial_status_404"
     },
     "upstream_class": "protomaps_build",
     "url": "https://build.protomaps.com/20260714.pmtiles"
