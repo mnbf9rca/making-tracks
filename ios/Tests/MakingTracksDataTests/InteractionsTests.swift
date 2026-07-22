@@ -381,6 +381,32 @@ final class InteractionsTests: XCTestCase {
         XCTAssertEqual(rows.map { $0["visit_order"] as Int }, [0, 1, 2])
     }
 
+    func testMoveVisitToDaySlotsAtTargetOrderAndPreservesTimeOfDay() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let calendar = Calendar(identifier: .gregorian)
+        let sourceDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 13)))
+        let targetDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 14)))
+        let moved = try db.recordVisit(ref("p_moved", name: "Moved"), at: sourceDay.addingTimeInterval(9 * 60 * 60 + 15 * 60))
+        let firstTarget = try db.recordVisit(ref("p_first", name: "First"), at: targetDay.addingTimeInterval(10 * 60 * 60))
+        let secondTarget = try db.recordVisit(ref("p_second", name: "Second"), at: targetDay.addingTimeInterval(11 * 60 * 60))
+
+        try db.moveVisit(
+            id: moved,
+            toDayContaining: targetDay,
+            targetDayOrderedIDs: [firstTarget, moved, secondTarget],
+            calendar: calendar
+        )
+
+        let visits = try db.trackVisits()
+        XCTAssertEqual(visits.map(\.id), [firstTarget, moved, secondTarget])
+        XCTAssertEqual(visits.map(\.visitOrder), [0, 1, 2])
+        XCTAssertEqual(calendar.component(.year, from: visits[1].visitedAt), 2026)
+        XCTAssertEqual(calendar.component(.month, from: visits[1].visitedAt), 7)
+        XCTAssertEqual(calendar.component(.day, from: visits[1].visitedAt), 14)
+        XCTAssertEqual(calendar.component(.hour, from: visits[1].visitedAt), 9)
+        XCTAssertEqual(calendar.component(.minute, from: visits[1].visitedAt), 15)
+    }
+
     func testDeleteLatestVisitRemovesOnlyNewestVisitForPlace() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         let place = try ref("p_unsee_latest")

@@ -839,6 +839,95 @@ final class AppShellTests: XCTestCase {
         )
     }
 
+    func testTrackVisitReorderingPlansCrossDayMoveIntoTargetSlot() {
+        let calendar = Calendar(identifier: .gregorian)
+        let dayOne = Date(timeIntervalSince1970: 60 * 60 * 24 * 10)
+        let dayTwo = dayOne.addingTimeInterval(60 * 60 * 24)
+        let visits = [
+            trackVisit(id: 1, seconds: dayOne.timeIntervalSince1970 + 60),
+            trackVisit(id: 2, seconds: dayOne.timeIntervalSince1970 + 120),
+            trackVisit(id: 3, seconds: dayTwo.timeIntervalSince1970 + 60),
+            trackVisit(id: 4, seconds: dayTwo.timeIntervalSince1970 + 120),
+        ]
+
+        let plan = TrackVisitReordering.movePlan(
+            in: visits,
+            fromOffsets: IndexSet(integer: 1),
+            toOffset: 3,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(
+            plan,
+            .moveVisit(id: 2, targetDay: calendar.startOfDay(for: dayTwo), targetDayOrderedIDs: [3, 2, 4])
+        )
+    }
+
+    func testTrackVisitReorderingPlansSameDayMoveAsDayReorder() {
+        let calendar = Calendar(identifier: .gregorian)
+        let day = Date(timeIntervalSince1970: 60 * 60 * 24 * 10)
+        let visits = [
+            trackVisit(id: 1, seconds: day.timeIntervalSince1970 + 60),
+            trackVisit(id: 2, seconds: day.timeIntervalSince1970 + 120),
+            trackVisit(id: 3, seconds: day.timeIntervalSince1970 + 180),
+        ]
+
+        let plan = TrackVisitReordering.movePlan(
+            in: visits,
+            fromOffsets: IndexSet(integer: 0),
+            toOffset: 3,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(
+            plan,
+            .reorderDay(day: calendar.startOfDay(for: day), orderedIDs: [2, 3, 1])
+        )
+    }
+
+    func testTrackVisitReorderingKeepsSameDayMoveAtBoundaryOnOriginalDay() {
+        let calendar = Calendar(identifier: .gregorian)
+        let dayOne = Date(timeIntervalSince1970: 60 * 60 * 24 * 10)
+        let dayTwo = dayOne.addingTimeInterval(60 * 60 * 24)
+        let visits = [
+            trackVisit(id: 1, seconds: dayOne.timeIntervalSince1970 + 60),
+            trackVisit(id: 2, seconds: dayOne.timeIntervalSince1970 + 120),
+            trackVisit(id: 3, seconds: dayTwo.timeIntervalSince1970 + 60),
+        ]
+
+        let plan = TrackVisitReordering.movePlan(
+            in: visits,
+            fromOffsets: IndexSet(integer: 0),
+            toOffset: 2,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(
+            plan,
+            .reorderDay(day: calendar.startOfDay(for: dayOne), orderedIDs: [2, 1])
+        )
+    }
+
+    func testTrackVisitReorderingRefusesCrossDayBlockMove() {
+        let calendar = Calendar(identifier: .gregorian)
+        let dayOne = Date(timeIntervalSince1970: 60 * 60 * 24 * 10)
+        let dayTwo = dayOne.addingTimeInterval(60 * 60 * 24)
+        let visits = [
+            trackVisit(id: 1, seconds: dayOne.timeIntervalSince1970 + 60),
+            trackVisit(id: 2, seconds: dayOne.timeIntervalSince1970 + 120),
+            trackVisit(id: 3, seconds: dayTwo.timeIntervalSince1970 + 60),
+        ]
+
+        XCTAssertNil(
+            TrackVisitReordering.movePlan(
+                in: visits,
+                fromOffsets: IndexSet([0, 1]),
+                toOffset: 3,
+                calendar: calendar
+            )
+        )
+    }
+
     func testListMapCategoryVisibilityIgnoresDiscoveryCategoryToggles() {
         XCTAssertNil(
             ListMapCategoryVisibility.visibleCategories(

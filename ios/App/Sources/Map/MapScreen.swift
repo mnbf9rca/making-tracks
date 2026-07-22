@@ -716,6 +716,11 @@ struct TrackVisitDaySection: Identifiable, Equatable {
 }
 
 enum TrackVisitReordering {
+    enum MovePlan: Equatable {
+        case reorderDay(day: Date, orderedIDs: [Int64])
+        case moveVisit(id: Int64, targetDay: Date, targetDayOrderedIDs: [Int64])
+    }
+
     static func daySections(
         for visits: [TrackVisit],
         calendar: Calendar = Calendar(identifier: .gregorian)
@@ -761,6 +766,84 @@ enum TrackVisitReordering {
         nextVisits.insert(contentsOf: movingVisits, at: insertionIndex)
         let nextIDs = nextVisits.map(\.id)
         return nextIDs == visits.map(\.id) ? nil : nextIDs
+    }
+
+    static func startsNewDay(
+        visit: TrackVisit,
+        previous: TrackVisit?,
+        calendar: Calendar = Calendar(identifier: .gregorian)
+    ) -> Bool {
+        guard let previous else { return true }
+        return calendar.startOfDay(for: visit.visitedAt) != calendar.startOfDay(for: previous.visitedAt)
+    }
+
+    static func movePlan(
+        in visits: [TrackVisit],
+        fromOffsets source: IndexSet,
+        toOffset destination: Int,
+        calendar: Calendar = Calendar(identifier: .gregorian)
+    ) -> MovePlan? {
+        guard !source.isEmpty,
+              destination >= 0,
+              destination <= visits.count,
+              source.allSatisfy({ visits.indices.contains($0) })
+        else {
+            return nil
+        }
+
+        let movingVisits = source.sorted().map { visits[$0] }
+        var remainingVisits = visits
+        for index in source.sorted(by: >) {
+            remainingVisits.remove(at: index)
+        }
+
+        let removedBeforeDestination = source.filter { $0 < destination }.count
+        let insertionIndex = destination - removedBeforeDestination
+        guard insertionIndex >= 0, insertionIndex <= remainingVisits.count else {
+            return nil
+        }
+
+        var nextVisits = remainingVisits
+        nextVisits.insert(contentsOf: movingVisits, at: insertionIndex)
+        guard nextVisits.map(\.id) != visits.map(\.id) else { return nil }
+
+        func day(for visit: TrackVisit) -> Date {
+            calendar.startOfDay(for: visit.visitedAt)
+        }
+
+        let originalDays = Set(movingVisits.map(day))
+        let originalDay = originalDays.count == 1 ? originalDays.first : nil
+        let previousDay = insertionIndex > 0 ? day(for: nextVisits[insertionIndex - 1]) : nil
+        let nextIndex = insertionIndex + movingVisits.count
+        let nextDay = nextIndex < nextVisits.count ? day(for: nextVisits[nextIndex]) : nil
+        let targetDay: Date
+        if let previousDay, previousDay == nextDay {
+            targetDay = previousDay
+        } else if let originalDay, previousDay == originalDay || nextDay == originalDay {
+            targetDay = originalDay
+        } else if let nextDay {
+            targetDay = nextDay
+        } else if let previousDay {
+            targetDay = previousDay
+        } else {
+            targetDay = day(for: movingVisits[0])
+        }
+
+        let movingIDs = Set(movingVisits.map(\.id))
+        let targetDayOrderedIDs = nextVisits.compactMap { visit -> Int64? in
+            movingIDs.contains(visit.id) || day(for: visit) == targetDay ? visit.id : nil
+        }
+
+        if movingVisits.count == 1, originalDays.first != targetDay {
+            return .moveVisit(
+                id: movingVisits[0].id,
+                targetDay: targetDay,
+                targetDayOrderedIDs: targetDayOrderedIDs
+            )
+        }
+
+        guard originalDays == [targetDay] else { return nil }
+        return .reorderDay(day: targetDay, orderedIDs: targetDayOrderedIDs)
     }
 }
 
@@ -4483,10 +4566,6 @@ private struct ListDetailView: View {
         focusPlaceID == nil
     }
 
-    private var visibleTrackVisitSections: [TrackVisitDaySection] {
-        TrackVisitReordering.daySections(for: visibleTrackVisits, calendar: calendar)
-    }
-
     private var calendar: Calendar {
         Calendar(identifier: .gregorian)
     }
@@ -4556,23 +4635,26 @@ private struct ListDetailView: View {
                     if visibleTrackVisits.isEmpty {
                         ContentUnavailableView("No visits yet", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
                     } else {
-                        ForEach(visibleTrackVisitSections) { section in
-                            Section {
-                                ForEach(section.visits) { visit in
-                                    trackVisitRow(visit)
-                                }
-                                .onMove { source, destination in
-                                    guard canReorderTrackVisits else { return }
-                                    Task {
-                                        await moveVisitsWithinDay(
-                                            section.visits,
-                                            fromOffsets: source,
-                                            toOffset: destination
-                                        )
-                                    }
-                                }
-                            } header: {
-                                Text(verbatim: formattedDay(section.day))
+                        ForEach(Array(visibleTrackVisits.enumerated()), id: \.element.id) { index, visit in
+                            if TrackVisitReordering.startsNewDay(
+                                visit: visit,
+                                previous: index > 0 ? visibleTrackVisits[index - 1] : nil,
+                                calendar: calendar
+                            ) {
+                                Text(verbatim: formattedDay(calendar.startOfDay(for: visit.visitedAt)))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            trackVisitRow(visit)
+                        }
+                        .onMove { source, destination in
+                            guard canReorderTrackVisits else { return }
+                            Task {
+                                await moveTrackVisits(
+                                    visibleTrackVisits,
+                                    fromOffsets: source,
+                                    toOffset: destination
+                                )
                             }
                         }
                     }
@@ -4810,21 +4892,30 @@ private struct ListDetailView: View {
     }
 
     @MainActor
-    private func moveVisitsWithinDay(
-        _ dayVisits: [TrackVisit],
+    private func moveTrackVisits(
+        _ visits: [TrackVisit],
         fromOffsets source: IndexSet,
         toOffset destination: Int
     ) async {
         guard let model,
-              let day = dayVisits.first?.visitedAt,
-              let order = TrackVisitReordering.reorderedIDs(
-                in: dayVisits,
+              let plan = TrackVisitReordering.movePlan(
+                in: visits,
                 fromOffsets: source,
-                toOffset: destination
+                toOffset: destination,
+                calendar: calendar
               )
         else { return }
         do {
-            try await model.reorderVisitsWithinDay(order, dayContaining: day)
+            switch plan {
+            case .reorderDay(let day, let orderedIDs):
+                try await model.reorderVisitsWithinDay(orderedIDs, dayContaining: day)
+            case .moveVisit(let id, let targetDay, let targetDayOrderedIDs):
+                try await model.moveVisit(
+                    visitID: id,
+                    toDayContaining: targetDay,
+                    targetDayOrderedIDs: targetDayOrderedIDs
+                )
+            }
             actionError = nil
             await reload()
             onChanged()
@@ -8074,6 +8165,10 @@ final class MapScreenModel {
 
     func reorderVisitsWithinDay(_ visitIDs: [Int64], dayContaining day: Date) async throws {
         try coreLoop.reorderVisitsWithinDay(visitIDs, dayContaining: day)
+    }
+
+    func moveVisit(visitID: Int64, toDayContaining day: Date, targetDayOrderedIDs: [Int64]) async throws {
+        try coreLoop.moveVisit(id: visitID, toDayContaining: day, targetDayOrderedIDs: targetDayOrderedIDs)
     }
 
     func deleteVisit(visitID: Int64) async throws {

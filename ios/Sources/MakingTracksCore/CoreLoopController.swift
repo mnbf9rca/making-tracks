@@ -67,6 +67,12 @@ public final class CoreLoopController: Sendable {
         emit(placeIDs)
     }
 
+    public func moveVisit(id: Int64, toDayContaining day: Date, targetDayOrderedIDs orderedIDs: [Int64]) throws {
+        let placeIDs = try database.placeIDs(forVisitIDs: orderedIDs)
+        try database.moveVisit(id: id, toDayContaining: day, targetDayOrderedIDs: orderedIDs)
+        emit(placeIDs)
+    }
+
     public func deleteVisit(id: Int64) throws {
         guard let visit = try database.visit(id: id) else { return }
         try database.deleteVisit(id: id)
