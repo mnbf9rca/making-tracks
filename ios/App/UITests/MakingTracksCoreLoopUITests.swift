@@ -661,7 +661,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(play.label, "Play track replay")
 
         for eventIndex in 1...5 {
-            slider.adjust(toNormalizedSliderPosition: Double(eventIndex) / 5.0)
+            if eventIndex > 1 {
+                dragReplaySlider(slider, fromEventIndex: eventIndex - 1, toEventIndex: eventIndex, eventCount: 6)
+            }
             XCTAssertTrue(waitForTrackSegmentCount(eventIndex, in: app))
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
             attachScreenshot(named: "track-replay-scrub-frame-0\(eventIndex)")
@@ -2021,6 +2023,29 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             return false
         }
         return true
+    }
+
+    private func dragReplaySlider(
+        _ slider: XCUIElement,
+        fromEventIndex: Int,
+        toEventIndex: Int,
+        eventCount: Int
+    ) {
+        let start = slider.coordinate(withNormalizedOffset: CGVector(
+            dx: normalizedReplaySliderPosition(eventIndex: fromEventIndex, eventCount: eventCount),
+            dy: 0.5
+        ))
+        let target = slider.coordinate(withNormalizedOffset: CGVector(
+            dx: normalizedReplaySliderPosition(eventIndex: toEventIndex, eventCount: eventCount),
+            dy: 0.5
+        ))
+        start.press(forDuration: 0.05, thenDragTo: target)
+    }
+
+    private func normalizedReplaySliderPosition(eventIndex: Int, eventCount: Int) -> Double {
+        guard eventCount > 1 else { return 0 }
+        let clampedIndex = min(max(eventIndex, 0), eventCount - 1)
+        return Double(clampedIndex) / Double(eventCount - 1)
     }
 
     private func waitForMapSurfaceToSettle(in app: XCUIApplication) -> Bool {
