@@ -560,6 +560,27 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(eastWestRatio, northSouthRatio, accuracy: 0.012)
     }
 
+    func testTrackSegmentRepeatedOutAndBackArcsUseDistinctLanes() throws {
+        let features = FeatureEncoding.trackSegmentFeatures([
+            trackVisit(id: 1, placeID: "a", seconds: 0, lat: 0, lon: 0),
+            trackVisit(id: 2, placeID: "b", seconds: 60, lat: 0, lon: 1),
+            trackVisit(id: 3, placeID: "a", seconds: 120, lat: 0, lon: 0),
+            trackVisit(id: 4, placeID: "b", seconds: 180, lat: 0, lon: 1),
+        ])
+
+        XCTAssertEqual(features.count, 3)
+
+        let midLats = try features.map { feature in
+            let coordinates = try trackCoordinates(in: feature)
+            XCTAssertFalse(coordinates.isEmpty)
+            return coordinates[coordinates.count / 2].lat
+        }
+
+        XCTAssertGreaterThan(midLats[0], 0)
+        XCTAssertLessThan(midLats[1], 0)
+        XCTAssertGreaterThan(midLats[2], midLats[0])
+    }
+
     func testTrackSegmentFeaturesKeepNonDatelineDerivedArcCoordinatesInWGS84Bounds() {
         let visits = [
             trackVisit(id: 1, placeID: "near-pole-west", seconds: 0, lat: 89.9, lon: -10),
