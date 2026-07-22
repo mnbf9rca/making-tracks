@@ -162,3 +162,46 @@ def test_executed_validation_passes_for_matching_sets(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert "executed test set matches expected set" in result.stdout
+
+
+def test_executed_validation_fails_with_unexpected_test_name(tmp_path):
+    expected = tmp_path / "expected.json"
+    executed_dir = tmp_path / "executed"
+    executed_dir.mkdir()
+    _write_json(
+        expected,
+        {
+            "tests": [
+                {"identifier": "MakingTracksUITests/MakingTracksCoreLoopUITests/testOne"},
+            ]
+        },
+    )
+    _write_json(
+        executed_dir / "ui-1.json",
+        {
+            "tests": [
+                {
+                    "identifier": "MakingTracksUITests/MakingTracksCoreLoopUITests/testOne",
+                    "testStatus": "Success",
+                },
+                {
+                    "identifier": "MakingTracksUITests/MakingTracksCoreLoopUITests/testUnexpected",
+                    "testStatus": "Success",
+                },
+            ]
+        },
+    )
+
+    result = _run(
+        "validate-executed",
+        "--expected-json",
+        str(expected),
+        "--executed-json-dir",
+        str(executed_dir),
+        "--target-prefix",
+        "MakingTracksUITests/",
+    )
+
+    assert result.returncode == 1
+    assert "unexpected executed tests:" in result.stderr
+    assert "MakingTracksUITests/MakingTracksCoreLoopUITests/testUnexpected" in result.stderr
