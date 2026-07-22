@@ -23,6 +23,8 @@
   "zone_allowlist": [],
   "basemap": {
     "source_pmtiles": "https://build.protomaps.com/20260714.pmtiles",
+    "retained_cut_pmtiles": "https://tiles.making-tracks.app/malaysia-singapore-brunei/20260721T215612Z/malaysia-singapore-brunei.pmtiles",
+    "retained_cut_sha256": "b9e55bc093a2a9a03cba36312ad3998f15a58fa2518366daa58c4080bd577135",
     "maxzoom": 14,
     "pack_granularity": "country",
     "size_budget_bytes": 500000000,

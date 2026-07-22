@@ -87,6 +87,16 @@ def test_region_config_rejects_non_v1_basemap_maxzoom(contracts_root):
     assert not is_valid("region-config", cfg)
 
 
+def test_region_config_requires_retained_cut_url_and_sha_as_a_pair(contracts_root):
+    cfg = json.loads((contracts_root / "regions/united-kingdom.json").read_text())
+    del cfg["basemap"]["retained_cut_sha256"]
+    assert not is_valid("region-config", cfg)
+
+    cfg = json.loads((contracts_root / "regions/united-kingdom.json").read_text())
+    del cfg["basemap"]["retained_cut_pmtiles"]
+    assert not is_valid("region-config", cfg)
+
+
 def test_region_config_rejects_pageview_windows_over_props_budget(contracts_root):
     cfg = json.loads(
         (contracts_root / "regions/malaysia-singapore-brunei.json").read_text()

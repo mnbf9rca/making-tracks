@@ -78,6 +78,12 @@ def _find_nondeterministic_calls(path_name: str, source: str) -> list[str]:
         if path_name == "fetch.py" and fn in {"get_json", "get_to_file"} and name == "monotonic":
             continue
         if (
+            path_name == "conditional_fetch_probe.py"
+            and fn == "_observation_from_response"
+            and name == "monotonic"
+        ):
+            continue
+        if (
             path_name == "progress.py"
             and fn in {"__init__", "tick", "done"}
             and name == "monotonic"

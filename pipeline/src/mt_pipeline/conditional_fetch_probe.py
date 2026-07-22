@@ -113,6 +113,11 @@ def summarize_pair(
 ) -> ProbeSummary:
     if initial.error:
         return ProbeSummary(outcome="initial_error", hash_verdict="not_checked")
+    if initial.status is not None and not 200 <= initial.status < 300:
+        return ProbeSummary(
+            outcome=f"unprobed_initial_status_{initial.status}",
+            hash_verdict="not_checked",
+        )
     if not conditional_headers(initial):
         return ProbeSummary(outcome="no_validators", hash_verdict="not_checked")
     if followup is None:
@@ -163,7 +168,11 @@ def fetch_observation(
 def probe_target(target: ProbeTarget) -> ProbeResult:
     initial = fetch_observation(target)
     conditional = conditional_headers(initial)
-    followup = fetch_observation(target, conditional=conditional) if conditional else None
+    followup = (
+        fetch_observation(target, conditional=conditional)
+        if conditional and initial.status is not None and 200 <= initial.status < 300
+        else None
+    )
     return ProbeResult(
         target=target,
         initial=initial,

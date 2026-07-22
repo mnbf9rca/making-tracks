@@ -78,6 +78,16 @@ def test_cli_enforces_stage_order(tmp_path, capsys):
 
 
 def test_cli_publish_missing_pmtiles_is_clean_error(tmp_path, capsys, monkeypatch):
+    real_target_docs = publish_stage._target_region_docs
+
+    def source_docs(region_config):
+        docs = real_target_docs(region_config)
+        for doc in docs.values():
+            doc["basemap"].pop("retained_cut_pmtiles", None)
+            doc["basemap"].pop("retained_cut_sha256", None)
+        return docs
+
+    monkeypatch.setattr(publish_stage, "_target_region_docs", source_docs)
     db = tmp_path / "w.db"
     conn = store.connect(db)
     store.init_schema(conn)
