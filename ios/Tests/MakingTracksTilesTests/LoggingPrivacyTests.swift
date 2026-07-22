@@ -350,6 +350,16 @@ final class LoggingPrivacyTests: XCTestCase {
         XCTAssertTrue(source.contains(".prepare(window: window"))
     }
 
+    func testTrackVisitDateHeadersAreNotStandaloneMovableRows() throws {
+        let source = try sourceFile("App/Sources/Map/MapScreen.swift")
+
+        XCTAssertFalse(
+            source.contains(#"Text(verbatim: formattedDay(calendar.startOfDay(for: visit.visitedAt)))"#),
+            "Date headers must be rendered inside the visit row, not as standalone rows in the movable ForEach."
+        )
+        XCTAssertTrue(source.contains("trackVisitRow(row.visit, dayHeader:"), "Track visit rows should receive optional inline day headers.")
+    }
+
     private func logLineHasExplicitPrivacyAnnotations(_ line: String) -> Bool {
         for interpolation in logInterpolations(in: line) {
             if interpolation.range(of: #"privacy\s*:"#, options: .regularExpression) == nil {
