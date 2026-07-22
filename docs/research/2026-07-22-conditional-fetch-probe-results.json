@@ -1,0 +1,199 @@
+[
+  {
+    "etag_strength": "missing",
+    "followup": null,
+    "has_last_modified": false,
+    "initial": {
+      "bytes_read": 3592,
+      "error": null,
+      "etag": null,
+      "last_modified": null,
+      "sha256": "83830ea2e72e20aec658ea2cde4dc32f119b56ee482194832b028545560acdfe",
+      "status": 200
+    },
+    "label": "Commons API imageinfo metadata",
+    "method": "GET",
+    "range": null,
+    "summary": {
+      "hash_verdict": "not_checked",
+      "outcome": "no_validators"
+    },
+    "upstream_class": "commons_api_metadata",
+    "url": "https://commons.wikimedia.org/w/api.php?action=query&titles=File%3AExample.jpg&prop=imageinfo&iiprop=url%7Cmime%7Csize%7Cextmetadata&format=json&maxlag=5"
+  },
+  {
+    "etag_strength": "malformed",
+    "followup": {
+      "bytes_read": 0,
+      "error": null,
+      "etag": "a0480ac7f4f3bb017a699df1d004a854",
+      "last_modified": "Sun, 06 Oct 2013 05:58:41 GMT",
+      "sha256": null,
+      "status": 304
+    },
+    "has_last_modified": true,
+    "initial": {
+      "bytes_read": 9022,
+      "error": null,
+      "etag": "a0480ac7f4f3bb017a699df1d004a854",
+      "last_modified": "Sun, 06 Oct 2013 05:58:41 GMT",
+      "sha256": "99bd915a3819b1fee3722328ae904dde5459e9b15d56abd98b903c770a2f582c",
+      "status": 200
+    },
+    "label": "Commons small image file",
+    "method": "GET",
+    "range": null,
+    "summary": {
+      "hash_verdict": "not_rechecked_304",
+      "outcome": "not_modified"
+    },
+    "upstream_class": "commons_image_file",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/a/a9/Example.jpg"
+  },
+  {
+    "etag_strength": "missing",
+    "followup": null,
+    "has_last_modified": false,
+    "initial": {
+      "bytes_read": 3151,
+      "error": null,
+      "etag": null,
+      "last_modified": null,
+      "sha256": "b41ea6289ac73b42c8e2eb5c174ad16df22a6a77bd53a46549fcb93abfff9648",
+      "status": 200
+    },
+    "label": "Wikipedia extracts API",
+    "method": "GET",
+    "range": null,
+    "summary": {
+      "hash_verdict": "not_checked",
+      "outcome": "no_validators"
+    },
+    "upstream_class": "wikipedia_api",
+    "url": "https://en.wikipedia.org/w/api.php?action=query&titles=London&prop=extracts&exintro=1&explaintext=1&format=json&maxlag=5"
+  },
+  {
+    "etag_strength": "missing",
+    "followup": null,
+    "has_last_modified": false,
+    "initial": {
+      "bytes_read": 140,
+      "error": null,
+      "etag": null,
+      "last_modified": null,
+      "sha256": "94bed59f007a1a37e9328d47d7e45640412d0b5bcd38a745448ee3658355526a",
+      "status": 200
+    },
+    "label": "Wikidata wbgetentities sitelink API",
+    "method": "GET",
+    "range": null,
+    "summary": {
+      "hash_verdict": "not_checked",
+      "outcome": "no_validators"
+    },
+    "upstream_class": "wikidata_entity_data",
+    "url": "https://www.wikidata.org/w/api.php?action=wbgetentities&ids=Q84&props=sitelinks&sitefilter=enwiki&format=json&maxlag=5"
+  },
+  {
+    "etag_strength": "missing",
+    "followup": null,
+    "has_last_modified": false,
+    "initial": {
+      "bytes_read": 6159,
+      "error": null,
+      "etag": null,
+      "last_modified": null,
+      "sha256": "0fea7e2956c0a5c645164dc476a9b10a45cc0022556be59daf55bd2373116bf1",
+      "status": 200
+    },
+    "label": "data.gov.sg dataset listing",
+    "method": "GET",
+    "range": null,
+    "summary": {
+      "hash_verdict": "not_checked",
+      "outcome": "no_validators"
+    },
+    "upstream_class": "data_gov_sg_api",
+    "url": "https://api-production.data.gov.sg/v2/public/api/datasets?page=1"
+  },
+  {
+    "etag_strength": "malformed",
+    "followup": {
+      "bytes_read": 0,
+      "error": null,
+      "etag": "sds_-2111899434",
+      "last_modified": "Wed, 22 Jul 2026 06:00:33 GMT",
+      "sha256": null,
+      "status": 304
+    },
+    "has_last_modified": true,
+    "initial": {
+      "bytes_read": 5037,
+      "error": null,
+      "etag": "sds_-2111899434",
+      "last_modified": "Wed, 22 Jul 2026 06:00:33 GMT",
+      "sha256": "3f43af5eff229480e781b0ebac101fb82d5c4b937a285a4a8c8dc93f894927ea",
+      "status": 200
+    },
+    "label": "Historic England NHLE FeatureServer metadata",
+    "method": "GET",
+    "range": null,
+    "summary": {
+      "hash_verdict": "not_rechecked_304",
+      "outcome": "not_modified"
+    },
+    "upstream_class": "arcgis_rest",
+    "url": "https://services-eu1.arcgis.com/ZOdPfBS3aqqDYPUQ/ArcGIS/rest/services/National_Heritage_List_for_England_NHLE_v02_VIEW/FeatureServer?f=json"
+  },
+  {
+    "etag_strength": "missing",
+    "followup": null,
+    "has_last_modified": false,
+    "initial": {
+      "bytes_read": 27150,
+      "error": null,
+      "etag": null,
+      "last_modified": null,
+      "sha256": "62c1c0b235e26952857139537b65f8272026cd1c385c1bf6dba20481ee8a6619",
+      "status": 404
+    },
+    "label": "Configured Protomaps build prefix",
+    "method": "GET",
+    "range": "bytes=0-65535",
+    "summary": {
+      "hash_verdict": "not_checked",
+      "outcome": "no_validators"
+    },
+    "upstream_class": "protomaps_build",
+    "url": "https://build.protomaps.com/20260714.pmtiles"
+  },
+  {
+    "etag_strength": "strong",
+    "followup": {
+      "bytes_read": 0,
+      "error": null,
+      "etag": "\"783ce5f934f29d8494b98e899f1d93b7\"",
+      "last_modified": "Wed, 22 Jul 2026 01:25:14 GMT",
+      "sha256": null,
+      "status": 304
+    },
+    "has_last_modified": true,
+    "initial": {
+      "bytes_read": 926,
+      "error": null,
+      "etag": "\"783ce5f934f29d8494b98e899f1d93b7\"",
+      "last_modified": "Wed, 22 Jul 2026 01:25:14 GMT",
+      "sha256": "dc6b9d38467e76894e310e8f612e99f4cb3a1934f5888bc25325b606babdf509",
+      "status": 200
+    },
+    "label": "Published region catalog",
+    "method": "GET",
+    "range": null,
+    "summary": {
+      "hash_verdict": "not_rechecked_304",
+      "outcome": "not_modified"
+    },
+    "upstream_class": "r2_cdn_catalog",
+    "url": "https://tiles.making-tracks.app/regions.json"
+  }
+]
