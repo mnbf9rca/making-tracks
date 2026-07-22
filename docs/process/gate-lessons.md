@@ -172,3 +172,5 @@ branch is stale and would regress shipped work. Argue to close it rather than re
 
 **A hash proves delivery integrity, never content safety.** An object that verifies is the object we
 published, not an object that is safe.
+
+**When CI and local disagree, CI wins, and the disagreement is a finding.** A CI-red/local-green result means the local environment cannot see the failure, not that CI is flaky. This has now happened twice for real causes: a control tapped without being scrolled into view on a shorter viewport, and a CI simulator that was a different device model from local. Both were invisible locally by construction. The reflex to call CI flaky and re-run is the thing to resist; triage the disagreement with the artifact bundle before dismissing it.
