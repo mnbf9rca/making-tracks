@@ -260,6 +260,42 @@ extension AppDatabase {
         }
     }
 
+    public func moveVisit(
+        id: Int64,
+        toDayContaining targetDay: Date,
+        targetDayOrderedIDs orderedIDs: [Int64],
+        calendar: Calendar = Calendar(identifier: .gregorian)
+    ) throws {
+        try dbQueue.write { db in
+            guard let existing = try Visit.fetchOne(db, key: id),
+                  let movedAt = Self.replacingDay(of: existing.visitedAt, withDayContaining: targetDay, calendar: calendar)
+            else {
+                throw AppDatabaseError.unreadableDatabase
+            }
+            let bounds = Self.dayBounds(containing: movedAt, calendar: calendar)
+            let idsInTargetDay = try Set(Int64.fetchAll(
+                db,
+                sql: "SELECT id FROM visits WHERE visited_at >= ? AND visited_at < ? AND id != ?",
+                arguments: [bounds.start, bounds.end, id]
+            ))
+            let expectedIDs = idsInTargetDay.union([id])
+            guard Set(orderedIDs) == expectedIDs, orderedIDs.count == expectedIDs.count else {
+                throw AppDatabaseError.unreadableDatabase
+            }
+
+            try db.execute(
+                sql: "UPDATE visits SET visited_at = ? WHERE id = ?",
+                arguments: [movedAt, id]
+            )
+            for (index, orderedID) in orderedIDs.enumerated() {
+                try db.execute(
+                    sql: "UPDATE visits SET visit_order = ? WHERE id = ?",
+                    arguments: [index, orderedID]
+                )
+            }
+        }
+    }
+
     public func setHidden(_ place: PlaceRef, _ hidden: Bool) throws {
         try dbQueue.write { db in
             if hidden {

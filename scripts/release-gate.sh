@@ -74,6 +74,32 @@ phase() {
   return "$status"
 }
 
+xcodebuild_log_name() {
+  local label
+
+  label="${1// /-}"
+  printf "%s.xcodebuild.log" "$label"
+}
+
+run_xcodebuild() {
+  local label
+  local raw_log
+
+  label="$1"
+  shift
+
+  if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+    xcodebuild "$@"
+    return
+  fi
+
+  command -v xcbeautify >/dev/null 2>&1 ||
+    refuse "xcbeautify must be installed for GitHub Actions release-gate logs"
+
+  raw_log="$RUN_DIR/$(xcodebuild_log_name "$label")"
+  xcodebuild "$@" 2>&1 | tee "$raw_log" | xcbeautify
+}
+
 destination_udid() {
   case "$DESTINATION" in
     *id=*)
@@ -112,20 +138,20 @@ mkdir -p "$DERIVED_DATA"
 rm -rf "$RESULT_BUNDLE"
 
 phase "simulator boot" xcrun simctl bootstatus "$(destination_udid)" -b
-phase "release build" xcodebuild build \
+phase "release build" run_xcodebuild "release build" build \
   -configuration Release \
   -project ios/App/MakingTracks.xcodeproj \
   -scheme "$SCHEME" \
   -destination "$DESTINATION" \
   -derivedDataPath "$DERIVED_DATA"
-phase "debug build for testing" xcodebuild build-for-testing \
+phase "debug build for testing" run_xcodebuild "debug build for testing" build-for-testing \
   -project ios/App/MakingTracks.xcodeproj \
   -scheme "$SCHEME" \
   -destination "$DESTINATION" \
   -parallel-testing-enabled NO \
   -disable-concurrent-destination-testing \
   -derivedDataPath "$DERIVED_DATA"
-phase "tests without building" xcodebuild test-without-building \
+phase "tests without building" run_xcodebuild "tests without building" test-without-building \
   -project ios/App/MakingTracks.xcodeproj \
   -scheme "$SCHEME" \
   -destination "$DESTINATION" \

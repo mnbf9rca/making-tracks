@@ -255,20 +255,39 @@ final class LoggingPrivacyTests: XCTestCase {
         }
     }
 
-    func testDiagnosticsConsentCopyMatchesFlowDisclosure() throws {
+    func testDiagnosticsConsentCopyUsesHumanLabelsWithoutChangingExportClasses() throws {
         let source = try String(
             contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+        let exportSource = try String(
+            contentsOf: packageRoot().appendingPathComponent("Sources/MakingTracksTiles/DiagnosticLogExport.swift"),
             encoding: .utf8
         )
 
         for expected in [
             "Nothing is sent automatically. The app prepares a file on this phone",
-            "App version", "Device model", "Session flow", "Map packs",
-            "Object URLs", "Errors", "Timings", "Places/actions",
-            "Device name", "Exact location", "Search wording",
+            "App details", "Device type", "Steps in the app", "Downloaded maps",
+            "Map file links", "Problems", "Load times", "Places and taps",
+            "Device name", "Precise location", "Search text",
+            "Your exact coordinates are not included.",
         ] {
             XCTAssertTrue(source.contains(expected), expected)
         }
+        for technicalLabel in [
+            #"DiagnosticsDisclosureClass(title: "Session flow""#,
+            #"DiagnosticsDisclosureClass(title: "Object URLs""#,
+            #"DiagnosticsDisclosureClass(title: "Places/actions""#,
+            #"DiagnosticsDisclosureClass(title: "Search wording""#,
+        ] {
+            XCTAssertFalse(source.contains(technicalLabel), technicalLabel)
+        }
+        XCTAssertTrue(exportSource.contains("included=app-version,device-model,installed-packs,session-flow,object-urls,error-codes,timings"))
+        XCTAssertTrue(exportSource.contains("not-included=device-name,exact-location,search-wording"))
+        XCTAssertFalse(source.contains("Phone model"))
+        XCTAssertFalse(source.contains("Phone name"))
+        XCTAssertFalse(source.contains("Your coordinates never leave."))
+        XCTAssertFalse(source.contains("Your coordinates are excluded."))
         XCTAssertFalse(source.contains("Places you looked at, saved, loved, hid or visited."))
         XCTAssertFalse(source.contains("Your searches, lists, location, viewport or device name."))
     }

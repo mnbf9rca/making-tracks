@@ -76,6 +76,7 @@ def _fake_tools(tmp_path: Path) -> tuple[Path, Path]:
     xcodebuild.write_text(
         "#!/bin/sh\n"
         'echo "xcodebuild:$*" >> "$MT_RELEASE_GATE_LOG"\n'
+        'if [ -n "${MT_RELEASE_GATE_XCODEBUILD_STDOUT:-}" ]; then printf "%s\\n" "$MT_RELEASE_GATE_XCODEBUILD_STDOUT"; fi\n'
         'if [ "${MT_RELEASE_GATE_FAIL_XCODEBUILD:-}" = "1" ]; then exit 65; fi\n',
         encoding="utf-8",
     )
@@ -185,6 +186,9 @@ def test_release_gate_github_actions_refuses_without_skip_lock(tmp_path):
 def test_release_gate_skip_lock_runs_only_inside_github_actions(tmp_path):
     repo = _init_repo(tmp_path)
     fakebin, log = _fake_tools(tmp_path)
+    xcbeautify = fakebin / "xcbeautify"
+    xcbeautify.write_text("cat\n", encoding="utf-8")
+    xcbeautify.chmod(xcbeautify.stat().st_mode | stat.S_IXUSR)
     env = _env(fakebin, log)
     env.pop("MT_SIM_LOCK")
     env["MT_RELEASE_GATE_SKIP_LOCK"] = "1"
@@ -325,3 +329,56 @@ def test_release_gate_logs_failed_phase_timing_before_exiting(tmp_path):
     assert result.returncode == 65
     assert "release-gate: phase start: release build" in result.stderr
     assert "release-gate: phase end: release build status=65 elapsed=" in result.stderr
+
+
+def test_release_gate_ci_prettifies_xcodebuild_and_preserves_raw_logs(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    xcbeautify = fakebin / "xcbeautify"
+    xcbeautify.write_text(
+        "#!/bin/sh\n"
+        'while IFS= read -r line; do printf "pretty:%s\\n" "$line"; done\n',
+        encoding="utf-8",
+    )
+    xcbeautify.chmod(xcbeautify.stat().st_mode | stat.S_IXUSR)
+    env = _env(fakebin, log)
+    env.pop("MT_SIM_LOCK")
+    env["MT_RELEASE_GATE_SKIP_LOCK"] = "1"
+    env["GITHUB_ACTIONS"] = "true"
+    env["MT_RELEASE_GATE_XCODEBUILD_STDOUT"] = "raw xcodebuild output"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert "pretty:raw xcodebuild output" in result.stdout
+    run_dir = log.parent / "release-gate-run"
+    assert (run_dir / "release-build.xcodebuild.log").read_text(encoding="utf-8") == (
+        "raw xcodebuild output\n"
+    )
+    assert (run_dir / "debug-build-for-testing.xcodebuild.log").read_text(
+        encoding="utf-8"
+    ) == "raw xcodebuild output\n"
+    assert (run_dir / "tests-without-building.xcodebuild.log").read_text(
+        encoding="utf-8"
+    ) == "raw xcodebuild output\n"
+
+
+def test_release_gate_ci_formatter_does_not_mask_xcodebuild_failure(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    xcbeautify = fakebin / "xcbeautify"
+    xcbeautify.write_text("cat\n", encoding="utf-8")
+    xcbeautify.chmod(xcbeautify.stat().st_mode | stat.S_IXUSR)
+    env = _env(fakebin, log)
+    env.pop("MT_SIM_LOCK")
+    env["MT_RELEASE_GATE_SKIP_LOCK"] = "1"
+    env["GITHUB_ACTIONS"] = "true"
+    env["MT_RELEASE_GATE_FAIL_XCODEBUILD"] = "1"
+    env["MT_RELEASE_GATE_XCODEBUILD_STDOUT"] = "raw failed output"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 65
+    assert "raw failed output" in result.stdout
+    raw_log = log.parent / "release-gate-run" / "release-build.xcodebuild.log"
+    assert raw_log.read_text(encoding="utf-8") == "raw failed output\n"
