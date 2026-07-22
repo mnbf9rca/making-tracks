@@ -6,9 +6,19 @@ on:
     branches: [develop, ios]
 
 jobs:
+  workflow-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - name: Validate GitHub workflow schemas
+        run: uvx check-jsonschema --builtin-schema vendor.github-workflows .github/workflows/*.yml
+
   shellcheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - name: Check shell scripts
         run: shellcheck scripts/*.sh
