@@ -838,9 +838,17 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             placeID: "mt1_D0000000000000000000000002",
             label: "Dense Pin 2, Historic Building, visited"
         ))
-        XCTAssertEqual(play.label, "Pause track replay")
+        XCTAssertTrue(waitForButtonLabel(
+            "Pause track replay",
+            identifier: "map.track-replay.play",
+            in: app
+        ))
         play.tap()
-        XCTAssertEqual(play.label, "Play track replay")
+        XCTAssertTrue(waitForButtonLabel(
+            "Play track replay",
+            identifier: "map.track-replay.play",
+            in: app
+        ))
 
         for eventIndex in 1...5 {
             slider.adjust(toNormalizedSliderPosition: Double(eventIndex) / 5.0)
