@@ -179,15 +179,18 @@ private enum AXElementReadback {
 }
 
 private enum AXSliderUpperEdgeAdjuster {
-    static func normalizedPositions(attempts: Int) -> [Double] {
-        precondition(attempts > 0, "AX slider adjustment must make at least one attempt")
+    struct DragPlan: Equatable {
+        var start: CGVector
+        var end: CGVector
+        var holdDuration: TimeInterval
+    }
 
-        // Work around the unresolved max-edge drag dismissal tracked in #407.
-        let preferred = [0.99, 0.995, 1.0]
-        if attempts <= preferred.count {
-            return Array(preferred.prefix(attempts))
-        }
-        return preferred + Array(repeating: 1.0, count: attempts - preferred.count)
+    static func upperEdgeDragPlan() -> DragPlan {
+        DragPlan(
+            start: CGVector(dx: 0.04, dy: 0.5),
+            end: CGVector(dx: 1.0, dy: 0.5),
+            holdDuration: 0.1
+        )
     }
 }
 
@@ -334,8 +337,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(samples, [false])
     }
 
-    func testAXSliderUpperEdgePositionsAvoidTrueEdgeUntilLastAttempt() {
-        XCTAssertEqual(AXSliderUpperEdgeAdjuster.normalizedPositions(attempts: 3), [0.99, 0.995, 1.0])
+    func testAXSliderUpperEdgeDragPlanTargetsCoordinateMaxEdge() {
+        let plan = AXSliderUpperEdgeAdjuster.upperEdgeDragPlan()
+
+        XCTAssertGreaterThan(plan.start.dx, 0.0)
+        XCTAssertLessThan(plan.start.dx, 0.1)
+        XCTAssertEqual(plan.start.dy, 0.5)
+        XCTAssertEqual(plan.end.dx, 1.0)
+        XCTAssertEqual(plan.end.dy, 0.5)
     }
 
     func testCardTogglesPersistAndRestyleMapPin() {
@@ -2119,10 +2128,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             XCTFail("Slider \(identifier) did not appear")
             return
         }
-        for normalizedPosition in AXSliderUpperEdgeAdjuster.normalizedPositions(attempts: 3) {
+        let plan = AXSliderUpperEdgeAdjuster.upperEdgeDragPlan()
+        for _ in 0..<3 {
             let currentSlider = app.sliders[identifier]
             guard currentSlider.waitForExistence(timeout: 2) else { continue }
-            currentSlider.adjust(toNormalizedSliderPosition: normalizedPosition)
+            currentSlider
+                .coordinate(withNormalizedOffset: plan.start)
+                .press(
+                    forDuration: plan.holdDuration,
+                    thenDragTo: currentSlider.coordinate(withNormalizedOffset: plan.end)
+                )
             let resampled = AXValueWaiter.wait(expected: expectedValue, attempts: 3, interval: 0.1) {
                 AXElementReadback.value(for: identifier) {
                     let current = app.sliders[$0]
@@ -2140,7 +2155,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         let finalDescription = finalSlider.exists ? finalSlider.debugDescription : "missing slider"
         XCTFail(
-            "Slider \(identifier) value was \(finalValue ?? "missing"), expected \(expectedValue) at normalized edge 1.0; \(finalDescription)"
+            "Slider \(identifier) value was \(finalValue ?? "missing"), expected \(expectedValue) after coordinate max-edge drag; \(finalDescription)"
         )
     }
 
