@@ -208,6 +208,16 @@ jobs:
             } | tee -a "$receipt"
           }
 
+          capture_vm_stat() {
+            local phase="$1"
+            {
+              echo
+              echo "vm_stat_${phase}_begin"
+              vm_stat
+              echo "vm_stat_${phase}_end"
+            } | tee -a "$receipt"
+          }
+
           run_contention_probe() {
             local phase="$1"
             local probe_root="${MT_RELEASE_GATE_DERIVED_DATA:-$MT_RELEASE_GATE_RUN_DIR/DerivedData}"
@@ -258,9 +268,11 @@ jobs:
 
           set +e
           capture_version_manifest
+          capture_vm_stat "before"
           run_contention_probe "before" | tee -a "$receipt"
           ./scripts/release-gate.sh 2>&1 | tee "$gate_log"
           gate_status="${PIPESTATUS[0]}"
+          capture_vm_stat "after"
           run_contention_probe "after" | tee -a "$receipt"
           set -e
 
