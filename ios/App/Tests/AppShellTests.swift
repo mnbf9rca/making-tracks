@@ -922,6 +922,26 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(sections.map { $0.visits.map(\.id) }, [[1, 2], [3]])
     }
 
+    func testTrackVisitReorderingBuildsOneMovableRowPerVisitWithInlineDayHeaders() {
+        let calendar = Calendar(identifier: .gregorian)
+        let dayOne = Date(timeIntervalSince1970: 60 * 60 * 24 * 10)
+        let dayTwo = dayOne.addingTimeInterval(60 * 60 * 24)
+        let visits = [
+            trackVisit(id: 1, seconds: dayOne.timeIntervalSince1970 + 60),
+            trackVisit(id: 2, seconds: dayOne.timeIntervalSince1970 + 120),
+            trackVisit(id: 3, seconds: dayTwo.timeIntervalSince1970 + 60),
+        ]
+
+        let rows = TrackVisitReordering.rows(for: visits, calendar: calendar)
+
+        XCTAssertEqual(rows.map { $0.visit.id }, [1, 2, 3])
+        XCTAssertEqual(rows.compactMap(\.dayHeader), [
+            calendar.startOfDay(for: dayOne),
+            calendar.startOfDay(for: dayTwo),
+        ])
+        XCTAssertEqual(rows.map { $0.dayHeader != nil }, [true, false, true])
+    }
+
     func testTrackVisitReorderingMovesRowsWithinDayByVisitID() {
         let visits = [
             trackVisit(id: 1, seconds: 100),

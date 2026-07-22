@@ -723,6 +723,13 @@ struct TrackVisitDaySection: Identifiable, Equatable {
     var id: Date { day }
 }
 
+struct TrackVisitRow: Identifiable, Equatable {
+    let visit: TrackVisit
+    let dayHeader: Date?
+
+    var id: Int64 { visit.id }
+}
+
 enum TrackVisitReordering {
     enum MovePlan: Equatable {
         case reorderDay(day: Date, orderedIDs: [Int64])
@@ -783,6 +790,20 @@ enum TrackVisitReordering {
     ) -> Bool {
         guard let previous else { return true }
         return calendar.startOfDay(for: visit.visitedAt) != calendar.startOfDay(for: previous.visitedAt)
+    }
+
+    static func rows(
+        for visits: [TrackVisit],
+        calendar: Calendar = Calendar(identifier: .gregorian)
+    ) -> [TrackVisitRow] {
+        visits.enumerated().map { index, visit in
+            let day = calendar.startOfDay(for: visit.visitedAt)
+            let previous = index > 0 ? visits[index - 1] : nil
+            return TrackVisitRow(
+                visit: visit,
+                dayHeader: startsNewDay(visit: visit, previous: previous, calendar: calendar) ? day : nil
+            )
+        }
     }
 
     static func movePlan(
@@ -5055,17 +5076,8 @@ private struct ListDetailView: View {
                     if visibleTrackVisits.isEmpty {
                         ContentUnavailableView("No visits yet", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
                     } else {
-                        ForEach(Array(visibleTrackVisits.enumerated()), id: \.element.id) { index, visit in
-                            if TrackVisitReordering.startsNewDay(
-                                visit: visit,
-                                previous: index > 0 ? visibleTrackVisits[index - 1] : nil,
-                                calendar: calendar
-                            ) {
-                                Text(verbatim: formattedDay(calendar.startOfDay(for: visit.visitedAt)))
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-                            trackVisitRow(visit)
+                        ForEach(TrackVisitReordering.rows(for: visibleTrackVisits, calendar: calendar)) { row in
+                            trackVisitRow(row.visit, dayHeader: row.dayHeader)
                         }
                         .onMove { source, destination in
                             guard canReorderTrackVisits else { return }
@@ -5148,27 +5160,35 @@ private struct ListDetailView: View {
         .accessibilityIdentifier("lists.detail.item.\(item.placeID)")
     }
 
-    private func trackVisitRow(_ visit: TrackVisit) -> some View {
-        HStack(alignment: .center, spacing: TrackVisitRowDensitySpec.horizontalSpacing) {
-            Image(systemName: "mappin.circle.fill")
-                .foregroundStyle(Color.secondary)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: TrackVisitRowDensitySpec.verticalSpacing) {
-                Text(verbatim: visit.name)
-                    .font(.body)
-                    .lineLimit(1)
-                Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitedAt(visit))")
-                    .font(.caption)
+    private func trackVisitRow(_ visit: TrackVisit, dayHeader: Date?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let dayHeader {
+                Text(verbatim: formattedDay(dayHeader))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
             }
-            .layoutPriority(1)
 
-            Spacer(minLength: 4)
+            HStack(alignment: .center, spacing: TrackVisitRowDensitySpec.horizontalSpacing) {
+                Image(systemName: "mappin.circle.fill")
+                    .foregroundStyle(Color.secondary)
+                    .accessibilityHidden(true)
 
-            visitEditControls(visit)
+                VStack(alignment: .leading, spacing: TrackVisitRowDensitySpec.verticalSpacing) {
+                    Text(verbatim: visit.name)
+                        .font(.body)
+                        .lineLimit(1)
+                    Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitedAt(visit))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .layoutPriority(1)
+
+                Spacer(minLength: 4)
+
+                visitEditControls(visit)
+            }
         }
         .frame(minHeight: TrackVisitRowDensitySpec.minimumHeight, alignment: .leading)
     }
