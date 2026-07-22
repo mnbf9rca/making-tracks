@@ -15,6 +15,7 @@
 		12C5D166DC2E3F3E836B4BA0 /* OnboardingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FF59CEFC1B7EB1B24AAAB55 /* OnboardingFlow.swift */; };
 		1477E9C0802B5ACD26327A43 /* AppLocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B6E6A8728A3BBF7FBCF25B9 /* AppLocationManager.swift */; };
 		1E88D6E14A988414962AB763 /* MapLibre in Frameworks */ = {isa = PBXBuildFile; productRef = CBADA08F3DCFE4D9F14B6043 /* MapLibre */; };
+		3D63AC3F9D91FF92D5DEBF59 /* DiagnosticsRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A330796CB1BF0358668CE6ED /* DiagnosticsRuntimeTests.swift */; };
 		59C7C078ADD59064266740CA /* MakingTracksData in Frameworks */ = {isa = PBXBuildFile; productRef = 52E446EDADC05A0EB10CB788 /* MakingTracksData */; };
 		78489B6DB316892B50A97831 /* PinCategorySymbolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AA103E16EBCD9EF3DABC9BB /* PinCategorySymbolTests.swift */; };
 		7856947E7D46610EA335891E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 63FDD03D128539278BC591EB /* Assets.xcassets */; };
@@ -72,6 +73,7 @@
 		7406D8636B27B4FE8E1C1555 /* MakingTracks.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MakingTracks.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7DE03FCA363155B0C5A81CE1 /* MLNMapViewRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLNMapViewRepresentable.swift; sourceTree = "<group>"; };
 		8165BC8A095352568E0849A6 /* MakingTracksApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MakingTracksApp.swift; sourceTree = "<group>"; };
+		A330796CB1BF0358668CE6ED /* DiagnosticsRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsRuntimeTests.swift; sourceTree = "<group>"; };
 		AB44B483382C7266D1246E92 /* HiddenMembershipTrackerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiddenMembershipTrackerTests.swift; sourceTree = "<group>"; };
 		B3982196AEEBAE17B1F5D899 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		E36873FF1289D2248F06F618 /* MakingTracksCoreLoopUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MakingTracksCoreLoopUITests.swift; sourceTree = "<group>"; };
@@ -112,6 +114,7 @@
 			isa = PBXGroup;
 			children = (
 				538B8CFCCBB98BEEE13D75E5 /* AppShellTests.swift */,
+				A330796CB1BF0358668CE6ED /* DiagnosticsRuntimeTests.swift */,
 				AB44B483382C7266D1246E92 /* HiddenMembershipTrackerTests.swift */,
 				2B2C08C6EC4CC9B925C76CEC /* LocationSessionPoliciesTests.swift */,
 				EB76FBD716ED22CC65743413 /* MapLayerVisibilityTests.swift */,
@@ -391,6 +394,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9A14258D08374EDCF12E44F5 /* AppShellTests.swift in Sources */,
+				3D63AC3F9D91FF92D5DEBF59 /* DiagnosticsRuntimeTests.swift in Sources */,
 				A0A4BEB6C707F68791895112 /* HiddenMembershipTrackerTests.swift in Sources */,
 				E33AAF4D7C085C6FBE57C261 /* LocationSessionPoliciesTests.swift in Sources */,
 				B4249A1E5E8913E54631AA6C /* MapLayerVisibilityTests.swift in Sources */,

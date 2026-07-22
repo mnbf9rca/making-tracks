@@ -364,7 +364,9 @@ final class LoggingPrivacyTests: XCTestCase {
 
         XCTAssertTrue(source.contains("await prepare()"))
         XCTAssertTrue(source.contains("private func prepare() async"))
-        XCTAssertTrue(source.contains(".prepare(window: window"))
+        XCTAssertTrue(source.contains("DiagnosticsExportRequest(selectedWindow: selectedWindow)"))
+        XCTAssertTrue(source.contains("request: request"))
+        XCTAssertTrue(source.contains(".prepare(window: request.window"))
         XCTAssertFalse(
             source.contains("await prepare(coverCurrentSession: true)"),
             "Normal Prepare should honor the selected explicit window instead of promoting Last hour to Everything."

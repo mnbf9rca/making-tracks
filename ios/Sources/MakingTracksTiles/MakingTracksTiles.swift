@@ -2105,8 +2105,16 @@ enum DescriptionIndexDecoder {
     private static let maxURLScalars = 2_048
 
     static func decode(_ data: Data, expected: TileCoordinate) throws -> [PlaceDescription] {
-        guard data.count <= DescriptionPayloadLimits.maxDescriptionIndexBytes,
-              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard data.count <= DescriptionPayloadLimits.maxDescriptionIndexBytes else {
+            throw TileError.responseTooLarge
+        }
+        let decodedObject: Any
+        do {
+            decodedObject = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw TileError.invalidTile
+        }
+        guard let object = decodedObject as? [String: Any],
               Set(object.keys) == ["schema_version", "min_reader_version", "z", "x", "y", "places"],
               object["schema_version"] as? Int == 1,
               let minReaderVersion = object["min_reader_version"] as? Int,
@@ -5700,6 +5708,8 @@ private final class AsyncBroadcaster<Element: Sendable>: @unchecked Sendable {
 public actor TileClient {
     // Tunable: enough refs for open/recent card actions after panning, still a hard memory bound.
     private static let recentPlaceRefLimit = 128
+    // Tunable: mirrors the recent card bound while preventing sidecar payloads from growing unbounded.
+    private static let descriptionSidecarCacheLimit = 128
 
     private let region: String
     private let fetcher: TileFetching
@@ -5709,6 +5719,9 @@ public actor TileClient {
     private var state: TileLoadState = .unavailable
     private var loadedPlaces: [String: DecodedPlace] = [:]
     private var loadedPlaceRequests: [String: PublishTileRequest] = [:]
+    private var descriptionSidecars: [DescriptionSidecarCacheKey: DescriptionSidecarPayload] = [:]
+    private var descriptionSidecarOrder: [DescriptionSidecarCacheKey] = []
+    private var descriptionSidecarTasks: [DescriptionSidecarCacheKey: Task<DescriptionSidecarPayload, Never>] = [:]
     private var loadedImages: [String: PlaceImage] = [:]
     private var recentPlaceRefs: [String: PlaceRef] = [:]
     private var recentPlaceRefOrder: [String] = []
@@ -5985,7 +5998,7 @@ public actor TileClient {
         )
         let imageRequests = imageIndexLoadRequests(from: viewportRequests)
         if !imageRequests.isEmpty {
-            logSidecarPlan(kind: "image-index", requests: imageRequests.map(\.tile), regionID: regionID)
+            Self.logSidecarPlan(kind: "image-index", requests: imageRequests.map(\.tile), regionID: regionID)
             let imageFetcher = fetcher
             imageLoadTask = Task {
                 await self.loadViewportImages(imageRequests, generation: generation, fetcher: imageFetcher)
@@ -6018,7 +6031,7 @@ public actor TileClient {
             if let request = loadedPlaceRequests[placeID],
                !loaded.descriptionSidecarResolved,
                loaded.placeRef.needsDescriptionSidecar {
-                let resolution = await loadDescription(request: request, placeID: loaded.placeRef.placeID)
+                let resolution = await descriptionResolution(request: request, placeID: loaded.placeRef.placeID)
                 placeRef = resolution.description.flatMap { loaded.placeRef.merging(description: $0) } ?? loaded.placeRef
                 if (resolution.shouldRememberAttempt || placeRef != loaded.placeRef),
                    loadedPlaceRequests[placeID]?.matchesDescriptionSidecar(request) == true {
@@ -6086,7 +6099,7 @@ public actor TileClient {
         let currentPlaceIDs = Set(loadedPlaces.keys)
         loadedImages = imagesByPlace.filter { currentPlaceIDs.contains($0.key) }
         imageLoadTask = nil
-        logSidecarFinish(
+        Self.logSidecarFinish(
             kind: "image-index",
             requests: requests.map(\.tile),
             loadedCount: loadedImages.count,
@@ -6198,7 +6211,7 @@ public actor TileClient {
         }
     }
 
-    private func logSidecarPlan(kind: String, requests: [PublishTileRequest], regionID: String) {
+    private static func logSidecarPlan(kind: String, requests: [PublishTileRequest], regionID: String) {
         let grouped = Dictionary(grouping: requests) { request in
             ObjectRequestLogKey(
                 publishVersion: request.publishVersion,
@@ -6227,7 +6240,7 @@ public actor TileClient {
         }
     }
 
-    private func logSidecarFinish(
+    private static func logSidecarFinish(
         kind: String,
         requests: [PublishTileRequest],
         loadedCount: Int,
@@ -6472,8 +6485,62 @@ public actor TileClient {
         return bySource.values.sorted(by: { $0.source < $1.source })
     }
 
-    private func loadDescription(request: PublishTileRequest, placeID: String) async -> PlaceDescriptionResolution {
-        logSidecarPlan(kind: "description-index", requests: [request], regionID: region)
+    private func descriptionResolution(request: PublishTileRequest, placeID: String) async -> PlaceDescriptionResolution {
+        let key = DescriptionSidecarCacheKey(request: request)
+        if let payload = descriptionSidecars[key] {
+            rememberDescriptionSidecarKey(key)
+            return PlaceDescriptionResolution(
+                description: payload.descriptions.first { $0.placeID == placeID },
+                shouldRememberAttempt: payload.shouldRememberAttempt
+            )
+        }
+        if let task = descriptionSidecarTasks[key] {
+            let payload = await task.value
+            return PlaceDescriptionResolution(
+                description: payload.descriptions.first { $0.placeID == placeID },
+                shouldRememberAttempt: payload.shouldRememberAttempt
+            )
+        }
+        let regionID = region
+        let fetcher = fetcher
+        let offlineStore = offlineStore
+        let task = Task {
+            await Self.loadDescriptionSidecar(
+                request: request,
+                fetcher: fetcher,
+                offlineStore: offlineStore,
+                regionID: regionID
+            )
+        }
+        descriptionSidecarTasks[key] = task
+        let payload = await task.value
+        descriptionSidecarTasks[key] = nil
+        if payload.shouldRememberAttempt {
+            descriptionSidecars[key] = payload
+            rememberDescriptionSidecarKey(key)
+        }
+        return PlaceDescriptionResolution(
+            description: payload.descriptions.first { $0.placeID == placeID },
+            shouldRememberAttempt: payload.shouldRememberAttempt
+        )
+    }
+
+    private func rememberDescriptionSidecarKey(_ key: DescriptionSidecarCacheKey) {
+        descriptionSidecarOrder.removeAll { $0 == key }
+        descriptionSidecarOrder.append(key)
+        while descriptionSidecarOrder.count > Self.descriptionSidecarCacheLimit {
+            let evicted = descriptionSidecarOrder.removeFirst()
+            descriptionSidecars[evicted] = nil
+        }
+    }
+
+    private static func loadDescriptionSidecar(
+        request: PublishTileRequest,
+        fetcher: TileFetching,
+        offlineStore: OfflineRegionStore?,
+        regionID: String
+    ) async -> DescriptionSidecarPayload {
+        Self.logSidecarPlan(kind: "description-index", requests: [request], regionID: regionID)
         do {
             let data: Data
             if request.source.isInstalled {
@@ -6482,40 +6549,52 @@ public actor TileClient {
                     publishVersion: request.publishVersion,
                     coordinate: request.coordinate
                 ) else {
-                    logSidecarFinish(
+                    Self.logSidecarFinish(
                         kind: "description-index",
                         requests: [request],
                         loadedCount: 0,
                         http404Count: 0,
-                        regionID: region
+                        regionID: regionID
                     )
-                    return PlaceDescriptionResolution(description: nil, shouldRememberAttempt: true)
+                    return DescriptionSidecarPayload(descriptions: [], shouldRememberAttempt: true)
                 }
                 data = offline
             } else {
                 let url = try trustedURL("\(request.region)/\(request.publishVersion)/descriptions/10/\(request.coordinate.x)/\(request.coordinate.y).json")
                 data = try await fetchBounded(fetcher, url: url, maxBytes: DescriptionPayloadLimits.maxDescriptionIndexBytes)
             }
-            let description = try DescriptionIndexDecoder.decode(data, expected: request.coordinate).first { $0.placeID == placeID }
-            logSidecarFinish(
+            let descriptions = try DescriptionIndexDecoder.decode(data, expected: request.coordinate)
+            Self.logSidecarFinish(
                 kind: "description-index",
                 requests: [request],
-                loadedCount: description == nil ? 0 : 1,
+                loadedCount: descriptions.count,
                 http404Count: 0,
-                regionID: region
+                regionID: regionID
             )
-            return PlaceDescriptionResolution(description: description, shouldRememberAttempt: true)
+            return DescriptionSidecarPayload(descriptions: descriptions, shouldRememberAttempt: true)
         } catch {
             MakingTracksLog.resolution.debug("description index unavailable region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
             let http404Count = (error as? TileError) == .httpStatus(404) ? 1 : 0
-            logSidecarFinish(
+            Self.logSidecarFinish(
                 kind: "description-index",
                 requests: [request],
                 loadedCount: 0,
                 http404Count: http404Count,
-                regionID: region
+                regionID: regionID
             )
-            return PlaceDescriptionResolution(description: nil, shouldRememberAttempt: http404Count > 0)
+            return DescriptionSidecarPayload(
+                descriptions: [],
+                shouldRememberAttempt: shouldRememberDescriptionSidecarError(error)
+            )
+        }
+    }
+
+    private static func shouldRememberDescriptionSidecarError(_ error: Error) -> Bool {
+        switch error as? TileError {
+        case .httpStatus(404), .invalidTile, .responseTooLarge:
+            return true
+        default:
+            return false
         }
     }
 }
@@ -6548,6 +6627,25 @@ private struct PlaceDescriptionResolution: Sendable {
     let shouldRememberAttempt: Bool
 }
 
+private struct DescriptionSidecarPayload: Sendable {
+    let descriptions: [PlaceDescription]
+    let shouldRememberAttempt: Bool
+}
+
+private struct DescriptionSidecarCacheKey: Hashable, Sendable {
+    let region: String
+    let publishVersion: String
+    let coordinate: TileCoordinate
+    let source: TileRequestSource
+
+    init(request: PublishTileRequest) {
+        self.region = request.region
+        self.publishVersion = request.publishVersion
+        self.coordinate = request.coordinate
+        self.source = request.source
+    }
+}
+
 private struct ObjectRequestLogKey: Comparable, Hashable {
     let publishVersion: String
     let tileZ: Int
@@ -6569,7 +6667,7 @@ private struct SidecarImageLoadResult: Sendable {
     let http404Count: Int
 }
 
-private enum TileRequestSource: Sendable, Equatable {
+private enum TileRequestSource: Sendable, Hashable {
     case installed(packTileCount: Int)
     case fallback
 
