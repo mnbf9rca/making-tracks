@@ -1087,7 +1087,7 @@ struct TrackTimelineModel: Equatable, Sendable {
             return override
         }
 #endif
-        return 0.85
+        return 0.5
     }
 
 #if DEBUG

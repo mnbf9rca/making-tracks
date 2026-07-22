@@ -204,6 +204,10 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(timeline.shouldPulseArrival(previousIndex: 1, nextIndex: 1))
     }
 
+    func testTrackTimelineAutoplayBeatKeepsPlacePingUnderASecond() {
+        XCTAssertEqual(TrackTimelineModel.autoplayBeatDuration, 0.5)
+    }
+
     func testTrackTimelineAccessibilityNamesSelectedVisitAndLovedState() {
         let timeline = TrackTimelineModel(visits: [
             trackVisit(id: 1, seconds: 0),
