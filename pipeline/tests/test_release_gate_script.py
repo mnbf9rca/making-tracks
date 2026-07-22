@@ -269,6 +269,61 @@ def test_release_gate_runs_release_build_for_testing_and_tests_without_rebuildin
     )
 
 
+def test_release_gate_build_mode_skips_test_execution(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env["MT_RELEASE_GATE_MODE"] = "build"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    lines = log.read_text(encoding="utf-8").splitlines()
+    assert any(line.startswith("xcodebuild:build -configuration Release ") for line in lines)
+    assert any(line.startswith("xcodebuild:build-for-testing ") for line in lines)
+    assert not any(line.startswith("xcodebuild:test-without-building ") for line in lines)
+
+
+def test_release_gate_test_mode_skips_builds_and_uses_only_testing_file(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    only_testing = tmp_path / "only-testing.txt"
+    only_testing.write_text(
+        "\n".join(
+            [
+                "# generated shard",
+                "  MakingTracksUITests/MakingTracksCoreLoopUITests/testOne  ",
+                "\tMakingTracksUITests/MakingTracksCoreLoopUITests/testTwo\t",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    env = _env(fakebin, log)
+    env["MT_RELEASE_GATE_MODE"] = "test"
+    env["MT_RELEASE_GATE_ONLY_TESTING_FILE"] = str(only_testing)
+    env["MT_RELEASE_GATE_RESULT_BUNDLE"] = str(tmp_path / "Shard.xcresult")
+    env["MT_RELEASE_GATE_XCTESTRUN_FILE"] = str(tmp_path / "MakingTracks.xctestrun")
+    (tmp_path / "MakingTracks.xctestrun").write_text("fake\n", encoding="utf-8")
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    lines = log.read_text(encoding="utf-8").splitlines()
+    assert not any(line.startswith("xcodebuild:build ") for line in lines)
+    assert not any(line.startswith("xcodebuild:build-for-testing ") for line in lines)
+    test_lines = [line for line in lines if line.startswith("xcodebuild:test-without-building ")]
+    assert len(test_lines) == 1
+    assert "-xctestrun " + str(tmp_path / "MakingTracks.xctestrun") in test_lines[0]
+    assert "-only-testing:MakingTracksUITests/MakingTracksCoreLoopUITests/testOne" in test_lines[0]
+    assert "-only-testing:MakingTracksUITests/MakingTracksCoreLoopUITests/testTwo" in test_lines[0]
+    assert "-only-testing:  MakingTracksUITests/MakingTracksCoreLoopUITests/testOne" not in test_lines[0]
+    assert "testOne  " not in test_lines[0]
+    assert "-only-testing:\tMakingTracksUITests/MakingTracksCoreLoopUITests/testTwo" not in test_lines[0]
+    assert "testTwo\t" not in test_lines[0]
+    assert "-resultBundlePath " + str(tmp_path / "Shard.xcresult") in test_lines[0]
+
+
 def test_release_gate_prunes_stale_warm_derived_data_before_running(tmp_path):
     repo = _init_repo(tmp_path)
     fakebin, log = _fake_tools(tmp_path)

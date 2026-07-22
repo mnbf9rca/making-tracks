@@ -1,0 +1,83 @@
+{
+  "uiTarget": "MakingTracksUITests",
+  "uiClass": "MakingTracksCoreLoopUITests",
+  "durationSource": "CI run 29952317663 xcresult per-test durations; greedily rebalanced after local E0 timings mispredicted CI shard duration.",
+  "shards": [
+    {
+      "id": "ui-1",
+      "durationWeightSeconds": 671.406,
+      "tests": [
+        "testCardVisitStateSuppressesNearbyPromptWithoutViewportRefresh",
+        "testTrackReplaySliderAndAutoplayDriveMapPins",
+        "testPlaceCardKeepsFixedActionSlotsReachableAtAccessibilityTextSize",
+        "testTracksMenuAndListsMyTracksReachSameScreenIdentity",
+        "testTappingAnotherPinSwitchesOpenCard",
+        "testMyTracksSystemListDrawsWholeLogTrackWithoutStoredListMembership",
+        "testLayersToggleAllCategoriesHidesAndRestoresPins",
+        "testCardTogglesPersistAndRestyleMapPin",
+        "testShowHiddenModeExposesUnhideAffordanceWithoutNormalHideOwnership",
+        "testReplayOnboardingPreselectsPersistedRegionFromSettings",
+        "testFirstRunOnboardingPersistsRegionAndCompletesBeforeRelaunch",
+        "testHiddenToastUndoRestoresHiddenPlace",
+        "testLocateMeShowsNearbyPromptForFixturePlace",
+        "testOnboardingRequestsLocationOnlyOnAffirmativeTap"
+      ]
+    },
+    {
+      "id": "ui-2",
+      "durationWeightSeconds": 672.138,
+      "tests": [
+        "testLocateMePromptsForNearbyPinWithAllDenseTiersVisible",
+        "testMapHomeChromeHitTargetsAndThemeScreenshots",
+        "testListMapCameraFitsSpreadListMembers",
+        "testCreditsStayGroupedAtAccessibilityTextSize",
+        "testCoverageEdgeScreenshotsAcrossThemes",
+        "testUnhideRestoresFixturePinToMapSourceBeforeCardDismissal",
+        "testLayersCanHideCategoryPins",
+        "testPlaceCardOverhaulRendersHierarchyAndHideAction",
+        "testCoverageShadingToggleIsDisplayOnlyLayerState",
+        "testMenuAboutCarriesCreditsAndMapAttributionIsInert",
+        "testSettingsStorageRowNavigatesToOfflineMaps",
+        "testHideRemovesFixturePinFromMapSource",
+        "testOfflineProgressChipDeepLinksToOfflineMaps",
+        "testLocateMeChromeExplainsWhenLocationIsDenied"
+      ]
+    },
+    {
+      "id": "ui-3",
+      "durationWeightSeconds": 671.209,
+      "tests": [
+        "testCustomListCanBeCreatedBrowsedAndShownOnMap",
+        "testPinSizeScreenshotsAcrossThemes",
+        "testLovedTrackChipDrivesMapSource",
+        "testPinClusteringScreenshotsCompareCityAndStreetZoomDensity",
+        "testPinSizeSliderUpdatesLiveMapLayers",
+        "testTrackGeometryDrawsConnectorFromSeededFixtureVisits",
+        "testDenseClusterLayerRendersVisibleBubbleAtCityZoom",
+        "testTracksMenuOpensUnifiedMyTracksVisitEditor",
+        "testTrackReplayProductionMapRecording",
+        "testListMapBackReturnsToSeededListDetail",
+        "testHiddenToastAutoDismissesWithoutUnhidingPlace",
+        "testSettingsThemePickerSelectsRealTheme",
+        "testOnboardingControlsRemainReachableAtAccessibilityTextSize",
+        "testAXExistenceWaiterConfirmsContinuousAbsence",
+        "testAXElementReadbackSkipsValueLookupWhenElementDisappears",
+        "testAXExistenceWaiterFailsContinuousAbsenceOnFirstObservedPresence",
+        "testAXExistenceWaiterWaitsThroughTransientPresence",
+        "testAXSliderUpperEdgePositionsAvoidTrueEdgeUntilLastAttempt",
+        "testAXValueWaiterReportsMissingWithoutThrowingWhenElementNeverReturns",
+        "testAXValueWaiterMatchesPredicateAfterMissingSample",
+        "testAXResamplerFailsForElementScopedWrongLabelEvenWhenExpectedLabelExistsElsewhere",
+        "testAXExistenceWaiterReportsStillPresentWhenElementNeverDisappears",
+        "testAXResamplerUsesFreshSamplesAfterPredicateMiss",
+        "testAXValueWaiterToleratesMissingSamplesUntilExpectedValueAppears"
+      ]
+    }
+  ],
+  "unitShard": {
+    "id": "unit",
+    "onlyTesting": [
+      "MakingTracksTests"
+    ]
+  }
+}
