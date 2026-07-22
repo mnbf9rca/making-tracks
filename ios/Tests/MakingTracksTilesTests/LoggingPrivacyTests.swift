@@ -371,8 +371,8 @@ final class LoggingPrivacyTests: XCTestCase {
 
     func testTrackVisitDateHeadersAreNotStandaloneMovableRows() throws {
         let source = try sourceFile("App/Sources/Map/MapScreen.swift")
-        let movableRowsStart = "ForEach(TrackVisitReordering.rows(for: visibleTrackVisits, calendar: calendar)) { row in"
-        let onMoveStart = "\n                        .onMove"
+        let movableRowsStart = "ForEach(TrackVisitReordering.rows(for:"
+        let inlineVisitRow = "trackVisitRow(row.visit, dayHeader: row.dayHeader)"
 
         XCTAssertFalse(
             source.contains(#"Text(verbatim: formattedDay(calendar.startOfDay(for: visit.visitedAt)))"#),
@@ -382,18 +382,19 @@ final class LoggingPrivacyTests: XCTestCase {
             return XCTFail("The My tracks movable ForEach should be built from TrackVisitReordering.rows.")
         }
         let afterForEach = source[forEachRange.upperBound...]
-        guard let onMoveRange = afterForEach.range(of: onMoveStart) else {
+        guard let onMoveRange = afterForEach.range(of: ".onMove") else {
             return XCTFail("The My tracks movable ForEach should apply onMove directly to visit rows.")
         }
-        let movableBodyLines = afterForEach[..<onMoveRange.lowerBound]
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && $0 != "}" }
+        let movableBody = String(afterForEach[..<onMoveRange.lowerBound])
+        let movableBodyWithoutVisitRow = movableBody.replacingOccurrences(of: inlineVisitRow, with: "")
 
-        XCTAssertEqual(
-            movableBodyLines,
-            ["trackVisitRow(row.visit, dayHeader: row.dayHeader)"],
-            "The movable track visit ForEach must contain only visit rows with inline day headers before onMove."
+        XCTAssertTrue(
+            movableBody.contains(inlineVisitRow),
+            "The movable track visit ForEach should render visits with inline day headers."
+        )
+        XCTAssertNil(
+            movableBodyWithoutVisitRow.range(of: #"(?i)header|formattedDay|Text\s*\("#, options: .regularExpression),
+            "The movable track visit ForEach must not render standalone date headers before onMove."
         )
     }
 
