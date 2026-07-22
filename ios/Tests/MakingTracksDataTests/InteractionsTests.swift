@@ -6,16 +6,18 @@ final class InteractionsTests: XCTestCase {
     private func ref(
         _ id: String,
         name: String = "Big Ben",
+        lat: Double = 51.5,
+        lon: Double = -0.12,
         schemaVersion: Int = 1,
         fetchedAt: Date = Date(timeIntervalSince1970: 50)
     ) throws -> PlaceRef {
-        let raw = "{\"place_id\":\"\(id)\",\"name\":\"\(name)\",\"lat\":51.5,\"lon\":-0.12," +
+        let raw = "{\"place_id\":\"\(id)\",\"name\":\"\(name)\",\"lat\":\(lat),\"lon\":\(lon)," +
             "\"category\":\"historic_building\",\"tier\":1,\"score\":0.82,\"source_refs\":[\"wd:Q42\"]}"
         return try PlaceRef(
             placeID: id,
             name: name,
-            lat: 51.5,
-            lon: -0.12,
+            lat: lat,
+            lon: lon,
             category: "historic_building",
             tier: 1,
             schemaVersion: schemaVersion,
@@ -183,6 +185,38 @@ final class InteractionsTests: XCTestCase {
         XCTAssertEqual(years, Array(repeating: 2026, count: 6))
         XCTAssertGreaterThanOrEqual(days.count, 4)
         XCTAssertGreaterThanOrEqual(timesOfDay.count, 4)
+    }
+
+    func testUITestingMultiDayTrackListSeedAllowsRepeatedPlacesForReplayLanes() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let first = try ref("p_replay_1", name: "Replay 1", lat: 3.135, lon: 101.62)
+        let second = try ref("p_replay_2", name: "Replay 2", lat: 3.245, lon: 101.81)
+        let third = try ref("p_replay_3", name: "Replay 3", lat: 3.065, lon: 101.75)
+        let fourth = try ref("p_replay_4", name: "Replay 4", lat: 3.218, lon: 101.67)
+        let fifth = try ref("p_replay_5", name: "Replay 5", lat: 3.105, lon: 101.86)
+
+        try db.seedUITestingMultiDayTrackList(
+            named: "Replay week",
+            places: [first, second, first, third, fourth, fifth]
+        )
+
+        let list = try XCTUnwrap(try db.lists().first { $0.name == "Replay week" })
+        let visits = try db.trackVisits(listID: XCTUnwrap(list.id))
+        XCTAssertEqual(visits.map(\.placeID), [
+            "p_replay_1",
+            "p_replay_2",
+            "p_replay_1",
+            "p_replay_3",
+            "p_replay_4",
+            "p_replay_5",
+        ])
+        XCTAssertEqual(Set(try db.listItems(listID: XCTUnwrap(list.id)).map(\.placeID)), [
+            "p_replay_1",
+            "p_replay_2",
+            "p_replay_3",
+            "p_replay_4",
+            "p_replay_5",
+        ])
     }
 
     func testSnapshotLookupReturnsEquatableSnapshot() throws {

@@ -519,7 +519,7 @@ extension AppDatabase {
                 try visit.insert(db)
                 try db.execute(
                     sql: """
-                        INSERT INTO list_items (list_id, place_id, added_at)
+                        INSERT OR IGNORE INTO list_items (list_id, place_id, added_at)
                         VALUES (?, ?, ?)
                         """,
                     arguments: [listID, place.placeID, timestamp]

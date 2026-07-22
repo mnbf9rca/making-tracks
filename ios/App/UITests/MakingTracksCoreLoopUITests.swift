@@ -676,6 +676,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             densePins: true,
             startupViewport: "kl-street",
             trackReplayBeatDuration: 1.1,
+            replayVisualSeed: true,
             hideFixtureChrome: true
         )
 
@@ -1531,6 +1532,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         densePins: Bool = false,
         startupViewport: String? = nil,
         trackReplayBeatDuration: Double? = nil,
+        replayVisualSeed: Bool = false,
         hideFixtureChrome: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
@@ -1550,6 +1552,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         if let trackReplayBeatDuration {
             app.launchArguments.append("--ui-testing-track-replay-beat-duration")
             app.launchArguments.append(String(trackReplayBeatDuration))
+        }
+        if replayVisualSeed {
+            app.launchArguments.append("--ui-testing-replay-visual-seed")
         }
         if pinDiagnostics {
             app.launchArguments.append("--ui-testing-pin-diagnostics")
