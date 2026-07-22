@@ -2603,6 +2603,9 @@ struct MapScreen: View {
                 onManageVisits: { placeID in
                     appShell.openTracksDeepLink(focusingPlaceID: placeID)
                 },
+                setNearbyPromptSuppressed: { placeID, suppressed in
+                    setNearbyPromptSuppressed(placeID: placeID, suppressed: suppressed)
+                },
                 showHiddenMode: layerVisibility.showHiddenPlaces
             )
         }
@@ -3737,6 +3740,14 @@ struct MapScreen: View {
                 assertionFailure("Failed to persist nearby prompt seen state: \(error)")
             }
         }
+    }
+
+    @discardableResult
+    private func setNearbyPromptSuppressed(placeID: String, suppressed: Bool) -> Bool {
+        if suppressed {
+            return suppressedNearbyPromptPlaceIDs.insert(placeID).inserted
+        }
+        return suppressedNearbyPromptPlaceIDs.remove(placeID) != nil
     }
 
 #if DEBUG
@@ -7101,6 +7112,7 @@ private struct PlaceCardSheet: View {
     let model: MapScreenModel?
     let onHide: (String, String) -> Void
     let onManageVisits: (String) -> Void
+    let setNearbyPromptSuppressed: (String, Bool) -> Bool
     let showHiddenMode: Bool
 
     @State private var sheetInstanceID = UUID().uuidString
@@ -7362,7 +7374,7 @@ private struct PlaceCardSheet: View {
             saveButton(card)
         case .seen:
             Button {
-                startAction { await setVisited(true) }
+                startAction { await setVisited(true, action: .seen) }
             } label: {
                 actionLabel(action)
             }
@@ -7371,7 +7383,7 @@ private struct PlaceCardSheet: View {
             .accessibilityValue("Not seen")
         case .love:
             Button {
-                startAction { await setLoved(true) }
+                startAction { await setLoved(true, action: .love) }
             } label: {
                 actionLabel(action)
             }
@@ -7380,7 +7392,7 @@ private struct PlaceCardSheet: View {
             .accessibilityValue("Not loved")
         case .unlove:
             Button {
-                startAction { await setLoved(false) }
+                startAction { await setLoved(false, action: .unlove) }
             } label: {
                 actionLabel(action)
             }
@@ -7391,7 +7403,7 @@ private struct PlaceCardSheet: View {
             hideButton(card)
         case let .unsee(isEnabled):
             Button {
-                startAction { await setVisited(false) }
+                startAction { await setVisited(false, action: action) }
             } label: {
                 actionLabel(action)
             }
@@ -7515,7 +7527,7 @@ private struct PlaceCardSheet: View {
         }
     }
 
-    private func setVisited(_ visited: Bool) async {
+    private func setVisited(_ visited: Bool, action: PlaceCardAction) async {
         if !visited, (await model?.visitCount(placeID: placeID) ?? 0) > 1 {
             // #217: Rob has not fixed the stale single-visit threshold yet, so
             // only the unambiguous multi-visit case routes to row selection here.
@@ -7526,13 +7538,13 @@ private struct PlaceCardSheet: View {
             }
             return
         }
-        await performAction {
+        await performAction(suppressingPromptFor: action) {
             try await model?.setVisited(placeID: placeID, visited: visited)
         }
     }
 
-    private func setLoved(_ loved: Bool) async {
-        await performAction {
+    private func setLoved(_ loved: Bool, action: PlaceCardAction) async {
+        await performAction(suppressingPromptFor: action) {
             try await model?.setLoved(placeID: placeID, loved: loved)
         }
     }
@@ -7547,6 +7559,7 @@ private struct PlaceCardSheet: View {
     }
 
     private func setHidden(_ card: PlaceCardModel) async {
+        let insertedNearbyPromptSuppression = await beginNearbyPromptSuppression(for: .hide)
         await MainActor.run {
             actionError = nil
         }
@@ -7559,6 +7572,7 @@ private struct PlaceCardSheet: View {
                 onHide(placeID, card.name)
             }
         } catch {
+            await rollbackNearbyPromptSuppressionIfNeeded(insertedNearbyPromptSuppression)
             await MainActor.run {
                 isPerformingAction = false
                 actionError = "Could not save that change."
@@ -7572,17 +7586,38 @@ private struct PlaceCardSheet: View {
         }
     }
 
-    private func performAction(_ action: () async throws -> Void) async {
+    private func performAction(
+        suppressingPromptFor promptSuppressingAction: PlaceCardAction? = nil,
+        _ action: () async throws -> Void
+    ) async {
+        let insertedNearbyPromptSuppression = await beginNearbyPromptSuppression(for: promptSuppressingAction)
         do {
             try await action()
             await MainActor.run { actionError = nil }
             await refreshCard()
             await MainActor.run { isPerformingAction = false }
         } catch {
+            await rollbackNearbyPromptSuppressionIfNeeded(insertedNearbyPromptSuppression)
             await MainActor.run {
                 isPerformingAction = false
                 actionError = "Could not save that change."
             }
+        }
+    }
+
+    private func beginNearbyPromptSuppression(for action: PlaceCardAction?) async -> Bool {
+        guard let action,
+              NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: action)
+        else { return false }
+        return await MainActor.run {
+            setNearbyPromptSuppressed(placeID, true)
+        }
+    }
+
+    private func rollbackNearbyPromptSuppressionIfNeeded(_ insertedSuppression: Bool) async {
+        guard insertedSuppression else { return }
+        await MainActor.run {
+            _ = setNearbyPromptSuppressed(placeID, false)
         }
     }
 
