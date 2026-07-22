@@ -8,6 +8,11 @@ import MakingTracksTiles
 @testable import MakingTracks
 
 final class AppShellTests: XCTestCase {
+    func testUITestingMotionPolicyDisablesMotionOnlyForDedicatedFlag() {
+        XCTAssertTrue(UITestingMotionPolicy.disablesMotion(arguments: ["app", "--ui-testing-disable-motion"]))
+        XCTAssertFalse(UITestingMotionPolicy.disablesMotion(arguments: ["app", "--ui-testing-fixture-map"]))
+    }
+
     func testPlaceCardVisualSpecMatchesApprovedCardLayout() {
         XCTAssertEqual(PlaceCardVisualSpec.closeSystemImageName, "ellipsis")
         XCTAssertFalse(PlaceCardVisualSpec.showsMediaSlotWhenPhotoMissing)

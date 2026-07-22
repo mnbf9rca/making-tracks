@@ -5,6 +5,14 @@ import MakingTracksMapStyle
 import MakingTracksTiles
 import UIKit
 
+enum UITestingMotionPolicy {
+    static let disablesMotion = disablesMotion(arguments: CommandLine.arguments)
+
+    static func disablesMotion(arguments: [String]) -> Bool {
+        arguments.contains("--ui-testing-disable-motion")
+    }
+}
+
 @main
 struct MakingTracksApp: App {
     @UIApplicationDelegateAdaptor(MakingTracksAppDelegate.self) private var appDelegate
@@ -60,6 +68,9 @@ struct MakingTracksApp: App {
 #endif
 
     init() {
+        if UITestingMotionPolicy.disablesMotion {
+            UIView.setAnimationsEnabled(false)
+        }
         Self.configureDiagnosticLogging()
         let fixture = Self.isFixtureMap
         MakingTracksLog.startup.info("app init started fixture=\(fixture, privacy: .public)")

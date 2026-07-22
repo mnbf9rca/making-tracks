@@ -1718,6 +1718,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
+        app.launchArguments.append("--ui-testing-disable-motion")
         app.launchArguments.append("--ui-testing-reset-pin-size")
         app.launchArguments.append("--ui-testing-reset-coverage-shading")
         if hideFixtureChrome {

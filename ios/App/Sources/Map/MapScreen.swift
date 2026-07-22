@@ -2400,8 +2400,8 @@ struct MapScreen: View {
                     .transition(.opacity)
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: isMapLoading)
-            .animation(.easeInOut(duration: 0.2), value: didMapLoadFail)
+            .animation(UITestingMotionPolicy.disablesMotion ? nil : .easeInOut(duration: 0.2), value: isMapLoading)
+            .animation(UITestingMotionPolicy.disablesMotion ? nil : .easeInOut(duration: 0.2), value: didMapLoadFail)
 #if DEBUG
             .overlay(alignment: .topLeading) {
                 if isFixtureMap && debugExposeFixturePinDiagnostics {
@@ -3112,7 +3112,10 @@ struct MapScreen: View {
                     Image(systemName: "mappin.circle.fill")
                         .foregroundStyle(Color.accentColor)
                         .scaleEffect(trackReplayArrivalPulseVisitID == visit.id ? 1.22 : 1.0)
-                        .animation(.spring(response: 0.22, dampingFraction: 0.45), value: trackReplayArrivalPulseVisitID)
+                        .animation(
+                            UITestingMotionPolicy.disablesMotion ? nil : .spring(response: 0.22, dampingFraction: 0.45),
+                            value: trackReplayArrivalPulseVisitID
+                        )
                         .accessibilityHidden(true)
                     Text(verbatim: visit.name)
                         .font(.caption.weight(.semibold))
@@ -3215,6 +3218,10 @@ struct MapScreen: View {
     }
 
     private func startTrackReplayArcGlide(to eventIndex: Int, timeline: TrackTimelineModel) {
+        if UITestingMotionPolicy.disablesMotion {
+            trackSourceSnapshot = trackReplaySnapshotCache.snapshot(throughEventIndex: eventIndex)
+            return
+        }
         let visitID = timeline.visits[eventIndex].id
         trackReplayArrivalPulseVisitID = nil
         trackSourceSnapshot = trackReplaySnapshotCache.snapshot(throughEventIndex: eventIndex, activeArcProgress: 0)
