@@ -405,7 +405,7 @@ jobs:
           "$xcbeautify_bin" --version
 
       - name: Download build products
-        uses: actions/download-artifact@v7.0.1
+        uses: actions/download-artifact@v7.0.0
         with:
           name: ios-release-gate-build-${{ github.run_id }}
           path: ${{ runner.temp }}/release-gate-build
@@ -685,7 +685,7 @@ jobs:
           "$xcbeautify_bin" --version
 
       - name: Download build products
-        uses: actions/download-artifact@v7.0.1
+        uses: actions/download-artifact@v7.0.0
         with:
           name: ios-release-gate-build-${{ github.run_id }}
           path: ${{ runner.temp }}/release-gate-build
@@ -820,14 +820,14 @@ jobs:
           fetch-depth: 0
 
       - name: Download release-gate artifacts
-        uses: actions/download-artifact@v7.0.1
+        uses: actions/download-artifact@v7.0.0
         with:
           pattern: ios-release-gate-${{ github.run_id }}-*
           path: ${{ runner.temp }}/release-gate-artifacts
           merge-multiple: false
 
       - name: Download build artifact
-        uses: actions/download-artifact@v7.0.1
+        uses: actions/download-artifact@v7.0.0
         with:
           name: ios-release-gate-build-${{ github.run_id }}
           path: ${{ runner.temp }}/release-gate-build
