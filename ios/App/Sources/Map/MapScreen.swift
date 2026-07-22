@@ -7581,18 +7581,19 @@ private struct PlaceCardSheet: View {
     }
 
     private func setHidden(_ hidden: Bool) async {
-        await performAction {
+        await performAction(suppressingPromptFor: hidden ? .hide : .unhide) {
             try await model?.setHidden(placeID: placeID, hidden: hidden)
         }
     }
 
     private func performAction(
-        suppressingPromptFor promptSuppressingAction: PlaceCardAction? = nil,
+        suppressingPromptFor nearbyPromptAction: PlaceCardAction? = nil,
         _ action: () async throws -> Void
     ) async {
-        let insertedNearbyPromptSuppression = await beginNearbyPromptSuppression(for: promptSuppressingAction)
+        let insertedNearbyPromptSuppression = await beginNearbyPromptSuppression(for: nearbyPromptAction)
         do {
             try await action()
+            await clearNearbyPromptSuppressionIfNeeded(for: nearbyPromptAction)
             await MainActor.run { actionError = nil }
             await refreshCard()
             await MainActor.run { isPerformingAction = false }
@@ -7614,8 +7615,19 @@ private struct PlaceCardSheet: View {
         }
     }
 
+    private func clearNearbyPromptSuppressionIfNeeded(for action: PlaceCardAction?) async {
+        guard let action,
+              NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: action)
+        else { return }
+        await MainActor.run {
+            _ = setNearbyPromptSuppressed(placeID, false)
+        }
+    }
+
     private func rollbackNearbyPromptSuppressionIfNeeded(_ insertedSuppression: Bool) async {
         guard insertedSuppression else { return }
+        // Correct while startAction serialises card actions; concurrent suppressing actions would need per-action
+        // contribution tracking instead of this single inserted/not-inserted rollback flag.
         await MainActor.run {
             _ = setNearbyPromptSuppressed(placeID, false)
         }

@@ -61,6 +61,15 @@ public enum NearbyPromptSuppressionPolicy {
             return false
         }
     }
+
+    public static func clearsPromptSuppressionOnSuccess(for action: PlaceCardAction) -> Bool {
+        switch action {
+        case .unsee(isEnabled: true), .unhide:
+            return true
+        case .save, .seen, .love, .unlove, .hide, .unsee(isEnabled: false), .seenDisabled:
+            return false
+        }
+    }
 }
 
 public struct PlaceCardActionSlots: Sendable, Equatable {

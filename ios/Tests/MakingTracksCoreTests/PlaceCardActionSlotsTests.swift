@@ -49,6 +49,18 @@ final class PlaceCardActionSlotsTests: XCTestCase {
         XCTAssertFalse(NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: .unhide))
     }
 
+    func testInverseActionsThatRestorePromptEligibilityClearPromptSuppressionOnSuccess() {
+        XCTAssertTrue(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .unsee(isEnabled: true)))
+        XCTAssertTrue(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .unhide))
+
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .unlove))
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .seen))
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .love))
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .hide))
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .save))
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .seenDisabled))
+    }
+
     func testHiddenPlaceOffersOnlyUnhideBackTowardUnseen() {
         XCTAssertEqual(
             PlaceCardActionSlots(pinState: PinState(saved: false, visit: .none, hidden: true)).actions,
