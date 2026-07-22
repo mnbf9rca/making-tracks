@@ -255,7 +255,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["menu.row.settings"].tap()
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
         let replayOnboardingButton = app.buttons["settings.replay-onboarding"]
-        XCTAssertTrue(scrollToExistence(of: replayOnboardingButton, in: app))
+        XCTAssertTrue(scrollToHittable(replayOnboardingButton, in: app))
         replayOnboardingButton.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
 
         XCTAssertTrue(app.staticTexts["Interesting places around you"].waitForExistence(timeout: 5))
@@ -1043,6 +1043,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(app.buttons["settings.theme.snow"].value as? String, "Not selected")
 
         let snowThemeButton = app.buttons["settings.theme.snow"]
+        XCTAssertTrue(scrollToHittable(snowThemeButton, in: app))
         snowThemeButton.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
         XCTAssertEqual(snowThemeButton.value as? String, "Selected")
         XCTAssertEqual(app.buttons["settings.theme.defined-paper"].value as? String, "Not selected")
@@ -1577,7 +1578,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["menu.row.settings"].tap()
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
         let themeButton = app.buttons["settings.theme.\(themeID)"]
-        XCTAssertTrue(themeButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(scrollToHittable(themeButton, in: app))
         themeButton.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
         XCTAssertEqual(themeButton.value as? String, "Selected")
         app.buttons["menu.done"].tap()
@@ -1844,7 +1845,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     private func tapSwitch(in app: XCUIApplication, identifier: String, expectedValue: String) {
         let switchElement = app.switches[identifier]
-        guard switchElement.waitForExistence(timeout: 5) else {
+        guard scrollToHittable(switchElement, in: app) else {
             XCTFail("Switch \(identifier) did not appear")
             return
         }
