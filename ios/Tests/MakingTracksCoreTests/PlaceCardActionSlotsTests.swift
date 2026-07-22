@@ -37,6 +37,30 @@ final class PlaceCardActionSlotsTests: XCTestCase {
         )
     }
 
+    func testActionsThatLeaveAPlacePromptIneligibleSuppressNearbyPromptImmediately() {
+        XCTAssertTrue(NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: .seen))
+        XCTAssertTrue(NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: .love))
+        XCTAssertTrue(NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: .unlove))
+        XCTAssertTrue(NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: .hide))
+
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: .save))
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: .unsee(isEnabled: true)))
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: .seenDisabled))
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: .unhide))
+    }
+
+    func testInverseActionsThatRestorePromptEligibilityClearPromptSuppressionOnSuccess() {
+        XCTAssertTrue(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .unsee(isEnabled: true)))
+        XCTAssertTrue(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .unhide))
+
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .unlove))
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .seen))
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .love))
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .hide))
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .save))
+        XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .seenDisabled))
+    }
+
     func testHiddenPlaceOffersOnlyUnhideBackTowardUnseen() {
         XCTAssertEqual(
             PlaceCardActionSlots(pinState: PinState(saved: false, visit: .none, hidden: true)).actions,
