@@ -14,6 +14,10 @@ Absent condition 3, a harness timeout is a real red. Infra classifications are b
 
 Each entry records gate duration and the runner benchmark score (`runner_benchmark_ops_per_sec`) so classifications can be checked against measured runner performance rather than duration alone. Use `not measured` only for legacy runs whose workflow did not emit the runner benchmark.
 
+## Check Name Mapping
+
+After the sharded gate change, `ios-release-gate` has two trigger-dependent meanings. On `pull_request`, it is the per-PR build+unit fan-in and the UI shards are expected to be skipped. On `workflow_dispatch`, it is the full UI-shard fan-in and also validates executed UI coverage against the built test enumeration. The parked flip plan must pin the meaning, not just the check name.
+
 ## Entries
 
 | Run | Attempt | Ref | Head | Duration | Runner Score | Result | Classification | Evidence | Action |

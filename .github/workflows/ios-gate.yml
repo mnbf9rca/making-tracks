@@ -82,6 +82,7 @@ jobs:
           "$xcbeautify_bin" --version
 
       - name: Validate UI shard manifest
+        if: github.event_name == 'workflow_dispatch'
         run: |
           set -euo pipefail
           python3 scripts/ios-test-shards.py validate-static \
@@ -295,7 +296,7 @@ jobs:
           exit "$gate_status"
 
       - name: Enumerate expected tests
-        if: success()
+        if: success() && github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
@@ -349,6 +350,7 @@ jobs:
 
   ios-ui-test-shards:
     name: ios-ui-test-shard-${{ matrix.shard }}
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-26
     needs: ios-gate-build
     timeout-minutes: 105
@@ -845,21 +847,28 @@ jobs:
             fi
           }
           check_need ios-gate-build '${{ needs.ios-gate-build.result }}'
-          check_need ios-ui-test-shards '${{ needs.ios-ui-test-shards.result }}'
           check_need ios-unit-tests '${{ needs.ios-unit-tests.result }}'
 
-          executed_dir="$RUNNER_TEMP/executed-tests"
-          mkdir -p "$executed_dir"
-          find "$RUNNER_TEMP/release-gate-artifacts" -name 'executed-tests-*.json' -exec cp {} "$executed_dir" \;
-          expected_json="$RUNNER_TEMP/release-gate-build/expected-tests.json"
-          if [ ! -f "$expected_json" ]; then
-            echo "expected test enumeration artifact missing: $expected_json" >&2
+          if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
+            check_need ios-ui-test-shards '${{ needs.ios-ui-test-shards.result }}'
+            executed_dir="$RUNNER_TEMP/executed-tests"
+            mkdir -p "$executed_dir"
+            find "$RUNNER_TEMP/release-gate-artifacts" -name 'executed-tests-*.json' -exec cp {} "$executed_dir" \;
+            expected_json="$RUNNER_TEMP/release-gate-build/expected-tests.json"
+            if [ ! -f "$expected_json" ]; then
+              echo "expected test enumeration artifact missing: $expected_json" >&2
+              status=1
+            elif ! python3 scripts/ios-test-shards.py validate-executed \
+              --expected-json "$expected_json" \
+              --executed-json-dir "$executed_dir" \
+              --target-prefix "MakingTracksUITests/"; then
+              status=1
+            fi
+          elif [ '${{ needs.ios-ui-test-shards.result }}' != 'skipped' ]; then
+            echo "ios-ui-test-shards result was ${{ needs.ios-ui-test-shards.result }}, expected skipped for pull_request" >&2
             status=1
-          elif ! python3 scripts/ios-test-shards.py validate-executed \
-            --expected-json "$expected_json" \
-            --executed-json-dir "$executed_dir" \
-            --target-prefix "MakingTracksUITests/"; then
-            status=1
+          else
+            echo "UI shards are workflow_dispatch-only; pull_request ios-release-gate covers build + unit."
           fi
 
           exit "$status"
