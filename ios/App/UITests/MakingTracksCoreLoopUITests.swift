@@ -46,6 +46,27 @@ private enum AXValueWaiter {
     }
 
     static func wait(
+        matching predicate: (String) -> Bool,
+        attempts: Int,
+        interval: TimeInterval = 0,
+        sample: () -> String?
+    ) -> AXSampleMatch {
+        precondition(attempts > 0, "AX value wait must make at least one sample")
+
+        var observed: String?
+        for attempt in 0..<attempts {
+            observed = sample()
+            if let observed, predicate(observed) {
+                return AXSampleMatch(matched: true, observed: observed)
+            }
+            if interval > 0, attempt < attempts - 1 {
+                RunLoop.current.run(until: Date().addingTimeInterval(interval))
+            }
+        }
+        return AXSampleMatch(matched: false, observed: observed)
+    }
+
+    static func wait(
         expected: String,
         timeout: TimeInterval,
         interval: TimeInterval = 0.1,
@@ -55,6 +76,18 @@ private enum AXValueWaiter {
 
         let attempts = max(1, Int(ceil(timeout / interval)))
         return wait(expected: expected, attempts: attempts, interval: interval, sample: sample)
+    }
+
+    static func wait(
+        matching predicate: @escaping (String) -> Bool,
+        timeout: TimeInterval,
+        interval: TimeInterval = 0.1,
+        sample: () -> String?
+    ) -> AXSampleMatch {
+        precondition(interval > 0, "AX value wait interval must be positive")
+
+        let attempts = max(1, Int(ceil(timeout / interval)))
+        return wait(matching: predicate, attempts: attempts, interval: interval, sample: sample)
     }
 }
 
@@ -73,6 +106,19 @@ private enum AXElementReadback {
     ) -> String? {
         let current = element(identifier)
         return current.exists ? current.value() : nil
+    }
+}
+
+private enum AXSliderUpperEdgeAdjuster {
+    static func normalizedPositions(attempts: Int) -> [Double] {
+        precondition(attempts > 0, "AX slider adjustment must make at least one attempt")
+
+        // Work around the unresolved max-edge drag dismissal tracked in #407.
+        let preferred = [0.99, 0.995, 1.0]
+        if attempts <= preferred.count {
+            return Array(preferred.prefix(attempts))
+        }
+        return preferred + Array(repeating: 1.0, count: attempts - preferred.count)
     }
 }
 
@@ -156,6 +202,26 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertFalse(result.matched)
         XCTAssertNil(result.observed)
+    }
+
+    func testAXValueWaiterMatchesPredicateAfterMissingSample() {
+        var samples: [String?] = [nil, "source applied features:24 layer:true"]
+
+        let result = AXValueWaiter.wait(
+            matching: { $0.hasPrefix("source applied features:24") },
+            attempts: 2,
+            interval: 0
+        ) {
+            samples.removeFirst()
+        }
+
+        XCTAssertTrue(result.matched)
+        XCTAssertEqual(result.observed, "source applied features:24 layer:true")
+        XCTAssertTrue(samples.isEmpty)
+    }
+
+    func testAXSliderUpperEdgePositionsAvoidTrueEdgeUntilLastAttempt() {
+        XCTAssertEqual(AXSliderUpperEdgeAdjuster.normalizedPositions(attempts: 3), [0.99, 0.995, 1.0])
     }
 
     func testCardTogglesPersistAndRestyleMapPin() {
@@ -1941,10 +2007,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             XCTFail("Slider \(identifier) did not appear")
             return
         }
-        for _ in 0..<3 {
+        for normalizedPosition in AXSliderUpperEdgeAdjuster.normalizedPositions(attempts: 3) {
             let currentSlider = app.sliders[identifier]
             guard currentSlider.waitForExistence(timeout: 2) else { continue }
-            currentSlider.adjust(toNormalizedSliderPosition: 1.0)
+            currentSlider.adjust(toNormalizedSliderPosition: normalizedPosition)
             let resampled = AXValueWaiter.wait(expected: expectedValue, attempts: 3, interval: 0.1) {
                 AXElementReadback.value(for: identifier) {
                     let current = app.sliders[$0]
@@ -2002,12 +2068,18 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     private func waitForSourceFeatureCount(_ count: Int, in app: XCUIApplication) -> Bool {
-        let sourceStatus = app.staticTexts["map.debug-source-status"]
-        let predicate = NSPredicate(format: "label BEGINSWITH %@", "source applied features:\(count)")
-        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: sourceStatus)
-        let result = XCTWaiter.wait(for: [expectation], timeout: 10)
-        if result != .completed {
-            XCTFail("Expected source applied features:\(count), got \(sourceStatus.exists ? sourceStatus.label : "missing source status")")
+        let expectedPrefix = "source applied features:\(count)"
+        let result = AXValueWaiter.wait(
+            matching: { $0.hasPrefix(expectedPrefix) },
+            timeout: 20
+        ) {
+            AXElementReadback.label(for: "map.debug-source-status") {
+                let current = app.staticTexts[$0]
+                return (exists: current.exists, label: current.label)
+            }
+        }
+        if !result.matched {
+            XCTFail("Expected \(expectedPrefix), got \(result.observed ?? "missing source status")")
             return false
         }
         return true
