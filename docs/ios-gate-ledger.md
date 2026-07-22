@@ -6,11 +6,11 @@ This ledger records iOS gate count-watch decisions that affect whether a run cou
 
 A red run is infra only when all of the following hold:
 
-- Every failure is an XCUITest harness operation, such as a snapshot-query timeout or app launch/terminate failure, with no app assertion failure.
-- Non-UI suites are green.
-- There is positive environmental evidence: a prior green on a byte-identical tree and/or a duration materially above that tree's established baseline.
+1. Every failure is a harness operation, such as a snapshot-query timeout or app launch/terminate failure, with no app assertion failure.
+2. Non-UI is green.
+3. There is positive environmental evidence: prior green on byte-identical tree and/or duration materially above the tree's established baseline.
 
-Absent positive environmental evidence, a harness timeout is a real red. Infra classifications consume a rerun budget; if infra-classified reds exceed the budget for the rolling window, the gate is not ready to be authoritative and the response is to reduce harness sensitivity.
+Absent condition 3, a harness timeout is a real red. Infra classifications are budgeted and auditable. If infra-classified reds exceed the budget for the rolling window, the gate is not ready to be authoritative and the response is to reduce harness sensitivity.
 
 ## Entries
 
