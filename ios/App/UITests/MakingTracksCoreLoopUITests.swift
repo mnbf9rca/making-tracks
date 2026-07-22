@@ -2,12 +2,91 @@ import Foundation
 import UIKit
 import XCTest
 
+private struct AXSampleMatch: Equatable {
+    var matched: Bool
+    var observed: String?
+}
+
+private struct AXStubElement {
+    var exists: Bool
+    var label: String
+}
+
+private enum AXResampler {
+    static func matches(
+        expected: String,
+        attempts: Int,
+        interval: TimeInterval = 0,
+        sample: () -> String?
+    ) -> AXSampleMatch {
+        precondition(attempts > 0, "AX resampling must make at least one sample")
+
+        var observed: String?
+        for attempt in 0..<attempts {
+            observed = sample()
+            if observed == expected {
+                return AXSampleMatch(matched: true, observed: observed)
+            }
+            if interval > 0, attempt < attempts - 1 {
+                RunLoop.current.run(until: Date().addingTimeInterval(interval))
+            }
+        }
+        return AXSampleMatch(matched: false, observed: observed)
+    }
+}
+
+private enum AXElementReadback {
+    static func label(
+        for identifier: String,
+        using element: (String) -> (exists: Bool, label: String)
+    ) -> String? {
+        let current = element(identifier)
+        return current.exists ? current.label : nil
+    }
+}
+
 @MainActor
 final class MakingTracksCoreLoopUITests: XCTestCase {
     private let placeID = "mt1_00000000000000000000000000"
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+    }
+
+    func testAXResamplerUsesFreshSamplesAfterPredicateMiss() {
+        var samples = ["stale", "Ghost Sign, Attraction, not visited"]
+
+        let result = AXResampler.matches(
+            expected: "Ghost Sign, Attraction, not visited",
+            attempts: 2,
+            sample: { samples.removeFirst() }
+        )
+
+        XCTAssertTrue(result.matched)
+        XCTAssertEqual(result.observed, "Ghost Sign, Attraction, not visited")
+        XCTAssertTrue(samples.isEmpty)
+    }
+
+    func testAXResamplerFailsForElementScopedWrongLabelEvenWhenExpectedLabelExistsElsewhere() {
+        let elementsByIdentifier = [
+            "map.pin.target": AXStubElement(exists: true, label: "Ghost Sign, Attraction, not visited"),
+            "map.pin.other": AXStubElement(exists: true, label: "Art Deco Cinema, Historic Building, not visited"),
+        ]
+
+        let result = AXResampler.matches(
+            expected: "Art Deco Cinema, Historic Building, not visited",
+            attempts: 3,
+            sample: {
+                AXElementReadback.label(for: "map.pin.target") { identifier in
+                    let element = elementsByIdentifier[identifier] ?? AXStubElement(exists: false, label: "")
+                    return (exists: element.exists, label: element.label)
+                }
+            }
+        )
+
+        XCTAssertEqual(elementsByIdentifier["map.pin.other"]?.label, "Art Deco Cinema, Historic Building, not visited")
+        XCTAssertFalse(result.matched)
+        XCTAssertEqual(result.observed, "Ghost Sign, Attraction, not visited")
     }
 
     func testCardTogglesPersistAndRestyleMapPin() {
@@ -742,9 +821,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
         openLayers(in: app)
-        let historicBuildings = app.switches["map.layers.category.historic_building"]
-        XCTAssertTrue(historicBuildings.waitForExistence(timeout: 5))
-        tapSwitch(historicBuildings, expectedValue: "0")
+        let historicBuildings = "map.layers.category.historic_building"
+        XCTAssertTrue(app.switches[historicBuildings].waitForExistence(timeout: 5))
+        tapSwitch(in: app, identifier: historicBuildings, expectedValue: "0")
         app.buttons["map.layers.done"].tap()
 
         XCTAssertTrue(waitForNonExistence(
@@ -755,8 +834,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 2))
 
         openLayers(in: app)
-        XCTAssertTrue(historicBuildings.waitForExistence(timeout: 5))
-        tapSwitch(historicBuildings, expectedValue: "1")
+        XCTAssertTrue(app.switches[historicBuildings].waitForExistence(timeout: 5))
+        tapSwitch(in: app, identifier: historicBuildings, expectedValue: "1")
         app.buttons["map.layers.done"].tap()
         XCTAssertTrue(waitForAccessibilityPin(
             in: app,
@@ -813,9 +892,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
 
         openLayers(in: app)
-        let showHidden = app.switches["map.layers.show-hidden"]
-        XCTAssertTrue(showHidden.waitForExistence(timeout: 5))
-        tapSwitch(showHidden, expectedValue: "1")
+        let showHidden = "map.layers.show-hidden"
+        XCTAssertTrue(app.switches[showHidden].waitForExistence(timeout: 5))
+        tapSwitch(in: app, identifier: showHidden, expectedValue: "1")
         app.buttons["map.layers.done"].tap()
 
         openFixtureCard(in: map, app: app)
@@ -943,9 +1022,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
 
         openLayers(in: app)
-        let historicBuildings = app.switches["map.layers.category.historic_building"]
-        XCTAssertTrue(historicBuildings.waitForExistence(timeout: 5))
-        tapSwitch(historicBuildings, expectedValue: "0")
+        let historicBuildings = "map.layers.category.historic_building"
+        XCTAssertTrue(app.switches[historicBuildings].waitForExistence(timeout: 5))
+        tapSwitch(in: app, identifier: historicBuildings, expectedValue: "0")
         app.buttons["map.layers.done"].tap()
         XCTAssertEqual(layersButton.value as? String, "Custom")
 
@@ -966,16 +1045,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(layersButton.value as? String, "Default")
 
         openLayers(in: app)
-        let coverageShading = app.switches["map.layers.coverage-shading"]
-        XCTAssertTrue(coverageShading.waitForExistence(timeout: 5))
-        tapSwitch(coverageShading, expectedValue: "0")
+        let coverageShading = "map.layers.coverage-shading"
+        XCTAssertTrue(app.switches[coverageShading].waitForExistence(timeout: 5))
+        tapSwitch(in: app, identifier: coverageShading, expectedValue: "0")
         app.buttons["map.layers.done"].tap()
 
         XCTAssertEqual(layersButton.value as? String, "Default")
 
         openLayers(in: app)
-        XCTAssertTrue(coverageShading.waitForExistence(timeout: 5))
-        tapSwitch(coverageShading, expectedValue: "1")
+        XCTAssertTrue(app.switches[coverageShading].waitForExistence(timeout: 5))
+        tapSwitch(in: app, identifier: coverageShading, expectedValue: "1")
         app.buttons["map.layers.done"].tap()
         XCTAssertEqual(layersButton.value as? String, "Default")
     }
@@ -1110,13 +1189,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
         let slider = app.sliders["settings.pin-size"]
         XCTAssertTrue(scrollToHittable(slider, in: app))
-        slider.adjust(toNormalizedSliderPosition: 1.0)
+        adjustSliderToTrueEdge(slider, in: app, identifier: "settings.pin-size", expectedValue: "160%")
         app.buttons["menu.done"].tap()
 
         let liveLayerSize = app.staticTexts["map.debug-pin-layer-size"]
         XCTAssertTrue(liveLayerSize.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForPinLayerSize(160, in: app))
         XCTAssertEqual(
-            liveLayerSize.label,
+            app.staticTexts["map.debug-pin-layer-size"].label,
             "pin-layer-size:160% circle:true icon:true bookmark:true heart:true"
         )
     }
@@ -1523,7 +1603,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     @discardableResult
     private func waitForAccessibilityPin(in app: XCUIApplication, placeID: String, label: String) -> Bool {
-        let pin = app.buttons["map.pin.\(placeID)"]
+        let identifier = "map.pin.\(placeID)"
+        let pin = app.buttons[identifier]
         guard pin.waitForExistence(timeout: 10) else {
             XCTFail("Accessibility pin \(placeID) did not appear")
             return false
@@ -1533,7 +1614,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         if result == .completed {
             return true
         }
-        XCTFail("Accessibility pin \(placeID) label was \(pin.label), expected \(label)")
+
+        // Re-sample the AX tree after a predicate miss; this catches stale
+        // XCUIElement snapshots without extending the wait budget.
+        let resampled = AXResampler.matches(expected: label, attempts: 3, interval: 0.1) {
+            AXElementReadback.label(for: identifier) {
+                let pin = app.buttons[$0]
+                return (exists: pin.exists, label: pin.label)
+            }
+        }
+        if resampled.matched {
+            return true
+        }
+
+        XCTFail("Accessibility pin \(placeID) label was \(resampled.observed ?? "missing"), expected \(label)")
         return false
     }
 
@@ -1679,10 +1773,69 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Layers"].waitForExistence(timeout: 5))
     }
 
-    private func tapSwitch(_ switchElement: XCUIElement, expectedValue: String) {
+    private func tapSwitch(in app: XCUIApplication, identifier: String, expectedValue: String) {
+        let switchElement = app.switches[identifier]
+        guard switchElement.waitForExistence(timeout: 5) else {
+            XCTFail("Switch \(identifier) did not appear")
+            return
+        }
+
         switchElement.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        expectation(for: NSPredicate(format: "value == %@", expectedValue), evaluatedWith: switchElement)
-        waitForExpectations(timeout: 5)
+        let predicate = NSPredicate(format: "value == %@", expectedValue)
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: switchElement)], timeout: 5)
+        if result == .completed {
+            return
+        }
+
+        // Re-sample the AX tree after a predicate miss; this is intentionally tight, not a slow-control wait.
+        let resampled = AXResampler.matches(expected: expectedValue, attempts: 3, interval: 0.1) {
+            app.switches[identifier].value as? String
+        }
+        if resampled.matched {
+            return
+        }
+
+        let finalElement = app.switches[identifier]
+        XCTFail(
+            "Switch \(identifier) value was \(resampled.observed ?? "missing"), expected \(expectedValue); \(finalElement.debugDescription)"
+        )
+    }
+
+    private func adjustSliderToTrueEdge(_ slider: XCUIElement, in app: XCUIApplication, identifier: String, expectedValue: String) {
+        guard slider.waitForExistence(timeout: 5) else {
+            XCTFail("Slider \(identifier) did not appear")
+            return
+        }
+        for _ in 0..<3 {
+            slider.adjust(toNormalizedSliderPosition: 1.0)
+            let resampled = AXResampler.matches(expected: expectedValue, attempts: 3, interval: 0.1) {
+                app.sliders[identifier].value as? String
+            }
+            if resampled.matched {
+                return
+            }
+        }
+        let finalSlider = app.sliders[identifier]
+        XCTFail(
+            "Slider \(identifier) value was \(finalSlider.value as? String ?? "missing"), expected \(expectedValue) at normalized edge 1.0; \(finalSlider.debugDescription)"
+        )
+    }
+
+    private func waitForPinLayerSize(_ expectedPercent: Int, in app: XCUIApplication) -> Bool {
+        let expected = "pin-layer-size:\(expectedPercent)%"
+        // Re-sample the AX tree after a predicate miss; the target remains the true 1.6 far edge.
+        let resampled = AXResampler.matches(expected: expected, attempts: 3, interval: 0.1) {
+            let status = app.staticTexts["map.debug-pin-layer-size"]
+            guard status.exists else { return nil }
+            let label = status.label
+            return label.hasPrefix(expected) ? expected : label
+        }
+        if resampled.matched {
+            return true
+        }
+
+        XCTFail("Pin layer size was \(resampled.observed ?? "missing"), expected \(expectedPercent)%")
+        return false
     }
 
     @discardableResult
