@@ -23,7 +23,8 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 105
     env:
-      MT_CI_SIMULATOR_NAME: iPhone 16
+      MT_CI_SIMULATOR_NAME: iPhone 17
+      MT_CI_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-2
       MT_CI_XCBEAUTIFY_SHA256: 87fdbe786f71d7b2ee28c5c1ca97087587292f2c5c6f9e721cf02db8b2a3c241
       MT_CI_XCBEAUTIFY_VERSION: 3.2.1
       MT_RELEASE_GATE_SKIP_LOCK: "1"
@@ -90,15 +91,17 @@ jobs:
             xcodebuild -version
             echo
             xcrun simctl list runtimes
+            echo
+            xcrun simctl list devicetypes
           } > "$receipt"
 
           runtime_id="$(
             xcrun simctl list runtimes -j |
-            /usr/bin/python3 -c 'import json, sys; data = json.load(sys.stdin); candidates = [item for item in data.get("runtimes", []) if item.get("isAvailable") and str(item.get("identifier", "")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-")]; assert candidates, "no available iOS simulator runtime"; version_key = lambda item: tuple(int(part) for part in str(item.get("version", "0")).split(".") if part.isdigit()); print(max(candidates, key=version_key)["identifier"])'
+            MT_CI_SIMULATOR_RUNTIME="$MT_CI_SIMULATOR_RUNTIME" /usr/bin/python3 -c 'import json, os, sys; data = json.load(sys.stdin); preferred = os.environ["MT_CI_SIMULATOR_RUNTIME"]; candidates = [item for item in data.get("runtimes", []) if item.get("isAvailable")]; by_identifier = {item.get("identifier"): item for item in candidates}; chosen = by_identifier.get(preferred); assert chosen, f"preferred iOS simulator runtime unavailable: {preferred}"; print(chosen["identifier"])'
           )"
           device_type="$(
             xcrun simctl list devicetypes -j |
-            MT_CI_SIMULATOR_NAME="$MT_CI_SIMULATOR_NAME" /usr/bin/python3 -c 'import json, os, sys; data = json.load(sys.stdin); preferred = os.environ["MT_CI_SIMULATOR_NAME"]; devices = [item for item in data.get("devicetypes", []) if str(item.get("name", "")).startswith("iPhone")]; assert devices, "no available iPhone simulator device type"; by_name = {item.get("name"): item for item in devices}; chosen = by_name.get(preferred) or devices[-1]; print(chosen["identifier"])'
+            MT_CI_SIMULATOR_NAME="$MT_CI_SIMULATOR_NAME" /usr/bin/python3 -c 'import json, os, sys; data = json.load(sys.stdin); preferred = os.environ["MT_CI_SIMULATOR_NAME"]; devices = [item for item in data.get("devicetypes", []) if str(item.get("name", "")).startswith("iPhone")]; by_name = {item.get("name"): item for item in devices}; chosen = by_name.get(preferred); assert chosen, f"preferred iPhone simulator device unavailable: {preferred}"; print(chosen["identifier"])'
           )"
           udid="$(
             xcrun simctl create "Making Tracks CI" "$device_type" "$runtime_id"
