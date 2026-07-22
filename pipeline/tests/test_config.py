@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from mt_pipeline import config
@@ -22,7 +24,7 @@ def test_live_region_basemaps_have_retained_controlled_cut_pins():
             f"https://tiles.making-tracks.app/{region_id}/"
         )
         assert basemap["retained_cut_pmtiles"].endswith(f"/{region_id}.pmtiles")
-        assert len(basemap["retained_cut_sha256"]) == 64
+        assert re.fullmatch(r"[0-9a-f]{64}", basemap["retained_cut_sha256"])
 
 
 def test_region_id_is_carried_through_not_hardcoded():

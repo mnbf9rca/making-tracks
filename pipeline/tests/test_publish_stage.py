@@ -1675,6 +1675,62 @@ def test_publish_stage_retained_cut_preflight_skips_pmtiles_and_registry(
         )
 
 
+def test_publish_stage_reuses_successfully_prepared_retained_basemap(
+    conn, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _seed_publish_inputs(conn)
+    _write_malaysia_registry(tmp_path)
+    publish_version = "20260715T120000Z"
+    prepared_path = (
+        tmp_path
+        / "stage/.work/malaysia-singapore-brunei"
+        / publish_version
+        / "malaysia-singapore-brunei.pmtiles"
+    )
+    prepared_bytes = b"prepared retained basemap"
+    prepared_sha = hashlib.sha256(prepared_bytes).hexdigest()
+    prepared_artifact = basemap.BasemapArtifact(
+        filename="malaysia-singapore-brunei.pmtiles",
+        maxzoom=14,
+        sha256=prepared_sha,
+        bytes=len(prepared_bytes),
+        bbox=[99.64, 0.85, 119.27, 7.36],
+    )
+
+    def prepare_retained(_target_docs, *, staging_root, publish_version):
+        prepared_path.parent.mkdir(parents=True, exist_ok=True)
+        prepared_path.write_bytes(prepared_bytes)
+        assert staging_root == tmp_path / "stage"
+        assert publish_version == "20260715T120000Z"
+        return {"malaysia-singapore-brunei": (prepared_path, prepared_artifact)}
+
+    def fail_pmtiles():
+        raise AssertionError("retained cut publish should not require pmtiles")
+
+    def fail_cut_basemap(_region_config, _out_path):
+        raise AssertionError("publish target should reuse prepared basemap")
+
+    monkeypatch.setattr(P, "_prepare_retained_basemaps", prepare_retained)
+    monkeypatch.setattr(P.basemap, "require_pmtiles", fail_pmtiles)
+    monkeypatch.setattr(P.basemap, "cut_basemap", fail_cut_basemap)
+
+    result = P.run(
+        conn,
+        "malaysia-singapore-brunei",
+        publish_version=publish_version,
+        generated_at="2026-07-15T12:00:00Z",
+        scoring_config_version="scoring-v1",
+        staging_root=tmp_path / "stage",
+    )
+
+    manifest = json.loads((result.staging_dir / "manifest.json").read_text())
+    staged_basemap = result.staging_dir / "malaysia-singapore-brunei.pmtiles"
+    assert staged_basemap.read_bytes() == prepared_bytes
+    assert manifest["basemap"]["bytes"] == len(prepared_bytes)
+    assert manifest["basemap"]["sha256"] == prepared_sha
+
+
 def test_subregion_doc_does_not_inherit_parent_retained_country_cut():
     region_config = P.config.load("malaysia-singapore-brunei")
     subregion = P.config.SubregionConfig(
