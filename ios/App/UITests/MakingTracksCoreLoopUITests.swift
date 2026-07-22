@@ -634,6 +634,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["map.track-replay.counter"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.otherElements["map.list-mode.control"].exists)
         slider.adjust(toNormalizedSliderPosition: 0.0)
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 1 of 6", in: app))
         XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
         XCTAssertTrue(waitForAccessibilityPin(
             in: app,
@@ -650,6 +651,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(play.waitForExistence(timeout: 5))
         attachScreenshot(named: "track-replay-scrub-frame-00")
         play.tap()
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 2 of 6", in: app))
         XCTAssertTrue(waitForTrackSegmentCount(1, in: app))
         XCTAssertTrue(waitForAccessibilityPin(
             in: app,
@@ -662,6 +664,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         for eventIndex in 1...5 {
             slider.adjust(toNormalizedSliderPosition: Double(eventIndex) / 5.0)
+            XCTAssertTrue(waitForTrackReplayCounter("Visit \(eventIndex + 1) of 6", in: app))
             XCTAssertTrue(waitForTrackSegmentCount(eventIndex, in: app))
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
             attachScreenshot(named: "track-replay-scrub-frame-0\(eventIndex)")
@@ -2034,11 +2037,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         timeout: TimeInterval = 10
     ) -> Bool {
         let counter = app.staticTexts["map.track-replay.counter"]
-        let predicate = NSPredicate(format: "exists == true AND label == %@", label)
-        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: counter)
-        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
-        if result != .completed {
-            XCTFail("Expected replay counter \(label), got \(counter.exists ? counter.label : "missing counter")")
+        let result = AXValueWaiter.wait(expected: label, timeout: timeout) {
+            counter.exists ? counter.label : nil
+        }
+        if !result.matched {
+            XCTFail("Expected replay counter \(label), got \(result.observed ?? "missing counter")")
             return false
         }
         return true
