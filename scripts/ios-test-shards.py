@@ -12,6 +12,12 @@ from typing import Any, Iterable
 
 
 TEST_FUNCTION_RE = re.compile(r"\bfunc\s+(test[A-Za-z0-9_]+)\s*\(")
+BUTTON_EXISTENCE_WAIT_RE = re.compile(
+    r'XCTAssertTrue\([^)]*\.buttons\["(?P<identifier>[^"]+)"\]\.waitForExistence\(timeout:\s*[^)]*\)\)'
+)
+BUTTON_PROPERTY_ASSERT_RE = re.compile(
+    r'XCTAssertEqual\([^)]*\.buttons\["(?P<identifier>[^"]+)"\]\.(?P<property>label|value)\b'
+)
 
 
 def load_json(path: Path) -> Any:
@@ -76,6 +82,40 @@ def command_validate_static(args: argparse.Namespace) -> int:
         return emit_error("\n".join(lines))
 
     print(f"static shard manifest covers {len(expected)} UI tests")
+    return 0
+
+
+def decoy_accessibility_waits(source: Path) -> list[tuple[int, str, str]]:
+    lines = source.read_text(encoding="utf-8").splitlines()
+    findings: list[tuple[int, str, str]] = []
+
+    for index, line in enumerate(lines[:-1]):
+        wait_match = BUTTON_EXISTENCE_WAIT_RE.search(line)
+        if wait_match is None:
+            continue
+
+        assert_match = BUTTON_PROPERTY_ASSERT_RE.search(lines[index + 1])
+        if assert_match is None:
+            continue
+
+        identifier = wait_match.group("identifier")
+        if assert_match.group("identifier") == identifier:
+            findings.append((index + 1, identifier, assert_match.group("property")))
+
+    return findings
+
+
+def command_validate_ax_waits(args: argparse.Namespace) -> int:
+    findings = decoy_accessibility_waits(args.source)
+    if findings:
+        lines = ["decoy accessibility waits:"]
+        lines.extend(
+            f"{args.source}:{line_number}: {identifier} .{property_name}"
+            for line_number, identifier, property_name in findings
+        )
+        return emit_error("\n".join(lines))
+
+    print("accessibility wait guard found no decoys")
     return 0
 
 
@@ -175,6 +215,10 @@ def build_parser() -> argparse.ArgumentParser:
     validate_static.add_argument("--source", type=Path, required=True)
     validate_static.add_argument("--manifest", type=Path, required=True)
     validate_static.set_defaults(func=command_validate_static)
+
+    validate_ax_waits = subcommands.add_parser("validate-ax-waits")
+    validate_ax_waits.add_argument("--source", type=Path, required=True)
+    validate_ax_waits.set_defaults(func=command_validate_ax_waits)
 
     write_only_testing = subcommands.add_parser("write-only-testing")
     write_only_testing.add_argument("--manifest", type=Path, required=True)
