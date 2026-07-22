@@ -35,6 +35,29 @@ private enum AXResampler {
     }
 }
 
+private enum AXValueWaiter {
+    static func wait(
+        expected: String,
+        attempts: Int,
+        interval: TimeInterval = 0,
+        sample: () -> String?
+    ) -> AXSampleMatch {
+        AXResampler.matches(expected: expected, attempts: attempts, interval: interval, sample: sample)
+    }
+
+    static func wait(
+        expected: String,
+        timeout: TimeInterval,
+        interval: TimeInterval = 0.1,
+        sample: () -> String?
+    ) -> AXSampleMatch {
+        precondition(interval > 0, "AX value wait interval must be positive")
+
+        let attempts = max(1, Int(ceil(timeout / interval)))
+        return wait(expected: expected, attempts: attempts, interval: interval, sample: sample)
+    }
+}
+
 private enum AXElementReadback {
     static func label(
         for identifier: String,
@@ -42,6 +65,14 @@ private enum AXElementReadback {
     ) -> String? {
         let current = element(identifier)
         return current.exists ? current.label : nil
+    }
+
+    static func value(
+        for identifier: String,
+        using element: (String) -> (exists: Bool, value: () -> String?)
+    ) -> String? {
+        let current = element(identifier)
+        return current.exists ? current.value() : nil
     }
 }
 
@@ -87,6 +118,44 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(elementsByIdentifier["map.pin.other"]?.label, "Art Deco Cinema, Historic Building, not visited")
         XCTAssertFalse(result.matched)
         XCTAssertEqual(result.observed, "Ghost Sign, Attraction, not visited")
+    }
+
+    func testAXElementReadbackSkipsValueLookupWhenElementDisappears() {
+        var valueWasRead = false
+
+        let result = AXElementReadback.value(for: "settings.pin-size") { _ in
+            (
+                exists: false,
+                value: {
+                    valueWasRead = true
+                    return "160%"
+                }
+            )
+        }
+
+        XCTAssertNil(result)
+        XCTAssertFalse(valueWasRead)
+    }
+
+    func testAXValueWaiterToleratesMissingSamplesUntilExpectedValueAppears() {
+        var samples: [String?] = [nil, "1", "0"]
+
+        let result = AXValueWaiter.wait(expected: "0", attempts: 3, interval: 0) {
+            samples.removeFirst()
+        }
+
+        XCTAssertTrue(result.matched)
+        XCTAssertEqual(result.observed, "0")
+        XCTAssertTrue(samples.isEmpty)
+    }
+
+    func testAXValueWaiterReportsMissingWithoutThrowingWhenElementNeverReturns() {
+        let result = AXValueWaiter.wait(expected: "160%", attempts: 2, interval: 0) {
+            nil
+        }
+
+        XCTAssertFalse(result.matched)
+        XCTAssertNil(result.observed)
     }
 
     func testCardTogglesPersistAndRestyleMapPin() {
@@ -1781,23 +1850,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
 
         switchElement.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        let predicate = NSPredicate(format: "value == %@", expectedValue)
-        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: switchElement)], timeout: 5)
-        if result == .completed {
-            return
+        let result = AXValueWaiter.wait(expected: expectedValue, timeout: 5) {
+            AXElementReadback.value(for: identifier) {
+                let current = app.switches[$0]
+                return (exists: current.exists, value: { current.value as? String })
+            }
         }
-
-        // Re-sample the AX tree after a predicate miss; this is intentionally tight, not a slow-control wait.
-        let resampled = AXResampler.matches(expected: expectedValue, attempts: 3, interval: 0.1) {
-            app.switches[identifier].value as? String
-        }
-        if resampled.matched {
+        if result.matched {
             return
         }
 
         let finalElement = app.switches[identifier]
+        let finalDescription = finalElement.exists ? finalElement.debugDescription : "missing switch"
         XCTFail(
-            "Switch \(identifier) value was \(resampled.observed ?? "missing"), expected \(expectedValue); \(finalElement.debugDescription)"
+            "Switch \(identifier) value was \(result.observed ?? "missing"), expected \(expectedValue); \(finalDescription)"
         )
     }
 
@@ -1807,17 +1873,27 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             return
         }
         for _ in 0..<3 {
-            slider.adjust(toNormalizedSliderPosition: 1.0)
-            let resampled = AXResampler.matches(expected: expectedValue, attempts: 3, interval: 0.1) {
-                app.sliders[identifier].value as? String
+            let currentSlider = app.sliders[identifier]
+            guard currentSlider.waitForExistence(timeout: 2) else { continue }
+            currentSlider.adjust(toNormalizedSliderPosition: 1.0)
+            let resampled = AXValueWaiter.wait(expected: expectedValue, attempts: 3, interval: 0.1) {
+                AXElementReadback.value(for: identifier) {
+                    let current = app.sliders[$0]
+                    return (exists: current.exists, value: { current.value as? String })
+                }
             }
             if resampled.matched {
                 return
             }
         }
         let finalSlider = app.sliders[identifier]
+        let finalValue = AXElementReadback.value(for: identifier) {
+            let current = app.sliders[$0]
+            return (exists: current.exists, value: { current.value as? String })
+        }
+        let finalDescription = finalSlider.exists ? finalSlider.debugDescription : "missing slider"
         XCTFail(
-            "Slider \(identifier) value was \(finalSlider.value as? String ?? "missing"), expected \(expectedValue) at normalized edge 1.0; \(finalSlider.debugDescription)"
+            "Slider \(identifier) value was \(finalValue ?? "missing"), expected \(expectedValue) at normalized edge 1.0; \(finalDescription)"
         )
     }
 
