@@ -48,11 +48,13 @@ struct TrackSourceSnapshot: Sendable {
 
     static func make(
         context: TrackGeometryContext,
-        activeToVisitID: Int64? = nil
+        activeToVisitID: Int64? = nil,
+        activeArcProgress: Double = 1.0
     ) -> TrackSourceSnapshot {
         let summary = FeatureEncoding.trackSegmentSummary(
             context.visits,
-            activeToVisitID: activeToVisitID
+            activeToVisitID: activeToVisitID,
+            activeArcProgress: activeArcProgress
         )
         return TrackSourceSnapshot(
             featureCollectionJSON: (try? FeatureEncoding.featureCollection(summary.features).jsonString())

@@ -34,7 +34,9 @@ struct MakingTracksApp: App {
     private static let simulatedLongitude = argumentValue("--ui-testing-location-longitude").flatMap(Double.init)
     private static let uiTestingOfflineProgress = argumentValue("--ui-testing-offline-progress").flatMap(Double.init)
     private static let uiTestingCoverageBBoxes = coverageBBoxArguments()
+    private static let debugHideFixtureChrome = arguments.contains("--ui-testing-hide-fixture-chrome")
     private static let debugUseDenseFixturePins = arguments.contains("--ui-testing-dense-pins")
+    private static let debugUseReplayVisualFixture = arguments.contains("--ui-testing-replay-visual-seed")
     private static let primaryFixturePlaceID = "mt1_00000000000000000000000000"
 #else
     private static let forceFirstRunOnboarding = false
@@ -52,7 +54,9 @@ struct MakingTracksApp: App {
     private static let simulatedLongitude: Double? = nil
     private static let uiTestingOfflineProgress: Double? = nil
     private static let uiTestingCoverageBBoxes: [CoverageBBox] = []
+    private static let debugHideFixtureChrome = false
     private static let debugUseDenseFixturePins = false
+    private static let debugUseReplayVisualFixture = false
 #endif
 
     init() {
@@ -100,9 +104,10 @@ struct MakingTracksApp: App {
                 }
                 let fixturePlaces = MapScreen.uiTestingFixturePlaces(dense: Self.debugUseDenseFixturePins)
                 if seedFixtureMultiDayTrackList {
+                    let trackPlaces = Self.debugUseReplayVisualFixture ? Self.replayVisualFixturePlaces : fixturePlaces
                     try database.seedUITestingMultiDayTrackList(
                         named: "Replay week",
-                        places: fixturePlaces,
+                        places: trackPlaces,
                         lovedVisitIndex: seedFixtureTrackListLovedVisit ? 0 : nil
                     )
                 } else if seedFixtureTrackList {
@@ -128,6 +133,32 @@ struct MakingTracksApp: App {
             MakingTracksLog.startup.error("store init failed fixture=\(fixture, privacy: .public) reason=\(surface.reasonLabel, privacy: .public)")
         }
         return startup
+    }()
+
+    private static let replayVisualFixturePlaces: [PlaceRef] = {
+        let fixtures: [(id: String, name: String, lat: Double, lon: Double, category: String, tier: Int)] = [
+            ("mt1_D0000000000000000000000001", "Dense Pin 1", 3.148, 101.662, "attraction", 1),
+            ("mt1_D0000000000000000000000002", "Dense Pin 2", 3.213, 101.760, "historic_building", 1),
+            ("mt1_D0000000000000000000000003", "Dense Pin 3", 3.080, 101.724, "museum", 1),
+            ("mt1_D0000000000000000000000004", "Dense Pin 4", 3.238, 101.682, "artwork", 1),
+            ("mt1_D0000000000000000000000005", "Dense Pin 5", 3.116, 101.842, "memorial", 2),
+        ]
+        let places = fixtures.map { fixture in
+            try! PlaceRef(
+                placeID: fixture.id,
+                name: fixture.name,
+                lat: fixture.lat,
+                lon: fixture.lon,
+                category: fixture.category,
+                tier: fixture.tier,
+                schemaVersion: 1,
+                fetchedAt: Date(timeIntervalSince1970: 0),
+                rawJSON: """
+                {"blurb":"Fixture pin for replay recording arc geometry.","category":"\(fixture.category)","lat":\(fixture.lat),"lon":\(fixture.lon),"name":"\(fixture.name)","place_id":"\(fixture.id)","score":0.5,"source_refs":["osm:node/\(fixture.id.suffix(1))"],"tier":\(fixture.tier)}
+                """
+            )
+        }
+        return [places[0], places[1], places[0], places[2], places[3], places[4]]
     }()
 
     private let locationManager: AppLocationManager = {
@@ -161,6 +192,7 @@ struct MakingTracksApp: App {
                     offlineDownloadProgress: Self.offlineDownloadProgress,
                     debugCoverageBBoxes: Self.uiTestingCoverageBBoxes,
                     debugExposeFixturePinDiagnostics: Self.debugExposeFixturePinDiagnostics,
+                    debugHideFixtureChrome: Self.debugHideFixtureChrome,
                     debugUseDenseFixturePins: Self.debugUseDenseFixturePins,
                     forceFirstRunOnboarding: Self.forceFirstRunOnboarding,
                     locationManager: locationManager

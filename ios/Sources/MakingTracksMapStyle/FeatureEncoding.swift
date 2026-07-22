@@ -113,12 +113,14 @@ public enum FeatureEncoding {
     public static func trackSegmentFeatures(
         _ visits: [TrackVisit],
         activeToVisitID: Int64? = nil,
+        activeArcProgress: Double = 1.0,
         maxConnectorGap: TimeInterval = TrackLayers.defaultMaxConnectorGap,
         burstWindow: TimeInterval = TrackLayers.defaultBurstWindow
     ) -> [JSONValue] {
         trackSegmentSummary(
             visits,
             activeToVisitID: activeToVisitID,
+            activeArcProgress: activeArcProgress,
             maxConnectorGap: maxConnectorGap,
             burstWindow: burstWindow
         ).features
@@ -131,6 +133,7 @@ public enum FeatureEncoding {
     public static func trackSegmentSummary(
         _ visits: [TrackVisit],
         activeToVisitID: Int64? = nil,
+        activeArcProgress: Double = 1.0,
         maxConnectorGap: TimeInterval = TrackLayers.defaultMaxConnectorGap,
         burstWindow: TimeInterval = TrackLayers.defaultBurstWindow
     ) -> TrackSegmentSummary {
@@ -147,19 +150,25 @@ public enum FeatureEncoding {
         var features: [JSONValue] = []
         let suppressedBurstConnectorCount = 0
         var connectableVisitIDs = Set<Int64>()
+        var pairOccurrenceCounts: [TrackArcPairKey: Int] = [:]
         for (from, to) in zip(visits, visits.dropFirst()) {
             guard let gap = connectorGap(from: from, to: to),
                   isValidCoordinate(from),
                   isValidCoordinate(to),
                   from.lat != to.lat || from.lon != to.lon
             else { continue }
+            let pairKey = TrackArcPairKey(from: from, to: to)
+            let occurrenceIndex = pairOccurrenceCounts[pairKey, default: 0]
+            pairOccurrenceCounts[pairKey] = occurrenceIndex + 1
             connectableVisitIDs.insert(from.id)
             connectableVisitIDs.insert(to.id)
             features.append(trackSegmentFeature(
                 from: from,
                 to: to,
                 gap: gap,
-                phase: to.id == activeToVisitID ? TrackLayers.activeArcPhase : "visited"
+                phase: to.id == activeToVisitID ? TrackLayers.activeArcPhase : "visited",
+                activeArcProgress: activeArcProgress,
+                pairOccurrenceIndex: occurrenceIndex
             ))
         }
         return TrackSegmentSummary(
@@ -173,24 +182,48 @@ public enum FeatureEncoding {
         from: TrackVisit,
         to: TrackVisit,
         gap: TimeInterval,
-        phase: String
+        phase: String,
+        activeArcProgress: Double,
+        pairOccurrenceIndex: Int
     ) -> JSONValue {
-        .object([
+        let coordinates = clippedActiveArcCoordinates(
+            trackArcCoordinates(from: from, to: to, pairOccurrenceIndex: pairOccurrenceIndex),
+            phase: phase,
+            progress: activeArcProgress
+        )
+        return .object([
             "type": .string("Feature"),
             "geometry": .object([
                 "type": .string("LineString"),
-                "coordinates": .array(trackArcCoordinates(from: from, to: to)),
+                "coordinates": .array(coordinates),
             ]),
             "properties": .object([
                 "from_visit_id": .double(Double(from.id)),
                 "to_visit_id": .double(Double(to.id)),
                 "gap_seconds": .double(gap),
+                "arc_lane": .double(arcLaneOffset(forPairOccurrenceIndex: pairOccurrenceIndex)),
                 TrackLayers.trackSegmentPhaseProperty: .string(phase),
             ]),
         ])
     }
 
-    private static func trackArcCoordinates(from: TrackVisit, to: TrackVisit) -> [JSONValue] {
+    private static func clippedActiveArcCoordinates(
+        _ coordinates: [JSONValue],
+        phase: String,
+        progress: Double
+    ) -> [JSONValue] {
+        guard phase == TrackLayers.activeArcPhase else { return coordinates }
+        let clampedProgress = clamped(progress, to: 0.0...1.0)
+        guard clampedProgress < 1, coordinates.count > 2 else { return coordinates }
+        let visibleCount = max(2, Int((Double(coordinates.count - 1) * clampedProgress).rounded(.up)) + 1)
+        return Array(coordinates.prefix(min(visibleCount, coordinates.count)))
+    }
+
+    private static func trackArcCoordinates(
+        from: TrackVisit,
+        to: TrackVisit,
+        pairOccurrenceIndex: Int
+    ) -> [JSONValue] {
         let rawDX = to.lon - from.lon
         let wrapsAntimeridian = abs(rawDX) > 180.0
         let dx = wrapsAntimeridian ? shortestLongitudeDelta(from: from.lon, to: to.lon) : rawDX
@@ -203,7 +236,9 @@ public enum FeatureEncoding {
         let projectedDY = end.y - start.y
         let distance = max((projectedDX * projectedDX + projectedDY * projectedDY).squareRoot(), 0.000_001)
         let midpoint = (x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
-        let offset = distance * TrackLayers.arcBendRatio * 2
+        let canonicalDirection = TrackArcEndpointKey(visit: from) <= TrackArcEndpointKey(visit: to) ? 1.0 : -1.0
+        let laneOffset = arcLaneOffset(forPairOccurrenceIndex: pairOccurrenceIndex)
+        let offset = distance * TrackLayers.arcBendRatio * 2 * canonicalDirection * laneOffset
         let control = (
             x: midpoint.x + (-projectedDY / distance) * offset,
             y: midpoint.y + (projectedDX / distance) * offset
@@ -229,6 +264,47 @@ public enum FeatureEncoding {
                 lon: wrapsAntimeridian ? lon : clamped(lon, to: -180.0...180.0),
                 lat: clamped(projectedY, to: -90.0...90.0)
             )
+        }
+    }
+
+    private static func arcLaneOffset(forPairOccurrenceIndex occurrenceIndex: Int) -> Double {
+        let clampedIndex = max(occurrenceIndex, 0)
+        let magnitude = 1.0 + (Double(clampedIndex / 2) * 0.55)
+        return clampedIndex.isMultiple(of: 2) ? magnitude : -magnitude
+    }
+
+    private struct TrackArcPairKey: Hashable {
+        let first: TrackArcEndpointKey
+        let second: TrackArcEndpointKey
+
+        init(from: TrackVisit, to: TrackVisit) {
+            let fromKey = TrackArcEndpointKey(visit: from)
+            let toKey = TrackArcEndpointKey(visit: to)
+            if fromKey <= toKey {
+                first = fromKey
+                second = toKey
+            } else {
+                first = toKey
+                second = fromKey
+            }
+        }
+    }
+
+    private struct TrackArcEndpointKey: Comparable, Hashable {
+        let placeID: String
+        let lat: Double
+        let lon: Double
+
+        init(visit: TrackVisit) {
+            placeID = visit.placeID
+            lat = visit.lat
+            lon = visit.lon
+        }
+
+        static func < (lhs: TrackArcEndpointKey, rhs: TrackArcEndpointKey) -> Bool {
+            if lhs.placeID != rhs.placeID { return lhs.placeID < rhs.placeID }
+            if lhs.lat != rhs.lat { return lhs.lat < rhs.lat }
+            return lhs.lon < rhs.lon
         }
     }
 

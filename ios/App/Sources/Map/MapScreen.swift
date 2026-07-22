@@ -708,6 +708,14 @@ struct TracksCopy {
     }
 }
 
+enum TrackVisitRowDensitySpec {
+    static let usesInlineEditControls = true
+    static let showsStandaloneDateLabel = false
+    static let verticalSpacing: CGFloat = 4
+    static let horizontalSpacing: CGFloat = 8
+    static let minimumHeight: CGFloat = 48
+}
+
 struct TrackVisitDaySection: Identifiable, Equatable {
     let day: Date
     let visits: [TrackVisit]
@@ -1063,13 +1071,17 @@ struct TrackFilterPickerListOption: Equatable, Identifiable {
 struct TrackReplaySnapshotCache: Sendable {
     static let empty = TrackReplaySnapshotCache(context: .empty)
 
+    private let contexts: [TrackGeometryContext]
     private let snapshots: [TrackSourceSnapshot]
 
     init(context: TrackGeometryContext) {
-        snapshots = context.visits.indices.map { index in
+        contexts = context.visits.indices.map { index in
+            context.clipped(throughEventIndex: index)
+        }
+        snapshots = contexts.enumerated().map { index, clippedContext in
             TrackSourceSnapshot.make(
-                context: context.clipped(throughEventIndex: index),
-                activeToVisitID: index > 0 ? context.visits[index].id : nil
+                context: clippedContext,
+                activeToVisitID: index > 0 ? clippedContext.visits.last?.id : nil
             )
         }
     }
@@ -1080,10 +1092,95 @@ struct TrackReplaySnapshotCache: Sendable {
         guard snapshots.indices.contains(index) else { return snapshots.last ?? .empty }
         return snapshots[index]
     }
+
+    func snapshot(throughEventIndex index: Int?, activeArcProgress: Double) -> TrackSourceSnapshot {
+        guard activeArcProgress < 1,
+              let index,
+              index > 0
+        else { return snapshot(throughEventIndex: index) }
+        guard contexts.indices.contains(index) else { return snapshots.last ?? .empty }
+        let context = contexts[index]
+        return TrackSourceSnapshot.make(
+            context: context,
+            activeToVisitID: context.visits.last?.id,
+            activeArcProgress: activeArcProgress
+        )
+    }
 }
 
 enum TrackTimelineDateMarkerLayout {
     static let markerSlotWidth: CGFloat = 56 // Tunable UI slot width for abbreviated dates near slider edges.
+}
+
+enum TrackReplayTimelineZoomLevel: Equatable, Sendable {
+    case coarse
+    case detail
+
+    static let detailVelocityThreshold: CGFloat = 240
+
+    static func level(forDragVelocity velocity: CGFloat) -> TrackReplayTimelineZoomLevel {
+        abs(velocity) > detailVelocityThreshold ? .coarse : .detail
+    }
+}
+
+struct TrackReplayTimelineMark: Equatable, Sendable {
+    let eventIndex: Int
+    let position: Double
+    let label: String
+    let isLabeled: Bool
+    let isSelected: Bool
+}
+
+enum TrackReplayTimelineLayout {
+    static func marks(
+        timeline: TrackTimelineModel,
+        selectedIndex: Int?,
+        availableWidth: Double,
+        zoomLevel: TrackReplayTimelineZoomLevel
+    ) -> [TrackReplayTimelineMark] {
+        guard !timeline.visits.isEmpty else { return [] }
+        let labeledIndices = labeledEventIndices(
+            timeline: timeline,
+            selectedIndex: selectedIndex,
+            availableWidth: availableWidth,
+            zoomLevel: zoomLevel
+        )
+        return timeline.visits.indices.map { index in
+            TrackReplayTimelineMark(
+                eventIndex: index,
+                position: TrackTimelineModel.normalizedPosition(eventIndex: index, eventCount: timeline.visits.count),
+                label: label(for: timeline.visits[index], zoomLevel: zoomLevel),
+                isLabeled: labeledIndices.contains(index),
+                isSelected: selectedIndex == index
+            )
+        }
+    }
+
+    private static func labeledEventIndices(
+        timeline: TrackTimelineModel,
+        selectedIndex: Int?,
+        availableWidth: Double,
+        zoomLevel: TrackReplayTimelineZoomLevel
+    ) -> Set<Int> {
+        switch zoomLevel {
+        case .coarse:
+            let maxCount = max(Int(availableWidth / Double(TrackTimelineDateMarkerLayout.markerSlotWidth)), 2)
+            guard timeline.visits.count > maxCount else { return Set(timeline.visits.indices) }
+            return Set([timeline.visits.startIndex, timeline.visits.index(before: timeline.visits.endIndex)])
+        case .detail:
+            let selected = selectedIndex ?? timeline.visits.startIndex
+            return Set((selected - 1...selected + 1).filter { timeline.visits.indices.contains($0) })
+        }
+    }
+
+    private static func label(for visit: TrackVisit, zoomLevel: TrackReplayTimelineZoomLevel) -> String {
+        switch zoomLevel {
+        case .coarse:
+            return visit.visitedAt.formatted(.dateTime.year())
+        case .detail:
+            return visit.visitedAt.formatted(date: .omitted, time: .shortened)
+        }
+    }
 }
 
 struct TrackTimelineModel: Equatable, Sendable {
@@ -1094,7 +1191,7 @@ struct TrackTimelineModel: Equatable, Sendable {
             return override
         }
 #endif
-        return 0.85
+        return 0.5
     }
 
 #if DEBUG
@@ -1210,7 +1307,7 @@ struct TrackTimelineModel: Equatable, Sendable {
         return "Visit \(eventIndex + 1) of \(visits.count), \(visit.name), \(visit.visitedAt.formatted(date: .abbreviated, time: .shortened))\(loved)"
     }
 
-    private static func normalizedPosition(eventIndex: Int, eventCount: Int) -> Double {
+    static func normalizedPosition(eventIndex: Int, eventCount: Int) -> Double {
         guard eventCount > 1 else { return 0 }
         return Double(eventIndex) / Double(eventCount - 1)
     }
@@ -1264,6 +1361,273 @@ private struct TrackTimelineDateMarkersView: View {
         guard width > TrackTimelineDateMarkerLayout.markerSlotWidth else { return 0 }
         let centered = width * CGFloat(marker.position) - TrackTimelineDateMarkerLayout.markerSlotWidth / 2
         return min(max(centered, 0), width - TrackTimelineDateMarkerLayout.markerSlotWidth)
+    }
+}
+
+private enum TrackReplayTimelineControlSpec {
+    static let height: CGFloat = 58
+    static let trackY: CGFloat = 27
+    static let trackHeight: CGFloat = 5
+    static let tickHeight: CGFloat = 13
+    static let selectedTickHeight: CGFloat = 20
+    static let handleOuterSize: CGFloat = 28
+    static let handleInnerSize: CGFloat = 12
+    static let labelSlotWidth: CGFloat = 56
+    static let elapsedColor = Color(red: 0.176, green: 0.549, blue: 0.514)
+    static let remainingColor = Color(uiColor: .systemGray4)
+    static let activeColor = Color(red: 0.859, green: 0.325, blue: 0.267)
+}
+
+private enum TrackReplayArcGlideSpec {
+    static let frameCount = 10
+    static let frameIntervalMilliseconds = 32
+    static let arrivalPulseMilliseconds = 260
+}
+
+private struct TrackReplayTimelineAccessibilitySlider: UIViewRepresentable {
+    let value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let accessibilityValue: String
+    let onValueChanged: (Double) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> UISlider {
+        let slider = UISlider(frame: .zero)
+        slider.addTarget(
+            context.coordinator,
+            action: #selector(Coordinator.valueChanged(_:)),
+            for: .valueChanged
+        )
+        configure(slider)
+        return slider
+    }
+
+    func updateUIView(_ slider: UISlider, context: Context) {
+        context.coordinator.parent = self
+        configure(slider)
+        let nextValue = Float(value)
+        if abs(slider.value - nextValue) > 0.001 {
+            slider.value = nextValue
+        }
+    }
+
+    private func configure(_ slider: UISlider) {
+        slider.minimumValue = Float(range.lowerBound)
+        slider.maximumValue = Float(range.upperBound)
+        slider.isContinuous = true
+        slider.minimumTrackTintColor = .clear
+        slider.maximumTrackTintColor = .clear
+        slider.thumbTintColor = .clear
+        slider.setThumbImage(Self.transparentThumbImage, for: .normal)
+        slider.setThumbImage(Self.transparentThumbImage, for: .highlighted)
+        slider.accessibilityLabel = "Track replay"
+        slider.accessibilityValue = accessibilityValue
+        slider.accessibilityIdentifier = "map.track-replay.slider"
+    }
+
+    private static let transparentThumbImage: UIImage = {
+        UIGraphicsImageRenderer(size: CGSize(width: 28, height: 28)).image { rendererContext in
+            UIColor.clear.setFill()
+            rendererContext.cgContext.fill(CGRect(x: 0, y: 0, width: 28, height: 28))
+        }
+    }()
+
+    final class Coordinator: NSObject {
+        var parent: TrackReplayTimelineAccessibilitySlider
+
+        init(parent: TrackReplayTimelineAccessibilitySlider) {
+            self.parent = parent
+        }
+
+        @MainActor
+        @objc func valueChanged(_ sender: UISlider) {
+            let rawValue = Double(sender.value)
+            let steppedValue: Double
+            if parent.step > 0 {
+                steppedValue = (rawValue / parent.step).rounded() * parent.step
+            } else {
+                steppedValue = rawValue
+            }
+            let clampedValue = min(max(steppedValue, parent.range.lowerBound), parent.range.upperBound)
+            if abs(Double(sender.value) - clampedValue) > 0.001 {
+                sender.value = Float(clampedValue)
+            }
+            parent.onValueChanged(clampedValue)
+        }
+    }
+}
+
+private struct TrackReplayTimelineControl: View {
+    let timeline: TrackTimelineModel
+    let selectedIndex: Int?
+    let zoomLevel: TrackReplayTimelineZoomLevel
+    let onZoomLevelChanged: (TrackReplayTimelineZoomLevel) -> Void
+    let onScrub: (Int) -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            let selected = resolvedSelectedIndex
+            let selectedPosition = CGFloat(TrackTimelineModel.normalizedPosition(
+                eventIndex: selected,
+                eventCount: timeline.visits.count
+            )) * width
+            let marks = TrackReplayTimelineLayout.marks(
+                timeline: timeline,
+                selectedIndex: selected,
+                availableWidth: Double(width),
+                zoomLevel: zoomLevel
+            )
+
+            ZStack(alignment: .topLeading) {
+                timelineChrome(width: width, selected: selected, selectedPosition: selectedPosition, marks: marks)
+                    .accessibilityHidden(true)
+
+                TrackReplayTimelineAccessibilitySlider(
+                    value: Double(selected),
+                    range: timeline.sliderRange,
+                    step: 1,
+                    accessibilityValue: timeline.accessibilityValue(for: selected),
+                    onValueChanged: { value in
+                        onScrub(timeline.eventIndex(forSliderValue: value))
+                    }
+                )
+                .frame(height: TrackReplayTimelineControlSpec.height)
+                .simultaneousGesture(dragGesture(width: width))
+            }
+        }
+        .frame(height: TrackReplayTimelineControlSpec.height)
+    }
+
+    private var resolvedSelectedIndex: Int {
+        timeline.eventIndex(forSliderValue: Double(selectedIndex ?? 0))
+    }
+
+    private func timelineChrome(
+        width: CGFloat,
+        selected: Int,
+        selectedPosition: CGFloat,
+        marks: [TrackReplayTimelineMark]
+    ) -> some View {
+        ZStack(alignment: .topLeading) {
+            Capsule()
+                .fill(TrackReplayTimelineControlSpec.remainingColor)
+                .frame(width: width, height: TrackReplayTimelineControlSpec.trackHeight)
+                .position(x: width / 2, y: TrackReplayTimelineControlSpec.trackY)
+
+            Capsule()
+                .fill(TrackReplayTimelineControlSpec.elapsedColor)
+                .frame(width: max(selectedPosition, TrackReplayTimelineControlSpec.trackHeight), height: TrackReplayTimelineControlSpec.trackHeight)
+                .position(x: max(selectedPosition / 2, TrackReplayTimelineControlSpec.trackHeight / 2), y: TrackReplayTimelineControlSpec.trackY)
+
+            if selected > 0 {
+                let previousPosition = CGFloat(TrackTimelineModel.normalizedPosition(
+                    eventIndex: selected - 1,
+                    eventCount: timeline.visits.count
+                )) * width
+                Capsule()
+                    .fill(TrackReplayTimelineControlSpec.activeColor)
+                    .frame(
+                        width: max(selectedPosition - previousPosition, TrackReplayTimelineControlSpec.trackHeight),
+                        height: TrackReplayTimelineControlSpec.trackHeight
+                    )
+                    .position(
+                        x: previousPosition + max(selectedPosition - previousPosition, TrackReplayTimelineControlSpec.trackHeight) / 2,
+                        y: TrackReplayTimelineControlSpec.trackY
+                    )
+            }
+
+            ForEach(marks, id: \.eventIndex) { mark in
+                let x = CGFloat(mark.position) * width
+                Rectangle()
+                    .fill(tickColor(for: mark, selected: selected))
+                    .frame(
+                        width: mark.isSelected ? 3 : 2,
+                        height: mark.isSelected
+                            ? TrackReplayTimelineControlSpec.selectedTickHeight
+                            : TrackReplayTimelineControlSpec.tickHeight
+                    )
+                    .position(x: x, y: TrackReplayTimelineControlSpec.trackY)
+
+                if mark.isLabeled {
+                    Text(verbatim: mark.label)
+                        .font(.caption2.weight(mark.isSelected ? .semibold : .regular))
+                        .foregroundStyle(mark.isSelected ? TrackReplayTimelineControlSpec.activeColor : .secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(width: TrackReplayTimelineControlSpec.labelSlotWidth, alignment: labelAlignment(for: mark.position))
+                        .position(x: labelX(for: x, width: width), y: 48)
+                }
+            }
+
+            Text(verbatim: timeline.selectedTimeLabel(after: selected))
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(TrackReplayTimelineControlSpec.activeColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(width: TrackReplayTimelineControlSpec.labelSlotWidth)
+                .position(x: labelX(for: selectedPosition, width: width), y: 8)
+
+            Circle()
+                .fill(Color(uiColor: .systemBackground))
+                .frame(
+                    width: TrackReplayTimelineControlSpec.handleOuterSize,
+                    height: TrackReplayTimelineControlSpec.handleOuterSize
+                )
+                .overlay {
+                    Circle()
+                        .stroke(TrackReplayTimelineControlSpec.activeColor, lineWidth: 3)
+                    Circle()
+                        .fill(TrackReplayTimelineControlSpec.activeColor)
+                        .frame(
+                            width: TrackReplayTimelineControlSpec.handleInnerSize,
+                            height: TrackReplayTimelineControlSpec.handleInnerSize
+                        )
+                }
+                .shadow(color: .black.opacity(0.14), radius: 3, x: 0, y: 1)
+                .position(x: selectedPosition, y: TrackReplayTimelineControlSpec.trackY)
+        }
+    }
+
+    private func dragGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                let velocity = value.predictedEndTranslation.width - value.translation.width
+                onZoomLevelChanged(TrackReplayTimelineZoomLevel.level(forDragVelocity: velocity))
+                onScrub(eventIndex(forLocationX: value.location.x, width: width))
+            }
+            .onEnded { _ in
+                onZoomLevelChanged(.coarse)
+            }
+    }
+
+    private func tickColor(for mark: TrackReplayTimelineMark, selected: Int) -> Color {
+        if mark.isSelected { return TrackReplayTimelineControlSpec.activeColor }
+        return mark.eventIndex < selected
+            ? TrackReplayTimelineControlSpec.elapsedColor
+            : TrackReplayTimelineControlSpec.remainingColor
+    }
+
+    private func labelAlignment(for position: Double) -> Alignment {
+        if position < 0.08 { return .leading }
+        if position > 0.92 { return .trailing }
+        return .center
+    }
+
+    private func labelX(for x: CGFloat, width: CGFloat) -> CGFloat {
+        let half = TrackReplayTimelineControlSpec.labelSlotWidth / 2
+        return min(max(x, half), max(half, width - half))
+    }
+
+    private func eventIndex(forLocationX locationX: CGFloat, width: CGFloat) -> Int {
+        guard width > 0 else { return 0 }
+        let normalized = min(max(locationX / width, 0), 1)
+        let rawIndex = Double(normalized) * Double(max(timeline.visits.count - 1, 0))
+        return timeline.eventIndex(forSliderValue: rawIndex)
     }
 }
 
@@ -1518,6 +1882,19 @@ struct ViewportRefreshTracker: Equatable {
 }
 
 enum ListMapViewport {
+    static func places(
+        for features: [(MapPlace, PinState)],
+        showVisited: Bool,
+        visitFilter: TracksVisitFilter,
+        context: TrackGeometryContext
+    ) -> [MapPlace] {
+        guard showVisited, visitFilter.isActive else {
+            return features.map(\.0)
+        }
+        let filteredPlaceIDs = Set(context.visits.map(\.placeID))
+        return features.map(\.0).filter { filteredPlaceIDs.contains($0.id) }
+    }
+
     static func viewport(for places: [MapPlace]) -> ViewportSeed? {
         guard let first = places.first else { return nil }
         var minLat = first.lat
@@ -1721,6 +2098,7 @@ struct MapScreen: View {
     var offlineDownloadProgress: OfflineDownloadProgress?
     var debugCoverageBBoxes: [CoverageBBox] = []
     var debugExposeFixturePinDiagnostics = false
+    var debugHideFixtureChrome = false
     var debugUseDenseFixturePins = false
     var onReplayOnboarding: @MainActor () -> Void = {}
     var cameraRequest: ViewportCameraRequest?
@@ -1739,10 +2117,12 @@ struct MapScreen: View {
     @State private var trackReplayContext = TrackGeometryContext.empty
     @State private var trackReplaySnapshotCache = TrackReplaySnapshotCache.empty
     @State private var selectedTrackReplayEventIndex: Int?
+    @State private var trackReplayTimelineZoomLevel = TrackReplayTimelineZoomLevel.coarse
     @State private var isTrackReplayAutoplaying = false
     @State private var trackReplayArrivalPulseVisitID: Int64?
     @State private var trackReplayAutoplayTask: Task<Void, Never>?
     @State private var trackReplayScrubTask: Task<Void, Never>?
+    @State private var trackReplayArcGlideTask: Task<Void, Never>?
     @State private var regionPMTilesURL: String?
     @State private var installedCoverageBBoxes: [CoverageBBox] = []
     @State private var attribution: [Attribution] = []
@@ -1803,6 +2183,7 @@ struct MapScreen: View {
         offlineDownloadProgress: OfflineDownloadProgress? = nil,
         debugCoverageBBoxes: [CoverageBBox] = [],
         debugExposeFixturePinDiagnostics: Bool = false,
+        debugHideFixtureChrome: Bool = false,
         debugUseDenseFixturePins: Bool = false,
         locationManager: AppLocationManager = AppLocationManager(),
         locationPermission: LocationPermission? = nil,
@@ -1817,6 +2198,7 @@ struct MapScreen: View {
         self.offlineDownloadProgress = offlineDownloadProgress
         self.debugCoverageBBoxes = debugCoverageBBoxes
         self.debugExposeFixturePinDiagnostics = debugExposeFixturePinDiagnostics
+        self.debugHideFixtureChrome = debugHideFixtureChrome
         self.debugUseDenseFixturePins = debugUseDenseFixturePins
         self.onReplayOnboarding = onReplayOnboarding
         self.cameraRequest = cameraRequest
@@ -2359,7 +2741,7 @@ struct MapScreen: View {
                     .background(.ultraThinMaterial, in: Capsule())
             }
 
-            if isFixtureMap {
+            if isFixtureMap && !debugHideFixtureChrome {
 #if DEBUG
                 Text(verbatim: "Startup region: \(startupViewport.fixtureRegionLabel)")
                     .font(.caption2)
@@ -2701,19 +3083,17 @@ struct MapScreen: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Slider(
-                    value: Binding(
-                        get: { Double(selectedIndex ?? 0) },
-                        set: { value in
-                            scrubSelectedTrackReplayEventIndex(timeline.eventIndex(forSliderValue: value), timeline: timeline)
-                        }
-                    ),
-                    in: timeline.sliderRange,
-                    step: 1
+                TrackReplayTimelineControl(
+                    timeline: timeline,
+                    selectedIndex: selectedIndex,
+                    zoomLevel: trackReplayTimelineZoomLevel,
+                    onZoomLevelChanged: { zoomLevel in
+                        trackReplayTimelineZoomLevel = zoomLevel
+                    },
+                    onScrub: { nextIndex in
+                        scrubSelectedTrackReplayEventIndex(nextIndex, timeline: timeline)
+                    }
                 )
-                .accessibilityLabel("Track replay")
-                .accessibilityValue(timeline.accessibilityValue(for: selectedTrackReplayEventIndex))
-                .accessibilityIdentifier("map.track-replay.slider")
 
                 HStack {
                     Text(verbatim: timeline.startTimeLabel)
@@ -2726,10 +3106,6 @@ struct MapScreen: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             }
-
-            TrackTimelineDateMarkersView(timeline: timeline)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("map.track-replay.date-markers")
 
             if let visit = selectedVisit {
                 HStack(spacing: 6) {
@@ -2796,6 +3172,11 @@ struct MapScreen: View {
         trackReplayScrubTask = nil
     }
 
+    private func stopMapTrackArcGlide() {
+        trackReplayArcGlideTask?.cancel()
+        trackReplayArcGlideTask = nil
+    }
+
     private func scrubSelectedTrackReplayEventIndex(_ nextIndex: Int, timeline: TrackTimelineModel) {
         stopMapTrackAutoplay()
         stopMapTrackScrub()
@@ -2818,14 +3199,40 @@ struct MapScreen: View {
         let previousIndex = selectedTrackReplayEventIndex
         let clampedIndex = clampedSelectedTrackReplayIndex(nextIndex, in: timeline)
         selectedTrackReplayEventIndex = clampedIndex
-        trackSourceSnapshot = trackReplaySnapshotCache.snapshot(throughEventIndex: clampedIndex)
-        if let clampedIndex,
-           timeline.shouldPulseArrival(previousIndex: previousIndex, nextIndex: clampedIndex),
-           timeline.visits.indices.contains(clampedIndex) {
-            let visitID = timeline.visits[clampedIndex].id
+        stopMapTrackArcGlide()
+        guard let clampedIndex else {
+            trackSourceSnapshot = trackReplaySnapshotCache.snapshot(throughEventIndex: clampedIndex)
+            return
+        }
+        let shouldAnimateArrival = clampedIndex > 0
+            && timeline.shouldPulseArrival(previousIndex: previousIndex, nextIndex: clampedIndex)
+            && timeline.visits.indices.contains(clampedIndex)
+        guard shouldAnimateArrival else {
+            trackSourceSnapshot = trackReplaySnapshotCache.snapshot(throughEventIndex: clampedIndex)
+            return
+        }
+        startTrackReplayArcGlide(to: clampedIndex, timeline: timeline)
+    }
+
+    private func startTrackReplayArcGlide(to eventIndex: Int, timeline: TrackTimelineModel) {
+        let visitID = timeline.visits[eventIndex].id
+        trackReplayArrivalPulseVisitID = nil
+        trackSourceSnapshot = trackReplaySnapshotCache.snapshot(throughEventIndex: eventIndex, activeArcProgress: 0)
+        trackReplayArcGlideTask = Task { @MainActor in
+            for frame in 1...TrackReplayArcGlideSpec.frameCount {
+                try? await Task.sleep(for: .milliseconds(TrackReplayArcGlideSpec.frameIntervalMilliseconds))
+                guard !Task.isCancelled else { return }
+                let progress = Double(frame) / Double(TrackReplayArcGlideSpec.frameCount)
+                trackSourceSnapshot = trackReplaySnapshotCache.snapshot(
+                    throughEventIndex: eventIndex,
+                    activeArcProgress: progress
+                )
+            }
+            guard !Task.isCancelled else { return }
             trackReplayArrivalPulseVisitID = visitID
+            trackReplayArcGlideTask = nil
             Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(260))
+                try? await Task.sleep(for: .milliseconds(TrackReplayArcGlideSpec.arrivalPulseMilliseconds))
                 if trackReplayArrivalPulseVisitID == visitID {
                     trackReplayArrivalPulseVisitID = nil
                 }
@@ -2841,10 +3248,12 @@ struct MapScreen: View {
     private func applyTrackReplayContext(_ context: TrackGeometryContext) {
         stopMapTrackAutoplay()
         stopMapTrackScrub()
+        stopMapTrackArcGlide()
         trackReplayContext = context
         trackReplaySnapshotCache = TrackReplaySnapshotCache(context: context)
         let timeline = TrackTimelineModel(visits: context.visits)
         selectedTrackReplayEventIndex = clampedSelectedTrackReplayIndex(selectedTrackReplayEventIndex, in: timeline)
+        trackReplayTimelineZoomLevel = .coarse
         trackReplayArrivalPulseVisitID = nil
         trackSourceSnapshot = trackReplaySnapshotCache.snapshot(throughEventIndex: selectedTrackReplayEventIndex)
     }
@@ -2852,9 +3261,11 @@ struct MapScreen: View {
     private func applyStaticTrackContext(_ context: TrackGeometryContext) {
         stopMapTrackAutoplay()
         stopMapTrackScrub()
+        stopMapTrackArcGlide()
         trackReplayContext = .empty
         trackReplaySnapshotCache = .empty
         selectedTrackReplayEventIndex = nil
+        trackReplayTimelineZoomLevel = .coarse
         trackReplayArrivalPulseVisitID = nil
         trackSourceSnapshot = TrackSourceSnapshot.make(context: context)
     }
@@ -2862,9 +3273,11 @@ struct MapScreen: View {
     private func clearTrackReplay() {
         stopMapTrackAutoplay()
         stopMapTrackScrub()
+        stopMapTrackArcGlide()
         trackReplayContext = .empty
         trackReplaySnapshotCache = .empty
         selectedTrackReplayEventIndex = nil
+        trackReplayTimelineZoomLevel = .coarse
         trackReplayArrivalPulseVisitID = nil
         trackSourceSnapshot = .empty
     }
@@ -3581,13 +3994,14 @@ struct MapScreen: View {
         isTrackFilterPickerPresented = false
         stopMapTrackAutoplay()
         Task { @MainActor in
-            await refreshActiveListMap()
+            await refreshActiveListMap(updateCamera: true)
         }
     }
 
     @MainActor
     private func showListOnMap(_ list: PlaceList, filter: TracksVisitFilter = .all) async {
         guard let id = list.id else { return }
+        cardPresentation.dismiss()
         activeListMap = ActiveListMap(listID: id, name: list.name, kind: list.kind, visitFilter: filter, showVisited: true)
         await refreshActiveListMap(updateCamera: true)
     }
@@ -3632,7 +4046,13 @@ struct MapScreen: View {
             clearTrackReplay()
         }
         stateEpoch += 1
-        if updateCamera, let viewport = ListMapViewport.viewport(for: next.map(\.0)) {
+        let viewportPlaces = ListMapViewport.places(
+            for: next,
+            showVisited: list.showVisited,
+            visitFilter: list.visitFilter,
+            context: nextTrackContext
+        )
+        if updateCamera, let viewport = ListMapViewport.viewport(for: viewportPlaces) {
             nextListCameraRequestID += 1
             listCameraRequest = ViewportCameraRequest(id: nextListCameraRequestID, viewport: viewport, fitBounds: true)
         }
@@ -4748,47 +5168,34 @@ private struct ListDetailView: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .center, spacing: TrackVisitRowDensitySpec.horizontalSpacing) {
                 Image(systemName: "mappin.circle.fill")
                     .foregroundStyle(Color.secondary)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
+
+                VStack(alignment: .leading, spacing: TrackVisitRowDensitySpec.verticalSpacing) {
                     Text(verbatim: visit.name)
                         .font(.body)
+                        .lineLimit(1)
                     Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitedAt(visit))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
                 .layoutPriority(1)
-                Spacer()
-                Button {
-                    Task { await setLoved(visit) }
-                } label: {
-                    Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
-                }
-                .buttonStyle(.bordered)
-                .fixedSize()
-                .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
-                .accessibilityIdentifier("lists.detail.track.row.loved.\(visit.id)")
-            }
 
-            visitEditControls(visit)
+                Spacer(minLength: 4)
+
+                visitEditControls(visit)
+            }
         }
-        .frame(minHeight: 44, alignment: .leading)
+        .frame(minHeight: TrackVisitRowDensitySpec.minimumHeight, alignment: .leading)
     }
 
     @ViewBuilder
     private func visitEditControls(_ visit: TrackVisit) -> some View {
-        VStack(spacing: 6) {
-            Text("Visit date")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("lists.detail.track.row.date.\(visit.id).label")
-
+        HStack(spacing: 6) {
             DatePicker(
                 "Visit date",
                 selection: Binding(
@@ -4808,17 +5215,28 @@ private struct ListDetailView: View {
                     .accessibilityIdentifier("lists.detail.track.row.date.\(visit.id)")
             }
 
-            HStack(spacing: 6) {
-                Button(role: .destructive) {
-                    Task { await deleteVisit(visit) }
-                } label: {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.bordered)
-                .accessibilityLabel("Delete \(visit.name), \(formattedVisitedAt(visit))")
-                .accessibilityIdentifier("lists.detail.track.row.delete.\(visit.id)")
+            Button {
+                Task { await setLoved(visit) }
+            } label: {
+                Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
             }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .fixedSize()
+            .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
+            .accessibilityIdentifier("lists.detail.track.row.loved.\(visit.id)")
+
+            Button(role: .destructive) {
+                Task { await deleteVisit(visit) }
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .accessibilityLabel("Delete \(visit.name), \(formattedVisitedAt(visit))")
+            .accessibilityIdentifier("lists.detail.track.row.delete.\(visit.id)")
         }
+        .controlSize(.small)
         .fixedSize()
     }
 

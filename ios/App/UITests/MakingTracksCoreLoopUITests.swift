@@ -627,6 +627,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let slider = app.sliders["map.track-replay.slider"]
         XCTAssertTrue(slider.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(slider.frame.midY, map.frame.midY)
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifierPrefix: "place-card.").firstMatch.exists)
         XCTAssertTrue(app.staticTexts["map.track-replay.selected-time"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["map.track-replay.start-time"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["map.track-replay.end-time"].waitForExistence(timeout: 5))
@@ -666,6 +667,62 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             attachScreenshot(named: "track-replay-scrub-frame-0\(eventIndex)")
         }
         attachScreenshot(named: "track-replay-pin-arrival")
+    }
+
+    func testTrackReplayProductionMapRecording() {
+        let app = launch(
+            reset: true,
+            seedMultiDayTrackList: true,
+            densePins: true,
+            startupViewport: "kl-street",
+            trackReplayBeatDuration: 1.1,
+            replayVisualSeed: true,
+            hideFixtureChrome: true
+        )
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapSurfaceToSettle(in: app))
+
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["Replay week"].tap()
+        XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForMapSurfaceToSettle(in: app))
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifierPrefix: "place-card.").firstMatch.exists)
+
+        let slider = app.sliders["map.track-replay.slider"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(slider.frame.midY, map.frame.midY)
+        XCTAssertTrue(app.staticTexts["map.track-replay.selected-time"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["map.track-replay.start-time"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["map.track-replay.end-time"].waitForExistence(timeout: 5))
+        XCTAssertNotEqual(
+            app.staticTexts["map.track-replay.start-time"].label,
+            app.staticTexts["map.track-replay.end-time"].label
+        )
+        XCTAssertTrue(app.staticTexts["map.track-replay.counter"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["map.debug-readiness"].exists)
+        XCTAssertFalse(app.staticTexts["map.debug-track-source-status"].exists)
+        XCTAssertFalse(app.staticTexts["map.startup-region"].exists)
+
+        RunLoop.current.run(until: Date().addingTimeInterval(1.0))
+        attachScreenshot(named: "track-replay-production-entry")
+
+        slider.adjust(toNormalizedSliderPosition: 0.0)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        attachScreenshot(named: "track-replay-production-start")
+
+        let play = app.buttons["map.track-replay.play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 5))
+        play.tap()
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 6 of 6", in: app, timeout: 9))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        attachScreenshot(named: "track-replay-production-arrival")
     }
 
     func testLovedTrackChipDrivesMapSource() {
@@ -1474,12 +1531,17 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         forceDarkAppearance: Bool = false,
         densePins: Bool = false,
         startupViewport: String? = nil,
-        trackReplayBeatDuration: Double? = nil
+        trackReplayBeatDuration: Double? = nil,
+        replayVisualSeed: Bool = false,
+        hideFixtureChrome: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
         app.launchArguments.append("--ui-testing-reset-pin-size")
         app.launchArguments.append("--ui-testing-reset-coverage-shading")
+        if hideFixtureChrome {
+            app.launchArguments.append("--ui-testing-hide-fixture-chrome")
+        }
         if densePins {
             app.launchArguments.append("--ui-testing-dense-pins")
         }
@@ -1490,6 +1552,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         if let trackReplayBeatDuration {
             app.launchArguments.append("--ui-testing-track-replay-beat-duration")
             app.launchArguments.append(String(trackReplayBeatDuration))
+        }
+        if replayVisualSeed {
+            app.launchArguments.append("--ui-testing-replay-visual-seed")
         }
         if pinDiagnostics {
             app.launchArguments.append("--ui-testing-pin-diagnostics")
@@ -1953,6 +2018,27 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let result = XCTWaiter.wait(for: [expectation], timeout: 10)
         if result != .completed {
             XCTFail("Expected \(expectedStatus), got \(sourceStatus.exists ? sourceStatus.label : "missing track source status")")
+            return false
+        }
+        return true
+    }
+
+    private func waitForMapSurfaceToSettle(in app: XCUIApplication) -> Bool {
+        let loading = app.otherElements["map.loading"]
+        return !loading.exists || loading.waitForNonExistence(timeout: 10)
+    }
+
+    private func waitForTrackReplayCounter(
+        _ label: String,
+        in app: XCUIApplication,
+        timeout: TimeInterval = 10
+    ) -> Bool {
+        let counter = app.staticTexts["map.track-replay.counter"]
+        let predicate = NSPredicate(format: "exists == true AND label == %@", label)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: counter)
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        if result != .completed {
+            XCTFail("Expected replay counter \(label), got \(counter.exists ? counter.label : "missing counter")")
             return false
         }
         return true

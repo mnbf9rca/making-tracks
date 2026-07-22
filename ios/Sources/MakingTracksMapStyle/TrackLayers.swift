@@ -41,7 +41,7 @@ public enum TrackLayers {
     // Retained for slice-3 animation pacing; not used to suppress drawn connectors.
     public static let defaultBurstWindow: TimeInterval = 5 * 60
     // Tunable per B6 §7.3; fixed bend ratio keeps every connector visibly abstract without encoding route knowledge.
-    public static let arcBendRatio = 0.12
+    public static let arcBendRatio = 0.18
     // Tunable per #257; enough samples to read as an arc rather than a round-joined angle.
     public static let arcInterpolationPointCount = 9
 

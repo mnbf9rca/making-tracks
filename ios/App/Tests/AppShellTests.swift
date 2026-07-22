@@ -204,6 +204,10 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(timeline.shouldPulseArrival(previousIndex: 1, nextIndex: 1))
     }
 
+    func testTrackTimelineAutoplayBeatKeepsPlacePingUnderASecond() {
+        XCTAssertEqual(TrackTimelineModel.autoplayBeatDuration, 0.5)
+    }
+
     func testTrackTimelineAccessibilityNamesSelectedVisitAndLovedState() {
         let timeline = TrackTimelineModel(visits: [
             trackVisit(id: 1, seconds: 0),
@@ -510,6 +514,64 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(try trackSegmentPhases(in: cache.snapshot(throughEventIndex: 2)), ["visited", TrackLayers.activeArcPhase])
     }
 
+    func testTrackReplaySnapshotCacheCanPartiallyDrawArrivingArc() throws {
+        let context = TrackGeometryContext(
+            visits: [
+                trackVisit(id: 1, seconds: 0),
+                trackVisit(id: 2, seconds: 60),
+            ]
+        )
+        let cache = TrackReplaySnapshotCache(context: context)
+
+        let partialCoordinates = try trackSegmentCoordinateCount(in: cache.snapshot(throughEventIndex: 1, activeArcProgress: 0.35))
+        let completeCoordinates = try trackSegmentCoordinateCount(in: cache.snapshot(throughEventIndex: 1, activeArcProgress: 1.0))
+
+        XCTAssertGreaterThan(partialCoordinates, 1)
+        XCTAssertLessThan(partialCoordinates, completeCoordinates)
+    }
+
+    func testTrackReplayTimelineVelocityZoomThresholds() {
+        XCTAssertEqual(TrackReplayTimelineZoomLevel.level(forDragVelocity: 900), .coarse)
+        XCTAssertEqual(TrackReplayTimelineZoomLevel.level(forDragVelocity: 120), .detail)
+    }
+
+    func testTrackReplayTimelineLayoutUsesEqualEventSpacingAndDecimatedLabels() {
+        let timeline = TrackTimelineModel(visits: [
+            trackVisit(id: 1, seconds: 0),
+            trackVisit(id: 2, seconds: 60),
+            trackVisit(id: 3, seconds: 120),
+            trackVisit(id: 4, seconds: 180),
+        ])
+
+        let marks = TrackReplayTimelineLayout.marks(
+            timeline: timeline,
+            selectedIndex: 2,
+            availableWidth: 180,
+            zoomLevel: .coarse
+        )
+
+        XCTAssertEqual(marks.map(\.eventIndex), [0, 1, 2, 3])
+        XCTAssertEqual(marks.map(\.position), [0, 1.0 / 3.0, 2.0 / 3.0, 1])
+        XCTAssertEqual(marks.filter(\.isLabeled).map(\.eventIndex), [0, 3])
+        XCTAssertEqual(marks.first { $0.eventIndex == 2 }?.isSelected, true)
+    }
+
+    func testTrackReplayTimelineLayoutShowsLocalTimeLabelsInDetailZoom() {
+        let timeline = TrackTimelineModel(visits: (0..<5).map {
+            trackVisit(id: Int64($0 + 1), seconds: TimeInterval($0 * 60 * 60))
+        })
+
+        let marks = TrackReplayTimelineLayout.marks(
+            timeline: timeline,
+            selectedIndex: 2,
+            availableWidth: 180,
+            zoomLevel: .detail
+        )
+
+        XCTAssertEqual(marks.filter(\.isLabeled).map(\.eventIndex), [1, 2, 3])
+        XCTAssertTrue(marks.first { $0.eventIndex == 2 }?.label.contains(":") == true)
+    }
+
     func testListMapViewportFitsAllMembersWithPadding() throws {
         let places = [
             MapPlace(id: "west", lat: 3.12, lon: 101.60, tier: 2, category: "museum"),
@@ -543,6 +605,34 @@ final class AppShellTests: XCTestCase {
         for place in places {
             XCTAssertTrue(viewport.bbox.contains(lon: place.lon, lat: place.lat), place.id)
         }
+    }
+
+    func testListMapViewportUsesFilteredTrackContextWhenVisitFilterIsActive() {
+        let places = [
+            MapPlace(id: "kept", lat: 3.12, lon: 101.60, tier: 2, category: "museum"),
+            MapPlace(id: "nearby", lat: 3.13, lon: 101.61, tier: 2, category: "museum"),
+            MapPlace(id: "far", lat: 4.20, lon: 102.80, tier: 2, category: "museum"),
+        ]
+        let features = places.map { ($0, PinState(saved: false, visit: .visited)) }
+        let context = TrackGeometryContext(visits: [
+            trackVisit(id: 1, placeID: "kept", seconds: 0),
+        ])
+
+        let viewportPlaces = ListMapViewport.places(
+            for: features,
+            showVisited: true,
+            visitFilter: TracksVisitFilter(lovedOnly: true),
+            context: context
+        )
+
+        XCTAssertEqual(viewportPlaces.map(\.id), ["kept"])
+    }
+
+    func testTrackVisitRowsUseCompactInlineControls() {
+        XCTAssertTrue(TrackVisitRowDensitySpec.usesInlineEditControls)
+        XCTAssertFalse(TrackVisitRowDensitySpec.showsStandaloneDateLabel)
+        XCTAssertLessThanOrEqual(TrackVisitRowDensitySpec.verticalSpacing, 4)
+        XCTAssertLessThanOrEqual(TrackVisitRowDensitySpec.minimumHeight, 52)
     }
 
     func testListMapPinPresentationTracksModeUsesFullStrengthPins() {
@@ -596,6 +686,15 @@ final class AppShellTests: XCTestCase {
             let properties = try XCTUnwrap(feature["properties"] as? [String: Any])
             return try XCTUnwrap(properties[TrackLayers.trackSegmentPhaseProperty] as? String)
         }
+    }
+
+    private func trackSegmentCoordinateCount(in snapshot: TrackSourceSnapshot) throws -> Int {
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: snapshot.data) as? [String: Any])
+        let features = try XCTUnwrap(root["features"] as? [[String: Any]])
+        let feature = try XCTUnwrap(features.first)
+        let geometry = try XCTUnwrap(feature["geometry"] as? [String: Any])
+        let coordinates = try XCTUnwrap(geometry["coordinates"] as? [[Double]])
+        return coordinates.count
     }
 
     func testUpdateRequiredSurfaceBlocksOnlyFreshTooOldReaderState() throws {
