@@ -127,6 +127,37 @@ private enum AXExistenceWaiter {
         let attempts = max(1, Int(ceil(timeout / interval)))
         return waitForAbsence(attempts: attempts, interval: interval, exists: exists)
     }
+
+    static func confirmContinuousAbsence(
+        attempts: Int,
+        interval: TimeInterval = 0,
+        exists: () -> Bool
+    ) -> AXExistenceMatch {
+        precondition(attempts > 0, "AX existence wait must make at least one sample")
+
+        var observed = false
+        for attempt in 0..<attempts {
+            observed = exists()
+            if observed {
+                return AXExistenceMatch(matched: false, observedExists: observed)
+            }
+            if interval > 0, attempt < attempts - 1 {
+                RunLoop.current.run(until: Date().addingTimeInterval(interval))
+            }
+        }
+        return AXExistenceMatch(matched: true, observedExists: observed)
+    }
+
+    static func confirmContinuousAbsence(
+        timeout: TimeInterval,
+        interval: TimeInterval = 0.1,
+        exists: () -> Bool
+    ) -> AXExistenceMatch {
+        precondition(interval > 0, "AX existence wait interval must be positive")
+
+        let attempts = max(1, Int(ceil(timeout / interval)))
+        return confirmContinuousAbsence(attempts: attempts, interval: interval, exists: exists)
+    }
 }
 
 private enum AXElementReadback {
@@ -277,6 +308,30 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertFalse(result.matched)
         XCTAssertEqual(result.observedExists, true)
+    }
+
+    func testAXExistenceWaiterConfirmsContinuousAbsence() {
+        var samples = [false, false, false]
+
+        let result = AXExistenceWaiter.confirmContinuousAbsence(attempts: 3, interval: 0) {
+            samples.removeFirst()
+        }
+
+        XCTAssertTrue(result.matched)
+        XCTAssertEqual(result.observedExists, false)
+        XCTAssertTrue(samples.isEmpty)
+    }
+
+    func testAXExistenceWaiterFailsContinuousAbsenceOnFirstObservedPresence() {
+        var samples = [false, true, false]
+
+        let result = AXExistenceWaiter.confirmContinuousAbsence(attempts: 3, interval: 0) {
+            samples.removeFirst()
+        }
+
+        XCTAssertFalse(result.matched)
+        XCTAssertEqual(result.observedExists, true)
+        XCTAssertEqual(samples, [false])
     }
 
     func testAXSliderUpperEdgePositionsAvoidTrueEdgeUntilLastAttempt() {
@@ -1569,7 +1624,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["place-card.visited"].tap()
         closePlaceCard(in: app)
 
-        XCTAssertTrue(waitForPromptToDisappear("map.nearby-prompt", in: app, timeout: 10))
+        XCTAssertTrue(confirmPromptRemainsAbsent("map.nearby-prompt", in: app, timeout: 2))
         XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
     }
 
@@ -2142,8 +2197,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         return true
     }
 
-    private func waitForPromptToDisappear(_ identifier: String, in app: XCUIApplication, timeout: TimeInterval) -> Bool {
-        let result = AXExistenceWaiter.waitForAbsence(timeout: timeout, interval: 0.25) {
+    private func confirmPromptRemainsAbsent(_ identifier: String, in app: XCUIApplication, timeout: TimeInterval) -> Bool {
+        let result = AXExistenceWaiter.confirmContinuousAbsence(timeout: timeout, interval: 0.25) {
             app.otherElements[identifier].exists
         }
         if result.matched {
@@ -2151,8 +2206,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
 
         let prompt = app.otherElements[identifier]
-        let description = prompt.exists ? prompt.debugDescription : "missing prompt"
-        XCTFail("Expected \(identifier) to disappear; last observed exists=\(result.observedExists); \(description)")
+        let description = prompt.exists ? prompt.debugDescription : "prompt was observed during polling but is no longer present"
+        XCTFail("Expected \(identifier) to remain absent; observedExists=\(result.observedExists); \(description)")
         return false
     }
 
