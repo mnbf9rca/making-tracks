@@ -64,7 +64,7 @@
         "testAXElementReadbackSkipsValueLookupWhenElementDisappears",
         "testAXExistenceWaiterFailsContinuousAbsenceOnFirstObservedPresence",
         "testAXExistenceWaiterWaitsThroughTransientPresence",
-        "testAXSliderUpperEdgePositionsAvoidTrueEdgeUntilLastAttempt",
+        "testAXSliderUpperEdgeDragPlanTargetsCoordinateMaxEdge",
         "testAXValueWaiterReportsMissingWithoutThrowingWhenElementNeverReturns",
         "testAXValueWaiterMatchesPredicateAfterMissingSample",
         "testAXResamplerFailsForElementScopedWrongLabelEvenWhenExpectedLabelExistsElsewhere",
