@@ -1,0 +1,83 @@
+{
+  "uiTarget": "MakingTracksUITests",
+  "uiClass": "MakingTracksCoreLoopUITests",
+  "durationSource": "E0 run 29945500221 log summary; failed tests use conservative balancing weights because the log summary omitted their individual durations.",
+  "shards": [
+    {
+      "id": "ui-1",
+      "durationWeightSeconds": 577.596,
+      "tests": [
+        "testCustomListCanBeCreatedBrowsedAndShownOnMap",
+        "testMapHomeChromeHitTargetsAndThemeScreenshots",
+        "testCardVisitStateSuppressesNearbyPromptWithoutViewportRefresh",
+        "testPlaceCardKeepsFixedActionSlotsReachableAtAccessibilityTextSize",
+        "testLayersCanHideCategoryPins",
+        "testListMapCameraFitsSpreadListMembers",
+        "testPlaceCardOverhaulRendersHierarchyAndHideAction",
+        "testLocateMePromptsForNearbyPinWithAllDenseTiersVisible",
+        "testDenseClusterLayerRendersVisibleBubbleAtCityZoom",
+        "testMenuAboutCarriesCreditsAndMapAttributionIsInert",
+        "testCreditsStayGroupedAtAccessibilityTextSize",
+        "testHiddenToastAutoDismissesWithoutUnhidingPlace",
+        "testLocateMeChromeExplainsWhenLocationIsDenied",
+        "testAXElementReadbackSkipsValueLookupWhenElementDisappears",
+        "testAXExistenceWaiterWaitsThroughTransientPresence",
+        "testAXSliderUpperEdgePositionsAvoidTrueEdgeUntilLastAttempt"
+      ]
+    },
+    {
+      "id": "ui-2",
+      "durationWeightSeconds": 577.778,
+      "tests": [
+        "testLovedTrackChipDrivesMapSource",
+        "testPinClusteringScreenshotsCompareCityAndStreetZoomDensity",
+        "testTappingAnotherPinSwitchesOpenCard",
+        "testCoverageEdgeScreenshotsAcrossThemes",
+        "testTracksMenuOpensUnifiedMyTracksVisitEditor",
+        "testLayersToggleAllCategoriesHidesAndRestoresPins",
+        "testMyTracksSystemListDrawsWholeLogTrackWithoutStoredListMembership",
+        "testTrackGeometryDrawsConnectorFromSeededFixtureVisits",
+        "testPinSizeSliderUpdatesLiveMapLayers",
+        "testUnhideRestoresFixturePinToMapSourceBeforeCardDismissal",
+        "testCoverageShadingToggleIsDisplayOnlyLayerState",
+        "testSettingsThemePickerSelectsRealTheme",
+        "testHiddenToastUndoRestoresHiddenPlace",
+        "testOnboardingControlsRemainReachableAtAccessibilityTextSize",
+        "testAXExistenceWaiterFailsContinuousAbsenceOnFirstObservedPresence",
+        "testAXValueWaiterMatchesPredicateAfterMissingSample",
+        "testAXResamplerFailsForElementScopedWrongLabelEvenWhenExpectedLabelExistsElsewhere",
+        "testAXValueWaiterReportsMissingWithoutThrowingWhenElementNeverReturns"
+      ]
+    },
+    {
+      "id": "ui-3",
+      "durationWeightSeconds": 577.743,
+      "tests": [
+        "testPinSizeScreenshotsAcrossThemes",
+        "testTrackReplaySliderAndAutoplayDriveMapPins",
+        "testLocateMeShowsNearbyPromptForFixturePlace",
+        "testCardTogglesPersistAndRestyleMapPin",
+        "testTracksMenuAndListsMyTracksReachSameScreenIdentity",
+        "testListMapBackReturnsToSeededListDetail",
+        "testTrackReplayProductionMapRecording",
+        "testShowHiddenModeExposesUnhideAffordanceWithoutNormalHideOwnership",
+        "testReplayOnboardingPreselectsPersistedRegionFromSettings",
+        "testFirstRunOnboardingPersistsRegionAndCompletesBeforeRelaunch",
+        "testSettingsStorageRowNavigatesToOfflineMaps",
+        "testHideRemovesFixturePinFromMapSource",
+        "testOfflineProgressChipDeepLinksToOfflineMaps",
+        "testOnboardingRequestsLocationOnlyOnAffirmativeTap",
+        "testAXExistenceWaiterReportsStillPresentWhenElementNeverDisappears",
+        "testAXExistenceWaiterConfirmsContinuousAbsence",
+        "testAXResamplerUsesFreshSamplesAfterPredicateMiss",
+        "testAXValueWaiterToleratesMissingSamplesUntilExpectedValueAppears"
+      ]
+    }
+  ],
+  "unitShard": {
+    "id": "unit",
+    "onlyTesting": [
+      "MakingTracksTests"
+    ]
+  }
+}

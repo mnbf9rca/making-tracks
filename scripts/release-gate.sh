@@ -20,6 +20,10 @@ DESTINATION="${MT_RELEASE_GATE_DESTINATION:-platform=iOS Simulator,id=$UDID}"
 RUN_DIR="${MT_RELEASE_GATE_RUN_DIR:-/private/tmp/release-gate-${AM_ME:-agent}}"
 DERIVED_DATA="${MT_RELEASE_GATE_DERIVED_DATA:-$RUN_DIR/DerivedData}"
 RESULT_BUNDLE="$RUN_DIR/MakingTracksTests.xcresult"
+MODE="${MT_RELEASE_GATE_MODE:-full}"
+ONLY_TESTING_FILE="${MT_RELEASE_GATE_ONLY_TESTING_FILE:-}"
+XCTESTRUN_FILE="${MT_RELEASE_GATE_XCTESTRUN_FILE:-}"
+ENUMERATED_TESTS_JSON="${MT_RELEASE_GATE_ENUMERATED_TESTS_JSON:-$RUN_DIR/enumerated-tests.json}"
 DERIVED_DATA_MAX_AGE_SECONDS="${MT_RELEASE_GATE_DERIVED_DATA_MAX_AGE_SECONDS:-604800}"
 
 refuse() {
@@ -100,6 +104,31 @@ run_xcodebuild() {
   xcodebuild "$@" 2>&1 | tee "$raw_log" | xcbeautify
 }
 
+populate_only_testing_args() {
+  local line
+
+  [ -n "$ONLY_TESTING_FILE" ] || return 0
+  [ -f "$ONLY_TESTING_FILE" ] ||
+    refuse "MT_RELEASE_GATE_ONLY_TESTING_FILE does not exist: $ONLY_TESTING_FILE"
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      ""|\#*) continue ;;
+    esac
+    only_testing_args+=("-only-testing:$line")
+  done < "$ONLY_TESTING_FILE"
+}
+
+populate_test_plan_args() {
+  if [ -n "$XCTESTRUN_FILE" ]; then
+    [ -f "$XCTESTRUN_FILE" ] ||
+      refuse "MT_RELEASE_GATE_XCTESTRUN_FILE does not exist: $XCTESTRUN_FILE"
+    test_args=(-xctestrun "$XCTESTRUN_FILE")
+  else
+    test_args=(-project ios/App/MakingTracks.xcodeproj -scheme "$SCHEME")
+  fi
+}
+
 destination_udid() {
   case "$DESTINATION" in
     *id=*)
@@ -135,29 +164,65 @@ lock_is_satisfied ||
 mkdir -p "$RUN_DIR"
 prune_derived_data_if_stale
 mkdir -p "$DERIVED_DATA"
+[ "${MT_RELEASE_GATE_RESULT_BUNDLE:-}" = "" ] || RESULT_BUNDLE="$MT_RELEASE_GATE_RESULT_BUNDLE"
 rm -rf "$RESULT_BUNDLE"
 
 phase "simulator boot" xcrun simctl bootstatus "$(destination_udid)" -b
-phase "release build" run_xcodebuild "release build" build \
-  -configuration Release \
-  -project ios/App/MakingTracks.xcodeproj \
-  -scheme "$SCHEME" \
-  -destination "$DESTINATION" \
-  -derivedDataPath "$DERIVED_DATA"
-phase "debug build for testing" run_xcodebuild "debug build for testing" build-for-testing \
-  -project ios/App/MakingTracks.xcodeproj \
-  -scheme "$SCHEME" \
-  -destination "$DESTINATION" \
-  -parallel-testing-enabled NO \
-  -disable-concurrent-destination-testing \
-  -derivedDataPath "$DERIVED_DATA"
-phase "tests without building" run_xcodebuild "tests without building" test-without-building \
-  -project ios/App/MakingTracks.xcodeproj \
-  -scheme "$SCHEME" \
-  -destination "$DESTINATION" \
-  -parallel-testing-enabled NO \
-  -disable-concurrent-destination-testing \
-  -derivedDataPath "$DERIVED_DATA" \
-  -resultBundlePath "$RESULT_BUNDLE"
+
+case "$MODE" in
+  full|build)
+    phase "release build" run_xcodebuild "release build" build \
+      -configuration Release \
+      -project ios/App/MakingTracks.xcodeproj \
+      -scheme "$SCHEME" \
+      -destination "$DESTINATION" \
+      -derivedDataPath "$DERIVED_DATA"
+    phase "debug build for testing" run_xcodebuild "debug build for testing" build-for-testing \
+      -project ios/App/MakingTracks.xcodeproj \
+      -scheme "$SCHEME" \
+      -destination "$DESTINATION" \
+      -parallel-testing-enabled NO \
+      -disable-concurrent-destination-testing \
+      -derivedDataPath "$DERIVED_DATA"
+    ;;
+  test|enumerate)
+    ;;
+  *)
+    refuse "unknown MT_RELEASE_GATE_MODE: $MODE"
+    ;;
+esac
+
+case "$MODE" in
+  full|test)
+    test_args=()
+    only_testing_args=()
+    populate_test_plan_args
+    populate_only_testing_args
+    [ -z "$ONLY_TESTING_FILE" ] || [ "${#only_testing_args[@]}" -gt 0 ] ||
+      refuse "MT_RELEASE_GATE_ONLY_TESTING_FILE has no runnable entries: $ONLY_TESTING_FILE"
+    phase "tests without building" run_xcodebuild "tests without building" test-without-building \
+      "${test_args[@]}" \
+      -destination "$DESTINATION" \
+      -parallel-testing-enabled NO \
+      -disable-concurrent-destination-testing \
+      -derivedDataPath "$DERIVED_DATA" \
+      "${only_testing_args[@]}" \
+      -resultBundlePath "$RESULT_BUNDLE"
+    ;;
+  enumerate)
+    test_args=()
+    populate_test_plan_args
+    phase "enumerate tests" run_xcodebuild "enumerate tests" test-without-building \
+      "${test_args[@]}" \
+      -destination "$DESTINATION" \
+      -parallel-testing-enabled NO \
+      -disable-concurrent-destination-testing \
+      -derivedDataPath "$DERIVED_DATA" \
+      -enumerate-tests \
+      -test-enumeration-style flat \
+      -test-enumeration-format json \
+      -test-enumeration-output-path "$ENUMERATED_TESTS_JSON"
+    ;;
+esac
 
 touch "$DERIVED_DATA"

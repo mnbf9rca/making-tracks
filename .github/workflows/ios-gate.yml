@@ -5,6 +5,8 @@ on:
     branches: [ios]
     paths:
       - ".github/workflows/ios-gate.yml"
+      - ".github/ios-ui-test-shards.json"
+      - "scripts/ios-test-shards.py"
       - "scripts/release-gate.sh"
       - "ios/App/**"
       - "ios/Sources/**"
@@ -18,8 +20,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ios-release-gate:
-    name: ios-release-gate
+  ios-gate-build:
+    name: ios-gate-build
     runs-on: macos-26
     timeout-minutes: 105
     env:
@@ -79,6 +81,13 @@ jobs:
           dirname "$xcbeautify_bin" >> "$GITHUB_PATH"
           "$xcbeautify_bin" --version
 
+      - name: Validate UI shard manifest
+        run: |
+          set -euo pipefail
+          python3 scripts/ios-test-shards.py validate-static \
+            --source ios/App/UITests/MakingTracksCoreLoopUITests.swift \
+            --manifest .github/ios-ui-test-shards.json
+
       - name: Resolve simulator destination
         run: |
           set -euo pipefail
@@ -103,9 +112,7 @@ jobs:
             xcrun simctl list devicetypes -j |
             MT_CI_SIMULATOR_NAME="$MT_CI_SIMULATOR_NAME" /usr/bin/python3 -c 'import json, os, sys; data = json.load(sys.stdin); preferred = os.environ["MT_CI_SIMULATOR_NAME"]; devices = [item for item in data.get("devicetypes", []) if str(item.get("name", "")).startswith("iPhone")]; by_name = {item.get("name"): item for item in devices}; chosen = by_name.get(preferred); assert chosen, f"preferred iPhone simulator device unavailable: {preferred}"; print(chosen["identifier"])'
           )"
-          udid="$(
-            xcrun simctl create "Making Tracks CI" "$device_type" "$runtime_id"
-          )"
+          udid="$(xcrun simctl create "Making Tracks CI" "$device_type" "$runtime_id")"
           {
             echo "MT_CI_SIMULATOR_DEVICE_TYPE=$device_type"
             echo "MT_CI_SIMULATOR_UDID=$udid"
@@ -123,7 +130,7 @@ jobs:
           cat "$receipt"
           echo "::endgroup::"
 
-      - name: Run release gate
+      - name: Run release build and build-for-testing
         shell: bash
         run: |
           set -euo pipefail
@@ -181,7 +188,7 @@ jobs:
               manifest_value tool.xcbeautify.version xcbeautify --version
               manifest_value tool.git.version git --version
               echo "spm.resolved.digest=$(shasum -a 256 ios/Package.resolved | awk '{print $1}')"
-              /usr/bin/python3 -c 'import json, sys; data = json.load(open("ios/Package.resolved")); pins = data.get("pins", []); rows = []; [rows.append((pin.get("identity") or pin.get("package") or pin.get("repositoryURL") or "", (pin.get("state") or {}).get("revision", ""))) for pin in pins]; [print(f"spm.pin.{name}={revision}") for name, revision in sorted(rows) if name]'
+              /usr/bin/python3 -c 'import json; data = json.load(open("ios/Package.resolved")); pins = data.get("pins", []); rows = []; [rows.append((pin.get("identity") or pin.get("package") or pin.get("repositoryURL") or "", (pin.get("state") or {}).get("revision", ""))) for pin in pins]; [print(f"spm.pin.{name}={revision}") for name, revision in sorted(rows) if name]'
             } > "$unsorted"
 
             LC_ALL=C sort "$unsorted" > "$manifest"
@@ -270,7 +277,7 @@ jobs:
           capture_version_manifest
           capture_vm_stat "before"
           run_contention_probe "before" | tee -a "$receipt"
-          ./scripts/release-gate.sh 2>&1 | tee "$gate_log"
+          MT_RELEASE_GATE_MODE=build ./scripts/release-gate.sh 2>&1 | tee "$gate_log"
           gate_status="${PIPESTATUS[0]}"
           capture_vm_stat "after"
           run_contention_probe "after" | tee -a "$receipt"
@@ -285,6 +292,316 @@ jobs:
           } | tee -a "$receipt"
 
           append_locale_addendum
+          exit "$gate_status"
+
+      - name: Enumerate expected tests
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          xctestrun="$(find "$MT_RELEASE_GATE_DERIVED_DATA/Build/Products" -name '*.xctestrun' -print -quit)"
+          if [ -z "$xctestrun" ]; then
+            echo "No .xctestrun found under $MT_RELEASE_GATE_DERIVED_DATA/Build/Products" >&2
+            exit 1
+          fi
+          MT_RELEASE_GATE_MODE=enumerate \
+            MT_RELEASE_GATE_XCTESTRUN_FILE="$xctestrun" \
+            MT_RELEASE_GATE_ENUMERATED_TESTS_JSON="$MT_RELEASE_GATE_RUN_DIR/expected-tests.json" \
+            ./scripts/release-gate.sh
+
+      - name: Pack build products
+        if: success()
+        run: |
+          set -euo pipefail
+          xctestrun="$(find "$MT_RELEASE_GATE_DERIVED_DATA/Build/Products" -name '*.xctestrun' -print -quit)"
+          if [ -z "$xctestrun" ]; then
+            echo "No .xctestrun found under $MT_RELEASE_GATE_DERIVED_DATA/Build/Products" >&2
+            exit 1
+          fi
+          echo "$xctestrun" > "$MT_RELEASE_GATE_RUN_DIR/xctestrun-path.txt"
+          tar -czf "$MT_RELEASE_GATE_RUN_DIR/build-products.tar.gz" -C "$MT_RELEASE_GATE_RUN_DIR" DerivedData/Build/Products
+
+      - name: Capture simulator screenshot
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "$MT_RELEASE_GATE_RUN_DIR"
+          if [ -n "${MT_CI_SIMULATOR_UDID:-}" ]; then
+            xcrun simctl io "$MT_CI_SIMULATOR_UDID" screenshot "$MT_RELEASE_GATE_RUN_DIR/screenshot.png" || true
+          fi
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: ios-release-gate-build-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/release-gate/environment.txt
+            ${{ runner.temp }}/release-gate/version-manifest.txt
+            ${{ runner.temp }}/release-gate/release-gate-output.log
+            ${{ runner.temp }}/release-gate/*.xcodebuild.log
+            ${{ runner.temp }}/release-gate/screenshot.png
+            ${{ runner.temp }}/release-gate/expected-tests.json
+            ${{ runner.temp }}/release-gate/xctestrun-path.txt
+            ${{ runner.temp }}/release-gate/build-products.tar.gz
+          if-no-files-found: ignore
+          retention-days: 7
+
+  ios-ui-test-shards:
+    name: ios-ui-test-shard-${{ matrix.shard }}
+    runs-on: macos-26
+    needs: ios-gate-build
+    timeout-minutes: 105
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [ui-1, ui-2, ui-3]
+    env:
+      MT_CI_SIMULATOR_NAME: iPhone 17
+      MT_CI_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-2
+      MT_CI_XCBEAUTIFY_SHA256: 87fdbe786f71d7b2ee28c5c1ca97087587292f2c5c6f9e721cf02db8b2a3c241
+      MT_CI_XCBEAUTIFY_VERSION: 3.2.1
+      MT_RELEASE_GATE_SKIP_LOCK: "1"
+      MT_TEST_SHARD_ID: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          if [ -n "${MT_CI_XCODE_PATH:-}" ]; then
+            sudo xcode-select -s "$MT_CI_XCODE_PATH"
+          fi
+          xcode-select -p
+          xcodebuild -version
+
+      - name: Configure release gate paths
+        run: |
+          set -euo pipefail
+          {
+            echo "MT_RELEASE_GATE_RUN_DIR=$RUNNER_TEMP/release-gate"
+            echo "MT_RELEASE_GATE_DERIVED_DATA=$RUNNER_TEMP/release-gate/DerivedData"
+          } >> "$GITHUB_ENV"
+
+      - name: Install xcbeautify
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/xcbeautify.zip"
+          install_dir="$RUNNER_TEMP/xcbeautify"
+          curl -fsSLo "$archive" "https://github.com/cpisciotta/xcbeautify/releases/download/$MT_CI_XCBEAUTIFY_VERSION/xcbeautify-$MT_CI_XCBEAUTIFY_VERSION-universal-apple-macosx.zip"
+          echo "$MT_CI_XCBEAUTIFY_SHA256  $archive" | shasum -a 256 -c -
+          rm -rf "$install_dir"
+          mkdir -p "$install_dir"
+          unzip -q "$archive" -d "$install_dir"
+          xcbeautify_bin="$(find "$install_dir" -type f -name xcbeautify -print -quit)"
+          if [ -z "$xcbeautify_bin" ]; then
+            echo "xcbeautify binary missing from release archive" >&2
+            exit 1
+          fi
+          chmod +x "$xcbeautify_bin"
+          dirname "$xcbeautify_bin" >> "$GITHUB_PATH"
+          "$xcbeautify_bin" --version
+
+      - name: Download build products
+        uses: actions/download-artifact@v7.0.1
+        with:
+          name: ios-release-gate-build-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-gate-build
+
+      - name: Unpack build products and write shard filter
+        run: |
+          set -euo pipefail
+          mkdir -p "$MT_RELEASE_GATE_RUN_DIR"
+          tar -xzf "$RUNNER_TEMP/release-gate-build/build-products.tar.gz" -C "$MT_RELEASE_GATE_RUN_DIR"
+          python3 scripts/ios-test-shards.py write-only-testing \
+            --manifest .github/ios-ui-test-shards.json \
+            --shard "$MT_TEST_SHARD_ID" \
+            --output "$MT_RELEASE_GATE_RUN_DIR/only-testing.txt"
+          xctestrun="$(find "$MT_RELEASE_GATE_DERIVED_DATA/Build/Products" -name '*.xctestrun' -print -quit)"
+          if [ -z "$xctestrun" ]; then
+            echo "No .xctestrun found under $MT_RELEASE_GATE_DERIVED_DATA/Build/Products" >&2
+            exit 1
+          fi
+          echo "MT_RELEASE_GATE_XCTESTRUN_FILE=$xctestrun" >> "$GITHUB_ENV"
+
+      - name: Resolve simulator destination
+        run: |
+          set -euo pipefail
+          mkdir -p "$MT_RELEASE_GATE_RUN_DIR"
+          receipt="$MT_RELEASE_GATE_RUN_DIR/environment.txt"
+          {
+            echo "git_sha=${GITHUB_SHA}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "test_shard=$MT_TEST_SHARD_ID"
+            echo "xcode_path=$(xcode-select -p)"
+            xcodebuild -version
+            echo
+            xcrun simctl list runtimes
+            echo
+            xcrun simctl list devicetypes
+          } > "$receipt"
+
+          runtime_id="$(
+            xcrun simctl list runtimes -j |
+            MT_CI_SIMULATOR_RUNTIME="$MT_CI_SIMULATOR_RUNTIME" /usr/bin/python3 -c 'import json, os, sys; data = json.load(sys.stdin); preferred = os.environ["MT_CI_SIMULATOR_RUNTIME"]; candidates = [item for item in data.get("runtimes", []) if item.get("isAvailable")]; by_identifier = {item.get("identifier"): item for item in candidates}; chosen = by_identifier.get(preferred); assert chosen, f"preferred iOS simulator runtime unavailable: {preferred}"; print(chosen["identifier"])'
+          )"
+          device_type="$(
+            xcrun simctl list devicetypes -j |
+            MT_CI_SIMULATOR_NAME="$MT_CI_SIMULATOR_NAME" /usr/bin/python3 -c 'import json, os, sys; data = json.load(sys.stdin); preferred = os.environ["MT_CI_SIMULATOR_NAME"]; devices = [item for item in data.get("devicetypes", []) if str(item.get("name", "")).startswith("iPhone")]; by_name = {item.get("name"): item for item in devices}; chosen = by_name.get(preferred); assert chosen, f"preferred iPhone simulator device unavailable: {preferred}"; print(chosen["identifier"])'
+          )"
+          udid="$(xcrun simctl create "Making Tracks CI ${MT_TEST_SHARD_ID}" "$device_type" "$runtime_id")"
+          {
+            echo "MT_CI_SIMULATOR_DEVICE_TYPE=$device_type"
+            echo "MT_CI_SIMULATOR_UDID=$udid"
+            echo "MT_RELEASE_GATE_DESTINATION=platform=iOS Simulator,id=$udid"
+          } >> "$GITHUB_ENV"
+          {
+            echo "simulator_name=$MT_CI_SIMULATOR_NAME"
+            echo "simulator_device_type=$device_type"
+            echo "simulator_runtime=$runtime_id"
+            echo "simulator_udid=$udid"
+            echo "destination=platform=iOS Simulator,id=$udid"
+          } >> "$receipt"
+
+          echo "::group::Release gate environment receipt"
+          cat "$receipt"
+          echo "::endgroup::"
+
+      - name: Run shard tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt="$MT_RELEASE_GATE_RUN_DIR/environment.txt"
+          gate_log="$MT_RELEASE_GATE_RUN_DIR/release-gate-output.log"
+          manifest="$MT_RELEASE_GATE_RUN_DIR/version-manifest.txt"
+
+          one_line() {
+            "$@" 2>&1 | tr '\n' ' ' | sed -E 's/[[:space:]]+$//'
+          }
+
+          manifest_value() {
+            local key="$1"
+            shift
+            local value
+            if value="$(one_line "$@")"; then
+              printf '%s=%s\n' "$key" "$value"
+            else
+              printf '%s=unavailable\n' "$key"
+            fi
+          }
+
+          {
+            echo "runner.image_version=${ImageVersion:-}"
+            echo "runner.image_os=${ImageOS:-}"
+            echo "runner.arch=${RUNNER_ARCH:-}"
+            echo "runner.os=${RUNNER_OS:-}"
+            echo "test_shard=$MT_TEST_SHARD_ID"
+            manifest_value host.hw_model sysctl -n hw.model
+            manifest_value host.cpu_brand sysctl -n machdep.cpu.brand_string
+            manifest_value host.ncpu sysctl -n hw.ncpu
+            manifest_value host.memsize sysctl -n hw.memsize
+            manifest_value host.vmm_present sysctl -n kern.hv_vmm_present
+            manifest_value os.product_version sw_vers -productVersion
+            manifest_value os.build_version sw_vers -buildVersion
+            manifest_value xcode.path xcode-select -p
+            xcodebuild -version |
+              awk 'NR == 1 { print "xcode.version=" $0 } NR == 2 { print "xcode.build=" $0 }'
+            manifest_value swift.version swift --version
+            manifest_value sdk.iphonesimulator xcrun --sdk iphonesimulator --show-sdk-version
+            echo "simdevice.type_identifier=${MT_CI_SIMULATOR_DEVICE_TYPE:-}"
+          } | LC_ALL=C sort > "$manifest"
+          {
+            echo
+            echo "version_manifest_begin"
+            cat "$manifest"
+            echo "version_manifest_end"
+          } | tee -a "$receipt"
+
+          capture_vm_stat() {
+            local phase="$1"
+            {
+              echo
+              echo "vm_stat_${phase}_begin"
+              vm_stat
+              echo "vm_stat_${phase}_end"
+            } | tee -a "$receipt"
+          }
+
+          run_contention_probe() {
+            local phase="$1"
+            local probe_root="${MT_RELEASE_GATE_DERIVED_DATA:-$MT_RELEASE_GATE_RUN_DIR/DerivedData}"
+            mkdir -p "$probe_root"
+            MT_CONTENTION_PHASE="$phase" MT_CONTENTION_PROBE_DIR="$probe_root" /usr/bin/python3 <<'PY'
+          import math
+          import os
+          import tempfile
+          import time
+
+          phase = os.environ["MT_CONTENTION_PHASE"]
+          probe_dir = os.environ["MT_CONTENTION_PROBE_DIR"]
+
+          def emit(key, value):
+              print(f"contention.{phase}.{key}={value}")
+
+          start_wall = time.perf_counter()
+          start_cpu = time.process_time()
+          total = 0.0
+          for index in range(2_500_000):
+              total += math.sqrt((index % 1000) + 0.5)
+          emit("cpu_wall_seconds", f"{time.perf_counter() - start_wall:.6f}")
+          emit("cpu_process_seconds", f"{time.process_time() - start_cpu:.6f}")
+          emit("cpu_work_result", f"{total:.6f}")
+
+          io_bytes = 16 * 1024 * 1024
+          block = os.urandom(1024 * 1024)
+          fd, path = tempfile.mkstemp(prefix=f"mt-{phase}-", dir=probe_dir)
+          try:
+              start_wall = time.perf_counter()
+              start_cpu = time.process_time()
+              with os.fdopen(fd, "wb", buffering=0) as handle:
+                  for _ in range(io_bytes // len(block)):
+                      handle.write(block)
+                  handle.flush()
+                  os.fsync(handle.fileno())
+              emit("io_fsync_wall_seconds", f"{time.perf_counter() - start_wall:.6f}")
+              emit("io_fsync_process_seconds", f"{time.process_time() - start_cpu:.6f}")
+              emit("io_fsync_bytes", str(io_bytes))
+              emit("io_fsync_dir", probe_dir)
+          finally:
+              try:
+                  os.unlink(path)
+              except FileNotFoundError:
+                  pass
+          PY
+          }
+
+          set +e
+          capture_vm_stat "before"
+          run_contention_probe "before" | tee -a "$receipt"
+          MT_RELEASE_GATE_MODE=test \
+            MT_RELEASE_GATE_ONLY_TESTING_FILE="$MT_RELEASE_GATE_RUN_DIR/only-testing.txt" \
+            MT_RELEASE_GATE_RESULT_BUNDLE="$MT_RELEASE_GATE_RUN_DIR/MakingTracksTests-${MT_TEST_SHARD_ID}.xcresult" \
+            ./scripts/release-gate.sh 2>&1 | tee "$gate_log"
+          gate_status="${PIPESTATUS[0]}"
+          capture_vm_stat "after"
+          run_contention_probe "after" | tee -a "$receipt"
+          set -e
+
+          {
+            echo
+            echo "release_gate_phase_durations_begin"
+            grep '^release-gate: phase end:' "$gate_log" |
+              sed -E 's/^release-gate: phase end: (.*) status=([0-9]+) elapsed=([0-9]+)s$/release_gate_phase label="\1" status=\2 elapsed_seconds=\3/' || true
+            echo "release_gate_phase_durations_end"
+          } | tee -a "$receipt"
+
+          if [ -d "$MT_RELEASE_GATE_RUN_DIR/MakingTracksTests-${MT_TEST_SHARD_ID}.xcresult" ]; then
+            xcrun xcresulttool get test-results tests \
+              --path "$MT_RELEASE_GATE_RUN_DIR/MakingTracksTests-${MT_TEST_SHARD_ID}.xcresult" \
+              --format json > "$MT_RELEASE_GATE_RUN_DIR/executed-tests-${MT_TEST_SHARD_ID}.json" || true
+          fi
 
           exit "$gate_status"
 
@@ -297,17 +614,252 @@ jobs:
             xcrun simctl io "$MT_CI_SIMULATOR_UDID" screenshot "$MT_RELEASE_GATE_RUN_DIR/screenshot.png" || true
           fi
 
-      - name: Upload release-gate artifacts
+      - name: Upload shard artifacts
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: ios-release-gate-${{ github.run_id }}
+          name: ios-release-gate-${{ github.run_id }}-${{ matrix.shard }}
           path: |
             ${{ runner.temp }}/release-gate/environment.txt
             ${{ runner.temp }}/release-gate/version-manifest.txt
             ${{ runner.temp }}/release-gate/release-gate-output.log
             ${{ runner.temp }}/release-gate/*.xcodebuild.log
+            ${{ runner.temp }}/release-gate/only-testing.txt
+            ${{ runner.temp }}/release-gate/executed-tests-${{ matrix.shard }}.json
             ${{ runner.temp }}/release-gate/screenshot.png
-            ${{ runner.temp }}/release-gate/MakingTracksTests.xcresult
+            ${{ runner.temp }}/release-gate/MakingTracksTests-${{ matrix.shard }}.xcresult
           if-no-files-found: ignore
           retention-days: 7
+
+  ios-unit-tests:
+    name: ios-unit-tests
+    runs-on: macos-26
+    needs: ios-gate-build
+    timeout-minutes: 105
+    env:
+      MT_CI_SIMULATOR_NAME: iPhone 17
+      MT_CI_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-2
+      MT_CI_XCBEAUTIFY_SHA256: 87fdbe786f71d7b2ee28c5c1ca97087587292f2c5c6f9e721cf02db8b2a3c241
+      MT_CI_XCBEAUTIFY_VERSION: 3.2.1
+      MT_RELEASE_GATE_SKIP_LOCK: "1"
+      MT_TEST_SHARD_ID: unit
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          if [ -n "${MT_CI_XCODE_PATH:-}" ]; then
+            sudo xcode-select -s "$MT_CI_XCODE_PATH"
+          fi
+          xcode-select -p
+          xcodebuild -version
+
+      - name: Configure release gate paths
+        run: |
+          set -euo pipefail
+          {
+            echo "MT_RELEASE_GATE_RUN_DIR=$RUNNER_TEMP/release-gate"
+            echo "MT_RELEASE_GATE_DERIVED_DATA=$RUNNER_TEMP/release-gate/DerivedData"
+          } >> "$GITHUB_ENV"
+
+      - name: Install xcbeautify
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/xcbeautify.zip"
+          install_dir="$RUNNER_TEMP/xcbeautify"
+          curl -fsSLo "$archive" "https://github.com/cpisciotta/xcbeautify/releases/download/$MT_CI_XCBEAUTIFY_VERSION/xcbeautify-$MT_CI_XCBEAUTIFY_VERSION-universal-apple-macosx.zip"
+          echo "$MT_CI_XCBEAUTIFY_SHA256  $archive" | shasum -a 256 -c -
+          rm -rf "$install_dir"
+          mkdir -p "$install_dir"
+          unzip -q "$archive" -d "$install_dir"
+          xcbeautify_bin="$(find "$install_dir" -type f -name xcbeautify -print -quit)"
+          if [ -z "$xcbeautify_bin" ]; then
+            echo "xcbeautify binary missing from release archive" >&2
+            exit 1
+          fi
+          chmod +x "$xcbeautify_bin"
+          dirname "$xcbeautify_bin" >> "$GITHUB_PATH"
+          "$xcbeautify_bin" --version
+
+      - name: Download build products
+        uses: actions/download-artifact@v7.0.1
+        with:
+          name: ios-release-gate-build-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-gate-build
+
+      - name: Unpack build products and write unit filter
+        run: |
+          set -euo pipefail
+          mkdir -p "$MT_RELEASE_GATE_RUN_DIR"
+          tar -xzf "$RUNNER_TEMP/release-gate-build/build-products.tar.gz" -C "$MT_RELEASE_GATE_RUN_DIR"
+          python3 scripts/ios-test-shards.py write-only-testing \
+            --manifest .github/ios-ui-test-shards.json \
+            --shard "$MT_TEST_SHARD_ID" \
+            --output "$MT_RELEASE_GATE_RUN_DIR/only-testing.txt"
+          xctestrun="$(find "$MT_RELEASE_GATE_DERIVED_DATA/Build/Products" -name '*.xctestrun' -print -quit)"
+          if [ -z "$xctestrun" ]; then
+            echo "No .xctestrun found under $MT_RELEASE_GATE_DERIVED_DATA/Build/Products" >&2
+            exit 1
+          fi
+          echo "MT_RELEASE_GATE_XCTESTRUN_FILE=$xctestrun" >> "$GITHUB_ENV"
+
+      - name: Resolve simulator destination
+        run: |
+          set -euo pipefail
+          mkdir -p "$MT_RELEASE_GATE_RUN_DIR"
+          receipt="$MT_RELEASE_GATE_RUN_DIR/environment.txt"
+          runtime_id="$(
+            xcrun simctl list runtimes -j |
+            MT_CI_SIMULATOR_RUNTIME="$MT_CI_SIMULATOR_RUNTIME" /usr/bin/python3 -c 'import json, os, sys; data = json.load(sys.stdin); preferred = os.environ["MT_CI_SIMULATOR_RUNTIME"]; candidates = [item for item in data.get("runtimes", []) if item.get("isAvailable")]; by_identifier = {item.get("identifier"): item for item in candidates}; chosen = by_identifier.get(preferred); assert chosen, f"preferred iOS simulator runtime unavailable: {preferred}"; print(chosen["identifier"])'
+          )"
+          device_type="$(
+            xcrun simctl list devicetypes -j |
+            MT_CI_SIMULATOR_NAME="$MT_CI_SIMULATOR_NAME" /usr/bin/python3 -c 'import json, os, sys; data = json.load(sys.stdin); preferred = os.environ["MT_CI_SIMULATOR_NAME"]; devices = [item for item in data.get("devicetypes", []) if str(item.get("name", "")).startswith("iPhone")]; by_name = {item.get("name"): item for item in devices}; chosen = by_name.get(preferred); assert chosen, f"preferred iPhone simulator device unavailable: {preferred}"; print(chosen["identifier"])'
+          )"
+          udid="$(xcrun simctl create "Making Tracks CI unit" "$device_type" "$runtime_id")"
+          {
+            echo "MT_CI_SIMULATOR_DEVICE_TYPE=$device_type"
+            echo "MT_CI_SIMULATOR_UDID=$udid"
+            echo "MT_RELEASE_GATE_DESTINATION=platform=iOS Simulator,id=$udid"
+          } >> "$GITHUB_ENV"
+          {
+            echo "git_sha=${GITHUB_SHA}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "test_shard=$MT_TEST_SHARD_ID"
+            echo "simulator_name=$MT_CI_SIMULATOR_NAME"
+            echo "simulator_device_type=$device_type"
+            echo "simulator_runtime=$runtime_id"
+            echo "simulator_udid=$udid"
+            echo "destination=platform=iOS Simulator,id=$udid"
+          } > "$receipt"
+
+      - name: Run unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt="$MT_RELEASE_GATE_RUN_DIR/environment.txt"
+          gate_log="$MT_RELEASE_GATE_RUN_DIR/release-gate-output.log"
+          manifest="$MT_RELEASE_GATE_RUN_DIR/version-manifest.txt"
+          {
+            echo "runner.image_version=${ImageVersion:-}"
+            echo "runner.image_os=${ImageOS:-}"
+            echo "runner.arch=${RUNNER_ARCH:-}"
+            echo "runner.os=${RUNNER_OS:-}"
+            echo "test_shard=$MT_TEST_SHARD_ID"
+            echo "host.hw_model=$(sysctl -n hw.model 2>/dev/null || echo unavailable)"
+            echo "host.cpu_brand=$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo unavailable)"
+            echo "host.ncpu=$(sysctl -n hw.ncpu 2>/dev/null || echo unavailable)"
+            echo "host.memsize=$(sysctl -n hw.memsize 2>/dev/null || echo unavailable)"
+            echo "host.vmm_present=$(sysctl -n kern.hv_vmm_present 2>/dev/null || echo unavailable)"
+            echo "os.product_version=$(sw_vers -productVersion 2>/dev/null || echo unavailable)"
+            echo "os.build_version=$(sw_vers -buildVersion 2>/dev/null || echo unavailable)"
+            echo "xcode.path=$(xcode-select -p 2>/dev/null || echo unavailable)"
+            xcodebuild -version |
+              awk 'NR == 1 { print "xcode.version=" $0 } NR == 2 { print "xcode.build=" $0 }'
+            echo "swift.version=$(swift --version 2>&1 | tr '\n' ' ' | sed -E 's/[[:space:]]+$//')"
+            echo "sdk.iphonesimulator=$(xcrun --sdk iphonesimulator --show-sdk-version 2>/dev/null || echo unavailable)"
+            echo "simdevice.type_identifier=${MT_CI_SIMULATOR_DEVICE_TYPE:-}"
+          } | LC_ALL=C sort > "$manifest"
+          {
+            echo
+            echo "version_manifest_begin"
+            cat "$manifest"
+            echo "version_manifest_end"
+          } | tee -a "$receipt"
+          {
+            echo
+            echo "vm_stat_before_begin"
+            vm_stat
+            echo "vm_stat_before_end"
+          } | tee -a "$receipt"
+          set +e
+          MT_RELEASE_GATE_MODE=test \
+            MT_RELEASE_GATE_ONLY_TESTING_FILE="$MT_RELEASE_GATE_RUN_DIR/only-testing.txt" \
+            MT_RELEASE_GATE_RESULT_BUNDLE="$MT_RELEASE_GATE_RUN_DIR/MakingTracksTests-unit.xcresult" \
+            ./scripts/release-gate.sh 2>&1 | tee "$gate_log"
+          gate_status="${PIPESTATUS[0]}"
+          set -e
+          {
+            echo
+            echo "vm_stat_after_begin"
+            vm_stat
+            echo "vm_stat_after_end"
+          } | tee -a "$receipt"
+          exit "$gate_status"
+
+      - name: Upload unit artifacts
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: ios-release-gate-${{ github.run_id }}-unit
+          path: |
+            ${{ runner.temp }}/release-gate/environment.txt
+            ${{ runner.temp }}/release-gate/version-manifest.txt
+            ${{ runner.temp }}/release-gate/release-gate-output.log
+            ${{ runner.temp }}/release-gate/*.xcodebuild.log
+            ${{ runner.temp }}/release-gate/only-testing.txt
+            ${{ runner.temp }}/release-gate/MakingTracksTests-unit.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+  ios-release-gate:
+    name: ios-release-gate
+    runs-on: macos-26
+    needs:
+      - ios-gate-build
+      - ios-ui-test-shards
+      - ios-unit-tests
+    if: always()
+    timeout-minutes: 105
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Download release-gate artifacts
+        uses: actions/download-artifact@v7.0.1
+        with:
+          pattern: ios-release-gate-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/release-gate-artifacts
+          merge-multiple: false
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v7.0.1
+        with:
+          name: ios-release-gate-build-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-gate-build
+
+      - name: Validate shard completion and executed coverage
+        run: |
+          set -euo pipefail
+          status=0
+          check_need() {
+            local name="$1"
+            local result="$2"
+            if [ "$result" != "success" ]; then
+              echo "$name result was $result, expected success" >&2
+              status=1
+            fi
+          }
+          check_need ios-gate-build '${{ needs.ios-gate-build.result }}'
+          check_need ios-ui-test-shards '${{ needs.ios-ui-test-shards.result }}'
+          check_need ios-unit-tests '${{ needs.ios-unit-tests.result }}'
+
+          executed_dir="$RUNNER_TEMP/executed-tests"
+          mkdir -p "$executed_dir"
+          find "$RUNNER_TEMP/release-gate-artifacts" -name 'executed-tests-*.json' -exec cp {} "$executed_dir" \;
+          expected_json="$RUNNER_TEMP/release-gate-build/expected-tests.json"
+          if [ ! -f "$expected_json" ]; then
+            echo "expected test enumeration artifact missing: $expected_json" >&2
+            status=1
+          elif ! python3 scripts/ios-test-shards.py validate-executed \
+            --expected-json "$expected_json" \
+            --executed-json-dir "$executed_dir" \
+            --target-prefix "MakingTracksUITests/"; then
+            status=1
+          fi
+
+          exit "$status"
