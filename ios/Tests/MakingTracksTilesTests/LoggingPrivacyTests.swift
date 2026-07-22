@@ -371,12 +371,30 @@ final class LoggingPrivacyTests: XCTestCase {
 
     func testTrackVisitDateHeadersAreNotStandaloneMovableRows() throws {
         let source = try sourceFile("App/Sources/Map/MapScreen.swift")
+        let movableRowsStart = "ForEach(TrackVisitReordering.rows(for: visibleTrackVisits, calendar: calendar)) { row in"
+        let onMoveStart = "\n                        .onMove"
 
         XCTAssertFalse(
             source.contains(#"Text(verbatim: formattedDay(calendar.startOfDay(for: visit.visitedAt)))"#),
             "Date headers must be rendered inside the visit row, not as standalone rows in the movable ForEach."
         )
-        XCTAssertTrue(source.contains("trackVisitRow(row.visit, dayHeader:"), "Track visit rows should receive optional inline day headers.")
+        guard let forEachRange = source.range(of: movableRowsStart) else {
+            return XCTFail("The My tracks movable ForEach should be built from TrackVisitReordering.rows.")
+        }
+        let afterForEach = source[forEachRange.upperBound...]
+        guard let onMoveRange = afterForEach.range(of: onMoveStart) else {
+            return XCTFail("The My tracks movable ForEach should apply onMove directly to visit rows.")
+        }
+        let movableBodyLines = afterForEach[..<onMoveRange.lowerBound]
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && $0 != "}" }
+
+        XCTAssertEqual(
+            movableBodyLines,
+            ["trackVisitRow(row.visit, dayHeader: row.dayHeader)"],
+            "The movable track visit ForEach must contain only visit rows with inline day headers before onMove."
+        )
     }
 
     private func logLineHasExplicitPrivacyAnnotations(_ line: String) -> Bool {
