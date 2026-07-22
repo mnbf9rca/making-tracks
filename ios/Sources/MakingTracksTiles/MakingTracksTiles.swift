@@ -1804,6 +1804,7 @@ public struct DecodedPlace: Sendable, Equatable {
     public let placeRef: PlaceRef
     public let imageURL: URL?
     public let sourceRefs: [String]
+    public let descriptionSidecarResolved: Bool
 }
 
 public struct DecodedTile: Sendable, Equatable {
@@ -2549,7 +2550,8 @@ public enum PlaceDecoder {
             mapPlace: MapPlace(id: placeID, lat: lat, lon: lon, tier: tier, category: category),
             placeRef: placeRef,
             imageURL: nil,
-            sourceRefs: sourceRefs
+            sourceRefs: sourceRefs,
+            descriptionSidecarResolved: false
         )
     }
 
@@ -6014,14 +6016,20 @@ public actor TileClient {
         if let loaded = loadedPlaces[placeID] {
             let placeRef: PlaceRef
             if let request = loadedPlaceRequests[placeID],
-               let enriched = await enrichedPlaceRef(for: loaded.placeRef, request: request) {
-                placeRef = enriched
-                loadedPlaces[placeID] = DecodedPlace(
-                    mapPlace: loaded.mapPlace,
-                    placeRef: enriched,
-                    imageURL: loaded.imageURL,
-                    sourceRefs: loaded.sourceRefs
-                )
+               !loaded.descriptionSidecarResolved,
+               loaded.placeRef.needsDescriptionSidecar {
+                let resolution = await loadDescription(request: request, placeID: loaded.placeRef.placeID)
+                placeRef = resolution.description.flatMap { loaded.placeRef.merging(description: $0) } ?? loaded.placeRef
+                if (resolution.shouldRememberAttempt || placeRef != loaded.placeRef),
+                   loadedPlaceRequests[placeID]?.matchesDescriptionSidecar(request) == true {
+                    loadedPlaces[placeID] = DecodedPlace(
+                        mapPlace: loaded.mapPlace,
+                        placeRef: placeRef,
+                        imageURL: loaded.imageURL,
+                        sourceRefs: loaded.sourceRefs,
+                        descriptionSidecarResolved: true
+                    )
+                }
             } else {
                 placeRef = loaded.placeRef
             }
@@ -6464,15 +6472,7 @@ public actor TileClient {
         return bySource.values.sorted(by: { $0.source < $1.source })
     }
 
-    private func enrichedPlaceRef(for placeRef: PlaceRef, request: PublishTileRequest) async -> PlaceRef? {
-        guard placeRef.needsDescriptionSidecar else { return placeRef }
-        guard let description = await loadDescription(request: request, placeID: placeRef.placeID) else {
-            return nil
-        }
-        return placeRef.merging(description: description)
-    }
-
-    private func loadDescription(request: PublishTileRequest, placeID: String) async -> PlaceDescription? {
+    private func loadDescription(request: PublishTileRequest, placeID: String) async -> PlaceDescriptionResolution {
         logSidecarPlan(kind: "description-index", requests: [request], regionID: region)
         do {
             let data: Data
@@ -6489,7 +6489,7 @@ public actor TileClient {
                         http404Count: 0,
                         regionID: region
                     )
-                    return nil
+                    return PlaceDescriptionResolution(description: nil, shouldRememberAttempt: true)
                 }
                 data = offline
             } else {
@@ -6504,7 +6504,7 @@ public actor TileClient {
                 http404Count: 0,
                 regionID: region
             )
-            return description
+            return PlaceDescriptionResolution(description: description, shouldRememberAttempt: true)
         } catch {
             MakingTracksLog.resolution.debug("description index unavailable region=\(request.region, privacy: .private(mask: .hash)) version=\(request.publishVersion, privacy: .public) reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
             let http404Count = (error as? TileError) == .httpStatus(404) ? 1 : 0
@@ -6515,7 +6515,7 @@ public actor TileClient {
                 http404Count: http404Count,
                 regionID: region
             )
-            return nil
+            return PlaceDescriptionResolution(description: nil, shouldRememberAttempt: http404Count > 0)
         }
     }
 }
@@ -6529,11 +6529,23 @@ private struct PublishTileRequest: Sendable {
     let attributionSources: Set<String>
     let source: TileRequestSource
     let basemap: InstalledPackBasemap?
+
+    func matchesDescriptionSidecar(_ other: PublishTileRequest) -> Bool {
+        region == other.region &&
+            publishVersion == other.publishVersion &&
+            coordinate == other.coordinate &&
+            source == other.source
+    }
 }
 
 private struct ImageIndexLoadRequest: Sendable {
     let tile: PublishTileRequest
     let placeIDs: Set<String>
+}
+
+private struct PlaceDescriptionResolution: Sendable {
+    let description: PlaceDescription?
+    let shouldRememberAttempt: Bool
 }
 
 private struct ObjectRequestLogKey: Comparable, Hashable {

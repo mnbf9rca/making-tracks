@@ -6109,7 +6109,7 @@ private struct DiagnosticsView: View {
                 Button("Try 15 min") {
                     selectedWindow = .fifteenMinutes
                     Task {
-                        await prepare(coverCurrentSession: false)
+                        await prepare()
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -6138,7 +6138,7 @@ private struct DiagnosticsView: View {
             } else {
                 Button(isPreparing ? "Preparing" : "Prepare") {
                     Task {
-                        await prepare(coverCurrentSession: true)
+                        await prepare()
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -6189,7 +6189,7 @@ private struct DiagnosticsView: View {
         ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file)
     }
 
-    private func prepare(coverCurrentSession: Bool) async {
+    private func prepare() async {
         guard !isPreparing else { return }
         isPreparing = true
         scrubFailed = false
@@ -6199,8 +6199,7 @@ private struct DiagnosticsView: View {
         do {
             artifact = try await DiagnosticsRuntime.prepareArtifact(
                 window: window,
-                storageStatus: currentStorageStatus,
-                coverCurrentSession: coverCurrentSession
+                storageStatus: currentStorageStatus
             )
         } catch DiagnosticLogExportError.privacyScrubFailed {
             scrubFailed = true
@@ -6299,8 +6298,7 @@ private enum DiagnosticsRuntime {
     @MainActor
     static func prepareArtifact(
         window: DiagnosticLogWindow,
-        storageStatus: StorageMenuStatus,
-        coverCurrentSession: Bool
+        storageStatus: StorageMenuStatus
     ) async throws -> DiagnosticLogArtifact {
         let exportMetadata = metadata(storageStatus: storageStatus)
         return try await Task.detached(priority: .userInitiated) {
@@ -6309,9 +6307,6 @@ private enum DiagnosticsRuntime {
                 store: store,
                 metadata: exportMetadata
             )
-            if coverCurrentSession {
-                return try exporter.prepareCoveringCurrentSession(preferredWindow: window, stagingRoot: stagingRoot())
-            }
             return try exporter.prepare(window: window, stagingRoot: stagingRoot())
         }.value
     }

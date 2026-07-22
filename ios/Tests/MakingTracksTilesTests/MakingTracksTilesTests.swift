@@ -1121,6 +1121,51 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertTrue(fetcher.requestedURLs.contains(descriptionURL))
     }
 
+    func testTileClientCachesMissingDescriptionSidecarForLoadedPlaceRef() async throws {
+        let placeID = "mt1_00000000000000000000000000"
+        let tile = try gzipJSON(tileObject(places: [validPlace([
+            "place_id": placeID,
+            "blurb": NSNull(),
+        ])]))
+        let tileSHA = sha256(tile)
+        let descriptionURL = "https://tiles.making-tracks.app/uk/20260716T155409Z/descriptions/10/511/340.json"
+        let fixtureRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TileClientMissingDescriptionSidecarTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+        let store = DiagnosticLogStore(
+            root: fixtureRoot.appendingPathComponent("logs", isDirectory: true)
+        )
+        MakingTracksLog.configureDiagnosticLogStore(store)
+        defer { MakingTracksLog.configureDiagnosticLogStore(nil) }
+        let fetcher = StubFetcher(routes: [
+            "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": manifestData(tileSHA: tileSHA, tileBytes: tile.count, attributionSources: []),
+            "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/511/340.json.gz": tile,
+            descriptionURL: jsonData(descriptionIndexObject(places: [validDescriptionEntry([
+                "place_id": "mt1_00000000000000000000000099",
+                "excerpt": "Different place description.",
+            ])])),
+        ])
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache())
+
+        try await client.refreshPin()
+        _ = await client.places(
+            inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51),
+            zoom: 16
+        )
+        for _ in 0..<3 {
+            let loadedPlaceRef = await client.placeRef(for: placeID)
+            XCTAssertNotNil(loadedPlaceRef)
+        }
+        let sidecarRequests = fetcher.requestedURLs.filter { $0 == descriptionURL }
+        let log = try store.snapshotLines(window: .everything).joined(separator: "\n")
+        let planLines = log.components(separatedBy: "\n")
+            .filter { $0.contains("sidecar description-index planned") }
+
+        XCTAssertEqual(sidecarRequests.count, 1)
+        XCTAssertEqual(planLines.count, 1, log)
+    }
+
     func testLiveCapturedUKTileFixtureRoundTripsThroughCodecAndDecoder() throws {
         let gz = Data(base64Encoded: liveTile489310Base64)!
         let raw = try TileCodec.decode(
