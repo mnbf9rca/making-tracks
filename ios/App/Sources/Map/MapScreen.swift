@@ -5785,20 +5785,20 @@ private struct DiagnosticsView: View {
     }
 
     private static let includedDisclosureClasses: [DiagnosticsDisclosureClass] = [
-        DiagnosticsDisclosureClass(title: "App version", detail: "Build number and app release."),
-        DiagnosticsDisclosureClass(title: "Device model", detail: "Model and iOS version."),
-        DiagnosticsDisclosureClass(title: "Session flow", detail: "Plaintext flow events."),
-        DiagnosticsDisclosureClass(title: "Map packs", detail: "Packs and publish versions."),
-        DiagnosticsDisclosureClass(title: "Object URLs", detail: "Our hosts and object paths."),
-        DiagnosticsDisclosureClass(title: "Errors", detail: "Status codes and labels."),
-        DiagnosticsDisclosureClass(title: "Timings", detail: "Fetch and decode timing."),
-        DiagnosticsDisclosureClass(title: "Places/actions", detail: "Session evidence for support."),
+        DiagnosticsDisclosureClass(title: "App details", detail: "App release and build number."),
+        DiagnosticsDisclosureClass(title: "Device type", detail: "Model and iOS version."),
+        DiagnosticsDisclosureClass(title: "Steps in the app", detail: "Screens opened and buttons used."),
+        DiagnosticsDisclosureClass(title: "Downloaded maps", detail: "Offline maps and their versions."),
+        DiagnosticsDisclosureClass(title: "Map file links", detail: "Making Tracks map file paths."),
+        DiagnosticsDisclosureClass(title: "Problems", detail: "Status codes and failure labels."),
+        DiagnosticsDisclosureClass(title: "Load times", detail: "Fetch and map drawing times."),
+        DiagnosticsDisclosureClass(title: "Places and taps", detail: "Places opened, saved, hidden, or marked seen."),
     ]
 
     private static let excludedDisclosureClasses: [DiagnosticsDisclosureClass] = [
-        DiagnosticsDisclosureClass(title: "Device name", detail: "Personal device label."),
-        DiagnosticsDisclosureClass(title: "Exact location", detail: "Coordinates are excluded."),
-        DiagnosticsDisclosureClass(title: "Search wording", detail: "Typed queries are omitted."),
+        DiagnosticsDisclosureClass(title: "Device name", detail: "Your personal device label."),
+        DiagnosticsDisclosureClass(title: "Precise location", detail: "Your exact coordinates are not included."),
+        DiagnosticsDisclosureClass(title: "Search text", detail: "What you typed is omitted."),
     ]
 }
 
