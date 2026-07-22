@@ -112,11 +112,28 @@ def iter_strings(value: Any) -> Iterable[str]:
             yield from iter_strings(item)
 
 
+def normalize_test_identifier(value: str, target_prefix: str) -> str | None:
+    if value.startswith(target_prefix):
+        identifier = value
+    else:
+        target_index = value.find(f"/{target_prefix}")
+        if target_index == -1:
+            return None
+        identifier = value[target_index + 1 :]
+
+    if "/test" not in identifier:
+        return None
+    if identifier.endswith("()"):
+        identifier = identifier[:-2]
+    return identifier
+
+
 def extract_test_identifiers(payload: Any, target_prefix: str) -> set[str]:
     identifiers: set[str] = set()
     for value in iter_strings(payload):
-        if value.startswith(target_prefix) and "/test" in value:
-            identifiers.add(value)
+        identifier = normalize_test_identifier(value, target_prefix)
+        if identifier is not None:
+            identifiers.add(identifier)
     return identifiers
 
 

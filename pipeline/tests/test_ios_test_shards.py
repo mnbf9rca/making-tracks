@@ -164,6 +164,48 @@ def test_executed_validation_passes_for_matching_sets(tmp_path):
     assert "executed test set matches expected set" in result.stdout
 
 
+def test_executed_validation_accepts_xcresult_node_identifier_urls(tmp_path):
+    expected = tmp_path / "expected.json"
+    executed_dir = tmp_path / "executed"
+    executed_dir.mkdir()
+    _write_json(
+        expected,
+        {
+            "tests": [
+                {
+                    "identifier": "MakingTracksUITests/MakingTracksCoreLoopUITests/testOne()",
+                },
+            ]
+        },
+    )
+    _write_json(
+        executed_dir / "ui-1.json",
+        {
+            "testNodes": [
+                {
+                    "nodeType": "Test Case",
+                    "nodeIdentifier": "MakingTracksCoreLoopUITests/testOne()",
+                    "nodeIdentifierURL": "test://com.apple.xcode/MakingTracks/MakingTracksUITests/MakingTracksCoreLoopUITests/testOne",
+                    "result": "Passed",
+                },
+            ]
+        },
+    )
+
+    result = _run(
+        "validate-executed",
+        "--expected-json",
+        str(expected),
+        "--executed-json-dir",
+        str(executed_dir),
+        "--target-prefix",
+        "MakingTracksUITests/",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "executed test set matches expected set" in result.stdout
+
+
 def test_executed_validation_fails_with_unexpected_test_name(tmp_path):
     expected = tmp_path / "expected.json"
     executed_dir = tmp_path / "executed"
