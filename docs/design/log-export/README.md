@@ -23,9 +23,10 @@ Validation notes:
   screen surfaces "Showing last hour to include this session" beside the size
   estimate, reflecting #352's session-covering default. The Try 15 min recovery
   remains an explicit short-window action.
-- The icon grid names every included and excluded class, including map packs.
-  Icons augment the class names rather than replacing them; the accessibility
-  render drops supporting blurbs before it drops class names.
+- The icon grid names every included and excluded class in plain user-facing
+  words, including downloaded maps. Icons augment the labels rather than
+  replacing them; the accessibility render drops supporting blurbs before it
+  drops class labels.
 - The "Share boundary" jargon is removed, but the consent beat remains: the
   prepared state says the user chooses who gets the file and nothing leaves
   Making Tracks before then. The preview shows plaintext session flow and
