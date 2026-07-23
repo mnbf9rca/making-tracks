@@ -30,6 +30,14 @@ The app-specific facts an agent needs are stated in `develop`'s file, in these s
   `./scripts/sim-lock.sh ./scripts/release-gate.sh`. Warnings-as-errors is set on the app target in
   `ios/App/project.yml`, which lives on this branch.
 
+## CI on this branch
+
+`.github/workflows/ios-gate.yml` runs the build and unit tests on every PR; the UI shards run only on
+`workflow_dispatch`. The check name `ios-release-gate` therefore means different things per trigger — the
+mapping, the count and classification rules, and the run ledger are in
+[`docs/ios-gate-ledger.md`](docs/ios-gate-ledger.md), which lives only on this branch. CI never replaces
+the host gate.
+
 ## The simulator has one entry point
 
 `scripts/sim-lock.sh` is the only thing that touches the designated simulator. Build, test, boot, shutdown,

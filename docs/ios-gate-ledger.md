@@ -14,6 +14,19 @@ Absent condition 3, a harness timeout is a real red. Infra classifications are b
 
 Each entry records gate duration and the runner benchmark score (`runner_benchmark_ops_per_sec`) so classifications can be checked against measured runner performance rather than duration alone. Use `not measured` only for legacy runs whose workflow did not emit the runner benchmark.
 
+## Count Rules
+
+1. A run counts toward the flip only when it is green on the full UI-shard fan-in — the
+   `workflow_dispatch` meaning of `ios-release-gate` (see Check Name Mapping) — on a tree that matches a
+   green local gate.
+2. Flip criterion: 2 consecutive counting greens. Rob pre-authorized the flip at that point (2026-07-22):
+   make `ios-release-gate` a required check, and amend the law so CI is the merge authority with local
+   full gates optional.
+3. A real red resets the count to zero. An infra-classified red neither counts nor resets, and consumes
+   the infra budget above.
+4. Status: the flip is parked pending the runner-capacity decision (self-hosted runner on real hardware).
+   Entries continue to be recorded while parked.
+
 ## Check Name Mapping
 
 After the sharded gate change, `ios-release-gate` has two trigger-dependent meanings. On `pull_request`, it is the per-PR build+unit fan-in and the UI shards are expected to be skipped. On `workflow_dispatch`, it is the full UI-shard fan-in and also validates executed UI coverage against the built test enumeration. The parked flip plan must pin the meaning, not just the check name.
