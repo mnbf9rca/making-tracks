@@ -989,6 +989,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(lovedApp.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
         lovedFilter = element(identifier: "map.list-mode.filter.loved", in: lovedApp)
         XCTAssertTrue(lovedFilter.waitForExistence(timeout: 5))
+        assertListMapFilterChromePlacement(lovedFilter, in: lovedApp)
         lovedFilter.tap()
         XCTAssertTrue(lovedApp.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
         attachScreenshot(named: "track-filter-picker-open")
@@ -1000,6 +1001,56 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForSourceFeatureCount(1, in: lovedApp))
         XCTAssertTrue(waitForTrackSegmentCount(0, in: lovedApp))
         attachScreenshot(named: "track-loved-filter-map-source")
+    }
+
+    func testTrackCategoryFilterScopesReplayDisplayAndCamera() {
+        let app = launch(
+            reset: true,
+            pinDiagnostics: true,
+            seedMultiDayTrackList: true,
+            densePins: true,
+            startupViewport: "kl-street"
+        )
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["Replay week"].tap()
+        XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+
+        let filter = element(identifier: "map.list-mode.filter.loved", in: app)
+        XCTAssertTrue(filter.waitForExistence(timeout: 5))
+        assertListMapFilterChromePlacement(filter, in: app)
+        filter.tap()
+        XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
+        XCTAssertTrue(scrollToHittable(app.buttons["track-filter-picker.category.attraction"], in: app))
+        app.buttons["track-filter-picker.category.attraction"].tap()
+        XCTAssertTrue(waitForButtonLabel("Show 1 visit", identifier: "track-filter-picker.apply", in: app))
+        app.buttons["track-filter-picker.apply"].tap()
+
+        XCTAssertTrue(waitForElementValue("Selected", identifier: "map.list-mode.filter.category.attraction", in: app))
+        XCTAssertTrue(waitForSourceFeatureCount(1, in: app))
+        XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
+        XCTAssertTrue(waitForProjectedFixturePinCount(1, in: app))
+        let projectedPin = app.staticTexts.matching(identifierPrefix: "map.fixture-pin.").firstMatch
+        XCTAssertTrue(projectedPin.identifier.contains("mt1_D0000000000000000000000001"), projectedPin.identifier)
+        XCTAssertEqual(projectedPin.label, "hit", projectedPin.identifier)
+        guard let projectedValue = projectedPin.value as? String else {
+            return XCTFail("missing normalized coordinates for \(projectedPin.identifier)")
+        }
+        let normalized = normalizedPoint(from: projectedValue)
+        XCTAssertGreaterThan(normalized.x, 0.04, projectedPin.identifier)
+        XCTAssertLessThan(normalized.x, 0.96, projectedPin.identifier)
+        XCTAssertGreaterThan(normalized.y, 0.08, projectedPin.identifier)
+        XCTAssertLessThan(normalized.y, 0.92, projectedPin.identifier)
+        assertListMapFilterChromePlacement(element(identifier: "map.list-mode.filter.category.attraction", in: app), in: app)
+        attachScreenshot(named: "track-category-filter-map-source")
     }
 
     func testListMapBackReturnsToSeededListDetail() {
@@ -2335,6 +2386,28 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             file: file,
             line: line
         )
+    }
+
+    private func assertListMapFilterChromePlacement(
+        _ filter: XCUIElement,
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let map = app.otherElements["map.surface"]
+        let title = app.staticTexts["map.list-mode.title"]
+        let back = app.buttons["map.list-mode.back"]
+        let layers = app.buttons["map.layers"]
+        XCTAssertTrue(filter.exists, file: file, line: line)
+        XCTAssertTrue(title.exists, file: file, line: line)
+        XCTAssertTrue(back.exists, file: file, line: line)
+        XCTAssertTrue(layers.exists, file: file, line: line)
+        XCTAssertLessThan(filter.frame.midX, map.frame.midX, file: file, line: line)
+        XCTAssertGreaterThan(layers.frame.minY, title.frame.minY, file: file, line: line)
+        XCTAssertGreaterThan(filter.frame.minY, layers.frame.maxY, file: file, line: line)
+        assertNoFrameIntersection(filter, title, file: file, line: line)
+        assertNoFrameIntersection(filter, back, file: file, line: line)
+        assertNoFrameIntersection(filter, layers, file: file, line: line)
     }
 
     private func waitForProjectedFixturePinCount(_ count: Int, in app: XCUIApplication) -> Bool {

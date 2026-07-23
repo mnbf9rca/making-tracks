@@ -1006,13 +1006,13 @@ enum TrackReplayPinPresentation {
         context: TrackGeometryContext,
         throughEventIndex index: Int?
     ) -> [(MapPlace, PinState)] {
-        guard !context.visits.isEmpty else { return features }
+        guard !context.visits.isEmpty else { return [] }
         let replayPlaceIDs = Set(context.visits.map(\.placeID))
         let reachedVisitStateByPlaceID = context.clipped(throughEventIndex: index).visits.reduce(into: [String: VisitState]()) { states, visit in
             states[visit.placeID] = visit.verdict == .loved ? .loved : .visited
         }
-        return features.map { place, state in
-            guard replayPlaceIDs.contains(place.id) else { return (place, state) }
+        return features.compactMap { place, state in
+            guard replayPlaceIDs.contains(place.id) else { return nil }
             return (
                 place,
                 PinState(
@@ -2030,8 +2030,8 @@ enum ListMapViewport {
         }
         let lonBounds = shortestLongitudeBounds(for: longitudes)
         let lonSpan = lonBounds.max - lonBounds.min
-        let lonPad = max(lonSpan * 0.18, 0.01)
-        let latPad = max((maxLat - minLat) * 0.18, 0.01)
+        let lonPad = padding(for: lonSpan, placeCount: places.count)
+        let latPad = padding(for: maxLat - minLat, placeCount: places.count)
         return ViewportSeed(
             bbox: BBox(
                 minLon: lonBounds.min - lonPad,
@@ -2041,6 +2041,11 @@ enum ListMapViewport {
             ),
             zoom: places.count == 1 ? 14 : 12
         )
+    }
+
+    private static func padding(for span: Double, placeCount: Int) -> Double {
+        guard placeCount > 1 else { return 0.01 }
+        return max(span * 0.12, 0.001)
     }
 
     private static func shortestLongitudeBounds(for longitudes: [Double]) -> (min: Double, max: Double) {
@@ -2701,6 +2706,7 @@ struct MapScreen: View {
         }
         .onChange(of: appShell.isMenuPresented) { _, isPresented in
             guard isPresented else { return }
+            cardPresentation.dismiss()
             Task { await refreshStorageMenuStatus() }
         }
         .onChange(of: layerVisibility) { _, visibility in
@@ -3000,11 +3006,6 @@ struct MapScreen: View {
 
     private var statusChrome: some View {
         VStack(alignment: .trailing, spacing: 8) {
-            if let activeListMap {
-                layersButton
-                listMapFilterChips(activeListMap)
-            }
-
             mapChrome
         }
     }
@@ -3031,6 +3032,8 @@ struct MapScreen: View {
         VStack(alignment: .leading, spacing: 8) {
             if let activeListMap {
                 listMapNavigationChrome(activeListMap)
+                layersButton
+                listMapFilterChips(activeListMap)
             } else {
                 Button {
                     appShell.openMenu()
