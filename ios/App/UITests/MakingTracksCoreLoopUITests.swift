@@ -622,16 +622,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         let saveButton = app.otherElements["place-card.action-bar"].buttons["place-card.save"]
         XCTAssertTrue(saveButton.waitForExistence(timeout: 5))
-        XCTAssertEqual(saveButton.label, "Save")
+        XCTAssertTrue(waitForButtonLabel("Saved", identifier: "place-card.save", in: app))
         XCTAssertTrue(element(identifier: "place-card.list-chips", in: app).label.contains("Date night"))
-
-        saveButton.tap()
-        XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
-        app.buttons["Want to go"].tap()
-        app.buttons["list-picker.done"].tap()
-
-        XCTAssertTrue(saveButton.waitForExistence(timeout: 5))
-        XCTAssertEqual(saveButton.label, "Saved")
 
         saveButton.tap()
         XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
@@ -644,8 +636,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         dateNightRow.tap()
         app.buttons["list-picker.done"].tap()
 
-        XCTAssertTrue(saveButton.waitForExistence(timeout: 5))
-        XCTAssertEqual(saveButton.label, "Saved")
+        XCTAssertTrue(waitForButtonLabel("Save", identifier: "place-card.save", in: app))
         XCTAssertFalse(element(identifier: "place-card.list-chips", in: app).exists)
     }
 
@@ -678,7 +669,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         let savedButton = app.otherElements["place-card.action-bar"].buttons["place-card.save"]
         XCTAssertTrue(savedButton.waitForExistence(timeout: 5))
-        XCTAssertEqual(savedButton.label, "Save")
+        XCTAssertTrue(waitForButtonLabel("Saved", identifier: "place-card.save", in: app))
         let listChips = element(identifier: "place-card.list-chips", in: app)
         XCTAssertTrue(listChips.waitForExistence(timeout: 5))
         XCTAssertTrue(listChips.label.contains("KL walk"))
@@ -871,12 +862,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForAccessibilityPin(
             in: app,
             placeID: "mt1_D0000000000000000000000001",
-            label: "Dense Pin 1, Attraction, visited"
+            label: "Dense Pin 1, Attraction, visited, saved"
         ))
         XCTAssertTrue(waitForAccessibilityPin(
             in: app,
             placeID: "mt1_D0000000000000000000000002",
-            label: "Dense Pin 2, Historic Building, visited"
+            label: "Dense Pin 2, Historic Building, visited, saved"
         ))
 
         let slider = app.sliders["map.track-replay.slider"]
@@ -894,12 +885,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForAccessibilityPin(
             in: app,
             placeID: "mt1_D0000000000000000000000001",
-            label: "Dense Pin 1, Attraction, visited"
+            label: "Dense Pin 1, Attraction, visited, saved"
         ))
         XCTAssertTrue(waitForAccessibilityPin(
             in: app,
             placeID: "mt1_D0000000000000000000000002",
-            label: "Dense Pin 2, Historic Building, not visited"
+            label: "Dense Pin 2, Historic Building, not visited, saved"
         ))
 
         let play = app.buttons["map.track-replay.play"]
@@ -911,7 +902,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForAccessibilityPin(
             in: app,
             placeID: "mt1_D0000000000000000000000002",
-            label: "Dense Pin 2, Historic Building, visited"
+            label: "Dense Pin 2, Historic Building, visited, saved"
         ))
         XCTAssertTrue(waitForButtonLabel(
             "Pause track replay",

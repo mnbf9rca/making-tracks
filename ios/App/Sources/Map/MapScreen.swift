@@ -7799,12 +7799,6 @@ private struct PlaceCardSheet: View {
         }
     }
 
-    private func setSaved(_ saved: Bool) async {
-        await performAction {
-            try await model?.setSaved(placeID: placeID, saved: saved)
-        }
-    }
-
     private func setVisited(_ visited: Bool, action: PlaceCardAction) async {
         if !visited, (await model?.visitCount(placeID: placeID) ?? 0) > 1 {
             // #217: Rob has not fixed the stale single-visit threshold yet, so
@@ -8877,12 +8871,6 @@ final class MapScreenModel {
             accessibilityLabel: "Photo of \(name)",
             attribution: "Fixture photo"
         )
-    }
-
-    func setSaved(placeID: String, saved: Bool) async throws {
-        guard let placeRef = await actionPlaceRef(for: placeID) else { throw MapScreenActionError.placeUnavailable }
-        try coreLoop.setSaved(placeRef, saved)
-        logVerdictChanged(placeRef: placeRef, action: "save", enabled: saved)
     }
 
     func addToList(placeID: String, listID: Int64) async throws {

@@ -52,8 +52,9 @@ final class CoreLoopControllerTests: XCTestCase {
         let controller = CoreLoopController(database: db)
         var changes = controller.changes.makeAsyncIterator()
         let place = try makePlace("p_loop")
+        let wantToGoListID = try db.wantToGoListID()
 
-        try controller.setSaved(place, true)
+        try controller.addToList(place, listID: wantToGoListID)
         let savedChange = await changes.next()
         XCTAssertEqual(savedChange, ["p_loop"])
         XCTAssertEqual(try db.viewportState(["p_loop"])["p_loop"], PinState(saved: true, visit: .none))
@@ -78,7 +79,7 @@ final class CoreLoopControllerTests: XCTestCase {
         XCTAssertEqual(unvisitedChange, ["p_loop"])
         XCTAssertEqual(try db.viewportState(["p_loop"])["p_loop"], PinState(saved: true, visit: .none))
 
-        try controller.setSaved(place, false)
+        try controller.removeFromList(placeID: place.placeID, listID: wantToGoListID)
         let unsavedChange = await changes.next()
         XCTAssertEqual(unsavedChange, ["p_loop"])
         XCTAssertEqual(try db.viewportState(["p_loop"])["p_loop"], PinState(saved: false, visit: .none))
@@ -109,7 +110,7 @@ final class CoreLoopControllerTests: XCTestCase {
         for (placeID, saved, visit) in cases {
             let place = try makePlace(placeID)
             if saved {
-                try controller.setSaved(place, true)
+                try controller.addToList(place, listID: db.wantToGoListID())
             }
             switch visit {
             case .none:
@@ -132,17 +133,18 @@ final class CoreLoopControllerTests: XCTestCase {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         let controller = CoreLoopController(database: db)
         let savedLoved = try makePlace("p_saved_loved_transition")
-        try controller.setSaved(savedLoved, true)
+        let wantToGoListID = try db.wantToGoListID()
+        try controller.addToList(savedLoved, listID: wantToGoListID)
         try controller.setVisited(savedLoved, true)
         try controller.setLoved(placeID: savedLoved.placeID, true)
 
-        try controller.setSaved(savedLoved, false)
+        try controller.removeFromList(placeID: savedLoved.placeID, listID: wantToGoListID)
         XCTAssertEqual(
             try db.viewportState([savedLoved.placeID])[savedLoved.placeID],
             PinState(saved: false, visit: .loved)
         )
 
-        try controller.setSaved(savedLoved, true)
+        try controller.addToList(savedLoved, listID: wantToGoListID)
         try controller.setLoved(placeID: savedLoved.placeID, false)
         XCTAssertEqual(
             try db.viewportState([savedLoved.placeID])[savedLoved.placeID],

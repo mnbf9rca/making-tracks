@@ -15,15 +15,6 @@ public final class CoreLoopController: Sendable {
         continuation = captured!
     }
 
-    public func setSaved(_ place: PlaceRef, _ saved: Bool) throws {
-        if saved {
-            try database.addToList(place, listID: database.wantToGoListID())
-        } else {
-            try database.removeFromList(placeID: place.placeID, listID: database.wantToGoListID())
-        }
-        emit(place.placeID)
-    }
-
     public func addToList(_ place: PlaceRef, listID: Int64) throws {
         try database.addToList(place, listID: listID)
         emit(place.placeID)
