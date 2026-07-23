@@ -4257,10 +4257,11 @@ struct MapScreen: View {
 
     @MainActor
     private func clearActiveListMap(deletedListID listID: Int64) async {
-        guard activeListMap?.listID == listID else { return }
-        activeListMap = nil
-        listCameraRequest = nil
-        clearTrackReplay()
+        if activeListMap?.listID == listID {
+            activeListMap = nil
+            listCameraRequest = nil
+            clearTrackReplay()
+        }
         await refreshCurrentViewport()
     }
 
@@ -8817,9 +8818,9 @@ final class MapScreenModel {
     }
 
     func deleteList(id: Int64) async throws {
-        let db = database
+        let coreLoop = coreLoop
         try await Task.detached {
-            try db.deleteList(id: id)
+            try coreLoop.deleteList(id: id)
         }.value
     }
 

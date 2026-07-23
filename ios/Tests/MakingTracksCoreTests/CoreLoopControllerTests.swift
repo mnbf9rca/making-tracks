@@ -197,6 +197,29 @@ final class CoreLoopControllerTests: XCTestCase {
         XCTAssertEqual(try db.listItems(listID: list.id!).map(\.placeID), [])
     }
 
+    func testDeletingCustomListEmitsAffectedPlaceIDsAndClearsSavedState() async throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let controller = CoreLoopController(database: db)
+        var changes = controller.changes.makeAsyncIterator()
+        let list = try db.createList(named: "Date night")
+        let place = try makePlace("p_deleted_list")
+        try controller.addToList(place, listID: list.id!)
+        _ = await changes.next()
+        XCTAssertEqual(
+            try db.viewportState([place.placeID])[place.placeID],
+            PinState(saved: true, visit: .none)
+        )
+
+        try controller.deleteList(id: list.id!)
+
+        let deletedChange = await changes.next()
+        XCTAssertEqual(deletedChange, [place.placeID])
+        XCTAssertEqual(
+            try db.viewportState([place.placeID])[place.placeID],
+            PinState(saved: false, visit: .none)
+        )
+    }
+
     func testVisitVerdictUsesVisitIDToFindPlaceAndEmitsChangedPlaceID() async throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         let controller = CoreLoopController(database: db)

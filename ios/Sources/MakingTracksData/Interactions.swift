@@ -56,7 +56,8 @@ extension AppDatabase {
         }
     }
 
-    public func deleteList(id: Int64) throws {
+    @discardableResult
+    public func deleteList(id: Int64) throws -> Set<String> {
         try dbQueue.write { db in
             guard let existing = try PlaceList.fetchOne(db, key: id) else {
                 throw AppDatabaseError.unreadableDatabase
@@ -64,7 +65,15 @@ extension AppDatabase {
             guard !existing.isSystem else {
                 throw AppDatabaseError.systemListIsProtected
             }
+            let affectedPlaceIDs = Set(
+                try String.fetchAll(
+                    db,
+                    sql: "SELECT place_id FROM list_items WHERE list_id = ?",
+                    arguments: [id]
+                )
+            )
             _ = try existing.delete(db)
+            return affectedPlaceIDs
         }
     }
 

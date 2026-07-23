@@ -640,6 +640,57 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(element(identifier: "place-card.list-chips", in: app).exists)
     }
 
+    func testDeletingOnlyCustomListRefreshesRenderedSavedPin() {
+        let app = launch(reset: true, seedUserList: true, pinDiagnostics: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+        XCTAssertTrue(waitForAccessibilityPin(
+            in: app,
+            placeID: placeID,
+            label: "Ghost Sign, Attraction, not visited, saved"
+        ))
+        let pin = app.buttons["map.pin.\(placeID)"]
+        let savedBookmarkPixels = waitForBookmarkPixelCount(
+            around: pin,
+            in: app,
+            matching: { $0 >= 12 },
+            failure: "Expected rendered bookmark badge pixels before deleting the containing list"
+        )
+
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        let dateNight = app.staticTexts["Date night"]
+        XCTAssertTrue(dateNight.waitForExistence(timeout: 5))
+        let dateNightRow = app.buttons.matching(identifierPrefix: "lists.row.").matching(
+            NSPredicate(format: "label CONTAINS %@", "Date night")
+        ).firstMatch
+        XCTAssertTrue(dateNightRow.waitForExistence(timeout: 5))
+        dateNightRow.swipeLeft()
+        let deleteButton = app.buttons.matching(identifierPrefix: "lists.delete.").firstMatch
+        XCTAssertTrue(deleteButton.waitForExistence(timeout: 5))
+        deleteButton.tap()
+        let confirmDelete = app.buttons.matching(identifier: "lists.delete.confirm").firstMatch
+        XCTAssertTrue(confirmDelete.waitForExistence(timeout: 5))
+        confirmDelete.tap()
+        XCTAssertTrue(waitForNonExistence(of: dateNight, timeout: 5))
+        app.buttons["menu.done"].tap()
+
+        XCTAssertTrue(waitForAccessibilityPin(
+            in: app,
+            placeID: placeID,
+            label: "Ghost Sign, Attraction, not visited"
+        ))
+        _ = waitForBookmarkPixelCount(
+            around: pin,
+            in: app,
+            matching: { $0 * 3 < savedBookmarkPixels },
+            failure: "Expected rendered bookmark badge pixels to clear after deleting the final containing list"
+        )
+    }
+
     func testCustomListCanBeCreatedBrowsedAndShownOnMap() {
         let app = launch(reset: true, resetTheme: true, pinDiagnostics: true, seedTrackVisits: true)
 
@@ -2541,6 +2592,87 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         XCTFail("Expected at least \(count) clusters, got \(clusters.count)")
         return false
+    }
+
+    private func waitForBookmarkPixelCount(
+        around pin: XCUIElement,
+        in app: XCUIApplication,
+        matching predicate: (Int) -> Bool,
+        failure: String
+    ) -> Int {
+        let deadline = Date().addingTimeInterval(5)
+        var observed = 0
+        while Date() < deadline {
+            observed = bookmarkDarkPixelCount(around: pin, in: app)
+            if predicate(observed) {
+                return observed
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = "bookmark-pixel-miss"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTFail("\(failure); observed \(observed) dark pixels")
+        return observed
+    }
+
+    private func bookmarkDarkPixelCount(around pin: XCUIElement, in app: XCUIApplication) -> Int {
+        let screenshot = XCUIScreen.main.screenshot()
+        guard let image = UIImage(data: screenshot.pngRepresentation)?.cgImage else { return 0 }
+
+        let appFrame = app.windows.firstMatch.exists ? app.windows.firstMatch.frame : app.frame
+        let sampleFrame = CGRect(
+            x: pin.frame.midX + 1,
+            y: pin.frame.minY + 1,
+            width: max(1, (pin.frame.width / 2) - 2),
+            height: max(1, (pin.frame.height / 2) - 2)
+        ).intersection(appFrame)
+        guard sampleFrame.width > 0, sampleFrame.height > 0, appFrame.width > 0, appFrame.height > 0 else {
+            return 0
+        }
+
+        let width = image.width
+        let height = image.height
+        let scaleX = CGFloat(width) / appFrame.width
+        let scaleY = CGFloat(height) / appFrame.height
+        let minX = max(0, Int(((sampleFrame.minX - appFrame.minX) * scaleX).rounded(.down)))
+        let maxX = min(width - 1, Int(((sampleFrame.maxX - appFrame.minX) * scaleX).rounded(.up)))
+        let minY = max(0, Int(((sampleFrame.minY - appFrame.minY) * scaleY).rounded(.down)))
+        let maxY = min(height - 1, Int(((sampleFrame.maxY - appFrame.minY) * scaleY).rounded(.up)))
+        guard minX < maxX, minY < maxY else { return 0 }
+
+        let bytesPerPixel = 4
+        let bytesPerRow = width * bytesPerPixel
+        var pixels = [UInt8](repeating: 0, count: height * bytesPerRow)
+        guard let context = CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        ) else {
+            return 0
+        }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        var darkPixelCount = 0
+        for y in minY...maxY {
+            for x in minX...maxX {
+                let index = y * bytesPerRow + x * bytesPerPixel
+                let red = Int(pixels[index])
+                let green = Int(pixels[index + 1])
+                let blue = Int(pixels[index + 2])
+                if red <= 80, green <= 80, blue <= 80 {
+                    darkPixelCount += 1
+                }
+            }
+        }
+        return darkPixelCount
     }
 
     private func waitForClusterPinPixels(in app: XCUIApplication) -> Bool {
