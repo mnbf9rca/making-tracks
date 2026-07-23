@@ -6202,21 +6202,7 @@ private struct DiagnosticsView: View {
                 Text("Nothing is sent automatically. The app prepares a file on this phone; when you share, you pick who gets it.")
             }
 
-            Section("Included") {
-                diagnosticsClassGrid(Self.includedDisclosureClasses, isIncluded: true)
-            }
-
-            Section("Not included") {
-                diagnosticsClassGrid(Self.excludedDisclosureClasses, isIncluded: false)
-            }
-
             if let artifact {
-                Section("Diagnostic file ready") {
-                    Text("\(formattedByteCount(artifact.byteCount)) archive is ready on this phone. Tap Share when you are ready to choose who gets it. Nothing leaves Making Tracks before then.")
-                        .font(.callout.weight(.semibold))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
                 Section("Preview") {
                     ScrollView([.horizontal, .vertical]) {
                         Text(verbatim: artifact.preview)
@@ -6228,8 +6214,15 @@ private struct DiagnosticsView: View {
                     .accessibilityIdentifier("settings.diagnostics.preview")
                 }
 
+                Section("Diagnostic file ready") {
+                    Text("\(formattedByteCount(artifact.byteCount)) archive is ready on this phone. Tap Share when you are ready to choose who gets it. Nothing leaves Making Tracks before then.")
+                        .font(.callout.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 Section("Before sharing") {
                     diagnosticsBullet("You choose the person or app that gets the file.")
+                    diagnosticsBullet("Your device name, exact location, and searches are not included in the export.")
                     diagnosticsBullet("Making Tracks has no upload endpoint.")
                 }
             }
@@ -6323,33 +6316,6 @@ private struct DiagnosticsView: View {
             .foregroundStyle(.primary, Color.accentColor)
     }
 
-    private func diagnosticsClassGrid(_ classes: [DiagnosticsDisclosureClass], isIncluded: Bool) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 10) {
-            ForEach(classes) { item in
-                diagnosticsClassTile(item, isIncluded: isIncluded)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func diagnosticsClassTile(_ item: DiagnosticsDisclosureClass, isIncluded: Bool) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: isIncluded ? "checkmark.circle.fill" : "slash.circle")
-                .foregroundStyle(isIncluded ? Color.accentColor : .secondary)
-                .imageScale(.medium)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Text(item.detail)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
-
     private func formattedByteCount(_ byteCount: Int) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file)
     }
@@ -6396,29 +6362,6 @@ private struct DiagnosticsView: View {
         }
     }
 
-    private static let includedDisclosureClasses: [DiagnosticsDisclosureClass] = [
-        DiagnosticsDisclosureClass(title: "App details", detail: "App release and build number."),
-        DiagnosticsDisclosureClass(title: "Device type", detail: "Model and iOS version."),
-        DiagnosticsDisclosureClass(title: "Steps in the app", detail: "Screens opened and buttons used."),
-        DiagnosticsDisclosureClass(title: "Downloaded maps", detail: "Offline maps and their versions."),
-        DiagnosticsDisclosureClass(title: "Map file links", detail: "Making Tracks map file paths."),
-        DiagnosticsDisclosureClass(title: "Problems", detail: "Status codes and failure labels."),
-        DiagnosticsDisclosureClass(title: "Load times", detail: "Fetch and map drawing times."),
-        DiagnosticsDisclosureClass(title: "Places and taps", detail: "Places opened, saved, hidden, or marked seen."),
-    ]
-
-    private static let excludedDisclosureClasses: [DiagnosticsDisclosureClass] = [
-        DiagnosticsDisclosureClass(title: "Device name", detail: "Your personal device label."),
-        DiagnosticsDisclosureClass(title: "Precise location", detail: "Your exact coordinates are not included."),
-        DiagnosticsDisclosureClass(title: "Search text", detail: "What you typed is omitted."),
-    ]
-}
-
-private struct DiagnosticsDisclosureClass: Identifiable {
-    let title: String
-    let detail: String
-
-    var id: String { title }
 }
 
 private struct DiagnosticsShareItem: Identifiable {
