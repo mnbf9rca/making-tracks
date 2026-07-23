@@ -363,7 +363,10 @@ final class LoggingPrivacyTests: XCTestCase {
         XCTAssertTrue(source.contains("Task {"), "Prepare actions should enter Swift concurrency.")
         XCTAssertTrue(source.contains("await prepare()"), "Prepare actions should await the async prepare path.")
         XCTAssertTrue(source.contains("private func prepare() async"), "Diagnostics prepare should be async.")
-        XCTAssertTrue(source.contains("Task.detached(priority: .userInitiated)"), "Exporter work should run off the main actor.")
+        XCTAssertTrue(
+            source.contains("Task.detached(priority: .userInitiated, operation: operation)"),
+            "Exporter work should run off the main actor."
+        )
         XCTAssertFalse(
             source.contains("private func prepare() {\n        isPreparing = true"),
             "Diagnostics prepare should not use the old synchronous body."
