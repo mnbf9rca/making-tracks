@@ -389,8 +389,8 @@ Scaling properties:
 
 - Adding a source is mostly adapter + source-catalog config + fixtures +
   licensing review.
-- Heavy work stays on the VPS and writes progress heartbeats with counts,
-  rates, durations, and log paths.
+- Heavy work stays on the VPS and uses the shared pipeline heartbeat helper so
+  logs expose counts, rates, durations, ETA-computable progress and log paths.
 - Snapshots are immutable inputs. Re-running the same snapshot, matcher config,
   and review decisions produces byte-identical outputs.
 - Acquisition concurrency is configured per source class. Wikimedia retains its

@@ -584,7 +584,8 @@ def test_acquire_all_skips_pageviews_when_region_opts_out(tmp_path, monkeypatch)
     assert "pageviews" not in paths
 
 
-def test_wikipedia_acquisition_writes_complete_snapshot(tmp_path):
+def test_wikipedia_acquisition_writes_complete_snapshot(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(acquire, "_WIKIPEDIA_HEARTBEAT_EVERY_PAGES", 1, raising=False)
     calls = []
 
     def fetch_json(url, *, expected_hosts, max_bytes, headers):
@@ -646,6 +647,15 @@ def test_wikipedia_acquisition_writes_complete_snapshot(tmp_path):
     assert [page["pageid"] for page in data["pages"]] == [10, 20]
     assert data["pages"][0]["wikidata"] == "Q10"
     assert len(calls) == 2
+    err = capsys.readouterr().err
+    assert "PHASE START acquire.wikipedia.geosearch region=en tiles=1" in err
+    assert "PHASE DONE acquire.wikipedia.geosearch region=en processed=1/1" in err
+    assert "segments=1 pageids=2" in err
+    assert "PHASE START acquire.wikipedia.page_fetch region=en pages=2" in err
+    assert "PHASE HEARTBEAT acquire.wikipedia.page_fetch region=en processed=2/2" in err
+    assert "pages=2" in err
+    assert "PHASE START acquire.wikipedia.persist region=en pages=2" in err
+    assert "PHASE DONE acquire.wikipedia.persist region=en processed=2/2" in err
 
 
 def test_qid_sitelink_acquisition_augments_wikipedia_snapshot_with_verified_pages(tmp_path):

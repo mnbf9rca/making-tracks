@@ -689,6 +689,10 @@ class _UploadProgress:
             heartbeat_every_seconds=heartbeat_every_seconds,
         )
 
+    @property
+    def heartbeat_every_seconds(self) -> float:
+        return self.progress.heartbeat_every_seconds
+
     def start(self) -> None:
         self.progress.start()
 

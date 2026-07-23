@@ -28,6 +28,8 @@ RETRY_STATUSES = {429, 500, 502, 503, 504}
 MAX_RETRY_AFTER_SECONDS = 300
 MAX_PAGEVIEW_TITLES = 50_000
 WIKIMEDIA_MAXLAG_SECONDS = 5
+_WIKIPEDIA_HEARTBEAT_EVERY_PAGES = 10_000
+_WIKIPEDIA_HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
 _BLANK_EXTRACT_HEARTBEAT_EVERY_PAGES = 10_000
 _BLANK_EXTRACT_HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
 _QID_RE = re.compile(r"Q[0-9]+")
@@ -1089,6 +1091,16 @@ def acquire_wikipedia(
         segment_paths = []
         workers = max(1, min(int(geosearch_workers), 8))
         backoff = SharedBackoff(sleep) if workers > 1 else None
+        geosearch_phase = progress.PhaseProgress(
+            "acquire.wikipedia.geosearch",
+            region=language,
+            total=len(tiles),
+            total_label="tiles",
+            heartbeat_every_records=_WIKIPEDIA_HEARTBEAT_EVERY_PAGES,
+            heartbeat_every_seconds=_WIKIPEDIA_HEARTBEAT_EVERY_SECONDS,
+        )
+        geosearch_phase.start()
+        completed_tiles = 0
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             futures = [
                 executor.submit(
@@ -1108,9 +1120,28 @@ def acquire_wikipedia(
             ]
             for future in concurrent.futures.as_completed(futures):
                 segment_paths.append(future.result())
+                completed_tiles += 1
+                geosearch_phase.tick(
+                    completed_tiles,
+                    extra=f" segments={len(segment_paths)}",
+                )
         pageids, segments = _merge_wikipedia_segments(segment_paths)
+        geosearch_phase.done(
+            completed_tiles,
+            extra=f" segments={len(segment_paths)} pageids={len(pageids)}",
+        )
 
         pages = []
+        page_phase = progress.PhaseProgress(
+            "acquire.wikipedia.page_fetch",
+            region=language,
+            total=len(pageids),
+            total_label="pages",
+            heartbeat_every_records=_WIKIPEDIA_HEARTBEAT_EVERY_PAGES,
+            heartbeat_every_seconds=_WIKIPEDIA_HEARTBEAT_EVERY_SECONDS,
+        )
+        page_phase.start()
+        fetched_pages = 0
         for batch in _chunks([str(pageid) for pageid in pageids], page_batch_size):
             ids = [int(pageid) for pageid in batch]
             data = _retry_json(
@@ -1138,6 +1169,9 @@ def acquire_wikipedia(
                         "wikidata": page.get("pageprops", {}).get("wikibase_item"),
                     }
                 )
+            fetched_pages += len(ids)
+            page_phase.tick(fetched_pages, extra=f" pages={len(pages)}")
+        page_phase.done(fetched_pages, extra=f" pages={len(pages)}")
     except Exception:
         out.unlink(missing_ok=True)
         out.with_name(f".{out.name}.tmp").unlink(missing_ok=True)
@@ -1145,19 +1179,27 @@ def acquire_wikipedia(
     finally:
         shutil.rmtree(segment_dir, ignore_errors=True)
 
-    return _atomic_write_json(
-        out,
-        {
-            "_meta": {
-                "complete": True,
-                "endpoint": endpoint,
-                "retrieved_at": retrieved_at or _now(),
-                "segments": segments,
-            },
-            "lang": language,
-            "pages": pages,
-        },
+    persist_phase = progress.PhaseProgress(
+        "acquire.wikipedia.persist",
+        region=language,
+        total=len(pages),
+        total_label="pages",
+        heartbeat_every_records=_WIKIPEDIA_HEARTBEAT_EVERY_PAGES,
+        heartbeat_every_seconds=_WIKIPEDIA_HEARTBEAT_EVERY_SECONDS,
     )
+    persist_phase.start()
+    payload = {
+        "_meta": {
+            "complete": True,
+            "endpoint": endpoint,
+            "retrieved_at": retrieved_at or _now(),
+            "segments": segments,
+        },
+        "lang": language,
+        "pages": pages,
+    }
+    persist_phase.done(len(pages), extra=f" pages={len(pages)}")
+    return _atomic_write_json(out, payload)
 
 
 def _pageview_timestamp(value: str) -> str:
