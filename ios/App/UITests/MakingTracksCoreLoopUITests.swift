@@ -819,6 +819,30 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "tracks-static-geometry")
     }
 
+    func testOpeningMenuDismissesOpenPlaceCardBeforeReplayEntry() {
+        let app = launch(reset: true, pinDiagnostics: true, seedMultiDayTrackList: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+
+        openFixtureCard(in: map, app: app)
+        let card = app.scrollViews.matching(identifierPrefix: "place-card.instance.").firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+
+        openAppMenu(in: app)
+        XCTAssertTrue(waitForNonExistence(of: card, timeout: 5), card.debugDescription)
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifierPrefix: "place-card.").firstMatch.exists)
+
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["Replay week"].tap()
+        XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifierPrefix: "place-card.").firstMatch.exists)
+    }
+
     func testTrackReplaySliderAndAutoplayDriveMapPins() {
         let app = launch(
             reset: true,
@@ -2434,6 +2458,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let title = app.staticTexts["map.list-mode.title"]
         let back = app.buttons["map.list-mode.back"]
         let layers = app.buttons["map.layers"]
+        XCTAssertTrue(map.exists, "map.surface missing before list-map chrome placement assertion", file: file, line: line)
         XCTAssertTrue(filter.exists, file: file, line: line)
         XCTAssertTrue(title.exists, file: file, line: line)
         XCTAssertTrue(back.exists, file: file, line: line)
