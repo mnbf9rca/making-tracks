@@ -1,4 +1,5 @@
 import json
+import time
 import types
 import urllib.parse
 
@@ -658,6 +659,78 @@ def test_wikipedia_acquisition_writes_complete_snapshot(tmp_path, capsys, monkey
     assert "PHASE DONE acquire.wikipedia.persist region=en processed=2/2" in err
 
 
+def test_wikipedia_acquisition_heartbeats_while_geosearch_worker_is_busy(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    monkeypatch.setattr(acquire, "_WIKIPEDIA_HEARTBEAT_EVERY_SECONDS", 0.01, raising=False)
+
+    def fetch_json(url, *, expected_hosts, max_bytes, headers):
+        parsed = urllib.parse.urlparse(url)
+        params = urllib.parse.parse_qs(parsed.query)
+        if params.get("list") == ["geosearch"]:
+            time.sleep(0.03)
+            return {"query": {"geosearch": []}}
+        raise AssertionError("page fetch should not run when geosearch is empty")
+
+    acquire.acquire_wikipedia(
+        tmp_path,
+        bbox=(100.0, 1.0, 101.0, 2.0),
+        language="en",
+        config={
+            "endpoint": "https://en.wikipedia.org/w/api.php",
+            "allowed_hosts": ["en.wikipedia.org"],
+        },
+        fetch_json=fetch_json,
+        sleep=lambda _seconds: None,
+        retrieved_at="2026-07-15T00:00:00Z",
+    )
+
+    err = capsys.readouterr().err
+    assert "PHASE HEARTBEAT acquire.wikipedia.geosearch region=en processed=0/1" in err
+
+
+def test_wikipedia_persist_done_is_not_logged_when_atomic_write_fails(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    def fetch_json(url, *, expected_hosts, max_bytes, headers):
+        parsed = urllib.parse.urlparse(url)
+        params = urllib.parse.parse_qs(parsed.query)
+        if params.get("list") == ["geosearch"]:
+            return {"query": {"geosearch": []}}
+        raise AssertionError("page fetch should not run when geosearch is empty")
+
+    def fail_write(*_args, **_kwargs):
+        path = _args[0]
+        if path.name == "wikipedia.snapshot.json":
+            raise OSError("disk full")
+        return original_write(*_args, **_kwargs)
+
+    original_write = acquire._atomic_write_json
+    monkeypatch.setattr(acquire, "_atomic_write_json", fail_write)
+
+    with pytest.raises(OSError, match="disk full"):
+        acquire.acquire_wikipedia(
+            tmp_path,
+            bbox=(100.0, 1.0, 101.0, 2.0),
+            language="en",
+            config={
+                "endpoint": "https://en.wikipedia.org/w/api.php",
+                "allowed_hosts": ["en.wikipedia.org"],
+            },
+            fetch_json=fetch_json,
+            sleep=lambda _seconds: None,
+            retrieved_at="2026-07-15T00:00:00Z",
+        )
+
+    err = capsys.readouterr().err
+    assert "PHASE START acquire.wikipedia.persist region=en pages=0" in err
+    assert "PHASE DONE acquire.wikipedia.persist" not in err
+
+
 def test_qid_sitelink_acquisition_augments_wikipedia_snapshot_with_verified_pages(tmp_path):
     snapshot = tmp_path / "wikipedia.snapshot.json"
     snapshot.write_text(
@@ -1050,6 +1123,79 @@ def test_blank_extract_refresh_falls_back_to_single_title_when_batch_stays_blank
     assert "PHASE DONE blank_extract.single_title_fallback region=en processed=2/2" in err
     assert "PHASE START blank_extract.persist region=en pages=2" in err
     assert "PHASE DONE blank_extract.persist region=en processed=2/2" in err
+
+
+def test_blank_extract_batch_refresh_counts_duplicate_titles_as_pages(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    monkeypatch.setattr(acquire, "_BLANK_EXTRACT_HEARTBEAT_EVERY_PAGES", 1, raising=False)
+    snapshot = tmp_path / "wikipedia.snapshot.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "_meta": {
+                    "complete": True,
+                    "retrieved_at": "2026-07-20T00:00:00Z",
+                    "segments": [],
+                },
+                "lang": "en",
+                "pages": [],
+                "qid_pages": [
+                    {
+                        "extract": "",
+                        "owner_lat": 3.1,
+                        "owner_lon": 101.7,
+                        "pageid": 42,
+                        "qid": "Q42",
+                        "title": "Shared Article",
+                        "wikibase_item": "Q42",
+                    },
+                    {
+                        "extract": "",
+                        "owner_lat": 3.2,
+                        "owner_lon": 101.8,
+                        "pageid": 43,
+                        "qid": "Q43",
+                        "title": "Shared Article",
+                        "wikibase_item": "Q43",
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+    )
+
+    def fetch_json(url, *, expected_hosts, max_bytes, headers):
+        return {
+            "query": {
+                "pages": {
+                    "42": {
+                        "pageid": 42,
+                        "title": "Shared Article",
+                        "extract": "",
+                        "pageprops": {"wikibase_item": "Q42"},
+                    }
+                }
+            }
+        }
+
+    acquire.refresh_blank_qid_page_extracts(
+        snapshot,
+        language="en",
+        wikipedia_config={
+            "endpoint": "https://en.wikipedia.org/w/api.php",
+            "allowed_hosts": ["en.wikipedia.org"],
+        },
+        fetch_json=fetch_json,
+        sleep=lambda _seconds: None,
+        refreshed_at="2026-07-20T02:00:00Z",
+    )
+
+    err = capsys.readouterr().err
+    assert "PHASE START blank_extract.batch_refresh region=en pages=2" in err
+    assert "PHASE DONE blank_extract.batch_refresh region=en processed=2/2" in err
 
 
 def test_qid_sitelink_acquisition_skips_malformed_page_entries(tmp_path):

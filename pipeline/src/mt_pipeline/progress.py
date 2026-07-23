@@ -70,6 +70,26 @@ class PhaseProgress:
                 flush=True,
             )
 
+    def heartbeat_if_due(
+        self,
+        processed: int,
+        *,
+        extra: str | Callable[[], str] = "",
+    ) -> None:
+        now = self.clock()
+        if (now - self.last_heartbeat) >= self.heartbeat_every_seconds:
+            self.last_heartbeat = now
+            elapsed = now - self.started
+            rate = processed / elapsed if elapsed > 0 else 0.0
+            extra_text = extra() if callable(extra) else extra
+            print(
+                f"PHASE HEARTBEAT {self.name} region={self.region} "
+                f"processed={processed}/{self._total_display()} rate={rate:.1f}/s "
+                f"elapsed={elapsed:.1f}s{extra_text}",
+                file=self.stream,
+                flush=True,
+            )
+
     def done(self, processed: int, *, extra: str = "") -> None:
         elapsed = self.clock() - self.started
         print(
