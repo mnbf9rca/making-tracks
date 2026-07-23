@@ -110,10 +110,11 @@ private enum MapOverlayChromeSpec {
     }
 }
 
-struct OfflineRegionCatalogZone: Identifiable, Hashable, Sendable {
+struct OfflineRegionCatalogZone: Identifiable, Equatable, Sendable {
     let id: String
     let displayName: String
     let parentID: String?
+    let bbox: BBox
     let publishVersion: String
     let searchCompactPublishVersion: String?
     let bytesWithoutThumbnails: Int
@@ -123,6 +124,7 @@ struct OfflineRegionCatalogZone: Identifiable, Hashable, Sendable {
         id: String,
         displayName: String,
         parentID: String?,
+        bbox: BBox = BBox(minLon: -180, minLat: -90, maxLon: 180, maxLat: 90),
         publishVersion: String,
         searchCompactPublishVersion: String? = nil,
         bytesWithoutThumbnails: Int,
@@ -131,6 +133,7 @@ struct OfflineRegionCatalogZone: Identifiable, Hashable, Sendable {
         self.id = id
         self.displayName = displayName
         self.parentID = parentID
+        self.bbox = bbox
         self.publishVersion = publishVersion
         self.searchCompactPublishVersion = searchCompactPublishVersion
         self.bytesWithoutThumbnails = bytesWithoutThumbnails
@@ -158,6 +161,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             id: MapRegion.unitedKingdom.rawValue,
             displayName: "United Kingdom",
             parentID: nil,
+            bbox: MapRegion.unitedKingdom.viewportBBox,
             publishVersion: "20260718T000000Z",
             searchCompactPublishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 2_640_000_000,
@@ -167,6 +171,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             id: "united-kingdom_london",
             displayName: "London",
             parentID: MapRegion.unitedKingdom.rawValue,
+            bbox: BBox(minLon: -0.51, minLat: 51.28, maxLon: 0.33, maxLat: 51.70),
             publishVersion: "20260718T000000Z",
             searchCompactPublishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 842_000_000,
@@ -176,6 +181,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             id: "united-kingdom_south_east",
             displayName: "South East England",
             parentID: MapRegion.unitedKingdom.rawValue,
+            bbox: BBox(minLon: -1.9, minLat: 50.7, maxLon: 1.9, maxLat: 52.2),
             publishVersion: "20260718T000000Z",
             searchCompactPublishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 1_120_000_000,
@@ -185,6 +191,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             id: MapRegion.malaysiaSingaporeBrunei.rawValue,
             displayName: "Malaysia, Singapore, and Brunei",
             parentID: nil,
+            bbox: MapRegion.malaysiaSingaporeBrunei.viewportBBox,
             publishVersion: "20260718T000000Z",
             searchCompactPublishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 1_420_000_000,
@@ -194,6 +201,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             id: "malaysia-singapore-brunei_kl",
             displayName: "Kuala Lumpur",
             parentID: MapRegion.malaysiaSingaporeBrunei.rawValue,
+            bbox: BBox(minLon: 101.4, minLat: 2.8, maxLon: 101.9, maxLat: 3.4),
             publishVersion: "20260718T000000Z",
             searchCompactPublishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 610_000_000,
@@ -203,6 +211,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             id: "malaysia-singapore-brunei_penang",
             displayName: "Penang",
             parentID: MapRegion.malaysiaSingaporeBrunei.rawValue,
+            bbox: BBox(minLon: 100.1, minLat: 5.1, maxLon: 100.6, maxLat: 5.7),
             publishVersion: "20260718T000000Z",
             searchCompactPublishVersion: "20260718T000000Z",
             bytesWithoutThumbnails: 520_000_000,
@@ -224,6 +233,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
                 id: entry.id,
                 displayName: entry.displayName,
                 parentID: entry.parent,
+                bbox: entry.bbox,
                 publishVersion: searchPublishVersion,
                 searchCompactPublishVersion: searchPublishVersion,
                 bytesWithoutThumbnails: entry.bytesWithoutThumbnails,
@@ -232,19 +242,28 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         }
     }
 
-    static func current(fetcher: TileFetching) async throws -> OfflineRegionCatalog {
+    static func current(fetcher: TileFetching, cache: OfflineRegionCatalogCache? = nil) async throws -> OfflineRegionCatalog {
         guard let url = URL(string: "https://\(HTTPTileFetcher.trustedHost)/regions.json") else {
             throw TileError.invalidURL
         }
         try HTTPTileFetcher.validateOrigin(url)
-        let data: Data
-        if let boundedFetcher = fetcher as? BoundedTileFetching {
-            data = try await boundedFetcher.fetch(url, maxBytes: RegionIndex.maxBytes)
-        } else {
-            data = try await fetcher.fetch(url)
+        do {
+            let data: Data
+            if let boundedFetcher = fetcher as? BoundedTileFetching {
+                data = try await boundedFetcher.fetch(url, maxBytes: RegionIndex.maxBytes)
+            } else {
+                data = try await fetcher.fetch(url)
+            }
+            guard data.count <= RegionIndex.maxBytes else { throw TileError.responseTooLarge }
+            let catalog = try OfflineRegionCatalog(regionIndex: RegionIndex.decode(data))
+            try? cache?.store(data)
+            return catalog
+        } catch {
+            if let cached = try? cache?.cachedCatalog() {
+                return cached
+            }
+            throw error
         }
-        guard data.count <= RegionIndex.maxBytes else { throw TileError.responseTooLarge }
-        return try OfflineRegionCatalog(regionIndex: RegionIndex.decode(data))
     }
 
     private static func publishVersion(fromSearchCompactPath path: String) -> String? {
@@ -266,6 +285,26 @@ struct OfflineRegionCatalog: Sendable, Equatable {
 
     func children(of parentID: String) -> [OfflineRegionCatalogZone] {
         zones.filter { $0.parentID == parentID }.sorted(by: zoneSort)
+    }
+
+    func selectedRootZoneID(for viewport: BBox, current: String? = nil) -> String? {
+        let roots = rootZones
+        if let current,
+           let currentZone = roots.first(where: { $0.id == current }),
+           currentZone.bbox.intersects(viewport) {
+            return current
+        }
+        let intersecting = roots.filter { $0.bbox.intersects(viewport) }
+        if intersecting.count == 1 {
+            return intersecting[0].id
+        }
+        if let current, roots.contains(where: { $0.id == current }) {
+            return current
+        }
+        return roots.min(by: {
+            Self.distanceSquared($0.bbox.center, viewport.center)
+                < Self.distanceSquared($1.bbox.center, viewport.center)
+        })?.id
     }
 
     func rows(
@@ -437,6 +476,53 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             return lhs.displayName < rhs.displayName
         }
         return lhs.id < rhs.id
+    }
+
+    private static func distanceSquared(
+        _ lhs: (lon: Double, lat: Double),
+        _ rhs: (lon: Double, lat: Double)
+    ) -> Double {
+        let dLon = lhs.lon - rhs.lon
+        let dLat = lhs.lat - rhs.lat
+        return dLon * dLon + dLat * dLat
+    }
+}
+
+struct OfflineRegionCatalogCache: Sendable, Equatable {
+    let directory: URL
+
+    init(directory: URL) throws {
+        self.directory = directory
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    static func appCache() throws -> OfflineRegionCatalogCache {
+        let cacheRoot = try FileManager.default.url(
+            for: .cachesDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        return try OfflineRegionCatalogCache(
+            directory: cacheRoot.appendingPathComponent("MakingTracks/RegionCatalog", isDirectory: true)
+        )
+    }
+
+    func cachedCatalog() throws -> OfflineRegionCatalog? {
+        guard FileManager.default.fileExists(atPath: catalogURL.path) else { return nil }
+        let data = try Data(contentsOf: catalogURL)
+        guard data.count <= RegionIndex.maxBytes else { throw TileError.responseTooLarge }
+        return try OfflineRegionCatalog(regionIndex: RegionIndex.decode(data))
+    }
+
+    func store(_ data: Data) throws {
+        guard data.count <= RegionIndex.maxBytes else { throw TileError.responseTooLarge }
+        _ = try OfflineRegionCatalog(regionIndex: RegionIndex.decode(data))
+        try data.write(to: catalogURL, options: .atomic)
+    }
+
+    private var catalogURL: URL {
+        directory.appendingPathComponent("regions.json")
     }
 }
 
@@ -4295,12 +4381,20 @@ private struct LocationMenuStatus: Sendable {
 
 struct StorageMenuRegion: Identifiable, Equatable, Sendable {
     let region: String
+    let title: String
     let publishVersion: String
     let bytes: Int
     let tileCount: Int
 
+    init(region: String, title: String? = nil, publishVersion: String, bytes: Int, tileCount: Int) {
+        self.region = region
+        self.title = title ?? region
+        self.publishVersion = publishVersion
+        self.bytes = bytes
+        self.tileCount = tileCount
+    }
+
     var id: String { region }
-    var title: String { region }
     var bytesText: String { StorageMenuStatus.formatBytes(bytes) }
 
     var detail: String {
@@ -4332,12 +4426,13 @@ struct StorageMenuStatus: Equatable, Sendable {
         )
     }
 
-    static func ready(from summary: OfflinePackStorageSummary) -> StorageMenuStatus {
+    static func ready(from summary: OfflinePackStorageSummary, catalog: OfflineRegionCatalog? = nil) -> StorageMenuStatus {
         ready(
             totalBytes: summary.totalBytes,
             regions: summary.packs.map {
                 StorageMenuRegion(
                     region: $0.region,
+                    title: catalog?.zone(id: $0.region)?.displayName,
                     publishVersion: $0.publishVersion,
                     bytes: $0.referencedBytes,
                     tileCount: $0.tileCount
@@ -7995,17 +8090,18 @@ final class MapScreenModel {
     private let forceTileNetworkOffline: Bool
     private let fixturePlaces: [String: PlaceRef]
     private let coreLoop: CoreLoopController
-    private var tileClients: [MapRegion: TileClient] = [:]
-    private var tileClientViewportTasks: [MapRegion: Task<Void, Never>] = [:]
+    private var tileClients: [String: TileClient] = [:]
+    private var tileClientViewportTasks: [String: Task<Void, Never>] = [:]
+    private var mapRegionCatalog = OfflineRegionCatalog.empty
     private let viewportChangeBroadcaster = MapScreenAsyncBroadcaster<Void>()
-    private var selectedRegion: MapRegion = .malaysiaSingaporeBrunei
+    private var selectedRegionID = MapRegion.malaysiaSingaporeBrunei.rawValue
     private var hiddenTracker: HiddenMembershipTracker
     private var showHiddenPlaces = false
 
     var changes: AsyncStream<Set<String>> { coreLoop.changes }
 
     var imageChanges: AsyncStream<Set<String>>? {
-        tileClient(for: selectedRegion)?.imageChanges
+        tileClient(for: selectedRegionID)?.imageChanges
     }
 
     var viewportChanges: AsyncStream<Void> {
@@ -8142,7 +8238,7 @@ final class MapScreenModel {
     func offlineMapsLocalState(for catalog: OfflineRegionCatalog) async -> OfflineMapsLocalState {
         async let installed = installedOfflinePublishVersions(for: catalog)
         async let pausedRegions = pausedOfflineDownloadRegions(for: catalog)
-        async let storageStatus = storageMenuStatus()
+        async let storageStatus = storageMenuStatus(catalog: catalog)
         let quarantines = offlinePackQuarantines()
         return await OfflineMapsLocalState(
             installed: installed,
@@ -8156,11 +8252,20 @@ final class MapScreenModel {
         allowsCellularDownloads: Bool,
         catalogFetcher: TileFetching? = nil
     ) async -> OfflineRegionCatalog {
+        let usesDefaultFetcher = catalogFetcher == nil
         let catalogFetcher = catalogFetcher ?? offlineAvailabilityFetcher(
             allowsCellularDownloads: allowsCellularDownloads
         )
+#if DEBUG
+        if forceTileNetworkOffline, usesDefaultFetcher {
+            return .empty
+        }
+#endif
         do {
-            let catalog = try await OfflineRegionCatalog.current(fetcher: catalogFetcher)
+            let catalog = try await OfflineRegionCatalog.current(
+                fetcher: catalogFetcher,
+                cache: try? OfflineRegionCatalogCache.appCache()
+            )
             MakingTracksLog.downloads.info("offline regions index fetched regions=\(catalog.zones.count, privacy: .public)")
             return catalog
         } catch {
@@ -8273,9 +8378,6 @@ final class MapScreenModel {
         }.value
     }
 
-    private static func isValidRegion(_ value: String) -> Bool {
-        value.range(of: "^[a-z][a-z0-9_-]{0,63}$", options: .regularExpression) == value.startIndex..<value.endIndex
-    }
 #endif
 
     func installedOfflineCoverageBBoxes() async -> [CoverageBBox] {
@@ -8377,16 +8479,16 @@ final class MapScreenModel {
 
     func refreshManifest() async {
         let startedAt = Date()
-        guard let client = tileClient(for: selectedRegion) else { return }
+        guard let client = tileClient(for: selectedRegionID) else { return }
         try? await client.refreshPin()
         let state = await client.loadState
         let elapsedMS = Int(Date().timeIntervalSince(startedAt) * 1000)
-        let regionID = selectedRegion.rawValue
+        let regionID = selectedRegionID
         let stateLabel = state.rawValue
         MakingTracksLog.startup.info("manifest refresh finished region=\(regionID, privacy: .private(mask: .hash)) state=\(stateLabel, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
     }
 
-    func storageMenuStatus() async -> StorageMenuStatus {
+    func storageMenuStatus(catalog: OfflineRegionCatalog? = nil) async -> StorageMenuStatus {
         guard let offlineStore else {
             MakingTracksLog.startup.info("storage summary unavailable")
             return .unavailable
@@ -8394,7 +8496,10 @@ final class MapScreenModel {
         let startedAt = Date()
         return await Task.detached {
             do {
-                let status = StorageMenuStatus.ready(from: try offlineStore.installedPackStorageSummary())
+                let status = StorageMenuStatus.ready(
+                    from: try offlineStore.installedPackStorageSummary(),
+                    catalog: catalog
+                )
                 let elapsedMS = Int(Date().timeIntervalSince(startedAt) * 1000)
                 MakingTracksLog.startup.info("storage summary finished regions=\(status.regions.count, privacy: .public) failed=\(status.failedRegions.count, privacy: .public) bytes=\(status.totalBytes, privacy: .public) durationMS=\(elapsedMS, privacy: .public)")
                 return status
@@ -8478,7 +8583,7 @@ final class MapScreenModel {
                 flowMetrics: nil
             )
         }
-        guard let client = tileClient(for: selectedRegion) else {
+        guard let client = tileClient(for: selectedRegionID) else {
             return ViewportFeatures(display: [], nearbyPrompt: [], sourceCount: 0, flowMetrics: nil)
         }
         let places = await client.currentPlaces()
@@ -8646,7 +8751,7 @@ final class MapScreenModel {
     private func cardPhoto(for placeID: String, name: String) async -> PlaceCardPhoto? {
         guard thumbnailLoader != nil,
               fixturePlaces[placeID] == nil,
-              let tileClient = tileClient(for: selectedRegion),
+              let tileClient = tileClient(for: selectedRegionID),
               let image = await tileClient.placeImage(for: placeID)
         else { return nil }
         return PlaceCardPhoto(placeName: name, image: image)
@@ -8772,7 +8877,7 @@ final class MapScreenModel {
             }
             return .tile(fixturePlace)
         }
-        guard let tileClient = tileClient(for: selectedRegion) else { return nil }
+        guard let tileClient = tileClient(for: selectedRegionID) else { return nil }
         return await PlaceResolver(tile: tileClient, snapshots: database).source(for: placeID)
     }
 
@@ -8788,7 +8893,7 @@ final class MapScreenModel {
 
     var pmtilesURL: String? {
         get async {
-            guard let client = tileClient(for: selectedRegion),
+            guard let client = tileClient(for: selectedRegionID),
                   let url = await client.basemapURL,
                   await client.basemapIntegrity != nil
             else { return nil }
@@ -8798,7 +8903,7 @@ final class MapScreenModel {
 
     var attribution: [Attribution] {
         get async {
-            guard let client = tileClient(for: selectedRegion) else {
+            guard let client = tileClient(for: selectedRegionID) else {
                 return [Attribution(source: "osm", license: "ODbL-1.0", text: "OSM credit")]
             }
             return await client.attribution
@@ -8807,18 +8912,18 @@ final class MapScreenModel {
 
     var loadState: TileLoadState {
         get async {
-            guard let client = tileClient(for: selectedRegion) else { return .ok }
+            guard let client = tileClient(for: selectedRegionID) else { return .ok }
             return await client.loadState
         }
     }
 
     private func selectClient(for bbox: BBox, allowManifestRefresh: Bool = true) async -> TileClient? {
-        let nextRegion = MapRegion.select(for: bbox, current: selectedRegion)
-        let changed = nextRegion != selectedRegion
-        selectedRegion = nextRegion
+        let nextRegion = await selectedRegionID(for: bbox, current: selectedRegionID)
+        let changed = nextRegion != selectedRegionID
+        selectedRegionID = nextRegion
         guard let client = tileClient(for: nextRegion) else { return nil }
         if changed {
-            MakingTracksLog.resolution.info("region selected region=\(nextRegion.rawValue, privacy: .private(mask: .hash))")
+            MakingTracksLog.resolution.info("region selected region=\(nextRegion, privacy: .private(mask: .hash))")
             if allowManifestRefresh {
                 try? await client.refreshPin()
             } else {
@@ -8828,8 +8933,44 @@ final class MapScreenModel {
         return client
     }
 
-    private func tileClient(for region: MapRegion) -> TileClient? {
-        guard let tileCache else { return nil }
+    private func selectedRegionID(for bbox: BBox, current: String) async -> String {
+        let catalog = await mapSelectionCatalog()
+        if let selected = catalog.selectedRootZoneID(for: bbox, current: current) {
+            return selected
+        }
+        return MapRegion.select(for: bbox, current: MapRegion(rawValue: current)).rawValue
+    }
+
+    private func mapSelectionCatalog() async -> OfflineRegionCatalog {
+        guard mapRegionCatalog.zones.isEmpty else { return mapRegionCatalog }
+        let catalog = await loadMapSelectionCatalog()
+        mapRegionCatalog = catalog
+        return catalog
+    }
+
+    private func loadMapSelectionCatalog() async -> OfflineRegionCatalog {
+#if DEBUG
+        if forceTileNetworkOffline {
+            return .empty
+        }
+#endif
+        do {
+            let catalog = try await OfflineRegionCatalog.current(
+                fetcher: HTTPTileFetcher.offlineAvailabilityProbe(allowsCellularDownloads: false),
+                cache: try? OfflineRegionCatalogCache.appCache()
+            )
+            MakingTracksLog.downloads.info("map regions index fetched regions=\(catalog.zones.count, privacy: .public)")
+            return catalog
+        } catch {
+            MakingTracksLog.downloads.error("map regions index failed reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
+            return .empty
+        }
+    }
+
+    private func tileClient(for region: String) -> TileClient? {
+        guard let tileCache,
+              Self.isValidRegion(region)
+        else { return nil }
         if let cached = tileClients[region] {
             return cached
         }
@@ -8839,7 +8980,7 @@ final class MapScreenModel {
         let fetcher: TileFetching = HTTPTileFetcher()
 #endif
         let client = TileClient(
-            region: region.rawValue,
+            region: region,
             fetcher: fetcher,
             cache: tileCache,
             offlineStore: offlineStore
@@ -8855,10 +8996,14 @@ final class MapScreenModel {
                 }
             }
         }
-        let regionID = region.rawValue
+        let regionID = region
         let hasOfflineStore = offlineStore != nil
         MakingTracksLog.startup.info("tile client created region=\(regionID, privacy: .private(mask: .hash)) offlineStore=\(hasOfflineStore, privacy: .public)")
         return client
+    }
+
+    private static func isValidRegion(_ value: String) -> Bool {
+        value.range(of: "^[a-z][a-z0-9_-]{0,63}$", options: .regularExpression) == value.startIndex..<value.endIndex
     }
 }
 
