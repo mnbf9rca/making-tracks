@@ -5656,9 +5656,9 @@ private struct ListDetailView: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("lists.detail.track.row.card.\(visit.id)")
-            .accessibilityLabel("Edit visit \(visit.name)")
-            .accessibilityHint("Opens visit date editing")
-            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(named: "Edit visit") {
+                selectedVisitForEditing = visit
+            }
             .contentShape(Rectangle())
             .onTapGesture {
                 selectedVisitForEditing = visit
