@@ -182,6 +182,48 @@ struct MakingTracksApp: App {
                 101.6934,
                 "museum"
             ),
+            (
+                "mt1_V0000000000000000000000003",
+                "Ghost Sign",
+                3.1491,
+                101.6951,
+                "attraction"
+            ),
+            (
+                "mt1_V0000000000000000000000004",
+                "Art Deco Cinema",
+                3.1502,
+                101.6960,
+                "historic_building"
+            ),
+            (
+                "mt1_V0000000000000000000000005",
+                "Central Market",
+                3.1437,
+                101.6958,
+                "market"
+            ),
+            (
+                "mt1_V0000000000000000000000006",
+                "Thean Hou Temple",
+                3.1215,
+                101.6865,
+                "temple"
+            ),
+            (
+                "mt1_V0000000000000000000000007",
+                "Petronas Twin Towers Observation Deck",
+                3.1579,
+                101.7116,
+                "attraction"
+            ),
+            (
+                "mt1_V0000000000000000000000008",
+                "Jalan Alor Night Market",
+                3.1466,
+                101.7008,
+                "food"
+            ),
         ]
         return fixtures.map { fixture in
             try! PlaceRef(

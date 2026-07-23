@@ -1,0 +1,246 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --paper: #f1eddf;
+      --sheet: #fffdf7;
+      --ink: #1c1c1e;
+      --dim: #64635d;
+      --line: #ddd8ca;
+      --accent: #0a6b5c;
+      --accent-soft: #e3f0eb;
+      --blue: #2f5c8a;
+      --blue-soft: #e8eef5;
+      --danger: #b42318;
+      --danger-soft: #f8e7e4;
+      --gold: #816018;
+      --gold-soft: #f3ead2;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #f6f6f4;
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+      padding: 28px 24px 34px;
+    }
+    h1 { font-size: 17px; font-weight: 650; margin-bottom: 2px; }
+    .sub { color: var(--dim); font-size: 12.5px; margin-bottom: 22px; max-width: 900px; }
+    .row { display: flex; gap: 30px; align-items: flex-start; }
+    .col { width: 390px; }
+    .cap { font-size: 12px; font-weight: 650; margin-bottom: 3px; }
+    .capsub { color: var(--dim); font-size: 11px; line-height: 1.35; margin-bottom: 9px; min-height: 44px; }
+    .phone {
+      background: var(--paper);
+      border: 1px solid #c9c6bd;
+      border-radius: 26px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.09);
+      height: 844px;
+      overflow: hidden;
+      position: relative;
+      width: 390px;
+    }
+    .status { display: flex; justify-content: space-between; padding: 12px 20px 8px; font-size: 12px; font-weight: 650; }
+    .nav {
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      gap: 12px;
+      min-height: 48px;
+      padding: 0 18px;
+    }
+    .back { color: var(--accent); font-size: 15px; white-space: nowrap; }
+    .title { font-size: 17px; font-weight: 650; }
+    .navspacer { flex: 1; }
+    .navbtn { color: var(--accent); font-size: 15px; font-weight: 600; }
+    .list { padding: 14px 16px 92px; }
+    .summary {
+      background: var(--sheet);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      margin-bottom: 12px;
+      padding: 12px;
+    }
+    .summaryline { align-items: center; display: flex; gap: 7px; font-size: 13px; font-weight: 650; }
+    .summary h2 { font-size: 20px; line-height: 1.1; margin: 5px 0 6px; }
+    .summary p { color: #3a3a36; font-size: 12.5px; line-height: 1.32; }
+    .buttonrow { display: flex; gap: 8px; margin-top: 10px; }
+    .btn {
+      background: #efede6;
+      border-radius: 9px;
+      color: #35342f;
+      flex: 1;
+      font-size: 13px;
+      font-weight: 650;
+      min-height: 38px;
+      padding: 10px 8px;
+      text-align: center;
+    }
+    .btn.primary { background: var(--accent); color: white; }
+    .section-title {
+      color: var(--dim);
+      font-size: 12px;
+      font-weight: 650;
+      letter-spacing: .3px;
+      margin: 12px 6px 6px;
+      text-transform: uppercase;
+    }
+    /* --- COMPACT visit row (amended per Rob: no per-tile date field) --- */
+    .visit {
+      align-items: center;
+      background: var(--sheet);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      display: flex;
+      gap: 10px;
+      margin-bottom: 7px;
+      padding: 9px 11px;
+    }
+    .pin {
+      align-items: center;
+      background: var(--accent-soft);
+      border-radius: 8px;
+      color: var(--accent);
+      display: flex;
+      flex: none;
+      font-size: 11px;
+      font-weight: 750;
+      height: 28px;
+      justify-content: center;
+      width: 28px;
+    }
+    .pin.blue { background: var(--blue-soft); color: var(--blue); }
+    .pin.gold { background: var(--gold-soft); color: var(--gold); }
+    .visit-text { flex: 1; min-width: 0; }
+    .name { font-size: 15px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .meta { color: var(--dim); font-size: 12px; line-height: 1.25; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .heart {
+      align-items: center;
+      border: 1px solid #ded5c8;
+      border-radius: 8px;
+      color: #b3aa9c;
+      display: flex;
+      flex: none;
+      font-size: 15px;
+      height: 30px;
+      justify-content: center;
+      width: 34px;
+    }
+    .heart.on { color: var(--danger); border-color: #e8c8c1; background: #fbeeeb; }
+    .drag {
+      align-items: center;
+      color: #9a958c;
+      display: flex;
+      flex: none;
+      font-size: 19px;
+      height: 30px;
+      justify-content: center;
+      width: 20px;
+    }
+    .chev { color: #b4afa4; flex: none; font-size: 19px; font-weight: 500; width: 10px; text-align: center; }
+    .note {
+      background: #f4f2eb;
+      border: 1px solid #e2ddce;
+      border-radius: 9px;
+      color: #45423d;
+      font-size: 12px;
+      line-height: 1.35;
+      margin-top: 10px;
+      padding: 9px 10px;
+    }
+    .bar {
+      background: rgba(255,253,247,.97);
+      border-top: 1px solid var(--line);
+      bottom: 0; left: 0; right: 0;
+      display: flex;
+      gap: 9px;
+      padding: 10px 16px 18px;
+      position: absolute;
+    }
+    /* detail-screen bits reused from the ratified Visit date panel */
+    .visit.detail { align-items: flex-start; display: block; padding: 11px 12px 12px; }
+    .visit.detail .visit-head { align-items: flex-start; display: flex; gap: 10px; }
+    .visit.detail .name { white-space: normal; }
+    .visit.detail .meta { white-space: normal; }
+    .controls { align-items: center; display: grid; gap: 8px; grid-template-columns: 1fr auto; margin-top: 10px; }
+    .datebox { border: 1px solid #e1dbcc; border-radius: 8px; padding: 8px 9px; }
+    .datebox span { color: var(--dim); display: block; font-size: 10.5px; font-weight: 650; text-transform: uppercase; }
+    .datebox strong { align-items: center; display: flex; font-size: 13px; gap: 6px; margin-top: 1px; }
+    .cal { color: var(--accent); font-size: 13px; }
+    .square { align-items: center; border: 1px solid #ded5c8; border-radius: 8px; color: var(--danger); background: var(--danger-soft); border-color: #e8c8c1; display: flex; font-size: 13px; font-weight: 750; height: 36px; justify-content: center; width: 36px; }
+    .callout { background: var(--blue-soft); border: 1px solid #c9d9e9; border-radius: 10px; color: #283747; font-size: 12.5px; line-height: 1.35; padding: 11px; }
+    .callout strong { display: block; font-size: 13px; margin-bottom: 3px; }
+    .tag { display:inline-block; background: var(--accent-soft); color: var(--accent); font-size: 10px; font-weight: 700; border-radius: 5px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; text-transform: uppercase; letter-spacing:.3px; }
+  </style>
+</head>
+<body>
+<h1>Visits editing - AMENDED for density (Rob's directive)</h1>
+<div class="sub">iPhone 17e, 390x844. Rob: "tiles are too long... you dont need the date on the tile AND a sectional date header." Amendment: compact one-line rows; the per-visit date field and delete leave the tile and live on the existing "Visit date" detail screen (right); the section header carries the day; the row keeps only quick actions (loved, reorder). ~8 rows now fit where 2-3 did.</div>
+
+<div class="row">
+  <div class="col">
+    <div class="cap">1 - My tracks <span class="tag">amended</span></div>
+    <div class="capsub">Compact rows: pin, name (one line, truncates), type + time-of-day, loved, drag handle. No date field (the day is the section header). Tap a row -> Visit date screen to adjust the day. Delete via swipe or Edit mode.</div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>100%</span></div>
+      <div class="nav"><div class="back">&#8249; Menu</div><div class="title">My tracks</div><div class="navspacer"></div><div class="navbtn">Done</div></div>
+      <div class="list">
+        <div class="summary">
+          <div class="summaryline"><span>v</span><span>Oldest first</span></div>
+          <h2>8 visits</h2>
+          <p>Your track is a sequence of visits you entered. Tap a row to correct its day; drag to reorder within a day.</p>
+          <div class="buttonrow"><div class="btn primary">Map</div><div class="btn">Refresh</div></div>
+        </div>
+
+        <div class="section-title">20 Jul 2026</div>
+        <div class="visit"><div class="pin">pin</div><div class="visit-text"><div class="name">Sultan Abdul Samad Building and Merdeka Square</div><div class="meta">Historic building &middot; 1:16 PM</div></div><div class="heart">&#9825;</div><div class="drag">&#9776;</div></div>
+        <div class="visit"><div class="pin blue">pin</div><div class="visit-text"><div class="name">National Textile Museum and Historic Railway Offices</div><div class="meta">Museum &middot; 2:16 PM</div></div><div class="heart">&#9825;</div><div class="drag">&#9776;</div></div>
+        <div class="visit"><div class="pin">pin</div><div class="visit-text"><div class="name">Ghost Sign</div><div class="meta">Attraction &middot; 5:42 PM</div></div><div class="heart on">&#9829;</div><div class="drag">&#9776;</div></div>
+
+        <div class="section-title">21 Jul 2026</div>
+        <div class="visit"><div class="pin gold">pin</div><div class="visit-text"><div class="name">Art Deco Cinema</div><div class="meta">Historic building &middot; 9:12 AM</div></div><div class="heart">&#9825;</div><div class="drag">&#9776;</div></div>
+        <div class="visit"><div class="pin">pin</div><div class="visit-text"><div class="name">Central Market</div><div class="meta">Market &middot; 11:03 AM</div></div><div class="heart">&#9825;</div><div class="drag">&#9776;</div></div>
+        <div class="visit"><div class="pin blue">pin</div><div class="visit-text"><div class="name">Thean Hou Temple</div><div class="meta">Temple &middot; 1:40 PM</div></div><div class="heart on">&#9829;</div><div class="drag">&#9776;</div></div>
+        <div class="visit"><div class="pin">pin</div><div class="visit-text"><div class="name">Petronas Twin Towers Observation Deck</div><div class="meta">Attraction &middot; 4:20 PM</div></div><div class="heart">&#9825;</div><div class="drag">&#9776;</div></div>
+        <div class="visit"><div class="pin gold">pin</div><div class="visit-text"><div class="name">Jalan Alor Night Market</div><div class="meta">Food &middot; 8:05 PM</div></div><div class="heart">&#9825;</div><div class="drag">&#9776;</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="cap">2 - Visit date (date-adjust home, unchanged)</div>
+    <div class="capsub">The date field and delete that left the tile live here - the already-ratified detail screen, reached by tapping a row. #221's core "adjust the day" feature keeps a focused home instead of a cramped inline field.</div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>100%</span></div>
+      <div class="nav"><div class="back">&#8249; My tracks</div><div class="title">Visit date</div></div>
+      <div class="list">
+        <div class="summary">
+          <div class="summaryline"><span>pin</span><span>Sultan Abdul Samad Building</span></div>
+          <h2>Correct the day</h2>
+          <p>Choose the day this visit belongs to. Making Tracks keeps the visit as your own entry, not as a GPS trace.</p>
+        </div>
+
+        <div class="section-title">Selected visit</div>
+        <div class="visit detail">
+          <div class="visit-head">
+            <div class="pin">pin</div>
+            <div class="visit-text"><div class="name">Sultan Abdul Samad Building and Merdeka Square</div><div class="meta">Historic building &middot; 1:16 PM</div></div>
+            <div class="heart">&#9825;</div>
+          </div>
+          <div class="controls">
+            <div class="datebox"><span>Visit date</span><strong>Jul 20, 2026 <span class="cal">&#128197;</span></strong></div>
+            <div class="moves"><div class="square">del</div></div>
+          </div>
+          <div class="note">Changing the day keeps the time you recorded &mdash; it won't invent a new one. Within a day, visits stay in the order you arrange them.</div>
+        </div>
+
+        <div class="section-title">After save</div>
+        <div class="callout"><strong>Added to Jul 20</strong>The visit moves to the end of that local day's order. You can move it earlier or later from the full My tracks list.</div>
+      </div>
+      <div class="bar"><div class="btn">Cancel</div><div class="btn primary">Save day</div></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

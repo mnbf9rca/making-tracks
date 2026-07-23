@@ -71,3 +71,14 @@ cannot silently move to a different device class.
 Ask independent agents to review visual fidelity, correctness, tests, security,
 and regression risk. Resolve all P1/P2 findings, obtain Opus's visual review, send
 the evidence to Rob before merge, and hand the reviewed branch to Fable.
+
+## Amended M6: Compact-row density
+
+The ratified amendment replaces inline date/delete fields in the full My tracks
+surface with one-line visit rows grouped under sectional day headers. Each row
+keeps only the pin, truncated name, category/time metadata, loved action, and
+reorder affordance. Tapping a row opens the existing Visit date home, where date
+adjustment and deletion remain available. The DEBUG visual fixture contains the
+eight named visits from `visits-editing-dense.png`, and the RED oracle must prove
+that at least six rows fit in the 390×844-class viewport with no inline date
+accessibility targets. History-list work is explicitly out of scope.

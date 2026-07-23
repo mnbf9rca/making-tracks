@@ -5195,6 +5195,7 @@ private struct ListDetailView: View {
     @State private var renameDraft: String
     @State private var actionError: String?
     @State private var trackEditMode: EditMode = .active
+    @State private var selectedVisitForEditing: TrackVisit?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
 
@@ -5383,6 +5384,16 @@ private struct ListDetailView: View {
         .accessibilityIdentifier("lists.detail.surface.track")
         .task { await reload() }
         .refreshable { await reload() }
+        .sheet(item: $selectedVisitForEditing) { visit in
+            TrackVisitDateEditorView(
+                model: model,
+                visit: visit,
+                onChanged: {
+                    await reload()
+                    onChanged()
+                }
+            )
+        }
     }
 
     private var collectionListBody: some View {
@@ -5584,15 +5595,14 @@ private struct ListDetailView: View {
     private func trackVisitRow(_ visit: TrackVisit, dayHeader: Date?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if let dayHeader {
-                Text(verbatim: formattedDay(dayHeader))
+                Text(verbatim: formattedTrackDay(dayHeader))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
                     .padding(.horizontal, 8)
                     .accessibilityIdentifier("lists.detail.track.day-header.\(visit.id)")
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: TrackVisitRowDensitySpec.horizontalSpacing) {
+            HStack(alignment: .center, spacing: TrackVisitRowDensitySpec.horizontalSpacing) {
                     Text("pin")
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(TrackVisitEditorVisualSpec.accent)
@@ -5600,14 +5610,14 @@ private struct ListDetailView: View {
                         .background(TrackVisitEditorVisualSpec.accentSoft, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .accessibilityHidden(true)
 
-                    VStack(alignment: .leading, spacing: TrackVisitRowDensitySpec.verticalSpacing) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(verbatim: visit.name)
                             .font(.body)
                             .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                             .accessibilityIdentifier("lists.detail.track.row.name.\(visit.id)")
-                        Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitedAt(visit))")
+                        Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitTime(visit))")
                             .font(.caption)
                             .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
                             .lineLimit(2)
@@ -5618,13 +5628,10 @@ private struct ListDetailView: View {
                     Button {
                         Task { await setLoved(visit) }
                     } label: {
-                        Text("heart")
-                            .font(.caption.weight(.bold))
+                        Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
+                            .font(.body.weight(.semibold))
                             .foregroundStyle(TrackVisitEditorVisualSpec.danger)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .padding(.horizontal, 8)
-                            .frame(minHeight: 30)
+                            .frame(width: 30, height: 30)
                             .background(
                                 TrackVisitEditorVisualSpec.cardBackground,
                                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -5639,12 +5646,9 @@ private struct ListDetailView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
                     .accessibilityIdentifier("lists.detail.track.row.loved.\(visit.id)")
-                }
-
-                visitEditControls(visit)
             }
             .padding(11)
-            .frame(maxWidth: .infinity, minHeight: TrackVisitRowDensitySpec.minimumHeight, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
             .background(TrackVisitEditorVisualSpec.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -5652,6 +5656,13 @@ private struct ListDetailView: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("lists.detail.track.row.card.\(visit.id)")
+            .accessibilityLabel("Edit visit \(visit.name)")
+            .accessibilityHint("Opens visit date editing")
+            .accessibilityAddTraits(.isButton)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selectedVisitForEditing = visit
+            }
         }
         .anchorPreference(
             key: TrackVisitRowBoundsPreferenceKey.self,
@@ -5672,100 +5683,6 @@ private struct ListDetailView: View {
             }
         }
         .frame(width: 44, height: 44)
-    }
-
-    @ViewBuilder
-    private func visitEditControls(_ visit: TrackVisit) -> some View {
-        let datePicker = ZStack(alignment: .leading) {
-            DatePicker(
-                "Visit date",
-                selection: Binding(
-                    get: { visit.visitedAt },
-                    set: { day in
-                        Task { await updateVisitDate(visit, toDayContaining: day) }
-                    }
-                ),
-                displayedComponents: .date
-            )
-            .datePickerStyle(.compact)
-            .labelsHidden()
-            .tint(TrackVisitEditorVisualSpec.accent)
-            .accessibilityLabel("Visit date for \(visit.name), \(formattedVisitedAt(visit))")
-            .accessibilityIdentifier("lists.detail.track.row.date.\(visit.id)")
-
-            HStack(spacing: 6) {
-                Text(verbatim: visit.visitedAt.formatted(date: .abbreviated, time: .omitted))
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
-                Image(systemName: "calendar")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(TrackVisitEditorVisualSpec.accent)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(TrackVisitEditorVisualSpec.cardBackground)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
-        .frame(minHeight: 34, alignment: .leading)
-
-        let dateBox = VStack(alignment: .leading, spacing: 2) {
-            Text("Visit date")
-                .font(.caption2.weight(.semibold))
-                .textCase(.uppercase)
-                .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
-                .accessibilityIdentifier("lists.detail.track.row.date-label.\(visit.id)")
-            datePicker
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(TrackVisitEditorVisualSpec.cardBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
-        }
-
-        let deleteButton = Button(role: .destructive) {
-            Task { await deleteVisit(visit) }
-        } label: {
-            Group {
-                if dynamicTypeSize.isAccessibilitySize {
-                    Text("delete")
-                } else {
-                    Text("del")
-                }
-            }
-            .font(.caption.weight(.bold))
-            .foregroundStyle(TrackVisitEditorVisualSpec.danger)
-            .lineLimit(1)
-            .padding(.horizontal, 10)
-            .frame(minHeight: 34)
-            .background(
-                TrackVisitEditorVisualSpec.dangerSoft,
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(TrackVisitEditorVisualSpec.danger, lineWidth: 1)
-            }
-            .frame(minWidth: 45, minHeight: 45)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Delete \(visit.name), \(formattedVisitedAt(visit))")
-        .accessibilityIdentifier("lists.detail.track.row.delete.\(visit.id)")
-
-        if dynamicTypeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 8) {
-                dateBox
-                deleteButton
-            }
-        } else {
-            HStack(alignment: .center, spacing: 8) {
-                dateBox
-                deleteButton
-            }
-        }
     }
 
     @MainActor
@@ -5927,13 +5844,185 @@ private struct ListDetailView: View {
         visit.visitedAt.formatted(date: .abbreviated, time: .shortened)
     }
 
+    private func formattedVisitTime(_ visit: TrackVisit) -> String {
+        visit.visitedAt.formatted(date: .omitted, time: .shortened)
+    }
+
     private func formattedDay(_ day: Date) -> String {
         day.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    private func formattedTrackDay(_ day: Date) -> String {
+        day.formatted(.dateTime.day(.twoDigits).month(.abbreviated).year(.defaultDigits)).uppercased()
     }
 
     private func lovedButtonAccessibilityLabel(for visit: TrackVisit) -> String {
         let action = visit.verdict == .loved ? "Remove loved from" : "Mark loved for"
         return "\(action) \(visit.name), \(formattedVisitedAt(visit))"
+    }
+}
+
+private struct TrackVisitDateEditorView: View {
+    let model: MapScreenModel?
+    let onChanged: @MainActor () async -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var visit: TrackVisit
+    @State private var selectedDate: Date
+    @State private var actionError: String?
+
+    init(
+        model: MapScreenModel?,
+        visit: TrackVisit,
+        onChanged: @escaping @MainActor () async -> Void
+    ) {
+        self.model = model
+        self.onChanged = onChanged
+        _visit = State(initialValue: visit)
+        _selectedDate = State(initialValue: visit.visitedAt)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button("‹ My tracks") { dismiss() }
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                    .frame(minWidth: 88, minHeight: 44, alignment: .leading)
+                    .accessibilityIdentifier("lists.detail.visit-date.back")
+                Spacer()
+                Text("Visit date")
+                    .font(.headline)
+                    .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                    .accessibilityIdentifier("lists.detail.visit-date.title")
+                Spacer()
+                Color.clear.frame(minWidth: 88, minHeight: 44)
+            }
+            .padding(.horizontal, 16)
+            .background(TrackVisitEditorVisualSpec.paperBackground)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(TrackVisitEditorVisualSpec.divider).frame(height: 1)
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("pin \(visit.name)")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                        Text("Correct the day")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                        Text("Choose the day this visit belongs to. Making Tracks keeps the visit as your own entry, not as a GPS trace.")
+                            .font(.subheadline)
+                            .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
+                    }
+                    .padding(13)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(TrackVisitEditorVisualSpec.cardBackground, in: RoundedRectangle(cornerRadius: 10))
+
+                    Text("SELECTED VISIT")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                        Text(verbatim: visit.name)
+                            .font(.body)
+                            .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                            .lineLimit(2)
+                            Spacer()
+                            Text("heart")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(TrackVisitEditorVisualSpec.danger)
+                        }
+                        HStack(spacing: 8) {
+                            ZStack(alignment: .leading) {
+                                DatePicker(
+                                    "Visit date",
+                                    selection: Binding(
+                                        get: { selectedDate },
+                                        set: { date in
+                                            selectedDate = date
+                                        }
+                                    ),
+                                    displayedComponents: .date
+                                )
+                                .datePickerStyle(.compact)
+                                .labelsHidden()
+                                .opacity(0.02)
+                                .accessibilityIdentifier("lists.detail.visit-date.picker")
+                                HStack(spacing: 6) {
+                            Text(selectedDate.formatted(date: .abbreviated, time: .omitted))
+                                .font(.callout.weight(.medium))
+                                .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                                    Image(systemName: "calendar")
+                                        .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                                }
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                            }
+                            .padding(9)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(TrackVisitEditorVisualSpec.cardBackground, in: RoundedRectangle(cornerRadius: 8))
+                            Button("Delete", role: .destructive) {
+                                Task { await deleteVisit() }
+                            }
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(TrackVisitEditorVisualSpec.danger)
+                            .frame(minWidth: 45, minHeight: 45)
+                            .background(TrackVisitEditorVisualSpec.dangerSoft, in: RoundedRectangle(cornerRadius: 8))
+                            .accessibilityIdentifier("lists.detail.visit-date.delete")
+                            .accessibilityLabel("Delete visit \(visit.name)")
+                        }
+                    }
+                    .padding(13)
+                    .background(TrackVisitEditorVisualSpec.cardBackground, in: RoundedRectangle(cornerRadius: 10))
+
+                    if let actionError {
+                        Text(actionError).font(.caption).foregroundStyle(TrackVisitEditorVisualSpec.danger)
+                    }
+                    HStack {
+                        Button("Cancel") { dismiss() }
+                            .frame(minWidth: 100, minHeight: 44)
+                        Spacer()
+                        Button("Save day") { Task { await saveDate() } }
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                            .frame(minWidth: 100, minHeight: 44)
+                            .accessibilityIdentifier("lists.detail.visit-date.save")
+                    }
+                }
+                .padding(16)
+            }
+        }
+        .background(TrackVisitEditorVisualSpec.paperBackground.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    @MainActor
+    private func saveDate() async {
+        guard let model else { return }
+        do {
+            try await model.updateVisitDate(visitID: visit.id, toDayContaining: selectedDate)
+            actionError = nil
+            await onChanged()
+            dismiss()
+        } catch {
+            actionError = "Could not update that visit."
+        }
+    }
+
+    @MainActor
+    private func deleteVisit() async {
+        guard let model else { return }
+        do {
+            try await model.deleteVisit(visitID: visit.id)
+            await onChanged()
+            dismiss()
+        } catch {
+            actionError = "Could not delete that visit."
+        }
     }
 }
 

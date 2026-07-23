@@ -957,14 +957,51 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(screenshotExportNames["tracks-unified-visit-editing"], "tracks-unified-visit-editing")
         attachScreenshot(named: "tracks-unified-visit-editing")
 
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifierPrefix: "lists.detail.track.row.date.").firstMatch.waitForExistence(timeout: 5))
-        let deleteVisit = app.buttons.matching(identifierPrefix: "lists.detail.track.row.delete.").firstMatch
-        XCTAssertTrue(deleteVisit.exists)
-        XCTAssertTrue(deleteVisit.label.contains("Ghost Sign"))
+        let firstRow = app.otherElements.matching(identifierPrefix: "lists.detail.track.row.card.").firstMatch
+        XCTAssertTrue(firstRow.exists)
+        firstRow.tap()
+        XCTAssertTrue(app.staticTexts["lists.detail.visit-date.title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["lists.detail.visit-date.back"].exists)
+        XCTAssertTrue(app.buttons["lists.detail.visit-date.delete"].exists)
+        XCTAssertTrue(app.datePickers["lists.detail.visit-date.picker"].exists)
         XCTAssertTrue(app.buttons["lists.detail.track.refresh"].exists)
         XCTAssertFalse(app.buttons["lists.detail.track.edit-order"].exists)
         XCTAssertFalse(app.buttons.matching(identifierPrefix: "lists.detail.track.row.move-up.").firstMatch.exists)
         XCTAssertFalse(app.buttons.matching(identifierPrefix: "lists.detail.track.row.move-down.").firstMatch.exists)
+    }
+
+    func testMyTracksCompactRowsFitSixVisitsWithoutInlineDateField() {
+        let app = launch(
+            reset: true,
+            seedVisitsEditorVisual: true,
+            hideFixtureChrome: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.tracks"].tap()
+
+        let trackSurface = app.collectionViews["lists.detail.surface.track"]
+        XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            app.descendants(matching: .any)
+                .matching(identifierPrefix: "lists.detail.track.row.date.").count,
+            0,
+            "Compact rows must not expose inline date controls"
+        )
+
+        let visibleRows = app.otherElements
+            .matching(identifierPrefix: "lists.detail.track.row.card.")
+            .allElementsBoundByIndex
+            .filter { row in
+                row.exists
+                    && row.frame.minY >= trackSurface.frame.minY
+                    && row.frame.maxY <= trackSurface.frame.maxY
+            }
+        XCTAssertGreaterThanOrEqual(
+            visibleRows.count,
+            6,
+            "At least six compact visit rows must fit in the 390x844-class viewport; surface=\(trackSurface.frame), rows=\(visibleRows.map(\.frame))"
+        )
     }
 
     func testMyTracksRenderedPixelOraclesAcrossLightAndDarkAppearances() {
@@ -1078,13 +1115,15 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(done.frame.intersects(title.frame), "Done must not collide with the title")
 
         let heart = app.buttons.matching(identifierPrefix: "lists.detail.track.row.loved.").firstMatch
-        let delete = app.buttons.matching(identifierPrefix: "lists.detail.track.row.delete.").firstMatch
         XCTAssertTrue(scrollToExistence(of: heart, in: app))
-        XCTAssertTrue(scrollToExistence(of: delete, in: app))
-        for (element, name) in [(heart, "heart"), (delete, "delete")] {
-            XCTAssertGreaterThanOrEqual(element.frame.width, 44, "\(name) touch width")
-            XCTAssertGreaterThanOrEqual(element.frame.height, 44, "\(name) touch height")
-        }
+        XCTAssertGreaterThanOrEqual(heart.frame.width, 44, "heart touch width")
+        XCTAssertGreaterThanOrEqual(heart.frame.height, 44, "heart touch height")
+        let firstRow = app.otherElements.matching(identifierPrefix: "lists.detail.track.row.card.").firstMatch
+        XCTAssertTrue(firstRow.exists)
+        firstRow.tap()
+        XCTAssertTrue(app.buttons["lists.detail.visit-date.delete"].waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(app.buttons["lists.detail.visit-date.delete"].frame.width, 44)
+        XCTAssertGreaterThanOrEqual(app.buttons["lists.detail.visit-date.delete"].frame.height, 44)
     }
 
     func testTracksMenuAndListsMyTracksReachSameScreenIdentity() {
@@ -2200,10 +2239,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         let trackSurface = app.collectionViews["lists.detail.surface.track"]
         XCTAssertTrue(trackSurface.waitForExistence(timeout: 5), file: file, line: line)
-        let firstDate = app.descendants(matching: .any)
-            .matching(identifierPrefix: "lists.detail.track.row.date.")
-            .firstMatch
-        XCTAssertTrue(firstDate.waitForExistence(timeout: 5), file: file, line: line)
+        XCTAssertEqual(
+            app.descendants(matching: .any)
+                .matching(identifierPrefix: "lists.detail.track.row.date.").count,
+            0,
+            "Compact My tracks rows must not expose inline date controls",
+            file: file,
+            line: line
+        )
 
         let screenshot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
@@ -2230,7 +2273,6 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let dim = RenderedRGB(100, 99, 93)
         let accent = RenderedRGB(10, 107, 92)
         let danger = RenderedRGB(180, 35, 24)
-        let dangerSoft = RenderedRGB(248, 231, 228)
         let reorderHandle = RenderedRGB(170, 168, 157)
         var failures: [String] = []
 
@@ -2307,9 +2349,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let dayHeader = app.staticTexts.matching(identifierPrefix: "lists.detail.track.day-header.").firstMatch
         let placeName = app.staticTexts.matching(identifierPrefix: "lists.detail.track.row.name.").firstMatch
         let metadata = app.staticTexts.matching(identifierPrefix: "lists.detail.track.row.metadata.").firstMatch
-        let dateLabel = app.staticTexts.matching(identifierPrefix: "lists.detail.track.row.date-label.").firstMatch
         let heart = app.buttons.matching(identifierPrefix: "lists.detail.track.row.loved.").firstMatch
-        let delete = app.buttons.matching(identifierPrefix: "lists.detail.track.row.delete.").firstMatch
         let firstRow = app.otherElements.matching(identifierPrefix: "lists.detail.track.row.card.").firstMatch
 
         requireText(back, named: "Back", foreground: accent, background: paper, minimumContrast: 4.5)
@@ -2324,21 +2364,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
            placeName.label != "Sultan Abdul Samad Building and Merdeka Square" {
             failures.append("place name: visual fixture is not the ratified long-name representative")
         }
-        if requireElement(placeName, named: "two-line representative place name"),
-           placeName.frame.height < 38 {
-            failures.append("place name: expected two visible lines, got \(placeName.frame)")
+        if requireElement(placeName, named: "compact representative place name"),
+           placeName.frame.height > 26 {
+            failures.append("place name: expected one compact line, got \(placeName.frame)")
         }
         requireText(metadata, named: "place metadata", foreground: dim, background: sheet, minimumContrast: 4.5)
-        requireText(dateLabel, named: "Visit date label", foreground: dim, background: sheet, minimumContrast: 4.5)
-        requireText(firstDate, named: "date value", foreground: ink, background: sheet, minimumContrast: 4.5)
-        requireText(
-            delete,
-            named: "delete",
-            foreground: danger,
-            background: dangerSoft,
-            minimumContrast: 4.5,
-            foregroundInset: 8
-        )
         requireText(
             heart,
             named: "heart",
@@ -2364,16 +2394,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
 
         if requireElement(placeName, named: "place name ordering"),
-           requireElement(firstDate, named: "date ordering"),
-           placeName.frame.minY >= firstDate.frame.minY {
-            failures.append("row anatomy: place name must render above Visit date")
+           requireElement(metadata, named: "metadata ordering"),
+           placeName.frame.maxY > metadata.frame.minY {
+            failures.append("row anatomy: place name must render above metadata")
         }
-        if requireElement(firstDate, named: "date/delete ordering"),
-           requireElement(delete, named: "delete ordering"),
-           firstDate.frame.minX >= delete.frame.minX {
-            failures.append("row anatomy: Visit date must render before delete")
-        }
-        for (element, name) in [(back, "Back"), (done, "Done"), (heart, "heart"), (delete, "delete")] {
+        for (element, name) in [(back, "Back"), (done, "Done"), (heart, "heart")] {
             if requireElement(element, named: "\(name) touch target"),
                element.frame.width < 44 || element.frame.height < 44 {
                 failures.append("\(name): expected at least a 44×44 touch target, got \(element.frame)")
