@@ -613,6 +613,42 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
     }
 
+    func testSavedTapReopensListPickerForPerListRemoval() {
+        let app = launch(reset: true, seedUserList: true)
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        openFixtureCard(in: map, app: app)
+
+        let saveButton = app.otherElements["place-card.action-bar"].buttons["place-card.save"]
+        XCTAssertTrue(saveButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(saveButton.label, "Save")
+        XCTAssertTrue(element(identifier: "place-card.list-chips", in: app).label.contains("Date night"))
+
+        saveButton.tap()
+        XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
+        app.buttons["Want to go"].tap()
+        app.buttons["list-picker.done"].tap()
+
+        XCTAssertTrue(saveButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(saveButton.label, "Saved")
+
+        saveButton.tap()
+        XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
+        let dateNightRow = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+            "list-picker.row.",
+            "Date night"
+        )).firstMatch
+        XCTAssertTrue(dateNightRow.waitForExistence(timeout: 5))
+        dateNightRow.tap()
+        app.buttons["list-picker.done"].tap()
+
+        XCTAssertTrue(saveButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(saveButton.label, "Saved")
+        XCTAssertFalse(element(identifier: "place-card.list-chips", in: app).exists)
+    }
+
     func testCustomListCanBeCreatedBrowsedAndShownOnMap() {
         let app = launch(reset: true, resetTheme: true, pinDiagnostics: true, seedTrackVisits: true)
 
