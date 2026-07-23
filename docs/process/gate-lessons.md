@@ -5,6 +5,13 @@ one line ("a test has teeth only if neutering the code it guards makes it fail")
 
 Use it as the checklist when running the adversarial-review gate, and when writing tests in the first place.
 
+**One principle runs through everything here: a check proves only the property it actually measures, on the
+state it actually covers.** A lock file proves who holds the lock, not who is using the device. A host test
+proves compilation and pure logic, not what renders. A render query proves what the query returned, not what
+drew. A hash proves delivery integrity, not content safety. A chained success echo proves the echo ran, not
+that the push landed. When a check passes, name the property it measured and ask whether that is the
+property you need — most of the defects below got past a check that was measuring something else.
+
 ---
 
 ## 1. Teeth
@@ -160,6 +167,11 @@ tree before accepting them.
 `file:line` citations and its "not built yet" claims go stale while it is being written. Fetch and re-check
 before opening the PR.
 
+**A force-push can leave your remote-tracking ref stale.** A plain `git fetch` does not always update it,
+and `git show origin/<branch>:<file>` then answers silently from the pre-push tree. Before reviewing a
+force-pushed branch, force-refresh the ref or read the file through `gh`. A stale tracking ref is the
+reviewer's stale gate.
+
 **Where implementation and design diverge, flag it.** Do not silently conform the doc to the code.
 
 **A change that hides, thins, or samples map pins by tier, fame, importance, or zoom contradicts
@@ -173,7 +185,18 @@ branch is stale and would regress shipped work. Argue to close it rather than re
 **A hash proves delivery integrity, never content safety.** An object that verifies is the object we
 published, not an object that is safe.
 
-**When CI and local disagree, CI wins, and the disagreement is a finding.** A CI-red/local-green result means the local environment cannot see the failure, not that CI is flaky. This has now happened twice for real causes: a control tapped without being scrolled into view on a shorter viewport, and a CI simulator that was a different device model from local. Both were invisible locally by construction. The reflex to call CI flaky and re-run is the thing to resist; triage the disagreement with the artifact bundle before dismissing it.
+**When CI and local disagree, CI wins, and the disagreement is a finding.** A CI-red/local-green result means
+the local environment cannot see the failure, not that CI is flaky — a shorter CI viewport or a different
+simulator device model produces failures that are invisible locally by construction. Resist the reflex to
+call CI flaky and re-run; triage the disagreement with the artifact bundle before dismissing it.
+(Incidents → *CI-red dismissed as flaky, twice*.)
+
+**Debug documented phenomena from the documentation, not from first principles.** When a defect lives in
+something other teams plausibly hit — CI runners, platform quirks, framework internals, tooling limits — the
+first parallel action is clean-room research: fresh-context agents given the bare symptoms only, required to
+cite sources and to separate documented fact from community report from inference. Run it alongside local
+evidence extraction, not instead of it. Hypotheses generated in-context inherit the framing of every earlier
+answer, so the hypothesis space never gets fresh eyes.
 
 **Review UK-scale pipeline work through an observability lens.** If a command or phase can run long enough
 that a human tails the log, ask whether the log exposes the current phase, done/total progress, rate, elapsed

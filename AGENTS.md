@@ -6,7 +6,7 @@ You are working on **Making Tracks** (making-tracks.app), an iOS map app for dis
 
 1. **Rule text is timeless.** No dates, no `as of`. A rule states what to do and why it is true, not what happened. Incident rationale goes in [`docs/process/incidents.md`](docs/process/incidents.md) and the rule cites it by name. A dated fact eventually goes false, and a false fact reads as permission to skip the rule (incidents → *Stale law disabled two gates*).
 2. **One rule, one home.** Principles live in `docs/PRINCIPLES.md`. Operational law lives here, stated once. Worked detail, command blocks and examples live in the process docs cited below. Cross-reference; never restate.
-3. **Cross-references name a section**, never a line number. Line numbers rot on the next edit.
+3. **Cross-references name a section**, never a line number. Line numbers rot on the next edit. Principle citations name the section and number (`Data 7`, `Product 7`) — bare numbers are ambiguous across sections.
 
 Every command in this file must be runnable as written — no placeholders you cannot fill. `scripts/lint_agent_law.py` runs in CI on every PR and catches the known bad shapes of the first and third constraints — dates, narrative openers, line-number citations. Run it yourself before committing. It cannot tell narrative from rule, so a green lint means "no known bad shape", not "correct". The constraints bind you, not the linter.
 
@@ -16,6 +16,7 @@ Every command in this file must be runnable as written — no placeholders you c
 2. `docs/superpowers/specs/2026-07-14-making-tracks-design.md` — the approved design: architecture, data model, decisions and their rationale, work-package decomposition.
 3. `brief.md` — the original product brief (context for *why*; the spec supersedes it where they differ).
 4. The design doc for your assigned WP, in `docs/superpowers/plans/`. Do not improvise scope beyond your WP.
+5. Rob's sibling repos (`gh: mnbf9rca/family-foqos` and kin), when your WP builds or debugs a capability that plausibly exists there. Ground the existing implementation first: read it, port the proven parts, and record in the issue what was reused and what was genuinely non-portable — with evidence, not assumption. Proven beats invented.
 
 ## Repo layout
 
@@ -28,11 +29,11 @@ Every command in this file must be runnable as written — no placeholders you c
 
 The non-negotiables are in [`docs/PRINCIPLES.md`](docs/PRINCIPLES.md) and that is their only home. Read it. Amending a principle is an argued amendment to that file, ratified by Rob — never an edit here.
 
-The ones that bite most often, by their number there: `place_id` is forever (7), all source data is polluted until proven otherwise (10), everything crossing a boundary is versioned (11), the pipeline is deterministic (12), "interesting" is measured not asserted (13), privacy is structural (14–15). Beyond principle 15, any network write of user-derived data must also satisfy the unlinkability rules in the spec's §9. If a change could reassign or reformat shipped `place_id`s, stop and flag it rather than proceeding.
+The ones that bite most often, by section and number there: `place_id` is forever (Data 7), all source data is polluted until proven otherwise (Data 10), everything crossing a boundary is versioned (Data 11), the pipeline is deterministic (Data 12), "interesting" is measured not asserted (Ranking 13), privacy is structural (Privacy 14–15), the app never editorialises which pins you see (Product 7). Beyond principle 15, any network write of user-derived data must also satisfy the unlinkability rules in the spec's §9. If a change could reassign or reformat shipped `place_id`s, stop and flag it rather than proceeding.
 
 These operational rules are not in `PRINCIPLES.md` and live here:
 
-- **Untrusted input, concretely.** Principle 10 states the posture; in practice it means validate schemas, bound sizes, sanitize strings, https-only URLs — and never interpolate source content unescaped into shell, SQL, or LLM prompts.
+- **Untrusted input, concretely.** Data 10 states the posture; in practice it means validate schemas, bound sizes, sanitize strings, https-only URLs — and never interpolate source content unescaped into shell, SQL, or LLM prompts.
 - **Determinism, concretely.** No wall-clock and no randomness in outputs, except via cached, versioned LLM calls.
 - **Constants that shape output are earned, not baked.** A threshold, weight, or cap that affects output quality or behaviour is either swept by the eval harness or flagged tunable in a comment — never a silent magic number the next person fears to touch.
 - **No silent long-running work.** Any process expected to run beyond ~30 seconds emits greppable progress through the shared heartbeat helper: per-phase START/DONE lines with counts and durations, plus heartbeats with done/total, rate, elapsed time and phase-specific counters. A human tailing the log must be able to compute the current phase, progress against a known total and an ETA. A long-running phase that is silent, or whose output is not ETA-computable, is a review-blocking defect. Detached runs always report their log path at launch.
@@ -53,6 +54,8 @@ Work packages (spec §8) are designed one at a time (design agent) and built one
 **A mutation is a bare single call.** Never put `&&` between a mutation — commit, push, merge, resolve, `gh` write, file move — and anything else, least of all its own verification or a success echo. A failed step earlier in the chain does not stop the rest, and a trailing `echo DONE` prints whether or not the thing happened. Issue the mutation alone, then verify in the **next** call by reading the artifact back: the pushed file, the live issue body, the branch head. An exit code from a step before the one you care about proves nothing. (Incidents → *A chained commit reached the main checkout*.)
 
 **Branch discipline.** Feature branches (`wp-<id>-plan` / `wp-<id>-impl`) are cut from `develop` and PR back to `develop` — a PR is the only path onto `develop`; never push to it directly. `main` is human-gated: only Rob promotes `develop` to `main`. No agent self-merges its own PR; the design lead (fable) reviews, and merges happen only with human-sanctioned authority (overnight, PRs queue for Rob's morning review). Promotions to `main` are merge commits (ruleset-enforced); squash is for feature PRs into `develop`/`ios` only.
+
+**Merge execution and announcement.** Merges into long-lived branches are executed by fable unless explicitly delegated per-merge; a reviewer's "cleared to merge" is input to fable's gate, never authorization to merge. Whoever executes a merge announces it as their first act afterwards — peer-to-peer to fable, with the PR number and merge SHA; a copy dropped into a busy thread is not an announcement. GitHub's `mergedBy` always shows the shared-token identity and proves nothing about who executed.
 
 **iOS branch.** App work (anything under `ios/`) branches from a freshly-fetched `ios` and PRs into `ios`, not `develop` — same gates. The long-lived `ios` branch lives in the main repo checkout as Rob's Xcode surface: never touch that working tree or switch its branch; Rob pulls when he chooses. fable merges `ios` ↔ `develop` at milestones. Pipeline/contracts/docs work targets `develop`.
 
@@ -92,7 +95,7 @@ Comments carry point-in-time evidence only: findings, measurements, test output,
 
 The body is where Rob looks. A stack of appended comments makes him reconstruct the story himself, which is the thing he is asking us not to do.
 
-**Labels.** Issues get a **track** label (`track-a-pipeline` / `track-b-ios` / `track-c-services`) plus a **type** label (`bug` / `enhancement` / `design` / `question`). `sourcery-review` and `greptile-review` are PR review triggers — never put them on an issue.
+**Labels.** Issues get a **track** label (`track-a-pipeline` / `track-b-ios` / `track-c-services`) plus a **type** label (`bug` / `enhancement` / `design` / `question`). `wp` is the work-package label, applied to any PR delivering a tracked work package. `sourcery-review` and `greptile-review` are PR review triggers — never put them on an issue.
 
 An issue whose work touches a user-facing surface also gets **`requires-mockups`**. That label is how the mockup rule is found: it turns "UI design ships with mockups" from something an agent has to remember into something the tracker can be queried for.
 
@@ -129,7 +132,7 @@ The idiom for both is in [`docs/process/ios-simulator.md`](docs/process/ios-simu
 
 ## Review gates (mandatory before declaring anything complete)
 
-Nothing is "done" on the author's say-so. **Every gate below is yours to execute on the host — do not assume CI runs it.** CI does not run the test suite; check `.github/workflows/` for what it does cover. A green PR is not a tested PR.
+Nothing is "done" on the author's say-so. **Every gate below is yours to execute on the host — CI never replaces it.** What CI covers varies by branch and by trigger: on `ios`, the per-PR check builds and runs unit tests only, and the UI suite runs on manual dispatch alone ([`docs/ios-gate-ledger.md`](docs/ios-gate-ledger.md) on `ios` → *Check Name Mapping*); check `.github/workflows/` on your target branch for what actually ran. A green PR is not a tested PR.
 
 Before you declare a plan complete, open a PR, or report a build finished:
 
@@ -141,7 +144,7 @@ Before you declare a plan complete, open a PR, or report a build finished:
 6. **Greptile is explicit-spend only.** Greptile (`greptile-review` label) costs $1/review and is applied only on fable's explicit instruction: `develop`→`main` promotions, security-surface PRs, and escalations. Sourcery remains the default automated layer; never apply `greptile-review` by default.
 7. **Your self-review is unconditional.** The adversarial pass (point 1) does not replace the design lead's review, and the automated bots never substitute for it: run your own critic pass regardless of which bot layers are configured or whether their credit is available. Those layers raise the floor; they are not the floor.
 
-**Threat-model discipline** (the spec's §5.5 security-posture hook). Every security or privacy review finding — from the adversarial self-review or from a human/bot reviewer — must **cite a specific in-scope vector from [`docs/threat-model.md`](docs/threat-model.md)** or **explicitly propose an amendment to that model**. A finding that names no vector, or that assumes an out-of-scope adversary (a compromised/jailbroken device, physical seizure, a nation-state, our own infra turning hostile, enterprise-MITM), is **rejected as overreach** — do not action it, and say why. The threat model's calibration tests (its §5) are the screening rubric; apply them mechanically. **Untrusted-data and content-validation findings** (defensive parsing, size caps, `SAFE_TEXT`, plain-text rendering, URL allowlists, no unescaped SQL/shell/LLM interpolation) cite the **hostile-upstream-content vector** (threat-model §2 / the spec's §5.5 / PRINCIPLES 10) and are **always in scope** — never "overreach"; that rule targets out-of-scope *adversaries*, not the handling of hostile content we publish. The model is not frozen: a genuine new vector is argued into `docs/threat-model.md` and ratified as project policy, never smuggled in as a one-off review comment. This governs the "security + untrusted-data posture" lens in point 1.
+**Threat-model discipline** (the spec's §5.5 security-posture hook). Every security or privacy review finding — from the adversarial self-review or from a human/bot reviewer — must **cite a specific in-scope vector from [`docs/threat-model.md`](docs/threat-model.md)** or **explicitly propose an amendment to that model**. A finding that names no vector, or that assumes an out-of-scope adversary (a compromised/jailbroken device, physical seizure, a nation-state, our own infra turning hostile, enterprise-MITM), is **rejected as overreach** — do not action it, and say why. The threat model's calibration tests (its §5) are the screening rubric; apply them mechanically. **Untrusted-data and content-validation findings** (defensive parsing, size caps, `SAFE_TEXT`, plain-text rendering, URL allowlists, no unescaped SQL/shell/LLM interpolation) cite the **hostile-upstream-content vector** (threat-model §2 / the spec's §5.5 / PRINCIPLES Data 10) and are **always in scope** — never "overreach"; that rule targets out-of-scope *adversaries*, not the handling of hostile content we publish. The model is not frozen: a genuine new vector is argued into `docs/threat-model.md` and ratified as project policy, never smuggled in as a one-off review comment. This governs the "security + untrusted-data posture" lens in point 1.
 
 The one standing exception: trivial mechanical changes (typo fixes, comment corrections) need tests green but not the adversarial pass. When unsure whether something is trivial, it isn't.
 
@@ -159,5 +162,5 @@ Before opening any PR, run this sequence top to bottom. Each step is stated in f
 8. **Push before requesting review** (Workflow). A review request against unpushed work is a no-op. Confirm the remote branch exists.
 9. **Open the PR** into `<target>` with labels applied immediately — `sourcery-review` (always) + the **track** label + the **wp** label — and cross-link the issue(s) it delivers in the body (Review gates, point 5; Reporting, issues and labels).
 10. **Process every review comment** (Review gates, point 5). Nothing merges with an unresolved thread.
-11. **After merge, the merger (fable) closes delivered issues explicitly** and ticks the #25 tracker (Reporting, issues and labels).
+11. **After merge, the merger (fable) closes delivered issues explicitly** and ticks the #25 tracker (Reporting, issues and labels), **and announces the merge** (Workflow → Merge execution and announcement).
 12. **Remove the worktree as the FINAL step, immediately after the PR merges** — `git worktree remove <path>` and delete the local branch. Do not leave it for a weekly sweep (Worktree discipline; incidents → *Dead worktrees accumulated 25 G*).

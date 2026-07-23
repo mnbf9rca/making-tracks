@@ -22,6 +22,20 @@ incident.
 VPS operator work does not use raw `ssh`. Use the wrapper in **VPS Operator Path**; it disables the
 1Password agent path and pins the VPS service identity.
 
+### Signing is required on long-lived branches
+
+The `protect-long-lived-branches` ruleset enforces `required_signatures` on `main`, `develop` and `ios`.
+Squash merges performed through GitHub are signed by GitHub itself, so unsigned feature-branch commits can
+still merge that way; anything pushed directly to a long-lived branch must carry a valid signature.
+
+Agents sign through the 1Password agent socket
+(`SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"`). The first
+signature per session raises a biometric prompt that Rob approves; plan signing work for when he is
+present. When existing commits need signatures, re-sign with a tree-preserving amend
+(`git commit --amend --no-edit -S`) — the unchanged tree hash is what carries prior gate evidence forward.
+Never sign with the VPS agent key (**VPS Operator Path**); GitHub does not recognize it, and a
+bad-signature commit is worse than an unsigned one.
+
 ### Do not diagnose a lock from the symptom alone
 
 The simultaneous-failure pattern is necessary but not sufficient evidence of a locked Mac. Verify before
@@ -98,3 +112,11 @@ region-index consumer or the contract makes `search_compact` nullable with an ex
 v3 publishes must include all live regions in one prepared publish. Do not run a v3 publish for only a
 subset of live regions; entries that lack real compact-search metadata are omitted rather than given false
 URLs.
+
+---
+
+## 4. Rob's device artifacts
+
+Screenshots and diagnostics exports from Rob's device sync into the repo checkout, untracked:
+`.mt-data/screenshots/` and `.mt-data/diagnostics/`. When Rob references an `IMG_NNNN` or a diagnostics
+export, read it from there rather than asking him to re-send it.
