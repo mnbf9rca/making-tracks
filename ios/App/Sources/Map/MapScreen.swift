@@ -808,11 +808,21 @@ struct TracksCopy {
 }
 
 enum TrackVisitRowDensitySpec {
-    static let usesInlineEditControls = true
-    static let showsStandaloneDateLabel = false
-    static let verticalSpacing: CGFloat = 4
-    static let horizontalSpacing: CGFloat = 8
-    static let minimumHeight: CGFloat = 48
+    static let usesInlineEditControls = false
+    static let showsStandaloneDateLabel = true
+    static let verticalSpacing: CGFloat = 8
+    static let horizontalSpacing: CGFloat = 10
+    static let minimumHeight: CGFloat = 112
+}
+
+enum TrackVisitEditorVisualSpec {
+    static let paperBackground = MapThemeColor.color(hex: "#f1eddf")
+    static let cardBackground = MapThemeColor.color(hex: "#fffdf7")
+    static let divider = MapThemeColor.color(hex: "#ddd8ca")
+    static let accent = MapThemeColor.color(hex: "#0a6b5c")
+    static let accentSoft = MapThemeColor.color(hex: "#e3f0eb")
+    static let danger = MapThemeColor.color(hex: "#b42318")
+    static let dangerSoft = MapThemeColor.color(hex: "#f8e7e4")
 }
 
 struct TrackVisitDaySection: Identifiable, Equatable {
@@ -5147,6 +5157,8 @@ private struct ListDetailView: View {
     @State private var currentList: PlaceList
     @State private var renameDraft: String
     @State private var actionError: String?
+    @State private var trackEditMode: EditMode = .active
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(
         model: MapScreenModel?,
@@ -5189,38 +5201,65 @@ private struct ListDetailView: View {
     }
 
     var body: some View {
+        if isTrackListDetail {
+            trackListBody
+        } else {
+            collectionListBody
+        }
+    }
+
+    private var trackListBody: some View {
+        List {
+            Section {
+                trackSummaryCard
+                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 8, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
+
+            Section {
+                if visibleTrackVisits.isEmpty {
+                    ContentUnavailableView("No visits yet", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+                        .listRowBackground(Color.clear)
+                } else {
+                    ForEach(TrackVisitReordering.rows(for: visibleTrackVisits, calendar: calendar)) { row in
+                        trackVisitRow(row.visit, dayHeader: row.dayHeader)
+                            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    }
+                    .onMove { source, destination in
+                        guard canReorderTrackVisits else { return }
+                        Task {
+                            await moveTrackVisits(
+                                visibleTrackVisits,
+                                fromOffsets: source,
+                                toOffset: destination
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(TrackVisitEditorVisualSpec.paperBackground)
+        .environment(\.editMode, canReorderTrackVisits ? $trackEditMode : .constant(.inactive))
+        .preferredColorScheme(.light)
+        .navigationTitle(currentList.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("lists.detail.surface.track")
+        .task { await reload() }
+        .refreshable { await reload() }
+    }
+
+    private var collectionListBody: some View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    if isTrackListDetail {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.down")
-                                .accessibilityHidden(true)
-                            Text(verbatim: TracksCopy.sortDirectionLabel)
-                                .accessibilityIdentifier("lists.detail.track.sort-direction")
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-
-                        Text(verbatim: TracksCopy.summary(
-                            visible: visibleTrackVisits.count,
-                            lovedOnly: false
-                        ))
+                    Text(verbatim: ListsCopy.progress(visited: progress.visited, total: progress.total))
                         .font(.headline)
-                        .accessibilityIdentifier("lists.detail.track.summary")
-
-                        if focusPlaceID != nil,
-                           focusedTrackVisitCount > 1 {
-                            Label("Multiple visits to this place", systemImage: "mappin.and.ellipse")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .accessibilityIdentifier("lists.detail.track.focus-message")
-                        }
-                    } else {
-                        Text(verbatim: ListsCopy.progress(visited: progress.visited, total: progress.total))
-                            .font(.headline)
-                            .accessibilityIdentifier("lists.detail.progress")
-                    }
+                        .accessibilityIdentifier("lists.detail.progress")
                     Button {
                         onShowOnMap(currentList, .all)
                     } label: {
@@ -5286,24 +5325,74 @@ private struct ListDetailView: View {
             }
         }
         .navigationTitle(currentList.name)
-        .accessibilityIdentifier(isTrackListDetail ? "lists.detail.surface.track" : "lists.detail.surface.collection")
+        .accessibilityIdentifier("lists.detail.surface.collection")
         .task { await reload() }
         .refreshable { await reload() }
-        .toolbar {
-            if isTrackListDetail {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if canReorderTrackVisits {
-                        EditButton()
-                            .accessibilityIdentifier("lists.detail.track.edit-order")
+    }
+
+    private var trackSummaryCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if focusPlaceID == nil {
+                HStack(spacing: 7) {
+                    Image(systemName: "arrow.down")
+                        .accessibilityHidden(true)
+                    Text(verbatim: TracksCopy.sortDirectionLabel)
+                        .accessibilityIdentifier("lists.detail.track.sort-direction")
+                }
+                .font(.subheadline.weight(.semibold))
+
+                Text(verbatim: TracksCopy.summary(
+                    visible: visibleTrackVisits.count,
+                    lovedOnly: false
+                ))
+                .font(.title2.weight(.bold))
+                .accessibilityIdentifier("lists.detail.track.summary")
+
+                Text("Your track is a sequence of visits you entered. Edit a row when the remembered day or order needs correcting.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    Button {
+                        onShowOnMap(currentList, .all)
+                    } label: {
+                        Label("Map", systemImage: "map")
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(TrackVisitEditorVisualSpec.accent)
+                    .accessibilityIdentifier("lists.detail.show-map")
+
                     Button {
                         Task { await reload() }
                     } label: {
-                        Image(systemName: "arrow.clockwise")
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.bordered)
                     .accessibilityLabel("Refresh tracks")
+                    .accessibilityIdentifier("lists.detail.track.refresh")
                 }
+            } else {
+                Label("Multiple visits to this place", systemImage: "mappin.and.ellipse")
+                    .font(.subheadline.weight(.semibold))
+                    .accessibilityIdentifier("lists.detail.track.focus-message")
+
+                Text("Choose the visit")
+                    .font(.title2.weight(.bold))
+                    .accessibilityIdentifier("lists.detail.track.summary")
+
+                Text("Delete only the row you mean to remove.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
+        }
+        .padding(13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(TrackVisitEditorVisualSpec.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
         }
     }
 
@@ -5341,80 +5430,118 @@ private struct ListDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             if let dayHeader {
                 Text(verbatim: formattedDay(dayHeader))
-                    .font(.caption.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
             }
 
-            HStack(alignment: .center, spacing: TrackVisitRowDensitySpec.horizontalSpacing) {
-                Image(systemName: "mappin.circle.fill")
-                    .foregroundStyle(Color.secondary)
-                    .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: TrackVisitRowDensitySpec.horizontalSpacing) {
+                    Text("pin")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                        .frame(width: 30, height: 30)
+                        .background(TrackVisitEditorVisualSpec.accentSoft, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: TrackVisitRowDensitySpec.verticalSpacing) {
-                    Text(verbatim: visit.name)
-                        .font(.body)
-                        .lineLimit(1)
-                    Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitedAt(visit))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                    VStack(alignment: .leading, spacing: TrackVisitRowDensitySpec.verticalSpacing) {
+                        Text(verbatim: visit.name)
+                            .font(.body)
+                            .lineLimit(2)
+                        Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitedAt(visit))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    .layoutPriority(1)
+
+                    Button {
+                        Task { await setLoved(visit) }
+                    } label: {
+                        Text("heart")
+                            .font(.caption.weight(.bold))
+                            .frame(minWidth: 34, minHeight: 30)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(TrackVisitEditorVisualSpec.danger)
+                    .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
+                    .accessibilityIdentifier("lists.detail.track.row.loved.\(visit.id)")
                 }
-                .layoutPriority(1)
-
-                Spacer(minLength: 4)
 
                 visitEditControls(visit)
             }
+            .padding(11)
+            .frame(maxWidth: .infinity, minHeight: TrackVisitRowDensitySpec.minimumHeight, alignment: .leading)
+            .background(TrackVisitEditorVisualSpec.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
+            }
         }
-        .frame(minHeight: TrackVisitRowDensitySpec.minimumHeight, alignment: .leading)
     }
 
     @ViewBuilder
     private func visitEditControls(_ visit: TrackVisit) -> some View {
-        HStack(spacing: 6) {
-            DatePicker(
-                "Visit date",
-                selection: Binding(
-                    get: { visit.visitedAt },
-                    set: { day in
-                        Task { await updateVisitDate(visit, toDayContaining: day) }
-                    }
-                ),
-                displayedComponents: .date
-            )
-            .datePickerStyle(.compact)
-            .labelsHidden()
-            .accessibilityLabel("Visit date for \(visit.name), \(formattedVisitedAt(visit))")
-            .accessibilityIdentifier("lists.detail.track.row.date.\(visit.id)")
-            .background {
-                Color.clear
-                    .accessibilityIdentifier("lists.detail.track.row.date.\(visit.id)")
-            }
+        let datePicker = DatePicker(
+            "Visit date",
+            selection: Binding(
+                get: { visit.visitedAt },
+                set: { day in
+                    Task { await updateVisitDate(visit, toDayContaining: day) }
+                }
+            ),
+            displayedComponents: .date
+        )
+        .datePickerStyle(.compact)
+        .labelsHidden()
+        .accessibilityLabel("Visit date for \(visit.name), \(formattedVisitedAt(visit))")
+        .accessibilityIdentifier("lists.detail.track.row.date.\(visit.id)")
 
-            Button {
-                Task { await setLoved(visit) }
-            } label: {
-                Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .fixedSize()
-            .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
-            .accessibilityIdentifier("lists.detail.track.row.loved.\(visit.id)")
-
-            Button(role: .destructive) {
-                Task { await deleteVisit(visit) }
-            } label: {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .accessibilityLabel("Delete \(visit.name), \(formattedVisitedAt(visit))")
-            .accessibilityIdentifier("lists.detail.track.row.delete.\(visit.id)")
+        let dateBox = VStack(alignment: .leading, spacing: 2) {
+            Text("Visit date")
+                .font(.caption2.weight(.semibold))
+                .textCase(.uppercase)
+                .foregroundStyle(.secondary)
+            datePicker
         }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(TrackVisitEditorVisualSpec.cardBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
+        }
+
+        let deleteButton = Button(role: .destructive) {
+            Task { await deleteVisit(visit) }
+        } label: {
+            if dynamicTypeSize.isAccessibilitySize {
+                Text("delete")
+                    .font(.caption.weight(.bold))
+            } else {
+                Text("del")
+                    .font(.caption.weight(.bold))
+            }
+        }
+        .buttonStyle(.bordered)
         .controlSize(.small)
-        .fixedSize()
+        .tint(TrackVisitEditorVisualSpec.danger)
+        .accessibilityLabel("Delete \(visit.name), \(formattedVisitedAt(visit))")
+        .accessibilityIdentifier("lists.detail.track.row.delete.\(visit.id)")
+
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 8) {
+                dateBox
+                deleteButton
+            }
+        } else {
+            HStack(alignment: .center, spacing: 8) {
+                dateBox
+                deleteButton
+            }
+        }
     }
 
     @MainActor
