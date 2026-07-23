@@ -315,8 +315,12 @@ final class DiagnosticLogExportTests: XCTestCase {
         let excludedLines = [
             "2026-07-19T12:58:13Z flow info device deviceName=Rob's iPhone",
             "2026-07-19T12:58:13Z flow info located gpsLatitude=51.50740 gpsLongitude=-0.12780",
+            "2026-07-19T12:58:13Z flow info search rawQuery=private medical search",
+            "2026-07-19T12:58:13Z flow info search rawSearchQuery=private medical search",
+            "2026-07-19T12:58:13Z flow info search searchQuery=private medical search",
             "2026-07-19T12:58:13Z flow info search queryText=private medical search",
             "2026-07-19T12:58:13Z flow info viewport browsed viewportCenter=100.29400,5.45200",
+            "2026-07-19T12:58:13Z flow info viewport browsed viewportBbox=100.28200,5.44000,100.30600,5.46400",
             "2026-07-19T12:58:13Z flow info viewport browsed bbox=100.28200,5.44000,100.30600,5.46400",
             "2026-07-19T12:58:13Z flow info viewport browsed tileX=795 tileY=493",
             "2026-07-19T12:58:13Z startup info device UIDevice . current . name",
