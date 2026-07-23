@@ -1170,26 +1170,45 @@ struct TrackFilterPickerListOption: Equatable, Identifiable {
 struct TrackReplaySnapshotCache: Sendable {
     static let empty = TrackReplaySnapshotCache(context: .empty)
 
-    private let contexts: [TrackGeometryContext]
+    private let context: TrackGeometryContext
     private let snapshots: [TrackSourceSnapshot]
 
     init(context: TrackGeometryContext) {
-        contexts = context.visits.indices.map { index in
-            context.clipped(throughEventIndex: index)
+        self.context = context
+        snapshots = []
+    }
+
+    private init(context: TrackGeometryContext, snapshots: [TrackSourceSnapshot]) {
+        self.context = context
+        self.snapshots = snapshots
+    }
+
+    static func precomputed(
+        context: TrackGeometryContext,
+        isCancelled: @Sendable () -> Bool = { Task.isCancelled }
+    ) -> TrackReplaySnapshotCache? {
+        var snapshots = [TrackSourceSnapshot]()
+        snapshots.reserveCapacity(context.visits.count)
+        for index in context.visits.indices {
+            guard !isCancelled() else { return nil }
+            snapshots.append(makeSnapshot(context: context, throughEventIndex: index))
         }
-        snapshots = contexts.enumerated().map { index, clippedContext in
-            TrackSourceSnapshot.make(
-                context: clippedContext,
-                activeToVisitID: index > 0 ? clippedContext.visits.last?.id : nil
-            )
-        }
+        guard !isCancelled() else { return nil }
+        return TrackReplaySnapshotCache(context: context, snapshots: snapshots)
     }
 
     func snapshot(throughEventIndex index: Int?) -> TrackSourceSnapshot {
-        guard let index else { return snapshots.last ?? .empty }
+        guard let index else {
+            return snapshots.last ?? Self.makeSnapshot(context: context, throughEventIndex: context.visits.indices.last)
+        }
         guard index >= 0 else { return .empty }
-        guard snapshots.indices.contains(index) else { return snapshots.last ?? .empty }
-        return snapshots[index]
+        if snapshots.indices.contains(index) {
+            return snapshots[index]
+        }
+        guard context.visits.indices.contains(index) else {
+            return snapshots.last ?? Self.makeSnapshot(context: context, throughEventIndex: context.visits.indices.last)
+        }
+        return Self.makeSnapshot(context: context, throughEventIndex: index)
     }
 
     func snapshot(throughEventIndex index: Int?, activeArcProgress: Double) -> TrackSourceSnapshot {
@@ -1197,12 +1216,22 @@ struct TrackReplaySnapshotCache: Sendable {
               let index,
               index > 0
         else { return snapshot(throughEventIndex: index) }
-        guard contexts.indices.contains(index) else { return snapshots.last ?? .empty }
-        let context = contexts[index]
+        guard context.visits.indices.contains(index) else { return snapshot(throughEventIndex: nil) }
+        let context = context.clipped(throughEventIndex: index)
         return TrackSourceSnapshot.make(
             context: context,
             activeToVisitID: context.visits.last?.id,
             activeArcProgress: activeArcProgress
+        )
+    }
+
+    private static func makeSnapshot(context: TrackGeometryContext, throughEventIndex index: Int?) -> TrackSourceSnapshot {
+        guard let index else { return .empty }
+        guard index >= 0 else { return .empty }
+        let clippedContext = context.clipped(throughEventIndex: index)
+        return TrackSourceSnapshot.make(
+            context: clippedContext,
+            activeToVisitID: index > 0 ? clippedContext.visits.last?.id : nil
         )
     }
 }
@@ -1416,22 +1445,17 @@ struct TrackTimelineModel: Equatable, Sendable {
     }
 
     private static func dateLabel(for date: Date, calendar: Calendar) -> String {
-        let components = calendar.dateComponents([.day, .month], from: date)
-        let month = components.month.flatMap(Self.monthLabel) ?? ""
-        return "\(components.day ?? 1) \(month)"
+        var format = Date.FormatStyle.dateTime.day().month(.abbreviated)
+        format.calendar = calendar
+        format.locale = calendar.locale ?? .current
+        format.timeZone = calendar.timeZone
+        return date.formatted(format)
     }
 
     private static func timeLabel(for date: Date) -> String {
         date.formatted(date: .omitted, time: .shortened)
     }
 
-    private static func monthLabel(_ month: Int) -> String? {
-        let labels = [
-            1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
-            7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
-        ]
-        return labels[month]
-    }
 }
 
 private struct TrackTimelineDateMarkersView: View {
@@ -2219,6 +2243,8 @@ struct MapScreen: View {
     @State private var trackReplayTimelineZoomLevel = TrackReplayTimelineZoomLevel.coarse
     @State private var isTrackReplayAutoplaying = false
     @State private var trackReplayArrivalPulseVisitID: Int64?
+    @State private var trackReplaySnapshotPrecomputeTask: Task<Void, Never>?
+    @State private var trackReplaySnapshotPrecomputeGeneration = 0
     @State private var trackReplayAutoplayTask: Task<Void, Never>?
     @State private var trackReplayScrubTask: Task<Void, Never>?
     @State private var trackReplayArcGlideTask: Task<Void, Never>?
@@ -2711,6 +2737,7 @@ struct MapScreen: View {
         .onDisappear {
             cancelHiddenToastDismissTask()
             stopMapTrackAutoplay()
+            stopTrackReplaySnapshotPrecompute()
         }
     }
 
@@ -3279,6 +3306,12 @@ struct MapScreen: View {
         trackReplayArcGlideTask = nil
     }
 
+    private func stopTrackReplaySnapshotPrecompute() {
+        trackReplaySnapshotPrecomputeGeneration += 1
+        trackReplaySnapshotPrecomputeTask?.cancel()
+        trackReplaySnapshotPrecomputeTask = nil
+    }
+
     private func scrubSelectedTrackReplayEventIndex(_ nextIndex: Int, timeline: TrackTimelineModel) {
         stopMapTrackAutoplay()
         stopMapTrackScrub()
@@ -3351,6 +3384,7 @@ struct MapScreen: View {
         stopMapTrackAutoplay()
         stopMapTrackScrub()
         stopMapTrackArcGlide()
+        stopTrackReplaySnapshotPrecompute()
         trackReplayContext = context
         trackReplaySnapshotCache = TrackReplaySnapshotCache(context: context)
         let timeline = TrackTimelineModel(visits: context.visits)
@@ -3358,12 +3392,14 @@ struct MapScreen: View {
         trackReplayTimelineZoomLevel = .coarse
         trackReplayArrivalPulseVisitID = nil
         trackSourceSnapshot = trackReplaySnapshotCache.snapshot(throughEventIndex: selectedTrackReplayEventIndex)
+        startTrackReplaySnapshotPrecompute(context: context)
     }
 
     private func applyStaticTrackContext(_ context: TrackGeometryContext) {
         stopMapTrackAutoplay()
         stopMapTrackScrub()
         stopMapTrackArcGlide()
+        stopTrackReplaySnapshotPrecompute()
         trackReplayContext = .empty
         trackReplaySnapshotCache = .empty
         selectedTrackReplayEventIndex = nil
@@ -3376,12 +3412,32 @@ struct MapScreen: View {
         stopMapTrackAutoplay()
         stopMapTrackScrub()
         stopMapTrackArcGlide()
+        stopTrackReplaySnapshotPrecompute()
         trackReplayContext = .empty
         trackReplaySnapshotCache = .empty
         selectedTrackReplayEventIndex = nil
         trackReplayTimelineZoomLevel = .coarse
         trackReplayArrivalPulseVisitID = nil
         trackSourceSnapshot = .empty
+    }
+
+    private func startTrackReplaySnapshotPrecompute(context: TrackGeometryContext) {
+        guard context.visits.count > 1 else { return }
+        trackReplaySnapshotPrecomputeGeneration += 1
+        let generation = trackReplaySnapshotPrecomputeGeneration
+        trackReplaySnapshotPrecomputeTask = Task.detached(priority: .utility) {
+            guard let warmedCache = TrackReplaySnapshotCache.precomputed(context: context) else { return }
+            await MainActor.run {
+                guard trackReplaySnapshotPrecomputeGeneration == generation,
+                      trackReplayContext == context
+                else { return }
+                trackReplaySnapshotCache = warmedCache
+                if trackReplayArcGlideTask == nil {
+                    trackSourceSnapshot = warmedCache.snapshot(throughEventIndex: selectedTrackReplayEventIndex)
+                }
+                trackReplaySnapshotPrecomputeTask = nil
+            }
+        }
     }
 
     private var listMapShowVisitedBinding: Binding<Bool> {

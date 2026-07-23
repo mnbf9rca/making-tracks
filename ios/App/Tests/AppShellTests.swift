@@ -177,11 +177,14 @@ final class AppShellTests: XCTestCase {
     }
 
     func testTrackTimelinePositionsAreVisitEventsNotElapsedTime() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_GB")
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let timeline = TrackTimelineModel(visits: [
             trackVisit(id: 1, seconds: 0),
             trackVisit(id: 2, seconds: 60),
             trackVisit(id: 3, seconds: 60 * 60 * 24 * 12),
-        ])
+        ], calendar: calendar)
 
         XCTAssertEqual(timeline.sliderRange, 0...2)
         XCTAssertEqual(timeline.eventIndex(forSliderValue: 0.0), 0)
@@ -505,7 +508,7 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(timeline.scrubEventPath(from: 2, to: 2), [2])
     }
 
-    func testTrackReplaySnapshotCachePrecomputesEventPrefixes() {
+    func testTrackReplaySnapshotCacheReturnsEventPrefixes() {
         let context = TrackGeometryContext(
             visits: [
                 trackVisit(id: 1, seconds: 0),
@@ -519,6 +522,62 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(cache.snapshot(throughEventIndex: 1).segmentCount, 1)
         XCTAssertEqual(cache.snapshot(throughEventIndex: 2).segmentCount, 2)
         XCTAssertEqual(cache.snapshot(throughEventIndex: -1).segmentCount, 0)
+    }
+
+    func testTrackReplaySnapshotCachePrecomputedMatchesLazySnapshots() throws {
+        let context = TrackGeometryContext(
+            visits: [
+                trackVisit(id: 1, seconds: 0),
+                trackVisit(id: 2, seconds: 60),
+                trackVisit(id: 3, seconds: 120),
+                trackVisit(id: 4, seconds: 180),
+            ]
+        )
+        let lazyCache = TrackReplaySnapshotCache(context: context)
+        let precomputedCache = try XCTUnwrap(TrackReplaySnapshotCache.precomputed(context: context))
+
+        for index in [-1, 0, 1, 2, 3, 4] {
+            XCTAssertEqual(
+                precomputedCache.snapshot(throughEventIndex: index).signature,
+                lazyCache.snapshot(throughEventIndex: index).signature,
+                "Precomputed replay snapshot differed from lazy snapshot at index \(index)"
+            )
+        }
+        XCTAssertEqual(
+            precomputedCache.snapshot(throughEventIndex: nil).signature,
+            lazyCache.snapshot(throughEventIndex: nil).signature
+        )
+    }
+
+    func testTrackReplaySnapshotCachePrecomputeStopsWhenCancelled() {
+        let context = TrackGeometryContext(
+            visits: [
+                trackVisit(id: 1, seconds: 0),
+                trackVisit(id: 2, seconds: 60),
+                trackVisit(id: 3, seconds: 120),
+            ]
+        )
+
+        let cache = TrackReplaySnapshotCache.precomputed(
+            context: context,
+            isCancelled: { true }
+        )
+
+        XCTAssertNil(cache)
+    }
+
+    func testTrackReplaySnapshotCacheConstructionStaysInsideLargeReplayListOpenBudget() {
+        let context = TrackGeometryContext(
+            visits: (0..<500).map { index in
+                trackVisit(id: Int64(index + 1), seconds: TimeInterval(index * 60))
+            }
+        )
+
+        let start = Date()
+        _ = TrackReplaySnapshotCache(context: context)
+        let elapsed = Date().timeIntervalSince(start)
+
+        XCTAssertLessThan(elapsed, 0.025, "500-visit replay cache construction took \(elapsed)s")
     }
 
     func testTrackReplaySnapshotCacheMarksArrivingSegmentActive() throws {
@@ -550,6 +609,20 @@ final class AppShellTests: XCTestCase {
 
         XCTAssertGreaterThan(partialCoordinates, 1)
         XCTAssertLessThan(partialCoordinates, completeCoordinates)
+    }
+
+    func testTrackTimelineDateMarkerLabelsUseCalendarLocale() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "fr_FR")
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let timeline = TrackTimelineModel(
+            visits: [
+                trackVisit(id: 1, seconds: 1_721_433_600),
+            ],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(timeline.dateMarkers.map(\.label), ["20 juil."])
     }
 
     func testTrackReplayTimelineVelocityZoomThresholds() {
