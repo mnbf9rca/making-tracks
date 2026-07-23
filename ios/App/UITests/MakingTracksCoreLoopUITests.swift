@@ -652,6 +652,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openAppMenu(in: app)
         app.buttons["menu.row.lists"].tap()
         XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.buttons["lists.create"].tap()
+        let listsError = app.staticTexts["lists.error"]
+        XCTAssertTrue(listsError.waitForExistence(timeout: 5))
+        XCTAssertEqual(listsError.label, "Enter a list name.")
         XCTAssertTrue(app.staticTexts["KL walk"].waitForExistence(timeout: 5))
         app.staticTexts["KL walk"].tap()
 
