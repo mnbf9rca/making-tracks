@@ -1198,6 +1198,53 @@ final class MakingTracksTilesTests: XCTestCase {
         XCTAssertEqual(sidecarRequests.count, 1)
     }
 
+    func testTileClientRetriesTransientDescriptionSidecarErrorForLoadedPlaceRef() async throws {
+        let placeID = "mt1_00000000000000000000000000"
+        let tile = try gzipJSON(tileObject(places: [validPlace([
+            "place_id": placeID,
+            "blurb": NSNull(),
+        ])]))
+        let tileSHA = sha256(tile)
+        let descriptionURL = "https://tiles.making-tracks.app/uk/20260716T155409Z/descriptions/10/511/340.json"
+        let fetcher = StubFetcher(
+            routes: [
+                "https://tiles.making-tracks.app/uk/current.json": jsonData(["schema_version": 1, "publish_version": "20260716T155409Z"]),
+                "https://tiles.making-tracks.app/uk/20260716T155409Z/manifest.json": manifestData(tileSHA: tileSHA, tileBytes: tile.count, attributionSources: []),
+                "https://tiles.making-tracks.app/uk/20260716T155409Z/tiles/10/511/340.json.gz": tile,
+                descriptionURL: jsonData(descriptionIndexObject(places: [validDescriptionEntry([
+                    "place_id": placeID,
+                    "excerpt": "Recovered sidecar description.",
+                ])])),
+            ],
+            errors: [descriptionURL: TileError.httpStatus(503)]
+        )
+        let client = TileClient(region: "uk", fetcher: fetcher, cache: try temporaryCache())
+
+        try await client.refreshPin()
+        _ = await client.places(
+            inViewport: BBox(minLon: -0.13, minLat: 51.49, maxLon: -0.11, maxLat: 51.51),
+            zoom: 16
+        )
+        guard let transientPlaceRef = await client.placeRef(for: placeID) else {
+            XCTFail("expected loaded place ref after transient sidecar error")
+            return
+        }
+        fetcher.errors[descriptionURL] = nil
+        guard let recoveredPlaceRef = await client.placeRef(for: placeID) else {
+            XCTFail("expected loaded place ref after sidecar recovery")
+            return
+        }
+        let transientRawData = try XCTUnwrap(transientPlaceRef.rawJSON.data(using: .utf8))
+        let transientRaw = try XCTUnwrap(JSONSerialization.jsonObject(with: transientRawData) as? [String: Any])
+        let rawData = try XCTUnwrap(recoveredPlaceRef.rawJSON.data(using: .utf8))
+        let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: rawData) as? [String: Any])
+        let sidecarRequests = fetcher.requestedURLs.filter { $0 == descriptionURL }
+
+        XCTAssertTrue(transientRaw["blurb"] is NSNull)
+        XCTAssertEqual(raw["blurb"] as? String, "Recovered sidecar description.")
+        XCTAssertEqual(sidecarRequests.count, 2)
+    }
+
     func testTileClientCachesInvalidDescriptionSidecarForLoadedPlaceRef() async throws {
         let placeID = "mt1_00000000000000000000000000"
         let tile = try gzipJSON(tileObject(places: [validPlace([
