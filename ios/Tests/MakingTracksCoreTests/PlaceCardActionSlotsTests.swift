@@ -33,7 +33,7 @@ final class PlaceCardActionSlotsTests: XCTestCase {
         )
         XCTAssertEqual(
             PlaceCardAction.save.accessibilityHint(isSaved: true),
-            "Double-tap to unsave, double-tap and hold to choose list."
+            "Double-tap to choose lists."
         )
     }
 

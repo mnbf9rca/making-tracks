@@ -44,7 +44,7 @@ public enum PlaceCardAction: Sendable, Equatable {
         switch self {
         case .save:
             return isSaved
-                ? "Double-tap to unsave, double-tap and hold to choose list."
+                ? "Double-tap to choose lists."
                 : "Double-tap to choose list."
         case .seen, .love, .unlove, .hide, .unsee, .seenDisabled, .unhide:
             return nil
