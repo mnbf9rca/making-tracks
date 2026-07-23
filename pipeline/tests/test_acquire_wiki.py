@@ -921,7 +921,10 @@ def test_qid_sitelink_blank_extract_refresh_skips_wikibase_mismatch(tmp_path):
 
 def test_blank_extract_refresh_falls_back_to_single_title_when_batch_stays_blank(
     tmp_path,
+    capsys,
+    monkeypatch,
 ):
+    monkeypatch.setattr(acquire, "_BLANK_EXTRACT_HEARTBEAT_EVERY_PAGES", 1, raising=False)
     snapshot = tmp_path / "wikipedia.snapshot.json"
     snapshot.write_text(
         json.dumps(
@@ -1019,6 +1022,24 @@ def test_blank_extract_refresh_falls_back_to_single_title_when_batch_stays_blank
     assert data["_meta"]["qid_sitelink_blank_extract_refresh"]["recovered"] == 1
     assert data["_meta"]["qid_sitelink_blank_extract_refresh"]["single_title_fallbacks"] == 2
     assert data["_meta"]["qid_sitelink_blank_extract_refresh"]["still_blank"] == 1
+    err = capsys.readouterr().err
+    assert "PHASE START blank_extract.batch_refresh region=en pages=2" in err
+    assert (
+        "PHASE HEARTBEAT blank_extract.batch_refresh region=en processed=2/2"
+    ) in err
+    assert "recovered=0 skipped_mismatch=0 fallback_count=0" in err
+    assert "PHASE DONE blank_extract.batch_refresh region=en processed=2/2" in err
+    assert "PHASE START blank_extract.single_title_fallback region=en pages=2" in err
+    assert (
+        "PHASE HEARTBEAT blank_extract.single_title_fallback region=en processed=1/2"
+    ) in err
+    assert (
+        "PHASE HEARTBEAT blank_extract.single_title_fallback region=en processed=2/2"
+    ) in err
+    assert "recovered=1 skipped_mismatch=0 fallback_count=2" in err
+    assert "PHASE DONE blank_extract.single_title_fallback region=en processed=2/2" in err
+    assert "PHASE START blank_extract.persist region=en pages=2" in err
+    assert "PHASE DONE blank_extract.persist region=en processed=2/2" in err
 
 
 def test_qid_sitelink_acquisition_skips_malformed_page_entries(tmp_path):
