@@ -255,7 +255,7 @@ final class LoggingPrivacyTests: XCTestCase {
         }
     }
 
-    func testDiagnosticsConsentCopyUsesHumanLabelsWithoutChangingExportClasses() throws {
+    func testDiagnosticsConsentCopyKeepsExportClassesWithoutDisclosureBoxes() throws {
         let source = try String(
             contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
             encoding: .utf8
@@ -267,20 +267,22 @@ final class LoggingPrivacyTests: XCTestCase {
 
         for expected in [
             "Nothing is sent automatically. The app prepares a file on this phone",
-            "App details", "Device type", "Steps in the app", "Downloaded maps",
-            "Map file links", "Problems", "Load times", "Places and taps",
-            "Device name", "Precise location", "Search text",
-            "Your exact coordinates are not included.",
+            "Tap Share when you are ready to choose who gets it. Nothing leaves Making Tracks before then.",
+            "Making Tracks has no upload endpoint.",
+            "Your device name, exact location, and searches are not included in the export.",
         ] {
             XCTAssertTrue(source.contains(expected), expected)
         }
-        for technicalLabel in [
-            #"DiagnosticsDisclosureClass(title: "Session flow""#,
-            #"DiagnosticsDisclosureClass(title: "Object URLs""#,
-            #"DiagnosticsDisclosureClass(title: "Places/actions""#,
-            #"DiagnosticsDisclosureClass(title: "Search wording""#,
+        for removedDisclosureCopy in [
+            "Section(\"Included\")",
+            "Section(\"Not included\")",
+            "diagnosticsClassGrid(",
+            "DiagnosticsDisclosureClass",
+            "App details", "Device type", "Steps in the app", "Downloaded maps",
+            "Map file links", "Problems", "Load times", "Places and taps",
+            "Device name", "Precise location", "Search text",
         ] {
-            XCTAssertFalse(source.contains(technicalLabel), technicalLabel)
+            XCTAssertFalse(source.contains(removedDisclosureCopy), removedDisclosureCopy)
         }
         XCTAssertTrue(exportSource.contains("included=app-version,device-model,installed-packs,session-flow,object-urls,error-codes,timings"))
         XCTAssertTrue(exportSource.contains("not-included=device-name,exact-location,search-wording"))
@@ -288,6 +290,7 @@ final class LoggingPrivacyTests: XCTestCase {
         XCTAssertFalse(source.contains("Phone name"))
         XCTAssertFalse(source.contains("Your coordinates never leave."))
         XCTAssertFalse(source.contains("Your coordinates are excluded."))
+        XCTAssertFalse(source.contains("never included"))
         XCTAssertFalse(source.contains("Places you looked at, saved, loved, hid or visited."))
         XCTAssertFalse(source.contains("Your searches, lists, location, viewport or device name."))
     }
@@ -326,6 +329,17 @@ final class LoggingPrivacyTests: XCTestCase {
         XCTAssertTrue(source.contains("ScrollView([.horizontal, .vertical])"))
         XCTAssertTrue(source.contains(".frame(minHeight: 220"))
         XCTAssertTrue(source.contains(".font(.system(.footnote, design: .monospaced))"))
+    }
+
+    func testDiagnosticsPreparedPreviewAppearsBeforeReadyCopy() throws {
+        let source = try String(
+            contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+        let previewRange = try XCTUnwrap(source.range(of: "Section(\"Preview\")"))
+        let readyRange = try XCTUnwrap(source.range(of: "Section(\"Diagnostic file ready\")"))
+
+        XCTAssertLessThan(previewRange.lowerBound, readyRange.lowerBound)
     }
 
     func testDiagnosticsDeleteRequiresConfirmation() throws {
