@@ -1111,6 +1111,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertLessThan(normalized.y, 0.92, projectedPin.identifier)
         assertListMapFilterChromePlacement(element(identifier: "map.list-mode.filter.category.attraction", in: app), in: app)
         attachScreenshot(named: "track-category-filter-map-source")
+
+        app.buttons["map.list-mode.back"].tap()
+        XCTAssertTrue(app.staticTexts["Replay week"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["lists.detail.progress"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["lists.detail.progress"].label, "you've been to 1 of these · all seen")
+        XCTAssertTrue(app.staticTexts["Dense Pin 1"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Dense Pin 2"].exists)
     }
 
     func testListMapBackReturnsToSeededListDetail() {
