@@ -183,13 +183,15 @@ private enum AXSliderUpperEdgeAdjuster {
         var start: CGVector
         var end: CGVector
         var holdDuration: TimeInterval
+        var fallbackNormalizedPositions: [Double]
     }
 
     static func upperEdgeDragPlan() -> DragPlan {
         DragPlan(
             start: CGVector(dx: 0.04, dy: 0.5),
             end: CGVector(dx: 1.0, dy: 0.5),
-            holdDuration: 0.1
+            holdDuration: 0.1,
+            fallbackNormalizedPositions: [0.99, 0.995, 1.0]
         )
     }
 }
@@ -345,6 +347,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(plan.start.dy, 0.5)
         XCTAssertEqual(plan.end.dx, 1.0)
         XCTAssertEqual(plan.end.dy, 0.5)
+        XCTAssertEqual(plan.fallbackNormalizedPositions, [0.99, 0.995, 1.0])
     }
 
     func testCardTogglesPersistAndRestyleMapPin() {
@@ -2152,6 +2155,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 return
             }
         }
+        for normalizedPosition in plan.fallbackNormalizedPositions {
+            let currentSlider = app.sliders[identifier]
+            guard currentSlider.waitForExistence(timeout: 2) else { continue }
+            currentSlider.adjust(toNormalizedSliderPosition: normalizedPosition)
+            let resampled = AXValueWaiter.wait(expected: expectedValue, attempts: 3, interval: 0.1) {
+                AXElementReadback.value(for: identifier) {
+                    let current = app.sliders[$0]
+                    return (exists: current.exists, value: { current.value as? String })
+                }
+            }
+            if resampled.matched {
+                return
+            }
+        }
         let finalSlider = app.sliders[identifier]
         let finalValue = AXElementReadback.value(for: identifier) {
             let current = app.sliders[$0]
@@ -2159,7 +2176,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         let finalDescription = finalSlider.exists ? finalSlider.debugDescription : "missing slider"
         XCTFail(
-            "Slider \(identifier) value was \(finalValue ?? "missing"), expected \(expectedValue) after coordinate max-edge drag; \(finalDescription)"
+            "Slider \(identifier) value was \(finalValue ?? "missing"), expected \(expectedValue) after coordinate max-edge drag and normalized fallback; \(finalDescription)"
         )
     }
 

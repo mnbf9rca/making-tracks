@@ -347,8 +347,8 @@ final class LoggingPrivacyTests: XCTestCase {
         )
 
         XCTAssertTrue(source.contains("Task {"), "Prepare actions should enter Swift concurrency.")
-        XCTAssertTrue(source.contains("await prepare(coverCurrentSession:"), "Prepare actions should await the async prepare path.")
-        XCTAssertTrue(source.contains("private func prepare(coverCurrentSession: Bool) async"), "Diagnostics prepare should be async.")
+        XCTAssertTrue(source.contains("await prepare()"), "Prepare actions should await the async prepare path.")
+        XCTAssertTrue(source.contains("private func prepare() async"), "Diagnostics prepare should be async.")
         XCTAssertTrue(source.contains("Task.detached(priority: .userInitiated)"), "Exporter work should run off the main actor.")
         XCTAssertFalse(
             source.contains("private func prepare() {\n        isPreparing = true"),
@@ -356,17 +356,25 @@ final class LoggingPrivacyTests: XCTestCase {
         )
     }
 
-    func testDiagnosticsNormalPrepareUsesSessionCoveringWindowButShortRetryStaysExplicit() throws {
+    func testDiagnosticsPrepareHonorsSelectedWindow() throws {
         let source = try String(
             contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
             encoding: .utf8
         )
 
-        XCTAssertTrue(source.contains("await prepare(coverCurrentSession: true)"))
-        XCTAssertTrue(source.contains("await prepare(coverCurrentSession: false)"))
-        XCTAssertTrue(source.contains("private func prepare(coverCurrentSession: Bool) async"))
-        XCTAssertTrue(source.contains("prepareCoveringCurrentSession(preferredWindow: window"))
-        XCTAssertTrue(source.contains(".prepare(window: window"))
+        XCTAssertTrue(source.contains("await prepare()"))
+        XCTAssertTrue(source.contains("private func prepare() async"))
+        XCTAssertTrue(source.contains("DiagnosticsExportRequest(selectedWindow: selectedWindow)"))
+        XCTAssertTrue(source.contains("request: request"))
+        XCTAssertTrue(source.contains(".prepare(window: request.window"))
+        XCTAssertFalse(
+            source.contains("await prepare(coverCurrentSession: true)"),
+            "Normal Prepare should honor the selected explicit window instead of promoting Last hour to Everything."
+        )
+        XCTAssertFalse(
+            source.contains("prepareCoveringCurrentSession(preferredWindow: window"),
+            "The session-covering heuristic turns retained older logs into Everything exports."
+        )
     }
 
     func testTrackVisitDateHeadersAreNotStandaloneMovableRows() throws {
