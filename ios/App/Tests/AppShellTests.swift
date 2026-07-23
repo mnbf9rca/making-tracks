@@ -483,7 +483,7 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(timeline.scrubEventPath(from: 2, to: 2), [2])
     }
 
-    func testTrackReplaySnapshotCachePrecomputesEventPrefixes() {
+    func testTrackReplaySnapshotCacheReturnsEventPrefixes() {
         let context = TrackGeometryContext(
             visits: [
                 trackVisit(id: 1, seconds: 0),
@@ -497,6 +497,48 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(cache.snapshot(throughEventIndex: 1).segmentCount, 1)
         XCTAssertEqual(cache.snapshot(throughEventIndex: 2).segmentCount, 2)
         XCTAssertEqual(cache.snapshot(throughEventIndex: -1).segmentCount, 0)
+    }
+
+    func testTrackReplaySnapshotCachePrecomputedMatchesLazySnapshots() throws {
+        let context = TrackGeometryContext(
+            visits: [
+                trackVisit(id: 1, seconds: 0),
+                trackVisit(id: 2, seconds: 60),
+                trackVisit(id: 3, seconds: 120),
+                trackVisit(id: 4, seconds: 180),
+            ]
+        )
+        let lazyCache = TrackReplaySnapshotCache(context: context)
+        let precomputedCache = try XCTUnwrap(TrackReplaySnapshotCache.precomputed(context: context))
+
+        for index in [-1, 0, 1, 2, 3, 4] {
+            XCTAssertEqual(
+                precomputedCache.snapshot(throughEventIndex: index).signature,
+                lazyCache.snapshot(throughEventIndex: index).signature,
+                "Precomputed replay snapshot differed from lazy snapshot at index \(index)"
+            )
+        }
+        XCTAssertEqual(
+            precomputedCache.snapshot(throughEventIndex: nil).signature,
+            lazyCache.snapshot(throughEventIndex: nil).signature
+        )
+    }
+
+    func testTrackReplaySnapshotCachePrecomputeStopsWhenCancelled() {
+        let context = TrackGeometryContext(
+            visits: [
+                trackVisit(id: 1, seconds: 0),
+                trackVisit(id: 2, seconds: 60),
+                trackVisit(id: 3, seconds: 120),
+            ]
+        )
+
+        let cache = TrackReplaySnapshotCache.precomputed(
+            context: context,
+            isCancelled: { true }
+        )
+
+        XCTAssertNil(cache)
     }
 
     func testTrackReplaySnapshotCacheConstructionStaysInsideLargeReplayListOpenBudget() {

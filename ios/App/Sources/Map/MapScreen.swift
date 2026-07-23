@@ -1084,13 +1084,18 @@ struct TrackReplaySnapshotCache: Sendable {
         self.snapshots = snapshots
     }
 
-    static func precomputed(context: TrackGeometryContext) -> TrackReplaySnapshotCache {
-        TrackReplaySnapshotCache(
-            context: context,
-            snapshots: context.visits.indices.map { index in
-                makeSnapshot(context: context, throughEventIndex: index)
-            }
-        )
+    static func precomputed(
+        context: TrackGeometryContext,
+        isCancelled: @Sendable () -> Bool = { Task.isCancelled }
+    ) -> TrackReplaySnapshotCache? {
+        var snapshots = [TrackSourceSnapshot]()
+        snapshots.reserveCapacity(context.visits.count)
+        for index in context.visits.indices {
+            guard !isCancelled() else { return nil }
+            snapshots.append(makeSnapshot(context: context, throughEventIndex: index))
+        }
+        guard !isCancelled() else { return nil }
+        return TrackReplaySnapshotCache(context: context, snapshots: snapshots)
     }
 
     func snapshot(throughEventIndex index: Int?) -> TrackSourceSnapshot {
@@ -2140,6 +2145,7 @@ struct MapScreen: View {
     @State private var isTrackReplayAutoplaying = false
     @State private var trackReplayArrivalPulseVisitID: Int64?
     @State private var trackReplaySnapshotPrecomputeTask: Task<Void, Never>?
+    @State private var trackReplaySnapshotPrecomputeGeneration = 0
     @State private var trackReplayAutoplayTask: Task<Void, Never>?
     @State private var trackReplayScrubTask: Task<Void, Never>?
     @State private var trackReplayArcGlideTask: Task<Void, Never>?
@@ -2632,6 +2638,7 @@ struct MapScreen: View {
         .onDisappear {
             cancelHiddenToastDismissTask()
             stopMapTrackAutoplay()
+            stopTrackReplaySnapshotPrecompute()
         }
     }
 
@@ -3201,6 +3208,7 @@ struct MapScreen: View {
     }
 
     private func stopTrackReplaySnapshotPrecompute() {
+        trackReplaySnapshotPrecomputeGeneration += 1
         trackReplaySnapshotPrecomputeTask?.cancel()
         trackReplaySnapshotPrecomputeTask = nil
     }
@@ -3316,11 +3324,14 @@ struct MapScreen: View {
 
     private func startTrackReplaySnapshotPrecompute(context: TrackGeometryContext) {
         guard context.visits.count > 1 else { return }
+        trackReplaySnapshotPrecomputeGeneration += 1
+        let generation = trackReplaySnapshotPrecomputeGeneration
         trackReplaySnapshotPrecomputeTask = Task.detached(priority: .utility) {
-            let warmedCache = TrackReplaySnapshotCache.precomputed(context: context)
-            guard !Task.isCancelled else { return }
+            guard let warmedCache = TrackReplaySnapshotCache.precomputed(context: context) else { return }
             await MainActor.run {
-                guard trackReplayContext == context else { return }
+                guard trackReplaySnapshotPrecomputeGeneration == generation,
+                      trackReplayContext == context
+                else { return }
                 trackReplaySnapshotCache = warmedCache
                 if trackReplayArcGlideTask == nil {
                     trackSourceSnapshot = warmedCache.snapshot(throughEventIndex: selectedTrackReplayEventIndex)
