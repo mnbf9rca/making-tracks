@@ -761,11 +761,11 @@ final class AppShellTests: XCTestCase {
         }
     }
 
-    func testTrackVisitRowsUseCompactInlineControls() {
-        XCTAssertTrue(TrackVisitRowDensitySpec.usesInlineEditControls)
-        XCTAssertFalse(TrackVisitRowDensitySpec.showsStandaloneDateLabel)
-        XCTAssertLessThanOrEqual(TrackVisitRowDensitySpec.verticalSpacing, 4)
-        XCTAssertLessThanOrEqual(TrackVisitRowDensitySpec.minimumHeight, 52)
+    func testTrackVisitRowsUseMockupCardControls() {
+        XCTAssertFalse(TrackVisitRowDensitySpec.usesInlineEditControls)
+        XCTAssertTrue(TrackVisitRowDensitySpec.showsStandaloneDateLabel)
+        XCTAssertGreaterThanOrEqual(TrackVisitRowDensitySpec.verticalSpacing, 8)
+        XCTAssertGreaterThanOrEqual(TrackVisitRowDensitySpec.minimumHeight, 96)
     }
 
     func testListMapPinPresentationTracksModeUsesFullStrengthPins() {

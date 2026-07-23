@@ -776,7 +776,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let deleteVisit = app.buttons.matching(identifierPrefix: "lists.detail.track.row.delete.").firstMatch
         XCTAssertTrue(deleteVisit.exists)
         XCTAssertTrue(deleteVisit.label.contains("Ghost Sign"))
-        XCTAssertTrue(app.buttons["lists.detail.track.edit-order"].exists)
+        XCTAssertTrue(app.buttons["lists.detail.track.refresh"].exists)
+        XCTAssertFalse(app.buttons["lists.detail.track.edit-order"].exists)
         XCTAssertFalse(app.buttons.matching(identifierPrefix: "lists.detail.track.row.move-up.").firstMatch.exists)
         XCTAssertFalse(app.buttons.matching(identifierPrefix: "lists.detail.track.row.move-down.").firstMatch.exists)
     }
