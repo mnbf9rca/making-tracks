@@ -696,6 +696,14 @@ struct ListsCopy {
         }
         return "you've been to \(visited) of these · \(remaining) to go"
     }
+
+    static func listNameCreateFailureMessage(for error: Error, draftName: String) -> String {
+        if error as? AppDatabaseError == .invalidListName {
+            let trimmedName = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmedName.isEmpty ? "Enter a list name." : "Use a shorter list name."
+        }
+        return "Could not create that list."
+    }
 }
 
 struct TracksCopy {
@@ -4950,7 +4958,7 @@ private struct ListsView: View {
             actionError = nil
             await reload()
         } catch {
-            actionError = "Use a shorter list name."
+            actionError = ListsCopy.listNameCreateFailureMessage(for: error, draftName: draftName)
         }
     }
 
@@ -6760,7 +6768,7 @@ private struct ListPickerView: View {
             await reload()
             onChanged()
         } catch {
-            actionError = "Use a shorter list name."
+            actionError = ListsCopy.listNameCreateFailureMessage(for: error, draftName: trimmedName)
         }
     }
 }
