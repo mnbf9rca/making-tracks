@@ -7611,11 +7611,7 @@ private struct PlaceCardSheet: View {
 
     private func saveButton(_ card: PlaceCardModel) -> some View {
         Button {
-            if card.pinState.saved {
-                startAction { await setSaved(false) }
-            } else {
-                showListPicker = true
-            }
+            showListPicker = true
         } label: {
             actionLabel(.save, title: card.pinState.saved ? "Saved" : "Save")
         }
