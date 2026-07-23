@@ -1212,6 +1212,83 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(ViewportSeed.penangMid.zoom, 13)
     }
 
+    func testOnboardingRegionChoicesComeFromRegionCatalogRoots() throws {
+        var regionIndex = appRegionIndexV3Object()
+        regionIndex["regions"] = [
+            appRegionIndexV3Entry([
+                "id": "west-midlands",
+                "display_name": "West Midlands",
+                "bbox": [-3.0, 51.8, -1.1, 53.8],
+                "search_compact": [
+                    "path": "west-midlands/20260720T000000Z/search/compact.json",
+                    "sha256": String(repeating: "c", count: 64),
+                    "bytes": 201,
+                    "schema_version": 1,
+                ],
+            ]),
+            appRegionIndexV3Entry([
+                "id": "west-midlands_birmingham",
+                "display_name": "Birmingham",
+                "parent": "west-midlands",
+                "bbox": [-2.1, 52.3, -1.6, 52.7],
+                "search_compact": [
+                    "path": "west-midlands_birmingham/20260720T000000Z/search/compact.json",
+                    "sha256": String(repeating: "d", count: 64),
+                    "bytes": 199,
+                    "schema_version": 1,
+                ],
+            ]),
+        ]
+        let catalog = OfflineRegionCatalog(regionIndex: try RegionIndex.decode(appJSONData(regionIndex)))
+
+        let choices = OnboardingRegionChoice.catalogChoices(from: catalog)
+
+        XCTAssertEqual(choices.map(\.publishRegionID), ["west-midlands"])
+        XCTAssertEqual(choices.map(\.title), ["West Midlands"])
+        XCTAssertEqual(choices.first?.startupViewport.bbox, BBox(minLon: -3.0, minLat: 51.8, maxLon: -1.1, maxLat: 53.8))
+    }
+
+    func testOnboardingRegionChoicesFailClosedWhenCatalogIsUnavailable() {
+        XCTAssertEqual(OnboardingRegionChoice.catalogChoices(from: .empty), [])
+    }
+
+    func testCatalogSelectsPublishedRootRegionForViewportWithoutMapRegionAllowlist() throws {
+        var regionIndex = appRegionIndexV3Object()
+        regionIndex["regions"] = [
+            appRegionIndexV3Entry([
+                "id": "west-midlands",
+                "display_name": "West Midlands",
+                "bbox": [-3.0, 51.8, -1.1, 53.8],
+                "search_compact": [
+                    "path": "west-midlands/20260720T000000Z/search/compact.json",
+                    "sha256": String(repeating: "c", count: 64),
+                    "bytes": 201,
+                    "schema_version": 1,
+                ],
+            ]),
+            appRegionIndexV3Entry([
+                "id": "north-west",
+                "display_name": "North West",
+                "bbox": [-3.7, 53.1, -1.5, 55.0],
+                "search_compact": [
+                    "path": "north-west/20260720T000000Z/search/compact.json",
+                    "sha256": String(repeating: "e", count: 64),
+                    "bytes": 203,
+                    "schema_version": 1,
+                ],
+            ]),
+        ]
+        let catalog = OfflineRegionCatalog(regionIndex: try RegionIndex.decode(appJSONData(regionIndex)))
+
+        let selected = catalog.selectedRootZoneID(
+            for: BBox(minLon: -2.2, minLat: 52.3, maxLon: -1.6, maxLat: 52.8),
+            current: nil
+        )
+
+        XCTAssertEqual(selected, "west-midlands")
+        XCTAssertNil(MapRegion(rawValue: "west-midlands"))
+    }
+
     func testOnboardingCopyMatchesPrivacyPolicyQualifierAndDoesNotExposeImageToggle() {
         XCTAssertEqual(
             OnboardingCopy.savedActivityPrivacy,
@@ -1562,6 +1639,66 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(status.totalBytesText, "Zero KB")
         XCTAssertEqual(status.regions, [])
         XCTAssertEqual(status.failedRegions, [])
+    }
+
+    func testStorageMenuStatusUsesCatalogDisplayNamesForInstalledPacks() throws {
+        let catalog = OfflineRegionCatalog(regionIndex: try RegionIndex.decode(appJSONData(appRegionIndexV3Object())))
+        let status = StorageMenuStatus.ready(
+            from: OfflinePackStorageSummary(
+                packs: [
+                    InstalledOfflinePackStorage(
+                        region: "malaysia-singapore-brunei",
+                        publishVersion: "20260719T125813Z",
+                        tileCount: 12,
+                        tileBytes: 2_000_000,
+                        basemapBytes: 1_000_000,
+                        referencedBytes: 3_000_000
+                    ),
+                ],
+                totalBytes: 3_000_000
+            ),
+            catalog: catalog
+        )
+
+        XCTAssertEqual(status.regions.map(\.region), ["malaysia-singapore-brunei"])
+        XCTAssertEqual(status.regions.map(\.title), ["Malaysia, Singapore, and Brunei"])
+    }
+
+    func testOfflineRegionCatalogUsesCachedCatalogWhenCurrentFetchIsOffline() async throws {
+        let cache = try OfflineRegionCatalogCache(
+            directory: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        )
+        let onlineFetcher = AppStubFetcher(routes: [
+            "https://tiles.making-tracks.app/regions.json": try appJSONData(appRegionIndexV3Object()),
+        ])
+        let offlineFetcher = AppStubFetcher(routes: [:])
+
+        _ = try await OfflineRegionCatalog.current(fetcher: onlineFetcher, cache: cache)
+        let offlineCatalog = try await OfflineRegionCatalog.current(fetcher: offlineFetcher, cache: cache)
+
+        XCTAssertEqual(offlineCatalog.rootZones.map(\.displayName), ["Malaysia, Singapore, and Brunei"])
+        XCTAssertEqual(offlineFetcher.requestedURLs, ["https://tiles.making-tracks.app/regions.json"])
+    }
+
+    func testOfflineRegionCatalogUsesCachedCatalogWhenCurrentFetchReturnsTruncatedBytes() async throws {
+        let cache = try OfflineRegionCatalogCache(
+            directory: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        )
+        let validCatalogData = try appJSONData(appRegionIndexV3Object())
+        let onlineFetcher = AppStubFetcher(routes: [
+            "https://tiles.making-tracks.app/regions.json": validCatalogData,
+        ])
+        let truncatedFetcher = AppStubFetcher(routes: [
+            "https://tiles.making-tracks.app/regions.json": Data(validCatalogData.prefix(48)),
+        ])
+
+        _ = try await OfflineRegionCatalog.current(fetcher: onlineFetcher, cache: cache)
+        let recoveredCatalog = try await OfflineRegionCatalog.current(fetcher: truncatedFetcher, cache: cache)
+
+        XCTAssertEqual(recoveredCatalog.rootZones.map(\.displayName), ["Malaysia, Singapore, and Brunei"])
+        XCTAssertEqual(truncatedFetcher.requestedURLs, ["https://tiles.making-tracks.app/regions.json"])
     }
 
     func testOfflineRegionCatalogDerivesRowsFromDecodedRegionIndex() throws {
