@@ -499,6 +499,20 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(cache.snapshot(throughEventIndex: -1).segmentCount, 0)
     }
 
+    func testTrackReplaySnapshotCacheConstructionStaysInsideLargeReplayListOpenBudget() {
+        let context = TrackGeometryContext(
+            visits: (0..<500).map { index in
+                trackVisit(id: Int64(index + 1), seconds: TimeInterval(index * 60))
+            }
+        )
+
+        let start = Date()
+        _ = TrackReplaySnapshotCache(context: context)
+        let elapsed = Date().timeIntervalSince(start)
+
+        XCTAssertLessThan(elapsed, 0.025, "500-visit replay cache construction took \(elapsed)s")
+    }
+
     func testTrackReplaySnapshotCacheMarksArrivingSegmentActive() throws {
         let context = TrackGeometryContext(
             visits: [
@@ -528,6 +542,20 @@ final class AppShellTests: XCTestCase {
 
         XCTAssertGreaterThan(partialCoordinates, 1)
         XCTAssertLessThan(partialCoordinates, completeCoordinates)
+    }
+
+    func testTrackTimelineDateMarkerLabelsUseCalendarLocale() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "fr_FR")
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let timeline = TrackTimelineModel(
+            visits: [
+                trackVisit(id: 1, seconds: 1_721_433_600),
+            ],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(timeline.dateMarkers.map(\.label), ["20 juil."])
     }
 
     func testTrackReplayTimelineVelocityZoomThresholds() {
