@@ -1119,6 +1119,24 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["lists.detail.progress"].label, "you've been to 1 of these · all seen")
         XCTAssertTrue(app.staticTexts["Dense Pin 1"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Dense Pin 2"].exists)
+
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+        let activeFilter = element(identifier: "map.list-mode.filter.category.attraction", in: app)
+        XCTAssertTrue(activeFilter.waitForExistence(timeout: 5))
+        activeFilter.tap()
+        XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
+        XCTAssertTrue(scrollToHittable(app.buttons["track-filter-picker.category.attraction"], in: app))
+        app.buttons["track-filter-picker.category.attraction"].tap()
+        XCTAssertTrue(waitForButtonLabel("Show 6 visits", identifier: "track-filter-picker.apply", in: app))
+        app.buttons["track-filter-picker.apply"].tap()
+
+        XCTAssertTrue(waitForSourceFeatureCount(6, in: app))
+        app.buttons["map.list-mode.back"].tap()
+        XCTAssertTrue(app.staticTexts["Replay week"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["lists.detail.progress"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["lists.detail.progress"].label, "you've been to 6 of these · all seen")
+        XCTAssertTrue(app.staticTexts["Dense Pin 2"].waitForExistence(timeout: 5))
     }
 
     func testListMapBackReturnsToSeededListDetail() {
