@@ -723,11 +723,11 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(viewportPlaces.map(\.id), ["kept"])
     }
 
-    func testTrackVisitRowsUseCompactInlineControls() {
-        XCTAssertTrue(TrackVisitRowDensitySpec.usesInlineEditControls)
-        XCTAssertFalse(TrackVisitRowDensitySpec.showsStandaloneDateLabel)
-        XCTAssertLessThanOrEqual(TrackVisitRowDensitySpec.verticalSpacing, 4)
-        XCTAssertLessThanOrEqual(TrackVisitRowDensitySpec.minimumHeight, 52)
+    func testTrackVisitRowsUseMockupCardControls() {
+        XCTAssertFalse(TrackVisitRowDensitySpec.usesInlineEditControls)
+        XCTAssertTrue(TrackVisitRowDensitySpec.showsStandaloneDateLabel)
+        XCTAssertGreaterThanOrEqual(TrackVisitRowDensitySpec.verticalSpacing, 8)
+        XCTAssertGreaterThanOrEqual(TrackVisitRowDensitySpec.minimumHeight, 96)
     }
 
     func testListMapPinPresentationTracksModeUsesFullStrengthPins() {

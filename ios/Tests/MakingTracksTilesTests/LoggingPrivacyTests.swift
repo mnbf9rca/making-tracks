@@ -400,24 +400,35 @@ final class LoggingPrivacyTests: XCTestCase {
             source.contains(#"Text(verbatim: formattedDay(calendar.startOfDay(for: visit.visitedAt)))"#),
             "Date headers must be rendered inside the visit row, not as standalone rows in the movable ForEach."
         )
-        guard let forEachRange = source.range(of: movableRowsStart) else {
-            return XCTFail("The My tracks movable ForEach should be built from TrackVisitReordering.rows.")
+        var movableBodies: [String] = []
+        var searchStart = source.startIndex
+        while let forEachRange = source[searchStart...].range(of: movableRowsStart) {
+            let afterForEach = source[forEachRange.upperBound...]
+            guard let onMoveRange = afterForEach.range(of: ".onMove") else {
+                return XCTFail("Every My tracks movable ForEach should apply onMove directly to visit rows.")
+            }
+            movableBodies.append(String(afterForEach[..<onMoveRange.lowerBound]))
+            searchStart = onMoveRange.upperBound
         }
-        let afterForEach = source[forEachRange.upperBound...]
-        guard let onMoveRange = afterForEach.range(of: ".onMove") else {
-            return XCTFail("The My tracks movable ForEach should apply onMove directly to visit rows.")
-        }
-        let movableBody = String(afterForEach[..<onMoveRange.lowerBound])
-        let movableBodyWithoutVisitRow = movableBody.replacingOccurrences(of: inlineVisitRow, with: "")
 
-        XCTAssertTrue(
-            movableBody.contains(inlineVisitRow),
-            "The movable track visit ForEach should render visits with inline day headers."
+        XCTAssertEqual(
+            movableBodies.count,
+            2,
+            "Both My tracks movable ForEach blocks should be guarded against standalone date headers."
         )
-        XCTAssertNil(
-            movableBodyWithoutVisitRow.range(of: #"(?i)header|formattedDay|Text\s*\("#, options: .regularExpression),
-            "The movable track visit ForEach must not render standalone date headers before onMove."
-        )
+
+        for (index, movableBody) in movableBodies.enumerated() {
+            let movableBodyWithoutVisitRow = movableBody.replacingOccurrences(of: inlineVisitRow, with: "")
+
+            XCTAssertTrue(
+                movableBody.contains(inlineVisitRow),
+                "Movable track visit ForEach \(index + 1) should render visits with inline day headers."
+            )
+            XCTAssertNil(
+                movableBodyWithoutVisitRow.range(of: #"(?i)header|formattedDay|Text\s*\("#, options: .regularExpression),
+                "Movable track visit ForEach \(index + 1) must not render standalone date headers before onMove."
+            )
+        }
     }
 
     private func logLineHasExplicitPrivacyAnnotations(_ line: String) -> Bool {
