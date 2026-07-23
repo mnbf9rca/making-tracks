@@ -75,7 +75,19 @@ def _find_nondeterministic_calls(path_name: str, source: str) -> list[str]:
             continue
         if path_name == "fetch.py" and fn == "_retry_after_seconds" and name == "now":
             continue
-        if path_name == "fetch.py" and fn in {"get_json", "get_to_file"} and name == "monotonic":
+        if (
+            path_name == "fetch.py"
+            and fn
+            in {
+                "_read_response_bytes",
+                "_stream_response_to_file",
+                "conditional_get_json",
+                "conditional_get_to_file",
+                "get_json",
+                "get_to_file",
+            }
+            and name == "monotonic"
+        ):
             continue
         if (
             path_name == "conditional_fetch_probe.py"

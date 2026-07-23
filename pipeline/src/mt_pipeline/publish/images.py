@@ -232,12 +232,20 @@ def commons_prescaled_url(filename: str) -> str:
     )
 
 
-def fetch_commons_imageinfo(filename: str) -> dict[str, Any]:
-    batch = fetch_commons_imageinfo_batch([filename])
+def fetch_commons_imageinfo(
+    filename: str,
+    *,
+    conditional_store: fetch.ConditionalFetchStore | None = None,
+) -> dict[str, Any]:
+    batch = fetch_commons_imageinfo_batch([filename], conditional_store=conditional_store)
     return batch.get(filename, {"query": {"pages": {}}})
 
 
-def fetch_commons_imageinfo_batch(filenames: list[str]) -> dict[str, dict[str, Any]]:
+def fetch_commons_imageinfo_batch(
+    filenames: list[str],
+    *,
+    conditional_store: fetch.ConditionalFetchStore | None = None,
+) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     unique_filenames = sorted(dict.fromkeys(filenames))
     for start in range(0, len(unique_filenames), COMMONS_METADATA_BATCH_SIZE):
@@ -255,13 +263,23 @@ def fetch_commons_imageinfo_batch(filenames: list[str]) -> dict[str, dict[str, A
                 }
             )
         )
-        payload = _wikimedia_request(
-            lambda query=query: fetch.get_json(
-                query,
-                expected_hosts={COMMONS_API_HOST},
-                headers={"User-Agent": USER_AGENT},
+        if conditional_store is None:
+            payload = _wikimedia_request(
+                lambda query=query: fetch.get_json(
+                    query,
+                    expected_hosts={COMMONS_API_HOST},
+                    headers={"User-Agent": USER_AGENT},
+                )
             )
-        )
+        else:
+            payload, _result = _wikimedia_request(
+                lambda query=query: fetch.conditional_get_json(
+                    query,
+                    expected_hosts={COMMONS_API_HOST},
+                    headers={"User-Agent": USER_AGENT},
+                    store=conditional_store,
+                )
+            )
         pages = payload.get("query", {}).get("pages", {})
         if not isinstance(pages, dict):
             continue
@@ -299,7 +317,26 @@ def _wikimedia_request(operation: Callable[[], Any]) -> Any:
     raise last_retryable
 
 
-def _download_wikimedia_file(url: str, dest: pathlib.Path, *, expected_hosts: set[str] | None = None, max_bytes: int = MAX_ORIGINAL_IMAGE_BYTES) -> int:
+def _download_wikimedia_file(
+    url: str,
+    dest: pathlib.Path,
+    *,
+    expected_hosts: set[str] | None = None,
+    max_bytes: int = MAX_ORIGINAL_IMAGE_BYTES,
+    conditional_store: fetch.ConditionalFetchStore | None = None,
+) -> int:
+    if conditional_store is not None:
+        result = _wikimedia_request(
+            lambda: fetch.conditional_get_to_file(
+                url,
+                dest,
+                expected_hosts=expected_hosts or {UPLOAD_HOST},
+                max_bytes=max_bytes,
+                headers={"User-Agent": USER_AGENT},
+                store=conditional_store,
+            )
+        )
+        return result.size
     return _wikimedia_request(
         lambda: fetch.get_to_file(
             url,
@@ -432,6 +469,7 @@ def build_place_images(
     thumb_dir.mkdir(parents=True, exist_ok=True)
     reject_dir.mkdir(parents=True, exist_ok=True)
     accepted_dir.mkdir(parents=True, exist_ok=True)
+    conditional_store = fetch.ConditionalFetchStore(cache_root / "conditional-fetch.json")
 
     out: list[PlaceImage] = []
     candidate_files: list[tuple[ImageCandidate, str]] = []
@@ -457,7 +495,8 @@ def build_place_images(
         return out
 
     imageinfo_by_filename = fetch_commons_imageinfo_batch(
-        [filename for _candidate, filename in candidate_files]
+        [filename for _candidate, filename in candidate_files],
+        conditional_store=conditional_store,
     )
 
     for candidate, filename in candidate_files:
@@ -481,10 +520,15 @@ def build_place_images(
                 raw_path,
                 expected_hosts={COMMONS_API_HOST, UPLOAD_HOST},
                 max_bytes=MAX_PRESCALED_IMAGE_BYTES,
+                conditional_store=conditional_store,
             )
         except Exception:
             try:
-                _download_wikimedia_file(decision.metadata.image_url, raw_path)
+                _download_wikimedia_file(
+                    decision.metadata.image_url,
+                    raw_path,
+                    conditional_store=conditional_store,
+                )
             except Exception:
                 _write_reject(reject_path, candidate, "download_failed")
                 continue

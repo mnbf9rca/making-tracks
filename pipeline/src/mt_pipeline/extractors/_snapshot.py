@@ -70,7 +70,7 @@ def download_snapshot(
     dest_dir,
     *,
     config,
-    fetch_fn=fetch.get_to_file,
+    fetch_fn=None,
     enabled=False,
     retries: int = 6,
     sleep=time.sleep,
@@ -80,13 +80,26 @@ def download_snapshot(
     if not enabled:
         _log.info("acquisition disabled for %s; expecting snapshot at %s", source_key, dest)
         return dest
+    conditional_store = fetch.ConditionalFetchStore(
+        pathlib.Path(dest_dir) / "conditional-fetch.json"
+    )
     for attempt in range(retries + 1):
-        size = fetch_fn(
-            entry["url"],
-            dest,
-            expected_hosts=set(entry["allowed_hosts"]),
-            max_bytes=entry.get("max_bytes", fetch.MAX_RESPONSE_BYTES),
-        )
+        if fetch_fn is None:
+            result = fetch.conditional_get_to_file(
+                entry["url"],
+                dest,
+                expected_hosts=set(entry["allowed_hosts"]),
+                max_bytes=entry.get("max_bytes", fetch.MAX_RESPONSE_BYTES),
+                store=conditional_store,
+            )
+            size = result.size
+        else:
+            size = fetch_fn(
+                entry["url"],
+                dest,
+                expected_hosts=set(entry["allowed_hosts"]),
+                max_bytes=entry.get("max_bytes", fetch.MAX_RESPONSE_BYTES),
+            )
         try:
             _validate_downloaded_snapshot(source_key, dest)
             break
