@@ -1,0 +1,626 @@
+<title>Making Tracks — Batched Design Session</title>
+<style>
+  :root{
+    /* App tokens (ratified, from docs/design/card/wf-*.html) — fixed, used inside phone frames */
+    --ink:#1c1c1e; --dim:#6b6b70; --line:#d8d5cc; --paper:#F1EDDF;
+    --pin:#E4572E; --sheet:#fff; --accent:#0a6b5c; --road:#e6e2d4;
+    /* Document chrome tokens (theme-aware) */
+    --bg:#efece2; --panel:#f7f5ee; --panel-2:#fffdf7;
+    --text:#26251f; --muted:#6f6c60; --hair:#ddd8c9;
+    --rule:#c9c3b1; --pick:#0a6b5c; --pick-soft:#e2efe9;
+    --open:#b4531f; --open-soft:#f3e5d8; --ratified:#4a4a4e;
+    --shadow:0 1px 2px rgba(40,36,20,.06),0 6px 22px -12px rgba(40,36,20,.22);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#17160f; --panel:#201e16; --panel-2:#26241a;
+      --text:#ece7d7; --muted:#a29d8a; --hair:#33301f;
+      --rule:#3a3626; --pick:#4fbfa9; --pick-soft:#16302a;
+      --open:#e0864a; --open-soft:#2e2113; --ratified:#b8b4a4;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 26px -12px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#17160f; --panel:#201e16; --panel-2:#26241a;
+    --text:#ece7d7; --muted:#a29d8a; --hair:#33301f;
+    --rule:#3a3626; --pick:#4fbfa9; --pick-soft:#16302a;
+    --open:#e0864a; --open-soft:#2e2113; --ratified:#b8b4a4;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 26px -12px rgba(0,0,0,.7);
+  }
+  :root[data-theme="light"]{
+    --bg:#efece2; --panel:#f7f5ee; --panel-2:#fffdf7;
+    --text:#26251f; --muted:#6f6c60; --hair:#ddd8c9;
+    --rule:#c9c3b1; --pick:#0a6b5c; --pick-soft:#e2efe9;
+    --open:#b4531f; --open-soft:#f3e5d8; --ratified:#4a4a4e;
+    --shadow:0 1px 2px rgba(40,36,20,.06),0 6px 22px -12px rgba(40,36,20,.22);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
+    line-height:1.5; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{ max-width:1080px; margin:0 auto; padding:38px 26px 90px; }
+  .mono{ font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; }
+
+  /* ---- Masthead ---- */
+  .mast{ border-bottom:2px solid var(--rule); padding-bottom:22px; margin-bottom:30px; }
+  .kicker{ font-size:11.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); font-weight:600; }
+  h1{ font-size:31px; font-weight:680; letter-spacing:-.4px; margin:9px 0 6px; text-wrap:balance; }
+  .lede{ font-size:15px; color:var(--muted); max-width:64ch; }
+  .howto{ display:flex; flex-wrap:wrap; gap:9px; margin-top:18px; }
+  .howto span{ font-size:12px; color:var(--muted); background:var(--panel); border:1px solid var(--hair); border-radius:20px; padding:5px 12px; }
+  .howto b{ color:var(--text); font-weight:600; }
+
+  /* ---- Group banner ---- */
+  .banner{ margin:40px 0 20px; padding:15px 18px; border-radius:12px;
+    background:var(--panel); border:1px solid var(--hair); border-left:3px solid var(--pick); }
+  .banner h2{ font-size:16px; font-weight:660; letter-spacing:-.1px; }
+  .banner p{ font-size:13px; color:var(--muted); margin-top:4px; max-width:78ch; }
+
+  /* ---- Issue card ---- */
+  .issue{ background:var(--panel); border:1px solid var(--hair); border-radius:16px;
+    box-shadow:var(--shadow); padding:22px 24px 24px; margin-bottom:22px; }
+  .ihead{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:3px; }
+  .inum{ font-size:12.5px; font-weight:600; color:var(--pick); background:var(--pick-soft);
+    border-radius:6px; padding:3px 8px; letter-spacing:.02em; }
+  .ihead h3{ font-size:18.5px; font-weight:650; letter-spacing:-.2px; }
+  .status{ font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; font-weight:700;
+    padding:3px 8px; border-radius:5px; }
+  .status.rat{ color:var(--ratified); background:var(--panel-2); border:1px solid var(--hair); }
+  .status.open{ color:var(--open); background:var(--open-soft); }
+  .context{ font-size:14px; color:var(--text); max-width:74ch; margin:10px 0 4px; }
+  .context .q{ color:var(--muted); font-style:italic; }
+  .ground{ font-size:12.5px; color:var(--muted); max-width:76ch; margin-top:7px;
+    padding-left:12px; border-left:2px solid var(--hair); }
+
+  /* ---- Options row ---- */
+  .opts{ display:flex; gap:16px; flex-wrap:wrap; margin:18px 0 6px; }
+  .opt{ flex:1 1 210px; min-width:200px; display:flex; flex-direction:column; }
+  .optcap{ font-size:12px; margin-bottom:8px; display:flex; align-items:center; gap:7px; }
+  .optcap .tag{ font-family:ui-monospace,monospace; font-size:10.5px; font-weight:600;
+    color:var(--muted); border:1px solid var(--hair); border-radius:5px; padding:1px 6px; }
+  .optcap b{ font-weight:600; }
+  .opt.rec .optcap b{ color:var(--pick); }
+  .opt.rec .optcap .tag{ color:var(--pick); border-color:var(--pick); background:var(--pick-soft); }
+  .optnote{ font-size:11.5px; color:var(--muted); margin-top:8px; line-height:1.4; }
+
+  /* ---- Phone mockup (app palette, fixed light) ---- */
+  .phone{ width:100%; max-width:230px; aspect-ratio:390/720; border:1px solid #c9c6bd;
+    border-radius:22px; overflow:hidden; position:relative; background:var(--paper);
+    box-shadow:0 2px 10px rgba(0,0,0,.10); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif; }
+  .opt.rec .phone{ outline:2px solid var(--pick); outline-offset:2px; }
+  .scr{ position:absolute; inset:0; }
+  .map{ position:absolute; inset:0; background:var(--paper); }
+  .rd{ position:absolute; background:var(--road); }
+  .pin{ position:absolute; width:10px; height:10px; border-radius:50%; background:var(--pin); border:1.5px solid #fff; }
+  .pin.sel{ box-shadow:0 0 0 4px rgba(228,87,46,.22); }
+  .pin.dim{ background:#c9b8a8; }
+  .navbar{ position:absolute; top:0; left:0; right:0; height:34px; background:rgba(255,255,255,.86);
+    border-bottom:1px solid #e7e3d7; display:flex; align-items:center; padding:0 10px; gap:6px;
+    font-size:10px; font-weight:600; }
+  .chevron{ font-size:12px; color:var(--accent); }
+  .rowlist{ position:absolute; left:0; right:0; background:var(--sheet); }
+  .vrow{ padding:8px 11px; border-bottom:1px solid #efece3; display:flex; align-items:center; gap:8px; }
+  .vdot{ width:14px; height:14px; border-radius:50%; background:var(--accent); flex:none;
+    display:flex; align-items:center; justify-content:center; color:#fff; font-size:8px; }
+  .vmeta{ flex:1; min-width:0; }
+  .vt{ font-size:10.5px; font-weight:600; line-height:1.15; }
+  .vs{ font-size:8.5px; color:var(--dim); }
+  .vtime{ font-size:8.5px; color:var(--dim); font-variant-numeric:tabular-nums; }
+  .sheet{ position:absolute; left:0; right:0; bottom:0; background:var(--sheet);
+    border-radius:14px 14px 0 0; box-shadow:0 -2px 12px rgba(0,0,0,.12); padding:9px 12px 12px; }
+  .grab{ width:30px; height:4px; border-radius:2px; background:#d4d2cc; margin:0 auto 8px; }
+  .nm{ font-size:14px; font-weight:640; letter-spacing:-.2px; }
+  .ty{ font-size:10px; color:var(--dim); margin-top:2px; }
+  .photo{ margin-top:8px; border-radius:8px; background:linear-gradient(150deg,#ded9cb,#cfc9b8);
+    display:flex; align-items:center; justify-content:center; color:#8d887a; font-size:9px; letter-spacing:.3px; }
+  .acts{ display:flex; gap:5px; margin-top:9px; }
+  .b{ flex:1; text-align:center; font-size:9px; font-weight:560; padding:6px 0; border-radius:7px; background:#f0eee9; color:#1c1c1e; }
+  .b.prom{ background:var(--accent); color:#fff; }
+  /* timeline */
+  .tl{ position:absolute; left:10px; right:10px; height:2px; background:#d8d3c4; }
+  .tl .beat{ position:absolute; top:-3px; width:2px; height:8px; background:#b7b09c; }
+  .tl .fillg{ position:absolute; left:0; height:2px; background:var(--accent); }
+  .tl .fillr{ position:absolute; height:2px; background:var(--pin); }
+  .tl .head{ position:absolute; top:-4px; width:10px; height:10px; border-radius:50%;
+    background:#fff; border:2.5px solid var(--pin); }
+  .arc{ position:absolute; border:1.5px dashed var(--accent); border-bottom:none;
+    border-left:none; border-right:none; border-radius:50%/100% 100% 0 0; height:0; }
+  .chipbar{ position:absolute; display:flex; gap:4px; }
+  .fchip{ font-size:8px; padding:3px 7px; border-radius:12px; background:#efece3; color:#4a4a4e; border:1px solid #e2ddd0; }
+  .fchip.on{ background:var(--accent); color:#fff; border-color:var(--accent); }
+  .cover{ position:absolute; border:2px dashed #b98f5a; border-radius:3px; }
+  .coverlab{ position:absolute; font-size:7.5px; color:#9a6a2f; background:rgba(255,255,255,.9);
+    padding:1px 4px; border-radius:3px; font-weight:650; }
+  .prog{ position:absolute; top:34px; left:0; height:2.5px; background:var(--accent); }
+  .shimmer{ position:absolute; border-radius:50%; background:rgba(10,107,92,.12);
+    border:1.5px solid rgba(10,107,92,.4); }
+  .toast{ position:absolute; border-radius:16px; background:rgba(28,28,30,.9); color:#fff;
+    font-size:8px; padding:4px 9px; display:flex; align-items:center; gap:5px; }
+  .spin{ width:8px; height:8px; border-radius:50%; border:1.5px solid rgba(255,255,255,.4); border-top-color:#fff; }
+  .letterbox{ position:absolute; background:#e7e2d5; }
+  .checkbox{ width:12px; height:12px; border-radius:4px; border:1.5px solid #c2bdad; flex:none; }
+  .checkbox.on{ background:var(--accent); border-color:var(--accent); }
+  .vrow.selrow{ background:var(--pick-soft); }
+
+  /* ---- Recommendation + decision ---- */
+  .rec{ margin-top:16px; font-size:13.5px; padding:12px 15px; border-radius:11px;
+    background:var(--panel-2); border:1px solid var(--hair); }
+  .rec .lbl{ font-size:11px; letter-spacing:.1em; text-transform:uppercase; font-weight:700; color:var(--pick); margin-right:8px; }
+  .rec b{ font-weight:640; }
+  .decide{ margin-top:12px; display:flex; align-items:flex-start; gap:10px; font-size:13px;
+    padding:11px 15px; border-radius:11px; border:1px dashed var(--rule); background:transparent; }
+  .decide .lbl{ font-family:ui-monospace,monospace; font-size:10.5px; letter-spacing:.05em;
+    text-transform:uppercase; font-weight:700; color:var(--open); flex:none; padding-top:1px; }
+  .decide .opts-inline b{ color:var(--text); font-weight:640; }
+  .flag{ font-size:11.5px; color:var(--muted); margin-top:9px; }
+  .flag b{ color:var(--open); font-weight:640; }
+
+  .foot{ margin-top:46px; padding-top:18px; border-top:1px solid var(--hair);
+    font-size:12px; color:var(--muted); max-width:76ch; }
+  a{ color:var(--pick); }
+  @media (max-width:640px){ .opt{ flex-basis:100%; } .phone{ max-width:260px; margin:0 auto; } }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <div class="kicker">Making Tracks · Track B (iOS) · rulings applied — refinement delta</div>
+    <h1>Your rulings, drawn back</h1>
+    <p class="lede">Round two. Four issues are ruled and marked <b class="mono" style="color:var(--pick)">RULED</b>; #360, #359 and #378 carried a refinement you asked for, redrawn below and flagged <b class="mono" style="color:var(--open)">REFINED</b> for a quick look. The coupled trio defaulted to the recommendations — objection-only.</p>
+    <div class="howto">
+      <span><b class="mono" style="color:var(--pick)">RULED</b> = your decision, applied</span>
+      <span><b class="mono" style="color:var(--open)">REFINED</b> = ruled, plus the change you asked for — glance &amp; confirm</span>
+      <span><b class="mono" style="color:var(--ratified)">DEFAULT</b> = trio, accepted unless you object</span>
+      <span>Mockups <b>schematic</b> — affordance, not final pixels</span>
+    </div>
+  </header>
+
+  <!-- ===================== GROUP 1: ONE SURFACE ===================== -->
+  <div class="banner">
+    <h2>Group 1 — One surface · <span style="color:var(--pick);">accepted by default</span></h2>
+    <p>You didn't need to touch these — they're <b>accepted by default on the recommendations</b> (objection-only): #266 lands on the list detail, #257's timeline character is confirmed, #361 builds only if nearly free. One thing still owed by you: <b>#257's three tunables</b> (beat spacing, label decimation, active-leg colour) — on your pending list, not blocking.</p>
+  </div>
+
+  <!-- #266 -->
+  <section class="issue">
+    <div class="ihead">
+      <span class="inum mono">#266</span>
+      <h3>Unify menu&nbsp;›&nbsp;Tracks and Lists&nbsp;›&nbsp;My tracks</h3>
+      <span class="status" style="color:var(--pick);background:var(--pick-soft);">Default · List landing</span>
+    </div>
+    <p class="context"><span class="q">"list › my tracks is different than menu › tracks? why?"</span> — two doors to one room. Ruled: <b>menu › Tracks opens the protected virtual My tracks surface</b>. The menu entry stays for discoverability but stops being a second screen. What folds in from the old Tracks screen (#248): chronological visit rows (events, not deduped places) and row-scoped verdict editing.</p>
+    <p class="ground">Grounded: a track is a list; My tracks (#263) is the canonical protected virtual list, so a parallel Tracks screen is a second implementation that will drift. The decision is made — the open sub-question is where the menu entry lands you.</p>
+
+    <div class="opts">
+      <div class="opt rec">
+        <div class="optcap"><span class="tag">A</span><b>Lands on list detail</b> · map one tap away</div>
+        <div class="phone"><div class="scr">
+          <div class="navbar"><span class="chevron">‹</span> Menu &nbsp;·&nbsp; <b>My tracks</b></div>
+          <div style="position:absolute;top:34px;left:0;right:0;padding:8px 11px;background:#faf8f1;font-size:9px;color:var(--dim);border-bottom:1px solid #efece3;">You've been to 6 of these · all seen &nbsp; <span style="color:var(--accent);font-weight:600;">Show on map ›</span></div>
+          <div class="rowlist" style="top:66px;">
+            <div class="vrow"><span class="vdot">✓</span><div class="vmeta"><div class="vt">Dense Pin 6</div><div class="vs">Religious · loved</div></div><span class="vtime">Jul 15 · 16:10</span></div>
+            <div class="vrow"><span class="vdot">✓</span><div class="vmeta"><div class="vt">Dense Pin 5</div><div class="vs">Memorial</div></div><span class="vtime">Jul 15 · 14:05</span></div>
+            <div class="vrow"><span class="vdot">✓</span><div class="vmeta"><div class="vt">Dense Pin 4</div><div class="vs">Artwork</div></div><span class="vtime">Jul 15 · 12:30</span></div>
+            <div class="vrow"><span class="vdot">✓</span><div class="vmeta"><div class="vt">Dense Pin 3</div><div class="vs">Museum</div></div><span class="vtime">Jul 15 · 11:30</span></div>
+            <div class="vrow"><span class="vdot">✓</span><div class="vmeta"><div class="vt">Dense Pin 2</div><div class="vs">Historic</div></div><span class="vtime">Jul 15 · 10:40</span></div>
+          </div>
+        </div></div>
+        <div class="optnote">Rows are the content; the retrace map is a "Show on map" tap away. Matches how every other list opens — one mental model.</div>
+      </div>
+      <div class="opt">
+        <div class="optcap"><span class="tag">B</span><b>Lands on the map</b> · rows scroll up</div>
+        <div class="phone"><div class="scr">
+          <div class="map">
+            <div class="rd" style="left:0;top:90px;width:230px;height:6px"></div>
+            <div class="rd" style="left:150px;top:0;width:6px;height:260px"></div>
+            <div class="arc" style="left:40px;top:120px;width:70px"></div>
+            <div class="arc" style="left:95px;top:100px;width:60px"></div>
+            <div class="pin sel" style="left:40px;top:118px"></div>
+            <div class="pin" style="left:105px;top:98px"></div>
+            <div class="pin" style="left:160px;top:130px"></div>
+          </div>
+          <div class="navbar"><span class="chevron">‹</span> Menu &nbsp;·&nbsp; <b>My tracks</b></div>
+          <div class="sheet" style="height:120px;">
+            <div class="grab"></div>
+            <div style="font-size:10px;font-weight:600;">6 visits · Jul 15</div>
+            <div class="vrow" style="border:none;padding:6px 0;"><span class="vdot">✓</span><div class="vmeta"><div class="vt">Dense Pin 6</div></div><span class="vtime">16:10</span></div>
+            <div class="vrow" style="border:none;padding:6px 0;"><span class="vdot">✓</span><div class="vmeta"><div class="vt">Dense Pin 5</div></div><span class="vtime">14:05</span></div>
+          </div>
+        </div></div>
+        <div class="optnote">Retrace-first. Stronger "here's your trip" moment, but breaks the list-opens-to-rows convention every other list follows.</div>
+      </div>
+    </div>
+
+    <div class="rec"><span class="lbl">Recommend</span><b>Option A — land on the list detail.</b> Unification's whole point is one mental model; every other list opens to its rows, and My tracks should too. The retrace map is the reward behind "Show on map," which is already where the timeline work (#257) lives. B is a nicer first impression but it makes the canonical surface behave unlike its siblings — the exact divergence #266 exists to end.</div>
+    <div class="decide"><span class="lbl">Your call</span><span class="opts-inline"><b>A</b> list-detail landing (recommended) &nbsp;/&nbsp; <b>B</b> map landing &nbsp;/&nbsp; other</span></div>
+    <p class="flag"><b>Note →</b> whichever wins, verdict editing lives on the rows (folded from #248) and membership stays protected — you can re-judge a visit, never remove it. That's PRINCIPLES §Product 7 territory; drawn, not re-litigated.</p>
+  </section>
+
+  <!-- #257 -->
+  <section class="issue">
+    <div class="ihead">
+      <span class="inum mono">#257</span>
+      <h3>Retrace timeline, line character &amp; event-paced replay</h3>
+      <span class="status" style="color:var(--pick);background:var(--pick-soft);">Default · Tunables owed</span>
+    </div>
+    <p class="context">The retrace map behind "Show on map." Settled rulings: <b>filtered scope re-indexes the timeline</b> (filtered-out visits have no beats, markers, dwell, or gap readout — no "3 hidden" counts); <b>tracks are continuous</b> ("don't split segments — my tracks are continuous"); the connector is <b>dotted always</b> (a solid stroke stays reserved for a genuinely recorded GPS trace); curvature is consistent, never fitted to roads. This confirms the drawing against those rulings — and the arc-glide capture you're judging on #387 is the motion layer of the same surface.</p>
+    <p class="ground">Grounded: #263 satisfies the boundary model; the honesty burden moved to styling and the event-indexed axis. No behaviour to decide — confirm the character and hand me the last tunables.</p>
+
+    <div class="opts">
+      <div class="opt rec">
+        <div class="optcap"><span class="tag">✓</span><b>All filters — full trip</b></div>
+        <div class="phone"><div class="scr">
+          <div class="map">
+            <div class="rd" style="left:0;top:150px;width:230px;height:6px"></div>
+            <div class="rd" style="left:90px;top:40px;width:6px;height:230px"></div>
+            <div class="arc" style="left:28px;top:110px;width:60px"></div>
+            <div class="arc" style="left:78px;top:95px;width:56px"></div>
+            <div class="arc" style="left:120px;top:120px;width:58px"></div>
+            <div class="pin" style="left:28px;top:108px"></div>
+            <div class="pin" style="left:82px;top:92px"></div>
+            <div class="pin sel" style="left:130px;top:118px"></div>
+            <div class="pin" style="left:172px;top:104px"></div>
+          </div>
+          <div class="navbar"><span class="chevron">‹</span> <b>Retrace</b> · Jul 15</div>
+          <div class="chipbar" style="top:42px;left:10px;">
+            <span class="fchip on">All</span><span class="fchip">Loved</span><span class="fchip">Seen</span>
+          </div>
+          <div class="sheet" style="height:96px;">
+            <div class="grab"></div>
+            <div style="display:flex;justify-content:space-between;font-size:9px;"><b>▶ 11:30 · Dense Pin 3</b><span style="color:var(--dim);">Visit 4 of 6</span></div>
+            <div class="tl" style="top:52px;">
+              <div class="fillg" style="width:58%"></div>
+              <div class="fillr" style="left:58%;width:14%"></div>
+              <div class="beat" style="left:0%"></div><div class="beat" style="left:19%"></div>
+              <div class="beat" style="left:38%"></div><div class="beat" style="left:58%"></div>
+              <div class="beat" style="left:78%"></div><div class="beat" style="left:100%"></div>
+              <div class="head" style="left:calc(58% - 5px)"></div>
+            </div>
+            <div style="position:absolute;bottom:9px;left:12px;right:12px;display:flex;justify-content:space-between;font-size:7.5px;color:var(--dim);"><span>9:20</span><span>event-paced · equal spacing</span><span>16:10</span></div>
+          </div>
+        </div></div>
+        <div class="optnote">Six beats, equal spacing (event-paced, not clock-proportional). Teal = travelled, orange = active leg. Dotted arcs, consistent curve.</div>
+      </div>
+      <div class="opt rec">
+        <div class="optcap"><span class="tag">✓</span><b>Loved only — re-indexed</b></div>
+        <div class="phone"><div class="scr">
+          <div class="map">
+            <div class="rd" style="left:0;top:150px;width:230px;height:6px"></div>
+            <div class="rd" style="left:90px;top:40px;width:6px;height:230px"></div>
+            <div class="arc" style="left:28px;top:110px;width:104px"></div>
+            <div class="pin sel" style="left:28px;top:108px"></div>
+            <div class="pin dim" style="left:82px;top:92px"></div>
+            <div class="pin" style="left:172px;top:104px"></div>
+            <div class="pin dim" style="left:130px;top:118px"></div>
+          </div>
+          <div class="navbar"><span class="chevron">‹</span> <b>Retrace</b> · Jul 15</div>
+          <div class="chipbar" style="top:42px;left:10px;">
+            <span class="fchip">All</span><span class="fchip on">Loved</span><span class="fchip">Seen</span>
+          </div>
+          <div class="sheet" style="height:96px;">
+            <div class="grab"></div>
+            <div style="display:flex;justify-content:space-between;font-size:9px;"><b>▶ 9:20 · Ghost Sign</b><span style="color:var(--dim);">Visit 1 of 2</span></div>
+            <div class="tl" style="top:52px;">
+              <div class="fillg" style="width:0%"></div>
+              <div class="beat" style="left:0%"></div><div class="beat" style="left:100%"></div>
+              <div class="head" style="left:-5px"></div>
+            </div>
+            <div style="position:absolute;bottom:9px;left:12px;right:12px;display:flex;justify-content:space-between;font-size:7.5px;color:var(--dim);"><span>9:20</span><span>2 beats · others have none</span><span>16:10</span></div>
+          </div>
+        </div></div>
+        <div class="optnote">Filter to Loved → only 2 beats. Filtered-out pins fade, get no beat/marker/dwell, <b>no "4 hidden" count</b>. The two loved visits connect directly. Re-indexing, as ruled.</div>
+      </div>
+    </div>
+
+    <div class="rec"><span class="lbl">Confirm</span>Both frames are the <b>ratified behaviour drawn</b>, not a choice: continuous dotted line, event-paced axis with equal beat spacing, silent re-indexing on filter, no hidden-count. If the drawing matches your intent, the only things left are <b>tunables</b>, which are already partly with me from #387.</div>
+    <div class="decide"><span class="lbl">Your call</span><span class="opts-inline">Confirm the character ✓ &nbsp;/&nbsp; adjust — and set: <b>beat spacing</b> (pure-equal vs slight dwell-weight), <b>label decimation</b> threshold, and whether the active leg shows <b>orange</b> (drawn) or inherits the arc-glide colour from #387</span></div>
+  </section>
+
+  <!-- #361 -->
+  <section class="issue">
+    <div class="ihead">
+      <span class="inum mono">#361</span>
+      <h3>Block reorder — move selected same-day rows together</h3>
+      <span class="status" style="color:var(--pick);background:var(--pick-soft);">Default · If nearly free</span>
+    </div>
+    <p class="context"><span class="q">"later if hard: select multiple to reorder them together (retaining the order within the block). if selection skips some, unselected items stay in place and the others move around them."</span> Split from #221 as <b>later-if-hard</b> — build now only if the base drag makes it nearly free. Single-visit cross-day drag already shipped (#395); this adds multi-select block move within a full day.</p>
+    <p class="ground">Grounded: applies only where the full day sequence is visible; <span class="mono">visits.id</span> stays row identity, <span class="mono">visit_order</span> stays persistence truth; focused/filtered views must not reorder hidden rows by implication.</p>
+
+    <div class="opts">
+      <div class="opt">
+        <div class="optcap"><span class="tag">A</span><b>Park it</b> — ship drag alone</div>
+        <div class="phone"><div class="scr">
+          <div class="navbar"><span class="chevron">‹</span> <b>My tracks</b> · Jul 15</div>
+          <div class="rowlist" style="top:34px;">
+            <div class="vrow"><span class="vdot">✓</span><div class="vmeta"><div class="vt">Dense Pin 1</div><div class="vs">Attraction</div></div><span style="color:var(--dim);font-size:12px;">≡</span></div>
+            <div class="vrow"><span class="vdot">✓</span><div class="vmeta"><div class="vt">Dense Pin 2</div><div class="vs">Historic</div></div><span style="color:var(--dim);font-size:12px;">≡</span></div>
+            <div class="vrow"><span class="vdot">✓</span><div class="vmeta"><div class="vt">Dense Pin 3</div><div class="vs">Museum</div></div><span style="color:var(--dim);font-size:12px;">≡</span></div>
+            <div class="vrow"><span class="vdot">✓</span><div class="vmeta"><div class="vt">Dense Pin 4</div><div class="vs">Artwork</div></div><span style="color:var(--dim);font-size:12px;">≡</span></div>
+          </div>
+        </div></div>
+        <div class="optnote">One-at-a-time drag handle, already shipped. Zero new surface. The honest default per the "later-if-hard" ruling.</div>
+      </div>
+      <div class="opt rec">
+        <div class="optcap"><span class="tag">B</span><b>Long-press → select → move block</b></div>
+        <div class="phone"><div class="scr">
+          <div class="navbar"><span style="color:var(--accent);font-weight:600;">Done</span> &nbsp;·&nbsp; <b>2 selected</b> &nbsp; <span style="margin-left:auto;color:var(--dim);">≡ drag</span></div>
+          <div class="rowlist" style="top:34px;">
+            <div class="vrow"><span class="checkbox"></span><div class="vmeta"><div class="vt">Dense Pin 1</div><div class="vs">Attraction</div></div></div>
+            <div class="vrow selrow"><span class="checkbox on" style="color:#fff;font-size:8px;display:flex;align-items:center;justify-content:center;">✓</span><div class="vmeta"><div class="vt">Dense Pin 2</div><div class="vs">Historic</div></div><span style="color:var(--accent);font-size:12px;">≡</span></div>
+            <div class="vrow selrow"><span class="checkbox on" style="color:#fff;font-size:8px;display:flex;align-items:center;justify-content:center;">✓</span><div class="vmeta"><div class="vt">Dense Pin 3</div><div class="vs">Museum</div></div><span style="color:var(--accent);font-size:12px;">≡</span></div>
+            <div class="vrow"><span class="checkbox"></span><div class="vmeta"><div class="vt">Dense Pin 4</div><div class="vs">Artwork</div></div></div>
+          </div>
+        </div></div>
+        <div class="optnote">Long-press any row → select mode → tick rows → drag the block. Skipped rows hold; the block moves around them, internal order kept. Reuses the drag engine.</div>
+      </div>
+    </div>
+
+    <div class="rec"><span class="lbl">Recommend</span>Gate on the literal ruling: <b>build B only if it's nearly free on the existing drag engine.</b> The block-move reuses the same reorder machinery and <span class="mono">visit_order</span> write; if the select-mode chrome is a day's work it clears "nearly free," so I lean <b>B</b>. If it needs a bespoke selection system, take <b>A</b> and revisit — the ruling explicitly permits parking.</div>
+    <div class="decide"><span class="lbl">Your call</span><span class="opts-inline"><b>B</b> if the builder confirms nearly-free (recommended) &nbsp;/&nbsp; <b>A</b> park it &nbsp;/&nbsp; build B regardless</span></div>
+  </section>
+
+  <!-- ===================== GROUP 2: CARD VISUAL ===================== -->
+  <div class="banner">
+    <h2>Group 2 — The place card</h2>
+    <p>A visual decision against the ratified #243 card family (docs/design/card). Standalone — doesn't couple to the others.</p>
+  </div>
+
+  <!-- #376 -->
+  <section class="issue">
+    <div class="ihead">
+      <span class="inum mono">#376</span>
+      <h3>Photo aspect ratios for odd crops</h3>
+      <span class="status" style="color:var(--pick);background:var(--pick-soft);">Ruled · Adaptive height</span>
+    </div>
+    <p class="context"><span class="q">"photos placeholders are all the same dimensions. But photos aren't? so some look odd — bank negara museum is just a zoomed-in slice of the building."</span> The card's fixed media frame center-crops every photo to one height, slicing tall or wide source images. Three honest treatments, drawn on the real problem case.</p>
+
+    <div class="opts">
+      <div class="opt">
+        <div class="optcap"><span class="tag">now</span><b>Fixed frame</b> — center-crop</div>
+        <div class="phone" style="max-width:190px;"><div class="scr"><div class="sheet" style="position:absolute;height:100%;border-radius:22px;">
+          <div class="grab"></div><div class="nm">Bank Negara Museum</div><div class="ty">◆ Museum</div>
+          <div class="photo" style="height:96px;background:linear-gradient(160deg,#c9b98f 0 60%,#a89268 60%);">slice of façade</div>
+          <div class="acts"><span class="b prom">Save</span><span class="b">Seen</span><span class="b">Hide</span></div>
+        </div></div></div>
+        <div class="optnote">Today. A tall building becomes a meaningless horizontal band. The bug.</div>
+      </div>
+      <div class="opt">
+        <div class="optcap"><span class="tag">A</span><b>Aspect-fit</b> — letterbox</div>
+        <div class="phone" style="max-width:190px;"><div class="scr"><div class="sheet" style="position:absolute;height:100%;border-radius:22px;">
+          <div class="grab"></div><div class="nm">Bank Negara Museum</div><div class="ty">◆ Museum</div>
+          <div class="photo" style="height:96px;position:relative;background:#e7e2d5;">
+            <div class="letterbox" style="left:0;top:0;bottom:0;width:34%;"></div>
+            <div class="letterbox" style="right:0;top:0;bottom:0;width:34%;"></div>
+            <span style="z-index:1;">whole building</span>
+          </div>
+          <div class="acts"><span class="b prom">Save</span><span class="b">Seen</span><span class="b">Hide</span></div>
+        </div></div></div>
+        <div class="optnote">Whole photo, always — fit inside a fixed frame with paper bars where the ratio doesn't fill. Every photo shown honestly, card height stays uniform.</div>
+      </div>
+      <div class="opt rec">
+        <div class="optcap"><span class="tag">B ✓</span><b>Adaptive height</b> — frame fits photo <b style="color:var(--pick)">· your pick</b></div>
+        <div class="phone" style="max-width:190px;"><div class="scr"><div class="sheet" style="position:absolute;height:100%;border-radius:22px;">
+          <div class="grab"></div><div class="nm">Bank Negara Museum</div><div class="ty">◆ Museum</div>
+          <div class="photo" style="height:150px;background:linear-gradient(160deg,#d7cba6,#b7a074);">whole building · taller frame</div>
+          <div class="acts" style="margin-top:7px;"><span class="b prom">Save</span><span class="b">Seen</span><span class="b">Hide</span></div>
+        </div></div></div>
+        <div class="optnote">Frame height follows the photo's ratio within a min/max clamp. No slicing, no dead bars. Card length varies a little — fine on a scroll sheet.</div>
+      </div>
+    </div>
+
+    <div class="rec"><span class="lbl" style="color:var(--pick)">Ruled</span><b>Adaptive frame height</b> — the frame fits the photo. Clamp to a sensible min/max so a panorama can't dominate and a square can't shrink to nothing; no slicing, no dead paper bars. Cards vary a little in length, which reads fine on the peek-then-scroll sheet. Build: media frame height derived from the image aspect ratio within the clamp, image filling it edge to edge.</div>
+  </section>
+
+  <!-- ===================== GROUP 3: MAP AFFORDANCES ===================== -->
+  <div class="banner">
+    <h2>Group 3 — Map edge &amp; loading affordances</h2>
+    <p>Two device-pass findings about what the map <em>doesn't</em> tell you: where coverage ends, and when it's working. Independent decisions.</p>
+  </div>
+
+  <!-- #360 -->
+  <section class="issue">
+    <div class="ihead">
+      <span class="inum mono">#360</span>
+      <h3>Coverage boundary — "empty here" vs "no data here"</h3>
+      <span class="status" style="color:var(--open);background:var(--open-soft);">Ruled A · Refined</span>
+    </div>
+    <p class="context"><span class="q">"no affordance showing boundary of zone/bundle coverage — panning just shows same base map, but no idea whether there should be things there or not."</span> Beyond a published zone the map looks identical to a covered-but-empty area. The user can't tell "nothing here" from "no data here."</p>
+    <p class="ground">Grounded — important: closed #229 <b>did ship</b>, but only as installed-offline-pack shading (<span class="mono">installedOfflineCoverageBBoxes()</span>). It does <b>not</b> answer this online-browsing case — there's no path from the live <span class="mono">regions.json</span> catalog / <span class="mono">MapRegion.viewportBBox</span> into the map style. So this is new work, not a re-open of a solved one.</p>
+
+    <p class="context" style="margin-top:2px;"><b style="color:var(--open);">Your refinement:</b> <span class="q">"how will it read as unmapped? needs a slight shading or something — otherwise how do i interpret it when the edge is outside viewport?"</span> Right: a line alone is invisible once you've panned past it. The fix is to make the <em>region beyond coverage</em> carry a treatment, so you can tell where you are without the edge on screen. Line marks the transition; shading answers "am I outside?" from any viewport. Below: at the edge, and fully beyond it.</p>
+    <div class="opts">
+      <div class="opt rec">
+        <div class="optcap"><span class="tag">A ✓</span><b>Boundary line + beyond-shading</b> — at the edge</div>
+        <div class="phone"><div class="scr"><div class="map">
+          <div class="rd" style="left:0;top:120px;width:150px;height:5px"></div>
+          <div style="position:absolute;left:150px;top:0;bottom:0;right:0;background:repeating-linear-gradient(135deg,rgba(170,150,120,.14) 0 6px,rgba(170,150,120,.03) 6px 12px);"></div>
+          <div style="position:absolute;left:150px;top:0;bottom:0;width:2px;background:repeating-linear-gradient(to bottom,#b98f5a 0 5px,transparent 5px 10px);"></div>
+          <span class="coverlab" style="left:158px;top:150px;">no data here</span>
+          <div class="pin" style="left:40px;top:70px"></div>
+          <div class="pin" style="left:95px;top:100px"></div>
+        </div></div></div>
+        <div class="optnote">Inside the published zone: normal paper, pins. The dashed line is the boundary; past it, a faint hatched tint. The line answers "where's the edge," the tint answers "which side am I on."</div>
+      </div>
+      <div class="opt rec">
+        <div class="optcap"><span class="tag">A ✓</span><b>Panned fully beyond</b> — edge off-screen</div>
+        <div class="phone"><div class="scr"><div class="map">
+          <div style="position:absolute;inset:0;background:repeating-linear-gradient(135deg,rgba(170,150,120,.14) 0 6px,rgba(170,150,120,.03) 6px 12px);"></div>
+          <div class="coverlab" style="left:50%;top:44%;transform:translateX(-50%);background:rgba(255,255,255,.82);">outside mapped coverage</div>
+        </div></div></div>
+        <div class="optnote"><b>This is the case your note caught.</b> Line's off-screen, but the hatched tint fills the whole viewport — you know instantly you're in no-data territory, not just an empty covered street. A faint standing label anchors it.</div>
+      </div>
+    </div>
+
+    <div class="rec"><span class="lbl" style="color:var(--pick)">Ruled + refined</span><b>Option A, now with a beyond-coverage tint, not just the line.</b> The published zone bbox from <span class="mono">regions.json</span> draws the boundary; everything outside it gets a low-contrast hatch/tint that reads at any zoom or pan. Two open knobs for build, low-stakes: the tint <b>weight</b> (must not fight the basemap you may still want to see) and whether the standing "outside coverage" label shows <b>always</b> when beyond, or only on first cross. It shares grammar with the shipped offline-pack shading — one visual family, "downloaded" vs "published-but-not-here."</div>
+    <div class="decide"><span class="lbl">Confirm</span><span class="opts-inline">Tint reads right ✓ &nbsp;/&nbsp; adjust weight or the label rule &nbsp;/&nbsp; hatch vs flat tint vs desaturate-basemap for the "beyond" fill</span></div>
+  </section>
+
+  <!-- #359 -->
+  <section class="issue">
+    <div class="ihead">
+      <span class="inum mono">#359</span>
+      <h3>Loading affordance for in-flight CDN fetches</h3>
+      <span class="status" style="color:var(--open);background:var(--open-soft);">Ruled A · Refined</span>
+    </div>
+    <p class="context"><span class="q">"no affordance on screen when loading data from cdn while browsing the map. given it's so slow, we should do something."</span> Browsing online with no pack, tile/pin data loads from the CDN with no visible state — the map just sits until things pop in. Same UX family as #349 (download honesty) and #345 (the underlying fetch cost).</p>
+
+    <p class="context" style="margin-top:2px;"><b style="color:var(--open);">Your caveat:</b> the same thing you said about the spinner — <span class="q">"if slow, reads as stuck."</span> So the bar has to show <b>progress, not presence</b>: it must visibly <em>advance</em> so a slow fetch reads as "working, getting there," never as a frozen indicator. Below: the bar moving between two moments, not sitting still.</p>
+    <div class="opts">
+      <div class="opt rec">
+        <div class="optcap"><span class="tag">A ✓</span><b>Early</b> — fetch just started</div>
+        <div class="phone"><div class="scr">
+          <div class="navbar"><b>Making Tracks</b></div>
+          <div class="prog" style="width:22%;"></div>
+          <div class="map" style="top:34px;">
+            <div class="rd" style="left:0;top:90px;width:230px;height:5px"></div>
+            <div class="pin" style="left:40px;top:60px"></div>
+            <div class="shimmer" style="left:88px;top:96px;width:16px;height:16px;"></div>
+            <div class="shimmer" style="left:150px;top:70px;width:16px;height:16px;"></div>
+          </div>
+        </div></div>
+        <div class="optnote">Bar at ~20%. Tied to bytes/tiles actually arriving, so it <em>moves</em> — a slow link makes it crawl forward, which reads as progress, not a hang.</div>
+      </div>
+      <div class="opt rec">
+        <div class="optcap"><span class="tag">A ✓</span><b>Later</b> — same fetch, advanced</div>
+        <div class="phone"><div class="scr">
+          <div class="navbar"><b>Making Tracks</b></div>
+          <div class="prog" style="width:74%;"></div>
+          <div class="map" style="top:34px;">
+            <div class="rd" style="left:0;top:90px;width:230px;height:5px"></div>
+            <div class="pin" style="left:40px;top:60px"></div>
+            <div class="pin" style="left:92px;top:100px"></div>
+            <div class="shimmer" style="left:150px;top:70px;width:16px;height:16px;"></div>
+          </div>
+        </div></div>
+        <div class="optnote">Bar at ~74%, one shimmer has resolved into a real pin. The advance <em>is</em> the reassurance. Bar fades out on completion; never sits full-but-present.</div>
+      </div>
+      <div class="opt">
+        <div class="optcap"><span class="tag">✗</span><b>Rejected</b> — corner spinner</div>
+        <div class="phone"><div class="scr">
+          <div class="navbar"><b>Making Tracks</b></div>
+          <div class="map" style="top:34px;">
+            <div class="rd" style="left:0;top:90px;width:230px;height:5px"></div>
+            <div class="pin" style="left:40px;top:60px"></div>
+            <div class="toast" style="right:12px;bottom:14px;"><span class="spin"></span> Loading places…</div>
+          </div>
+        </div></div>
+        <div class="optnote">The one you flagged: a spinning presence indicator that says "something's happening" but never "how far." On a slow link it reads as stuck. Not this.</div>
+      </div>
+    </div>
+
+    <div class="rec"><span class="lbl" style="color:var(--pick)">Ruled + refined</span><b>Option A, with determinate progress semantics.</b> The bar is driven by real fetch progress (bytes or tile-count), so it advances rather than pulses; the pin shimmer localises "places arriving here." Both share grammar with #349's download progress, so the app speaks about slowness one consistent way. The point of the refinement: never a full-but-idle bar or a bare spinner — the affordance's job is to show the fetch <em>moving</em>.</div>
+    <div class="decide"><span class="lbl">Confirm</span><span class="opts-inline">Progress-driven bar ✓ &nbsp;/&nbsp; if true byte-progress isn't available from the fetch layer, fall back to a slow indeterminate <b>sweep</b> (still directional) rather than a static bar</span></div>
+    <p class="flag"><b>Routed separately →</b> you asked the deeper e2e question — light index first, lazy detail pull — which is going to <b>codex4 for evidence first</b>. That governs how <em>often</em> this affordance fires and how much there is to load; the look is ruled here, the fetch architecture is its own thread.</p>
+  </section>
+
+  <!-- ===================== GROUP 4: WELCOME ===================== -->
+  <div class="banner">
+    <h2>Group 4 — The welcome journey</h2>
+    <p>The largest, and the one you flagged by hand: <span class="q">"welcome flow is pretty bland… wireframe it screen by screen to make sure we have a compelling journey, with the right things in the correct order."</span> A proposed sequence below — rule the order and the framing, then I detail each screen.</p>
+  </div>
+
+  <!-- #378 -->
+  <section class="issue">
+    <div class="ihead">
+      <span class="inum mono">#378</span>
+      <h3>Welcome flow — screen by screen</h3>
+      <span class="status" style="color:var(--open);background:var(--open-soft);">Reordered · Refined</span>
+    </div>
+    <p class="context">The privacy posture stays the pitch. Your three changes are applied: <b>location moves before the region step</b>; <b>region choice is last</b>, with a real <b>Skip</b> and copy that the app works without a download; and a <b>new "how you keep track" pane</b> covering save / seen / hide — simple, no egg-sucking. Five screens now, each still earning the next.</p>
+
+    <div class="opts">
+      <div class="opt rec">
+        <div class="optcap"><span class="tag">1</span><b>Hook</b></div>
+        <div class="phone" style="aspect-ratio:390/560;"><div class="scr" style="background:var(--paper);">
+          <div style="position:absolute;inset:0;padding:30px 20px;display:flex;flex-direction:column;">
+            <div style="margin-top:40px;font-size:22px;font-weight:680;letter-spacing:-.4px;line-height:1.12;">Every place has<br>a story.</div>
+            <div style="font-size:11px;color:var(--dim);margin-top:10px;line-height:1.4;">A quiet map of what's around you — plaques, ruins, oddities, the things guidebooks skip.</div>
+            <div style="position:absolute;left:40px;right:40px;top:250px;">
+              <div class="pin" style="left:10%;top:0;"></div><div class="pin" style="left:60%;top:30px;"></div><div class="pin sel" style="left:35%;top:60px;"></div><div class="pin" style="left:80%;top:80px;"></div>
+            </div>
+            <div style="margin-top:auto;"><div class="b prom" style="font-size:11px;padding:9px 0;">Start exploring</div></div>
+          </div>
+        </div></div>
+        <div class="optnote">The thesis, not a logo splash. Shows the product (pins on paper) immediately.</div>
+      </div>
+      <div class="opt rec">
+        <div class="optcap"><span class="tag">2</span><b>The promise</b></div>
+        <div class="phone" style="aspect-ratio:390/560;"><div class="scr" style="background:var(--sheet);">
+          <div style="position:absolute;inset:0;padding:30px 20px;display:flex;flex-direction:column;">
+            <div style="margin-top:36px;font-size:19px;font-weight:660;letter-spacing:-.3px;">Yours alone.</div>
+            <div style="font-size:11px;color:var(--dim);margin-top:8px;line-height:1.45;">No account. No tracking. Where you go and what you save stays on this phone — there's nothing to send us, and no us to send it to.</div>
+            <div style="margin-top:18px;display:flex;flex-direction:column;gap:9px;">
+              <div style="font-size:10px;display:flex;gap:7px;align-items:center;"><span style="color:var(--accent);">●</span> Works offline, once a region's downloaded</div>
+              <div style="font-size:10px;display:flex;gap:7px;align-items:center;"><span style="color:var(--accent);">●</span> No sign-up, ever</div>
+              <div style="font-size:10px;display:flex;gap:7px;align-items:center;"><span style="color:var(--accent);">●</span> Your visits never leave the device</div>
+            </div>
+            <div style="margin-top:auto;"><div class="b prom" style="font-size:11px;padding:9px 0;">Next</div></div>
+          </div>
+        </div></div>
+        <div class="optnote">Privacy as the <em>differentiator</em>, in your voice ("no us to send it to"). This is the screen that earns trust before asking for anything.</div>
+      </div>
+      <div class="opt rec">
+        <div class="optcap"><span class="tag">3</span><b>How you keep track</b> <b style="color:var(--pick)">· new</b></div>
+        <div class="phone" style="aspect-ratio:390/560;"><div class="scr" style="background:var(--sheet);">
+          <div style="position:absolute;inset:0;padding:26px 18px;display:flex;flex-direction:column;">
+            <div style="margin-top:28px;font-size:18px;font-weight:660;letter-spacing:-.2px;">Found something?</div>
+            <div style="font-size:10.5px;color:var(--dim);margin-top:6px;line-height:1.4;">Every place has three quick actions.</div>
+            <div style="margin-top:16px;display:flex;flex-direction:column;gap:11px;">
+              <div style="display:flex;gap:9px;align-items:flex-start;"><span class="b prom" style="flex:none;width:44px;padding:5px 0;font-size:9px;">Save</span><span style="font-size:10px;line-height:1.35;color:#3a3a3e;">keep it for later</span></div>
+              <div style="display:flex;gap:9px;align-items:flex-start;"><span class="b" style="flex:none;width:44px;padding:5px 0;font-size:9px;">Seen</span><span style="font-size:10px;line-height:1.35;color:#3a3a3e;">mark the ones you've been to</span></div>
+              <div style="display:flex;gap:9px;align-items:flex-start;"><span class="b" style="flex:none;width:44px;padding:5px 0;font-size:9px;">Hide</span><span style="font-size:10px;line-height:1.35;color:#3a3a3e;">tuck away ones you're not interested in</span></div>
+            </div>
+            <div style="margin-top:auto;"><div class="b prom" style="font-size:11px;padding:9px 0;">Got it</div></div>
+          </div>
+        </div></div>
+        <div class="optnote">The pane you asked for — save / seen / hide in one line each, on the real action bar so it's recognisable. No tutorial, no egg-sucking.</div>
+      </div>
+      <div class="opt rec">
+        <div class="optcap"><span class="tag">4</span><b>Location — in context</b></div>
+        <div class="phone" style="aspect-ratio:390/560;"><div class="scr" style="background:var(--paper);">
+          <div class="map"><div class="rd" style="left:0;top:150px;width:230px;height:5px"></div><div class="pin" style="left:40px;top:120px"></div><div class="pin" style="left:120px;top:100px"></div></div>
+          <div class="sheet" style="height:58%;">
+            <div class="grab"></div>
+            <div style="font-size:15px;font-weight:640;">Show what's near you?</div>
+            <div style="font-size:10.5px;color:var(--dim);margin-top:7px;line-height:1.45;">We'll centre the map on you and surface nearby places. Your location is used on-device only — it's never sent anywhere.</div>
+            <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px;">
+              <div class="b prom" style="font-size:11px;padding:10px 0;">Use my location</div>
+              <div class="b" style="font-size:11px;padding:10px 0;">Not now — I'll browse the map</div>
+            </div>
+          </div>
+        </div></div>
+        <div class="optnote">Now <em>before</em> the region step. Asked after the promise, with a real "not now" that still lands you in a usable map. Reinforces the on-device claim at the moment it matters.</div>
+      </div>
+      <div class="opt rec">
+        <div class="optcap"><span class="tag">5</span><b>First region — last, skippable</b></div>
+        <div class="phone" style="aspect-ratio:390/560;"><div class="scr" style="background:var(--sheet);">
+          <div style="position:absolute;inset:0;padding:24px 18px;display:flex;flex-direction:column;">
+            <div style="margin-top:26px;font-size:18px;font-weight:660;">Download a region?</div>
+            <div style="font-size:10px;color:var(--dim);margin-top:6px;line-height:1.4;">For offline use and faster browsing. You can always add one later.</div>
+            <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px;">
+              <div class="vrow" style="border:1px solid var(--accent);border-radius:9px;background:var(--pick-soft);"><div class="vmeta"><div class="vt">Malaysia · Singapore · Brunei</div><div class="vs">Kuala Lumpur, George Town…</div></div><span style="color:var(--accent);">↓</span></div>
+              <div class="vrow" style="border:1px solid #e2ddd0;border-radius:9px;"><div class="vmeta"><div class="vt">United Kingdom</div><div class="vs">London, Edinburgh…</div></div><span style="color:var(--dim);">↓</span></div>
+            </div>
+            <div style="margin-top:14px;"><div class="b prom" style="font-size:11px;padding:9px 0;">Download &amp; start</div></div>
+            <div style="margin-top:10px;text-align:center;"><span style="font-size:10.5px;color:var(--dim);text-decoration:underline;">Skip — browse online for now</span></div>
+            <div style="font-size:8.5px;color:var(--dim);text-align:center;margin-top:5px;line-height:1.35;">Making Tracks works without a download.<br>You'll just need a connection to load places.</div>
+          </div>
+        </div></div>
+        <div class="optnote">Moved to <b>last</b>, and no longer a gate: a clear low-emphasis <b>Skip</b> under the grid, with copy stating the app works without a download. Region list sourced from the live catalog (now resilient — see #420).</div>
+      </div>
+    </div>
+
+    <div class="rec"><span class="lbl" style="color:var(--pick)">Reordered</span><b>Five screens: Hook → Promise → How you keep track → Location → Region (skippable, last).</b> Your changes applied: location now precedes region; region is last with a real Skip and "works without a download" copy so it's never a wall; and the new save/seen/hide pane teaches the core loop in three lines. The pitch still leads with privacy — that's the part that fixed "bland."</div>
+    <div class="decide"><span class="lbl">Confirm</span><span class="opts-inline">Order &amp; the new pane read right ✓ &nbsp;/&nbsp; adjust the keep-track copy or where it sits &nbsp;/&nbsp; then I detail each screen's final copy &amp; layout</span></div>
+    <p class="flag"><b>Theming note →</b> a compelling welcome likely wants a component or two the app doesn't have yet (full-bleed intro type, the promise layout). That's a <b>#350 call</b> — you liked this look and asked about it; #350 stays parked per your own #335 rule, my 15-surface inventory is ready, and pulling it forward is your live option. Say the word.</p>
+  </section>
+
+  <footer class="foot">
+    Ruled version — your 2026-07-23 decisions baked in. #376 adaptive frame height; #360 boundary line + beyond-coverage shading; #359 progress-not-presence bar; #378 reordered (location before region, region last + Skip, new keep-track pane); trio accepted by default. Still owed by you: #257's three tunables, and an objection window on the trio if the defaults are wrong. Grounded against <span class="mono">origin/ios</span> and the wireframe language in <span class="mono">docs/design/card</span>; committed to <span class="mono">docs/design/2026-07-23-design-session/</span> as the durable record. §Product 7 held throughout (no pin hiding/tiering); #350 theming parked unless you pull it.
+  </footer>
+
+</div>
