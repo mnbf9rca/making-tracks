@@ -269,7 +269,10 @@ public final class DiagnosticLogStore {
         guard let cutoff = window.cutoff(relativeTo: now()) else {
             return DiagnosticLogSnapshot(totalLineCount: allLines.count, lines: allLines)
         }
-        let cutoffToken = Self.timestampFormatter().string(from: cutoff)
+        let firstIncludedSecond = Date(
+            timeIntervalSince1970: cutoff.timeIntervalSince1970.rounded(.up)
+        )
+        let cutoffToken = Self.timestampFormatter().string(from: firstIncludedSecond)
         let windowLines = allLines.filter { line in
             guard let timestamp = Self.canonicalTimestampToken(from: line) else { return true }
             return timestamp >= cutoffToken[...]
@@ -395,11 +398,13 @@ public struct DiagnosticLogExporter {
     }
 
     public func prepare(window: DiagnosticLogWindow, stagingRoot: URL) throws -> DiagnosticLogArtifact {
+        try Task.checkCancellation()
         var timings = DiagnosticLogPreparePhaseTimings()
         let totalStartedAt = DiagnosticLogPreparePhaseTimings.now()
         let snapshot = try timings.measure("snapshot") {
             try store.snapshot(window: window)
         }
+        try Task.checkCancellation()
         return try prepare(
             windowedSnapshot: DiagnosticLogWindowedSnapshot(window: window, snapshot: snapshot),
             stagingRoot: stagingRoot,
@@ -420,6 +425,7 @@ public struct DiagnosticLogExporter {
                 try fileManager.removeItem(at: stagingRoot)
             }
         }
+        try Task.checkCancellation()
         let exportTimestamp = Self.filenameTimestampFormatter().string(from: exportedAt())
         let directory = stagingRoot.appendingPathComponent("MakingTracksDiagnostics-\(exportTimestamp)", isDirectory: true)
         do {
@@ -427,6 +433,7 @@ public struct DiagnosticLogExporter {
                 try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
                 try DiagnosticLogStore.setDiagnosticsResourceValuesForExporter(directory)
             }
+            try Task.checkCancellation()
 
             let summaryURL = directory.appendingPathComponent("summary-\(exportTimestamp).txt")
             let logURL = directory.appendingPathComponent("diagnostic-log-\(exportTimestamp).txt")
@@ -452,6 +459,7 @@ public struct DiagnosticLogExporter {
             guard passedScrub else {
                 throw DiagnosticLogExportError.privacyScrubFailed
             }
+            try Task.checkCancellation()
             let previewPhaseTimings = timings.entries + [
                 DiagnosticLogPreparePhaseTiming(phase: "preview", durationMilliseconds: 0),
             ]
@@ -468,9 +476,11 @@ public struct DiagnosticLogExporter {
                 try previewRender.summary.write(to: summaryURL, atomically: true, encoding: .utf8)
                 try log.write(to: logURL, atomically: true, encoding: .utf8)
             }
+            try Task.checkCancellation()
             let archiveURL = try timings.measure("archive") {
                 try makeArchive(directory: directory, stagingRoot: stagingRoot, exportTimestamp: exportTimestamp)
             }
+            try Task.checkCancellation()
             let byteCount = try timings.measure("byte-count") {
                 try archiveByteCount(archiveURL)
             }

@@ -337,6 +337,19 @@ final class DiagnosticLogExportTests: XCTestCase {
         XCTAssertLessThan(duration, 2.0, "snapshot took \(duration)s")
     }
 
+    func testLastHourSnapshotDoesNotRoundFractionalCutoffDown() throws {
+        let fixture = try makeFixture()
+        let now = fixture.now.addingTimeInterval(0.5)
+        let store = DiagnosticLogStore(root: fixture.logs, now: { now })
+        try store.appendRawLineForTesting("2026-07-19T11:18:13Z flow info before fractional cutoff")
+        try store.appendRawLineForTesting("2026-07-19T11:18:14Z flow info after fractional cutoff")
+
+        XCTAssertEqual(
+            try store.snapshot(window: .lastHour).lines,
+            ["2026-07-19T11:18:14Z flow info after fractional cutoff"]
+        )
+    }
+
     func testExportScrubFailsClosedForFixedExcludedClasses() throws {
         let fixture = try makeFixture()
         let excludedLines = [

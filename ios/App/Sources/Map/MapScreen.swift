@@ -6337,6 +6337,7 @@ private struct DiagnosticsView: View {
     @State private var artifact: DiagnosticLogArtifact?
     @State private var scrubFailed = false
     @State private var isPreparing = false
+    @State private var preparationTask: Task<Void, Never>?
     @State private var shareItem: DiagnosticsShareItem?
     @State private var showDeleteConfirmation = false
 
@@ -6406,7 +6407,10 @@ private struct DiagnosticsView: View {
         .sheet(item: $shareItem) { item in
             ActivityShareSheet(activityItems: [item.url])
         }
-        .onDisappear(perform: cleanupPreparedArtifact)
+        .onDisappear {
+            preparationTask?.cancel()
+            cleanupPreparedArtifact()
+        }
         .confirmationDialog("Delete diagnostic logs?",
             isPresented: $showDeleteConfirmation,
             titleVisibility: .visible
@@ -6426,9 +6430,7 @@ private struct DiagnosticsView: View {
             if scrubFailed {
                 Button("Try 15 min") {
                     selectedWindow = .fifteenMinutes
-                    Task {
-                        await prepare()
-                    }
+                    beginPreparation()
                 }
                 .buttonStyle(.borderedProminent)
                 .frame(maxWidth: .infinity)
@@ -6455,9 +6457,7 @@ private struct DiagnosticsView: View {
                 .accessibilityIdentifier("settings.diagnostics.share")
             } else {
                 Button(isPreparing ? "Preparing" : "Prepare") {
-                    Task {
-                        await prepare()
-                    }
+                    beginPreparation()
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isPreparing)
@@ -6480,25 +6480,37 @@ private struct DiagnosticsView: View {
         ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file)
     }
 
+    private func beginPreparation() {
+        guard preparationTask == nil else { return }
+        preparationTask = Task {
+            await prepare()
+            preparationTask = nil
+        }
+    }
+
     private func prepare() async {
         guard !isPreparing else { return }
         isPreparing = true
+        defer { isPreparing = false }
         scrubFailed = false
         artifact = nil
         let request = DiagnosticsExportRequest(selectedWindow: selectedWindow)
         let currentStorageStatus = storageStatus
         do {
-            artifact = try await DiagnosticsRuntime.prepareArtifact(
+            let preparedArtifact = try await DiagnosticsRuntime.prepareArtifact(
                 request: request,
                 storageStatus: currentStorageStatus
             )
+            try Task.checkCancellation()
+            artifact = preparedArtifact
+        } catch is CancellationError {
+            return
         } catch DiagnosticLogExportError.privacyScrubFailed {
             scrubFailed = true
         } catch {
             MakingTracksLog.startup.error("diagnostics export failed reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
             scrubFailed = true
         }
-        isPreparing = false
     }
 
     private func cleanupPreparedArtifact() {
@@ -6577,15 +6589,46 @@ enum DiagnosticsRuntime {
         storageStatus: StorageMenuStatus
     ) async throws -> DiagnosticLogArtifact {
         let exportMetadata = metadata(storageStatus: storageStatus)
-        return try await Task.detached(priority: .userInitiated) {
+        let stagingBase = try stagingRoot()
+        return try await runPreparationAttempt(stagingBase: stagingBase) { attemptRoot in
             let store = try makeStore()
             return try prepareArtifact(
                 request: request,
                 store: store,
                 metadata: exportMetadata,
-                stagingRoot: stagingRoot()
+                stagingRoot: attemptRoot
             )
-        }.value
+        }
+    }
+
+    static func runPreparationAttempt<Value: Sendable>(
+        stagingBase: URL,
+        operation: @escaping @Sendable (URL) throws -> Value
+    ) async throws -> Value {
+        let attemptRoot = stagingBase.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        do {
+            return try await runCancellableDetachedOperation {
+                try operation(attemptRoot)
+            }
+        } catch {
+            if FileManager.default.fileExists(atPath: attemptRoot.path) {
+                try? FileManager.default.removeItem(at: attemptRoot)
+            }
+            throw error
+        }
+    }
+
+    static func runCancellableDetachedOperation<Value: Sendable>(
+        _ operation: @escaping @Sendable () throws -> Value
+    ) async throws -> Value {
+        let worker = Task.detached(priority: .userInitiated, operation: operation)
+        return try await withTaskCancellationHandler {
+            let value = try await worker.value
+            try Task.checkCancellation()
+            return value
+        } onCancel: {
+            worker.cancel()
+        }
     }
 
     static func prepareArtifact(
