@@ -155,11 +155,14 @@ final class AppShellTests: XCTestCase {
     }
 
     func testTrackTimelinePositionsAreVisitEventsNotElapsedTime() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_GB")
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let timeline = TrackTimelineModel(visits: [
             trackVisit(id: 1, seconds: 0),
             trackVisit(id: 2, seconds: 60),
             trackVisit(id: 3, seconds: 60 * 60 * 24 * 12),
-        ])
+        ], calendar: calendar)
 
         XCTAssertEqual(timeline.sliderRange, 0...2)
         XCTAssertEqual(timeline.eventIndex(forSliderValue: 0.0), 0)
