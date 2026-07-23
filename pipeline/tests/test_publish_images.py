@@ -1,6 +1,7 @@
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -509,7 +510,7 @@ def test_build_place_images_fetches_filters_downloads_and_caches_thumb(tmp_path,
     metadata_calls = []
     transcodes = []
 
-    def fake_imageinfo(filenames):
+    def fake_imageinfo(filenames, **_kwargs):
         metadata_calls.append(list(filenames))
         return {
             filename: _imageinfo(license_short_name="CC BY 4.0")
@@ -521,9 +522,16 @@ def test_build_place_images_fetches_filters_downloads_and_caches_thumb(tmp_path,
     def fake_download(url, dest, **kwargs):
         downloads.append((url, Path(dest).name, kwargs))
         Path(dest).write_bytes(b"raw-image")
-        return 9
+        return SimpleNamespace(size=9, status="downloaded")
 
-    monkeypatch.setattr(images.fetch, "get_to_file", fake_download)
+    monkeypatch.setattr(images.fetch, "conditional_get_to_file", fake_download, raising=False)
+    monkeypatch.setattr(
+        images.fetch,
+        "get_to_file",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("image downloads must use conditional_get_to_file")
+        ),
+    )
     def fake_transcode(path):
         transcodes.append(path)
         return images.ThumbTranscode(webp_bytes=b"webp", width=320, height=240)
@@ -545,6 +553,9 @@ def test_build_place_images_fetches_filters_downloads_and_caches_thumb(tmp_path,
                 "expected_hosts": {"commons.wikimedia.org", "upload.wikimedia.org"},
                 "headers": {"User-Agent": images.USER_AGENT},
                 "max_bytes": images.MAX_PRESCALED_IMAGE_BYTES,
+                "store": images.fetch.ConditionalFetchStore(
+                    tmp_path / "conditional-fetch.json"
+                ),
             },
         )
     ]
@@ -1547,7 +1558,7 @@ def test_build_place_images_falls_back_to_original_after_prescaled_download_fail
     monkeypatch.setattr(
         images,
         "fetch_commons_imageinfo_batch",
-        lambda filenames: {
+            lambda filenames, **_kwargs: {
             filename: _imageinfo(license_short_name="CC BY 4.0")
             for filename in filenames
         },
@@ -1558,9 +1569,16 @@ def test_build_place_images_falls_back_to_original_after_prescaled_download_fail
         if "Special:FilePath" in url:
             raise images.fetch.FetchError("prescaled unavailable")
         Path(dest).write_bytes(b"raw-image")
-        return 9
+        return SimpleNamespace(size=9, status="downloaded")
 
-    monkeypatch.setattr(images.fetch, "get_to_file", fake_download)
+    monkeypatch.setattr(images.fetch, "conditional_get_to_file", fake_download)
+    monkeypatch.setattr(
+        images.fetch,
+        "get_to_file",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("image downloads must use conditional_get_to_file")
+        ),
+    )
     monkeypatch.setattr(
         images,
         "transcode_to_webp_thumb",
@@ -1618,7 +1636,7 @@ def test_build_place_images_retries_cached_transient_reject(tmp_path, monkeypatc
     )
     metadata_calls = []
 
-    def fake_imageinfo(filenames):
+    def fake_imageinfo(filenames, **_kwargs):
         metadata_calls.append(list(filenames))
         return {
             filename: _imageinfo(license_short_name="CC BY 4.0")
@@ -1651,7 +1669,7 @@ def test_build_place_images_does_not_cache_batch_fetch_exception(tmp_path, monke
         image_url="https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg",
     )
 
-    def raise_transient(_filenames):
+    def raise_transient(_filenames, **_kwargs):
         raise images.fetch.FetchError("temporary commons outage")
 
     monkeypatch.setattr(images, "fetch_commons_imageinfo_batch", raise_transient)
@@ -1673,7 +1691,7 @@ def test_build_place_images_records_missing_metadata_payload_as_cacheable_reject
     )
     metadata_calls = []
 
-    def fake_imageinfo(filenames):
+    def fake_imageinfo(filenames, **_kwargs):
         metadata_calls.append(list(filenames))
         return {}
 
@@ -1707,7 +1725,7 @@ def test_build_place_images_records_invalid_metadata_payload_as_cacheable_reject
     monkeypatch.setattr(
         images,
         "fetch_commons_imageinfo_batch",
-        lambda filenames: {filename: [] for filename in filenames},
+            lambda filenames, **_kwargs: {filename: [] for filename in filenames},
     )
 
     assert images.build_place_images([candidate], cache_dir=tmp_path) == []
@@ -1727,7 +1745,7 @@ def test_build_place_images_records_rejects_without_downloading(tmp_path, monkey
     monkeypatch.setattr(
         images,
         "fetch_commons_imageinfo_batch",
-        lambda filenames: {
+            lambda filenames, **_kwargs: {
             filename: _imageinfo(license_short_name="CC BY-ND 4.0")
             for filename in filenames
         },
@@ -1757,7 +1775,7 @@ def test_build_place_images_records_decode_failure_without_aborting(tmp_path, mo
     monkeypatch.setattr(
         images,
         "fetch_commons_imageinfo_batch",
-        lambda filenames: {
+            lambda filenames, **_kwargs: {
             filename: _imageinfo(license_short_name="CC BY 4.0")
             for filename in filenames
         },
@@ -1856,6 +1874,60 @@ def test_fetch_commons_imageinfo_batch_uses_50_title_chunks_and_rehydrates_pages
 
     assert len(requested_urls) == 2
     assert set(result) == {f"Image {i}.jpg" for i in range(51)}
+
+
+def test_fetch_commons_imageinfo_batch_uses_conditional_json_when_store_available(
+    tmp_path, monkeypatch
+):
+    calls = []
+    store = images.fetch.ConditionalFetchStore(tmp_path / "conditional-fetch.json")
+
+    def fake_request(operation):
+        return operation()
+
+    def fake_conditional_get_json(url, **kwargs):
+        calls.append((url, kwargs))
+        return (
+            {
+                "query": {
+                    "pages": {
+                        "1": {
+                            "title": "File:Fort.jpg",
+                            "imageinfo": [
+                                {
+                                    "url": "https://upload.wikimedia.org/example.jpg",
+                                    "mime": "image/jpeg",
+                                    "extmetadata": {},
+                                }
+                            ],
+                        }
+                    }
+                }
+            },
+            SimpleNamespace(status="downloaded"),
+        )
+
+    monkeypatch.setattr(images, "_wikimedia_request", fake_request)
+    monkeypatch.setattr(images.fetch, "conditional_get_json", fake_conditional_get_json)
+    monkeypatch.setattr(
+        images.fetch,
+        "get_json",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("metadata fetches must use conditional_get_json")
+        ),
+    )
+
+    result = images.fetch_commons_imageinfo_batch(
+        ["Fort.jpg"],
+        conditional_store=store,
+    )
+
+    assert set(result) == {"Fort.jpg"}
+    assert calls[0][1] == {
+        "expected_hosts": {images.COMMONS_API_HOST},
+        "headers": {"User-Agent": images.USER_AGENT},
+        "store": store,
+    }
 
 
 def test_wikimedia_request_retries_429_after_retry_after(monkeypatch):

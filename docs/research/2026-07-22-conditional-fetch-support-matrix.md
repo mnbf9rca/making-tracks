@@ -39,6 +39,15 @@ bandwidth optimization only; it never proves correctness by itself.
   `GET` method constant, not stringly repeated call-site literals.
 - Persist validators beside the content hash for each fetched resource. A stored
   validator without a stored content hash is not enough to skip processing.
+- The retained validator store is `conditional-fetch.json` beside the owning
+  cache or snapshot directory. Its entries are keyed by `GET`, the full URL, and
+  caller-supplied request headers after removing only conditional replay headers
+  (`If-None-Match`, `If-Modified-Since`). This means headers such as `Range`,
+  `Accept`, and other representation-shaping headers participate in the key.
+- JSON bodies retained for `304` reuse live under `conditional-fetch-bodies/`
+  named by SHA-256. File callers retain the artifact at their destination path;
+  a `304` is accepted only when that file still exists and hashes to the stored
+  SHA-256.
 - Do not normalize or quote upstream `ETag` values before replaying them in
   `If-None-Match`; Wikimedia image files and ArcGIS both returned useful
   nonstandard unquoted values.

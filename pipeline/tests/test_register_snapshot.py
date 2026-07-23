@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import pathlib
+from types import SimpleNamespace
 import urllib.request
 import urllib.response
 
@@ -195,6 +196,65 @@ def test_download_snapshot_writes_sidecar_via_injected_fetch(tmp_path):
     ).hexdigest()
     assert meta["size"] == 42
     _snapshot.verify_sha256_sidecar(path)
+
+
+def test_download_snapshot_default_fetch_uses_conditional_client(tmp_path, monkeypatch):
+    cfg = {
+        "historic_england": {
+            "url": "https://historicengland.org.uk/nhle.geojson",
+            "allowed_hosts": ["historicengland.org.uk"],
+            "max_bytes": 99,
+            "snapshot_date": "2026-07-14",
+        }
+    }
+    calls = []
+
+    def fake_conditional_fetch(url, dest, *, expected_hosts, max_bytes, store, **kwargs):
+        calls.append(
+            {
+                "url": url,
+                "dest": pathlib.Path(dest).name,
+                "expected_hosts": expected_hosts,
+                "max_bytes": max_bytes,
+                "store": store,
+            }
+        )
+        body = b'{"type":"FeatureCollection","features":[]}'
+        pathlib.Path(dest).write_bytes(body)
+        return SimpleNamespace(size=len(body), status="downloaded")
+
+    monkeypatch.setattr(
+        _snapshot.fetch,
+        "conditional_get_to_file",
+        fake_conditional_fetch,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        _snapshot.fetch,
+        "get_to_file",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("register snapshots must use conditional_get_to_file")
+        ),
+    )
+
+    path = _snapshot.download_snapshot(
+        "historic_england",
+        tmp_path,
+        config=cfg,
+        fetch_fn=None,
+        enabled=True,
+    )
+
+    assert calls == [
+        {
+            "url": "https://historicengland.org.uk/nhle.geojson",
+            "dest": "historic_england.snapshot",
+            "expected_hosts": {"historicengland.org.uk"},
+            "max_bytes": 99,
+            "store": fetch.ConditionalFetchStore(tmp_path / "conditional-fetch.json"),
+        }
+    ]
+    assert json.loads(path.read_text()) == {"type": "FeatureCollection", "features": []}
 
 
 def test_historic_england_download_rejects_arcgis_export_status(tmp_path):
