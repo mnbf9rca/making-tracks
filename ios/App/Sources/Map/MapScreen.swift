@@ -247,23 +247,23 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             throw TileError.invalidURL
         }
         try HTTPTileFetcher.validateOrigin(url)
-        let data: Data
         do {
+            let data: Data
             if let boundedFetcher = fetcher as? BoundedTileFetching {
                 data = try await boundedFetcher.fetch(url, maxBytes: RegionIndex.maxBytes)
             } else {
                 data = try await fetcher.fetch(url)
             }
+            guard data.count <= RegionIndex.maxBytes else { throw TileError.responseTooLarge }
+            let catalog = try OfflineRegionCatalog(regionIndex: RegionIndex.decode(data))
+            try? cache?.store(data)
+            return catalog
         } catch {
             if let cached = try? cache?.cachedCatalog() {
                 return cached
             }
             throw error
         }
-        guard data.count <= RegionIndex.maxBytes else { throw TileError.responseTooLarge }
-        let catalog = try OfflineRegionCatalog(regionIndex: RegionIndex.decode(data))
-        try? cache?.store(data)
-        return catalog
     }
 
     private static func publishVersion(fromSearchCompactPath path: String) -> String? {

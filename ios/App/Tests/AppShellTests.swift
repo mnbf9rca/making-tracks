@@ -1663,6 +1663,26 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(offlineFetcher.requestedURLs, ["https://tiles.making-tracks.app/regions.json"])
     }
 
+    func testOfflineRegionCatalogUsesCachedCatalogWhenCurrentFetchReturnsTruncatedBytes() async throws {
+        let cache = try OfflineRegionCatalogCache(
+            directory: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        )
+        let validCatalogData = try appJSONData(appRegionIndexV3Object())
+        let onlineFetcher = AppStubFetcher(routes: [
+            "https://tiles.making-tracks.app/regions.json": validCatalogData,
+        ])
+        let truncatedFetcher = AppStubFetcher(routes: [
+            "https://tiles.making-tracks.app/regions.json": Data(validCatalogData.prefix(48)),
+        ])
+
+        _ = try await OfflineRegionCatalog.current(fetcher: onlineFetcher, cache: cache)
+        let recoveredCatalog = try await OfflineRegionCatalog.current(fetcher: truncatedFetcher, cache: cache)
+
+        XCTAssertEqual(recoveredCatalog.rootZones.map(\.displayName), ["Malaysia, Singapore, and Brunei"])
+        XCTAssertEqual(truncatedFetcher.requestedURLs, ["https://tiles.making-tracks.app/regions.json"])
+    }
+
     func testOfflineRegionCatalogDerivesRowsFromDecodedRegionIndex() throws {
         let catalog = OfflineRegionCatalog(regionIndex: try RegionIndex.decode(appJSONData(appRegionIndexV3Object())))
 
