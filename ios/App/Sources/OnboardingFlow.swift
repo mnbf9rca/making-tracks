@@ -25,6 +25,7 @@ struct MakingTracksRootView: View {
     @State private var isReplayingOnboarding = false
     @State private var didConsumeForcedFirstRunOnboarding = false
     @State private var downloadState: OnboardingDownloadState = .idle
+    @State private var onboardingRegionCatalogState = OnboardingRegionCatalogState.loading
     @State private var cameraRequestID = 0
     @State private var cameraRequest: ViewportCameraRequest?
 
@@ -121,6 +122,7 @@ struct MakingTracksRootView: View {
                 isReplay: isReplay,
                 chosenRegionRawValue: chosenRegionRawValue
             ),
+            regionCatalogState: onboardingRegionCatalogState,
             locationPermission: locationPermission,
             downloadState: downloadState,
             showsUITestingDiagnostics: isFixtureMap,
@@ -138,9 +140,37 @@ struct MakingTracksRootView: View {
             let completed = hasCompletedOnboarding
             MakingTracksLog.startup.info("onboarding presented replay=\(isReplay, privacy: .public) completed=\(completed, privacy: .public)")
         }
+        .task {
+            await refreshOnboardingRegionCatalog()
+        }
         .onDisappear {
             let completed = hasCompletedOnboarding
             MakingTracksLog.startup.info("onboarding dismissed replay=\(isReplay, privacy: .public) completed=\(completed, privacy: .public)")
+        }
+    }
+
+    @MainActor
+    private func refreshOnboardingRegionCatalog() async {
+#if DEBUG
+        if isFixtureMap {
+            onboardingRegionCatalogState = .ready(OnboardingRegionChoice.catalogChoices(from: .debugFixture))
+            return
+        }
+#endif
+        onboardingRegionCatalogState = .loading
+        do {
+            let catalog = try await OfflineRegionCatalog.current(
+                fetcher: HTTPTileFetcher.offlineAvailabilityProbe(
+                    allowsCellularDownloads: allowsCellularDownloads
+                ),
+                cache: try? OfflineRegionCatalogCache.appCache()
+            )
+            let choices = OnboardingRegionChoice.catalogChoices(from: catalog)
+            onboardingRegionCatalogState = choices.isEmpty ? .unavailable : .ready(choices)
+            MakingTracksLog.startup.info("onboarding region catalog fetched regions=\(choices.count, privacy: .public)")
+        } catch {
+            onboardingRegionCatalogState = .unavailable
+            MakingTracksLog.startup.error("onboarding region catalog failed reason=\(MakingTracksLog.errorLabel(error), privacy: .public)")
         }
     }
 
@@ -311,36 +341,112 @@ struct MakingTracksRootView: View {
     }
 }
 
-enum OnboardingRegionChoice: String, CaseIterable, Sendable, Equatable, Identifiable {
-    case uk
-    case malaysia
+enum OnboardingRegionCatalogState: Equatable {
+    case loading
+    case ready([OnboardingRegionChoice])
+    case unavailable
+}
+
+struct OnboardingRegionChoice: Sendable, Equatable, Identifiable {
+    let rawValue: String
+    let title: String
+    let publishRegionID: String
+    let startupViewport: ViewportSeed
+    let accessibilityID: String
 
     var id: String { rawValue }
 
-    var title: String {
-        switch self {
-        case .uk:
-            return "UK"
-        case .malaysia:
-            return "Malaysia"
+    static func == (lhs: OnboardingRegionChoice, rhs: OnboardingRegionChoice) -> Bool {
+        lhs.publishRegionID == rhs.publishRegionID
+    }
+
+    static let uk = OnboardingRegionChoice(
+        rawValue: "uk",
+        title: "UK",
+        publishRegionID: MapRegion.unitedKingdom.rawValue,
+        startupViewport: .uk,
+        accessibilityID: "uk"
+    )
+
+    static let malaysia = OnboardingRegionChoice(
+        rawValue: "malaysia",
+        title: "Malaysia",
+        publishRegionID: MapRegion.malaysiaSingaporeBrunei.rawValue,
+        startupViewport: .kl,
+        accessibilityID: "malaysia"
+    )
+
+    init(
+        rawValue: String,
+        title: String,
+        publishRegionID: String,
+        startupViewport: ViewportSeed,
+        accessibilityID: String? = nil
+    ) {
+        self.rawValue = rawValue
+        self.title = title
+        self.publishRegionID = publishRegionID
+        self.startupViewport = startupViewport
+        self.accessibilityID = accessibilityID ?? rawValue
+    }
+
+    init?(rawValue: String) {
+        switch rawValue {
+        case Self.uk.rawValue, Self.uk.publishRegionID:
+            self = .uk
+        case Self.malaysia.rawValue, Self.malaysia.publishRegionID:
+            self = .malaysia
+        default:
+            return nil
         }
     }
 
-    var publishRegionID: String {
-        switch self {
-        case .uk:
-            return MapRegion.unitedKingdom.rawValue
-        case .malaysia:
-            return MapRegion.malaysiaSingaporeBrunei.rawValue
+    static func catalogChoices(from catalog: OfflineRegionCatalog) -> [OnboardingRegionChoice] {
+        catalog.rootZones.map { zone in
+            if let legacy = legacyChoice(for: zone) {
+                return legacy
+            }
+            return OnboardingRegionChoice(
+                rawValue: zone.id,
+                title: zone.displayName,
+                publishRegionID: zone.id,
+                startupViewport: ViewportSeed(bbox: zone.bbox, zoom: 6),
+                accessibilityID: legacyAccessibilityID(for: zone.id)
+            )
         }
     }
 
-    var startupViewport: ViewportSeed {
-        switch self {
-        case .uk:
-            return .uk
-        case .malaysia:
-            return .kl
+    private static func legacyChoice(for zone: OfflineRegionCatalogZone) -> OnboardingRegionChoice? {
+        switch zone.id {
+        case MapRegion.unitedKingdom.rawValue:
+            return OnboardingRegionChoice(
+                rawValue: Self.uk.rawValue,
+                title: Self.uk.title,
+                publishRegionID: zone.id,
+                startupViewport: ViewportSeed(bbox: zone.bbox, zoom: 6),
+                accessibilityID: Self.uk.accessibilityID
+            )
+        case MapRegion.malaysiaSingaporeBrunei.rawValue:
+            return OnboardingRegionChoice(
+                rawValue: Self.malaysia.rawValue,
+                title: Self.malaysia.title,
+                publishRegionID: zone.id,
+                startupViewport: ViewportSeed(bbox: zone.bbox, zoom: 6),
+                accessibilityID: Self.malaysia.accessibilityID
+            )
+        default:
+            return nil
+        }
+    }
+
+    private static func legacyAccessibilityID(for regionID: String) -> String {
+        switch regionID {
+        case MapRegion.unitedKingdom.rawValue:
+            return Self.uk.accessibilityID
+        case MapRegion.malaysiaSingaporeBrunei.rawValue:
+            return Self.malaysia.accessibilityID
+        default:
+            return regionID
         }
     }
 }
@@ -467,6 +573,7 @@ private enum OnboardingStep: Int, CaseIterable {
 
 struct OnboardingFlow: View {
     let isReplay: Bool
+    let regionCatalogState: OnboardingRegionCatalogState
     @ObservedObject var locationPermission: LocationPermission
     let showsUITestingDiagnostics: Bool
     let prepareDownload: (OnboardingRegionChoice) -> Void
@@ -482,6 +589,7 @@ struct OnboardingFlow: View {
     init(
         isReplay: Bool,
         initialSelectedRegion: OnboardingRegionChoice?,
+        regionCatalogState: OnboardingRegionCatalogState = .loading,
         locationPermission: LocationPermission,
         downloadState: OnboardingDownloadState,
         showsUITestingDiagnostics: Bool = false,
@@ -490,6 +598,7 @@ struct OnboardingFlow: View {
         complete: @escaping (OnboardingRegionChoice?) -> Void
     ) {
         self.isReplay = isReplay
+        self.regionCatalogState = regionCatalogState
         self.locationPermission = locationPermission
         self.downloadState = downloadState
         self.showsUITestingDiagnostics = showsUITestingDiagnostics
@@ -560,8 +669,20 @@ struct OnboardingFlow: View {
                     title: "Choose your first region",
                     body: "You can change regions later. This only sets the map you see first."
                 )
-                ForEach(OnboardingRegionChoice.allCases) { choice in
-                    regionButton(choice)
+                switch regionCatalogState {
+                case .loading:
+                    ProgressView("Loading regions")
+                        .accessibilityIdentifier("onboarding.region.loading")
+                case let .ready(choices):
+                    if choices.isEmpty {
+                        regionCatalogUnavailable
+                    } else {
+                        ForEach(choices) { choice in
+                            regionButton(choice)
+                        }
+                    }
+                case .unavailable:
+                    regionCatalogUnavailable
                 }
             }
         case .offline:
@@ -572,14 +693,18 @@ struct OnboardingFlow: View {
                 )
                 downloadStatus
                 Button(downloadButtonTitle) {
-                    startDownload(selectedRegion ?? .malaysia)
+                    if let selectedRegion {
+                        startDownload(selectedRegion)
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!canStartDownload)
                 .accessibilityIdentifier("onboarding.download")
             }
-            .task(id: selectedRegion ?? .malaysia) {
-                prepareDownload(selectedRegion ?? .malaysia)
+            .task(id: selectedRegion?.id) {
+                if let selectedRegion {
+                    prepareDownload(selectedRegion)
+                }
             }
         case .location:
             VStack(alignment: .leading, spacing: 14) {
@@ -614,7 +739,15 @@ struct OnboardingFlow: View {
     }
 
     private var selectedRegionTitle: String {
-        (selectedRegion ?? .malaysia).title
+        selectedRegion?.title ?? "selected region"
+    }
+
+    private var regionCatalogUnavailable: some View {
+        Label("Regions unavailable. You can skip setup and use the map online.", systemImage: "exclamationmark.triangle")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("onboarding.region.unavailable")
     }
 
     @ViewBuilder
@@ -669,8 +802,10 @@ struct OnboardingFlow: View {
     }
 
     private var canStartDownload: Bool {
-        guard case let .ready(plan) = downloadState else { return false }
-        return plan.region == (selectedRegion ?? .malaysia) && plan.hasHeadroom
+        guard let selectedRegion,
+              case let .ready(plan) = downloadState
+        else { return false }
+        return plan.region == selectedRegion && plan.hasHeadroom
     }
 
     private var downloadButtonTitle: String {
@@ -712,7 +847,7 @@ struct OnboardingFlow: View {
             .padding(.horizontal, 14)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .accessibilityIdentifier("onboarding.region.\(choice.rawValue)")
+        .accessibilityIdentifier("onboarding.region.\(choice.accessibilityID)")
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
