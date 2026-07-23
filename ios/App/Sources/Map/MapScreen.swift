@@ -6204,7 +6204,7 @@ private struct DiagnosticsView: View {
                 Button("Try 15 min") {
                     selectedWindow = .fifteenMinutes
                     Task {
-                        await prepare(coverCurrentSession: false)
+                        await prepare()
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -6233,7 +6233,7 @@ private struct DiagnosticsView: View {
             } else {
                 Button(isPreparing ? "Preparing" : "Prepare") {
                     Task {
-                        await prepare(coverCurrentSession: true)
+                        await prepare()
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -6284,18 +6284,17 @@ private struct DiagnosticsView: View {
         ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file)
     }
 
-    private func prepare(coverCurrentSession: Bool) async {
+    private func prepare() async {
         guard !isPreparing else { return }
         isPreparing = true
         scrubFailed = false
         artifact = nil
-        let window = selectedWindow
+        let request = DiagnosticsExportRequest(selectedWindow: selectedWindow)
         let currentStorageStatus = storageStatus
         do {
             artifact = try await DiagnosticsRuntime.prepareArtifact(
-                window: window,
-                storageStatus: currentStorageStatus,
-                coverCurrentSession: coverCurrentSession
+                request: request,
+                storageStatus: currentStorageStatus
             )
         } catch DiagnosticLogExportError.privacyScrubFailed {
             scrubFailed = true
@@ -6357,6 +6356,14 @@ private struct DiagnosticsShareItem: Identifiable {
     let url: URL
 }
 
+struct DiagnosticsExportRequest: Equatable, Sendable {
+    let window: DiagnosticLogWindow
+
+    init(selectedWindow: DiagnosticLogWindow) {
+        self.window = selectedWindow
+    }
+}
+
 private struct ActivityShareSheet: UIViewControllerRepresentable {
     let activityItems: [Any]
 
@@ -6367,7 +6374,7 @@ private struct ActivityShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
-private enum DiagnosticsRuntime {
+enum DiagnosticsRuntime {
     static func makeStore() throws -> DiagnosticLogStore {
         let bundleIdentifier = Self.bundleIdentifier
         let root = try DiagnosticLogStore.defaultRoot(bundleIdentifier: bundleIdentifier)
@@ -6393,22 +6400,34 @@ private enum DiagnosticsRuntime {
 
     @MainActor
     static func prepareArtifact(
-        window: DiagnosticLogWindow,
-        storageStatus: StorageMenuStatus,
-        coverCurrentSession: Bool
+        request: DiagnosticsExportRequest,
+        storageStatus: StorageMenuStatus
     ) async throws -> DiagnosticLogArtifact {
         let exportMetadata = metadata(storageStatus: storageStatus)
         return try await Task.detached(priority: .userInitiated) {
             let store = try makeStore()
-            let exporter = DiagnosticLogExporter(
+            return try prepareArtifact(
+                request: request,
                 store: store,
-                metadata: exportMetadata
+                metadata: exportMetadata,
+                stagingRoot: stagingRoot()
             )
-            if coverCurrentSession {
-                return try exporter.prepareCoveringCurrentSession(preferredWindow: window, stagingRoot: stagingRoot())
-            }
-            return try exporter.prepare(window: window, stagingRoot: stagingRoot())
         }.value
+    }
+
+    static func prepareArtifact(
+        request: DiagnosticsExportRequest,
+        store: DiagnosticLogStore,
+        metadata: DiagnosticLogMetadata,
+        stagingRoot: URL,
+        exportedAt: @escaping @Sendable () -> Date = Date.init
+    ) throws -> DiagnosticLogArtifact {
+        let exporter = DiagnosticLogExporter(
+            store: store,
+            metadata: metadata,
+            exportedAt: exportedAt
+        )
+        return try exporter.prepare(window: request.window, stagingRoot: stagingRoot)
     }
 
     private static var bundleIdentifier: String {
