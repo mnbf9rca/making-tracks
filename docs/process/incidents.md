@@ -158,6 +158,15 @@ The runbook had told agents to `lsof` the lock file when in doubt. That instruct
 
 → *iOS simulator* (AGENTS.md); *docs/process/ios-simulator.md*.
 
+## CI-red dismissed as flaky, twice
+
+**2026-07-21/22.** Two CI-red/local-green results were nearly written off as runner flakiness. Both were
+real failures, invisible locally by construction: a control tapped without being scrolled into view on a
+shorter CI viewport, and a CI simulator that was a different device model from the local one. The artifact
+bundles surfaced both; reruns would have surfaced neither.
+
+Rule: `docs/process/gate-lessons.md` → **Gate conduct**, *When CI and local disagree, CI wins*.
+
 ## A display change merged on host tests alone
 
 **2026-07-20.** A sparse-tier fallback altering the map display path merged after host-only Swift package
