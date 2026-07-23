@@ -7,10 +7,11 @@ extension AppDatabase {
     static func normalizedListName(_ name: String) throws -> String {
         let filtered = String(name.unicodeScalars.filter { !isUnsafeListNameScalar($0) })
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !filtered.isEmpty,
-              filtered.unicodeScalars.count <= maxListNameScalars
-        else {
-            throw AppDatabaseError.invalidListName
+        guard !filtered.isEmpty else {
+            throw AppDatabaseError.emptyListName
+        }
+        guard filtered.unicodeScalars.count <= maxListNameScalars else {
+            throw AppDatabaseError.listNameTooLong
         }
         return filtered
     }

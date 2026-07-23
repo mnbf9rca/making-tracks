@@ -134,12 +134,16 @@ final class AppShellTests: XCTestCase {
 
     func testListCreateFailureCopyDistinguishesEmptyNamesFromLengthFailures() {
         XCTAssertEqual(
-            ListsCopy.listNameCreateFailureMessage(for: AppDatabaseError.invalidListName, draftName: "   "),
+            ListsCopy.listNameCreateFailureMessage(for: AppDatabaseError.emptyListName, draftName: "   "),
+            "Enter a list name."
+        )
+        XCTAssertEqual(
+            ListsCopy.listNameCreateFailureMessage(for: AppDatabaseError.emptyListName, draftName: "\u{0007}\u{200B}"),
             "Enter a list name."
         )
         XCTAssertEqual(
             ListsCopy.listNameCreateFailureMessage(
-                for: AppDatabaseError.invalidListName,
+                for: AppDatabaseError.listNameTooLong,
                 draftName: String(repeating: "x", count: 81)
             ),
             "Use a shorter list name."
