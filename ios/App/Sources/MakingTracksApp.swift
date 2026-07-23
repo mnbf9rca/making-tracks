@@ -165,6 +165,7 @@ struct MakingTracksApp: App {
         return [places[0], places[1], places[0], places[2], places[3], places[4]]
     }()
 
+#if DEBUG
     private static let visitsEditorVisualFixturePlaces: [PlaceRef] = {
         let fixtures: [(id: String, name: String, lat: Double, lon: Double, category: String)] = [
             (
@@ -198,6 +199,7 @@ struct MakingTracksApp: App {
             )
         }
     }()
+#endif
 
     private let locationManager: AppLocationManager = {
         if isLocationNotDeterminedFixture {

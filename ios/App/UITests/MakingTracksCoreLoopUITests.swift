@@ -127,6 +127,28 @@ private struct RenderedPixelRaster {
         return Double(matches) / Double(region.count)
     }
 
+    func representativeToken(
+        _ token: RenderedRGB,
+        in frame: CGRect,
+        tolerance: Int = 5
+    ) -> (color: RenderedRGB, count: Int)? {
+        let matches = samples(in: frame).filter { $0.matches(token, tolerance: tolerance) }
+        guard !matches.isEmpty else { return nil }
+        let sums = matches.reduce(into: (red: 0, green: 0, blue: 0)) { result, pixel in
+            result.red += pixel.red
+            result.green += pixel.green
+            result.blue += pixel.blue
+        }
+        return (
+            RenderedRGB(
+                Int((Double(sums.red) / Double(matches.count)).rounded()),
+                Int((Double(sums.green) / Double(matches.count)).rounded()),
+                Int((Double(sums.blue) / Double(matches.count)).rounded())
+            ),
+            matches.count
+        )
+    }
+
     func systemBlueCount(in frame: CGRect) -> Int {
         samples(in: frame).lazy.filter { pixel in
             pixel.blue >= 160
@@ -134,6 +156,50 @@ private struct RenderedPixelRaster {
                 && pixel.blue - pixel.green >= 35
         }.count
     }
+
+    func differingPixelCount(
+        comparedTo other: RenderedPixelRaster,
+        in frame: CGRect,
+        tolerance: Int = 0
+    ) -> Int? {
+        guard width == other.width,
+              height == other.height,
+              bytesPerRow == other.bytesPerRow,
+              appFrame == other.appFrame
+        else {
+            return nil
+        }
+
+        let clipped = frame.intersection(appFrame)
+        guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return 0 }
+
+        let scaleX = CGFloat(width) / appFrame.width
+        let scaleY = CGFloat(height) / appFrame.height
+        let minX = max(0, Int(((clipped.minX - appFrame.minX) * scaleX).rounded(.down)))
+        let maxX = min(width - 1, Int(((clipped.maxX - appFrame.minX) * scaleX).rounded(.up)))
+        let minY = max(0, Int(((clipped.minY - appFrame.minY) * scaleY).rounded(.down)))
+        let maxY = min(height - 1, Int(((clipped.maxY - appFrame.minY) * scaleY).rounded(.up)))
+        guard minX <= maxX, minY <= maxY else { return 0 }
+
+        var differenceCount = 0
+        for y in minY...maxY {
+            for x in minX...maxX {
+                let offset = (y * bytesPerRow) + (x * 4)
+                if abs(Int(pixels[offset]) - Int(other.pixels[offset])) > tolerance
+                    || abs(Int(pixels[offset + 1]) - Int(other.pixels[offset + 1])) > tolerance
+                    || abs(Int(pixels[offset + 2]) - Int(other.pixels[offset + 2])) > tolerance {
+                    differenceCount += 1
+                }
+            }
+        }
+        return differenceCount
+    }
+}
+
+@MainActor
+private struct MyTracksAppearanceCapture {
+    let raster: RenderedPixelRaster
+    let trackSurfaceFrame: CGRect
 }
 
 private enum AXResampler {
@@ -901,12 +967,124 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(app.buttons.matching(identifierPrefix: "lists.detail.track.row.move-down.").firstMatch.exists)
     }
 
-    func testMyTracksRenderedPixelOracleInLightAppearance() {
-        assertMyTracksRenderedPixelOracle(forceDarkAppearance: false, appearanceName: "light")
+    func testMyTracksRenderedPixelOraclesAcrossLightAndDarkAppearances() {
+        guard let light = assertMyTracksRenderedPixelOracle(
+            forceDarkAppearance: false,
+            appearanceName: "light"
+        ), let dark = assertMyTracksRenderedPixelOracle(
+            forceDarkAppearance: true,
+            appearanceName: "dark"
+        ) else {
+            return
+        }
+
+        XCTAssertEqual(light.trackSurfaceFrame, dark.trackSurfaceFrame)
+        let comparisonFrame = light.trackSurfaceFrame
+            .intersection(dark.trackSurfaceFrame)
+            .insetBy(dx: 1, dy: 1)
+        guard let differenceCount = light.raster.differingPixelCount(
+            comparedTo: dark.raster,
+            in: comparisonFrame
+        ) else {
+            XCTFail("Could not compare Light and Dark My tracks editor rasters")
+            return
+        }
+        XCTAssertEqual(
+            differenceCount,
+            0,
+            "My tracks editor must render identically in forced Light and Dark appearances"
+        )
     }
 
-    func testMyTracksRenderedPixelOracleInDarkAppearance() {
-        assertMyTracksRenderedPixelOracle(forceDarkAppearance: true, appearanceName: "dark")
+    func testFilteredMyTracksHidesInvariantReorderHandleToken() {
+        XCUIDevice.shared.appearance = .light
+        defer { XCUIDevice.shared.appearance = .light }
+
+        let app = launch(
+            reset: true,
+            seedVisitsEditorVisual: true,
+            hideFixtureChrome: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["My tracks"].tap()
+
+        let trackSurface = app.collectionViews["lists.detail.surface.track"]
+        XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+
+        let filter = element(identifier: "map.list-mode.filter.loved", in: app)
+        XCTAssertTrue(filter.waitForExistence(timeout: 5))
+        filter.tap()
+        XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
+        let category = app.buttons["track-filter-picker.category.historic_building"]
+        XCTAssertTrue(scrollToHittable(category, in: app))
+        category.tap()
+        let apply = app.buttons["track-filter-picker.apply"]
+        XCTAssertTrue(apply.waitForExistence(timeout: 5))
+        apply.tap()
+
+        app.buttons["map.list-mode.back"].tap()
+        XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["lists.detail.track.summary"].label, "1 visit")
+
+        let screenshot = XCUIScreen.main.screenshot()
+        let appFrame = app.windows.firstMatch.exists ? app.windows.firstMatch.frame : app.frame
+        guard let raster = RenderedPixelRaster(screenshot: screenshot, appFrame: appFrame) else {
+            XCTFail("Could not decode filtered My tracks screenshot")
+            return
+        }
+        let reorderStrip = CGRect(
+            x: trackSurface.frame.maxX - 50,
+            y: trackSurface.frame.minY,
+            width: 50,
+            height: trackSurface.frame.height
+        )
+        XCTAssertEqual(
+            raster.tokenCount(RenderedRGB(170, 168, 157), in: reorderStrip),
+            0,
+            "Filtered My tracks must not render the reorder-handle token"
+        )
+    }
+
+    func testMyTracksControlsRemainAccessibleAtAccessibilityTextSize() {
+        XCUIDevice.shared.appearance = .light
+        defer { XCUIDevice.shared.appearance = .light }
+
+        let app = launch(
+            reset: true,
+            accessibilityTextSize: true,
+            seedVisitsEditorVisual: true,
+            hideFixtureChrome: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.tracks"].tap()
+        XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+
+        let back = app.buttons["lists.detail.track.back"]
+        let title = app.staticTexts["lists.detail.track.title"]
+        let done = app.buttons["lists.detail.track.done"]
+        for (element, name) in [(back, "Back"), (done, "Done")] {
+            XCTAssertTrue(element.exists, "\(name) must exist")
+            XCTAssertGreaterThanOrEqual(element.frame.width, 44, "\(name) touch width")
+            XCTAssertGreaterThanOrEqual(element.frame.height, 44, "\(name) touch height")
+        }
+        XCTAssertTrue(title.exists)
+        XCTAssertFalse(back.frame.intersects(title.frame), "Back must not collide with the title")
+        XCTAssertFalse(done.frame.intersects(title.frame), "Done must not collide with the title")
+
+        let heart = app.buttons.matching(identifierPrefix: "lists.detail.track.row.loved.").firstMatch
+        let delete = app.buttons.matching(identifierPrefix: "lists.detail.track.row.delete.").firstMatch
+        XCTAssertTrue(scrollToExistence(of: heart, in: app))
+        XCTAssertTrue(scrollToExistence(of: delete, in: app))
+        for (element, name) in [(heart, "heart"), (delete, "delete")] {
+            XCTAssertGreaterThanOrEqual(element.frame.width, 44, "\(name) touch width")
+            XCTAssertGreaterThanOrEqual(element.frame.height, 44, "\(name) touch height")
+        }
     }
 
     func testTracksMenuAndListsMyTracksReachSameScreenIdentity() {
@@ -916,6 +1094,18 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openAppMenu(in: fromMenu)
         fromMenu.buttons["menu.row.tracks"].tap()
         XCTAssertTrue(fromMenu.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        fromMenu.buttons["lists.detail.track.back"].tap()
+        XCTAssertTrue(fromMenu.navigationBars["Menu"].waitForExistence(timeout: 5))
+        fromMenu.buttons["menu.row.tracks"].tap()
+        XCTAssertTrue(fromMenu.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        fromMenu.buttons["lists.detail.track.done"].tap()
+        XCTAssertTrue(fromMenu.otherElements["map.surface"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            waitForNonExistence(
+                of: fromMenu.collectionViews["lists.detail.surface.track"],
+                timeout: 5
+            )
+        )
 
         let fromLists = launch(reset: true, pinDiagnostics: true)
         XCTAssertTrue(fromLists.otherElements["map.surface"].waitForExistence(timeout: 10))
@@ -925,6 +1115,19 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(fromLists.staticTexts["Lists"].waitForExistence(timeout: 5))
         fromLists.staticTexts["My tracks"].tap()
         XCTAssertTrue(fromLists.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        fromLists.buttons["lists.detail.track.back"].tap()
+        XCTAssertTrue(fromLists.navigationBars["Lists"].waitForExistence(timeout: 5))
+        XCTAssertTrue(fromLists.buttons["lists.create"].exists)
+        fromLists.staticTexts["My tracks"].tap()
+        XCTAssertTrue(fromLists.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        fromLists.buttons["lists.detail.track.done"].tap()
+        XCTAssertTrue(fromLists.otherElements["map.surface"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            waitForNonExistence(
+                of: fromLists.collectionViews["lists.detail.surface.track"],
+                timeout: 5
+            )
+        )
     }
 
     func testTrackGeometryDrawsConnectorFromSeededFixtureVisits() {
@@ -1977,15 +2180,21 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         appearanceName: String,
         file: StaticString = #filePath,
         line: UInt = #line
-    ) {
+    ) -> MyTracksAppearanceCapture? {
+        let forcedAppearance: XCUIDevice.Appearance = forceDarkAppearance ? .dark : .light
+        XCUIDevice.shared.appearance = forcedAppearance
+        XCTAssertEqual(XCUIDevice.shared.appearance, forcedAppearance, file: file, line: line)
+        defer { XCUIDevice.shared.appearance = .light }
+
         let app = launch(
             reset: true,
-            pinDiagnostics: true,
             seedVisitsEditorVisual: true,
-            forceDarkAppearance: forceDarkAppearance
+            forceDarkAppearance: forceDarkAppearance,
+            hideFixtureChrome: true
         )
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10), file: file, line: line)
-        XCTAssertTrue(waitForMapToFinishLoading(in: app), file: file, line: line)
+        let loading = app.otherElements["map.loading"]
+        XCTAssertTrue(!loading.exists || loading.waitForNonExistence(timeout: 10), file: file, line: line)
         openAppMenu(in: app)
         app.buttons["menu.row.tracks"].tap()
 
@@ -2008,9 +2217,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
 
         let appFrame = app.windows.firstMatch.exists ? app.windows.firstMatch.frame : app.frame
+        XCTAssertEqual(appFrame.width, 402, accuracy: 0.5, file: file, line: line)
+        XCTAssertEqual(appFrame.height, 874, accuracy: 0.5, file: file, line: line)
         guard let raster = RenderedPixelRaster(screenshot: screenshot, appFrame: appFrame) else {
             XCTFail("Could not decode My tracks rendered screenshot", file: file, line: line)
-            return
+            return nil
         }
 
         let paper = RenderedRGB(241, 237, 223)
@@ -2020,6 +2231,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let accent = RenderedRGB(10, 107, 92)
         let danger = RenderedRGB(180, 35, 24)
         let dangerSoft = RenderedRGB(248, 231, 228)
+        let reorderHandle = RenderedRGB(170, 168, 157)
         var failures: [String] = []
 
         func requireElement(_ element: XCUIElement, named name: String) -> Bool {
@@ -2035,28 +2247,34 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             named name: String,
             foreground: RenderedRGB,
             background: RenderedRGB,
-            minimumContrast: Double
+            minimumContrast: Double,
+            foregroundInset: CGFloat = 0,
+            minimumForegroundPixels: Int = 8
         ) {
             guard requireElement(element, named: name) else { return }
-            let foregroundCount = raster.tokenCount(foreground, in: element.frame)
-            let backgroundCount = raster.tokenCount(
+            let foregroundSample = raster.representativeToken(
+                foreground,
+                in: element.frame.insetBy(dx: foregroundInset, dy: foregroundInset)
+            )
+            let backgroundSample = raster.representativeToken(
                 background,
                 in: element.frame.insetBy(dx: -3, dy: -3)
             )
-            if foregroundCount < 3 {
+            if (foregroundSample?.count ?? 0) < minimumForegroundPixels {
                 failures.append(
-                    "\(name): expected rendered foreground \(foreground), found \(foregroundCount) pixels within ±5 RGB"
+                    "\(name): expected rendered foreground \(foreground), found \(foregroundSample?.count ?? 0) interior pixels within ±5 RGB"
                 )
             }
-            if backgroundCount < 3 {
+            if (backgroundSample?.count ?? 0) < 8 {
                 failures.append(
-                    "\(name): expected rendered background \(background), found \(backgroundCount) pixels within ±5 RGB"
+                    "\(name): expected rendered background \(background), found \(backgroundSample?.count ?? 0) pixels within ±5 RGB"
                 )
             }
-            let contrast = foreground.contrastRatio(with: background)
+            guard let foregroundSample, let backgroundSample else { return }
+            let contrast = foregroundSample.color.contrastRatio(with: backgroundSample.color)
             if contrast < minimumContrast || contrast < 3 {
                 failures.append(
-                    "\(name): WCAG contrast \(String(format: "%.2f", contrast)):1, expected at least \(minimumContrast):1"
+                    "\(name): observed WCAG contrast \(String(format: "%.2f", contrast)):1, expected at least \(minimumContrast):1"
                 )
             }
         }
@@ -2106,11 +2324,29 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
            placeName.label != "Sultan Abdul Samad Building and Merdeka Square" {
             failures.append("place name: visual fixture is not the ratified long-name representative")
         }
+        if requireElement(placeName, named: "two-line representative place name"),
+           placeName.frame.height < 38 {
+            failures.append("place name: expected two visible lines, got \(placeName.frame)")
+        }
         requireText(metadata, named: "place metadata", foreground: dim, background: sheet, minimumContrast: 4.5)
         requireText(dateLabel, named: "Visit date label", foreground: dim, background: sheet, minimumContrast: 4.5)
         requireText(firstDate, named: "date value", foreground: ink, background: sheet, minimumContrast: 4.5)
-        requireText(delete, named: "delete", foreground: danger, background: dangerSoft, minimumContrast: 4.5)
-        requireText(heart, named: "heart", foreground: danger, background: sheet, minimumContrast: 4.5)
+        requireText(
+            delete,
+            named: "delete",
+            foreground: danger,
+            background: dangerSoft,
+            minimumContrast: 4.5,
+            foregroundInset: 8
+        )
+        requireText(
+            heart,
+            named: "heart",
+            foreground: danger,
+            background: sheet,
+            minimumContrast: 4.5,
+            foregroundInset: 8
+        )
 
         requireFill(chrome, named: "navigation chrome", token: paper, minimumCoverage: 0.65)
         requireFill(summaryCard, named: "summary card", token: sheet, minimumCoverage: 0.45)
@@ -2137,9 +2373,15 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
            firstDate.frame.minX >= delete.frame.minX {
             failures.append("row anatomy: Visit date must render before delete")
         }
+        for (element, name) in [(back, "Back"), (done, "Done"), (heart, "heart"), (delete, "delete")] {
+            if requireElement(element, named: "\(name) touch target"),
+               element.frame.width < 44 || element.frame.height < 44 {
+                failures.append("\(name): expected at least a 44×44 touch target, got \(element.frame)")
+            }
+        }
         if requireElement(heart, named: "compact heart"),
-           heart.frame.width > 64 || heart.frame.height > 44 {
-            failures.append("heart: expected compact single-line control, got \(heart.frame)")
+           heart.frame.width > 72 || heart.frame.height > 46 {
+            failures.append("heart: expected compact single-line hit target, got \(heart.frame)")
         }
 
         if raster.tokenCount(paper, in: trackSurface.frame) < 100 {
@@ -2148,12 +2390,25 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         if raster.tokenCount(sheet, in: trackSurface.frame) < 100 {
             failures.append("track surface: sheet token is not visibly rendered")
         }
+        let reorderStrip = CGRect(
+            x: trackSurface.frame.maxX - 50,
+            y: trackSurface.frame.minY,
+            width: 50,
+            height: trackSurface.frame.height
+        )
+        if raster.tokenCount(reorderHandle, in: reorderStrip) < 100 {
+            failures.append("reorder handles: invariant token is not visibly rendered")
+        }
 
         XCTAssertTrue(
             failures.isEmpty,
             "My tracks \(appearanceName) rendered-pixel oracle failed:\n- \(failures.joined(separator: "\n- "))",
             file: file,
             line: line
+        )
+        return MyTracksAppearanceCapture(
+            raster: raster,
+            trackSurfaceFrame: trackSurface.frame
         )
     }
 

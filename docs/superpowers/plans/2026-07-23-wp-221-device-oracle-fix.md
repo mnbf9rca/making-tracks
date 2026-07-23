@@ -18,12 +18,14 @@ from passing while the rendered content is illegible.
 
 Add shared screenshot sampling helpers that:
 
-1. Render the My tracks editor from the menu in forced Light and forced Dark.
+1. Render the My tracks editor from the menu after explicitly setting and
+   verifying the designated simulator's Light and Dark appearances.
 2. Sample the rendered paper, sheet, ink, dim, accent, and danger colours with
    Opus's ±5 RGB tolerance.
-3. Compute WCAG relative luminance from sampled foreground/background pixels and
-   require normal text contrast of at least 4.5:1, large text at least 3:1, and no
-   sampled text below 3:1.
+3. Compute WCAG relative luminance from observed foreground/background token
+   samples, exclude control outlines from glyph sampling, require normal text
+   contrast of at least 4.5:1 and large text at least 3:1, and reject sampled text
+   below 3:1.
 4. Verify opaque/low-variance paper and sheet fills, flat paper-backed navigation
    controls, and absence of system-blue pixels.
 5. Verify representative row control order and compact heart/delete controls.
@@ -60,9 +62,11 @@ unchanged.
 ## Task 4: Prove the fix and prepare device evidence
 
 Run the focused Light and Dark pixel tests, `swift test --package-path ios`, and
-`./scripts/sim-lock.sh ./scripts/release-gate.sh`. Export 390×844 Light and Dark
-device-frame screenshots and place them beside the frozen mockup with an M1–M6
-checklist.
+`./scripts/sim-lock.sh ./scripts/release-gate.sh`. Export Light and Dark
+screenshots at the designated simulator's native 402×874 logical canvas—the same
+canvas as Rob's reported device—and place them beside the frozen 390×844 design
+reference with an M1–M6 checklist. Assert the native canvas dimensions so evidence
+cannot silently move to a different device class.
 
 Ask independent agents to review visual fidelity, correctness, tests, security,
 and regression risk. Resolve all P1/P2 findings, obtain Opus's visual review, send
