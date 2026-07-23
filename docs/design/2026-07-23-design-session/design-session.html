@@ -374,7 +374,7 @@
     <div class="ihead">
       <span class="inum mono">#376</span>
       <h3>Photo aspect ratios for odd crops</h3>
-      <span class="status" style="color:var(--pick);background:var(--pick-soft);">Ruled · Letterbox</span>
+      <span class="status" style="color:var(--pick);background:var(--pick-soft);">Ruled · Adaptive height</span>
     </div>
     <p class="context"><span class="q">"photos placeholders are all the same dimensions. But photos aren't? so some look odd — bank negara museum is just a zoomed-in slice of the building."</span> The card's fixed media frame center-crops every photo to one height, slicing tall or wide source images. Three honest treatments, drawn on the real problem case.</p>
 
@@ -388,8 +388,8 @@
         </div></div></div>
         <div class="optnote">Today. A tall building becomes a meaningless horizontal band. The bug.</div>
       </div>
-      <div class="opt rec">
-        <div class="optcap"><span class="tag">B ✓</span><b>Aspect-fit</b> — letterbox <b style="color:var(--pick)">· your pick</b></div>
+      <div class="opt">
+        <div class="optcap"><span class="tag">A</span><b>Aspect-fit</b> — letterbox</div>
         <div class="phone" style="max-width:190px;"><div class="scr"><div class="sheet" style="position:absolute;height:100%;border-radius:22px;">
           <div class="grab"></div><div class="nm">Bank Negara Museum</div><div class="ty">◆ Museum</div>
           <div class="photo" style="height:96px;position:relative;background:#e7e2d5;">
@@ -401,8 +401,8 @@
         </div></div></div>
         <div class="optnote">Whole photo, always — fit inside a fixed frame with paper bars where the ratio doesn't fill. Every photo shown honestly, card height stays uniform.</div>
       </div>
-      <div class="opt">
-        <div class="optcap"><span class="tag">C</span><b>Adaptive height</b> — frame fits photo</div>
+      <div class="opt rec">
+        <div class="optcap"><span class="tag">B ✓</span><b>Adaptive height</b> — frame fits photo <b style="color:var(--pick)">· your pick</b></div>
         <div class="phone" style="max-width:190px;"><div class="scr"><div class="sheet" style="position:absolute;height:100%;border-radius:22px;">
           <div class="grab"></div><div class="nm">Bank Negara Museum</div><div class="ty">◆ Museum</div>
           <div class="photo" style="height:150px;background:linear-gradient(160deg,#d7cba6,#b7a074);">whole building · taller frame</div>
@@ -412,7 +412,7 @@
       </div>
     </div>
 
-    <div class="rec"><span class="lbl" style="color:var(--pick)">Ruled</span><b>Aspect-fit letterbox.</b> The whole photo, always, letterboxed into a fixed frame — over my adaptive-height suggestion. It keeps cards a uniform height and never slices a subject; the paper bars are the accepted cost for showing every photo honestly. Build: fit the image inside the media frame, fill the remainder with the card's paper tone (not black), centred.</div>
+    <div class="rec"><span class="lbl" style="color:var(--pick)">Ruled</span><b>Adaptive frame height</b> — the frame fits the photo. Clamp to a sensible min/max so a panorama can't dominate and a square can't shrink to nothing; no slicing, no dead paper bars. Cards vary a little in length, which reads fine on the peek-then-scroll sheet. Build: media frame height derived from the image aspect ratio within the clamp, image filling it edge to edge.</div>
   </section>
 
   <!-- ===================== GROUP 3: MAP AFFORDANCES ===================== -->
@@ -620,7 +620,7 @@
   </section>
 
   <footer class="foot">
-    Ruled version — your 2026-07-23 decisions baked in. #376 letterbox; #360 boundary line + beyond-coverage shading; #359 progress-not-presence bar; #378 reordered (location before region, region last + Skip, new keep-track pane); trio accepted by default. Still owed by you: #257's three tunables, and an objection window on the trio if the defaults are wrong. Grounded against <span class="mono">origin/ios</span> and the wireframe language in <span class="mono">docs/design/card</span>; committed to <span class="mono">docs/design/2026-07-23-design-session/</span> as the durable record. §Product 7 held throughout (no pin hiding/tiering); #350 theming parked unless you pull it.
+    Ruled version — your 2026-07-23 decisions baked in. #376 adaptive frame height; #360 boundary line + beyond-coverage shading; #359 progress-not-presence bar; #378 reordered (location before region, region last + Skip, new keep-track pane); trio accepted by default. Still owed by you: #257's three tunables, and an objection window on the trio if the defaults are wrong. Grounded against <span class="mono">origin/ios</span> and the wireframe language in <span class="mono">docs/design/card</span>; committed to <span class="mono">docs/design/2026-07-23-design-session/</span> as the durable record. §Product 7 held throughout (no pin hiding/tiering); #350 theming parked unless you pull it.
   </footer>
 
 </div>

@@ -10,18 +10,17 @@ durable record; the HTML is the drawn version.
 
 ## #376 — Place card photo aspect ratios
 
-**Ruled: aspect-fit letterbox** (Rob: "Option B"). Not the adaptive-height treatment I
-recommended.
+**Ruled: adaptive height** (Rob: "376 Adaptive height - frame fits photo"). Confirmed
+directly by Rob after the Option-B letter ambiguity was surfaced.
 
-- The whole photo, always, fit inside the fixed media frame; the remainder filled with the
-  card's paper tone (not black), centred.
-- Keeps every card a uniform height and never slices a subject. The paper bars on odd crops
-  are the accepted cost.
+- The photo frame height adapts to fit the photo.
+- The card does not crop the subject and does not fill odd crops with letterbox bars.
+- This is the adaptive-height treatment originally recommended in the packet.
 
 > Labelling note for the record: the packet mislabelled options by mixing a "current state"
-> panel with lettered options, which shifted Rob's letters by one. "Option B" resolves to the
-> **aspect-fit letterbox** treatment, confirmed by fable's relay ("not your adaptive-height
-> recommendation"). Adaptive height is explicitly *not* chosen.
+> panel with lettered options, which shifted Rob's letters by one. Rob was asked directly
+> after that ambiguity was surfaced; the ruled treatment is **adaptive height**, not
+> aspect-fit letterbox.
 
 ## #360 — Coverage boundary (empty-here vs no-data-here)
 
