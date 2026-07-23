@@ -310,6 +310,33 @@ final class DiagnosticLogExportTests: XCTestCase {
         XCTAssertLessThan(artifact.preview.count, log.count / 3)
     }
 
+    func testLastHourSnapshotFiltersOneHundredThousandLinesWithinTwoSeconds() throws {
+        let fixture = try makeFixture()
+        try FileManager.default.createDirectory(at: fixture.logs, withIntermediateDirectories: true)
+        let oldLine = "2026-07-19T10:58:13Z flow info old event"
+        let boundaryLine = "2026-07-19T11:58:13Z flow info cutoff event"
+        let recentLine = "2026-07-19T12:05:13Z flow info recent event"
+        let malformedLine = "not-a-timestamp startup info retain fail-safe"
+        let invalidCanonicalLine = "2026-00-19T12:05:13Z startup info retain invalid date"
+        let historicalLineCount = 100_000
+        let text = Array(repeating: oldLine, count: historicalLineCount).joined(separator: "\n")
+            + "\n\(boundaryLine)\n\(recentLine)\n\(malformedLine)\n\(invalidCanonicalLine)\n"
+        try text.write(
+            to: fixture.logs.appendingPathComponent("making-tracks.log"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
+
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+        let snapshot = try store.snapshot(window: .lastHour)
+        let duration = Double(DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000_000_000
+
+        XCTAssertEqual(snapshot.totalLineCount, historicalLineCount + 4)
+        XCTAssertEqual(snapshot.lines, [boundaryLine, recentLine, malformedLine, invalidCanonicalLine])
+        XCTAssertLessThan(duration, 2.0, "snapshot took \(duration)s")
+    }
+
     func testExportScrubFailsClosedForFixedExcludedClasses() throws {
         let fixture = try makeFixture()
         let excludedLines = [
