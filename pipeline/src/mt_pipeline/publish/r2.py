@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 import json
 import os
 import re
-import sys
 import time
 import hashlib
 from importlib import import_module as _import_module
@@ -21,6 +19,8 @@ from mt_contracts.caps import DESCRIPTION_TILE_ZOOM
 from mt_contracts.region_index import validate_region_index
 from mt_contracts.validation import validate_instance
 from mt_contracts.versions import SCHEMA_VERSIONS
+
+from .. import progress
 
 
 _REGION_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
@@ -679,69 +679,36 @@ class _UploadProgress:
         heartbeat_every_objects: int,
         heartbeat_every_seconds: float,
     ) -> None:
-        self.phase = phase
-        self.region = region
-        self.total_objects = len(ops)
-        self.total_bytes = sum(_op_size(op) for op in ops)
-        self.workers = workers
-        self.heartbeat_every_objects = max(1, heartbeat_every_objects)
-        self.heartbeat_every_seconds = heartbeat_every_seconds
-        self.started = time.monotonic()
-        self.last_heartbeat = self.started
-        self.objects_done = 0
-        self.bytes_done = 0
-        self.kind_counts: Counter[str] = Counter()
+        self.progress = progress.UploadProgress(
+            phase=phase,
+            region=region,
+            total_objects=len(ops),
+            total_bytes=sum(_op_size(op) for op in ops),
+            workers=workers,
+            heartbeat_every_objects=heartbeat_every_objects,
+            heartbeat_every_seconds=heartbeat_every_seconds,
+        )
+
+    @property
+    def heartbeat_every_seconds(self) -> float:
+        return self.progress.heartbeat_every_seconds
 
     def start(self) -> None:
-        print(
-            f"PUBLISH_UPLOAD START phase={self.phase} region={self.region} "
-            f"objects_total={self.total_objects} bytes_total={self.total_bytes} "
-            f"workers={self.workers}",
-            file=sys.stderr,
-        )
+        self.progress.start()
 
     def tick(self, op: PublishOp, *, force: bool = False) -> None:
-        self.objects_done += 1
-        self.bytes_done += _op_size(op)
-        self.kind_counts[op.kind] += 1
-        now = time.monotonic()
-        if (
-            force
-            or self.objects_done == self.total_objects
-            or self.objects_done % self.heartbeat_every_objects == 0
-            or now - self.last_heartbeat >= self.heartbeat_every_seconds
-        ):
-            self.last_heartbeat = now
-            self._print("HEARTBEAT", now, op)
+        self.progress.tick(
+            object_bytes=_op_size(op),
+            kind=op.kind,
+            key_class=_key_class(op.key),
+            force=force,
+        )
 
     def heartbeat_if_due(self) -> None:
-        now = time.monotonic()
-        if now - self.last_heartbeat >= self.heartbeat_every_seconds:
-            self.last_heartbeat = now
-            self._print("HEARTBEAT", now, None)
+        self.progress.heartbeat_if_due()
 
     def done(self) -> None:
-        self._print("DONE", time.monotonic(), None)
-
-    def _print(self, label: str, now: float, op: PublishOp | None) -> None:
-        elapsed = now - self.started
-        object_rate = self.objects_done / elapsed if elapsed > 0 else 0.0
-        byte_rate = self.bytes_done / elapsed if elapsed > 0 else 0.0
-        current_kind = "none" if op is None else op.kind
-        current_key_class = "none" if op is None else _key_class(op.key)
-        kind_counts = ",".join(
-            f"{kind}:{self.kind_counts[kind]}" for kind in sorted(self.kind_counts)
-        )
-        print(
-            f"PUBLISH_UPLOAD {label} phase={self.phase} region={self.region} "
-            f"objects_done={self.objects_done}/{self.total_objects} "
-            f"bytes_done={self.bytes_done}/{self.total_bytes} "
-            f"objects_rate={object_rate:.1f}/s bytes_rate={byte_rate:.1f}/s "
-            f"elapsed={elapsed:.1f}s workers={self.workers} "
-            f"current_kind={current_kind} current_key_class={current_key_class} "
-            f"kind_counts={kind_counts}",
-            file=sys.stderr,
-        )
+        self.progress.done()
 
 
 def _upload_ops_parallel(

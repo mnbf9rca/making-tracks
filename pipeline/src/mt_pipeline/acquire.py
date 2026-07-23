@@ -12,8 +12,9 @@ import shutil
 import threading
 import time
 import urllib.parse
+from collections.abc import Callable
 
-from . import fetch, stages
+from . import fetch, progress, stages
 from .extractors import _snapshot, pageviews
 
 DEFAULT_CONFIG = pathlib.Path(__file__).resolve().parents[2] / "config/acquire_sources.json"
@@ -28,6 +29,10 @@ RETRY_STATUSES = {429, 500, 502, 503, 504}
 MAX_RETRY_AFTER_SECONDS = 300
 MAX_PAGEVIEW_TITLES = 50_000
 WIKIMEDIA_MAXLAG_SECONDS = 5
+_WIKIPEDIA_HEARTBEAT_EVERY_PAGES = 10_000
+_WIKIPEDIA_HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
+_BLANK_EXTRACT_HEARTBEAT_EVERY_PAGES = 10_000
+_BLANK_EXTRACT_HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
 _QID_RE = re.compile(r"Q[0-9]+")
 _POINT_RE = re.compile(r"Point\(([-0-9.]+) ([-0-9.]+)\)")
 
@@ -628,6 +633,7 @@ def _apply_refreshed_qid_pages(
 def _refresh_blank_qid_page_extracts(
     snapshot: dict,
     *,
+    language: str,
     wikipedia_config: dict,
     fetch_json,
     title_batch_size: int,
@@ -641,8 +647,11 @@ def _refresh_blank_qid_page_extracts(
     content_sha256_before = _qid_pages_content_sha256(qid_pages)
     blanks = _accepted_blank_qid_pages(qid_pages)
     blank_by_title: dict[str, dict] = {}
+    blank_title_counts: dict[str, int] = {}
     for page in blanks:
-        blank_by_title.setdefault(str(page["title"]), page)
+        title = str(page["title"])
+        blank_by_title.setdefault(title, page)
+        blank_title_counts[title] = blank_title_counts.get(title, 0) + 1
 
     endpoint = wikipedia_config["endpoint"]
     expected_hosts = set(wikipedia_config["allowed_hosts"])
@@ -651,9 +660,26 @@ def _refresh_blank_qid_page_extracts(
     skipped_mismatch = 0
     single_title_fallbacks = 0
     mismatched_titles: set[str] = set()
+    batch_done = 0
+    batch_phase = progress.PhaseProgress(
+        "blank_extract.batch_refresh",
+        region=language,
+        total=len(blanks),
+        total_label="pages",
+        heartbeat_every_records=_BLANK_EXTRACT_HEARTBEAT_EVERY_PAGES,
+        heartbeat_every_seconds=_BLANK_EXTRACT_HEARTBEAT_EVERY_SECONDS,
+    )
+    batch_phase.start()
     for title_batch in _chunks(sorted(blank_by_title), title_batch_size):
-        data = _retry_json(
-            _wiki_pages_by_title_url(endpoint, title_batch),
+        data = _retry_json_with_phase_heartbeats(
+            phase=batch_phase,
+            processed=batch_done,
+            extra=lambda: _blank_extract_progress_extra(
+                recovered=recovered,
+                skipped_mismatch=skipped_mismatch,
+                fallback_count=single_title_fallbacks,
+            ),
+            url=_wiki_pages_by_title_url(endpoint, title_batch),
             expected_hosts=expected_hosts,
             max_bytes=max_bytes,
             fetch_json=fetch_json,
@@ -672,15 +698,59 @@ def _refresh_blank_qid_page_extracts(
         recovered += batch_recovered
         skipped_mismatch += batch_skipped_mismatch
         mismatched_titles.update(batch_mismatched_titles)
+        batch_done += sum(blank_title_counts[title] for title in title_batch)
+        batch_phase.tick(
+            batch_done,
+            extra=_blank_extract_progress_extra(
+                recovered=recovered,
+                skipped_mismatch=skipped_mismatch,
+                fallback_count=single_title_fallbacks,
+            ),
+        )
+    batch_phase.done(
+        batch_done,
+        extra=_blank_extract_progress_extra(
+            recovered=recovered,
+            skipped_mismatch=skipped_mismatch,
+            fallback_count=single_title_fallbacks,
+        ),
+    )
 
-    for page in sorted(
+    fallback_pages = sorted(
         _accepted_blank_qid_pages(qid_pages), key=lambda item: str(item["title"])
-    ):
+    )
+    fallback_done = 0
+    fallback_phase = progress.PhaseProgress(
+        "blank_extract.single_title_fallback",
+        region=language,
+        total=len(fallback_pages),
+        total_label="pages",
+        heartbeat_every_records=_BLANK_EXTRACT_HEARTBEAT_EVERY_PAGES,
+        heartbeat_every_seconds=_BLANK_EXTRACT_HEARTBEAT_EVERY_SECONDS,
+    )
+    fallback_phase.start()
+    for page in fallback_pages:
+        fallback_done += 1
         title = str(page["title"])
         if title in mismatched_titles:
+            fallback_phase.tick(
+                fallback_done,
+                extra=_blank_extract_progress_extra(
+                    recovered=recovered,
+                    skipped_mismatch=skipped_mismatch,
+                    fallback_count=single_title_fallbacks,
+                ),
+            )
             continue
-        data = _retry_json(
-            _wiki_pages_by_title_url(endpoint, [title]),
+        data = _retry_json_with_phase_heartbeats(
+            phase=fallback_phase,
+            processed=fallback_done - 1,
+            extra=lambda: _blank_extract_progress_extra(
+                recovered=recovered,
+                skipped_mismatch=skipped_mismatch,
+                fallback_count=single_title_fallbacks,
+            ),
+            url=_wiki_pages_by_title_url(endpoint, [title]),
             expected_hosts=expected_hosts,
             max_bytes=max_bytes,
             fetch_json=fetch_json,
@@ -700,6 +770,22 @@ def _refresh_blank_qid_page_extracts(
         recovered += single_recovered
         skipped_mismatch += single_skipped_mismatch
         mismatched_titles.update(single_mismatched_titles)
+        fallback_phase.tick(
+            fallback_done,
+            extra=_blank_extract_progress_extra(
+                recovered=recovered,
+                skipped_mismatch=skipped_mismatch,
+                fallback_count=single_title_fallbacks,
+            ),
+        )
+    fallback_phase.done(
+        fallback_done,
+        extra=_blank_extract_progress_extra(
+            recovered=recovered,
+            skipped_mismatch=skipped_mismatch,
+            fallback_count=single_title_fallbacks,
+        ),
+    )
 
     still_blank = len(_accepted_blank_qid_pages(qid_pages))
     return {
@@ -712,6 +798,86 @@ def _refresh_blank_qid_page_extracts(
         "single_title_fallbacks": single_title_fallbacks,
         "still_blank": still_blank,
     }
+
+
+def _blank_extract_progress_extra(
+    *,
+    recovered: int,
+    skipped_mismatch: int,
+    fallback_count: int,
+) -> str:
+    return (
+        f" recovered={recovered} skipped_mismatch={skipped_mismatch} "
+        f"fallback_count={fallback_count}"
+    )
+
+
+def _write_blank_extract_snapshot(
+    path: pathlib.Path,
+    snapshot: dict,
+    *,
+    language: str,
+    stats: dict[str, object],
+) -> pathlib.Path:
+    try:
+        total = int(stats.get("accepted_pages", 0))
+        recovered = int(stats.get("recovered", 0))
+        skipped_mismatch = int(stats.get("skipped_mismatch", 0))
+        fallback_count = int(stats.get("single_title_fallbacks", 0))
+    except (TypeError, ValueError):
+        total = recovered = skipped_mismatch = fallback_count = 0
+    phase = progress.PhaseProgress(
+        "blank_extract.persist",
+        region=language,
+        total=total,
+        total_label="pages",
+        heartbeat_every_records=_BLANK_EXTRACT_HEARTBEAT_EVERY_PAGES,
+        heartbeat_every_seconds=_BLANK_EXTRACT_HEARTBEAT_EVERY_SECONDS,
+    )
+    phase.start()
+    written = _atomic_write_json(path, snapshot)
+    phase.done(
+        total,
+        extra=_blank_extract_progress_extra(
+            recovered=recovered,
+            skipped_mismatch=skipped_mismatch,
+            fallback_count=fallback_count,
+        ),
+    )
+    return written
+
+
+def _retry_json_with_phase_heartbeats(
+    *,
+    phase: progress.PhaseProgress,
+    processed: int,
+    extra: str | Callable[[], str],
+    url: str,
+    expected_hosts: set[str],
+    max_bytes: int,
+    fetch_json,
+    retries: int,
+    sleep,
+) -> dict:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            _retry_json,
+            url,
+            expected_hosts=expected_hosts,
+            max_bytes=max_bytes,
+            fetch_json=fetch_json,
+            retries=retries,
+            sleep=sleep,
+        )
+        while True:
+            done, _pending = concurrent.futures.wait(
+                {future},
+                timeout=phase.heartbeat_every_seconds,
+                return_when=concurrent.futures.FIRST_COMPLETED,
+            )
+            if done:
+                return future.result()
+            phase.heartbeat_if_due(processed, extra=extra)
 
 
 def _commons_upload_url(value: object) -> str | None:
@@ -891,6 +1057,7 @@ def acquire_qid_sitelink_wikipedia(
     )
     blank_extract_refresh = _refresh_blank_qid_page_extracts(
         snapshot,
+        language=language,
         wikipedia_config=wikipedia_config,
         fetch_json=fetch_json,
         title_batch_size=title_batch_size,
@@ -907,7 +1074,12 @@ def acquire_qid_sitelink_wikipedia(
         "qid_sitelink_retrieved_at"
     ]
     meta["qid_sitelink_blank_extract_refresh"] = blank_extract_refresh
-    return _atomic_write_json(path, snapshot)
+    return _write_blank_extract_snapshot(
+        path,
+        snapshot,
+        language=language,
+        stats=blank_extract_refresh,
+    )
 
 
 def refresh_blank_qid_page_extracts(
@@ -927,6 +1099,7 @@ def refresh_blank_qid_page_extracts(
         raise AcquireError("wikipedia snapshot language does not match qid sitelink language")
     blank_extract_refresh = _refresh_blank_qid_page_extracts(
         snapshot,
+        language=language,
         wikipedia_config=wikipedia_config,
         fetch_json=fetch_json,
         title_batch_size=title_batch_size,
@@ -938,7 +1111,12 @@ def refresh_blank_qid_page_extracts(
         raise AcquireError("wikipedia snapshot metadata must be an object")
     meta["qid_sitelink_blank_extract_refreshed_at"] = refreshed_at or _now()
     meta["qid_sitelink_blank_extract_refresh"] = blank_extract_refresh
-    return _atomic_write_json(path, snapshot)
+    return _write_blank_extract_snapshot(
+        path,
+        snapshot,
+        language=language,
+        stats=blank_extract_refresh,
+    )
 
 
 def acquire_wikipedia(
@@ -970,6 +1148,16 @@ def acquire_wikipedia(
         segment_paths = []
         workers = max(1, min(int(geosearch_workers), 8))
         backoff = SharedBackoff(sleep) if workers > 1 else None
+        geosearch_phase = progress.PhaseProgress(
+            "acquire.wikipedia.geosearch",
+            region=language,
+            total=len(tiles),
+            total_label="tiles",
+            heartbeat_every_records=_WIKIPEDIA_HEARTBEAT_EVERY_PAGES,
+            heartbeat_every_seconds=_WIKIPEDIA_HEARTBEAT_EVERY_SECONDS,
+        )
+        geosearch_phase.start()
+        completed_tiles = 0
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             futures = [
                 executor.submit(
@@ -987,15 +1175,50 @@ def acquire_wikipedia(
                 )
                 for index, tile in enumerate(tiles)
             ]
-            for future in concurrent.futures.as_completed(futures):
-                segment_paths.append(future.result())
+            pending = set(futures)
+            while pending:
+                done, pending = concurrent.futures.wait(
+                    pending,
+                    timeout=geosearch_phase.heartbeat_every_seconds,
+                    return_when=concurrent.futures.FIRST_COMPLETED,
+                )
+                if not done:
+                    geosearch_phase.heartbeat_if_due(
+                        completed_tiles,
+                        extra=f" segments={len(segment_paths)}",
+                    )
+                    continue
+                for future in done:
+                    segment_paths.append(future.result())
+                    completed_tiles += 1
+                    geosearch_phase.tick(
+                        completed_tiles,
+                        extra=f" segments={len(segment_paths)}",
+                    )
         pageids, segments = _merge_wikipedia_segments(segment_paths)
+        geosearch_phase.done(
+            completed_tiles,
+            extra=f" segments={len(segment_paths)} pageids={len(pageids)}",
+        )
 
         pages = []
+        page_phase = progress.PhaseProgress(
+            "acquire.wikipedia.page_fetch",
+            region=language,
+            total=len(pageids),
+            total_label="pages",
+            heartbeat_every_records=_WIKIPEDIA_HEARTBEAT_EVERY_PAGES,
+            heartbeat_every_seconds=_WIKIPEDIA_HEARTBEAT_EVERY_SECONDS,
+        )
+        page_phase.start()
+        fetched_pages = 0
         for batch in _chunks([str(pageid) for pageid in pageids], page_batch_size):
             ids = [int(pageid) for pageid in batch]
-            data = _retry_json(
-                _wiki_pages_url(endpoint, ids),
+            data = _retry_json_with_phase_heartbeats(
+                phase=page_phase,
+                processed=fetched_pages,
+                extra=lambda: f" pages={len(pages)}",
+                url=_wiki_pages_url(endpoint, ids),
                 expected_hosts=expected_hosts,
                 max_bytes=max_bytes,
                 fetch_json=fetch_json,
@@ -1019,6 +1242,9 @@ def acquire_wikipedia(
                         "wikidata": page.get("pageprops", {}).get("wikibase_item"),
                     }
                 )
+            fetched_pages += len(ids)
+            page_phase.tick(fetched_pages, extra=f" pages={len(pages)}")
+        page_phase.done(fetched_pages, extra=f" pages={len(pages)}")
     except Exception:
         out.unlink(missing_ok=True)
         out.with_name(f".{out.name}.tmp").unlink(missing_ok=True)
@@ -1026,19 +1252,28 @@ def acquire_wikipedia(
     finally:
         shutil.rmtree(segment_dir, ignore_errors=True)
 
-    return _atomic_write_json(
-        out,
-        {
-            "_meta": {
-                "complete": True,
-                "endpoint": endpoint,
-                "retrieved_at": retrieved_at or _now(),
-                "segments": segments,
-            },
-            "lang": language,
-            "pages": pages,
-        },
+    persist_phase = progress.PhaseProgress(
+        "acquire.wikipedia.persist",
+        region=language,
+        total=len(pages),
+        total_label="pages",
+        heartbeat_every_records=_WIKIPEDIA_HEARTBEAT_EVERY_PAGES,
+        heartbeat_every_seconds=_WIKIPEDIA_HEARTBEAT_EVERY_SECONDS,
     )
+    persist_phase.start()
+    payload = {
+        "_meta": {
+            "complete": True,
+            "endpoint": endpoint,
+            "retrieved_at": retrieved_at or _now(),
+            "segments": segments,
+        },
+        "lang": language,
+        "pages": pages,
+    }
+    written = _atomic_write_json(out, payload)
+    persist_phase.done(len(pages), extra=f" pages={len(pages)}")
+    return written
 
 
 def _pageview_timestamp(value: str) -> str:
