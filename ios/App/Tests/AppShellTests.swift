@@ -289,6 +289,28 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(replayed.map(\.1.hidden), [false, false, true])
     }
 
+    func testTrackReplayPinPresentationScopesDisplayToReplayContext() {
+        let features = [
+            (MapPlace(id: "attraction", lat: 51.501, lon: -0.101, tier: 2, category: "attraction"), PinState(saved: false, visit: .visited)),
+            (MapPlace(id: "historic", lat: 51.502, lon: -0.102, tier: 2, category: "historic_building"), PinState(saved: false, visit: .visited)),
+        ]
+        let context = TrackGeometryContext(visits: [
+            trackVisit(id: 1, placeID: "attraction", seconds: 0),
+        ])
+
+        let replayed = TrackReplayPinPresentation.features(
+            features,
+            context: context,
+            throughEventIndex: 0
+        )
+
+        XCTAssertEqual(replayed.map(\.0.id), ["attraction"])
+        XCTAssertEqual(
+            TrackReplayPinPresentation.features(features, context: .empty, throughEventIndex: nil).map(\.0.id),
+            []
+        )
+    }
+
     func testTrackReplayRepeatedPlaceUsesLatestReachedEventStateOnly() {
         let features = [
             (MapPlace(id: "p1", lat: 51.501, lon: -0.101, tier: 2, category: "history"), PinState(saved: false, visit: .loved)),
@@ -721,6 +743,22 @@ final class AppShellTests: XCTestCase {
         )
 
         XCTAssertEqual(viewportPlaces.map(\.id), ["kept"])
+    }
+
+    func testListMapViewportKeepsDenseReplayMembersTightlyFramed() throws {
+        let places = [
+            MapPlace(id: "west", lat: 3.132, lon: 101.682, tier: 1, category: "attraction"),
+            MapPlace(id: "east", lat: 3.136, lon: 101.686, tier: 1, category: "historic_building"),
+            MapPlace(id: "middle", lat: 3.134, lon: 101.684, tier: 1, category: "museum"),
+        ]
+
+        let viewport = try XCTUnwrap(ListMapViewport.viewport(for: places))
+
+        XCTAssertLessThan(viewport.bbox.maxLon - viewport.bbox.minLon, 0.008)
+        XCTAssertLessThan(viewport.bbox.maxLat - viewport.bbox.minLat, 0.008)
+        for place in places {
+            XCTAssertTrue(viewport.bbox.contains(lon: place.lon, lat: place.lat), place.id)
+        }
     }
 
     func testTrackVisitRowsUseMockupCardControls() {

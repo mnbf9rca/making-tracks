@@ -759,15 +759,18 @@ final class AppShellModel {
     var isMenuPresented = false
     var deepLinkPath: MenuDestination?
     var tracksFocusPlaceID: String?
+    var listDetailVisitFilter = TracksVisitFilter.all
 
     func openMenu() {
         tracksFocusPlaceID = nil
+        listDetailVisitFilter = .all
         deepLinkPath = nil
         isMenuPresented = true
     }
 
-    func openListDetailDeepLink(listID: Int64) {
+    func openListDetailDeepLink(listID: Int64, visitFilter: TracksVisitFilter = .all) {
         tracksFocusPlaceID = nil
+        listDetailVisitFilter = visitFilter
         deepLinkPath = .listDetail(listID)
         isMenuPresented = true
     }
@@ -1016,13 +1019,13 @@ enum TrackReplayPinPresentation {
         context: TrackGeometryContext,
         throughEventIndex index: Int?
     ) -> [(MapPlace, PinState)] {
-        guard !context.visits.isEmpty else { return features }
+        guard !context.visits.isEmpty else { return [] }
         let replayPlaceIDs = Set(context.visits.map(\.placeID))
         let reachedVisitStateByPlaceID = context.clipped(throughEventIndex: index).visits.reduce(into: [String: VisitState]()) { states, visit in
             states[visit.placeID] = visit.verdict == .loved ? .loved : .visited
         }
-        return features.map { place, state in
-            guard replayPlaceIDs.contains(place.id) else { return (place, state) }
+        return features.compactMap { place, state in
+            guard replayPlaceIDs.contains(place.id) else { return nil }
             return (
                 place,
                 PinState(
@@ -1977,18 +1980,21 @@ enum MapEmptyRegionSurface: Equatable {
 extension AppShellModel {
     func openListsDeepLink() {
         tracksFocusPlaceID = nil
+        listDetailVisitFilter = .all
         deepLinkPath = .lists
         isMenuPresented = true
     }
 
     func openTracksDeepLink(focusingPlaceID placeID: String? = nil) {
         tracksFocusPlaceID = placeID
+        listDetailVisitFilter = .all
         deepLinkPath = .tracks
         isMenuPresented = true
     }
 
     func openOfflineMapsDeepLink() {
         tracksFocusPlaceID = nil
+        listDetailVisitFilter = .all
         deepLinkPath = .offlineMaps
         isMenuPresented = true
     }
@@ -2040,8 +2046,8 @@ enum ListMapViewport {
         }
         let lonBounds = shortestLongitudeBounds(for: longitudes)
         let lonSpan = lonBounds.max - lonBounds.min
-        let lonPad = max(lonSpan * 0.18, 0.01)
-        let latPad = max((maxLat - minLat) * 0.18, 0.01)
+        let lonPad = padding(for: lonSpan, placeCount: places.count)
+        let latPad = padding(for: maxLat - minLat, placeCount: places.count)
         return ViewportSeed(
             bbox: BBox(
                 minLon: lonBounds.min - lonPad,
@@ -2051,6 +2057,11 @@ enum ListMapViewport {
             ),
             zoom: places.count == 1 ? 14 : 12
         )
+    }
+
+    private static func padding(for span: Double, placeCount: Int) -> Double {
+        guard placeCount > 1 else { return 0.01 }
+        return max(span * 0.12, 0.001)
     }
 
     private static func shortestLongitudeBounds(for longitudes: [Double]) -> (min: Double, max: Double) {
@@ -2711,6 +2722,7 @@ struct MapScreen: View {
         }
         .onChange(of: appShell.isMenuPresented) { _, isPresented in
             guard isPresented else { return }
+            cardPresentation.dismiss()
             Task { await refreshStorageMenuStatus() }
         }
         .onChange(of: layerVisibility) { _, visibility in
@@ -3010,11 +3022,6 @@ struct MapScreen: View {
 
     private var statusChrome: some View {
         VStack(alignment: .trailing, spacing: 8) {
-            if let activeListMap {
-                layersButton
-                listMapFilterChips(activeListMap)
-            }
-
             mapChrome
         }
     }
@@ -3041,6 +3048,8 @@ struct MapScreen: View {
         VStack(alignment: .leading, spacing: 8) {
             if let activeListMap {
                 listMapNavigationChrome(activeListMap)
+                layersButton
+                listMapFilterChips(activeListMap)
             } else {
                 Button {
                     appShell.openMenu()
@@ -3092,7 +3101,7 @@ struct MapScreen: View {
                     clearTrackReplay()
                     await refreshCurrentViewport()
                     await refreshTrackGeometry()
-                    appShell.openListDetailDeepLink(listID: returnListID)
+                    appShell.openListDetailDeepLink(listID: returnListID, visitFilter: list.visitFilter)
                 }
             } label: {
                 Label("Back", systemImage: "chevron.left")
@@ -4759,6 +4768,7 @@ private struct AppMenuSheet: View {
             destinationWithDone(ListDetailDeepLinkView(
                 model: model,
                 listID: listID,
+                visitFilter: shell.listDetailVisitFilter,
                 onShowOnMap: showListOnMapAndDismiss,
                 onListRenamed: onListRenamed
             ))
@@ -4839,6 +4849,7 @@ private struct AppMenuSheet: View {
 private struct ListDetailDeepLinkView: View {
     let model: MapScreenModel?
     let listID: Int64
+    let visitFilter: TracksVisitFilter
     let onShowOnMap: @MainActor (PlaceList, TracksVisitFilter) -> Void
     let onListRenamed: @MainActor (PlaceList) -> Void
 
@@ -4851,6 +4862,7 @@ private struct ListDetailDeepLinkView: View {
                 ListDetailView(
                     model: model,
                     list: list,
+                    visitFilter: visitFilter,
                     onChanged: {},
                     onShowOnMap: onShowOnMap,
                     onListRenamed: onListRenamed
@@ -5146,6 +5158,7 @@ private struct ListsView: View {
 private struct ListDetailView: View {
     let model: MapScreenModel?
     let list: PlaceList
+    let visitFilter: TracksVisitFilter
     let focusPlaceID: String?
     let onChanged: @MainActor () -> Void
     let onShowOnMap: @MainActor (PlaceList, TracksVisitFilter) -> Void
@@ -5163,6 +5176,7 @@ private struct ListDetailView: View {
     init(
         model: MapScreenModel?,
         list: PlaceList,
+        visitFilter: TracksVisitFilter = .all,
         focusPlaceID: String? = nil,
         onChanged: @escaping @MainActor () -> Void,
         onShowOnMap: @escaping @MainActor (PlaceList, TracksVisitFilter) -> Void,
@@ -5170,6 +5184,7 @@ private struct ListDetailView: View {
     ) {
         self.model = model
         self.list = list
+        self.visitFilter = visitFilter
         self.focusPlaceID = focusPlaceID
         self.onChanged = onChanged
         self.onShowOnMap = onShowOnMap
@@ -5193,7 +5208,7 @@ private struct ListDetailView: View {
     }
 
     private var canReorderTrackVisits: Bool {
-        focusPlaceID == nil
+        focusPlaceID == nil && !visitFilter.isActive
     }
 
     private var calendar: Calendar {
@@ -5260,7 +5275,7 @@ private struct ListDetailView: View {
                         .font(.headline)
                         .accessibilityIdentifier("lists.detail.progress")
                     Button {
-                        onShowOnMap(currentList, .all)
+                        onShowOnMap(currentList, visitFilter)
                     } label: {
                         Label("Show on map", systemImage: "map")
                     }
@@ -5547,7 +5562,7 @@ private struct ListDetailView: View {
     private func reload() async {
         guard let model, let id = list.id else { return }
         if isTrackListDetail {
-            let nextVisits = await model.trackVisits(listID: id, filter: .all)
+            let nextVisits = await model.trackVisits(listID: id, filter: visitFilter)
             guard currentList.id == id else { return }
             let nextVisibleVisits = if let focusPlaceID {
                 nextVisits.filter { $0.placeID == focusPlaceID }
@@ -5558,8 +5573,21 @@ private struct ListDetailView: View {
             progress = ListProgress(visited: nextVisibleVisits.count, total: nextVisibleVisits.count)
             items = []
         } else {
-            items = await model.listItems(listID: id)
-            progress = await model.listProgress(listID: id)
+            let nextItems = await model.listItems(listID: id)
+            let nextVisibleItems: [ListPlace]
+            if currentList.kind == PlaceList.trackKind && visitFilter.isActive {
+                let visits = await model.trackVisits(listID: id, filter: visitFilter)
+                let visiblePlaceIDs = Set(visits.map(\.placeID))
+                nextVisibleItems = nextItems.filter { visiblePlaceIDs.contains($0.placeID) }
+            } else {
+                nextVisibleItems = nextItems
+            }
+            items = nextVisibleItems
+            if currentList.kind == PlaceList.trackKind {
+                progress = ListProgress(visited: nextVisibleItems.count, total: nextVisibleItems.count)
+            } else {
+                progress = await model.listProgress(listID: id)
+            }
             trackVisits = []
         }
     }
