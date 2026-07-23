@@ -255,10 +255,13 @@ final class InteractionsTests: XCTestCase {
         XCTAssertEqual(renamed.name, "Architecture")
 
         XCTAssertThrowsError(try db.createList(named: "   ")) { error in
-            XCTAssertEqual(error as? AppDatabaseError, .invalidListName)
+            XCTAssertEqual(error as? AppDatabaseError, .emptyListName)
+        }
+        XCTAssertThrowsError(try db.createList(named: "\u{0007}\u{200B}")) { error in
+            XCTAssertEqual(error as? AppDatabaseError, .emptyListName)
         }
         XCTAssertThrowsError(try db.createList(named: String(repeating: "x", count: 81))) { error in
-            XCTAssertEqual(error as? AppDatabaseError, .invalidListName)
+            XCTAssertEqual(error as? AppDatabaseError, .listNameTooLong)
         }
         XCTAssertThrowsError(try db.renameList(id: try db.wantToGoListID(), name: "Trips")) { error in
             XCTAssertEqual(error as? AppDatabaseError, .systemListIsProtected)

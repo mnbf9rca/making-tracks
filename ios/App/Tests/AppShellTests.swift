@@ -132,6 +132,28 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(ListsCopy.progress(visited: 2, total: 2), "you've been to 2 of these · all seen")
     }
 
+    func testListCreateFailureCopyDistinguishesEmptyNamesFromLengthFailures() {
+        XCTAssertEqual(
+            ListsCopy.listNameCreateFailureMessage(for: AppDatabaseError.emptyListName, draftName: "   "),
+            "Enter a list name."
+        )
+        XCTAssertEqual(
+            ListsCopy.listNameCreateFailureMessage(for: AppDatabaseError.emptyListName, draftName: "\u{0007}\u{200B}"),
+            "Enter a list name."
+        )
+        XCTAssertEqual(
+            ListsCopy.listNameCreateFailureMessage(
+                for: AppDatabaseError.listNameTooLong,
+                draftName: String(repeating: "x", count: 81)
+            ),
+            "Use a shorter list name."
+        )
+        XCTAssertEqual(
+            ListsCopy.listNameCreateFailureMessage(for: AppDatabaseError.unreadableDatabase, draftName: "KL walk"),
+            "Could not create that list."
+        )
+    }
+
     func testTracksCopySummarizesVisibleVisitCounts() {
         XCTAssertEqual(TracksCopy.summary(visible: 0, lovedOnly: false), "No visits yet")
         XCTAssertEqual(TracksCopy.summary(visible: 0, lovedOnly: true), "No loved visits yet")
