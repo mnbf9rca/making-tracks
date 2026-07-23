@@ -217,6 +217,49 @@ final class DiagnosticLogExportTests: XCTestCase {
         XCTAssertTrue(summary.contains("log-lines=2"), summary)
     }
 
+    func testPreparedArtifactReportsPhaseDurations() throws {
+        let fixture = try makeFixture()
+        let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
+        try store.appendRawLineForTesting("2026-07-19T12:05:13Z flow info viewport browsed region=malaysia-singapore-brunei zoom=14 tileZ=10 covered=12 requests=9 blocked=3 source=camera-idle")
+
+        let artifact = try DiagnosticLogExporter(
+            store: store,
+            metadata: fixture.metadata,
+            exportedAt: { fixture.now }
+        ).prepare(window: .lastHour, stagingRoot: fixture.staging)
+
+        let summary = try String(contentsOf: artifact.summaryURL, encoding: .utf8)
+
+        for phase in [
+            "snapshot",
+            "stage-clean",
+            "stage-create",
+            "log-render",
+            "scrub",
+            "preview",
+        ] {
+            XCTAssertTrue(summary.contains("prepare-phase=\(phase) duration-ms="), summary)
+        }
+        XCTAssertFalse(summary.contains("prepare-phase=write-files duration-ms="), summary)
+        XCTAssertFalse(summary.contains("prepare-phase=archive duration-ms="), summary)
+        XCTAssertEqual(
+            artifact.phaseTimings.map(\.phase),
+            [
+                "snapshot",
+                "stage-clean",
+                "stage-create",
+                "log-render",
+                "scrub",
+                "preview",
+                "write-files",
+                "archive",
+                "byte-count",
+                "total",
+            ]
+        )
+        XCTAssertTrue(artifact.phaseTimings.allSatisfy { $0.durationMilliseconds >= 0 })
+    }
+
     func testSessionCoveringExportPromotesShortWindowThatWouldZeroPreview() throws {
         let fixture = try makeFixture()
         let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
@@ -276,6 +319,8 @@ final class DiagnosticLogExportTests: XCTestCase {
             "2026-07-19T12:58:13Z flow info viewport browsed viewportCenter=100.29400,5.45200",
             "2026-07-19T12:58:13Z flow info viewport browsed bbox=100.28200,5.44000,100.30600,5.46400",
             "2026-07-19T12:58:13Z flow info viewport browsed tileX=795 tileY=493",
+            "2026-07-19T12:58:13Z startup info device UIDevice . current . name",
+            "2026-07-19T12:58:13Z startup info located location . coordinate . latitude=51.50740",
         ]
 
         for line in excludedLines {

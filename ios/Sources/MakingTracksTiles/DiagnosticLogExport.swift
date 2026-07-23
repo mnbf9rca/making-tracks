@@ -1,4 +1,5 @@
 import Foundation
+import Dispatch
 
 public enum DiagnosticLogCategory: String, Sendable {
     case downloads
@@ -81,6 +82,12 @@ public struct DiagnosticLogArtifact: Equatable, Sendable {
     public var logURL: URL
     public var byteCount: Int
     public var preview: String
+    public var phaseTimings: [DiagnosticLogPreparePhaseTiming]
+}
+
+public struct DiagnosticLogPreparePhaseTiming: Equatable, Sendable {
+    public var phase: String
+    public var durationMilliseconds: Int
 }
 
 struct DiagnosticLogSnapshot: Equatable, Sendable {
@@ -109,6 +116,36 @@ struct DiagnosticVisiblePreview: Equatable, Sendable {
 
 public enum DiagnosticLogExportError: Error, Equatable {
     case privacyScrubFailed
+}
+
+private struct DiagnosticLogPreparePhaseTimings: Equatable, Sendable {
+    private(set) var entries: [DiagnosticLogPreparePhaseTiming] = []
+
+    mutating func measure<T>(_ phase: String, _ work: () throws -> T) rethrows -> T {
+        let startedAt = Self.now()
+        defer {
+            append(phase, startedAt: startedAt)
+        }
+        return try work()
+    }
+
+    mutating func append(_ phase: String, startedAt: UInt64) {
+        entries.append(
+            DiagnosticLogPreparePhaseTiming(
+                phase: phase,
+                durationMilliseconds: Self.durationMilliseconds(since: startedAt)
+            )
+        )
+    }
+
+    static func now() -> UInt64 {
+        DispatchTime.now().uptimeNanoseconds
+    }
+
+    private static func durationMilliseconds(since startedAt: UInt64) -> Int {
+        let elapsed = DispatchTime.now().uptimeNanoseconds - startedAt
+        return Int(elapsed / 1_000_000)
+    }
 }
 
 public final class DiagnosticLogStore {
@@ -300,63 +337,92 @@ public struct DiagnosticLogExporter {
     }
 
     public func prepare(window: DiagnosticLogWindow, stagingRoot: URL) throws -> DiagnosticLogArtifact {
-        try prepare(windowedSnapshot: DiagnosticLogWindowedSnapshot(window: window, snapshot: store.snapshot(window: window)), stagingRoot: stagingRoot)
+        var timings = DiagnosticLogPreparePhaseTimings()
+        let totalStartedAt = DiagnosticLogPreparePhaseTimings.now()
+        let snapshot = try timings.measure("snapshot") {
+            try store.snapshot(window: window)
+        }
+        return try prepare(
+            windowedSnapshot: DiagnosticLogWindowedSnapshot(window: window, snapshot: snapshot),
+            stagingRoot: stagingRoot,
+            timings: timings,
+            totalStartedAt: totalStartedAt
+        )
     }
 
-    private func prepare(windowedSnapshot: DiagnosticLogWindowedSnapshot, stagingRoot: URL) throws -> DiagnosticLogArtifact {
-        if fileManager.fileExists(atPath: stagingRoot.path) {
-            try fileManager.removeItem(at: stagingRoot)
+    private func prepare(
+        windowedSnapshot: DiagnosticLogWindowedSnapshot,
+        stagingRoot: URL,
+        timings initialTimings: DiagnosticLogPreparePhaseTimings,
+        totalStartedAt: UInt64
+    ) throws -> DiagnosticLogArtifact {
+        var timings = initialTimings
+        try timings.measure("stage-clean") {
+            if fileManager.fileExists(atPath: stagingRoot.path) {
+                try fileManager.removeItem(at: stagingRoot)
+            }
         }
         let exportTimestamp = Self.filenameTimestampFormatter().string(from: exportedAt())
         let directory = stagingRoot.appendingPathComponent("MakingTracksDiagnostics-\(exportTimestamp)", isDirectory: true)
         do {
-            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-            try DiagnosticLogStore.setDiagnosticsResourceValuesForExporter(directory)
+            try timings.measure("stage-create") {
+                try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+                try DiagnosticLogStore.setDiagnosticsResourceValuesForExporter(directory)
+            }
 
             let summaryURL = directory.appendingPathComponent("summary-\(exportTimestamp).txt")
             let logURL = directory.appendingPathComponent("diagnostic-log-\(exportTimestamp).txt")
 
             let window = windowedSnapshot.window
             let snapshot = windowedSnapshot.snapshot
-            let log = snapshot.lines.joined(separator: "\n") + "\n"
+            let log = timings.measure("log-render") {
+                snapshot.lines.joined(separator: "\n") + "\n"
+            }
             let summary = renderSummary(
                 window: window,
                 snapshot: snapshot,
                 scrubStatus: "pending",
                 previewLineCount: 0,
                 previewLogLineCount: 0,
-                omittedPreviewLogLineCount: 0
+                omittedPreviewLogLineCount: 0,
+                phaseTimings: timings.entries
             )
             let scrubText = [summary, log].joined(separator: "\n")
-            guard Self.passesPrivacyScrub(scrubText) else {
+            let passedScrub = timings.measure("scrub") {
+                Self.passesPrivacyScrub(scrubText)
+            }
+            guard passedScrub else {
                 throw DiagnosticLogExportError.privacyScrubFailed
             }
-            let previewLogLineCount = Self.lineCount(in: log)
-            let visiblePreview = renderVisiblePreview(summary: summary, logLines: snapshot.lines)
-            let summaryForPreviewCounts = renderSummary(
-                window: window,
-                snapshot: snapshot,
-                scrubStatus: "passed",
-                previewLineCount: 0,
-                previewLogLineCount: previewLogLineCount,
-                omittedPreviewLogLineCount: visiblePreview.omittedLogLineCount
-            )
-            let visiblePreviewForCounts = renderVisiblePreview(summary: summaryForPreviewCounts, logLines: snapshot.lines)
-            let previewLineCount = Self.lineCount(in: visiblePreviewForCounts.text)
-            let exportedSummary = renderSummary(
-                window: window,
-                snapshot: snapshot,
-                scrubStatus: "passed",
-                previewLineCount: previewLineCount,
-                previewLogLineCount: previewLogLineCount,
-                omittedPreviewLogLineCount: visiblePreview.omittedLogLineCount
-            )
-            let exportedVisiblePreview = renderVisiblePreview(summary: exportedSummary, logLines: snapshot.lines)
+            let previewPhaseTimings = timings.entries + [
+                DiagnosticLogPreparePhaseTiming(phase: "preview", durationMilliseconds: 0),
+            ]
+            let previewRender = timings.measure("preview") {
+                renderSummaryAndVisiblePreview(
+                    window: window,
+                    snapshot: snapshot,
+                    scrubStatus: "passed",
+                    phaseTimings: previewPhaseTimings
+                )
+            }
 
-            try exportedSummary.write(to: summaryURL, atomically: true, encoding: .utf8)
-            try log.write(to: logURL, atomically: true, encoding: .utf8)
-            let archiveURL = try makeArchive(directory: directory, stagingRoot: stagingRoot, exportTimestamp: exportTimestamp)
-            let byteCount = try archiveByteCount(archiveURL)
+            try timings.measure("write-files") {
+                try previewRender.summary.write(to: summaryURL, atomically: true, encoding: .utf8)
+                try log.write(to: logURL, atomically: true, encoding: .utf8)
+            }
+            let archiveURL = try timings.measure("archive") {
+                try makeArchive(directory: directory, stagingRoot: stagingRoot, exportTimestamp: exportTimestamp)
+            }
+            let byteCount = try timings.measure("byte-count") {
+                try archiveByteCount(archiveURL)
+            }
+            timings.append("total", startedAt: totalStartedAt)
+            let finalPreview = renderSummaryAndVisiblePreview(
+                window: window,
+                snapshot: snapshot,
+                scrubStatus: "passed",
+                phaseTimings: timings.entries
+            ).preview
 
             return DiagnosticLogArtifact(
                 directoryURL: directory,
@@ -364,7 +430,8 @@ public struct DiagnosticLogExporter {
                 summaryURL: summaryURL,
                 logURL: logURL,
                 byteCount: byteCount,
-                preview: exportedVisiblePreview.text
+                preview: finalPreview.text,
+                phaseTimings: timings.entries
             )
         } catch {
             if fileManager.fileExists(atPath: stagingRoot.path) {
@@ -378,8 +445,17 @@ public struct DiagnosticLogExporter {
         preferredWindow: DiagnosticLogWindow,
         stagingRoot: URL
     ) throws -> DiagnosticLogArtifact {
-        let snapshot = try store.snapshotCoveringCurrentSession(preferredWindow: preferredWindow)
-        return try prepare(windowedSnapshot: snapshot, stagingRoot: stagingRoot)
+        var timings = DiagnosticLogPreparePhaseTimings()
+        let totalStartedAt = DiagnosticLogPreparePhaseTimings.now()
+        let snapshot = try timings.measure("snapshot") {
+            try store.snapshotCoveringCurrentSession(preferredWindow: preferredWindow)
+        }
+        return try prepare(
+            windowedSnapshot: snapshot,
+            stagingRoot: stagingRoot,
+            timings: timings,
+            totalStartedAt: totalStartedAt
+        )
     }
 
     private func makeArchive(directory: URL, stagingRoot: URL, exportTimestamp: String) throws -> URL {
@@ -421,7 +497,8 @@ public struct DiagnosticLogExporter {
         scrubStatus: String,
         previewLineCount: Int,
         previewLogLineCount: Int,
-        omittedPreviewLogLineCount: Int
+        omittedPreviewLogLineCount: Int,
+        phaseTimings: [DiagnosticLogPreparePhaseTiming]
     ) -> String {
         var lines = [
             "Making Tracks diagnostics",
@@ -440,7 +517,40 @@ public struct DiagnosticLogExporter {
         lines.append("log-stage=preview lines=\(previewLineCount) log-lines=\(previewLogLineCount)")
         let visiblePreviewStatus = omittedPreviewLogLineCount > 0 ? "capped" : "complete"
         lines.append("visible-preview=\(visiblePreviewStatus) max-log-lines=\(Self.maxVisiblePreviewLogLines) omitted-log-lines=\(omittedPreviewLogLineCount)")
+        lines.append(contentsOf: phaseTimings.map {
+            "prepare-phase=\($0.phase) duration-ms=\($0.durationMilliseconds)"
+        })
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    private func renderSummaryAndVisiblePreview(
+        window: DiagnosticLogWindow,
+        snapshot: DiagnosticLogSnapshot,
+        scrubStatus: String,
+        phaseTimings: [DiagnosticLogPreparePhaseTiming]
+    ) -> (summary: String, preview: DiagnosticVisiblePreview) {
+        let omittedPreviewLogLineCount = max(0, snapshot.windowLineCount - Self.maxVisiblePreviewLogLines)
+        var previewLineCount = 0
+        var summary = ""
+        var preview = DiagnosticVisiblePreview(text: "", logLineCount: 0, omittedLogLineCount: omittedPreviewLogLineCount)
+        for _ in 0..<3 {
+            summary = renderSummary(
+                window: window,
+                snapshot: snapshot,
+                scrubStatus: scrubStatus,
+                previewLineCount: previewLineCount,
+                previewLogLineCount: snapshot.windowLineCount,
+                omittedPreviewLogLineCount: omittedPreviewLogLineCount,
+                phaseTimings: phaseTimings
+            )
+            preview = renderVisiblePreview(summary: summary, logLines: snapshot.lines)
+            let measuredPreviewLineCount = Self.lineCount(in: preview.text)
+            if measuredPreviewLineCount == previewLineCount {
+                break
+            }
+            previewLineCount = measuredPreviewLineCount
+        }
+        return (summary, preview)
     }
 
     private func renderVisiblePreview(summary: String, logLines: [String]) -> DiagnosticVisiblePreview {
@@ -463,21 +573,40 @@ public struct DiagnosticLogExporter {
     }
 
     private static func passesPrivacyScrub(_ text: String) -> Bool {
-        let forbiddenPatterns = [
-            #"(?i)\bdeviceName\b"#,
-            #"UIDevice\s*\.\s*current\s*\.\s*name"#,
-            #"(?i)\bgps[A-Za-z]*(lat|lon|latitude|longitude)\b"#,
-            #"(?i)\blocation\s*\.\s*coordinate\s*\.\s*(latitude|longitude)"#,
-            #"(?i)\bviewport(Center|Bbox)\b"#,
-            #"(?i)\bbbox\b"#,
-            #"(?i)\bcenter\b"#,
-            #"(?i)\btile[XY]\b"#,
-            #"(?i)\braw(Search)?Query\b"#,
-            #"(?i)\bsearchQuery\b"#,
-            #"(?i)\bqueryText\b"#,
-        ]
-        return forbiddenPatterns.allSatisfy { pattern in
-            text.range(of: pattern, options: .regularExpression) == nil
+        let lowercased = text.lowercased()
+        let compacted = lowercased.filter { !$0.isWhitespace }
+        guard !compacted.contains("uidevice.current.name"),
+              !compacted.contains("location.coordinate.latitude"),
+              !compacted.contains("location.coordinate.longitude")
+        else {
+            return false
+        }
+
+        let tokens = lowercased.split { !$0.isLetter && !$0.isNumber }
+        for token in tokens {
+            if Self.isForbiddenPrivacyToken(token) {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func isForbiddenPrivacyToken(_ token: Substring) -> Bool {
+        switch token {
+        case "devicename",
+            "viewportcenter",
+            "viewportbbox",
+            "bbox",
+            "center",
+            "tilex",
+            "tiley",
+            "rawquery",
+            "rawsearchquery",
+            "searchquery",
+            "querytext":
+            return true
+        default:
+            return token.hasPrefix("gps") && (token.contains("lat") || token.contains("lon"))
         }
     }
 
