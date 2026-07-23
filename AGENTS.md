@@ -95,7 +95,7 @@ Comments carry point-in-time evidence only: findings, measurements, test output,
 
 The body is where Rob looks. A stack of appended comments makes him reconstruct the story himself, which is the thing he is asking us not to do.
 
-**Labels.** Issues get a **track** label (`track-a-pipeline` / `track-b-ios` / `track-c-services`) plus a **type** label (`bug` / `enhancement` / `design` / `question`). `sourcery-review` and `greptile-review` are PR review triggers — never put them on an issue.
+**Labels.** Issues get a **track** label (`track-a-pipeline` / `track-b-ios` / `track-c-services`) plus a **type** label (`bug` / `enhancement` / `design` / `question`). `wp` is the work-package label, applied to any PR delivering a tracked work package. `sourcery-review` and `greptile-review` are PR review triggers — never put them on an issue.
 
 An issue whose work touches a user-facing surface also gets **`requires-mockups`**. That label is how the mockup rule is found: it turns "UI design ships with mockups" from something an agent has to remember into something the tracker can be queried for.
 
