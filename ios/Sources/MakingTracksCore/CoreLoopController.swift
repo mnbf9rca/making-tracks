@@ -15,15 +15,6 @@ public final class CoreLoopController: Sendable {
         continuation = captured!
     }
 
-    public func setSaved(_ place: PlaceRef, _ saved: Bool) throws {
-        if saved {
-            try database.addToList(place, listID: database.wantToGoListID())
-        } else {
-            try database.removeFromList(placeID: place.placeID, listID: database.wantToGoListID())
-        }
-        emit(place.placeID)
-    }
-
     public func addToList(_ place: PlaceRef, listID: Int64) throws {
         try database.addToList(place, listID: listID)
         emit(place.placeID)
@@ -32,6 +23,12 @@ public final class CoreLoopController: Sendable {
     public func removeFromList(placeID: String, listID: Int64) throws {
         try database.removeFromList(placeID: placeID, listID: listID)
         emit(placeID)
+    }
+
+    public func deleteList(id: Int64) throws {
+        let affectedPlaceIDs = try database.deleteList(id: id)
+        guard !affectedPlaceIDs.isEmpty else { return }
+        emit(affectedPlaceIDs)
     }
 
     public func setVisited(_ place: PlaceRef, _ visited: Bool) throws {

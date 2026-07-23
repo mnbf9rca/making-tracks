@@ -288,12 +288,12 @@ final class InteractionsTests: XCTestCase {
         let rows = try db.listItems(listID: custom.id!)
         XCTAssertEqual(rows.map(\.placeID), ["p_custom"])
         XCTAssertEqual(rows[0].name, "Custom Place")
-        XCTAssertEqual(rows[0].pinState, PinState(saved: false, visit: .visited, hidden: true))
+        XCTAssertEqual(rows[0].pinState, PinState(saved: true, visit: .visited, hidden: true))
 
         let features = try db.listMapFeatures(listID: custom.id!)
         XCTAssertEqual(features.map(\.0.id), ["p_custom"])
         XCTAssertEqual(features[0].0.lat, customPlace.lat)
-        XCTAssertEqual(features[0].1, PinState(saved: false, visit: .visited, hidden: true))
+        XCTAssertEqual(features[0].1, PinState(saved: true, visit: .visited, hidden: true))
     }
 
     func testListMembershipLookupUsesExactRowsNotDisplayFeed() throws {
