@@ -18,6 +18,10 @@ Each entry records gate duration and the runner benchmark score (`runner_benchma
 
 After the sharded gate change, `ios-release-gate` has two trigger-dependent meanings. On `pull_request`, it is the per-PR build+unit fan-in and the UI shards are expected to be skipped. On `workflow_dispatch`, it is the full UI-shard fan-in and also validates executed UI coverage against the built test enumeration. The parked flip plan must pin the meaning, not just the check name.
 
+## Capacity Ledger
+
+- The pin-size slider failures from the capacity run and follow-up hardening share one root cause: the memory-pressured runner expressing through gesture synthesis. `adjust(toNormalizedSliderPosition:)` undershooting to 150% and coordinate-drag plateauing at 150% under load are not separate product failures. The hybrid slider helper is acceptable only because the actual 160% readback remains the success invariant. If a third plateau appears, route it as runner capacity work, not another fallback mechanism.
+
 ## Entries
 
 | Run | Attempt | Ref | Head | Duration | Runner Score | Result | Classification | Evidence | Action |
