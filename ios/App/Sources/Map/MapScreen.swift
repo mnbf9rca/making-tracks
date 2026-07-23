@@ -5245,7 +5245,6 @@ private struct ListDetailView: View {
         .scrollContentBackground(.hidden)
         .background(TrackVisitEditorVisualSpec.paperBackground)
         .environment(\.editMode, canReorderTrackVisits ? $trackEditMode : .constant(.inactive))
-        .preferredColorScheme(.light)
         .navigationTitle(currentList.name)
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("lists.detail.surface.track")
