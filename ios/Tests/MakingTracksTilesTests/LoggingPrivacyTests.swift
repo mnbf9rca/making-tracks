@@ -391,6 +391,18 @@ final class LoggingPrivacyTests: XCTestCase {
         )
     }
 
+    func testDiagnosticsKeepsPreparedArtifactUntilCancelDeleteOrScreenExit() throws {
+        let source = try String(
+            contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertFalse(source.contains(".sheet(item: $shareItem, onDismiss: cleanupPreparedArtifact)"))
+        XCTAssertTrue(source.contains(".sheet(item: $shareItem) { item in"))
+        XCTAssertTrue(source.contains(".onDisappear(perform: cleanupPreparedArtifact)"))
+        XCTAssertTrue(source.contains("Button(\"Cancel\") {\n                    cleanupPreparedArtifact()"))
+    }
+
     func testTrackVisitDateHeadersAreNotStandaloneMovableRows() throws {
         let source = try sourceFile("App/Sources/Map/MapScreen.swift")
         let movableRowsStart = "ForEach(TrackVisitReordering.rows(for:"

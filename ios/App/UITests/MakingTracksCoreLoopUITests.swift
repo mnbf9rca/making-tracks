@@ -1465,6 +1465,23 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Offline maps"].waitForExistence(timeout: 5))
     }
 
+    func testDiagnosticsShowsScopedExclusionBeforePrepareInDarkAppearance() {
+        let app = launch(reset: true, forceDarkAppearance: true)
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.settings"].tap()
+        let diagnostics = app.buttons["settings.diagnostics.export"]
+        XCTAssertTrue(scrollToHittable(diagnostics, in: app))
+        diagnostics.tap()
+
+        let exclusion = app.staticTexts[
+            "Your device name, exact location, and searches are not included in the export."
+        ]
+        XCTAssertTrue(scrollToExistence(of: exclusion, in: app))
+        XCTAssertTrue(exclusion.isHittable)
+        attachScreenshot(named: "diagnostics-preprepare-exclusions-dark")
+    }
+
     func testMapHomeChromeHitTargetsAndThemeScreenshots() {
         let app = launch(reset: true, resetTheme: true, forceDarkAppearance: true)
 

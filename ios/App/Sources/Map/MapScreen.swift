@@ -6374,9 +6374,14 @@ private struct DiagnosticsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Section("Before sharing") {
+            }
+
+            Section("Before sharing") {
+                if artifact != nil {
                     diagnosticsBullet("You choose the person or app that gets the file.")
-                    diagnosticsBullet("Your device name, exact location, and searches are not included in the export.")
+                }
+                diagnosticsBullet("Your device name, exact location, and searches are not included in the export.")
+                if artifact != nil {
                     diagnosticsBullet("Making Tracks has no upload endpoint.")
                 }
             }
@@ -6398,9 +6403,10 @@ private struct DiagnosticsView: View {
         .safeAreaInset(edge: .bottom) {
             actionBar
         }
-        .sheet(item: $shareItem, onDismiss: cleanupPreparedArtifact) { item in
+        .sheet(item: $shareItem) { item in
             ActivityShareSheet(activityItems: [item.url])
         }
+        .onDisappear(perform: cleanupPreparedArtifact)
         .confirmationDialog("Delete diagnostic logs?",
             isPresented: $showDeleteConfirmation,
             titleVisibility: .visible
