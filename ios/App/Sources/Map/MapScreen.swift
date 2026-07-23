@@ -821,6 +821,8 @@ enum TrackVisitRowDensitySpec {
 enum TrackVisitEditorVisualSpec {
     static let paperBackground = MapThemeColor.color(hex: "#f1eddf")
     static let cardBackground = MapThemeColor.color(hex: "#fffdf7")
+    static let primaryText = MapThemeColor.color(hex: "#1c1c1e")
+    static let secondaryText = MapThemeColor.color(hex: "#64635d")
     static let divider = MapThemeColor.color(hex: "#ddd8ca")
     static let accent = MapThemeColor.color(hex: "#0a6b5c")
     static let accentSoft = MapThemeColor.color(hex: "#e3f0eb")
@@ -4762,7 +4764,8 @@ private struct AppMenuSheet: View {
                 model: model,
                 onShowOnMap: showListOnMapAndDismiss,
                 onListRenamed: onListRenamed,
-                onListDeleted: onListDeleted
+                onListDeleted: onListDeleted,
+                onDone: { dismiss() }
             ))
         case let .listDetail(listID):
             destinationWithDone(ListDetailDeepLinkView(
@@ -4770,15 +4773,17 @@ private struct AppMenuSheet: View {
                 listID: listID,
                 visitFilter: shell.listDetailVisitFilter,
                 onShowOnMap: showListOnMapAndDismiss,
-                onListRenamed: onListRenamed
+                onListRenamed: onListRenamed,
+                onDone: { dismiss() }
             ))
         case .tracks:
-            destinationWithDone(TrackListDetailDeepLinkView(
+            TrackListDetailDeepLinkView(
                 model: model,
                 focusPlaceID: shell.tracksFocusPlaceID,
                 onShowOnMap: showListOnMapAndDismiss,
-                onListRenamed: onListRenamed
-            ))
+                onListRenamed: onListRenamed,
+                onDone: { dismiss() }
+            )
         case .offlineMaps:
 #if DEBUG
             destinationWithDone(OfflineMapsView(
@@ -4852,6 +4857,7 @@ private struct ListDetailDeepLinkView: View {
     let visitFilter: TracksVisitFilter
     let onShowOnMap: @MainActor (PlaceList, TracksVisitFilter) -> Void
     let onListRenamed: @MainActor (PlaceList) -> Void
+    let onDone: @MainActor () -> Void
 
     @State private var list: PlaceList?
     @State private var didLoad = false
@@ -4865,7 +4871,8 @@ private struct ListDetailDeepLinkView: View {
                     visitFilter: visitFilter,
                     onChanged: {},
                     onShowOnMap: onShowOnMap,
-                    onListRenamed: onListRenamed
+                    onListRenamed: onListRenamed,
+                    onDone: onDone
                 )
             } else if didLoad {
                 ContentUnavailableView("List not found", systemImage: "list.bullet")
@@ -4893,6 +4900,7 @@ private struct TrackListDetailDeepLinkView: View {
     let focusPlaceID: String?
     let onShowOnMap: @MainActor (PlaceList, TracksVisitFilter) -> Void
     let onListRenamed: @MainActor (PlaceList) -> Void
+    let onDone: @MainActor () -> Void
 
     @State private var list: PlaceList?
     @State private var didLoad = false
@@ -4906,7 +4914,8 @@ private struct TrackListDetailDeepLinkView: View {
                     focusPlaceID: focusPlaceID,
                     onChanged: {},
                     onShowOnMap: onShowOnMap,
-                    onListRenamed: onListRenamed
+                    onListRenamed: onListRenamed,
+                    onDone: onDone
                 )
             } else if didLoad {
                 ContentUnavailableView("List not found", systemImage: "list.bullet")
@@ -5006,6 +5015,7 @@ private struct ListsView: View {
     let onShowOnMap: @MainActor (PlaceList, TracksVisitFilter) -> Void
     let onListRenamed: @MainActor (PlaceList) -> Void
     let onListDeleted: @MainActor (Int64) -> Void
+    let onDone: @MainActor () -> Void
 
     @State private var lists: [PlaceList] = []
     @State private var progress: [Int64: ListProgress] = [:]
@@ -5044,7 +5054,8 @@ private struct ListsView: View {
                             list: list,
                             onChanged: { Task { await reload() } },
                             onShowOnMap: onShowOnMap,
-                            onListRenamed: onListRenamed
+                            onListRenamed: onListRenamed,
+                            onDone: onDone
                         )
                     } label: {
                         listRow(list)
@@ -5163,6 +5174,7 @@ private struct ListDetailView: View {
     let onChanged: @MainActor () -> Void
     let onShowOnMap: @MainActor (PlaceList, TracksVisitFilter) -> Void
     let onListRenamed: @MainActor (PlaceList) -> Void
+    let onDone: @MainActor () -> Void
 
     @State private var items: [ListPlace] = []
     @State private var trackVisits: [TrackVisit] = []
@@ -5172,6 +5184,7 @@ private struct ListDetailView: View {
     @State private var actionError: String?
     @State private var trackEditMode: EditMode = .active
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.dismiss) private var dismiss
 
     init(
         model: MapScreenModel?,
@@ -5180,7 +5193,8 @@ private struct ListDetailView: View {
         focusPlaceID: String? = nil,
         onChanged: @escaping @MainActor () -> Void,
         onShowOnMap: @escaping @MainActor (PlaceList, TracksVisitFilter) -> Void,
-        onListRenamed: @escaping @MainActor (PlaceList) -> Void
+        onListRenamed: @escaping @MainActor (PlaceList) -> Void,
+        onDone: @escaping @MainActor () -> Void
     ) {
         self.model = model
         self.list = list
@@ -5189,6 +5203,7 @@ private struct ListDetailView: View {
         self.onChanged = onChanged
         self.onShowOnMap = onShowOnMap
         self.onListRenamed = onListRenamed
+        self.onDone = onDone
         _currentList = State(initialValue: list)
         _renameDraft = State(initialValue: list.name)
     }
@@ -5217,10 +5232,59 @@ private struct ListDetailView: View {
 
     var body: some View {
         if isTrackListDetail {
-            trackListBody
+            VStack(spacing: 0) {
+                trackListChrome
+                trackListBody
+            }
+            .background(TrackVisitEditorVisualSpec.paperBackground.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
         } else {
             collectionListBody
         }
+    }
+
+    private var trackListChrome: some View {
+        ZStack {
+            HStack(spacing: 12) {
+                Button {
+                    dismiss()
+                } label: {
+                    Text("‹ Back")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("lists.detail.track.back")
+
+                Spacer()
+
+                Button {
+                    onDone()
+                } label: {
+                    Text("Done")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("lists.detail.track.done")
+            }
+
+            Text(verbatim: currentList.name)
+                .font(.headline)
+                .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                .lineLimit(1)
+                .accessibilityIdentifier("lists.detail.track.title")
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: 50)
+        .background(TrackVisitEditorVisualSpec.paperBackground)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(TrackVisitEditorVisualSpec.divider)
+                .frame(height: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("lists.detail.track.chrome")
     }
 
     private var trackListBody: some View {
@@ -5259,9 +5323,8 @@ private struct ListDetailView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(TrackVisitEditorVisualSpec.paperBackground)
+        .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
         .environment(\.editMode, canReorderTrackVisits ? $trackEditMode : .constant(.inactive))
-        .navigationTitle(currentList.name)
-        .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("lists.detail.surface.track")
         .task { await reload() }
         .refreshable { await reload() }
@@ -5354,51 +5417,72 @@ private struct ListDetailView: View {
                         .accessibilityIdentifier("lists.detail.track.sort-direction")
                 }
                 .font(.subheadline.weight(.semibold))
+                .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
 
                 Text(verbatim: TracksCopy.summary(
                     visible: visibleTrackVisits.count,
                     lovedOnly: false
                 ))
                 .font(.title2.weight(.bold))
+                .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
                 .accessibilityIdentifier("lists.detail.track.summary")
 
                 Text("Your track is a sequence of visits you entered. Edit a row when the remembered day or order needs correcting.")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
 
                 HStack(spacing: 8) {
                     Button {
                         onShowOnMap(currentList, .all)
                     } label: {
                         Label("Map", systemImage: "map")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.white)
                             .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                            .background(
+                                TrackVisitEditorVisualSpec.accent,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            )
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(TrackVisitEditorVisualSpec.accent)
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier("lists.detail.show-map")
 
                     Button {
                         Task { await reload() }
                     } label: {
                         Label("Refresh", systemImage: "arrow.clockwise")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(TrackVisitEditorVisualSpec.accent)
                             .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                            .background(
+                                TrackVisitEditorVisualSpec.paperBackground,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
+                            }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
                     .accessibilityLabel("Refresh tracks")
                     .accessibilityIdentifier("lists.detail.track.refresh")
                 }
             } else {
                 Label("Multiple visits to this place", systemImage: "mappin.and.ellipse")
                     .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
                     .accessibilityIdentifier("lists.detail.track.focus-message")
 
                 Text("Choose the visit")
                     .font(.title2.weight(.bold))
+                    .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
                     .accessibilityIdentifier("lists.detail.track.summary")
 
                 Text("Delete only the row you mean to remove.")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
             }
         }
         .padding(13)
@@ -5408,6 +5492,8 @@ private struct ListDetailView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("lists.detail.track.summary-card")
     }
 
     private func listItemRow(_ item: ListPlace) -> some View {
@@ -5445,8 +5531,9 @@ private struct ListDetailView: View {
             if let dayHeader {
                 Text(verbatim: formattedDay(dayHeader))
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
                     .padding(.horizontal, 8)
+                    .accessibilityIdentifier("lists.detail.track.day-header.\(visit.id)")
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -5461,11 +5548,14 @@ private struct ListDetailView: View {
                     VStack(alignment: .leading, spacing: TrackVisitRowDensitySpec.verticalSpacing) {
                         Text(verbatim: visit.name)
                             .font(.body)
+                            .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
                             .lineLimit(2)
+                            .accessibilityIdentifier("lists.detail.track.row.name.\(visit.id)")
                         Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitedAt(visit))")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
                             .lineLimit(2)
+                            .accessibilityIdentifier("lists.detail.track.row.metadata.\(visit.id)")
                     }
                     .layoutPriority(1)
 
@@ -5474,11 +5564,21 @@ private struct ListDetailView: View {
                     } label: {
                         Text("heart")
                             .font(.caption.weight(.bold))
-                            .frame(minWidth: 34, minHeight: 30)
+                            .foregroundStyle(TrackVisitEditorVisualSpec.danger)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .padding(.horizontal, 8)
+                            .frame(minHeight: 30)
+                            .background(
+                                TrackVisitEditorVisualSpec.cardBackground,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(TrackVisitEditorVisualSpec.danger, lineWidth: 1)
+                            }
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(TrackVisitEditorVisualSpec.danger)
+                    .buttonStyle(.plain)
                     .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
                     .accessibilityIdentifier("lists.detail.track.row.loved.\(visit.id)")
                 }
@@ -5492,6 +5592,8 @@ private struct ListDetailView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("lists.detail.track.row.card.\(visit.id)")
         }
     }
 
@@ -5509,6 +5611,8 @@ private struct ListDetailView: View {
         )
         .datePickerStyle(.compact)
         .labelsHidden()
+        .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+        .tint(TrackVisitEditorVisualSpec.accent)
         .accessibilityLabel("Visit date for \(visit.name), \(formattedVisitedAt(visit))")
         .accessibilityIdentifier("lists.detail.track.row.date.\(visit.id)")
 
@@ -5516,7 +5620,8 @@ private struct ListDetailView: View {
             Text("Visit date")
                 .font(.caption2.weight(.semibold))
                 .textCase(.uppercase)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
+                .accessibilityIdentifier("lists.detail.track.row.date-label.\(visit.id)")
             datePicker
         }
         .padding(.horizontal, 9)
@@ -5534,14 +5639,25 @@ private struct ListDetailView: View {
             if dynamicTypeSize.isAccessibilitySize {
                 Text("delete")
                     .font(.caption.weight(.bold))
+                    .foregroundStyle(TrackVisitEditorVisualSpec.danger)
             } else {
                 Text("del")
                     .font(.caption.weight(.bold))
+                    .foregroundStyle(TrackVisitEditorVisualSpec.danger)
             }
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .tint(TrackVisitEditorVisualSpec.danger)
+        .buttonStyle(.plain)
+        .lineLimit(1)
+        .padding(.horizontal, 10)
+        .frame(minHeight: 34)
+        .background(
+            TrackVisitEditorVisualSpec.dangerSoft,
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(TrackVisitEditorVisualSpec.danger, lineWidth: 1)
+        }
         .accessibilityLabel("Delete \(visit.name), \(formattedVisitedAt(visit))")
         .accessibilityIdentifier("lists.detail.track.row.delete.\(visit.id)")
 

@@ -25,6 +25,7 @@ struct MakingTracksApp: App {
     private static let isLocationAuthorizedFixture = arguments.contains("--ui-testing-location-authorized")
     private static let debugExposeFixturePinDiagnostics = arguments.contains("--ui-testing-pin-diagnostics")
     private static let seedFixtureTrackVisits = arguments.contains("--ui-testing-seed-track-visits")
+    private static let seedFixtureVisitsEditorVisual = arguments.contains("--ui-testing-seed-visits-editor-visual")
     private static let seedFixtureBurstTrackVisits = arguments.contains("--ui-testing-seed-burst-track-visits")
     private static let seedFixtureTrackList = arguments.contains("--ui-testing-seed-track-list")
     private static let seedFixtureMultiDayTrackList = arguments.contains("--ui-testing-seed-multiday-track-list")
@@ -45,6 +46,7 @@ struct MakingTracksApp: App {
     private static let isLocationAuthorizedFixture = false
     private static let debugExposeFixturePinDiagnostics = false
     private static let seedFixtureTrackVisits = false
+    private static let seedFixtureVisitsEditorVisual = false
     private static let seedFixtureBurstTrackVisits = false
     private static let seedFixtureTrackList = false
     private static let seedFixtureMultiDayTrackList = false
@@ -103,7 +105,9 @@ struct MakingTracksApp: App {
                     try database.seedUITestingUserList(named: "Date night", containingPlaceID: Self.primaryFixturePlaceID)
                 }
                 let fixturePlaces = MapScreen.uiTestingFixturePlaces(dense: Self.debugUseDenseFixturePins)
-                if seedFixtureMultiDayTrackList {
+                if seedFixtureVisitsEditorVisual {
+                    try database.seedUITestingTrackVisits(Self.visitsEditorVisualFixturePlaces)
+                } else if seedFixtureMultiDayTrackList {
                     let trackPlaces = Self.debugUseReplayVisualFixture ? Self.replayVisualFixturePlaces : fixturePlaces
                     try database.seedUITestingMultiDayTrackList(
                         named: "Replay week",
@@ -159,6 +163,40 @@ struct MakingTracksApp: App {
             )
         }
         return [places[0], places[1], places[0], places[2], places[3], places[4]]
+    }()
+
+    private static let visitsEditorVisualFixturePlaces: [PlaceRef] = {
+        let fixtures: [(id: String, name: String, lat: Double, lon: Double, category: String)] = [
+            (
+                "mt1_V0000000000000000000000001",
+                "Sultan Abdul Samad Building and Merdeka Square",
+                3.1487,
+                101.6942,
+                "historic_building"
+            ),
+            (
+                "mt1_V0000000000000000000000002",
+                "National Textile Museum and Historic Railway Offices",
+                3.1478,
+                101.6934,
+                "museum"
+            ),
+        ]
+        return fixtures.map { fixture in
+            try! PlaceRef(
+                placeID: fixture.id,
+                name: fixture.name,
+                lat: fixture.lat,
+                lon: fixture.lon,
+                category: fixture.category,
+                tier: 1,
+                schemaVersion: 1,
+                fetchedAt: Date(timeIntervalSince1970: 0),
+                rawJSON: """
+                {"category":"\(fixture.category)","lat":\(fixture.lat),"lon":\(fixture.lon),"name":"\(fixture.name)","place_id":"\(fixture.id)","score":0.5,"source_refs":["osm:node/\(fixture.id.suffix(1))"],"tier":1}
+                """
+            )
+        }
     }()
 
     private let locationManager: AppLocationManager = {
