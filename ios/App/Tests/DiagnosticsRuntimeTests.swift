@@ -4,6 +4,67 @@ import MakingTracksTiles
 @testable import MakingTracks
 
 final class DiagnosticsRuntimeTests: XCTestCase {
+    func testDetachedPreparationOperationObservesParentCancellation() async throws {
+        let started = DispatchSemaphore(value: 0)
+        let cancellationObserved = DispatchSemaphore(value: 0)
+        let task = Task.detached {
+            try await DiagnosticsRuntime.runCancellableDetachedOperation { () throws -> Int in
+                started.signal()
+                while !Task.isCancelled {
+                    Thread.sleep(forTimeInterval: 0.001)
+                }
+                cancellationObserved.signal()
+                throw CancellationError()
+            }
+        }
+
+        XCTAssertEqual(started.wait(timeout: .now() + 2), .success)
+        task.cancel()
+        XCTAssertEqual(cancellationObserved.wait(timeout: .now() + 2), .success)
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+            // Expected.
+        }
+    }
+
+    func testCancelledPreparationAttemptRemovesOnlyItsLateStagingRoot() async throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DiagnosticsCancellationTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let successor = base.appendingPathComponent("successor", isDirectory: true)
+        try FileManager.default.createDirectory(at: successor, withIntermediateDirectories: true)
+        try Data("new attempt".utf8).write(to: successor.appendingPathComponent("archive.zip"))
+
+        let started = DispatchSemaphore(value: 0)
+        let finishLate = DispatchSemaphore(value: 0)
+        let task = Task.detached {
+            try await DiagnosticsRuntime.runPreparationAttempt(stagingBase: base) { attemptRoot in
+                started.signal()
+                finishLate.wait()
+                try FileManager.default.createDirectory(at: attemptRoot, withIntermediateDirectories: true)
+                try Data("abandoned attempt".utf8).write(
+                    to: attemptRoot.appendingPathComponent("archive.zip")
+                )
+                return attemptRoot
+            }
+        }
+
+        XCTAssertEqual(started.wait(timeout: .now() + 2), .success)
+        task.cancel()
+        finishLate.signal()
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: successor.path))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: base.path), ["successor"])
+    }
+
     func testPrepareArtifactRequestHonorsLastHourWindow() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("DiagnosticsRuntimeTests-\(UUID().uuidString)", isDirectory: true)

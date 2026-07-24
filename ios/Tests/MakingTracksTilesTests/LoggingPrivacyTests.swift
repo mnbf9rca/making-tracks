@@ -363,7 +363,10 @@ final class LoggingPrivacyTests: XCTestCase {
         XCTAssertTrue(source.contains("Task {"), "Prepare actions should enter Swift concurrency.")
         XCTAssertTrue(source.contains("await prepare()"), "Prepare actions should await the async prepare path.")
         XCTAssertTrue(source.contains("private func prepare() async"), "Diagnostics prepare should be async.")
-        XCTAssertTrue(source.contains("Task.detached(priority: .userInitiated)"), "Exporter work should run off the main actor.")
+        XCTAssertTrue(
+            source.contains("Task.detached(priority: .userInitiated, operation: operation)"),
+            "Exporter work should run off the main actor."
+        )
         XCTAssertFalse(
             source.contains("private func prepare() {\n        isPreparing = true"),
             "Diagnostics prepare should not use the old synchronous body."
@@ -389,6 +392,22 @@ final class LoggingPrivacyTests: XCTestCase {
             source.contains("prepareCoveringCurrentSession(preferredWindow: window"),
             "The session-covering heuristic turns retained older logs into Everything exports."
         )
+    }
+
+    func testDiagnosticsKeepsPreparedArtifactUntilCancelDeleteOrScreenExit() throws {
+        let source = try String(
+            contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertFalse(source.contains(".sheet(item: $shareItem, onDismiss: cleanupPreparedArtifact)"))
+        XCTAssertTrue(source.contains(".sheet(item: $shareItem) { item in"))
+        XCTAssertTrue(source.contains("@State private var preparationTask: Task<Void, Never>?"))
+        XCTAssertTrue(source.contains(
+            ".onDisappear {\n            preparationTask?.cancel()\n            cleanupPreparedArtifact()\n        }"
+        ))
+        XCTAssertTrue(source.contains("catch is CancellationError"))
+        XCTAssertTrue(source.contains("Button(\"Cancel\") {\n                    cleanupPreparedArtifact()"))
     }
 
     func testTrackVisitDateHeadersAreNotStandaloneMovableRows() throws {

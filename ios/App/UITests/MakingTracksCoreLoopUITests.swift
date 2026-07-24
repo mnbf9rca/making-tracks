@@ -1507,6 +1507,46 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Offline maps"].waitForExistence(timeout: 5))
     }
 
+    func testDiagnosticsShowsScopedExclusionBeforePrepareInDarkAppearance() {
+        let app = launch(reset: true, forceDarkAppearance: true)
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.settings"].tap()
+        let diagnostics = app.buttons["settings.diagnostics.export"]
+        XCTAssertTrue(scrollToHittable(diagnostics, in: app))
+        diagnostics.tap()
+
+        let exclusion = app.staticTexts[
+            "Your device name, exact location, and searches are not included in the export."
+        ]
+        XCTAssertTrue(scrollToExistence(of: exclusion, in: app))
+        XCTAssertTrue(exclusion.isHittable)
+        attachScreenshot(named: "diagnostics-preprepare-exclusions-dark")
+    }
+
+    func testDiagnosticsShareSheetDismissalKeepsPreparedArtifact() {
+        let app = launch(reset: true)
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.settings"].tap()
+        let diagnostics = app.buttons["settings.diagnostics.export"]
+        XCTAssertTrue(scrollToHittable(diagnostics, in: app))
+        diagnostics.tap()
+
+        let prepare = app.buttons["settings.diagnostics.prepare"]
+        XCTAssertTrue(prepare.waitForExistence(timeout: 5))
+        prepare.tap()
+        let share = app.buttons["settings.diagnostics.share"]
+        XCTAssertTrue(share.waitForExistence(timeout: 30))
+        share.tap()
+
+        let close = app.buttons["Close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        close.tap()
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["settings.diagnostics.cancel"].exists)
+    }
+
     func testMapHomeChromeHitTargetsAndThemeScreenshots() {
         let app = launch(reset: true, resetTheme: true, forceDarkAppearance: true)
 
@@ -2935,6 +2975,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "map-location-off": "denied-settings",
         "place-card-a11y": "place-card-a11y",
         "credits-a11y": "credits-a11y",
+        "diagnostics-preprepare-exclusions-dark": "diagnostics-preprepare-exclusions-dark",
         "tracks-static-geometry": "tracks-static-geometry",
         "tracks-unified-visit-editing": "tracks-unified-visit-editing",
         "list-map-polished-chrome": "list-map-polished-chrome",
