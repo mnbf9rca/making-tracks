@@ -1599,6 +1599,49 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Dense Pin 2"].waitForExistence(timeout: 5))
     }
 
+    func testTrackCategoryFilterScopesReplayTimelineAndAutoplay() {
+        let app = launch(
+            reset: true,
+            seedVisitsEditorVisual: true,
+            trackReplayBeatDuration: 5
+        )
+
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["My tracks"].tap()
+        XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+
+        let filter = element(identifier: "map.list-mode.filter.loved", in: app)
+        XCTAssertTrue(filter.waitForExistence(timeout: 5))
+        filter.tap()
+        XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
+        let attraction = app.buttons["track-filter-picker.category.attraction"]
+        XCTAssertTrue(scrollToHittable(attraction, in: app))
+        attraction.tap()
+        XCTAssertTrue(waitForButtonLabel("Show 2 visits", identifier: "track-filter-picker.apply", in: app))
+        app.buttons["track-filter-picker.apply"].tap()
+
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 2 of 2", in: app))
+        XCTAssertTrue(waitForTrackReplayArrival(
+            prefix: "Visit 2 of 2, Petronas Twin Towers Observation Deck",
+            in: app
+        ))
+
+        let play = app.buttons["map.track-replay.play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 5))
+        play.tap()
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 1 of 2", in: app))
+        XCTAssertTrue(waitForTrackReplayArrival(
+            prefix: "Visit 1 of 2, Ghost Sign",
+            in: app
+        ))
+        play.tap()
+    }
+
     func testListMapBackReturnsToSeededListDetail() {
         let app = launch(reset: true, pinDiagnostics: true, seedTrackList: true)
 
@@ -3190,6 +3233,22 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         if !result.matched {
             XCTFail("Expected replay counter \(label), got \(result.observed ?? "missing counter")")
+            return false
+        }
+        return true
+    }
+
+    private func waitForTrackReplayArrival(
+        prefix: String,
+        in app: XCUIApplication,
+        timeout: TimeInterval = 10
+    ) -> Bool {
+        let arrival = element(identifier: "map.track-replay.arrival", in: app)
+        let predicate = NSPredicate(format: "exists == true AND label BEGINSWITH %@", prefix)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: arrival)
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        if result != .completed {
+            XCTFail("Expected replay arrival starting \(prefix), got \(arrival.exists ? arrival.label : "missing arrival")")
             return false
         }
         return true
