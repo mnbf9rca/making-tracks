@@ -1508,6 +1508,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     func testDiagnosticsShowsScopedExclusionBeforePrepareInDarkAppearance() {
+        // This asserts structural presence under a dark launch, not dark-color legibility.
         let app = launch(reset: true, forceDarkAppearance: true)
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
         openAppMenu(in: app)
