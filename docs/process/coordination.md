@@ -36,6 +36,7 @@ Legacy handles `codex` (bare) and `claude` are **dead** — do not route to them
 fable runs a loop **~every 30 minutes**: read `tasks.md` and the PR/CI states; merge ready PRs per the merge law (announce PR + SHA first); assign next tasks; nudge stalls.
 
 - **Dual channel** (Rob, 2026-07-24; supersedes "builders talk to the tree, not to fable"): all agents — builders included — announce events to fable via AMQ (completion, blockers, handoffs), **and** write status to `tasks.md`. AMQ is the event channel so fable learns of completions without waiting for the next loop pass; `tasks.md` is the durable record the loop reads to catch a stuck agent — no progress, or a reply that never came. An event announced only on AMQ or only in `tasks.md` is half-delivered.
+- **No active phase** (fable ruling, 2026-07-24, pending Rob's ratification): when no phase `tasks.md` exists, issue-routed work uses its **tracker issue** as the durable record — post the same status vocabulary as issue comments. The dual-channel obligation is unchanged; only the ledger location moves.
 - **Stall** = a claimed task with **no status change for 45 minutes** (tunable per phase in the `tasks.md` header).
 - **Nudge** = an AMQ message quoting the last status line and the builder-brief pointer.
 - **Two unanswered nudges** → the task is released back to the graph and an **incident line** is logged.
