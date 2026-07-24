@@ -46,7 +46,7 @@ Storage is a **visit-event log**, not a boolean: `visits(id, place_id, visited_a
 
 ### 3.2 Bookmarks are a list
 
-One mechanism: **lists**. The app ships with a system list "Want to go"; the quick-save tap adds to it. Custom lists ("Date nights", "KL trip") are the same mechanism — this is the Google/Apple Maps saved-places pattern users already know.
+One mechanism: **lists**. The app ships with a system list "Want to go"; the Save tap opens the list picker (#383/#425 — originally a quick-add to "Want to go"), where the place is added to any list(s). Custom lists ("Date nights", "KL trip") are the same mechanism — this is the Google/Apple Maps saved-places pattern users already know.
 
 - Marking seen never mutates list membership. Every list renders visit-progress the same way ("3 of 12 visited"), which is exactly how shared lists will render in v2.
 - Pin states are **two orthogonal axes**, and every cell of the matrix is defined: saved ∈ {no, yes} × visit ∈ {none, visited, loved}. Precedence rule: the **visit axis drives fade** (visited and loved pins fade; loved additionally keeps a heart badge); the **saved axis contributes an independent bookmark badge that persists through fading**. So saved+visited = faded pin with bookmark badge; saved+loved = faded pin with bookmark and heart badges. This matters because saved-then-visited is the *guaranteed end state of the core loop*, not an edge case. Bookmark is intent, visit is history; orthogonal, not a state machine.
