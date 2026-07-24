@@ -106,7 +106,7 @@ struct MakingTracksApp: App {
                 }
                 let fixturePlaces = MapScreen.uiTestingFixturePlaces(dense: Self.debugUseDenseFixturePins)
                 if seedFixtureVisitsEditorVisual {
-                    try database.seedUITestingTrackVisits(Self.visitsEditorVisualFixturePlaces)
+                    try database.seedUITestingTrackVisits(Self.visitsEditorVisualFixturePlaces, multiDay: true)
                 } else if seedFixtureMultiDayTrackList {
                     let trackPlaces = Self.debugUseReplayVisualFixture ? Self.replayVisualFixturePlaces : fixturePlaces
                     try database.seedUITestingMultiDayTrackList(

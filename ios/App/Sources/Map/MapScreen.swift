@@ -5364,23 +5364,6 @@ private struct ListDetailView: View {
         .background(TrackVisitEditorVisualSpec.paperBackground)
         .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
         .environment(\.editMode, canReorderTrackVisits ? $trackEditMode : .constant(.inactive))
-        .overlayPreferenceValue(TrackVisitRowBoundsPreferenceKey.self) { rowBounds in
-            if canReorderTrackVisits {
-                GeometryReader { proxy in
-                    ForEach(rowBounds.keys.sorted(), id: \.self) { visitID in
-                        if let anchor = rowBounds[visitID] {
-                            invariantReorderHandle
-                                .position(
-                                    x: proxy.size.width - 28,
-                                    y: proxy[anchor].midY
-                                )
-                        }
-                    }
-                }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
-        }
         .accessibilityIdentifier("lists.detail.surface.track")
         .task { await reload() }
         .refreshable { await reload() }
@@ -5625,6 +5608,8 @@ private struct ListDetailView: View {
                     }
                     .layoutPriority(1)
 
+                    Spacer(minLength: 4)
+
                     Button {
                         Task { await setLoved(visit) }
                     } label: {
@@ -5646,6 +5631,10 @@ private struct ListDetailView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
                     .accessibilityIdentifier("lists.detail.track.row.loved.\(visit.id)")
+
+                    if canReorderTrackVisits {
+                        invariantReorderHandle
+                    }
             }
             .padding(11)
             .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
