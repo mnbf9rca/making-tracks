@@ -4257,10 +4257,11 @@ struct MapScreen: View {
 
     @MainActor
     private func clearActiveListMap(deletedListID listID: Int64) async {
-        guard activeListMap?.listID == listID else { return }
-        activeListMap = nil
-        listCameraRequest = nil
-        clearTrackReplay()
+        if activeListMap?.listID == listID {
+            activeListMap = nil
+            listCameraRequest = nil
+            clearTrackReplay()
+        }
         await refreshCurrentViewport()
     }
 
@@ -7848,12 +7849,6 @@ private struct PlaceCardSheet: View {
         }
     }
 
-    private func setSaved(_ saved: Bool) async {
-        await performAction {
-            try await model?.setSaved(placeID: placeID, saved: saved)
-        }
-    }
-
     private func setVisited(_ visited: Bool, action: PlaceCardAction) async {
         if !visited, (await model?.visitCount(placeID: placeID) ?? 0) > 1 {
             // #217: Rob has not fixed the stale single-visit threshold yet, so
@@ -8872,9 +8867,9 @@ final class MapScreenModel {
     }
 
     func deleteList(id: Int64) async throws {
-        let db = database
+        let coreLoop = coreLoop
         try await Task.detached {
-            try db.deleteList(id: id)
+            try coreLoop.deleteList(id: id)
         }.value
     }
 
@@ -8926,12 +8921,6 @@ final class MapScreenModel {
             accessibilityLabel: "Photo of \(name)",
             attribution: "Fixture photo"
         )
-    }
-
-    func setSaved(placeID: String, saved: Bool) async throws {
-        guard let placeRef = await actionPlaceRef(for: placeID) else { throw MapScreenActionError.placeUnavailable }
-        try coreLoop.setSaved(placeRef, saved)
-        logVerdictChanged(placeRef: placeRef, action: "save", enabled: saved)
     }
 
     func addToList(placeID: String, listID: Int64) async throws {

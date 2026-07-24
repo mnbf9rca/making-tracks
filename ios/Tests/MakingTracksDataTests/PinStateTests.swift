@@ -60,7 +60,7 @@ final class PinStateTests: XCTestCase {
         XCTAssertEqual(state["pB"], PinState(saved: false, visit: .loved))
     }
 
-    func testSavedStateOnlyReflectsWantToGoSystemListMembership() throws {
+    func testSavedStateReflectsMembershipInAnyList() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
         try db.dbQueue.write { d in
             try d.execute(
@@ -77,7 +77,7 @@ final class PinStateTests: XCTestCase {
         let state = try db.viewportState(["p_want", "p_user_list_only"])
 
         XCTAssertEqual(state["p_want"], PinState(saved: true, visit: .none))
-        XCTAssertEqual(state["p_user_list_only"], PinState(saved: false, visit: .none))
+        XCTAssertEqual(state["p_user_list_only"], PinState(saved: true, visit: .none))
     }
 
     func testUserListNamesExcludeSystemListAndDeduplicateNames() throws {
