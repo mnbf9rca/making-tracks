@@ -1208,6 +1208,55 @@ final class AppShellTests: XCTestCase {
         )
     }
 
+    func testTrackVisitDragTriggerMapsPositiveTranslationFromKnownSourceFrame() {
+        let orderedVisitIDs: [Int64] = [1, 2, 3]
+        let rowFrames: [Int64: CGRect] = [
+            1: CGRect(x: 0, y: 0, width: 300, height: 80),
+            2: CGRect(x: 0, y: 90, width: 300, height: 80),
+            3: CGRect(x: 0, y: 180, width: 300, height: 80),
+        ]
+
+        XCTAssertEqual(
+            TrackVisitDragTrigger.destinationOffset(
+                for: 2,
+                translationY: 90,
+                orderedVisitIDs: orderedVisitIDs,
+                rowFrames: rowFrames
+            ),
+            3,
+            "Dragging the middle row down by one row must move it after the next row, not to index 0"
+        )
+    }
+
+    func testTrackVisitDragTriggerUsesCapturedSourceAfterAutoScrollUnmountsRow() {
+        let orderedVisitIDs: [Int64] = [1, 2, 3]
+        let remainingRowFrames: [Int64: CGRect] = [
+            1: CGRect(x: 0, y: 0, width: 300, height: 80),
+            3: CGRect(x: 0, y: 180, width: 300, height: 80),
+        ]
+
+        XCTAssertEqual(
+            TrackVisitDragTrigger.destinationOffset(
+                for: 2,
+                translationY: 90,
+                sourceMidY: 130,
+                orderedVisitIDs: orderedVisitIDs,
+                rowFrames: remainingRowFrames
+            ),
+            3,
+            "A lazy List unmounting the source row during edge auto-scroll must not cancel the drop"
+        )
+    }
+
+    func testTrackVisitDragVisualSpecLiftsOnlyTheActiveRow() {
+        XCTAssertEqual(TrackVisitDragVisualSpec.scale(isActive: false), 1)
+        XCTAssertGreaterThan(TrackVisitDragVisualSpec.scale(isActive: true), 1)
+        XCTAssertEqual(TrackVisitDragVisualSpec.offsetY(isActive: false), 0)
+        XCTAssertLessThan(TrackVisitDragVisualSpec.offsetY(isActive: true), 0)
+        XCTAssertEqual(TrackVisitDragVisualSpec.shadowOpacity(isActive: false), 0)
+        XCTAssertGreaterThan(TrackVisitDragVisualSpec.shadowOpacity(isActive: true), 0)
+    }
+
     func testTrackVisitDragTriggerRejectsUnknownOrUnmeasuredSource() {
         let orderedVisitIDs: [Int64] = [1, 2]
         let rowFrames: [Int64: CGRect] = [1: CGRect(x: 0, y: 0, width: 300, height: 80)]

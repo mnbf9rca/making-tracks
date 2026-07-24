@@ -1015,6 +1015,23 @@ enum TrackVisitDragTrigger {
 
     static func destinationOffset(
         for visitID: Int64,
+        translationY: CGFloat,
+        sourceMidY: CGFloat? = nil,
+        orderedVisitIDs: [Int64],
+        rowFrames: [Int64: CGRect]
+    ) -> Int? {
+        guard orderedVisitIDs.contains(visitID),
+              let resolvedSourceMidY = sourceMidY ?? rowFrames[visitID]?.midY
+        else { return nil }
+        return destinationOffset(
+            dropY: resolvedSourceMidY + translationY,
+            orderedVisitIDs: orderedVisitIDs,
+            rowFrames: rowFrames
+        )
+    }
+
+    static func destinationOffset(
+        for visitID: Int64,
         dropY: CGFloat,
         orderedVisitIDs: [Int64],
         rowFrames: [Int64: CGRect]
@@ -1022,7 +1039,18 @@ enum TrackVisitDragTrigger {
         guard orderedVisitIDs.contains(visitID), rowFrames[visitID] != nil else {
             return nil
         }
+        return destinationOffset(
+            dropY: dropY,
+            orderedVisitIDs: orderedVisitIDs,
+            rowFrames: rowFrames
+        )
+    }
 
+    private static func destinationOffset(
+        dropY: CGFloat,
+        orderedVisitIDs: [Int64],
+        rowFrames: [Int64: CGRect]
+    ) -> Int? {
         let measuredRows = orderedVisitIDs.enumerated().compactMap { index, id in
             rowFrames[id].map { (index: index, frame: $0) }
         }
@@ -1076,6 +1104,28 @@ enum TrackVisitDragTrigger {
         }
         guard sourceIndex > 0 else { return nil }
         return sourceIndex - 1
+    }
+}
+
+enum TrackVisitDragVisualSpec {
+    static func scale(isActive: Bool) -> CGFloat {
+        isActive ? 1.015 : 1
+    }
+
+    static func offsetY(isActive: Bool) -> CGFloat {
+        isActive ? -3 : 0
+    }
+
+    static func shadowOpacity(isActive: Bool) -> Double {
+        isActive ? 0.22 : 0
+    }
+
+    static func shadowRadius(isActive: Bool) -> CGFloat {
+        isActive ? 9 : 0
+    }
+
+    static func shadowY(isActive: Bool) -> CGFloat {
+        isActive ? 5 : 0
     }
 }
 
@@ -5276,6 +5326,7 @@ private struct ListDetailView: View {
     @State private var trackVisitRowFrames: [Int64: CGRect] = [:]
     @State private var trackVisitViewportBounds = CGRect.zero
     @State private var draggingTrackVisitID: Int64?
+    @State private var trackVisitDragStartMidY: CGFloat?
     @State private var trackAutoScrollTask: Task<Void, Never>?
     @State private var trackAutoScrollTargetID: Int64?
     @State private var trackAutoScrollTowardEnd = false
@@ -5736,6 +5787,17 @@ private struct ListDetailView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
             }
+            .scaleEffect(TrackVisitDragVisualSpec.scale(isActive: draggingTrackVisitID == visit.id))
+            .offset(y: TrackVisitDragVisualSpec.offsetY(isActive: draggingTrackVisitID == visit.id))
+            .shadow(
+                color: Color.black.opacity(
+                    TrackVisitDragVisualSpec.shadowOpacity(isActive: draggingTrackVisitID == visit.id)
+                ),
+                radius: TrackVisitDragVisualSpec.shadowRadius(isActive: draggingTrackVisitID == visit.id),
+                y: TrackVisitDragVisualSpec.shadowY(isActive: draggingTrackVisitID == visit.id)
+            )
+            .zIndex(draggingTrackVisitID == visit.id ? 1 : 0)
+            .animation(.easeOut(duration: 0.12), value: draggingTrackVisitID == visit.id)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("lists.detail.track.row.card.\(visit.id)")
             .accessibilityAction(named: "Edit visit") {
@@ -5793,25 +5855,36 @@ private struct ListDetailView: View {
 
     private func trackVisitReorderGesture(for visit: TrackVisit) -> some Gesture {
         DragGesture(
-            minimumDistance: 4,
+            minimumDistance: 0,
             coordinateSpace: .named(TrackVisitDragTrigger.coordinateSpaceName)
         )
         .onChanged { value in
-            guard canReorderTrackVisits else { return }
-            draggingTrackVisitID = visit.id
-            updateTrackVisitAutoScroll(dropY: value.location.y)
+            guard canReorderTrackVisits,
+                  let sourceFrame = trackVisitRowFrames[visit.id]
+            else { return }
+            if draggingTrackVisitID != visit.id {
+                draggingTrackVisitID = visit.id
+                trackVisitDragStartMidY = sourceFrame.midY
+            }
+            guard let sourceMidY = trackVisitDragStartMidY else { return }
+            updateTrackVisitAutoScroll(
+                dropY: sourceMidY + value.translation.height
+            )
         }
         .onEnded { value in
             defer {
                 draggingTrackVisitID = nil
+                trackVisitDragStartMidY = nil
                 stopTrackVisitAutoScroll()
             }
             guard canReorderTrackVisits,
                   draggingTrackVisitID == visit.id,
+                  let sourceMidY = trackVisitDragStartMidY,
                   let source = visibleTrackVisits.firstIndex(where: { $0.id == visit.id }),
                   let destination = TrackVisitDragTrigger.destinationOffset(
                     for: visit.id,
-                    dropY: value.location.y,
+                    translationY: value.translation.height,
+                    sourceMidY: sourceMidY,
                     orderedVisitIDs: visibleTrackVisits.map(\.id),
                     rowFrames: trackVisitRowFrames
                   )
