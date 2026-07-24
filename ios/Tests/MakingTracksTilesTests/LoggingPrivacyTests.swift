@@ -153,6 +153,34 @@ final class LoggingPrivacyTests: XCTestCase {
 
         XCTAssertEqual(MakingTracksLog.host(hostileURL), "tiles.making-tracks.app")
         XCTAssertEqual(MakingTracksLog.objectKind(hostileURL), "tile")
+        XCTAssertEqual(
+            MakingTracksLog.objectPath(hostileURL),
+            "/uk_london/20260718T010203Z/tiles/10/{x}/{y}.json.gz"
+        )
+        XCTAssertFalse(MakingTracksLog.objectPath(hostileURL).contains("/1/2"))
+        for (path, expected) in [
+            (
+                "/uk_london/20260718T010203Z/images/10/11/12.json",
+                "/uk_london/20260718T010203Z/images/10/{x}/{y}.json"
+            ),
+            (
+                "/uk_london/20260718T010203Z/descriptions/10/21/22.json",
+                "/uk_london/20260718T010203Z/descriptions/10/{x}/{y}.json"
+            ),
+        ] {
+            XCTAssertEqual(
+                MakingTracksLog.objectPath(
+                    try XCTUnwrap(URL(string: "https://tiles.making-tracks.app\(path)"))
+                ),
+                expected
+            )
+        }
+        XCTAssertEqual(
+            MakingTracksLog.objectPath(
+                try XCTUnwrap(URL(string: "https://tiles.making-tracks.app/uk_london/20260718T010203Z/current.json"))
+            ),
+            "/uk_london/20260718T010203Z/current.json"
+        )
         XCTAssertEqual(MakingTracksLog.errorLabel(TileError.httpStatus(503)), "http-503")
         XCTAssertEqual(MakingTracksLog.errorLabel(TileError.invalidRedirect), "invalid-redirect")
 
@@ -255,7 +283,7 @@ final class LoggingPrivacyTests: XCTestCase {
         }
     }
 
-    func testDiagnosticsConsentCopyKeepsExportClassesWithoutDisclosureBoxes() throws {
+    func testDiagnosticsReviewRestoresRuledDisclosureGuardrails() throws {
         let source = try String(
             contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
             encoding: .utf8
@@ -264,35 +292,65 @@ final class LoggingPrivacyTests: XCTestCase {
             contentsOf: packageRoot().appendingPathComponent("Sources/MakingTracksTiles/DiagnosticLogExport.swift"),
             encoding: .utf8
         )
+        let diagnosticsSource = try XCTUnwrap(
+            source.components(separatedBy: "private struct DiagnosticsView").last?
+                .components(separatedBy: "private struct DiagnosticsShareItem").first
+        )
 
         for expected in [
             "Nothing is sent automatically. The app prepares a file on this phone",
             "Tap Share when you are ready to choose who gets it. Nothing leaves Making Tracks before then.",
             "Making Tracks has no upload endpoint.",
             "Your device name, exact location, and searches are not included in the export.",
-        ] {
-            XCTAssertTrue(source.contains(expected), expected)
-        }
-        for removedDisclosureCopy in [
-            "Section(\"Included\")",
-            "Section(\"Not included\")",
             "diagnosticsClassGrid(",
             "DiagnosticsDisclosureClass",
             "App details", "Device type", "Steps in the app", "Downloaded maps",
             "Map file links", "Problems", "Load times", "Places and taps",
             "Device name", "Precise location", "Search text",
+            "Section(\"Included\")", "Section(\"Excluded\")",
+            "settings.diagnostics.window-status",
+            "settings.diagnostics.included",
+            "settings.diagnostics.excluded",
+            "\"Prepare file\"",
+            ".disabled(isPreparing || artifact != nil)",
+            "if artifact == nil",
+            "@Environment(\\.dynamicTypeSize)",
+            "if !dynamicTypeSize.isAccessibilitySize",
+            "dynamicTypeSize.isAccessibilitySize ? [GridItem(.flexible())]",
+            "settings.diagnostics.window.\\(window.accessibilityID)",
         ] {
-            XCTAssertFalse(source.contains(removedDisclosureCopy), removedDisclosureCopy)
+            XCTAssertTrue(diagnosticsSource.contains(expected), expected)
         }
+        XCTAssertEqual(
+            diagnosticsSource.components(separatedBy: "Your device name, exact location, and searches are not included in the export.").count - 1,
+            2,
+            "The scoped exclusion promise should remain visible in both pre-Prepare and prepared states."
+        )
+
+        let titleRange = try XCTUnwrap(diagnosticsSource.range(of: "Text(\"Send a diagnostic log\")"))
+        let explanationRange = try XCTUnwrap(diagnosticsSource.range(
+            of: "Text(\"Nothing is sent automatically. The app prepares a file on this phone"
+        ))
+        let pickerRange = try XCTUnwrap(diagnosticsSource.range(of: "diagnosticsWindowPicker"))
+        let statusRange = try XCTUnwrap(diagnosticsSource.range(of: "diagnosticsWindowStatus"))
+        let includedRange = try XCTUnwrap(diagnosticsSource.range(of: "Section(\"Included\")"))
+        let excludedRange = try XCTUnwrap(diagnosticsSource.range(of: "Section(\"Excluded\")"))
+
+        XCTAssertLessThan(titleRange.lowerBound, explanationRange.lowerBound)
+        XCTAssertLessThan(explanationRange.lowerBound, pickerRange.lowerBound)
+        XCTAssertLessThan(pickerRange.lowerBound, statusRange.lowerBound)
+        XCTAssertLessThan(statusRange.lowerBound, includedRange.lowerBound)
+        XCTAssertLessThan(includedRange.lowerBound, excludedRange.lowerBound)
+
         XCTAssertTrue(exportSource.contains("included=app-version,device-model,installed-packs,session-flow,object-urls,error-codes,timings"))
         XCTAssertTrue(exportSource.contains("not-included=device-name,exact-location,search-wording"))
-        XCTAssertFalse(source.contains("Phone model"))
-        XCTAssertFalse(source.contains("Phone name"))
-        XCTAssertFalse(source.contains("Your coordinates never leave."))
-        XCTAssertFalse(source.contains("Your coordinates are excluded."))
-        XCTAssertFalse(source.contains("never included"))
-        XCTAssertFalse(source.contains("Places you looked at, saved, loved, hid or visited."))
-        XCTAssertFalse(source.contains("Your searches, lists, location, viewport or device name."))
+        XCTAssertFalse(diagnosticsSource.contains("Phone model"))
+        XCTAssertFalse(diagnosticsSource.contains("Phone name"))
+        XCTAssertFalse(diagnosticsSource.contains("Your coordinates never leave."))
+        XCTAssertFalse(diagnosticsSource.contains("Your coordinates are excluded."))
+        XCTAssertFalse(diagnosticsSource.contains("never included"))
+        XCTAssertFalse(diagnosticsSource.contains("Places you looked at, saved, loved, hid or visited."))
+        XCTAssertFalse(diagnosticsSource.contains("Your searches, lists, location, viewport or device name."))
     }
 
     func testDiagnosticsRedesignKeepsDeleteInsideDiagnosticsContext() throws {
@@ -407,7 +465,9 @@ final class LoggingPrivacyTests: XCTestCase {
             ".onDisappear {\n            preparationTask?.cancel()\n            cleanupPreparedArtifact()\n        }"
         ))
         XCTAssertTrue(source.contains("catch is CancellationError"))
-        XCTAssertTrue(source.contains("Button(\"Cancel\") {\n                    cleanupPreparedArtifact()"))
+        XCTAssertTrue(source.contains(
+            "Button {\n                    cleanupPreparedArtifact()\n                } label: {\n                    Text(\"Cancel\")"
+        ))
     }
 
     func testTrackVisitDateHeadersAreNotStandaloneMovableRows() throws {
