@@ -1,6 +1,6 @@
 # Proposed AGENTS.md Amendments — Phase-Cycle Workflow
 
-**Status: PROPOSED — pending Rob's ratification.** Inert until ratified; do not apply to `AGENTS.md` before then. After ratification, a separate PR applies these to `AGENTS.md` on `develop`.
+**Status: RATIFIED (Rob, 2026-07-24).** A separate PR applies these to `AGENTS.md` on `develop`; until that PR merges, current `AGENTS.md` text stands.
 
 Source: `docs/superpowers/specs/2026-07-24-dev-workflow-phase-cycle.md` §10. Current text quoted from `AGENTS.md` on `develop` (verified 2026-07-24). Each item gives the CURRENT text and the PROPOSED change.
 
