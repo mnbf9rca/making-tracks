@@ -434,14 +434,11 @@ extension AppDatabase {
             String.fetchAll(
                 db,
                 sql: """
-                    SELECT DISTINCT li.place_id
-                    FROM list_items li
-                    JOIN lists l ON l.id = li.list_id
-                    WHERE li.place_id IN (\(qmarks))
-                    AND l.is_system = 1
-                    AND l.name = ?
+                    SELECT DISTINCT place_id
+                    FROM list_items
+                    WHERE place_id IN (\(qmarks))
                     """,
-                arguments: StatementArguments(placeIDs + [Self.wantToGoListName])
+                arguments: StatementArguments(placeIDs)
             )
         )
         let hidden = try Set(

@@ -26,15 +26,20 @@ public enum DiagnosticLogWindow: Hashable, Sendable {
     case lastHour
     case everything
 
-    fileprivate func contains(_ date: Date, relativeTo now: Date) -> Bool {
+    fileprivate func cutoff(relativeTo now: Date) -> Date? {
         switch self {
         case .fifteenMinutes:
-            return date >= now.addingTimeInterval(-15 * 60)
+            return now.addingTimeInterval(-15 * 60)
         case .lastHour:
-            return date >= now.addingTimeInterval(-60 * 60)
+            return now.addingTimeInterval(-60 * 60)
         case .everything:
-            return true
+            return nil
         }
+    }
+
+    fileprivate func contains(_ date: Date, relativeTo now: Date) -> Bool {
+        guard let cutoff = cutoff(relativeTo: now) else { return true }
+        return date >= cutoff
     }
 }
 
@@ -261,10 +266,18 @@ public final class DiagnosticLogStore {
     }
 
     private func snapshotLocked(window: DiagnosticLogWindow, allLines: [String]) -> DiagnosticLogSnapshot {
-        let referenceNow = now()
+        guard let cutoff = window.cutoff(relativeTo: now()) else {
+            return DiagnosticLogSnapshot(totalLineCount: allLines.count, lines: allLines)
+        }
+        let firstIncludedSecond = Date(
+            timeIntervalSince1970: cutoff.timeIntervalSince1970.rounded(.up)
+        )
+        guard let cutoffToken = Self.canonicalTimestampToken(for: firstIncludedSecond) else {
+            return DiagnosticLogSnapshot(totalLineCount: allLines.count, lines: allLines)
+        }
         let windowLines = allLines.filter { line in
-            guard let date = Self.dateFromLine(line) else { return true }
-            return window.contains(date, relativeTo: referenceNow)
+            guard let timestamp = Self.canonicalTimestampToken(from: line) else { return true }
+            return timestamp >= cutoffToken[...]
         }
         return DiagnosticLogSnapshot(totalLineCount: allLines.count, lines: windowLines)
     }
@@ -314,6 +327,61 @@ public final class DiagnosticLogStore {
         guard let timestamp = line.split(separator: " ", maxSplits: 1).first else { return nil }
         return timestampFormatter().date(from: String(timestamp))
     }
+
+    static func canonicalTimestampToken(for date: Date) -> String? {
+        let token = timestampFormatter().string(from: date)
+        return canonicalTimestampToken(from: token).map(String.init)
+    }
+
+    private static func canonicalTimestampToken(from line: String) -> Substring? {
+        guard let token = line.split(separator: " ", maxSplits: 1).first else { return nil }
+        let bytes = Array(token.utf8)
+        guard bytes.count == 20,
+              bytes[4] == Character("-").asciiValue,
+              bytes[7] == Character("-").asciiValue,
+              bytes[10] == Character("T").asciiValue,
+              bytes[13] == Character(":").asciiValue,
+              bytes[16] == Character(":").asciiValue,
+              bytes[19] == Character("Z").asciiValue
+        else {
+            return nil
+        }
+        let digitPositions = [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18]
+        guard digitPositions.allSatisfy({ (48...57).contains(bytes[$0]) }) else { return nil }
+
+        func decimal(_ first: Int, _ second: Int) -> Int {
+            Int(bytes[first] - 48) * 10 + Int(bytes[second] - 48)
+        }
+        let year = decimal(0, 1) * 100 + decimal(2, 3)
+        let month = decimal(5, 6)
+        let day = decimal(8, 9)
+        let hour = decimal(11, 12)
+        let minute = decimal(14, 15)
+        let second = decimal(17, 18)
+        guard year > 0,
+              (1...12).contains(month),
+              (1...daysInMonth(month, year: year)).contains(day),
+              (0...23).contains(hour),
+              (0...59).contains(minute),
+              (0...59).contains(second)
+        else {
+            return nil
+        }
+        return token
+    }
+
+    private static func daysInMonth(_ month: Int, year: Int) -> Int {
+        switch month {
+        case 2:
+            let isLeapYear = year.isMultiple(of: 400)
+                || (year.isMultiple(of: 4) && !year.isMultiple(of: 100))
+            return isLeapYear ? 29 : 28
+        case 4, 6, 9, 11:
+            return 30
+        default:
+            return 31
+        }
+    }
 }
 
 public struct DiagnosticLogExporter {
@@ -337,11 +405,13 @@ public struct DiagnosticLogExporter {
     }
 
     public func prepare(window: DiagnosticLogWindow, stagingRoot: URL) throws -> DiagnosticLogArtifact {
+        try Task.checkCancellation()
         var timings = DiagnosticLogPreparePhaseTimings()
         let totalStartedAt = DiagnosticLogPreparePhaseTimings.now()
         let snapshot = try timings.measure("snapshot") {
             try store.snapshot(window: window)
         }
+        try Task.checkCancellation()
         return try prepare(
             windowedSnapshot: DiagnosticLogWindowedSnapshot(window: window, snapshot: snapshot),
             stagingRoot: stagingRoot,
@@ -362,6 +432,7 @@ public struct DiagnosticLogExporter {
                 try fileManager.removeItem(at: stagingRoot)
             }
         }
+        try Task.checkCancellation()
         let exportTimestamp = Self.filenameTimestampFormatter().string(from: exportedAt())
         let directory = stagingRoot.appendingPathComponent("MakingTracksDiagnostics-\(exportTimestamp)", isDirectory: true)
         do {
@@ -369,6 +440,7 @@ public struct DiagnosticLogExporter {
                 try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
                 try DiagnosticLogStore.setDiagnosticsResourceValuesForExporter(directory)
             }
+            try Task.checkCancellation()
 
             let summaryURL = directory.appendingPathComponent("summary-\(exportTimestamp).txt")
             let logURL = directory.appendingPathComponent("diagnostic-log-\(exportTimestamp).txt")
@@ -394,6 +466,7 @@ public struct DiagnosticLogExporter {
             guard passedScrub else {
                 throw DiagnosticLogExportError.privacyScrubFailed
             }
+            try Task.checkCancellation()
             let previewPhaseTimings = timings.entries + [
                 DiagnosticLogPreparePhaseTiming(phase: "preview", durationMilliseconds: 0),
             ]
@@ -410,9 +483,11 @@ public struct DiagnosticLogExporter {
                 try previewRender.summary.write(to: summaryURL, atomically: true, encoding: .utf8)
                 try log.write(to: logURL, atomically: true, encoding: .utf8)
             }
+            try Task.checkCancellation()
             let archiveURL = try timings.measure("archive") {
                 try makeArchive(directory: directory, stagingRoot: stagingRoot, exportTimestamp: exportTimestamp)
             }
+            try Task.checkCancellation()
             let byteCount = try timings.measure("byte-count") {
                 try archiveByteCount(archiveURL)
             }
