@@ -225,9 +225,21 @@ struct OfflineRegionCatalog: Sendable, Equatable {
     }
 
     init(regionIndex: RegionIndex) {
-        self.zones = regionIndex.regions.map { entry in
-            guard let searchPublishVersion = Self.publishVersion(fromSearchCompactPath: entry.searchCompact.path) else {
-                preconditionFailure("RegionIndex.decode must validate search_compact.path before catalog construction")
+        self.zones = regionIndex.regions.compactMap { entry in
+            guard let searchPublishVersion = Self.publishVersion(
+                fromSearchCompactPath: entry.searchCompact.path,
+                matchingEntryID: entry.id
+            ) else {
+                MakingTracksLog.file(
+                    category: .downloads,
+                    level: .error,
+                    "region catalog entry dropped",
+                    fields: [
+                        .object("region", entry.id),
+                        .public("reason", "invalid-search-compact-publish-version"),
+                    ]
+                )
+                return nil
             }
             return OfflineRegionCatalogZone(
                 id: entry.id,
@@ -266,13 +278,31 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         }
     }
 
-    private static func publishVersion(fromSearchCompactPath path: String) -> String? {
+    private static func publishVersion(
+        fromSearchCompactPath path: String,
+        matchingEntryID entryID: String
+    ) -> String? {
         let parts = path.split(separator: "/", omittingEmptySubsequences: false)
-        guard parts.count >= 4,
-              parts[parts.count - 2] == "search",
-              parts[parts.count - 1] == "compact.json"
+        guard parts.count == 4,
+              parts[0] == entryID,
+              parts[2] == "search",
+              parts[3] == "compact.json",
+              Self.isPublishVersion(parts[1])
         else { return nil }
-        return String(parts[parts.count - 3])
+        return String(parts[1])
+    }
+
+    private static func isPublishVersion(_ value: Substring) -> Bool {
+        let bytes = Array(value.utf8)
+        return bytes.count == 16
+            && bytes[0..<8].allSatisfy(Self.isASCIIDigit)
+            && bytes[8] == 84 // T
+            && bytes[9..<15].allSatisfy(Self.isASCIIDigit)
+            && bytes[15] == 90 // Z
+    }
+
+    private static func isASCIIDigit(_ byte: UInt8) -> Bool {
+        (48...57).contains(byte)
     }
 
     var rootZones: [OfflineRegionCatalogZone] {
@@ -335,7 +365,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             )
         }
         return catalogRows + unavailableLocalRows(
-            knownZoneIDs: Set(zones.map(\.id)),
+            knownZoneIDs: Set(catalogRows.map(\.zone.id)),
             installed: installed,
             installedStorageBytes: installedStorageBytes,
             activeProgress: activeProgress,
