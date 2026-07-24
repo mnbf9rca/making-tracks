@@ -16,7 +16,7 @@ Legacy handles `codex` (bare) and `claude` are **dead** — do not route to them
 
 ## AMQ conventions
 
-- **Root:** `.agent-mail`. **Fleet session: `collab`.** The base tree is *not* drained by agents, so every send must use `--session collab` (`amq send --to <handle> --session collab …`, or the inline `<handle>@<project>:collab` form).
+- **Root:** `.agent-mail`. **Fleet session: `collab`.** The base tree is *not* drained by agents, so every send must use `--session collab` (`amq send --to <handle> --session collab …`). The inline `<handle>@<project>:<session>` form is cross-**project** routing only — do not use it for same-project session sends.
 - **Handles:** `fable`, `opus`, `codex1`–`codex4`, `user` (Rob), `codex-r` (from the restart).
 - **Threads:** `p2p/<a>__<b>` for a pair (e.g. `p2p/fable__opus`); `gate/<topic>` addressed to `user` for human-action gates (a decision or promotion only Rob can make).
 - **Kinds** (amq defaults): `review_request`, `question`, `todo`, `status`, `decision`, plus `answer`/`review_response`. Set `priority` (`urgent`/`normal`/`low`) to match.
