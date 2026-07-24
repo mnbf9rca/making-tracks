@@ -419,35 +419,96 @@ final class LoggingPrivacyTests: XCTestCase {
             source.contains(#"Text(verbatim: formattedDay(calendar.startOfDay(for: visit.visitedAt)))"#),
             "Date headers must be rendered inside the visit row, not as standalone rows in the movable ForEach."
         )
-        var movableBodies: [String] = []
-        var searchStart = source.startIndex
-        while let forEachRange = source[searchStart...].range(of: movableRowsStart) {
-            let afterForEach = source[forEachRange.upperBound...]
-            guard let onMoveRange = afterForEach.range(of: ".onMove") else {
-                return XCTFail("Every My tracks movable ForEach should apply onMove directly to visit rows.")
-            }
-            movableBodies.append(String(afterForEach[..<onMoveRange.lowerBound]))
-            searchStart = onMoveRange.upperBound
-        }
-
-        XCTAssertEqual(
-            movableBodies.count,
-            2,
-            "Both My tracks movable ForEach blocks should be guarded against standalone date headers."
-        )
+        let trackListBodyStart = try XCTUnwrap(source.range(of: "private var trackListBody"))
+        let collectionListBodyStart = try XCTUnwrap(source.range(of: "private var collectionListBody"))
+        let trackSummaryCardStart = try XCTUnwrap(source.range(of: "private var trackSummaryCard"))
+        let movableBodies = [
+            String(source[trackListBodyStart.lowerBound..<collectionListBodyStart.lowerBound]),
+            String(source[collectionListBodyStart.lowerBound..<trackSummaryCardStart.lowerBound]),
+        ]
+        let onlyRowBranchPattern =
+            #"\belse[ \t]*\{[ \t]*\n[ \t]*"#
+                + #"ForEach\(TrackVisitReordering\.rows\(for:\s*visibleTrackVisits,\s*calendar:\s*calendar\)\)"#
+                + #"[ \t]*\{[ \t]*row[ \t]+in[ \t]*\n[ \t]+"#
+                + #"trackVisitRow\(row\.visit,[ \t]*dayHeader:[ \t]*row\.dayHeader\)"#
+                + #"(?:[ \t]*\n[ \t]*\.[^;\n]*)*[ \t]*\n[ \t]*\}"#
+                + #"[ \t]*\n[ \t]*\}"#
+        let onlyRowPatterns = [
+            onlyRowBranchPattern + #"[ \t]*\n[ \t]*\}[ \t]*\n[ \t]*\}"#,
+            onlyRowBranchPattern + #"[ \t]*\n[ \t]*\}[ \t]*else[ \t]+if[ \t]+items\b"#,
+        ]
 
         for (index, movableBody) in movableBodies.enumerated() {
             let movableBodyWithoutVisitRow = movableBody.replacingOccurrences(of: inlineVisitRow, with: "")
-
-            XCTAssertTrue(
-                movableBody.contains(inlineVisitRow),
+            XCTAssertEqual(
+                movableBody.components(separatedBy: movableRowsStart).count - 1,
+                1,
+                "My tracks body \(index + 1) should contain exactly one movable visit ForEach."
+            )
+            XCTAssertEqual(
+                movableBody.components(separatedBy: "TrackVisitReordering.").count - 1,
+                1,
+                "My tracks body \(index + 1) must not build standalone day-section rows."
+            )
+            XCTAssertEqual(
+                movableBody.components(separatedBy: inlineVisitRow).count - 1,
+                1,
                 "Movable track visit ForEach \(index + 1) should render visits with inline day headers."
             )
+            XCTAssertNotNil(
+                movableBody.range(of: onlyRowPatterns[index], options: .regularExpression),
+                "Movable track visit ForEach \(index + 1) should contain only the visit row and its modifiers."
+            )
+            XCTAssertFalse(movableBody.contains("/*"), "Block comments must not masquerade as live movable rows.")
+            XCTAssertFalse(movableBody.contains("//"), "Line comments must not masquerade as live movable rows.")
+            XCTAssertFalse(movableBody.contains("\"\"\""), "Multiline strings must not masquerade as live movable rows.")
+            XCTAssertFalse(movableBody.contains("#if"), "Inactive compiler branches must not masquerade as live movable rows.")
             XCTAssertNil(
-                movableBodyWithoutVisitRow.range(of: #"(?i)header|formattedDay|Text\s*\("#, options: .regularExpression),
-                "Movable track visit ForEach \(index + 1) must not render standalone date headers before onMove."
+                movableBodyWithoutVisitRow.range(
+                    of: #"(?i)\bdayHeader\b|\bvisitedAt\b|formattedTrackDay|formattedDay|\.formatted\s*\(\s*date\s*:"#,
+                    options: .regularExpression
+                ),
+                "My tracks body \(index + 1) must not render a standalone date header beside the visit row."
             )
         }
+
+        let trackVisitRowStart = try XCTUnwrap(source.range(of: "private func trackVisitRow"))
+        let reorderHandleStart = try XCTUnwrap(source.range(of: "private func invariantReorderHandle"))
+        let trackVisitRowSource = source[trackVisitRowStart.lowerBound..<reorderHandleStart.lowerBound]
+        let rowStackStart = try XCTUnwrap(
+            trackVisitRowSource.range(
+                of: #"VStack(?:\([^\n{]*\))?[ \t]*\{"#,
+                options: .regularExpression
+            )
+        )
+        let visitCardStart = try XCTUnwrap(
+            trackVisitRowSource.range(
+                of: #"HStack(?:\([^\n{]*\))?[ \t]*\{"#,
+                options: .regularExpression
+            )
+        )
+        let inlineHeaderPattern =
+            #"private func trackVisitRow\([^)]*dayHeader:[ \t]*Date\?\)[^{]*\{[ \t]*\n[ \t]*"#
+                + #"VStack\([^\n]*\)[ \t]*\{[ \t]*\n[ \t]*if let dayHeader[ \t]*\{[ \t]*\n[ \t]*"#
+                + #"Text\(verbatim:[ \t]*formattedTrackDay\(dayHeader\)\)"#
+        XCTAssertNotNil(
+            trackVisitRowSource.range(of: inlineHeaderPattern, options: .regularExpression),
+            "The visit row should own its live date-header view inside one structural VStack row."
+        )
+        XCTAssertNil(
+            source.range(
+                of: #"@(?:SwiftUI\.)?ViewBuilder(?:\(\))?"#
+                    + #"(?:[ \t\r\n]+@[A-Za-z_][A-Za-z0-9_.]*(?:\([^\n]*\))?)*"#
+                    + #"[ \t\r\n]+(?:file)?private[ \t]+func[ \t]+trackVisitRow\b"#,
+                options: .regularExpression
+            ),
+            "The visit-row helper must remain a single root view so its header cannot become a sibling List row."
+        )
+        XCTAssertLessThan(rowStackStart.lowerBound, visitCardStart.lowerBound)
+        XCTAssertFalse(trackVisitRowSource.contains("/*"), "Block comments must not masquerade as a live row header.")
+        XCTAssertFalse(trackVisitRowSource.contains("//"), "Line comments must not masquerade as a live row header.")
+        XCTAssertFalse(trackVisitRowSource.contains("\"\"\""), "Multiline strings must not masquerade as a live row header.")
+        XCTAssertFalse(trackVisitRowSource.contains("#if"), "Inactive compiler branches must not masquerade as a live row header.")
     }
 
     private func logLineHasExplicitPrivacyAnnotations(_ line: String) -> Bool {
