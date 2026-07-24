@@ -492,6 +492,32 @@ final class AppShellTests: XCTestCase {
         )
     }
 
+    func testTrackFilterPickerTreatsNoSelectedCategoryButtonsAsAllCategories() {
+        var draft = TrackFilterPickerDraft()
+
+        XCTAssertTrue(draft.includesAllCategories)
+        draft.toggleCategory("history")
+        XCTAssertEqual(draft.categories, ["history"])
+        XCTAssertFalse(draft.includesAllCategories)
+
+        draft.toggleCategory("history")
+        XCTAssertNil(draft.categories)
+        XCTAssertTrue(draft.includesAllCategories)
+        XCTAssertEqual(draft.filter, .all)
+    }
+
+    func testTrackFilterPickerCanExplicitlyReturnFromNoCategoriesToAll() {
+        var draft = TrackFilterPickerDraft(
+            filter: TracksVisitFilter(categories: Set<String>())
+        )
+
+        XCTAssertFalse(draft.includesAllCategories)
+        draft.selectAllCategories()
+
+        XCTAssertTrue(draft.includesAllCategories)
+        XCTAssertEqual(draft.filter, .all)
+    }
+
     func testTrackFilterPickerActionLabelReportsOnlyScopedVisitCount() {
         XCTAssertEqual(TrackFilterPickerCopy.applyLabel(scopedVisitCount: 27), "Show 27 visits")
         XCTAssertEqual(TrackFilterPickerCopy.applyLabel(scopedVisitCount: 1), "Show 1 visit")

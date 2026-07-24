@@ -1642,6 +1642,141 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         play.tap()
     }
 
+    func testLayersCategoryFilterScopesReplayTimelineAndAutoplay() {
+        let app = launch(
+            reset: true,
+            seedVisitsEditorVisual: true,
+            trackReplayBeatDuration: 5
+        )
+
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["My tracks"].tap()
+        XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+
+        openLayers(in: app)
+        let toggleAll = app.buttons["map.layers.show-all-categories"]
+        XCTAssertTrue(scrollToHittable(toggleAll, in: app))
+        XCTAssertEqual(toggleAll.label, "Hide all categories")
+        toggleAll.tap()
+        XCTAssertTrue(waitForButtonLabel(
+            "Show all categories",
+            identifier: "map.layers.show-all-categories",
+            in: app
+        ))
+
+        let attraction = "map.layers.category.attraction"
+        XCTAssertTrue(scrollToHittable(app.switches[attraction], in: app))
+        tapSwitch(in: app, identifier: attraction, expectedValue: "1")
+        app.buttons["map.layers.done"].tap()
+
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 2 of 2", in: app))
+        XCTAssertTrue(waitForTrackReplayArrival(
+            prefix: "Visit 2 of 2, Petronas Twin Towers Observation Deck",
+            in: app
+        ))
+
+        let play = app.buttons["map.track-replay.play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 5))
+        play.tap()
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 1 of 2", in: app))
+        XCTAssertTrue(waitForTrackReplayArrival(
+            prefix: "Visit 1 of 2, Ghost Sign",
+            in: app
+        ))
+        play.tap()
+    }
+
+    func testLayersOtherCategoryScopesReplayToFallbackVisits() {
+        let app = launch(
+            reset: true,
+            seedVisitsEditorVisual: true,
+            trackReplayBeatDuration: 5
+        )
+
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["My tracks"].tap()
+        XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+
+        openLayers(in: app)
+        let toggleAll = app.buttons["map.layers.show-all-categories"]
+        XCTAssertTrue(scrollToHittable(toggleAll, in: app))
+        toggleAll.tap()
+
+        let other = "map.layers.category.uncategorized"
+        XCTAssertTrue(scrollToHittable(app.switches[other], in: app))
+        tapSwitch(in: app, identifier: other, expectedValue: "1")
+        app.buttons["map.layers.done"].tap()
+
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 3 of 3", in: app))
+        XCTAssertTrue(waitForTrackReplayArrival(
+            prefix: "Visit 3 of 3, Jalan Alor Night Market",
+            in: app
+        ))
+
+        let play = app.buttons["map.track-replay.play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 5))
+        play.tap()
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 1 of 3", in: app))
+        XCTAssertTrue(waitForTrackReplayArrival(
+            prefix: "Visit 1 of 3, Central Market",
+            in: app
+        ))
+        play.tap()
+    }
+
+    func testFilterTracksExplicitlyReturnsFromNoCategoriesToAll() {
+        let app = launch(reset: true, seedVisitsEditorVisual: true)
+
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["My tracks"].tap()
+        XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+
+        openLayers(in: app)
+        let toggleAll = app.buttons["map.layers.show-all-categories"]
+        XCTAssertTrue(scrollToHittable(toggleAll, in: app))
+        toggleAll.tap()
+        app.buttons["map.layers.done"].tap()
+
+        let filter = element(identifier: "map.list-mode.filter.loved", in: app)
+        XCTAssertTrue(filter.waitForExistence(timeout: 5))
+        filter.tap()
+        XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
+
+        let allTypes = app.buttons["track-filter-picker.category.all"]
+        XCTAssertTrue(scrollToHittable(allTypes, in: app))
+        XCTAssertEqual(allTypes.value as? String, "Not selected")
+        XCTAssertTrue(waitForButtonLabel("Show 0 visits", identifier: "track-filter-picker.apply", in: app))
+        allTypes.tap()
+        XCTAssertTrue(waitForElementValue(
+            "Selected",
+            identifier: "track-filter-picker.category.all",
+            in: app
+        ))
+        XCTAssertTrue(waitForButtonLabel("Show 8 visits", identifier: "track-filter-picker.apply", in: app))
+        app.buttons["track-filter-picker.apply"].tap()
+
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 8 of 8", in: app))
+        XCTAssertTrue(waitForTrackReplayArrival(
+            prefix: "Visit 8 of 8, Jalan Alor Night Market",
+            in: app
+        ))
+    }
+
     func testListMapBackReturnsToSeededListDetail() {
         let app = launch(reset: true, pinDiagnostics: true, seedTrackList: true)
 
