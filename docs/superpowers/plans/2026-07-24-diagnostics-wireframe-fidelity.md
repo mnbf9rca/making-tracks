@@ -13,8 +13,14 @@
 - Branch from fresh `origin/ios` and PR back to `ios`.
 - Preserve the exporter privacy boundary and exact frozen class tokens.
 - Preserve PR #397's plain user-facing class labels.
-- Preserve PR #429's Preview-before-ready-copy prepared ordering.
-- Preserve PR #439's always-visible scoped exclusion sentence and prepared-artifact lifetime.
+- Restore the Included/Excluded grids only in the pre-Prepare state. Preserve PR #429's box-free
+  prepared state with Preview first, followed by ready copy.
+- Preserve PR #439's scoped exclusion sentence in both states and its prepared-artifact lifetime.
+- Match the frozen AXXXL variant's stated accessibility outcome: retain every class label and omit
+  supporting blurbs. Collapse the runtime disclosure grid to one column at accessibility sizes. The
+  frozen HTML's two-column geometry fragmented real AXXXL labels into single letters on the designated
+  simulator; the one-column adaptation is required to preserve the ruled readable-label guardrail.
+- Fold the small #447 privacy fix found during review: redact absolute tile X/Y from diagnostic object paths.
 - Do not force a color scheme or absorb #350's app-wide theming scope.
 - App-target verification runs only through `./scripts/sim-lock.sh`.
 - Baseline host suite has the separately tracked #446 failure: 385 tests, 1 failure in `testTrackVisitDateHeadersAreNotStandaloneMovableRows`.
@@ -27,6 +33,7 @@
 - Modify: `ios/Tests/MakingTracksTilesTests/LoggingPrivacyTests.swift`
 - Modify: `ios/App/UITests/MakingTracksCoreLoopUITests.swift`
 - Modify: `ios/App/Sources/Map/MapScreen.swift`
+- Modify: `ios/Sources/MakingTracksTiles/MakingTracksLog.swift`
 
 **Interfaces:**
 - Consumes: `DiagnosticLogWindow.settingsOptions`, `DiagnosticLogWindow.label`, the existing selected-window binding, and existing `DiagnosticsView` state.
@@ -70,6 +77,10 @@ XCTAssertTrue(app.buttons["Prepare file"].exists)
 ```
 
 Keep the existing assertion for the scoped exclusion sentence.
+
+Add an AXXXL simulator regression that proves class labels remain present while supporting blurbs are
+absent. Assert that every disclosure label shares the same leading edge, pinning the one-column runtime
+adaptation required by device evidence.
 
 - [ ] **Step 3: Run focused tests to verify RED**
 
@@ -129,7 +140,20 @@ var statusLabel: String {
 }
 ```
 
-Restore `Included` and `Excluded` class grids using PR #397's labels. Keep the PR #439 scoped exclusion sentence visible below the excluded grid. Give each section a stable accessibility identifier.
+Restore `Included` and `Excluded` class grids using PR #397's labels only while `artifact == nil`.
+Keep the PR #439 scoped exclusion sentence below the excluded grid before Prepare and repeat it in the
+prepared `Before sharing` section. This keeps the prepared state box-free and Preview-first per #429.
+Give each pre-Prepare section a stable accessibility identifier. Disable the window picker while preparing
+and while an artifact exists so the visible window cannot diverge from the prepared file.
+
+At accessibility Dynamic Type sizes, omit `DiagnosticsDisclosureClass.detail`, retain every title and
+icon, and collapse the disclosure grid to one column. The frozen render's accessibility requirement is
+readable class names; its two-column HTML geometry does not survive real AXXXL rendering, so the
+device-proven one-column layout implements that requirement without authoring a new wireframe mid-build.
+
+Redact coordinate-bearing CDN object paths through `MakingTracksLog.objectPath`: retain region, publish
+version, object kind, and tile Z, but replace absolute X/Y components with placeholders. Preserve readable
+non-coordinate paths such as `current.json`.
 
 - [ ] **Step 5: Implement the ruled fixed action**
 
@@ -174,7 +198,7 @@ Capture actual Release, app-unit, and UI-test counts and confirm zero new warnin
 Commit with:
 
 ```bash
-git add docs/superpowers/plans/2026-07-24-diagnostics-wireframe-fidelity.md ios/App/Sources/Map/MapScreen.swift ios/App/UITests/MakingTracksCoreLoopUITests.swift ios/Tests/MakingTracksTilesTests/LoggingPrivacyTests.swift
+git add docs/superpowers/plans/2026-07-24-diagnostics-wireframe-fidelity.md ios/App/Sources/Map/MapScreen.swift ios/App/UITests/MakingTracksCoreLoopUITests.swift ios/Sources/MakingTracksTiles/MakingTracksLog.swift ios/Tests/MakingTracksTilesTests/LoggingPrivacyTests.swift
 git commit -m "Restore diagnostics wireframe hierarchy"
 ```
 

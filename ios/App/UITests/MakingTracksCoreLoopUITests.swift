@@ -1924,7 +1924,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Offline maps"].waitForExistence(timeout: 5))
     }
 
-    func testDiagnosticsShowsScopedExclusionBeforePrepareInDarkAppearance() {
+    func testDiagnosticsMatchesRuledReviewGuardrailsBeforePrepareInDarkAppearance() {
         // This asserts structural presence under a dark launch, not dark-color legibility.
         let app = launch(reset: true, forceDarkAppearance: true)
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
@@ -1934,12 +1934,95 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(scrollToHittable(diagnostics, in: app))
         diagnostics.tap()
 
+        let windowStatus = app.descendants(matching: .any)["settings.diagnostics.window-status"]
+        XCTAssertTrue(windowStatus.waitForExistence(timeout: 5))
+
+        let included = app.descendants(matching: .any)["settings.diagnostics.included"]
+        XCTAssertTrue(scrollToExistence(of: included, in: app))
+
+        for title in [
+            "App details", "Device type", "Steps in the app", "Downloaded maps",
+            "Map file links", "Problems", "Load times", "Places and taps",
+            "Device name", "Precise location", "Search text",
+        ] {
+            let disclosure = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH %@", title))
+                .firstMatch
+            XCTAssertTrue(scrollToExistence(of: disclosure, in: app), title)
+        }
+
+        let excluded = app.descendants(matching: .any)["settings.diagnostics.excluded"]
+        XCTAssertTrue(scrollToExistence(of: excluded, in: app))
+
         let exclusion = app.staticTexts[
             "Your device name, exact location, and searches are not included in the export."
         ]
         XCTAssertTrue(scrollToExistence(of: exclusion, in: app))
         XCTAssertTrue(exclusion.isHittable)
+        let prepare = app.buttons["settings.diagnostics.prepare"]
+        XCTAssertTrue(prepare.exists)
+        XCTAssertEqual(prepare.label, "Prepare file")
         attachScreenshot(named: "diagnostics-preprepare-exclusions-dark")
+    }
+
+    func testDiagnosticsAXXXLKeepsClassLabelsAndDropsSupportingBlurbs() {
+        let app = launch(reset: true, accessibilityTextSize: true)
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["map.menu"].waitForExistence(timeout: 5))
+        app.buttons["map.menu"].tap()
+        app.buttons["menu.row.settings"].tap()
+        let diagnostics = app.buttons["settings.diagnostics.export"]
+        XCTAssertTrue(scrollToHittable(diagnostics, in: app))
+        diagnostics.tap()
+
+        let windowOptionIdentifiers = [
+            "settings.diagnostics.window.fifteen-minutes",
+            "settings.diagnostics.window.last-hour",
+            "settings.diagnostics.window.everything",
+        ]
+        for identifier in windowOptionIdentifiers {
+            let option = app.buttons[identifier]
+            XCTAssertTrue(option.waitForExistence(timeout: 5), identifier)
+            XCTAssertGreaterThanOrEqual(option.frame.height, 44, identifier)
+        }
+        app.buttons[windowOptionIdentifiers[0]].tap()
+        let windowStatus = app.descendants(matching: .any)["settings.diagnostics.window-status"]
+        XCTAssertTrue(windowStatus.waitForExistence(timeout: 5))
+        XCTAssertTrue(windowStatus.label.contains("Showing the last 15 minutes"), windowStatus.label)
+
+        var disclosureLabelMinXs: [CGFloat] = []
+        for (title, detail) in [
+            ("App details", "App release and build number."),
+            ("Device type", "Model and iOS version."),
+            ("Steps in the app", "Screens opened and buttons used."),
+            ("Downloaded maps", "Offline maps and their versions."),
+            ("Map file links", "Making Tracks map file paths."),
+            ("Problems", "Status codes and failure labels."),
+            ("Load times", "Fetch and map drawing times."),
+            ("Places and taps", "Places opened, saved, hidden, or marked seen."),
+            ("Device name", "Your personal device label."),
+            ("Precise location", "Your exact coordinates are not included."),
+            ("Search text", "What you typed is omitted."),
+        ] {
+            let disclosure = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label == %@", title))
+                .firstMatch
+            XCTAssertTrue(scrollToExistence(of: disclosure, in: app), title)
+            disclosureLabelMinXs.append(disclosure.frame.minX)
+            XCTAssertEqual(
+                app.descendants(matching: .any)
+                    .matching(NSPredicate(format: "label CONTAINS %@", detail))
+                    .count,
+                0,
+                detail
+            )
+        }
+        XCTAssertLessThanOrEqual(
+            (disclosureLabelMinXs.max() ?? 0) - (disclosureLabelMinXs.min() ?? 0),
+            2,
+            "AXXXL disclosure classes must collapse to one readable column."
+        )
+        attachScreenshot(named: "diagnostics-preprepare-axxxl")
     }
 
     func testDiagnosticsShareSheetDismissalKeepsPreparedArtifact() {
@@ -1956,6 +2039,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         prepare.tap()
         let share = app.buttons["settings.diagnostics.share"]
         XCTAssertTrue(share.waitForExistence(timeout: 30))
+        let windowPicker = app.descendants(matching: .any)["settings.diagnostics.window"]
+        XCTAssertTrue(windowPicker.exists)
+        XCTAssertFalse(windowPicker.isEnabled)
+        XCTAssertFalse(app.descendants(matching: .any)["settings.diagnostics.included"].exists)
+        let preview = app.descendants(matching: .any)["settings.diagnostics.preview"]
+        XCTAssertTrue(scrollToExistence(of: preview, in: app))
         share.tap()
 
         let close = app.buttons["Close"]
