@@ -17,7 +17,7 @@ One sitting produces the **Phase Spec** (`docs/superpowers/specs/YYYY-MM-DD-phas
 
 - Goal narrative and explicit non-goals.
 - **Acceptance criteria**: testable, behaviour-level statements of "done". These are what the acceptance pass grades against, so vague criteria are rejected in-session.
-- **Wireframes**: authored during the session (HTML sources, rendered PNG at 390×844 plus accessibility variant), ruled on by Rob before the session ends. Build agents implement against ruled wireframes; they no longer author them.
+- **Wireframes**: produced during the session (HTML sources, rendered PNG at 390×844 plus accessibility variant) and ruled on by Rob before the session ends. Opus specifies the layout, a build agent authors the HTML and renders (the existing authorship split, moved forward in time), opus validates. During the build phase agents implement against ruled wireframes; no new wireframes are authored mid-build.
 - **Contracts**: cross-track interfaces fixed before dependent tasks start (PRINCIPLES.md Engineering 18).
 - Judgment rules for the phase (see §6 for the standing ones).
 
@@ -97,7 +97,7 @@ A fresh fable session boots by reading AGENTS.md, `coordination.md`, and the cur
 
 ## 10. Amendments this forces (Rob to ratify; AGENTS.md on develop unless noted)
 
-1. Wireframe authorship moves to design time: design side authors, build agents implement, Rob rules in-session. (Reverses "UI design ships with mockups" build-agent authorship.)
+1. Wireframes move to design time: opus specifies, a build agent authors the HTML/renders (authorship split unchanged), opus validates, Rob rules in-session before ratification. Build phase implements against ruled wireframes only. (Amends the *timing* of "UI design ships with mockups", not its authorship.)
 2. WP-at-a-time flow replaced by the phase cycle (§2); grounding chain gains the Phase Spec and `tasks.md`.
 3. Taste-call protocol (§4) added to build-agent law.
 4. Fold-or-file refined per §6.
