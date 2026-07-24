@@ -1180,6 +1180,162 @@ final class AppShellTests: XCTestCase {
         )
     }
 
+    func testTrackVisitDragTriggerMapsDropPositionToExistingMoveOffset() {
+        let orderedVisitIDs: [Int64] = [1, 2, 3]
+        let rowFrames: [Int64: CGRect] = [
+            1: CGRect(x: 0, y: 0, width: 300, height: 80),
+            2: CGRect(x: 0, y: 90, width: 300, height: 80),
+            3: CGRect(x: 0, y: 180, width: 300, height: 80),
+        ]
+
+        XCTAssertEqual(
+            TrackVisitDragTrigger.destinationOffset(
+                for: 1,
+                dropY: 230,
+                orderedVisitIDs: orderedVisitIDs,
+                rowFrames: rowFrames
+            ),
+            3
+        )
+        XCTAssertEqual(
+            TrackVisitDragTrigger.destinationOffset(
+                for: 3,
+                dropY: 10,
+                orderedVisitIDs: orderedVisitIDs,
+                rowFrames: rowFrames
+            ),
+            0
+        )
+    }
+
+    func testTrackVisitDragTriggerRejectsUnknownOrUnmeasuredSource() {
+        let orderedVisitIDs: [Int64] = [1, 2]
+        let rowFrames: [Int64: CGRect] = [1: CGRect(x: 0, y: 0, width: 300, height: 80)]
+
+        XCTAssertNil(
+            TrackVisitDragTrigger.destinationOffset(
+                for: 3,
+                dropY: 10,
+                orderedVisitIDs: orderedVisitIDs,
+                rowFrames: rowFrames
+            )
+        )
+        XCTAssertNil(
+            TrackVisitDragTrigger.destinationOffset(
+                for: 2,
+                dropY: 10,
+                orderedVisitIDs: orderedVisitIDs,
+                rowFrames: rowFrames
+            )
+        )
+    }
+
+    func testTrackVisitDragTriggerFindsAdjacentOffscreenRowAtViewportEdge() {
+        let orderedVisitIDs: [Int64] = [1, 2, 3, 4, 5, 6]
+        let rowFrames: [Int64: CGRect] = [
+            3: CGRect(x: 0, y: 100, width: 300, height: 80),
+            4: CGRect(x: 0, y: 190, width: 300, height: 80),
+        ]
+
+        XCTAssertEqual(
+            TrackVisitDragTrigger.autoScrollTargetID(
+                dropY: 265,
+                orderedVisitIDs: orderedVisitIDs,
+                rowFrames: rowFrames,
+                viewportBounds: CGRect(x: 0, y: 90, width: 300, height: 190)
+            ),
+            5
+        )
+        XCTAssertEqual(
+            TrackVisitDragTrigger.autoScrollTargetID(
+                dropY: 105,
+                orderedVisitIDs: orderedVisitIDs,
+                rowFrames: rowFrames,
+                viewportBounds: CGRect(x: 0, y: 90, width: 300, height: 190)
+            ),
+            2
+        )
+        XCTAssertNil(
+            TrackVisitDragTrigger.autoScrollTargetID(
+                dropY: 180,
+                orderedVisitIDs: orderedVisitIDs,
+                rowFrames: rowFrames,
+                viewportBounds: CGRect(x: 0, y: 90, width: 300, height: 190)
+            )
+        )
+    }
+
+    func testTrackVisitDragTriggerUsesViewportInsteadOfClippedOrPrefetchedRowEdges() {
+        let orderedVisitIDs: [Int64] = [1, 2, 3, 4, 5, 6]
+        let rowFrames: [Int64: CGRect] = [
+            2: CGRect(x: 0, y: -120, width: 300, height: 70),
+            3: CGRect(x: 0, y: -20, width: 300, height: 100),
+            4: CGRect(x: 0, y: 90, width: 300, height: 290),
+            5: CGRect(x: 0, y: 400, width: 300, height: 80),
+        ]
+        let viewport = CGRect(x: 0, y: 0, width: 300, height: 300)
+
+        XCTAssertEqual(
+            TrackVisitDragTrigger.autoScrollTargetID(
+                dropY: 295,
+                orderedVisitIDs: orderedVisitIDs,
+                rowFrames: rowFrames,
+                viewportBounds: viewport
+            ),
+            5
+        )
+        XCTAssertEqual(
+            TrackVisitDragTrigger.autoScrollTargetID(
+                dropY: 5,
+                orderedVisitIDs: orderedVisitIDs,
+                rowFrames: rowFrames,
+                viewportBounds: viewport
+            ),
+            2
+        )
+        XCTAssertNil(
+            TrackVisitDragTrigger.autoScrollTargetID(
+                dropY: 150,
+                orderedVisitIDs: orderedVisitIDs,
+                rowFrames: rowFrames,
+                viewportBounds: viewport
+            )
+        )
+    }
+
+    func testTrackVisitDragTriggerMapsAccessibilityStepsToMoveOffsets() {
+        XCTAssertEqual(
+            TrackVisitDragTrigger.accessibilityDestinationOffset(
+                sourceIndex: 0,
+                movingTowardEnd: true,
+                visitCount: 3
+            ),
+            2
+        )
+        XCTAssertEqual(
+            TrackVisitDragTrigger.accessibilityDestinationOffset(
+                sourceIndex: 2,
+                movingTowardEnd: false,
+                visitCount: 3
+            ),
+            1
+        )
+        XCTAssertNil(
+            TrackVisitDragTrigger.accessibilityDestinationOffset(
+                sourceIndex: 0,
+                movingTowardEnd: false,
+                visitCount: 3
+            )
+        )
+        XCTAssertNil(
+            TrackVisitDragTrigger.accessibilityDestinationOffset(
+                sourceIndex: 2,
+                movingTowardEnd: true,
+                visitCount: 3
+            )
+        )
+    }
+
     func testListMapCategoryVisibilityIgnoresDiscoveryCategoryToggles() {
         XCTAssertNil(
             ListMapCategoryVisibility.visibleCategories(

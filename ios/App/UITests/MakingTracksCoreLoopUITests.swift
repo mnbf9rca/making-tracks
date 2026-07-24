@@ -200,6 +200,8 @@ private struct RenderedPixelRaster {
 private struct MyTracksAppearanceCapture {
     let raster: RenderedPixelRaster
     let trackSurfaceFrame: CGRect
+    let visitDateRaster: RenderedPixelRaster
+    let visitDateSurfaceFrame: CGRect
 }
 
 private enum AXResampler {
@@ -1006,6 +1008,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.buttons["lists.detail.visit-date.back"].exists)
         XCTAssertTrue(app.buttons["lists.detail.visit-date.delete"].exists)
         XCTAssertTrue(app.datePickers["lists.detail.visit-date.picker"].exists)
+        XCTAssertTrue(app.datePickers["lists.detail.visit-date.picker"].isHittable)
+        XCTAssertTrue(app.images["lists.detail.visit-date.summary-pin"].exists)
+        XCTAssertTrue(app.images["lists.detail.visit-date.selected-pin"].exists)
+        XCTAssertTrue(app.images["lists.detail.visit-date.heart"].exists)
+        XCTAssertFalse(app.staticTexts["heart"].exists)
         XCTAssertTrue(app.buttons["lists.detail.track.refresh"].exists)
         XCTAssertFalse(app.buttons["lists.detail.track.edit-order"].exists)
         XCTAssertFalse(app.buttons.matching(identifierPrefix: "lists.detail.track.row.move-up.").firstMatch.exists)
@@ -1073,6 +1080,23 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             0,
             "My tracks editor must render identically in forced Light and Dark appearances"
         )
+
+        XCTAssertEqual(light.visitDateSurfaceFrame, dark.visitDateSurfaceFrame)
+        let visitDateComparisonFrame = light.visitDateSurfaceFrame
+            .intersection(dark.visitDateSurfaceFrame)
+            .insetBy(dx: 1, dy: 1)
+        guard let visitDateDifferenceCount = light.visitDateRaster.differingPixelCount(
+            comparedTo: dark.visitDateRaster,
+            in: visitDateComparisonFrame
+        ) else {
+            XCTFail("Could not compare Light and Dark Visit date rasters")
+            return
+        }
+        XCTAssertEqual(
+            visitDateDifferenceCount,
+            0,
+            "Visit date editor must render identically in forced Light and Dark appearances"
+        )
     }
 
     func testFilteredMyTracksHidesInvariantReorderHandleToken() {
@@ -1118,18 +1142,29 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             XCTFail("Could not decode filtered My tracks screenshot")
             return
         }
-        let reorderStrip = CGRect(
-            // The amended row keeps the handle inside the card, not in the
-            // list's trailing gutter.
-            x: trackSurface.frame.minX,
-            y: trackSurface.frame.minY,
-            width: trackSurface.frame.width,
-            height: trackSurface.frame.height
-        )
         XCTAssertEqual(
-            raster.tokenCount(RenderedRGB(170, 168, 157), in: reorderStrip),
+            app.descendants(matching: .any)
+                .matching(identifierPrefix: "lists.detail.track.row.reorder.").count,
             0,
-            "Filtered My tracks must not render the reorder-handle token"
+            "Filtered My tracks must not expose app-drawn reorder handles"
+        )
+        let renderedRows = app.otherElements
+            .matching(identifierPrefix: "lists.detail.track.row.card.")
+            .allElementsBoundByIndex
+            .filter(\.exists)
+        let reorderTokenCount = renderedRows.reduce(into: 0) { count, row in
+            let reorderStrip = CGRect(
+                x: row.frame.maxX - 60,
+                y: row.frame.minY,
+                width: 60,
+                height: row.frame.height
+            )
+            count += raster.tokenCount(RenderedRGB(170, 168, 157), in: reorderStrip)
+        }
+        XCTAssertEqual(
+            reorderTokenCount,
+            0,
+            "Filtered My tracks must not render the reorder-handle token in any row's trailing bounds"
         )
     }
 
@@ -1165,6 +1200,15 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(heart.frame.width, 44, "heart touch width")
         XCTAssertGreaterThanOrEqual(heart.frame.height, 44, "heart touch height")
         let firstRow = app.otherElements.matching(identifierPrefix: "lists.detail.track.row.card.").firstMatch
+        let renderedRowCount = app.descendants(matching: .any)
+            .matching(identifierPrefix: "lists.detail.track.row.card.").count
+        let renderedHandleCount = app.descendants(matching: .any)
+            .matching(identifierPrefix: "lists.detail.track.row.reorder.").count
+        XCTAssertEqual(
+            renderedHandleCount,
+            renderedRowCount,
+            "Every rendered visit row must expose exactly one app-drawn reorder handle"
+        )
         XCTAssertTrue(firstRow.exists)
         firstRow.tap()
         XCTAssertTrue(app.buttons["lists.detail.visit-date.delete"].waitForExistence(timeout: 5))
@@ -2438,6 +2482,17 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let metadata = app.staticTexts.matching(identifierPrefix: "lists.detail.track.row.metadata.").firstMatch
         let heart = app.buttons.matching(identifierPrefix: "lists.detail.track.row.loved.").firstMatch
         let firstRow = app.otherElements.matching(identifierPrefix: "lists.detail.track.row.card.").firstMatch
+        let renderedRowCount = app.descendants(matching: .any)
+            .matching(identifierPrefix: "lists.detail.track.row.card.").count
+        let renderedHandleCount = app.descendants(matching: .any)
+            .matching(identifierPrefix: "lists.detail.track.row.reorder.").count
+        XCTAssertEqual(
+            renderedHandleCount,
+            renderedRowCount,
+            "Every rendered visit row must expose exactly one app-drawn reorder handle",
+            file: file,
+            line: line
+        )
 
         requireText(back, named: "Back", foreground: accent, background: paper, minimumContrast: 4.5)
         requireText(title, named: "My tracks title", foreground: ink, background: paper, minimumContrast: 3)
@@ -2520,9 +2575,41 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             file: file,
             line: line
         )
+
+        firstRow.tap()
+        let visitDateTitle = app.staticTexts["lists.detail.visit-date.title"]
+        XCTAssertTrue(visitDateTitle.waitForExistence(timeout: 5), file: file, line: line)
+        let visitDateScreenshot = XCUIScreen.main.screenshot()
+        let visitDateAttachment = XCTAttachment(screenshot: visitDateScreenshot)
+        visitDateAttachment.name = "my-tracks-visit-date-oracle-\(appearanceName)"
+        visitDateAttachment.lifetime = .keepAlways
+        add(visitDateAttachment)
+        exportScreenshot(
+            visitDateScreenshot,
+            named: "my-tracks-visit-date-oracle-\(appearanceName)",
+            force: true
+        )
+        guard let visitDateRaster = RenderedPixelRaster(
+            screenshot: visitDateScreenshot,
+            appFrame: appFrame
+        ) else {
+            XCTFail("Could not decode Visit date rendered screenshot", file: file, line: line)
+            return nil
+        }
+        let visitDateBack = app.buttons["lists.detail.visit-date.back"]
+        XCTAssertTrue(visitDateBack.exists, file: file, line: line)
+        let visitDateSurfaceFrame = CGRect(
+            x: appFrame.minX,
+            y: visitDateBack.frame.minY,
+            width: appFrame.width,
+            height: appFrame.maxY - visitDateBack.frame.minY - 34
+        )
+
         return MyTracksAppearanceCapture(
             raster: raster,
-            trackSurfaceFrame: trackSurface.frame
+            trackSurfaceFrame: trackSurface.frame,
+            visitDateRaster: visitDateRaster,
+            visitDateSurfaceFrame: visitDateSurfaceFrame
         )
     }
 
@@ -3589,6 +3676,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "tracks-unified-visit-editing": "tracks-unified-visit-editing",
         "my-tracks-rendered-oracle-light": "my-tracks-rendered-oracle-light",
         "my-tracks-rendered-oracle-dark": "my-tracks-rendered-oracle-dark",
+        "my-tracks-visit-date-oracle-light": "my-tracks-visit-date-oracle-light",
+        "my-tracks-visit-date-oracle-dark": "my-tracks-visit-date-oracle-dark",
         "list-map-polished-chrome": "list-map-polished-chrome",
         "list-map-spread-fit": "list-map-spread-fit",
         "my-tracks-burst-readout": "my-tracks-burst-readout",
