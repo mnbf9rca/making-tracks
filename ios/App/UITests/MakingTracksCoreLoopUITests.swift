@@ -1079,9 +1079,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let reorderStrip = CGRect(
             // The amended row keeps the handle inside the card, not in the
             // list's trailing gutter.
-            x: trackSurface.frame.maxX - 120,
+            x: trackSurface.frame.minX,
             y: trackSurface.frame.minY,
-            width: 120,
+            width: trackSurface.frame.width,
             height: trackSurface.frame.height
         )
         XCTAssertEqual(
