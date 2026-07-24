@@ -6993,6 +6993,8 @@ private struct SettingsView: View {
 }
 
 private struct DiagnosticsView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let storageStatus: StorageMenuStatus
 
     @State private var selectedWindow = DiagnosticLogWindow.lastHour
@@ -7006,17 +7008,35 @@ private struct DiagnosticsView: View {
     var body: some View {
         List {
             Section {
-                Picker("Time range", selection: $selectedWindow) {
-                    ForEach(DiagnosticLogWindow.settingsOptions, id: \.self) { window in
-                        Text(window.label).tag(window)
-                    }
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Send a diagnostic log")
+                        .font(.title3.weight(.bold))
+
+                    Text("Nothing is sent automatically. The app prepares a file on this phone; when you share, you pick who gets it.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    diagnosticsWindowPicker
+
+                    diagnosticsWindowStatus
                 }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("settings.diagnostics.window")
-            } header: {
-                Text("Send a diagnostic log")
-            } footer: {
-                Text("Nothing is sent automatically. The app prepares a file on this phone; when you share, you pick who gets it.")
+                .padding(.vertical, 4)
+            }
+
+            if artifact == nil {
+                Section("Included") {
+                    diagnosticsClassGrid(Self.includedDisclosureClasses, isIncluded: true)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("settings.diagnostics.included")
+
+                Section("Excluded") {
+                    diagnosticsClassGrid(Self.excludedDisclosureClasses, isIncluded: false)
+                    diagnosticsBullet("Your device name, exact location, and searches are not included in the export.")
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("settings.diagnostics.excluded")
             }
 
             if let artifact {
@@ -7039,12 +7059,10 @@ private struct DiagnosticsView: View {
 
             }
 
-            Section("Before sharing") {
-                if artifact != nil {
+            if artifact != nil {
+                Section("Before sharing") {
+                    diagnosticsBullet("Your device name, exact location, and searches are not included in the export.")
                     diagnosticsBullet("You choose the person or app that gets the file.")
-                }
-                diagnosticsBullet("Your device name, exact location, and searches are not included in the export.")
-                if artifact != nil {
                     diagnosticsBullet("Making Tracks has no upload endpoint.")
                 }
             }
@@ -7090,38 +7108,59 @@ private struct DiagnosticsView: View {
     private var actionBar: some View {
         HStack(spacing: 10) {
             if scrubFailed {
-                Button("Try 15 min") {
+                Button {
                     selectedWindow = .fifteenMinutes
                     beginPreparation()
+                } label: {
+                    Text("Try 15 min")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(DiagnosticsVisualSpec.accent)
                 .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("settings.diagnostics.retry-shorter")
 
-                Button("Delete logs", role: .destructive) {
+                Button(role: .destructive) {
                     showDeleteConfirmation = true
+                } label: {
+                    Text("Delete logs")
+                        .frame(minHeight: 44)
                 }
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("settings.diagnostics.delete")
             } else if let artifact {
-                Button("Cancel") {
+                Button {
                     cleanupPreparedArtifact()
+                } label: {
+                    Text("Cancel")
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
                 .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("settings.diagnostics.cancel")
 
-                Button("Share") {
+                Button {
                     shareItem = DiagnosticsShareItem(url: artifact.archiveURL)
+                } label: {
+                    Text("Share")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(DiagnosticsVisualSpec.accent)
                 .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("settings.diagnostics.share")
             } else {
-                Button(isPreparing ? "Preparing" : "Prepare") {
+                Button {
                     beginPreparation()
+                } label: {
+                    Text(isPreparing ? "Preparing" : "Prepare file")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(DiagnosticsVisualSpec.accent)
                 .disabled(isPreparing)
                 .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("settings.diagnostics.prepare")
@@ -7132,10 +7171,108 @@ private struct DiagnosticsView: View {
         .background(.bar)
     }
 
+    @ViewBuilder
+    private var diagnosticsWindowPicker: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 4) {
+                ForEach(DiagnosticLogWindow.settingsOptions, id: \.self) { window in
+                    Button {
+                        selectedWindow = window
+                    } label: {
+                        HStack {
+                            Text(window.label)
+                                .fontWeight(.semibold)
+                            Spacer()
+                            Image(systemName: selectedWindow == window ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(
+                                    selectedWindow == window ? DiagnosticsVisualSpec.accent : .secondary
+                                )
+                        }
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(
+                                    selectedWindow == window
+                                        ? DiagnosticsVisualSpec.accent.opacity(0.12)
+                                        : Color.secondary.opacity(0.06)
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isPreparing || artifact != nil)
+                    .accessibilityValue(selectedWindow == window ? "Selected" : "")
+                    .accessibilityIdentifier("settings.diagnostics.window.\(window.accessibilityID)")
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("settings.diagnostics.window")
+        } else {
+            Picker("Time range", selection: $selectedWindow) {
+                ForEach(DiagnosticLogWindow.settingsOptions, id: \.self) { window in
+                    Text(window.label).tag(window)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(isPreparing || artifact != nil)
+            .accessibilityIdentifier("settings.diagnostics.window")
+        }
+    }
+
+    private var diagnosticsWindowStatus: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Showing \(selectedWindow.statusLabel)")
+                    .font(.callout.weight(.semibold))
+                Text("Archive size is shown after Prepare.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: "arrow.up.doc")
+                .foregroundStyle(DiagnosticsVisualSpec.accent)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("settings.diagnostics.window-status")
+    }
+
     private func diagnosticsBullet(_ text: String) -> some View {
         Label(text, systemImage: "circle.fill")
             .symbolRenderingMode(.palette)
-            .foregroundStyle(.primary, Color.accentColor)
+            .foregroundStyle(.primary, DiagnosticsVisualSpec.accent)
+    }
+
+    private func diagnosticsClassGrid(_ classes: [DiagnosticsDisclosureClass], isIncluded: Bool) -> some View {
+        let columns = dynamicTypeSize.isAccessibilitySize ? [GridItem(.flexible())] : [
+            GridItem(.flexible()),
+            GridItem(.flexible()),
+        ]
+        return LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+            ForEach(classes) { item in
+                diagnosticsClassTile(item, isIncluded: isIncluded)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func diagnosticsClassTile(_ item: DiagnosticsDisclosureClass, isIncluded: Bool) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: isIncluded ? "checkmark.circle.fill" : "slash.circle")
+                .foregroundStyle(isIncluded ? DiagnosticsVisualSpec.accent : .secondary)
+                .imageScale(.medium)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Text(item.detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private func formattedByteCount(_ byteCount: Int) -> String {
@@ -7196,6 +7333,34 @@ private struct DiagnosticsView: View {
         }
     }
 
+    private static let includedDisclosureClasses: [DiagnosticsDisclosureClass] = [
+        DiagnosticsDisclosureClass(title: "App details", detail: "App release and build number."),
+        DiagnosticsDisclosureClass(title: "Device type", detail: "Model and iOS version."),
+        DiagnosticsDisclosureClass(title: "Steps in the app", detail: "Screens opened and buttons used."),
+        DiagnosticsDisclosureClass(title: "Downloaded maps", detail: "Offline maps and their versions."),
+        DiagnosticsDisclosureClass(title: "Map file links", detail: "Making Tracks map file paths."),
+        DiagnosticsDisclosureClass(title: "Problems", detail: "Status codes and failure labels."),
+        DiagnosticsDisclosureClass(title: "Load times", detail: "Fetch and map drawing times."),
+        DiagnosticsDisclosureClass(title: "Places and taps", detail: "Places opened, saved, hidden, or marked seen."),
+    ]
+
+    private static let excludedDisclosureClasses: [DiagnosticsDisclosureClass] = [
+        DiagnosticsDisclosureClass(title: "Device name", detail: "Your personal device label."),
+        DiagnosticsDisclosureClass(title: "Precise location", detail: "Your exact coordinates are not included."),
+        DiagnosticsDisclosureClass(title: "Search text", detail: "What you typed is omitted."),
+    ]
+
+}
+
+private enum DiagnosticsVisualSpec {
+    static let accent = MapThemeColor.color(hex: "#0a6b5c")
+}
+
+private struct DiagnosticsDisclosureClass: Identifiable {
+    let title: String
+    let detail: String
+
+    var id: String { title }
 }
 
 private struct DiagnosticsShareItem: Identifiable {
@@ -7343,6 +7508,28 @@ private extension DiagnosticLogWindow {
             return "Last hour"
         case .everything:
             return "Everything"
+        }
+    }
+
+    var statusLabel: String {
+        switch self {
+        case .fifteenMinutes:
+            return "the last 15 minutes"
+        case .lastHour:
+            return "the last hour"
+        case .everything:
+            return "everything"
+        }
+    }
+
+    var accessibilityID: String {
+        switch self {
+        case .fifteenMinutes:
+            return "fifteen-minutes"
+        case .lastHour:
+            return "last-hour"
+        case .everything:
+            return "everything"
         }
     }
 }
