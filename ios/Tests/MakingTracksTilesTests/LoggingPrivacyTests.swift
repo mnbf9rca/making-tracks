@@ -153,6 +153,34 @@ final class LoggingPrivacyTests: XCTestCase {
 
         XCTAssertEqual(MakingTracksLog.host(hostileURL), "tiles.making-tracks.app")
         XCTAssertEqual(MakingTracksLog.objectKind(hostileURL), "tile")
+        XCTAssertEqual(
+            MakingTracksLog.objectPath(hostileURL),
+            "/uk_london/20260718T010203Z/tiles/10/{x}/{y}.json.gz"
+        )
+        XCTAssertFalse(MakingTracksLog.objectPath(hostileURL).contains("/1/2"))
+        for (path, expected) in [
+            (
+                "/uk_london/20260718T010203Z/images/10/11/12.json",
+                "/uk_london/20260718T010203Z/images/10/{x}/{y}.json"
+            ),
+            (
+                "/uk_london/20260718T010203Z/descriptions/10/21/22.json",
+                "/uk_london/20260718T010203Z/descriptions/10/{x}/{y}.json"
+            ),
+        ] {
+            XCTAssertEqual(
+                MakingTracksLog.objectPath(
+                    try XCTUnwrap(URL(string: "https://tiles.making-tracks.app\(path)"))
+                ),
+                expected
+            )
+        }
+        XCTAssertEqual(
+            MakingTracksLog.objectPath(
+                try XCTUnwrap(URL(string: "https://tiles.making-tracks.app/uk_london/20260718T010203Z/current.json"))
+            ),
+            "/uk_london/20260718T010203Z/current.json"
+        )
         XCTAssertEqual(MakingTracksLog.errorLabel(TileError.httpStatus(503)), "http-503")
         XCTAssertEqual(MakingTracksLog.errorLabel(TileError.invalidRedirect), "invalid-redirect")
 
@@ -255,7 +283,7 @@ final class LoggingPrivacyTests: XCTestCase {
         }
     }
 
-    func testDiagnosticsConsentCopyKeepsExportClassesWithoutDisclosureBoxes() throws {
+    func testDiagnosticsReviewRestoresRuledDisclosureGuardrails() throws {
         let source = try String(
             contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
             encoding: .utf8
@@ -264,35 +292,65 @@ final class LoggingPrivacyTests: XCTestCase {
             contentsOf: packageRoot().appendingPathComponent("Sources/MakingTracksTiles/DiagnosticLogExport.swift"),
             encoding: .utf8
         )
+        let diagnosticsSource = try XCTUnwrap(
+            source.components(separatedBy: "private struct DiagnosticsView").last?
+                .components(separatedBy: "private struct DiagnosticsShareItem").first
+        )
 
         for expected in [
             "Nothing is sent automatically. The app prepares a file on this phone",
             "Tap Share when you are ready to choose who gets it. Nothing leaves Making Tracks before then.",
             "Making Tracks has no upload endpoint.",
             "Your device name, exact location, and searches are not included in the export.",
-        ] {
-            XCTAssertTrue(source.contains(expected), expected)
-        }
-        for removedDisclosureCopy in [
-            "Section(\"Included\")",
-            "Section(\"Not included\")",
             "diagnosticsClassGrid(",
             "DiagnosticsDisclosureClass",
             "App details", "Device type", "Steps in the app", "Downloaded maps",
             "Map file links", "Problems", "Load times", "Places and taps",
             "Device name", "Precise location", "Search text",
+            "Section(\"Included\")", "Section(\"Excluded\")",
+            "settings.diagnostics.window-status",
+            "settings.diagnostics.included",
+            "settings.diagnostics.excluded",
+            "\"Prepare file\"",
+            ".disabled(isPreparing || artifact != nil)",
+            "if artifact == nil",
+            "@Environment(\\.dynamicTypeSize)",
+            "if !dynamicTypeSize.isAccessibilitySize",
+            "dynamicTypeSize.isAccessibilitySize ? [GridItem(.flexible())]",
+            "settings.diagnostics.window.\\(window.accessibilityID)",
         ] {
-            XCTAssertFalse(source.contains(removedDisclosureCopy), removedDisclosureCopy)
+            XCTAssertTrue(diagnosticsSource.contains(expected), expected)
         }
+        XCTAssertEqual(
+            diagnosticsSource.components(separatedBy: "Your device name, exact location, and searches are not included in the export.").count - 1,
+            2,
+            "The scoped exclusion promise should remain visible in both pre-Prepare and prepared states."
+        )
+
+        let titleRange = try XCTUnwrap(diagnosticsSource.range(of: "Text(\"Send a diagnostic log\")"))
+        let explanationRange = try XCTUnwrap(diagnosticsSource.range(
+            of: "Text(\"Nothing is sent automatically. The app prepares a file on this phone"
+        ))
+        let pickerRange = try XCTUnwrap(diagnosticsSource.range(of: "diagnosticsWindowPicker"))
+        let statusRange = try XCTUnwrap(diagnosticsSource.range(of: "diagnosticsWindowStatus"))
+        let includedRange = try XCTUnwrap(diagnosticsSource.range(of: "Section(\"Included\")"))
+        let excludedRange = try XCTUnwrap(diagnosticsSource.range(of: "Section(\"Excluded\")"))
+
+        XCTAssertLessThan(titleRange.lowerBound, explanationRange.lowerBound)
+        XCTAssertLessThan(explanationRange.lowerBound, pickerRange.lowerBound)
+        XCTAssertLessThan(pickerRange.lowerBound, statusRange.lowerBound)
+        XCTAssertLessThan(statusRange.lowerBound, includedRange.lowerBound)
+        XCTAssertLessThan(includedRange.lowerBound, excludedRange.lowerBound)
+
         XCTAssertTrue(exportSource.contains("included=app-version,device-model,installed-packs,session-flow,object-urls,error-codes,timings"))
         XCTAssertTrue(exportSource.contains("not-included=device-name,exact-location,search-wording"))
-        XCTAssertFalse(source.contains("Phone model"))
-        XCTAssertFalse(source.contains("Phone name"))
-        XCTAssertFalse(source.contains("Your coordinates never leave."))
-        XCTAssertFalse(source.contains("Your coordinates are excluded."))
-        XCTAssertFalse(source.contains("never included"))
-        XCTAssertFalse(source.contains("Places you looked at, saved, loved, hid or visited."))
-        XCTAssertFalse(source.contains("Your searches, lists, location, viewport or device name."))
+        XCTAssertFalse(diagnosticsSource.contains("Phone model"))
+        XCTAssertFalse(diagnosticsSource.contains("Phone name"))
+        XCTAssertFalse(diagnosticsSource.contains("Your coordinates never leave."))
+        XCTAssertFalse(diagnosticsSource.contains("Your coordinates are excluded."))
+        XCTAssertFalse(diagnosticsSource.contains("never included"))
+        XCTAssertFalse(diagnosticsSource.contains("Places you looked at, saved, loved, hid or visited."))
+        XCTAssertFalse(diagnosticsSource.contains("Your searches, lists, location, viewport or device name."))
     }
 
     func testDiagnosticsRedesignKeepsDeleteInsideDiagnosticsContext() throws {
@@ -407,7 +465,9 @@ final class LoggingPrivacyTests: XCTestCase {
             ".onDisappear {\n            preparationTask?.cancel()\n            cleanupPreparedArtifact()\n        }"
         ))
         XCTAssertTrue(source.contains("catch is CancellationError"))
-        XCTAssertTrue(source.contains("Button(\"Cancel\") {\n                    cleanupPreparedArtifact()"))
+        XCTAssertTrue(source.contains(
+            "Button {\n                    cleanupPreparedArtifact()\n                } label: {\n                    Text(\"Cancel\")"
+        ))
     }
 
     func testTrackVisitDateHeadersAreNotStandaloneMovableRows() throws {
@@ -419,29 +479,96 @@ final class LoggingPrivacyTests: XCTestCase {
             source.contains(#"Text(verbatim: formattedDay(calendar.startOfDay(for: visit.visitedAt)))"#),
             "Date headers must be rendered inside the visit row, not as standalone rows in the movable ForEach."
         )
-        let movableBodies = source
-            .components(separatedBy: movableRowsStart)
-            .dropFirst()
-            .map { String($0.prefix(800)) }
-
-        XCTAssertEqual(
-            movableBodies.count,
-            2,
-            "Both My tracks movable ForEach blocks should be guarded against standalone date headers."
-        )
+        let trackListBodyStart = try XCTUnwrap(source.range(of: "private var trackListBody"))
+        let collectionListBodyStart = try XCTUnwrap(source.range(of: "private var collectionListBody"))
+        let trackSummaryCardStart = try XCTUnwrap(source.range(of: "private var trackSummaryCard"))
+        let movableBodies = [
+            String(source[trackListBodyStart.lowerBound..<collectionListBodyStart.lowerBound]),
+            String(source[collectionListBodyStart.lowerBound..<trackSummaryCardStart.lowerBound]),
+        ]
+        let onlyRowBranchPattern =
+            #"\belse[ \t]*\{[ \t]*\n[ \t]*"#
+                + #"ForEach\(TrackVisitReordering\.rows\(for:\s*visibleTrackVisits,\s*calendar:\s*calendar\)\)"#
+                + #"[ \t]*\{[ \t]*row[ \t]+in[ \t]*\n[ \t]+"#
+                + #"trackVisitRow\(row\.visit,[ \t]*dayHeader:[ \t]*row\.dayHeader\)"#
+                + #"(?:[ \t]*\n[ \t]*\.[^;\n]*)*[ \t]*\n[ \t]*\}"#
+                + #"[ \t]*\n[ \t]*\}"#
+        let onlyRowPatterns = [
+            onlyRowBranchPattern + #"[ \t]*\n[ \t]*\}[ \t]*\n[ \t]*\}"#,
+            onlyRowBranchPattern + #"[ \t]*\n[ \t]*\}[ \t]*else[ \t]+if[ \t]+items\b"#,
+        ]
 
         for (index, movableBody) in movableBodies.enumerated() {
             let movableBodyWithoutVisitRow = movableBody.replacingOccurrences(of: inlineVisitRow, with: "")
-
-            XCTAssertTrue(
-                movableBody.contains(inlineVisitRow),
+            XCTAssertEqual(
+                movableBody.components(separatedBy: movableRowsStart).count - 1,
+                1,
+                "My tracks body \(index + 1) should contain exactly one movable visit ForEach."
+            )
+            XCTAssertEqual(
+                movableBody.components(separatedBy: "TrackVisitReordering.").count - 1,
+                1,
+                "My tracks body \(index + 1) must not build standalone day-section rows."
+            )
+            XCTAssertEqual(
+                movableBody.components(separatedBy: inlineVisitRow).count - 1,
+                1,
                 "Movable track visit ForEach \(index + 1) should render visits with inline day headers."
             )
+            XCTAssertNotNil(
+                movableBody.range(of: onlyRowPatterns[index], options: .regularExpression),
+                "Movable track visit ForEach \(index + 1) should contain only the visit row and its modifiers."
+            )
+            XCTAssertFalse(movableBody.contains("/*"), "Block comments must not masquerade as live movable rows.")
+            XCTAssertFalse(movableBody.contains("//"), "Line comments must not masquerade as live movable rows.")
+            XCTAssertFalse(movableBody.contains("\"\"\""), "Multiline strings must not masquerade as live movable rows.")
+            XCTAssertFalse(movableBody.contains("#if"), "Inactive compiler branches must not masquerade as live movable rows.")
             XCTAssertNil(
-                movableBodyWithoutVisitRow.range(of: #"(?i)header|formattedDay|Text\s*\("#, options: .regularExpression),
-                "Movable track visit ForEach \(index + 1) must not render standalone date headers."
+                movableBodyWithoutVisitRow.range(
+                    of: #"(?i)\bdayHeader\b|\bvisitedAt\b|formattedTrackDay|formattedDay|\.formatted\s*\(\s*date\s*:"#,
+                    options: .regularExpression
+                ),
+                "My tracks body \(index + 1) must not render a standalone date header beside the visit row."
             )
         }
+
+        let trackVisitRowStart = try XCTUnwrap(source.range(of: "private func trackVisitRow"))
+        let reorderHandleStart = try XCTUnwrap(source.range(of: "private func invariantReorderHandle"))
+        let trackVisitRowSource = source[trackVisitRowStart.lowerBound..<reorderHandleStart.lowerBound]
+        let rowStackStart = try XCTUnwrap(
+            trackVisitRowSource.range(
+                of: #"VStack(?:\([^\n{]*\))?[ \t]*\{"#,
+                options: .regularExpression
+            )
+        )
+        let visitCardStart = try XCTUnwrap(
+            trackVisitRowSource.range(
+                of: #"HStack(?:\([^\n{]*\))?[ \t]*\{"#,
+                options: .regularExpression
+            )
+        )
+        let inlineHeaderPattern =
+            #"private func trackVisitRow\([^)]*dayHeader:[ \t]*Date\?\)[^{]*\{[ \t]*\n[ \t]*"#
+                + #"VStack\([^\n]*\)[ \t]*\{[ \t]*\n[ \t]*if let dayHeader[ \t]*\{[ \t]*\n[ \t]*"#
+                + #"Text\(verbatim:[ \t]*formattedTrackDay\(dayHeader\)\)"#
+        XCTAssertNotNil(
+            trackVisitRowSource.range(of: inlineHeaderPattern, options: .regularExpression),
+            "The visit row should own its live date-header view inside one structural VStack row."
+        )
+        XCTAssertNil(
+            source.range(
+                of: #"@(?:SwiftUI\.)?ViewBuilder(?:\(\))?"#
+                    + #"(?:[ \t\r\n]+@[A-Za-z_][A-Za-z0-9_.]*(?:\([^\n]*\))?)*"#
+                    + #"[ \t\r\n]+(?:file)?private[ \t]+func[ \t]+trackVisitRow\b"#,
+                options: .regularExpression
+            ),
+            "The visit-row helper must remain a single root view so its header cannot become a sibling List row."
+        )
+        XCTAssertLessThan(rowStackStart.lowerBound, visitCardStart.lowerBound)
+        XCTAssertFalse(trackVisitRowSource.contains("/*"), "Block comments must not masquerade as a live row header.")
+        XCTAssertFalse(trackVisitRowSource.contains("//"), "Line comments must not masquerade as a live row header.")
+        XCTAssertFalse(trackVisitRowSource.contains("\"\"\""), "Multiline strings must not masquerade as a live row header.")
+        XCTAssertFalse(trackVisitRowSource.contains("#if"), "Inactive compiler branches must not masquerade as a live row header.")
     }
 
     func testTrackVisitCustomDragUsesAnOverlayIndependentOfTheLazySourceRow() throws {
