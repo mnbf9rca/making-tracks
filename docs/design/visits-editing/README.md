@@ -7,6 +7,7 @@ Artifacts:
 
 - `visits-editing-default.png` from `wf-visits-editing-default.html`
 - `visits-editing-ax.png` from `wf-visits-editing-ax.html`
+- `visits-editing-dense.png` from `wf-visits-editing-dense.html` (ratified compact-row amendment)
 
 Render command used on macOS:
 
@@ -32,5 +33,8 @@ Validation notes:
 - Delete is row-addressed and first-class for the #217 un-see fallback path.
   A route from a place card can land on repeated visits for that place without
   collapsing them into one place row.
+- The ratified dense amendment keeps My tracks rows to one line with the day as
+  a sectional header; tapping a row opens the Visit date screen for date adjustment
+  and deletion. The history-list variant is explicitly out of scope.
 - The rendering follows the #350 theming umbrella: quiet paper, system controls,
   restrained accent, and no route-recorder language.

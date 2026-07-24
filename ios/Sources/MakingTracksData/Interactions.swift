@@ -411,12 +411,13 @@ extension AppDatabase {
     }
 
 #if DEBUG
-    public func seedUITestingTrackVisits(_ places: [PlaceRef]) throws {
+    public func seedUITestingTrackVisits(_ places: [PlaceRef], multiDay: Bool = false) throws {
         try dbQueue.write { db in
             let seedStart = Date(timeIntervalSince1970: 1_000)
             for (index, place) in places.enumerated() {
                 try snapshotIfNeeded(place, db)
-                let timestamp = seedStart.addingTimeInterval(Double(index) * 60 * 60)
+                let dayOffset: Double = multiDay && index >= 4 ? 24 * 60 * 60 : 0
+                let timestamp = seedStart.addingTimeInterval(dayOffset + Double(index % 4) * 60 * 60)
                 var visit = Visit(
                     id: nil,
                     placeID: place.placeID,

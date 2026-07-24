@@ -17,6 +17,193 @@ private struct AXStubElement {
     var label: String
 }
 
+private struct RenderedRGB: Equatable {
+    let red: Int
+    let green: Int
+    let blue: Int
+
+    init(_ red: Int, _ green: Int, _ blue: Int) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+    }
+
+    func matches(_ other: RenderedRGB, tolerance: Int = 5) -> Bool {
+        abs(red - other.red) <= tolerance
+            && abs(green - other.green) <= tolerance
+            && abs(blue - other.blue) <= tolerance
+    }
+
+    var relativeLuminance: Double {
+        func linear(_ component: Int) -> Double {
+            let value = Double(component) / 255
+            return value <= 0.04045
+                ? value / 12.92
+                : pow((value + 0.055) / 1.055, 2.4)
+        }
+
+        return (0.2126 * linear(red)) + (0.7152 * linear(green)) + (0.0722 * linear(blue))
+    }
+
+    func contrastRatio(with other: RenderedRGB) -> Double {
+        let lighter = max(relativeLuminance, other.relativeLuminance)
+        let darker = min(relativeLuminance, other.relativeLuminance)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+}
+
+@MainActor
+private struct RenderedPixelRaster {
+    private let pixels: [UInt8]
+    private let width: Int
+    private let height: Int
+    private let bytesPerRow: Int
+    private let appFrame: CGRect
+
+    init?(screenshot: XCUIScreenshot, appFrame: CGRect) {
+        guard let image = UIImage(data: screenshot.pngRepresentation)?.cgImage,
+              appFrame.width > 0,
+              appFrame.height > 0
+        else {
+            return nil
+        }
+
+        width = image.width
+        height = image.height
+        bytesPerRow = image.width * 4
+        self.appFrame = appFrame
+
+        var storage = [UInt8](repeating: 0, count: image.height * bytesPerRow)
+        guard let context = CGContext(
+            data: &storage,
+            width: image.width,
+            height: image.height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        ) else {
+            return nil
+        }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        pixels = storage
+    }
+
+    func samples(in frame: CGRect) -> [RenderedRGB] {
+        let clipped = frame.intersection(appFrame)
+        guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return [] }
+
+        let scaleX = CGFloat(width) / appFrame.width
+        let scaleY = CGFloat(height) / appFrame.height
+        let minX = max(0, Int(((clipped.minX - appFrame.minX) * scaleX).rounded(.down)))
+        let maxX = min(width - 1, Int(((clipped.maxX - appFrame.minX) * scaleX).rounded(.up)))
+        let minY = max(0, Int(((clipped.minY - appFrame.minY) * scaleY).rounded(.down)))
+        let maxY = min(height - 1, Int(((clipped.maxY - appFrame.minY) * scaleY).rounded(.up)))
+        guard minX <= maxX, minY <= maxY else { return [] }
+
+        var result: [RenderedRGB] = []
+        result.reserveCapacity((maxX - minX + 1) * (maxY - minY + 1))
+        for y in minY...maxY {
+            for x in minX...maxX {
+                let offset = (y * bytesPerRow) + (x * 4)
+                result.append(RenderedRGB(
+                    Int(pixels[offset]),
+                    Int(pixels[offset + 1]),
+                    Int(pixels[offset + 2])
+                ))
+            }
+        }
+        return result
+    }
+
+    func tokenCount(_ token: RenderedRGB, in frame: CGRect, tolerance: Int = 5) -> Int {
+        samples(in: frame).lazy.filter { $0.matches(token, tolerance: tolerance) }.count
+    }
+
+    func tokenCoverage(_ token: RenderedRGB, in frame: CGRect, tolerance: Int = 5) -> Double {
+        let region = samples(in: frame)
+        guard !region.isEmpty else { return 0 }
+        let matches = region.lazy.filter { $0.matches(token, tolerance: tolerance) }.count
+        return Double(matches) / Double(region.count)
+    }
+
+    func representativeToken(
+        _ token: RenderedRGB,
+        in frame: CGRect,
+        tolerance: Int = 5
+    ) -> (color: RenderedRGB, count: Int)? {
+        let matches = samples(in: frame).filter { $0.matches(token, tolerance: tolerance) }
+        guard !matches.isEmpty else { return nil }
+        let sums = matches.reduce(into: (red: 0, green: 0, blue: 0)) { result, pixel in
+            result.red += pixel.red
+            result.green += pixel.green
+            result.blue += pixel.blue
+        }
+        return (
+            RenderedRGB(
+                Int((Double(sums.red) / Double(matches.count)).rounded()),
+                Int((Double(sums.green) / Double(matches.count)).rounded()),
+                Int((Double(sums.blue) / Double(matches.count)).rounded())
+            ),
+            matches.count
+        )
+    }
+
+    func systemBlueCount(in frame: CGRect) -> Int {
+        samples(in: frame).lazy.filter { pixel in
+            pixel.blue >= 160
+                && pixel.blue - pixel.red >= 70
+                && pixel.blue - pixel.green >= 35
+        }.count
+    }
+
+    func differingPixelCount(
+        comparedTo other: RenderedPixelRaster,
+        in frame: CGRect,
+        tolerance: Int = 0
+    ) -> Int? {
+        guard width == other.width,
+              height == other.height,
+              bytesPerRow == other.bytesPerRow,
+              appFrame == other.appFrame
+        else {
+            return nil
+        }
+
+        let clipped = frame.intersection(appFrame)
+        guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return 0 }
+
+        let scaleX = CGFloat(width) / appFrame.width
+        let scaleY = CGFloat(height) / appFrame.height
+        let minX = max(0, Int(((clipped.minX - appFrame.minX) * scaleX).rounded(.down)))
+        let maxX = min(width - 1, Int(((clipped.maxX - appFrame.minX) * scaleX).rounded(.up)))
+        let minY = max(0, Int(((clipped.minY - appFrame.minY) * scaleY).rounded(.down)))
+        let maxY = min(height - 1, Int(((clipped.maxY - appFrame.minY) * scaleY).rounded(.up)))
+        guard minX <= maxX, minY <= maxY else { return 0 }
+
+        var differenceCount = 0
+        for y in minY...maxY {
+            for x in minX...maxX {
+                let offset = (y * bytesPerRow) + (x * 4)
+                if abs(Int(pixels[offset]) - Int(other.pixels[offset])) > tolerance
+                    || abs(Int(pixels[offset + 1]) - Int(other.pixels[offset + 1])) > tolerance
+                    || abs(Int(pixels[offset + 2]) - Int(other.pixels[offset + 2])) > tolerance {
+                    differenceCount += 1
+                }
+            }
+        }
+        return differenceCount
+    }
+}
+
+@MainActor
+private struct MyTracksAppearanceCapture {
+    let raster: RenderedPixelRaster
+    let trackSurfaceFrame: CGRect
+    let visitDateRaster: RenderedPixelRaster
+    let visitDateSurfaceFrame: CGRect
+}
+
 private enum AXResampler {
     static func matches(
         expected: String,
@@ -814,14 +1001,219 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(screenshotExportNames["tracks-unified-visit-editing"], "tracks-unified-visit-editing")
         attachScreenshot(named: "tracks-unified-visit-editing")
 
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifierPrefix: "lists.detail.track.row.date.").firstMatch.waitForExistence(timeout: 5))
-        let deleteVisit = app.buttons.matching(identifierPrefix: "lists.detail.track.row.delete.").firstMatch
-        XCTAssertTrue(deleteVisit.exists)
-        XCTAssertTrue(deleteVisit.label.contains("Ghost Sign"))
+        let firstRow = app.otherElements.matching(identifierPrefix: "lists.detail.track.row.card.").firstMatch
+        XCTAssertTrue(firstRow.exists)
+        firstRow.tap()
+        XCTAssertTrue(app.staticTexts["lists.detail.visit-date.title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["lists.detail.visit-date.back"].exists)
+        XCTAssertTrue(app.buttons["lists.detail.visit-date.delete"].exists)
+        XCTAssertTrue(app.datePickers["lists.detail.visit-date.picker"].exists)
+        XCTAssertTrue(app.datePickers["lists.detail.visit-date.picker"].isHittable)
+        XCTAssertTrue(app.images["lists.detail.visit-date.summary-pin"].exists)
+        XCTAssertTrue(app.images["lists.detail.visit-date.selected-pin"].exists)
+        XCTAssertTrue(app.images["lists.detail.visit-date.heart"].exists)
+        XCTAssertFalse(app.staticTexts["heart"].exists)
         XCTAssertTrue(app.buttons["lists.detail.track.refresh"].exists)
         XCTAssertFalse(app.buttons["lists.detail.track.edit-order"].exists)
         XCTAssertFalse(app.buttons.matching(identifierPrefix: "lists.detail.track.row.move-up.").firstMatch.exists)
         XCTAssertFalse(app.buttons.matching(identifierPrefix: "lists.detail.track.row.move-down.").firstMatch.exists)
+    }
+
+    func testMyTracksCompactRowsFitSixVisitsWithoutInlineDateField() {
+        let app = launch(
+            reset: true,
+            seedVisitsEditorVisual: true,
+            hideFixtureChrome: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.tracks"].tap()
+
+        let trackSurface = app.collectionViews["lists.detail.surface.track"]
+        XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            app.descendants(matching: .any)
+                .matching(identifierPrefix: "lists.detail.track.row.date.").count,
+            0,
+            "Compact rows must not expose inline date controls"
+        )
+
+        let visibleRows = app.otherElements
+            .matching(identifierPrefix: "lists.detail.track.row.card.")
+            .allElementsBoundByIndex
+            .filter { row in
+                row.exists
+                    && row.frame.minY >= trackSurface.frame.minY
+                    && row.frame.maxY <= trackSurface.frame.maxY
+            }
+        XCTAssertGreaterThanOrEqual(
+            visibleRows.count,
+            6,
+            "At least six compact visit rows must fit in the 390x844-class viewport; surface=\(trackSurface.frame), rows=\(visibleRows.map(\.frame))"
+        )
+    }
+
+    func testMyTracksRenderedPixelOraclesAcrossLightAndDarkAppearances() {
+        guard let light = assertMyTracksRenderedPixelOracle(
+            forceDarkAppearance: false,
+            appearanceName: "light"
+        ), let dark = assertMyTracksRenderedPixelOracle(
+            forceDarkAppearance: true,
+            appearanceName: "dark"
+        ) else {
+            return
+        }
+
+        XCTAssertEqual(light.trackSurfaceFrame, dark.trackSurfaceFrame)
+        let comparisonFrame = light.trackSurfaceFrame
+            .intersection(dark.trackSurfaceFrame)
+            .insetBy(dx: 1, dy: 1)
+        guard let differenceCount = light.raster.differingPixelCount(
+            comparedTo: dark.raster,
+            in: comparisonFrame
+        ) else {
+            XCTFail("Could not compare Light and Dark My tracks editor rasters")
+            return
+        }
+        XCTAssertEqual(
+            differenceCount,
+            0,
+            "My tracks editor must render identically in forced Light and Dark appearances"
+        )
+
+        XCTAssertEqual(light.visitDateSurfaceFrame, dark.visitDateSurfaceFrame)
+        let visitDateComparisonFrame = light.visitDateSurfaceFrame
+            .intersection(dark.visitDateSurfaceFrame)
+            .insetBy(dx: 1, dy: 1)
+        guard let visitDateDifferenceCount = light.visitDateRaster.differingPixelCount(
+            comparedTo: dark.visitDateRaster,
+            in: visitDateComparisonFrame
+        ) else {
+            XCTFail("Could not compare Light and Dark Visit date rasters")
+            return
+        }
+        XCTAssertEqual(
+            visitDateDifferenceCount,
+            0,
+            "Visit date editor must render identically in forced Light and Dark appearances"
+        )
+    }
+
+    func testFilteredMyTracksHidesInvariantReorderHandleToken() {
+        XCUIDevice.shared.appearance = .light
+        defer { XCUIDevice.shared.appearance = .light }
+
+        let app = launch(
+            reset: true,
+            seedVisitsEditorVisual: true,
+            hideFixtureChrome: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["My tracks"].tap()
+
+        let trackSurface = app.collectionViews["lists.detail.surface.track"]
+        XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+
+        let filter = element(identifier: "map.list-mode.filter.loved", in: app)
+        XCTAssertTrue(filter.waitForExistence(timeout: 5))
+        filter.tap()
+        XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
+        let category = app.buttons["track-filter-picker.category.historic_building"]
+        XCTAssertTrue(scrollToHittable(category, in: app))
+        category.tap()
+        let apply = app.buttons["track-filter-picker.apply"]
+        XCTAssertTrue(apply.waitForExistence(timeout: 5))
+        apply.tap()
+
+        app.buttons["map.list-mode.back"].tap()
+        XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
+        // The amended dense fixture contains two historic-building visits; the filter
+        // must still suppress reorder affordances on the filtered surface.
+        XCTAssertEqual(app.staticTexts["lists.detail.track.summary"].label, "2 visits")
+
+        let screenshot = XCUIScreen.main.screenshot()
+        let appFrame = app.windows.firstMatch.exists ? app.windows.firstMatch.frame : app.frame
+        guard let raster = RenderedPixelRaster(screenshot: screenshot, appFrame: appFrame) else {
+            XCTFail("Could not decode filtered My tracks screenshot")
+            return
+        }
+        XCTAssertEqual(
+            app.descendants(matching: .any)
+                .matching(identifierPrefix: "lists.detail.track.row.reorder.").count,
+            0,
+            "Filtered My tracks must not expose app-drawn reorder handles"
+        )
+        let renderedRows = app.otherElements
+            .matching(identifierPrefix: "lists.detail.track.row.card.")
+            .allElementsBoundByIndex
+            .filter(\.exists)
+        let reorderTokenCount = renderedRows.reduce(into: 0) { count, row in
+            let reorderStrip = CGRect(
+                x: row.frame.maxX - 60,
+                y: row.frame.minY,
+                width: 60,
+                height: row.frame.height
+            )
+            count += raster.tokenCount(RenderedRGB(170, 168, 157), in: reorderStrip)
+        }
+        XCTAssertEqual(
+            reorderTokenCount,
+            0,
+            "Filtered My tracks must not render the reorder-handle token in any row's trailing bounds"
+        )
+    }
+
+    func testMyTracksControlsRemainAccessibleAtAccessibilityTextSize() {
+        XCUIDevice.shared.appearance = .light
+        defer { XCUIDevice.shared.appearance = .light }
+
+        let app = launch(
+            reset: true,
+            accessibilityTextSize: true,
+            seedVisitsEditorVisual: true,
+            hideFixtureChrome: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.tracks"].tap()
+        XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+
+        let back = app.buttons["lists.detail.track.back"]
+        let title = app.staticTexts["lists.detail.track.title"]
+        let done = app.buttons["lists.detail.track.done"]
+        for (element, name) in [(back, "Back"), (done, "Done")] {
+            XCTAssertTrue(element.exists, "\(name) must exist")
+            XCTAssertGreaterThanOrEqual(element.frame.width, 44, "\(name) touch width")
+            XCTAssertGreaterThanOrEqual(element.frame.height, 44, "\(name) touch height")
+        }
+        XCTAssertTrue(title.exists)
+        XCTAssertFalse(back.frame.intersects(title.frame), "Back must not collide with the title")
+        XCTAssertFalse(done.frame.intersects(title.frame), "Done must not collide with the title")
+
+        let heart = app.buttons.matching(identifierPrefix: "lists.detail.track.row.loved.").firstMatch
+        XCTAssertTrue(scrollToExistence(of: heart, in: app))
+        XCTAssertGreaterThanOrEqual(heart.frame.width, 44, "heart touch width")
+        XCTAssertGreaterThanOrEqual(heart.frame.height, 44, "heart touch height")
+        let firstRow = app.otherElements.matching(identifierPrefix: "lists.detail.track.row.card.").firstMatch
+        let renderedRowCount = app.descendants(matching: .any)
+            .matching(identifierPrefix: "lists.detail.track.row.card.").count
+        let renderedHandleCount = app.descendants(matching: .any)
+            .matching(identifierPrefix: "lists.detail.track.row.reorder.").count
+        XCTAssertEqual(
+            renderedHandleCount,
+            renderedRowCount,
+            "Every rendered visit row must expose exactly one app-drawn reorder handle"
+        )
+        XCTAssertTrue(firstRow.exists)
+        firstRow.tap()
+        XCTAssertTrue(app.buttons["lists.detail.visit-date.delete"].waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(app.buttons["lists.detail.visit-date.delete"].frame.width, 44)
+        XCTAssertGreaterThanOrEqual(app.buttons["lists.detail.visit-date.delete"].frame.height, 44)
     }
 
     func testTracksMenuAndListsMyTracksReachSameScreenIdentity() {
@@ -831,6 +1223,18 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openAppMenu(in: fromMenu)
         fromMenu.buttons["menu.row.tracks"].tap()
         XCTAssertTrue(fromMenu.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        fromMenu.buttons["lists.detail.track.back"].tap()
+        XCTAssertTrue(fromMenu.navigationBars["Menu"].waitForExistence(timeout: 5))
+        fromMenu.buttons["menu.row.tracks"].tap()
+        XCTAssertTrue(fromMenu.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        fromMenu.buttons["lists.detail.track.done"].tap()
+        XCTAssertTrue(fromMenu.otherElements["map.surface"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            waitForNonExistence(
+                of: fromMenu.collectionViews["lists.detail.surface.track"],
+                timeout: 5
+            )
+        )
 
         let fromLists = launch(reset: true, pinDiagnostics: true)
         XCTAssertTrue(fromLists.otherElements["map.surface"].waitForExistence(timeout: 10))
@@ -840,6 +1244,19 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(fromLists.staticTexts["Lists"].waitForExistence(timeout: 5))
         fromLists.staticTexts["My tracks"].tap()
         XCTAssertTrue(fromLists.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        fromLists.buttons["lists.detail.track.back"].tap()
+        XCTAssertTrue(fromLists.navigationBars["Lists"].waitForExistence(timeout: 5))
+        XCTAssertTrue(fromLists.buttons["lists.create"].exists)
+        fromLists.staticTexts["My tracks"].tap()
+        XCTAssertTrue(fromLists.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        fromLists.buttons["lists.detail.track.done"].tap()
+        XCTAssertTrue(fromLists.otherElements["map.surface"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            waitForNonExistence(
+                of: fromLists.collectionViews["lists.detail.surface.track"],
+                timeout: 5
+            )
+        )
     }
 
     func testTrackGeometryDrawsConnectorFromSeededFixtureVisits() {
@@ -1928,6 +2345,274 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "credits-a11y")
     }
 
+    private func assertMyTracksRenderedPixelOracle(
+        forceDarkAppearance: Bool,
+        appearanceName: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> MyTracksAppearanceCapture? {
+        let forcedAppearance: XCUIDevice.Appearance = forceDarkAppearance ? .dark : .light
+        XCUIDevice.shared.appearance = forcedAppearance
+        XCTAssertEqual(XCUIDevice.shared.appearance, forcedAppearance, file: file, line: line)
+        defer { XCUIDevice.shared.appearance = .light }
+
+        let app = launch(
+            reset: true,
+            seedVisitsEditorVisual: true,
+            forceDarkAppearance: forceDarkAppearance,
+            hideFixtureChrome: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10), file: file, line: line)
+        let loading = app.otherElements["map.loading"]
+        XCTAssertTrue(!loading.exists || loading.waitForNonExistence(timeout: 10), file: file, line: line)
+        openAppMenu(in: app)
+        app.buttons["menu.row.tracks"].tap()
+
+        let trackSurface = app.collectionViews["lists.detail.surface.track"]
+        XCTAssertTrue(trackSurface.waitForExistence(timeout: 5), file: file, line: line)
+        XCTAssertEqual(
+            app.descendants(matching: .any)
+                .matching(identifierPrefix: "lists.detail.track.row.date.").count,
+            0,
+            "Compact My tracks rows must not expose inline date controls",
+            file: file,
+            line: line
+        )
+
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = "my-tracks-rendered-oracle-\(appearanceName)"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        exportScreenshot(
+            screenshot,
+            named: "my-tracks-rendered-oracle-\(appearanceName)",
+            force: true
+        )
+
+        let appFrame = app.windows.firstMatch.exists ? app.windows.firstMatch.frame : app.frame
+        XCTAssertEqual(appFrame.width, 402, accuracy: 0.5, file: file, line: line)
+        XCTAssertEqual(appFrame.height, 874, accuracy: 0.5, file: file, line: line)
+        guard let raster = RenderedPixelRaster(screenshot: screenshot, appFrame: appFrame) else {
+            XCTFail("Could not decode My tracks rendered screenshot", file: file, line: line)
+            return nil
+        }
+
+        let paper = RenderedRGB(241, 237, 223)
+        let sheet = RenderedRGB(255, 253, 247)
+        let ink = RenderedRGB(28, 28, 30)
+        let dim = RenderedRGB(100, 99, 93)
+        let accent = RenderedRGB(10, 107, 92)
+        let danger = RenderedRGB(180, 35, 24)
+        let reorderHandle = RenderedRGB(170, 168, 157)
+        var failures: [String] = []
+
+        func requireElement(_ element: XCUIElement, named name: String) -> Bool {
+            guard element.exists else {
+                failures.append("\(name): missing accessibility target")
+                return false
+            }
+            return true
+        }
+
+        func requireText(
+            _ element: XCUIElement,
+            named name: String,
+            foreground: RenderedRGB,
+            background: RenderedRGB,
+            minimumContrast: Double,
+            foregroundInset: CGFloat = 0,
+            minimumForegroundPixels: Int = 8
+        ) {
+            guard requireElement(element, named: name) else { return }
+            let foregroundSample = raster.representativeToken(
+                foreground,
+                in: element.frame.insetBy(dx: foregroundInset, dy: foregroundInset)
+            )
+            let backgroundSample = raster.representativeToken(
+                background,
+                in: element.frame.insetBy(dx: -3, dy: -3)
+            )
+            if (foregroundSample?.count ?? 0) < minimumForegroundPixels {
+                failures.append(
+                    "\(name): expected rendered foreground \(foreground), found \(foregroundSample?.count ?? 0) interior pixels within ±5 RGB"
+                )
+            }
+            if (backgroundSample?.count ?? 0) < 8 {
+                failures.append(
+                    "\(name): expected rendered background \(background), found \(backgroundSample?.count ?? 0) pixels within ±5 RGB"
+                )
+            }
+            guard let foregroundSample, let backgroundSample else { return }
+            let contrast = foregroundSample.color.contrastRatio(with: backgroundSample.color)
+            if contrast < minimumContrast || contrast < 3 {
+                failures.append(
+                    "\(name): observed WCAG contrast \(String(format: "%.2f", contrast)):1, expected at least \(minimumContrast):1"
+                )
+            }
+        }
+
+        func requireFill(
+            _ element: XCUIElement,
+            named name: String,
+            token: RenderedRGB,
+            minimumCoverage: Double
+        ) {
+            guard requireElement(element, named: name) else { return }
+            let coverage = raster.tokenCoverage(token, in: element.frame)
+            if coverage < minimumCoverage {
+                failures.append(
+                    "\(name): token coverage \(String(format: "%.1f", coverage * 100))%, expected at least \(Int(minimumCoverage * 100))%"
+                )
+            }
+        }
+
+        let chrome = app.otherElements["lists.detail.track.chrome"]
+        let back = app.buttons["lists.detail.track.back"]
+        let title = app.staticTexts["lists.detail.track.title"]
+        let done = app.buttons["lists.detail.track.done"]
+        let summaryCard = app.otherElements["lists.detail.track.summary-card"]
+        let sortDirection = app.staticTexts["lists.detail.track.sort-direction"]
+        let summary = app.staticTexts["lists.detail.track.summary"]
+        let explainer = app.staticTexts[
+            "Your track is a sequence of visits you entered. Edit a row when the remembered day or order needs correcting."
+        ]
+        let dayHeader = app.staticTexts.matching(identifierPrefix: "lists.detail.track.day-header.").firstMatch
+        let placeName = app.staticTexts.matching(identifierPrefix: "lists.detail.track.row.name.").firstMatch
+        let metadata = app.staticTexts.matching(identifierPrefix: "lists.detail.track.row.metadata.").firstMatch
+        let heart = app.buttons.matching(identifierPrefix: "lists.detail.track.row.loved.").firstMatch
+        let firstRow = app.otherElements.matching(identifierPrefix: "lists.detail.track.row.card.").firstMatch
+        let renderedRowCount = app.descendants(matching: .any)
+            .matching(identifierPrefix: "lists.detail.track.row.card.").count
+        let renderedHandleCount = app.descendants(matching: .any)
+            .matching(identifierPrefix: "lists.detail.track.row.reorder.").count
+        XCTAssertEqual(
+            renderedHandleCount,
+            renderedRowCount,
+            "Every rendered visit row must expose exactly one app-drawn reorder handle",
+            file: file,
+            line: line
+        )
+
+        requireText(back, named: "Back", foreground: accent, background: paper, minimumContrast: 4.5)
+        requireText(title, named: "My tracks title", foreground: ink, background: paper, minimumContrast: 3)
+        requireText(done, named: "Done", foreground: accent, background: paper, minimumContrast: 4.5)
+        requireText(sortDirection, named: "sort direction", foreground: ink, background: sheet, minimumContrast: 4.5)
+        requireText(summary, named: "visit summary", foreground: ink, background: sheet, minimumContrast: 3)
+        requireText(explainer, named: "summary explanation", foreground: dim, background: sheet, minimumContrast: 4.5)
+        requireText(dayHeader, named: "day header", foreground: dim, background: paper, minimumContrast: 4.5)
+        requireText(placeName, named: "place name", foreground: ink, background: sheet, minimumContrast: 4.5)
+        if requireElement(placeName, named: "representative long Malaysian place name"),
+           placeName.label != "Sultan Abdul Samad Building and Merdeka Square" {
+            failures.append("place name: visual fixture is not the ratified long-name representative")
+        }
+        if requireElement(placeName, named: "compact representative place name"),
+           placeName.frame.height > 26 {
+            failures.append("place name: expected one compact line, got \(placeName.frame)")
+        }
+        requireText(metadata, named: "place metadata", foreground: dim, background: sheet, minimumContrast: 4.5)
+        requireText(
+            heart,
+            named: "heart",
+            foreground: danger,
+            background: sheet,
+            minimumContrast: 4.5,
+            foregroundInset: 8
+        )
+
+        requireFill(chrome, named: "navigation chrome", token: paper, minimumCoverage: 0.65)
+        requireFill(summaryCard, named: "summary card", token: sheet, minimumCoverage: 0.45)
+        requireFill(firstRow, named: "visit row card", token: sheet, minimumCoverage: 0.45)
+        requireFill(back, named: "flat Back control", token: paper, minimumCoverage: 0.45)
+        requireFill(done, named: "flat Done control", token: paper, minimumCoverage: 0.45)
+        requireFill(heart, named: "unfilled heart control", token: sheet, minimumCoverage: 0.35)
+
+        if requireElement(chrome, named: "navigation chrome system-blue scan"),
+           raster.systemBlueCount(in: chrome.frame) > 0 {
+            failures.append("navigation chrome: found system-blue pixels")
+        }
+        if raster.systemBlueCount(in: trackSurface.frame) > 0 {
+            failures.append("track surface: found system-blue pixels")
+        }
+
+        if requireElement(placeName, named: "place name ordering"),
+           requireElement(metadata, named: "metadata ordering"),
+           placeName.frame.maxY > metadata.frame.minY {
+            failures.append("row anatomy: place name must render above metadata")
+        }
+        for (element, name) in [(back, "Back"), (done, "Done"), (heart, "heart")] {
+            if requireElement(element, named: "\(name) touch target"),
+               element.frame.width < 44 || element.frame.height < 44 {
+                failures.append("\(name): expected at least a 44×44 touch target, got \(element.frame)")
+            }
+        }
+        if requireElement(heart, named: "compact heart"),
+           heart.frame.width > 72 || heart.frame.height > 46 {
+            failures.append("heart: expected compact single-line hit target, got \(heart.frame)")
+        }
+
+        if raster.tokenCount(paper, in: trackSurface.frame) < 100 {
+            failures.append("track surface: paper token is not visibly rendered")
+        }
+        if raster.tokenCount(sheet, in: trackSurface.frame) < 100 {
+            failures.append("track surface: sheet token is not visibly rendered")
+        }
+        let reorderStrip = CGRect(
+            // The amended row keeps the handle inside the card. Sample the
+            // first row's trailing bounds, not the list gutter or full surface.
+            x: firstRow.frame.maxX - 60,
+            y: firstRow.frame.minY,
+            width: 60,
+            height: firstRow.frame.height
+        )
+        if raster.tokenCount(reorderHandle, in: reorderStrip) < 100 {
+            failures.append("reorder handles: invariant token is not visibly rendered")
+        }
+
+        XCTAssertTrue(
+            failures.isEmpty,
+            "My tracks \(appearanceName) rendered-pixel oracle failed:\n- \(failures.joined(separator: "\n- "))",
+            file: file,
+            line: line
+        )
+
+        firstRow.tap()
+        let visitDateTitle = app.staticTexts["lists.detail.visit-date.title"]
+        XCTAssertTrue(visitDateTitle.waitForExistence(timeout: 5), file: file, line: line)
+        let visitDateScreenshot = XCUIScreen.main.screenshot()
+        let visitDateAttachment = XCTAttachment(screenshot: visitDateScreenshot)
+        visitDateAttachment.name = "my-tracks-visit-date-oracle-\(appearanceName)"
+        visitDateAttachment.lifetime = .keepAlways
+        add(visitDateAttachment)
+        exportScreenshot(
+            visitDateScreenshot,
+            named: "my-tracks-visit-date-oracle-\(appearanceName)",
+            force: true
+        )
+        guard let visitDateRaster = RenderedPixelRaster(
+            screenshot: visitDateScreenshot,
+            appFrame: appFrame
+        ) else {
+            XCTFail("Could not decode Visit date rendered screenshot", file: file, line: line)
+            return nil
+        }
+        let visitDateBack = app.buttons["lists.detail.visit-date.back"]
+        XCTAssertTrue(visitDateBack.exists, file: file, line: line)
+        let visitDateSurfaceFrame = CGRect(
+            x: appFrame.minX,
+            y: visitDateBack.frame.minY,
+            width: appFrame.width,
+            height: appFrame.maxY - visitDateBack.frame.minY - 34
+        )
+
+        return MyTracksAppearanceCapture(
+            raster: raster,
+            trackSurfaceFrame: trackSurface.frame,
+            visitDateRaster: visitDateRaster,
+            visitDateSurfaceFrame: visitDateSurfaceFrame
+        )
+    }
+
     private func launch(
         reset: Bool,
         locationNotDetermined: Bool = false,
@@ -1943,6 +2628,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         pinSizeMultiplier: Double? = nil,
         pinDiagnostics: Bool = false,
         seedTrackVisits: Bool = false,
+        seedVisitsEditorVisual: Bool = false,
         seedBurstTrackVisits: Bool = false,
         seedSpreadList: Bool = false,
         seedTrackList: Bool = false,
@@ -2014,6 +2700,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         if seedTrackVisits {
             app.launchArguments.append("--ui-testing-seed-track-visits")
+        }
+        if seedVisitsEditorVisual {
+            app.launchArguments.append("--ui-testing-seed-visits-editor-visual")
         }
         if seedBurstTrackVisits {
             app.launchArguments.append("--ui-testing-seed-burst-track-visits")
@@ -2815,8 +3504,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         exportScreenshot(screenshot, named: name)
     }
 
-    private func exportScreenshot(_ screenshot: XCUIScreenshot, named name: String) {
-        guard ProcessInfo.processInfo.environment["MAKING_TRACKS_EXPORT_UI_TEST_SCREENSHOTS"] == "1" else { return }
+    private func exportScreenshot(
+        _ screenshot: XCUIScreenshot,
+        named name: String,
+        force: Bool = false
+    ) {
+        guard force || ProcessInfo.processInfo.environment["MAKING_TRACKS_EXPORT_UI_TEST_SCREENSHOTS"] == "1" else {
+            return
+        }
         guard let exportName = screenshotExportNames[name] else {
             XCTFail("No screenshot export name configured for \(name)")
             return
@@ -2979,6 +3674,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "diagnostics-preprepare-exclusions-dark": "diagnostics-preprepare-exclusions-dark",
         "tracks-static-geometry": "tracks-static-geometry",
         "tracks-unified-visit-editing": "tracks-unified-visit-editing",
+        "my-tracks-rendered-oracle-light": "my-tracks-rendered-oracle-light",
+        "my-tracks-rendered-oracle-dark": "my-tracks-rendered-oracle-dark",
+        "my-tracks-visit-date-oracle-light": "my-tracks-visit-date-oracle-light",
+        "my-tracks-visit-date-oracle-dark": "my-tracks-visit-date-oracle-dark",
         "list-map-polished-chrome": "list-map-polished-chrome",
         "list-map-spread-fit": "list-map-spread-fit",
         "my-tracks-burst-readout": "my-tracks-burst-readout",

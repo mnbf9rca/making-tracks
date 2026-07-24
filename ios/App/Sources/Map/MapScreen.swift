@@ -821,11 +821,33 @@ enum TrackVisitRowDensitySpec {
 enum TrackVisitEditorVisualSpec {
     static let paperBackground = MapThemeColor.color(hex: "#f1eddf")
     static let cardBackground = MapThemeColor.color(hex: "#fffdf7")
+    static let primaryText = MapThemeColor.color(hex: "#1c1c1e")
+    static let secondaryText = MapThemeColor.color(hex: "#64635d")
     static let divider = MapThemeColor.color(hex: "#ddd8ca")
+    static let reorderHandle = MapThemeColor.color(hex: "#aaa89d")
     static let accent = MapThemeColor.color(hex: "#0a6b5c")
     static let accentSoft = MapThemeColor.color(hex: "#e3f0eb")
     static let danger = MapThemeColor.color(hex: "#b42318")
     static let dangerSoft = MapThemeColor.color(hex: "#f8e7e4")
+}
+
+private struct TrackVisitRowBoundsPreferenceKey: PreferenceKey {
+    nonisolated(unsafe) static var defaultValue: [Int64: CGRect] = [:]
+
+    static func reduce(
+        value: inout [Int64: CGRect],
+        nextValue: () -> [Int64: CGRect]
+    ) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
+private struct TrackVisitViewportBoundsPreferenceKey: PreferenceKey {
+    nonisolated(unsafe) static var defaultValue = CGRect.zero
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
+    }
 }
 
 struct TrackVisitDaySection: Identifiable, Equatable {
@@ -985,6 +1007,125 @@ enum TrackVisitReordering {
 
         guard originalDays == [targetDay] else { return nil }
         return .reorderDay(day: targetDay, orderedIDs: targetDayOrderedIDs)
+    }
+}
+
+enum TrackVisitDragTrigger {
+    static let coordinateSpaceName = "track-visit-reorder"
+
+    static func destinationOffset(
+        for visitID: Int64,
+        translationY: CGFloat,
+        sourceMidY: CGFloat? = nil,
+        orderedVisitIDs: [Int64],
+        rowFrames: [Int64: CGRect]
+    ) -> Int? {
+        guard orderedVisitIDs.contains(visitID),
+              let resolvedSourceMidY = sourceMidY ?? rowFrames[visitID]?.midY
+        else { return nil }
+        return destinationOffset(
+            dropY: resolvedSourceMidY + translationY,
+            orderedVisitIDs: orderedVisitIDs,
+            rowFrames: rowFrames
+        )
+    }
+
+    static func destinationOffset(
+        for visitID: Int64,
+        dropY: CGFloat,
+        orderedVisitIDs: [Int64],
+        rowFrames: [Int64: CGRect]
+    ) -> Int? {
+        guard orderedVisitIDs.contains(visitID), rowFrames[visitID] != nil else {
+            return nil
+        }
+        return destinationOffset(
+            dropY: dropY,
+            orderedVisitIDs: orderedVisitIDs,
+            rowFrames: rowFrames
+        )
+    }
+
+    private static func destinationOffset(
+        dropY: CGFloat,
+        orderedVisitIDs: [Int64],
+        rowFrames: [Int64: CGRect]
+    ) -> Int? {
+        let measuredRows = orderedVisitIDs.enumerated().compactMap { index, id in
+            rowFrames[id].map { (index: index, frame: $0) }
+        }
+        guard let first = measuredRows.first, let last = measuredRows.last else {
+            return nil
+        }
+        if dropY < first.frame.midY {
+            return first.index
+        }
+        if let destination = measuredRows.first(where: { dropY < $0.frame.midY }) {
+            return destination.index
+        }
+        return min(last.index + 1, orderedVisitIDs.count)
+    }
+
+    static func autoScrollTargetID(
+        dropY: CGFloat,
+        orderedVisitIDs: [Int64],
+        rowFrames: [Int64: CGRect],
+        viewportBounds: CGRect
+    ) -> Int64? {
+        guard !viewportBounds.isEmpty else { return nil }
+        let visibleRows = orderedVisitIDs.enumerated().compactMap { index, id in
+            rowFrames[id].flatMap { frame in
+                frame.intersects(viewportBounds) ? (index: index, frame: frame) : nil
+            }
+        }
+        guard let first = visibleRows.first, let last = visibleRows.last else {
+            return nil
+        }
+
+        let edgeInset: CGFloat = 32
+        if dropY <= viewportBounds.minY + edgeInset, first.index > 0 {
+            return orderedVisitIDs[first.index - 1]
+        }
+        if dropY >= viewportBounds.maxY - edgeInset, last.index + 1 < orderedVisitIDs.count {
+            return orderedVisitIDs[last.index + 1]
+        }
+        return nil
+    }
+
+    static func accessibilityDestinationOffset(
+        sourceIndex: Int,
+        movingTowardEnd: Bool,
+        visitCount: Int
+    ) -> Int? {
+        guard sourceIndex >= 0, sourceIndex < visitCount else { return nil }
+        if movingTowardEnd {
+            guard sourceIndex + 1 < visitCount else { return nil }
+            return sourceIndex + 2
+        }
+        guard sourceIndex > 0 else { return nil }
+        return sourceIndex - 1
+    }
+}
+
+enum TrackVisitDragVisualSpec {
+    static func scale(isActive: Bool) -> CGFloat {
+        isActive ? 1.015 : 1
+    }
+
+    static func offsetY(isActive: Bool) -> CGFloat {
+        isActive ? -3 : 0
+    }
+
+    static func shadowOpacity(isActive: Bool) -> Double {
+        isActive ? 0.22 : 0
+    }
+
+    static func shadowRadius(isActive: Bool) -> CGFloat {
+        isActive ? 9 : 0
+    }
+
+    static func shadowY(isActive: Bool) -> CGFloat {
+        isActive ? 5 : 0
     }
 }
 
@@ -4763,7 +4904,8 @@ private struct AppMenuSheet: View {
                 model: model,
                 onShowOnMap: showListOnMapAndDismiss,
                 onListRenamed: onListRenamed,
-                onListDeleted: onListDeleted
+                onListDeleted: onListDeleted,
+                onDone: { dismiss() }
             ))
         case let .listDetail(listID):
             destinationWithDone(ListDetailDeepLinkView(
@@ -4771,15 +4913,17 @@ private struct AppMenuSheet: View {
                 listID: listID,
                 visitFilter: shell.listDetailVisitFilter,
                 onShowOnMap: showListOnMapAndDismiss,
-                onListRenamed: onListRenamed
+                onListRenamed: onListRenamed,
+                onDone: { dismiss() }
             ))
         case .tracks:
-            destinationWithDone(TrackListDetailDeepLinkView(
+            TrackListDetailDeepLinkView(
                 model: model,
                 focusPlaceID: shell.tracksFocusPlaceID,
                 onShowOnMap: showListOnMapAndDismiss,
-                onListRenamed: onListRenamed
-            ))
+                onListRenamed: onListRenamed,
+                onDone: { dismiss() }
+            )
         case .offlineMaps:
 #if DEBUG
             destinationWithDone(OfflineMapsView(
@@ -4853,6 +4997,7 @@ private struct ListDetailDeepLinkView: View {
     let visitFilter: TracksVisitFilter
     let onShowOnMap: @MainActor (PlaceList, TracksVisitFilter) -> Void
     let onListRenamed: @MainActor (PlaceList) -> Void
+    let onDone: @MainActor () -> Void
 
     @State private var list: PlaceList?
     @State private var didLoad = false
@@ -4866,7 +5011,8 @@ private struct ListDetailDeepLinkView: View {
                     visitFilter: visitFilter,
                     onChanged: {},
                     onShowOnMap: onShowOnMap,
-                    onListRenamed: onListRenamed
+                    onListRenamed: onListRenamed,
+                    onDone: onDone
                 )
             } else if didLoad {
                 ContentUnavailableView("List not found", systemImage: "list.bullet")
@@ -4894,6 +5040,7 @@ private struct TrackListDetailDeepLinkView: View {
     let focusPlaceID: String?
     let onShowOnMap: @MainActor (PlaceList, TracksVisitFilter) -> Void
     let onListRenamed: @MainActor (PlaceList) -> Void
+    let onDone: @MainActor () -> Void
 
     @State private var list: PlaceList?
     @State private var didLoad = false
@@ -4907,7 +5054,8 @@ private struct TrackListDetailDeepLinkView: View {
                     focusPlaceID: focusPlaceID,
                     onChanged: {},
                     onShowOnMap: onShowOnMap,
-                    onListRenamed: onListRenamed
+                    onListRenamed: onListRenamed,
+                    onDone: onDone
                 )
             } else if didLoad {
                 ContentUnavailableView("List not found", systemImage: "list.bullet")
@@ -5007,6 +5155,7 @@ private struct ListsView: View {
     let onShowOnMap: @MainActor (PlaceList, TracksVisitFilter) -> Void
     let onListRenamed: @MainActor (PlaceList) -> Void
     let onListDeleted: @MainActor (Int64) -> Void
+    let onDone: @MainActor () -> Void
 
     @State private var lists: [PlaceList] = []
     @State private var progress: [Int64: ListProgress] = [:]
@@ -5045,7 +5194,8 @@ private struct ListsView: View {
                             list: list,
                             onChanged: { Task { await reload() } },
                             onShowOnMap: onShowOnMap,
-                            onListRenamed: onListRenamed
+                            onListRenamed: onListRenamed,
+                            onDone: onDone
                         )
                     } label: {
                         listRow(list)
@@ -5164,6 +5314,7 @@ private struct ListDetailView: View {
     let onChanged: @MainActor () -> Void
     let onShowOnMap: @MainActor (PlaceList, TracksVisitFilter) -> Void
     let onListRenamed: @MainActor (PlaceList) -> Void
+    let onDone: @MainActor () -> Void
 
     @State private var items: [ListPlace] = []
     @State private var trackVisits: [TrackVisit] = []
@@ -5171,8 +5322,18 @@ private struct ListDetailView: View {
     @State private var currentList: PlaceList
     @State private var renameDraft: String
     @State private var actionError: String?
-    @State private var trackEditMode: EditMode = .active
+    @State private var selectedVisitForEditing: TrackVisit?
+    @State private var trackVisitRowFrames: [Int64: CGRect] = [:]
+    @State private var trackVisitViewportBounds = CGRect.zero
+    @State private var draggingTrackVisitID: Int64?
+    @State private var trackVisitDragStartMidY: CGFloat?
+    @State private var trackAutoScrollTask: Task<Void, Never>?
+    @State private var trackAutoScrollTargetID: Int64?
+    @State private var trackAutoScrollTowardEnd = false
+    @State private var trackAutoScrollTick = 0
+    @State private var trackAutoScrollGeneration = 0
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.dismiss) private var dismiss
 
     init(
         model: MapScreenModel?,
@@ -5181,7 +5342,8 @@ private struct ListDetailView: View {
         focusPlaceID: String? = nil,
         onChanged: @escaping @MainActor () -> Void,
         onShowOnMap: @escaping @MainActor (PlaceList, TracksVisitFilter) -> Void,
-        onListRenamed: @escaping @MainActor (PlaceList) -> Void
+        onListRenamed: @escaping @MainActor (PlaceList) -> Void,
+        onDone: @escaping @MainActor () -> Void
     ) {
         self.model = model
         self.list = list
@@ -5190,6 +5352,7 @@ private struct ListDetailView: View {
         self.onChanged = onChanged
         self.onShowOnMap = onShowOnMap
         self.onListRenamed = onListRenamed
+        self.onDone = onDone
         _currentList = State(initialValue: list)
         _renameDraft = State(initialValue: list.name)
     }
@@ -5218,54 +5381,156 @@ private struct ListDetailView: View {
 
     var body: some View {
         if isTrackListDetail {
-            trackListBody
+            VStack(spacing: 0) {
+                trackListChrome
+                trackListBody
+            }
+            .background(TrackVisitEditorVisualSpec.paperBackground.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
         } else {
             collectionListBody
         }
     }
 
-    private var trackListBody: some View {
-        List {
-            Section {
-                trackSummaryCard
-                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 8, trailing: 16))
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+    private var trackListChrome: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                trackListBackButton
+
+                if dynamicTypeSize.isAccessibilitySize {
+                    Spacer(minLength: 12)
+                } else {
+                    trackListTitle
+                        .frame(maxWidth: .infinity)
+                }
+
+                trackListDoneButton
             }
 
-            Section {
-                if visibleTrackVisits.isEmpty {
-                    ContentUnavailableView("No visits yet", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+            if dynamicTypeSize.isAccessibilitySize {
+                trackListTitle
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: 50)
+        .background(TrackVisitEditorVisualSpec.paperBackground)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(TrackVisitEditorVisualSpec.divider)
+                .frame(height: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("lists.detail.track.chrome")
+    }
+
+    private var trackListBackButton: some View {
+        Button {
+            dismiss()
+        } label: {
+            Text("‹ Back")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                .frame(minWidth: 88, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("lists.detail.track.back")
+    }
+
+    private var trackListDoneButton: some View {
+        Button {
+            onDone()
+        } label: {
+            Text("Done")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                .frame(minWidth: 88, minHeight: 44, alignment: .trailing)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("lists.detail.track.done")
+    }
+
+    private var trackListTitle: some View {
+        Text(verbatim: currentList.name)
+            .font(.headline)
+            .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+            .multilineTextAlignment(.center)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+            .accessibilityIdentifier("lists.detail.track.title")
+    }
+
+    private var trackListBody: some View {
+        ScrollViewReader { proxy in
+            List {
+                Section {
+                    trackSummaryCard
+                        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 8, trailing: 16))
+                        .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
-                } else {
-                    ForEach(TrackVisitReordering.rows(for: visibleTrackVisits, calendar: calendar)) { row in
-                        trackVisitRow(row.visit, dayHeader: row.dayHeader)
-                            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
-                            .listRowSeparator(.hidden)
+                }
+
+                Section {
+                    if visibleTrackVisits.isEmpty {
+                        ContentUnavailableView("No visits yet", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
                             .listRowBackground(Color.clear)
-                    }
-                    .onMove { source, destination in
-                        guard canReorderTrackVisits else { return }
-                        Task {
-                            await moveTrackVisits(
-                                visibleTrackVisits,
-                                fromOffsets: source,
-                                toOffset: destination
-                            )
+                    } else {
+                        ForEach(TrackVisitReordering.rows(for: visibleTrackVisits, calendar: calendar)) { row in
+                            trackVisitRow(row.visit, dayHeader: row.dayHeader)
+                                .id(row.visit.id)
+                                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
                         }
                     }
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(TrackVisitEditorVisualSpec.paperBackground)
+            .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+            .coordinateSpace(name: TrackVisitDragTrigger.coordinateSpaceName)
+            .overlay {
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: TrackVisitViewportBoundsPreferenceKey.self,
+                        value: CGRect(origin: .zero, size: geometry.size)
+                    )
+                }
+                .allowsHitTesting(false)
+            }
+            .onPreferenceChange(TrackVisitRowBoundsPreferenceKey.self) { frames in
+                trackVisitRowFrames = frames
+            }
+            .onPreferenceChange(TrackVisitViewportBoundsPreferenceKey.self) { bounds in
+                trackVisitViewportBounds = bounds
+            }
+            .onChange(of: trackAutoScrollTick) { _, _ in
+                guard let targetID = trackAutoScrollTargetID else { return }
+                withAnimation(.linear(duration: 0.18)) {
+                    proxy.scrollTo(
+                        targetID,
+                        anchor: trackAutoScrollTowardEnd ? .bottom : .top
+                    )
+                }
+            }
+            .onDisappear { stopTrackVisitAutoScroll() }
+            .accessibilityIdentifier("lists.detail.surface.track")
+            .task { await reload() }
+            .refreshable { await reload() }
+            .sheet(item: $selectedVisitForEditing) { visit in
+                TrackVisitDateEditorView(
+                    model: model,
+                    visit: visit,
+                    onChanged: {
+                        await reload()
+                        onChanged()
+                    }
+                )
+            }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .background(TrackVisitEditorVisualSpec.paperBackground)
-        .environment(\.editMode, canReorderTrackVisits ? $trackEditMode : .constant(.inactive))
-        .navigationTitle(currentList.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .accessibilityIdentifier("lists.detail.surface.track")
-        .task { await reload() }
-        .refreshable { await reload() }
     }
 
     private var collectionListBody: some View {
@@ -5310,16 +5575,6 @@ private struct ListDetailView: View {
                         ForEach(TrackVisitReordering.rows(for: visibleTrackVisits, calendar: calendar)) { row in
                             trackVisitRow(row.visit, dayHeader: row.dayHeader)
                         }
-                        .onMove { source, destination in
-                            guard canReorderTrackVisits else { return }
-                            Task {
-                                await moveTrackVisits(
-                                    visibleTrackVisits,
-                                    fromOffsets: source,
-                                    toOffset: destination
-                                )
-                            }
-                        }
                     }
                 } else if items.isEmpty {
                     ContentUnavailableView("No places yet", systemImage: "mappin.slash")
@@ -5355,51 +5610,72 @@ private struct ListDetailView: View {
                         .accessibilityIdentifier("lists.detail.track.sort-direction")
                 }
                 .font(.subheadline.weight(.semibold))
+                .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
 
                 Text(verbatim: TracksCopy.summary(
                     visible: visibleTrackVisits.count,
                     lovedOnly: false
                 ))
                 .font(.title2.weight(.bold))
+                .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
                 .accessibilityIdentifier("lists.detail.track.summary")
 
                 Text("Your track is a sequence of visits you entered. Edit a row when the remembered day or order needs correcting.")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
 
                 HStack(spacing: 8) {
                     Button {
                         onShowOnMap(currentList, .all)
                     } label: {
                         Label("Map", systemImage: "map")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.white)
                             .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                            .background(
+                                TrackVisitEditorVisualSpec.accent,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            )
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(TrackVisitEditorVisualSpec.accent)
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier("lists.detail.show-map")
 
                     Button {
                         Task { await reload() }
                     } label: {
                         Label("Refresh", systemImage: "arrow.clockwise")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(TrackVisitEditorVisualSpec.accent)
                             .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                            .background(
+                                TrackVisitEditorVisualSpec.paperBackground,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
+                            }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
                     .accessibilityLabel("Refresh tracks")
                     .accessibilityIdentifier("lists.detail.track.refresh")
                 }
             } else {
                 Label("Multiple visits to this place", systemImage: "mappin.and.ellipse")
                     .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
                     .accessibilityIdentifier("lists.detail.track.focus-message")
 
                 Text("Choose the visit")
                     .font(.title2.weight(.bold))
+                    .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
                     .accessibilityIdentifier("lists.detail.track.summary")
 
                 Text("Delete only the row you mean to remove.")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
             }
         }
         .padding(13)
@@ -5409,6 +5685,8 @@ private struct ListDetailView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("lists.detail.track.summary-card")
     }
 
     private func listItemRow(_ item: ListPlace) -> some View {
@@ -5444,14 +5722,14 @@ private struct ListDetailView: View {
     private func trackVisitRow(_ visit: TrackVisit, dayHeader: Date?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if let dayHeader {
-                Text(verbatim: formattedDay(dayHeader))
+                Text(verbatim: formattedTrackDay(dayHeader))
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
                     .padding(.horizontal, 8)
+                    .accessibilityIdentifier("lists.detail.track.day-header.\(visit.id)")
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: TrackVisitRowDensitySpec.horizontalSpacing) {
+            HStack(alignment: .center, spacing: TrackVisitRowDensitySpec.horizontalSpacing) {
                     Text("pin")
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(TrackVisitEditorVisualSpec.accent)
@@ -5459,103 +5737,238 @@ private struct ListDetailView: View {
                         .background(TrackVisitEditorVisualSpec.accentSoft, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .accessibilityHidden(true)
 
-                    VStack(alignment: .leading, spacing: TrackVisitRowDensitySpec.verticalSpacing) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(verbatim: visit.name)
                             .font(.body)
-                            .lineLimit(2)
-                        Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitedAt(visit))")
+                            .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .accessibilityIdentifier("lists.detail.track.row.name.\(visit.id)")
+                        Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitTime(visit))")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
                             .lineLimit(2)
+                            .accessibilityIdentifier("lists.detail.track.row.metadata.\(visit.id)")
                     }
                     .layoutPriority(1)
+
+                    Spacer(minLength: 4)
 
                     Button {
                         Task { await setLoved(visit) }
                     } label: {
-                        Text("heart")
-                            .font(.caption.weight(.bold))
-                            .frame(minWidth: 34, minHeight: 30)
+                        Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(TrackVisitEditorVisualSpec.danger)
+                            .frame(width: 30, height: 30)
+                            .background(
+                                TrackVisitEditorVisualSpec.cardBackground,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(TrackVisitEditorVisualSpec.danger, lineWidth: 1)
+                            }
+                            .frame(minWidth: 45, minHeight: 45)
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(TrackVisitEditorVisualSpec.danger)
+                    .buttonStyle(.plain)
                     .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
                     .accessibilityIdentifier("lists.detail.track.row.loved.\(visit.id)")
-                }
 
-                visitEditControls(visit)
+                    if canReorderTrackVisits {
+                        invariantReorderHandle(for: visit)
+                    }
             }
             .padding(11)
-            .frame(maxWidth: .infinity, minHeight: TrackVisitRowDensitySpec.minimumHeight, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
             .background(TrackVisitEditorVisualSpec.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
             }
+            .scaleEffect(TrackVisitDragVisualSpec.scale(isActive: draggingTrackVisitID == visit.id))
+            .offset(y: TrackVisitDragVisualSpec.offsetY(isActive: draggingTrackVisitID == visit.id))
+            .shadow(
+                color: Color.black.opacity(
+                    TrackVisitDragVisualSpec.shadowOpacity(isActive: draggingTrackVisitID == visit.id)
+                ),
+                radius: TrackVisitDragVisualSpec.shadowRadius(isActive: draggingTrackVisitID == visit.id),
+                y: TrackVisitDragVisualSpec.shadowY(isActive: draggingTrackVisitID == visit.id)
+            )
+            .zIndex(draggingTrackVisitID == visit.id ? 1 : 0)
+            .animation(.easeOut(duration: 0.12), value: draggingTrackVisitID == visit.id)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("lists.detail.track.row.card.\(visit.id)")
+            .accessibilityAction(named: "Edit visit") {
+                selectedVisitForEditing = visit
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selectedVisitForEditing = visit
+            }
+        }
+        .background {
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: TrackVisitRowBoundsPreferenceKey.self,
+                    value: [
+                        visit.id: geometry.frame(
+                            in: .named(TrackVisitDragTrigger.coordinateSpaceName)
+                        ),
+                    ]
+                )
+            }
         }
     }
 
-    @ViewBuilder
-    private func visitEditControls(_ visit: TrackVisit) -> some View {
-        let datePicker = DatePicker(
-            "Visit date",
-            selection: Binding(
-                get: { visit.visitedAt },
-                set: { day in
-                    Task { await updateVisitDate(visit, toDayContaining: day) }
+    private func invariantReorderHandle(for visit: TrackVisit) -> some View {
+        ZStack {
+            Rectangle()
+                .fill(TrackVisitEditorVisualSpec.cardBackground)
+            VStack(spacing: 3) {
+                ForEach(0..<3, id: \.self) { _ in
+                    Capsule()
+                        .fill(TrackVisitEditorVisualSpec.reorderHandle)
+                        .frame(width: 22, height: 2)
                 }
-            ),
-            displayedComponents: .date
+            }
+        }
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
+        .highPriorityGesture(trackVisitReorderGesture(for: visit))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Reorder \(visit.name)")
+        .accessibilityHint("Drag, or swipe up or down, to change this visit's order")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment:
+                moveTrackVisitByAccessibility(visit, movingTowardEnd: true)
+            case .decrement:
+                moveTrackVisitByAccessibility(visit, movingTowardEnd: false)
+            @unknown default:
+                break
+            }
+        }
+        .accessibilityIdentifier("lists.detail.track.row.reorder.\(visit.id)")
+    }
+
+    private func trackVisitReorderGesture(for visit: TrackVisit) -> some Gesture {
+        DragGesture(
+            minimumDistance: 0,
+            coordinateSpace: .named(TrackVisitDragTrigger.coordinateSpaceName)
         )
-        .datePickerStyle(.compact)
-        .labelsHidden()
-        .accessibilityLabel("Visit date for \(visit.name), \(formattedVisitedAt(visit))")
-        .accessibilityIdentifier("lists.detail.track.row.date.\(visit.id)")
-
-        let dateBox = VStack(alignment: .leading, spacing: 2) {
-            Text("Visit date")
-                .font(.caption2.weight(.semibold))
-                .textCase(.uppercase)
-                .foregroundStyle(.secondary)
-            datePicker
+        .onChanged { value in
+            guard canReorderTrackVisits,
+                  let sourceFrame = trackVisitRowFrames[visit.id]
+            else { return }
+            if draggingTrackVisitID != visit.id {
+                draggingTrackVisitID = visit.id
+                trackVisitDragStartMidY = sourceFrame.midY
+            }
+            guard let sourceMidY = trackVisitDragStartMidY else { return }
+            updateTrackVisitAutoScroll(
+                dropY: sourceMidY + value.translation.height
+            )
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(TrackVisitEditorVisualSpec.cardBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
-        }
+        .onEnded { value in
+            defer {
+                draggingTrackVisitID = nil
+                trackVisitDragStartMidY = nil
+                stopTrackVisitAutoScroll()
+            }
+            guard canReorderTrackVisits,
+                  draggingTrackVisitID == visit.id,
+                  let sourceMidY = trackVisitDragStartMidY,
+                  let source = visibleTrackVisits.firstIndex(where: { $0.id == visit.id }),
+                  let destination = TrackVisitDragTrigger.destinationOffset(
+                    for: visit.id,
+                    translationY: value.translation.height,
+                    sourceMidY: sourceMidY,
+                    orderedVisitIDs: visibleTrackVisits.map(\.id),
+                    rowFrames: trackVisitRowFrames
+                  )
+            else { return }
 
-        let deleteButton = Button(role: .destructive) {
-            Task { await deleteVisit(visit) }
-        } label: {
-            if dynamicTypeSize.isAccessibilitySize {
-                Text("delete")
-                    .font(.caption.weight(.bold))
-            } else {
-                Text("del")
-                    .font(.caption.weight(.bold))
+            let visits = visibleTrackVisits
+            Task {
+                await moveTrackVisits(
+                    visits,
+                    fromOffsets: IndexSet(integer: source),
+                    toOffset: destination
+                )
             }
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .tint(TrackVisitEditorVisualSpec.danger)
-        .accessibilityLabel("Delete \(visit.name), \(formattedVisitedAt(visit))")
-        .accessibilityIdentifier("lists.detail.track.row.delete.\(visit.id)")
+    }
 
-        if dynamicTypeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 8) {
-                dateBox
-                deleteButton
+    @MainActor
+    private func updateTrackVisitAutoScroll(dropY: CGFloat) {
+        guard TrackVisitDragTrigger.autoScrollTargetID(
+            dropY: dropY,
+            orderedVisitIDs: visibleTrackVisits.map(\.id),
+            rowFrames: trackVisitRowFrames,
+            viewportBounds: trackVisitViewportBounds
+        ) != nil
+        else {
+            stopTrackVisitAutoScroll()
+            return
+        }
+        guard trackAutoScrollTask == nil else { return }
+
+        trackAutoScrollGeneration &+= 1
+        let generation = trackAutoScrollGeneration
+        trackAutoScrollTask = Task { @MainActor in
+            defer {
+                if trackAutoScrollGeneration == generation {
+                    trackAutoScrollTask = nil
+                }
             }
-        } else {
-            HStack(alignment: .center, spacing: 8) {
-                dateBox
-                deleteButton
+            while !Task.isCancelled {
+                guard let targetID = TrackVisitDragTrigger.autoScrollTargetID(
+                    dropY: dropY,
+                    orderedVisitIDs: visibleTrackVisits.map(\.id),
+                    rowFrames: trackVisitRowFrames,
+                    viewportBounds: trackVisitViewportBounds
+                ) else {
+                    return
+                }
+                trackAutoScrollTargetID = targetID
+                trackAutoScrollTowardEnd = dropY >= trackVisitViewportBounds.midY
+                trackAutoScrollTick &+= 1
+                try? await Task.sleep(for: .milliseconds(250))
             }
+        }
+    }
+
+    @MainActor
+    private func stopTrackVisitAutoScroll() {
+        trackAutoScrollGeneration &+= 1
+        trackAutoScrollTask?.cancel()
+        trackAutoScrollTask = nil
+        trackAutoScrollTargetID = nil
+    }
+
+    @MainActor
+    private func moveTrackVisitByAccessibility(
+        _ visit: TrackVisit,
+        movingTowardEnd: Bool
+    ) {
+        let visits = visibleTrackVisits
+        guard canReorderTrackVisits,
+              let source = visits.firstIndex(where: { $0.id == visit.id }),
+              let destination = TrackVisitDragTrigger.accessibilityDestinationOffset(
+                sourceIndex: source,
+                movingTowardEnd: movingTowardEnd,
+                visitCount: visits.count
+              )
+        else { return }
+
+        Task {
+            await moveTrackVisits(
+                visits,
+                fromOffsets: IndexSet(integer: source),
+                toOffset: destination
+            )
         }
     }
 
@@ -5718,13 +6131,206 @@ private struct ListDetailView: View {
         visit.visitedAt.formatted(date: .abbreviated, time: .shortened)
     }
 
+    private func formattedVisitTime(_ visit: TrackVisit) -> String {
+        visit.visitedAt.formatted(date: .omitted, time: .shortened)
+    }
+
     private func formattedDay(_ day: Date) -> String {
         day.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    private func formattedTrackDay(_ day: Date) -> String {
+        day.formatted(.dateTime.day(.twoDigits).month(.abbreviated).year(.defaultDigits)).uppercased()
     }
 
     private func lovedButtonAccessibilityLabel(for visit: TrackVisit) -> String {
         let action = visit.verdict == .loved ? "Remove loved from" : "Mark loved for"
         return "\(action) \(visit.name), \(formattedVisitedAt(visit))"
+    }
+}
+
+private struct TrackVisitDateEditorView: View {
+    let model: MapScreenModel?
+    let onChanged: @MainActor () async -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var visit: TrackVisit
+    @State private var selectedDate: Date
+    @State private var actionError: String?
+
+    init(
+        model: MapScreenModel?,
+        visit: TrackVisit,
+        onChanged: @escaping @MainActor () async -> Void
+    ) {
+        self.model = model
+        self.onChanged = onChanged
+        _visit = State(initialValue: visit)
+        _selectedDate = State(initialValue: visit.visitedAt)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button("‹ My tracks") { dismiss() }
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                    .frame(minWidth: 88, minHeight: 44, alignment: .leading)
+                    .accessibilityIdentifier("lists.detail.visit-date.back")
+                Spacer()
+                Text("Visit date")
+                    .font(.headline)
+                    .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                    .accessibilityIdentifier("lists.detail.visit-date.title")
+                Spacer()
+                Color.clear.frame(minWidth: 88, minHeight: 44)
+            }
+            .padding(.horizontal, 16)
+            .background(TrackVisitEditorVisualSpec.paperBackground)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(TrackVisitEditorVisualSpec.divider).frame(height: 1)
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "mappin")
+                                .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                                .accessibilityLabel("Pinned visit")
+                                .accessibilityIdentifier("lists.detail.visit-date.summary-pin")
+                            Text(verbatim: visit.name)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                        }
+                        Text("Correct the day")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                        Text("Choose the day this visit belongs to. Making Tracks keeps the visit as your own entry, not as a GPS trace.")
+                            .font(.subheadline)
+                            .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
+                    }
+                    .padding(13)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(TrackVisitEditorVisualSpec.cardBackground, in: RoundedRectangle(cornerRadius: 10))
+
+                    Text("SELECTED VISIT")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(alignment: .center, spacing: 10) {
+                            Image(systemName: "mappin")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                                .frame(width: 30, height: 30)
+                                .background(
+                                    TrackVisitEditorVisualSpec.accentSoft,
+                                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                )
+                                .accessibilityLabel("Pinned visit")
+                                .accessibilityIdentifier("lists.detail.visit-date.selected-pin")
+                            Text(verbatim: visit.name)
+                                .font(.body)
+                                .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                                .lineLimit(2)
+                            Spacer()
+                            Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(TrackVisitEditorVisualSpec.danger)
+                                .frame(width: 30, height: 30)
+                                .accessibilityLabel(visit.verdict == .loved ? "Loved" : "Not loved")
+                                .accessibilityIdentifier("lists.detail.visit-date.heart")
+                        }
+                        HStack(spacing: 8) {
+                            ZStack(alignment: .leading) {
+                                DatePicker(
+                                    "Visit date",
+                                    selection: Binding(
+                                        get: { selectedDate },
+                                        set: { date in
+                                            selectedDate = date
+                                        }
+                                    ),
+                                    displayedComponents: .date
+                                )
+                                .datePickerStyle(.compact)
+                                .labelsHidden()
+                                .accessibilityIdentifier("lists.detail.visit-date.picker")
+                                HStack(spacing: 6) {
+                                    Text(selectedDate.formatted(date: .abbreviated, time: .omitted))
+                                        .font(.callout.weight(.medium))
+                                        .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                                    Image(systemName: "calendar")
+                                        .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                                }
+                                .padding(9)
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .background(TrackVisitEditorVisualSpec.cardBackground)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .background(TrackVisitEditorVisualSpec.cardBackground, in: RoundedRectangle(cornerRadius: 8))
+                            Button("Delete", role: .destructive) {
+                                Task { await deleteVisit() }
+                            }
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(TrackVisitEditorVisualSpec.danger)
+                            .frame(minWidth: 45, minHeight: 45)
+                            .background(TrackVisitEditorVisualSpec.dangerSoft, in: RoundedRectangle(cornerRadius: 8))
+                            .accessibilityIdentifier("lists.detail.visit-date.delete")
+                            .accessibilityLabel("Delete visit \(visit.name)")
+                        }
+                    }
+                    .padding(13)
+                    .background(TrackVisitEditorVisualSpec.cardBackground, in: RoundedRectangle(cornerRadius: 10))
+
+                    if let actionError {
+                        Text(actionError).font(.caption).foregroundStyle(TrackVisitEditorVisualSpec.danger)
+                    }
+                    HStack {
+                        Button("Cancel") { dismiss() }
+                            .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                            .frame(minWidth: 100, minHeight: 44)
+                        Spacer()
+                        Button("Save day") { Task { await saveDate() } }
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                            .frame(minWidth: 100, minHeight: 44)
+                            .accessibilityIdentifier("lists.detail.visit-date.save")
+                    }
+                }
+                .padding(16)
+            }
+        }
+        .background(TrackVisitEditorVisualSpec.paperBackground.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    @MainActor
+    private func saveDate() async {
+        guard let model else { return }
+        do {
+            try await model.updateVisitDate(visitID: visit.id, toDayContaining: selectedDate)
+            actionError = nil
+            await onChanged()
+            dismiss()
+        } catch {
+            actionError = "Could not update that visit."
+        }
+    }
+
+    @MainActor
+    private func deleteVisit() async {
+        guard let model else { return }
+        do {
+            try await model.deleteVisit(visitID: visit.id)
+            await onChanged()
+            dismiss()
+        } catch {
+            actionError = "Could not delete that visit."
+        }
     }
 }
 
