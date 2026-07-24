@@ -87,9 +87,11 @@ On finding a defect in a pre-existing component while building or testing:
 
 ## 8. Session hygiene
 
-New repo doc: `docs/process/coordination.md` — fleet roster and handles, AMQ conventions, merge law, supervision-loop contract, taste-call protocol, review-budget numbers, pointer to the current phase directory. This is the content that today exists only in fable's private memory.
+New repo doc: `docs/process/coordination.md` — fleet roster and handles, AMQ conventions (including the session layout: the fleet lives in the `collab` session, not the base tree), merge law, supervision-loop contract, taste-call protocol, pointer to the current phase directory. This is the content that today exists only in fable's private memory.
 
-A fresh fable session boots by reading AGENTS.md, `coordination.md`, and the current phase's `tasks.md` — nothing load-bearing lives only in a session, so restarting fable costs nothing.
+**A handle is a seat, not a session.** Exactly one live session holds each handle at a time; a new session takes a seat by announcing it in the seat's own inbox (who, since when), and the predecessor stands down. The fleet cannot distinguish two instances sharing a handle — replies and task assignments go to whichever drains first — so unannounced duplicates are forbidden.
+
+A fresh session in any seat boots by reading AGENTS.md, `coordination.md`, and the current phase's `tasks.md` — nothing load-bearing lives only in a session, so restarting any agent costs nothing. Results live in the tree; AMQ messages are doorbells, not storage.
 
 ## 9. Cutover
 
