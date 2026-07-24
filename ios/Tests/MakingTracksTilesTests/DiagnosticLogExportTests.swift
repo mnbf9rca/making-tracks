@@ -350,6 +350,21 @@ final class DiagnosticLogExportTests: XCTestCase {
         )
     }
 
+    func testLogWriterAndSnapshotCutoffShareCanonicalTimestampShape() throws {
+        let fixture = try makeFixture()
+        let store = DiagnosticLogStore(root: fixture.logs, now: { fixture.now })
+        try store.append(category: .startup, level: .info, message: "format probe", fields: [])
+
+        XCTAssertEqual(
+            DiagnosticLogStore.canonicalTimestampToken(for: fixture.now),
+            "2026-07-19T12:18:13Z"
+        )
+        XCTAssertEqual(
+            try store.snapshotLines(window: .everything),
+            ["2026-07-19T12:18:13Z startup info format probe"]
+        )
+    }
+
     func testExportScrubFailsClosedForFixedExcludedClasses() throws {
         let fixture = try makeFixture()
         let excludedLines = [

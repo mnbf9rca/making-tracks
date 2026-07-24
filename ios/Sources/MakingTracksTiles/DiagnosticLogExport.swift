@@ -272,7 +272,9 @@ public final class DiagnosticLogStore {
         let firstIncludedSecond = Date(
             timeIntervalSince1970: cutoff.timeIntervalSince1970.rounded(.up)
         )
-        let cutoffToken = Self.timestampFormatter().string(from: firstIncludedSecond)
+        guard let cutoffToken = Self.canonicalTimestampToken(for: firstIncludedSecond) else {
+            return DiagnosticLogSnapshot(totalLineCount: allLines.count, lines: allLines)
+        }
         let windowLines = allLines.filter { line in
             guard let timestamp = Self.canonicalTimestampToken(from: line) else { return true }
             return timestamp >= cutoffToken[...]
@@ -324,6 +326,11 @@ public final class DiagnosticLogStore {
     private static func dateFromLine(_ line: String) -> Date? {
         guard let timestamp = line.split(separator: " ", maxSplits: 1).first else { return nil }
         return timestampFormatter().date(from: String(timestamp))
+    }
+
+    static func canonicalTimestampToken(for date: Date) -> String? {
+        let token = timestampFormatter().string(from: date)
+        return canonicalTimestampToken(from: token).map(String.init)
     }
 
     private static func canonicalTimestampToken(from line: String) -> Substring? {
