@@ -2420,10 +2420,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             failures.append("track surface: sheet token is not visibly rendered")
         }
         let reorderStrip = CGRect(
-            x: trackSurface.frame.maxX - 50,
-            y: trackSurface.frame.minY,
-            width: 50,
-            height: trackSurface.frame.height
+            // The amended row keeps the handle inside the card. Sample the
+            // first row's trailing bounds, not the list gutter or full surface.
+            x: firstRow.frame.maxX - 60,
+            y: firstRow.frame.minY,
+            width: 60,
+            height: firstRow.frame.height
         )
         if raster.tokenCount(reorderHandle, in: reorderStrip) < 100 {
             failures.append("reorder handles: invariant token is not visibly rendered")
