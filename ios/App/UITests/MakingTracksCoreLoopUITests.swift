@@ -949,9 +949,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(trackDetail.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["My tracks"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["lists.detail.track.sort-direction"].label, "Oldest first")
-        // The amended dense fixture contains two historic-building visits; the filter
-        // must still suppress reorder affordances on the filtered surface.
-        XCTAssertEqual(app.staticTexts["lists.detail.track.summary"].label, "2 visits")
+        XCTAssertEqual(app.staticTexts["lists.detail.track.summary"].label, "1 visit")
         XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any).matching(identifierPrefix: "lists.detail.track.row.").firstMatch.exists)
         XCTAssertFalse(app.sliders["tracks.timeline.slider"].exists)
@@ -1068,7 +1066,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         app.buttons["map.list-mode.back"].tap()
         XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["lists.detail.track.summary"].label, "1 visit")
+        // The amended dense fixture contains two historic-building visits; the filter
+        // must still suppress reorder affordances on the filtered surface.
+        XCTAssertEqual(app.staticTexts["lists.detail.track.summary"].label, "2 visits")
 
         let screenshot = XCUIScreen.main.screenshot()
         let appFrame = app.windows.firstMatch.exists ? app.windows.firstMatch.frame : app.frame
