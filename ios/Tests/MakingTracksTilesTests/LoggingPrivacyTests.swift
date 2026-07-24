@@ -419,16 +419,10 @@ final class LoggingPrivacyTests: XCTestCase {
             source.contains(#"Text(verbatim: formattedDay(calendar.startOfDay(for: visit.visitedAt)))"#),
             "Date headers must be rendered inside the visit row, not as standalone rows in the movable ForEach."
         )
-        var movableBodies: [String] = []
-        var searchStart = source.startIndex
-        while let forEachRange = source[searchStart...].range(of: movableRowsStart) {
-            let afterForEach = source[forEachRange.upperBound...]
-            guard let onMoveRange = afterForEach.range(of: ".onMove") else {
-                return XCTFail("Every My tracks movable ForEach should apply onMove directly to visit rows.")
-            }
-            movableBodies.append(String(afterForEach[..<onMoveRange.lowerBound]))
-            searchStart = onMoveRange.upperBound
-        }
+        let movableBodies = source
+            .components(separatedBy: movableRowsStart)
+            .dropFirst()
+            .map { String($0.prefix(800)) }
 
         XCTAssertEqual(
             movableBodies.count,
@@ -445,9 +439,50 @@ final class LoggingPrivacyTests: XCTestCase {
             )
             XCTAssertNil(
                 movableBodyWithoutVisitRow.range(of: #"(?i)header|formattedDay|Text\s*\("#, options: .regularExpression),
-                "Movable track visit ForEach \(index + 1) must not render standalone date headers before onMove."
+                "Movable track visit ForEach \(index + 1) must not render standalone date headers."
             )
         }
+    }
+
+    func testTrackVisitCustomDragUsesAnOverlayIndependentOfTheLazySourceRow() throws {
+        let source = try sourceFile("App/Sources/Map/MapScreen.swift")
+
+        XCTAssertTrue(source.contains("@GestureState private var trackVisitDragTranslationY: CGFloat = 0"))
+        XCTAssertTrue(source.contains("@State private var trackVisitDragStartCardFrame: CGRect?"))
+        XCTAssertTrue(source.contains(".overlay(alignment: .topLeading)"))
+        XCTAssertTrue(source.contains("trackVisitDragOverlay"))
+        XCTAssertTrue(source.contains("TrackVisitDragVisualSpec.overlayFrame("))
+        XCTAssertTrue(source.contains(".opacity(draggingTrackVisitID == visit.id ? 0 : 1)"))
+        XCTAssertTrue(source.contains(".updating($trackVisitDragTranslationY)"))
+        XCTAssertTrue(source.contains("resetTrackVisitDragState()"))
+    }
+
+    func testTrackVisitDateEditorUsesTheOwningTrackPageBounds() throws {
+        let source = try sourceFile("App/Sources/Map/MapScreen.swift")
+        XCTAssertTrue(source.contains("ZStack(alignment: .top) {\n                trackListPage\n                trackVisitEditorPage"))
+        XCTAssertTrue(source.contains("private var trackListPage: some View"))
+        XCTAssertTrue(source.contains("private var trackVisitEditorPage: some View"))
+        XCTAssertTrue(source.contains("TrackVisitDateEditorView("))
+        XCTAssertFalse(source.contains(".sheet(item: $selectedVisitForEditing)"))
+        XCTAssertFalse(source.contains(".navigationDestination(isPresented: visitEditorIsPresented)"))
+        XCTAssertTrue(source.contains("presentVisitEditor(visit)"))
+        XCTAssertTrue(source.contains(".allowsHitTesting(selectedVisitForEditing == nil)"))
+
+        guard let editorStart = source.range(of: "private struct TrackVisitDateEditorView: View {"),
+              let editorEnd = source[editorStart.upperBound...].range(of: "\nprivate struct OfflineMapsReleaseGatedView")
+        else {
+            return XCTFail("Could not isolate TrackVisitDateEditorView")
+        }
+        let editor = source[editorStart.lowerBound..<editorEnd.lowerBound]
+        XCTAssertTrue(editor.contains("GeometryReader { geometry in\n            editorContent"))
+        XCTAssertTrue(editor.contains("private var editorContent: some View {\n        VStack(spacing: 0)"))
+        XCTAssertTrue(editor.contains("width: geometry.size.width"))
+        XCTAssertTrue(editor.contains("height: geometry.size.height"))
+        XCTAssertTrue(editor.contains("alignment: .top"))
+        XCTAssertTrue(editor.contains(".ignoresSafeArea(.container, edges: .top)"))
+        XCTAssertTrue(editor.contains("navigationChrome"))
+        XCTAssertTrue(editor.contains("ScrollView {"))
+        XCTAssertFalse(editor.contains(".toolbar(.hidden, for: .navigationBar)"))
     }
 
     private func logLineHasExplicitPrivacyAnnotations(_ line: String) -> Bool {

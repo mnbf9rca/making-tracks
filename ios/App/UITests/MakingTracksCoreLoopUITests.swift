@@ -2576,9 +2576,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             line: line
         )
 
+        let expectedVisitDateChromeMinY = back.frame.minY
         firstRow.tap()
         let visitDateTitle = app.staticTexts["lists.detail.visit-date.title"]
         XCTAssertTrue(visitDateTitle.waitForExistence(timeout: 5), file: file, line: line)
+        let visitDateSurface = app.otherElements["lists.detail.visit-date.surface"]
+        XCTAssertTrue(visitDateSurface.exists, file: file, line: line)
+        XCTAssertEqual(
+            visitDateSurface.frame.minY,
+            expectedVisitDateChromeMinY,
+            accuracy: 20,
+            "Visit date root frame must share the owning track page's origin",
+            file: file,
+            line: line
+        )
         let visitDateScreenshot = XCUIScreen.main.screenshot()
         let visitDateAttachment = XCTAttachment(screenshot: visitDateScreenshot)
         visitDateAttachment.name = "my-tracks-visit-date-oracle-\(appearanceName)"
@@ -2598,6 +2609,22 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         let visitDateBack = app.buttons["lists.detail.visit-date.back"]
         XCTAssertTrue(visitDateBack.exists, file: file, line: line)
+        XCTAssertTrue(visitDateBack.isHittable, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(
+            visitDateBack.frame.minY,
+            appFrame.minY,
+            "Visit date chrome must stay inside the device canvas",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            visitDateBack.frame.minY,
+            expectedVisitDateChromeMinY,
+            accuracy: 20,
+            "Visit date chrome must align with the owning large sheet's ruled top",
+            file: file,
+            line: line
+        )
         let visitDateSurfaceFrame = CGRect(
             x: appFrame.minX,
             y: visitDateBack.frame.minY,

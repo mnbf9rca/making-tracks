@@ -1249,10 +1249,24 @@ final class AppShellTests: XCTestCase {
     }
 
     func testTrackVisitDragVisualSpecLiftsOnlyTheActiveRow() {
+        let startFrame = CGRect(x: 16, y: 120, width: 370, height: 64)
+
         XCTAssertEqual(TrackVisitDragVisualSpec.scale(isActive: false), 1)
         XCTAssertGreaterThan(TrackVisitDragVisualSpec.scale(isActive: true), 1)
-        XCTAssertEqual(TrackVisitDragVisualSpec.offsetY(isActive: false), 0)
-        XCTAssertLessThan(TrackVisitDragVisualSpec.offsetY(isActive: true), 0)
+        XCTAssertEqual(
+            TrackVisitDragVisualSpec.overlayFrame(
+                startFrame: startFrame,
+                translationY: 90
+            ),
+            CGRect(x: 16, y: 207, width: 370, height: 64)
+        )
+        XCTAssertEqual(
+            TrackVisitDragVisualSpec.overlayFrame(
+                startFrame: startFrame,
+                translationY: -90
+            ),
+            CGRect(x: 16, y: 27, width: 370, height: 64)
+        )
         XCTAssertEqual(TrackVisitDragVisualSpec.shadowOpacity(isActive: false), 0)
         XCTAssertGreaterThan(TrackVisitDragVisualSpec.shadowOpacity(isActive: true), 0)
     }

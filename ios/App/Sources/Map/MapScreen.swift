@@ -819,6 +819,7 @@ enum TrackVisitRowDensitySpec {
 }
 
 enum TrackVisitEditorVisualSpec {
+    static let chromeMinimumHeight: CGFloat = 50
     static let paperBackground = MapThemeColor.color(hex: "#f1eddf")
     static let cardBackground = MapThemeColor.color(hex: "#fffdf7")
     static let primaryText = MapThemeColor.color(hex: "#1c1c1e")
@@ -832,6 +833,17 @@ enum TrackVisitEditorVisualSpec {
 }
 
 private struct TrackVisitRowBoundsPreferenceKey: PreferenceKey {
+    nonisolated(unsafe) static var defaultValue: [Int64: CGRect] = [:]
+
+    static func reduce(
+        value: inout [Int64: CGRect],
+        nextValue: () -> [Int64: CGRect]
+    ) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
+private struct TrackVisitCardBoundsPreferenceKey: PreferenceKey {
     nonisolated(unsafe) static var defaultValue: [Int64: CGRect] = [:]
 
     static func reduce(
@@ -1112,8 +1124,11 @@ enum TrackVisitDragVisualSpec {
         isActive ? 1.015 : 1
     }
 
-    static func offsetY(isActive: Bool) -> CGFloat {
-        isActive ? -3 : 0
+    static func overlayFrame(
+        startFrame: CGRect,
+        translationY: CGFloat
+    ) -> CGRect {
+        startFrame.offsetBy(dx: 0, dy: translationY - 3)
     }
 
     static func shadowOpacity(isActive: Bool) -> Double {
@@ -5324,9 +5339,12 @@ private struct ListDetailView: View {
     @State private var actionError: String?
     @State private var selectedVisitForEditing: TrackVisit?
     @State private var trackVisitRowFrames: [Int64: CGRect] = [:]
+    @State private var trackVisitCardFrames: [Int64: CGRect] = [:]
     @State private var trackVisitViewportBounds = CGRect.zero
     @State private var draggingTrackVisitID: Int64?
     @State private var trackVisitDragStartMidY: CGFloat?
+    @State private var trackVisitDragStartCardFrame: CGRect?
+    @GestureState private var trackVisitDragTranslationY: CGFloat = 0
     @State private var trackAutoScrollTask: Task<Void, Never>?
     @State private var trackAutoScrollTargetID: Int64?
     @State private var trackAutoScrollTowardEnd = false
@@ -5375,21 +5393,48 @@ private struct ListDetailView: View {
         focusPlaceID == nil && !visitFilter.isActive
     }
 
+    @ViewBuilder
+    private var trackVisitEditorPage: some View {
+        if let visit = selectedVisitForEditing {
+            TrackVisitDateEditorView(
+                model: model,
+                visit: visit,
+                onChanged: {
+                    await reload()
+                    onChanged()
+                },
+                onDismiss: {
+                    selectedVisitForEditing = nil
+                }
+            )
+        }
+    }
+
     private var calendar: Calendar {
         Calendar(identifier: .gregorian)
     }
 
     var body: some View {
         if isTrackListDetail {
-            VStack(spacing: 0) {
-                trackListChrome
-                trackListBody
+            ZStack(alignment: .top) {
+                trackListPage
+                trackVisitEditorPage
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(TrackVisitEditorVisualSpec.paperBackground.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
         } else {
             collectionListBody
         }
+    }
+
+    private var trackListPage: some View {
+        VStack(spacing: 0) {
+            trackListChrome
+            trackListBody
+        }
+        .accessibilityHidden(selectedVisitForEditing != nil)
+        .allowsHitTesting(selectedVisitForEditing == nil)
     }
 
     private var trackListChrome: some View {
@@ -5414,7 +5459,7 @@ private struct ListDetailView: View {
             }
         }
         .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: 50)
+        .frame(maxWidth: .infinity, minHeight: TrackVisitEditorVisualSpec.chromeMinimumHeight)
         .background(TrackVisitEditorVisualSpec.paperBackground)
         .overlay(alignment: .bottom) {
             Rectangle()
@@ -5501,8 +5546,14 @@ private struct ListDetailView: View {
                 }
                 .allowsHitTesting(false)
             }
+            .overlay(alignment: .topLeading) {
+                trackVisitDragOverlay
+            }
             .onPreferenceChange(TrackVisitRowBoundsPreferenceKey.self) { frames in
                 trackVisitRowFrames = frames
+            }
+            .onPreferenceChange(TrackVisitCardBoundsPreferenceKey.self) { frames in
+                trackVisitCardFrames = frames
             }
             .onPreferenceChange(TrackVisitViewportBoundsPreferenceKey.self) { bounds in
                 trackVisitViewportBounds = bounds
@@ -5516,20 +5567,15 @@ private struct ListDetailView: View {
                     )
                 }
             }
-            .onDisappear { stopTrackVisitAutoScroll() }
+            .onChange(of: trackVisitDragTranslationY) { previous, current in
+                if previous != 0, current == 0, draggingTrackVisitID != nil {
+                    resetTrackVisitDragState()
+                }
+            }
+            .onDisappear { resetTrackVisitDragState() }
             .accessibilityIdentifier("lists.detail.surface.track")
             .task { await reload() }
             .refreshable { await reload() }
-            .sheet(item: $selectedVisitForEditing) { visit in
-                TrackVisitDateEditorView(
-                    model: model,
-                    visit: visit,
-                    onChanged: {
-                        await reload()
-                        onChanged()
-                    }
-                )
-            }
         }
     }
 
@@ -5729,84 +5775,22 @@ private struct ListDetailView: View {
                     .accessibilityIdentifier("lists.detail.track.day-header.\(visit.id)")
             }
 
-            HStack(alignment: .center, spacing: TrackVisitRowDensitySpec.horizontalSpacing) {
-                    Text("pin")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(TrackVisitEditorVisualSpec.accent)
-                        .frame(width: 30, height: 30)
-                        .background(TrackVisitEditorVisualSpec.accentSoft, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .accessibilityHidden(true)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(verbatim: visit.name)
-                            .font(.body)
-                            .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .accessibilityIdentifier("lists.detail.track.row.name.\(visit.id)")
-                        Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitTime(visit))")
-                            .font(.caption)
-                            .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
-                            .lineLimit(2)
-                            .accessibilityIdentifier("lists.detail.track.row.metadata.\(visit.id)")
+            trackVisitCard(visit)
+                .opacity(draggingTrackVisitID == visit.id ? 0 : 1)
+                .accessibilityHidden(draggingTrackVisitID == visit.id)
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(
+                            key: TrackVisitCardBoundsPreferenceKey.self,
+                            value: [
+                                visit.id: geometry.frame(
+                                    in: .named(TrackVisitDragTrigger.coordinateSpaceName)
+                                ),
+                            ]
+                        )
                     }
-                    .layoutPriority(1)
-
-                    Spacer(minLength: 4)
-
-                    Button {
-                        Task { await setLoved(visit) }
-                    } label: {
-                        Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(TrackVisitEditorVisualSpec.danger)
-                            .frame(width: 30, height: 30)
-                            .background(
-                                TrackVisitEditorVisualSpec.cardBackground,
-                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            )
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(TrackVisitEditorVisualSpec.danger, lineWidth: 1)
-                            }
-                            .frame(minWidth: 45, minHeight: 45)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
-                    .accessibilityIdentifier("lists.detail.track.row.loved.\(visit.id)")
-
-                    if canReorderTrackVisits {
-                        invariantReorderHandle(for: visit)
-                    }
-            }
-            .padding(11)
-            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
-            .background(TrackVisitEditorVisualSpec.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
-            }
-            .scaleEffect(TrackVisitDragVisualSpec.scale(isActive: draggingTrackVisitID == visit.id))
-            .offset(y: TrackVisitDragVisualSpec.offsetY(isActive: draggingTrackVisitID == visit.id))
-            .shadow(
-                color: Color.black.opacity(
-                    TrackVisitDragVisualSpec.shadowOpacity(isActive: draggingTrackVisitID == visit.id)
-                ),
-                radius: TrackVisitDragVisualSpec.shadowRadius(isActive: draggingTrackVisitID == visit.id),
-                y: TrackVisitDragVisualSpec.shadowY(isActive: draggingTrackVisitID == visit.id)
-            )
-            .zIndex(draggingTrackVisitID == visit.id ? 1 : 0)
-            .animation(.easeOut(duration: 0.12), value: draggingTrackVisitID == visit.id)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("lists.detail.track.row.card.\(visit.id)")
-            .accessibilityAction(named: "Edit visit") {
-                selectedVisitForEditing = visit
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                selectedVisitForEditing = visit
-            }
+                }
+                .animation(.easeOut(duration: 0.12), value: draggingTrackVisitID == visit.id)
         }
         .background {
             GeometryReader { geometry in
@@ -5820,6 +5804,114 @@ private struct ListDetailView: View {
                 )
             }
         }
+    }
+
+    private func trackVisitCard(_ visit: TrackVisit) -> some View {
+        HStack(alignment: .center, spacing: TrackVisitRowDensitySpec.horizontalSpacing) {
+            Text("pin")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                .frame(width: 30, height: 30)
+                .background(
+                    TrackVisitEditorVisualSpec.accentSoft,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: visit.name)
+                    .font(.body)
+                    .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .accessibilityIdentifier("lists.detail.track.row.name.\(visit.id)")
+                Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitTime(visit))")
+                    .font(.caption)
+                    .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
+                    .lineLimit(2)
+                    .accessibilityIdentifier("lists.detail.track.row.metadata.\(visit.id)")
+            }
+            .layoutPriority(1)
+
+            Spacer(minLength: 4)
+
+            Button {
+                Task { await setLoved(visit) }
+            } label: {
+                Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(TrackVisitEditorVisualSpec.danger)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        TrackVisitEditorVisualSpec.cardBackground,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(TrackVisitEditorVisualSpec.danger, lineWidth: 1)
+                    }
+                    .frame(minWidth: 45, minHeight: 45)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
+            .accessibilityIdentifier("lists.detail.track.row.loved.\(visit.id)")
+
+            if canReorderTrackVisits {
+                invariantReorderHandle(for: visit)
+            }
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+        .background(
+            TrackVisitEditorVisualSpec.cardBackground,
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("lists.detail.track.row.card.\(visit.id)")
+        .accessibilityAction(named: "Edit visit") {
+            presentVisitEditor(visit)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            presentVisitEditor(visit)
+        }
+    }
+
+    @ViewBuilder
+    private var trackVisitDragOverlay: some View {
+        if let draggingTrackVisitID,
+           let startFrame = trackVisitDragStartCardFrame,
+           let visit = visibleTrackVisits.first(where: { $0.id == draggingTrackVisitID })
+        {
+            let frame = TrackVisitDragVisualSpec.overlayFrame(
+                startFrame: startFrame,
+                translationY: trackVisitDragTranslationY
+            )
+            trackVisitCard(visit)
+                .frame(width: frame.width, height: frame.height)
+                .scaleEffect(TrackVisitDragVisualSpec.scale(isActive: true))
+                .shadow(
+                    color: Color.black.opacity(
+                        TrackVisitDragVisualSpec.shadowOpacity(isActive: true)
+                    ),
+                    radius: TrackVisitDragVisualSpec.shadowRadius(isActive: true),
+                    y: TrackVisitDragVisualSpec.shadowY(isActive: true)
+                )
+                .position(x: frame.midX, y: frame.midY)
+                .allowsHitTesting(false)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Dragging \(visit.name)")
+                .accessibilityIdentifier("lists.detail.track.row.drag-overlay.\(visit.id)")
+        }
+    }
+
+    private func presentVisitEditor(_ visit: TrackVisit) {
+        selectedVisitForEditing = visit
     }
 
     private func invariantReorderHandle(for visit: TrackVisit) -> some View {
@@ -5858,13 +5950,18 @@ private struct ListDetailView: View {
             minimumDistance: 0,
             coordinateSpace: .named(TrackVisitDragTrigger.coordinateSpaceName)
         )
+        .updating($trackVisitDragTranslationY) { value, translationY, _ in
+            translationY = value.translation.height
+        }
         .onChanged { value in
             guard canReorderTrackVisits,
-                  let sourceFrame = trackVisitRowFrames[visit.id]
+                  let sourceFrame = trackVisitRowFrames[visit.id],
+                  let sourceCardFrame = trackVisitCardFrames[visit.id]
             else { return }
             if draggingTrackVisitID != visit.id {
                 draggingTrackVisitID = visit.id
                 trackVisitDragStartMidY = sourceFrame.midY
+                trackVisitDragStartCardFrame = sourceCardFrame
             }
             guard let sourceMidY = trackVisitDragStartMidY else { return }
             updateTrackVisitAutoScroll(
@@ -5873,9 +5970,7 @@ private struct ListDetailView: View {
         }
         .onEnded { value in
             defer {
-                draggingTrackVisitID = nil
-                trackVisitDragStartMidY = nil
-                stopTrackVisitAutoScroll()
+                resetTrackVisitDragState()
             }
             guard canReorderTrackVisits,
                   draggingTrackVisitID == visit.id,
@@ -5899,6 +5994,14 @@ private struct ListDetailView: View {
                 )
             }
         }
+    }
+
+    @MainActor
+    private func resetTrackVisitDragState() {
+        draggingTrackVisitID = nil
+        trackVisitDragStartMidY = nil
+        trackVisitDragStartCardFrame = nil
+        stopTrackVisitAutoScroll()
     }
 
     @MainActor
@@ -6152,8 +6255,8 @@ private struct ListDetailView: View {
 private struct TrackVisitDateEditorView: View {
     let model: MapScreenModel?
     let onChanged: @MainActor () async -> Void
+    let onDismiss: @MainActor () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @State private var visit: TrackVisit
     @State private var selectedDate: Date
     @State private var actionError: String?
@@ -6161,35 +6264,34 @@ private struct TrackVisitDateEditorView: View {
     init(
         model: MapScreenModel?,
         visit: TrackVisit,
-        onChanged: @escaping @MainActor () async -> Void
+        onChanged: @escaping @MainActor () async -> Void,
+        onDismiss: @escaping @MainActor () -> Void
     ) {
         self.model = model
         self.onChanged = onChanged
+        self.onDismiss = onDismiss
         _visit = State(initialValue: visit)
         _selectedDate = State(initialValue: visit.visitedAt)
     }
 
     var body: some View {
+        GeometryReader { geometry in
+            editorContent
+                .frame(
+                    width: geometry.size.width,
+                    height: geometry.size.height,
+                    alignment: .top
+                )
+        }
+        .ignoresSafeArea(.container, edges: .top)
+        .background(TrackVisitEditorVisualSpec.paperBackground.ignoresSafeArea())
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("lists.detail.visit-date.surface")
+    }
+
+    private var editorContent: some View {
         VStack(spacing: 0) {
-            HStack {
-                Button("‹ My tracks") { dismiss() }
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(TrackVisitEditorVisualSpec.accent)
-                    .frame(minWidth: 88, minHeight: 44, alignment: .leading)
-                    .accessibilityIdentifier("lists.detail.visit-date.back")
-                Spacer()
-                Text("Visit date")
-                    .font(.headline)
-                    .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
-                    .accessibilityIdentifier("lists.detail.visit-date.title")
-                Spacer()
-                Color.clear.frame(minWidth: 88, minHeight: 44)
-            }
-            .padding(.horizontal, 16)
-            .background(TrackVisitEditorVisualSpec.paperBackground)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(TrackVisitEditorVisualSpec.divider).frame(height: 1)
-            }
+            navigationChrome
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -6290,7 +6392,7 @@ private struct TrackVisitDateEditorView: View {
                         Text(actionError).font(.caption).foregroundStyle(TrackVisitEditorVisualSpec.danger)
                     }
                     HStack {
-                        Button("Cancel") { dismiss() }
+                        Button("Cancel") { onDismiss() }
                             .foregroundStyle(TrackVisitEditorVisualSpec.accent)
                             .frame(minWidth: 100, minHeight: 44)
                         Spacer()
@@ -6304,8 +6406,28 @@ private struct TrackVisitDateEditorView: View {
                 .padding(16)
             }
         }
-        .background(TrackVisitEditorVisualSpec.paperBackground.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private var navigationChrome: some View {
+        HStack {
+            Button("‹ My tracks") { onDismiss() }
+                .font(.body.weight(.semibold))
+                .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                .frame(minWidth: 88, minHeight: 44, alignment: .leading)
+                .accessibilityIdentifier("lists.detail.visit-date.back")
+            Spacer()
+            Text("Visit date")
+                .font(.headline)
+                .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                .accessibilityIdentifier("lists.detail.visit-date.title")
+            Spacer()
+            Color.clear.frame(minWidth: 88, minHeight: 44)
+        }
+        .padding(.horizontal, 16)
+        .background(TrackVisitEditorVisualSpec.paperBackground)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(TrackVisitEditorVisualSpec.divider).frame(height: 1)
+        }
     }
 
     @MainActor
@@ -6315,7 +6437,7 @@ private struct TrackVisitDateEditorView: View {
             try await model.updateVisitDate(visitID: visit.id, toDayContaining: selectedDate)
             actionError = nil
             await onChanged()
-            dismiss()
+            onDismiss()
         } catch {
             actionError = "Could not update that visit."
         }
@@ -6327,7 +6449,7 @@ private struct TrackVisitDateEditorView: View {
         do {
             try await model.deleteVisit(visitID: visit.id)
             await onChanged()
-            dismiss()
+            onDismiss()
         } catch {
             actionError = "Could not delete that visit."
         }
