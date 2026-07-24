@@ -81,7 +81,7 @@ On finding a defect in a pre-existing component while building or testing:
 ## 7. Review budget
 
 - **Greptile**: 50 reviews/month. Allocated at decomposition to the highest-risk tasks (state machines, migrations, security-adjacent). Not spent ad hoc.
-- **Sourcery**: label every PR (`sourcery-review`); no cap tracking. If the weekly diff cap runs out, Sourcery silently stops reviewing and the PR proceeds on the remaining gates — progress beats full coverage (Rob, 2026-07-24).
+- **Sourcery**: label every PR (`sourcery-review`); no cap tracking. If the weekly diff cap runs out, Sourcery comments that the limit was hit and skips the review; the PR proceeds on the remaining gates — progress beats full coverage (Rob, 2026-07-24).
 - Docs-only PRs consume neither.
 - Existing gates (adversarial self-review, tests green with pasted counts, zero new warnings, Release build under fleet lock) are unchanged.
 
