@@ -28,6 +28,13 @@ final class MaterialToastTests: XCTestCase {
             ).contentMode,
             .messageActionAndDismiss
         )
+        XCTAssertEqual(
+            MaterialToast(
+                message: "Location is off",
+                dismissAction: {}
+            ).contentMode,
+            .messageAndDismiss
+        )
     }
 
     func testToastUsesSnowForegroundActionAndHairlineTokens() {
@@ -72,17 +79,20 @@ final class MaterialToastTests: XCTestCase {
             dismissAccessibilityIdentifier: "map.nearby-prompt.dismiss"
         )
         let configuration = toast.renderConfiguration(reduceTransparency: false)
+        guard case let .controls(controls) = configuration.interaction else {
+            return XCTFail("Control toast resolved as a whole-surface action")
+        }
 
         XCTAssertEqual(
-            configuration.primaryActionAccessibilityIdentifier,
+            controls.primaryActionAccessibilityIdentifier,
             "map.nearby-prompt.seen"
         )
         XCTAssertEqual(
-            configuration.dismissAccessibilityIdentifier,
+            controls.dismissAccessibilityIdentifier,
             "map.nearby-prompt.dismiss"
         )
-        XCTAssertGreaterThanOrEqual(configuration.dismissMinimumTarget.width, 44)
-        XCTAssertGreaterThanOrEqual(configuration.dismissMinimumTarget.height, 44)
+        XCTAssertGreaterThanOrEqual(controls.minimumInteractiveTarget.width, 44)
+        XCTAssertGreaterThanOrEqual(controls.minimumInteractiveTarget.height, 44)
     }
 
 #if canImport(AppKit)
@@ -91,6 +101,23 @@ final class MaterialToastTests: XCTestCase {
             action: {},
             accessibilityLabel: "Dismiss",
             accessibilityIdentifier: "map.nearby-prompt.dismiss",
+            minimumTarget: CGSize(width: 44, height: 44)
+        )
+        let hostingController = NSHostingController(rootView: control)
+
+        let renderedSize = hostingController.view.fittingSize
+
+        XCTAssertGreaterThanOrEqual(renderedSize.width, 44)
+        XCTAssertGreaterThanOrEqual(renderedSize.height, 44)
+    }
+
+    func testRenderedBuiltInPrimaryActionIsAtLeastFortyFourPointsInBothDimensions() {
+        let control = MaterialToastPrimaryActionButton(
+            action: MaterialToastAction(
+                "Open",
+                accessibilityIdentifier: "map.download.open"
+            ) {},
+            foreground: color(0x0A, 0x6B, 0x5C),
             minimumTarget: CGSize(width: 44, height: 44)
         )
         let hostingController = NSHostingController(rootView: control)
@@ -115,37 +142,47 @@ final class MaterialToastTests: XCTestCase {
             }
         )
         let configuration = toast.renderConfiguration(reduceTransparency: false)
+        guard case let .controls(controls) = configuration.interaction else {
+            return XCTFail("Custom-action toast resolved as a whole-surface action")
+        }
 
         XCTAssertEqual(toast.contentMode, .messageAndAction)
-        XCTAssertTrue(configuration.hasLeadingContent)
-        XCTAssertTrue(configuration.usesCustomActionContent)
+        XCTAssertTrue(controls.hasLeadingContent)
+        XCTAssertTrue(controls.usesCustomActionContent)
         XCTAssertEqual(
-            configuration.primaryActionAccessibilityIdentifier,
+            controls.primaryActionAccessibilityIdentifier,
             "map.location-settings"
         )
     }
 
-    func testWholeSurfaceActionIsExpressibleAndPerformsOnce() {
+    func testSurfaceDescriptorIsClosedToInnerControlsAndPerformsOnce() {
         var invocations = 0
+        let surfaceAction = MaterialToastSurfaceAction(
+            accessibilityLabel: "Offline maps download progress",
+            accessibilityHint: "Opens Offline maps",
+            accessibilityIdentifier: "map.download-progress"
+        ) {
+            invocations += 1
+        }
         let toast = MaterialToast(
             message: "Download 42%",
-            surfaceAction: {
-                invocations += 1
-            },
-            surfaceAccessibilityIdentifier: "map.download-progress",
-            leadingContent: {
-                Image(systemName: "arrow.down.circle")
-            }
+            surfaceAction: surfaceAction,
+            leadingSystemImage: "arrow.down.circle",
+            progressState: .percentage(42)
         )
         let configuration = toast.renderConfiguration(reduceTransparency: false)
+        guard case let .surface(surface) = configuration.interaction else {
+            return XCTFail("Whole-surface toast resolved as inner controls")
+        }
 
-        XCTAssertTrue(configuration.hasSurfaceAction)
-        XCTAssertEqual(
-            configuration.surfaceAccessibilityIdentifier,
-            "map.download-progress"
-        )
+        XCTAssertEqual(toast.contentMode, .messageOnly)
+        XCTAssertEqual(surface.accessibilityLabel, "Offline maps download progress")
+        XCTAssertEqual(surface.accessibilityHint, "Opens Offline maps")
+        XCTAssertEqual(surface.accessibilityIdentifier, "map.download-progress")
+        XCTAssertEqual(surface.leadingSystemImage, "arrow.down.circle")
+        XCTAssertEqual(surface.progressState, .percentage(42))
 
-        toast.performSurfaceAction()
+        surfaceAction.perform()
 
         XCTAssertEqual(invocations, 1)
     }

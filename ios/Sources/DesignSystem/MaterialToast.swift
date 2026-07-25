@@ -20,6 +20,29 @@ public struct MaterialToastAction {
     }
 }
 
+public struct MaterialToastSurfaceAction {
+    public let accessibilityLabel: String
+    public let accessibilityHint: String
+    public let accessibilityIdentifier: String
+    private let action: () -> Void
+
+    public init(
+        accessibilityLabel: String,
+        accessibilityHint: String,
+        accessibilityIdentifier: String,
+        action: @escaping () -> Void
+    ) {
+        self.accessibilityLabel = accessibilityLabel
+        self.accessibilityHint = accessibilityHint
+        self.accessibilityIdentifier = accessibilityIdentifier
+        self.action = action
+    }
+
+    public func perform() {
+        action()
+    }
+}
+
 enum MaterialToastContentMode: Equatable {
     case messageOnly
     case messageAndAction
@@ -48,17 +71,32 @@ enum MaterialToastMessageWidth: Equatable {
     }
 }
 
+struct MaterialToastControlConfiguration: Equatable {
+    let primaryActionAccessibilityIdentifier: String?
+    let dismissAccessibilityIdentifier: String?
+    let minimumInteractiveTarget: CGSize
+    let hasLeadingContent: Bool
+    let usesCustomActionContent: Bool
+}
+
+struct MaterialToastSurfaceConfiguration: Equatable {
+    let accessibilityLabel: String
+    let accessibilityHint: String
+    let accessibilityIdentifier: String
+    let leadingSystemImage: String?
+    let progressState: MaterialProgressState?
+}
+
+enum MaterialToastInteractionConfiguration: Equatable {
+    case controls(MaterialToastControlConfiguration)
+    case surface(MaterialToastSurfaceConfiguration)
+}
+
 struct MaterialToastRenderConfiguration: Equatable {
     let appearance: MaterialToastAppearance
     let horizontalMessageWidth: MaterialToastMessageWidth
     let fallbackMessageWidth: MaterialToastMessageWidth
-    let primaryActionAccessibilityIdentifier: String?
-    let dismissAccessibilityIdentifier: String?
-    let surfaceAccessibilityIdentifier: String?
-    let dismissMinimumTarget: CGSize
-    let hasLeadingContent: Bool
-    let usesCustomActionContent: Bool
-    let hasSurfaceAction: Bool
+    let interaction: MaterialToastInteractionConfiguration
     let colorScheme: ColorScheme
 
     var action: MaterialColor {
@@ -66,22 +104,45 @@ struct MaterialToastRenderConfiguration: Equatable {
     }
 }
 
+private struct MaterialToastControlContent {
+    let primaryAction: MaterialToastAction?
+    let customActionAccessibilityIdentifier: String?
+    let dismissAction: (() -> Void)?
+    let dismissAccessibilityLabel: String
+    let dismissAccessibilityIdentifier: String?
+    let accessibilityIdentifier: String?
+    let leadingContent: AnyView?
+    let customActionContent: AnyView?
+}
+
+private struct MaterialToastSurfaceContent {
+    let action: MaterialToastSurfaceAction
+    let leadingSystemImage: String?
+    let progressState: MaterialProgressState?
+}
+
+private enum MaterialToastInteraction {
+    case controls(MaterialToastControlContent)
+    case surface(MaterialToastSurfaceContent)
+}
+
 public struct MaterialToast: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private let message: String
-    private let primaryAction: MaterialToastAction?
-    private let customActionAccessibilityIdentifier: String?
-    private let dismissAction: (() -> Void)?
-    let dismissAccessibilityLabel: String
-    private let dismissAccessibilityIdentifier: String?
-    private let surfaceAction: (() -> Void)?
-    private let surfaceAccessibilityIdentifier: String?
     private let theme: MaterialTheme
-    private let leadingContent: AnyView?
-    private let customActionContent: AnyView?
+    private let interaction: MaterialToastInteraction
 
     let contentMode: MaterialToastContentMode
+
+    var dismissAccessibilityLabel: String {
+        switch interaction {
+        case let .controls(content):
+            content.dismissAccessibilityLabel
+        case .surface:
+            "Dismiss"
+        }
+    }
 
     public init(
         message: String,
@@ -89,23 +150,20 @@ public struct MaterialToast: View {
         dismissAction: (() -> Void)? = nil,
         dismissAccessibilityLabel: String = "Dismiss",
         dismissAccessibilityIdentifier: String? = nil,
-        surfaceAction: (() -> Void)? = nil,
-        surfaceAccessibilityIdentifier: String? = nil,
+        accessibilityIdentifier: String? = nil,
         theme: MaterialTheme = .snow
     ) {
-        self.init(
-            message: message,
+        let content = MaterialToastControlContent(
             primaryAction: primaryAction,
             customActionAccessibilityIdentifier: nil,
             dismissAction: dismissAction,
             dismissAccessibilityLabel: dismissAccessibilityLabel,
             dismissAccessibilityIdentifier: dismissAccessibilityIdentifier,
-            surfaceAction: surfaceAction,
-            surfaceAccessibilityIdentifier: surfaceAccessibilityIdentifier,
-            theme: theme,
+            accessibilityIdentifier: accessibilityIdentifier,
             leadingContent: nil,
             customActionContent: nil
         )
+        self.init(message: message, theme: theme, controlContent: content)
     }
 
     public init<LeadingContent: View>(
@@ -114,24 +172,21 @@ public struct MaterialToast: View {
         dismissAction: (() -> Void)? = nil,
         dismissAccessibilityLabel: String = "Dismiss",
         dismissAccessibilityIdentifier: String? = nil,
-        surfaceAction: (() -> Void)? = nil,
-        surfaceAccessibilityIdentifier: String? = nil,
+        accessibilityIdentifier: String? = nil,
         theme: MaterialTheme = .snow,
         @ViewBuilder leadingContent: () -> LeadingContent
     ) {
-        self.init(
-            message: message,
+        let content = MaterialToastControlContent(
             primaryAction: primaryAction,
             customActionAccessibilityIdentifier: nil,
             dismissAction: dismissAction,
             dismissAccessibilityLabel: dismissAccessibilityLabel,
             dismissAccessibilityIdentifier: dismissAccessibilityIdentifier,
-            surfaceAction: surfaceAction,
-            surfaceAccessibilityIdentifier: surfaceAccessibilityIdentifier,
-            theme: theme,
+            accessibilityIdentifier: accessibilityIdentifier,
             leadingContent: AnyView(leadingContent()),
             customActionContent: nil
         )
+        self.init(message: message, theme: theme, controlContent: content)
     }
 
     public init<ActionContent: View>(
@@ -140,24 +195,21 @@ public struct MaterialToast: View {
         dismissAction: (() -> Void)? = nil,
         dismissAccessibilityLabel: String = "Dismiss",
         dismissAccessibilityIdentifier: String? = nil,
-        surfaceAction: (() -> Void)? = nil,
-        surfaceAccessibilityIdentifier: String? = nil,
+        accessibilityIdentifier: String? = nil,
         theme: MaterialTheme = .snow,
         @ViewBuilder actionContent: () -> ActionContent
     ) {
-        self.init(
-            message: message,
+        let content = MaterialToastControlContent(
             primaryAction: nil,
             customActionAccessibilityIdentifier: primaryActionAccessibilityIdentifier,
             dismissAction: dismissAction,
             dismissAccessibilityLabel: dismissAccessibilityLabel,
             dismissAccessibilityIdentifier: dismissAccessibilityIdentifier,
-            surfaceAction: surfaceAction,
-            surfaceAccessibilityIdentifier: surfaceAccessibilityIdentifier,
-            theme: theme,
+            accessibilityIdentifier: accessibilityIdentifier,
             leadingContent: nil,
             customActionContent: AnyView(actionContent())
         )
+        self.init(message: message, theme: theme, controlContent: content)
     }
 
     public init<LeadingContent: View, ActionContent: View>(
@@ -166,54 +218,56 @@ public struct MaterialToast: View {
         dismissAction: (() -> Void)? = nil,
         dismissAccessibilityLabel: String = "Dismiss",
         dismissAccessibilityIdentifier: String? = nil,
-        surfaceAction: (() -> Void)? = nil,
-        surfaceAccessibilityIdentifier: String? = nil,
+        accessibilityIdentifier: String? = nil,
         theme: MaterialTheme = .snow,
         @ViewBuilder leadingContent: () -> LeadingContent,
         @ViewBuilder actionContent: () -> ActionContent
     ) {
-        self.init(
-            message: message,
+        let content = MaterialToastControlContent(
             primaryAction: nil,
             customActionAccessibilityIdentifier: primaryActionAccessibilityIdentifier,
             dismissAction: dismissAction,
             dismissAccessibilityLabel: dismissAccessibilityLabel,
             dismissAccessibilityIdentifier: dismissAccessibilityIdentifier,
-            surfaceAction: surfaceAction,
-            surfaceAccessibilityIdentifier: surfaceAccessibilityIdentifier,
-            theme: theme,
+            accessibilityIdentifier: accessibilityIdentifier,
             leadingContent: AnyView(leadingContent()),
             customActionContent: AnyView(actionContent())
         )
+        self.init(message: message, theme: theme, controlContent: content)
+    }
+
+    public init(
+        message: String,
+        surfaceAction: MaterialToastSurfaceAction,
+        leadingSystemImage: String? = nil,
+        progressState: MaterialProgressState? = nil,
+        theme: MaterialTheme = .snow
+    ) {
+        self.message = message
+        self.theme = theme
+        interaction = .surface(
+            MaterialToastSurfaceContent(
+                action: surfaceAction,
+                leadingSystemImage: leadingSystemImage,
+                progressState: progressState
+            )
+        )
+        contentMode = .messageOnly
     }
 
     private init(
         message: String,
-        primaryAction: MaterialToastAction?,
-        customActionAccessibilityIdentifier: String?,
-        dismissAction: (() -> Void)?,
-        dismissAccessibilityLabel: String,
-        dismissAccessibilityIdentifier: String?,
-        surfaceAction: (() -> Void)?,
-        surfaceAccessibilityIdentifier: String?,
         theme: MaterialTheme,
-        leadingContent: AnyView?,
-        customActionContent: AnyView?
+        controlContent: MaterialToastControlContent
     ) {
         self.message = message
-        self.primaryAction = primaryAction
-        self.customActionAccessibilityIdentifier = customActionAccessibilityIdentifier
-        self.dismissAction = dismissAction
-        self.dismissAccessibilityLabel = dismissAccessibilityLabel
-        self.dismissAccessibilityIdentifier = dismissAccessibilityIdentifier
-        self.surfaceAction = surfaceAction
-        self.surfaceAccessibilityIdentifier = surfaceAccessibilityIdentifier
         self.theme = theme
-        self.leadingContent = leadingContent
-        self.customActionContent = customActionContent
+        interaction = .controls(controlContent)
 
-        let hasAction = primaryAction != nil || customActionContent != nil
-        switch (hasAction, dismissAction != nil) {
+        let hasAction =
+            controlContent.primaryAction != nil
+            || controlContent.customActionContent != nil
+        switch (hasAction, controlContent.dismissAction != nil) {
         case (false, false):
             contentMode = .messageOnly
         case (true, false):
@@ -230,24 +284,28 @@ public struct MaterialToast: View {
             reduceTransparency: reduceTransparency
         )
 
-        if let surfaceAction {
-            decoratedToast(configuration: configuration)
-                .contentShape(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+        switch interaction {
+        case let .controls(content):
+            decoratedToast(configuration: configuration) {
+                controlToastContent(
+                    content: content,
+                    configuration: configuration
                 )
-                .onTapGesture(perform: surfaceAction)
-                .accessibilityAddTraits(.isButton)
-                .accessibilityAction {
-                    surfaceAction()
+            }
+            .materialAccessibilityIdentifier(content.accessibilityIdentifier)
+        case let .surface(content):
+            Button(action: content.action.perform) {
+                decoratedToast(configuration: configuration) {
+                    surfaceToastContent(
+                        content: content,
+                        configuration: configuration
+                    )
                 }
-                .materialAccessibilityIdentifier(
-                    configuration.surfaceAccessibilityIdentifier
-                )
-        } else {
-            decoratedToast(configuration: configuration)
-                .materialAccessibilityIdentifier(
-                    configuration.surfaceAccessibilityIdentifier
-                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(content.action.accessibilityLabel)
+            .accessibilityHint(content.action.accessibilityHint)
+            .accessibilityIdentifier(content.action.accessibilityIdentifier)
         }
     }
 
@@ -263,31 +321,50 @@ public struct MaterialToast: View {
     func renderConfiguration(
         reduceTransparency: Bool
     ) -> MaterialToastRenderConfiguration {
-        MaterialToastRenderConfiguration(
+        let interactionConfiguration: MaterialToastInteractionConfiguration
+
+        switch interaction {
+        case let .controls(content):
+            interactionConfiguration = .controls(
+                MaterialToastControlConfiguration(
+                    primaryActionAccessibilityIdentifier:
+                        content.primaryAction?.accessibilityIdentifier
+                        ?? content.customActionAccessibilityIdentifier,
+                    dismissAccessibilityIdentifier:
+                        content.dismissAccessibilityIdentifier,
+                    minimumInteractiveTarget: CGSize(width: 44, height: 44),
+                    hasLeadingContent: content.leadingContent != nil,
+                    usesCustomActionContent:
+                        content.customActionContent != nil
+                )
+            )
+        case let .surface(content):
+            interactionConfiguration = .surface(
+                MaterialToastSurfaceConfiguration(
+                    accessibilityLabel: content.action.accessibilityLabel,
+                    accessibilityHint: content.action.accessibilityHint,
+                    accessibilityIdentifier:
+                        content.action.accessibilityIdentifier,
+                    leadingSystemImage: content.leadingSystemImage,
+                    progressState: content.progressState
+                )
+            )
+        }
+
+        return MaterialToastRenderConfiguration(
             appearance: appearance(reduceTransparency: reduceTransparency),
             horizontalMessageWidth: .intrinsic,
             fallbackMessageWidth: .flexible,
-            primaryActionAccessibilityIdentifier:
-                primaryAction?.accessibilityIdentifier
-                ?? customActionAccessibilityIdentifier,
-            dismissAccessibilityIdentifier: dismissAccessibilityIdentifier,
-            surfaceAccessibilityIdentifier: surfaceAccessibilityIdentifier,
-            dismissMinimumTarget: CGSize(width: 44, height: 44),
-            hasLeadingContent: leadingContent != nil,
-            usesCustomActionContent: customActionContent != nil,
-            hasSurfaceAction: surfaceAction != nil,
+            interaction: interactionConfiguration,
             colorScheme: .light
         )
     }
 
-    func performSurfaceAction() {
-        surfaceAction?()
-    }
-
-    private func decoratedToast(
-        configuration: MaterialToastRenderConfiguration
+    private func decoratedToast<Content: View>(
+        configuration: MaterialToastRenderConfiguration,
+        @ViewBuilder content: () -> Content
     ) -> some View {
-        toastContent(configuration: configuration)
+        content()
             .padding(12)
             .foregroundStyle(configuration.appearance.foreground.swiftUIColor)
             .background {
@@ -307,20 +384,22 @@ public struct MaterialToast: View {
             .environment(\.colorScheme, configuration.colorScheme)
     }
 
-    @ViewBuilder
-    private func toastContent(
+    private func controlToastContent(
+        content: MaterialToastControlContent,
         configuration: MaterialToastRenderConfiguration
     ) -> some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 12) {
-                messageAndActions(
+                controlMessageAndActions(
+                    content: content,
                     messageWidth: configuration.horizontalMessageWidth,
                     configuration: configuration
                 )
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                messageAndActions(
+                controlMessageAndActions(
+                    content: content,
                     messageWidth: configuration.fallbackMessageWidth,
                     configuration: configuration
                 )
@@ -329,11 +408,12 @@ public struct MaterialToast: View {
     }
 
     @ViewBuilder
-    private func messageAndActions(
+    private func controlMessageAndActions(
+        content: MaterialToastControlContent,
         messageWidth: MaterialToastMessageWidth,
         configuration: MaterialToastRenderConfiguration
     ) -> some View {
-        if let leadingContent {
+        if let leadingContent = content.leadingContent {
             leadingContent
         }
 
@@ -342,14 +422,63 @@ public struct MaterialToast: View {
             messageView(width: messageWidth)
         case .messageAndAction:
             messageView(width: messageWidth)
-            primaryActionView(configuration: configuration)
+            primaryActionView(
+                content: content,
+                configuration: configuration
+            )
         case .messageAndDismiss:
             messageView(width: messageWidth)
-            dismissActionView(configuration: configuration)
+            dismissActionView(
+                content: content,
+                configuration: configuration
+            )
         case .messageActionAndDismiss:
             messageView(width: messageWidth)
-            primaryActionView(configuration: configuration)
-            dismissActionView(configuration: configuration)
+            primaryActionView(
+                content: content,
+                configuration: configuration
+            )
+            dismissActionView(
+                content: content,
+                configuration: configuration
+            )
+        }
+    }
+
+    private func surfaceToastContent(
+        content: MaterialToastSurfaceContent,
+        configuration: MaterialToastRenderConfiguration
+    ) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                surfaceMessageAndProgress(
+                    content: content,
+                    messageWidth: configuration.horizontalMessageWidth
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                surfaceMessageAndProgress(
+                    content: content,
+                    messageWidth: configuration.fallbackMessageWidth
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func surfaceMessageAndProgress(
+        content: MaterialToastSurfaceContent,
+        messageWidth: MaterialToastMessageWidth
+    ) -> some View {
+        if let leadingSystemImage = content.leadingSystemImage {
+            Image(systemName: leadingSystemImage)
+        }
+
+        messageView(width: messageWidth)
+
+        if let progressState = content.progressState {
+            MaterialProgress(state: progressState, theme: theme)
         }
     }
 
@@ -366,36 +495,67 @@ public struct MaterialToast: View {
 
     @ViewBuilder
     private func primaryActionView(
+        content: MaterialToastControlContent,
         configuration: MaterialToastRenderConfiguration
     ) -> some View {
-        if let customActionContent {
-            customActionContent
-                .materialAccessibilityIdentifier(
-                    configuration.primaryActionAccessibilityIdentifier
+        if case let .controls(controlConfiguration) =
+            configuration.interaction {
+            if let customActionContent = content.customActionContent {
+                customActionContent
+                    .materialAccessibilityIdentifier(
+                        controlConfiguration
+                            .primaryActionAccessibilityIdentifier
+                    )
+            } else if let primaryAction = content.primaryAction {
+                MaterialToastPrimaryActionButton(
+                    action: primaryAction,
+                    foreground: configuration.action,
+                    minimumTarget:
+                        controlConfiguration.minimumInteractiveTarget
                 )
-        } else if let primaryAction {
-            Button(primaryAction.title, action: primaryAction.perform)
-                .foregroundStyle(configuration.action.swiftUIColor)
-                .buttonStyle(.plain)
-                .materialAccessibilityIdentifier(
-                    configuration.primaryActionAccessibilityIdentifier
-                )
+            }
         }
     }
 
     @ViewBuilder
     private func dismissActionView(
+        content: MaterialToastControlContent,
         configuration: MaterialToastRenderConfiguration
     ) -> some View {
-        if let dismissAction {
+        if
+            let dismissAction = content.dismissAction,
+            case let .controls(controlConfiguration) =
+                configuration.interaction
+        {
             MaterialToastDismissButton(
                 action: dismissAction,
-                accessibilityLabel: dismissAccessibilityLabel,
+                accessibilityLabel: content.dismissAccessibilityLabel,
                 accessibilityIdentifier:
-                    configuration.dismissAccessibilityIdentifier,
-                minimumTarget: configuration.dismissMinimumTarget
+                    controlConfiguration.dismissAccessibilityIdentifier,
+                minimumTarget:
+                    controlConfiguration.minimumInteractiveTarget
             )
         }
+    }
+}
+
+struct MaterialToastPrimaryActionButton: View {
+    let action: MaterialToastAction
+    let foreground: MaterialColor
+    let minimumTarget: CGSize
+
+    var body: some View {
+        Button(action: action.perform) {
+            Text(verbatim: action.title)
+                .frame(
+                    minWidth: minimumTarget.width,
+                    minHeight: minimumTarget.height
+                )
+                .contentShape(Rectangle())
+        }
+        .foregroundStyle(foreground.swiftUIColor)
+        .buttonStyle(.plain)
+        .materialAccessibilityIdentifier(action.accessibilityIdentifier)
     }
 }
 
