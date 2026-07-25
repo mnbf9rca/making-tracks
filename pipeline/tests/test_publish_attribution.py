@@ -57,6 +57,22 @@ def test_cc0_only_region_needs_no_attribution():
     assert A.attribution_for({"wikidata"}, A1D) == []
 
 
+def test_wikipedia_refs_emit_wikipedia_attribution_not_wikidata():
+    sources = A.sources_used(
+        [
+            {"place_id": _pid("A"), "source_refs": ["wp:12345"]},
+            {"place_id": _pid("B"), "source_refs": ["wd:Q1"]},
+        ]
+    )
+
+    out = A.attribution_for(sources, A1D)
+
+    assert sources == {"wikidata", "wikipedia"}
+    assert [attr["source"] for attr in out] == ["wikipedia"]
+    assert out[0]["license"] == "CC-BY-SA-4.0"
+    assert out[0]["text"] == A1D["wikipedia"]["attribution"]
+
+
 def test_heuristic_score_provenance_and_current_pointer_are_contracted():
     schema = json.loads((PIPELINE_ROOT.parent / "contracts/schemas/manifest.schema.json").read_text())
     task_id = schema["properties"]["provenance"]["items"]["properties"]["task_id"]
