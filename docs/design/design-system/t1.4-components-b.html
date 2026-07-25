@@ -44,7 +44,7 @@
   .chevron { color: var(--muted); font-size: 18px; }
   .toast-stack { display: grid; gap: 7px; }
   .toast {
-    display: flex; align-items: center; gap: 9px; min-height: 43px; padding: 8px 10px 8px 12px;
+    display: flex; align-items: center; gap: 12px; padding: 12px;
     border: 1px solid var(--hairline); border-radius: 16px;
     background: rgba(251, 250, 242, .62);
     -webkit-backdrop-filter: blur(16px) saturate(120%);
@@ -52,11 +52,10 @@
     font-size: 12px; line-height: 1.25;
   }
   .toast-message { flex: 1; min-width: 0; }
-  .action { flex: none; color: var(--accent); white-space: nowrap; }
-  .dismiss { flex: none; width: 25px; height: 25px; display: grid; place-items: center; color: var(--ink); font-size: 18px; }
+  .action { flex: none; min-width: 44px; height: 44px; display: grid; place-items: center; color: var(--accent); white-space: nowrap; }
+  .dismiss { flex: none; width: 44px; height: 44px; display: grid; place-items: center; color: var(--ink); font-size: 18px; }
   .system-symbol { flex: none; width: 22px; height: 22px; color: var(--accent); }
-  .download-copy { flex: 1; min-width: 0; display: grid; gap: 5px; }
-  .download-progress { display: grid; gap: 4px; }
+  .download-progress { flex: 0 0 116px; display: grid; gap: 4px; }
   .download-progress .progress-head { justify-content: flex-end; }
   .progress-row { display: grid; gap: 4px; margin: 9px 0; }
   .progress-head { display: flex; align-items: baseline; justify-content: space-between; color: var(--muted); font-size: 12px; }
@@ -102,7 +101,8 @@
         <div class="toast"><span class="toast-message">You&rsquo;re near a place</span><span class="action">Seen it</span><span class="dismiss" aria-label="Dismiss nearby prompt">×</span></div>
         <div class="toast" aria-label="Offline London download progress. Opens Offline maps.">
           <svg class="system-symbol" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 6.5v9M8.5 12l3.5 3.5 3.5-3.5"/></svg>
-          <div class="download-copy"><span class="toast-message">Offline London</span><div class="download-progress"><div class="progress-head"><span>42%</span></div><div class="track"><div class="fill" style="width:42%"></div></div></div></div>
+          <span class="toast-message">Offline London</span>
+          <div class="download-progress"><div class="progress-head"><span>42%</span></div><div class="track"><div class="fill" style="width:42%"></div></div></div>
         </div>
       </div>
 

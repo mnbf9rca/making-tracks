@@ -36,9 +36,8 @@
     font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
   }
   h1 { margin: 6px 48px 2px 0; font-size: 34px; line-height: 1.06; letter-spacing: -.5px; }
-  .sub { margin: 0; color: var(--muted); font-size: 18px; line-height: 1.25; }
   .section {
-    margin: 12px 0 6px; color: var(--muted); font-size: 18px; line-height: 1.15;
+    margin: 8px 0 6px; color: var(--muted); font-size: 18px; line-height: 1.15;
     font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
   }
   .raised { padding: 10px 12px; background: var(--surface-raised); border-radius: 14px; }
@@ -52,17 +51,18 @@
   .chevron { flex: none; color: var(--muted); font-size: 24px; }
   .toast-stack { display: grid; gap: 7px; }
   .toast {
-    padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 16px;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 12px;
+    padding: 12px; border: 1px solid var(--hairline); border-radius: 16px;
     background: rgba(251, 250, 242, .62);
     -webkit-backdrop-filter: blur(16px) saturate(120%);
     backdrop-filter: blur(16px) saturate(120%);
   }
   .toast-message { font-size: 24px; line-height: 1.2; }
   .toast-actions {
-    display: flex; flex-direction: column; align-items: flex-start;
-    margin-top: 5px; color: var(--accent); font-size: 24px; line-height: 1.1;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 12px;
+    color: var(--accent); font-size: 24px; line-height: 1.1;
   }
-  .toast-action { min-height: 44px; display: flex; align-items: center; }
+  .toast-action { min-width: 44px; height: 44px; display: flex; align-items: center; }
   .dismiss { color: var(--ink); }
   .progress { display: grid; gap: 6px; }
   .progress-head {
@@ -88,7 +88,6 @@
     <div class="content">
       <div class="eyebrow">T1.4 · AXXXL</div>
       <h1>Components grow at accessibility size</h1>
-      <p class="sub">390pt canvas · no hidden clipping</p>
 
       <div class="section">Multiline rows</div>
       <div class="raised">
