@@ -41,7 +41,7 @@ fable runs a loop **~every 30 minutes**: read `tasks.md` and the PR/CI states; m
 - **Stall** = a claimed task with **no status change for 45 minutes** (tunable per phase in the `tasks.md` header).
 - **Nudge** = an AMQ message quoting the last status line and the builder-brief pointer.
 - **Two unanswered nudges** → the task is released back to the graph and an **incident line** is logged.
-- Status vocabulary: `claimed → branch → tests green → PR open → review clean → ready-to-merge`.
+- Status vocabulary: `claimed → branch → tests green → PR open → review clean → ready-to-merge` (plus `blocked: <reason>` / `released`).
 
 ## Taste-call protocol (spec §4)
 
