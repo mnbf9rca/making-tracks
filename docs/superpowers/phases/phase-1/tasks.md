@@ -306,9 +306,9 @@ Ship a render of the three buttons and the chip states at 390×844 plus an AX va
 - **Issue:** #467 · **Spec section:** §5
 - **Acceptance criteria:** AC8, AC9, AC11 (family exists), AC12, AC26 (Reduce Transparency in the sheet/toast surfaces), AC28
 - **Depends on:** T1.1
-- **Owner:** unclaimed
+- **Owner:** codex1
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed
+- **Status:** claimed
 - **Contracts produced:** the sheet pattern, the two row types, the toast/pill family and the progress component. **T1.6, T1.7, T1.8 and T1.9 all consume them** — fix the API here and name it in the PR body.
 - **Contracts consumed:** T1.1's token sheet.
 - **Gate:** host-only (`cd ios && swift test`) unless you touch `project.yml`, as T1.3.
