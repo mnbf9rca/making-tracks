@@ -9277,12 +9277,15 @@ enum MapThemeColor {
     }
 
     static func color(css: String) -> Color {
-        Color(uiColor: uiColor(css: css))
+        guard let color = uiColor(css: css) else {
+            preconditionFailure("Unsupported map theme colour: \(css)")
+        }
+        return Color(uiColor: color)
     }
 
-    static func uiColor(css: String) -> UIColor {
+    static func uiColor(css: String) -> UIColor? {
         guard let components = components(css: css) else {
-            preconditionFailure("Unsupported map theme colour: \(css)")
+            return nil
         }
 
         return UIColor(

@@ -1965,8 +1965,8 @@ final class AppShellTests: XCTestCase {
         ))
     }
 
-    func testMapThemeColorParsesOpaqueHexAndTranslucentRGBA() {
-        let color = MapThemeColor.uiColor(css: MapTheme.definedPaper.background)
+    func testMapThemeColorParsesOpaqueHexAndSnowBoundaryToken() throws {
+        let color = try XCTUnwrap(MapThemeColor.uiColor(css: MapTheme.definedPaper.background))
         var red: CGFloat = 0
         var green: CGFloat = 0
         var blue: CGFloat = 0
@@ -1978,7 +1978,7 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(Int(round(blue * 255)), 0xE5)
         XCTAssertEqual(alpha, 1)
 
-        let translucent = MapThemeColor.uiColor(css: "rgba(43, 40, 35, 0.14)")
+        let translucent = try XCTUnwrap(MapThemeColor.uiColor(css: MapTheme.snow.boundaries))
         XCTAssertTrue(translucent.getRed(&red, green: &green, blue: &blue, alpha: &alpha))
         XCTAssertEqual(Int(round(red * 255)), 43)
         XCTAssertEqual(Int(round(green * 255)), 40)
@@ -1987,7 +1987,9 @@ final class AppShellTests: XCTestCase {
     }
 
     func testMapThemeColorRejectsMalformedCSSInsteadOfSubstitutingBeige() {
+        XCTAssertNil(MapThemeColor.uiColor(css: "not-a-color"))
         XCTAssertNil(MapThemeColor.components(css: "not-a-color"))
+        XCTAssertNil(MapThemeColor.components(css: "rgba(256, 40, 35, 0.14)"))
         XCTAssertNil(MapThemeColor.components(css: "rgba(43, 40, 35, 1.4)"))
     }
 

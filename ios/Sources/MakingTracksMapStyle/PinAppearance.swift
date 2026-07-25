@@ -1,7 +1,8 @@
+import DesignSystem
 import MakingTracksData
 
 public let FULL_OPACITY = 1.0
-public let FADED_OPACITY = 0.35
+public let FADED_OPACITY = PinTokenBlock.constant.pinFaded.opacity
 
 public struct PinAppearance: Equatable, Sendable {
     public var opacity: Double

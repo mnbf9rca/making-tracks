@@ -10,12 +10,9 @@
   body {
     --ground: #F4F1EA;
     --land: #ECE8DD;
-    --park: #E4E8D8;
     --water: #DCE3E5;
     --road: #E3DED2;
-    --road-minor: #E8E4DA;
     --boundary: #CDC7B8;
-    --label: #676157;
     --surface: #FBFAF2;
     --ink: #2B2823;
     --muted: #6B675F;
@@ -32,12 +29,9 @@
   body[data-variant="after"],
   body[data-variant="ax"] {
     --land: #F4F1EA;
-    --park: #DCE5D4;
     --water: #C9DBE2;
     --road: #C9BFA8;
-    --road-minor: #DDD5C2;
     --boundary: rgba(43, 40, 35, 0.14);
-    --label: #6B675F;
   }
   body[data-variant="ax"] {
     --control-height: 62px;
@@ -167,15 +161,6 @@
     color: var(--muted);
     font-size: 11px;
   }
-  .map-label {
-    fill: var(--label);
-    paint-order: stroke;
-    stroke: var(--ground);
-    stroke-width: 5px;
-    stroke-linejoin: round;
-    font-size: 13px;
-    font-weight: 650;
-  }
   .pin circle { fill: var(--pin); stroke: #B8421F; stroke-width: 1.2; }
   .pin path, .pin polygon {
     fill: none;
@@ -189,21 +174,17 @@
 </head>
 <body>
 <main class="home" aria-label="Making Tracks Snow map home">
-  <svg class="map" viewBox="0 0 390 844" role="img" aria-label="Map home with roads, water, parks, tracks, and pins">
-    <rect width="390" height="844" fill="var(--ground)"/>
+  <svg class="map" viewBox="0 0 390 844" role="img" aria-label="Snow map home with roads, water, boundaries, track, and pins">
+    <rect width="390" height="844" fill="var(--land)"/>
     <path d="M-30 300 C42 257 106 279 159 306 C230 342 277 286 431 255 L431 386 C315 375 272 421 203 405 C116 384 64 355 -30 412Z" fill="var(--water)"/>
-    <path d="M-18 545 C49 508 105 523 137 587 C161 635 126 707 48 718 C4 724 -18 684 -18 628Z" fill="var(--park)"/>
-    <path d="M282 366 C344 332 422 375 419 449 C416 500 356 525 303 488 C267 462 250 393 282 366Z" fill="var(--park)"/>
     <g fill="none" stroke-linecap="round">
       <path d="M-34 174 C61 203 145 194 226 142 C291 100 339 109 424 152" stroke="var(--road)" stroke-width="17"/>
       <path d="M35 874 C78 707 170 614 239 519 C305 428 332 284 355 -24" stroke="var(--road)" stroke-width="16"/>
-      <path d="M-20 477 C84 448 157 470 238 517 C303 554 350 577 416 570" stroke="var(--road-minor)" stroke-width="9"/>
-      <path d="M5 749 C109 686 207 710 277 662 C333 624 361 593 420 584" stroke="var(--road-minor)" stroke-width="8"/>
+      <path d="M-20 477 C84 448 157 470 238 517 C303 554 350 577 416 570" stroke="var(--road)" stroke-width="9"/>
+      <path d="M5 749 C109 686 207 710 277 662 C333 624 361 593 420 584" stroke="var(--road)" stroke-width="8"/>
       <path d="M40 157 C89 232 154 248 211 272 C275 300 304 337 338 405" stroke="var(--boundary)" stroke-width="2"/>
       <path d="M32 646 C93 596 147 617 203 574 C256 533 300 554 354 500" stroke="var(--track)" stroke-width="6" stroke-dasharray="1 9"/>
     </g>
-    <text class="map-label" x="57" y="271">Old Market</text>
-    <text class="map-label" x="243" y="443">Riverside Walk</text>
   </svg>
 
   <svg class="pins" viewBox="0 0 390 844" aria-hidden="true">
