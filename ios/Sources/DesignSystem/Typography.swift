@@ -2,6 +2,8 @@ import SwiftUI
 
 #if canImport(UIKit)
     import UIKit
+#elseif canImport(AppKit)
+    import AppKit
 #endif
 
 public enum TypographyRole: CaseIterable, Hashable, Sendable {
@@ -19,24 +21,48 @@ public enum TypographyRole: CaseIterable, Hashable, Sendable {
 
 public enum Typography {
     public static func font(for role: TypographyRole) -> Font {
-        #if canImport(UIKit)
-            Font(uiFont(for: role))
-        #else
-            let specification = role.specification
+        let specification = role.specification
 
-            if let newsreaderName = specification.newsreaderName {
-                return .custom(
-                    newsreaderName,
-                    size: specification.pointSize,
-                    relativeTo: specification.textStyle.swiftUI
+        if let newsreaderName = specification.newsreaderName {
+            guard customFontIsAvailable(
+                named: newsreaderName,
+                size: specification.pointSize
+            ) else {
+                var fallback = Font.system(
+                    specification.textStyle.swiftUI,
+                    design: .serif,
+                    weight: specification.weight.swiftUI
                 )
+                if specification.isItalic {
+                    fallback = fallback.italic()
+                }
+                return fallback
             }
 
-            return .system(
-                specification.textStyle.swiftUI,
-                design: .default,
-                weight: specification.weight.swiftUI
+            return .custom(
+                newsreaderName,
+                size: specification.pointSize,
+                relativeTo: specification.textStyle.swiftUI
             )
+        }
+
+        return .system(
+            specification.textStyle.swiftUI,
+            design: .default,
+            weight: specification.weight.swiftUI
+        )
+    }
+
+    private static func customFontIsAvailable(
+        named name: String,
+        size: CGFloat
+    ) -> Bool {
+        #if canImport(UIKit)
+            UIFont(name: name, size: size) != nil
+        #elseif canImport(AppKit)
+            NSFont(name: name, size: size) != nil
+        #else
+            true
         #endif
     }
 
@@ -54,7 +80,7 @@ public enum Typography {
 }
 
 #if canImport(UIKit)
-    struct TypographyProvider: @unchecked Sendable {
+    struct TypographyProvider: Sendable {
         typealias FontLoader = @Sendable (String, CGFloat) -> UIFont?
 
         private let fontNamed: FontLoader

@@ -41,6 +41,7 @@ App OSS acknowledgements and build-tool credits are generated from `contracts/os
 |---|---|---|---|---|
 | GRDB.swift | 7.11.1 | `ios/Package.swift`<br>`ios/Package.resolved`<br>`contracts/third-party-notices/GRDB.swift-LICENSE` | [MIT](https://github.com/groue/GRDB.swift/blob/master/LICENSE) | Include in app OSS credits. Keep copyright/license notice available with app acknowledgements. |
 | MapLibre Native iOS / maplibre-gl-native-distribution | 6.27.0 | `ios/App/project.yml`<br>`ios/Package.resolved`<br>`contracts/third-party-notices/MapLibre-Native-LICENSE.md` | [BSD-2-Clause](https://github.com/maplibre/maplibre-native/blob/main/LICENSE.md) | Include in app OSS credits. Keep package license notice available with app acknowledgements. |
+| Newsreader | productiontype/Newsreader commit cfcb4f7af0e52c25e8df2a2431814c8e5fe2e155; static TTF instances | `ios/App/Resources/Fonts/Newsreader72pt-SemiBold.ttf`<br>`ios/App/Resources/Fonts/Newsreader16pt-SemiBold.ttf`<br>`ios/App/Resources/Fonts/Newsreader16pt-Bold.ttf`<br>`ios/App/Resources/Fonts/Newsreader16pt-Italic.ttf`<br>`contracts/third-party-notices/Newsreader-OFL.txt` | [OFL-1.1](https://github.com/productiontype/Newsreader/blob/cfcb4f7af0e52c25e8df2a2431814c8e5fe2e155/OFL.txt) | Bundle the static TTF instances with the OFL notice and include Newsreader in the app OSS credits. |
 
 ### Mirrored Assets
 
