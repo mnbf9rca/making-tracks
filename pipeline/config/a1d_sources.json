@@ -16,6 +16,10 @@
     "license": "PDDL-1.0",
     "attribution": "Plaque data from Open Plaques (openplaques.org), released under the Public Domain Dedication and License 1.0."
   },
+  "wikipedia": {
+    "license": "CC-BY-SA-4.0",
+    "attribution": "Wikipedia content from Wikipedia contributors, licensed under CC BY-SA 4.0; additional terms may apply."
+  },
   "osm": {
     "license": "ODbL-1.0",
     "attribution": "Map/place data © OpenStreetMap contributors, licensed under ODbL."

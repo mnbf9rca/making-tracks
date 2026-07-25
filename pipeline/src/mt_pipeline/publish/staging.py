@@ -32,3 +32,13 @@ def build_staging(
         encoding="utf-8",
     )
     return version_root
+
+
+def write_region_index(root: Path, region_index_obj: dict[str, Any]) -> Path:
+    path = Path(root) / "regions.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(region_index_obj, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    return path
