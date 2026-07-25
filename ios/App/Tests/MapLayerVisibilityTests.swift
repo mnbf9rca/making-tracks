@@ -1,4 +1,5 @@
 import XCTest
+import MakingTracksData
 import MakingTracksMapStyle
 @testable import MakingTracks
 
@@ -98,5 +99,30 @@ final class MapLayerVisibilityTests: XCTestCase {
 
         visibility.setCategory("museum", visible: false)
         XCTAssertEqual(visibility.toggleAllCategoriesTitle, "Show all categories")
+    }
+
+    func testListMapDisplaysVisitFilterCategoriesWithoutChangingDiscoveryVisibility() {
+        let discovery = MapLayerVisibility(visibleCategories: ["museum"])
+        let displayed = ListMapLayerVisibility.displayed(
+            discoveryVisibility: discovery,
+            visitFilter: TracksVisitFilter(categories: ["attraction"])
+        )
+
+        XCTAssertEqual(displayed.visibleCategories, ["attraction"])
+        XCTAssertEqual(discovery.visibleCategories, ["museum"])
+    }
+
+    func testListMapLayersCanWriteAnExplicitlyEmptyCategoryScope() {
+        var visibility = MapLayerVisibility()
+        visibility.toggleAllCategories()
+
+        let updated = ListMapLayerVisibility.updating(
+            visitFilter: .all,
+            from: visibility
+        )
+
+        XCTAssertNotNil(updated.categories)
+        XCTAssertEqual(updated.categories, [])
+        XCTAssertTrue(updated.isActive)
     }
 }

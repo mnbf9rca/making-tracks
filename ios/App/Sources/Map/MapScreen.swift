@@ -1281,7 +1281,7 @@ enum ListMapFilterChips {
                 isSelected: true
             ))
         }
-        for category in filter.categories.sorted() {
+        for category in (filter.categories ?? []).sorted() {
             chips.append(ListMapFilterChip(
                 id: "category-\(identifierSuffix(for: category))",
                 title: category,
@@ -1306,7 +1306,7 @@ enum ListMapFilterChips {
 struct TrackFilterPickerDraft: Equatable, Sendable {
     var lovedOnly: Bool
     var listIDs: Set<Int64>
-    var categories: Set<String>
+    var categories: Set<String>?
 
     init(filter: TracksVisitFilter = .all) {
         lovedOnly = filter.lovedOnly
@@ -1316,6 +1316,14 @@ struct TrackFilterPickerDraft: Equatable, Sendable {
 
     var filter: TracksVisitFilter {
         TracksVisitFilter(lovedOnly: lovedOnly, listIDs: listIDs, categories: categories)
+    }
+
+    var includesAllCategories: Bool {
+        categories == nil
+    }
+
+    mutating func selectAllCategories() {
+        categories = nil
     }
 
     mutating func toggleLoved() {
@@ -1331,10 +1339,13 @@ struct TrackFilterPickerDraft: Equatable, Sendable {
     }
 
     mutating func toggleCategory(_ category: String) {
-        if categories.contains(category) {
-            categories.remove(category)
+        var next = categories ?? []
+        if next.contains(category) {
+            next.remove(category)
+            categories = next.isEmpty ? nil : next
         } else {
-            categories.insert(category)
+            next.insert(category)
+            categories = next
         }
     }
 }
@@ -2904,7 +2915,7 @@ struct MapScreen: View {
         }
         .sheet(isPresented: $showLayers) {
             LayersSheet(
-                visibility: $layerVisibility
+                visibility: layersSheetVisibilityBinding
             )
                 .presentationDetents([.medium, .large])
                 .onAppear {
@@ -3826,29 +3837,73 @@ struct MapScreen: View {
     }
 
     private var layersButton: some View {
-        Button {
+        let visibility = layersSheetVisibility
+        return Button {
             showLayers = true
         } label: {
             layersIcon
                 .frame(width: MapHomeChromeSpec.hitTargetSide, height: MapHomeChromeSpec.hitTargetSide)
-                .background(layerVisibility.isDefault ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.accentColor), in: Circle())
+                .background(visibility.isDefault ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.accentColor), in: Circle())
                 .contentShape(Rectangle())
         }
         .accessibilityLabel("Layers")
         .accessibilityHint("Shows map layer controls")
-        .accessibilityValue(layerVisibility.isDefault ? "Default" : "Custom")
+        .accessibilityValue(visibility.isDefault ? "Default" : "Custom")
         .accessibilityIdentifier("map.layers")
     }
 
     @ViewBuilder
     private var layersIcon: some View {
-        let icon = Image(systemName: MapHomeChromeSpec.layersSymbolName(isActive: !layerVisibility.isDefault))
+        let visibility = layersSheetVisibility
+        let icon = Image(systemName: MapHomeChromeSpec.layersSymbolName(isActive: !visibility.isDefault))
             .font(.title3)
-            .foregroundStyle(layerVisibility.isDefault ? AnyShapeStyle(.primary) : AnyShapeStyle(Color.white))
-        if layerVisibility.isDefault {
+            .foregroundStyle(visibility.isDefault ? AnyShapeStyle(.primary) : AnyShapeStyle(Color.white))
+        if visibility.isDefault {
             icon.mapChromeGlyphHalo()
         } else {
             icon
+        }
+    }
+
+    private var layersSheetVisibility: MapLayerVisibility {
+        ListMapLayerVisibility.displayed(
+            discoveryVisibility: layerVisibility,
+            visitFilter: activeListMap?.visitFilter
+        )
+    }
+
+    private var layersSheetVisibilityBinding: Binding<MapLayerVisibility> {
+        Binding(
+            get: { layersSheetVisibility },
+            set: { updateLayersSheetVisibility($0) }
+        )
+    }
+
+    @MainActor
+    private func updateLayersSheetVisibility(_ visibility: MapLayerVisibility) {
+        guard var list = activeListMap else {
+            layerVisibility = visibility
+            return
+        }
+
+        layerVisibility = MapLayerVisibility(
+            categories: layerVisibility.categories,
+            showHiddenPlaces: visibility.showHiddenPlaces,
+            showCoverageShading: visibility.showCoverageShading,
+            visibleCategories: layerVisibility.visibleCategories
+        )
+
+        let nextFilter = ListMapLayerVisibility.updating(
+            visitFilter: list.visitFilter,
+            from: visibility
+        )
+        guard nextFilter != list.visitFilter else { return }
+        list.visitFilter = nextFilter
+        list.showVisited = true
+        activeListMap = list
+        stopMapTrackAutoplay()
+        Task { @MainActor in
+            await refreshActiveListMap(updateCamera: true)
         }
     }
 
@@ -8112,11 +8167,20 @@ private struct TrackFilterPickerSheet: View {
                     }
 
                     Section("Types") {
+                        filterButton(
+                            title: "All types",
+                            systemImage: "checkmark.circle",
+                            isSelected: draft.includesAllCategories,
+                            accessibilityIdentifier: "track-filter-picker.category.all"
+                        ) {
+                            draft.selectAllCategories()
+                        }
+
                         ForEach(categoryOptions) { category in
                             filterButton(
                                 title: category.title,
                                 systemImage: PinLayers.categorySymbolNames[category.iconName] ?? "mappin",
-                                isSelected: draft.categories.contains(category.id),
+                                isSelected: draft.categories?.contains(category.id) == true,
                                 accessibilityIdentifier: "track-filter-picker.category.\(category.id)"
                             ) {
                                 draft.toggleCategory(category.id)

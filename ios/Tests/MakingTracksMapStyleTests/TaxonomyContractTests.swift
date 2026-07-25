@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import MakingTracksData
 @testable import MakingTracksMapStyle
 
 final class TaxonomyContractTests: XCTestCase {
@@ -8,7 +9,9 @@ final class TaxonomyContractTests: XCTestCase {
 
         XCTAssertEqual(taxonomy.categories.count, Set(taxonomy.categories).count)
         XCTAssertEqual(Set(PinLayers.categoryIconNames.keys), Set(taxonomy.categories))
+        XCTAssertEqual(PlaceCategoryTaxonomy.knownCategoryIDs, Set(taxonomy.categories))
         XCTAssertEqual(PinLayers.fallbackCategoryID, taxonomy.uncovered)
+        XCTAssertEqual(PlaceCategoryTaxonomy.fallbackCategoryID, taxonomy.uncovered)
         XCTAssertFalse(PinLayers.categoryIconNames.keys.contains(taxonomy.uncovered))
         XCTAssertNotNil(PinLayers.categorySymbolNames[PinLayers.fallbackCategoryIconName])
     }

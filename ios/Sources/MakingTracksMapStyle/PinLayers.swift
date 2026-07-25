@@ -21,7 +21,7 @@ public enum PinLayers {
     // Tunable per B6 replay; enough enlargement to read as an arrival ping without covering neighbors.
     public static let trackReplayPulseScale = 1.28
     public static let categorySymbolPointSize = 17.0
-    public static let fallbackCategoryID = "uncategorized"
+    public static let fallbackCategoryID = PlaceCategoryTaxonomy.fallbackCategoryID
     public static let fallbackCategoryIconName = "pin-category-uncategorized"
     public static let hiddenIconName = "pin-hidden"
     public static let categoryIconNames: [String: String] = [
@@ -156,7 +156,10 @@ public enum PinLayers {
     public static func categoryVisibilityFilter(visibleCategories: Set<String>?) -> JSONValue? {
         guard let visibleCategories else { return nil }
         let category = JSONValue.array([.string("get"), .string("category")])
-        let knownCategories = JSONValue.array([.string("literal"), .array(categoryIconNames.keys.sorted().map(JSONValue.string))])
+        let knownCategories = JSONValue.array([
+            .string("literal"),
+            .array(PlaceCategoryTaxonomy.knownCategoryIDs.sorted().map(JSONValue.string)),
+        ])
         let visibleKnownCategories = JSONValue.array([.string("literal"), .array(visibleCategories.subtracting([fallbackCategoryID]).sorted().map(JSONValue.string))])
         let knownCategoryFilter: JSONValue = .array([.string("in"), category, visibleKnownCategories])
         let categoryFilter: JSONValue
@@ -170,11 +173,7 @@ public enum PinLayers {
     }
 
     public static func isCategoryVisible(_ category: String, visibleCategories: Set<String>?) -> Bool {
-        guard let visibleCategories else { return true }
-        if categoryIconNames.keys.contains(category) {
-            return visibleCategories.contains(category)
-        }
-        return visibleCategories.contains(fallbackCategoryID)
+        PlaceCategoryTaxonomy.isVisible(category, visibleCategories: visibleCategories)
     }
 
     public static func combinedFilter(_ filters: [JSONValue?]) -> JSONValue? {
