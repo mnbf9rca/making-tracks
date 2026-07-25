@@ -110,6 +110,18 @@ final class MaterialTokensTests: XCTestCase {
         )
     }
 
+    func testContrastEvaluatorMatchesKnownVectorsAndRejectsKnownFailure() throws {
+        let black = color(0x00, 0x00, 0x00)
+        let white = color(0xFF, 0xFF, 0xFF)
+        XCTAssertEqual(try XCTUnwrap(contrastRatio(black, white)), 21, accuracy: 0.000_001)
+        XCTAssertEqual(try XCTUnwrap(contrastRatio(white, white)), 1, accuracy: 0.000_001)
+        XCTAssertLessThan(
+            try XCTUnwrap(contrastRatio(color(0x77, 0x77, 0x77), white)),
+            4.5,
+            "The evaluator must reject a known opaque body-text failure."
+        )
+    }
+
     func testEveryMaterialPassesBodyAndLargeUIContrastGates() {
         for material in MaterialTheme.allCases {
             let sheet = material.tokens

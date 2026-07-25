@@ -68,6 +68,14 @@ enum PlaceCardActionAppearance {
             .quiet
         }
     }
+
+    static func semanticControlOpacity(isEnabled: Bool) -> Double {
+        isEnabled ? 1 : 0.46
+    }
+
+    static func semanticControlScale(isPressed: Bool) -> CGFloat {
+        isPressed ? 0.98 : 1
+    }
 }
 
 struct PlaceCardActionStyleModifier: ViewModifier {
@@ -95,7 +103,7 @@ struct PlaceCardActionStyleModifier: ViewModifier {
 }
 
 enum PlaceCardPhotoLayout {
-    static let minimumHeight: CGFloat = 112
+    static let preferredMinimumHeight: CGFloat = 112
     static let maximumHeight: CGFloat = 260
     static let fallbackAspectRatio: CGFloat = 4 / 3
 
@@ -117,7 +125,7 @@ enum PlaceCardPhotoLayout {
         imageHeight: Int?
     ) -> CGSize {
         guard containerWidth.isFinite, containerWidth > 0 else {
-            return CGSize(width: 0, height: minimumHeight)
+            return CGSize(width: 0, height: preferredMinimumHeight)
         }
 
         let aspectRatio: CGFloat
@@ -132,7 +140,11 @@ enum PlaceCardPhotoLayout {
         }
 
         let proposedHeight = containerWidth / aspectRatio
-        let clampedHeight = min(max(proposedHeight, minimumHeight), maximumHeight)
+        // A hard minimum is incompatible with fixed available width, no crop,
+        // and no letterbox for extreme panoramas. Preserve the intrinsic ratio
+        // below the preferred minimum; a tall image can satisfy the hard
+        // maximum by narrowing its frame.
+        let clampedHeight = min(proposedHeight, maximumHeight)
         let frameWidth = proposedHeight > maximumHeight
             ? min(containerWidth, clampedHeight * aspectRatio)
             : containerWidth
@@ -144,6 +156,8 @@ private struct PlaceCardSemanticToneButtonStyle: ButtonStyle {
     let foreground: Color
     let background: Color
 
+    @Environment(\.isEnabled) private var isEnabled
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Typography.font(for: .button))
@@ -153,7 +167,16 @@ private struct PlaceCardSemanticToneButtonStyle: ButtonStyle {
             .frame(minHeight: 44)
             .background(background, in: Capsule())
             .contentShape(Capsule())
-            .opacity(configuration.isPressed ? 0.78 : 1)
+            .opacity(
+                PlaceCardActionAppearance.semanticControlOpacity(
+                    isEnabled: isEnabled
+                )
+            )
+            .scaleEffect(
+                PlaceCardActionAppearance.semanticControlScale(
+                    isPressed: configuration.isPressed
+                )
+            )
     }
 }
 
@@ -163,6 +186,7 @@ struct PlaceCardSheet: View {
     let onHide: (String, String) -> Void
     let onManageVisits: (String) -> Void
     let setNearbyPromptSuppressed: @MainActor (String, Bool) -> Bool
+    let showHiddenMode: Bool
 
     @State private var sheetInstanceID = UUID().uuidString
     @State private var card: PlaceCardModel?

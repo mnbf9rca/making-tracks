@@ -79,6 +79,19 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .unsee(isEnabled: false)), .quiet)
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .seenDisabled), .quiet)
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .unhide), .quiet)
+        XCTAssertEqual(
+            PlaceCardActionAppearance.semanticControlOpacity(isEnabled: false),
+            0.46
+        )
+        XCTAssertEqual(
+            PlaceCardActionAppearance.semanticControlOpacity(isEnabled: true),
+            1
+        )
+        XCTAssertEqual(
+            PlaceCardActionAppearance.semanticControlScale(isPressed: false),
+            1
+        )
+        XCTAssertEqual(PlaceCardActionAppearance.semanticControlScale(isPressed: true), 0.98)
 
         let actionSets: [[PlaceCardAction]] = [
             [.save, .seen, .hide],
@@ -95,15 +108,24 @@ final class AppShellTests: XCTestCase {
     }
 
     func testPlaceCardPhotoHeightFollowsAspectRatioWithinTasteClamp() {
-        XCTAssertEqual(PlaceCardPhotoLayout.minimumHeight, 112)
+        XCTAssertEqual(PlaceCardPhotoLayout.preferredMinimumHeight, 112)
         XCTAssertEqual(PlaceCardPhotoLayout.maximumHeight, 260)
         XCTAssertEqual(
             PlaceCardPhotoLayout.height(containerWidth: 320, imageWidth: 640, imageHeight: 480),
             240
         )
+        let panoramicFrame = PlaceCardPhotoLayout.size(
+            containerWidth: 320,
+            imageWidth: 1_600,
+            imageHeight: 400
+        )
+        XCTAssertEqual(panoramicFrame.height, 80)
+        XCTAssertEqual(panoramicFrame.width, 320)
         XCTAssertEqual(
-            PlaceCardPhotoLayout.height(containerWidth: 320, imageWidth: 1_600, imageHeight: 400),
-            112
+            panoramicFrame.width / panoramicFrame.height,
+            4,
+            accuracy: 0.001,
+            "An extreme panorama must preserve its aspect ratio rather than add letterbox bars."
         )
         XCTAssertEqual(
             PlaceCardPhotoLayout.height(containerWidth: 320, imageWidth: 400, imageHeight: 1_200),
@@ -149,6 +171,8 @@ final class AppShellTests: XCTestCase {
 
         XCTAssertFalse(mapSource.contains("struct PlaceCardSheet: View"))
         XCTAssertTrue(cardSource.contains("struct PlaceCardSheet: View"))
+        XCTAssertTrue(mapSource.contains("showHiddenMode: layerVisibility.showHiddenPlaces"))
+        XCTAssertTrue(cardSource.contains("let showHiddenMode: Bool"))
         XCTAssertFalse(cardSource.contains("PlaceCardVisualSpec"))
         XCTAssertFalse(cardSource.contains("preferredColorScheme(.light)"))
         XCTAssertFalse(cardSource.contains("mediaSlotHeight"))

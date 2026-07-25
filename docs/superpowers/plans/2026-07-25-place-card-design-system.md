@@ -20,11 +20,16 @@ XCUITest, XcodeGen project generation, simulator release gate.
 
 ## Taste guesses
 
-- Replace the fixed 132pt photo slot with a 112–260pt clamp. At the card's
-  usual ~354pt content width, 112pt keeps a 3.16:1 panorama legible rather than
-  a sliver, while 260pt keeps portrait/square media below most of the first
-  medium detent and leaves the pinned action bar visible. The unclamped height
-  is `availableWidth × imageHeight / imageWidth`.
+- Replace the fixed 132pt photo slot with a preferred 112pt minimum and hard
+  260pt maximum. At the card's usual ~354pt content width, 112pt keeps a
+  3.16:1 panorama legible, while 260pt keeps portrait/square media below most
+  of the first medium detent and leaves the pinned action bar visible. Preserve
+  the intrinsic ratio below 112pt for more extreme panoramas: a 4:1 image at
+  320pt is naturally 80pt tall, and a hard 112pt floor would force 32pt of
+  letterbox. Cropping, letterboxing, and horizontal overflow were rejected
+  because #376's ruled no-crop/no-letterbox properties outrank this taste
+  guess. The unclamped height is
+  `availableWidth × imageHeight / imageWidth`.
 - Use metadata dimensions before decode and decoded-image dimensions as the
   authoritative fallback. Invalid or absent dimensions use a neutral 4:3
   loading/error ratio rather than bringing back a fixed production-photo
@@ -94,8 +99,9 @@ XCUITest, XcodeGen project generation, simulator release gate.
 - Modify: `ios/App/Sources/PlaceCard/PlaceCardSheet.swift`
 - Modify: `ios/App/Tests/AppShellTests.swift`
 
-1. Implement the pure 112–260pt height calculation from available width and
-   safe intrinsic dimensions.
+1. Implement the pure preferred-minimum-112/hard-maximum-260 calculation from
+   available width and safe intrinsic dimensions, preserving the intrinsic
+   ratio below the preferred minimum for extreme panoramas.
 2. Size the slot with a geometry-provided available width and render decoded
    media with aspect-fit semantics.
 3. Keep loading/failure UI token-backed and Reduce Transparency-safe (solid

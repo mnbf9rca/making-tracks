@@ -2970,7 +2970,8 @@ struct MapScreen: View {
                 },
                 setNearbyPromptSuppressed: { placeID, suppressed in
                     setNearbyPromptSuppressed(placeID: placeID, suppressed: suppressed)
-                }
+                },
+                showHiddenMode: layerVisibility.showHiddenPlaces
             )
         }
         .onDisappear {
