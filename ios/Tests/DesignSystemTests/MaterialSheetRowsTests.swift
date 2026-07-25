@@ -11,6 +11,8 @@ final class MaterialSheetRowsTests: XCTestCase {
         XCTAssertEqual(appearance.topCornerRadius, 22)
         XCTAssertEqual(appearance.detents, [.medium, .large])
         XCTAssertEqual(appearance.closeAccessibilityLabel, "Close")
+        XCTAssertEqual(appearance.grabberColor, MaterialTheme.snow.tokens.hairline)
+        XCTAssertNotEqual(appearance.grabberColor, appearance.background.color)
     }
 
     func testRaisedCardRowResolvesRaisedSurfaceWithoutDivider() {

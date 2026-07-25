@@ -24,6 +24,7 @@ enum MaterialSheetDetent: Equatable {
 
 struct MaterialSheetAppearance: Equatable {
     let background: MaterialSheetBackground
+    let grabberColor: MaterialColor
     let topCornerRadius: CGFloat
     let detents: [MaterialSheetDetent]
     let closeAccessibilityLabel: String
@@ -48,6 +49,7 @@ public struct MaterialSheet<Content: View>: View {
         self.content = content()
         appearance = MaterialSheetAppearance(
             background: .solid(theme.tokens.surface),
+            grabberColor: theme.tokens.hairline,
             topCornerRadius: 22,
             detents: [.medium, .large],
             closeAccessibilityLabel: "Close"
@@ -57,7 +59,7 @@ public struct MaterialSheet<Content: View>: View {
     public var body: some View {
         VStack(spacing: 0) {
             Capsule()
-                .fill(appearance.background.color.swiftUIColor.opacity(0.35))
+                .fill(appearance.grabberColor.swiftUIColor)
                 .frame(width: 36, height: 5)
                 .padding(.top, 10)
 
