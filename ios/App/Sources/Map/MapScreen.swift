@@ -892,6 +892,105 @@ private struct TrackVisitViewportBoundsPreferenceKey: PreferenceKey {
     }
 }
 
+private struct TrackVisitAutoScrollRequest: Equatable {
+    let sequence: Int
+    let deltaY: CGFloat
+}
+
+@MainActor
+private struct TrackVisitAutoScrollBridge: UIViewRepresentable {
+    let request: TrackVisitAutoScrollRequest?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        guard let request,
+              context.coordinator.lastSequence != request.sequence,
+              let window = uiView.window
+        else { return }
+
+        let probeFrame = uiView.convert(uiView.bounds, to: window)
+        let candidates = collectionViews(in: window)
+            .filter {
+                $0.accessibilityIdentifier == "lists.detail.surface.track"
+                    && isEffectivelyVisible($0, in: window)
+            }
+            .map {
+                (
+                    view: $0,
+                    overlap: overlapArea($0, with: probeFrame, in: window)
+                )
+            }
+            .filter { $0.overlap > 0 }
+        guard let scrollView = candidates
+            .max(by: { $0.overlap < $1.overlap })?
+            .view
+        else { return }
+        context.coordinator.lastSequence = request.sequence
+
+        let minimumY = -scrollView.adjustedContentInset.top
+        let maximumY = max(
+            minimumY,
+            scrollView.contentSize.height
+                - scrollView.bounds.height
+                + scrollView.adjustedContentInset.bottom
+        )
+        let targetY = min(
+            maximumY,
+            max(minimumY, scrollView.contentOffset.y + request.deltaY)
+        )
+        scrollView.setContentOffset(
+            CGPoint(x: scrollView.contentOffset.x, y: targetY),
+            animated: false
+        )
+    }
+
+    private func collectionViews(in view: UIView) -> [UICollectionView] {
+        var matches = view.subviews.compactMap { $0 as? UICollectionView }
+        for subview in view.subviews {
+            matches.append(contentsOf: collectionViews(in: subview))
+        }
+        return matches
+    }
+
+    private func overlapArea(
+        _ scrollView: UICollectionView,
+        with probeFrame: CGRect,
+        in window: UIWindow
+    ) -> CGFloat {
+        let scrollFrame = scrollView.convert(scrollView.bounds, to: window)
+        let intersection = scrollFrame.intersection(probeFrame)
+        guard !intersection.isNull else { return 0 }
+        return intersection.width * intersection.height
+    }
+
+    private func isEffectivelyVisible(_ view: UIView, in window: UIWindow) -> Bool {
+        var candidate: UIView? = view
+        while let current = candidate {
+            guard !current.isHidden, current.alpha > 0.01 else { return false }
+            if current === window {
+                return true
+            }
+            candidate = current.superview
+        }
+        return false
+    }
+
+    @MainActor
+    final class Coordinator {
+        var lastSequence: Int?
+    }
+}
+
 struct TrackVisitDaySection: Identifiable, Equatable {
     let day: Date
     let visits: [TrackVisit]
@@ -5375,11 +5474,11 @@ private struct ListDetailView: View {
     @State private var trackVisitDragStartMidY: CGFloat?
     @State private var trackVisitDragStartCardFrame: CGRect?
     @GestureState private var trackVisitDragTranslationY: CGFloat = 0
+    @GestureState private var trackVisitGestureIsActive = false
     @State private var trackAutoScrollTask: Task<Void, Never>?
-    @State private var trackAutoScrollTargetID: Int64?
-    @State private var trackAutoScrollTowardEnd = false
-    @State private var trackAutoScrollTick = 0
     @State private var trackAutoScrollGeneration = 0
+    @State private var trackAutoScrollRequest: TrackVisitAutoScrollRequest?
+    @State private var trackAutoScrollRequestSequence = 0
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
 
@@ -5538,7 +5637,7 @@ private struct ListDetailView: View {
     }
 
     private var trackListBody: some View {
-        ScrollViewReader { proxy in
+        ScrollViewReader { _ in
             List {
                 Section {
                     trackSummaryCard
@@ -5566,18 +5665,19 @@ private struct ListDetailView: View {
             .scrollContentBackground(.hidden)
             .background(TrackVisitEditorVisualSpec.paperBackground)
             .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
-            .coordinateSpace(name: TrackVisitDragTrigger.coordinateSpaceName)
+            .background {
+                TrackVisitAutoScrollBridge(request: trackAutoScrollRequest)
+            }
             .overlay {
                 GeometryReader { geometry in
                     Color.clear.preference(
                         key: TrackVisitViewportBoundsPreferenceKey.self,
-                        value: CGRect(origin: .zero, size: geometry.size)
+                        value: geometry.frame(
+                            in: .named(TrackVisitDragTrigger.coordinateSpaceName)
+                        )
                     )
                 }
                 .allowsHitTesting(false)
-            }
-            .overlay(alignment: .topLeading) {
-                trackVisitDragOverlay
             }
             .onPreferenceChange(TrackVisitRowBoundsPreferenceKey.self) { frames in
                 trackVisitRowFrames = frames
@@ -5588,17 +5688,8 @@ private struct ListDetailView: View {
             .onPreferenceChange(TrackVisitViewportBoundsPreferenceKey.self) { bounds in
                 trackVisitViewportBounds = bounds
             }
-            .onChange(of: trackAutoScrollTick) { _, _ in
-                guard let targetID = trackAutoScrollTargetID else { return }
-                withAnimation(.linear(duration: 0.18)) {
-                    proxy.scrollTo(
-                        targetID,
-                        anchor: trackAutoScrollTowardEnd ? .bottom : .top
-                    )
-                }
-            }
-            .onChange(of: trackVisitDragTranslationY) { previous, current in
-                if previous != 0, current == 0, draggingTrackVisitID != nil {
+            .onChange(of: trackVisitGestureIsActive) { wasActive, isActive in
+                if wasActive, !isActive, draggingTrackVisitID != nil {
                     resetTrackVisitDragState()
                 }
             }
@@ -5606,6 +5697,19 @@ private struct ListDetailView: View {
             .accessibilityIdentifier("lists.detail.surface.track")
             .task { await reload() }
             .refreshable { await reload() }
+        }
+        .coordinateSpace(name: TrackVisitDragTrigger.coordinateSpaceName)
+        .overlay(alignment: .topLeading) {
+            trackVisitReorderGestureSurfaces
+        }
+        .overlay(alignment: .topLeading) {
+            GeometryReader { geometry in
+                trackVisitDragOverlay(
+                    overlayOrigin: geometry.frame(
+                        in: .named(TrackVisitDragTrigger.coordinateSpaceName)
+                    ).origin
+                )
+            }
         }
     }
 
@@ -5912,8 +6016,46 @@ private struct ListDetailView: View {
         }
     }
 
+    private var trackVisitReorderGestureSurfaceFrames: [Int64: CGRect] {
+        var frames = trackVisitCardFrames
+        if let draggingTrackVisitID, let trackVisitDragStartCardFrame {
+            frames[draggingTrackVisitID] = trackVisitDragStartCardFrame
+        }
+        return frames
+    }
+
     @ViewBuilder
-    private var trackVisitDragOverlay: some View {
+    private var trackVisitReorderGestureSurfaces: some View {
+        if canReorderTrackVisits {
+            GeometryReader { geometry in
+                let overlayOrigin = geometry.frame(
+                    in: .named(TrackVisitDragTrigger.coordinateSpaceName)
+                ).origin
+                ZStack(alignment: .topLeading) {
+                    ForEach(
+                        trackVisitReorderGestureSurfaceFrames.keys.sorted(),
+                        id: \.self
+                    ) { visitID in
+                        if let frame = trackVisitReorderGestureSurfaceFrames[visitID] {
+                            Rectangle()
+                                .fill(Color.black.opacity(0.001))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                                .position(
+                                    x: frame.maxX - 33 - overlayOrigin.x,
+                                    y: frame.midY - overlayOrigin.y
+                                )
+                                .simultaneousGesture(trackVisitReorderGesture(for: visitID))
+                                .accessibilityHidden(true)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func trackVisitDragOverlay(overlayOrigin: CGPoint) -> some View {
         if let draggingTrackVisitID,
            let startFrame = trackVisitDragStartCardFrame,
            let visit = visibleTrackVisits.first(where: { $0.id == draggingTrackVisitID })
@@ -5932,7 +6074,10 @@ private struct ListDetailView: View {
                     radius: TrackVisitDragVisualSpec.shadowRadius(isActive: true),
                     y: TrackVisitDragVisualSpec.shadowY(isActive: true)
                 )
-                .position(x: frame.midX, y: frame.midY)
+                .position(
+                    x: frame.midX - overlayOrigin.x,
+                    y: frame.midY - overlayOrigin.y
+                )
                 .allowsHitTesting(false)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Dragging \(visit.name)")
@@ -5958,7 +6103,6 @@ private struct ListDetailView: View {
         }
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
-        .highPriorityGesture(trackVisitReorderGesture(for: visit))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Reorder \(visit.name)")
         .accessibilityHint("Drag, or swipe up or down, to change this visit's order")
@@ -5975,7 +6119,7 @@ private struct ListDetailView: View {
         .accessibilityIdentifier("lists.detail.track.row.reorder.\(visit.id)")
     }
 
-    private func trackVisitReorderGesture(for visit: TrackVisit) -> some Gesture {
+    private func trackVisitReorderGesture(for visitID: Int64) -> some Gesture {
         DragGesture(
             minimumDistance: 0,
             coordinateSpace: .named(TrackVisitDragTrigger.coordinateSpaceName)
@@ -5983,17 +6127,22 @@ private struct ListDetailView: View {
         .updating($trackVisitDragTranslationY) { value, translationY, _ in
             translationY = value.translation.height
         }
+        .updating($trackVisitGestureIsActive) { _, isActive, _ in
+            isActive = true
+        }
         .onChanged { value in
-            guard canReorderTrackVisits,
-                  let sourceFrame = trackVisitRowFrames[visit.id],
-                  let sourceCardFrame = trackVisitCardFrames[visit.id]
-            else { return }
-            if draggingTrackVisitID != visit.id {
-                draggingTrackVisitID = visit.id
+            guard canReorderTrackVisits else { return }
+            if draggingTrackVisitID == nil {
+                guard let sourceFrame = trackVisitRowFrames[visitID],
+                    let sourceCardFrame = trackVisitCardFrames[visitID]
+                else { return }
+                draggingTrackVisitID = visitID
                 trackVisitDragStartMidY = sourceFrame.midY
                 trackVisitDragStartCardFrame = sourceCardFrame
             }
-            guard let sourceMidY = trackVisitDragStartMidY else { return }
+            guard draggingTrackVisitID == visitID,
+                  let sourceMidY = trackVisitDragStartMidY
+            else { return }
             updateTrackVisitAutoScroll(
                 dropY: sourceMidY + value.translation.height
             )
@@ -6003,11 +6152,11 @@ private struct ListDetailView: View {
                 resetTrackVisitDragState()
             }
             guard canReorderTrackVisits,
-                  draggingTrackVisitID == visit.id,
+                  draggingTrackVisitID == visitID,
                   let sourceMidY = trackVisitDragStartMidY,
-                  let source = visibleTrackVisits.firstIndex(where: { $0.id == visit.id }),
+                  let source = visibleTrackVisits.firstIndex(where: { $0.id == visitID }),
                   let destination = TrackVisitDragTrigger.destinationOffset(
-                    for: visit.id,
+                    for: visitID,
                     translationY: value.translation.height,
                     sourceMidY: sourceMidY,
                     orderedVisitIDs: visibleTrackVisits.map(\.id),
@@ -6036,12 +6185,13 @@ private struct ListDetailView: View {
 
     @MainActor
     private func updateTrackVisitAutoScroll(dropY: CGFloat) {
-        guard TrackVisitDragTrigger.autoScrollTargetID(
+        let targetID = TrackVisitDragTrigger.autoScrollTargetID(
             dropY: dropY,
             orderedVisitIDs: visibleTrackVisits.map(\.id),
             rowFrames: trackVisitRowFrames,
             viewportBounds: trackVisitViewportBounds
-        ) != nil
+        )
+        guard targetID != nil
         else {
             stopTrackVisitAutoScroll()
             return
@@ -6057,17 +6207,19 @@ private struct ListDetailView: View {
                 }
             }
             while !Task.isCancelled {
-                guard let targetID = TrackVisitDragTrigger.autoScrollTargetID(
+                guard TrackVisitDragTrigger.autoScrollTargetID(
                     dropY: dropY,
                     orderedVisitIDs: visibleTrackVisits.map(\.id),
                     rowFrames: trackVisitRowFrames,
                     viewportBounds: trackVisitViewportBounds
-                ) else {
+                ) != nil else {
                     return
                 }
-                trackAutoScrollTargetID = targetID
-                trackAutoScrollTowardEnd = dropY >= trackVisitViewportBounds.midY
-                trackAutoScrollTick &+= 1
+                trackAutoScrollRequestSequence &+= 1
+                trackAutoScrollRequest = TrackVisitAutoScrollRequest(
+                    sequence: trackAutoScrollRequestSequence,
+                    deltaY: dropY >= trackVisitViewportBounds.midY ? 56 : -56
+                )
                 try? await Task.sleep(for: .milliseconds(250))
             }
         }
@@ -6078,7 +6230,6 @@ private struct ListDetailView: View {
         trackAutoScrollGeneration &+= 1
         trackAutoScrollTask?.cancel()
         trackAutoScrollTask = nil
-        trackAutoScrollTargetID = nil
     }
 
     @MainActor
@@ -6305,21 +6456,6 @@ private struct TrackVisitDateEditorView: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            editorContent
-                .frame(
-                    width: geometry.size.width,
-                    height: geometry.size.height,
-                    alignment: .top
-                )
-        }
-        .ignoresSafeArea(.container, edges: .top)
-        .background(TrackVisitEditorVisualSpec.paperBackground.ignoresSafeArea())
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("lists.detail.visit-date.surface")
-    }
-
-    private var editorContent: some View {
         VStack(spacing: 0) {
             navigationChrome
 
@@ -6436,6 +6572,9 @@ private struct TrackVisitDateEditorView: View {
                 .padding(16)
             }
         }
+        .background(TrackVisitEditorVisualSpec.paperBackground.ignoresSafeArea())
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("lists.detail.visit-date.surface")
     }
 
     private var navigationChrome: some View {
@@ -6451,9 +6590,14 @@ private struct TrackVisitDateEditorView: View {
                 .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
                 .accessibilityIdentifier("lists.detail.visit-date.title")
             Spacer()
-            Color.clear.frame(minWidth: 88, minHeight: 44)
+            Text("‹ My tracks")
+                .font(.body.weight(.semibold))
+                .frame(minWidth: 88, minHeight: 44, alignment: .trailing)
+                .hidden()
+                .accessibilityHidden(true)
         }
         .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: TrackVisitEditorVisualSpec.chromeMinimumHeight)
         .background(TrackVisitEditorVisualSpec.paperBackground)
         .overlay(alignment: .bottom) {
             Rectangle().fill(TrackVisitEditorVisualSpec.divider).frame(height: 1)

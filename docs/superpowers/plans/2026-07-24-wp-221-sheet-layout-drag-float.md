@@ -4,7 +4,7 @@
 
 **Goal:** Restore top-aligned Visit date sheet layout and make the active My tracks row travel with the user's drag without changing reorder results.
 
-**Architecture:** Keep the ruled custom My tracks chrome, compact rows, app-drawn reorder handle, destination calculation, accessibility actions, and edge auto-scroll. Present Visit date as a page within the already full-height My tracks surface instead of creating a nested presentation. A top-aligned `ZStack` keeps the full-height track list participating in layout while the editor is visible, so both pages share the owning surface's live coordinate origin through rotation and window resizing. During reorder, hide the lazy source card and render a frozen-frame copy in a list-level overlay whose `@GestureState` translation follows the finger even when edge auto-scroll unmounts the source row.
+**Architecture:** Keep the ruled custom My tracks chrome, compact rows, app-drawn reorder handle, destination calculation, accessibility actions, and edge auto-scroll. Present Visit date as a page within the already full-height My tracks surface instead of creating a nested presentation. Keep the full-height track page in layout while the editor is active, but hide it from accessibility and hit testing. Replace the editor chrome's greedy clear symmetry spacer with a hidden duplicate of the Back label so the title remains centered at standard and accessibility Dynamic Type sizes. During reorder, hide the lazy source card and render a frozen-frame copy in a list-level overlay whose `@GestureState` translation follows the finger. Own each drag recognizer in a stable parent overlay, but limit its hit region to the measured 44-by-44-point handle; retain only the active handle's frozen surface when its lazy row scrolls offscreen. Keep edge-target selection and timing in SwiftUI, while a noninteractive, accessibility-identified UIKit bridge applies bounded content-offset steps to the owning `List` because SwiftUI's two programmatic-scroll APIs ignore requests during the active custom drag.
 
 **Tech Stack:** Swift 6, SwiftUI, XCTest, XCUITest, the designated iOS simulator through `scripts/sim-lock.sh`.
 
@@ -27,7 +27,7 @@
 
 **Interfaces:**
 - Consumes: `AppMenuSheet`, `TrackVisitDateEditorView`, `lists.detail.visit-date.back`, and the existing rendered-pixel oracle fixture.
-- Produces: an owner-bounds page overlay and a two-sided geometry assertion aligning the child and owner navigation rows.
+- Produces: an in-surface editor page and a two-sided geometry assertion aligning the child and owner navigation rows.
 
 - [x] **Step 1: Write the failing UI assertion**
 
@@ -60,20 +60,29 @@ Observed: FAIL at y=254 versus a maximum of 174.8.
 
 - [x] **Step 3: Present Visit date within the owning page bounds**
 
-Nested-sheet and navigation attempts (`.presentationSizing(.page)`, `.presentationDetents([.large])`, flexible frames, a live owner-height environment value, local navigation destinations, and a measured overlay) retained the same shortened intrinsic-height proposal. Keep the editor inside `ListDetailView`, disable and accessibility-hide the underlying track page while it is active, and make both pages top-aligned siblings while the full-height list remains in layout:
+Nested-sheet and navigation attempts (`.presentationSizing(.page)`, `.presentationDetents([.large])`, flexible frames, a live owner-height environment value, local navigation destinations, and measured overlays) retained the same apparent y=246 result. A diagnostic accessibility probe established that the editor root was already at y=62 with zero safe-area inset. The actual cause was the trailing `Color.clear` having only minimum dimensions: it greedily expanded the navigation HStack to consume the VStack's surplus height, centering the Back control at y=246. Keep the editor in the owning `ZStack`, but give the symmetry spacer fixed dimensions and give the chrome its standard minimum height:
 
 ```swift
 ZStack(alignment: .top) {
     trackListPage
     trackVisitEditorPage
 }
+
+Text("‹ My tracks")
+    .font(.body.weight(.semibold))
+    .frame(minWidth: 88, minHeight: 44, alignment: .trailing)
+    .hidden()
+    .accessibilityHidden(true)
+
+navigationChrome
+    .frame(maxWidth: .infinity, minHeight: TrackVisitEditorVisualSpec.chromeMinimumHeight)
 ```
 
-- [ ] **Step 4: Run the focused UI test to verify GREEN**
+- [x] **Step 4: Run the focused UI test to verify GREEN**
 
 Run the command from Step 2.
 
-Expected: PASS in both Light and Dark appearance, with the existing pixel identity oracle still green.
+Observed: PASS in both Light and Dark appearance. The strict sheet-top geometry assertions pass, and the opaque editor interior remains pixel-identical; the comparison excludes only the system-owned rounded corners that expose the appearance-dependent map beneath the sheet.
 
 ### Task 2: Pin and repair active-row drag travel
 
@@ -120,7 +129,8 @@ Run:
 Run:
 
 ```bash
-swift test --filter LoggingPrivacyTests.testTrackVisitDateHeadersAreNotStandaloneMovableRows
+swift test --package-path ios \
+  --filter LoggingPrivacyTests.testTrackVisitDateHeadersAreNotStandaloneMovableRows
 ```
 
 Run the structural overlay regression:
@@ -132,13 +142,13 @@ swift test --package-path ios \
 
 - [x] **Step 3: Implement an independent drag overlay**
 
-Measure each card in the list coordinate space. At drag start, freeze that card frame in parent state; hide the source card; draw a copy in a list-level overlay positioned from the frozen frame plus `@GestureState` translation. Centralize cleanup so gesture cancellation and disappearance clear identity, frozen geometry, and auto-scroll. Do not change drop destination calculation, row identity, accessibility actions, or auto-scroll.
+Measure each card in the list coordinate space. Create exact 44-by-44-point gesture surfaces over the visible reorder handles in a stable parent overlay, retaining the active surface at its frozen frame if the corresponding lazy row unmounts. Convert named-space geometry into the outer overlay's local coordinates before positioning both the gesture surface and floating copy. At drag start, freeze that card frame in parent state; hide the source card; draw a copy in a list-level overlay positioned from the frozen frame plus `@GestureState` translation. Track gesture activity separately from translation so crossing zero does not look like cancellation, and centralize cleanup so genuine cancellation and disappearance clear identity, frozen geometry, and auto-scroll. Preserve the existing SwiftUI edge-target calculation and timer; use a main-actor `UIViewRepresentable` probe to select only the effectively visible `UICollectionView` identified as `lists.detail.surface.track`, require positive overlap, and apply adjusted-inset-clamped offset steps. Do not change drop destination calculation, row identity, or accessibility actions. A real trailing-gutter swipe test proves that no full-height hit area steals ordinary List scrolling.
 
 - [x] **Step 4: Run focused tests to verify GREEN**
 
-Run both commands from Step 2.
+Run all three commands from Step 2.
 
-Expected: both pass with zero failures.
+Observed: all three focused tests pass with zero failures. Real XCUITests additionally pass for a direct handle reorder, an initially offscreen visit becoming visible through edge auto-scroll before persistence is checked, and ordinary scrolling from the trailing gutter outside a handle.
 
 ### Task 3: Verify and deliver
 
@@ -155,7 +165,7 @@ Expected: both pass with zero failures.
 Run:
 
 ```bash
-swift test
+swift test --package-path ios
 ```
 
 Run:
