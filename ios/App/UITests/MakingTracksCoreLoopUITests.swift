@@ -747,9 +747,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
         XCTAssertTrue(sourceArticle.waitForExistence(timeout: 5))
         XCTAssertEqual(sourceArticle.label, "Wikipedia source article")
-        XCTAssertTrue(sourceArticle.isHittable)
         assertDoesNotExposeURL(sourceArticle)
         XCTAssertTrue(expandPlaceCardSheet(in: app))
+        XCTAssertTrue(sourceArticle.isHittable)
 
         XCTAssertTrue(photo.waitForExistence(timeout: 5))
         XCTAssertEqual(photo.label, "Photo of Ghost Sign")
