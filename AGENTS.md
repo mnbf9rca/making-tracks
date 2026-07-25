@@ -98,6 +98,8 @@ The pipeline is the one from the place-card design: HTML wireframes rendered to 
 
 **An issue is a single coherent story, told in its body.** Not a conversation. When a decision is put to Rob, or a ruling lands, edit the body (`gh issue edit N`) so the whole thing still reads as one account of what this work is and where it stands — Request / Status / Open questions. Rewrite rather than append; a body that grew by accretion is a transcript wearing a body's clothes.
 
+**Running status never goes on issues.** Status transitions live in the phase's `tasks.md` ledger (pre-phase: `docs/superpowers/phases/pre-phase/tasks.md`) — an in-worktree file agents recover from after a crash and the supervision loop reads for stalls, neither of which a GitHub comment can serve. An issue records the work item and its outcome; progress commentary and status essays on issues are spam.
+
 Comments carry point-in-time evidence only: findings, measurements, test output, a render that has just been produced. **Comments are never the record.** Anything that changes what the issue *is* goes into the body, and if a comment ends up carrying state, move it and delete it.
 
 The body is where Rob looks. A stack of appended comments makes him reconstruct the story himself, which is the thing he is asking us not to do.
