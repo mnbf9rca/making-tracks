@@ -9,7 +9,7 @@ Format: one line per transition, newest last:
 
 ## Active
 
-(none)
+- 2026-07-25T09:50Z opus phase-1-design-session-input PR open (ready-to-merge) — candidate scopes synthesised from the backlog for Rob's Phase 1 design session (PR #462)
 
 ## Done (pre-phase, 2026-07-24 wave — recorded retroactively)
 
