@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T1.4 components B — default</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { width: 390px; height: 844px; margin: 0; overflow: hidden; }
+  body {
+    --ground: #F4F1EA;
+    --surface: #FBFAF2;
+    --surface-raised: #FFFFFF;
+    --ink: #2B2823;
+    --muted: #6B675F;
+    --accent: #0A6B5C;
+    --eyebrow: #8A5A2B;
+    --hairline: rgba(43, 40, 35, 0.14);
+    background: var(--ground);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  }
+  .canvas { position: relative; width: 390px; height: 844px; background: var(--ground); overflow: hidden; }
+  .map { position: absolute; inset: 0; opacity: .7; }
+  .map path { fill: none; stroke-linecap: round; }
+  .sheet {
+    position: absolute; inset: 74px 0 0; overflow: hidden;
+    background: var(--surface); border-radius: 22px 22px 0 0;
+  }
+  .grabber { width: 36px; height: 5px; margin: 10px auto 0; border-radius: 999px; background: var(--hairline); }
+  .close {
+    position: absolute; top: 11px; right: 12px; width: 44px; height: 44px;
+    display: grid; place-items: center; color: var(--ink); font-size: 21px; line-height: 1;
+  }
+  .content { padding: 13px 20px 20px; }
+  .eyebrow { color: var(--eyebrow); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  h1 { margin: 4px 0 2px; font-size: 24px; line-height: 1.15; letter-spacing: -.35px; }
+  .sub { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.35; }
+  .section-label { margin: 15px 0 6px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+  .raised-row { padding: 11px 12px; background: var(--surface-raised); border-radius: 14px; }
+  .row-title { font-size: 15px; font-weight: 650; line-height: 1.2; }
+  .row-meta { margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.25; }
+  .hairline-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 1px; border-bottom: 1px solid var(--hairline); }
+  .chevron { color: var(--muted); font-size: 18px; }
+  .toast-stack { display: grid; gap: 7px; }
+  .toast {
+    display: flex; align-items: center; gap: 12px; padding: 12px;
+    border: 1px solid var(--hairline); border-radius: 16px;
+    background: rgba(251, 250, 242, .62);
+    -webkit-backdrop-filter: blur(16px) saturate(120%);
+    backdrop-filter: blur(16px) saturate(120%);
+    font-size: 12px; line-height: 1.25;
+  }
+  .toast-message { flex: 1; min-width: 0; }
+  .action { flex: none; min-width: 44px; height: 44px; display: grid; place-items: center; color: var(--accent); white-space: nowrap; }
+  .dismiss { flex: none; width: 44px; height: 44px; display: grid; place-items: center; color: var(--ink); font-size: 18px; }
+  .system-symbol { flex: none; width: 22px; height: 22px; color: var(--accent); }
+  .download-progress { flex: 0 0 116px; display: grid; gap: 4px; }
+  .download-progress .progress-head { justify-content: flex-end; }
+  .progress-row { display: grid; gap: 4px; margin: 9px 0; }
+  .progress-head { display: flex; align-items: baseline; justify-content: space-between; color: var(--muted); font-size: 12px; }
+  .progress-head strong { color: var(--ink); font-weight: 650; }
+  .track { height: 3px; overflow: hidden; border-radius: 999px; background: var(--hairline); }
+  .fill { height: 3px; border-radius: 999px; background: var(--accent); }
+  .map-fetch { display: flex; align-items: center; gap: 9px; margin-top: 11px; color: var(--muted); font-size: 11px; }
+  .map-fetch .track { flex: 1; }
+  .map-fetch .fill { width: 32px; }
+  .fold { position: absolute; left: 0; right: 0; bottom: 0; border-top: 2px dashed #C0392B; }
+  .fold-label { position: absolute; right: 6px; bottom: 4px; padding: 1px 4px; border-radius: 3px; background: rgba(251,250,242,.94); color: #C0392B; font-size: 9px; font-weight: 700; }
+</style>
+</head>
+<body>
+<main class="canvas" aria-label="Default-size render of the sheet, rows, toast, and progress components">
+  <svg class="map" viewBox="0 0 390 844" aria-hidden="true">
+    <path d="M-20 138 C100 114 140 169 220 148 S350 91 420 119" stroke="#C9BFA8" stroke-width="15"/>
+    <path d="M32 0 C80 108 47 178 92 267 S160 395 126 488" stroke="#DDD5C2" stroke-width="8"/>
+    <path d="M270 0 C232 116 289 166 248 260 S283 399 356 468" stroke="#C9DBE2" stroke-width="36"/>
+  </svg>
+  <section class="sheet" aria-label="Material sheet">
+    <div class="grabber" aria-label="Sheet grabber"></div>
+    <div class="close" aria-label="Close">×</div>
+    <div class="content">
+      <div class="eyebrow">T1.4 · component language</div>
+      <h1>One material, clear progress</h1>
+      <p class="sub">Solid Snow sheet · medium / large presentation</p>
+
+      <div class="section-label">Rows</div>
+      <div class="raised-row">
+        <div class="row-title">Weekend oddities</div>
+        <div class="row-meta">Raised card row · 14pt radius</div>
+      </div>
+      <div class="hairline-row">
+        <div><div class="row-title">Saved places</div><div class="row-meta">Hairline list row</div></div>
+        <span class="chevron">›</span>
+      </div>
+
+      <div class="section-label">Contextual toasts</div>
+      <div class="toast-stack">
+        <div class="toast"><span class="toast-message">Location is off</span></div>
+        <div class="toast"><span class="toast-message">Place hidden</span><span class="action">Undo</span></div>
+        <div class="toast"><span class="toast-message">You&rsquo;re near a place</span><span class="action">Seen it</span><span class="dismiss" aria-label="Dismiss nearby prompt">×</span></div>
+        <div class="toast" aria-label="Offline London download progress. Opens Offline maps.">
+          <svg class="system-symbol" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 6.5v9M8.5 12l3.5 3.5 3.5-3.5"/></svg>
+          <span class="toast-message">Offline London</span>
+          <div class="download-progress"><div class="progress-head"><span>42%</span></div><div class="track"><div class="fill" style="width:42%"></div></div></div>
+        </div>
+      </div>
+
+      <div class="section-label">Progress</div>
+      <div class="progress-row">
+        <div class="progress-head"><strong>Ghost signs</strong><span>3 of 8 seen</span></div>
+        <div class="track"><div class="fill" style="width:37.5%"></div></div>
+      </div>
+      <div class="progress-row">
+        <div class="progress-head"><strong>Offline London</strong><span>42%</span></div>
+        <div class="track"><div class="fill" style="width:42%"></div></div>
+      </div>
+      <div class="map-fetch"><span>Map fetch</span><div class="track"><div class="fill"></div></div></div>
+    </div>
+    <div class="fold"></div><div class="fold-label">fold · 390 × 844</div>
+  </section>
+</main>
+</body>
+</html>
