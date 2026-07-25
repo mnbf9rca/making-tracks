@@ -17,6 +17,23 @@
       "app_resource": true
     },
     {
+      "name": "Newsreader",
+      "category": "ios_app",
+      "version_or_pin": "productiontype/Newsreader commit cfcb4f7af0e52c25e8df2a2431814c8e5fe2e155; static TTF instances",
+      "evidence": [
+        "ios/App/Resources/Fonts/Newsreader72pt-SemiBold.ttf",
+        "ios/App/Resources/Fonts/Newsreader16pt-SemiBold.ttf",
+        "ios/App/Resources/Fonts/Newsreader16pt-Bold.ttf",
+        "ios/App/Resources/Fonts/Newsreader16pt-Italic.ttf",
+        "contracts/third-party-notices/Newsreader-OFL.txt"
+      ],
+      "license_spdx": "OFL-1.1",
+      "license_url": "https://github.com/productiontype/Newsreader/blob/cfcb4f7af0e52c25e8df2a2431814c8e5fe2e155/OFL.txt",
+      "compliance": "Bundle the static TTF instances with the OFL notice and include Newsreader in the app OSS credits.",
+      "notice_path": "contracts/third-party-notices/Newsreader-OFL.txt",
+      "app_resource": true
+    },
+    {
       "name": "GRDB.swift",
       "category": "ios_app",
       "version_or_pin": "7.11.1",
