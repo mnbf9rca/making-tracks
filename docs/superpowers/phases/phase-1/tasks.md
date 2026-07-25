@@ -308,9 +308,9 @@ Ship a render of the three buttons and the chip states at 390×844 plus an AX va
 - **Issue:** #467 · **Spec section:** §5
 - **Acceptance criteria:** AC8, AC9, AC11 (family exists), AC12, AC26 (Reduce Transparency in the sheet/toast surfaces), AC28
 - **Depends on:** T1.1
-- **Owner:** unclaimed
+- **Owner:** codex1
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed
+- **Status:** ready-to-merge — #491; 441 host tests, 0 failures; Sourcery + Opus PASS; CI green
 - **Contracts produced:** the sheet pattern, the two row types, the toast/pill family and the progress component. **T1.6, T1.7, T1.8 and T1.9 all consume them** — fix the API here and name it in the PR body.
 - **Contracts consumed:** T1.1's token sheet.
 - **Gate:** host-only (`cd ios && swift test`) unless you touch `project.yml`, as T1.3.
@@ -438,8 +438,10 @@ Full gate required, plus renders of the map home with both doors and each door o
 
 **Two acceptance additions inherited from T1.4.** T1.4 built the family but mounts nothing — its diff touches no file under `ios/App/` — so two obligations that can only be proved at a real call site land here, on the task that does the mounting. They are anchored in this row rather than left in a review thread, which is what makes the deferral compliant rather than an unowned one:
 
-1. **44×44 proof at the concrete call sites.** T1.4 proved its own built-in controls meet the target in both dimensions. Prove it again for every control that is *injected* at adoption — `LocationSettingsButton` inside the location-off banner, any T1.3-styled action passed as custom content, and the nearby prompt's two controls — because an injected view carries its own frame and the family cannot enforce one it does not own.
-2. **Mounted download-progress accessibility *value*.** AC29's value clause is proved on the **live pill**, not on the component in isolation. T1.4's tests assert the value the component derives; this task asserts the value VoiceOver actually reads from the mounted surface with real progress state behind it.
+1. **44×44 proof at the concrete call sites.** T1.4 proved its own built-in controls meet the target in both dimensions. Prove it again for every control that is *injected* at adoption, because an opaque caller-built SwiftUI or `UIViewRepresentable` control owns its own hit region and the family cannot enforce a frame it does not own. **This is a fix, not just a check: `LocationSettingsButton` currently carries a fixed 68×16 frame**, which is already below the minimum — replace it with a genuine 44pt-minimum target and **retain the `map.location-settings` identifier**. Do the same for any T1.3-styled action passed as custom content, and for the nearby prompt's two controls.
+2. **Mounted download-progress accessibility *value*.** AC29's value clause is proved on the **live pill**, not on the component in isolation — and the reason is structural rather than a matter of thoroughness: **T1.4's package-test host cannot surface a mounted SwiftUI button's accessibility element at all**, so no test living in `DesignSystemTests` can reach it. Add app-level evidence that the whole-surface download control announces its derived progress value (`42%`, for instance) alongside its label and hint.
+
+*(Both items' concrete detail — the 68×16 frame, the identifier, the package-host limitation — comes from codex1's T1.4 adversarial pass. It lived in a branch-local paragraph that was correctly deleted as a duplicate once this row existed; the detail is preserved here so the deletion cost nothing.)*
 
 **Builder brief.** Migrate the four bespoke contextual views onto T1.4's family.
 
@@ -593,7 +595,7 @@ Host tests only (`cd ios && swift test`) unless you touch `project.yml`. No rend
 
 ## Rulings
 
-Decomposition raised six judgment calls the ratified spec did not settle. **Rob has ruled on all six.** Nothing here is a taste guess any more, so a builder who finds one of these questions in front of them should follow the ruling rather than flagging it again. Numbering is kept from the original flags so earlier threads still resolve.
+Judgment calls the ratified spec did not settle, and Rob's ruling on each. **Nothing here is a taste guess any more**, so a builder who meets one of these questions should follow the ruling rather than flagging it again. R1–R6 came from decomposition and keep their original flag numbers so earlier threads still resolve; later entries are questions the build surfaced, appended in the order they were ruled.
 
 - **R1 — The compass is MapLibre's built-in.** Adopt and position it; do not build a bespoke control. Appear-on-rotation is the correct iOS grammar, and the renders' intent was a stable home in the quiet chrome cluster rather than an always-visible control. Theming and positioning are the only design requirements. → T1.6, AC19.
 - **R2 — The reserved Search slot renders nothing.** The World door's layout accommodates Search; no row, no placeholder, no "coming soon" advertising appears until DS-11 #477. A visible dead row is a tap that does nothing. → T1.6, AC20.
@@ -604,3 +606,6 @@ Decomposition raised six judgment calls the ratified spec did not settle. **Rob 
   - A builder already working on T1.1 when this ruling lands receives it as a **scope note relayed by fable**, not by re-reading this file. Claim state is not discoverable here — see *How to read this file*, point 5.
 - **R5 — Phase-scoped grading stands, including the AC13 exception.** Grading the app-wide absolutes over the module plus the surfaces this phase adopts is the ratified migration design; grading them app-wide now would manufacture known-failing noise and burn the acceptance pass's signal. AC13 remains app-wide, because "even before full adoption" is explicit in spec §5.
 - **R6 — The epic's issue bodies are corrected by fable, not here.** The counts and claims this graph records under *Where the issue text is wrong* are being folded into the issue bodies by fable, with the inventory re-verified against the current tree and the corrected bodies reviewed by the original planner. Rob's framing for #470: the mockups are ratified (#295, `68d1b38`), the app side is unbuilt, and DS-2 and DS-4 deliver it.
+- **R7 — The love and warning tones become four ratified sheet rows.** `love`, `loveContainer`, `warning`, `warningContainer`, at the Snow values proposed from T1.10. This is R4's precedent applied a second time: a tone the §3 table does not cover becomes a **ratified row in the sheet**, never a literal in a view. It carries R4's rider — **the sheet's AA gate covers the new rows per material**, Snow passing borderline, the gate rather than the eye acting as arbiter, and any future material proving itself against it. → T1.10 (unblocked by this), AC2, AC15.
+- **R8 — The track line stays its own per-material row; it does not collapse into `accent`.** Snow keeps `#2D8C83`, which is the implemented state. The rationale is worth carrying verbatim because it is the reason, not merely the outcome: **the trail is subject-adjacent — the user's story through the world — not UI machinery**, and coupling it to `accent` would silently recolour user history with button semantics wherever a material's accent shifts. That is the same instinct as R4's "one sheet" law pointing the other way: shared where the system is one language, separate where the subject is not the machinery. → T1.5, AC3.
+  - **Naming flag, not an action.** The ruling calls this row *trail*; the merged contract calls it `trackLine`. **Nothing is renamed here** — the token is merged and consumed by in-flight T1.5, and a rename on a parenthesis is how a contract breaks under four builders. The ruling's substance is recorded now; the *trail* rename ratifies "whenever the fleet next touches it", per the ruling's own words.
