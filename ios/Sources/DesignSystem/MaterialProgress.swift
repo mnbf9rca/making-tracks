@@ -25,11 +25,20 @@ public enum MaterialProgressState: Hashable, Sendable {
     case indeterminate
 
     var presentation: MaterialProgressPresentation {
+        presentation(countSuffix: nil)
+    }
+
+    func presentation(countSuffix: String?) -> MaterialProgressPresentation {
         switch self {
         case let .count(completed, total):
             let clampedTotal = max(total, 0)
             let clampedCompleted = min(max(completed, 0), clampedTotal)
-            let count = "\(clampedCompleted) of \(clampedTotal)"
+            let clampedCount = "\(clampedCompleted) of \(clampedTotal)"
+            let count = if let countSuffix, !countSuffix.isEmpty {
+                "\(clampedCount) \(countSuffix)"
+            } else {
+                clampedCount
+            }
             let fraction = clampedTotal == 0
                 ? 0
                 : Double(clampedCompleted) / Double(clampedTotal)
@@ -58,14 +67,18 @@ public enum MaterialProgressState: Hashable, Sendable {
     }
 }
 
-public struct MaterialProgress: View {
+public struct MaterialProgress<LeadingHeader: View>: View {
+    private let leadingHeader: LeadingHeader
     let renderConfiguration: MaterialProgressRenderConfiguration
 
     public init(
         state: MaterialProgressState,
         accessibilityLabel: String = "Progress",
-        theme: MaterialTheme = .snow
+        countSuffix: String? = nil,
+        theme: MaterialTheme = .snow,
+        @ViewBuilder leadingHeader: () -> LeadingHeader
     ) {
+        self.leadingHeader = leadingHeader()
         renderConfiguration = MaterialProgressRenderConfiguration(
             appearance: MaterialProgressAppearance(
                 fill: theme.tokens.accent,
@@ -73,7 +86,7 @@ public struct MaterialProgress: View {
                 count: theme.tokens.muted,
                 barHeight: 3
             ),
-            presentation: state.presentation,
+            presentation: state.presentation(countSuffix: countSuffix),
             accessibilityLabel: accessibilityLabel
         )
     }
@@ -81,8 +94,14 @@ public struct MaterialProgress: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let visibleCount = renderConfiguration.presentation.visibleCount {
-                Text(visibleCount)
-                    .foregroundStyle(renderConfiguration.appearance.count.swiftUIColor)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    leadingHeader
+                    Spacer(minLength: 8)
+                    Text(verbatim: visibleCount)
+                        .foregroundStyle(
+                            renderConfiguration.appearance.count.swiftUIColor
+                        )
+                }
             }
 
             progressBar
@@ -112,5 +131,23 @@ public struct MaterialProgress: View {
         }
 
         return min(width, 32)
+    }
+}
+
+public extension MaterialProgress where LeadingHeader == EmptyView {
+    init(
+        state: MaterialProgressState,
+        accessibilityLabel: String = "Progress",
+        countSuffix: String? = nil,
+        theme: MaterialTheme = .snow
+    ) {
+        self.init(
+            state: state,
+            accessibilityLabel: accessibilityLabel,
+            countSuffix: countSuffix,
+            theme: theme
+        ) {
+            EmptyView()
+        }
     }
 }
