@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 public struct MaterialColor: Hashable, Sendable {
@@ -26,6 +27,23 @@ public struct MaterialColor: Hashable, Sendable {
             blue: blue,
             opacity: opacity
         )
+    }
+
+    public var mapStyleString: String {
+        let red = Int((red * 255).rounded())
+        let green = Int((green * 255).rounded())
+        let blue = Int((blue * 255).rounded())
+
+        guard opacity != 1 else {
+            return String(format: "#%02X%02X%02X", red, green, blue)
+        }
+
+        let opacity = String(
+            format: "%.15g",
+            locale: Locale(identifier: "en_US_POSIX"),
+            self.opacity
+        )
+        return "rgba(\(red), \(green), \(blue), \(opacity))"
     }
 
     fileprivate func withOpacity(_ opacity: Double) -> MaterialColor {
@@ -70,26 +88,24 @@ public enum SemanticColorToken: String, CaseIterable, Hashable, Sendable {
     case labels
     case labelHalo
     case boundaries
+    case trackLine
 }
 
 public struct PinTokenBlock: Hashable, Sendable {
     public static let constant = PinTokenBlock(
         pin: MaterialColor(red: 0xE4, green: 0x57, blue: 0x2E),
-        trackLine: MaterialColor(red: 0x2D, green: 0x8C, blue: 0x83),
         fadedOpacity: 0.35
     )
 
     public let pin: MaterialColor
-    public let trackLine: MaterialColor
-    public let fadedOpacity: Double
+    private let fadedOpacity: Double
 
     public var pinFaded: MaterialColor {
         pin.withOpacity(fadedOpacity)
     }
 
-    private init(pin: MaterialColor, trackLine: MaterialColor, fadedOpacity: Double) {
+    private init(pin: MaterialColor, fadedOpacity: Double) {
         self.pin = pin
-        self.trackLine = trackLine
         self.fadedOpacity = fadedOpacity
     }
 }
@@ -114,6 +130,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
     public let labels: MaterialColor
     public let labelHalo: MaterialColor
     public let boundaries: MaterialColor
+    public let trackLine: MaterialColor
 
     public var pins: PinTokenBlock {
         .constant
@@ -140,6 +157,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         case .labels: labels
         case .labelHalo: labelHalo
         case .boundaries: boundaries
+        case .trackLine: trackLine
         }
     }
 
@@ -162,7 +180,8 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         background: MaterialColor(red: 0xF4, green: 0xF1, blue: 0xEA),
         labels: MaterialColor(red: 0x6B, green: 0x67, blue: 0x5F),
         labelHalo: MaterialColor(red: 0xF4, green: 0xF1, blue: 0xEA),
-        boundaries: MaterialColor(red: 0x2B, green: 0x28, blue: 0x23, opacity: 0.14)
+        boundaries: MaterialColor(red: 0x2B, green: 0x28, blue: 0x23, opacity: 0.14),
+        trackLine: MaterialColor(red: 0x2D, green: 0x8C, blue: 0x83)
     )
 
     init(
@@ -184,7 +203,8 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         background: MaterialColor,
         labels: MaterialColor,
         labelHalo: MaterialColor,
-        boundaries: MaterialColor
+        boundaries: MaterialColor,
+        trackLine: MaterialColor
     ) {
         self.ground = ground
         self.water = water
@@ -205,6 +225,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         self.labels = labels
         self.labelHalo = labelHalo
         self.boundaries = boundaries
+        self.trackLine = trackLine
     }
 }
 
