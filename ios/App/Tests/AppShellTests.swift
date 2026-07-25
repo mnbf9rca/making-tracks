@@ -1,3 +1,4 @@
+import DesignSystem
 import Foundation
 import SwiftUI
 import UIKit
@@ -10,12 +11,14 @@ import MakingTracksMapStyle
 final class AppShellTests: XCTestCase {
     @MainActor
     func testAccentColorAssetIsTheGlobalAppAccent() {
+        let accent = MaterialTheme.snow.tokens.accent
+
         guard let asset = UIColor(named: "AccentColor", in: .main, compatibleWith: nil) else {
             XCTFail("AccentColor asset must be compiled into the app")
             return
         }
 
-        assertColor(Color(uiColor: asset), red: 10.0 / 255.0, green: 107.0 / 255.0, blue: 92.0 / 255.0)
+        assertColor(Color(uiColor: asset), red: accent.red, green: accent.green, blue: accent.blue)
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "NSAccentColorName") as? String, "AccentColor")
     }
 

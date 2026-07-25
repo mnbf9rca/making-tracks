@@ -19,6 +19,8 @@ final class MaterialTokensTests: XCTestCase {
             .eyebrow: color(0x8A, 0x5A, 0x2B),
             .hairline: color(0x2B, 0x28, 0x23, opacity: 0.14),
             .scrim: color(0x2B, 0x28, 0x23, opacity: 0.35),
+            // The prose table is qualitative; 0.10 selects the frozen render's --shadow-soft recipe.
+            // Its --shadow-sheet 0.12 alpha remains component-specific.
             .shadow: color(0x2B, 0x28, 0x23, opacity: 0.10),
             .background: color(0xF4, 0xF1, 0xEA),
             .labels: color(0x6B, 0x67, 0x5F),
@@ -123,6 +125,7 @@ final class MaterialTokensTests: XCTestCase {
                 label: "accentContrast/accent large text or UI"
             )
             assertContrast(
+                // PaperStyle always renders the 1.25pt halo, so this proves that pair—not labels against every basemap fill.
                 sheet.labels,
                 sheet.labelHalo,
                 minimum: 4.5,
