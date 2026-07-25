@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T1.3 buttons and chips — 390×844</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 390px; height: 844px; overflow: hidden; }
+  body {
+    --ground: #F4F1EA;
+    --surface: #FBFAF2;
+    --surface-raised: #FFFFFF;
+    --ink: #2B2823;
+    --muted: #6B675F;
+    --accent: #0A6B5C;
+    --accent-contrast: #FBFAF2;
+    --tonal: rgba(10, 107, 92, 0.12);
+    --hairline: rgba(43, 40, 35, 0.14);
+    --shadow: rgba(43, 40, 35, 0.10);
+    background: var(--ground);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  }
+  main {
+    width: 390px;
+    height: 844px;
+    padding: 50px 20px 28px;
+    background:
+      radial-gradient(circle at 86% 8%, rgba(201, 219, 226, 0.72), transparent 28%),
+      linear-gradient(146deg, transparent 0 58%, rgba(201, 191, 168, 0.42) 58% 60%, transparent 60%),
+      var(--ground);
+  }
+  .eyebrow {
+    margin: 0 0 8px;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0; font-size: 30px; line-height: 1.08; letter-spacing: -0.02em; }
+  .intro { margin: 10px 0 24px; color: var(--muted); font-size: 15px; line-height: 1.45; }
+  section {
+    margin-top: 14px;
+    padding: 18px;
+    border: 1px solid var(--hairline);
+    border-radius: 20px;
+    background: rgba(251, 250, 242, 0.96);
+    box-shadow: 0 5px 18px var(--shadow);
+  }
+  h2 { margin: 0 0 5px; font-size: 13px; line-height: 1.2; letter-spacing: 0.08em; text-transform: uppercase; }
+  .note { margin: 0 0 16px; color: var(--muted); font-size: 12px; line-height: 1.35; }
+  .button-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .control, .chip {
+    min-height: 44px;
+    border: 0;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 14px;
+    font: 600 15px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    white-space: normal;
+    text-align: center;
+  }
+  .control svg, .chip svg {
+    width: 17px;
+    height: 17px;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .filled { color: var(--accent-contrast); background: var(--accent); }
+  .tonal { color: var(--accent); background: var(--tonal); }
+  .quiet { color: var(--muted); background: transparent; }
+  .disabled { opacity: 0.46; }
+  .disabled-row { display: flex; align-items: center; gap: 12px; }
+  .disabled-row .control { min-width: 128px; }
+  .spoken { color: var(--muted); font-size: 12px; line-height: 1.35; }
+  .spoken strong { display: block; color: var(--ink); font-size: 13px; }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding-inline: 13px; font-size: 13px; }
+  .legend {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--hairline);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px 12px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.25;
+  }
+  .dot { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--accent); }
+</style>
+</head>
+<body>
+<main aria-label="T1.3 button and chip component evidence">
+  <p class="eyebrow">DesignSystem · T1.3</p>
+  <h1>One control language</h1>
+  <p class="intro">Exactly three button tones and one capsule chip family, all resolved from the Snow token sheet.</p>
+
+  <section aria-label="Three button styles">
+    <h2>Buttons</h2>
+    <p class="note">Filled is the single primary action. Tonal is available. Quiet recedes without disappearing.</p>
+    <div class="button-row">
+      <div class="control tonal">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 4.4h10.8v15.9L12 16.4l-5.4 3.9z"/></svg>
+        Save
+      </div>
+      <div class="control filled">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.6 12S6.2 5.6 12 5.6 21.4 12 21.4 12 17.8 18.4 12 18.4 2.6 12 2.6 12z"/><circle cx="12" cy="12" r="2.8"/></svg>
+        Seen
+      </div>
+      <div class="control quiet">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.2 4.2 19.8 19.8"/><path d="M9.8 6.1c.7-.2 1.4-.3 2.2-.3 5.8 0 9.4 6.2 9.4 6.2s-1.1 1.9-3 3.6M6.7 8.2C4.1 10 2.6 12 2.6 12s3.6 6.2 9.4 6.2c1.5 0 2.9-.4 4.1-1"/></svg>
+        Hide
+      </div>
+    </div>
+  </section>
+
+  <section aria-label="Chip states">
+    <h2>Chips</h2>
+    <p class="note">Filled means active; tonal means available. State is spoken as well as coloured.</p>
+    <div class="chip-row">
+      <div class="chip filled">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4.2 4.2L19 6.5"/></svg>
+        Memorials
+      </div>
+      <div class="chip tonal">Artwork</div>
+      <div class="chip tonal">Historic buildings</div>
+    </div>
+  </section>
+
+  <section aria-label="Disabled state">
+    <h2>Disabled</h2>
+    <p class="note">Opacity is only the visual cue; VoiceOver receives an explicit value.</p>
+    <div class="disabled-row">
+      <div class="control tonal disabled">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18"/></svg>
+        Add
+      </div>
+      <div class="spoken"><strong>Accessibility value</strong>Unavailable</div>
+    </div>
+    <div class="legend">
+      <div><span class="dot"></span>accent #0A6B5C</div>
+      <div><span class="dot"></span>tonal 12%</div>
+      <div><span class="dot"></span>44pt minimum target</div>
+      <div><span class="dot"></span>SF Symbols · medium</div>
+    </div>
+  </section>
+</main>
+</body>
+</html>
