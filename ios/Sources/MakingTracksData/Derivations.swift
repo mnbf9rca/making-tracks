@@ -183,7 +183,7 @@ extension AppDatabase {
             guard isTrackList || listPlaceIDs.contains(visit.placeID) else { return false }
             guard !filter.lovedOnly || visit.verdict == .loved else { return false }
             guard filter.listIDs.isEmpty || filterListPlaceIDs.contains(visit.placeID) else { return false }
-            guard filter.categories.isEmpty || filter.categories.contains(visit.category) else { return false }
+            guard filter.includes(category: visit.category) else { return false }
             return true
         }
         return TrackGeometryContext(visits: renderedVisits)

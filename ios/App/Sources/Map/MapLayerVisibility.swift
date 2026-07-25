@@ -1,4 +1,5 @@
 import Foundation
+import MakingTracksData
 import MakingTracksMapStyle
 
 struct MapLayerCategory: Identifiable, Equatable, Sendable {
@@ -85,5 +86,29 @@ struct MapLayerVisibility: Equatable, Sendable {
                 return String(first).uppercased() + word.dropFirst()
             }
             .joined(separator: " ")
+    }
+}
+
+enum ListMapLayerVisibility {
+    static func displayed(
+        discoveryVisibility: MapLayerVisibility,
+        visitFilter: TracksVisitFilter?
+    ) -> MapLayerVisibility {
+        guard let visitFilter else { return discoveryVisibility }
+        return MapLayerVisibility(
+            categories: discoveryVisibility.categories,
+            showHiddenPlaces: discoveryVisibility.showHiddenPlaces,
+            showCoverageShading: discoveryVisibility.showCoverageShading,
+            visibleCategories: visitFilter.categories
+        )
+    }
+
+    static func updating(
+        visitFilter: TracksVisitFilter,
+        from visibility: MapLayerVisibility
+    ) -> TracksVisitFilter {
+        var next = visitFilter
+        next.categories = visibility.visibleCategories
+        return next
     }
 }
