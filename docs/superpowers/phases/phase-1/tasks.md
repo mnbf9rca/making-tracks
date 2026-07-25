@@ -436,6 +436,11 @@ Full gate required, plus renders of the map home with both doors and each door o
 - **Status:** unclaimed
 - **Contracts consumed:** T1.1 tokens, T1.3 buttons (the nearby prompt's embedded action), T1.4 toast/pill family and progress component.
 
+**Two acceptance additions inherited from T1.4.** T1.4 built the family but mounts nothing — its diff touches no file under `ios/App/` — so two obligations that can only be proved at a real call site land here, on the task that does the mounting. They are anchored in this row rather than left in a review thread, which is what makes the deferral compliant rather than an unowned one:
+
+1. **44×44 proof at the concrete call sites.** T1.4 proved its own built-in controls meet the target in both dimensions. Prove it again for every control that is *injected* at adoption — `LocationSettingsButton` inside the location-off banner, any T1.3-styled action passed as custom content, and the nearby prompt's two controls — because an injected view carries its own frame and the family cannot enforce one it does not own.
+2. **Mounted download-progress accessibility *value*.** AC29's value clause is proved on the **live pill**, not on the component in isolation. T1.4's tests assert the value the component derives; this task asserts the value VoiceOver actually reads from the mounted surface with real progress state behind it.
+
 **Builder brief.** Migrate the four bespoke contextual views onto T1.4's family.
 
 Depends on T1.6 rather than running beside it **on purpose**: the download-progress pill lives inside `shellChrome` (`MapScreen.swift:3365`), which T1.6 rewrites wholesale. Two builders editing that region of a 10k-line file concurrently is a merge conflict that costs more than the lost parallelism, and the Codex budget this phase does not have room for avoidable rework.
@@ -562,7 +567,17 @@ Full gate plus renders of the card in snow, default and AX sizes.
 
 **Builder brief.** T1.3 shipped its components with font literals because the graph gave it a dependency on T1.1 only, so T1.2's role API did not exist to consume — a decomposition omission, not a builder error. The result is two answers to "what type does a control use", with nothing failing when they drift. This task collapses that to one.
 
-**Scope: rename-level, no visual change.** Replace the literals in `ios/Sources/DesignSystem/ControlStyles.swift` with role calls — `Typography.font(for: .button)` for the action text in `MaterialButtonStyleBody` and `MaterialControlLabelStyle`, and `Typography.font(for: .label)` for the chip's text and icon. **If you find yourself changing a rendered size or weight, stop.** That is a design change, not an adoption, and it needs a ruling rather than a commit.
+**Scope: rename-level, no visual change.** Two kinds of site, and they need different treatment:
+
+**(a) Literals to replace — `ios/Sources/DesignSystem/ControlStyles.swift` (T1.3).** `Typography.font(for: .button)` for the action text in `MaterialButtonStyleBody` and `MaterialControlLabelStyle`, and `Typography.font(for: .label)` for the chip's text and icon. **If you find yourself changing a rendered size or weight, stop.** That is a design change, not an adoption, and it needs a ruling rather than a commit.
+
+**(b) Roles to *supply* — T1.4's components, which have no literals to replace.** `MaterialToast.swift`, `MaterialProgress.swift` and `MaterialSheetRows.swift` contain **zero** `.font(` calls: they inherit whatever the adopting surface happens to set, so every adopter must remember the right voice and any one of them can silently get it wrong. Give each component the role for the text it owns:
+
+- `MaterialToast` — the message, and the built-in action's title.
+- `MaterialProgress` — the count text. The `leadingHeader` is caller-supplied and stays the caller's choice.
+- `MaterialSheetRows` — owns no text of its own; its content is caller-supplied. Nothing to do unless the close affordance gains a label.
+
+These are all **machinery voice** under spec §4, so they take SF roles, not Newsreader. The obvious mapping is `.body` for the toast message, `.button` for its action title and `.metadata` for the progress count — but confirm each against §4's machinery list rather than taking that from this row, and flag under `## Taste guesses` if you land somewhere else. **Supplying a role where a component previously inherited is still not a licence to change a rendered size**: if adopting a role visibly changes any component, that is a finding to raise, not a change to absorb.
 
 **Why the values already line up.** T1.3's review corrected its action text from `.body` (17pt) to 15pt semibold, matching both the frozen coherence render (`.coh .act { font-size:15px; font-weight:600 }`) and T1.2's `.button` role (15pt, `.subheadline`, semibold). That correction is what makes this a rename. If T1.3 merged without it, this task is no longer rename-level and you should say so rather than absorbing a redesign.
 
