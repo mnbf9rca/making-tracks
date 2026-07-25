@@ -9,7 +9,13 @@ Format: one line per transition, newest last:
 
 ## Active
 
-- 2026-07-25T09:50Z opus phase-1-design-session-input PR open (ready-to-merge) — candidate scopes synthesised from the backlog for Rob's Phase 1 design session (PR #462)
+Nothing active. **Phase 1 is live** — phase work is tracked in `docs/superpowers/phases/phase-1/tasks.md`. This ledger covers pre-phase and issue-routed work only, per coordination.md → *Supervision-loop contract* → *No active phase*.
+
+## Done (pre-phase)
+
+- 2026-07-25T14:30Z opus #466 PR open — Phase 1 task graph authored (T1.1–T1.10) at `docs/superpowers/phases/phase-1/tasks.md`; coordination.md *Current phase* repointed at it
+- 2026-07-25T09:50Z fable #465 merged as 42c556f3 — design-system & IA spec ratified in the 2026-07-25 design session; **Phase 1 opened** on epic #466 (scope: DS-1 #467, DS-2 #468, DS-4 #470; DS-5 #471 stretch)
+- 2026-07-25T09:50Z opus #462 merged as 246006cc — phase-1 design-session input: candidate scopes synthesised from the backlog for Rob's design session
 
 ## Done (pre-phase, 2026-07-24 wave — recorded retroactively)
 

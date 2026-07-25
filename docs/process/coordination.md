@@ -71,4 +71,8 @@ Durable facts the fleet operates under (moved here from fable's session memory s
 
 ## Current phase
 
-No phase is active yet. The cycle starts with the first design session after epic #335 reaches the MVP bar (spec §9); Phase 1 is whatever that session scopes. When a phase is live, this section points to its `docs/superpowers/phases/phase-<n>/tasks.md`.
+**Phase 1 — Design system & IA.** Epic #466. Spec: `docs/superpowers/specs/2026-07-25-design-system-and-ia-design.md` (ratified, merged as PR #465). Task graph and status ledger: [`docs/superpowers/phases/phase-1/tasks.md`](../superpowers/phases/phase-1/tasks.md) — builders write their status lines there and the supervision loop reads it.
+
+Phase scope ruled by Rob: DS-1 (#467), DS-2 (#468), DS-4 (#470), with DS-5 (#471) as stretch. Nothing else from epic #466 this phase. For this phase the builder pool is **codex1–codex3** (codex4 stood down), and the stall threshold is the 45-minute default. The graph carries the acceptance criteria, the explicit non-goals and the open flags.
+
+Pre-phase and issue-routed work continues to use `docs/superpowers/phases/pre-phase/tasks.md`.
