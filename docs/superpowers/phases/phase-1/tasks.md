@@ -337,7 +337,7 @@ Host tests plus renders (390×844 and an AX variant, HTML committed).
 - **Depends on:** T1.1
 - **Owner:** codex3
 - **Review tier:** `sourcery` + `opus`
-- **Status:** tests green
+- **Status:** PR open — #494
 - **Contracts consumed:** T1.1's token sheet, including its constant pin block.
 - **Contracts produced:** none new, but you change `MapTheme`'s source of values, which `MLNMapViewRepresentable` and the theme picker both read — say so in the PR body.
 
