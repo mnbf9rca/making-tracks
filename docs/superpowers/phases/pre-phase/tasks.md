@@ -9,10 +9,11 @@ Format: one line per transition, newest last:
 
 ## Active
 
-- 2026-07-24T15:20Z opus #146 blocked: awaits a rigorous long real-device session (Rob) to confirm the jetsam fix (#151/#418; sim proxy flat ~305MB/17min); stays open until then
+(none)
 
 ## Done (pre-phase, 2026-07-24 wave — recorded retroactively)
 
+- 2026-07-25T09:45Z fable #146 closed — device validation passed: 25m11s continuous session on 13452386, no kill (evidence bundle on the issue)
 - 2026-07-25T01:37Z codex3 #221 merged as PR #453 (13452386); device-passed and closed 2026-07-25
 - 2026-07-25T00:47Z codex2 #257 merged as PR #452 (fbf215f2); device-passed and closed 2026-07-25
 - 2026-07-24T23:56Z codex1 #319 merged as PR #451 (2763aed5); closed
