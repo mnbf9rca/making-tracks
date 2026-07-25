@@ -9,7 +9,7 @@ Format: one line per transition, newest last:
 
 ## Active
 
-- 2026-07-24T15:20Z opus #146 blocked: awaits a rigorous long real-device session (Rob) to confirm the jetsam fix (#151/#418; sim proxy flat ~305MB/17min); stays open until then
+(none)
 
 ## Done (pre-phase, 2026-07-24 wave — recorded retroactively)
 
