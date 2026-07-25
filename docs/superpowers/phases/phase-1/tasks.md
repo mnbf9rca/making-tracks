@@ -308,7 +308,7 @@ Ship a render of the three buttons and the chip states at 390×844 plus an AX va
 - **Issue:** #467 · **Spec section:** §5
 - **Acceptance criteria:** AC8, AC9, AC11 (family exists), AC12, AC26 (Reduce Transparency in the sheet/toast surfaces), AC28
 - **Depends on:** T1.1
-- **Owner:** codex2
+- **Owner:** unclaimed
 - **Review tier:** `sourcery` + `opus`
 - **Status:** unclaimed
 - **Contracts produced:** the sheet pattern, the two row types, the toast/pill family and the progress component. **T1.6, T1.7, T1.8 and T1.9 all consume them** — fix the API here and name it in the PR body.
@@ -520,7 +520,7 @@ Write host-level tests for the two new queries (`cd ios && swift test`) before t
 - **Branch:** `wp-471-place-card-tokens` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC30, AC31, AC32, AC33, plus AC5 (the place name is story voice), AC15/AC16 for this surface, AC26/AC27/AC29
 - **Depends on:** T1.1, T1.3, and **T1.2** if you move the card's title onto the story voice (the place name is one of spec §4's named Newsreader roles). If T1.2 has not merged, do the token and action-bar work and leave the title to a follow-up, saying so in the PR body.
-- **Owner:** unclaimed
+- **Owner:** codex2
 - **Review tier:** `sourcery` + `opus`
 - **Status:** claimed
 - **Contracts consumed:** T1.1 tokens, T1.3 button styles, T1.2 font roles (title only).
