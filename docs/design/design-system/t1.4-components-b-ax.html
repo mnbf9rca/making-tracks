@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T1.4 components B — accessibility size</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { width: 390px; height: 844px; margin: 0; overflow: hidden; }
+  body {
+    --ground: #F4F1EA; --surface: #FBFAF2; --surface-raised: #FFFFFF; --ink: #2B2823;
+    --muted: #6B675F; --accent: #0A6B5C; --eyebrow: #8A5A2B; --hairline: rgba(43,40,35,.14);
+    background: var(--ground); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  }
+  .canvas { position: relative; width: 390px; height: 844px; overflow: hidden; background: var(--ground); }
+  .sheet { position: absolute; inset: 20px 0 0; overflow: hidden; background: var(--surface); border-radius: 22px 22px 0 0; box-shadow: 0 -6px 20px rgba(43,40,35,.12); }
+  .grabber { width: 36px; height: 5px; margin: 10px auto 0; border-radius: 999px; background: var(--hairline); }
+  .close { position: absolute; top: 13px; right: 15px; width: 44px; height: 44px; display:grid; place-items:center; border:1px solid var(--hairline); border-radius:50%; background:var(--surface-raised); font-size:24px; }
+  .content { padding: 16px 18px 14px; }
+  .eyebrow { color:var(--eyebrow); font-size:11px; line-height:1.2; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+  h1 { margin:5px 52px 3px 0; font-size:25px; line-height:1.13; letter-spacing:-.4px; }
+  .sub { margin:0; color:var(--muted); font-size:15px; line-height:1.3; }
+  .section { margin-top: 13px; color:var(--muted); font-size:11px; line-height:1.2; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+  .raised { margin-top:6px; padding:10px 11px; background:var(--surface-raised); border-radius:14px; box-shadow:0 2px 8px rgba(43,40,35,.10); }
+  .title { font-size:17px; line-height:1.22; font-weight:700; }
+  .meta { margin-top:2px; color:var(--muted); font-size:14px; line-height:1.27; }
+  .hairline { display:flex; gap:10px; align-items:center; padding:9px 1px; border-bottom:1px solid var(--hairline); }
+  .hairline .meta { flex:1; margin:0; }
+  .toast-stack { display:grid; gap:7px; margin-top:6px; }
+  .toast { padding:10px 11px; border:1px solid var(--hairline); border-radius:16px; background:rgba(251,250,242,.88); box-shadow:0 2px 8px rgba(43,40,35,.10); }
+  .toast-message { font-size:16px; line-height:1.24; }
+  .toast-actions { display:flex; justify-content:flex-end; gap:18px; margin-top:8px; color:var(--accent); font-size:16px; line-height:1.2; font-weight:700; }
+  .dismiss { color:var(--ink); }
+  .progress { display:grid; gap:5px; margin-top:9px; }
+  .progress-head { display:flex; justify-content:space-between; gap:12px; font-size:15px; line-height:1.2; }
+  .progress-head strong { font-weight:700; } .progress-head span { color:var(--muted); white-space:nowrap; }
+  .track { height:3px; overflow:hidden; border-radius:999px; background:var(--hairline); }
+  .fill { height:3px; border-radius:999px; background:var(--accent); }
+  .fetch { display:flex; align-items:center; gap:10px; margin-top:11px; color:var(--muted); font-size:14px; }
+  .fetch .track { flex:1; } .fetch .fill { width:32px; }
+  .fold { position:absolute; left:0; right:0; bottom:0; border-top:2px dashed #C0392B; }
+  .fold-label { position:absolute; right:6px; bottom:4px; padding:1px 4px; border-radius:3px; color:#C0392B; background:rgba(251,250,242,.94); font-size:9px; font-weight:700; }
+</style>
+</head>
+<body>
+<main class="canvas" aria-label="Accessibility-size render of the sheet, rows, toast, and progress components">
+  <section class="sheet" aria-label="Material sheet with accessibility-sized content">
+    <div class="grabber" aria-label="Sheet grabber"></div><div class="close" aria-label="Close">×</div>
+    <div class="content">
+      <div class="eyebrow">T1.4 · accessibility size</div>
+      <h1>Components grow without a fixed-height trap</h1>
+      <p class="sub">390pt canvas · long real-world strings remain inside the sheet</p>
+      <div class="section">Rows</div>
+      <div class="raised"><div class="title">A long saved-list name wraps inside the raised card row</div><div class="meta">Two lines remain legible at accessibility size.</div></div>
+      <div class="hairline"><div class="meta">A hairline row can carry a deliberately longer description without escaping its width.</div><span aria-hidden="true">›</span></div>
+      <div class="section">Contextual toasts — stacked actions</div>
+      <div class="toast-stack">
+        <div class="toast"><div class="toast-message">Location is off. Turn it on when you want nearby places.</div></div>
+        <div class="toast"><div class="toast-message">London download is ready to continue on this phone.</div><div class="toast-actions"><span>Open downloads</span></div></div>
+        <div class="toast"><div class="toast-message">You&rsquo;re near the old signal house on Riverside Walk.</div><div class="toast-actions"><span>Seen it</span><span class="dismiss">Dismiss</span></div></div>
+      </div>
+      <div class="section">Progress</div>
+      <div class="progress"><div class="progress-head"><strong>Ghost signs in Bermondsey</strong><span>3 of 8</span></div><div class="track"><div class="fill" style="width:37.5%"></div></div></div>
+      <div class="progress"><div class="progress-head"><strong>Offline London download</strong><span>42%</span></div><div class="track"><div class="fill" style="width:42%"></div></div></div>
+      <div class="fetch"><span>Map fetch</span><div class="track"><div class="fill"></div></div></div>
+    </div>
+    <div class="fold"></div><div class="fold-label">fold · 390 × 844</div>
+  </section>
+</main>
+</body>
+</html>
