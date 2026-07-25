@@ -48,6 +48,7 @@ Several spec statements are app-wide absolutes that *cannot* be true when Phase 
 - **AC16** Each surface's extraction from `MapScreen.swift` happens with that surface's adoption — no big-bang rewrite, no adoption without extraction. [§8]
 - **AC17** The map theme type consumes the material sheet, so map and UI have a single colour source. [§8]
 - **AC34** Pins visibly pop against `ground` in every shipped material — spec §3 states "the render is the check", so this is graded on a render, not a ratio. [§3 gates]
+- **AC35** Components **inside** `DesignSystem` resolve their type through the typography role API rather than defining their own font literals, so there is exactly one answer to what type a control uses. [§4 two voices, §8 single source. Added with T1.11 by fable's ruling: AC15 binds views *outside* the module and so does not reach a literal written inside it, which is the gap T1.11 closes.]
 
 ### IA shell — issue #468, spec §2
 
@@ -188,6 +189,7 @@ Edges are "must have merged before this starts". Read them as a list, not as the
 | T1.8 Tracks door contents, #266 unification | T1.6, T1.4, **T1.2** |
 | T1.9 Loved + Hidden surfaces | T1.8, **T1.2** |
 | T1.10 place card *(stretch)* | T1.1, T1.3, **T1.2** (title only) |
+| T1.11 components adopt the typography role API *(follow-up)* | **T1.2 and T1.3, both merged**, and only once T1.2's API has settled |
 
 T1.2 is easy to under-read as a leaf: three later tasks render story-voice titles, so the font-role API is a real upstream dependency for T1.8, T1.9 and T1.10, and it is **not** transitively supplied by T1.6 or T1.4.
 
@@ -330,6 +332,7 @@ Host tests plus renders (390×844 and an AX variant, HTML committed).
 ### T1.5 — The map theme consumes the material sheet
 
 - **Issue:** #467 · **Spec section:** §8
+- **Branch:** `wp-467-map-theme-tokens` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC3 (pin/track constants), AC17, AC34 (the pin-pop render is this task's evidence)
 - **Depends on:** T1.1
 - **Owner:** unclaimed
@@ -370,6 +373,7 @@ Fold-or-file note: `TrackLineStyle` (`ios/Sources/MakingTracksMapStyle/TrackLine
 ### T1.6 — IA shell: two doors replace the hamburger, chrome reduction, bare attribution
 
 - **Issue:** #468 · **Spec section:** §2
+- **Branch:** `wp-468-ia-shell-doors` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC18, AC19, AC20, AC22, AC23, plus AC14 (the door pill icons and the retired chrome glyphs), AC15/AC16 (the chrome and door code you move out of `MapScreen.swift`), AC5 (any Newsreader text on the door surfaces), AC26/AC27/AC29 for the chrome and door surfaces
 - **Depends on:** T1.1, T1.3, T1.4
 - **Owner:** unclaimed
@@ -424,6 +428,7 @@ Full gate required, plus renders of the map home with both doors and each door o
 ### T1.7 — Contextual chrome adopts the toast/pill family
 
 - **Issue:** #468 · **Spec section:** §2, §5
+- **Branch:** `wp-468-chrome-toast-family` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC11, AC12 (the download-progress consumer), AC23, plus AC15/AC16 (these four views come out of `MapScreen.swift` as they adopt), AC26, AC29
 - **Depends on:** T1.6
 - **Owner:** unclaimed
@@ -448,6 +453,7 @@ Full gate plus renders of each of the four states.
 ### T1.8 — Tracks door contents: unify #266, My tracks hero, Lists with progress
 
 - **Issue:** #470 · **Spec section:** §2
+- **Branch:** `wp-470-tracks-door-unify-266` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC21 (My tracks and Lists parts), AC22 (**you inherit it**: T1.6 wired this door provisionally, so you are the task that can silently drop a destination), AC24, AC28, plus AC5 (Newsreader titles), AC12 (the progress bar), AC15/AC16 (what you extract from `MapScreen.swift` as this surface adopts), AC26/AC27/AC29
 - **Depends on:** T1.6, T1.4, **T1.2** — the hero and list-row titles are story-voice text, so this task needs the font-role API, which is not a transitive dependency of T1.6 or T1.4
 - **Owner:** unclaimed
@@ -478,6 +484,7 @@ Full gate plus renders of the door and the hero landing.
 ### T1.9 — Loved and Hidden places become browsable surfaces
 
 - **Issue:** #470 · **Spec section:** §2
+- **Branch:** `wp-470-loved-hidden-surfaces` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC21 (Loved and Hidden parts), AC22 (the door keeps every destination it had), AC25, plus AC5 (Newsreader titles on the new surfaces), AC15/AC16, AC26/AC27/AC29
 - **Depends on:** T1.8, and **T1.2** for story-voice titles on the two new surfaces
 - **Owner:** unclaimed
@@ -510,6 +517,7 @@ Write host-level tests for the two new queries (`cd ios && swift test`) before t
 ### T1.10 — Place card adopts the design system — **STRETCH**
 
 - **Issue:** #471 · **Spec section:** §5
+- **Branch:** `wp-471-place-card-tokens` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC30, AC31, AC32, AC33, plus AC5 (the place name is story voice), AC15/AC16 for this surface, AC26/AC27/AC29
 - **Depends on:** T1.1, T1.3, and **T1.2** if you move the card's title onto the story voice (the place name is one of spec §4's named Newsreader roles). If T1.2 has not merged, do the token and action-bar work and leave the title to a follow-up, saying so in the PR body.
 - **Owner:** unclaimed
@@ -537,6 +545,34 @@ The **clamp values are the only open part** and they are yours as a taste guess,
 **The test that will fail, and must be rewritten rather than deleted.** `testPlaceCardVisualSpecMatchesApprovedCardLayout` (`ios/App/Tests/AppShellTests.swift:11`) asserts every one of the 13 colour literals by exact value, plus the geometry constants including `showsMediaSlotWhenPhotoMissing` and `mediaSlotHeight`. Rewrite it to assert the card resolves its colours **from tokens** — that is the invariant worth pinning now. `testPlaceCardActionTonesFollowRuledSlotsWithoutDestructiveHide` (`:35`) asserts the tone mapping and needs re-pointing at the new styles. **There is no snapshot framework in this repo**, so nothing else will catch a visual regression: your renders are the evidence.
 
 Full gate plus renders of the card in snow, default and AX sizes.
+
+---
+
+### T1.11 — DesignSystem components adopt the typography role API — **follow-up**
+
+- **Issue:** #467 · **Spec section:** §4, §8
+- **Acceptance criteria:** AC35, plus AC5 for the components it touches
+- **Depends on:** **T1.2 and T1.3, both merged** — and see the sequencing rule below, which is stricter than the edge
+- **Owner:** codex3
+- **Review tier:** `sourcery` + `opus`
+- **Status:** unclaimed
+- **Branch:** `wp-467-component-typography-adoption` — cut from a freshly-fetched `ios`
+- **Contracts consumed:** T1.2's font-role API, T1.3's control styles.
+- **Contracts produced:** none. This task **removes** a second source of truth rather than adding one.
+
+**Builder brief.** T1.3 shipped its components with font literals because the graph gave it a dependency on T1.1 only, so T1.2's role API did not exist to consume — a decomposition omission, not a builder error. The result is two answers to "what type does a control use", with nothing failing when they drift. This task collapses that to one.
+
+**Scope: rename-level, no visual change.** Replace the literals in `ios/Sources/DesignSystem/ControlStyles.swift` with role calls — `Typography.font(for: .button)` for the action text in `MaterialButtonStyleBody` and `MaterialControlLabelStyle`, and `Typography.font(for: .label)` for the chip's text and icon. **If you find yourself changing a rendered size or weight, stop.** That is a design change, not an adoption, and it needs a ruling rather than a commit.
+
+**Why the values already line up.** T1.3's review corrected its action text from `.body` (17pt) to 15pt semibold, matching both the frozen coherence render (`.coh .act { font-size:15px; font-weight:600 }`) and T1.2's `.button` role (15pt, `.subheadline`, semibold). That correction is what makes this a rename. If T1.3 merged without it, this task is no longer rename-level and you should say so rather than absorbing a redesign.
+
+**Sequencing rule — stricter than the dependency edge.** Do not start when T1.2 merely merges; start when **T1.2's API has settled**. T1.2's SwiftUI path is under review because `Font(uiFont:)` returns a resolved fixed-size font that does not honour `.dynamicTypeSize` on a subtree, so the role API's shape is expected to move. Adopting against the pre-fix API buys the rework twice.
+
+**Add a divergence test if the API admits one cheaply.** The point of this task is that the two cannot silently disagree again: assert a control's resolved size and weight equal `Typography`'s for that role. If the API makes that awkward, say so in the PR body rather than shipping an assertion that cannot fail.
+
+**Note on what this does *not* gate.** T1.3 merges on its own gate and does **not** block on T1.2. T1.6 needs T1.3 and T1.4 and must not inherit T1.2's fix latency; the door pills are SF 600 by spec §5 and need no role API. This row exists so that deferral is owned and tracked rather than loose (AGENTS.md → *Authoring law*, no unowned deferrals).
+
+Host tests only (`cd ios && swift test`) unless you touch `project.yml`. No render needed if nothing visual changes — and nothing visual should change.
 
 ---
 
