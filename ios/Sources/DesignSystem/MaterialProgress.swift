@@ -20,22 +20,18 @@ struct MaterialProgressRenderConfiguration: Equatable {
 }
 
 public enum MaterialProgressState: Hashable, Sendable {
-    case count(completed: Int, total: Int)
+    case count(completed: Int, total: Int, suffix: String? = nil)
     case percentage(Int)
     case indeterminate
 
     var presentation: MaterialProgressPresentation {
-        presentation(countSuffix: nil)
-    }
-
-    func presentation(countSuffix: String?) -> MaterialProgressPresentation {
         switch self {
-        case let .count(completed, total):
+        case let .count(completed, total, suffix):
             let clampedTotal = max(total, 0)
             let clampedCompleted = min(max(completed, 0), clampedTotal)
             let clampedCount = "\(clampedCompleted) of \(clampedTotal)"
-            let count = if let countSuffix, !countSuffix.isEmpty {
-                "\(clampedCount) \(countSuffix)"
+            let count = if let suffix, !suffix.isEmpty {
+                "\(clampedCount) \(suffix)"
             } else {
                 clampedCount
             }
@@ -73,8 +69,7 @@ public struct MaterialProgress<LeadingHeader: View>: View {
 
     public init(
         state: MaterialProgressState,
-        accessibilityLabel: String = "Progress",
-        countSuffix: String? = nil,
+        accessibilityLabel: String,
         theme: MaterialTheme = .snow,
         @ViewBuilder leadingHeader: () -> LeadingHeader
     ) {
@@ -86,7 +81,7 @@ public struct MaterialProgress<LeadingHeader: View>: View {
                 count: theme.tokens.muted,
                 barHeight: 3
             ),
-            presentation: state.presentation(countSuffix: countSuffix),
+            presentation: state.presentation,
             accessibilityLabel: accessibilityLabel
         )
     }
@@ -94,14 +89,7 @@ public struct MaterialProgress<LeadingHeader: View>: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let visibleCount = renderConfiguration.presentation.visibleCount {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    leadingHeader
-                    Spacer(minLength: 8)
-                    Text(verbatim: visibleCount)
-                        .foregroundStyle(
-                            renderConfiguration.appearance.count.swiftUIColor
-                        )
-                }
+                progressHeader(visibleCount: visibleCount)
             }
 
             progressBar
@@ -109,6 +97,30 @@ public struct MaterialProgress<LeadingHeader: View>: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(renderConfiguration.accessibilityLabel)
         .accessibilityValue(renderConfiguration.presentation.accessibilityValue)
+    }
+
+    private func progressHeader(visibleCount: String) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                leadingHeader
+                    .fixedSize(horizontal: true, vertical: true)
+                Spacer(minLength: 8)
+                countText(visibleCount)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                leadingHeader
+                    .fixedSize(horizontal: false, vertical: true)
+                countText(visibleCount)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+    }
+
+    private func countText(_ visibleCount: String) -> some View {
+        Text(verbatim: visibleCount)
+            .foregroundStyle(renderConfiguration.appearance.count.swiftUIColor)
+            .fixedSize(horizontal: true, vertical: true)
     }
 
     private var progressBar: some View {
@@ -138,13 +150,11 @@ public extension MaterialProgress where LeadingHeader == EmptyView {
     init(
         state: MaterialProgressState,
         accessibilityLabel: String = "Progress",
-        countSuffix: String? = nil,
         theme: MaterialTheme = .snow
     ) {
         self.init(
             state: state,
             accessibilityLabel: accessibilityLabel,
-            countSuffix: countSuffix,
             theme: theme
         ) {
             EmptyView()

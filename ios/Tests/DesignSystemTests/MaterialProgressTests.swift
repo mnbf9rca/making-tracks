@@ -53,8 +53,7 @@ final class MaterialProgressTests: XCTestCase {
 
     func testCountSuffixIsAppliedToVisibleAndAccessibilityValues() {
         let presentation = MaterialProgress(
-            state: .count(completed: 3, total: 8),
-            countSuffix: "seen"
+            state: .count(completed: 3, total: 8, suffix: "seen")
         ).renderConfiguration.presentation
 
         XCTAssertEqual(presentation.fraction, 0.375)
@@ -64,8 +63,7 @@ final class MaterialProgressTests: XCTestCase {
 
     func testCountSuffixIsAppliedAfterCountClamping() {
         let presentation = MaterialProgress(
-            state: .count(completed: 12, total: 8),
-            countSuffix: "seen"
+            state: .count(completed: 12, total: 8, suffix: "seen")
         ).renderConfiguration.presentation
 
         XCTAssertEqual(presentation.fraction, 1)
@@ -84,56 +82,89 @@ final class MaterialProgressTests: XCTestCase {
         )
     }
 
-    func testCountSuffixDoesNotAlterPercentageOrIndeterminatePresentation() {
-        let percentage = MaterialProgress(
-            state: .percentage(42),
-            countSuffix: "seen"
-        ).renderConfiguration.presentation
-        let indeterminate = MaterialProgress(
-            state: .indeterminate,
-            countSuffix: "seen"
-        ).renderConfiguration.presentation
-
+    func testSemanticSuffixIsOwnedByCountStateOnly() {
         XCTAssertEqual(
-            percentage,
+            MaterialProgressState.percentage(42).presentation,
             .init(fraction: 0.42, visibleCount: "42%", accessibilityValue: "42%")
         )
         XCTAssertEqual(
-            indeterminate,
+            MaterialProgressState.indeterminate.presentation,
             .init(fraction: nil, visibleCount: nil, accessibilityValue: "In progress")
+        )
+        XCTAssertEqual(
+            MaterialProgressState.count(
+                completed: 3,
+                total: 8,
+                suffix: "seen"
+            ).presentation,
+            .init(
+                fraction: 0.375,
+                visibleCount: "3 of 8 seen",
+                accessibilityValue: "3 of 8 seen"
+            )
         )
     }
 
-    func testCallerCanSupplyTypedLeadingHeaderContentWithoutOwningTheCount() {
+    func testTypedLeadingHeaderRequiresAndCarriesItsAccessibilityLabel() {
         let progress: MaterialProgress<Text> = MaterialProgress(
-            state: .count(completed: 3, total: 8),
-            countSuffix: "seen"
+            state: .count(completed: 3, total: 8, suffix: "seen"),
+            accessibilityLabel: "Ghost signs"
         ) {
-            Text("Stories")
+            Text("Ghost signs")
         }
 
-        XCTAssertEqual(
-            progress.renderConfiguration.presentation.visibleCount,
-            "3 of 8 seen"
-        )
+        let configuration = progress.renderConfiguration
+
+        XCTAssertEqual(configuration.accessibilityLabel, "Ghost signs")
+        XCTAssertEqual(configuration.presentation.visibleCount, "3 of 8 seen")
+        XCTAssertEqual(configuration.presentation.accessibilityValue, "3 of 8 seen")
     }
 
 #if canImport(AppKit)
-    func testDeterminateViewMountsItsCountHeaderAboveTheBar() {
-        let determinate = NSHostingController(
-            rootView: MaterialProgress(
+    func testDeterminateViewRendersCountGlyphPixelsAboveTheBar() throws {
+        let image = try render(
+            MaterialProgress(
                 state: .count(completed: 3, total: 8)
             )
             .frame(width: 200)
         )
-        let indeterminate = NSHostingController(
-            rootView: MaterialProgress(state: .indeterminate)
-                .frame(width: 200)
-        )
 
         XCTAssertGreaterThan(
-            determinate.view.fittingSize.height,
-            indeterminate.view.fittingSize.height
+            glyphPixelCountAboveProgressBar(in: image),
+            20
+        )
+    }
+
+    func testAccessibilityHeaderFitsAtPhoneWidthWithoutCompressingCount() throws {
+        let count = "8 of 8 landmarks seen"
+        let progress = try render(
+            MaterialProgress(
+                state: .count(
+                    completed: 12,
+                    total: 8,
+                    suffix: "landmarks seen"
+                ),
+                accessibilityLabel: "Ghost signs"
+            ) {
+                Text(
+                    "Ghost signs and painted advertisements preserved across the city"
+                )
+            }
+            .frame(width: 390)
+            .dynamicTypeSize(.accessibility5)
+        )
+        let standaloneCount = try render(
+            Text(verbatim: count)
+                .foregroundStyle(MaterialTheme.snow.tokens.muted.swiftUIColor)
+                .fixedSize(horizontal: true, vertical: true)
+                .dynamicTypeSize(.accessibility5)
+        )
+
+        XCTAssertEqual(progress.width, 390)
+        XCTAssertGreaterThan(progress.height, standaloneCount.height)
+        XCTAssertGreaterThanOrEqual(
+            mutedGlyphPixelCount(in: progress),
+            Int(Double(mutedGlyphPixelCount(in: standaloneCount)) * 0.85)
         )
     }
 #endif
@@ -162,6 +193,55 @@ final class MaterialProgressTests: XCTestCase {
         XCTAssertNil(configuration.presentation.visibleCount)
         XCTAssertEqual(configuration.presentation.accessibilityValue, "In progress")
     }
+
+#if canImport(AppKit)
+    private func render<Content: View>(_ content: Content) throws -> CGImage {
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 1
+        return try XCTUnwrap(renderer.cgImage)
+    }
+
+    private func glyphPixelCountAboveProgressBar(in image: CGImage) -> Int {
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        let maximumGlyphRowWidth = bitmap.pixelsWide / 2
+
+        return (0..<bitmap.pixelsHigh).reduce(into: 0) { count, y in
+            let nontransparentPixels = (0..<bitmap.pixelsWide).reduce(into: 0) {
+                rowCount,
+                x in
+                if (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.01 {
+                    rowCount += 1
+                }
+            }
+
+            if nontransparentPixels > 0,
+               nontransparentPixels < maximumGlyphRowWidth {
+                count += nontransparentPixels
+            }
+        }
+    }
+
+    private func mutedGlyphPixelCount(in image: CGImage) -> Int {
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        let muted = MaterialTheme.snow.tokens.muted
+
+        return (0..<bitmap.pixelsHigh).reduce(into: 0) { count, y in
+            for x in 0..<bitmap.pixelsWide {
+                guard
+                    let color = bitmap.colorAt(x: x, y: y)?
+                        .usingColorSpace(.sRGB),
+                    color.alphaComponent > 0.05,
+                    abs(color.redComponent - muted.red) < 0.08,
+                    abs(color.greenComponent - muted.green) < 0.08,
+                    abs(color.blueComponent - muted.blue) < 0.08
+                else {
+                    continue
+                }
+                count += 1
+            }
+        }
+    }
+#endif
 
     private func color(
         _ red: UInt8,
