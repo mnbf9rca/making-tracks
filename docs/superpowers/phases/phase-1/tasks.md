@@ -330,6 +330,7 @@ Host tests plus renders (390×844 and an AX variant, HTML committed).
 ### T1.5 — The map theme consumes the material sheet
 
 - **Issue:** #467 · **Spec section:** §8
+- **Branch:** `wp-467-map-theme-tokens` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC3 (pin/track constants), AC17, AC34 (the pin-pop render is this task's evidence)
 - **Depends on:** T1.1
 - **Owner:** unclaimed
@@ -370,6 +371,7 @@ Fold-or-file note: `TrackLineStyle` (`ios/Sources/MakingTracksMapStyle/TrackLine
 ### T1.6 — IA shell: two doors replace the hamburger, chrome reduction, bare attribution
 
 - **Issue:** #468 · **Spec section:** §2
+- **Branch:** `wp-468-ia-shell-doors` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC18, AC19, AC20, AC22, AC23, plus AC14 (the door pill icons and the retired chrome glyphs), AC15/AC16 (the chrome and door code you move out of `MapScreen.swift`), AC5 (any Newsreader text on the door surfaces), AC26/AC27/AC29 for the chrome and door surfaces
 - **Depends on:** T1.1, T1.3, T1.4
 - **Owner:** unclaimed
@@ -424,6 +426,7 @@ Full gate required, plus renders of the map home with both doors and each door o
 ### T1.7 — Contextual chrome adopts the toast/pill family
 
 - **Issue:** #468 · **Spec section:** §2, §5
+- **Branch:** `wp-468-chrome-toast-family` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC11, AC12 (the download-progress consumer), AC23, plus AC15/AC16 (these four views come out of `MapScreen.swift` as they adopt), AC26, AC29
 - **Depends on:** T1.6
 - **Owner:** unclaimed
@@ -448,6 +451,7 @@ Full gate plus renders of each of the four states.
 ### T1.8 — Tracks door contents: unify #266, My tracks hero, Lists with progress
 
 - **Issue:** #470 · **Spec section:** §2
+- **Branch:** `wp-470-tracks-door-unify-266` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC21 (My tracks and Lists parts), AC22 (**you inherit it**: T1.6 wired this door provisionally, so you are the task that can silently drop a destination), AC24, AC28, plus AC5 (Newsreader titles), AC12 (the progress bar), AC15/AC16 (what you extract from `MapScreen.swift` as this surface adopts), AC26/AC27/AC29
 - **Depends on:** T1.6, T1.4, **T1.2** — the hero and list-row titles are story-voice text, so this task needs the font-role API, which is not a transitive dependency of T1.6 or T1.4
 - **Owner:** unclaimed
@@ -478,6 +482,7 @@ Full gate plus renders of the door and the hero landing.
 ### T1.9 — Loved and Hidden places become browsable surfaces
 
 - **Issue:** #470 · **Spec section:** §2
+- **Branch:** `wp-470-loved-hidden-surfaces` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC21 (Loved and Hidden parts), AC22 (the door keeps every destination it had), AC25, plus AC5 (Newsreader titles on the new surfaces), AC15/AC16, AC26/AC27/AC29
 - **Depends on:** T1.8, and **T1.2** for story-voice titles on the two new surfaces
 - **Owner:** unclaimed
@@ -510,6 +515,7 @@ Write host-level tests for the two new queries (`cd ios && swift test`) before t
 ### T1.10 — Place card adopts the design system — **STRETCH**
 
 - **Issue:** #471 · **Spec section:** §5
+- **Branch:** `wp-471-place-card-tokens` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC30, AC31, AC32, AC33, plus AC5 (the place name is story voice), AC15/AC16 for this surface, AC26/AC27/AC29
 - **Depends on:** T1.1, T1.3, and **T1.2** if you move the card's title onto the story voice (the place name is one of spec §4's named Newsreader roles). If T1.2 has not merged, do the token and action-bar work and leave the title to a follow-up, saying so in the PR body.
 - **Owner:** unclaimed
