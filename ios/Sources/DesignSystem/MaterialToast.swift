@@ -310,6 +310,7 @@ public struct MaterialToast: View {
                 Button(action: content.action.perform) {
                     decoratedToast(
                         configuration: configuration,
+                        minimumWidth: 44,
                         minimumHeight: 44
                     ) {
                         surfaceToastContent(
@@ -397,12 +398,16 @@ public struct MaterialToast: View {
 
     private func decoratedToast<Content: View>(
         configuration: MaterialToastRenderConfiguration,
+        minimumWidth: CGFloat? = nil,
         minimumHeight: CGFloat? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
         content()
             .padding(12)
-            .frame(minHeight: minimumHeight)
+            .frame(
+                minWidth: minimumWidth,
+                minHeight: minimumHeight
+            )
             .foregroundStyle(configuration.appearance.foreground.swiftUIColor)
             .background {
                 switch configuration.appearance.backdrop {
@@ -522,7 +527,7 @@ public struct MaterialToast: View {
     private func messageView(
         width: MaterialToastMessageWidth
     ) -> some View {
-        // Typography remains inherited until T1.2 provides the role API.
+        // Typography is intentionally inherited; T1.11 owns component role adoption.
         Text(verbatim: message)
             .fixedSize(
                 horizontal: width.usesIntrinsicWidth,

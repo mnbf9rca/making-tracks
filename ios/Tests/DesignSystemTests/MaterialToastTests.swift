@@ -128,9 +128,9 @@ final class MaterialToastTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(renderedSize.height, 44)
     }
 
-    func testRenderedNoProgressSurfaceButtonIsAtLeastFortyFourPointsHigh() {
+    func testRenderedNoProgressSurfaceButtonIsAtLeastFortyFourPointsInBothDimensions() {
         let toast = MaterialToast(
-            message: "Offline maps",
+            message: "I",
             surfaceAction: MaterialToastSurfaceAction(
                 accessibilityLabel: "Offline maps",
                 accessibilityHint: "Opens Offline maps",
@@ -143,6 +143,7 @@ final class MaterialToastTests: XCTestCase {
 
         let renderedSize = hostingController.view.fittingSize
 
+        XCTAssertGreaterThanOrEqual(renderedSize.width, 44)
         XCTAssertGreaterThanOrEqual(renderedSize.height, 44)
     }
 
