@@ -229,7 +229,7 @@ private struct MaterialButtonStyleBody: View {
     var body: some View {
         configuration.label
             .labelStyle(MaterialControlLabelStyle())
-            .font(.body.weight(.semibold))
+            .font(.subheadline.weight(.semibold))
             .foregroundStyle(appearance.foreground.swiftUIColor)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -268,7 +268,7 @@ private struct MaterialControlLabelStyle: LabelStyle {
                 .font(.body.weight(.medium))
                 .symbolRenderingMode(.monochrome)
             configuration.title
-                .font(.body.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
         }
     }
 }

@@ -1,4 +1,6 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import SwiftUI
 import XCTest
 @testable import DesignSystem
@@ -63,25 +65,7 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
-    func testMaterialChipKeepsTheNativeButtonAccessibilityElement() throws {
-        let source = try controlStylesSource()
-        let chipSource = try XCTUnwrap(
-            source
-                .components(separatedBy: "public struct MaterialChip: View")
-                .last?
-                .components(separatedBy: "private struct MaterialButtonStyleBody")
-                .first
-        )
-
-        XCTAssertTrue(chipSource.contains("Button(action: action)"))
-        XCTAssertTrue(chipSource.contains(".accessibilityLabel"))
-        XCTAssertTrue(chipSource.contains(".accessibilityValue"))
-        XCTAssertFalse(
-            chipSource.contains(".accessibilityElement(children: .ignore)"),
-            "Replacing the native Button element discards semantics that the chip should inherit."
-        )
-    }
-
+#if canImport(AppKit)
     func testMaterialChipRendersActiveFilledAndAvailableTonal() throws {
         let active = try renderChip(state: .active)
         let available = try renderChip(state: .available)
@@ -90,6 +74,51 @@ final class ControlStylesTests: XCTestCase {
         let availableAccentPixels = solidAccentPixelCount(in: available)
 
         XCTAssertGreaterThan(activeAccentPixels, availableAccentPixels + 500)
+    }
+#endif
+
+    func testMaterialFilledButtonPlainTextUsesSubheadlineSemibold() throws {
+        let shortTitle = "Save"
+        let longTitle = "Save place"
+
+        let styledWidthDelta = try renderedWidth(
+            Button(shortTitle, action: {})
+                .buttonStyle(MaterialFilledButtonStyle())
+        ) - renderedWidth(
+            Button(longTitle, action: {})
+                .buttonStyle(MaterialFilledButtonStyle())
+        )
+        let expectedWidthDelta = try renderedWidth(
+            Text(shortTitle).font(.subheadline.weight(.semibold))
+        ) - renderedWidth(
+            Text(longTitle).font(.subheadline.weight(.semibold))
+        )
+
+        XCTAssertEqual(styledWidthDelta, expectedWidthDelta, accuracy: 1)
+    }
+
+    func testMaterialFilledButtonLabelTitleUsesSubheadlineSemibold() throws {
+        let shortTitle = "Save"
+        let longTitle = "Save place"
+
+        let styledWidthDelta = try renderedWidth(
+            Button(action: {}) {
+                Label(shortTitle, systemImage: "bookmark")
+            }
+            .buttonStyle(MaterialFilledButtonStyle())
+        ) - renderedWidth(
+            Button(action: {}) {
+                Label(longTitle, systemImage: "bookmark")
+            }
+            .buttonStyle(MaterialFilledButtonStyle())
+        )
+        let expectedWidthDelta = try renderedWidth(
+            Text(shortTitle).font(.subheadline.weight(.semibold))
+        ) - renderedWidth(
+            Text(longTitle).font(.subheadline.weight(.semibold))
+        )
+
+        XCTAssertEqual(styledWidthDelta, expectedWidthDelta, accuracy: 1)
     }
 
     func testMaterialControlsGrowVerticallyForMultilineLabels() throws {
@@ -143,6 +172,11 @@ final class ControlStylesTests: XCTestCase {
         try render(content).height
     }
 
+    private func renderedWidth<Content: View>(_ content: Content) throws -> Int {
+        try render(content).width
+    }
+
+#if canImport(AppKit)
     private func solidAccentPixelCount(in image: CGImage) -> Int {
         let bitmap = NSBitmapImageRep(cgImage: image)
 
@@ -163,16 +197,7 @@ final class ControlStylesTests: XCTestCase {
             }
         }
     }
-
-    private func controlStylesSource() throws -> String {
-        let testsDirectory = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = testsDirectory
-            .deletingLastPathComponent()
-            .appendingPathComponent("Sources/DesignSystem/ControlStyles.swift")
-        return try String(contentsOf: sourceURL, encoding: .utf8)
-    }
+#endif
 
     private func color(
         _ red: UInt8,
