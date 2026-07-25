@@ -29,9 +29,8 @@
   }
   .grabber { width: 36px; height: 5px; margin: 10px auto 0; border-radius: 999px; background: var(--hairline); }
   .close {
-    position: absolute; top: 13px; right: 16px; width: 36px; height: 36px;
-    display: grid; place-items: center; border: 1px solid var(--hairline); border-radius: 50%;
-    color: var(--ink); background: var(--surface-raised); font-size: 21px; line-height: 1;
+    position: absolute; top: 11px; right: 12px; width: 44px; height: 44px;
+    display: grid; place-items: center; color: var(--ink); font-size: 21px; line-height: 1;
   }
   .content { padding: 13px 20px 20px; }
   .eyebrow { color: var(--eyebrow); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
@@ -53,8 +52,12 @@
     font-size: 12px; line-height: 1.25;
   }
   .toast-message { flex: 1; min-width: 0; }
-  .action { flex: none; color: var(--accent); font-weight: 700; white-space: nowrap; }
+  .action { flex: none; color: var(--accent); white-space: nowrap; }
   .dismiss { flex: none; width: 25px; height: 25px; display: grid; place-items: center; color: var(--ink); font-size: 18px; }
+  .system-symbol { flex: none; width: 22px; height: 22px; color: var(--accent); }
+  .download-copy { flex: 1; min-width: 0; display: grid; gap: 5px; }
+  .download-progress { display: grid; gap: 4px; }
+  .download-progress .progress-head { justify-content: flex-end; }
   .progress-row { display: grid; gap: 4px; margin: 9px 0; }
   .progress-head { display: flex; align-items: baseline; justify-content: space-between; color: var(--muted); font-size: 12px; }
   .progress-head strong { color: var(--ink); font-weight: 650; }
@@ -95,13 +98,17 @@
       <div class="section-label">Contextual toasts</div>
       <div class="toast-stack">
         <div class="toast"><span class="toast-message">Location is off</span></div>
-        <div class="toast"><span class="toast-message">Download is ready</span><span class="action">Open</span></div>
+        <div class="toast"><span class="toast-message">Place hidden</span><span class="action">Undo</span></div>
         <div class="toast"><span class="toast-message">You&rsquo;re near a place</span><span class="action">Seen it</span><span class="dismiss" aria-label="Dismiss nearby prompt">×</span></div>
+        <div class="toast" aria-label="Offline London download progress. Opens Offline maps.">
+          <svg class="system-symbol" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 6.5v9M8.5 12l3.5 3.5 3.5-3.5"/></svg>
+          <div class="download-copy"><span class="toast-message">Offline London</span><div class="download-progress"><div class="progress-head"><span>42%</span></div><div class="track"><div class="fill" style="width:42%"></div></div></div></div>
+        </div>
       </div>
 
       <div class="section-label">Progress</div>
       <div class="progress-row">
-        <div class="progress-head"><strong>Ghost signs</strong><span>3 of 8</span></div>
+        <div class="progress-head"><strong>Ghost signs</strong><span>3 of 8 seen</span></div>
         <div class="track"><div class="fill" style="width:37.5%"></div></div>
       </div>
       <div class="progress-row">
