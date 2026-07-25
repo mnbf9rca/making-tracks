@@ -134,6 +134,11 @@
     stroke-linejoin: round;
   }
   .pin.faded { opacity: 0.35; }
+  body[data-variant="ax"] .pin {
+    transform: scale(1.3333);
+    transform-box: fill-box;
+    transform-origin: center;
+  }
 </style>
 </head>
 <body>
@@ -152,25 +157,35 @@
   </svg>
 
   <svg class="pins" viewBox="0 0 390 844" aria-hidden="true">
-    <g class="pin" transform="translate(66 205)">
-      <circle cx="10" cy="10" r="9"/>
-      <polygon points="10,5 11.3,8.3 14.8,8.5 12.1,10.7 13,14.1 10,12.2 7,14.1 7.9,10.7 5.2,8.5 8.7,8.3"/>
+    <g transform="translate(66 205)">
+      <g class="pin">
+        <circle cx="10" cy="10" r="9"/>
+        <polygon points="10,5 11.3,8.3 14.8,8.5 12.1,10.7 13,14.1 10,12.2 7,14.1 7.9,10.7 5.2,8.5 8.7,8.3"/>
+      </g>
     </g>
-    <g class="pin faded" transform="translate(250 285)">
-      <circle cx="10" cy="10" r="9"/>
-      <path d="M5 8h3l1.5-2h3L14 8h2v7H5Z"/><circle cx="10.5" cy="11.5" r="2.2"/>
+    <g transform="translate(250 285)">
+      <g class="pin faded">
+        <circle cx="10" cy="10" r="9"/>
+        <path d="M5 8h3l1.5-2h3L14 8h2v7H5Z"/><circle cx="10.5" cy="11.5" r="2.2"/>
+      </g>
     </g>
-    <g class="pin" transform="translate(160 382)">
-      <circle cx="10" cy="10" r="9"/>
-      <path d="m5 9 5-3 5 3M6 15h8M7 10v4m3-4v4m3-4v4"/>
+    <g transform="translate(160 382)">
+      <g class="pin">
+        <circle cx="10" cy="10" r="9"/>
+        <path d="m5 9 5-3 5 3M6 15h8M7 10v4m3-4v4m3-4v4"/>
+      </g>
     </g>
-    <g class="pin faded" transform="translate(296 514)">
-      <circle cx="10" cy="10" r="9"/>
-      <polygon points="10,5 11.3,8.3 14.8,8.5 12.1,10.7 13,14.1 10,12.2 7,14.1 7.9,10.7 5.2,8.5 8.7,8.3"/>
+    <g transform="translate(296 514)">
+      <g class="pin faded">
+        <circle cx="10" cy="10" r="9"/>
+        <polygon points="10,5 11.3,8.3 14.8,8.5 12.1,10.7 13,14.1 10,12.2 7,14.1 7.9,10.7 5.2,8.5 8.7,8.3"/>
+      </g>
     </g>
-    <g class="pin" transform="translate(87 578)">
-      <circle cx="10" cy="10" r="9"/>
-      <path d="M5 8h3l1.5-2h3L14 8h2v7H5Z"/><circle cx="10.5" cy="11.5" r="2.2"/>
+    <g transform="translate(87 578)">
+      <g class="pin">
+        <circle cx="10" cy="10" r="9"/>
+        <path d="M5 8h3l1.5-2h3L14 8h2v7H5Z"/><circle cx="10.5" cy="11.5" r="2.2"/>
+      </g>
     </g>
   </svg>
 
@@ -200,8 +215,8 @@
     title.textContent = "Before · literal Snow palette";
     detail.textContent = "Legacy land, water and road values";
   } else if (variant === "ax") {
-    title.textContent = "After · AX controls";
-    detail.textContent = "Token Snow · constant orange pins";
+    title.textContent = "After · AX pin size";
+    detail.textContent = "160% pins · constant orange";
   } else {
     title.textContent = "After · DesignSystem Snow";
     detail.textContent = "AC34 · pins pop over token ground";
