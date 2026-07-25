@@ -62,11 +62,19 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .save), .tonal)
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .seen), .filled)
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .hide), .quiet)
-        XCTAssertEqual(PlaceCardActionAppearance.style(for: .love), .rulingPendingLove)
-        XCTAssertEqual(PlaceCardActionAppearance.style(for: .unlove), .rulingPendingLove)
+        let loveStyle = PlaceCardActionStyle.semantic(
+            foreground: .love,
+            background: .loveContainer
+        )
+        let warningStyle = PlaceCardActionStyle.semantic(
+            foreground: .warning,
+            background: .warningContainer
+        )
+        XCTAssertEqual(PlaceCardActionAppearance.style(for: .love), loveStyle)
+        XCTAssertEqual(PlaceCardActionAppearance.style(for: .unlove), loveStyle)
         XCTAssertEqual(
             PlaceCardActionAppearance.style(for: .unsee(isEnabled: true)),
-            .rulingPendingWarning
+            warningStyle
         )
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .unsee(isEnabled: false)), .quiet)
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .seenDisabled), .quiet)
@@ -149,10 +157,8 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(cardSource.contains(".thinMaterial"))
         XCTAssertFalse(cardSource.contains(".font(."))
 
-        // Until Rob rules the missing sheet rows, exactly the four pre-existing
-        // love/warning values remain behind the named TODO seam.
-        XCTAssertEqual(cardSource.components(separatedBy: "Color(red:").count - 1, 4)
-        XCTAssertEqual(cardSource.components(separatedBy: "TODO(ruling)").count - 1, 2)
+        XCTAssertFalse(cardSource.contains("Color(red:"))
+        XCTAssertFalse(cardSource.contains("TODO(ruling)"))
     }
 
     func testMapHomeChromeUsesFilterGlyphAndChiplessMenuSpec() {

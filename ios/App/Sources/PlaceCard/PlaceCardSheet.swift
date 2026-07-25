@@ -47,8 +47,10 @@ enum PlaceCardActionStyle: Equatable {
     case filled
     case tonal
     case quiet
-    case rulingPendingLove
-    case rulingPendingWarning
+    case semantic(
+        foreground: SemanticColorToken,
+        background: SemanticColorToken
+    )
 }
 
 enum PlaceCardActionAppearance {
@@ -59,9 +61,9 @@ enum PlaceCardActionAppearance {
         case .save:
             .tonal
         case .love, .unlove:
-            .rulingPendingLove
+            .semantic(foreground: .love, background: .loveContainer)
         case .unsee(isEnabled: true):
-            .rulingPendingWarning
+            .semantic(foreground: .warning, background: .warningContainer)
         case .hide, .unsee(isEnabled: false), .seenDisabled, .unhide:
             .quiet
         }
@@ -81,22 +83,11 @@ struct PlaceCardActionStyleModifier: ViewModifier {
             content.buttonStyle(MaterialTonalButtonStyle(theme: theme))
         case .quiet:
             content.buttonStyle(MaterialQuietButtonStyle(theme: theme))
-        case .rulingPendingLove:
-            // TODO(ruling): Replace this compatibility style with Rob's
-            // ratified material-sheet token rows. Do not derive new values.
+        case let .semantic(foregroundToken, backgroundToken):
             content.buttonStyle(
-                PlaceCardPendingRulingButtonStyle(
-                    foreground: Color(red: 0.77, green: 0.19, blue: 0.17),
-                    background: Color(red: 0.99, green: 0.89, blue: 0.89)
-                )
-            )
-        case .rulingPendingWarning:
-            // TODO(ruling): Replace this compatibility style with Rob's
-            // ratified material-sheet token rows. Do not derive new values.
-            content.buttonStyle(
-                PlaceCardPendingRulingButtonStyle(
-                    foreground: Color(red: 0.46, green: 0.34, blue: 0.12),
-                    background: Color(red: 0.95, green: 0.91, blue: 0.82)
+                PlaceCardSemanticToneButtonStyle(
+                    foreground: theme.tokens[foregroundToken].swiftUIColor,
+                    background: theme.tokens[backgroundToken].swiftUIColor
                 )
             )
         }
@@ -149,7 +140,7 @@ enum PlaceCardPhotoLayout {
     }
 }
 
-private struct PlaceCardPendingRulingButtonStyle: ButtonStyle {
+private struct PlaceCardSemanticToneButtonStyle: ButtonStyle {
     let foreground: Color
     let background: Color
 

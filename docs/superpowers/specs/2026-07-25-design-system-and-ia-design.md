@@ -100,6 +100,8 @@ pin/track layer constants. Semantic token names, one value column per material.
 | `muted` | `#6B675F` | `#A79E90` |
 | `accent` | `#0A6B5C` | `#4DB6A0` |
 | `accentContrast` | `#FBFAF2` | `#241E17` |
+| `love` / `loveContainer` | `#C4312B` / `#FCE3E3` | Deferred to Mud implementation; must pass the sheet AA gate |
+| `warning` / `warningContainer` | `#75571F` / `#F2E8D1` | Deferred to Mud implementation; must pass the sheet AA gate |
 | `eyebrow` (category labels) | `#8A5A2B` | `#C9955C` |
 | `hairline` | `rgba(43,40,35,0.14)` | `rgba(239,232,220,0.14)` |
 | `scrim` | `rgba(43,40,35,0.35)` | `rgba(0,0,0,0.45)` |
@@ -113,10 +115,12 @@ the current picker's choices become material variants or retire, decided in the 
 architecture issue with a migration for the stored `map.theme.id`.
 
 **Future materials** — forest (greenish), sand, petals (pinkish) — are recipes: a new value
-column that must pass the same gates. **Gates for any material:** every text/background pair
-≥ WCAG AA (4.5:1 body, 3:1 large/UI); pins must visibly pop against `ground` (the render is
-the check); contrast gates are validated *in the token sheet*, so an illegible material
-cannot ship.
+column that must pass the same gates. Every material supplies its own love and warning
+foreground/container values; Snow's ratified rows do not become cross-material constants.
+**Gates for any material:** every text/background pair, including `love`/`loveContainer`
+and `warning`/`warningContainer`, ≥ WCAG AA (4.5:1 body, 3:1 large/UI); pins must visibly
+pop against `ground` (the render is the check); contrast gates are validated *in the token
+sheet*, so an illegible material cannot ship.
 
 ## 4. Typography
 
