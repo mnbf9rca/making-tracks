@@ -292,3 +292,4 @@ ios/App/DerivedData/
 # Agent worktrees
 .worktrees/
 wt/
+.superpowers/
