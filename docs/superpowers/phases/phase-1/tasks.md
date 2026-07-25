@@ -522,7 +522,7 @@ Write host-level tests for the two new queries (`cd ios && swift test`) before t
 - **Depends on:** T1.1, T1.3, and **T1.2** if you move the card's title onto the story voice (the place name is one of spec §4's named Newsreader roles). If T1.2 has not merged, do the token and action-bar work and leave the title to a follow-up, saying so in the PR body.
 - **Owner:** codex2
 - **Review tier:** `sourcery` + `opus`
-- **Status:** claimed
+- **Status:** branch
 - **Contracts consumed:** T1.1 tokens, T1.3 button styles, T1.2 font roles (title only).
 - **Ruled renders:** `coherence.png` frame 3 for the card, and `docs/design/2026-07-23-design-session/RULINGS.md` → *#376* for the photo-height ruling.
 
