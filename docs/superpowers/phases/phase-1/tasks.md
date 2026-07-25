@@ -378,7 +378,7 @@ Fold-or-file note: `TrackLineStyle` (`ios/Sources/MakingTracksMapStyle/TrackLine
 - **Depends on:** T1.1, T1.3, T1.4
 - **Owner:** codex1
 - **Review tier:** `sourcery` + `greptile` + `opus` — **the phase's highest-risk task**
-- **Status:** claimed
+- **Status:** branch
 - **Contracts consumed:** T1.1 tokens, T1.3 buttons/chips, T1.4 sheet pattern. If any door text uses the story voice you also consume T1.2's font-role API — if T1.2 has not merged, use SF for the door pills (spec §5 specifies SF 600 for doors) and leave story-voice text to T1.8.
 - **Ruled render:** `docs/design/design-system/ia-doors.png` — certifies the **door pattern only**, not its row list. The render shows Offline maps and Coverage as World-door rows; spec §2 supersedes that. Implement spec §2's rows, not the render's.
 
