@@ -571,6 +571,83 @@ final class LoggingPrivacyTests: XCTestCase {
         XCTAssertFalse(trackVisitRowSource.contains("#if"), "Inactive compiler branches must not masquerade as a live row header.")
     }
 
+    func testTrackVisitCustomDragUsesAnOverlayIndependentOfTheLazySourceRow() throws {
+        let source = try sourceFile("App/Sources/Map/MapScreen.swift")
+
+        XCTAssertTrue(source.contains("@GestureState private var trackVisitDragTranslationY: CGFloat = 0"))
+        XCTAssertTrue(source.contains("@GestureState private var trackVisitGestureIsActive = false"))
+        XCTAssertTrue(source.contains("@State private var trackVisitDragStartCardFrame: CGRect?"))
+        XCTAssertTrue(source.contains(".overlay(alignment: .topLeading)"))
+        XCTAssertTrue(source.contains("trackVisitDragOverlay"))
+        XCTAssertTrue(source.contains("TrackVisitDragVisualSpec.overlayFrame("))
+        XCTAssertTrue(source.contains(".opacity(draggingTrackVisitID == visit.id ? 0 : 1)"))
+        XCTAssertTrue(source.contains("trackVisitReorderGestureSurfaces"))
+        XCTAssertTrue(source.contains(".frame(width: 44, height: 44)"))
+        XCTAssertTrue(source.contains(".simultaneousGesture(trackVisitReorderGesture(for: visitID))"))
+        XCTAssertTrue(source.contains("frames[draggingTrackVisitID] = trackVisitDragStartCardFrame"))
+        XCTAssertTrue(source.contains("frame.midY - overlayOrigin.y"))
+        XCTAssertTrue(source.contains("TrackVisitAutoScrollBridge(request: trackAutoScrollRequest)"))
+        XCTAssertTrue(source.contains("scrollView.setContentOffset("))
+        XCTAssertTrue(source.contains(
+            #"$0.accessibilityIdentifier == "lists.detail.surface.track""#
+        ))
+        XCTAssertTrue(source.contains(".filter { $0.overlap > 0 }"))
+        XCTAssertFalse(source.contains(".overlay(alignment: .trailing)"))
+        XCTAssertFalse(source.contains(".frame(width: 60)"))
+        XCTAssertFalse(source.contains("value.startLocation"))
+        XCTAssertTrue(source.contains(".updating($trackVisitDragTranslationY)"))
+        XCTAssertTrue(source.contains(".updating($trackVisitGestureIsActive)"))
+        XCTAssertTrue(source.contains(".onChange(of: trackVisitGestureIsActive)"))
+        XCTAssertFalse(source.contains(".onChange(of: trackVisitDragTranslationY)"))
+        XCTAssertTrue(source.contains("resetTrackVisitDragState()"))
+
+        guard let overlayStart = source.range(
+            of: "private func trackVisitDragOverlay(overlayOrigin: CGPoint) -> some View {"
+        ),
+              let overlayEnd = source[overlayStart.upperBound...].range(
+                of: "\n    private func presentVisitEditor"
+              )
+        else {
+            return XCTFail("Could not isolate the track visit drag overlay")
+        }
+        let overlay = source[overlayStart.lowerBound..<overlayEnd.lowerBound]
+        XCTAssertTrue(overlay.contains(
+            ".position(\n                    x: frame.midX - overlayOrigin.x,\n                    y: frame.midY - overlayOrigin.y"
+        ))
+    }
+
+    func testTrackVisitDateEditorUsesTheOwningTrackPageBounds() throws {
+        let source = try sourceFile("App/Sources/Map/MapScreen.swift")
+        XCTAssertTrue(source.contains(
+            "ZStack(alignment: .top) {\n                trackListPage\n                trackVisitEditorPage"
+        ))
+        XCTAssertTrue(source.contains("private var trackListPage: some View"))
+        XCTAssertTrue(source.contains("private var trackVisitEditorPage: some View"))
+        XCTAssertTrue(source.contains("TrackVisitDateEditorView("))
+        XCTAssertFalse(source.contains(".sheet(item: $selectedVisitForEditing)"))
+        XCTAssertFalse(source.contains(".navigationDestination(isPresented: visitEditorIsPresented)"))
+        XCTAssertTrue(source.contains("presentVisitEditor(visit)"))
+        XCTAssertTrue(source.contains(".allowsHitTesting(selectedVisitForEditing == nil)"))
+
+        guard let editorStart = source.range(of: "private struct TrackVisitDateEditorView: View {"),
+              let editorEnd = source[editorStart.upperBound...].range(of: "\nprivate struct OfflineMapsReleaseGatedView")
+        else {
+            return XCTFail("Could not isolate TrackVisitDateEditorView")
+        }
+        let editor = source[editorStart.lowerBound..<editorEnd.lowerBound]
+        XCTAssertTrue(editor.contains("var body: some View {\n        VStack(spacing: 0)"))
+        XCTAssertTrue(editor.contains("navigationChrome"))
+        XCTAssertTrue(editor.contains("ScrollView {"))
+        XCTAssertTrue(editor.contains("Text(\"‹ My tracks\")"))
+        XCTAssertTrue(editor.contains(".hidden()"))
+        XCTAssertTrue(editor.contains(".accessibilityHidden(true)"))
+        XCTAssertTrue(editor.contains(
+            ".frame(maxWidth: .infinity, minHeight: TrackVisitEditorVisualSpec.chromeMinimumHeight)"
+        ))
+        XCTAssertFalse(editor.contains(".toolbar(.hidden, for: .navigationBar)"))
+        XCTAssertFalse(editor.contains("lists.detail.visit-date.layout-probe"))
+    }
+
     private func logLineHasExplicitPrivacyAnnotations(_ line: String) -> Bool {
         for interpolation in logInterpolations(in: line) {
             if interpolation.range(of: #"privacy\s*:"#, options: .regularExpression) == nil {
