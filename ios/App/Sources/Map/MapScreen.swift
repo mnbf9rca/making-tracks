@@ -7970,7 +7970,7 @@ private struct AboutView: View {
 
     private static let buildCommit = loadBuildCommit()
     private static let appVersion = loadAppVersion()
-    private static let ossCredits = loadOSSCredits()
+    private static let ossCredits = OSSCreditsManifest.load()?.credits ?? []
     private static let osmCopyrightURL = URL(string: "https://www.openstreetmap.org/copyright")!
     private static let privacyPolicyURL = URL(string: "https://making-tracks.app/privacy")!
 
@@ -7997,14 +7997,6 @@ private struct AboutView: View {
         case (nil, nil):
             return "unknown"
         }
-    }
-
-    private static func loadOSSCredits() -> [OSSCreditEntry] {
-        guard let url = Bundle.main.url(forResource: "OSSCredits", withExtension: "json"),
-              let data = try? Data(contentsOf: url),
-              let manifest = try? JSONDecoder().decode(OSSCreditsManifest.self, from: data)
-        else { return [] }
-        return manifest.credits
     }
 
     var body: some View {
@@ -8253,11 +8245,18 @@ private struct OpenSourceCreditView: View {
     }
 }
 
-private struct OSSCreditsManifest: Decodable {
+struct OSSCreditsManifest: Decodable {
     let credits: [OSSCreditEntry]
+
+    static func load(from bundle: Bundle = .main) -> OSSCreditsManifest? {
+        guard let url = bundle.url(forResource: "OSSCredits", withExtension: "json"),
+              let data = try? Data(contentsOf: url)
+        else { return nil }
+        return try? JSONDecoder().decode(OSSCreditsManifest.self, from: data)
+    }
 }
 
-private struct OSSCreditEntry: Decodable, Identifiable {
+struct OSSCreditEntry: Decodable, Identifiable {
     let acknowledgement: String
     let category: String
     let licenseURLString: String

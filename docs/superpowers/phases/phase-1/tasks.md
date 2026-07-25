@@ -249,9 +249,9 @@ You changed `project.yml`, so the Release build must run even though your logic 
 - **Issue:** #467 · **Spec section:** §4
 - **Acceptance criteria:** AC4, AC6, AC27 (Newsreader scaling). **AC5 is shared**: this task owns the *role API* that makes the story/machinery split expressible; the tasks that render text own applying it (T1.6, T1.8, T1.9, T1.10).
 - **Depends on:** T1.1
-- **Owner:** unclaimed
+- **Owner:** codex2
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed
+- **Status:** ready-to-merge
 - **Contracts produced:** the font-role API. **T1.6, T1.8, T1.9 and T1.10 all consume it** for titles and place names, so fix its shape here and name it in the PR body: callers ask for a *role* (display, sheet title, place name, list-row title, evocative sub-line, and the SF machinery roles), never for a font or a point size.
 - **Contracts consumed:** T1.1's token sheet.
 
@@ -555,7 +555,7 @@ Full gate plus renders of the card in snow, default and AX sizes.
 - **Depends on:** **T1.2 and T1.3, both merged** — and see the sequencing rule below, which is stricter than the edge
 - **Owner:** codex3
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed
+- **Status:** `blocked: reserved for codex3 after T1.5` — reserved rather than open, so it is **not** "claimable" for the purposes of T1.10's stretch clause. codex3 wrote `ControlStyles` and the 15pt correction that makes this collapse rename-level, so the context fit is real; a builder who frees up first should take other work rather than this.
 - **Branch:** `wp-467-component-typography-adoption` — cut from a freshly-fetched `ios`
 - **Contracts consumed:** T1.2's font-role API, T1.3's control styles.
 - **Contracts produced:** none. This task **removes** a second source of truth rather than adding one.
