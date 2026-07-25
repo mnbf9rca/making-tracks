@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import XCTest
 @testable import DesignSystem
 
@@ -33,11 +35,15 @@ final class ControlStylesTests: XCTestCase {
     }
 
     func testDisabledButtonsAndChipsExposeSpokenState() {
-        XCTAssertNil(MaterialFilledButtonStyle().accessibilityValue(isEnabled: true))
-        XCTAssertEqual(
-            MaterialFilledButtonStyle().accessibilityValue(isEnabled: false),
-            "Unavailable"
-        )
+        let buttonValues: [(Bool) -> String?] = [
+            MaterialFilledButtonStyle().accessibilityValue,
+            MaterialTonalButtonStyle().accessibilityValue,
+            MaterialQuietButtonStyle().accessibilityValue,
+        ]
+        for value in buttonValues {
+            XCTAssertNil(value(true))
+            XCTAssertEqual(value(false), "Unavailable")
+        }
 
         XCTAssertEqual(
             MaterialChipState.active.accessibilityValue(isEnabled: true),
@@ -55,6 +61,117 @@ final class ControlStylesTests: XCTestCase {
             MaterialChipState.available.accessibilityValue(isEnabled: false),
             "Unavailable"
         )
+    }
+
+    func testMaterialChipKeepsTheNativeButtonAccessibilityElement() throws {
+        let source = try controlStylesSource()
+        let chipSource = try XCTUnwrap(
+            source
+                .components(separatedBy: "public struct MaterialChip: View")
+                .last?
+                .components(separatedBy: "private struct MaterialButtonStyleBody")
+                .first
+        )
+
+        XCTAssertTrue(chipSource.contains("Button(action: action)"))
+        XCTAssertTrue(chipSource.contains(".accessibilityLabel"))
+        XCTAssertTrue(chipSource.contains(".accessibilityValue"))
+        XCTAssertFalse(
+            chipSource.contains(".accessibilityElement(children: .ignore)"),
+            "Replacing the native Button element discards semantics that the chip should inherit."
+        )
+    }
+
+    func testMaterialChipRendersActiveFilledAndAvailableTonal() throws {
+        let active = try renderChip(state: .active)
+        let available = try renderChip(state: .available)
+
+        let activeAccentPixels = solidAccentPixelCount(in: active)
+        let availableAccentPixels = solidAccentPixelCount(in: available)
+
+        XCTAssertGreaterThan(activeAccentPixels, availableAccentPixels + 500)
+    }
+
+    func testMaterialControlsGrowVerticallyForMultilineLabels() throws {
+        let shortChip = try renderedHeight(
+            MaterialChip("Saved", state: .active, action: {})
+                .frame(width: 108)
+        )
+        let longChip = try renderedHeight(
+            MaterialChip(
+                "Saved for a long weekend adventure in the mountains",
+                state: .active,
+                action: {}
+            )
+            .frame(width: 108)
+        )
+
+        XCTAssertGreaterThan(longChip, shortChip + 10)
+
+        let shortButton = try renderedHeight(
+            Button("Save", action: {})
+                .buttonStyle(MaterialFilledButtonStyle())
+                .frame(width: 108)
+        )
+        let longButton = try renderedHeight(
+            Button(
+                "Save for a long weekend adventure in the mountains",
+                action: {}
+            )
+                .buttonStyle(MaterialFilledButtonStyle())
+                .frame(width: 108)
+        )
+
+        XCTAssertGreaterThan(longButton, shortButton + 10)
+    }
+
+    private func renderChip(state: MaterialChipState) throws -> CGImage {
+        try render(
+            MaterialChip("Trail", state: state, action: {})
+                .padding(8)
+                .background(Color.white)
+        )
+    }
+
+    private func render<Content: View>(_ content: Content) throws -> CGImage {
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 1
+        return try XCTUnwrap(renderer.cgImage)
+    }
+
+    private func renderedHeight<Content: View>(_ content: Content) throws -> Int {
+        try render(content).height
+    }
+
+    private func solidAccentPixelCount(in image: CGImage) -> Int {
+        let bitmap = NSBitmapImageRep(cgImage: image)
+
+        return (0..<bitmap.pixelsHigh).reduce(into: 0) { count, y in
+            for x in 0..<bitmap.pixelsWide {
+                guard
+                    let color = bitmap.colorAt(x: x, y: y)?
+                        .usingColorSpace(.sRGB)
+                else {
+                    continue
+                }
+                if color.greenComponent > color.redComponent + 0.2,
+                   color.blueComponent > color.redComponent + 0.2,
+                   color.greenComponent > color.blueComponent + 0.03,
+                   color.alphaComponent > 0.98 {
+                    count += 1
+                }
+            }
+        }
+    }
+
+    private func controlStylesSource() throws -> String {
+        let testsDirectory = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = testsDirectory
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/DesignSystem/ControlStyles.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 
     private func color(

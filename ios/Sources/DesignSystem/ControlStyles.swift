@@ -114,17 +114,21 @@ public enum MaterialChipState: Hashable, Sendable {
     case active
     case available
 
+    var style: MaterialChipStyle {
+        switch self {
+        case .active:
+            .filled
+        case .available:
+            .tonal
+        }
+    }
+
     var appearance: MaterialControlAppearance {
         appearance(theme: .snow)
     }
 
     func appearance(theme: MaterialTheme) -> MaterialControlAppearance {
-        switch self {
-        case .active:
-            .filled(tokens: theme.tokens)
-        case .available:
-            .tonal(tokens: theme.tokens)
-        }
+        style.appearance(theme: theme)
     }
 
     func accessibilityValue(isEnabled: Bool) -> String {
@@ -170,9 +174,6 @@ public struct MaterialChip: View {
 
     public var body: some View {
         styledButton
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text(verbatim: title))
-            .accessibilityValue(Text(verbatim: state.accessibilityValue(isEnabled: isEnabled)))
     }
 
     @ViewBuilder
@@ -190,12 +191,30 @@ public struct MaterialChip: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .accessibilityLabel(Text(verbatim: title))
+        .accessibilityValue(
+            Text(verbatim: state.accessibilityValue(isEnabled: isEnabled))
+        )
 
-        switch state {
-        case .active:
+        switch state.style {
+        case .filled:
             button.buttonStyle(MaterialFilledButtonStyle(theme: theme))
-        case .available:
+        case .tonal:
             button.buttonStyle(MaterialTonalButtonStyle(theme: theme))
+        }
+    }
+}
+
+enum MaterialChipStyle: Equatable, Sendable {
+    case filled
+    case tonal
+
+    func appearance(theme: MaterialTheme) -> MaterialControlAppearance {
+        switch self {
+        case .filled:
+            .filled(tokens: theme.tokens)
+        case .tonal:
+            .tonal(tokens: theme.tokens)
         }
     }
 }

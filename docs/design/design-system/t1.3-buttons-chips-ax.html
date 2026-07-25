@@ -46,6 +46,10 @@
     text-align: center;
   }
   .control { font-size: 23px; }
+  .control.wrap-proof {
+    width: 230px;
+    justify-self: start;
+  }
   .control svg, .chip svg {
     width: 24px;
     height: 24px;
@@ -66,6 +70,7 @@
     font-size: 19px;
     white-space: normal;
   }
+  .chip.wrap-proof { width: 180px; }
   .disabled { opacity: 0.46; }
   .spoken { margin: 6px 5px 0; color: var(--muted); font-size: 16px; line-height: 1.2; }
   .proof {
@@ -91,7 +96,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.6 12S6.2 5.6 12 5.6 21.4 12 21.4 12 17.8 18.4 12 18.4 2.6 12 2.6 12z"/><circle cx="12" cy="12" r="2.8"/></svg>
         Mark this place as seen
       </div>
-      <div class="control tonal">
+      <div class="control tonal wrap-proof">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 4.4h10.8v15.9L12 16.4l-5.4 3.9z"/></svg>
         Save to a list for later
       </div>
@@ -109,7 +114,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4.2 4.2L19 6.5"/></svg>
         Historic buildings
       </div>
-      <div class="chip tonal">Public art and sculpture</div>
+      <div class="chip tonal wrap-proof">Public art and sculpture</div>
       <div class="chip tonal disabled">Industrial heritage</div>
     </div>
     <p class="spoken">Disabled value: <strong>Unavailable</strong></p>
