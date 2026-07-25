@@ -203,10 +203,18 @@ were written against the regressions and observed RED before the fixes; all
 focused, structural, pixel-oracle, accessibility, and full-gate tests are GREEN
 after restoring the implementation.
 
-- [ ] **Step 4: Re-ground, push, and open the PR**
+- [x] **Step 4: Re-ground, push, and open the PR**
 
 Fetch `origin/ios`, merge it if needed, rerun affected gates, review `git diff --stat origin/ios..HEAD`, push the branch, and open an `ios`-targeting PR linked to issue #221 with `sourcery-review`, `track-b-ios`, and `wp`.
 
-- [ ] **Step 5: Dual-deliver status**
+Observed: the final fetch remained at `fbf215f2`; signed merge `66d2937f`
+contains that tip. The clean branch was pushed and draft PR
+[#453](https://github.com/mnbf9rca/making-tracks/pull/453) targets `ios`, links
+issue #221, and carries all three required labels.
+
+- [x] **Step 5: Dual-deliver status**
 
 Post each transition (`tests green`, `PR open`, `review clean`, `ready-to-merge`) both to Fable over AMQ and as an issue #221 comment.
+
+Observed: the delivery summary records all four transitions, exact gate counts,
+review disposition, latest upstream grounding, and the PR link in both channels.
