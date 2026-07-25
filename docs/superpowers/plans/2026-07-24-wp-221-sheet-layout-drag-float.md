@@ -160,7 +160,7 @@ Observed: all three focused tests pass with zero failures. Real XCUITests additi
 - Consumes: the fixes from Tasks 1–2 and issue #221's M1–M6 device-fidelity gate.
 - Produces: a pushed iOS-targeting PR with exact test counts, visual evidence, review accounting, and dual-channel status updates.
 
-- [ ] **Step 1: Run host and full simulator gates**
+- [x] **Step 1: Run host and full simulator gates**
 
 Run:
 
@@ -176,13 +176,32 @@ Run:
 
 Expected: all host, app/unit, UI, and Release build checks pass with zero warnings.
 
-- [ ] **Step 2: Produce Light and Dark device evidence**
+Observed after the final signed merge of `origin/ios` at `fbf215f2`: host Swift
+tests pass 389/389. The mandatory simulator gate passes its Release
+warnings-as-errors build, 185/185 app/unit tests, and 70/70 UI tests.
+
+- [x] **Step 2: Produce Light and Dark device evidence**
 
 Run the rendered-pixel oracle on the designated simulator in both appearances, export the Visit date screenshots, and compare them against the issue's frozen layout. Confirm the navigation row is at the sheet top and capture a drag-in-progress view showing the active row under the finger.
 
-- [ ] **Step 3: Run adversarial review**
+Observed: the strict rendered-pixel oracle passes in both appearances and exports
+`/private/tmp/making-tracks-artifacts/my-tracks-rendered-oracle-light.png`,
+`my-tracks-rendered-oracle-dark.png`,
+`my-tracks-visit-date-oracle-light.png`, and
+`my-tracks-visit-date-oracle-dark.png`. The geometry assertions prove the editor
+chrome remains at the sheet top. Real handle-drag UI tests prove direct travel,
+edge auto-scroll to an initially offscreen visit, persisted order, and ordinary
+gutter scrolling.
+
+- [x] **Step 3: Run adversarial review**
 
 Review spec fidelity, SwiftUI correctness, gesture behavior, accessibility, hostile-content handling under threat-model §2, and test teeth. Neuter each surviving fix and confirm its regression test fails before restoring it.
+
+Observed: three independent adversarial reviews approved the drag/test behavior,
+SwiftUI/layout correctness, and spec/security/privacy scope. The focused tests
+were written against the regressions and observed RED before the fixes; all
+focused, structural, pixel-oracle, accessibility, and full-gate tests are GREEN
+after restoring the implementation.
 
 - [ ] **Step 4: Re-ground, push, and open the PR**
 
