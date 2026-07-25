@@ -7,7 +7,7 @@ import MakingTracksTiles
 
 struct PlaceCardAppearance {
     static let cardBackgroundToken = SemanticColorToken.surface
-    static let mediaBackgroundToken = SemanticColorToken.surfaceRaised
+    static let mediaBackgroundToken = SemanticColorToken.road
     static let primaryTextToken = SemanticColorToken.ink
     static let secondaryTextToken = SemanticColorToken.muted
     static let linkTextToken = SemanticColorToken.accent
@@ -113,8 +113,20 @@ enum PlaceCardPhotoLayout {
         imageWidth: Int?,
         imageHeight: Int?
     ) -> CGFloat {
+        size(
+            containerWidth: containerWidth,
+            imageWidth: imageWidth,
+            imageHeight: imageHeight
+        ).height
+    }
+
+    static func size(
+        containerWidth: CGFloat,
+        imageWidth: Int?,
+        imageHeight: Int?
+    ) -> CGSize {
         guard containerWidth.isFinite, containerWidth > 0 else {
-            return minimumHeight
+            return CGSize(width: 0, height: minimumHeight)
         }
 
         let aspectRatio: CGFloat
@@ -129,7 +141,11 @@ enum PlaceCardPhotoLayout {
         }
 
         let proposedHeight = containerWidth / aspectRatio
-        return min(max(proposedHeight, minimumHeight), maximumHeight)
+        let clampedHeight = min(max(proposedHeight, minimumHeight), maximumHeight)
+        let frameWidth = proposedHeight > maximumHeight
+            ? min(containerWidth, clampedHeight * aspectRatio)
+            : containerWidth
+        return CGSize(width: frameWidth, height: clampedHeight)
     }
 }
 
@@ -156,7 +172,6 @@ struct PlaceCardSheet: View {
     let onHide: (String, String) -> Void
     let onManageVisits: (String) -> Void
     let setNearbyPromptSuppressed: @MainActor (String, Bool) -> Bool
-    let showHiddenMode: Bool
 
     @State private var sheetInstanceID = UUID().uuidString
     @State private var card: PlaceCardModel?
@@ -708,7 +723,11 @@ private struct PlaceCardPhotoSlot: View {
     }
 
     private var slotHeight: CGFloat {
-        PlaceCardPhotoLayout.height(
+        slotSize.height
+    }
+
+    private var slotSize: CGSize {
+        PlaceCardPhotoLayout.size(
             containerWidth: availableWidth > 0 ? availableWidth : 320,
             imageWidth: photo.width ?? image?.cgImage?.width,
             imageHeight: photo.height ?? image?.cgImage?.height
@@ -738,8 +757,14 @@ private struct PlaceCardPhotoSlot: View {
                     .accessibilityHidden(true)
             }
         }
+        .frame(width: slotSize.width, height: slotHeight)
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: PlaceCardLayout.mediaCornerRadius,
+                style: .continuous
+            )
+        )
         .frame(maxWidth: .infinity)
-        .frame(height: slotHeight)
         .background {
             GeometryReader { proxy in
                 Color.clear
@@ -748,15 +773,9 @@ private struct PlaceCardPhotoSlot: View {
                     }
                     .onChange(of: proxy.size.width) { _, width in
                         availableWidth = width
-                    }
+                }
             }
         }
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: PlaceCardLayout.mediaCornerRadius,
-                style: .continuous
-            )
-        )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(slotAccessibilityLabel)
         .accessibilityIdentifier("place-card.photo")

@@ -265,11 +265,18 @@ final class LoggingPrivacyTests: XCTestCase {
         XCTAssertTrue(workflow.contains("swift test --filter LoggingPrivacyTests"))
     }
 
-    func testMapScreenEmitsRuledSessionFlowEvents() throws {
-        let source = try String(
-            contentsOf: packageRoot().appendingPathComponent("App/Sources/Map/MapScreen.swift"),
-            encoding: .utf8
-        )
+    func testMapExperienceEmitsRuledSessionFlowEvents() throws {
+        let source = try [
+            "App/Sources/Map/MapScreen.swift",
+            "App/Sources/PlaceCard/PlaceCardSheet.swift",
+        ]
+        .map {
+            try String(
+                contentsOf: packageRoot().appendingPathComponent($0),
+                encoding: .utf8
+            )
+        }
+        .joined(separator: "\n")
 
         for expected in [
             #"MakingTracksLog.flowEvent("screen opened""#,

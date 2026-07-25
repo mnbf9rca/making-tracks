@@ -25,7 +25,7 @@ final class AppShellTests: XCTestCase {
 
     func testPlaceCardAppearanceResolvesApprovedMaterialTokens() {
         XCTAssertEqual(PlaceCardAppearance.cardBackgroundToken, .surface)
-        XCTAssertEqual(PlaceCardAppearance.mediaBackgroundToken, .surfaceRaised)
+        XCTAssertEqual(PlaceCardAppearance.mediaBackgroundToken, .road)
         XCTAssertEqual(PlaceCardAppearance.primaryTextToken, .ink)
         XCTAssertEqual(PlaceCardAppearance.secondaryTextToken, .muted)
         XCTAssertEqual(PlaceCardAppearance.linkTextToken, .accent)
@@ -100,6 +100,19 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(
             PlaceCardPhotoLayout.height(containerWidth: 320, imageWidth: 400, imageHeight: 1_200),
             260
+        )
+        let portraitFrame = PlaceCardPhotoLayout.size(
+            containerWidth: 320,
+            imageWidth: 400,
+            imageHeight: 1_200
+        )
+        XCTAssertEqual(portraitFrame.height, 260)
+        XCTAssertEqual(portraitFrame.width, 260 / 3, accuracy: 0.001)
+        XCTAssertEqual(
+            portraitFrame.width / portraitFrame.height,
+            1 / 3,
+            accuracy: 0.001,
+            "A max-clamped portrait frame must still match the image, with no letterbox bars."
         )
         XCTAssertEqual(
             PlaceCardPhotoLayout.height(containerWidth: 320, imageWidth: nil, imageHeight: nil),
