@@ -1,3 +1,4 @@
+import DesignSystem
 import Foundation
 import SwiftUI
 import UIKit
@@ -8,6 +9,19 @@ import MakingTracksMapStyle
 @testable import MakingTracks
 
 final class AppShellTests: XCTestCase {
+    @MainActor
+    func testAccentColorAssetIsTheGlobalAppAccent() {
+        let accent = MaterialTheme.snow.tokens.accent
+
+        guard let asset = UIColor(named: "AccentColor", in: .main, compatibleWith: nil) else {
+            XCTFail("AccentColor asset must be compiled into the app")
+            return
+        }
+
+        assertColor(Color(uiColor: asset), red: accent.red, green: accent.green, blue: accent.blue)
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "NSAccentColorName") as? String, "AccentColor")
+    }
+
     func testPlaceCardVisualSpecMatchesApprovedCardLayout() {
         XCTAssertEqual(PlaceCardVisualSpec.closeSystemImageName, "ellipsis")
         XCTAssertFalse(PlaceCardVisualSpec.showsMediaSlotWhenPhotoMissing)

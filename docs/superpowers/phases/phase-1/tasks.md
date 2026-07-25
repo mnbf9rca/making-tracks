@@ -210,9 +210,9 @@ Suggested waves for a three-builder pool. **Wave 1 is intentionally serial** —
 - **Issue:** #467 · **Spec section:** §3, §8
 - **Acceptance criteria:** AC1, AC2, AC3 (constant pin block only), AC13, AC34 (snow)
 - **Depends on:** none — **this is the critical path; everything else waits on it**
-- **Owner:** unclaimed
+- **Owner:** codex1
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed
+- **Status:** ready-to-merge
 - **Contracts produced:** the material token sheet API — the type that names the semantic tokens, the accessor other modules call, and the constant pin block. **T1.2 through T1.10 all consume this**, so its shape is a cross-task contract: fix it in this PR and name it in the PR body, because four builders start against it the moment this merges (PRINCIPLES Engineering 18, contracts before parallelism).
 - **Contracts consumed:** none.
 

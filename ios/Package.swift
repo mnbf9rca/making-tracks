@@ -9,6 +9,7 @@ let package = Package(
         .library(name: "MakingTracksTiles", targets: ["MakingTracksTiles"]),
         .library(name: "MakingTracksMapStyle", targets: ["MakingTracksMapStyle"]),
         .library(name: "MakingTracksCore", targets: ["MakingTracksCore"]),
+        .library(name: "DesignSystem", targets: ["DesignSystem"]),
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
@@ -35,6 +36,10 @@ let package = Package(
             dependencies: ["MakingTracksData", "MakingTracksTiles"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
+        .target(
+            name: "DesignSystem",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
         .testTarget(
             name: "MakingTracksDataTests",
             dependencies: ["MakingTracksData", "MakingTracksMapStyle"],
@@ -53,6 +58,11 @@ let package = Package(
         .testTarget(
             name: "MakingTracksCoreTests",
             dependencies: ["MakingTracksCore", "MakingTracksData", "MakingTracksTiles"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "DesignSystemTests",
+            dependencies: ["DesignSystem"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
     ]
