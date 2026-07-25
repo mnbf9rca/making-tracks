@@ -282,7 +282,7 @@ AC6 needs **no About-screen code change**. `AboutView` (`MapScreen.swift:7968`) 
 - **Depends on:** T1.1
 - **Owner:** codex3
 - **Review tier:** `sourcery` + `opus`
-- **Status:** branch — `wp-467-buttons-chips`
+- **Status:** tests green — `swift test`: 400 tests, 0 failures
 - **Contracts produced:** the three `ButtonStyle`s and the chip family. **T1.6, T1.7, T1.8, T1.9 and T1.10 all consume them** — fix the names and the tone/state API here and name them in the PR body.
 - **Contracts consumed:** T1.1's token sheet.
 - **Gate:** the components are in a SwiftPM target, so their tests are host-only (`cd ios && swift test`). You changed no app-target file, so no fleet lock and no Release build are needed — **unless** you touch `project.yml`, in which case run `MT_RELEASE_GATE_MODE=build ./scripts/sim-lock.sh ./scripts/release-gate.sh`.
