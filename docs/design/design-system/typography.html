@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Making Tracks — design mockup</title>
+<style>
+  body { margin: 0; padding: 40px; background: #E9E5DB; font-family: -apple-system, system-ui, sans-serif; color: #2B2823; }
+  h2 { font-family: 'Newsreader', serif; font-size: 32px; font-weight: 700; margin: 0 0 8px; }
+  .subtitle { font-size: 15px; color: #6B675F; margin: 0 0 28px; max-width: 640px; }
+  p { margin: 0.4em 0; }
+</style>
+</head>
+<body>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,600&family=Besley:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Piazzolla:ital,opsz,wght@0,8..30,400;0,8..30,600;0,8..30,700;1,8..30,400&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;0,7..72,700;1,7..72,400&display=swap');
+
+  .spec {
+    background: #F3EFE5;
+    border-radius: 14px;
+    padding: 26px 28px 22px;
+    color: #2B2823;
+    margin-top: 10px;
+  }
+  .spec .eyebrow {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: #0a6b5c; font-weight: 600; margin-bottom: 10px;
+  }
+  .spec .display { font-size: 33px; line-height: 1.15; margin: 0 0 6px; font-weight: 600; }
+  .spec .placename-italic { font-size: 17px; font-style: italic; color: #5a564d; margin: 0 0 16px; }
+  .spec .cardbox {
+    background: #FBFAF2; border-radius: 10px; padding: 17px 19px;
+    box-shadow: 0 1px 3px rgba(60,50,30,0.12); margin-bottom: 6px;
+  }
+  .spec .place { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
+  .spec .cat {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 13px; color: #8a5a2b; margin: 0 0 10px;
+  }
+  .spec .body {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 14px; line-height: 1.45; color: #4a463f; margin: 0;
+  }
+  .spec .chips { display: flex; gap: 8px; margin-top: 12px; }
+  .spec .chip {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 999px;
+  }
+  .chip.save { background: rgba(10,107,92,0.12); color: #0a6b5c; }
+  .chip.seen { background: #0a6b5c; color: #FBFAF2; }
+  .chip.hide { background: rgba(43,40,35,0.08); color: #6b675f; }
+  .f-news .display, .f-news .place { font-family: 'Newsreader', serif; }
+  .f-news .placename-italic { font-family: 'Newsreader', serif; }
+  .f-besley .display, .f-besley .place { font-family: 'Besley', serif; }
+  .f-besley .placename-italic { font-family: 'Besley', serif; }
+  .f-piaz .display, .f-piaz .place { font-family: 'Piazzolla', serif; }
+  .f-piaz .placename-italic { font-family: 'Piazzolla', serif; }
+  .f-lit .display, .f-lit .place { font-family: 'Literata', serif; }
+  .f-lit .placename-italic { font-family: 'Literata', serif; }
+</style>
+
+<h2>Round 2 — what the font world actually says</h2>
+<p class="subtitle">Research verdicts: Fraunces is 2021's branding cliché (dropped). Bricolage is the SaaS-landing-page font (dropped). New York can't legally be bundled (kept only as free fallback). Below: the research's top picks plus your Literata lean, same card as before. The italic line under each headline is the cartographic gesture — on real maps, place names of rivers and features are set in serif italic.</p>
+
+<div class="options">
+  <div class="option" data-choice="newsreader" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Newsreader — the research's #1 (and now my recommendation)</h3>
+      <p>Editorial serif built for screens, optical sizes 6–72pt (survives Dynamic Type from tiny to AX5), and critics single out its italics — "insanely beautiful." Almost unused in the wild: no trend baggage. Guidebook, not startup.</p>
+      <div class="spec f-news">
+        <div class="eyebrow">Welcome · screen 1</div>
+        <div class="display">Every place has a story.</div>
+        <p class="placename-italic">along the Klang river, past the old signal house</p>
+        <div class="cardbox">
+          <p class="place">Menara Panduan Kuala Lumpur</p>
+          <p class="cat">⚑ Memorial · OpenStreetMap</p>
+          <p class="body">Nothing is sent automatically. The app prepares a file on this phone; when you share, you pick who gets it.</p>
+          <div class="chips"><span class="chip save">Save</span><span class="chip seen">Seen</span><span class="chip hide">Hide</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="besley" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Besley — the cartographic one (research runner-up)</h3>
+      <p>A modern open-source Clarendon — literally the typeface family of park signage and 19th-century maps. Sturdy enough to sit over map texture. The most "outdoors heritage" of the four; pushed too bold it goes craft-brewery.</p>
+      <div class="spec f-besley">
+        <div class="eyebrow">Welcome · screen 1</div>
+        <div class="display">Every place has a story.</div>
+        <p class="placename-italic">along the Klang river, past the old signal house</p>
+        <div class="cardbox">
+          <p class="place">Menara Panduan Kuala Lumpur</p>
+          <p class="cat">⚑ Memorial · OpenStreetMap</p>
+          <p class="body">Nothing is sent automatically. The app prepares a file on this phone; when you share, you pick who gets it.</p>
+          <div class="chips"><span class="chip save">Save</span><span class="chip seen">Seen</span><span class="chip hide">Hide</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="piazzolla" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Piazzolla — calm small, characterful large</h3>
+      <p>Critics' #1 body face of 2021: "very calm and quiet at reading sizes, but the larger it gets, the more personality it shows" — exactly how a Dynamic Type display face should behave. Slightly edgier texture than the others.</p>
+      <div class="spec f-piaz">
+        <div class="eyebrow">Welcome · screen 1</div>
+        <div class="display">Every place has a story.</div>
+        <p class="placename-italic">along the Klang river, past the old signal house</p>
+        <div class="cardbox">
+          <p class="place">Menara Panduan Kuala Lumpur</p>
+          <p class="cat">⚑ Memorial · OpenStreetMap</p>
+          <p class="body">Nothing is sent automatically. The app prepares a file on this phone; when you share, you pick who gets it.</p>
+          <div class="chips"><span class="chip save">Save</span><span class="chip seen">Seen</span><span class="chip hide">Hide</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="literata" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>Literata — your lean; the safe third</h3>
+      <p>First-rate craft, unimpeachably safe. The research's caveat: its excellence is optimized for long body reading, which we won't use it for — as a display voice it's restrained, and it's the ambient serif of reading apps (Google Play Books' default).</p>
+      <div class="spec f-lit">
+        <div class="eyebrow">Welcome · screen 1</div>
+        <div class="display">Every place has a story.</div>
+        <p class="placename-italic">along the Klang river, past the old signal house</p>
+        <div class="cardbox">
+          <p class="place">Menara Panduan Kuala Lumpur</p>
+          <p class="cat">⚑ Memorial · OpenStreetMap</p>
+          <p class="body">Nothing is sent automatically. The app prepares a file on this phone; when you share, you pick who gets it.</p>
+          <div class="chips"><span class="chip save">Save</span><span class="chip seen">Seen</span><span class="chip hide">Hide</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

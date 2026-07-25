@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Making Tracks — design mockup</title>
+<style>
+  body { margin: 0; padding: 40px; background: #E9E5DB; font-family: -apple-system, system-ui, sans-serif; color: #2B2823; }
+  h2 { font-family: 'Newsreader', serif; font-size: 32px; font-weight: 700; margin: 0 0 8px; }
+  .subtitle { font-size: 15px; color: #6B675F; margin: 0 0 28px; max-width: 640px; }
+  p { margin: 0.4em 0; }
+</style>
+</head>
+<body>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,600&display=swap');
+
+  /* ── materials ─────────────────────────────────────────────── */
+  .coh .snow {
+    --ground:#F4F1EA; --water:#C9DBE2; --park:#DCE5D4; --road:#C9BFA8; --road-minor:#DDD5C2;
+    --surface:#FBFAF2; --surface-raised:#FFFFFF; --ink:#2B2823; --muted:#6B675F;
+    --accent:#0A6B5C; --accent-contrast:#FBFAF2; --eyebrow:#8A5A2B;
+    --hairline:rgba(43,40,35,0.14); --scrim:rgba(43,40,35,0.35);
+    --pin:#E4572E; --pin-faded:rgba(228,87,46,0.35);
+    --shadow-soft:0 2px 8px rgba(43,40,35,0.10);
+    --shadow-sheet:0 -6px 20px rgba(43,40,35,0.12);
+  }
+  .coh .mud {
+    --ground:#262019; --water:#1E3038; --park:#2A3224; --road:#4A4136; --road-minor:#3A332A;
+    --surface:#322A21; --surface-raised:#3A3128; --ink:#EFE8DC; --muted:#A79E90;
+    --accent:#4DB6A0; --accent-contrast:#241E17; --eyebrow:#C9955C;
+    --hairline:rgba(239,232,220,0.14); --scrim:rgba(0,0,0,0.45);
+    --pin:#E4572E; --pin-faded:rgba(228,87,46,0.35);
+    --shadow-soft:0 2px 8px rgba(0,0,0,0.30);
+    --shadow-sheet:0 -6px 20px rgba(0,0,0,0.32);
+  }
+
+  /* ── page ──────────────────────────────────────────────────── */
+  .coh {
+    font-family:-apple-system, system-ui, sans-serif;
+    color:#2B2823;
+    background:#EDE9E0;
+    padding:32px 28px 36px;
+    border-radius:14px;
+  }
+  .coh h2 {
+    font-family:'Newsreader', serif; font-weight:600; font-size:30px;
+    line-height:1.15; margin:0 0 6px; color:#2B2823;
+  }
+  .coh .subtitle {
+    font-size:14px; line-height:1.5; color:#6B675F; margin:0 0 28px; max-width:62ch;
+  }
+  .coh .rack { display:flex; flex-wrap:wrap; gap:28px; }
+  .coh .unit { width:304px; }
+  .coh .cap { font-size:12px; line-height:1.4; color:#6B675F; margin:12px 2px 0; }
+
+  /* ── phone frame ───────────────────────────────────────────── */
+  .coh .frame {
+    position:relative; box-sizing:border-box;
+    width:304px; height:624px;
+    border:2px solid #1C1813; border-radius:40px; overflow:hidden;
+    box-shadow:0 4px 16px rgba(43,40,35,0.16);
+    background:var(--ground);
+  }
+  .coh .map { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  .coh .pins { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  .coh .scrim { position:absolute; inset:0; background:var(--scrim); }
+
+  /* ── icons ─────────────────────────────────────────────────── */
+  .coh .ico { display:block; flex:none; }
+
+  /* ── map chrome ────────────────────────────────────────────── */
+  .coh .compass {
+    position:absolute; top:16px; right:16px; width:36px; height:36px;
+    border-radius:999px; background:var(--surface); border:1px solid var(--hairline);
+    box-shadow:var(--shadow-soft); display:flex; align-items:center; justify-content:center;
+    color:var(--ink);
+  }
+  .coh .locate {
+    position:absolute; right:16px; bottom:104px; width:40px; height:40px;
+    border-radius:999px; background:var(--surface); border:1px solid var(--hairline);
+    box-shadow:var(--shadow-soft); display:flex; align-items:center; justify-content:center;
+    color:var(--accent);
+  }
+  .coh .doors {
+    position:absolute; left:0; right:0; bottom:52px;
+    display:flex; justify-content:center; gap:10px;
+  }
+  .coh .door {
+    display:inline-flex; align-items:center; gap:8px;
+    background:var(--surface); border:1px solid var(--hairline); border-radius:999px;
+    padding:10px 18px; box-shadow:var(--shadow-soft);
+    font-size:15px; font-weight:600; line-height:1; color:var(--ink);
+  }
+  .coh .door .ico { color:var(--accent); }
+  .coh .attrib {
+    position:absolute; left:0; right:0; bottom:26px; text-align:center;
+    font-size:11px; line-height:1; color:var(--muted);
+  }
+
+  /* ── sheets ────────────────────────────────────────────────── */
+  .coh .sheet {
+    position:absolute; left:0; right:0; bottom:0;
+    background:var(--surface); border-radius:22px 22px 0 0;
+    box-shadow:var(--shadow-sheet); overflow:hidden;
+  }
+  .coh .sheet-card { height:70%; }
+  .coh .sheet-door { height:75%; }
+  .coh .grabber {
+    width:36px; height:4px; border-radius:999px; background:var(--hairline);
+    margin:8px auto 0;
+  }
+
+  /* ── place card ────────────────────────────────────────────── */
+  .coh .card-body { padding:14px 20px 0; }
+  .coh .photo {
+    height:130px; border-radius:10px;
+    background:linear-gradient(140deg, var(--park) 0%, var(--water) 100%);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .coh .photo .ico { color:var(--ink); opacity:0.35; }
+  .coh .eyebrow {
+    display:flex; align-items:center; gap:6px; margin-top:16px;
+    color:var(--eyebrow); font-size:11px; font-weight:600;
+    letter-spacing:0.12em; text-transform:uppercase; line-height:1;
+  }
+  .coh .placename {
+    font-family:'Newsreader', serif; font-weight:700; font-size:24px; line-height:1.2;
+    color:var(--ink); margin:8px 0 0;
+  }
+  .coh .placesub {
+    font-family:'Newsreader', serif; font-style:italic; font-weight:400;
+    font-size:15px; line-height:1.35; color:var(--muted); margin:4px 0 0;
+  }
+  .coh .meta { font-size:14px; line-height:1.45; color:var(--muted); margin:12px 0 0; }
+
+  .coh .actionbar {
+    position:absolute; left:0; right:0; bottom:0;
+    border-top:1px solid var(--hairline); background:var(--surface);
+    padding:12px 16px 20px; display:flex; gap:8px;
+  }
+  .coh .act {
+    flex:1 1 0; height:40px; border-radius:999px;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    font-size:15px; font-weight:600; line-height:1;
+  }
+  .coh .act-tonal { background:color-mix(in srgb, var(--accent) 12%, transparent); color:var(--accent); }
+  .coh .act-filled { background:var(--accent); color:var(--accent-contrast); }
+  .coh .act-quiet { background:transparent; color:var(--muted); }
+
+  /* ── tracks door ───────────────────────────────────────────── */
+  .coh .door-body { padding:12px 18px 0; }
+  .coh .sheet-title {
+    font-family:'Newsreader', serif; font-weight:600; font-size:26px; line-height:1.15;
+    color:var(--ink); margin:0;
+  }
+  .coh .sheet-sub {
+    font-family:'Newsreader', serif; font-style:italic; font-weight:400;
+    font-size:14px; line-height:1.35; color:var(--muted); margin:4px 0 0;
+  }
+  .coh .hero {
+    margin-top:16px; background:var(--surface-raised); border-radius:14px; padding:14px;
+  }
+  .coh .hero-top { display:flex; align-items:center; gap:12px; }
+  .coh .hero .lead { color:var(--accent); }
+  .coh .hero .grow { flex:1 1 auto; min-width:0; }
+  .coh .hero-title {
+    font-family:'Newsreader', serif; font-weight:600; font-size:18px; line-height:1.2;
+    color:var(--ink); margin:0;
+  }
+  .coh .hero-meta {
+    font-size:13px; line-height:1.35; color:var(--muted); margin:6px 0 0;
+  }
+  .coh .retrace {
+    display:flex; align-items:center; gap:5px; color:var(--accent);
+    font-size:13px; font-weight:600; line-height:1;
+  }
+  .coh .sectionlabel {
+    font-size:11px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase;
+    color:var(--muted); line-height:1; margin:20px 0 4px;
+  }
+  .coh .listrow { padding:8px 0; border-bottom:1px solid var(--hairline); }
+  .coh .listrow:last-of-type { border-bottom:0; }
+  .coh .rowtop { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+  .coh .rowtitle {
+    font-family:'Newsreader', serif; font-weight:600; font-size:17px; line-height:1.25;
+    color:var(--ink); margin:0;
+  }
+  .coh .rowcount { font-size:13px; line-height:1.25; color:var(--muted); flex:none; }
+  .coh .track { height:3px; border-radius:2px; background:var(--hairline); margin-top:8px; }
+  .coh .fill { height:3px; border-radius:2px; background:var(--accent); }
+  .coh .plainrow {
+    display:flex; align-items:center; gap:10px; padding:11px 0;
+    border-top:1px solid var(--hairline);
+  }
+  .coh .plainrow .grow { flex:1 1 auto; }
+  .coh .plainrow .lead { color:var(--accent); }
+  .coh .plainrow.quiet .lead, .coh .plainrow.quiet .rowtitle, .coh .plainrow.quiet .rowcount { color:var(--muted); }
+</style>
+
+<svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false">
+  <!-- ── icon family: stroke 1.8, round caps/joins, currentColor ── -->
+  <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <symbol id="i-world" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="8.6"/>
+      <path d="M3.4 12h17.2"/>
+      <path d="M12 3.4c3.3 2.7 3.3 14.5 0 17.2"/>
+      <path d="M12 3.4c-3.3 2.7-3.3 14.5 0 17.2"/>
+    </symbol>
+    <symbol id="i-tracks" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8.2 4.4c1.7 0 2.4 1.5 2.2 3.2-.2 1.6-.6 2.4-.6 3.4 0 .9-.6 1.4-1.6 1.4s-1.6-.5-1.6-1.4c0-1-.4-1.8-.6-3.4-.2-1.7.5-3.2 2.2-3.2z"/>
+      <path d="M6.4 14.6h3.6v2.4c0 1-.7 1.6-1.8 1.6s-1.8-.6-1.8-1.6z"/>
+      <path d="M17.3 8c1.4 0 2 1.2 1.8 2.6-.2 1.3-.5 2-.5 2.8 0 .7-.5 1.2-1.3 1.2s-1.3-.5-1.3-1.2c0-.8-.3-1.5-.5-2.8-.2-1.4.4-2.6 1.8-2.6z"/>
+      <path d="M15.8 16.4h3v1.9c0 .8-.6 1.3-1.5 1.3s-1.5-.5-1.5-1.3z"/>
+    </symbol>
+    <symbol id="i-locate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20.6 3.4 3.9 10.6l7.2 2.9 2.9 7.2z"/>
+    </symbol>
+    <symbol id="i-compass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 4.4 14.6 12 12 19.6 9.4 12z"/>
+      <path d="M12 4.4 14.6 12 12 12.9 9.4 12z" fill="var(--pin)" stroke="none"/>
+    </symbol>
+    <symbol id="i-landscape" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2.6" y="4.6" width="18.8" height="14.8" rx="2.6"/>
+      <circle cx="8.2" cy="9.6" r="1.7"/>
+      <path d="M2.6 16.6 7.2 12l3.5 3.5 3.6-4.1 6.1 6.6"/>
+    </symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 3.6v16.8"/>
+      <path d="M6 4.8h9.6l-1.8 3.2 1.8 3.2H6"/>
+    </symbol>
+    <symbol id="i-bookmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6.6 4.4h10.8v15.9l-5.4-3.9-5.4 3.9z"/>
+    </symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2.6 12S6.2 5.6 12 5.6 21.4 12 21.4 12 17.8 18.4 12 18.4 2.6 12 2.6 12z"/>
+      <circle cx="12" cy="12" r="2.8"/>
+    </symbol>
+    <symbol id="i-eyeoff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4.2 4.2 19.8 19.8"/>
+      <path d="M9.8 6.1c.7-.2 1.4-.3 2.2-.3 5.8 0 9.4 6.2 9.4 6.2s-1.1 1.9-3 3.6"/>
+      <path d="M6.7 8.2C4.1 10 2.6 12 2.6 12s3.6 6.2 9.4 6.2c1.5 0 2.9-.4 4.1-1"/>
+    </symbol>
+    <symbol id="i-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 4.4 3.6 6.6v13l5.4-2.2 6 2.2 5.4-2.2v-13L15 6.6z"/>
+      <path d="M9 4.4v13"/>
+      <path d="M15 6.6v13"/>
+    </symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 19.8S4.4 15.2 4.4 10.4c0-2.6 2-4.5 4.4-4.5 1.6 0 2.6.8 3.2 1.7.6-.9 1.6-1.7 3.2-1.7 2.4 0 4.4 1.9 4.4 4.5 0 4.8-7.6 9.4-7.6 9.4z"/>
+    </symbol>
+  </g>
+
+  <!-- ── map pin glyph family (pins never theme) ── -->
+  <symbol id="pin-star" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10.6" fill="#E4572E" stroke="#B8421F" stroke-width="1.2"/>
+    <polygon points="12,6.4 13.35,10.14 17.33,10.27 14.19,12.71 15.29,16.53 12,14.3 8.71,16.53 9.81,12.71 6.67,10.27 10.65,10.14"
+      fill="none" stroke="#FFFFFF" stroke-width="1.4" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="pin-camera" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10.6" fill="#E4572E" stroke="#B8421F" stroke-width="1.2"/>
+    <g fill="none" stroke="#FFFFFF" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M7 10.2h1.9l1.1-1.8h4l1.1 1.8H17c.6 0 1 .4 1 1v5.2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1v-5.2c0-.6.4-1 1-1z"/>
+      <circle cx="12" cy="13.6" r="2.2"/>
+    </g>
+  </symbol>
+  <symbol id="pin-museum" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10.6" fill="#E4572E" stroke="#B8421F" stroke-width="1.2"/>
+    <g fill="none" stroke="#FFFFFF" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6.2 10.3 12 6.9l5.8 3.4"/>
+      <path d="M6.2 17.2h11.6"/>
+      <path d="M9 11.2v4.6M12 11.2v4.6M15 11.2v4.6"/>
+    </g>
+  </symbol>
+
+  <!-- ── the landscape: ONE geometry, painted by whichever material ── -->
+  <symbol id="mtmap" viewBox="0 0 300 620" preserveAspectRatio="xMidYMid slice">
+    <rect x="0" y="0" width="300" height="620" fill="var(--ground)"/>
+    <path d="M28 382C68 350 132 358 152 400c20 44-20 92-72 82-46-9-76-66-52-100z" fill="var(--park)"/>
+    <path d="M-20 88C60 128 40 198 110 250s80 82 65 172c-8 48 45 88 145 138"
+      fill="none" stroke="var(--water)" stroke-width="26" stroke-linecap="round"/>
+    <g fill="none" stroke="var(--road-minor)" stroke-width="4" stroke-linecap="round">
+      <path d="M212-10c-6 78 28 138 18 210 -8 58 12 108 8 180"/>
+      <path d="M-10 300c70-12 120 12 190-4 62-14 96-32 130-16"/>
+      <path d="M20 58c70 12 110-20 180 2 54 17 78 42 110 26"/>
+      <path d="M132 630c22-64 82-88 118-142 26-38 38-72 42-108"/>
+    </g>
+    <g fill="none" stroke="var(--road)" stroke-width="7" stroke-linecap="round">
+      <path d="M-10 178c92-16 158 24 210-2 44-22 88-42 110-28"/>
+      <path d="M62-10c8 100-24 172 6 262 26 78 42 122 30 218-8 66 18 96 14 156"/>
+      <path d="M-10 502c80 22 152-14 236 4 40 8 62 16 84 6"/>
+    </g>
+  </symbol>
+
+  <!-- ── the marks on it: identical across both map frames ── -->
+  <symbol id="mtpins" viewBox="0 0 300 620" preserveAspectRatio="xMidYMid slice">
+    <use href="#pin-star" x="59" y="139" width="22" height="22"/>
+    <use href="#pin-camera" x="139" y="199" width="22" height="22" opacity="0.35"/>
+    <use href="#pin-museum" x="204" y="244" width="22" height="22"/>
+    <use href="#pin-star" x="84" y="289" width="22" height="22" opacity="0.35"/>
+    <use href="#pin-camera" x="174" y="339" width="22" height="22"/>
+    <use href="#pin-museum" x="49" y="409" width="22" height="22"/>
+    <use href="#pin-star" x="229" y="419" width="22" height="22" opacity="0.35"/>
+    <use href="#pin-camera" x="129" y="454" width="22" height="22"/>
+    <g>
+      <circle cx="212" cy="152" r="13" fill="#E4572E" stroke="#B8421F" stroke-width="1.2"/>
+      <text x="212" y="156.6" text-anchor="middle" fill="#FFFFFF"
+        font-family="-apple-system, system-ui, sans-serif" font-size="12" font-weight="600">12</text>
+    </g>
+  </symbol>
+</svg>
+
+<div class="coh">
+  <h2>One language, two materials</h2>
+  <p class="subtitle">Same app, same geometry, same components — snow and mud. Pins never theme.</p>
+
+  <div class="rack">
+
+    <!-- ══ Frame 1 — Snow · Map home ══════════════════════════ -->
+    <div class="unit">
+      <div class="frame snow">
+        <svg class="map" viewBox="0 0 300 620" preserveAspectRatio="xMidYMid slice"><use href="#mtmap"/></svg>
+        <svg class="pins" viewBox="0 0 300 620" preserveAspectRatio="xMidYMid slice"><use href="#mtpins"/></svg>
+
+        <div class="compass"><svg class="ico" viewBox="0 0 24 24" width="20" height="20"><use href="#i-compass"/></svg></div>
+        <div class="locate"><svg class="ico" viewBox="0 0 24 24" width="20" height="20"><use href="#i-locate"/></svg></div>
+
+        <div class="doors">
+          <div class="door"><svg class="ico" viewBox="0 0 24 24" width="18" height="18"><use href="#i-world"/></svg>World</div>
+          <div class="door"><svg class="ico" viewBox="0 0 24 24" width="18" height="18"><use href="#i-tracks"/></svg>Tracks</div>
+        </div>
+        <div class="attrib">© OpenStreetMap</div>
+      </div>
+      <p class="cap">Snow · Map home</p>
+    </div>
+
+    <!-- ══ Frame 2 — Mud · Map home ═══════════════════════════ -->
+    <div class="unit">
+      <div class="frame mud">
+        <svg class="map" viewBox="0 0 300 620" preserveAspectRatio="xMidYMid slice"><use href="#mtmap"/></svg>
+        <svg class="pins" viewBox="0 0 300 620" preserveAspectRatio="xMidYMid slice"><use href="#mtpins"/></svg>
+
+        <div class="compass"><svg class="ico" viewBox="0 0 24 24" width="20" height="20"><use href="#i-compass"/></svg></div>
+        <div class="locate"><svg class="ico" viewBox="0 0 24 24" width="20" height="20"><use href="#i-locate"/></svg></div>
+
+        <div class="doors">
+          <div class="door"><svg class="ico" viewBox="0 0 24 24" width="18" height="18"><use href="#i-world"/></svg>World</div>
+          <div class="door"><svg class="ico" viewBox="0 0 24 24" width="18" height="18"><use href="#i-tracks"/></svg>Tracks</div>
+        </div>
+        <div class="attrib">© OpenStreetMap</div>
+      </div>
+      <p class="cap">Mud · Map home</p>
+    </div>
+
+    <!-- ══ Frame 3 — Snow · Place card ════════════════════════ -->
+    <div class="unit">
+      <div class="frame snow">
+        <svg class="map" viewBox="0 0 300 620" preserveAspectRatio="xMidYMid slice"><use href="#mtmap"/></svg>
+        <svg class="pins" viewBox="0 0 300 620" preserveAspectRatio="xMidYMid slice"><use href="#mtpins"/></svg>
+        <div class="scrim"></div>
+
+        <div class="sheet sheet-card">
+          <div class="grabber"></div>
+          <div class="card-body">
+            <div class="photo"><svg class="ico" viewBox="0 0 24 24" width="30" height="30"><use href="#i-landscape"/></svg></div>
+            <div class="eyebrow">
+              <svg class="ico" viewBox="0 0 24 24" width="13" height="13"><use href="#i-flag"/></svg>Memorial
+            </div>
+            <p class="placename">Menara Panduan Kuala Lumpur</p>
+            <p class="placesub">a beacon above the old river junction</p>
+            <p class="meta">Marked seen 20 Jul 2026 · OpenStreetMap</p>
+          </div>
+          <div class="actionbar">
+            <div class="act act-tonal"><svg class="ico" viewBox="0 0 24 24" width="17" height="17"><use href="#i-bookmark"/></svg>Save</div>
+            <div class="act act-filled"><svg class="ico" viewBox="0 0 24 24" width="17" height="17"><use href="#i-eye"/></svg>Seen</div>
+            <div class="act act-quiet"><svg class="ico" viewBox="0 0 24 24" width="17" height="17"><use href="#i-eyeoff"/></svg>Hide</div>
+          </div>
+        </div>
+      </div>
+      <p class="cap">Snow · Place card</p>
+    </div>
+
+    <!-- ══ Frame 4 — Mud · Tracks door ════════════════════════ -->
+    <div class="unit">
+      <div class="frame mud">
+        <svg class="map" viewBox="0 0 300 620" preserveAspectRatio="xMidYMid slice"><use href="#mtmap"/></svg>
+        <svg class="pins" viewBox="0 0 300 620" preserveAspectRatio="xMidYMid slice"><use href="#mtpins"/></svg>
+        <div class="scrim"></div>
+
+        <div class="sheet sheet-door">
+          <div class="grabber"></div>
+          <div class="door-body">
+            <p class="sheet-title">Tracks</p>
+            <p class="sheet-sub">your story through the world</p>
+
+            <div class="hero">
+              <div class="hero-top">
+                <svg class="ico lead" viewBox="0 0 24 24" width="22" height="22"><use href="#i-tracks"/></svg>
+                <p class="hero-title grow">My tracks</p>
+                <div class="retrace">
+                  <svg class="ico" viewBox="0 0 24 24" width="15" height="15"><use href="#i-map"/></svg>Retrace
+                </div>
+              </div>
+              <p class="hero-meta">214 visits · last: Thean Hou Temple</p>
+            </div>
+
+            <p class="sectionlabel">Lists</p>
+
+            <div class="listrow">
+              <div class="rowtop"><p class="rowtitle">Ghost signs</p><span class="rowcount">4 of 11 seen</span></div>
+              <div class="track"><div class="fill" style="width:36.4%"></div></div>
+            </div>
+            <div class="listrow">
+              <div class="rowtop"><p class="rowtitle">KL follies</p><span class="rowcount">7 of 9 seen</span></div>
+              <div class="track"><div class="fill" style="width:77.8%"></div></div>
+            </div>
+            <div class="listrow">
+              <div class="rowtop"><p class="rowtitle">Riverside plaques</p><span class="rowcount">2 of 14 seen</span></div>
+              <div class="track"><div class="fill" style="width:14.3%"></div></div>
+            </div>
+
+            <div class="plainrow">
+              <svg class="ico lead" viewBox="0 0 24 24" width="19" height="19"><use href="#i-heart"/></svg>
+              <p class="rowtitle grow">Loved places</p>
+              <span class="rowcount">23</span>
+            </div>
+            <div class="plainrow quiet">
+              <svg class="ico lead" viewBox="0 0 24 24" width="19" height="19"><use href="#i-eyeoff"/></svg>
+              <p class="rowtitle grow">Hidden places</p>
+              <span class="rowcount">7</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="cap">Mud · Tracks door</p>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>
