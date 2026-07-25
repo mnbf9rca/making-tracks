@@ -1989,6 +1989,8 @@ final class AppShellTests: XCTestCase {
     func testMapThemeColorRejectsMalformedCSSInsteadOfSubstitutingBeige() {
         XCTAssertNil(MapThemeColor.uiColor(css: "not-a-color"))
         XCTAssertNil(MapThemeColor.components(css: "not-a-color"))
+        XCTAssertNil(MapThemeColor.components(css: "-12345"))
+        XCTAssertNil(MapThemeColor.components(css: "+12345"))
         XCTAssertNil(MapThemeColor.components(css: "rgba(256, 40, 35, 0.14)"))
         XCTAssertNil(MapThemeColor.components(css: "rgba(43, 40, 35, 1.4)"))
     }

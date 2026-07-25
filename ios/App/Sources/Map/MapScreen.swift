@@ -9299,7 +9299,10 @@ enum MapThemeColor {
     static func components(css: String) -> Components? {
         let trimmed = css.trimmingCharacters(in: .whitespacesAndNewlines)
         let hex = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
-        if hex.count == 6, let rgb = Int(hex, radix: 16) {
+        let isSixDigitHex = hex.utf8.count == 6 && hex.utf8.allSatisfy { byte in
+            (48...57).contains(byte) || (65...70).contains(byte) || (97...102).contains(byte)
+        }
+        if isSixDigitHex, let rgb = Int(hex, radix: 16) {
             return Components(
                 red: CGFloat((rgb >> 16) & 0xff) / 255,
                 green: CGFloat((rgb >> 8) & 0xff) / 255,
