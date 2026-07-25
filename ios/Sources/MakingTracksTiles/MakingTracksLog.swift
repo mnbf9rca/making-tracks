@@ -51,8 +51,26 @@ public enum MakingTracksLog {
 
     public static func objectPath(_ url: URL) -> String {
         guard url.host == "tiles.making-tracks.app" else { return "unknown" }
-        let path = url.path
-        return path.isEmpty ? "/" : path
+        var components = publicObjectPathComponents(url)
+        guard !components.isEmpty else { return "/" }
+
+        if components.count >= 6,
+           ["tiles", "images", "descriptions"].contains(components[2]),
+           components[3].allSatisfy(\.isNumber),
+           components[4].allSatisfy(\.isNumber)
+        {
+            let filenameParts = components[5].split(
+                separator: ".",
+                maxSplits: 1,
+                omittingEmptySubsequences: true
+            )
+            if filenameParts.count == 2, filenameParts[0].allSatisfy(\.isNumber) {
+                components[4] = "{x}"
+                components[5] = "{y}.\(filenameParts[1])"
+            }
+        }
+
+        return "/" + components.joined(separator: "/")
     }
 
     public static func objectPublishVersion(_ url: URL) -> String {

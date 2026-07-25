@@ -225,9 +225,21 @@ struct OfflineRegionCatalog: Sendable, Equatable {
     }
 
     init(regionIndex: RegionIndex) {
-        self.zones = regionIndex.regions.map { entry in
-            guard let searchPublishVersion = Self.publishVersion(fromSearchCompactPath: entry.searchCompact.path) else {
-                preconditionFailure("RegionIndex.decode must validate search_compact.path before catalog construction")
+        self.zones = regionIndex.regions.compactMap { entry in
+            guard let searchPublishVersion = Self.publishVersion(
+                fromSearchCompactPath: entry.searchCompact.path,
+                matchingEntryID: entry.id
+            ) else {
+                MakingTracksLog.file(
+                    category: .downloads,
+                    level: .error,
+                    "region catalog entry dropped",
+                    fields: [
+                        .object("region", entry.id),
+                        .public("reason", "invalid-search-compact-publish-version"),
+                    ]
+                )
+                return nil
             }
             return OfflineRegionCatalogZone(
                 id: entry.id,
@@ -266,13 +278,31 @@ struct OfflineRegionCatalog: Sendable, Equatable {
         }
     }
 
-    private static func publishVersion(fromSearchCompactPath path: String) -> String? {
+    private static func publishVersion(
+        fromSearchCompactPath path: String,
+        matchingEntryID entryID: String
+    ) -> String? {
         let parts = path.split(separator: "/", omittingEmptySubsequences: false)
-        guard parts.count >= 4,
-              parts[parts.count - 2] == "search",
-              parts[parts.count - 1] == "compact.json"
+        guard parts.count == 4,
+              parts[0] == entryID,
+              parts[2] == "search",
+              parts[3] == "compact.json",
+              Self.isPublishVersion(parts[1])
         else { return nil }
-        return String(parts[parts.count - 3])
+        return String(parts[1])
+    }
+
+    private static func isPublishVersion(_ value: Substring) -> Bool {
+        let bytes = Array(value.utf8)
+        return bytes.count == 16
+            && bytes[0..<8].allSatisfy(Self.isASCIIDigit)
+            && bytes[8] == 84 // T
+            && bytes[9..<15].allSatisfy(Self.isASCIIDigit)
+            && bytes[15] == 90 // Z
+    }
+
+    private static func isASCIIDigit(_ byte: UInt8) -> Bool {
+        (48...57).contains(byte)
     }
 
     var rootZones: [OfflineRegionCatalogZone] {
@@ -335,7 +365,7 @@ struct OfflineRegionCatalog: Sendable, Equatable {
             )
         }
         return catalogRows + unavailableLocalRows(
-            knownZoneIDs: Set(zones.map(\.id)),
+            knownZoneIDs: Set(catalogRows.map(\.zone.id)),
             installed: installed,
             installedStorageBytes: installedStorageBytes,
             activeProgress: activeProgress,
@@ -819,6 +849,7 @@ enum TrackVisitRowDensitySpec {
 }
 
 enum TrackVisitEditorVisualSpec {
+    static let chromeMinimumHeight: CGFloat = 50
     static let paperBackground = MapThemeColor.color(hex: "#f1eddf")
     static let cardBackground = MapThemeColor.color(hex: "#fffdf7")
     static let primaryText = MapThemeColor.color(hex: "#1c1c1e")
@@ -842,11 +873,121 @@ private struct TrackVisitRowBoundsPreferenceKey: PreferenceKey {
     }
 }
 
+private struct TrackVisitCardBoundsPreferenceKey: PreferenceKey {
+    nonisolated(unsafe) static var defaultValue: [Int64: CGRect] = [:]
+
+    static func reduce(
+        value: inout [Int64: CGRect],
+        nextValue: () -> [Int64: CGRect]
+    ) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
 private struct TrackVisitViewportBoundsPreferenceKey: PreferenceKey {
     nonisolated(unsafe) static var defaultValue = CGRect.zero
 
     static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
         value = nextValue()
+    }
+}
+
+private struct TrackVisitAutoScrollRequest: Equatable {
+    let sequence: Int
+    let deltaY: CGFloat
+}
+
+@MainActor
+private struct TrackVisitAutoScrollBridge: UIViewRepresentable {
+    let request: TrackVisitAutoScrollRequest?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        guard let request,
+              context.coordinator.lastSequence != request.sequence,
+              let window = uiView.window
+        else { return }
+
+        let probeFrame = uiView.convert(uiView.bounds, to: window)
+        let candidates = collectionViews(in: window)
+            .filter {
+                $0.accessibilityIdentifier == "lists.detail.surface.track"
+                    && isEffectivelyVisible($0, in: window)
+            }
+            .map {
+                (
+                    view: $0,
+                    overlap: overlapArea($0, with: probeFrame, in: window)
+                )
+            }
+            .filter { $0.overlap > 0 }
+        guard let scrollView = candidates
+            .max(by: { $0.overlap < $1.overlap })?
+            .view
+        else { return }
+        context.coordinator.lastSequence = request.sequence
+
+        let minimumY = -scrollView.adjustedContentInset.top
+        let maximumY = max(
+            minimumY,
+            scrollView.contentSize.height
+                - scrollView.bounds.height
+                + scrollView.adjustedContentInset.bottom
+        )
+        let targetY = min(
+            maximumY,
+            max(minimumY, scrollView.contentOffset.y + request.deltaY)
+        )
+        scrollView.setContentOffset(
+            CGPoint(x: scrollView.contentOffset.x, y: targetY),
+            animated: false
+        )
+    }
+
+    private func collectionViews(in view: UIView) -> [UICollectionView] {
+        var matches = view.subviews.compactMap { $0 as? UICollectionView }
+        for subview in view.subviews {
+            matches.append(contentsOf: collectionViews(in: subview))
+        }
+        return matches
+    }
+
+    private func overlapArea(
+        _ scrollView: UICollectionView,
+        with probeFrame: CGRect,
+        in window: UIWindow
+    ) -> CGFloat {
+        let scrollFrame = scrollView.convert(scrollView.bounds, to: window)
+        let intersection = scrollFrame.intersection(probeFrame)
+        guard !intersection.isNull else { return 0 }
+        return intersection.width * intersection.height
+    }
+
+    private func isEffectivelyVisible(_ view: UIView, in window: UIWindow) -> Bool {
+        var candidate: UIView? = view
+        while let current = candidate {
+            guard !current.isHidden, current.alpha > 0.01 else { return false }
+            if current === window {
+                return true
+            }
+            candidate = current.superview
+        }
+        return false
+    }
+
+    @MainActor
+    final class Coordinator {
+        var lastSequence: Int?
     }
 }
 
@@ -1112,8 +1253,11 @@ enum TrackVisitDragVisualSpec {
         isActive ? 1.015 : 1
     }
 
-    static func offsetY(isActive: Bool) -> CGFloat {
-        isActive ? -3 : 0
+    static func overlayFrame(
+        startFrame: CGRect,
+        translationY: CGFloat
+    ) -> CGRect {
+        startFrame.offsetBy(dx: 0, dy: translationY - 3)
     }
 
     static func shadowOpacity(isActive: Bool) -> Double {
@@ -1251,7 +1395,7 @@ enum ListMapFilterChips {
                 isSelected: true
             ))
         }
-        for category in filter.categories.sorted() {
+        for category in (filter.categories ?? []).sorted() {
             chips.append(ListMapFilterChip(
                 id: "category-\(identifierSuffix(for: category))",
                 title: category,
@@ -1276,7 +1420,7 @@ enum ListMapFilterChips {
 struct TrackFilterPickerDraft: Equatable, Sendable {
     var lovedOnly: Bool
     var listIDs: Set<Int64>
-    var categories: Set<String>
+    var categories: Set<String>?
 
     init(filter: TracksVisitFilter = .all) {
         lovedOnly = filter.lovedOnly
@@ -1286,6 +1430,14 @@ struct TrackFilterPickerDraft: Equatable, Sendable {
 
     var filter: TracksVisitFilter {
         TracksVisitFilter(lovedOnly: lovedOnly, listIDs: listIDs, categories: categories)
+    }
+
+    var includesAllCategories: Bool {
+        categories == nil
+    }
+
+    mutating func selectAllCategories() {
+        categories = nil
     }
 
     mutating func toggleLoved() {
@@ -1301,10 +1453,13 @@ struct TrackFilterPickerDraft: Equatable, Sendable {
     }
 
     mutating func toggleCategory(_ category: String) {
-        if categories.contains(category) {
-            categories.remove(category)
+        var next = categories ?? []
+        if next.contains(category) {
+            next.remove(category)
+            categories = next.isEmpty ? nil : next
         } else {
-            categories.insert(category)
+            next.insert(category)
+            categories = next
         }
     }
 }
@@ -2874,7 +3029,7 @@ struct MapScreen: View {
         }
         .sheet(isPresented: $showLayers) {
             LayersSheet(
-                visibility: $layerVisibility
+                visibility: layersSheetVisibilityBinding
             )
                 .presentationDetents([.medium, .large])
                 .onAppear {
@@ -3796,29 +3951,73 @@ struct MapScreen: View {
     }
 
     private var layersButton: some View {
-        Button {
+        let visibility = layersSheetVisibility
+        return Button {
             showLayers = true
         } label: {
             layersIcon
                 .frame(width: MapHomeChromeSpec.hitTargetSide, height: MapHomeChromeSpec.hitTargetSide)
-                .background(layerVisibility.isDefault ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.accentColor), in: Circle())
+                .background(visibility.isDefault ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.accentColor), in: Circle())
                 .contentShape(Rectangle())
         }
         .accessibilityLabel("Layers")
         .accessibilityHint("Shows map layer controls")
-        .accessibilityValue(layerVisibility.isDefault ? "Default" : "Custom")
+        .accessibilityValue(visibility.isDefault ? "Default" : "Custom")
         .accessibilityIdentifier("map.layers")
     }
 
     @ViewBuilder
     private var layersIcon: some View {
-        let icon = Image(systemName: MapHomeChromeSpec.layersSymbolName(isActive: !layerVisibility.isDefault))
+        let visibility = layersSheetVisibility
+        let icon = Image(systemName: MapHomeChromeSpec.layersSymbolName(isActive: !visibility.isDefault))
             .font(.title3)
-            .foregroundStyle(layerVisibility.isDefault ? AnyShapeStyle(.primary) : AnyShapeStyle(Color.white))
-        if layerVisibility.isDefault {
+            .foregroundStyle(visibility.isDefault ? AnyShapeStyle(.primary) : AnyShapeStyle(Color.white))
+        if visibility.isDefault {
             icon.mapChromeGlyphHalo()
         } else {
             icon
+        }
+    }
+
+    private var layersSheetVisibility: MapLayerVisibility {
+        ListMapLayerVisibility.displayed(
+            discoveryVisibility: layerVisibility,
+            visitFilter: activeListMap?.visitFilter
+        )
+    }
+
+    private var layersSheetVisibilityBinding: Binding<MapLayerVisibility> {
+        Binding(
+            get: { layersSheetVisibility },
+            set: { updateLayersSheetVisibility($0) }
+        )
+    }
+
+    @MainActor
+    private func updateLayersSheetVisibility(_ visibility: MapLayerVisibility) {
+        guard var list = activeListMap else {
+            layerVisibility = visibility
+            return
+        }
+
+        layerVisibility = MapLayerVisibility(
+            categories: layerVisibility.categories,
+            showHiddenPlaces: visibility.showHiddenPlaces,
+            showCoverageShading: visibility.showCoverageShading,
+            visibleCategories: layerVisibility.visibleCategories
+        )
+
+        let nextFilter = ListMapLayerVisibility.updating(
+            visitFilter: list.visitFilter,
+            from: visibility
+        )
+        guard nextFilter != list.visitFilter else { return }
+        list.visitFilter = nextFilter
+        list.showVisited = true
+        activeListMap = list
+        stopMapTrackAutoplay()
+        Task { @MainActor in
+            await refreshActiveListMap(updateCamera: true)
         }
     }
 
@@ -5324,14 +5523,17 @@ private struct ListDetailView: View {
     @State private var actionError: String?
     @State private var selectedVisitForEditing: TrackVisit?
     @State private var trackVisitRowFrames: [Int64: CGRect] = [:]
+    @State private var trackVisitCardFrames: [Int64: CGRect] = [:]
     @State private var trackVisitViewportBounds = CGRect.zero
     @State private var draggingTrackVisitID: Int64?
     @State private var trackVisitDragStartMidY: CGFloat?
+    @State private var trackVisitDragStartCardFrame: CGRect?
+    @GestureState private var trackVisitDragTranslationY: CGFloat = 0
+    @GestureState private var trackVisitGestureIsActive = false
     @State private var trackAutoScrollTask: Task<Void, Never>?
-    @State private var trackAutoScrollTargetID: Int64?
-    @State private var trackAutoScrollTowardEnd = false
-    @State private var trackAutoScrollTick = 0
     @State private var trackAutoScrollGeneration = 0
+    @State private var trackAutoScrollRequest: TrackVisitAutoScrollRequest?
+    @State private var trackAutoScrollRequestSequence = 0
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
 
@@ -5375,21 +5577,48 @@ private struct ListDetailView: View {
         focusPlaceID == nil && !visitFilter.isActive
     }
 
+    @ViewBuilder
+    private var trackVisitEditorPage: some View {
+        if let visit = selectedVisitForEditing {
+            TrackVisitDateEditorView(
+                model: model,
+                visit: visit,
+                onChanged: {
+                    await reload()
+                    onChanged()
+                },
+                onDismiss: {
+                    selectedVisitForEditing = nil
+                }
+            )
+        }
+    }
+
     private var calendar: Calendar {
         Calendar(identifier: .gregorian)
     }
 
     var body: some View {
         if isTrackListDetail {
-            VStack(spacing: 0) {
-                trackListChrome
-                trackListBody
+            ZStack(alignment: .top) {
+                trackListPage
+                trackVisitEditorPage
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(TrackVisitEditorVisualSpec.paperBackground.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
         } else {
             collectionListBody
         }
+    }
+
+    private var trackListPage: some View {
+        VStack(spacing: 0) {
+            trackListChrome
+            trackListBody
+        }
+        .accessibilityHidden(selectedVisitForEditing != nil)
+        .allowsHitTesting(selectedVisitForEditing == nil)
     }
 
     private var trackListChrome: some View {
@@ -5414,7 +5643,7 @@ private struct ListDetailView: View {
             }
         }
         .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: 50)
+        .frame(maxWidth: .infinity, minHeight: TrackVisitEditorVisualSpec.chromeMinimumHeight)
         .background(TrackVisitEditorVisualSpec.paperBackground)
         .overlay(alignment: .bottom) {
             Rectangle()
@@ -5463,7 +5692,7 @@ private struct ListDetailView: View {
     }
 
     private var trackListBody: some View {
-        ScrollViewReader { proxy in
+        ScrollViewReader { _ in
             List {
                 Section {
                     trackSummaryCard
@@ -5491,12 +5720,16 @@ private struct ListDetailView: View {
             .scrollContentBackground(.hidden)
             .background(TrackVisitEditorVisualSpec.paperBackground)
             .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
-            .coordinateSpace(name: TrackVisitDragTrigger.coordinateSpaceName)
+            .background {
+                TrackVisitAutoScrollBridge(request: trackAutoScrollRequest)
+            }
             .overlay {
                 GeometryReader { geometry in
                     Color.clear.preference(
                         key: TrackVisitViewportBoundsPreferenceKey.self,
-                        value: CGRect(origin: .zero, size: geometry.size)
+                        value: geometry.frame(
+                            in: .named(TrackVisitDragTrigger.coordinateSpaceName)
+                        )
                     )
                 }
                 .allowsHitTesting(false)
@@ -5504,30 +5737,32 @@ private struct ListDetailView: View {
             .onPreferenceChange(TrackVisitRowBoundsPreferenceKey.self) { frames in
                 trackVisitRowFrames = frames
             }
+            .onPreferenceChange(TrackVisitCardBoundsPreferenceKey.self) { frames in
+                trackVisitCardFrames = frames
+            }
             .onPreferenceChange(TrackVisitViewportBoundsPreferenceKey.self) { bounds in
                 trackVisitViewportBounds = bounds
             }
-            .onChange(of: trackAutoScrollTick) { _, _ in
-                guard let targetID = trackAutoScrollTargetID else { return }
-                withAnimation(.linear(duration: 0.18)) {
-                    proxy.scrollTo(
-                        targetID,
-                        anchor: trackAutoScrollTowardEnd ? .bottom : .top
-                    )
+            .onChange(of: trackVisitGestureIsActive) { wasActive, isActive in
+                if wasActive, !isActive, draggingTrackVisitID != nil {
+                    resetTrackVisitDragState()
                 }
             }
-            .onDisappear { stopTrackVisitAutoScroll() }
+            .onDisappear { resetTrackVisitDragState() }
             .accessibilityIdentifier("lists.detail.surface.track")
             .task { await reload() }
             .refreshable { await reload() }
-            .sheet(item: $selectedVisitForEditing) { visit in
-                TrackVisitDateEditorView(
-                    model: model,
-                    visit: visit,
-                    onChanged: {
-                        await reload()
-                        onChanged()
-                    }
+        }
+        .coordinateSpace(name: TrackVisitDragTrigger.coordinateSpaceName)
+        .overlay(alignment: .topLeading) {
+            trackVisitReorderGestureSurfaces
+        }
+        .overlay(alignment: .topLeading) {
+            GeometryReader { geometry in
+                trackVisitDragOverlay(
+                    overlayOrigin: geometry.frame(
+                        in: .named(TrackVisitDragTrigger.coordinateSpaceName)
+                    ).origin
                 )
             }
         }
@@ -5729,84 +5964,22 @@ private struct ListDetailView: View {
                     .accessibilityIdentifier("lists.detail.track.day-header.\(visit.id)")
             }
 
-            HStack(alignment: .center, spacing: TrackVisitRowDensitySpec.horizontalSpacing) {
-                    Text("pin")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(TrackVisitEditorVisualSpec.accent)
-                        .frame(width: 30, height: 30)
-                        .background(TrackVisitEditorVisualSpec.accentSoft, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .accessibilityHidden(true)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(verbatim: visit.name)
-                            .font(.body)
-                            .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .accessibilityIdentifier("lists.detail.track.row.name.\(visit.id)")
-                        Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitTime(visit))")
-                            .font(.caption)
-                            .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
-                            .lineLimit(2)
-                            .accessibilityIdentifier("lists.detail.track.row.metadata.\(visit.id)")
+            trackVisitCard(visit)
+                .opacity(draggingTrackVisitID == visit.id ? 0 : 1)
+                .accessibilityHidden(draggingTrackVisitID == visit.id)
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(
+                            key: TrackVisitCardBoundsPreferenceKey.self,
+                            value: [
+                                visit.id: geometry.frame(
+                                    in: .named(TrackVisitDragTrigger.coordinateSpaceName)
+                                ),
+                            ]
+                        )
                     }
-                    .layoutPriority(1)
-
-                    Spacer(minLength: 4)
-
-                    Button {
-                        Task { await setLoved(visit) }
-                    } label: {
-                        Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(TrackVisitEditorVisualSpec.danger)
-                            .frame(width: 30, height: 30)
-                            .background(
-                                TrackVisitEditorVisualSpec.cardBackground,
-                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            )
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(TrackVisitEditorVisualSpec.danger, lineWidth: 1)
-                            }
-                            .frame(minWidth: 45, minHeight: 45)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
-                    .accessibilityIdentifier("lists.detail.track.row.loved.\(visit.id)")
-
-                    if canReorderTrackVisits {
-                        invariantReorderHandle(for: visit)
-                    }
-            }
-            .padding(11)
-            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
-            .background(TrackVisitEditorVisualSpec.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
-            }
-            .scaleEffect(TrackVisitDragVisualSpec.scale(isActive: draggingTrackVisitID == visit.id))
-            .offset(y: TrackVisitDragVisualSpec.offsetY(isActive: draggingTrackVisitID == visit.id))
-            .shadow(
-                color: Color.black.opacity(
-                    TrackVisitDragVisualSpec.shadowOpacity(isActive: draggingTrackVisitID == visit.id)
-                ),
-                radius: TrackVisitDragVisualSpec.shadowRadius(isActive: draggingTrackVisitID == visit.id),
-                y: TrackVisitDragVisualSpec.shadowY(isActive: draggingTrackVisitID == visit.id)
-            )
-            .zIndex(draggingTrackVisitID == visit.id ? 1 : 0)
-            .animation(.easeOut(duration: 0.12), value: draggingTrackVisitID == visit.id)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("lists.detail.track.row.card.\(visit.id)")
-            .accessibilityAction(named: "Edit visit") {
-                selectedVisitForEditing = visit
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                selectedVisitForEditing = visit
-            }
+                }
+                .animation(.easeOut(duration: 0.12), value: draggingTrackVisitID == visit.id)
         }
         .background {
             GeometryReader { geometry in
@@ -5820,6 +5993,155 @@ private struct ListDetailView: View {
                 )
             }
         }
+    }
+
+    private func trackVisitCard(_ visit: TrackVisit) -> some View {
+        HStack(alignment: .center, spacing: TrackVisitRowDensitySpec.horizontalSpacing) {
+            Text("pin")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                .frame(width: 30, height: 30)
+                .background(
+                    TrackVisitEditorVisualSpec.accentSoft,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: visit.name)
+                    .font(.body)
+                    .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .accessibilityIdentifier("lists.detail.track.row.name.\(visit.id)")
+                Text(verbatim: "\(categoryLabel(visit.category)) · \(formattedVisitTime(visit))")
+                    .font(.caption)
+                    .foregroundStyle(TrackVisitEditorVisualSpec.secondaryText)
+                    .lineLimit(2)
+                    .accessibilityIdentifier("lists.detail.track.row.metadata.\(visit.id)")
+            }
+            .layoutPriority(1)
+
+            Spacer(minLength: 4)
+
+            Button {
+                Task { await setLoved(visit) }
+            } label: {
+                Image(systemName: visit.verdict == .loved ? "heart.fill" : "heart")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(TrackVisitEditorVisualSpec.danger)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        TrackVisitEditorVisualSpec.cardBackground,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(TrackVisitEditorVisualSpec.danger, lineWidth: 1)
+                    }
+                    .frame(minWidth: 45, minHeight: 45)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(lovedButtonAccessibilityLabel(for: visit))
+            .accessibilityIdentifier("lists.detail.track.row.loved.\(visit.id)")
+
+            if canReorderTrackVisits {
+                invariantReorderHandle(for: visit)
+            }
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+        .background(
+            TrackVisitEditorVisualSpec.cardBackground,
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(TrackVisitEditorVisualSpec.divider, lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("lists.detail.track.row.card.\(visit.id)")
+        .accessibilityAction(named: "Edit visit") {
+            presentVisitEditor(visit)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            presentVisitEditor(visit)
+        }
+    }
+
+    private var trackVisitReorderGestureSurfaceFrames: [Int64: CGRect] {
+        var frames = trackVisitCardFrames
+        if let draggingTrackVisitID, let trackVisitDragStartCardFrame {
+            frames[draggingTrackVisitID] = trackVisitDragStartCardFrame
+        }
+        return frames
+    }
+
+    @ViewBuilder
+    private var trackVisitReorderGestureSurfaces: some View {
+        if canReorderTrackVisits {
+            GeometryReader { geometry in
+                let overlayOrigin = geometry.frame(
+                    in: .named(TrackVisitDragTrigger.coordinateSpaceName)
+                ).origin
+                ZStack(alignment: .topLeading) {
+                    ForEach(
+                        trackVisitReorderGestureSurfaceFrames.keys.sorted(),
+                        id: \.self
+                    ) { visitID in
+                        if let frame = trackVisitReorderGestureSurfaceFrames[visitID] {
+                            Rectangle()
+                                .fill(Color.black.opacity(0.001))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                                .position(
+                                    x: frame.maxX - 33 - overlayOrigin.x,
+                                    y: frame.midY - overlayOrigin.y
+                                )
+                                .simultaneousGesture(trackVisitReorderGesture(for: visitID))
+                                .accessibilityHidden(true)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func trackVisitDragOverlay(overlayOrigin: CGPoint) -> some View {
+        if let draggingTrackVisitID,
+           let startFrame = trackVisitDragStartCardFrame,
+           let visit = visibleTrackVisits.first(where: { $0.id == draggingTrackVisitID })
+        {
+            let frame = TrackVisitDragVisualSpec.overlayFrame(
+                startFrame: startFrame,
+                translationY: trackVisitDragTranslationY
+            )
+            trackVisitCard(visit)
+                .frame(width: frame.width, height: frame.height)
+                .scaleEffect(TrackVisitDragVisualSpec.scale(isActive: true))
+                .shadow(
+                    color: Color.black.opacity(
+                        TrackVisitDragVisualSpec.shadowOpacity(isActive: true)
+                    ),
+                    radius: TrackVisitDragVisualSpec.shadowRadius(isActive: true),
+                    y: TrackVisitDragVisualSpec.shadowY(isActive: true)
+                )
+                .position(
+                    x: frame.midX - overlayOrigin.x,
+                    y: frame.midY - overlayOrigin.y
+                )
+                .allowsHitTesting(false)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Dragging \(visit.name)")
+                .accessibilityIdentifier("lists.detail.track.row.drag-overlay.\(visit.id)")
+        }
+    }
+
+    private func presentVisitEditor(_ visit: TrackVisit) {
+        selectedVisitForEditing = visit
     }
 
     private func invariantReorderHandle(for visit: TrackVisit) -> some View {
@@ -5836,7 +6158,6 @@ private struct ListDetailView: View {
         }
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
-        .highPriorityGesture(trackVisitReorderGesture(for: visit))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Reorder \(visit.name)")
         .accessibilityHint("Drag, or swipe up or down, to change this visit's order")
@@ -5853,36 +6174,44 @@ private struct ListDetailView: View {
         .accessibilityIdentifier("lists.detail.track.row.reorder.\(visit.id)")
     }
 
-    private func trackVisitReorderGesture(for visit: TrackVisit) -> some Gesture {
+    private func trackVisitReorderGesture(for visitID: Int64) -> some Gesture {
         DragGesture(
             minimumDistance: 0,
             coordinateSpace: .named(TrackVisitDragTrigger.coordinateSpaceName)
         )
+        .updating($trackVisitDragTranslationY) { value, translationY, _ in
+            translationY = value.translation.height
+        }
+        .updating($trackVisitGestureIsActive) { _, isActive, _ in
+            isActive = true
+        }
         .onChanged { value in
-            guard canReorderTrackVisits,
-                  let sourceFrame = trackVisitRowFrames[visit.id]
-            else { return }
-            if draggingTrackVisitID != visit.id {
-                draggingTrackVisitID = visit.id
+            guard canReorderTrackVisits else { return }
+            if draggingTrackVisitID == nil {
+                guard let sourceFrame = trackVisitRowFrames[visitID],
+                    let sourceCardFrame = trackVisitCardFrames[visitID]
+                else { return }
+                draggingTrackVisitID = visitID
                 trackVisitDragStartMidY = sourceFrame.midY
+                trackVisitDragStartCardFrame = sourceCardFrame
             }
-            guard let sourceMidY = trackVisitDragStartMidY else { return }
+            guard draggingTrackVisitID == visitID,
+                  let sourceMidY = trackVisitDragStartMidY
+            else { return }
             updateTrackVisitAutoScroll(
                 dropY: sourceMidY + value.translation.height
             )
         }
         .onEnded { value in
             defer {
-                draggingTrackVisitID = nil
-                trackVisitDragStartMidY = nil
-                stopTrackVisitAutoScroll()
+                resetTrackVisitDragState()
             }
             guard canReorderTrackVisits,
-                  draggingTrackVisitID == visit.id,
+                  draggingTrackVisitID == visitID,
                   let sourceMidY = trackVisitDragStartMidY,
-                  let source = visibleTrackVisits.firstIndex(where: { $0.id == visit.id }),
+                  let source = visibleTrackVisits.firstIndex(where: { $0.id == visitID }),
                   let destination = TrackVisitDragTrigger.destinationOffset(
-                    for: visit.id,
+                    for: visitID,
                     translationY: value.translation.height,
                     sourceMidY: sourceMidY,
                     orderedVisitIDs: visibleTrackVisits.map(\.id),
@@ -5902,13 +6231,22 @@ private struct ListDetailView: View {
     }
 
     @MainActor
+    private func resetTrackVisitDragState() {
+        draggingTrackVisitID = nil
+        trackVisitDragStartMidY = nil
+        trackVisitDragStartCardFrame = nil
+        stopTrackVisitAutoScroll()
+    }
+
+    @MainActor
     private func updateTrackVisitAutoScroll(dropY: CGFloat) {
-        guard TrackVisitDragTrigger.autoScrollTargetID(
+        let targetID = TrackVisitDragTrigger.autoScrollTargetID(
             dropY: dropY,
             orderedVisitIDs: visibleTrackVisits.map(\.id),
             rowFrames: trackVisitRowFrames,
             viewportBounds: trackVisitViewportBounds
-        ) != nil
+        )
+        guard targetID != nil
         else {
             stopTrackVisitAutoScroll()
             return
@@ -5924,17 +6262,19 @@ private struct ListDetailView: View {
                 }
             }
             while !Task.isCancelled {
-                guard let targetID = TrackVisitDragTrigger.autoScrollTargetID(
+                guard TrackVisitDragTrigger.autoScrollTargetID(
                     dropY: dropY,
                     orderedVisitIDs: visibleTrackVisits.map(\.id),
                     rowFrames: trackVisitRowFrames,
                     viewportBounds: trackVisitViewportBounds
-                ) else {
+                ) != nil else {
                     return
                 }
-                trackAutoScrollTargetID = targetID
-                trackAutoScrollTowardEnd = dropY >= trackVisitViewportBounds.midY
-                trackAutoScrollTick &+= 1
+                trackAutoScrollRequestSequence &+= 1
+                trackAutoScrollRequest = TrackVisitAutoScrollRequest(
+                    sequence: trackAutoScrollRequestSequence,
+                    deltaY: dropY >= trackVisitViewportBounds.midY ? 56 : -56
+                )
                 try? await Task.sleep(for: .milliseconds(250))
             }
         }
@@ -5945,7 +6285,6 @@ private struct ListDetailView: View {
         trackAutoScrollGeneration &+= 1
         trackAutoScrollTask?.cancel()
         trackAutoScrollTask = nil
-        trackAutoScrollTargetID = nil
     }
 
     @MainActor
@@ -6152,8 +6491,8 @@ private struct ListDetailView: View {
 private struct TrackVisitDateEditorView: View {
     let model: MapScreenModel?
     let onChanged: @MainActor () async -> Void
+    let onDismiss: @MainActor () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @State private var visit: TrackVisit
     @State private var selectedDate: Date
     @State private var actionError: String?
@@ -6161,35 +6500,19 @@ private struct TrackVisitDateEditorView: View {
     init(
         model: MapScreenModel?,
         visit: TrackVisit,
-        onChanged: @escaping @MainActor () async -> Void
+        onChanged: @escaping @MainActor () async -> Void,
+        onDismiss: @escaping @MainActor () -> Void
     ) {
         self.model = model
         self.onChanged = onChanged
+        self.onDismiss = onDismiss
         _visit = State(initialValue: visit)
         _selectedDate = State(initialValue: visit.visitedAt)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Button("‹ My tracks") { dismiss() }
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(TrackVisitEditorVisualSpec.accent)
-                    .frame(minWidth: 88, minHeight: 44, alignment: .leading)
-                    .accessibilityIdentifier("lists.detail.visit-date.back")
-                Spacer()
-                Text("Visit date")
-                    .font(.headline)
-                    .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
-                    .accessibilityIdentifier("lists.detail.visit-date.title")
-                Spacer()
-                Color.clear.frame(minWidth: 88, minHeight: 44)
-            }
-            .padding(.horizontal, 16)
-            .background(TrackVisitEditorVisualSpec.paperBackground)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(TrackVisitEditorVisualSpec.divider).frame(height: 1)
-            }
+            navigationChrome
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -6290,7 +6613,7 @@ private struct TrackVisitDateEditorView: View {
                         Text(actionError).font(.caption).foregroundStyle(TrackVisitEditorVisualSpec.danger)
                     }
                     HStack {
-                        Button("Cancel") { dismiss() }
+                        Button("Cancel") { onDismiss() }
                             .foregroundStyle(TrackVisitEditorVisualSpec.accent)
                             .frame(minWidth: 100, minHeight: 44)
                         Spacer()
@@ -6305,7 +6628,35 @@ private struct TrackVisitDateEditorView: View {
             }
         }
         .background(TrackVisitEditorVisualSpec.paperBackground.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("lists.detail.visit-date.surface")
+    }
+
+    private var navigationChrome: some View {
+        HStack {
+            Button("‹ My tracks") { onDismiss() }
+                .font(.body.weight(.semibold))
+                .foregroundStyle(TrackVisitEditorVisualSpec.accent)
+                .frame(minWidth: 88, minHeight: 44, alignment: .leading)
+                .accessibilityIdentifier("lists.detail.visit-date.back")
+            Spacer()
+            Text("Visit date")
+                .font(.headline)
+                .foregroundStyle(TrackVisitEditorVisualSpec.primaryText)
+                .accessibilityIdentifier("lists.detail.visit-date.title")
+            Spacer()
+            Text("‹ My tracks")
+                .font(.body.weight(.semibold))
+                .frame(minWidth: 88, minHeight: 44, alignment: .trailing)
+                .hidden()
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: TrackVisitEditorVisualSpec.chromeMinimumHeight)
+        .background(TrackVisitEditorVisualSpec.paperBackground)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(TrackVisitEditorVisualSpec.divider).frame(height: 1)
+        }
     }
 
     @MainActor
@@ -6315,7 +6666,7 @@ private struct TrackVisitDateEditorView: View {
             try await model.updateVisitDate(visitID: visit.id, toDayContaining: selectedDate)
             actionError = nil
             await onChanged()
-            dismiss()
+            onDismiss()
         } catch {
             actionError = "Could not update that visit."
         }
@@ -6327,7 +6678,7 @@ private struct TrackVisitDateEditorView: View {
         do {
             try await model.deleteVisit(visitID: visit.id)
             await onChanged()
-            dismiss()
+            onDismiss()
         } catch {
             actionError = "Could not delete that visit."
         }
@@ -6938,6 +7289,8 @@ private struct SettingsView: View {
 }
 
 private struct DiagnosticsView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let storageStatus: StorageMenuStatus
 
     @State private var selectedWindow = DiagnosticLogWindow.lastHour
@@ -6951,17 +7304,35 @@ private struct DiagnosticsView: View {
     var body: some View {
         List {
             Section {
-                Picker("Time range", selection: $selectedWindow) {
-                    ForEach(DiagnosticLogWindow.settingsOptions, id: \.self) { window in
-                        Text(window.label).tag(window)
-                    }
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Send a diagnostic log")
+                        .font(.title3.weight(.bold))
+
+                    Text("Nothing is sent automatically. The app prepares a file on this phone; when you share, you pick who gets it.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    diagnosticsWindowPicker
+
+                    diagnosticsWindowStatus
                 }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("settings.diagnostics.window")
-            } header: {
-                Text("Send a diagnostic log")
-            } footer: {
-                Text("Nothing is sent automatically. The app prepares a file on this phone; when you share, you pick who gets it.")
+                .padding(.vertical, 4)
+            }
+
+            if artifact == nil {
+                Section("Included") {
+                    diagnosticsClassGrid(Self.includedDisclosureClasses, isIncluded: true)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("settings.diagnostics.included")
+
+                Section("Excluded") {
+                    diagnosticsClassGrid(Self.excludedDisclosureClasses, isIncluded: false)
+                    diagnosticsBullet("Your device name, exact location, and searches are not included in the export.")
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("settings.diagnostics.excluded")
             }
 
             if let artifact {
@@ -6984,12 +7355,10 @@ private struct DiagnosticsView: View {
 
             }
 
-            Section("Before sharing") {
-                if artifact != nil {
+            if artifact != nil {
+                Section("Before sharing") {
+                    diagnosticsBullet("Your device name, exact location, and searches are not included in the export.")
                     diagnosticsBullet("You choose the person or app that gets the file.")
-                }
-                diagnosticsBullet("Your device name, exact location, and searches are not included in the export.")
-                if artifact != nil {
                     diagnosticsBullet("Making Tracks has no upload endpoint.")
                 }
             }
@@ -7035,38 +7404,59 @@ private struct DiagnosticsView: View {
     private var actionBar: some View {
         HStack(spacing: 10) {
             if scrubFailed {
-                Button("Try 15 min") {
+                Button {
                     selectedWindow = .fifteenMinutes
                     beginPreparation()
+                } label: {
+                    Text("Try 15 min")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(DiagnosticsVisualSpec.accent)
                 .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("settings.diagnostics.retry-shorter")
 
-                Button("Delete logs", role: .destructive) {
+                Button(role: .destructive) {
                     showDeleteConfirmation = true
+                } label: {
+                    Text("Delete logs")
+                        .frame(minHeight: 44)
                 }
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("settings.diagnostics.delete")
             } else if let artifact {
-                Button("Cancel") {
+                Button {
                     cleanupPreparedArtifact()
+                } label: {
+                    Text("Cancel")
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
                 .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("settings.diagnostics.cancel")
 
-                Button("Share") {
+                Button {
                     shareItem = DiagnosticsShareItem(url: artifact.archiveURL)
+                } label: {
+                    Text("Share")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(DiagnosticsVisualSpec.accent)
                 .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("settings.diagnostics.share")
             } else {
-                Button(isPreparing ? "Preparing" : "Prepare") {
+                Button {
                     beginPreparation()
+                } label: {
+                    Text(isPreparing ? "Preparing" : "Prepare file")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(DiagnosticsVisualSpec.accent)
                 .disabled(isPreparing)
                 .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("settings.diagnostics.prepare")
@@ -7077,10 +7467,108 @@ private struct DiagnosticsView: View {
         .background(.bar)
     }
 
+    @ViewBuilder
+    private var diagnosticsWindowPicker: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 4) {
+                ForEach(DiagnosticLogWindow.settingsOptions, id: \.self) { window in
+                    Button {
+                        selectedWindow = window
+                    } label: {
+                        HStack {
+                            Text(window.label)
+                                .fontWeight(.semibold)
+                            Spacer()
+                            Image(systemName: selectedWindow == window ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(
+                                    selectedWindow == window ? DiagnosticsVisualSpec.accent : .secondary
+                                )
+                        }
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(
+                                    selectedWindow == window
+                                        ? DiagnosticsVisualSpec.accent.opacity(0.12)
+                                        : Color.secondary.opacity(0.06)
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isPreparing || artifact != nil)
+                    .accessibilityValue(selectedWindow == window ? "Selected" : "")
+                    .accessibilityIdentifier("settings.diagnostics.window.\(window.accessibilityID)")
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("settings.diagnostics.window")
+        } else {
+            Picker("Time range", selection: $selectedWindow) {
+                ForEach(DiagnosticLogWindow.settingsOptions, id: \.self) { window in
+                    Text(window.label).tag(window)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(isPreparing || artifact != nil)
+            .accessibilityIdentifier("settings.diagnostics.window")
+        }
+    }
+
+    private var diagnosticsWindowStatus: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Showing \(selectedWindow.statusLabel)")
+                    .font(.callout.weight(.semibold))
+                Text("Archive size is shown after Prepare.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: "arrow.up.doc")
+                .foregroundStyle(DiagnosticsVisualSpec.accent)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("settings.diagnostics.window-status")
+    }
+
     private func diagnosticsBullet(_ text: String) -> some View {
         Label(text, systemImage: "circle.fill")
             .symbolRenderingMode(.palette)
-            .foregroundStyle(.primary, Color.accentColor)
+            .foregroundStyle(.primary, DiagnosticsVisualSpec.accent)
+    }
+
+    private func diagnosticsClassGrid(_ classes: [DiagnosticsDisclosureClass], isIncluded: Bool) -> some View {
+        let columns = dynamicTypeSize.isAccessibilitySize ? [GridItem(.flexible())] : [
+            GridItem(.flexible()),
+            GridItem(.flexible()),
+        ]
+        return LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+            ForEach(classes) { item in
+                diagnosticsClassTile(item, isIncluded: isIncluded)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func diagnosticsClassTile(_ item: DiagnosticsDisclosureClass, isIncluded: Bool) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: isIncluded ? "checkmark.circle.fill" : "slash.circle")
+                .foregroundStyle(isIncluded ? DiagnosticsVisualSpec.accent : .secondary)
+                .imageScale(.medium)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Text(item.detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private func formattedByteCount(_ byteCount: Int) -> String {
@@ -7141,6 +7629,34 @@ private struct DiagnosticsView: View {
         }
     }
 
+    private static let includedDisclosureClasses: [DiagnosticsDisclosureClass] = [
+        DiagnosticsDisclosureClass(title: "App details", detail: "App release and build number."),
+        DiagnosticsDisclosureClass(title: "Device type", detail: "Model and iOS version."),
+        DiagnosticsDisclosureClass(title: "Steps in the app", detail: "Screens opened and buttons used."),
+        DiagnosticsDisclosureClass(title: "Downloaded maps", detail: "Offline maps and their versions."),
+        DiagnosticsDisclosureClass(title: "Map file links", detail: "Making Tracks map file paths."),
+        DiagnosticsDisclosureClass(title: "Problems", detail: "Status codes and failure labels."),
+        DiagnosticsDisclosureClass(title: "Load times", detail: "Fetch and map drawing times."),
+        DiagnosticsDisclosureClass(title: "Places and taps", detail: "Places opened, saved, hidden, or marked seen."),
+    ]
+
+    private static let excludedDisclosureClasses: [DiagnosticsDisclosureClass] = [
+        DiagnosticsDisclosureClass(title: "Device name", detail: "Your personal device label."),
+        DiagnosticsDisclosureClass(title: "Precise location", detail: "Your exact coordinates are not included."),
+        DiagnosticsDisclosureClass(title: "Search text", detail: "What you typed is omitted."),
+    ]
+
+}
+
+private enum DiagnosticsVisualSpec {
+    static let accent = MapThemeColor.color(hex: "#0a6b5c")
+}
+
+private struct DiagnosticsDisclosureClass: Identifiable {
+    let title: String
+    let detail: String
+
+    var id: String { title }
 }
 
 private struct DiagnosticsShareItem: Identifiable {
@@ -7288,6 +7804,28 @@ private extension DiagnosticLogWindow {
             return "Last hour"
         case .everything:
             return "Everything"
+        }
+    }
+
+    var statusLabel: String {
+        switch self {
+        case .fifteenMinutes:
+            return "the last 15 minutes"
+        case .lastHour:
+            return "the last hour"
+        case .everything:
+            return "everything"
+        }
+    }
+
+    var accessibilityID: String {
+        switch self {
+        case .fifteenMinutes:
+            return "fifteen-minutes"
+        case .lastHour:
+            return "last-hour"
+        case .everything:
+            return "everything"
         }
     }
 }
@@ -7895,11 +8433,20 @@ private struct TrackFilterPickerSheet: View {
                     }
 
                     Section("Types") {
+                        filterButton(
+                            title: "All types",
+                            systemImage: "checkmark.circle",
+                            isSelected: draft.includesAllCategories,
+                            accessibilityIdentifier: "track-filter-picker.category.all"
+                        ) {
+                            draft.selectAllCategories()
+                        }
+
                         ForEach(categoryOptions) { category in
                             filterButton(
                                 title: category.title,
                                 systemImage: PinLayers.categorySymbolNames[category.iconName] ?? "mappin",
-                                isSelected: draft.categories.contains(category.id),
+                                isSelected: draft.categories?.contains(category.id) == true,
                                 accessibilityIdentifier: "track-filter-picker.category.\(category.id)"
                             ) {
                                 draft.toggleCategory(category.id)

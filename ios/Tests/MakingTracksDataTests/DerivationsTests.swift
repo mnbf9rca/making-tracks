@@ -191,6 +191,60 @@ final class DerivationsTests: XCTestCase {
         XCTAssertEqual(summary.connectableVisitCount, 2)
     }
 
+    func testExplicitlyEmptyTrackCategoryScopeProducesNoReplayVisits() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        try db.dbQueue.write { d in
+            try insertSnapshot(
+                d,
+                placeID: "history",
+                name: "History",
+                category: "history",
+                lat: 51.50,
+                lon: -0.12,
+                tier: 2
+            )
+            try insertVisit(d, placeID: "history", timestamp: Date(timeIntervalSince1970: 10))
+        }
+
+        let visits = try db.trackVisits(
+            filter: TracksVisitFilter(categories: Set<String>())
+        )
+
+        XCTAssertTrue(visits.isEmpty)
+    }
+
+    func testTrackCategoryFallbackScopeIncludesUnknownCategories() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        try db.dbQueue.write { d in
+            try insertSnapshot(
+                d,
+                placeID: "known",
+                name: "Known",
+                category: "museum",
+                lat: 51.50,
+                lon: -0.12,
+                tier: 2
+            )
+            try insertSnapshot(
+                d,
+                placeID: "future",
+                name: "Future",
+                category: "future_category",
+                lat: 51.51,
+                lon: -0.13,
+                tier: 2
+            )
+            try insertVisit(d, placeID: "known", timestamp: Date(timeIntervalSince1970: 10))
+            try insertVisit(d, placeID: "future", timestamp: Date(timeIntervalSince1970: 20))
+        }
+
+        let visits = try db.trackVisits(
+            filter: TracksVisitFilter(categories: ["uncategorized"])
+        )
+
+        XCTAssertEqual(visits.map(\.placeID), ["future"])
+    }
+
     func testComposedLovedAndListFilterKeepsRepeatedLovedPlaceVisitsOnlyInsideSelectedLists() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
         try db.dbQueue.write { d in

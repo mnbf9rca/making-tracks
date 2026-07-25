@@ -4,7 +4,7 @@ import UIKit
 import XCTest
 import MakingTracksData
 import MakingTracksMapStyle
-import MakingTracksTiles
+@testable import MakingTracksTiles
 @testable import MakingTracks
 
 final class AppShellTests: XCTestCase {
@@ -490,6 +490,32 @@ final class AppShellTests: XCTestCase {
             draft.filter,
             TracksVisitFilter(lovedOnly: true, listIDs: [77, 88], categories: ["architecture"])
         )
+    }
+
+    func testTrackFilterPickerTreatsNoSelectedCategoryButtonsAsAllCategories() {
+        var draft = TrackFilterPickerDraft()
+
+        XCTAssertTrue(draft.includesAllCategories)
+        draft.toggleCategory("history")
+        XCTAssertEqual(draft.categories, ["history"])
+        XCTAssertFalse(draft.includesAllCategories)
+
+        draft.toggleCategory("history")
+        XCTAssertNil(draft.categories)
+        XCTAssertTrue(draft.includesAllCategories)
+        XCTAssertEqual(draft.filter, .all)
+    }
+
+    func testTrackFilterPickerCanExplicitlyReturnFromNoCategoriesToAll() {
+        var draft = TrackFilterPickerDraft(
+            filter: TracksVisitFilter(categories: Set<String>())
+        )
+
+        XCTAssertFalse(draft.includesAllCategories)
+        draft.selectAllCategories()
+
+        XCTAssertTrue(draft.includesAllCategories)
+        XCTAssertEqual(draft.filter, .all)
     }
 
     func testTrackFilterPickerActionLabelReportsOnlyScopedVisitCount() {
@@ -1249,10 +1275,24 @@ final class AppShellTests: XCTestCase {
     }
 
     func testTrackVisitDragVisualSpecLiftsOnlyTheActiveRow() {
+        let startFrame = CGRect(x: 16, y: 120, width: 370, height: 64)
+
         XCTAssertEqual(TrackVisitDragVisualSpec.scale(isActive: false), 1)
         XCTAssertGreaterThan(TrackVisitDragVisualSpec.scale(isActive: true), 1)
-        XCTAssertEqual(TrackVisitDragVisualSpec.offsetY(isActive: false), 0)
-        XCTAssertLessThan(TrackVisitDragVisualSpec.offsetY(isActive: true), 0)
+        XCTAssertEqual(
+            TrackVisitDragVisualSpec.overlayFrame(
+                startFrame: startFrame,
+                translationY: 90
+            ),
+            CGRect(x: 16, y: 207, width: 370, height: 64)
+        )
+        XCTAssertEqual(
+            TrackVisitDragVisualSpec.overlayFrame(
+                startFrame: startFrame,
+                translationY: -90
+            ),
+            CGRect(x: 16, y: 27, width: 370, height: 64)
+        )
         XCTAssertEqual(TrackVisitDragVisualSpec.shadowOpacity(isActive: false), 0)
         XCTAssertGreaterThan(TrackVisitDragVisualSpec.shadowOpacity(isActive: true), 0)
     }
@@ -2043,6 +2083,63 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(rows.map(\.state), [.notInstalled, .notInstalled])
     }
 
+    func testOfflineRegionCatalogDropsConstructedZoneWithMalformedSearchCompactPath() {
+        let catalog = OfflineRegionCatalog(
+            regionIndex: appConstructedRegionIndexWithMalformedSearchCompactPath()
+        )
+
+        XCTAssertEqual(catalog.zones.map(\.id), ["malaysia-singapore-brunei"])
+        XCTAssertEqual(catalog.zone(id: "malaysia-singapore-brunei")?.searchCompactPublishVersion, "20260719T125813Z")
+        XCTAssertNil(catalog.zone(id: "malaysia-singapore-brunei_kl"))
+        XCTAssertNil(catalog.zone(id: "malaysia-singapore-brunei_wrong-path-id"))
+        XCTAssertNil(catalog.zone(id: "malaysia-singapore-brunei_invalid-version"))
+        XCTAssertNil(catalog.zone(id: "malaysia-singapore-brunei_trailing-extra"))
+        XCTAssertNil(catalog.zone(id: "malaysia-singapore-brunei_nondigit-version"))
+        let rows = catalog.rows(
+            installed: [:],
+            availablePublishVersions: [
+                "malaysia-singapore-brunei": "20260719T125813Z",
+                "malaysia-singapore-brunei_kl": "20260719T125813Z",
+                "malaysia-singapore-brunei_wrong-path-id": "20260719T125813Z",
+                "malaysia-singapore-brunei_invalid-version": "not-a-publish-version",
+                "malaysia-singapore-brunei_trailing-extra": "20260719T125813Z",
+                "malaysia-singapore-brunei_nondigit-version": "2026071XT125813Z",
+            ],
+            activeProgress: nil,
+            quarantines: []
+        )
+        XCTAssertEqual(rows.map(\.zone.id), ["malaysia-singapore-brunei"])
+        XCTAssertEqual(rows.map(\.state), [.notInstalled])
+    }
+
+    func testOfflineRegionCatalogRecordsDroppedMalformedZoneInDiagnostics() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OfflineRegionCatalogDropLogs-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DiagnosticLogStore(root: root)
+        MakingTracksLog.configureDiagnosticLogStore(store)
+        defer { MakingTracksLog.configureDiagnosticLogStore(nil) }
+
+        _ = OfflineRegionCatalog(
+            regionIndex: appConstructedRegionIndexWithMalformedSearchCompactPath()
+        )
+
+        let droppedLines = try store.snapshotLines(window: .everything).filter {
+            $0.contains("downloads error region catalog entry dropped")
+        }
+        XCTAssertEqual(droppedLines.count, 5)
+        for region in [
+            "malaysia-singapore-brunei_kl",
+            "malaysia-singapore-brunei_wrong-path-id",
+            "malaysia-singapore-brunei_invalid-version",
+            "malaysia-singapore-brunei_trailing-extra",
+            "malaysia-singapore-brunei_nondigit-version",
+        ] {
+            let line = try XCTUnwrap(droppedLines.first { $0.contains("region=\(region)") })
+            XCTAssertTrue(line.contains("reason=invalid-search-compact-publish-version"), line)
+        }
+    }
+
     func testOfflineRegionRowsSurfaceProgressUpdatesAndQuarantines() {
         let catalog = OfflineRegionCatalog.debugFixture
         let progress = OfflineDownloadProgress(
@@ -2207,6 +2304,27 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(paused?.cancelRegion, "uk_london")
         XCTAssertEqual(quarantined?.state, .unavailable)
         XCTAssertTrue(quarantined?.allowsDelete == true)
+    }
+
+    func testOfflineRegionRowsSurfaceInstalledValidChildOfDroppedParentForCleanup() {
+        let catalog = OfflineRegionCatalog(
+            regionIndex: appConstructedRegionIndexWithMalformedParentAndValidChild()
+        )
+
+        XCTAssertNil(catalog.zone(id: "orphan-parent"))
+        XCTAssertNotNil(catalog.zone(id: "orphan-parent_child"))
+        XCTAssertTrue(catalog.rootZones.isEmpty)
+
+        let rows = catalog.rows(
+            installed: ["orphan-parent_child": "20260719T125813Z"],
+            activeProgress: nil,
+            quarantines: []
+        )
+        let child = rows.first { $0.zone.id == "orphan-parent_child" }
+
+        XCTAssertEqual(rows.map(\.zone.id), ["orphan-parent_child"])
+        XCTAssertEqual(child?.state, .unavailable)
+        XCTAssertTrue(child?.hasUnavailableLocalData == true)
     }
 
     func testOfflineRegionRowsOfferCleanupForUnavailablePausedUnknownRegion() {
@@ -3019,6 +3137,168 @@ private func appRegionIndexV3Object() -> [String: Any] {
             ]),
         ],
     ]
+}
+
+private func appConstructedRegionIndexWithMalformedSearchCompactPath() -> RegionIndex {
+    let validSearchCompact = RegionIndex.SearchCompact(
+        path: "malaysia-singapore-brunei/20260719T125813Z/search/compact.json",
+        sha256: String(repeating: "a", count: 64),
+        bytes: 208,
+        schemaVersion: 1
+    )
+    let malformedSearchCompact = RegionIndex.SearchCompact(
+        path: "malaysia-singapore-brunei_kl/search/compact.json",
+        sha256: String(repeating: "b", count: 64),
+        bytes: 197,
+        schemaVersion: 1
+    )
+    let wrongPathIDSearchCompact = RegionIndex.SearchCompact(
+        path: "wrong-region/20260719T125813Z/search/compact.json",
+        sha256: String(repeating: "c", count: 64),
+        bytes: 196,
+        schemaVersion: 1
+    )
+    let invalidVersionSearchCompact = RegionIndex.SearchCompact(
+        path: "malaysia-singapore-brunei_invalid-version/not-a-publish-version/search/compact.json",
+        sha256: String(repeating: "d", count: 64),
+        bytes: 195,
+        schemaVersion: 1
+    )
+    let trailingExtraSearchCompact = RegionIndex.SearchCompact(
+        path: "malaysia-singapore-brunei_trailing-extra/20260719T125813Z/search/compact.json/extra",
+        sha256: String(repeating: "e", count: 64),
+        bytes: 194,
+        schemaVersion: 1
+    )
+    let nondigitVersionSearchCompact = RegionIndex.SearchCompact(
+        path: "malaysia-singapore-brunei_nondigit-version/2026071XT125813Z/search/compact.json",
+        sha256: String(repeating: "f", count: 64),
+        bytes: 193,
+        schemaVersion: 1
+    )
+    return RegionIndex(
+        schemaVersion: 3,
+        minReaderVersion: 1,
+        generatedAt: "2026-07-20T12:00:00Z",
+        regions: [
+            RegionIndex.Entry(
+                id: "malaysia-singapore-brunei",
+                displayName: "Malaysia, Singapore, and Brunei",
+                parent: nil,
+                bbox: BBox(minLon: 99.0, minLat: -1.5, maxLon: 120.0, maxLat: 7.5),
+                publishVersion: "20260719T125813Z",
+                searchCompact: validSearchCompact,
+                basemapBytes: 4_000_000,
+                tileCount: 12,
+                bytesWithoutThumbnails: 228_849_472,
+                bytesWithThumbnails: 240_582_030
+            ),
+            RegionIndex.Entry(
+                id: "malaysia-singapore-brunei_kl",
+                displayName: "Kuala Lumpur",
+                parent: "malaysia-singapore-brunei",
+                bbox: BBox(minLon: 101.4, minLat: 2.8, maxLon: 101.9, maxLat: 3.4),
+                publishVersion: "20260719T125813Z",
+                searchCompact: malformedSearchCompact,
+                basemapBytes: 1_000_000,
+                tileCount: 4,
+                bytesWithoutThumbnails: 33_000_000,
+                bytesWithThumbnails: 41_000_000
+            ),
+            RegionIndex.Entry(
+                id: "malaysia-singapore-brunei_wrong-path-id",
+                displayName: "Wrong Path ID",
+                parent: "malaysia-singapore-brunei",
+                bbox: BBox(minLon: 101.0, minLat: 2.0, maxLon: 102.0, maxLat: 3.0),
+                publishVersion: "20260719T125813Z",
+                searchCompact: wrongPathIDSearchCompact,
+                basemapBytes: 900_000,
+                tileCount: 3,
+                bytesWithoutThumbnails: 32_000_000,
+                bytesWithThumbnails: 40_000_000
+            ),
+            RegionIndex.Entry(
+                id: "malaysia-singapore-brunei_invalid-version",
+                displayName: "Invalid Version",
+                parent: "malaysia-singapore-brunei",
+                bbox: BBox(minLon: 102.0, minLat: 3.0, maxLon: 103.0, maxLat: 4.0),
+                publishVersion: "20260719T125813Z",
+                searchCompact: invalidVersionSearchCompact,
+                basemapBytes: 800_000,
+                tileCount: 2,
+                bytesWithoutThumbnails: 31_000_000,
+                bytesWithThumbnails: 39_000_000
+            ),
+            RegionIndex.Entry(
+                id: "malaysia-singapore-brunei_trailing-extra",
+                displayName: "Trailing Extra",
+                parent: "malaysia-singapore-brunei",
+                bbox: BBox(minLon: 103.0, minLat: 4.0, maxLon: 104.0, maxLat: 5.0),
+                publishVersion: "20260719T125813Z",
+                searchCompact: trailingExtraSearchCompact,
+                basemapBytes: 700_000,
+                tileCount: 2,
+                bytesWithoutThumbnails: 30_000_000,
+                bytesWithThumbnails: 38_000_000
+            ),
+            RegionIndex.Entry(
+                id: "malaysia-singapore-brunei_nondigit-version",
+                displayName: "Nondigit Version",
+                parent: "malaysia-singapore-brunei",
+                bbox: BBox(minLon: 104.0, minLat: 5.0, maxLon: 105.0, maxLat: 6.0),
+                publishVersion: "20260719T125813Z",
+                searchCompact: nondigitVersionSearchCompact,
+                basemapBytes: 600_000,
+                tileCount: 1,
+                bytesWithoutThumbnails: 29_000_000,
+                bytesWithThumbnails: 37_000_000
+            ),
+        ]
+    )
+}
+
+private func appConstructedRegionIndexWithMalformedParentAndValidChild() -> RegionIndex {
+    RegionIndex(
+        schemaVersion: 3,
+        minReaderVersion: 1,
+        generatedAt: "2026-07-20T12:00:00Z",
+        regions: [
+            RegionIndex.Entry(
+                id: "orphan-parent",
+                displayName: "Orphan Parent",
+                parent: nil,
+                bbox: BBox(minLon: 99.0, minLat: -1.5, maxLon: 120.0, maxLat: 7.5),
+                publishVersion: "20260719T125813Z",
+                searchCompact: RegionIndex.SearchCompact(
+                    path: "orphan-parent/search/compact.json",
+                    sha256: String(repeating: "a", count: 64),
+                    bytes: 208,
+                    schemaVersion: 1
+                ),
+                basemapBytes: 4_000_000,
+                tileCount: 12,
+                bytesWithoutThumbnails: 228_849_472,
+                bytesWithThumbnails: 240_582_030
+            ),
+            RegionIndex.Entry(
+                id: "orphan-parent_child",
+                displayName: "Orphan Child",
+                parent: "orphan-parent",
+                bbox: BBox(minLon: 101.4, minLat: 2.8, maxLon: 101.9, maxLat: 3.4),
+                publishVersion: "20260719T125813Z",
+                searchCompact: RegionIndex.SearchCompact(
+                    path: "orphan-parent_child/20260719T125813Z/search/compact.json",
+                    sha256: String(repeating: "b", count: 64),
+                    bytes: 197,
+                    schemaVersion: 1
+                ),
+                basemapBytes: 1_000_000,
+                tileCount: 4,
+                bytesWithoutThumbnails: 33_000_000,
+                bytesWithThumbnails: 41_000_000
+            ),
+        ]
+    )
 }
 
 private func appRegionIndexV3Entry(_ overrides: [String: Any] = [:]) -> [String: Any] {

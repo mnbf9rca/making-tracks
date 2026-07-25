@@ -1053,6 +1053,182 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
     }
 
+    func testMyTracksReorderHandleDragMovesTheSelectedVisit() {
+        let app = launch(
+            reset: true,
+            seedVisitsEditorVisual: true,
+            hideFixtureChrome: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.tracks"].tap()
+
+        let trackSurface = app.collectionViews["lists.detail.surface.track"]
+        XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
+        let sourceCard = app.otherElements["lists.detail.track.row.card.1"]
+        let displacedCard = app.otherElements["lists.detail.track.row.card.2"]
+        let targetCard = app.otherElements["lists.detail.track.row.card.3"]
+        let sourceHandle = element(identifier: "lists.detail.track.row.reorder.1", in: app)
+        let targetHandle = element(identifier: "lists.detail.track.row.reorder.3", in: app)
+        XCTAssertTrue(sourceCard.exists)
+        XCTAssertTrue(displacedCard.exists)
+        XCTAssertTrue(targetCard.exists)
+        XCTAssertTrue(sourceHandle.exists)
+        XCTAssertTrue(targetHandle.exists)
+        XCTAssertLessThan(sourceCard.frame.minY, displacedCard.frame.minY)
+
+        sourceHandle.press(forDuration: 0.5, thenDragTo: targetHandle)
+
+        let reordered = NSPredicate { _, _ in
+            sourceCard.exists
+                && displacedCard.exists
+                && sourceCard.frame.minY > displacedCard.frame.minY
+        }
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: reordered, object: sourceCard)],
+                timeout: 5
+            ),
+            .completed,
+            "Dragging visit 1 to visit 3 must move the selected visit through the real SwiftUI gesture path"
+        )
+    }
+
+    func testMyTracksReorderHandleDragSurvivesEdgeAutoScroll() {
+        let app = launch(
+            reset: true,
+            seedVisitsEditorVisual: true,
+            hideFixtureChrome: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.tracks"].tap()
+
+        let trackSurface = app.collectionViews["lists.detail.surface.track"]
+        XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
+        let sourceCard = app.otherElements["lists.detail.track.row.card.1"]
+        let initiallyOffscreenCard = app.otherElements["lists.detail.track.row.card.8"]
+        let sourceHandle = element(identifier: "lists.detail.track.row.reorder.1", in: app)
+        XCTAssertTrue(sourceCard.exists)
+        XCTAssertTrue(sourceHandle.exists)
+        XCTAssertFalse(
+            initiallyOffscreenCard.exists
+                && initiallyOffscreenCard.frame.intersects(trackSurface.frame),
+            "Visit 8 must begin outside the rendered viewport so it can witness auto-scroll"
+        )
+
+        let dragStart = sourceHandle.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+        )
+        let lowerEdge = trackSurface.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.9, dy: 0.96)
+        )
+        dragStart.press(
+            forDuration: 0.5,
+            thenDragTo: lowerEdge,
+            withVelocity: .slow,
+            thenHoldForDuration: 3
+        )
+
+        let autoScrolled = NSPredicate { _, _ in
+            initiallyOffscreenCard.exists
+                && initiallyOffscreenCard.frame.intersects(trackSurface.frame)
+        }
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [
+                    XCTNSPredicateExpectation(
+                        predicate: autoScrolled,
+                        object: initiallyOffscreenCard
+                    ),
+                ],
+                timeout: 5
+            ),
+            .completed,
+            "Holding at the lower edge must scroll visit 8 into the rendered viewport"
+        )
+
+        trackSurface.swipeUp()
+        let persistedBeyondWitness = NSPredicate { _, _ in
+            initiallyOffscreenCard.exists
+                && sourceCard.exists
+                && initiallyOffscreenCard.frame.minY < sourceCard.frame.minY
+        }
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [
+                    XCTNSPredicateExpectation(
+                        predicate: persistedBeyondWitness,
+                        object: sourceCard
+                    ),
+                ],
+                timeout: 5
+            ),
+            .completed,
+            "The persisted order must place visit 1 beyond the initially offscreen visit 8"
+        )
+    }
+
+    func testMyTracksTrailingGutterStillScrollsOutsideReorderHandles() {
+        let app = launch(
+            reset: true,
+            seedVisitsEditorVisual: true,
+            hideFixtureChrome: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.tracks"].tap()
+
+        let trackSurface = app.collectionViews["lists.detail.surface.track"]
+        XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
+        let firstCard = app.otherElements["lists.detail.track.row.card.1"]
+        let initiallyOffscreenCard = app.otherElements["lists.detail.track.row.card.8"]
+        XCTAssertTrue(firstCard.exists)
+        XCTAssertFalse(
+            initiallyOffscreenCard.exists
+                && initiallyOffscreenCard.frame.intersects(trackSurface.frame)
+        )
+
+        let gutterStartY = max(
+            0.2,
+            min(
+                0.8,
+                (firstCard.frame.minY - trackSurface.frame.minY - 3)
+                    / trackSurface.frame.height
+            )
+        )
+        let gutterStart = trackSurface.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.98, dy: gutterStartY)
+        )
+        let gutterEnd = trackSurface.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.98, dy: 0.12)
+        )
+        gutterStart.press(
+            forDuration: 0.05,
+            thenDragTo: gutterEnd,
+            withVelocity: .fast,
+            thenHoldForDuration: 0
+        )
+
+        let scrolled = NSPredicate { _, _ in
+            initiallyOffscreenCard.exists
+                && initiallyOffscreenCard.frame.intersects(trackSurface.frame)
+        }
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [
+                    XCTNSPredicateExpectation(
+                        predicate: scrolled,
+                        object: initiallyOffscreenCard
+                    ),
+                ],
+                timeout: 5
+            ),
+            .completed,
+            "A vertical swipe in the trailing List gutter must scroll rather than start a reorder"
+        )
+    }
+
     func testMyTracksRenderedPixelOraclesAcrossLightAndDarkAppearances() {
         guard let light = assertMyTracksRenderedPixelOracle(
             forceDarkAppearance: false,
@@ -1084,7 +1260,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(light.visitDateSurfaceFrame, dark.visitDateSurfaceFrame)
         let visitDateComparisonFrame = light.visitDateSurfaceFrame
             .intersection(dark.visitDateSurfaceFrame)
-            .insetBy(dx: 1, dy: 1)
+            // The system-owned sheet corners expose the appearance-dependent
+            // map underneath. Compare the opaque editor interior, including
+            // its navigation content, rather than those translucent corners.
+            .insetBy(dx: 20, dy: 1)
         guard let visitDateDifferenceCount = light.visitDateRaster.differingPixelCount(
             comparedTo: dark.visitDateRaster,
             in: visitDateComparisonFrame
@@ -1214,6 +1393,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.buttons["lists.detail.visit-date.delete"].waitForExistence(timeout: 5))
         XCTAssertGreaterThanOrEqual(app.buttons["lists.detail.visit-date.delete"].frame.width, 44)
         XCTAssertGreaterThanOrEqual(app.buttons["lists.detail.visit-date.delete"].frame.height, 44)
+        let visitBack = app.buttons["lists.detail.visit-date.back"]
+        let visitTitle = app.staticTexts["lists.detail.visit-date.title"]
+        XCTAssertTrue(visitBack.exists)
+        XCTAssertTrue(visitTitle.exists)
+        XCTAssertFalse(
+            visitBack.frame.intersects(visitTitle.frame),
+            "Visit date Back control must not collide with the title at accessibility text sizes"
+        )
     }
 
     func testTracksMenuAndListsMyTracksReachSameScreenIdentity() {
@@ -1599,6 +1786,184 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Dense Pin 2"].waitForExistence(timeout: 5))
     }
 
+    func testTrackCategoryFilterScopesReplayTimelineAndAutoplay() {
+        let app = launch(
+            reset: true,
+            seedVisitsEditorVisual: true,
+            trackReplayBeatDuration: 5
+        )
+
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["My tracks"].tap()
+        XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+
+        let filter = element(identifier: "map.list-mode.filter.loved", in: app)
+        XCTAssertTrue(filter.waitForExistence(timeout: 5))
+        filter.tap()
+        XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
+        let attraction = app.buttons["track-filter-picker.category.attraction"]
+        XCTAssertTrue(scrollToHittable(attraction, in: app))
+        attraction.tap()
+        XCTAssertTrue(waitForButtonLabel("Show 2 visits", identifier: "track-filter-picker.apply", in: app))
+        app.buttons["track-filter-picker.apply"].tap()
+
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 2 of 2", in: app))
+        XCTAssertTrue(waitForTrackReplayArrival(
+            prefix: "Visit 2 of 2, Petronas Twin Towers Observation Deck",
+            in: app
+        ))
+
+        let play = app.buttons["map.track-replay.play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 5))
+        play.tap()
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 1 of 2", in: app))
+        XCTAssertTrue(waitForTrackReplayArrival(
+            prefix: "Visit 1 of 2, Ghost Sign",
+            in: app
+        ))
+        play.tap()
+    }
+
+    func testLayersCategoryFilterScopesReplayTimelineAndAutoplay() {
+        let app = launch(
+            reset: true,
+            seedVisitsEditorVisual: true,
+            trackReplayBeatDuration: 5
+        )
+
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["My tracks"].tap()
+        XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+
+        openLayers(in: app)
+        let toggleAll = app.buttons["map.layers.show-all-categories"]
+        XCTAssertTrue(scrollToHittable(toggleAll, in: app))
+        XCTAssertEqual(toggleAll.label, "Hide all categories")
+        toggleAll.tap()
+        XCTAssertTrue(waitForButtonLabel(
+            "Show all categories",
+            identifier: "map.layers.show-all-categories",
+            in: app
+        ))
+
+        let attraction = "map.layers.category.attraction"
+        XCTAssertTrue(scrollToHittable(app.switches[attraction], in: app))
+        tapSwitch(in: app, identifier: attraction, expectedValue: "1")
+        app.buttons["map.layers.done"].tap()
+
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 2 of 2", in: app))
+        XCTAssertTrue(waitForTrackReplayArrival(
+            prefix: "Visit 2 of 2, Petronas Twin Towers Observation Deck",
+            in: app
+        ))
+
+        let play = app.buttons["map.track-replay.play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 5))
+        play.tap()
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 1 of 2", in: app))
+        XCTAssertTrue(waitForTrackReplayArrival(
+            prefix: "Visit 1 of 2, Ghost Sign",
+            in: app
+        ))
+        play.tap()
+    }
+
+    func testLayersOtherCategoryScopesReplayToFallbackVisits() {
+        let app = launch(
+            reset: true,
+            seedVisitsEditorVisual: true,
+            trackReplayBeatDuration: 5
+        )
+
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["My tracks"].tap()
+        XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+
+        openLayers(in: app)
+        let toggleAll = app.buttons["map.layers.show-all-categories"]
+        XCTAssertTrue(scrollToHittable(toggleAll, in: app))
+        toggleAll.tap()
+
+        let other = "map.layers.category.uncategorized"
+        XCTAssertTrue(scrollToHittable(app.switches[other], in: app))
+        tapSwitch(in: app, identifier: other, expectedValue: "1")
+        app.buttons["map.layers.done"].tap()
+
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 3 of 3", in: app))
+        XCTAssertTrue(waitForTrackReplayArrival(
+            prefix: "Visit 3 of 3, Jalan Alor Night Market",
+            in: app
+        ))
+
+        let play = app.buttons["map.track-replay.play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 5))
+        play.tap()
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 1 of 3", in: app))
+        XCTAssertTrue(waitForTrackReplayArrival(
+            prefix: "Visit 1 of 3, Central Market",
+            in: app
+        ))
+        play.tap()
+    }
+
+    func testFilterTracksExplicitlyReturnsFromNoCategoriesToAll() {
+        let app = launch(reset: true, seedVisitsEditorVisual: true)
+
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openAppMenu(in: app)
+        app.buttons["menu.row.lists"].tap()
+        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
+        app.staticTexts["My tracks"].tap()
+        XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+
+        openLayers(in: app)
+        let toggleAll = app.buttons["map.layers.show-all-categories"]
+        XCTAssertTrue(scrollToHittable(toggleAll, in: app))
+        toggleAll.tap()
+        app.buttons["map.layers.done"].tap()
+
+        let filter = element(identifier: "map.list-mode.filter.loved", in: app)
+        XCTAssertTrue(filter.waitForExistence(timeout: 5))
+        filter.tap()
+        XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
+
+        let allTypes = app.buttons["track-filter-picker.category.all"]
+        XCTAssertTrue(scrollToHittable(allTypes, in: app))
+        XCTAssertEqual(allTypes.value as? String, "Not selected")
+        XCTAssertTrue(waitForButtonLabel("Show 0 visits", identifier: "track-filter-picker.apply", in: app))
+        allTypes.tap()
+        XCTAssertTrue(waitForElementValue(
+            "Selected",
+            identifier: "track-filter-picker.category.all",
+            in: app
+        ))
+        XCTAssertTrue(waitForButtonLabel("Show 8 visits", identifier: "track-filter-picker.apply", in: app))
+        app.buttons["track-filter-picker.apply"].tap()
+
+        XCTAssertTrue(waitForTrackReplayCounter("Visit 8 of 8", in: app))
+        XCTAssertTrue(waitForTrackReplayArrival(
+            prefix: "Visit 8 of 8, Jalan Alor Night Market",
+            in: app
+        ))
+    }
+
     func testListMapBackReturnsToSeededListDetail() {
         let app = launch(reset: true, pinDiagnostics: true, seedTrackList: true)
 
@@ -1924,7 +2289,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Offline maps"].waitForExistence(timeout: 5))
     }
 
-    func testDiagnosticsShowsScopedExclusionBeforePrepareInDarkAppearance() {
+    func testDiagnosticsMatchesRuledReviewGuardrailsBeforePrepareInDarkAppearance() {
         // This asserts structural presence under a dark launch, not dark-color legibility.
         let app = launch(reset: true, forceDarkAppearance: true)
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
@@ -1934,12 +2299,95 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(scrollToHittable(diagnostics, in: app))
         diagnostics.tap()
 
+        let windowStatus = app.descendants(matching: .any)["settings.diagnostics.window-status"]
+        XCTAssertTrue(windowStatus.waitForExistence(timeout: 5))
+
+        let included = app.descendants(matching: .any)["settings.diagnostics.included"]
+        XCTAssertTrue(scrollToExistence(of: included, in: app))
+
+        for title in [
+            "App details", "Device type", "Steps in the app", "Downloaded maps",
+            "Map file links", "Problems", "Load times", "Places and taps",
+            "Device name", "Precise location", "Search text",
+        ] {
+            let disclosure = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH %@", title))
+                .firstMatch
+            XCTAssertTrue(scrollToExistence(of: disclosure, in: app), title)
+        }
+
+        let excluded = app.descendants(matching: .any)["settings.diagnostics.excluded"]
+        XCTAssertTrue(scrollToExistence(of: excluded, in: app))
+
         let exclusion = app.staticTexts[
             "Your device name, exact location, and searches are not included in the export."
         ]
         XCTAssertTrue(scrollToExistence(of: exclusion, in: app))
         XCTAssertTrue(exclusion.isHittable)
+        let prepare = app.buttons["settings.diagnostics.prepare"]
+        XCTAssertTrue(prepare.exists)
+        XCTAssertEqual(prepare.label, "Prepare file")
         attachScreenshot(named: "diagnostics-preprepare-exclusions-dark")
+    }
+
+    func testDiagnosticsAXXXLKeepsClassLabelsAndDropsSupportingBlurbs() {
+        let app = launch(reset: true, accessibilityTextSize: true)
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["map.menu"].waitForExistence(timeout: 5))
+        app.buttons["map.menu"].tap()
+        app.buttons["menu.row.settings"].tap()
+        let diagnostics = app.buttons["settings.diagnostics.export"]
+        XCTAssertTrue(scrollToHittable(diagnostics, in: app))
+        diagnostics.tap()
+
+        let windowOptionIdentifiers = [
+            "settings.diagnostics.window.fifteen-minutes",
+            "settings.diagnostics.window.last-hour",
+            "settings.diagnostics.window.everything",
+        ]
+        for identifier in windowOptionIdentifiers {
+            let option = app.buttons[identifier]
+            XCTAssertTrue(option.waitForExistence(timeout: 5), identifier)
+            XCTAssertGreaterThanOrEqual(option.frame.height, 44, identifier)
+        }
+        app.buttons[windowOptionIdentifiers[0]].tap()
+        let windowStatus = app.descendants(matching: .any)["settings.diagnostics.window-status"]
+        XCTAssertTrue(windowStatus.waitForExistence(timeout: 5))
+        XCTAssertTrue(windowStatus.label.contains("Showing the last 15 minutes"), windowStatus.label)
+
+        var disclosureLabelMinXs: [CGFloat] = []
+        for (title, detail) in [
+            ("App details", "App release and build number."),
+            ("Device type", "Model and iOS version."),
+            ("Steps in the app", "Screens opened and buttons used."),
+            ("Downloaded maps", "Offline maps and their versions."),
+            ("Map file links", "Making Tracks map file paths."),
+            ("Problems", "Status codes and failure labels."),
+            ("Load times", "Fetch and map drawing times."),
+            ("Places and taps", "Places opened, saved, hidden, or marked seen."),
+            ("Device name", "Your personal device label."),
+            ("Precise location", "Your exact coordinates are not included."),
+            ("Search text", "What you typed is omitted."),
+        ] {
+            let disclosure = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label == %@", title))
+                .firstMatch
+            XCTAssertTrue(scrollToExistence(of: disclosure, in: app), title)
+            disclosureLabelMinXs.append(disclosure.frame.minX)
+            XCTAssertEqual(
+                app.descendants(matching: .any)
+                    .matching(NSPredicate(format: "label CONTAINS %@", detail))
+                    .count,
+                0,
+                detail
+            )
+        }
+        XCTAssertLessThanOrEqual(
+            (disclosureLabelMinXs.max() ?? 0) - (disclosureLabelMinXs.min() ?? 0),
+            2,
+            "AXXXL disclosure classes must collapse to one readable column."
+        )
+        attachScreenshot(named: "diagnostics-preprepare-axxxl")
     }
 
     func testDiagnosticsShareSheetDismissalKeepsPreparedArtifact() {
@@ -1956,6 +2404,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         prepare.tap()
         let share = app.buttons["settings.diagnostics.share"]
         XCTAssertTrue(share.waitForExistence(timeout: 30))
+        let windowPicker = app.descendants(matching: .any)["settings.diagnostics.window"]
+        XCTAssertTrue(windowPicker.exists)
+        XCTAssertFalse(windowPicker.isEnabled)
+        XCTAssertFalse(app.descendants(matching: .any)["settings.diagnostics.included"].exists)
+        let preview = app.descendants(matching: .any)["settings.diagnostics.preview"]
+        XCTAssertTrue(scrollToExistence(of: preview, in: app))
         share.tap()
 
         let close = app.buttons["Close"]
@@ -2576,9 +3030,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             line: line
         )
 
+        let expectedVisitDateChromeMinY = back.frame.minY
         firstRow.tap()
         let visitDateTitle = app.staticTexts["lists.detail.visit-date.title"]
         XCTAssertTrue(visitDateTitle.waitForExistence(timeout: 5), file: file, line: line)
+        let visitDateSurface = app.otherElements["lists.detail.visit-date.surface"]
+        XCTAssertTrue(visitDateSurface.exists, file: file, line: line)
+        XCTAssertEqual(
+            visitDateSurface.frame.minY,
+            expectedVisitDateChromeMinY,
+            accuracy: 20,
+            "Visit date root frame must share the owning track page's origin",
+            file: file,
+            line: line
+        )
         let visitDateScreenshot = XCUIScreen.main.screenshot()
         let visitDateAttachment = XCTAttachment(screenshot: visitDateScreenshot)
         visitDateAttachment.name = "my-tracks-visit-date-oracle-\(appearanceName)"
@@ -2598,6 +3063,22 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         let visitDateBack = app.buttons["lists.detail.visit-date.back"]
         XCTAssertTrue(visitDateBack.exists, file: file, line: line)
+        XCTAssertTrue(visitDateBack.isHittable, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(
+            visitDateBack.frame.minY,
+            appFrame.minY,
+            "Visit date chrome must stay inside the device canvas",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            visitDateBack.frame.minY,
+            expectedVisitDateChromeMinY,
+            accuracy: 20,
+            "Visit date chrome must align with the owning large sheet's ruled top",
+            file: file,
+            line: line
+        )
         let visitDateSurfaceFrame = CGRect(
             x: appFrame.minX,
             y: visitDateBack.frame.minY,
@@ -3190,6 +3671,22 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         if !result.matched {
             XCTFail("Expected replay counter \(label), got \(result.observed ?? "missing counter")")
+            return false
+        }
+        return true
+    }
+
+    private func waitForTrackReplayArrival(
+        prefix: String,
+        in app: XCUIApplication,
+        timeout: TimeInterval = 10
+    ) -> Bool {
+        let arrival = element(identifier: "map.track-replay.arrival", in: app)
+        let predicate = NSPredicate(format: "exists == true AND label BEGINSWITH %@", prefix)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: arrival)
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        if result != .completed {
+            XCTFail("Expected replay arrival starting \(prefix), got \(arrival.exists ? arrival.label : "missing arrival")")
             return false
         }
         return true

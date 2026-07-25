@@ -6,16 +6,21 @@ public struct TracksVisitFilter: Sendable, Equatable, Hashable {
 
     public var lovedOnly: Bool
     public var listIDs: Set<Int64>
-    public var categories: Set<String>
+    /// `nil` means every category; an empty set deliberately means no categories.
+    public var categories: Set<String>?
 
     public var isActive: Bool {
-        lovedOnly || !listIDs.isEmpty || !categories.isEmpty
+        lovedOnly || !listIDs.isEmpty || categories != nil
+    }
+
+    public func includes(category: String) -> Bool {
+        PlaceCategoryTaxonomy.isVisible(category, visibleCategories: categories)
     }
 
     public init(
         lovedOnly: Bool = false,
         listIDs: Set<Int64> = [],
-        categories: Set<String> = []
+        categories: Set<String>? = nil
     ) {
         self.lovedOnly = lovedOnly
         self.listIDs = listIDs
@@ -25,7 +30,7 @@ public struct TracksVisitFilter: Sendable, Equatable, Hashable {
     public init(
         lovedOnly: Bool = false,
         listIDs: [Int64],
-        categories: Set<String> = []
+        categories: Set<String>? = nil
     ) {
         self.init(lovedOnly: lovedOnly, listIDs: Set(listIDs), categories: categories)
     }
