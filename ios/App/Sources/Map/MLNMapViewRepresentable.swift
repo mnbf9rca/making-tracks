@@ -973,10 +973,10 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         private func addClusterLayers(source: MLNShapeSource, style: MLNStyle, pinSize: PinSize, theme: MapTheme) {
             let circle = MLNCircleStyleLayer(identifier: "pin-clusters-circle", source: source)
             circle.predicate = NSPredicate(mglJSONObject: PinLayers.clusterFilter().foundationObject)
-            circle.circleColor = NSExpression(forConstantValue: MapThemeColor.uiColor(hex: PinLayers.pinColor))
+            circle.circleColor = NSExpression(forConstantValue: MapThemeColor.uiColor(css: PinLayers.pinColor))
             circle.circleOpacity = NSExpression(forConstantValue: 0.92)
             circle.circleRadius = NSExpression(forConstantValue: PinLayers.clusterBubbleRadius(pinSize: pinSize))
-            circle.circleStrokeColor = NSExpression(forConstantValue: MapThemeColor.uiColor(hex: theme.background))
+            circle.circleStrokeColor = NSExpression(forConstantValue: MapThemeColor.uiColor(css: theme.background))
             circle.circleStrokeWidth = NSExpression(forConstantValue: 1.5)
             style.addLayer(circle)
 
@@ -986,7 +986,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             count.textFontNames = NSExpression(forConstantValue: ["Noto Sans Regular"])
             count.textFontSize = NSExpression(forConstantValue: PinLayers.clusterCountTextSize(pinSize: pinSize))
             count.textColor = NSExpression(forConstantValue: UIColor.white)
-            count.textHaloColor = NSExpression(forConstantValue: MapThemeColor.uiColor(hex: theme.labelHalo))
+            count.textHaloColor = NSExpression(forConstantValue: MapThemeColor.uiColor(css: theme.labelHalo))
             count.textHaloWidth = NSExpression(forConstantValue: 0.4)
             count.textAllowsOverlap = NSExpression(forConstantValue: true)
             count.textIgnoresPlacement = NSExpression(forConstantValue: true)
@@ -1029,7 +1029,7 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
             line.predicate = filter.map { NSPredicate(mglJSONObject: $0.foundationObject) }
             line.lineCap = NSExpression(forConstantValue: trackStyle.cap)
             line.lineJoin = NSExpression(forConstantValue: trackStyle.join)
-            line.lineColor = NSExpression(forConstantValue: MapThemeColor.uiColor(hex: trackStyle.color))
+            line.lineColor = NSExpression(forConstantValue: MapThemeColor.uiColor(css: trackStyle.color))
             line.lineOpacity = NSExpression(forConstantValue: trackStyle.opacity)
             line.lineWidth = NSExpression(forConstantValue: trackStyle.width)
             line.lineDashPattern = NSExpression(forConstantValue: trackStyle.dashPattern)
