@@ -64,13 +64,13 @@
   }
   .toast-action { min-width: 44px; height: 44px; display: flex; align-items: center; }
   .dismiss { color: var(--ink); }
-  .progress { display: grid; gap: 6px; }
+  .progress { display: grid; gap: 4px; margin-top: 8px; }
   .progress-head {
-    display: flex; align-items: first baseline; justify-content: space-between;
-    gap: 12px; font-size: 20px; line-height: 1.2;
+    display: flex; flex-direction: column; align-items: stretch;
+    gap: 4px; font-size: 20px; line-height: 1.2;
   }
-  .progress-title { min-width: 0; font-weight: 650; }
-  .progress-count { flex: none; color: var(--muted); white-space: nowrap; }
+  .progress-title { width: 100%; min-width: 0; font-weight: 650; }
+  .progress-count { align-self: flex-end; color: var(--muted); white-space: nowrap; }
   .track { height: 3px; border-radius: 999px; background: var(--hairline); }
   .fill { height: 3px; border-radius: 999px; background: var(--accent); }
   .fold { position: absolute; left: 0; right: 0; bottom: 0; border-top: 2px dashed #C0392B; }
@@ -111,9 +111,8 @@
         </div>
       </div>
 
-      <div class="section">Title + semantic count</div>
       <div class="progress">
-        <div class="progress-head"><span class="progress-title">Ghost signs in Bermondsey</span><span class="progress-count">3 of 8 seen</span></div>
+        <div class="progress-head"><span class="progress-title">Ghost signs along Bermondsey&rsquo;s riverside warehouses</span><span class="progress-count">3 of 8 seen</span></div>
         <div class="track"><div class="fill" style="width:37.5%"></div></div>
       </div>
     </div>
