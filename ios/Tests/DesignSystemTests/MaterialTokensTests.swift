@@ -3,6 +3,10 @@ import XCTest
 @testable import DesignSystem
 
 final class MaterialTokensTests: XCTestCase {
+    func testSnowPinsItsIntrinsicLightColorScheme() {
+        XCTAssertEqual(MaterialTheme.snow.colorScheme, .light)
+    }
+
     func testSnowMatchesEveryRatifiedSemanticColor() {
         let expected: [SemanticColorToken: MaterialColor] = [
             .ground: color(0xF4, 0xF1, 0xEA),

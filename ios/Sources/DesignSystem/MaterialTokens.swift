@@ -237,4 +237,10 @@ public enum MaterialTheme: String, CaseIterable, Hashable, Sendable {
         case .snow: .snow
         }
     }
+
+    public var colorScheme: ColorScheme {
+        switch self {
+        case .snow: .light
+        }
+    }
 }
