@@ -250,12 +250,15 @@ final class MaterialToastTests: XCTestCase {
         XCTAssertNil(surface.accessibilityValue)
     }
 
-    func testSnowRenderingPinsLightColorSchemeForDeterministicContrast() {
+    func testToastUsesThemeColorSchemeForDeterministicContrast() {
         let configuration = MaterialToast(
             message: "Location is off"
         ).renderConfiguration(reduceTransparency: false)
 
-        XCTAssertEqual(configuration.colorScheme, .light)
+        XCTAssertEqual(
+            configuration.colorScheme,
+            MaterialTheme.snow.colorScheme
+        )
     }
 
     func testToastUsesOneRegularMaterialRecipeUnlessTransparencyIsReduced() {

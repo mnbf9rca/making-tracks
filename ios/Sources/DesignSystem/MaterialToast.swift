@@ -392,7 +392,7 @@ public struct MaterialToast: View {
             horizontalMessageWidth: .intrinsic,
             fallbackMessageWidth: .flexible,
             interaction: interactionConfiguration,
-            colorScheme: .light
+            colorScheme: theme.colorScheme
         )
     }
 

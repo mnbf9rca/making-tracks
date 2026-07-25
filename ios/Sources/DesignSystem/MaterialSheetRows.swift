@@ -28,6 +28,7 @@ struct MaterialSheetAppearance: Equatable {
     let topCornerRadius: CGFloat
     let detents: [MaterialSheetDetent]
     let closeAccessibilityLabel: String
+    let closeForeground: MaterialColor
 }
 
 struct MaterialRowAppearance: Equatable {
@@ -39,10 +40,12 @@ struct MaterialRowAppearance: Equatable {
 struct MaterialSheetCloseButton: View {
     let action: () -> Void
     let accessibilityLabel: String
+    let foreground: MaterialColor
 
     var body: some View {
         Button(action: action) {
             Image(systemName: "xmark")
+                .foregroundStyle(foreground.swiftUIColor)
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
         }
@@ -67,7 +70,8 @@ public struct MaterialSheet<Content: View>: View {
             grabberColor: theme.tokens.hairline,
             topCornerRadius: 22,
             detents: [.medium, .large],
-            closeAccessibilityLabel: "Close"
+            closeAccessibilityLabel: "Close",
+            closeForeground: theme.tokens.muted
         )
     }
 
@@ -82,7 +86,8 @@ public struct MaterialSheet<Content: View>: View {
                 Spacer()
                 MaterialSheetCloseButton(
                     action: dismiss.callAsFunction,
-                    accessibilityLabel: appearance.closeAccessibilityLabel
+                    accessibilityLabel: appearance.closeAccessibilityLabel,
+                    foreground: appearance.closeForeground
                 )
             }
 
