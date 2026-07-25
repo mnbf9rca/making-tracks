@@ -555,7 +555,7 @@ Full gate plus renders of the card in snow, default and AX sizes.
 - **Depends on:** **T1.2 and T1.3, both merged** — and see the sequencing rule below, which is stricter than the edge
 - **Owner:** codex3
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed
+- **Status:** `blocked: reserved for codex3 after T1.5` — reserved rather than open, so it is **not** "claimable" for the purposes of T1.10's stretch clause. codex3 wrote `ControlStyles` and the 15pt correction that makes this collapse rename-level, so the context fit is real; a builder who frees up first should take other work rather than this.
 - **Branch:** `wp-467-component-typography-adoption` — cut from a freshly-fetched `ios`
 - **Contracts consumed:** T1.2's font-role API, T1.3's control styles.
 - **Contracts produced:** none. This task **removes** a second source of truth rather than adding one.
