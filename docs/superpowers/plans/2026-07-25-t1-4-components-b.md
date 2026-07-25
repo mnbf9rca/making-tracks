@@ -94,7 +94,7 @@ Expected: all focused tests pass with zero failures.
 
 **Interfaces:**
 - Consumes: `MaterialTheme.tokens.surface`, `.ink`, `.accent`, and `.hairline`.
-- Produces: `MaterialToastAction` and `MaterialToast`.
+- Produces: `MaterialToastAction`, `MaterialToastSurfaceAction`, and `MaterialToast`.
 
 - [ ] **Step 1: Write failing content-shape tests**
 
@@ -123,7 +123,7 @@ The production break caught is a family that cannot express one of the four exis
 
 - [ ] **Step 2: Write failing transparency and action tests**
 
-Assert the independently derived Snow foreground/action tokens. Assert `appearance(reduceTransparency: false)` uses the single regular-material recipe and `appearance(reduceTransparency: true)` uses solid Snow `surface`. Invoke `MaterialToastAction.perform()` and assert the real closure fires once. Assert the default dismiss accessibility label is `Dismiss` and a caller can make it context-specific.
+Assert the independently derived Snow foreground/action tokens. Assert `appearance(reduceTransparency: false)` uses the single regular-material recipe and `appearance(reduceTransparency: true)` uses solid Snow `surface`. Invoke `MaterialToastAction.perform()` and assert the real closure fires once. Assert built-in, custom, and dismiss controls retain identifiers and a 44×44pt minimum target. Assert the default dismiss accessibility label is `Dismiss` and a caller can make it context-specific. Pin the closed whole-surface action's label, hint, identifier, progress accessibility value, and single invocation.
 
 - [ ] **Step 3: Verify RED**
 
@@ -141,10 +141,11 @@ Create:
 
 ```swift
 public struct MaterialToastAction
+public struct MaterialToastSurfaceAction
 public struct MaterialToast: View
 ```
 
-`MaterialToast` accepts a verbatim message, optional primary action, optional dismiss action, a dismiss accessibility label defaulting to `Dismiss`, and `theme: MaterialTheme = .snow`. Use `ViewThatFits(in: .horizontal)` to select an HStack at normal sizes and a VStack fallback at AX sizes. Use one rounded family shape, the same padding and stroke in every mode, and `@Environment(\.accessibilityReduceTransparency)` to select the tested backdrop. Do not depend on T1.3's unmerged button styles.
+`MaterialToast` accepts a verbatim message, optional primary action, optional dismiss action, a dismiss accessibility label defaulting to `Dismiss`, and `theme: MaterialTheme = .snow`. Control-based initializers accept built-in actions or caller-built styled/representable action content, but always own the 44pt target. A separate closed whole-surface initializer accepts only `MaterialToastSurfaceAction`, an optional leading SF Symbol name, and optional `MaterialProgressState`; it renders a real outer `Button` and cannot represent nested controls. Use `ViewThatFits(in: .horizontal)` to select an HStack at normal sizes and a VStack fallback at AX sizes. Use one rounded family shape, the same padding and stroke in every mode, and `@Environment(\.accessibilityReduceTransparency)` to select the tested backdrop. Do not depend on T1.3's button-style symbols; T1.7 injects them through the caller-built control path.
 
 - [ ] **Step 5: Verify GREEN**
 
@@ -209,15 +210,15 @@ Create:
 
 ```swift
 public enum MaterialProgressState: Hashable, Sendable {
-    case count(completed: Int, total: Int)
+    case count(completed: Int, total: Int, suffix: String? = nil)
     case percentage(Int)
     case indeterminate
 }
 
-public struct MaterialProgress: View
+public struct MaterialProgress<LeadingHeader: View>: View
 ```
 
-`MaterialProgress` accepts its state, an accessibility label defaulting to `Progress`, and `theme: MaterialTheme = .snow`. Render a 3pt accent fill on the hairline track. Count and percentage states always render their derived visible text. The indeterminate state renders a bare static accent segment and speaks `In progress`; introducing animation is out of scope and therefore introduces no new Reduced Motion obligation.
+`MaterialProgress` accepts its state, an accessibility label, and `theme: MaterialTheme = .snow`; the `EmptyView` convenience retains the `Progress` default. Count states alone can own a semantic suffix such as `seen`, applied after clamping to both visible and spoken values. A typed leading-header initializer lets T1.8 supply its later typography-styled title while the component still owns the trailing count. Its `ViewThatFits` header keeps the count intrinsic in the normal HStack and falls back to a VStack at AX sizes. Render a 3pt accent fill on the hairline track. Count and percentage states always render their derived visible text. The indeterminate state renders a bare static accent segment and speaks `In progress`; introducing animation is out of scope and therefore introduces no new Reduced Motion obligation.
 
 - [ ] **Step 5: Verify GREEN**
 
