@@ -75,18 +75,21 @@ public enum SemanticColorToken: String, CaseIterable, Hashable, Sendable {
 public struct PinTokenBlock: Hashable, Sendable {
     public static let constant = PinTokenBlock(
         pin: MaterialColor(red: 0xE4, green: 0x57, blue: 0x2E),
+        trackLine: MaterialColor(red: 0x2D, green: 0x8C, blue: 0x83),
         fadedOpacity: 0.35
     )
 
     public let pin: MaterialColor
+    public let trackLine: MaterialColor
     public let fadedOpacity: Double
 
     public var pinFaded: MaterialColor {
         pin.withOpacity(fadedOpacity)
     }
 
-    private init(pin: MaterialColor, fadedOpacity: Double) {
+    private init(pin: MaterialColor, trackLine: MaterialColor, fadedOpacity: Double) {
         self.pin = pin
+        self.trackLine = trackLine
         self.fadedOpacity = fadedOpacity
     }
 }

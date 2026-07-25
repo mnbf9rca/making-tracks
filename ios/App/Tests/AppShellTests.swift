@@ -8,13 +8,15 @@ import MakingTracksMapStyle
 @testable import MakingTracks
 
 final class AppShellTests: XCTestCase {
-    func testAccentColorAssetMatchesSnowAccent() {
+    @MainActor
+    func testAccentColorAssetIsTheGlobalAppAccent() {
         guard let asset = UIColor(named: "AccentColor", in: .main, compatibleWith: nil) else {
             XCTFail("AccentColor asset must be compiled into the app")
             return
         }
 
         assertColor(Color(uiColor: asset), red: 10.0 / 255.0, green: 107.0 / 255.0, blue: 92.0 / 255.0)
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "NSAccentColorName") as? String, "AccentColor")
     }
 
     func testPlaceCardVisualSpecMatchesApprovedCardLayout() {

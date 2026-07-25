@@ -40,6 +40,7 @@ final class MaterialTokensTests: XCTestCase {
         XCTAssertEqual(pins, .constant)
         XCTAssertEqual(pins.pin, color(0xE4, 0x57, 0x2E))
         XCTAssertEqual(pins.pinFaded, color(0xE4, 0x57, 0x2E, opacity: 0.35))
+        XCTAssertEqual(pins.trackLine, color(0x2D, 0x8C, 0x83))
     }
 
     func testMapRowsCanVaryWithoutChangingTheirInitialSourceTokens() {
@@ -65,6 +66,28 @@ final class MaterialTokensTests: XCTestCase {
         }
         assertStaticAcrossSystemAppearances(sheet.pins.pin, label: "pin")
         assertStaticAcrossSystemAppearances(sheet.pins.pinFaded, label: "pinFaded")
+        assertStaticAcrossSystemAppearances(sheet.pins.trackLine, label: "trackLine")
+    }
+
+    func testContrastGateRejectsTranslucentOperands() {
+        XCTAssertNil(
+            contrastRatio(
+                color(0x00, 0x00, 0x00, opacity: 0),
+                color(0xFF, 0xFF, 0xFF)
+            )
+        )
+        XCTAssertNil(
+            contrastRatio(
+                color(0x00, 0x00, 0x00, opacity: 0.5),
+                color(0xFF, 0xFF, 0xFF)
+            )
+        )
+        XCTAssertNil(
+            contrastRatio(
+                color(0x00, 0x00, 0x00),
+                color(0xFF, 0xFF, 0xFF, opacity: 0.5)
+            )
+        )
     }
 
     func testEveryMaterialPassesBodyAndLargeUIContrastGates() {
@@ -152,6 +175,17 @@ final class MaterialTokensTests: XCTestCase {
         let lightResolved = color.swiftUIColor.resolve(in: light)
         let darkResolved = color.swiftUIColor.resolve(in: dark)
 
+        XCTAssertEqual(Double(lightResolved.red), color.red, accuracy: 0.000_001, label, file: file, line: line)
+        XCTAssertEqual(Double(lightResolved.green), color.green, accuracy: 0.000_001, label, file: file, line: line)
+        XCTAssertEqual(Double(lightResolved.blue), color.blue, accuracy: 0.000_001, label, file: file, line: line)
+        XCTAssertEqual(
+            Double(lightResolved.opacity),
+            color.opacity,
+            accuracy: 0.000_001,
+            label,
+            file: file,
+            line: line
+        )
         XCTAssertEqual(lightResolved.red, darkResolved.red, accuracy: 0.000_001, label, file: file, line: line)
         XCTAssertEqual(lightResolved.green, darkResolved.green, accuracy: 0.000_001, label, file: file, line: line)
         XCTAssertEqual(lightResolved.blue, darkResolved.blue, accuracy: 0.000_001, label, file: file, line: line)
@@ -166,7 +200,14 @@ final class MaterialTokensTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        let ratio = contrastRatio(foreground, background)
+        guard let ratio = contrastRatio(foreground, background) else {
+            XCTFail(
+                "\(label) contrast requires opaque foreground and background tokens",
+                file: file,
+                line: line
+            )
+            return
+        }
         XCTAssertGreaterThanOrEqual(
             ratio,
             minimum,
@@ -176,7 +217,10 @@ final class MaterialTokensTests: XCTestCase {
         )
     }
 
-    private func contrastRatio(_ first: MaterialColor, _ second: MaterialColor) -> Double {
+    private func contrastRatio(_ first: MaterialColor, _ second: MaterialColor) -> Double? {
+        guard first.opacity == 1, second.opacity == 1 else {
+            return nil
+        }
         let lighter = max(relativeLuminance(first), relativeLuminance(second))
         let darker = min(relativeLuminance(first), relativeLuminance(second))
         return (lighter + 0.05) / (darker + 0.05)
