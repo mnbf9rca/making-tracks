@@ -9,7 +9,7 @@ Format: one line per transition, newest last:
 
 ## Active
 
-(none)
+- 2026-07-24T15:20Z opus #146 blocked: awaits a rigorous long real-device session (Rob) to confirm the jetsam fix (#151/#418; sim proxy flat ~305MB/17min); stays open until then
 
 ## Done (pre-phase, 2026-07-24 wave — recorded retroactively)
 
@@ -18,3 +18,7 @@ Format: one line per transition, newest last:
 - 2026-07-24T23:56Z codex1 #319 merged as PR #451 (2763aed5); closed
 - 2026-07-24T21:23Z codex1 #324 merged as PR #449 (8bfdc5e9); device-passed and closed 2026-07-25
 - 2026-07-24T20:49Z codex4 #446 merged as PR #450 (ce4888de); closed
+- 2026-07-24T15:22Z opus #351 closed — issue audit; Rob device sign-off "looks good" (6 fixes, last #439)
+- 2026-07-24T15:22Z opus #372 closed — issue audit; Rob device sign-off "confirmed" (PRs #383/#422/#425/#438)
+- 2026-07-24T15:22Z opus #306 closed — issue audit; WP delivered by merged PR #313 (3ae2257)
+- 2026-07-24T15:22Z opus #317 closed — issue audit; AX agency clause restored (#397 dcbef0a4 / #355 214760a6)
