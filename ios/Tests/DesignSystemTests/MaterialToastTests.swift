@@ -128,24 +128,24 @@ final class MaterialToastTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(renderedSize.height, 44)
     }
 
-    func testRenderedTinyCustomActionIsAtLeastFortyFourPointsInBothDimensions() {
-        let control = MaterialToastCustomActionWrapper(
-            accessibilityIdentifier: "map.location-settings",
-            minimumTarget: CGSize(width: 44, height: 44)
-        ) {
-            Button(action: {}) {
-                Color.clear
-                    .frame(width: 1, height: 1)
-            }
-            .buttonStyle(.plain)
-        }
-        let hostingController = NSHostingController(rootView: control)
+    func testRenderedNoProgressSurfaceButtonIsAtLeastFortyFourPointsHigh() {
+        let toast = MaterialToast(
+            message: "Offline maps",
+            surfaceAction: MaterialToastSurfaceAction(
+                accessibilityLabel: "Offline maps",
+                accessibilityHint: "Opens Offline maps",
+                accessibilityIdentifier: "map.offline"
+            ) {}
+        )
+        .font(.caption2)
+        .dynamicTypeSize(.xSmall)
+        let hostingController = NSHostingController(rootView: toast)
 
         let renderedSize = hostingController.view.fittingSize
 
-        XCTAssertGreaterThanOrEqual(renderedSize.width, 44)
         XCTAssertGreaterThanOrEqual(renderedSize.height, 44)
     }
+
 #endif
 
     func testCallerCanInjectLeadingAndArbitraryStyledActionContent() {

@@ -190,6 +190,11 @@ public struct MaterialToast: View {
         self.init(message: message, theme: theme, controlContent: content)
     }
 
+    /// Creates a toast with caller-supplied interactive action content.
+    ///
+    /// The supplied control must preserve its own interaction semantics and
+    /// provide a minimum 44×44 point hit target. The adopting surface owns
+    /// proving that target for its concrete control.
     public init<ActionContent: View>(
         message: String,
         primaryActionAccessibilityIdentifier: String? = nil,
@@ -213,6 +218,11 @@ public struct MaterialToast: View {
         self.init(message: message, theme: theme, controlContent: content)
     }
 
+    /// Creates a toast with leading content and a caller-supplied interactive action.
+    ///
+    /// The supplied control must preserve its own interaction semantics and
+    /// provide a minimum 44×44 point hit target. The adopting surface owns
+    /// proving that target for its concrete control.
     public init<LeadingContent: View, ActionContent: View>(
         message: String,
         primaryActionAccessibilityIdentifier: String? = nil,
@@ -298,12 +308,21 @@ public struct MaterialToast: View {
             if case let .surface(surfaceConfiguration) =
                 configuration.interaction {
                 Button(action: content.action.perform) {
-                    decoratedToast(configuration: configuration) {
+                    decoratedToast(
+                        configuration: configuration,
+                        minimumHeight: 44
+                    ) {
                         surfaceToastContent(
                             content: content,
                             configuration: configuration
                         )
                     }
+                    .contentShape(
+                        RoundedRectangle(
+                            cornerRadius: 16,
+                            style: .continuous
+                        )
+                    )
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(
@@ -378,10 +397,12 @@ public struct MaterialToast: View {
 
     private func decoratedToast<Content: View>(
         configuration: MaterialToastRenderConfiguration,
+        minimumHeight: CGFloat? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
         content()
             .padding(12)
+            .frame(minHeight: minimumHeight)
             .foregroundStyle(configuration.appearance.foreground.swiftUIColor)
             .background {
                 switch configuration.appearance.backdrop {
@@ -517,15 +538,11 @@ public struct MaterialToast: View {
         if case let .controls(controlConfiguration) =
             configuration.interaction {
             if let customActionContent = content.customActionContent {
-                MaterialToastCustomActionWrapper(
-                    accessibilityIdentifier:
+                customActionContent
+                    .materialAccessibilityIdentifier(
                         controlConfiguration
-                            .primaryActionAccessibilityIdentifier,
-                    minimumTarget:
-                        controlConfiguration.minimumInteractiveTarget
-                ) {
-                    customActionContent
-                }
+                            .primaryActionAccessibilityIdentifier
+                    )
             } else if let primaryAction = content.primaryAction {
                 MaterialToastPrimaryActionButton(
                     action: primaryAction,
@@ -556,32 +573,6 @@ public struct MaterialToast: View {
                     controlConfiguration.minimumInteractiveTarget
             )
         }
-    }
-}
-
-struct MaterialToastCustomActionWrapper<Content: View>: View {
-    let accessibilityIdentifier: String?
-    let minimumTarget: CGSize
-    private let content: Content
-
-    init(
-        accessibilityIdentifier: String?,
-        minimumTarget: CGSize,
-        @ViewBuilder content: () -> Content
-    ) {
-        self.accessibilityIdentifier = accessibilityIdentifier
-        self.minimumTarget = minimumTarget
-        self.content = content()
-    }
-
-    var body: some View {
-        content
-            .frame(
-                minWidth: minimumTarget.width,
-                minHeight: minimumTarget.height
-            )
-            .contentShape(Rectangle())
-            .materialAccessibilityIdentifier(accessibilityIdentifier)
     }
 }
 
