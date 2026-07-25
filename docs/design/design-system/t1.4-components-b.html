@@ -16,7 +16,6 @@
     --accent: #0A6B5C;
     --eyebrow: #8A5A2B;
     --hairline: rgba(43, 40, 35, 0.14);
-    --shadow: rgba(43, 40, 35, 0.10);
     background: var(--ground);
     color: var(--ink);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
@@ -40,7 +39,7 @@
   h1 { margin: 4px 0 2px; font-size: 24px; line-height: 1.15; letter-spacing: -.35px; }
   .sub { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.35; }
   .section-label { margin: 15px 0 6px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-  .raised-row { padding: 11px 12px; background: var(--surface-raised); border-radius: 14px; box-shadow: 0 2px 8px var(--shadow); }
+  .raised-row { padding: 11px 12px; background: var(--surface-raised); border-radius: 14px; }
   .row-title { font-size: 15px; font-weight: 650; line-height: 1.2; }
   .row-meta { margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.25; }
   .hairline-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 1px; border-bottom: 1px solid var(--hairline); }
@@ -49,7 +48,9 @@
   .toast {
     display: flex; align-items: center; gap: 9px; min-height: 43px; padding: 8px 10px 8px 12px;
     border: 1px solid var(--hairline); border-radius: 16px;
-    background: rgba(251, 250, 242, .88); box-shadow: 0 2px 8px var(--shadow);
+    background: rgba(251, 250, 242, .62);
+    -webkit-backdrop-filter: blur(16px) saturate(120%);
+    backdrop-filter: blur(16px) saturate(120%);
     font-size: 12px; line-height: 1.25;
   }
   .toast-message { flex: 1; min-width: 0; }
