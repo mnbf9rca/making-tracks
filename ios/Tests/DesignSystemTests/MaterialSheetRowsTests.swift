@@ -1,3 +1,6 @@
+#if canImport(AppKit)
+import AppKit
+#endif
 import SwiftUI
 import XCTest
 @testable import DesignSystem
@@ -30,6 +33,21 @@ final class MaterialSheetRowsTests: XCTestCase {
         XCTAssertNil(appearance.cornerRadius)
         XCTAssertEqual(appearance.divider, MaterialTheme.snow.tokens.hairline)
     }
+
+#if canImport(AppKit)
+    func testRenderedCloseButtonHasMinimumInteractiveTargetInBothDimensions() {
+        let closeButton = MaterialSheetCloseButton(
+            action: {},
+            accessibilityLabel: "Close"
+        )
+        let hostingController = NSHostingController(rootView: closeButton)
+
+        let renderedSize = hostingController.view.fittingSize
+
+        XCTAssertGreaterThanOrEqual(renderedSize.width, 44)
+        XCTAssertGreaterThanOrEqual(renderedSize.height, 44)
+    }
+#endif
 
     private func color(
         _ red: UInt8,

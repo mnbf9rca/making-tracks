@@ -36,6 +36,21 @@ struct MaterialRowAppearance: Equatable {
     let divider: MaterialColor?
 }
 
+struct MaterialSheetCloseButton: View {
+    let action: () -> Void
+    let accessibilityLabel: String
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(accessibilityLabel)
+        .buttonStyle(.plain)
+    }
+}
+
 public struct MaterialSheet<Content: View>: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -65,11 +80,10 @@ public struct MaterialSheet<Content: View>: View {
 
             HStack {
                 Spacer()
-                Button(action: dismiss.callAsFunction) {
-                    Image(systemName: "xmark")
-                }
-                .accessibilityLabel(appearance.closeAccessibilityLabel)
-                .padding()
+                MaterialSheetCloseButton(
+                    action: dismiss.callAsFunction,
+                    accessibilityLabel: appearance.closeAccessibilityLabel
+                )
             }
 
             content
