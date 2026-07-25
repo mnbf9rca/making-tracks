@@ -251,7 +251,7 @@ You changed `project.yml`, so the Release build must run even though your logic 
 - **Depends on:** T1.1
 - **Owner:** codex2
 - **Review tier:** `sourcery` + `opus`
-- **Status:** PR open
+- **Status:** review clean
 - **Contracts produced:** the font-role API. **T1.6, T1.8, T1.9 and T1.10 all consume it** for titles and place names, so fix its shape here and name it in the PR body: callers ask for a *role* (display, sheet title, place name, list-row title, evocative sub-line, and the SF machinery roles), never for a font or a point size.
 - **Contracts consumed:** T1.1's token sheet.
 
