@@ -42,6 +42,8 @@ targets:
         product: MakingTracksMapStyle
       - package: MakingTracksData
         product: MakingTracksCore
+      - package: MakingTracksData
+        product: DesignSystem
       - package: MapLibre
         product: MapLibre
     postBuildScripts:
@@ -87,6 +89,7 @@ targets:
     settings:
       base:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     info:
       path: Sources/Info.plist
       properties:

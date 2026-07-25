@@ -1,0 +1,216 @@
+import SwiftUI
+
+public struct MaterialColor: Hashable, Sendable {
+    public let red: Double
+    public let green: Double
+    public let blue: Double
+    public let opacity: Double
+
+    init(
+        red: UInt8,
+        green: UInt8,
+        blue: UInt8,
+        opacity: Double = 1
+    ) {
+        self.red = Double(red) / 255
+        self.green = Double(green) / 255
+        self.blue = Double(blue) / 255
+        self.opacity = opacity
+    }
+
+    public var swiftUIColor: Color {
+        Color(
+            .sRGB,
+            red: red,
+            green: green,
+            blue: blue,
+            opacity: opacity
+        )
+    }
+
+    fileprivate func withOpacity(_ opacity: Double) -> MaterialColor {
+        MaterialColor(
+            normalizedRed: red,
+            normalizedGreen: green,
+            normalizedBlue: blue,
+            opacity: opacity
+        )
+    }
+
+    private init(
+        normalizedRed red: Double,
+        normalizedGreen green: Double,
+        normalizedBlue blue: Double,
+        opacity: Double
+    ) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.opacity = opacity
+    }
+}
+
+public enum SemanticColorToken: String, CaseIterable, Hashable, Sendable {
+    case ground
+    case water
+    case park
+    case road
+    case roadMinor
+    case surface
+    case surfaceRaised
+    case ink
+    case muted
+    case accent
+    case accentContrast
+    case eyebrow
+    case hairline
+    case scrim
+    case shadow
+    case background
+    case labels
+    case labelHalo
+    case boundaries
+}
+
+public struct PinTokenBlock: Hashable, Sendable {
+    public static let constant = PinTokenBlock(
+        pin: MaterialColor(red: 0xE4, green: 0x57, blue: 0x2E),
+        fadedOpacity: 0.35
+    )
+
+    public let pin: MaterialColor
+    public let fadedOpacity: Double
+
+    public var pinFaded: MaterialColor {
+        pin.withOpacity(fadedOpacity)
+    }
+
+    private init(pin: MaterialColor, fadedOpacity: Double) {
+        self.pin = pin
+        self.fadedOpacity = fadedOpacity
+    }
+}
+
+public struct MaterialTokenSheet: Hashable, Sendable {
+    public let ground: MaterialColor
+    public let water: MaterialColor
+    public let park: MaterialColor
+    public let road: MaterialColor
+    public let roadMinor: MaterialColor
+    public let surface: MaterialColor
+    public let surfaceRaised: MaterialColor
+    public let ink: MaterialColor
+    public let muted: MaterialColor
+    public let accent: MaterialColor
+    public let accentContrast: MaterialColor
+    public let eyebrow: MaterialColor
+    public let hairline: MaterialColor
+    public let scrim: MaterialColor
+    public let shadow: MaterialColor
+    public let background: MaterialColor
+    public let labels: MaterialColor
+    public let labelHalo: MaterialColor
+    public let boundaries: MaterialColor
+
+    public var pins: PinTokenBlock {
+        .constant
+    }
+
+    public subscript(token: SemanticColorToken) -> MaterialColor {
+        switch token {
+        case .ground: ground
+        case .water: water
+        case .park: park
+        case .road: road
+        case .roadMinor: roadMinor
+        case .surface: surface
+        case .surfaceRaised: surfaceRaised
+        case .ink: ink
+        case .muted: muted
+        case .accent: accent
+        case .accentContrast: accentContrast
+        case .eyebrow: eyebrow
+        case .hairline: hairline
+        case .scrim: scrim
+        case .shadow: shadow
+        case .background: background
+        case .labels: labels
+        case .labelHalo: labelHalo
+        case .boundaries: boundaries
+        }
+    }
+
+    fileprivate static let snow = MaterialTokenSheet(
+        ground: MaterialColor(red: 0xF4, green: 0xF1, blue: 0xEA),
+        water: MaterialColor(red: 0xC9, green: 0xDB, blue: 0xE2),
+        park: MaterialColor(red: 0xDC, green: 0xE5, blue: 0xD4),
+        road: MaterialColor(red: 0xC9, green: 0xBF, blue: 0xA8),
+        roadMinor: MaterialColor(red: 0xDD, green: 0xD5, blue: 0xC2),
+        surface: MaterialColor(red: 0xFB, green: 0xFA, blue: 0xF2),
+        surfaceRaised: MaterialColor(red: 0xFF, green: 0xFF, blue: 0xFF),
+        ink: MaterialColor(red: 0x2B, green: 0x28, blue: 0x23),
+        muted: MaterialColor(red: 0x6B, green: 0x67, blue: 0x5F),
+        accent: MaterialColor(red: 0x0A, green: 0x6B, blue: 0x5C),
+        accentContrast: MaterialColor(red: 0xFB, green: 0xFA, blue: 0xF2),
+        eyebrow: MaterialColor(red: 0x8A, green: 0x5A, blue: 0x2B),
+        hairline: MaterialColor(red: 0x2B, green: 0x28, blue: 0x23, opacity: 0.14),
+        scrim: MaterialColor(red: 0x2B, green: 0x28, blue: 0x23, opacity: 0.35),
+        shadow: MaterialColor(red: 0x2B, green: 0x28, blue: 0x23, opacity: 0.10),
+        background: MaterialColor(red: 0xF4, green: 0xF1, blue: 0xEA),
+        labels: MaterialColor(red: 0x6B, green: 0x67, blue: 0x5F),
+        labelHalo: MaterialColor(red: 0xF4, green: 0xF1, blue: 0xEA),
+        boundaries: MaterialColor(red: 0x2B, green: 0x28, blue: 0x23, opacity: 0.14)
+    )
+
+    init(
+        ground: MaterialColor,
+        water: MaterialColor,
+        park: MaterialColor,
+        road: MaterialColor,
+        roadMinor: MaterialColor,
+        surface: MaterialColor,
+        surfaceRaised: MaterialColor,
+        ink: MaterialColor,
+        muted: MaterialColor,
+        accent: MaterialColor,
+        accentContrast: MaterialColor,
+        eyebrow: MaterialColor,
+        hairline: MaterialColor,
+        scrim: MaterialColor,
+        shadow: MaterialColor,
+        background: MaterialColor,
+        labels: MaterialColor,
+        labelHalo: MaterialColor,
+        boundaries: MaterialColor
+    ) {
+        self.ground = ground
+        self.water = water
+        self.park = park
+        self.road = road
+        self.roadMinor = roadMinor
+        self.surface = surface
+        self.surfaceRaised = surfaceRaised
+        self.ink = ink
+        self.muted = muted
+        self.accent = accent
+        self.accentContrast = accentContrast
+        self.eyebrow = eyebrow
+        self.hairline = hairline
+        self.scrim = scrim
+        self.shadow = shadow
+        self.background = background
+        self.labels = labels
+        self.labelHalo = labelHalo
+        self.boundaries = boundaries
+    }
+}
+
+public enum MaterialTheme: String, CaseIterable, Hashable, Sendable {
+    case snow
+
+    public var tokens: MaterialTokenSheet {
+        switch self {
+        case .snow: .snow
+        }
+    }
+}
