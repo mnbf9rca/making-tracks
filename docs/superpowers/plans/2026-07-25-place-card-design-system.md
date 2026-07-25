@@ -35,9 +35,10 @@ XCUITest, XcodeGen project generation, simulator release gate.
   loading/error ratio rather than bringing back a fixed production-photo
   height.
 - Preserve aspect ratio with `scaledToFit`, never `scaledToFill`. The frame
-  follows the intrinsic ratio in the admitted clamp range. (Extremes at the
-  clamp are the unavoidable boundary of the ruled min/max policy; render
-  evidence will include representative landscape and portrait cases.)
+  follows the intrinsic ratio at every aspect. The hard maximum narrows a tall
+  frame; the preferred minimum yields to the natural height for a wider
+  panorama because the ruled no-crop/no-letterbox properties take precedence.
+  Render evidence will include representative landscape and portrait cases.
 
 ## Task 1: Pin the token, style, typography, dead-code, and photo-layout contracts
 
@@ -50,11 +51,13 @@ XCUITest, XcodeGen project generation, simulator release gate.
    `accentContrast` token resolutions rather than 13 literal colours.
 2. Repoint the action mapping test to filled/tonal/quiet semantic styles and
    assert at most one filled slot in every pin state.
-3. Add pure photo-layout tests covering 4:3, landscape, portrait, min clamp,
-   max clamp, invalid metadata, and decoded-size fallback.
-4. Add a source-structure assertion that the card is absent from
-   `MapScreen.swift`, has no forced light scheme, no fixed 132pt slot,
-   no `scaledToFill`, and no missing-photo branch/type.
+3. Add pure photo-layout tests covering 4:3, landscape, portrait, a panorama
+   below the preferred minimum, max clamp, invalid metadata, and decoded-size
+   fallback.
+4. Add a source-location assertion only for AC16: the card is absent from
+   `MapScreen.swift` and present in its extracted file. Cover retired visual
+   branches through resolved appearance, layout behavior, and render evidence
+   rather than source-text proxies.
 5. Run the focused app test target and record the expected RED result.
 
 ## Task 2: Extract the place-card surface

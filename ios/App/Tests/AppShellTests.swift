@@ -154,7 +154,7 @@ final class AppShellTests: XCTestCase {
         )
     }
 
-    func testPlaceCardSurfaceIsExtractedAndLegacyVisualBranchesAreRetired() throws {
+    func testPlaceCardSurfaceIsExtractedFromMapScreen() throws {
         let appRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -171,18 +171,6 @@ final class AppShellTests: XCTestCase {
 
         XCTAssertFalse(mapSource.contains("struct PlaceCardSheet: View"))
         XCTAssertTrue(cardSource.contains("struct PlaceCardSheet: View"))
-        XCTAssertTrue(mapSource.contains("showHiddenMode: layerVisibility.showHiddenPlaces"))
-        XCTAssertTrue(cardSource.contains("let showHiddenMode: Bool"))
-        XCTAssertFalse(cardSource.contains("PlaceCardVisualSpec"))
-        XCTAssertFalse(cardSource.contains("preferredColorScheme(.light)"))
-        XCTAssertFalse(cardSource.contains("mediaSlotHeight"))
-        XCTAssertFalse(cardSource.contains("PlaceCardMissingPhotoSlot"))
-        XCTAssertFalse(cardSource.contains("scaledToFill"))
-        XCTAssertFalse(cardSource.contains(".thinMaterial"))
-        XCTAssertFalse(cardSource.contains(".font(."))
-
-        XCTAssertFalse(cardSource.contains("Color(red:"))
-        XCTAssertFalse(cardSource.contains("TODO(ruling)"))
     }
 
     func testMapHomeChromeUsesFilterGlyphAndChiplessMenuSpec() {

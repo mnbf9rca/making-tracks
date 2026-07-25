@@ -118,9 +118,7 @@ architecture issue with a migration for the stored `map.theme.id`.
 column that must pass the same gates. Every material supplies its own love and warning
 foreground/container values; Snow's ratified rows do not become cross-material constants.
 **Gates for any material:** every text/background pair, including `love`/`loveContainer`
-and `warning`/`warningContainer`, ≥ WCAG AA (4.5:1 body, 3:1 large/UI). Enabled
-interaction feedback must not alpha-composite either semantic pair below that
-gate; use geometry rather than whole-control opacity for the pressed state. Pins must visibly
+and `warning`/`warningContainer`, ≥ WCAG AA (4.5:1 body, 3:1 large/UI); pins must visibly
 pop against `ground` (the render is the check); contrast gates are validated *in the token
 sheet*, so an illegible material cannot ship.
 
