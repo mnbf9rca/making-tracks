@@ -40,12 +40,13 @@ Several spec statements are app-wide absolutes that *cannot* be true when Phase 
 - **AC9** Two row types only: raised card-row (`surfaceRaised`, 14pt radius) and hairline row. **[phase-scoped]** [§5]
 - **AC10** One chip capsule family: filled = active, tonal = available. **[phase-scoped]** [§5]
 - **AC11** One toast/pill family carries download progress, location notice, nearby prompt and undo. [§5]
-- **AC12** One progress language — thin accent bar on hairline track — shared by list progress and download progress. [§5]
-- **AC13** `Color.accentColor` resolves to a real `AccentColor` asset (snow accent); no site relies on the stock system accent. **[phase-scoped]** [§5]
+- **AC12** One progress language — thin accent bar on hairline track. Spec §5 names **three** consumers of it: list progress, download progress, **and the ruled #359 map-fetch hairline**. The component must be able to express all three; adopting it at the #359 call site belongs to whichever task owns that surface, and if #359 is unbuilt that adoption is out of phase (see *Explicit non-goals*). [§5]
+- **AC13** `Color.accentColor` resolves to a real `AccentColor` asset (snow accent); no site relies on the stock system accent. **Not phase-scoped** — spec §5 requires this to hold "even before full adoption", which is the whole point of doing it as an asset rather than per-call-site. [§5]
 - **AC14** SF Symbols only, one weight `.medium`, monochrome, tinted `ink`/`muted`/`accent`. No multicolor, no emoji. Bespoke glyphs only for pin category glyphs and the footprints motif. **[phase-scoped]** [§6]
 - **AC15** No view outside `DesignSystem` defines a colour or font literal. **[phase-scoped]** [§8]
 - **AC16** Each surface's extraction from `MapScreen.swift` happens with that surface's adoption — no big-bang rewrite, no adoption without extraction. [§8]
 - **AC17** The map theme type consumes the material sheet, so map and UI have a single colour source. [§8]
+- **AC34** Pins visibly pop against `ground` in every shipped material — spec §3 states "the render is the check", so this is graded on a render, not a ratio. [§3 gates]
 
 ### IA shell — issue #468, spec §2
 
@@ -72,7 +73,7 @@ Several spec statements are app-wide absolutes that *cannot* be true when Phase 
 
 - **AC30** The card's bottom-fade gradient uses the card surface token at both stops; the cream→white seam is gone. [#471]
 - **AC31** The action bar uses the three DS styles: Save tonal, Seen filled, Hide quiet. [#471]
-- **AC32** The photo slot uses the ruled #376 adaptive height; the fixed 132pt frame and the dead missing-photo slot are retired. [#471, §5]
+- **AC32** The photo slot uses the ruled #376 adaptive height: **the frame height adapts to fit the photo, the subject is not cropped, and odd crops are not filled with letterbox bars**, within a min/max clamp. The fixed 132pt frame and the dead missing-photo slot are retired. [#471, §5, and the ruling itself in `docs/design/2026-07-23-design-session/RULINGS.md` → *#376 — Place card photo aspect ratios*]
 - **AC33** `PlaceCardVisualSpec`'s colour literals are gone and the card drops its forced `.preferredColorScheme(.light)` in favour of material tokens. [#471]
 
 ---
@@ -91,6 +92,7 @@ Scope creep here is expensive, because each of these is someone else's issue in 
 | App-wide a11y sweep | DS-10 #476 | You own AC26/27/29 **for the surfaces your task touches**, not app-wide. |
 | Search | DS-11 #477 | The World door reserves the slot. Search does not exist. |
 | Future materials (forest, sand, petals) | DS-12 #478 | — |
+| Adopting the progress component at the #359 map-fetch hairline | #359 | Spec §5 names that hairline as the third consumer of the one progress language, so T1.4's component must be able to express it (AC12). Wiring it at the map-fetch site is #359's own work and is not in this phase — if you find that surface already built and one line from adopting, that is a fold-or-file call, not licence to build it. |
 
 ---
 
@@ -100,7 +102,7 @@ Grounded against `ios` at 42c556f3. These are corrections to the epic's issue bo
 
 | Issue says | Tree says |
 |---|---|
-| `PaperStyle` consumes the material sheet | **No type named `PaperStyle` exists.** The file is `ios/Sources/MakingTracksMapStyle/PaperStyle.swift` but the type inside is `public struct MapTheme` (line 51). The only occurrence of the string "PaperStyle" is inside a test method name at `ios/App/Tests/NativeClusteringSpikeTests.swift:20`. |
+| `PaperStyle` consumes the material sheet | **No type named `PaperStyle` exists.** The file is `ios/Sources/MakingTracksMapStyle/PaperStyle.swift` but the type inside is `public struct MapTheme` (line 51). The string "PaperStyle" survives only as a filename, a test filename (`ios/Tests/MakingTracksMapStyleTests/PaperStyleTests.swift`) and a test method name (`ios/App/Tests/NativeClusteringSpikeTests.swift:20`) — never as a symbol you can call. |
 | "seven per-surface spec enums" in `MapScreen.swift` | **Nine** `*Spec` types exist, and only **four** carry colour/font literals: `PlaceCardVisualSpec` (:24, 13 literals), `TrackVisitEditorVisualSpec` (:851, 10), `TrackReplayTimelineControlSpec` (:1799, 3), `DiagnosticsVisualSpec` (:7651, 1). The other five (`MapHomeChromeSpec` :12, `MapOverlayChromeSpec` :101, `TrackVisitRowDensitySpec` :843, `TrackVisitDragVisualSpec` :1251, `TrackReplayArcGlideSpec` :1813) are pure layout/timing constants. |
 | "13 stock-blue `Color.accentColor` sites" | **10** literal `Color.accentColor` references (all `MapScreen.swift`: 3557, 3960, 4956, 5001, 5454, 5930, 7171, 7909, 8501, 8507), plus **9** `.buttonStyle(.borderedProminent)` sites with no `.tint()` override that also render in the stock accent (`MapScreen.swift` 4131, 4975, 5020, 5783, 8477; `OnboardingFlow.swift` 700, 865, 880, 887). So 10 narrow, 19 broad — not 13. Re-derive the list; do not trust the number. |
 | "four scattered teal definitions" | Four distinct **values** across **six** sites in **two** modules: `#057563` (`MapScreen.swift:44`), `#006e5e` (:50), `#0a6b5c` (:859 and again :7652), `#2d8c83` (:1808 as RGB floats and again `ios/Sources/MakingTracksMapStyle/TrackLayers.swift:9` as a hex string). Plus `accentSoft` `#e3f0eb` (:860). The scattering is worse than "four definitions" implies. |
@@ -108,7 +110,7 @@ Grounded against `ios` at 42c556f3. These are corrections to the epic's issue bo
 | "Retrace one tap away" | **"Retrace" is not a code symbol** — zero occurrences in `ios/`. The real control is a "Map" button in the track summary card (`MapScreen.swift:5866`) and "Show on map" in plain list detail (:5781), both accessibility id `lists.detail.show-map`. |
 | Loved / Hidden become "manageable" rows | **Neither collection surface exists.** No menu row, no view, no accessibility ids. Loved exists only as per-card state plus a filter chip; Hidden only as per-card state plus the "Include hidden places" toggle. Both need **new read helpers** — but **no new schema or migration** (see T1.9). |
 | Hidden management "round-trips with the include-hidden filter" | The filter (`LayersSheet`, `MapScreen.swift:8527`, id `map.layers.show-hidden`) affects **map pin rendering only**, via `PinFeatureFilter.discoveryFeatures`. It does **not** gate `trackVisits`, `trackGeometryContext` or `listProgress`, which unconditionally exclude hidden places (`ios/Sources/MakingTracksData/Derivations.swift:160, 182, 380`). AC25 must be satisfied against that asymmetry, not in ignorance of it. |
-| "the ruled #376 adaptive photo height" | **No reference to #376 exists anywhere in the tree** — no comment, no TODO, no partial implementation. See Open flag OF4. |
+| "the ruled #376 adaptive photo height" | The ruling **is** in the tree, just not in code: `docs/design/2026-07-23-design-session/RULINGS.md` → *#376 — Place card photo aspect ratios* records it verbatim ("Adaptive height - frame fits photo"), and no code, comment or partial implementation exists yet. AC32 states the ruled behaviour; only the min/max clamp values are open, and those are a taste guess for T1.10, not a blocker. |
 | — | **There is no snapshot / visual-regression framework in the repo.** The only "visual" coverage is exact-value constant assertions in `ios/App/Tests/AppShellTests.swift:11` plus behavioural XCUITests by accessibility id. Do not assume pixel coverage exists to catch a styling regression. |
 
 ---
@@ -171,18 +173,22 @@ MT_RELEASE_GATE_MODE=build ./scripts/sim-lock.sh ./scripts/release-gate.sh
 
 ## Dependency graph
 
-```
-T1.1 tokens + module
- ├── T1.2 fonts + OFL
- ├── T1.3 buttons + chips ──┐
- ├── T1.4 sheet/rows/toasts/progress ──┤
- └── T1.5 MapTheme consumes sheet      │
-                                       ├── T1.6 IA shell (doors, chrome, attribution)
-                                       │    ├── T1.7 contextual chrome → toast family
-                                       │    └── T1.8 Tracks door contents (#266 unification)
-                                       │         └── T1.9 Loved + Hidden surfaces
-                                       └── T1.10 place card (STRETCH)
-```
+Edges are "must have merged before this starts". Read them as a list, not as the picture's vertical alignment.
+
+| Task | Depends on |
+|---|---|
+| T1.1 tokens + module | — (critical path) |
+| T1.2 fonts + OFL | T1.1 |
+| T1.3 buttons + chips | T1.1 |
+| T1.4 sheet / rows / toasts / progress | T1.1 |
+| T1.5 map theme consumes sheet | T1.1 |
+| T1.6 IA shell — doors, chrome, attribution | T1.1, T1.3, T1.4 |
+| T1.7 contextual chrome → toast family | T1.6 |
+| T1.8 Tracks door contents, #266 unification | T1.6, T1.4, **T1.2** |
+| T1.9 Loved + Hidden surfaces | T1.8, **T1.2** |
+| T1.10 place card *(stretch)* | T1.1, T1.3, **T1.2** (title only) |
+
+T1.2 is easy to under-read as a leaf: three later tasks render story-voice titles, so the font-role API is a real upstream dependency for T1.8, T1.9 and T1.10, and it is **not** transitively supplied by T1.6 or T1.4.
 
 Suggested waves for a three-builder pool. **Wave 1 is intentionally serial** — T1.1 blocks everything, so keep it small and land it fast; the other two builders should claim T1.2 and T1.3 the moment it merges.
 
@@ -201,21 +207,29 @@ Suggested waves for a three-builder pool. **Wave 1 is intentionally serial** —
 ### T1.1 — DesignSystem module, material token schema, snow sheet, AccentColor asset
 
 - **Issue:** #467 · **Spec section:** §3, §8
-- **Acceptance criteria:** AC1, AC2, AC3 (constant pin block only), AC13
+- **Acceptance criteria:** AC1, AC2, AC3 (constant pin block only), AC13, AC34 (snow)
 - **Depends on:** none — **this is the critical path; everything else waits on it**
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `opus`
 - **Status:** unclaimed
+- **Contracts produced:** the material token sheet API — the type that names the semantic tokens, the accessor other modules call, and the constant pin block. **T1.2 through T1.10 all consume this**, so its shape is a cross-task contract: fix it in this PR and name it in the PR body, because four builders start against it the moment this merges (PRINCIPLES Engineering 18, contracts before parallelism).
+- **Contracts consumed:** none.
 
 **Builder brief.** Create the `DesignSystem` module and the token foundation. No surface re-skins in this task.
 
-Mechanics, grounded: `ios/Package.swift` is the local SPM manifest (name `MakingTracksData`, swift-tools 6.0) declaring four library targets each with a sibling `.testTarget` — follow the `MakingTracksMapStyle` / `MakingTracksMapStyleTests` pattern at `ios/Package.swift:40`. Add a `.target(name: "DesignSystem")`, a matching `.library` product, and a `.testTarget(name: "DesignSystemTests")`, with sources under `ios/Sources/DesignSystem/` and tests under `ios/Tests/DesignSystemTests/`. Then add the `DesignSystem` product to the `MakingTracks` app target's dependency list in `ios/App/project.yml:25` — the `packages:` block at `:19` already points at `path: ..`, so no new package entry is needed. Then run `cd ios/App && xcodegen generate` by hand and commit the regenerated project.
+Mechanics, grounded. `ios/Package.swift` is the local SPM manifest (name `MakingTracksData`, swift-tools 6.0). Copy the `MakingTracksMapStyle` shape: its `.library` product is declared at `ios/Package.swift:10`, its `.target` at `:29`, and its `.testTarget` at `:49`–`:50`. Add the same triplet for `DesignSystem` — `.library` product, `.target`, and `.testTarget(name: "DesignSystemTests", dependencies: ["DesignSystem"])` — with sources under `ios/Sources/DesignSystem/` and tests under `ios/Tests/DesignSystemTests/`.
+
+Then wire it into the app. In `ios/App/project.yml`, the `packages:` block is at `:20` and already points at `path: ..`, so **no new package entry is needed**; the `MakingTracks` app target's `dependencies:` list is at `:36`, where the existing four products are declared as `- package: MakingTracksData` / `product: <name>` pairs at `:37`–`:44`. Add a fifth pair for `DesignSystem` in the same form. Then run `cd ios/App && xcodegen generate` by hand and commit the regenerated project — nothing automates this.
 
 The token sheet: semantic names, **one value column per material**, snow values exactly as the spec §3 table gives them. The schema must admit a second column (mud) without redesign, but **no mud values ship this phase** — that is DS-7 #473. Include the constant pin block (`pin` `#E4572E`, `pinFaded` 35%) as values that are *by construction* shared across material columns, so AC3 is a property of the schema rather than a convention someone can break.
 
+**Tokens resolve statically, not dynamically.** Spec §3's mode model is theme-locked: snow *is* light, mud *is* dark, and the app renders the pinned material "regardless of system light/dark". So token values must not be dynamic or appearance-adaptive colours — a token that resolves differently under system dark appearance breaks theme-locking the moment T1.10 removes the place card's forced light mode. Assert it: the snow column resolves to identical values under both system appearances.
+
 AC2 is a **test**, not a review step: assert every text/background pair in the snow column meets 4.5:1 for body and 3:1 for large/UI. Write it so adding a material with an illegible pair fails the suite. This runs host-only — `cd ios && swift test` — no simulator, no fleet lock. Prove teeth: perturb one token to a failing contrast and confirm the test goes red.
 
-`AccentColor`: `ios/App/Assets.xcassets` currently contains only `AppIcon.appiconset` and has no `AccentColor` entry, so create one set to the snow accent (`#0A6B5C`). That alone fixes the stock-blue default at the 10 literal `Color.accentColor` sites; you do not need to rewrite those call sites in this task. The nine unstyled `.borderedProminent` sites are AC7's problem and belong to the surfaces that adopt buttons, not here.
+AC34 is graded on a **render**, not a ratio — spec §3 says "the render is the check". Ship a render showing pins over `ground` so the pop is visible.
+
+`AccentColor` (AC13, **not** phase-scoped — spec §5 wants no stock-blue site surviving "even before full adoption"). `ios/App/Assets.xcassets` contains only `AppIcon.appiconset` today, so add an `AccentColor` colorset set to the snow accent `#0A6B5C`. **An asset named `AccentColor` is not automatically the app's accent** — the app target must point at it via the `ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME` build setting in `ios/App/project.yml`, or the 10 literal `Color.accentColor` sites keep resolving to stock blue. Set it, regenerate, and verify on a real screen rather than trusting the asset's presence. You do not need to rewrite those 10 call sites. The nine unstyled `.borderedProminent` sites are AC7's problem and belong to the surfaces that adopt buttons.
 
 Do **not** migrate the four colour-carrying `*Spec` enums in this task — extraction accompanies adoption (AC16). Leave them; T1.10 and later phases dissolve them.
 
@@ -226,19 +240,27 @@ You changed `project.yml`, so the Release build must run even though your logic 
 ### T1.2 — Newsreader font provider and OFL licence entry
 
 - **Issue:** #467 · **Spec section:** §4
-- **Acceptance criteria:** AC4, AC5 (provider API only), AC6, AC27 (Newsreader scaling)
+- **Acceptance criteria:** AC4, AC6, AC27 (Newsreader scaling). **AC5 is shared**: this task owns the *role API* that makes the story/machinery split expressible; the tasks that render text own applying it (T1.6, T1.8, T1.9, T1.10).
 - **Depends on:** T1.1
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `opus`
 - **Status:** unclaimed
+- **Contracts produced:** the font-role API. **T1.6, T1.8, T1.9 and T1.10 all consume it** for titles and place names, so fix its shape here and name it in the PR body: callers ask for a *role* (display, sheet title, place name, list-row title, evocative sub-line, and the SF machinery roles), never for a font or a point size.
+- **Contracts consumed:** T1.1's token sheet.
 
 **Builder brief.** Ship the story voice.
 
-The tree has **no custom fonts at all** today: no `.ttf`/`.otf` in the repo, no `UIAppFonts` key in `ios/App/Sources/Info.plist`, no font registration calls, and `UIFontMetrics` appears exactly once (`MapScreen.swift:8303`, scaling a hand-built `UIFont` for `.caption2`). You are establishing this path, not extending one.
+The tree has **no custom fonts at all** today: no `.ttf`/`.otf` anywhere in the repo, no `UIAppFonts` key in `ios/App/Sources/Info.plist`, no font registration calls, and `UIFontMetrics` appears exactly once (`MapScreen.swift:8303`, scaling a hand-built `UIFont` for `.caption2`). You are establishing this path, not extending one.
 
-Acquire Newsreader (Production Type, SIL OFL 1.1) and ship **static named instances, 3–4 cuts spanning the optical range — not the variable font file**; iOS variable-font APIs are unreliable and the spec rules them out. Register via `UIAppFonts`. The provider lives in `DesignSystem` and exposes the story roles by name (display lines, sheet titles, place names, list-row titles) plus italic for evocative sub-lines. Every cut is scaled through `UIFontMetrics(forTextStyle:)` with the text style matched to the design size — a raw point size that does not scale is a defect (AC27).
+**Acquisition, concretely.** Newsreader is by Production Type, licensed SIL OFL 1.1, and is published on Google Fonts (`https://fonts.google.com/specimen/Newsreader`) with source at `https://github.com/productiontype/Newsreader`. Take the **static** instances, not the variable file — spec §4 rules the variable file out because iOS variable-font APIs are unreliable. Ship 3–4 cuts spanning the optical range plus the italic the spec calls for on evocative sub-lines.
 
-The provider must also express the machinery voice (SF) so that AC5 is expressible as an API distinction rather than a convention: a caller picks a *role*, not a font. On-map labels stay sans and are not your concern — they are MapLibre style layers, not SwiftUI text.
+**Where the files go and how they bundle.** There is no precedent in this repo, so establish one: put the font files under `ios/App/Resources/Fonts/`, add that directory to the `MakingTracks` target's `sources:` in `ios/App/project.yml` (the app target's `sources:` list sits above its `dependencies:` at `:36`) so XcodeGen copies them into the bundle, then declare each filename under a `UIAppFonts` array in `ios/App/Sources/Info.plist`. Run `cd ios/App && xcodegen generate` and commit the regenerated project. Verify the fonts actually registered at runtime rather than assuming — a misnamed `UIAppFonts` entry fails silently and falls back to the system font, which looks like nothing happened.
+
+**Do not rename the font files.** The OFL's Reserved Font Name clause makes a rename a licence violation, and renaming is also how the `UIAppFonts` entry silently stops matching.
+
+Every cut is scaled through `UIFontMetrics(forTextStyle:)` with the text style matched to the design size — a raw point size that does not scale is a defect (AC27). The provider must also express the machinery voice (SF) so AC5 becomes an API distinction rather than a convention. On-map labels stay sans and are not your concern — they are MapLibre style layers, not SwiftUI text.
+
+**Fallback.** Spec §4 retains New York as a runtime `design: .serif` fallback (its licence forbids bundling, so it is only ever a fallback). Make the provider degrade to `design: .serif` if a Newsreader cut is missing at runtime, rather than silently rendering SF where the story voice was specified — a silent fall back to the machinery voice is invisible in review and wrong on every card.
 
 AC6 needs **no About-screen code change**. `AboutView` (`MapScreen.swift:7968`) loads `ios/App/Sources/OSSCredits.json` (`:8002`) and renders each entry; that file already contains a full OFL-1.1 entry for the Noto Sans glyph mirror with the complete licence body inlined in `notice_text`. Add a Newsreader entry following that exact pattern (`license_spdx: "OFL-1.1"`, licence text in `notice_text`).
 
@@ -256,6 +278,9 @@ AC6 needs **no About-screen code change**. `AboutView` (`MapScreen.swift:7968`) 
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `opus`
 - **Status:** unclaimed
+- **Contracts produced:** the three `ButtonStyle`s and the chip family. **T1.6, T1.7, T1.8, T1.9 and T1.10 all consume them** — fix the names and the tone/state API here and name them in the PR body.
+- **Contracts consumed:** T1.1's token sheet.
+- **Gate:** the components are in a SwiftPM target, so their tests are host-only (`cd ios && swift test`). You changed no app-target file, so no fleet lock and no Release build are needed — **unless** you touch `project.yml`, in which case run `MT_RELEASE_GATE_MODE=build ./scripts/sim-lock.sh ./scripts/release-gate.sh`.
 
 **Builder brief.** Three `ButtonStyle`s and one chip family in `DesignSystem`, all reading tokens.
 
@@ -279,6 +304,9 @@ Ship a render of the three buttons and the chip states at 390×844 plus an AX va
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `opus`
 - **Status:** unclaimed
+- **Contracts produced:** the sheet pattern, the two row types, the toast/pill family and the progress component. **T1.6, T1.7, T1.8 and T1.9 all consume them** — fix the API here and name it in the PR body.
+- **Contracts consumed:** T1.1's token sheet.
+- **Gate:** host-only (`cd ios && swift test`) unless you touch `project.yml`, as T1.3.
 
 **Builder brief.** The remaining core components in `DesignSystem`.
 
@@ -288,7 +316,7 @@ Ship a render of the three buttons and the chip states at 390×844 plus an AX va
 
 **Toast/pill family:** one component that can express all four of today's bespoke views. They currently disagree on every axis, which is the defect: download-progress pill (`MapScreen.swift:3365`, `.ultraThinMaterial` + `Capsule`, `.caption` semibold), location-off banner (`:4039`, `.ultraThinMaterial` + `Capsule`, `.caption2` semibold), nearby prompt (`:4117`, `.ultraThinMaterial` + `RoundedRectangle(cornerRadius: 10)`, `.caption2`, with an embedded `.borderedProminent` button), undo toast (`:3135`, `.regularMaterial` + `Capsule`, `.callout` medium, with a `.bordered` button). Your family must cover: text-only, text + one action, and text + action + dismiss. **Do not migrate the four call sites here** — that is T1.7.
 
-**Progress:** one language, a thin accent bar on a hairline track, used by both list progress and download progress. It **carries a count** (AC28): never colour or bar-length alone.
+**Progress:** one language, a thin accent bar on a hairline track. Spec §5 names **three** consumers — list progress, download progress, and the ruled #359 map-fetch hairline — so the component must express all three shapes, including a bare hairline with no count where a map-fetch indicator has no meaningful total. It **carries a count wherever one exists** (AC28): never colour or bar-length alone. Adopting it at the #359 call site is not yours; see *Explicit non-goals*.
 
 Host tests plus renders (390×844 and an AX variant, HTML committed).
 
@@ -297,17 +325,21 @@ Host tests plus renders (390×844 and an AX variant, HTML committed).
 ### T1.5 — The map theme consumes the material sheet
 
 - **Issue:** #467 · **Spec section:** §8
-- **Acceptance criteria:** AC3 (pin/track constants), AC17
+- **Acceptance criteria:** AC3 (pin/track constants), AC17, AC34 (the pin-pop render is this task's evidence)
 - **Depends on:** T1.1
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `opus`
 - **Status:** unclaimed
+- **Contracts consumed:** T1.1's token sheet, including its constant pin block.
+- **Contracts produced:** none new, but you change `MapTheme`'s source of values, which `MLNMapViewRepresentable` and the theme picker both read — say so in the PR body.
 
 **Builder brief.** Make map and UI share one colour source.
 
-**Read this first: there is no `PaperStyle` type.** The file is `ios/Sources/MakingTracksMapStyle/PaperStyle.swift`; the type inside is `public struct MapTheme` at line 51, exposing hex-string colours (`background`, `land`, `parks`, `water`, `roads`, `boundaries`, `labels`, `labelHalo`) plus widths and flags, with four static presets (`.snow`, `.definedPaper`, `.streetContrast`, `.verdantKL`), `allCandidates` (`:174`) and `named(_:)`. Consumers: `ios/App/Sources/Map/MLNMapViewRepresentable.swift:166` for layer construction, and `MapScreen.swift:3333` (`selectedTheme`) plus the theme-picker UI around `:7849`–`:7890`.
+**Read this first: there is no `PaperStyle` type.** The file is `ios/Sources/MakingTracksMapStyle/PaperStyle.swift`; the type inside is `public struct MapTheme` at line 51, exposing hex-string colours (`background`, `land`, `parks`, `water`, `roads`, `boundaries`, `labels`, `labelHalo`) plus widths and flags, with four static presets (`.snow`, `.definedPaper`, `.streetContrast`, `.verdantKL`), `allCandidates` (`:174`) and `named(_:)`. Consumers: `ios/App/Sources/Map/MLNMapViewRepresentable.swift:166` for layer construction, and `MapScreen.swift:3333` (`selectedTheme`). The theme-**picker** UI is the "Map theme" section of `SettingsView` (`MapScreen.swift:7153`–`7182`); note that `:7849`–`:7890` is `PinSizePreview`, a pin-size swatch, **not** the picker.
 
-Derive **`MapTheme.snow`** from the `DesignSystem` snow material sheet — `ground`→land, `water`, `park`, `road`/`roadMinor`, and the label colours — so the map and the app surfaces read the same tokens (AC17).
+Derive **`MapTheme.snow`** from the `DesignSystem` snow material sheet — `ground`→`land`, `water`, `park`→`parks`, `road`/`roadMinor`→`roads` — so the map and the app surfaces read the same tokens (AC17).
+
+**Four of `MapTheme`'s fields have no token in the spec §3 table: `background`, `boundaries`, `labels`, `labelHalo`.** See Open flag OF4. Do not invent ratified-looking token rows: use the best guess recorded there (`background`→`ground`, `labels`→`muted`, `labelHalo`→`ground`, `boundaries`→`hairline`), and state in your PR body that any token row you add beyond the spec §3 table is a **proposal to Rob**, not a ratified value. AC1's "matches the spec §3 table exactly" binds the tokens that table names — it cannot bind rows the table does not have.
 
 **Leave the other three presets and the theme picker alone.** The spec says the four existing paper themes "fold into the material system … decided in the material architecture issue with a migration for the stored `map.theme.id`", and that migration is DS-7 #473, out of this phase. Deleting or rewiring the presets now would break the picker and its UITests (`ios/App/UITests/MakingTracksCoreLoopUITests.swift:2427`–`3246`) for no in-phase benefit. This is a taste guess — flag it in your PR body with that alternative stated.
 
@@ -315,19 +347,24 @@ Also collapse the pin and track constants onto the sheet's constant block (AC3):
 
 Fold-or-file note: `TrackLineStyle` (`ios/Sources/MakingTracksMapStyle/TrackLineStyle.swift:3`) has no call sites outside `TrackLayers.swift`. Do not assume the app constructs it.
 
-`MapTheme` is in a SwiftPM target, so its tests are host-only (`cd ios && swift test`), but map rendering changed — run the full gate and confirm the map still renders in the simulator.
+`MapTheme` is in a SwiftPM target, so its tests are host-only (`cd ios && swift test`), but map rendering changed — run the full gate too.
+
+**This task changes the map's visible palette, so it ships renders.** Today's `MapTheme.snow` is `land #ECE8DD`, `water #DCE3E5`, `roads #E3DED2`; the spec §3 snow column is `ground #F4F1EA`, `water #C9DBE2`, `road #C9BFA8`. That is a visible change to the app's largest surface, and the authoring law is explicit that a PR changing how a surface looks carries the renders that show it — "confirm it still renders" is not evidence. Ship before/after renders of the map home at 390×844 plus an AX variant with HTML sources committed, and make one of them the **AC34 pin-pop check**: pins over the new `ground`, so the pop is visible rather than asserted.
 
 ---
 
 ### T1.6 — IA shell: two doors replace the hamburger, chrome reduction, bare attribution
 
 - **Issue:** #468 · **Spec section:** §2
-- **Acceptance criteria:** AC18, AC19, AC20, AC22, AC23, AC26/AC27/AC29 for the chrome and door surfaces
+- **Acceptance criteria:** AC18, AC19, AC20, AC22, AC23, plus AC14 (the door pill icons and the retired chrome glyphs), AC15/AC16 (the chrome and door code you move out of `MapScreen.swift`), AC5 (any Newsreader text on the door surfaces), AC26/AC27/AC29 for the chrome and door surfaces
 - **Depends on:** T1.1, T1.3, T1.4
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `greptile` + `opus` — **the phase's highest-risk task**
 - **Status:** unclaimed
-- **Ruled render:** `docs/design/design-system/ia-doors.png` — certifies the **door pattern only**. Its row list predates a ruling: Offline maps and Coverage live in **Settings**, and a Search slot joins the World door. Spec §2 is canonical.
+- **Contracts consumed:** T1.1 tokens, T1.3 buttons/chips, T1.4 sheet pattern. If any door text uses the story voice you also consume T1.2's font-role API — if T1.2 has not merged, use SF for the door pills (spec §5 specifies SF 600 for doors) and leave story-voice text to T1.8.
+- **Ruled render:** `docs/design/design-system/ia-doors.png` — certifies the **door pattern only**, not its row list. The render shows Offline maps and Coverage as World-door rows; spec §2 supersedes that. Implement spec §2's rows, not the render's.
+
+**Doors, per spec §5:** pill buttons on `surface`, hairline border, soft shadow, SF 600 text, accent stroke icon. AC14 binds those icons — SF Symbols only, one weight `.medium`, monochrome, tinted. This task is also where spec §6's "odd-one-out chrome glyphs (filter icon, etc.)" retire structurally, since the chrome cluster they lived in is being rebuilt.
 
 **Builder brief.** Replace the hamburger and its modal menu with two door pills, without losing a single destination.
 
@@ -339,7 +376,7 @@ What must survive, because deleting the menu does not delete these destinations.
 |---|---|---|
 | `.settings` → `SettingsView` (`:7141`) | World door, quiet bottom row | Screen unchanged (DS-6 #472 owns its rebuild) |
 | `.about` → `AboutView` (`:7968`) | World door, quiet bottom row | Screen unchanged |
-| `.offlineMaps` | **Settings**, not a door | Already reachable from Settings' "Manage offline maps" row (`:7230`, id `settings.storage.manage`, routing to the same `MenuDestination.offlineMaps` at `:7915`). Per spec §2 this is now its only menu home. |
+| `.offlineMaps` | **Settings**, not a door | Reachable today from Settings' "Manage offline maps" row (`:7230`, id `settings.storage.manage`, routing to the same `MenuDestination.offlineMaps` at `:7915`). *Target:* spec §2 makes Settings its only menu home, so this task removes the root menu row and adds no door row. Settings' own reorganisation into Offline-maps and Coverage groups is DS-6 #472 — do not restructure Settings here. |
 | `.lists` → `ListsView` (`:5352`) | Tracks door | See below |
 | `.tracks` → `TrackListDetailDeepLinkView` (`:5237`) | Tracks door | See below |
 | `.listDetail(Int64)` | Deep link only | Reached from list-mode "Back" (`:3400`) |
@@ -347,7 +384,9 @@ What must survive, because deleting the menu does not delete these destinations.
 
 **The Tracks door routes to today's surfaces in this task.** Its contents are restructured in T1.8. If you delete the hamburger and leave the Tracks door empty, the app regresses between two merges — so the door opens onto the existing Lists / My-tracks destinations, and T1.8 replaces that content. Say so in your PR body so the reviewer knows the door is deliberately provisional.
 
-**The World door's Scope row routes to the existing Layers sheet, unchanged.** Entry today is `layersButton` (`:3953`, id `map.layers`) opening `LayersSheet` (`:8519`, detents medium/large) which holds the include-hidden toggle (`:8527`), coverage shading (`:8540`) and the category toggles (`:8554`). Merging that with the list-mode filter chips (`:3465`, which open a *different* sheet, `TrackFilterPickerSheet` at `:8408`) is DS-3 #469 and **out of scope**. Whether the standalone layers button survives alongside the door's Scope row is a taste call — flag your choice.
+**The World door's Scope row routes to the existing Layers sheet, unchanged.** Entry today is `layersButton` (`:3953`, id `map.layers`) opening `LayersSheet` (`:8519`, detents medium/large) which holds the include-hidden toggle (`:8527`), coverage shading (`:8540`) and the category toggles (`:8554`). Merging that sheet's contents with the list-mode filter chips (`:3465`, which open a *different* sheet, `TrackFilterPickerSheet` at `:8408`) is DS-3 #469 and **out of scope** — you route to the sheet as it stands.
+
+**The standalone layers button is deleted, and this is not a taste call.** Spec §9 item 2 reads "two doors replace hamburger **+ Layers entry**", and AC19 — which this task owns — enumerates persistent chrome exhaustively as compass, locate, the two doors and the attribution, with no sixth slot. `layersButton` is unconditional persistent chrome today: it renders in **both** branches of the `if/else` in `shellChrome` (`:3343`–`:3387`) and `shellChrome` itself is an ungated `.overlay` (`:2796`). So the World door's Scope row becomes the only entry to `LayersSheet`, and the `map.layers` UITests get re-pointed once, here. In list-mode, where the button also appears today, the door is still present, so the Scope row remains reachable — confirm that in the simulator rather than assuming it.
 
 **Deep links that must keep working.** `AppShellModel` (`:787`, extended `:2276`) is the source of truth. Five entry points: `openMenu()` (`:794`, dies with the hamburger), `openListDetailDeepLink` (`:801`, called from list-mode Back at `:3400`), `openListsDeepLink` (`:2277` — **no production caller; exercised only by `AppShellTests.swift:83`**), `openTracksDeepLink` (`:2284`, called from the place card's "Manage visits" at `:3047`), `openOfflineMapsDeepLink` (`:2291`, called from **two** places: the empty-region card's action at `:5014`/wired `:2837`, and the download-progress pill at `:3367`). AC22 is graded on all of these still resolving. The dead `openListsDeepLink` is a fold-or-file call: small and encapsulated, so remove it in this PR and log the issue, or keep it and say why.
 
@@ -360,7 +399,7 @@ What must survive, because deleting the menu does not delete these destinations.
 
 **Search slot — see Open flag OF2.** Best guess: the door's layout reserves the position but renders no row until DS-11 #477, because a visible dead row invites taps that do nothing. Flag it with the alternative (a disabled row) stated.
 
-**The test migration is the bulk of this task and the reason for the Greptile slot.** `ios/App/UITests/MakingTracksCoreLoopUITests.swift` has roughly 70 tests, many driving the menu through a helper `openAppMenu(in:)` (first use around `:850`) and asserting on ids `map.menu`, `menu.row.lists`, `menu.row.tracks`, `menu.row.settings`, `menu.row.offline-maps`, `menu.row.about`, `menu.done`. Representative cases to re-point rather than delete: `testMenuAboutCarriesCreditsAndMapAttributionIsInert` (`:2203`) and `testOfflineProgressChipDeepLinksToOfflineMaps` (`:2234`). In unit tests, `testMapHomeChromeUsesFilterGlyphAndChiplessMenuSpec` (`ios/App/Tests/AppShellTests.swift:47`) asserts `MapHomeChromeSpec`'s hamburger constants directly and must be rewritten, and the `AppShellModel` routing tests at `:56`, `:71`, `:80`, `:89`, `:99`, `:109` must be re-pointed at the new routing.
+**The test migration is the bulk of this task and the reason for the Greptile slot.** `ios/App/UITests/MakingTracksCoreLoopUITests.swift` has roughly 70 tests, many driving the menu through a helper `openAppMenu(in:)` (first call site `:630`) and asserting on ids `map.menu`, `menu.row.lists`, `menu.row.tracks`, `menu.row.settings`, `menu.row.offline-maps`, `menu.row.about`, `menu.done`. Representative cases to re-point rather than delete: `testMenuAboutCarriesCreditsAndMapAttributionIsInert` (`:2203`) and `testOfflineProgressChipDeepLinksToOfflineMaps` (`:2234`). In unit tests, `testMapHomeChromeUsesFilterGlyphAndChiplessMenuSpec` (`ios/App/Tests/AppShellTests.swift:47`) asserts `MapHomeChromeSpec`'s hamburger constants directly and must be rewritten, and the `AppShellModel` routing tests at `:56`, `:71`, `:80`, `:89`, `:99`, `:109` must be re-pointed at the new routing.
 
 **Re-point tests; do not delete them to get green.** A test deleted because its identifier moved is lost coverage of a destination that AC22 says must still work. If a test genuinely no longer describes a behaviour that exists, say so explicitly in the PR body and name what replaces its coverage.
 
@@ -371,11 +410,12 @@ Full gate required, plus renders of the map home with both doors and each door o
 ### T1.7 — Contextual chrome adopts the toast/pill family
 
 - **Issue:** #468 · **Spec section:** §2, §5
-- **Acceptance criteria:** AC11, AC23, AC26, AC29
+- **Acceptance criteria:** AC11, AC12 (the download-progress consumer), AC23, plus AC15/AC16 (these four views come out of `MapScreen.swift` as they adopt), AC26, AC29
 - **Depends on:** T1.6
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `opus`
 - **Status:** unclaimed
+- **Contracts consumed:** T1.1 tokens, T1.3 buttons (the nearby prompt's embedded action), T1.4 toast/pill family and progress component.
 
 **Builder brief.** Migrate the four bespoke contextual views onto T1.4's family.
 
@@ -394,22 +434,24 @@ Full gate plus renders of each of the four states.
 ### T1.8 — Tracks door contents: unify #266, My tracks hero, Lists with progress
 
 - **Issue:** #470 · **Spec section:** §2
-- **Acceptance criteria:** AC21 (My tracks and Lists parts), AC24, AC28, AC26/AC27/AC29
-- **Depends on:** T1.6, T1.4
+- **Acceptance criteria:** AC21 (My tracks and Lists parts), AC22 (**you inherit it**: T1.6 wired this door provisionally, so you are the task that can silently drop a destination), AC24, AC28, plus AC5 (Newsreader titles), AC12 (the progress bar), AC15/AC16 (what you extract from `MapScreen.swift` as this surface adopts), AC26/AC27/AC29
+- **Depends on:** T1.6, T1.4, **T1.2** — the hero and list-row titles are story-voice text, so this task needs the font-role API, which is not a transitive dependency of T1.6 or T1.4
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `opus`
 - **Status:** unclaimed
+- **Contracts consumed:** T1.1 tokens, T1.2 font roles, T1.4 rows + progress component, T1.6's door surface.
 - **Ruled renders:** `coherence.png` frame 4, `ia-doors.png` frame 3
 
 **Builder brief.** Build the Tracks door's real contents, and actually deliver #266's unification.
 
-**#266 is unbuilt — this is not a restyle.** Today `.lists` and `.tracks` are two distinct `MenuDestination` cases (`MapScreen.swift:740`) reaching the same `ListDetailView` for the system track list by two paths: `.tracks` → `TrackListDetailDeepLinkView` (`:5237`), which fetches the list where `isSystem && kind == PlaceList.trackKind` (`:5275`, kind defined at `ios/Sources/MakingTracksData/Models/PlaceList.swift:7`); and `.lists` → `ListsView` (`:5352`), whose row for that same system list navigates to the same detail view (`:5390`). `ListDetailView` (`:5508`) then branches on `isTrackListDetail` (`:5562`) into `trackListPage` versus `collectionListBody`. **UITest `testTracksMenuAndListsMyTracksReachSameScreenIdentity` (`ios/App/UITests/MakingTracksCoreLoopUITests.swift:1406`) currently asserts the drift** — it must be rewritten to assert the single surface, not two paths agreeing.
+**#266 is unbuilt — this is not a restyle.** Today `.lists` and `.tracks` are two distinct `MenuDestination` cases (`MapScreen.swift:740`) reaching the same `ListDetailView` for the system track list by two paths: `.tracks` → `TrackListDetailDeepLinkView` (`:5237`), which fetches the list where `isSystem && kind == PlaceList.trackKind` (`:5275`, `trackKind` defined at `ios/Sources/MakingTracksData/Models/PlaceList.swift:6`, the `kind` property at `:11`); and `.lists` → `ListsView` (`:5352`), whose row for that same system list navigates to the same detail view (`:5390`). `ListDetailView` (`:5508`) then branches on `isTrackListDetail` (`:5562`) into `trackListPage` versus `collectionListBody`. **UITest `testTracksMenuAndListsMyTracksReachSameScreenIdentity` (`ios/App/UITests/MakingTracksCoreLoopUITests.swift:1406`) currently asserts the drift** — it must be rewritten to assert the single surface, not two paths agreeing.
 
 The door presents:
 
 - **My tracks hero** — raised card-row (T1.4), Newsreader title, SF metadata. Lands on the list-detail surface with **Retrace one tap away**. "Retrace" is spec vocabulary with no code symbol: the control is the "Map" button in the track summary card (`:5866`) or "Show on map" in plain list detail (`:5781`), both id `lists.detail.show-map`, calling `onShowOnMap` → `showListOnMap` (`:4528`) which sets `activeListMap`. Keep that id.
-- **Lists** — hairline rows with per-list progress. **The query already exists:** `AppDatabase.listProgress(listID:)` (`ios/Sources/MakingTracksData/Derivations.swift:315`) returns `ListProgress(visited:total:)` (`Models/PlaceList.swift:37`), with an async wrapper `MapScreenModel.listProgress(listID:)` (`MapScreen.swift:9947`) and existing UI use in `ListsView.listRow` (`:5449`). No new query needed. Render it with T1.4's progress bar **and its counts** — AC28 forbids bar-length alone.
-- **Loved places** and **Hidden places** rows are **T1.9**, not this task. Leave their positions out or inert, and say which in your PR body.
+- **Lists** — hairline rows with per-list progress. **The query already exists:** `AppDatabase.listProgress(listID:)` (`ios/Sources/MakingTracksData/Derivations.swift:315`) returns a bare tuple `(visited: Int, total: Int)` — **not** the `ListProgress` struct, which is declared at `Models/PlaceList.swift:37` and built one layer up. There is an async wrapper `MapScreenModel.listProgress(listID:)` (`MapScreen.swift:9947`) and existing UI use in `ListsView.listRow` (`:5449`). No new query needed. Render it with T1.4's progress bar **and its counts** — AC28 forbids bar-length alone.
+- **New list** — the ratified render's Lists block carries a "New list" row (`docs/design/design-system/ia-doors.html:786`) and the affordance exists today as a `TextField("New list", …)` inside `ListsView` (`MapScreen.swift:5369`; a second one lives in the add-to-list sheet at `:8130`, which is not yours). **Carry it across.** It is the one row in the ruled render that no other task owns, and AC22 means losing it is a regression, not a simplification.
+- **Loved places** and **Hidden places** rows are **T1.9**, not this task. Do **not** ship a visible row that does nothing — same reasoning as OF2's Search slot. Reserve the positions in the layout and render no rows, and say so in your PR body.
 
 AC24 is a regression gate, not new work: one surface, list-detail landing, verdict edits fold in, membership protected. The system "My tracks" list is protected in the data layer (`ios/Tests/MakingTracksDataTests/InteractionsTests.swift:99` `testMyTracksSystemListIsProtectedAndUsesTrackKind`; `ListsView` already gates delete on `!list.isSystem` at `:5404`) — do not weaken that.
 
@@ -422,11 +464,14 @@ Full gate plus renders of the door and the hero landing.
 ### T1.9 — Loved and Hidden places become browsable surfaces
 
 - **Issue:** #470 · **Spec section:** §2
-- **Acceptance criteria:** AC21 (Loved and Hidden parts), AC25, AC26/AC27/AC29
-- **Depends on:** T1.8
+- **Acceptance criteria:** AC21 (Loved and Hidden parts), AC22 (the door keeps every destination it had), AC25, plus AC5 (Newsreader titles on the new surfaces), AC15/AC16, AC26/AC27/AC29
+- **Depends on:** T1.8, and **T1.2** for story-voice titles on the two new surfaces
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `opus` (a Greptile slot here is fable's call — see *Review budget*)
 - **Status:** unclaimed
+- **Contracts consumed:** T1.1 tokens, T1.2 font roles, T1.4 rows, T1.8's door structure.
+- **Contracts produced:** two new read helpers on `AppDatabase` — an all-loved-places query and a hidden-places-with-snapshot-data query. Name their signatures in the PR body; nothing else in the phase consumes them, but DS-6 and later phases will.
+- **Ruled renders:** `coherence.png` frame 4 and `ia-doors.png` frame 3 both show the Tracks door's row set — the Loved and Hidden rows you build are two of the four rows those renders certify, so they are graded against them. The list surfaces *behind* those rows are new and have no ruled render: specify them against the DS row and sheet patterns, and ship your own renders.
 
 **Builder brief.** This is **new UI over new read queries** — not a rewire of an existing screen. Neither surface exists today.
 
@@ -451,12 +496,13 @@ Write host-level tests for the two new queries (`cd ios && swift test`) before t
 ### T1.10 — Place card adopts the design system — **STRETCH**
 
 - **Issue:** #471 · **Spec section:** §5
-- **Acceptance criteria:** AC30, AC31, AC32, AC33, plus AC15/AC16 for this surface and AC26/AC27/AC29
-- **Depends on:** T1.1, T1.3
+- **Acceptance criteria:** AC30, AC31, AC32, AC33, plus AC5 (the place name is story voice), AC15/AC16 for this surface, AC26/AC27/AC29
+- **Depends on:** T1.1, T1.3, and **T1.2** if you move the card's title onto the story voice (the place name is one of spec §4's named Newsreader roles). If T1.2 has not merged, do the token and action-bar work and leave the title to a follow-up, saying so in the PR body.
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `opus`
 - **Status:** unclaimed — **stretch: claim only when no in-scope task is unclaimed**
-- **Ruled render:** `coherence.png` frame 3
+- **Contracts consumed:** T1.1 tokens, T1.3 button styles, T1.2 font roles (title only).
+- **Ruled renders:** `coherence.png` frame 3 for the card, and `docs/design/2026-07-23-design-session/RULINGS.md` → *#376* for the photo-height ruling.
 
 **Builder brief.** Move the place card onto tokens. This is the phase's first real *adoption*, so AC16 applies: extraction accompanies adoption.
 
@@ -468,7 +514,9 @@ Write host-level tests for the two new queries (`cd ios && swift test`) before t
 
 **Photo slot (AC32).** `mediaSlotHeight = 132` (`:37`) is applied at both `PlaceCardMissingPhotoSlot.body` (`:9148`) and `PlaceCardPhotoSlot.body` (`:9191`). The dead slot is `PlaceCardMissingPhotoSlot` (`:9135`), reachable only through `photoSlot(_:)` (`:8778`) behind `PlaceCardVisualSpec.showsMediaSlotWhenPhotoMissing`, which is a `static let false` (`:34`) never written anywhere — so the branch is **unreachable dead code**, and the type has no other call site. Retire the flag, the branch and the type together.
 
-**Open flag OF4 gates the rest of AC32.** There is **no reference to #376 anywhere in the tree** — no comment, no TODO, no partial work — so the "ruled adaptive height" is not recorded where you can read it. Read issue #376 itself for the ruling. If #376 does not state a concrete rule, do **not** guess a layout algorithm: adaptive photo height is a system-wide visual change and a wrong guess is expensive to rework, which is exactly the taste-call case that escalates. Deliver the rest of the task and flag AC32's height rule as blocked on a ruling.
+**The #376 ruling exists — read it, do not re-derive it.** `docs/design/2026-07-23-design-session/RULINGS.md` → *#376 — Place card photo aspect ratios* records Rob's decision verbatim: "Adaptive height - frame fits photo". Concretely: the photo frame height adapts to fit the photo; the card does **not** crop the subject; odd crops are **not** filled with letterbox bars. That file also notes the packet mislabelled its options and shifted Rob's letters by one, so ignore any lettered option you find elsewhere and treat adaptive height as the ruling. Issue #376's own body adds that the image fills the frame edge to edge within a min/max clamp.
+
+The **clamp values are the only open part** and they are yours as a taste guess, not a blocker: pick a minimum that keeps a very wide photo from becoming a sliver and a maximum that keeps a very tall photo from pushing the action bar off the first detent, state both values and your reasoning under `## Taste guesses`, and note that the fixed 132pt height is the value they replace.
 
 **`.preferredColorScheme(.light)` (AC33)** appears exactly once in the whole tree, `:8646`, on the card sheet's modifier chain — so it forces the card *and everything inside it, including the fade* into light appearance. Removing it is what makes the card able to render in mud later; verify the card in dark system appearance after removal, since nothing else was protecting it.
 
@@ -485,6 +533,6 @@ These are judgment calls the ratified spec does not settle. Per the taste-call p
 - **OF1 — Is there a compass?** Spec §2 lists a compass in persistent chrome (AC19), but no compass control exists in the Swift sources; MapLibre's `MLNMapView` has a built-in one that appears on rotation and is never configured or hidden. Best guess in T1.6: adopt and position the built-in rather than building a bespoke control. A bespoke themed compass would be new work nobody has scoped.
 - **OF2 — What does a "reserved" Search slot look like?** Spec §2 says the World door "reserves its place" for Search. Best guess in T1.6: the layout reserves the position and renders no row until DS-11 #477, on the grounds that a visible dead row invites taps that do nothing. Alternative: a visibly disabled row that advertises Search is coming.
 - **OF3 — What happens to the four existing paper themes this phase?** Spec §3 says they "fold into the material system … decided in the material architecture issue with a migration for the stored `map.theme.id`" — but that migration is DS-7 #473, out of phase. Best guess in T1.5: derive `MapTheme.snow` from the snow sheet and leave `.definedPaper`, `.streetContrast`, `.verdantKL` and the picker untouched, so nothing breaks for no in-phase gain.
-- **OF4 — #376's adaptive photo height is not written down anywhere reachable.** AC32 depends on it and the tree has no trace of the ruling. If issue #376 does not state a concrete rule, T1.10 delivers everything else and AC32's height rule waits for a ruling rather than being guessed.
-- **OF5 — App-wide criteria are graded phase-scoped.** Spec §5, §6, §7 and §8 state absolutes ("no `.bordered` anywhere", "no colour or font literal outside the module", "Reduced Motion app-wide") that cannot hold while DS-3 and DS-6 through DS-12 are unbuilt. This graph grades them over the module plus the surfaces this phase adopts, marked **[phase-scoped]**. If the acceptance pass should instead grade them app-wide and record the remainder as known-failing, that is a different call and worth making now rather than at the acceptance pass.
+- **OF4 — four `MapTheme` fields have no token in the ratified §3 table.** `background`, `boundaries`, `labels` and `labelHalo` are map-style colours the spec's token table does not cover, so AC1 and AC17 cannot both be satisfied without either adding token rows nobody ratified or leaving literals in the map style. Best guess in T1.5: `background`→`ground`, `labels`→`muted`, `labelHalo`→`ground`, `boundaries`→`hairline`, with every added row declared in the PR body as a **proposal**, not a ratified value. Rob's call on whether those four join the token sheet, stay map-only constants, or take different values. (Note: on-map *label* colour is a map-style value; spec §4's "on-map labels stay sans" is about typeface, not this.)
+- **OF5 — App-wide criteria are graded phase-scoped.** Spec §5, §6, §7 and §8 state absolutes ("no `.bordered` anywhere", "no colour or font literal outside the module", "Reduced Motion app-wide") that cannot hold while DS-3 and DS-6 through DS-12 are unbuilt. This graph grades them over the module plus the surfaces this phase adopts, marked **[phase-scoped]**. **AC13 is the deliberate exception** — spec §5 says the accent asset must hold "even before full adoption", so it is graded app-wide. If the acceptance pass should instead grade the rest app-wide and record the remainder as known-failing, that is a different call and worth making now rather than at the acceptance pass.
 - **OF6 — The epic's issue bodies carry several counts and claims the tree contradicts** (see *Where the issue text is wrong*), most consequentially that #266 is described as built when it is not. The issues are the record, so they should be corrected. Not done in this PR — flagged for fable.
