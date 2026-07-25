@@ -83,6 +83,7 @@ struct MaterialToastSurfaceConfiguration: Equatable {
     let accessibilityLabel: String
     let accessibilityHint: String
     let accessibilityIdentifier: String
+    let accessibilityValue: String?
     let leadingSystemImage: String?
     let progressState: MaterialProgressState?
 }
@@ -294,18 +295,30 @@ public struct MaterialToast: View {
             }
             .materialAccessibilityIdentifier(content.accessibilityIdentifier)
         case let .surface(content):
-            Button(action: content.action.perform) {
-                decoratedToast(configuration: configuration) {
-                    surfaceToastContent(
-                        content: content,
-                        configuration: configuration
-                    )
+            if case let .surface(surfaceConfiguration) =
+                configuration.interaction {
+                Button(action: content.action.perform) {
+                    decoratedToast(configuration: configuration) {
+                        surfaceToastContent(
+                            content: content,
+                            configuration: configuration
+                        )
+                    }
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    surfaceConfiguration.accessibilityLabel
+                )
+                .accessibilityHint(
+                    surfaceConfiguration.accessibilityHint
+                )
+                .accessibilityIdentifier(
+                    surfaceConfiguration.accessibilityIdentifier
+                )
+                .materialAccessibilityValue(
+                    surfaceConfiguration.accessibilityValue
+                )
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(content.action.accessibilityLabel)
-            .accessibilityHint(content.action.accessibilityHint)
-            .accessibilityIdentifier(content.action.accessibilityIdentifier)
         }
     }
 
@@ -345,6 +358,9 @@ public struct MaterialToast: View {
                     accessibilityHint: content.action.accessibilityHint,
                     accessibilityIdentifier:
                         content.action.accessibilityIdentifier,
+                    accessibilityValue:
+                        content.progressState?
+                            .presentation.accessibilityValue,
                     leadingSystemImage: content.leadingSystemImage,
                     progressState: content.progressState
                 )
@@ -501,11 +517,15 @@ public struct MaterialToast: View {
         if case let .controls(controlConfiguration) =
             configuration.interaction {
             if let customActionContent = content.customActionContent {
-                customActionContent
-                    .materialAccessibilityIdentifier(
+                MaterialToastCustomActionWrapper(
+                    accessibilityIdentifier:
                         controlConfiguration
-                            .primaryActionAccessibilityIdentifier
-                    )
+                            .primaryActionAccessibilityIdentifier,
+                    minimumTarget:
+                        controlConfiguration.minimumInteractiveTarget
+                ) {
+                    customActionContent
+                }
             } else if let primaryAction = content.primaryAction {
                 MaterialToastPrimaryActionButton(
                     action: primaryAction,
@@ -536,6 +556,32 @@ public struct MaterialToast: View {
                     controlConfiguration.minimumInteractiveTarget
             )
         }
+    }
+}
+
+struct MaterialToastCustomActionWrapper<Content: View>: View {
+    let accessibilityIdentifier: String?
+    let minimumTarget: CGSize
+    private let content: Content
+
+    init(
+        accessibilityIdentifier: String?,
+        minimumTarget: CGSize,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.accessibilityIdentifier = accessibilityIdentifier
+        self.minimumTarget = minimumTarget
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .frame(
+                minWidth: minimumTarget.width,
+                minHeight: minimumTarget.height
+            )
+            .contentShape(Rectangle())
+            .materialAccessibilityIdentifier(accessibilityIdentifier)
     }
 }
 
@@ -581,6 +627,17 @@ struct MaterialToastDismissButton: View {
 }
 
 private extension View {
+    @ViewBuilder
+    func materialAccessibilityValue(
+        _ accessibilityValue: String?
+    ) -> some View {
+        if let accessibilityValue {
+            self.accessibilityValue(accessibilityValue)
+        } else {
+            self
+        }
+    }
+
     @ViewBuilder
     func materialAccessibilityIdentifier(
         _ accessibilityIdentifier: String?

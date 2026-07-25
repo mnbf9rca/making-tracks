@@ -127,6 +127,25 @@ final class MaterialToastTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(renderedSize.width, 44)
         XCTAssertGreaterThanOrEqual(renderedSize.height, 44)
     }
+
+    func testRenderedTinyCustomActionIsAtLeastFortyFourPointsInBothDimensions() {
+        let control = MaterialToastCustomActionWrapper(
+            accessibilityIdentifier: "map.location-settings",
+            minimumTarget: CGSize(width: 44, height: 44)
+        ) {
+            Button(action: {}) {
+                Color.clear
+                    .frame(width: 1, height: 1)
+            }
+            .buttonStyle(.plain)
+        }
+        let hostingController = NSHostingController(rootView: control)
+
+        let renderedSize = hostingController.view.fittingSize
+
+        XCTAssertGreaterThanOrEqual(renderedSize.width, 44)
+        XCTAssertGreaterThanOrEqual(renderedSize.height, 44)
+    }
 #endif
 
     func testCallerCanInjectLeadingAndArbitraryStyledActionContent() {
@@ -179,12 +198,55 @@ final class MaterialToastTests: XCTestCase {
         XCTAssertEqual(surface.accessibilityLabel, "Offline maps download progress")
         XCTAssertEqual(surface.accessibilityHint, "Opens Offline maps")
         XCTAssertEqual(surface.accessibilityIdentifier, "map.download-progress")
+        XCTAssertEqual(surface.accessibilityValue, "42%")
         XCTAssertEqual(surface.leadingSystemImage, "arrow.down.circle")
         XCTAssertEqual(surface.progressState, .percentage(42))
 
         surfaceAction.perform()
 
         XCTAssertEqual(invocations, 1)
+    }
+
+    func testSurfaceConfigurationSpeaksCountSuffixWithDescriptorMetadata() {
+        let toast = MaterialToast(
+            message: "List progress",
+            surfaceAction: MaterialToastSurfaceAction(
+                accessibilityLabel: "List progress",
+                accessibilityHint: "Opens the list",
+                accessibilityIdentifier: "map.list-progress"
+            ) {},
+            progressState: .count(
+                completed: 3,
+                total: 8,
+                suffix: "seen"
+            )
+        )
+        let configuration = toast.renderConfiguration(reduceTransparency: false)
+        guard case let .surface(surface) = configuration.interaction else {
+            return XCTFail("Whole-surface toast resolved as inner controls")
+        }
+
+        XCTAssertEqual(surface.accessibilityLabel, "List progress")
+        XCTAssertEqual(surface.accessibilityHint, "Opens the list")
+        XCTAssertEqual(surface.accessibilityIdentifier, "map.list-progress")
+        XCTAssertEqual(surface.accessibilityValue, "3 of 8 seen")
+    }
+
+    func testSurfaceConfigurationOmitsAccessibilityValueWithoutProgress() {
+        let toast = MaterialToast(
+            message: "Offline maps",
+            surfaceAction: MaterialToastSurfaceAction(
+                accessibilityLabel: "Offline maps",
+                accessibilityHint: "Opens Offline maps",
+                accessibilityIdentifier: "map.offline"
+            ) {}
+        )
+        let configuration = toast.renderConfiguration(reduceTransparency: false)
+        guard case let .surface(surface) = configuration.interaction else {
+            return XCTFail("Whole-surface toast resolved as inner controls")
+        }
+
+        XCTAssertNil(surface.accessibilityValue)
     }
 
     func testSnowRenderingPinsLightColorSchemeForDeterministicContrast() {
