@@ -308,7 +308,7 @@ Ship a render of the three buttons and the chip states at 390×844 plus an AX va
 - **Issue:** #467 · **Spec section:** §5
 - **Acceptance criteria:** AC8, AC9, AC11 (family exists), AC12, AC26 (Reduce Transparency in the sheet/toast surfaces), AC28
 - **Depends on:** T1.1
-- **Owner:** unclaimed
+- **Owner:** codex2
 - **Review tier:** `sourcery` + `opus`
 - **Status:** unclaimed
 - **Contracts produced:** the sheet pattern, the two row types, the toast/pill family and the progress component. **T1.6, T1.7, T1.8 and T1.9 all consume them** — fix the API here and name it in the PR body.
@@ -522,7 +522,7 @@ Write host-level tests for the two new queries (`cd ios && swift test`) before t
 - **Depends on:** T1.1, T1.3, and **T1.2** if you move the card's title onto the story voice (the place name is one of spec §4's named Newsreader roles). If T1.2 has not merged, do the token and action-bar work and leave the title to a follow-up, saying so in the PR body.
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed — **stretch: claim only when no in-scope task is *claimable*.** "Claimable" means unclaimed *and* unblocked: a task still waiting on its dependencies does not hold this one back. That is why the wave table places T1.10 in wave 3 alongside T1.5 and T1.6 while T1.7-T1.9 are still blocked.
+- **Status:** claimed
 - **Contracts consumed:** T1.1 tokens, T1.3 button styles, T1.2 font roles (title only).
 - **Ruled renders:** `coherence.png` frame 3 for the card, and `docs/design/2026-07-23-design-session/RULINGS.md` → *#376* for the photo-height ruling.
 
