@@ -7,6 +7,36 @@ import XCTest
 
 @MainActor
 final class ControlStylesTests: XCTestCase {
+    func testMaterialControlInteractionFeedbackPreservesEnabledOpacity() {
+        XCTAssertEqual(
+            MaterialControlInteractionFeedback.semanticControlOpacity(
+                isEnabled: true
+            ),
+            1
+        )
+        XCTAssertEqual(
+            MaterialControlInteractionFeedback.semanticControlOpacity(
+                isEnabled: false
+            ),
+            0.46
+        )
+    }
+
+    func testMaterialControlInteractionFeedbackUsesScaleForPresses() {
+        XCTAssertEqual(
+            MaterialControlInteractionFeedback.semanticControlScale(
+                isPressed: false
+            ),
+            1
+        )
+        XCTAssertEqual(
+            MaterialControlInteractionFeedback.semanticControlScale(
+                isPressed: true
+            ),
+            0.98
+        )
+    }
+
     func testButtonStylesResolveTheThreeRatifiedSemanticPalettes() {
         let filled = MaterialFilledButtonStyle().appearance
         XCTAssertEqual(filled.foreground, color(0xFB, 0xFA, 0xF2))
