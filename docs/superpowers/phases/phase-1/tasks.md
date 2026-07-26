@@ -616,9 +616,9 @@ Host tests only (`cd ios && swift test`) unless you touch `project.yml`. No rend
 - **Issue:** #467 · **Spec section:** §5, §7
 - **Acceptance criteria:** AC10, AC29 (with the evidence clause below), AC27
 - **Depends on:** none — `ControlStyles` is merged code
-- **Owner:** unclaimed
+- **Owner:** codex2
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed
+- **Status:** branch — `codex2` implementing from fresh `ios` at `61873130`; baseline 452/452 host tests green
 - **Branch:** `wp-467-chip-geometry` — cut from a freshly-fetched `ios`
 - **Contracts consumed:** T1.1 tokens, T1.3 control styles.
 
