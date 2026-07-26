@@ -647,14 +647,14 @@ Renders before and after at 390×844 plus an AX variant, HTML committed — the 
 
 ### T1.13 — `MaterialChip` gains the API R10 requires
 
-- **Issue:** #467 · **Spec section:** §5, §7
+- **Issue:** #508 · **Spec section:** §5, §7
 - **Acceptance criteria:** AC10, AC27, plus R10's tiling contract (*Rulings* → R10)
 - **Depends on:** none
-- **Owner:** unclaimed — claimable by any of the pool
+- **Owner:** codex4
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed
+- **Status:** ready to merge — PR #509; 462 host tests, 0 failures; Sourcery + opus clear
 - **Deadline:** before DS-3 (#469) is **built**, which is next-phase work. There is no in-phase consumer, so this is comfortable rather than urgent — but it is a named row precisely so it does not become a deferral nobody owns.
-- **Branch:** `wp-467-chip-tiling-api` — cut from a freshly-fetched `ios`
+- **Branch:** `wp-508-chip-tiling-api` — cut from a freshly-fetched `ios`
 - **Contracts consumed:** T1.3 control styles, T1.12 geometry.
 
 **Builder brief.** R10 says min-clipping is the consuming layout's obligation. **Today the consuming layout cannot discharge it**, and that is the whole task. `MaterialChip` applies `.contentShape(.interaction, MaterialChipHitTargetShape())` *inside its own body*; `MaterialChipHitTargetShape` is `private`; `MaterialChipGeometry` is internal to `DesignSystem`, so the app module cannot read `visualHeight`, `minimumHitTarget` or `hitOutset(for:)`; and `init` takes no gap parameter. A layout therefore cannot clip the shape, cannot compute `min(11, gap/2)` from the component's own constants, and cannot pass the gap in. Its only options are to hardcode `11` and hope, or to reimplement the chip.
@@ -669,13 +669,13 @@ Host tests only unless you touch `project.yml`. No render — nothing visual cha
 
 ### T1.14 — `IconRole`: the icon scale becomes vocabulary
 
-- **Issue:** #467 · **Spec section:** §4, §5
+- **Issue:** #508 · **Spec section:** §4, §5
 - **Acceptance criteria:** AC14, AC15, plus R11 (*Rulings* → R11)
 - **Depends on:** **T1.8 merged** — this migrates that door's icons off their interim path, so it edits files T1.8 owns until it lands
 - **Owner:** unclaimed — well-bounded, and a good first row for an idle seat once the dependency clears
 - **Review tier:** `sourcery` + `opus`
 - **Status:** unclaimed
-- **Branch:** `wp-467-icon-role` — cut from a freshly-fetched `ios`
+- **Branch:** `wp-508-icon-role` — cut from a freshly-fetched `ios`
 - **Contracts consumed:** T1.2 font roles, T1.3 control styles, T1.8's door surfaces.
 
 **Builder brief.** Build `IconRole` exactly as R11 ratifies it — three roles, closed set, paired to typography. R11's four points are all load-bearing; read them in the rulings section before you start, because three of them are constraints on the *shape* rather than the values.
