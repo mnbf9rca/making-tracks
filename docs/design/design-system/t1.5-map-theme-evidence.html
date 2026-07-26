@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T1.5 map theme token evidence</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 390px; height: 844px; overflow: hidden; }
+  body {
+    --ground: #F4F1EA;
+    --land: #ECE8DD;
+    --water: #DCE3E5;
+    --road: #E3DED2;
+    --boundary: #CDC7B8;
+    --surface: #FBFAF2;
+    --ink: #2B2823;
+    --muted: #6B675F;
+    --accent: #0A6B5C;
+    --hairline: rgba(43, 40, 35, 0.14);
+    --pin: #E4572E;
+    --track: #2D8C83;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  }
+  body[data-variant="after"],
+  body[data-variant="ax"] {
+    --land: #F4F1EA;
+    --water: #C9DBE2;
+    --road: #C9BFA8;
+    --boundary: rgba(43, 40, 35, 0.14);
+  }
+  .home {
+    position: relative;
+    width: 390px;
+    height: 844px;
+    overflow: hidden;
+    background: var(--ground);
+  }
+  .map, .pins {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .status {
+    position: absolute;
+    z-index: 5;
+    top: 10px;
+    left: 24px;
+    right: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 650;
+  }
+  .status-icons { letter-spacing: 2px; }
+  .shell-button {
+    position: absolute;
+    z-index: 5;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    color: var(--ink);
+  }
+  .menu {
+    top: 44px;
+    left: 16px;
+    filter: drop-shadow(0 0 1.2px rgba(255, 255, 255, 0.95));
+  }
+  .layers {
+    top: 96px;
+    left: 16px;
+    border-radius: 50%;
+    background: rgba(251, 250, 242, 0.76);
+    backdrop-filter: blur(12px);
+  }
+  .locate {
+    right: 16px;
+    bottom: 16px;
+    border-radius: 50%;
+    background: rgba(251, 250, 242, 0.76);
+    backdrop-filter: blur(12px);
+  }
+  .evidence {
+    position: absolute;
+    z-index: 5;
+    left: 18px;
+    bottom: 76px;
+    padding: 9px 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 13px;
+    background: rgba(251, 250, 242, 0.94);
+    box-shadow: 0 2px 8px rgba(43, 40, 35, 0.10);
+  }
+  .evidence strong {
+    display: block;
+    color: var(--ink);
+    font-size: 12px;
+    line-height: 1.2;
+  }
+  .evidence span {
+    display: block;
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.25;
+  }
+  body[data-variant="ax"] .evidence strong { font-size: 16px; }
+  body[data-variant="ax"] .evidence span { font-size: 14px; }
+  .attribution {
+    position: absolute;
+    z-index: 5;
+    left: 16px;
+    bottom: 16px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(251, 250, 242, 0.76);
+    backdrop-filter: blur(12px);
+    color: var(--ink);
+    font-size: 11px;
+    font-weight: 650;
+  }
+  .pin circle { fill: var(--pin); }
+  .pin path, .pin polygon {
+    fill: none;
+    stroke: #FFF;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .pin.faded { opacity: 0.35; }
+  body[data-variant="ax"] .pin {
+    transform: scale(1.3333);
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+</style>
+</head>
+<body>
+<main class="home" aria-label="Making Tracks Snow map home">
+  <svg class="map" viewBox="0 0 390 844" role="img" aria-label="Snow map home with roads, water, boundaries, track, and pins">
+    <rect width="390" height="844" fill="var(--land)"/>
+    <path d="M-30 300 C42 257 106 279 159 306 C230 342 277 286 431 255 L431 386 C315 375 272 421 203 405 C116 384 64 355 -30 412Z" fill="var(--water)"/>
+    <g fill="none" stroke-linecap="round">
+      <path d="M-34 174 C61 203 145 194 226 142 C291 100 339 109 424 152" stroke="var(--road)" stroke-width="17"/>
+      <path d="M35 874 C78 707 170 614 239 519 C305 428 332 284 355 -24" stroke="var(--road)" stroke-width="16"/>
+      <path d="M-20 477 C84 448 157 470 238 517 C303 554 350 577 416 570" stroke="var(--road)" stroke-width="9"/>
+      <path d="M5 749 C109 686 207 710 277 662 C333 624 361 593 420 584" stroke="var(--road)" stroke-width="8"/>
+      <path d="M40 157 C89 232 154 248 211 272 C275 300 304 337 338 405" stroke="var(--boundary)" stroke-width="2"/>
+      <path d="M32 646 C93 596 147 617 203 574 C256 533 300 554 354 500" stroke="var(--track)" stroke-width="6" stroke-dasharray="1 9"/>
+    </g>
+  </svg>
+
+  <svg class="pins" viewBox="0 0 390 844" aria-hidden="true">
+    <g transform="translate(66 205)">
+      <g class="pin">
+        <circle cx="10" cy="10" r="9"/>
+        <polygon points="10,5 11.3,8.3 14.8,8.5 12.1,10.7 13,14.1 10,12.2 7,14.1 7.9,10.7 5.2,8.5 8.7,8.3"/>
+      </g>
+    </g>
+    <g transform="translate(250 285)">
+      <g class="pin faded">
+        <circle cx="10" cy="10" r="9"/>
+        <path d="M5 8h3l1.5-2h3L14 8h2v7H5Z"/><circle cx="10.5" cy="11.5" r="2.2"/>
+      </g>
+    </g>
+    <g transform="translate(160 382)">
+      <g class="pin">
+        <circle cx="10" cy="10" r="9"/>
+        <path d="m5 9 5-3 5 3M6 15h8M7 10v4m3-4v4m3-4v4"/>
+      </g>
+    </g>
+    <g transform="translate(296 514)">
+      <g class="pin faded">
+        <circle cx="10" cy="10" r="9"/>
+        <polygon points="10,5 11.3,8.3 14.8,8.5 12.1,10.7 13,14.1 10,12.2 7,14.1 7.9,10.7 5.2,8.5 8.7,8.3"/>
+      </g>
+    </g>
+    <g transform="translate(87 578)">
+      <g class="pin">
+        <circle cx="10" cy="10" r="9"/>
+        <path d="M5 8h3l1.5-2h3L14 8h2v7H5Z"/><circle cx="10.5" cy="11.5" r="2.2"/>
+      </g>
+    </g>
+  </svg>
+
+  <div class="status"><span>9:41</span><span class="status-icons">● ◔ ▰</span></div>
+  <div class="shell-button menu" aria-label="Menu">
+    <svg width="30" height="30" viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h22M4 15h22M4 22h22"/></svg>
+  </div>
+  <div class="shell-button layers" aria-label="Layers">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M7 9h10M7 12h10M7 15h10"/></svg>
+  </div>
+  <div class="shell-button locate" aria-label="Locate me">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M20.5 3.5 4 10.5l7 2.8 2.8 7.2Z"/></svg>
+  </div>
+  <aside class="evidence">
+    <strong id="evidence-title"></strong>
+    <span id="evidence-detail"></span>
+  </aside>
+  <div class="attribution">© OpenStreetMap</div>
+</main>
+<script>
+  const requested = new URLSearchParams(location.search).get("variant");
+  const variant = ["before", "after", "ax"].includes(requested) ? requested : "after";
+  document.body.dataset.variant = variant;
+  const title = document.getElementById("evidence-title");
+  const detail = document.getElementById("evidence-detail");
+  if (variant === "before") {
+    title.textContent = "Before · literal Snow palette";
+    detail.textContent = "Legacy land, water and road values";
+  } else if (variant === "ax") {
+    title.textContent = "After · AX pin size";
+    detail.textContent = "160% pins · constant orange";
+  } else {
+    title.textContent = "After · DesignSystem Snow";
+    detail.textContent = "AC34 · pins pop over token ground";
+  }
+</script>
+</body>
+</html>

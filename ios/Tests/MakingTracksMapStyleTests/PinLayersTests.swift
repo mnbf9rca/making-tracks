@@ -1,4 +1,5 @@
 import XCTest
+import DesignSystem
 import MakingTracksData
 @testable import MakingTracksMapStyle
 
@@ -23,6 +24,12 @@ final class PinLayersTests: XCTestCase {
             XCTAssertEqual(Expression.evaluate(PinLayers.bookmarkFilter(), props), .bool(want.showBookmarkBadge), "bookmark \(state)")
             XCTAssertEqual(Expression.evaluate(PinLayers.heartFilter(), props), .bool(want.showHeartBadge), "heart \(state)")
         }
+    }
+
+    func testPinAndTrackLayerValuesComeFromTheTokenSheet() {
+        XCTAssertEqual(PinLayers.pinColor, PinTokenBlock.constant.pin.mapStyleString)
+        XCTAssertEqual(FADED_OPACITY, PinTokenBlock.constant.pinFaded.opacity)
+        XCTAssertEqual(TrackLayers.lineColor, MaterialTheme.snow.tokens.trackLine.mapStyleString.lowercased())
     }
 
     func testTracksModeKeepsVisitedPinsFullStrengthWithoutLyingAboutVisitState() {
@@ -150,7 +157,7 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(paint["line-opacity"], .double(TrackLayers.lineOpacity))
         XCTAssertEqual(paint["line-width"], .double(TrackLayers.lineWidth))
         XCTAssertEqual(paint["line-dasharray"], .array(TrackLayers.lineDashPatternValues.map(JSONValue.double)))
-        XCTAssertEqual(TrackLayers.lineColor, "#2d8c83")
+        XCTAssertEqual(TrackLayers.lineColor, MaterialTheme.snow.tokens.trackLine.mapStyleString.lowercased())
         XCTAssertEqual(TrackLayers.lineWidth, 6.2, accuracy: 1e-9)
         XCTAssertEqual(TrackLayers.lineOpacity, 1.00, accuracy: 1e-9)
         XCTAssertEqual(TrackLayers.lineDotLength, 1.0, accuracy: 1e-9)

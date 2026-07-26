@@ -1,3 +1,4 @@
+import DesignSystem
 import Foundation
 
 public enum TrackLayers {
@@ -6,7 +7,7 @@ public enum TrackLayers {
     public static let activeLineLayerID = "tracks-line-active"
     public static let activeArcPhase = "active"
     public static let trackSegmentPhaseProperty = "track_segment_phase"
-    public static let lineColor = "#2d8c83"
+    public static let lineColor = MaterialTheme.snow.tokens.trackLine.mapStyleString.lowercased()
     public static let activeLineColor = "#db5344"
     public static let lineCap = "round"
     public static let lineJoin = "round"
