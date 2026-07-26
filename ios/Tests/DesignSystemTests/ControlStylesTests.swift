@@ -103,6 +103,12 @@ final class ControlStylesTests: XCTestCase {
 
     func testMaterialChipIconUsesTypographyLabelSizeAndMediumWeight() throws {
         let title = "Map"
+
+        XCTAssertEqual(
+            MaterialChip.iconFont,
+            Typography.font(for: .label).weight(.medium)
+        )
+
         let textOnlyWidth = try renderedWidth(
             MaterialChip(title, state: .active, action: {})
                 .dynamicTypeSize(.accessibility5)
