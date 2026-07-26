@@ -624,7 +624,7 @@ final class ControlStylesTests: XCTestCase {
             labels: snow.labels,
             labelHalo: snow.labelHalo,
             boundaries: snow.boundaries,
-            trackLine: snow.trackLine,
+            trail: snow.trail,
             disabledAlpha: disabledAlpha,
             pressScale: pressScale
         )

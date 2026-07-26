@@ -141,8 +141,8 @@ Renders: the card in every state combination the bar can reach, default and AX, 
 ## A3 — `trackLine` becomes `trail`
 
 - **Serves:** R8's naming rider · **Review tier:** `sourcery` + `opus` · **Depends on:** none
-- **Owner:** unclaimed
-- **Status:** unclaimed
+- **Owner:** codex3
+- **Status:** review clean
 - **Branch:** `wp-526-trail-token-rename` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Rename the token `trackLine` → `trail` — the `SemanticColorToken` case, the

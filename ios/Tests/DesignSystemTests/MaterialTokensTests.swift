@@ -41,7 +41,7 @@ final class MaterialTokensTests: XCTestCase {
             .labels: color(0x6B, 0x67, 0x5F),
             .labelHalo: color(0xF4, 0xF1, 0xEA),
             .boundaries: color(0x2B, 0x28, 0x23, opacity: 0.14),
-            .trackLine: color(0x2D, 0x8C, 0x83),
+            .trail: color(0x2D, 0x8C, 0x83),
         ]
 
         XCTAssertEqual(Set(expected.keys), Set(SemanticColorToken.allCases))
@@ -66,14 +66,15 @@ final class MaterialTokensTests: XCTestCase {
             labels: color(0x04, 0x05, 0x06),
             labelHalo: color(0x07, 0x08, 0x09),
             boundaries: color(0x0A, 0x0B, 0x0C),
-            trackLine: color(0x0D, 0x0E, 0x0F)
+            trail: color(0x0D, 0x0E, 0x0F)
         )
 
         XCTAssertNotEqual(sheet.background, sheet.ground)
         XCTAssertNotEqual(sheet.labels, sheet.muted)
         XCTAssertNotEqual(sheet.labelHalo, sheet.ground)
         XCTAssertNotEqual(sheet.boundaries, sheet.hairline)
-        XCTAssertNotEqual(sheet.trackLine, MaterialTheme.snow.tokens.trackLine)
+        XCTAssertNotEqual(sheet.trail, MaterialTheme.snow.tokens.trail)
+        XCTAssertEqual(sheet[.trail], color(0x0D, 0x0E, 0x0F))
     }
 
     func testMapStyleStringUsesUppercaseHexForOpaqueColors() {
@@ -93,7 +94,7 @@ final class MaterialTokensTests: XCTestCase {
         }
         assertStaticAcrossSystemAppearances(sheet.pins.pin, label: "pin")
         assertStaticAcrossSystemAppearances(sheet.pins.pinFaded, label: "pinFaded")
-        assertStaticAcrossSystemAppearances(sheet.trackLine, label: "trackLine")
+        assertStaticAcrossSystemAppearances(sheet.trail, label: "trail")
     }
 
     func testContrastGateRejectsTranslucentOperands() {
@@ -187,7 +188,7 @@ final class MaterialTokensTests: XCTestCase {
         labels: MaterialColor,
         labelHalo: MaterialColor,
         boundaries: MaterialColor,
-        trackLine: MaterialColor
+        trail: MaterialColor
     ) -> MaterialTokenSheet {
         let snow = MaterialTheme.snow.tokens
         return MaterialTokenSheet(
@@ -214,7 +215,7 @@ final class MaterialTokensTests: XCTestCase {
             labels: labels,
             labelHalo: labelHalo,
             boundaries: boundaries,
-            trackLine: trackLine,
+            trail: trail,
             disabledAlpha: snow.disabledAlpha,
             pressScale: snow.pressScale
         )
