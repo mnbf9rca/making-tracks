@@ -516,9 +516,9 @@ Full gate plus renders of the door and the hero landing.
 - **Branch:** `wp-470-loved-hidden-surfaces` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC21 (Loved and Hidden parts), AC22 (the door keeps every destination it had), AC25, plus AC5 (Newsreader titles on the new surfaces), AC15/AC16, AC26/AC27/AC29
 - **Depends on:** T1.8, and **T1.2** for story-voice titles on the two new surfaces
-- **Owner:** unclaimed
+- **Owner:** codex2
 - **Review tier:** `sourcery` + `opus` (a Greptile slot here is fable's call — see *Review budget*)
-- **Status:** unclaimed
+- **Status:** branch — `wp-470-loved-hidden-surfaces` at `8259ea0afab2b7418cef66bdabe29df84fb1b2f0`; design and query-test plan in progress
 - **Contracts consumed:** T1.1 tokens, T1.2 font roles, T1.4 rows, T1.8's door structure.
 - **Contracts produced:** two new read helpers on `AppDatabase` — an all-loved-places query and a hidden-places-with-snapshot-data query. Name their signatures in the PR body; nothing else in the phase consumes them, but DS-6 and later phases will.
 - **Ruled renders:** `coherence.png` frame 4 and `ia-doors.png` frame 3 both show the Tracks door's row set — the Loved and Hidden rows you build are two of the four rows those renders certify, so they are graded against them. The list surfaces *behind* those rows are new and have no ruled render: specify them against the DS row and sheet patterns, and ship your own renders.
