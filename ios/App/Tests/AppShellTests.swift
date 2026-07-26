@@ -67,6 +67,38 @@ final class AppShellTests: XCTestCase {
         XCTAssertGreaterThan(MapHomeChromeSpec.glyphHaloRadius, 0)
     }
 
+    func testMapDoorsExposeDistinctRuledPresentation() {
+        XCTAssertEqual(
+            MapDoor.world.presentation,
+            MapDoorPresentation(
+                title: "World",
+                systemImage: "globe.europe.africa",
+                accessibilityIdentifier: "map.door.world"
+            )
+        )
+        XCTAssertEqual(
+            MapDoor.tracks.presentation,
+            MapDoorPresentation(
+                title: "Tracks",
+                systemImage: "shoeprints.fill",
+                accessibilityIdentifier: "map.door.tracks"
+            )
+        )
+    }
+
+    @MainActor
+    func testMapDoorBarRendersAtStandardAndAX5DynamicType() {
+        for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
+            let renderer = ImageRenderer(
+                content: MapDoorBar(openWorld: {}, openTracks: {})
+                    .environment(\.dynamicTypeSize, dynamicTypeSize)
+                    .frame(width: 390)
+            )
+
+            XCTAssertNotNil(renderer.uiImage)
+        }
+    }
+
     func testAppShellModelOpensEachDoorAtItsRoot() {
         let shell = AppShellModel()
 
