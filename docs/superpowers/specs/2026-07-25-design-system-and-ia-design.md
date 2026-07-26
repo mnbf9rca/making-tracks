@@ -134,7 +134,7 @@ pin/track layer constants. Semantic token names, one value column per material.
 | `mapLabels` (R4) | = `muted` | = `muted` |
 | `mapLabelHalo` (R4) | = `ground` | = `ground` |
 | `mapBoundaries` (R4) | = `hairline` | = `hairline` |
-| `trail` (R8; code name `trackLine` until renamed) | `#2D8C83` | *owed at material time* |
+| `trail` (R8) | `#2D8C83` | *owed at material time* |
 | `love` (R7) | `#C4312B` | *owed at material time* |
 | `loveContainer` (R7) | `#FCE3E3` | *owed at material time* |
 | `warning` (R7) | `#75571F` | *owed at material time* |
