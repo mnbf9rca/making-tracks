@@ -54,6 +54,19 @@ final class IconRoleTests: XCTestCase {
         }
     }
 
+    func testRoleOverridesAmbientPaletteRenderingWithMonochrome() throws {
+        let rendered = try renderedGlyph(
+            Image(systemName: "person.crop.circle.badge.checkmark")
+                .iconRole(.inline)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(Color.red, Color.blue),
+            dynamicTypeSize: .large
+        )
+
+        XCTAssertGreaterThan(rendered.redPixelCount, 0)
+        XCTAssertEqual(rendered.bluePixelCount, 0)
+    }
+
     private func renderedGlyph<Content: View>(
         _ content: Content,
         dynamicTypeSize: DynamicTypeSize
@@ -66,18 +79,34 @@ final class IconRoleTests: XCTestCase {
         let image = try XCTUnwrap(renderer.cgImage)
         let bitmap = NSBitmapImageRep(cgImage: image)
         var opaquePixelCount = 0
+        var redPixelCount = 0
+        var bluePixelCount = 0
 
         for y in 0..<bitmap.pixelsHigh {
-            for x in 0..<bitmap.pixelsWide
-            where (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05 {
+            for x in 0..<bitmap.pixelsWide {
+                guard
+                    let color = bitmap.colorAt(x: x, y: y)?
+                        .usingColorSpace(.sRGB),
+                    color.alphaComponent > 0.05
+                else {
+                    continue
+                }
                 opaquePixelCount += 1
+
+                if color.redComponent > color.blueComponent + 0.2 {
+                    redPixelCount += 1
+                } else if color.blueComponent > color.redComponent + 0.2 {
+                    bluePixelCount += 1
+                }
             }
         }
 
         return RenderedGlyph(
             width: image.width,
             height: image.height,
-            opaquePixelCount: opaquePixelCount
+            opaquePixelCount: opaquePixelCount,
+            redPixelCount: redPixelCount,
+            bluePixelCount: bluePixelCount
         )
     }
 #endif
@@ -88,6 +117,8 @@ private struct RenderedGlyph: Equatable {
     let width: Int
     let height: Int
     let opaquePixelCount: Int
+    let redPixelCount: Int
+    let bluePixelCount: Int
 }
 
 private struct RatifiedIconGlyph: View {

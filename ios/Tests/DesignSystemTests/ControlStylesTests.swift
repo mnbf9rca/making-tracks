@@ -393,6 +393,25 @@ final class ControlStylesTests: XCTestCase {
             accuracy: 1
         )
     }
+
+    func testMaterialChipWiresAccessoryRoleAtPointOfUse() throws {
+        let chip = MaterialChip(
+            "Map",
+            systemImage: "map",
+            state: .active,
+            action: {}
+        )
+
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: chip.body
+                )
+            ),
+            .accessory
+        )
+    }
 #endif
 
     func testMaterialFilledButtonPlainTextUsesTypographyButtonRole() throws {

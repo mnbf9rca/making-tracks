@@ -29,9 +29,11 @@ public extension View {
 }
 
 private struct IconRoleModifier: ViewModifier {
+    private let role: IconRole
     @ScaledMetric private var pointSize: CGFloat
 
     init(role: IconRole) {
+        self.role = role
         _pointSize = ScaledMetric(
             wrappedValue: role.pointSize,
             relativeTo: role.typographyRole.specification.textStyle.swiftUI

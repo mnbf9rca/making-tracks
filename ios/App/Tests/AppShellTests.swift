@@ -442,6 +442,41 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
+    func testTracksDoorIconsWireRatifiedRolesAtPointOfUse() throws {
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: TracksDoorHeroIconGlyph(
+                        systemName: "figure.walk"
+                    ).body
+                )
+            ),
+            .hero
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: TracksDoorNewListIcon(
+                        systemName: "plus"
+                    ).body
+                )
+            ),
+            .inline
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: TracksDoorRetraceCue().body
+                )
+            ),
+            .accessory
+        )
+    }
+
+    @MainActor
     func testTracksDoorRetraceCueUsesRatifiedTypeGapAndChevronScale() throws {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
             let actual = try tracksDoorRenderedSize(
@@ -3717,6 +3752,24 @@ private func appConstructedRegionIndexWithMalformedSearchCompactPath() -> Region
             ),
         ]
     )
+}
+
+private func firstDescendant<Descendant>(
+    of type: Descendant.Type,
+    in value: Any
+) -> Descendant? {
+    if let value = value as? Descendant {
+        return value
+    }
+    for child in Mirror(reflecting: value).children {
+        if let descendant = firstDescendant(
+            of: type,
+            in: child.value
+        ) {
+            return descendant
+        }
+    }
+    return nil
 }
 
 private struct RatifiedTracksDoorHeroIcon: View {
