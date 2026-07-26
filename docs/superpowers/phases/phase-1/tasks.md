@@ -341,9 +341,9 @@ Host tests plus renders (390×844 and an AX variant, HTML committed).
 - **Branch:** `wp-467-map-theme-tokens` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC3 (pin/track constants), AC17, AC34 (the pin-pop render is this task's evidence)
 - **Depends on:** T1.1
-- **Owner:** unclaimed
+- **Owner:** codex3
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed
+- **Status:** ready-to-merge — #494; 443 host tests, 192 app tests and 70 UI tests, 0 failures; three exact-head critics + Opus cleared; CI green; zero review threads; Sourcery service-degradation evidence recorded in PR body after the one permitted retrigger, per fable ruling
 - **Contracts consumed:** T1.1's token sheet, including its constant pin block.
 - **Contracts produced:** none new, but you change `MapTheme`'s source of values, which `MLNMapViewRepresentable` and the theme picker both read — say so in the PR body.
 
@@ -519,7 +519,7 @@ Full gate plus renders of the door and the hero landing.
 
 The Hidden row is **quiet** by design (spec §2): hiding becomes reversible in the open, without advertising itself.
 
-Reuse `showHiddenMode` if it fits — `PlaceCard(showHiddenMode:)` (`MapScreen.swift:8601`) already exposes an unhide affordance without normal hide ownership, pinned by `testShowHiddenModeExposesUnhideAffordanceWithoutNormalHideOwnership` (`UITests:2176`).
+Reuse `showHiddenMode` if it fits. T1.10 moved it without changing it: the seam is now `let showHiddenMode: Bool` on `PlaceCardSheet` (`ios/App/Sources/PlaceCard/PlaceCardSheet.swift:189`), wired from `layerVisibility.showHiddenPlaces` (`MapScreen.swift:2974`). **The mechanism is unchanged** — `PinState.hidden` → `PlaceCardActionSlots` → `[.unhide]`, same accessibility identifiers — and it is still pinned by `testShowHiddenModeExposesUnhideAffordanceWithoutNormalHideOwnership` (`ios/App/UITests/MakingTracksCoreLoopUITests.swift:2214`). It exposes an unhide affordance without normal hide ownership, which is the property this task needs.
 
 Existing coverage to keep green: `testSetHiddenIsIdempotentReversibleAndSnapshotsOnFirstInteraction` (`ios/Tests/MakingTracksDataTests/InteractionsTests.swift:545`), `testHiddenIsOrthogonalToSavedAndVisitState` (`:563`), `testSetLovedTrueMarksLatestVisitAndFalseClearsEveryLovedVisitForPlace` (`:358`), `testVerdictLovedIsRecordedAndReversible` (`:63`), `testHiddenAndListScopeOmissionsBridgeSilently` (`DerivationsTests.swift:418`).
 
@@ -533,9 +533,9 @@ Write host-level tests for the two new queries (`cd ios && swift test`) before t
 - **Branch:** `wp-471-place-card-tokens` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC30, AC31, AC32, AC33, plus AC5 (the place name is story voice), AC15/AC16 for this surface, AC26/AC27/AC29
 - **Depends on:** T1.1, T1.3, and **T1.2** if you move the card's title onto the story voice (the place name is one of spec §4's named Newsreader roles). If T1.2 has not merged, do the token and action-bar work and leave the title to a follow-up, saying so in the PR body.
-- **Owner:** unclaimed
+- **Owner:** codex2
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed — **stretch: claim only when no in-scope task is *claimable*** (defined in *Dependency graph*).
+- **Status:** branch
 - **Contracts consumed:** T1.1 tokens, T1.3 button styles, T1.2 font roles (title only).
 - **Ruled renders:** `coherence.png` frame 3 for the card, and `docs/design/2026-07-23-design-session/RULINGS.md` → *#376* for the photo-height ruling.
 

@@ -20,6 +20,10 @@ final class MaterialTokensTests: XCTestCase {
             .muted: color(0x6B, 0x67, 0x5F),
             .accent: color(0x0A, 0x6B, 0x5C),
             .accentContrast: color(0xFB, 0xFA, 0xF2),
+            .love: color(0xC4, 0x31, 0x2B),
+            .loveContainer: color(0xFC, 0xE3, 0xE3),
+            .warning: color(0x75, 0x57, 0x1F),
+            .warningContainer: color(0xF2, 0xE8, 0xD1),
             .eyebrow: color(0x8A, 0x5A, 0x2B),
             .hairline: color(0x2B, 0x28, 0x23, opacity: 0.14),
             .scrim: color(0x2B, 0x28, 0x23, opacity: 0.35),
@@ -106,6 +110,18 @@ final class MaterialTokensTests: XCTestCase {
         )
     }
 
+    func testContrastEvaluatorMatchesKnownVectorsAndRejectsKnownFailure() throws {
+        let black = color(0x00, 0x00, 0x00)
+        let white = color(0xFF, 0xFF, 0xFF)
+        XCTAssertEqual(try XCTUnwrap(contrastRatio(black, white)), 21, accuracy: 0.000_001)
+        XCTAssertEqual(try XCTUnwrap(contrastRatio(white, white)), 1, accuracy: 0.000_001)
+        XCTAssertLessThan(
+            try XCTUnwrap(contrastRatio(color(0x77, 0x77, 0x77), white)),
+            4.5,
+            "The evaluator must reject a known opaque body-text failure."
+        )
+    }
+
     func testEveryMaterialPassesBodyAndLargeUIContrastGates() {
         for material in MaterialTheme.allCases {
             let sheet = material.tokens
@@ -127,6 +143,18 @@ final class MaterialTokensTests: XCTestCase {
                 sheet.accent,
                 minimum: 3.0,
                 label: "accentContrast/accent large text or UI"
+            )
+            assertContrast(
+                sheet.love,
+                sheet.loveContainer,
+                minimum: 4.5,
+                label: "love/loveContainer body text"
+            )
+            assertContrast(
+                sheet.warning,
+                sheet.warningContainer,
+                minimum: 4.5,
+                label: "warning/warningContainer body text"
             )
             assertContrast(
                 // PaperStyle always renders the 1.25pt halo, so this proves that pair—not labels against every basemap fill.
@@ -167,6 +195,10 @@ final class MaterialTokensTests: XCTestCase {
             muted: snow.muted,
             accent: snow.accent,
             accentContrast: snow.accentContrast,
+            love: snow.love,
+            loveContainer: snow.loveContainer,
+            warning: snow.warning,
+            warningContainer: snow.warningContainer,
             eyebrow: snow.eyebrow,
             hairline: snow.hairline,
             scrim: snow.scrim,

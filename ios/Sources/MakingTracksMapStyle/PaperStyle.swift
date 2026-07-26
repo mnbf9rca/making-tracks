@@ -1,3 +1,5 @@
+import DesignSystem
+
 public let MUTED_MAX = 0.25
 public let paperBasemapGlyphsURL = "https://tiles.making-tracks.app/global/fonts/{fontstack}/{range}.pbf"
 
@@ -99,23 +101,26 @@ public struct MapTheme: Sendable {
         self.showsLabels = showsLabels
     }
 
-    public static let snow = MapTheme(
-        id: "snow",
-        displayName: "Snow",
-        freshPhrase: "Fresh snow",
-        background: "#F4F1EA",
-        land: "#ECE8DD",
-        parks: "#E4E8D8",
-        water: "#DCE3E5",
-        roads: "#E3DED2",
-        boundaries: "#CDC7B8",
-        labels: "#676157",
-        labelHalo: "#F4F1EA",
-        roadWidth: 0.6,
-        boundaryWidth: 0.5,
-        showsParks: false,
-        showsLabels: false
-    )
+    public static let snow: MapTheme = {
+        let tokens = MaterialTheme.snow.tokens
+        return MapTheme(
+            id: "snow",
+            displayName: "Snow",
+            freshPhrase: "Fresh snow",
+            background: tokens.background.mapStyleString,
+            land: tokens.ground.mapStyleString,
+            parks: tokens.park.mapStyleString,
+            water: tokens.water.mapStyleString,
+            roads: tokens.road.mapStyleString,
+            boundaries: tokens.boundaries.mapStyleString,
+            labels: tokens.labels.mapStyleString,
+            labelHalo: tokens.labelHalo.mapStyleString,
+            roadWidth: 0.6,
+            boundaryWidth: 0.5,
+            showsParks: false,
+            showsLabels: false
+        )
+    }()
 
     public static let definedPaper = MapTheme(
         id: "defined-paper",

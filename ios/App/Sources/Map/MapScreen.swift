@@ -1,5 +1,4 @@
 import CoreLocation
-import ImageIO
 import Observation
 import SwiftUI
 import UIKit
@@ -18,83 +17,6 @@ struct MapHomeChromeSpec {
 
     static func layersSymbolName(isActive: Bool) -> String {
         isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"
-    }
-}
-
-struct PlaceCardVisualSpec {
-    enum ActionTone: Equatable {
-        case primary
-        case neutral
-        case love
-        case warning
-        case disabled
-    }
-
-    static let closeSystemImageName = "ellipsis"
-    static let showsMediaSlotWhenPhotoMissing = false
-    static let actionCornerRadius: CGFloat = 8
-    static let actionMinimumHeight: CGFloat = 44
-    static let mediaSlotHeight: CGFloat = 132
-    static let cardCornerRadius: CGFloat = 22
-    static let typeSwatchSide: CGFloat = 14
-    static let actionBarHorizontalPadding: CGFloat = 18
-    static let cardBackground = Color(red: 0.985, green: 0.98, blue: 0.95)
-    static let mediaBackground = Color(red: 0.82, green: 0.79, blue: 0.70)
-    static let neutralActionBackground = Color(red: 0.93, green: 0.92, blue: 0.88)
-    static let primaryActionBackground = Color(red: 0.02, green: 0.46, blue: 0.39)
-    static let loveActionBackground = Color(red: 0.99, green: 0.89, blue: 0.89)
-    static let warningActionBackground = Color(red: 0.95, green: 0.91, blue: 0.82)
-    static let disabledActionBackground = Color(red: 0.96, green: 0.95, blue: 0.91)
-    static let primaryText = Color(red: 0.12, green: 0.12, blue: 0.11)
-    static let secondaryText = Color(red: 0.43, green: 0.42, blue: 0.38)
-    static let linkText = Color(red: 0.0, green: 0.43, blue: 0.37)
-    static let loveText = Color(red: 0.77, green: 0.19, blue: 0.17)
-    static let warningText = Color(red: 0.46, green: 0.34, blue: 0.12)
-    static let disabledText = Color(red: 0.68, green: 0.66, blue: 0.61)
-
-    static func tone(for action: PlaceCardAction) -> ActionTone {
-        switch action {
-        case .seen:
-            return .primary
-        case .love, .unlove:
-            return .love
-        case .unsee(isEnabled: true):
-            return .warning
-        case .unsee(isEnabled: false), .seenDisabled:
-            return .disabled
-        case .save, .hide, .unhide:
-            return .neutral
-        }
-    }
-
-    static func actionBackground(for tone: ActionTone) -> Color {
-        switch tone {
-        case .primary:
-            return primaryActionBackground
-        case .neutral:
-            return neutralActionBackground
-        case .love:
-            return loveActionBackground
-        case .warning:
-            return warningActionBackground
-        case .disabled:
-            return disabledActionBackground
-        }
-    }
-
-    static func actionForeground(for tone: ActionTone) -> Color {
-        switch tone {
-        case .primary:
-            return .white
-        case .neutral:
-            return primaryText
-        case .love:
-            return loveText
-        case .warning:
-            return warningText
-        case .disabled:
-            return disabledText
-        }
     }
 }
 
@@ -850,16 +772,16 @@ enum TrackVisitRowDensitySpec {
 
 enum TrackVisitEditorVisualSpec {
     static let chromeMinimumHeight: CGFloat = 50
-    static let paperBackground = MapThemeColor.color(hex: "#f1eddf")
-    static let cardBackground = MapThemeColor.color(hex: "#fffdf7")
-    static let primaryText = MapThemeColor.color(hex: "#1c1c1e")
-    static let secondaryText = MapThemeColor.color(hex: "#64635d")
-    static let divider = MapThemeColor.color(hex: "#ddd8ca")
-    static let reorderHandle = MapThemeColor.color(hex: "#aaa89d")
-    static let accent = MapThemeColor.color(hex: "#0a6b5c")
-    static let accentSoft = MapThemeColor.color(hex: "#e3f0eb")
-    static let danger = MapThemeColor.color(hex: "#b42318")
-    static let dangerSoft = MapThemeColor.color(hex: "#f8e7e4")
+    static let paperBackground = MapThemeColor.color(css: "#f1eddf")
+    static let cardBackground = MapThemeColor.color(css: "#fffdf7")
+    static let primaryText = MapThemeColor.color(css: "#1c1c1e")
+    static let secondaryText = MapThemeColor.color(css: "#64635d")
+    static let divider = MapThemeColor.color(css: "#ddd8ca")
+    static let reorderHandle = MapThemeColor.color(css: "#aaa89d")
+    static let accent = MapThemeColor.color(css: "#0a6b5c")
+    static let accentSoft = MapThemeColor.color(css: "#e3f0eb")
+    static let danger = MapThemeColor.color(css: "#b42318")
+    static let dangerSoft = MapThemeColor.color(css: "#f8e7e4")
 }
 
 private struct TrackVisitRowBoundsPreferenceKey: PreferenceKey {
@@ -2801,7 +2723,7 @@ struct MapScreen: View {
             .overlay {
                 if didMapLoadFail {
                     ZStack {
-                        MapThemeColor.color(hex: selectedTheme.background)
+                        MapThemeColor.color(css: selectedTheme.background)
                             .ignoresSafeArea()
                         VStack(spacing: 8) {
                             Image(systemName: "map")
@@ -2819,7 +2741,7 @@ struct MapScreen: View {
                     .transition(.opacity)
                 } else if isMapLoading {
                     ZStack {
-                        MapThemeColor.color(hex: selectedTheme.background)
+                        MapThemeColor.color(css: selectedTheme.background)
                             .ignoresSafeArea()
                         ProgressView()
                             .padding(14)
@@ -7649,7 +7571,7 @@ private struct DiagnosticsView: View {
 }
 
 private enum DiagnosticsVisualSpec {
-    static let accent = MapThemeColor.color(hex: "#0a6b5c")
+    static let accent = MapThemeColor.color(css: "#0a6b5c")
 }
 
 private struct DiagnosticsDisclosureClass: Identifiable {
@@ -7854,7 +7776,7 @@ private struct PinSizePreview: View {
 
     var body: some View {
         ZStack {
-            MapThemeColor.color(hex: theme.background)
+            MapThemeColor.color(css: theme.background)
             dummyMapLines
             dummyPin
         }
@@ -7862,7 +7784,7 @@ private struct PinSizePreview: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(MapThemeColor.color(hex: theme.boundaries).opacity(0.55), lineWidth: 1)
+                .strokeBorder(MapThemeColor.color(css: theme.boundaries).opacity(0.55), lineWidth: 1)
         )
     }
 
@@ -7881,20 +7803,20 @@ private struct PinSizePreview: View {
                 path.move(to: CGPoint(x: size.width * 0.22, y: size.height * 0.88))
                 path.addLine(to: CGPoint(x: size.width * 0.62, y: size.height * 0.10))
             }
-            .stroke(MapThemeColor.color(hex: theme.roads), lineWidth: 5)
+            .stroke(MapThemeColor.color(css: theme.roads), lineWidth: 5)
 
             Path { path in
                 path.addRect(CGRect(x: size.width * 0.06, y: size.height * 0.10, width: size.width * 0.26, height: size.height * 0.22))
                 path.addRect(CGRect(x: size.width * 0.68, y: size.height * 0.66, width: size.width * 0.24, height: size.height * 0.18))
             }
-            .fill(MapThemeColor.color(hex: theme.parks).opacity(theme.showsParks ? 0.75 : 0.35))
+            .fill(MapThemeColor.color(css: theme.parks).opacity(theme.showsParks ? 0.75 : 0.35))
         }
     }
 
     private var dummyPin: some View {
         ZStack(alignment: .topTrailing) {
             Circle()
-                .fill(MapThemeColor.color(hex: PinLayers.pinColor))
+                .fill(MapThemeColor.color(css: PinLayers.pinColor))
                 .frame(width: CGFloat(metrics.circleDiameter), height: CGFloat(metrics.circleDiameter))
                 .overlay {
                     Image(systemName: "star.fill")
@@ -8103,7 +8025,7 @@ private struct CreditEntryView: View {
     }
 }
 
-private struct ListPickerView: View {
+struct ListPickerView: View {
     let placeID: String
     let model: MapScreenModel?
     let onChanged: @MainActor () -> Void
@@ -8335,7 +8257,7 @@ private extension View {
     }
 }
 
-private struct FlowLayout: Layout {
+struct FlowLayout: Layout {
     var spacing: CGFloat
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -8591,650 +8513,6 @@ private struct LayersSheet: View {
     }
 }
 
-private struct PlaceCardSheet: View {
-    let placeID: String
-    let model: MapScreenModel?
-    let onHide: (String, String) -> Void
-    let onManageVisits: (String) -> Void
-    let setNearbyPromptSuppressed: @MainActor (String, Bool) -> Bool
-    let showHiddenMode: Bool
-
-    @State private var sheetInstanceID = UUID().uuidString
-    @State private var card: PlaceCardModel?
-    @State private var isLoading = true
-    @State private var actionError: String?
-    @State private var showListPicker = false
-    @State private var actionBarHeight: CGFloat = 0
-    @State private var isPerformingAction = false
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            ScrollView {
-                cardContent
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-                    .padding(.bottom, CGFloat(
-                        PlaceCardOverlayMetrics.contentBottomPadding(actionBarHeight: Double(actionBarHeight))
-                    ))
-            }
-            .accessibilityIdentifier("place-card.instance.\(sheetInstanceID)")
-
-            if let card {
-                VStack(spacing: 0) {
-                    placeCardBottomFade
-                        .allowsHitTesting(false)
-                    actionBar(card)
-                        .background(
-                            GeometryReader { proxy in
-                                Color.clear.preference(key: PlaceCardActionBarHeightKey.self, value: proxy.size.height)
-                            }
-                        )
-                }
-                .onPreferenceChange(PlaceCardActionBarHeightKey.self) { height in
-                    actionBarHeight = height
-                }
-            }
-        }
-        .presentationDetents(cardDetents)
-        .presentationDragIndicator(.visible)
-        .presentationCornerRadius(PlaceCardVisualSpec.cardCornerRadius)
-        .presentationBackground(PlaceCardVisualSpec.cardBackground)
-        .presentationBackgroundInteraction(.enabled(upThrough: dynamicTypeSize.isAccessibilitySize ? .large : .medium))
-        .preferredColorScheme(.light)
-        .task(id: placeID) {
-            await loadCard()
-        }
-        .sheet(isPresented: $showListPicker) {
-            ListPickerView(
-                placeID: placeID,
-                model: model,
-                onChanged: {
-                    Task { await refreshCard() }
-                }
-            )
-        }
-        .task(id: placeID) {
-            await observeImageChanges()
-        }
-    }
-
-    @ViewBuilder
-    private var cardContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let card {
-                header
-                Text(verbatim: card.name)
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(PlaceCardVisualSpec.primaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityAddTraits(.isHeader)
-                    .accessibilityIdentifier("place-card.title")
-                typeRow(card)
-                photoSlot(card)
-                if let blurb = card.blurb {
-                    Text(verbatim: blurb)
-                        .font(.body)
-                        .foregroundStyle(PlaceCardVisualSpec.primaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("place-card.description")
-                }
-                sourceArticleLink(card.sourceArticleLink)
-                listChips(card.listNames)
-                attributionText(card)
-            } else if isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity, alignment: .center)
-            } else {
-                Text(verbatim: "Place unavailable")
-                    .font(.headline)
-                Text(verbatim: placeID)
-                    .font(.caption2)
-                    .textSelection(.enabled)
-            }
-        }
-    }
-
-    private var cardDetents: Set<PresentationDetent> {
-        Set(PlaceCardDetentPolicy.identifiers(isAccessibilitySize: dynamicTypeSize.isAccessibilitySize).compactMap { identifier in
-            switch identifier {
-            case "medium":
-                return .medium
-            case "large":
-                return .large
-            default:
-                return nil
-            }
-        })
-    }
-
-    private var header: some View {
-        HStack {
-            Spacer()
-
-            Menu {
-                Button("Add to list") {
-                    showListPicker = true
-                }
-                .accessibilityIdentifier("place-card.add-to-list")
-            } label: {
-                Image(systemName: PlaceCardVisualSpec.closeSystemImageName)
-                    .font(.subheadline.weight(.semibold))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(PlaceCardVisualSpec.secondaryText)
-            .accessibilityLabel("More")
-            .accessibilityIdentifier("place-card.more")
-        }
-    }
-
-    private var placeCardBottomFade: some View {
-        LinearGradient(
-            stops: [
-                Gradient.Stop(color: Color(.systemBackground).opacity(0), location: 0),
-                Gradient.Stop(color: Color(.systemBackground), location: 1),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .frame(height: CGFloat(PlaceCardOverlayMetrics.fadeHeight))
-    }
-
-    @ViewBuilder
-    private func sourceArticleLink(_ link: SourceArticleLink?) -> some View {
-        if let link {
-            Link(destination: link.url) {
-                Text(verbatim: link.label)
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(PlaceCardVisualSpec.linkText)
-            }
-            .accessibilityIdentifier("place-card.source-article")
-            .accessibilityLabel(Text(verbatim: "\(link.sourceName) source article"))
-        }
-    }
-
-    @ViewBuilder
-    private func typeRow(_ card: PlaceCardModel) -> some View {
-        HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(PlaceCardVisualSpec.mediaBackground)
-                .frame(
-                    width: PlaceCardVisualSpec.typeSwatchSide,
-                    height: PlaceCardVisualSpec.typeSwatchSide
-                )
-                .accessibilityHidden(true)
-            Text(verbatim: categoryLabel(card.category))
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(PlaceCardVisualSpec.secondaryText)
-                .accessibilityIdentifier("place-card.type.label")
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    @ViewBuilder
-    private func photoSlot(_ card: PlaceCardModel) -> some View {
-        if let photo = card.photo {
-            PlaceCardPhotoSlot(photo: photo, model: model)
-        } else if PlaceCardVisualSpec.showsMediaSlotWhenPhotoMissing {
-            PlaceCardMissingPhotoSlot(placeName: card.name)
-        }
-    }
-
-    @ViewBuilder
-    private func listChips(_ names: [String]) -> some View {
-        if !names.isEmpty {
-            FlowLayout(spacing: 8) {
-                ForEach(names, id: \.self) { name in
-                    Button {
-                        showListPicker = true
-                    } label: {
-                        Text(verbatim: name)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(PlaceCardVisualSpec.primaryText)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(PlaceCardVisualSpec.neutralActionBackground, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .accessibilityIdentifier("place-card.list-chips")
-        }
-    }
-
-    @ViewBuilder
-    private func attributionText(_ card: PlaceCardModel) -> some View {
-        let parts = attributionParts(card)
-        if !parts.isEmpty {
-            Text(verbatim: parts.joined(separator: " / "))
-                .font(.caption2)
-                .foregroundStyle(PlaceCardVisualSpec.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("place-card.attribution")
-        }
-    }
-
-    @ViewBuilder
-    private func actionBar(_ card: PlaceCardModel) -> some View {
-        let slots = PlaceCardActionSlots(pinState: card.pinState).actions
-        let layout = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
-            : AnyLayout(HStackLayout(spacing: 10))
-
-        VStack(alignment: .leading, spacing: 8) {
-            if let actionError {
-                Text(verbatim: actionError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("place-card.action-error")
-            }
-
-            layout {
-                ForEach(Array(slots.enumerated()), id: \.offset) { _, action in
-                    actionButton(action, card: card)
-                        .frame(maxWidth: .infinity)
-                        .accessibilitySortPriority(10)
-                }
-            }
-        }
-        .disabled(isPerformingAction)
-        .padding(.horizontal, PlaceCardVisualSpec.actionBarHorizontalPadding)
-        .padding(.top, 10)
-        .padding(.bottom, 12)
-        .background(PlaceCardVisualSpec.cardBackground)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("place-card.action-bar")
-        .accessibilitySortPriority(10)
-    }
-
-    @ViewBuilder
-    private func actionButton(_ action: PlaceCardAction, card: PlaceCardModel) -> some View {
-        switch action {
-        case .save:
-            saveButton(card)
-        case .seen:
-            Button {
-                startAction { await setVisited(true, action: .seen) }
-            } label: {
-                actionLabel(action)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("place-card.visited")
-            .accessibilityValue("Not seen")
-        case .love:
-            Button {
-                startAction { await setLoved(true, action: .love) }
-            } label: {
-                actionLabel(action)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("place-card.loved")
-            .accessibilityValue("Not loved")
-        case .unlove:
-            Button {
-                startAction { await setLoved(false, action: .unlove) }
-            } label: {
-                actionLabel(action)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("place-card.loved")
-            .accessibilityValue("Loved")
-        case .hide:
-            hideButton(card)
-        case let .unsee(isEnabled):
-            Button {
-                startAction { await setVisited(false, action: action) }
-            } label: {
-                actionLabel(action)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("place-card.unsee")
-            .accessibilityValue("Seen")
-            .disabled(!isEnabled)
-        case .seenDisabled:
-            Button {} label: {
-                actionLabel(action)
-            }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("place-card.visited")
-                .accessibilityValue("Hidden")
-                .disabled(true)
-        case .unhide:
-            unhideButton()
-        }
-    }
-
-    private func saveButton(_ card: PlaceCardModel) -> some View {
-        Button {
-            showListPicker = true
-        } label: {
-            actionLabel(.save, title: card.pinState.saved ? "Saved" : "Save")
-        }
-        .highPriorityGesture(
-            LongPressGesture(minimumDuration: 0.5)
-                .onEnded { _ in
-                    showListPicker = true
-                }
-        )
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("place-card.save")
-        .accessibilityValue(card.pinState.saved ? "Saved" : "Not saved")
-        .accessibilityHint(PlaceCardAction.save.accessibilityHint(isSaved: card.pinState.saved) ?? "")
-    }
-
-    private func hideButton(_ card: PlaceCardModel) -> some View {
-        Button {
-            startAction { await setHidden(card) }
-        } label: {
-            actionLabel(.hide)
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("place-card.hide")
-        .accessibilityValue("Not hidden")
-    }
-
-    private func unhideButton() -> some View {
-        Button {
-            startAction { await setHidden(false) }
-        } label: {
-            actionLabel(.unhide)
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("place-card.unhide")
-        .accessibilityValue("Hidden")
-    }
-
-    private func actionLabel(_ action: PlaceCardAction, title: String? = nil) -> some View {
-        let tone = PlaceCardVisualSpec.tone(for: action)
-        return Text(verbatim: title ?? action.title)
-            .font(.headline.weight(.semibold))
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: PlaceCardVisualSpec.actionMinimumHeight)
-            .foregroundStyle(PlaceCardVisualSpec.actionForeground(for: tone))
-            .background(PlaceCardVisualSpec.actionBackground(for: tone))
-            .clipShape(RoundedRectangle(cornerRadius: PlaceCardVisualSpec.actionCornerRadius, style: .continuous))
-            .overlay {
-                if tone == .disabled {
-                    RoundedRectangle(cornerRadius: PlaceCardVisualSpec.actionCornerRadius, style: .continuous)
-                        .stroke(PlaceCardVisualSpec.disabledText.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                }
-            }
-    }
-
-    private func loadCard() async {
-        await MainActor.run {
-            card = nil
-            actionError = nil
-            isLoading = true
-        }
-        let nextCard = await model?.cardModel(for: placeID)
-        await MainActor.run {
-            card = nextCard
-            isLoading = false
-            if let nextCard {
-                MakingTracksLog.flowEvent("place viewed", fields: [
-                    .object("placeID", placeID),
-                    .object("placeName", nextCard.name),
-                    .public("source", "card"),
-                ])
-            }
-        }
-    }
-
-    private func refreshCard() async {
-        let nextCard = await model?.cardModel(for: placeID)
-        await MainActor.run {
-            card = nextCard
-        }
-    }
-
-    private func observeImageChanges() async {
-        guard let changes = model?.imageChanges else { return }
-        for await ids in changes {
-            guard !Task.isCancelled else { return }
-            guard ids.contains(placeID) else { continue }
-            await refreshCard()
-        }
-    }
-
-    private func setVisited(_ visited: Bool, action: PlaceCardAction) async {
-        if !visited, (await model?.visitCount(placeID: placeID) ?? 0) > 1 {
-            // #217: Rob has not fixed the stale single-visit threshold yet, so
-            // only the unambiguous multi-visit case routes to row selection here.
-            await MainActor.run {
-                isPerformingAction = false
-                dismiss()
-                onManageVisits(placeID)
-            }
-            return
-        }
-        await performAction(suppressingPromptFor: action) {
-            try await model?.setVisited(placeID: placeID, visited: visited)
-        }
-    }
-
-    private func setLoved(_ loved: Bool, action: PlaceCardAction) async {
-        await performAction(suppressingPromptFor: action) {
-            try await model?.setLoved(placeID: placeID, loved: loved)
-        }
-    }
-
-    private func startAction(_ action: @escaping () async -> Void) {
-        guard !isPerformingAction else { return }
-        isPerformingAction = true
-        actionError = nil
-        Task {
-            await action()
-        }
-    }
-
-    private func setHidden(_ card: PlaceCardModel) async {
-        let insertedNearbyPromptSuppression = await beginNearbyPromptSuppression(for: .hide)
-        await MainActor.run {
-            actionError = nil
-        }
-        do {
-            try await model?.setHidden(placeID: placeID, hidden: true)
-            await MainActor.run {
-                isPerformingAction = false
-                self.card = nil
-                dismiss()
-                onHide(placeID, card.name)
-            }
-        } catch {
-            await rollbackNearbyPromptSuppressionIfNeeded(insertedNearbyPromptSuppression)
-            await MainActor.run {
-                isPerformingAction = false
-                actionError = "Could not save that change."
-            }
-        }
-    }
-
-    private func setHidden(_ hidden: Bool) async {
-        await performAction(suppressingPromptFor: hidden ? .hide : .unhide) {
-            try await model?.setHidden(placeID: placeID, hidden: hidden)
-        }
-    }
-
-    private func performAction(
-        suppressingPromptFor nearbyPromptAction: PlaceCardAction? = nil,
-        _ action: () async throws -> Void
-    ) async {
-        let insertedNearbyPromptSuppression = await beginNearbyPromptSuppression(for: nearbyPromptAction)
-        do {
-            try await action()
-            await clearNearbyPromptSuppressionIfNeeded(for: nearbyPromptAction)
-            await MainActor.run { actionError = nil }
-            await refreshCard()
-            await MainActor.run { isPerformingAction = false }
-        } catch {
-            await rollbackNearbyPromptSuppressionIfNeeded(insertedNearbyPromptSuppression)
-            await MainActor.run {
-                isPerformingAction = false
-                actionError = "Could not save that change."
-            }
-        }
-    }
-
-    private func beginNearbyPromptSuppression(for action: PlaceCardAction?) async -> Bool {
-        guard let action,
-              NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: action)
-        else { return false }
-        return setNearbyPromptSuppressed(placeID, true)
-    }
-
-    private func clearNearbyPromptSuppressionIfNeeded(for action: PlaceCardAction?) async {
-        guard let action,
-              NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: action)
-        else { return }
-        _ = setNearbyPromptSuppressed(placeID, false)
-    }
-
-    private func rollbackNearbyPromptSuppressionIfNeeded(_ insertedSuppression: Bool) async {
-        guard insertedSuppression else { return }
-        // Correct while startAction serialises card actions; concurrent suppressing actions would need per-action
-        // contribution tracking instead of this single inserted/not-inserted rollback flag.
-        _ = setNearbyPromptSuppressed(placeID, false)
-    }
-
-    private func categoryLabel(_ raw: String) -> String {
-        raw
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: "-", with: " ")
-            .split(separator: " ")
-            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
-            .joined(separator: " ")
-    }
-
-    private func attributionParts(_ card: PlaceCardModel) -> [String] {
-        var parts: [String] = []
-        if let photo = card.photo {
-            parts.append(photo.attribution)
-        }
-        if !card.sourceNames.isEmpty {
-            parts.append(card.sourceNames.joined(separator: " / "))
-        }
-        return parts
-    }
-
-}
-
-private struct PlaceCardActionBarHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-private struct PlaceCardMissingPhotoSlot: View {
-    let placeName: String
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: PlaceCardVisualSpec.actionCornerRadius, style: .continuous)
-                .fill(PlaceCardVisualSpec.mediaBackground)
-            Image(systemName: "photo")
-                .font(.system(size: 30, weight: .regular))
-                .foregroundStyle(PlaceCardVisualSpec.secondaryText.opacity(0.8))
-                .accessibilityHidden(true)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: PlaceCardVisualSpec.mediaSlotHeight)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("No photo available for \(placeName)")
-        .accessibilityIdentifier("place-card.photo.placeholder")
-    }
-}
-
-private struct PlaceCardPhotoSlot: View {
-    let photo: PlaceCardPhoto
-    let model: MapScreenModel?
-
-    @State private var image: UIImage?
-    @State private var didFail = false
-
-    private var loadID: String {
-        photo.thumbSHA256 ?? photo.accessibilityLabel
-    }
-
-    private var slotAccessibilityLabel: String {
-        didFail && photo.thumbURL != nil ? "Photo unavailable" : photo.accessibilityLabel
-    }
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(.thinMaterial)
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .accessibilityHidden(true)
-            } else if photo.thumbURL == nil || didFail {
-                Image(systemName: "photo")
-                    .font(.system(size: 42, weight: .regular))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            } else if !didFail {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityHidden(true)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: PlaceCardVisualSpec.mediaSlotHeight)
-        .clipShape(RoundedRectangle(cornerRadius: PlaceCardVisualSpec.actionCornerRadius, style: .continuous))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(slotAccessibilityLabel)
-        .accessibilityIdentifier("place-card.photo")
-        .task(id: loadID) {
-            await loadPhoto(expectedLoadID: loadID)
-        }
-    }
-
-    private func loadPhoto(expectedLoadID: String) async {
-        guard !Task.isCancelled else { return }
-        await MainActor.run {
-            guard !Task.isCancelled, loadID == expectedLoadID else { return }
-            image = nil
-            didFail = false
-        }
-        guard photo.thumbURL != nil else { return }
-        guard let data = await model?.photoData(for: photo) else {
-            await MainActor.run {
-                guard !Task.isCancelled, loadID == expectedLoadID else { return }
-                didFail = true
-            }
-            return
-        }
-        await MainActor.run {
-            guard !Task.isCancelled, loadID == expectedLoadID else { return }
-            if Self.isSafeDecodedImage(data), let decoded = UIImage(data: data) {
-                image = decoded
-            } else {
-                didFail = true
-            }
-        }
-    }
-
-    private static func isSafeDecodedImage(_ data: Data) -> Bool {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let width = properties[kCGImagePropertyPixelWidth] as? Int,
-              let height = properties[kCGImagePropertyPixelHeight] as? Int,
-              width > 0,
-              height > 0
-        else { return false }
-        // Tunable guard shared with the card contract: enough for thumbnails, bounded against decode bombs.
-        return width <= 16_000_000 / height
-    }
-}
-
 private enum MapScreenActionError: Error {
     case placeUnavailable
 }
@@ -9269,20 +8547,79 @@ enum MapDeferredOfflineMaintenancePolicy {
 }
 
 enum MapThemeColor {
-    static func color(hex: String) -> Color {
-        Color(uiColor: uiColor(hex: hex))
+    struct Components {
+        let red: CGFloat
+        let green: CGFloat
+        let blue: CGFloat
+        let alpha: CGFloat
     }
 
-    static func uiColor(hex: String) -> UIColor {
-        let trimmed = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-        let value = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
-        guard value.count == 6, let rgb = Int(value, radix: 16) else {
-            return UIColor(red: 0.953, green: 0.937, blue: 0.898, alpha: 1)
+    static func color(css: String) -> Color {
+        guard let color = uiColor(css: css) else {
+            preconditionFailure("Unsupported map theme colour: \(css)")
         }
-        let red = CGFloat((rgb >> 16) & 0xff) / 255
-        let green = CGFloat((rgb >> 8) & 0xff) / 255
-        let blue = CGFloat(rgb & 0xff) / 255
-        return UIColor(red: red, green: green, blue: blue, alpha: 1)
+        return Color(uiColor: color)
+    }
+
+    static func uiColor(css: String) -> UIColor? {
+        guard let components = components(css: css) else {
+            return nil
+        }
+
+        return UIColor(
+            red: components.red,
+            green: components.green,
+            blue: components.blue,
+            alpha: components.alpha
+        )
+    }
+
+    static func components(css: String) -> Components? {
+        let trimmed = css.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hex = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
+        let isSixDigitHex = hex.utf8.count == 6 && hex.utf8.allSatisfy { byte in
+            (48...57).contains(byte) || (65...70).contains(byte) || (97...102).contains(byte)
+        }
+        if isSixDigitHex, let rgb = Int(hex, radix: 16) {
+            return Components(
+                red: CGFloat((rgb >> 16) & 0xff) / 255,
+                green: CGFloat((rgb >> 8) & 0xff) / 255,
+                blue: CGFloat(rgb & 0xff) / 255,
+                alpha: 1
+            )
+        }
+
+        guard trimmed.hasPrefix("rgba("), trimmed.hasSuffix(")") else {
+            return nil
+        }
+        let contents = trimmed.dropFirst(5).dropLast()
+        let fields = contents.split(separator: ",", omittingEmptySubsequences: false)
+        guard fields.count == 4,
+              let red = byte(from: fields[0]),
+              let green = byte(from: fields[1]),
+              let blue = byte(from: fields[2]),
+              let alpha = Double(String(fields[3]).trimmingCharacters(in: .whitespacesAndNewlines)),
+              alpha.isFinite,
+              (0...1).contains(alpha)
+        else {
+            return nil
+        }
+
+        return Components(
+            red: CGFloat(red) / 255,
+            green: CGFloat(green) / 255,
+            blue: CGFloat(blue) / 255,
+            alpha: CGFloat(alpha)
+        )
+    }
+
+    private static func byte(from field: Substring) -> Int? {
+        guard let value = Int(String(field).trimmingCharacters(in: .whitespacesAndNewlines)),
+              (0...255).contains(value)
+        else {
+            return nil
+        }
+        return value
     }
 }
 

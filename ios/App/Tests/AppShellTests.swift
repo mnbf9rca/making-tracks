@@ -3,6 +3,7 @@ import Foundation
 import SwiftUI
 import UIKit
 import XCTest
+import MakingTracksCore
 import MakingTracksData
 import MakingTracksMapStyle
 @testable import MakingTracksTiles
@@ -22,40 +23,154 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "NSAccentColorName") as? String, "AccentColor")
     }
 
-    func testPlaceCardVisualSpecMatchesApprovedCardLayout() {
-        XCTAssertEqual(PlaceCardVisualSpec.closeSystemImageName, "ellipsis")
-        XCTAssertFalse(PlaceCardVisualSpec.showsMediaSlotWhenPhotoMissing)
-        XCTAssertEqual(PlaceCardVisualSpec.actionCornerRadius, 8)
-        XCTAssertEqual(PlaceCardVisualSpec.actionMinimumHeight, 44)
-        XCTAssertEqual(PlaceCardVisualSpec.mediaSlotHeight, 132)
-        XCTAssertEqual(PlaceCardVisualSpec.cardCornerRadius, 22)
-        XCTAssertEqual(PlaceCardVisualSpec.typeSwatchSide, 14)
-        XCTAssertEqual(PlaceCardVisualSpec.actionBarHorizontalPadding, 18)
-        assertColor(PlaceCardVisualSpec.cardBackground, red: 0.985, green: 0.98, blue: 0.95)
-        assertColor(PlaceCardVisualSpec.mediaBackground, red: 0.82, green: 0.79, blue: 0.70)
-        assertColor(PlaceCardVisualSpec.neutralActionBackground, red: 0.93, green: 0.92, blue: 0.88)
-        assertColor(PlaceCardVisualSpec.primaryActionBackground, red: 0.02, green: 0.46, blue: 0.39)
-        assertColor(PlaceCardVisualSpec.loveActionBackground, red: 0.99, green: 0.89, blue: 0.89)
-        assertColor(PlaceCardVisualSpec.warningActionBackground, red: 0.95, green: 0.91, blue: 0.82)
-        assertColor(PlaceCardVisualSpec.disabledActionBackground, red: 0.96, green: 0.95, blue: 0.91)
-        assertColor(PlaceCardVisualSpec.primaryText, red: 0.12, green: 0.12, blue: 0.11)
-        assertColor(PlaceCardVisualSpec.secondaryText, red: 0.43, green: 0.42, blue: 0.38)
-        assertColor(PlaceCardVisualSpec.linkText, red: 0.0, green: 0.43, blue: 0.37)
-        assertColor(PlaceCardVisualSpec.loveText, red: 0.77, green: 0.19, blue: 0.17)
-        assertColor(PlaceCardVisualSpec.warningText, red: 0.46, green: 0.34, blue: 0.12)
-        assertColor(PlaceCardVisualSpec.disabledText, red: 0.68, green: 0.66, blue: 0.61)
+    func testPlaceCardAppearanceResolvesApprovedMaterialTokens() {
+        XCTAssertEqual(PlaceCardAppearance.cardBackgroundToken, .surface)
+        XCTAssertEqual(PlaceCardAppearance.mediaBackgroundToken, .road)
+        XCTAssertEqual(PlaceCardAppearance.primaryTextToken, .ink)
+        XCTAssertEqual(PlaceCardAppearance.secondaryTextToken, .muted)
+        XCTAssertEqual(PlaceCardAppearance.linkTextToken, .accent)
+
+        let appearance = PlaceCardAppearance(theme: .snow)
+        let tokens = MaterialTheme.snow.tokens
+        assertColor(
+            appearance.cardBackground,
+            red: tokens.surface.red,
+            green: tokens.surface.green,
+            blue: tokens.surface.blue
+        )
+        assertColor(
+            appearance.primaryText,
+            red: tokens.ink.red,
+            green: tokens.ink.green,
+            blue: tokens.ink.blue
+        )
+        assertColor(
+            appearance.secondaryText,
+            red: tokens.muted.red,
+            green: tokens.muted.green,
+            blue: tokens.muted.blue
+        )
+        assertColor(
+            appearance.linkText,
+            red: tokens.accent.red,
+            green: tokens.accent.green,
+            blue: tokens.accent.blue
+        )
     }
 
-    func testPlaceCardActionTonesFollowRuledSlotsWithoutDestructiveHide() {
-        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .save), .neutral)
-        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .seen), .primary)
-        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .hide), .neutral)
-        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .love), .love)
-        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .unlove), .love)
-        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .unsee(isEnabled: true)), .warning)
-        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .unsee(isEnabled: false)), .disabled)
-        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .seenDisabled), .disabled)
-        XCTAssertEqual(PlaceCardVisualSpec.tone(for: .unhide), .neutral)
+    func testPlaceCardActionsUseRuledDesignSystemStylesWithoutDestructiveHide() {
+        XCTAssertEqual(PlaceCardActionAppearance.style(for: .save), .tonal)
+        XCTAssertEqual(PlaceCardActionAppearance.style(for: .seen), .filled)
+        XCTAssertEqual(PlaceCardActionAppearance.style(for: .hide), .quiet)
+        let loveStyle = PlaceCardActionStyle.semantic(
+            foreground: .love,
+            background: .loveContainer
+        )
+        let warningStyle = PlaceCardActionStyle.semantic(
+            foreground: .warning,
+            background: .warningContainer
+        )
+        XCTAssertEqual(PlaceCardActionAppearance.style(for: .love), loveStyle)
+        XCTAssertEqual(PlaceCardActionAppearance.style(for: .unlove), loveStyle)
+        XCTAssertEqual(
+            PlaceCardActionAppearance.style(for: .unsee(isEnabled: true)),
+            warningStyle
+        )
+        XCTAssertEqual(PlaceCardActionAppearance.style(for: .unsee(isEnabled: false)), .quiet)
+        XCTAssertEqual(PlaceCardActionAppearance.style(for: .seenDisabled), .quiet)
+        XCTAssertEqual(PlaceCardActionAppearance.style(for: .unhide), .quiet)
+        XCTAssertEqual(
+            PlaceCardActionAppearance.semanticControlOpacity(isEnabled: false),
+            0.46
+        )
+        XCTAssertEqual(
+            PlaceCardActionAppearance.semanticControlOpacity(isEnabled: true),
+            1
+        )
+        XCTAssertEqual(
+            PlaceCardActionAppearance.semanticControlScale(isPressed: false),
+            1
+        )
+        XCTAssertEqual(PlaceCardActionAppearance.semanticControlScale(isPressed: true), 0.98)
+
+        let actionSets: [[PlaceCardAction]] = [
+            [.save, .seen, .hide],
+            [.save, .love, .unsee(isEnabled: true)],
+            [.save, .unlove, .unsee(isEnabled: false)],
+            [.save, .seenDisabled, .unhide],
+        ]
+        for actions in actionSets {
+            XCTAssertLessThanOrEqual(
+                actions.filter { PlaceCardActionAppearance.style(for: $0) == .filled }.count,
+                1
+            )
+        }
+    }
+
+    func testPlaceCardPhotoHeightFollowsAspectRatioWithinTasteClamp() {
+        XCTAssertEqual(PlaceCardPhotoLayout.preferredMinimumHeight, 112)
+        XCTAssertEqual(PlaceCardPhotoLayout.maximumHeight, 260)
+        XCTAssertEqual(
+            PlaceCardPhotoLayout.height(containerWidth: 320, imageWidth: 640, imageHeight: 480),
+            240
+        )
+        let panoramicFrame = PlaceCardPhotoLayout.size(
+            containerWidth: 320,
+            imageWidth: 1_600,
+            imageHeight: 400
+        )
+        XCTAssertEqual(panoramicFrame.height, 80)
+        XCTAssertEqual(panoramicFrame.width, 320)
+        XCTAssertEqual(
+            panoramicFrame.width / panoramicFrame.height,
+            4,
+            accuracy: 0.001,
+            "An extreme panorama must preserve its aspect ratio rather than add letterbox bars."
+        )
+        XCTAssertEqual(
+            PlaceCardPhotoLayout.height(containerWidth: 320, imageWidth: 400, imageHeight: 1_200),
+            260
+        )
+        let portraitFrame = PlaceCardPhotoLayout.size(
+            containerWidth: 320,
+            imageWidth: 400,
+            imageHeight: 1_200
+        )
+        XCTAssertEqual(portraitFrame.height, 260)
+        XCTAssertEqual(portraitFrame.width, 260 / 3, accuracy: 0.001)
+        XCTAssertEqual(
+            portraitFrame.width / portraitFrame.height,
+            1 / 3,
+            accuracy: 0.001,
+            "A max-clamped portrait frame must still match the image, with no letterbox bars."
+        )
+        XCTAssertEqual(
+            PlaceCardPhotoLayout.height(containerWidth: 320, imageWidth: nil, imageHeight: nil),
+            240
+        )
+        XCTAssertEqual(
+            PlaceCardPhotoLayout.height(containerWidth: 320, imageWidth: 0, imageHeight: 480),
+            240
+        )
+    }
+
+    func testPlaceCardSurfaceIsExtractedFromMapScreen() throws {
+        let appRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let mapSource = try String(
+            contentsOf: appRoot.appendingPathComponent("Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+        let cardSource = try String(
+            contentsOf: appRoot.appendingPathComponent(
+                "Sources/PlaceCard/PlaceCardSheet.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertFalse(mapSource.contains("struct PlaceCardSheet: View"))
+        XCTAssertTrue(cardSource.contains("struct PlaceCardSheet: View"))
     }
 
     func testMapHomeChromeUsesFilterGlyphAndChiplessMenuSpec() {
@@ -1965,8 +2080,8 @@ final class AppShellTests: XCTestCase {
         ))
     }
 
-    func testMapLoadingPlaceholderUsesOpaqueDefinedPaperBackground() {
-        let color = MapThemeColor.uiColor(hex: MapTheme.definedPaper.background)
+    func testMapThemeColorParsesOpaqueHexAndSnowBoundaryToken() throws {
+        let color = try XCTUnwrap(MapThemeColor.uiColor(css: MapTheme.definedPaper.background))
         var red: CGFloat = 0
         var green: CGFloat = 0
         var blue: CGFloat = 0
@@ -1978,12 +2093,21 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(Int(round(blue * 255)), 0xE5)
         XCTAssertEqual(alpha, 1)
 
-        let fallback = MapThemeColor.uiColor(hex: "not-a-color")
-        XCTAssertTrue(fallback.getRed(&red, green: &green, blue: &blue, alpha: &alpha))
-        XCTAssertEqual(Int(round(red * 255)), 0xF3)
-        XCTAssertEqual(Int(round(green * 255)), 0xEF)
-        XCTAssertEqual(Int(round(blue * 255)), 0xE5)
-        XCTAssertEqual(alpha, 1)
+        let translucent = try XCTUnwrap(MapThemeColor.uiColor(css: MapTheme.snow.boundaries))
+        XCTAssertTrue(translucent.getRed(&red, green: &green, blue: &blue, alpha: &alpha))
+        XCTAssertEqual(Int(round(red * 255)), 43)
+        XCTAssertEqual(Int(round(green * 255)), 40)
+        XCTAssertEqual(Int(round(blue * 255)), 35)
+        XCTAssertEqual(alpha, 0.14, accuracy: 0.001)
+    }
+
+    func testMapThemeColorRejectsMalformedCSSInsteadOfSubstitutingBeige() {
+        XCTAssertNil(MapThemeColor.uiColor(css: "not-a-color"))
+        XCTAssertNil(MapThemeColor.components(css: "not-a-color"))
+        XCTAssertNil(MapThemeColor.components(css: "-12345"))
+        XCTAssertNil(MapThemeColor.components(css: "+12345"))
+        XCTAssertNil(MapThemeColor.components(css: "rgba(256, 40, 35, 0.14)"))
+        XCTAssertNil(MapThemeColor.components(css: "rgba(43, 40, 35, 1.4)"))
     }
 
     func testStorageMenuStatusUsesStableRowsAndByteFormatting() {
