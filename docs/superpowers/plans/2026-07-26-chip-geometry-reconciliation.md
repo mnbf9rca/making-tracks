@@ -118,13 +118,14 @@ git commit -m "fix(ios): restore ratified chip geometry"
 - Modify: `ios/App/UITests/MakingTracksCoreLoopUITests.swift`
 
 **Interfaces:**
-- Consumes: the chip interaction shape from Task 1 and the seeded `Date night` place-card chip
-- Produces: an AC29 UI-test oracle against the chip's real accessibility button
+- Consumes: the chip interaction shape from Task 1 and a debug-only isolated chip fixture
+- Produces: an AC29 UI-test oracle against the chip's real button action
 
 - [ ] **Step 1: Write an XCUITest that taps outside the capsule**
 
-Launch a debug-only isolated `MaterialChip` fixture whose action increments a
-visible counter. Because the interaction shape expands the accessibility frame,
+Launch a debug-only isolated `MaterialChip` fixture against a reset fixture
+database whose action increments a visible counter. Because the interaction
+shape expands the accessibility frame,
 derive the visible capsule midpoint from the largest contiguous band of rendered
 accent pixels, normalize its geometric edges using the specified 22pt visual
 height, and tap 11pt beyond both edges. This avoids anti-aliasing edge
@@ -150,9 +151,13 @@ as UI-test teeth. The explicit derived shape remains the component-owned,
 deterministic guarantee rather than relying on undocumented platform fallback.
 A center tap or frame-height assertion would not prove the interaction outcome.
 
-- [ ] **Step 2: Run the single UI test against the pre-hit-area implementation and verify RED**
+- [ ] **Step 2: Verify the geometry mutation and fixture test start RED**
 
-Run the named UI test through the simulator lock:
+Mutate `minimumHitTarget` from 44 to 40 and run the focused host geometry test.
+Expected: failure on both the minimum and derived outset assertions. Restore 44.
+
+Before adding the debug fixture, run the named UI test through the simulator
+lock:
 
 ```bash
 ./scripts/sim-lock.sh xcodebuild \
@@ -163,11 +168,14 @@ Run the named UI test through the simulator lock:
   test
 ```
 
-Expected: failure because the coordinate is outside the current content shape and does not open the picker.
+Expected: failure because the isolated fixture button does not exist. Shape
+removal is deliberately not claimed as a RED mutation because undocumented
+platform button tolerance accepts the 44pt-boundary taps independently.
 
 - [ ] **Step 3: Run the single UI test after Task 1 and verify GREEN**
 
-Repeat the locked `xcodebuild` command. Expected: the coordinate outside the 22pt frame opens `Add to list`.
+Repeat the locked `xcodebuild` command. Expected: the top and bottom coordinates
+outside the 22pt capsule increment the isolated action counter exactly once each.
 
 - [ ] **Step 4: Commit the actual hit-testing proof**
 

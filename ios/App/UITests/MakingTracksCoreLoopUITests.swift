@@ -927,7 +927,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     func testMaterialChipExtendsHitTargetBeyondVisualCapsule() {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-testing-chip-target"]
+        app.launchArguments = [
+            "--ui-testing-fixture-map",
+            "--ui-testing-reset-database",
+            "--ui-testing-chip-target",
+        ]
         app.launch()
 
         // `contentShape(.interaction, ...)` expands the accessibility frame,

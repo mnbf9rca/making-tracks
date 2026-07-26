@@ -618,7 +618,7 @@ Host tests only (`cd ios && swift test`) unless you touch `project.yml`. No rend
 - **Depends on:** none — `ControlStyles` is merged code
 - **Owner:** codex2
 - **Review tier:** `sourcery` + `opus`
-- **Status:** tests green — 453/453 host tests and focused AC29 XCUITest 1/1 green; mutation without the extended interaction shape fails; 390×844 before/after/AX renders committed at `3586e15d`
+- **Status:** review fixes green — 454/454 host tests and isolated AC29 XCUITest 1/1; the 44→40 geometry mutation fails, while undocumented platform button tolerance makes shape removal behaviorally equivalent at the tested point; 390×844 before/after/AX renders committed at `3586e15d`
 - **Branch:** `wp-467-chip-geometry` — cut from a freshly-fetched `ios`
 - **Contracts consumed:** T1.1 tokens, T1.3 control styles.
 
