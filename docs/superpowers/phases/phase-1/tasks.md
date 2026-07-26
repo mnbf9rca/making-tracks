@@ -453,9 +453,9 @@ Full gate required, plus renders of the map home with both doors and each door o
 - **Branch:** `wp-468-chrome-toast-family` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC11, AC12 (the download-progress consumer), AC23, plus AC15/AC16 (these four views come out of `MapScreen.swift` as they adopt), AC26, AC29
 - **Depends on:** T1.6
-- **Owner:** unclaimed
+- **Owner:** codex1
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed
+- **Status:** ready-to-merge — #511; current-base host 468/468 and canonical 286/286; CI/reviews green; fable owns merge
 - **Contracts consumed:** T1.1 tokens, T1.3 buttons (the nearby prompt's embedded action), T1.4 toast/pill family and progress component.
 
 **Two acceptance additions inherited from T1.4.** T1.4 built the family but mounts nothing — its diff touches no file under `ios/App/` — so two obligations that can only be proved at a real call site land here, on the task that does the mounting. They are anchored in this row rather than left in a review thread, which is what makes the deferral compliant rather than an unowned one:

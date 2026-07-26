@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T1.7 contextual chrome AXXXL — 390×844</title>
+<style>
+  * { box-sizing: border-box; } html, body { width: 390px; height: 844px; margin: 0; overflow: hidden; }
+  body { --ground:#F4F1EA; --water:#C9DBE2; --park:#DCE5D4; --surface:#FBFAF2; --ink:#2B2823; --muted:#6B675F; --accent:#0A6B5C; --accent-contrast:#FBFAF2; --hairline:rgba(43,40,35,.14); background:var(--ground); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif; }
+  .canvas { position:relative; width:390px; height:844px; overflow:hidden; background:var(--ground); }
+  .map { position:absolute; inset:0; opacity:.87; background:linear-gradient(148deg, transparent 0 27%, var(--park) 27% 42%, transparent 42% 56%, var(--water) 56% 100%); }
+  .map:before,.map:after { content:""; position:absolute; inset:-45px; background:repeating-linear-gradient(22deg, transparent 0 40px, rgba(201,191,168,.7) 41px 45px, transparent 46px 91px); transform:rotate(-9deg); }
+  .proof-title { position:absolute; z-index:1; top:14px; left:14px; color:var(--ink); font-size:11px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; }
+  .stack { position:absolute; z-index:2; top:43px; left:12px; right:12px; display:grid; gap:7px; }
+  .state-label { margin-left:4px; color:var(--muted); font-size:9px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+  .toast { display:grid; gap:10px; padding:12px; border:1px solid var(--hairline); border-radius:16px; background:rgba(251,250,242,.78); box-shadow:0 3px 12px rgba(43,40,35,.1); -webkit-backdrop-filter:blur(16px) saturate(120%); backdrop-filter:blur(16px) saturate(120%); }
+  .row { display:flex; align-items:flex-start; gap:12px; min-width:0; }.message { min-width:0; flex:1; font-size:21px; line-height:1.12; }.icon { flex:none; width:25px; height:25px; color:var(--accent); }
+  .action { min-width:44px; min-height:44px; display:grid; place-items:center; border-radius:999px; font-size:18px; font-weight:600; white-space:nowrap; }.quiet { color:var(--muted); }.filled { padding:0 16px; background:var(--accent); color:var(--accent-contrast); }.tonal { padding:0 16px; background:rgba(10,107,92,.12); color:var(--accent); }.dismiss { color:var(--ink); font-size:25px; }
+  .fallback { display:grid; gap:12px; }.fallback > .action { justify-self:start; }.fallback-actions { display:flex; gap:12px; align-items:center; }.progress { display:grid; gap:4px; }.count { color:var(--muted); font-size:16px; line-height:1.1; }.track { height:3px; overflow:hidden; border-radius:99px; background:var(--hairline); }.fill { width:42%; height:3px; border-radius:99px; background:var(--accent); }
+  .fallback-note { color:var(--muted); font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }.attribution { position:absolute; z-index:1; left:14px; bottom:20px; color:var(--muted); font-size:11px; }.fold { position:absolute; z-index:4; left:0; right:0; bottom:0; border-top:2px dashed #C0392B; }.fold-label { position:absolute; z-index:4; right:6px; bottom:4px; padding:1px 4px; border-radius:3px; background:rgba(251,250,242,.94); color:#C0392B; font-size:9px; font-weight:700; } svg{overflow:visible}.stroke{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;stroke-width:1.8}
+</style>
+</head>
+<body>
+<main class="canvas" aria-label="Accessibility-size Snow map proof of all contextual chrome states and stacked fallback">
+  <div class="map" aria-hidden="true"></div><div class="proof-title">T1.7 · contextual chrome · AXXXL</div>
+  <div class="stack">
+    <section><div class="state-label">Offline maps · whole-surface affordance</div><div class="toast"><div class="row"><span class="icon"><svg width="25" height="25" viewBox="0 0 24 24"><circle class="stroke" cx="12" cy="12" r="9"/><path class="stroke" d="M12 6v9m-3-3 3 3 3-3M8 18h8"/></svg></span><div class="message">Offline maps Waiting for Wi-Fi</div></div><div class="progress"><div class="count">42%</div><div class="track"><div class="fill"></div></div></div></div></section>
+    <section><div class="state-label">Location notice · quiet 44pt action</div><div class="toast"><div class="row"><div class="message">Location is off</div><div class="action quiet" aria-label="Settings"><svg width="21" height="21" viewBox="0 0 24 24"><path class="stroke" d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path class="stroke" d="m19 13.5 1.4 1-1.8 3.1-1.6-.6a7.5 7.5 0 0 1-2.2 1.3l-.2 1.7h-3.6l-.2-1.7A7.5 7.5 0 0 1 8.6 17L7 17.6l-1.8-3.1 1.4-1a7.7 7.7 0 0 1 0-3l-1.4-1L7 6.4l1.6.6A7.5 7.5 0 0 1 10.8 5l.2-1.7h3.6l.2 1.7A7.5 7.5 0 0 1 17 7l1.6-.6 1.8 3.1-1.4 1a7.7 7.7 0 0 1 0 3Z"/></svg></div></div></div></section>
+    <section><div class="state-label">Nearby prompt · ViewThatFits stacked fallback</div><div class="toast fallback"><div class="message">You&#39;re near the old signal house on Riverside Walk — seen it?</div><div class="action filled">Seen it</div><div class="action dismiss" aria-label="Dismiss nearby prompt">×</div><div class="fallback-note">Controls stack below long copy · 44pt minimum</div></div></section>
+    <section><div class="state-label">Hidden place · tonal undo fallback</div><div class="toast fallback"><div class="message">Hidden — Undo</div><div class="fallback-actions"><div class="action tonal">Undo</div></div></div></section>
+  </div>
+  <div class="attribution">© OpenStreetMap</div><div class="fold"></div><div class="fold-label">fold · 390 × 844</div>
+</main>
+</body>
+</html>
