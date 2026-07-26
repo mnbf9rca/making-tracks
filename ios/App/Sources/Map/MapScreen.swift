@@ -5054,11 +5054,9 @@ private struct MapDoorSheetIntegration: View {
                 onDone: { dismiss() }
             )
         case .lovedPlaces:
-            ContentUnavailableView("Loved places", systemImage: "heart")
-                .accessibilityIdentifier("tracks.loved.pending")
+            ManagedPlacesView(model: model, mode: .loved)
         case .hiddenPlaces:
-            ContentUnavailableView("Hidden places", systemImage: "eye.slash")
-                .accessibilityIdentifier("tracks.hidden.pending")
+            ManagedPlacesView(model: model, mode: .hidden)
         case .offlineMaps:
 #if DEBUG
             OfflineMapsView(

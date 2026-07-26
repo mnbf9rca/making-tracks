@@ -425,6 +425,100 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(content.hiddenCount, 0)
     }
 
+    func testManagedPlacesModesExposeRuledPresentationAndAccessibleActions() {
+        let loved = ManagedPlacesMode.loved.presentation
+        XCTAssertEqual(loved.title, "Loved places")
+        XCTAssertEqual(loved.systemImage, "heart")
+        XCTAssertEqual(loved.emptyTitle, "No loved places yet")
+        XCTAssertEqual(
+            loved.emptyGuidance,
+            "Love a place you’ve seen and it’ll wait here."
+        )
+        XCTAssertEqual(loved.surfaceIdentifier, "tracks.loved.surface")
+        XCTAssertEqual(loved.rowIdentifierPrefix, "tracks.loved.row")
+        XCTAssertEqual(loved.actionIdentifierPrefix, "tracks.loved.remove")
+        XCTAssertEqual(loved.failureMessage, "Could not update that loved place.")
+        XCTAssertEqual(
+            ManagedPlacesMode.loved.actionAccessibilityLabel(placeName: "Alpha Arch"),
+            "Remove loved from Alpha Arch"
+        )
+
+        let hidden = ManagedPlacesMode.hidden.presentation
+        XCTAssertEqual(hidden.title, "Hidden places")
+        XCTAssertEqual(hidden.systemImage, "eye.slash")
+        XCTAssertEqual(hidden.emptyTitle, "No hidden places")
+        XCTAssertEqual(
+            hidden.emptyGuidance,
+            "Places you hide will wait here until you bring them back."
+        )
+        XCTAssertEqual(hidden.surfaceIdentifier, "tracks.hidden.surface")
+        XCTAssertEqual(hidden.rowIdentifierPrefix, "tracks.hidden.row")
+        XCTAssertEqual(hidden.actionIdentifierPrefix, "tracks.hidden.unhide")
+        XCTAssertEqual(hidden.failureMessage, "Could not unhide that place.")
+        XCTAssertEqual(
+            ManagedPlacesMode.hidden.actionAccessibilityLabel(placeName: "Beta Plaque"),
+            "Unhide Beta Plaque"
+        )
+    }
+
+    func testManagedPlacesStateRemovesOnlySuccessfulMembershipAndRetainsFailures() {
+        let loved = ListPlace(
+            placeID: "loved",
+            name: "Loved Place",
+            category: "history",
+            pinState: PinState(saved: false, visit: .loved)
+        )
+        let both = ListPlace(
+            placeID: "both",
+            name: "Loved and Hidden",
+            category: "memorial",
+            pinState: PinState(saved: false, visit: .loved, hidden: true)
+        )
+        var state = ManagedPlacesState(places: [loved, both])
+
+        state.beginAction(placeID: loved.placeID)
+        state.beginAction(placeID: both.placeID)
+        XCTAssertTrue(state.isPending(placeID: loved.placeID))
+        XCTAssertTrue(state.isPending(placeID: both.placeID))
+
+        state.finishAction(
+            placeID: loved.placeID,
+            succeeded: true,
+            failureMessage: "unused"
+        )
+        XCTAssertEqual(state.places, [both])
+        XCTAssertFalse(state.isPending(placeID: loved.placeID))
+        XCTAssertTrue(state.isPending(placeID: both.placeID))
+        XCTAssertNil(state.errorMessage)
+
+        state.finishAction(
+            placeID: both.placeID,
+            succeeded: false,
+            failureMessage: "Could not update that loved place."
+        )
+        XCTAssertEqual(state.places, [both])
+        XCTAssertTrue(state.pendingPlaceIDs.isEmpty)
+        XCTAssertEqual(state.errorMessage, "Could not update that loved place.")
+    }
+
+    func testLovedManagedPlaceMetadataNamesHiddenOverlapWithoutFilteringIt() {
+        let both = ListPlace(
+            placeID: "both",
+            name: "Loved and Hidden",
+            category: "historic_building",
+            pinState: PinState(saved: false, visit: .loved, hidden: true)
+        )
+
+        XCTAssertEqual(
+            ManagedPlacesMode.loved.metadata(for: both),
+            "Historic Building · Hidden"
+        )
+        XCTAssertEqual(
+            ManagedPlacesMode.hidden.metadata(for: both),
+            "Historic Building"
+        )
+    }
+
     func testQuietChromeUsesTokenSurfacesAndBareAttribution() {
         XCTAssertEqual(MapDoorChromeSpec.attributionTypographyRole, .label)
         XCTAssertFalse(MapDoorChromeSpec.attributionHasBackground)
