@@ -650,9 +650,9 @@ Renders before and after at 390×844 plus an AX variant, HTML committed — the 
 - **Issue:** #467 · **Spec section:** §5, §7
 - **Acceptance criteria:** AC10, AC27, plus R10's tiling contract (*Rulings* → R10)
 - **Depends on:** none
-- **Owner:** unclaimed — claimable by any of the pool
+- **Owner:** codex4
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed
+- **Status:** claimed — branch `wp-508-chip-tiling-api`
 - **Deadline:** before DS-3 (#469) is **built**, which is next-phase work. There is no in-phase consumer, so this is comfortable rather than urgent — but it is a named row precisely so it does not become a deferral nobody owns.
 - **Branch:** `wp-467-chip-tiling-api` — cut from a freshly-fetched `ios`
 - **Contracts consumed:** T1.3 control styles, T1.12 geometry.
