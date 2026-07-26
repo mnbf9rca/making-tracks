@@ -80,18 +80,33 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .seenDisabled), .quiet)
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .unhide), .quiet)
         XCTAssertEqual(
-            PlaceCardActionAppearance.semanticControlOpacity(isEnabled: false),
+            PlaceCardActionAppearance.semanticControlOpacity(
+                isEnabled: false,
+                tokens: MaterialTheme.snow.tokens
+            ),
             0.46
         )
         XCTAssertEqual(
-            PlaceCardActionAppearance.semanticControlOpacity(isEnabled: true),
+            PlaceCardActionAppearance.semanticControlOpacity(
+                isEnabled: true,
+                tokens: MaterialTheme.snow.tokens
+            ),
             1
         )
         XCTAssertEqual(
-            PlaceCardActionAppearance.semanticControlScale(isPressed: false),
+            PlaceCardActionAppearance.semanticControlScale(
+                isPressed: false,
+                tokens: MaterialTheme.snow.tokens
+            ),
             1
         )
-        XCTAssertEqual(PlaceCardActionAppearance.semanticControlScale(isPressed: true), 0.98)
+        XCTAssertEqual(
+            PlaceCardActionAppearance.semanticControlScale(
+                isPressed: true,
+                tokens: MaterialTheme.snow.tokens
+            ),
+            0.98
+        )
 
         let actionSets: [[PlaceCardAction]] = [
             [.save, .seen, .hide],

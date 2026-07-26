@@ -139,6 +139,8 @@ public struct MaterialTokenSheet: Hashable, Sendable {
     public let labelHalo: MaterialColor
     public let boundaries: MaterialColor
     public let trackLine: MaterialColor
+    public let disabledAlpha: Double
+    public let pressScale: CGFloat
 
     public var pins: PinTokenBlock {
         .constant
@@ -197,7 +199,9 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         labels: MaterialColor(red: 0x6B, green: 0x67, blue: 0x5F),
         labelHalo: MaterialColor(red: 0xF4, green: 0xF1, blue: 0xEA),
         boundaries: MaterialColor(red: 0x2B, green: 0x28, blue: 0x23, opacity: 0.14),
-        trackLine: MaterialColor(red: 0x2D, green: 0x8C, blue: 0x83)
+        trackLine: MaterialColor(red: 0x2D, green: 0x8C, blue: 0x83),
+        disabledAlpha: 0.46,
+        pressScale: 0.98
     )
 
     init(
@@ -224,7 +228,9 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         labels: MaterialColor,
         labelHalo: MaterialColor,
         boundaries: MaterialColor,
-        trackLine: MaterialColor
+        trackLine: MaterialColor,
+        disabledAlpha: Double,
+        pressScale: CGFloat
     ) {
         self.ground = ground
         self.water = water
@@ -250,6 +256,8 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         self.labelHalo = labelHalo
         self.boundaries = boundaries
         self.trackLine = trackLine
+        self.disabledAlpha = disabledAlpha
+        self.pressScale = pressScale
     }
 }
 

@@ -7,6 +7,13 @@ final class MaterialTokensTests: XCTestCase {
         XCTAssertEqual(MaterialTheme.snow.colorScheme, .light)
     }
 
+    func testSnowMatchesRatifiedInteractionRows() {
+        let sheet = MaterialTheme.snow.tokens
+
+        XCTAssertEqual(sheet.disabledAlpha, 0.46)
+        XCTAssertEqual(sheet.pressScale, 0.98)
+    }
+
     func testSnowMatchesEveryRatifiedSemanticColor() {
         let expected: [SemanticColorToken: MaterialColor] = [
             .ground: color(0xF4, 0xF1, 0xEA),
@@ -207,7 +214,9 @@ final class MaterialTokensTests: XCTestCase {
             labels: labels,
             labelHalo: labelHalo,
             boundaries: boundaries,
-            trackLine: trackLine
+            trackLine: trackLine,
+            disabledAlpha: snow.disabledAlpha,
+            pressScale: snow.pressScale
         )
     }
 

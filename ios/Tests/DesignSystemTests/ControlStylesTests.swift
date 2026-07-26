@@ -10,13 +10,15 @@ final class ControlStylesTests: XCTestCase {
     func testMaterialControlInteractionFeedbackPreservesEnabledOpacity() {
         XCTAssertEqual(
             MaterialControlInteractionFeedback.semanticControlOpacity(
-                isEnabled: true
+                isEnabled: true,
+                tokens: MaterialTheme.snow.tokens
             ),
             1
         )
         XCTAssertEqual(
             MaterialControlInteractionFeedback.semanticControlOpacity(
-                isEnabled: false
+                isEnabled: false,
+                tokens: MaterialTheme.snow.tokens
             ),
             0.46
         )
@@ -25,15 +27,39 @@ final class ControlStylesTests: XCTestCase {
     func testMaterialControlInteractionFeedbackUsesScaleForPresses() {
         XCTAssertEqual(
             MaterialControlInteractionFeedback.semanticControlScale(
-                isPressed: false
+                isPressed: false,
+                tokens: MaterialTheme.snow.tokens
             ),
             1
         )
         XCTAssertEqual(
             MaterialControlInteractionFeedback.semanticControlScale(
-                isPressed: true
+                isPressed: true,
+                tokens: MaterialTheme.snow.tokens
             ),
             0.98
+        )
+    }
+
+    func testMaterialControlInteractionFeedbackReadsTheProvidedSheetRows() {
+        let sheet = makeInteractionSheet(
+            disabledAlpha: 0.23,
+            pressScale: 0.87
+        )
+
+        XCTAssertEqual(
+            MaterialControlInteractionFeedback.semanticControlOpacity(
+                isEnabled: false,
+                tokens: sheet
+            ),
+            0.23
+        )
+        XCTAssertEqual(
+            MaterialControlInteractionFeedback.semanticControlScale(
+                isPressed: true,
+                tokens: sheet
+            ),
+            0.87
         )
     }
 
@@ -569,13 +595,49 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
+    private func makeInteractionSheet(
+        disabledAlpha: Double,
+        pressScale: CGFloat
+    ) -> MaterialTokenSheet {
+        let snow = MaterialTheme.snow.tokens
+        return MaterialTokenSheet(
+            ground: snow.ground,
+            water: snow.water,
+            park: snow.park,
+            road: snow.road,
+            roadMinor: snow.roadMinor,
+            surface: snow.surface,
+            surfaceRaised: snow.surfaceRaised,
+            ink: snow.ink,
+            muted: snow.muted,
+            accent: snow.accent,
+            accentContrast: snow.accentContrast,
+            love: snow.love,
+            loveContainer: snow.loveContainer,
+            warning: snow.warning,
+            warningContainer: snow.warningContainer,
+            eyebrow: snow.eyebrow,
+            hairline: snow.hairline,
+            scrim: snow.scrim,
+            shadow: snow.shadow,
+            background: snow.background,
+            labels: snow.labels,
+            labelHalo: snow.labelHalo,
+            boundaries: snow.boundaries,
+            trackLine: snow.trackLine,
+            disabledAlpha: disabledAlpha,
+            pressScale: pressScale
+        )
+    }
+
 #if canImport(AppKit)
     private func renderChipStyleBody(isPressed: Bool) throws -> CGImage {
         try render(
             MaterialChipStyleBody(
                 label: Color.clear.frame(width: 400, height: 400),
                 isPressed: isPressed,
-                appearance: .filled(tokens: MaterialTheme.snow.tokens)
+                appearance: .filled(tokens: MaterialTheme.snow.tokens),
+                tokens: MaterialTheme.snow.tokens
             )
             .padding(12)
             .background(MaterialTheme.snow.tokens.surface.swiftUIColor)
@@ -588,6 +650,7 @@ final class ControlStylesTests: XCTestCase {
                 label: Color.clear.frame(width: 400, height: 400),
                 isPressed: isPressed,
                 appearance: .filled(tokens: MaterialTheme.snow.tokens),
+                tokens: MaterialTheme.snow.tokens,
                 accessibilityValue: { _ in nil }
             )
             .padding(12)
