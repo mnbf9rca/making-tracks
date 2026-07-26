@@ -220,6 +220,7 @@ struct MapDoorSheet<Destination: View>: View {
     let deepLinkDestination: MapShellDestination?
     let model: MapScreenModel?
     let openScope: () -> Void
+    let prepareTracksHistory: () -> Void
     let onListDeleted: @MainActor (Int64) -> Void
     let destination: (MapShellDestination) -> Destination
 
@@ -231,6 +232,7 @@ struct MapDoorSheet<Destination: View>: View {
         deepLinkDestination: MapShellDestination?,
         model: MapScreenModel?,
         openScope: @escaping () -> Void,
+        prepareTracksHistory: @escaping () -> Void,
         onListDeleted: @escaping @MainActor (Int64) -> Void,
         @ViewBuilder destination: @escaping (MapShellDestination) -> Destination
     ) {
@@ -238,6 +240,7 @@ struct MapDoorSheet<Destination: View>: View {
         self.deepLinkDestination = deepLinkDestination
         self.model = model
         self.openScope = openScope
+        self.prepareTracksHistory = prepareTracksHistory
         self.onListDeleted = onListDeleted
         self.destination = destination
     }
@@ -277,6 +280,7 @@ struct MapDoorSheet<Destination: View>: View {
             TracksDoorRootView(
                 path: $path,
                 model: model,
+                prepareTracksHistory: prepareTracksHistory,
                 onListDeleted: onListDeleted
             )
         }
@@ -344,7 +348,10 @@ struct WorldDoorRootView: View {
 struct TracksDoorRootView: View {
     @Binding var path: [MapShellDestination]
     let model: MapScreenModel?
+    let prepareTracksHistory: () -> Void
     let onListDeleted: @MainActor (Int64) -> Void
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var content = TracksDoorContent.empty
     @State private var draftName = ""
@@ -449,27 +456,30 @@ struct TracksDoorRootView: View {
 
     private func heroRow(_ hero: TracksDoorHeroContent) -> some View {
         Button {
+            prepareTracksHistory()
             path.append(.tracks)
         } label: {
             MaterialRaisedCardRow {
-                ViewThatFits(in: .horizontal) {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(alignment: .top, spacing: 12) {
+                            heroIcon
+                            heroCopy(hero)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        retraceCue
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                } else {
                     HStack(spacing: 12) {
                         heroIcon
                         heroCopy(hero)
                         Spacer(minLength: 8)
                         retraceCue
                     }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 12) {
-                            heroIcon
-                            heroCopy(hero)
-                        }
-                        retraceCue
-                    }
+                    .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
             }
             .padding(.horizontal, 16)
         }
@@ -481,7 +491,7 @@ struct TracksDoorRootView: View {
 
     private var heroIcon: some View {
         Image(systemName: TracksDoorRow.myTracks.presentation.systemImage)
-            .font(.headline.weight(.medium))
+            .font(Iconography.font(for: .standard))
             .symbolRenderingMode(.monochrome)
             .foregroundStyle(tokens.accent.swiftUIColor)
             .accessibilityHidden(true)
@@ -501,10 +511,15 @@ struct TracksDoorRootView: View {
     }
 
     private var retraceCue: some View {
-        Label("Retrace", systemImage: "map")
-            .font(Typography.font(for: .button))
-            .foregroundStyle(tokens.accent.swiftUIColor)
-            .fixedSize(horizontal: true, vertical: true)
+        HStack(spacing: 4) {
+            Text("Retrace")
+            Image(systemName: "chevron.right")
+                .font(Iconography.font(for: .compact))
+                .accessibilityHidden(true)
+        }
+        .font(Typography.font(for: .button))
+        .foregroundStyle(tokens.accent.swiftUIColor)
+        .fixedSize(horizontal: true, vertical: true)
     }
 
     private func listRow(_ list: TracksDoorListContent) -> some View {
@@ -546,7 +561,7 @@ struct TracksDoorRootView: View {
                     Task { await createList() }
                 } label: {
                     Image(systemName: TracksDoorRow.newList.presentation.systemImage)
-                        .font(.body.weight(.medium))
+                        .font(Iconography.font(for: .standard))
                         .foregroundStyle(tokens.accent.swiftUIColor)
                         .frame(minWidth: 44, minHeight: 44)
                         .contentShape(Rectangle())

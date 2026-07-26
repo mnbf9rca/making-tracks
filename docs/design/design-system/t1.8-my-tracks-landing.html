@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=390, initial-scale=1">
+<title>T1.8 My tracks landing implementation evidence</title>
+<style>
+  @font-face {
+    font-family: "Newsreader";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader16pt-Bold.ttf");
+    font-weight: 700;
+  }
+  * { box-sizing: border-box; }
+  :root {
+    --surface: #f6f1e5;
+    --raised: #fffdf8;
+    --ink: #1f1e1b;
+    --muted: #6b675f;
+    --accent: #0a6b5c;
+    --warning: #b42318;
+    --line: #ddd7c9;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    --serif: "Newsreader", Georgia, serif;
+  }
+  html, body {
+    margin: 0;
+    width: 390px;
+    height: 1688px;
+    overflow: hidden;
+    background: var(--surface);
+    color: var(--ink);
+    font-family: var(--sans);
+  }
+  .frame {
+    position: relative;
+    width: 390px;
+    height: 844px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .frame + .frame { border-top: 1px solid var(--ink); }
+  .status {
+    height: 48px;
+    padding: 12px 24px 0;
+    display: flex;
+    justify-content: space-between;
+    font-size: 15px;
+    font-weight: 700;
+  }
+  nav {
+    height: 66px;
+    display: grid;
+    grid-template-columns: 1fr 1.35fr 1fr;
+    align-items: center;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--line);
+    font-size: 18px;
+    font-weight: 700;
+  }
+  nav .back, nav .done { color: var(--accent); }
+  nav .title { text-align: center; font-size: 20px; }
+  nav .done { text-align: right; }
+  main { padding: 12px 16px 30px; }
+  .summary {
+    padding: 14px 13px 12px;
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    background: var(--raised);
+  }
+  .sort { font-size: 17px; font-weight: 700; }
+  .visits {
+    margin-top: 13px;
+    font-family: var(--serif);
+    font-size: 25px;
+    font-weight: 700;
+  }
+  .explain {
+    margin-top: 11px;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.34;
+  }
+  .actions { display: flex; gap: 8px; margin-top: 12px; }
+  .button {
+    min-height: 44px;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    color: var(--accent);
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .button.primary { border-color: var(--accent); background: var(--accent); color: white; }
+  .date {
+    margin: 17px 8px 9px;
+    color: var(--muted);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: .8px;
+  }
+  .visit-row {
+    min-height: 66px;
+    display: grid;
+    grid-template-columns: 38px 1fr 44px 32px;
+    align-items: center;
+    gap: 9px;
+    padding: 11px 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--raised);
+  }
+  .pin {
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    background: #e4f1ed;
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .place {
+    font-family: var(--sans);
+    font-size: 17px;
+    font-weight: 400;
+  }
+  .place-meta { margin-top: 2px; color: var(--muted); font-size: 13px; }
+  .heart {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--warning);
+    border-radius: 10px;
+    color: var(--warning);
+    font-size: 24px;
+  }
+  .handle { color: #aaa69d; font-size: 24px; letter-spacing: -4px; }
+  .fold { position: absolute; z-index: 9; left: 0; right: 0; bottom: 0; border-top: 2px dashed #c0392b; }
+  .fold-label {
+    position: absolute;
+    z-index: 10;
+    right: 6px;
+    bottom: 4px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: rgba(251,250,242,.94);
+    color: #c0392b;
+    font-size: 9px;
+    font-weight: 700;
+  }
+  .ax .status { font-size: 18px; }
+  .ax nav {
+    height: 95px;
+    grid-template-columns: 1fr 1.45fr 1fr;
+    font-size: 25px;
+  }
+  .ax nav .title { font-size: 26px; }
+  .ax main { padding: 16px; }
+  .ax .summary { padding: 18px 16px; }
+  .ax .sort { font-size: 27px; }
+  .ax .visits { margin-top: 19px; font-size: 37px; }
+  .ax .explain { margin-top: 14px; font-size: 23px; line-height: 1.28; }
+  .ax .actions { flex-direction: column; margin-top: 16px; }
+  .ax .button { min-height: 62px; font-size: 25px; }
+  .ax .date { margin-top: 21px; font-size: 21px; }
+  .ax .visit-row {
+    min-height: 150px;
+    grid-template-columns: 48px 1fr 52px 38px;
+    gap: 12px;
+  }
+  .ax .pin { width: 44px; height: 44px; font-size: 16px; }
+  .ax .place { font-size: 27px; }
+  .ax .place-meta { font-size: 20px; }
+  .ax .heart { width: 48px; height: 48px; font-size: 31px; }
+  .ax .handle { display: block; font-size: 30px; }
+</style>
+</head>
+<body>
+  <section class="frame">
+    <div class="status"><span>9:41</span><span>●●●  ◉  ▰</span></div>
+    <nav><span class="back">‹ Back</span><span class="title">My tracks</span><span class="done">Done</span></nav>
+    <main>
+      <section class="summary">
+        <div class="sort">↓ &nbsp;Oldest first</div>
+        <div class="visits">214 visits</div>
+        <div class="explain">Your track is a sequence of visits you entered. Edit a row when the remembered day or order needs correcting.</div>
+        <div class="actions"><div class="button primary">▱ &nbsp; Map</div><div class="button">↻ &nbsp; Refresh</div></div>
+      </section>
+      <div class="date">26 JUL 2026</div>
+      <section class="visit-row">
+        <div class="pin">pin</div>
+        <div><div class="place">Riverside Plaques</div><div class="place-meta">Memorial · 5:53</div></div>
+        <div class="heart">♡</div><div class="handle">☰</div>
+      </section>
+    </main>
+    <div class="fold"></div><div class="fold-label">fold · 390 × 844</div>
+  </section>
+
+  <section class="frame ax">
+    <div class="status"><span>9:41</span><span>●●●  ◉  ▰</span></div>
+    <nav><span class="back">‹ Back</span><span class="title">My tracks</span><span class="done">Done</span></nav>
+    <main>
+      <section class="summary">
+        <div class="sort">↓ &nbsp;Oldest first</div>
+        <div class="visits">214 visits</div>
+        <div class="explain">Your track is a sequence of visits you entered. Edit a row when the remembered day or order needs correcting.</div>
+        <div class="actions"><div class="button primary">▱ &nbsp; Map</div><div class="button">↻ &nbsp; Refresh</div></div>
+      </section>
+      <div class="date">26 JUL 2026</div>
+      <section class="visit-row">
+        <div class="pin">pin</div>
+        <div><div class="place">Riverside Plaques</div><div class="place-meta">Memorial · 5:53</div></div>
+        <div class="heart">♡</div><div class="handle">☰</div>
+      </section>
+    </main>
+    <div class="fold"></div><div class="fold-label">fold · 390 × 844</div>
+  </section>
+</body>
+</html>

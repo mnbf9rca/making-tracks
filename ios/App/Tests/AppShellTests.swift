@@ -467,6 +467,18 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(shell.tracksFocusPlaceID, "p_repeat")
     }
 
+    func testAppShellModelClearsOnlyTheFocusedTrackStateForRootHero() {
+        let shell = AppShellModel()
+        shell.openTracksDeepLink(focusingPlaceID: "p_repeat")
+
+        shell.prepareTracksHistory()
+
+        XCTAssertNil(shell.tracksFocusPlaceID)
+        XCTAssertEqual(shell.listDetailVisitFilter, .all)
+        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertEqual(shell.deepLinkDestination, .tracks)
+    }
+
     func testAppShellModelClearsTracksFocusForDoorRootsAndOtherDeepLinks() {
         let shell = AppShellModel()
         shell.openTracksDeepLink(focusingPlaceID: "p_repeat")

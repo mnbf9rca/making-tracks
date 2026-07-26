@@ -723,6 +723,11 @@ final class AppShellModel {
         presentedDoor = .tracks
     }
 
+    func prepareTracksHistory() {
+        tracksFocusPlaceID = nil
+        listDetailVisitFilter = .all
+    }
+
     private func prepareDoorRoot(_ door: MapDoor) {
         tracksFocusPlaceID = nil
         listDetailVisitFilter = .all
@@ -5019,6 +5024,7 @@ private struct MapDoorSheetIntegration: View {
             deepLinkDestination: shell.deepLinkDestination,
             model: model,
             openScope: openScope,
+            prepareTracksHistory: shell.prepareTracksHistory,
             onListDeleted: onListDeleted
         ) { destination in
             destinationView(destination)
