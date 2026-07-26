@@ -241,11 +241,24 @@ final class AppShellTests: XCTestCase {
 
     func testDoorRootsExposeOnlyRuledRows() {
         XCTAssertEqual(WorldDoorRow.allCases, [.scope, .settings, .about])
-        XCTAssertEqual(TracksDoorRow.allCases, [.myTracks, .newList])
+        XCTAssertEqual(
+            TracksDoorRow.allCases,
+            [.myTracks, .newList, .lovedPlaces, .hiddenPlaces]
+        )
         XCTAssertFalse(WorldDoorRow.allCases.map(\.title).contains("Offline maps"))
         XCTAssertFalse(WorldDoorRow.allCases.map(\.title).contains("Coverage"))
-        XCTAssertFalse(TracksDoorRow.allCases.map(\.title).contains("Loved places"))
-        XCTAssertFalse(TracksDoorRow.allCases.map(\.title).contains("Hidden places"))
+        XCTAssertEqual(TracksDoorRow.lovedPlaces.presentation.title, "Loved places")
+        XCTAssertEqual(TracksDoorRow.lovedPlaces.presentation.systemImage, "heart")
+        XCTAssertEqual(
+            TracksDoorRow.lovedPlaces.presentation.accessibilityIdentifier,
+            "tracks.row.loved"
+        )
+        XCTAssertEqual(TracksDoorRow.hiddenPlaces.presentation.title, "Hidden places")
+        XCTAssertEqual(TracksDoorRow.hiddenPlaces.presentation.systemImage, "eye.slash")
+        XCTAssertEqual(
+            TracksDoorRow.hiddenPlaces.presentation.accessibilityIdentifier,
+            "tracks.row.hidden"
+        )
     }
 
     func testTracksDoorContentProjectsHeroAndEveryNonTrackListInDatabaseOrder() {
@@ -305,6 +318,28 @@ final class AppShellTests: XCTestCase {
                     lat: 0,
                     lon: 0
                 ),
+            ],
+            lovedPlaces: [
+                ListPlace(
+                    placeID: "loved",
+                    name: "Loved Place",
+                    category: "history",
+                    pinState: PinState(saved: false, visit: .loved)
+                ),
+                ListPlace(
+                    placeID: "both",
+                    name: "Loved and Hidden",
+                    category: "memorial",
+                    pinState: PinState(saved: false, visit: .loved, hidden: true)
+                ),
+            ],
+            hiddenPlaces: [
+                ListPlace(
+                    placeID: "both",
+                    name: "Loved and Hidden",
+                    category: "memorial",
+                    pinState: PinState(saved: false, visit: .loved, hidden: true)
+                ),
             ]
         )
 
@@ -338,6 +373,8 @@ final class AppShellTests: XCTestCase {
                 ),
             ]
         )
+        XCTAssertEqual(content.lovedCount, 2)
+        XCTAssertEqual(content.hiddenCount, 1)
     }
 
     func testTracksDoorContentHandlesEmptyHistoryAndMissingProgressWithoutInventingRows() {
@@ -364,7 +401,9 @@ final class AppShellTests: XCTestCase {
                 ),
             ],
             progress: [:],
-            visits: []
+            visits: [],
+            lovedPlaces: [],
+            hiddenPlaces: []
         )
 
         XCTAssertEqual(
@@ -382,6 +421,8 @@ final class AppShellTests: XCTestCase {
                 ),
             ]
         )
+        XCTAssertEqual(content.lovedCount, 0)
+        XCTAssertEqual(content.hiddenCount, 0)
     }
 
     func testQuietChromeUsesTokenSurfacesAndBareAttribution() {
