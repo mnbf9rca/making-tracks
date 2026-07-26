@@ -268,10 +268,17 @@ information that only exists as pixels gets under-read.**
 | Attribution | 11pt bare muted text, never a pill | `ia-doors` |
 | Interaction target floor | 44pt, tiled per **R10** where the rider permits | R10 scope line |
 | Pin | 20px circle, white stroke glyph | `ia-doors` |
+| Place-card **More** control | 44×44 target, glyph at **`IconRole.hero` = 22** | ruled by this session — see the snap note below |
 
-*One figure from the ratification session — the **snapped-21** note — is not yet written here: it
-could not be grounded in any frozen render and is owed from the session rather than guessed. The
-row lands when the session supplies the element it attaches to.*
+**The snapped 21.** T1.10's *implementation* render drew the More control's glyph at **21px**
+(`t1.10-place-card.html:107`–`:114`, `.more { font-size: 21px }`). This session ruled that figure
+**presumptively an accident** and snapped it to `IconRole.hero`'s 22. Two things about it are worth
+keeping, because both explain why it survived every sweep that should have caught it: it lives in an
+**implementation render, not a frozen one**, so it was outside the ratified render set anyone would
+think to search; and it was a **`font-size` on a text span** — the control was drawn as a typed `•••`
+rather than as an icon — so it never appeared in an icon-size sweep either. **A figure in neither the
+ratified set nor the expected vocabulary is invisible to a careful search, which is the argument for
+this table stated from the other side.**
 
 ## 6. Iconography
 
