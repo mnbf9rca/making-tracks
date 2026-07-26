@@ -348,13 +348,9 @@ struct WorldDoorRootView: View {
 struct TracksDoorHeroIconGlyph: View {
     let systemName: String
 
-    /// AC35 carve-out: ia-doors.html frame 3 ratifies this hero glyph at a 22pt scale.
-    @ScaledMetric(relativeTo: .body) private var pointSize = 22.0
-
     var body: some View {
         Image(systemName: systemName)
-            .font(.system(size: pointSize, weight: .medium))
-            .symbolRenderingMode(.monochrome)
+            .iconRole(.hero)
     }
 }
 
@@ -368,17 +364,15 @@ struct TracksDoorHeroTitle: View {
 }
 
 struct TracksDoorRetraceCue: View {
-    /// AC35 carve-out: ia-doors.html .action ratifies 13pt/600 type and a 3pt gap.
-    @ScaledMetric(relativeTo: .footnote) private var pointSize = 13.0
-
     var body: some View {
         HStack(spacing: 3) {
             Text("Retrace")
             Image(systemName: "chevron.right")
-                .font(Typography.font(for: .label))
+                .iconRole(.accessory)
                 .accessibilityHidden(true)
         }
-        .font(.system(size: pointSize, weight: .semibold))
+        // R12: ia-doors.html:428-431 and :753 ratify Retrace at SF 13/600.
+        .font(Typography.font(for: .action))
         .fixedSize(horizontal: true, vertical: true)
     }
 }
@@ -388,7 +382,7 @@ struct TracksDoorNewListIcon: View {
 
     var body: some View {
         Image(systemName: systemName)
-            .font(Typography.font(for: .button))
+            .iconRole(.inline)
     }
 }
 

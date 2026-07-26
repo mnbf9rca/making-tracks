@@ -172,8 +172,6 @@ public enum MaterialChipState: Hashable, Sendable {
 public struct MaterialChip: View {
     /// `ia-doors.html` ratifies 12pt/600, which no `TypographyRole` expresses.
     static let titleFont = Font.caption.weight(.semibold)
-    static let iconFont =
-        Typography.font(for: .label).weight(.medium)
 
     @Environment(\.isEnabled) private var isEnabled
 
@@ -210,8 +208,7 @@ public struct MaterialChip: View {
             HStack(spacing: MaterialChipGeometry.labelSpacing) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(Self.iconFont)
-                        .symbolRenderingMode(.monochrome)
+                        .iconRole(.accessory)
                         .accessibilityHidden(true)
                 }
                 Text(verbatim: title)
