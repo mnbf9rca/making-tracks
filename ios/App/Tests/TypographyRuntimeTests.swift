@@ -36,6 +36,13 @@ final class TypographyRuntimeTests: XCTestCase {
             weight: .semibold
         ),
         .init(
+            role: .heroTitle,
+            fontName: "Newsreader16pt-SemiBold",
+            pointSize: 18,
+            textStyle: .headline,
+            weight: .semibold
+        ),
+        .init(
             role: .evocativeSubline,
             fontName: "Newsreader16pt-Italic",
             pointSize: 15,
@@ -145,6 +152,25 @@ final class TypographyRuntimeTests: XCTestCase {
 
         XCTAssertEqual(placeNameFallback.familyName, expected.familyName)
         XCTAssertNotEqual(placeNameFallback.familyName, UIFont.systemFont(ofSize: 24).familyName)
+
+        let heroTitleFallback = provider.uiFont(for: .heroTitle)
+        let heroSerifDescriptor = try XCTUnwrap(
+            UIFont.systemFont(ofSize: 18, weight: .semibold)
+                .fontDescriptor
+                .withDesign(.serif)
+        )
+        let expectedHeroBase = UIFont(
+            descriptor: heroSerifDescriptor,
+            size: 18
+        )
+        let expectedHero = UIFontMetrics(forTextStyle: .headline)
+            .scaledFont(for: expectedHeroBase)
+
+        XCTAssertEqual(heroTitleFallback.familyName, expectedHero.familyName)
+        XCTAssertNotEqual(
+            heroTitleFallback.familyName,
+            UIFont.systemFont(ofSize: 18).familyName
+        )
 
         let sublineFallback = provider.uiFont(for: .evocativeSubline)
 

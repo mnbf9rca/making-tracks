@@ -9,6 +9,7 @@ final class TypographyTests: XCTestCase {
             .sheetTitle,
             .placeName,
             .listRowTitle,
+            .heroTitle,
             .evocativeSubline,
             .button,
             .label,

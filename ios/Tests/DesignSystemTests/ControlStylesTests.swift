@@ -76,6 +76,27 @@ final class ControlStylesTests: XCTestCase {
         XCTAssertGreaterThan(activeAccentPixels, availableAccentPixels + 500)
     }
 
+    func testMaterialChipNeighborGapDoesNotChangeRenderedPixels() throws {
+        let freeSpace = try render(
+            MaterialChip("Trail", state: .active, action: {})
+        )
+        let tiled = try render(
+            MaterialChip(
+                "Trail",
+                state: .active,
+                neighborGaps: .all(8),
+                action: {}
+            )
+        )
+
+        XCTAssertEqual(freeSpace.width, tiled.width)
+        XCTAssertEqual(freeSpace.height, tiled.height)
+        XCTAssertEqual(
+            try pixelData(in: freeSpace),
+            try pixelData(in: tiled)
+        )
+    }
+
     func testMaterialChipTitleUsesRatifiedCaptionSizeAndSemiboldWeight() throws {
         let shortTitle = "Map"
         let longTitle = "Map places"
@@ -123,7 +144,7 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
-    func testMaterialChipHitTargetExpandsOnlyDimensionsBelowMinimum() {
+    func testMaterialChipFreeSpaceHitTargetExpandsOnlyDimensionsBelowMinimum() {
         XCTAssertEqual(MaterialChipGeometry.minimumHitTarget, 44)
         XCTAssertEqual(
             MaterialChipGeometry.hitOutset(
@@ -131,8 +152,217 @@ final class ControlStylesTests: XCTestCase {
             ),
             11
         )
-        XCTAssertEqual(MaterialChipGeometry.hitOutset(for: 44), 0)
-        XCTAssertEqual(MaterialChipGeometry.hitOutset(for: 80), 0)
+        XCTAssertEqual(
+            MaterialChipGeometry.hitOutset(for: 44),
+            0
+        )
+        XCTAssertEqual(
+            MaterialChipGeometry.hitOutset(for: 80),
+            0
+        )
+    }
+
+    func testMaterialChipTiledHitTargetClipsOutsetToHalfNeighborGap() {
+        XCTAssertEqual(
+            MaterialChipGeometry.tiledHitOutset(
+                for: MaterialChipGeometry.visualHeight,
+                neighborGap: 8
+            ),
+            4
+        )
+        XCTAssertEqual(
+            MaterialChipGeometry.tiledHitOutset(
+                for: MaterialChipGeometry.visualHeight,
+                neighborGap: 44
+            ),
+            11
+        )
+        XCTAssertEqual(
+            MaterialChipGeometry.tiledHitOutset(
+                for: MaterialChipGeometry.visualHeight,
+                neighborGap: 0
+            ),
+            0
+        )
+        XCTAssertEqual(
+            MaterialChipGeometry.tiledHitOutset(
+                for: MaterialChipGeometry.visualHeight,
+                neighborGap: nil
+            ),
+            11
+        )
+        XCTAssertEqual(
+            MaterialChipGeometry.tiledHitOutset(
+                for: MaterialChipGeometry.visualHeight,
+                neighborGap: -8
+            ),
+            0
+        )
+        XCTAssertEqual(
+            MaterialChipGeometry.tiledHitOutset(
+                for: MaterialChipGeometry.visualHeight,
+                neighborGap: .nan
+            ),
+            11
+        )
+        XCTAssertEqual(
+            MaterialChipGeometry.tiledHitOutset(
+                for: MaterialChipGeometry.visualHeight,
+                neighborGap: .infinity
+            ),
+            11
+        )
+        XCTAssertEqual(
+            MaterialChipGeometry.tiledHitOutset(
+                for: 60,
+                neighborGap: nil
+            ),
+            0,
+            "A free edge does not expand an axis already wider than 44pt"
+        )
+        XCTAssertEqual(
+            MaterialChipGeometry.tiledHitOutset(
+                for: 60,
+                neighborGap: 8
+            ),
+            0,
+            "A neighbor gap never creates expansion an axis does not need"
+        )
+    }
+
+    func testMaterialChipNeighborGapsNormalizeUnsafeLayoutValues() {
+        let gaps = MaterialChipNeighborGaps(
+            top: -8,
+            leading: .nan,
+            bottom: .infinity,
+            trailing: 8
+        )
+
+        XCTAssertEqual(gaps.top, 0)
+        XCTAssertNil(gaps.leading)
+        XCTAssertNil(gaps.bottom)
+        XCTAssertEqual(gaps.trailing, 8)
+    }
+
+    func testMaterialChipTiledHitTargetsClipOnlyFacingSides() {
+        let gap: CGFloat = 8
+        let chipWidth = MaterialChipGeometry.visualHeight
+        let leftRect = CGRect(
+            x: 0,
+            y: 0,
+            width: chipWidth,
+            height: MaterialChipGeometry.visualHeight
+        )
+        let rightRect = CGRect(
+            x: leftRect.maxX + gap,
+            y: 0,
+            width: chipWidth,
+            height: MaterialChipGeometry.visualHeight
+        )
+        let leftTarget = MaterialChipHitTargetShape(
+            neighborGaps: MaterialChipNeighborGaps(trailing: gap)
+        ).path(in: leftRect)
+        let rightTarget = MaterialChipHitTargetShape(
+            neighborGaps: MaterialChipNeighborGaps(leading: gap)
+        ).path(in: rightRect)
+        let centerY = leftRect.midY
+        let samples = [
+            (
+                point: CGPoint(x: leftRect.maxX + 1, y: centerY),
+                leftOwnsPoint: true
+            ),
+            (
+                point: CGPoint(x: rightRect.minX - 1, y: centerY),
+                leftOwnsPoint: false
+            ),
+            (
+                point: CGPoint(
+                    x: leftRect.maxX + 1,
+                    y: leftRect.minY - 3
+                ),
+                leftOwnsPoint: true
+            ),
+            (
+                point: CGPoint(
+                    x: rightRect.minX - 1,
+                    y: rightRect.maxY + 3
+                ),
+                leftOwnsPoint: false
+            ),
+        ]
+
+        for sample in samples {
+            let leftContains = leftTarget.contains(sample.point)
+            let rightContains = rightTarget.contains(sample.point)
+
+            XCTAssertNotEqual(
+                leftContains,
+                rightContains,
+                "Every sampled point must map to exactly one chip"
+            )
+            XCTAssertEqual(leftContains, sample.leftOwnsPoint)
+        }
+
+        XCTAssertTrue(
+            leftTarget.contains(
+                CGPoint(x: leftRect.minX - 10, y: leftRect.midY)
+            ),
+            "The free run edge keeps its full 11pt outset"
+        )
+        XCTAssertTrue(
+            leftTarget.contains(
+                CGPoint(x: leftRect.midX, y: leftRect.minY - 10)
+            ),
+            "The free row edge keeps its full 11pt outset"
+        )
+    }
+
+    func testMaterialChipTiledHitTargetsUseIndependentAxisGaps() {
+        let rect = CGRect(
+            x: 20,
+            y: 20,
+            width: MaterialChipGeometry.visualHeight,
+            height: MaterialChipGeometry.visualHeight
+        )
+        let path = MaterialChipHitTargetShape(
+            neighborGaps: MaterialChipNeighborGaps(
+                top: 6,
+                leading: 8,
+                bottom: 10,
+                trailing: 12
+            )
+        ).path(in: rect)
+
+        XCTAssertEqual(path.boundingRect.minX, rect.minX - 4)
+        XCTAssertEqual(path.boundingRect.maxX, rect.maxX + 6)
+        XCTAssertEqual(path.boundingRect.minY, rect.minY - 3)
+        XCTAssertEqual(path.boundingRect.maxY, rect.maxY + 5)
+    }
+
+    func testMaterialChipTiledHitTargetsMirrorLeadingForRightToLeft() {
+        let rect = CGRect(
+            x: 20,
+            y: 20,
+            width: MaterialChipGeometry.visualHeight,
+            height: MaterialChipGeometry.visualHeight
+        )
+        let path = MaterialChipHitTargetShape(
+            neighborGaps: MaterialChipNeighborGaps(
+                leading: 8,
+                trailing: 12
+            )
+        ).path(in: rect)
+
+        XCTAssertEqual(path.boundingRect.minX, rect.minX - 4)
+        XCTAssertEqual(path.boundingRect.maxX, rect.maxX + 6)
+        XCTAssertEqual(path.boundingRect.width, rect.width + 10)
+        XCTAssertEqual(
+            MaterialChipHitTargetShape(
+                neighborGaps: .all(8)
+            ).layoutDirectionBehavior,
+            .mirrors(in: .rightToLeft),
+            "SwiftUI must mirror logical leading and trailing exactly once"
+        )
     }
 
     func testMaterialChipIconUsesTypographyLabelSizeAndMediumWeight() throws {
@@ -269,7 +499,86 @@ final class ControlStylesTests: XCTestCase {
         try render(content).width
     }
 
+    func testMaterialChipWiresTiledHitShapeIntoBothVisualStates() throws {
+        let gaps = MaterialChipNeighborGaps(
+            top: 6,
+            leading: 8,
+            bottom: 10,
+            trailing: 12
+        )
+
+        for state in [MaterialChipState.active, .available] {
+            let chip = MaterialChip(
+                "Chip",
+                state: state,
+                neighborGaps: gaps,
+                action: {}
+            )
+            let body = chip.body
+            let shape = try XCTUnwrap(
+                firstDescendant(
+                    of: MaterialChipHitTargetShape.self,
+                    in: body
+                )
+            )
+            let contentShapeKinds = try XCTUnwrap(
+                firstDescendant(
+                    of: ContentShapeKinds.self,
+                    in: body
+                )
+            )
+
+            XCTAssertEqual(shape.neighborGaps, gaps)
+            XCTAssertEqual(contentShapeKinds, .interaction)
+        }
+    }
+
+    private func firstDescendant<Descendant>(
+        of type: Descendant.Type,
+        in value: Any
+    ) -> Descendant? {
+        if let value = value as? Descendant {
+            return value
+        }
+        for child in Mirror(reflecting: value).children {
+            if let descendant = firstDescendant(of: type, in: child.value) {
+                return descendant
+            }
+        }
+        return nil
+    }
+
 #if canImport(AppKit)
+    private func pixelData(in image: CGImage) throws -> Data {
+        let bytesPerRow = image.width * 4
+        var pixels = Data(
+            count: bytesPerRow * image.height
+        )
+        try pixels.withUnsafeMutableBytes { buffer in
+            let context = try XCTUnwrap(
+                CGContext(
+                    data: buffer.baseAddress,
+                    width: image.width,
+                    height: image.height,
+                    bitsPerComponent: 8,
+                    bytesPerRow: bytesPerRow,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                )
+            )
+            context.draw(
+                image,
+                in: CGRect(
+                    x: 0,
+                    y: 0,
+                    width: image.width,
+                    height: image.height
+                )
+            )
+        }
+        return pixels
+    }
+
     private func solidAccentPixelCount(in image: CGImage) -> Int {
         let bitmap = NSBitmapImageRep(cgImage: image)
 

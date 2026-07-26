@@ -32,6 +32,8 @@ struct MakingTracksApp: App {
     private static let seedFixtureMultiDayTrackList = arguments.contains("--ui-testing-seed-multiday-track-list")
     private static let seedFixtureTrackListLovedVisit = arguments.contains("--ui-testing-seed-track-list-loved-visit")
     private static let seedFixtureSpreadList = arguments.contains("--ui-testing-seed-spread-list")
+    private static let seedFixtureTracksDoorTextStress = arguments.contains("--ui-testing-seed-tracks-door-text-stress")
+    private static let seedFixtureFocusedTracksRoute = arguments.contains("--ui-testing-seed-focused-tracks-route")
     private static let simulatedLatitude = argumentValue("--ui-testing-location-latitude").flatMap(Double.init)
     private static let simulatedLongitude = argumentValue("--ui-testing-location-longitude").flatMap(Double.init)
     private static let uiTestingOfflineProgress = argumentValue("--ui-testing-offline-progress").flatMap(Double.init)
@@ -55,6 +57,8 @@ struct MakingTracksApp: App {
     private static let seedFixtureMultiDayTrackList = false
     private static let seedFixtureTrackListLovedVisit = false
     private static let seedFixtureSpreadList = false
+    private static let seedFixtureTracksDoorTextStress = false
+    private static let seedFixtureFocusedTracksRoute = false
     private static let simulatedLatitude: Double? = nil
     private static let simulatedLongitude: Double? = nil
     private static let uiTestingOfflineProgress: Double? = nil
@@ -110,7 +114,25 @@ struct MakingTracksApp: App {
                     try database.seedUITestingUserList(named: "Date night", containingPlaceID: Self.primaryFixturePlaceID)
                 }
                 let fixturePlaces = MapScreen.uiTestingFixturePlaces(dense: Self.debugUseDenseFixturePins)
-                if seedFixtureVisitsEditorVisual {
+                if seedFixtureTracksDoorTextStress {
+                    let longListName =
+                        "Longest list **literal** 0123456789 0123456789 0123456789 "
+                        + "0123456789 0123456789!"
+                    try database.seedUITestingUserList(
+                        named: longListName,
+                        containingPlaceID: Self.primaryFixturePlaceID
+                    )
+                    try database.seedUITestingTrackVisits([
+                        fixturePlaces[0],
+                        Self.tracksDoorTextStressPlace,
+                    ])
+                } else if seedFixtureFocusedTracksRoute {
+                    try database.seedUITestingTrackVisits([
+                        fixturePlaces[0],
+                        fixturePlaces[0],
+                        fixturePlaces[1],
+                    ])
+                } else if seedFixtureVisitsEditorVisual {
                     try database.seedUITestingTrackVisits(Self.visitsEditorVisualFixturePlaces, multiDay: true)
                 } else if seedFixtureMultiDayTrackList {
                     let trackPlaces = Self.debugUseReplayVisualFixture ? Self.replayVisualFixturePlaces : fixturePlaces
@@ -171,6 +193,25 @@ struct MakingTracksApp: App {
     }()
 
 #if DEBUG
+    private static let tracksDoorTextStressPlace: PlaceRef = {
+        let name =
+            "[Riverside](https://example.com) **Plaques** "
+            + String(repeating: "x", count: 155)
+        return try! PlaceRef(
+            placeID: "mt1_T0000000000000000000000001",
+            name: name,
+            lat: 3.151,
+            lon: 101.695,
+            category: "memorial",
+            tier: 1,
+            schemaVersion: 1,
+            fetchedAt: Date(timeIntervalSince1970: 0),
+            rawJSON: """
+            {"category":"memorial","lat":3.151,"lon":101.695,"name":"\(name)","place_id":"mt1_T0000000000000000000000001","score":0.5,"source_refs":["osm:node/1"],"tier":1}
+            """
+        )
+    }()
+
     private static let visitsEditorVisualFixturePlaces: [PlaceRef] = {
         let fixtures: [(id: String, name: String, lat: Double, lon: Double, category: String)] = [
             (
