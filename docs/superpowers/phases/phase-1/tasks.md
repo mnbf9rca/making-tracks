@@ -132,6 +132,8 @@ Grounded against `ios` at 42c556f3. These are corrections to the epic's issue bo
 
 **PR body must contain:** the issue it serves (`#467`/`#468`/`#470`/`#471`) and this task's id; actual test output with **counts, not adjectives**; the adversarial-review accounting (raised / survived / fixed); a `## Taste guesses` heading if you made any; and the renders for any surface whose appearance changes.
 
+**A PR body states EVIDENCE, and POINTS at live state.** The checks and the review threads are the record for reviewer status; **a body never restates a status that can change after the author stops looking.** The reason this is a rule and not a reminder: *"pending"* is the only entry that **cannot stay true**, so a body listing per-reviewer status takes on an update obligation nobody can meet — **the drift is structural, not careless**. It also fails in both directions and the second is the dangerous one: a stale body can understate an outcome as easily as overstate it, and a merger reading *"reviewer failed"* against a review that has since succeeded will reach for a waiver the PR does not need.
+
 **Gates, all yours to run on the host — CI does not replace them.**
 
 ```bash
