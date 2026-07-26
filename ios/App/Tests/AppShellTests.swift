@@ -392,6 +392,19 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
+    func testLocationSettingsGearOwnsInlineIconRole() throws {
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: MapLocationOffToast(onOpenSettings: {}).body
+                )
+            ),
+            .inline
+        )
+    }
+
+    @MainActor
     func testMapDoorBarRendersAtStandardAndAX5DynamicType() {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
             let renderer = ImageRenderer(
