@@ -52,12 +52,13 @@ struct MapNearbyPromptToast: View {
             primaryActionAccessibilityIdentifier: "map.nearby-prompt.seen",
             dismissAction: onDismiss,
             dismissAccessibilityLabel: "Dismiss nearby prompt",
-            dismissAccessibilityIdentifier: "map.nearby-prompt.dismiss",
-            accessibilityIdentifier: "map.nearby-prompt"
+            dismissAccessibilityIdentifier: "map.nearby-prompt.dismiss"
         ) {
             Button("Seen it", action: onSeen)
                 .buttonStyle(MaterialFilledButtonStyle())
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("map.nearby-prompt")
     }
 }
 

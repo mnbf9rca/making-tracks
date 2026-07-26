@@ -2830,14 +2830,22 @@ struct MapScreen: View {
             }
             .overlay(alignment: .bottom) {
                 if let prompt = nearbyPromptCandidate {
-                    nearbyPromptView(for: prompt)
+                    MapNearbyPromptToast(
+                        message: "You're near \(prompt.name) — seen it?",
+                        onSeen: { handleNearbyPromptSeen(prompt) },
+                        onDismiss: {
+                            suppressedNearbyPromptPlaceIDs.insert(prompt.placeID)
+                        }
+                    )
                         .padding(.bottom, nearbyPromptBottomPadding)
                         .padding(.horizontal, MapOverlayChromeSpec.edgePadding)
                 }
             }
             .overlay(alignment: .bottom) {
-                if let hiddenToast {
-                    hiddenToastView(for: hiddenToast)
+                if hiddenToast != nil {
+                    MapHiddenUndoToast {
+                        Task { await undoHiddenToast() }
+                    }
                         .padding(.bottom, hiddenToastBottomPadding)
                         .padding(.horizontal, MapOverlayChromeSpec.edgePadding)
                 }
@@ -3080,21 +3088,6 @@ struct MapScreen: View {
         hiddenToastDismissTask = nil
     }
 
-    private func hiddenToastView(for _: HiddenToast) -> some View {
-        HStack(spacing: 10) {
-            Text(verbatim: "Hidden — Undo")
-                .font(.callout.weight(.medium))
-            Button("Undo") {
-                Task { await undoHiddenToast() }
-            }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("place-card.hide.undo")
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.regularMaterial, in: Capsule())
-    }
-
     private var isMapLoading: Bool {
         guard !didMapLoadFail else { return false }
         return !isMapReady || (isFixtureMap && !hasLoadedFixtureFeatures)
@@ -3316,22 +3309,10 @@ struct MapScreen: View {
                 listMapNavigationChrome(activeListMap)
                 listMapFilterChips(activeListMap)
             } else if let offlineDownloadProgress = currentOfflineDownloadProgress {
-                Button {
-                    appShell.openOfflineMapsDeepLink()
-                } label: {
-                    Label(
-                        offlineDownloadProgress.isWaitingForConnectivity
-                            ? "Offline maps \(offlineDownloadProgress.statusText)"
-                            : "Offline maps \(offlineDownloadProgress.percentComplete)%",
-                        systemImage: "arrow.down.circle"
-                    )
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(.ultraThinMaterial, in: Capsule())
-                }
-                .accessibilityIdentifier("map.download-progress")
+                MapDownloadProgressToast(
+                    progress: offlineDownloadProgress,
+                    onOpenOfflineMaps: appShell.openOfflineMapsDeepLink
+                )
             }
         }
     }
@@ -3950,19 +3931,7 @@ struct MapScreen: View {
     }
 
     private var locationOffBanner: some View {
-        HStack(spacing: 8) {
-            Text("Location is off")
-                .font(.caption2)
-                .fontWeight(.semibold)
-
-            LocationSettingsButton {
-                openLocationSettings()
-            }
-            .frame(width: 68, height: 16)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(.ultraThinMaterial, in: Capsule())
+        MapLocationOffToast(onOpenSettings: openLocationSettings)
     }
 
     private var locateMeButton: some View {
@@ -4053,41 +4022,6 @@ struct MapScreen: View {
             name: candidate.name,
             distanceMeters: candidate.distanceMeters
         )
-    }
-
-    @ViewBuilder
-    private func nearbyPromptView(for prompt: NearbyPromptCandidate) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            Text(verbatim: "You're near \(prompt.name) — seen it?")
-                .font(.caption2)
-                .fontWeight(.semibold)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Spacer(minLength: 8)
-
-            Button("Seen it") {
-                handleNearbyPromptSeen(prompt)
-            }
-            .buttonStyle(.borderedProminent)
-            .accessibilityIdentifier("map.nearby-prompt.seen")
-
-            Button {
-                suppressedNearbyPromptPlaceIDs.insert(prompt.placeID)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption2)
-                    .frame(width: 30, height: 30)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityLabel("Dismiss nearby prompt")
-            .accessibilityIdentifier("map.nearby-prompt.dismiss")
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("map.nearby-prompt")
     }
 
     private func start() async {
@@ -8106,53 +8040,6 @@ struct OSSCreditEntry: Decodable, Identifiable {
         case name
         case noticeText = "notice_text"
         case versionOrPin = "version_or_pin"
-    }
-}
-
-private struct LocationSettingsButton: UIViewRepresentable {
-    let action: () -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(action: action)
-    }
-
-    func makeUIView(context: Context) -> UIButton {
-        let button = UIButton(type: .system)
-        var configuration = UIButton.Configuration.plain()
-        configuration.image = UIImage(systemName: "gearshape.fill")
-        configuration.title = "Settings"
-        configuration.imagePadding = 4
-        configuration.contentInsets = .zero
-        configuration.baseForegroundColor = .label
-        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-            var outgoing = incoming
-            let baseFont = UIFont.systemFont(ofSize: 11, weight: .semibold)
-            outgoing.font = UIFontMetrics(forTextStyle: .caption2).scaledFont(for: baseFont)
-            return outgoing
-        }
-        button.configuration = configuration
-        button.titleLabel?.adjustsFontForContentSizeCategory = true
-        button.accessibilityLabel = "Settings"
-        button.accessibilityHint = "Opens location settings"
-        button.accessibilityIdentifier = "map.location-settings"
-        button.addTarget(context.coordinator, action: #selector(Coordinator.tap), for: .touchUpInside)
-        return button
-    }
-
-    func updateUIView(_ uiView: UIButton, context: Context) {
-        context.coordinator.action = action
-    }
-
-    final class Coordinator {
-        var action: () -> Void
-
-        init(action: @escaping () -> Void) {
-            self.action = action
-        }
-
-        @objc func tap() {
-            action()
-        }
     }
 }
 
