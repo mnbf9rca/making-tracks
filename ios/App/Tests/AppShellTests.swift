@@ -430,9 +430,7 @@ final class AppShellTests: XCTestCase {
                 dynamicTypeSize: dynamicTypeSize
             )
             let expected = try tracksDoorRenderedSize(
-                Image(systemName: "plus")
-                    .font(Typography.font(for: .button))
-                    .symbolRenderingMode(.monochrome),
+                RatifiedTracksDoorInlineIcon(systemName: "plus"),
                 dynamicTypeSize: dynamicTypeSize
             )
 
@@ -3784,19 +3782,39 @@ private struct RatifiedTracksDoorHeroIcon: View {
     }
 }
 
+private struct RatifiedTracksDoorInlineIcon: View {
+    let systemName: String
+
+    @ScaledMetric(relativeTo: .subheadline) private var pointSize = 15.0
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: pointSize, weight: .medium))
+            .symbolRenderingMode(.monochrome)
+    }
+}
+
+private struct RatifiedTracksDoorAccessoryIcon: View {
+    let systemName: String
+
+    @ScaledMetric(relativeTo: .caption2) private var pointSize = 11.0
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: pointSize, weight: .medium))
+            .symbolRenderingMode(.monochrome)
+    }
+}
+
 private struct RatifiedTracksDoorRetraceCue: View {
     /// R12 / ia-doors.html:428-431 and :753 ratify SF 13/600 type and a 3pt gap.
-    @ScaledMetric(relativeTo: .footnote) private var pointSize = 13.0
-
     var body: some View {
         HStack(spacing: 3) {
             Text("Retrace")
-            Image(systemName: "chevron.right")
-                .font(Typography.font(for: .label).weight(.medium))
-                .symbolRenderingMode(.monochrome)
+            RatifiedTracksDoorAccessoryIcon(systemName: "chevron.right")
                 .accessibilityHidden(true)
         }
-        .font(.system(size: pointSize, weight: .semibold))
+        .font(.system(.footnote, design: .default, weight: .semibold))
         .fixedSize(horizontal: true, vertical: true)
     }
 }
