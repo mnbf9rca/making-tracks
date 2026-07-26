@@ -173,6 +173,28 @@ final class AppShellTests: XCTestCase {
         XCTAssertTrue(cardSource.contains("struct PlaceCardSheet: View"))
     }
 
+    func testContextualChromeAdaptersUseTheMaterialToastFamily() throws {
+        let appRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: appRoot.appendingPathComponent(
+                "Sources/Map/MapContextualChrome.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("struct MapDownloadProgressToast: View"))
+        XCTAssertTrue(source.contains("surfaceAction: MaterialToastSurfaceAction("))
+        XCTAssertTrue(source.contains("progressState: .percentage(progress.percentComplete)"))
+        XCTAssertTrue(source.contains("struct MapLocationOffToast: View"))
+        XCTAssertTrue(source.contains("MaterialQuietButtonStyle()"))
+        XCTAssertTrue(source.contains("struct MapNearbyPromptToast: View"))
+        XCTAssertTrue(source.contains("MaterialFilledButtonStyle()"))
+        XCTAssertTrue(source.contains("struct MapHiddenUndoToast: View"))
+        XCTAssertTrue(source.contains("MaterialTonalButtonStyle()"))
+    }
+
     func testPersistentDoorChromeReservesStandardAndAccessibilityClearance() {
         XCTAssertEqual(MapDoorChromeSpec.doorBarClearance(isAccessibilitySize: false), 68)
         XCTAssertEqual(MapDoorChromeSpec.doorBarClearance(isAccessibilitySize: true), 124)
