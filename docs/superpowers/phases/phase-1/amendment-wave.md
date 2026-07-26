@@ -1,15 +1,35 @@
-# Amendment wave — task graph (**draft, for fable's budget and dependency check**)
+# Amendment wave — task graph — **WAVE OPEN**
+
+**Owning issue: [#526](https://github.com/mnbf9rca/making-tracks/issues/526).** Every PR in this wave
+cites it.
 
 Source: the **2026-07-26 design session** (designer + Rob), ratified into the spec by #524
 (`13244148`). Every row here implements something that session ruled; nothing here is new design.
 
-**Read this file the way Phase 1's graph was read.** *Operating rules — every task* in
-[`phase-1/tasks.md`](tasks.md) applies unchanged and is not repeated: branch and PR shape, labels,
-open-ready, the SHA-copy rule, the body-states-evidence rule, gates on the host, the taste-guess
-protocol. Rows below carry only what is specific to them.
+**The wave is open and rows A1–A8 are live.** fable's budget and dependency pass is complete; claims
+go out by doorbell. A row is **claimable when it is unclaimed *and* unblocked** — see the dependency
+graph below, and note that A1 and A2 wait on A8.
 
-**Status of this document:** a draft for check. No row is claimable until fable has run the budget
-and dependency pass and opened the wave.
+**Read this file the way Phase 1's graph was read, and do not expect it to repeat what already has a
+home.** These apply unchanged and are **not** restated here, per one-rule-one-home:
+
+- ***Operating rules — every task*** → [`phase-1/tasks.md`](tasks.md): branch and PR shape, labels,
+  open-ready-before-the-automated-layer, the SHA-copy rule, the body-states-evidence rule, gates on
+  the host, the taste-guess protocol, the render-set rule.
+- **Claim protocol, stall rules and the status vocabulary** →
+  [`docs/process/coordination.md`](../../../process/coordination.md) → *Supervision-loop contract*.
+  In particular: **claim state is authoritative only with fable, never from the tree** — a status
+  line rides its own branch until its PR merges, so this file structurally lags every claim made
+  since the last merge. A row reading `unclaimed` here may already be claimed. **Ask; do not infer.**
+  Stall = **no status change for 45 minutes**; two unanswered nudges releases the row with an
+  incident line. Vocabulary: `claimed → branch → tests green → PR open → review clean →
+  ready-to-merge`, plus `blocked: <reason>` and `released`.
+  **`released` means returned to the pool, never shipped** — it reads as its own opposite, so the
+  merged state is written as `merged as <sha>` and nothing else.
+
+**The `Status` field is the builder's until handoff, and the merger's record thereafter.** Rows below
+are left `unclaimed` deliberately: **the three doorbelled claimants write their own lines** after
+re-grounding on this file's merge. Do not write another seat's status.
 
 ---
 
@@ -41,6 +61,9 @@ render loop.
 
 - **Serves:** R13, R14 · **Spec section:** §2 · **Review tier:** `sourcery` + `opus`
 - **Depends on:** A8's Explore frame
+- **Owner:** unclaimed
+- **Status:** unclaimed
+- **Branch:** `wp-526-journal-explore-doors` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Rename Door 2 *Tracks* → **Journal** and Door 1 *World* → **Explore**, and
 collapse Explore so the door **opens Scope directly**: no intermediate row list, Settings and About
@@ -80,6 +103,9 @@ Renders of both doors at 390×844 plus an AX variant, graded against A8's frames
 
 - **Serves:** R15 · **Spec section:** §5 · **Review tier:** `sourcery` + `opus`
 - **Depends on:** A8's R15 card frame, **A4**
+- **Owner:** unclaimed
+- **Status:** unclaimed
+- **Branch:** `wp-526-place-card-state-morphology` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Re-implement the place card's action bar under R15: **ON = filled pill + filled
 glyph; OFF = tonal + outline glyph; momentary verbs = quiet text**, with never-colour-alone applying
@@ -104,6 +130,9 @@ Renders: the card in every state combination the bar can reach, default and AX, 
 ## A3 — `trackLine` becomes `trail`
 
 - **Serves:** R8's naming rider · **Review tier:** `sourcery` + `opus` · **Depends on:** none
+- **Owner:** unclaimed
+- **Status:** unclaimed
+- **Branch:** `wp-526-trail-token-rename` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Rename the token `trackLine` → `trail` — the `SemanticColorToken` case, the
 `MaterialTokenSheet` property, the Snow value `#2D8C83`, and every consumer including
@@ -118,6 +147,9 @@ Nothing else changes. If a value moves, you have exceeded the task.
 ## A4 — `disabledAlpha` and `pressScale` become sheet rows
 
 - **Serves:** the session's taste verdicts · **Review tier:** `sourcery` + `opus` · **Depends on:** none
+- **Owner:** unclaimed
+- **Status:** unclaimed
+- **Branch:** `wp-526-interaction-constants` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Add `disabledAlpha` (`0.46`) and `pressScale` (`0.98`) to the token sheet as
 ratified rows, and make `MaterialControlInteractionFeedback` **consume them** rather than holding
@@ -132,6 +164,9 @@ wiring assertion: a mutation of the *sheet row* must fail, or the tokens are dec
 ## A5 — Quiet-control press feedback: the symbol-weight pulse
 
 - **Serves:** the session's gap ruling · **Review tier:** `sourcery` + `opus` · **Depends on:** A4
+- **Owner:** unclaimed
+- **Status:** unclaimed
+- **Branch:** `wp-526-quiet-press-pulse` — cut from a freshly-fetched `ios`
 
 **Builder brief.** `quiet` is `background: nil`, `backgroundOpacity: 0`, so R9's geometry remedy has
 no boundary to move: an icon-only quiet control's press feedback is currently ~0.35pt of motion on a
@@ -149,6 +184,9 @@ First mounted instance to verify against: T1.7's location-off Settings gear.
 
 - **Serves:** #517 (Rob) · **Review tier:** `sourcery` + `opus` · **Depends on:** none
 - **Greptile slot recommended** — see *budget note*
+- **Owner:** unclaimed
+- **Status:** unclaimed
+- **Branch:** `wp-517-saved-hidden-exclusivity` — cut from a freshly-fetched `ios` *(already cut)*
 
 **Builder brief.** Four parts, and the third is a data migration:
 
@@ -170,6 +208,9 @@ only reason a migration is ever in scope.
 ## A7 — #522 post-merge annotations
 
 - **Serves:** #522 · **Review tier:** `sourcery` · **Depends on:** none
+- **Owner:** unclaimed
+- **Status:** unclaimed
+- **Branch:** `wp-522-merged-body-annotations` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Annotate the merged bodies of **#486** and **#503** where their acceptance claims
 contradict the ratified graph, preserving the historical evidence. **Follow the #518 precedent
@@ -184,6 +225,9 @@ Docs-only; no code, no gate.
 
 - **Serves:** R14, R15 · **Depends on:** none · **This is the critical path**
 - **Pipeline:** build agent authors → **opus validates** → **Rob rules** → frozen
+- **Owner:** unclaimed
+- **Status:** unclaimed
+- **Branch:** `wp-526-explore-r15-renders` — cut from a freshly-fetched `ios`
 
 **Brief.** Two new frozen frames: the **Explore surface** as R14 collapses it (Scope directly, quiet
 Settings/About bottom rows with the gear prominent, reserved Search slot at top rendering nothing),
