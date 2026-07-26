@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T1.7 contextual chrome — 390×844</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { width: 390px; height: 844px; margin: 0; overflow: hidden; }
+  body {
+    --ground: #F4F1EA; --water: #C9DBE2; --park: #DCE5D4; --road: #C9BFA8;
+    --surface: #FBFAF2; --ink: #2B2823; --muted: #6B675F; --accent: #0A6B5C;
+    --accent-contrast: #FBFAF2; --hairline: rgba(43,40,35,.14);
+    background: var(--ground); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  }
+  .canvas { position: relative; width: 390px; height: 844px; overflow: hidden; background: var(--ground); }
+  .map { position: absolute; inset: 0; opacity: .95; }
+  .map svg { display: block; width: 100%; height: 100%; }
+  .map .minor { fill: none; stroke: #DDD5C2; stroke-linecap: round; stroke-width: 4; }
+  .map .major { fill: none; stroke: var(--road); stroke-linecap: round; stroke-width: 7; }
+  .map .water { fill: var(--water); } .map .park { fill: var(--park); }
+  .map-label { fill: var(--muted); font-size: 9px; letter-spacing: .02em; }
+  .map-pin { fill: #E4572E; stroke: var(--surface); stroke-width: 2; }
+  .corner { position: absolute; z-index: 1; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--hairline); border-radius: 14px; background: rgba(251,250,242,.8); box-shadow: 0 3px 10px rgba(43,40,35,.1); color: var(--accent); }
+  .compass { top: 58px; right: 14px; } .locate { top: 110px; right: 14px; }
+  .attribution { position: absolute; z-index: 1; bottom: 20px; left: 14px; color: var(--muted); font-size: 11px; }
+  .proof-title { position: absolute; z-index: 1; top: 16px; left: 14px; color: var(--ink); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+  .toast-stack { position: absolute; z-index: 2; top: 173px; left: 16px; right: 16px; display: grid; gap: 12px; }
+  .state { display: grid; gap: 4px; }
+  .state-label { margin-left: 4px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+  .toast { min-width: 0; padding: 12px; border: 1px solid var(--hairline); border-radius: 16px; background: rgba(251,250,242,.72); box-shadow: 0 4px 16px rgba(43,40,35,.1); -webkit-backdrop-filter: blur(16px) saturate(120%); backdrop-filter: blur(16px) saturate(120%); }
+  .toast-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .message { min-width: 0; flex: 1; font-size: 17px; line-height: 1.25; }
+  .icon { flex: none; display: grid; width: 22px; height: 22px; place-items: center; color: var(--accent); }
+  .action { flex: none; min-width: 44px; height: 44px; display: grid; place-items: center; border-radius: 999px; font-size: 15px; font-weight: 600; white-space: nowrap; }
+  .quiet { color: var(--muted); }
+  .filled { padding: 0 16px; background: var(--accent); color: var(--accent-contrast); }
+  .tonal { padding: 0 16px; background: rgba(10,107,92,.12); color: var(--accent); }
+  .dismiss { color: var(--ink); font-size: 23px; font-weight: 400; }
+  .download { display: grid; gap: 8px; }
+  .progress-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .count { flex: none; color: var(--muted); font-size: 13px; }
+  .track { height: 3px; overflow: hidden; border-radius: 99px; background: var(--hairline); }
+  .fill { width: 42%; height: 3px; border-radius: 99px; background: var(--accent); }
+  .fold { position: absolute; z-index: 4; left: 0; right: 0; bottom: 0; border-top: 2px dashed #C0392B; }
+  .fold-label { position: absolute; z-index: 4; right: 6px; bottom: 4px; padding: 1px 4px; border-radius: 3px; background: rgba(251,250,242,.94); color: #C0392B; font-size: 9px; font-weight: 700; }
+  svg { overflow: visible; } .stroke { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+</style>
+</head>
+<body>
+<main class="canvas" aria-label="Default-size Snow map proof of four contextual chrome states">
+  <div class="map" aria-hidden="true">
+    <svg viewBox="0 0 390 844">
+      <path class="water" d="M0 550 C65 520 79 565 130 540 S234 528 284 558 S350 590 390 566 V844 H0Z"/>
+      <path class="park" d="M17 83 C63 48 130 63 141 116 S105 181 49 164 S-5 122 17 83Z"/>
+      <path class="park" d="M276 202 C316 171 371 188 390 220 V393 C351 401 307 376 290 335 S247 234 276 202Z"/>
+      <path class="minor" d="M-15 287 C73 248 97 331 173 309 S293 273 404 318"/>
+      <path class="minor" d="M-10 405 C68 375 111 418 177 397 S293 389 403 431"/>
+      <path class="minor" d="M32 680 C92 608 133 634 193 581 S310 492 405 504"/>
+      <path class="major" d="M-12 189 C63 223 112 205 166 243 S280 333 403 300"/>
+      <path class="major" d="M72 844 C103 733 154 672 201 618 S309 512 403 477"/>
+      <circle class="map-pin" cx="219" cy="495" r="8"/><circle class="map-pin" cx="106" cy="620" r="8"/><circle class="map-pin" cx="302" cy="694" r="8"/>
+      <text class="map-label" x="42" y="248">KINGS CROSS</text><text class="map-label" x="215" y="386">CLERKENWELL</text><text class="map-label" x="166" y="732">THE THAMES</text>
+    </svg>
+  </div>
+  <div class="proof-title">T1.7 · contextual chrome</div>
+  <div class="corner compass" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24"><path class="stroke" d="m12 3 4 9-4 9-4-9 4-9Z"/><path class="stroke" d="m12 3 2 9-2 9"/></svg></div>
+  <div class="corner locate" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24"><circle class="stroke" cx="12" cy="12" r="5"/><path class="stroke" d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg></div>
+  <div class="toast-stack">
+    <section class="state" aria-label="Offline maps download state">
+      <div class="state-label">Offline maps · whole surface opens Offline maps</div>
+      <div class="toast download">
+        <div class="toast-row"><span class="icon"><svg width="22" height="22" viewBox="0 0 24 24"><circle class="stroke" cx="12" cy="12" r="9"/><path class="stroke" d="M12 6v9m-3-3 3 3 3-3M8 18h8"/></svg></span><div class="progress-head message"><span>Offline maps</span><span class="count">42%</span></div></div>
+        <div class="track"><div class="fill"></div></div>
+      </div>
+    </section>
+    <section class="state" aria-label="Location off state">
+      <div class="state-label">Location notice · quiet action</div>
+      <div class="toast"><div class="toast-row"><div class="message">Location is off</div><div class="action quiet" aria-label="Settings"><svg width="21" height="21" viewBox="0 0 24 24"><path class="stroke" d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path class="stroke" d="m19 13.5 1.4 1-1.8 3.1-1.6-.6a7.5 7.5 0 0 1-2.2 1.3l-.2 1.7h-3.6l-.2-1.7A7.5 7.5 0 0 1 8.6 17L7 17.6l-1.8-3.1 1.4-1a7.7 7.7 0 0 1 0-3l-1.4-1L7 6.4l1.6.6A7.5 7.5 0 0 1 10.8 5l.2-1.7h3.6l.2 1.7A7.5 7.5 0 0 1 17 7l1.6-.6 1.8 3.1-1.4 1a7.7 7.7 0 0 1 0 3Z"/></svg></div></div></div>
+    </section>
+    <section class="state" aria-label="Nearby prompt state">
+      <div class="state-label">Nearby prompt · filled response + dismiss</div>
+      <div class="toast"><div class="toast-row"><div class="message">You&#39;re near Ghost Sign — seen it?</div><div class="action filled">Seen it</div><div class="action dismiss" aria-label="Dismiss nearby prompt">×</div></div></div>
+    </section>
+    <section class="state" aria-label="Hidden undo state">
+      <div class="state-label">Hidden place · tonal undo</div>
+      <div class="toast"><div class="toast-row"><div class="message">Hidden — Undo</div><div class="action tonal">Undo</div></div></div>
+    </section>
+  </div>
+  <div class="attribution">© OpenStreetMap</div><div class="fold"></div><div class="fold-label">fold · 390 × 844</div>
+</main>
+</body>
+</html>

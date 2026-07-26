@@ -26,6 +26,7 @@
 		915D71B1930B5DB4AEF0ABC3 /* Newsreader72pt-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A48E219EA55B851FD5EDD31F /* Newsreader72pt-SemiBold.ttf */; };
 		93D8C47C12062A4D16FC5BC5 /* TypographyRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1DFBB29DC117B5BFBE1E85F /* TypographyRuntimeTests.swift */; };
 		950D21AE358E7609C95B9CE3 /* Newsreader16pt-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D5C5A78FA0D0465851229FA5 /* Newsreader16pt-Italic.ttf */; };
+		9A04531C96946217CBF2BE67 /* MapContextualChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDB23D03D2EE07A3F60E295 /* MapContextualChrome.swift */; };
 		9A14258D08374EDCF12E44F5 /* AppShellTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 538B8CFCCBB98BEEE13D75E5 /* AppShellTests.swift */; };
 		A0A4BEB6C707F68791895112 /* HiddenMembershipTrackerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB44B483382C7266D1246E92 /* HiddenMembershipTrackerTests.swift */; };
 		AE9F899F811FE6AD774A0F38 /* OSSCredits.json in Resources */ = {isa = PBXBuildFile; fileRef = 1CB5F787D9335E6F6658C952 /* OSSCredits.json */; };
@@ -86,6 +87,7 @@
 		7406D8636B27B4FE8E1C1555 /* MakingTracks.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MakingTracks.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7DE03FCA363155B0C5A81CE1 /* MLNMapViewRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLNMapViewRepresentable.swift; sourceTree = "<group>"; };
 		8165BC8A095352568E0849A6 /* MakingTracksApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MakingTracksApp.swift; sourceTree = "<group>"; };
+		8BDB23D03D2EE07A3F60E295 /* MapContextualChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapContextualChrome.swift; sourceTree = "<group>"; };
 		A330796CB1BF0358668CE6ED /* DiagnosticsRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsRuntimeTests.swift; sourceTree = "<group>"; };
 		A48E219EA55B851FD5EDD31F /* Newsreader72pt-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader72pt-SemiBold.ttf"; sourceTree = "<group>"; };
 		AB44B483382C7266D1246E92 /* HiddenMembershipTrackerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiddenMembershipTrackerTests.swift; sourceTree = "<group>"; };
@@ -181,6 +183,7 @@
 			children = (
 				6879CA7F65FAB04C7987F924 /* HiddenMembershipTracker.swift */,
 				B3525A5E7A7CEBCA35304E0E /* ManagedPlacesView.swift */,
+				8BDB23D03D2EE07A3F60E295 /* MapContextualChrome.swift */,
 				C9A87BCE0F932F1A26E94416 /* MapDoorShell.swift */,
 				0ED60266EB41A05525C52E2E /* MapLayerVisibility.swift */,
 				344D7C929CEBD0057FA01F8C /* MapScreen.swift */,
@@ -468,6 +471,7 @@
 				D723B8F7C4E54215817261EA /* MLNMapViewRepresentable.swift in Sources */,
 				E205428A35137AEC62A677DE /* MakingTracksApp.swift in Sources */,
 				8755EE16C4180FE7D73DFDCD /* ManagedPlacesView.swift in Sources */,
+				9A04531C96946217CBF2BE67 /* MapContextualChrome.swift in Sources */,
 				BDD25BD73021E8B1AB199D29 /* MapDoorShell.swift in Sources */,
 				06447D7969A73B3EBB37BF48 /* MapLayerVisibility.swift in Sources */,
 				03DDC05F05147127FAC7FFA5 /* MapScreen.swift in Sources */,

@@ -457,6 +457,30 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    private func assertMinimumInteractiveTarget(
+        _ element: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertGreaterThanOrEqual(element.frame.width, 44, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(element.frame.height, 44, file: file, line: line)
+    }
+
+    private func assertContainedInAppFrame(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let appFrame = app.windows.firstMatch.exists ? app.windows.firstMatch.frame : app.frame
+        XCTAssertTrue(
+            appFrame.contains(element.frame),
+            "\(element.identifier) frame \(element.frame) escapes app frame \(appFrame)",
+            file: file,
+            line: line
+        )
+    }
+
     func testMapHomeExposesBothDoorsAndScopeOpensLayers() {
         let app = launch(reset: true, pinDiagnostics: true)
 
@@ -2387,8 +2411,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
     }
 
-    func testHiddenToastUndoRestoresHiddenPlace() {
-        let app = launch(reset: true)
+    func testHiddenToastUndoRestoresHiddenPlaceAtAX5() {
+        let app = launch(reset: true, accessibilityTextSize: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
@@ -2397,7 +2421,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["place-card.hide"].tap()
         XCTAssertTrue(app.staticTexts["Hidden — Undo"].waitForExistence(timeout: 5))
 
-        app.buttons["place-card.hide.undo"].tap()
+        let undoButton = app.buttons["place-card.hide.undo"]
+        XCTAssertTrue(undoButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(undoButton.label, "Undo")
+        XCTAssertTrue(undoButton.isHittable)
+        assertMinimumInteractiveTarget(undoButton)
+        assertContainedInAppFrame(undoButton, in: app)
+        undoButton.tap()
         XCTAssertFalse(app.staticTexts["Hidden — Undo"].waitForExistence(timeout: 2))
 
         openFixtureCard(in: map, app: app)
@@ -2578,14 +2608,22 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["Close"].tap()
     }
 
-    func testOfflineProgressChipDeepLinksToOfflineMaps() {
-        let activeDownloadApp = launch(reset: true, offlineProgress: 0.42)
+    func testOfflineProgressChipDeepLinksToOfflineMapsAtAX5() {
+        let activeDownloadApp = launch(
+            reset: true,
+            accessibilityTextSize: true,
+            offlineProgress: 0.42
+        )
         let activeMap = activeDownloadApp.otherElements["map.surface"]
         XCTAssertTrue(activeMap.waitForExistence(timeout: 10))
 
         let progressChip = activeDownloadApp.buttons["map.download-progress"]
         XCTAssertTrue(progressChip.waitForExistence(timeout: 5))
-        XCTAssertTrue(progressChip.label.contains("42%"))
+        XCTAssertEqual(progressChip.label, "Offline maps download")
+        XCTAssertEqual(progressChip.value as? String, "42%")
+        XCTAssertTrue(progressChip.isHittable)
+        assertMinimumInteractiveTarget(progressChip)
+        assertContainedInAppFrame(progressChip, in: activeDownloadApp)
         progressChip.tap()
 
         XCTAssertTrue(activeDownloadApp.staticTexts["Offline maps"].waitForExistence(timeout: 5))
@@ -2598,6 +2636,24 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(activeDownloadApp.buttons["world.row.settings"].exists)
         XCTAssertTrue(activeDownloadApp.buttons["world.row.about"].exists)
         activeDownloadApp.buttons["Close"].tap()
+    }
+
+    func testOfflineProgressChipAnnouncesWaitingConnectivity() {
+        let app = launch(
+            reset: true,
+            accessibilityTextSize: true,
+            offlineProgress: 0.42,
+            offlineWaiting: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+
+        let progressChip = app.buttons["map.download-progress"]
+        XCTAssertTrue(progressChip.waitForExistence(timeout: 5))
+        XCTAssertEqual(progressChip.label, "Offline maps download, Waiting for Wi-Fi")
+        XCTAssertEqual(progressChip.value as? String, "42%")
+        XCTAssertTrue(progressChip.isHittable)
+        assertMinimumInteractiveTarget(progressChip)
+        assertContainedInAppFrame(progressChip, in: app)
     }
 
     func testSettingsThemePickerSelectsRealTheme() {
@@ -3012,8 +3068,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(actionBar.buttons["place-card.hide"].exists)
     }
 
-    func testLocateMeChromeExplainsWhenLocationIsDenied() throws {
-        let app = launch(reset: true, locationDenied: true)
+    func testLocateMeChromeExplainsWhenLocationIsDeniedAtAX5() throws {
+        let app = launch(
+            reset: true,
+            locationDenied: true,
+            accessibilityTextSize: true
+        )
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
@@ -3021,13 +3081,55 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(app.buttons["map.locate-me"].label, "Locate me")
         XCTAssertTrue(app.staticTexts["Location is off"].waitForExistence(timeout: 5))
         let locationSettings = app.buttons["map.location-settings"]
-        if !locationSettings.waitForExistence(timeout: 5) {
-            XCTAssertTrue(app.otherElements["map.location-settings"].waitForExistence(timeout: 5))
-        }
+        XCTAssertTrue(locationSettings.waitForExistence(timeout: 5))
+        XCTAssertEqual(locationSettings.label, "Settings")
+        XCTAssertTrue(locationSettings.isHittable)
+        assertMinimumInteractiveTarget(locationSettings)
+        assertContainedInAppFrame(locationSettings, in: app)
         attachScreenshot(named: "map-location-off")
+        locationSettings.tap()
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5))
     }
 
-    func testLocateMeShowsNearbyPromptForFixturePlace() {
+    func testLocateMeShowsNearbyPromptForFixturePlaceAtAX5() {
+        let app = launch(
+            reset: true,
+            simulatedLocationAuthorization: true,
+            simulatedLatitude: 3.1402,
+            simulatedLongitude: 101.6902,
+            accessibilityTextSize: true
+        )
+
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        app.buttons["map.locate-me"].tap()
+
+        let nearbyPrompt = app.otherElements["map.nearby-prompt"]
+        XCTAssertTrue(nearbyPrompt.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["You're near Ghost Sign — seen it?"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "nearby-prompt")
+
+        let seenButton = app.buttons["map.nearby-prompt.seen"]
+        let dismissButton = app.buttons["map.nearby-prompt.dismiss"]
+        XCTAssertTrue(seenButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(dismissButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(seenButton.label, "Seen it")
+        XCTAssertEqual(dismissButton.label, "Dismiss nearby prompt")
+        XCTAssertTrue(seenButton.isHittable)
+        XCTAssertTrue(dismissButton.isHittable)
+        assertMinimumInteractiveTarget(seenButton)
+        assertMinimumInteractiveTarget(dismissButton)
+        assertContainedInAppFrame(seenButton, in: app)
+        assertContainedInAppFrame(dismissButton, in: app)
+        assertNoFrameIntersection(seenButton, dismissButton)
+        seenButton.tap()
+
+        XCTAssertFalse(nearbyPrompt.waitForExistence(timeout: 2))
+        XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
+    }
+
+    func testNearbyPromptDismissSuppressesPrompt() {
         let app = launch(
             reset: true,
             simulatedLocationAuthorization: true,
@@ -3042,15 +3144,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         let nearbyPrompt = app.otherElements["map.nearby-prompt"]
         XCTAssertTrue(nearbyPrompt.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["You're near Ghost Sign — seen it?"].waitForExistence(timeout: 5))
-        attachScreenshot(named: "nearby-prompt")
+        app.buttons["map.nearby-prompt.dismiss"].tap()
 
-        let seenButton = app.buttons["map.nearby-prompt.seen"]
-        XCTAssertTrue(seenButton.waitForExistence(timeout: 5))
-        seenButton.tap()
-
-        XCTAssertFalse(nearbyPrompt.waitForExistence(timeout: 2))
-        XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
+        XCTAssertTrue(confirmPromptRemainsAbsent("map.nearby-prompt", in: app, timeout: 2))
+        XCTAssertEqual(app.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 0")
     }
 
     func testCardVisitStateSuppressesNearbyPromptWithoutViewportRefresh() {
@@ -3451,6 +3548,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         accessibilityTextSize: Bool = false,
         seedUserList: Bool = false,
         offlineProgress: Double? = nil,
+        offlineWaiting: Bool = false,
         resetTheme: Bool = false,
         theme: String? = nil,
         pinSizeMultiplier: Double? = nil,
@@ -3558,6 +3656,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         if let offlineProgress {
             app.launchArguments.append("--ui-testing-offline-progress")
             app.launchArguments.append(String(offlineProgress))
+        }
+        if offlineWaiting {
+            app.launchArguments.append("--ui-testing-offline-waiting")
         }
         if resetTheme {
             app.launchArguments.append("--ui-testing-reset-theme")
