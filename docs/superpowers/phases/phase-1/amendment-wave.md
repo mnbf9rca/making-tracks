@@ -113,13 +113,24 @@ to state. The action vocabulary is `PlaceCardAction` — `save`, `seen`, `love`,
 `unsee`, `seenDisabled`, `unhide` — plus the `place-card.more` control, which is a **momentary verb**
 and therefore quiet.
 
-> **Raise before you build, do not resolve.** R15 says ON is a filled pill. §5 says **filled is one
-> per screen, maximum**. A card whose place is saved *and* seen *and* loved has **three ON states at
-> once**, and the two rules cannot both hold on that card. This is a design conflict between two
-> ratified statements, not an implementation detail — **it needs a ruling, not a guess.** Possible
-> readings the session may not have considered: filled-per-*group* rather than per-screen; the glyph
-> carrying ON while the container stays tonal within an action bar; or the action bar being exempt
-> as a control cluster. **Do not pick one.** Raise it through fable, build everything else meanwhile.
+> **This was a conflict; it is now ruled. Build to the ruling — R16.** R15 makes ON a filled pill and
+> §5 caps filled at one per screen, so a card that is saved *and* seen *and* loved could not satisfy
+> both. **R16 dissolves it in the taxonomy:** a `state toggle` is §5's **fourth component category**,
+> and it sits **outside the filled-action budget**, which governs actions only. *"States are not
+> buttons — the budget exists to stop screens shouting competing imperatives; an ON state is not an
+> imperative, it is a fact the control is reporting; three true facts are not three CTAs."*
+>
+> **Apply R16's rider:** within the cluster, an ON pill fills with **the state's own semantic token** —
+> **seen** `accent`, **loved** the ratified `love` row, **saved** `accent`'s tonal-strength companion —
+> so three ON pills read as three differently-toned facts rather than three copies of the CTA colour.
+> Morphology still carries the state: **fill plus glyph, never colour alone.**
+>
+> **The stop survives as a fallback for what the rider leaves open.** The rider names *which* token
+> each state fills, not its value, and **A8's render proves those values against the AA gate**. If a
+> value fails — `saved`'s tonal-strength companion is the likely one — that is a **flag to the
+> designer through fable, not a builder invention**. Reading B (glyph-only, containers tonal) was
+> **rejected on evidence** and must not be reintroduced as a workaround: it puts state legibility on
+> the smallest mark on the control, which is the defect R15 exists to fix.
 
 The `place-card.*` identifiers are contracts and survive unchanged.
 
@@ -236,6 +247,19 @@ and the **place card under R15** in the state combinations its action bar can re
 **Every load-bearing number in these frames goes into the spec's component-metrics table when they
 freeze.** That table is the phase's answer to four separate misattributions, one of them from the
 design authority; a new frozen render that does not feed it recreates the problem it solved.
+
+**Acceptance evidence for the R15 card frame — R16's rider is proved here or nowhere.** The rider
+names *which* semantic token each ON state fills — **seen** `accent`, **loved** the ratified `love`
+row, **saved** `accent`'s tonal-strength companion — and leaves the **values** to this render to prove
+**against the AA gate**. So the frame is not accepted on looking right: it must **show the fully-lit
+cluster** (saved + seen + loved simultaneously ON, the worst case) and carry the **contrast figures
+per ON pill** as its evidence. The purpose the gate is protecting is stated in R16: three ON pills
+must read as three differently-toned *facts* while the screen's single filled **action** stays
+unmistakable beside them — so the render also has to place a filled action next to the lit cluster,
+or it has not tested the thing the rider exists for.
+
+**If a value fails the gate, that is a finding for the designer, not a substitution.** `saved`'s
+tonal-strength companion is the likely candidate. Raise it through fable; do not pick a passing colour.
 
 ---
 
