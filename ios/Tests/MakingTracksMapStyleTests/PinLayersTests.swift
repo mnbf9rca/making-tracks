@@ -1,6 +1,6 @@
 import XCTest
-import DesignSystem
 import MakingTracksData
+@testable import DesignSystem
 @testable import MakingTracksMapStyle
 
 final class PinLayersTests: XCTestCase {
@@ -26,10 +26,17 @@ final class PinLayersTests: XCTestCase {
         }
     }
 
-    func testPinAndTrackLayerValuesComeFromTheTokenSheet() {
+    func testPinAndTrackLayerValuesComeFromTheTokenSheet() throws {
         XCTAssertEqual(PinLayers.pinColor, PinTokenBlock.constant.pin.mapStyleString)
         XCTAssertEqual(FADED_OPACITY, PinTokenBlock.constant.pinFaded.opacity)
-        XCTAssertEqual(TrackLayers.lineColor, MaterialTheme.snow.tokens.trackLine.mapStyleString.lowercased())
+        XCTAssertEqual(TrackLayers.lineColor, MaterialTheme.snow.tokens.trail.mapStyleString.lowercased())
+
+        let tokens = tokenSheet(trail: MaterialColor(red: 0x01, green: 0x02, blue: 0x03))
+        XCTAssertEqual(TrackLayers.lineStyle(tokens: tokens).color, "#010203")
+
+        let layer = try XCTUnwrap(layer(id: TrackLayers.lineLayerID, in: TrackLayers.trackLayers(tokens: tokens)))
+        guard case let .object(paint)? = layer["paint"] else { return XCTFail("line paint") }
+        XCTAssertEqual(paint["line-color"], .string("#010203"))
     }
 
     func testTracksModeKeepsVisitedPinsFullStrengthWithoutLyingAboutVisitState() {
@@ -157,7 +164,7 @@ final class PinLayersTests: XCTestCase {
         XCTAssertEqual(paint["line-opacity"], .double(TrackLayers.lineOpacity))
         XCTAssertEqual(paint["line-width"], .double(TrackLayers.lineWidth))
         XCTAssertEqual(paint["line-dasharray"], .array(TrackLayers.lineDashPatternValues.map(JSONValue.double)))
-        XCTAssertEqual(TrackLayers.lineColor, MaterialTheme.snow.tokens.trackLine.mapStyleString.lowercased())
+        XCTAssertEqual(TrackLayers.lineColor, MaterialTheme.snow.tokens.trail.mapStyleString.lowercased())
         XCTAssertEqual(TrackLayers.lineWidth, 6.2, accuracy: 1e-9)
         XCTAssertEqual(TrackLayers.lineOpacity, 1.00, accuracy: 1e-9)
         XCTAssertEqual(TrackLayers.lineDotLength, 1.0, accuracy: 1e-9)
@@ -841,6 +848,36 @@ final class PinLayersTests: XCTestCase {
     private func layoutValue(_ key: String, in layer: [String: JSONValue]?) -> JSONValue? {
         guard case let .object(layout)? = layer?["layout"] else { return nil }
         return layout[key]
+    }
+
+    private func tokenSheet(trail: MaterialColor) -> MaterialTokenSheet {
+        let snow = MaterialTheme.snow.tokens
+        return MaterialTokenSheet(
+            ground: snow.ground,
+            water: snow.water,
+            park: snow.park,
+            road: snow.road,
+            roadMinor: snow.roadMinor,
+            surface: snow.surface,
+            surfaceRaised: snow.surfaceRaised,
+            ink: snow.ink,
+            muted: snow.muted,
+            accent: snow.accent,
+            accentContrast: snow.accentContrast,
+            love: snow.love,
+            loveContainer: snow.loveContainer,
+            warning: snow.warning,
+            warningContainer: snow.warningContainer,
+            eyebrow: snow.eyebrow,
+            hairline: snow.hairline,
+            scrim: snow.scrim,
+            shadow: snow.shadow,
+            background: snow.background,
+            labels: snow.labels,
+            labelHalo: snow.labelHalo,
+            boundaries: snow.boundaries,
+            trail: trail
+        )
     }
 
     private func isZoomInterpolation(_ value: JSONValue) -> Bool {
