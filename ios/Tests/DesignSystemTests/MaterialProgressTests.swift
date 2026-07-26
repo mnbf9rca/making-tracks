@@ -136,19 +136,77 @@ final class MaterialProgressTests: XCTestCase {
     }
 
     func testProgressCountOwnsTypographyMetadataRole() throws {
-        let progress = MaterialProgress(
-            state: .count(completed: 3, total: 8)
+        let count = "3 of 8"
+        let progressImage = try render(
+            MaterialProgress(
+                state: .count(completed: 3, total: 8)
+            )
+            .frame(width: 200)
+            .dynamicTypeSize(.accessibility5)
         )
-        .frame(width: 200)
+        let expectedCountImage = try render(
+            Text(verbatim: count)
+                .font(Typography.font(for: .metadata))
+                .foregroundStyle(MaterialTheme.snow.tokens.muted.swiftUIColor)
+                .fixedSize(horizontal: true, vertical: true)
+                .dynamicTypeSize(.accessibility5)
+        )
 
-        let inheritedLargeTitleHeight = try render(
-            progress.font(.largeTitle)
-        ).height
-        let metadataRoleHeight = try render(
-            progress.font(Typography.font(for: .metadata))
-        ).height
+        XCTAssertEqual(
+            mutedGlyphPixelCount(in: progressImage),
+            mutedGlyphPixelCount(in: expectedCountImage),
+            accuracy: 8
+        )
+    }
 
-        XCTAssertEqual(inheritedLargeTitleHeight, metadataRoleHeight)
+    func testProgressLeadingHeaderKeepsCallerOwnedAmbientTypography() throws {
+        let progressImage = try render(
+            MaterialProgress(
+                state: .count(completed: 3, total: 8),
+                accessibilityLabel: "Ghost signs"
+            ) {
+                Text("Ghost signs")
+            }
+            .font(.largeTitle)
+            .frame(width: 390)
+        )
+        let callerHeaderImage = try render(
+            Text("Ghost signs")
+                .font(.largeTitle)
+        )
+
+        XCTAssertGreaterThanOrEqual(
+            progressImage.height,
+            callerHeaderImage.height + 7
+        )
+    }
+
+    func testProgressCountMetadataRoleDoesNotLeakToLeadingHeader() throws {
+        let progressWithLargeCallerHeader = try render(
+            MaterialProgress(
+                state: .count(completed: 3, total: 8),
+                accessibilityLabel: "Ghost signs"
+            ) {
+                Text("Ghost signs")
+            }
+            .font(.largeTitle)
+            .frame(width: 390)
+        )
+        let progressWithMetadataCallerHeader = try render(
+            MaterialProgress(
+                state: .count(completed: 3, total: 8),
+                accessibilityLabel: "Ghost signs"
+            ) {
+                Text("Ghost signs")
+            }
+            .font(Typography.font(for: .metadata))
+            .frame(width: 390)
+        )
+
+        XCTAssertGreaterThan(
+            progressWithLargeCallerHeader.height,
+            progressWithMetadataCallerHeader.height + 8
+        )
     }
 
     func testAccessibilityHeaderFitsAtPhoneWidthWithoutCompressingCount() throws {
@@ -181,7 +239,11 @@ final class MaterialProgressTests: XCTestCase {
         XCTAssertGreaterThan(progress.height, standaloneCount.height)
         XCTAssertGreaterThanOrEqual(
             mutedGlyphPixelCount(in: progress),
-            Int(Double(mutedGlyphPixelCount(in: standaloneCount)) * 0.85)
+            Int(Double(mutedGlyphPixelCount(in: standaloneCount)) * 0.95)
+        )
+        XCTAssertLessThanOrEqual(
+            mutedGlyphPixelCount(in: progress),
+            Int(Double(mutedGlyphPixelCount(in: standaloneCount)) * 1.05)
         )
     }
 #endif

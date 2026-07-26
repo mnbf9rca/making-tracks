@@ -129,33 +129,85 @@ final class MaterialToastTests: XCTestCase {
     }
 
     func testToastMessageOwnsTypographyBodyRole() throws {
-        let toast = MaterialToast(message: "Location services are unavailable")
-
-        let inheritedLargeTitleHeight = try renderedHeight(
-            toast.font(.largeTitle)
+        let shortMessage = "Location"
+        let longMessage = "Location services are unavailable"
+        let actualWidthDelta = try renderedWidth(
+            MaterialToast(message: shortMessage)
+                .dynamicTypeSize(.accessibility5)
+        ) - renderedWidth(
+            MaterialToast(message: longMessage)
+                .dynamicTypeSize(.accessibility5)
         )
-        let bodyRoleHeight = try renderedHeight(
-            toast.font(Typography.font(for: .body))
+        let expectedWidthDelta = try renderedWidth(
+            Text(shortMessage)
+                .font(Typography.font(for: .body))
+                .dynamicTypeSize(.accessibility5)
+        ) - renderedWidth(
+            Text(longMessage)
+                .font(Typography.font(for: .body))
+                .dynamicTypeSize(.accessibility5)
         )
 
-        XCTAssertEqual(inheritedLargeTitleHeight, bodyRoleHeight)
+        XCTAssertEqual(actualWidthDelta, expectedWidthDelta, accuracy: 1)
     }
 
     func testBuiltInToastActionOwnsTypographyButtonRole() throws {
-        let control = MaterialToastPrimaryActionButton(
-            action: MaterialToastAction("Open offline maps") {},
+        let shortTitle = "Open offline"
+        let longTitle = "Open offline maps"
+        let shortControl = MaterialToastPrimaryActionButton(
+            action: MaterialToastAction(shortTitle) {},
             foreground: color(0x0A, 0x6B, 0x5C),
             minimumTarget: CGSize(width: 44, height: 44)
         )
-
-        let inheritedLargeTitleWidth = try renderedWidth(
-            control.font(.largeTitle)
+        let longControl = MaterialToastPrimaryActionButton(
+            action: MaterialToastAction(longTitle) {},
+            foreground: color(0x0A, 0x6B, 0x5C),
+            minimumTarget: CGSize(width: 44, height: 44)
         )
-        let buttonRoleWidth = try renderedWidth(
-            control.font(Typography.font(for: .button))
+        let actualWidthDelta = try renderedWidth(
+            shortControl.dynamicTypeSize(.accessibility5)
+        ) - renderedWidth(
+            longControl.dynamicTypeSize(.accessibility5)
+        )
+        let expectedWidthDelta = try renderedWidth(
+            Text(shortTitle)
+                .font(Typography.font(for: .button))
+                .dynamicTypeSize(.accessibility5)
+        ) - renderedWidth(
+            Text(longTitle)
+                .font(Typography.font(for: .button))
+                .dynamicTypeSize(.accessibility5)
         )
 
-        XCTAssertEqual(inheritedLargeTitleWidth, buttonRoleWidth)
+        XCTAssertEqual(actualWidthDelta, expectedWidthDelta, accuracy: 1)
+    }
+
+    func testCustomToastActionKeepsCallerOwnedAmbientTypography() throws {
+        let shortTitle = "Open"
+        let longTitle = "Open offline maps"
+        let shortToast = MaterialToast(
+            message: "Download ready",
+            actionContent: {
+                Text(shortTitle)
+            }
+        )
+        .font(.largeTitle)
+        let longToast = MaterialToast(
+            message: "Download ready",
+            actionContent: {
+                Text(longTitle)
+            }
+        )
+        .font(.largeTitle)
+        let actualWidthDelta = try renderedWidth(shortToast)
+            - renderedWidth(longToast)
+        let expectedWidthDelta = try renderedWidth(
+            Text(shortTitle).font(.largeTitle)
+        ) - renderedWidth(
+            Text(longTitle).font(.largeTitle)
+        )
+
+        XCTAssertEqual(actualWidthDelta, expectedWidthDelta, accuracy: 1)
     }
 
     func testRenderedNoProgressSurfaceButtonIsAtLeastFortyFourPointsInBothDimensions() {

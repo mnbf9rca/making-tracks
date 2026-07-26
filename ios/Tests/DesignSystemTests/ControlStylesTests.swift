@@ -76,40 +76,57 @@ final class ControlStylesTests: XCTestCase {
         XCTAssertGreaterThan(activeAccentPixels, availableAccentPixels + 500)
     }
 
-    func testMaterialChipTitleUsesTypographyLabelRole() throws {
+    func testMaterialChipTitleUsesRatifiedCaptionSizeAndSemiboldWeight() throws {
         let shortTitle = "Map"
         let longTitle = "Map places"
 
+        XCTAssertEqual(
+            MaterialChip.titleFont,
+            Font.caption.weight(.semibold)
+        )
+
         let styledWidthDelta = try renderedWidth(
             MaterialChip(shortTitle, state: .active, action: {})
-                .dynamicTypeSize(.accessibility5)
         ) - renderedWidth(
             MaterialChip(longTitle, state: .active, action: {})
-                .dynamicTypeSize(.accessibility5)
         )
         let expectedWidthDelta = try renderedWidth(
             Text(shortTitle)
-                .font(Typography.font(for: .label))
-                .dynamicTypeSize(.accessibility5)
+                .font(.caption.weight(.semibold))
         ) - renderedWidth(
             Text(longTitle)
-                .font(Typography.font(for: .label))
-                .dynamicTypeSize(.accessibility5)
+                .font(.caption.weight(.semibold))
         )
 
         XCTAssertEqual(styledWidthDelta, expectedWidthDelta, accuracy: 1)
+    }
 
-        let styledHeight = try renderedHeight(
-            MaterialChip(longTitle, state: .active, action: {})
+    func testMaterialChipIconUsesTypographyLabelSizeAndMediumWeight() throws {
+        let title = "Map"
+        let textOnlyWidth = try renderedWidth(
+            MaterialChip(title, state: .active, action: {})
                 .dynamicTypeSize(.accessibility5)
         )
-        let labelRoleHeight = try renderedHeight(
-            Text(longTitle)
-                .font(Typography.font(for: .label))
+        let iconAndTextWidth = try renderedWidth(
+            MaterialChip(
+                title,
+                systemImage: "map",
+                state: .active,
+                action: {}
+            )
+            .dynamicTypeSize(.accessibility5)
+        )
+        let expectedIconWidth = try renderedWidth(
+            Image(systemName: "map")
+                .font(Typography.font(for: .label).weight(.medium))
                 .dynamicTypeSize(.accessibility5)
         )
 
-        XCTAssertEqual(styledHeight, max(44, labelRoleHeight + 20))
+        XCTAssertEqual(
+            iconAndTextWidth - textOnlyWidth,
+            expectedIconWidth + 5,
+            accuracy: 1
+        )
     }
 #endif
 

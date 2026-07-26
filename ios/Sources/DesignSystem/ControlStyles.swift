@@ -150,6 +150,9 @@ public enum MaterialChipState: Hashable, Sendable {
 /// `systemImage` accepts an SF Symbol name; arbitrary image content is
 /// intentionally outside the family.
 public struct MaterialChip: View {
+    /// `ia-doors.html` ratifies 12pt/600, which no `TypographyRole` expresses.
+    static let titleFont = Font.caption.weight(.semibold)
+
     @Environment(\.isEnabled) private var isEnabled
 
     private let title: String
@@ -187,7 +190,7 @@ public struct MaterialChip: View {
                         .accessibilityHidden(true)
                 }
                 Text(verbatim: title)
-                    .font(Typography.font(for: .label))
+                    .font(Self.titleFont)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
