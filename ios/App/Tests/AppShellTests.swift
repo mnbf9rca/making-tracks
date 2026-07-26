@@ -86,6 +86,13 @@ final class AppShellTests: XCTestCase {
         )
     }
 
+    func testDoorRootsExposeOnlyRuledRows() {
+        XCTAssertEqual(WorldDoorRow.allCases, [.scope, .settings, .about])
+        XCTAssertEqual(TracksDoorRow.allCases, [.lists, .myTracks])
+        XCTAssertFalse(WorldDoorRow.allCases.map(\.title).contains("Offline maps"))
+        XCTAssertFalse(WorldDoorRow.allCases.map(\.title).contains("Coverage"))
+    }
+
     @MainActor
     func testMapDoorBarRendersAtStandardAndAX5DynamicType() {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {

@@ -737,7 +737,7 @@ struct ViewportCameraRequest: Sendable, Equatable {
     }
 }
 
-enum MenuDestination: Hashable {
+enum MapShellDestination: Hashable {
     case lists
     case listDetail(Int64)
     case tracks
@@ -753,8 +753,6 @@ enum MapDoor: Hashable, Identifiable {
 
     var id: Self { self }
 }
-
-typealias MapShellDestination = MenuDestination
 
 enum OfflineDownloadSettings {
     static let allowsCellularDownloadsKey = "offline.downloads.allow-cellular"
@@ -798,7 +796,6 @@ final class AppShellModel {
     var presentedDoor: MapDoor?
     var deepLinkDestination: MapShellDestination?
     var isMenuPresented = false
-    var deepLinkPath: MenuDestination?
     var tracksFocusPlaceID: String?
     var listDetailVisitFilter = TracksVisitFilter.all
 
@@ -811,12 +808,7 @@ final class AppShellModel {
     }
 
     func openMenu() {
-        tracksFocusPlaceID = nil
-        listDetailVisitFilter = .all
-        presentedDoor = nil
-        deepLinkDestination = nil
-        deepLinkPath = nil
-        isMenuPresented = true
+        openWorldDoor()
     }
 
     func openListDetailDeepLink(listID: Int64, visitFilter: TracksVisitFilter = .all) {
@@ -824,7 +816,6 @@ final class AppShellModel {
         listDetailVisitFilter = visitFilter
         presentedDoor = .tracks
         deepLinkDestination = .listDetail(listID)
-        deepLinkPath = .listDetail(listID)
         isMenuPresented = true
     }
 
@@ -833,7 +824,7 @@ final class AppShellModel {
         listDetailVisitFilter = .all
         presentedDoor = door
         deepLinkDestination = nil
-        deepLinkPath = nil
+        isMenuPresented = true
     }
 }
 
@@ -2310,7 +2301,6 @@ extension AppShellModel {
         listDetailVisitFilter = .all
         presentedDoor = .tracks
         deepLinkDestination = .lists
-        deepLinkPath = .lists
         isMenuPresented = true
     }
 
@@ -2319,7 +2309,6 @@ extension AppShellModel {
         listDetailVisitFilter = .all
         presentedDoor = .tracks
         deepLinkDestination = .tracks
-        deepLinkPath = .tracks
         isMenuPresented = true
     }
 
@@ -2328,7 +2317,6 @@ extension AppShellModel {
         listDetailVisitFilter = .all
         presentedDoor = .world
         deepLinkDestination = .offlineMaps
-        deepLinkPath = .offlineMaps
         isMenuPresented = true
     }
 }
@@ -2612,6 +2600,7 @@ struct MapScreen: View {
     @State private var storageMenuStatus = StorageMenuStatus.loading
     @State private var cardPresentation = PlaceCardPresentation()
     @State private var showLayers = false
+    @State private var showLayersAfterDoorDismiss = false
     @State private var layerVisibility = MapLayerVisibility()
     @State private var appliedShowHiddenPlaces = false
     @State private var loadState: TileLoadState = .unavailable
@@ -2954,8 +2943,17 @@ struct MapScreen: View {
             }
             }
         }
-        .sheet(isPresented: $appShell.isMenuPresented) {
-            AppMenuSheet(
+        .sheet(
+            isPresented: $appShell.isMenuPresented,
+            onDismiss: {
+                appShell.presentedDoor = nil
+                appShell.deepLinkDestination = nil
+                guard showLayersAfterDoorDismiss else { return }
+                showLayersAfterDoorDismiss = false
+                showLayers = true
+            }
+        ) {
+            MapDoorSheetIntegration(
                 shell: appShell,
                 model: model,
                 attribution: attribution,
@@ -2966,6 +2964,9 @@ struct MapScreen: View {
                 locationStatus: locationMenuStatus,
                 storageStatus: storageMenuStatus,
                 openLocationSettings: openLocationSettings,
+                openScope: {
+                    showLayersAfterDoorDismiss = true
+                },
                 replayOnboarding: onReplayOnboarding,
                 onOfflineMapsChanged: refreshAfterOfflineMapsChanged,
                 onShowListOnMap: { list, filter in
@@ -5092,7 +5093,7 @@ private extension MapEmptyRegionSurface {
     }
 }
 
-private struct AppMenuSheet: View {
+private struct MapDoorSheetIntegration: View {
     @Bindable var shell: AppShellModel
     let model: MapScreenModel?
     let attribution: [Attribution]
@@ -5103,55 +5104,45 @@ private struct AppMenuSheet: View {
     let locationStatus: LocationMenuStatus
     let storageStatus: StorageMenuStatus
     let openLocationSettings: () -> Void
+    let openScope: () -> Void
     let replayOnboarding: @MainActor () -> Void
     let onOfflineMapsChanged: @MainActor () async -> Void
     let onShowListOnMap: @MainActor (PlaceList, TracksVisitFilter) -> Void
     let onListRenamed: @MainActor (PlaceList) -> Void
     let onListDeleted: @MainActor (Int64) -> Void
 
-    @State private var path: [MenuDestination] = []
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack(path: $path) {
-            AppMenuRootView(path: $path)
-                .navigationTitle("Menu")
-                .navigationDestination(for: MenuDestination.self) { destination in
-                    destinationView(destination)
-                }
-                .toolbar {
-                    Button("Done") { dismiss() }
-                        .accessibilityIdentifier("menu.done")
-                }
-        }
-        .onAppear {
-            applyDeepLinkIfNeeded(resetToRootWhenNoDeepLink: true)
-        }
-        .onChange(of: shell.deepLinkPath) { _, _ in
-            applyDeepLinkIfNeeded(resetToRootWhenNoDeepLink: false)
+        MapDoorSheet(
+            door: shell.presentedDoor ?? .world,
+            deepLinkDestination: shell.deepLinkDestination,
+            openScope: openScopeAndDismiss
+        ) { destination in
+            destinationView(destination)
         }
     }
 
     @ViewBuilder
-    private func destinationView(_ destination: MenuDestination) -> some View {
+    private func destinationView(_ destination: MapShellDestination) -> some View {
         switch destination {
         case .lists:
-            destinationWithDone(ListsView(
+            ListsView(
                 model: model,
                 onShowOnMap: showListOnMapAndDismiss,
                 onListRenamed: onListRenamed,
                 onListDeleted: onListDeleted,
                 onDone: { dismiss() }
-            ))
+            )
         case let .listDetail(listID):
-            destinationWithDone(ListDetailDeepLinkView(
+            ListDetailDeepLinkView(
                 model: model,
                 listID: listID,
                 visitFilter: shell.listDetailVisitFilter,
                 onShowOnMap: showListOnMapAndDismiss,
                 onListRenamed: onListRenamed,
                 onDone: { dismiss() }
-            ))
+            )
         case .tracks:
             TrackListDetailDeepLinkView(
                 model: model,
@@ -5162,57 +5153,36 @@ private struct AppMenuSheet: View {
             )
         case .offlineMaps:
 #if DEBUG
-            destinationWithDone(OfflineMapsView(
+            OfflineMapsView(
                 model: model,
                 seededProgress: seededOfflineDownloadProgress,
                 downloadSession: offlineDownloadSession,
                 storageStatus: storageStatus,
                 onOfflineMapsChanged: onOfflineMapsChanged
-            ))
+            )
 #else
-            destinationWithDone(OfflineMapsReleaseGatedView())
+            OfflineMapsReleaseGatedView()
 #endif
         case .settings:
-            destinationWithDone(SettingsView(
-                path: $path,
+            SettingsView(
                 selectedThemeID: $selectedThemeID,
                 pinSizeMultiplier: $pinSizeMultiplier,
                 locationStatus: locationStatus,
                 storageStatus: storageStatus,
                 openLocationSettings: openLocationSettings,
                 replayOnboarding: replayOnboardingAndDismiss
-            ))
+            )
         case .diagnostics:
-            destinationWithDone(DiagnosticsView(storageStatus: storageStatus))
+            DiagnosticsView(storageStatus: storageStatus)
         case .about:
-            destinationWithDone(AboutView(attribution: attribution))
+            AboutView(attribution: attribution)
         }
     }
 
-    private func destinationWithDone<Content: View>(_ content: Content) -> some View {
-        content.toolbar {
-            Button("Done") { dismiss() }
-                .accessibilityIdentifier("menu.done")
-        }
-    }
-
-    private func applyDeepLinkIfNeeded(resetToRootWhenNoDeepLink: Bool) {
-        guard let destination = shell.deepLinkPath else {
-            if resetToRootWhenNoDeepLink {
-                path = []
-            }
-            return
-        }
-        if destination != .tracks {
-            shell.tracksFocusPlaceID = nil
-        }
-        switch destination {
-        case let .listDetail(listID):
-            path = [.lists, .listDetail(listID)]
-        default:
-            path = [destination]
-        }
-        shell.deepLinkPath = nil
+    private func openScopeAndDismiss() {
+        openScope()
+        shell.isMenuPresented = false
+        dismiss()
     }
 
     private func replayOnboardingAndDismiss() {
@@ -5311,78 +5281,6 @@ private struct TrackListDetailDeepLinkView: View {
         }
         list = await model.lists().first { $0.isSystem && $0.kind == PlaceList.trackKind }
         didLoad = true
-    }
-}
-
-private struct AppMenuRootView: View {
-    @Binding var path: [MenuDestination]
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    var body: some View {
-        List {
-            Button {
-                path.append(.lists)
-            } label: {
-                menuRow(title: "Lists", subtitle: "Saved places and collections", systemImage: "list.bullet")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("menu.row.lists")
-
-            Button {
-                path.append(.tracks)
-            } label: {
-                menuRow(title: "Tracks", subtitle: "Places you've seen", systemImage: "clock.arrow.circlepath")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("menu.row.tracks")
-
-            Button {
-                path.append(.offlineMaps)
-            } label: {
-                menuRow(title: "Offline maps", subtitle: "Download regions for later", systemImage: "arrow.down.circle")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("menu.row.offline-maps")
-
-            Button {
-                path.append(.settings)
-            } label: {
-                menuRow(title: "Settings", subtitle: "Map theme, location, and storage", systemImage: "gearshape")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("menu.row.settings")
-
-            Button {
-                path.append(.about)
-            } label: {
-                menuRow(title: "About", subtitle: "Credits, attribution, and build info", systemImage: "info.circle")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("menu.row.about")
-        }
-    }
-
-    private func menuRow(title: String, subtitle: String, systemImage: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.headline)
-                .frame(width: 28)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.body)
-                if !dynamicTypeSize.isAccessibilitySize {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        .contentShape(Rectangle())
-        .foregroundStyle(.primary)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint(dynamicTypeSize.isAccessibilitySize ? subtitle : "")
     }
 }
 
@@ -7176,7 +7074,6 @@ private struct OfflineMapsView: View {
 #endif
 
 private struct SettingsView: View {
-    @Binding var path: [MenuDestination]
     @Binding var selectedThemeID: String
     @Binding var pinSizeMultiplier: Double
     let locationStatus: LocationMenuStatus
@@ -7265,9 +7162,7 @@ private struct SettingsView: View {
             }
 
             Section("Storage") {
-                Button {
-                    path.append(SettingsStorageNavigation.destination)
-                } label: {
+                NavigationLink(value: SettingsStorageNavigation.destination) {
                     SettingsStorageSummary(storageStatus: storageStatus)
                 }
                 .buttonStyle(.plain)
@@ -7275,9 +7170,7 @@ private struct SettingsView: View {
             }
 
             Section("Diagnostics") {
-                Button {
-                    path.append(.diagnostics)
-                } label: {
+                NavigationLink(value: MapShellDestination.diagnostics) {
                     HStack(spacing: 10) {
                         Image(systemName: "arrow.up.doc")
                             .foregroundStyle(.secondary)
@@ -7950,7 +7843,7 @@ private struct PinSizePreview: View {
 }
 
 enum SettingsStorageNavigation {
-    static let destination = MenuDestination.offlineMaps
+    static let destination = MapShellDestination.offlineMaps
 }
 
 private struct SettingsStorageSummary: View {
