@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T1.12 chip geometry evidence — 390×844</title>
+<style>
+  @font-face {
+    font-family: "Newsreader";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader72pt-SemiBold.ttf");
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 390px; height: 844px; overflow: hidden; }
+  body {
+    --ground: #F4F1EA;
+    --surface: #FBFAF2;
+    --water: #C9DBE2;
+    --road: #C9BFA8;
+    --ink: #2B2823;
+    --muted: #6B675F;
+    --accent: #0A6B5C;
+    --tonal: rgba(10, 107, 92, .12);
+    --hairline: rgba(43, 40, 35, .14);
+    background: var(--ground);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  }
+  .phone {
+    position: relative;
+    width: 390px;
+    height: 844px;
+    overflow: hidden;
+    background:
+      linear-gradient(28deg, transparent 0 24%, rgba(201, 191, 168, .75) 24% 26%, transparent 26%),
+      linear-gradient(151deg, transparent 0 47%, rgba(201, 191, 168, .65) 47% 49%, transparent 49%),
+      radial-gradient(circle at 82% 12%, var(--water) 0 10%, transparent 10.5%),
+      var(--ground);
+  }
+  .status {
+    position: absolute;
+    z-index: 3;
+    top: 14px;
+    left: 22px;
+    right: 22px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    font-weight: 650;
+  }
+  .pin {
+    position: absolute;
+    top: 104px;
+    right: 58px;
+    width: 30px;
+    height: 30px;
+    border: 4px solid var(--surface);
+    border-radius: 50% 50% 50% 8px;
+    background: #E4572E;
+    box-shadow: 0 4px 10px rgba(43, 40, 35, .18);
+    transform: rotate(-45deg);
+  }
+  .pin::after {
+    content: "";
+    position: absolute;
+    inset: 7px;
+    border-radius: 50%;
+    background: var(--surface);
+  }
+  .sheet {
+    position: absolute;
+    inset: 150px 0 0;
+    overflow: hidden;
+    border-radius: 22px 22px 0 0;
+    background: var(--surface);
+    box-shadow: 0 -8px 28px rgba(43, 40, 35, .13);
+  }
+  .grabber {
+    width: 36px;
+    height: 5px;
+    margin: 8px auto 9px;
+    border-radius: 4px;
+    background: rgba(107, 103, 95, .38);
+  }
+  .content { padding: 0 18px; }
+  .eyebrow {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  h1 {
+    margin: 4px 0 5px;
+    font: 650 32px/1.04 "Newsreader", Georgia, serif;
+    letter-spacing: -.02em;
+  }
+  .meta {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .photo {
+    height: 150px;
+    margin: 16px 0 14px;
+    border-radius: 16px;
+    background:
+      linear-gradient(180deg, transparent 0 54%, rgba(43, 40, 35, .18) 100%),
+      linear-gradient(132deg, #b5c8ca, #ddd0b5 45%, #8b8d78);
+    box-shadow: inset 0 0 0 1px rgba(43, 40, 35, .08);
+  }
+  .copy {
+    margin: 0 0 16px;
+    max-width: 330px;
+    color: var(--ink);
+    font-size: 15px;
+    line-height: 1.34;
+  }
+  .label {
+    margin-bottom: 8px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .chip-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 50px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: max-content;
+    border: 0;
+    border-radius: 999px;
+    color: var(--surface);
+    background: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .chip.tonal {
+    color: var(--accent);
+    background: var(--tonal);
+  }
+  .chip svg {
+    width: 11px;
+    height: 11px;
+    flex: 0 0 11px;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+  }
+  body[data-variant="before"] .chip {
+    min-height: 44px;
+    padding: 10px 16px;
+    gap: 5px;
+  }
+  body:not([data-variant="before"]) .chip {
+    min-height: 22px;
+    padding: 0 9px;
+    gap: 4px;
+  }
+  .inspection {
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    bottom: 88px;
+    display: grid;
+    grid-template-columns: 78px 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 15px;
+    background: #F4F1EA;
+  }
+  .measure {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 78px;
+    height: 60px;
+    border-left: 1px solid var(--accent);
+    border-right: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 750;
+  }
+  .measure::before,
+  .measure::after {
+    content: "";
+    position: absolute;
+    left: -4px;
+    right: -4px;
+    height: 1px;
+    background: var(--accent);
+  }
+  .measure::before { top: 8px; }
+  .measure::after { bottom: 8px; }
+  .measure span {
+    padding: 3px 5px;
+    border-radius: 999px;
+    background: var(--surface);
+  }
+  .inspection strong {
+    display: block;
+    font-size: 13px;
+    line-height: 1.2;
+  }
+  .inspection p {
+    margin: 4px 0 0;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .action-bar {
+    position: absolute;
+    inset: auto 0 0;
+    height: 76px;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 10px 18px 12px;
+    border-top: 1px solid var(--hairline);
+    background: rgba(251, 250, 242, .97);
+  }
+  .action {
+    min-height: 44px;
+    flex: 1;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--tonal);
+    color: var(--accent);
+    font-size: 15px;
+    font-weight: 650;
+  }
+  .action.filled {
+    color: var(--surface);
+    background: var(--accent);
+  }
+  body[data-variant="ax"] .sheet { inset: 112px 0 0; }
+  body[data-variant="ax"] .eyebrow { font-size: 15px; }
+  body[data-variant="ax"] h1 { font-size: 39px; }
+  body[data-variant="ax"] .meta { font-size: 17px; }
+  body[data-variant="ax"] .photo { height: 112px; margin: 12px 0; }
+  body[data-variant="ax"] .copy { font-size: 19px; line-height: 1.25; margin-bottom: 12px; }
+  body[data-variant="ax"] .label { font-size: 14px; margin-bottom: 5px; }
+  body[data-variant="ax"] .chip-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+  body[data-variant="ax"] .chip {
+    max-width: 290px;
+    min-height: 22px;
+    font-size: 21px;
+    line-height: 1.18;
+    padding: 0 9px;
+    white-space: normal;
+    text-align: left;
+  }
+  body[data-variant="ax"] .chip svg {
+    width: 18px;
+    height: 18px;
+    flex-basis: 18px;
+  }
+  body[data-variant="ax"] .inspection {
+    bottom: 91px;
+    grid-template-columns: 68px 1fr;
+    padding: 9px 11px;
+  }
+  body[data-variant="ax"] .measure { width: 68px; height: 51px; }
+  body[data-variant="ax"] .inspection strong { font-size: 14px; }
+  body[data-variant="ax"] .inspection p { font-size: 12px; }
+  body[data-variant="ax"] .action { font-size: 18px; }
+</style>
+</head>
+<body>
+<main class="phone" aria-label="T1.12 chip geometry implementation evidence">
+  <div class="status"><span>9:41</span><span>● ◔ ▰</span></div>
+  <div class="pin" aria-hidden="true"></div>
+  <section class="sheet">
+    <div class="grabber"></div>
+    <div class="content">
+      <div class="eyebrow">Attraction</div>
+      <h1>Ghost Sign</h1>
+      <div class="meta">Soho · London</div>
+      <div class="photo" role="img" aria-label="Abstract place-card photo"></div>
+      <p class="copy">A hand-painted sign still visible above the old shopfront.</p>
+      <div class="label">Saved to</div>
+      <div class="chip-row">
+        <div class="chip">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2.2h8v7.6L6 7.4 2 9.8Z"/></svg>
+          <span>Date night</span>
+        </div>
+        <div class="chip tonal">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2.2h8v7.6L6 7.4 2 9.8Z"/></svg>
+          <span>London curiosities</span>
+        </div>
+      </div>
+    </div>
+    <aside class="inspection">
+      <div class="measure"><span id="measure"></span></div>
+      <div>
+        <strong id="evidence-title"></strong>
+        <p id="evidence-detail"></p>
+      </div>
+    </aside>
+    <div class="action-bar">
+      <div class="action filled">Saved</div>
+      <div class="action">Seen</div>
+      <div class="action">Hide</div>
+    </div>
+  </section>
+</main>
+<script>
+  const requested = new URLSearchParams(location.search).get("variant");
+  const variant = ["before", "after", "ax"].includes(requested) ? requested : "after";
+  document.body.dataset.variant = variant;
+
+  const measure = document.getElementById("measure");
+  const title = document.getElementById("evidence-title");
+  const detail = document.getElementById("evidence-detail");
+  if (variant === "before") {
+    measure.textContent = "44 pt";
+    title.textContent = "Before · button geometry inherited";
+    detail.textContent = "44pt capsule · 16pt sides · 5pt icon gap";
+  } else if (variant === "ax") {
+    measure.textContent = "AX";
+    title.textContent = "After · accessibility text";
+    detail.textContent = "Content grows; 9pt sides and 4pt gap remain. No clipping.";
+  } else {
+    measure.textContent = "22 pt";
+    title.textContent = "After · ratified chip geometry";
+    detail.textContent = "22pt capsule · 9pt sides · 4pt gap. The 44pt interaction target is intentionally invisible and proven by XCUITest.";
+  }
+</script>
+</body>
+</html>
