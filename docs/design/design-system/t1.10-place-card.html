@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T1.10 Snow place card — 390×844</title>
+<style>
+  @font-face {
+    font-family: "Newsreader";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader72pt-SemiBold.ttf");
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 390px; height: 844px; overflow: hidden; }
+  body {
+    --ground: #F4F1EA;
+    --surface: #FBFAF2;
+    --road: #D7CBB2;
+    --ink: #2B2823;
+    --muted: #6B675F;
+    --accent: #0A6B5C;
+    --tonal: rgba(10, 107, 92, 0.12);
+    color: var(--ink);
+    background: var(--ground);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  }
+  .phone {
+    position: relative;
+    width: 390px;
+    height: 844px;
+    background:
+      linear-gradient(33deg, transparent 0 28%, rgba(215, 203, 178, .86) 28% 30%, transparent 30% 100%),
+      linear-gradient(144deg, transparent 0 48%, rgba(215, 203, 178, .72) 48% 50%, transparent 50% 100%),
+      radial-gradient(circle at 76% 14%, #c9dbe2 0 10%, transparent 10.5%),
+      var(--ground);
+  }
+  .status {
+    position: absolute;
+    inset: 15px 21px auto;
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    font-weight: 650;
+  }
+  .map-label {
+    position: absolute;
+    top: 70px;
+    left: 18px;
+    padding: 7px 11px;
+    color: var(--muted);
+    background: rgba(251, 250, 242, .9);
+    border-radius: 999px;
+    font-size: 12px;
+    box-shadow: 0 2px 10px rgba(43, 40, 35, .1);
+  }
+  .pin {
+    position: absolute;
+    top: 117px;
+    left: 278px;
+    width: 31px;
+    height: 31px;
+    border: 4px solid var(--surface);
+    border-radius: 50% 50% 50% 8px;
+    background: var(--accent);
+    box-shadow: 0 4px 10px rgba(43, 40, 35, .18);
+    transform: rotate(-45deg);
+  }
+  .pin::after {
+    content: "";
+    position: absolute;
+    inset: 7px;
+    border-radius: 50%;
+    background: var(--surface);
+  }
+  .sheet {
+    position: absolute;
+    inset: 169px 0 0;
+    overflow: hidden;
+    border-radius: 22px 22px 0 0;
+    background: var(--surface);
+    box-shadow: 0 -8px 28px rgba(43, 40, 35, .13);
+  }
+  .grabber {
+    width: 36px;
+    height: 5px;
+    margin: 8px auto 5px;
+    border-radius: 4px;
+    background: rgba(107, 103, 95, .38);
+  }
+  .content {
+    height: 585px;
+    overflow: hidden;
+    padding: 4px 18px 120px;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 36px;
+  }
+  .context {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .more {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    font-size: 21px;
+    letter-spacing: 2px;
+  }
+  h1 {
+    margin: 2px 0 6px;
+    font: 650 33px/1.03 "Newsreader", Georgia, serif;
+    letter-spacing: -.02em;
+  }
+  .type {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 570;
+  }
+  .swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    background: #B45D38;
+  }
+  .photo {
+    width: 354px;
+    height: 236px;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--road);
+  }
+  .photo svg { display: block; width: 100%; height: 100%; }
+  .caption {
+    margin: 7px 0 14px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.3;
+  }
+  .summary {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.42;
+  }
+  .source {
+    display: inline-block;
+    margin-top: 12px;
+    color: var(--accent);
+    font-size: 15px;
+    font-weight: 620;
+    text-decoration: none;
+  }
+  .fade {
+    position: absolute;
+    inset: auto 0 92px;
+    height: 38px;
+    background: linear-gradient(transparent, var(--surface));
+  }
+  .actions {
+    position: absolute;
+    inset: auto 0 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    padding: 10px 18px 17px;
+    background: var(--surface);
+  }
+  .button {
+    min-height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    font-size: 15px;
+    font-weight: 630;
+  }
+  .tonal { color: var(--accent); background: var(--tonal); }
+  .filled { color: var(--surface); background: var(--accent); }
+  .quiet { color: var(--muted); background: transparent; }
+  .home {
+    position: absolute;
+    inset: auto 128px 7px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--ink);
+  }
+</style>
+</head>
+<body>
+<main class="phone" aria-label="Default-size Snow place-card render">
+  <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
+  <div class="map-label">Making Tracks · Norwich</div>
+  <div class="pin" aria-hidden="true"></div>
+
+  <section class="sheet" aria-label="Place card">
+    <div class="grabber"></div>
+    <div class="content">
+      <div class="header">
+        <span class="context">Nearby story</span>
+        <span class="more" aria-label="More">•••</span>
+      </div>
+      <h1>Colman’s Carrow Works</h1>
+      <div class="type"><span class="swatch"></span>Industrial heritage</div>
+      <div class="photo" aria-label="Historic view of the Carrow Works">
+        <svg viewBox="0 0 720 480" role="img" aria-label="Historic factory illustration">
+          <defs>
+            <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#c9dbe2"/><stop offset="1" stop-color="#e9e2d3"/></linearGradient>
+            <linearGradient id="brick" x2="0" y2="1"><stop stop-color="#a94f39"/><stop offset="1" stop-color="#71382d"/></linearGradient>
+          </defs>
+          <rect width="720" height="480" fill="url(#sky)"/>
+          <rect y="348" width="720" height="132" fill="#83755c"/>
+          <path d="M0 361 720 309v45L0 406z" fill="#d7cbb2"/>
+          <g fill="url(#brick)" stroke="#60352c" stroke-width="5">
+            <path d="M61 176h316v183H61z"/>
+            <path d="M377 235h281v124H377z"/>
+            <path d="M105 122h68v237h-68z"/>
+          </g>
+          <path d="M105 122h68l-34-57z" fill="#7d4134"/>
+          <g fill="#f3deae" stroke="#69473b" stroke-width="4">
+            <path d="M91 217h46v59H91zM164 217h46v59h-46zM237 217h46v59h-46zM310 217h46v59h-46z"/>
+            <path d="M409 268h54v54h-54zM493 268h54v54h-54zM577 268h54v54h-54z"/>
+          </g>
+          <path d="M206 176v-54h142v54" fill="#f0d365" stroke="#60352c" stroke-width="5"/>
+          <text x="277" y="158" text-anchor="middle" fill="#71382d" font-family="Georgia,serif" font-size="29" font-weight="700">COLMAN’S</text>
+          <g opacity=".22" fill="#fbfaf2"><circle cx="604" cy="88" r="58"/><circle cx="630" cy="119" r="45"/></g>
+        </svg>
+      </div>
+      <p class="caption">Carrow Works from the river, c. 1920 · Norfolk Record Office</p>
+      <p class="summary">For more than a century, the mustard works shaped this bend in the Wensum—and the lives of thousands who crossed its gates.</p>
+      <a class="source" href="#">Read the source article ↗</a>
+    </div>
+    <div class="fade"></div>
+    <div class="actions" aria-label="Place actions">
+      <div class="button tonal">Save</div>
+      <div class="button filled">Seen</div>
+      <div class="button quiet">Hide</div>
+    </div>
+  </section>
+  <div class="home"></div>
+</main>
+</body>
+</html>
