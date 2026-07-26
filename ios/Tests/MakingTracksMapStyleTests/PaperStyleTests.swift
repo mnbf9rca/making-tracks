@@ -1,7 +1,21 @@
 import XCTest
+import DesignSystem
 @testable import MakingTracksMapStyle
 
 final class PaperStyleTests: XCTestCase {
+    func testSnowThemeUsesTheMaterialSheetMapRows() {
+        let tokens = MaterialTheme.snow.tokens
+
+        XCTAssertEqual(MapTheme.snow.background, tokens.background.mapStyleString)
+        XCTAssertEqual(MapTheme.snow.land, tokens.ground.mapStyleString)
+        XCTAssertEqual(MapTheme.snow.parks, tokens.park.mapStyleString)
+        XCTAssertEqual(MapTheme.snow.water, tokens.water.mapStyleString)
+        XCTAssertEqual(MapTheme.snow.roads, tokens.road.mapStyleString)
+        XCTAssertEqual(MapTheme.snow.boundaries, tokens.boundaries.mapStyleString)
+        XCTAssertEqual(MapTheme.snow.labels, tokens.labels.mapStyleString)
+        XCTAssertEqual(MapTheme.snow.labelHalo, tokens.labelHalo.mapStyleString)
+    }
+
     func testStyleIsV8WithPmtilesVectorSource() throws {
         let style = paperBasemapStyle(pmtilesURL: "pmtiles://https://tiles.making-tracks.app/malaysia/20260716T155409Z/malaysia.pmtiles")
         guard case let .object(root) = style else { return XCTFail("root not object") }

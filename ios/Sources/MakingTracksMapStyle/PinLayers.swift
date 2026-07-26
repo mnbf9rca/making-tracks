@@ -1,7 +1,8 @@
+import DesignSystem
 import MakingTracksData
 
 public enum PinLayers {
-    public static let pinColor = "#E4572E"
+    public static let pinColor = PinTokenBlock.constant.pin.mapStyleString
     public static let hiddenPinColor = "#767B82"
     public static let sourceID = "pins"
     public static let baseBadgeOffset = 8.0

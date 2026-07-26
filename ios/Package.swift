@@ -28,7 +28,7 @@ let package = Package(
         ),
         .target(
             name: "MakingTracksMapStyle",
-            dependencies: ["MakingTracksData"],
+            dependencies: ["MakingTracksData", "DesignSystem"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .target(
@@ -52,7 +52,7 @@ let package = Package(
         ),
         .testTarget(
             name: "MakingTracksMapStyleTests",
-            dependencies: ["MakingTracksMapStyle", "MakingTracksData"],
+            dependencies: ["MakingTracksMapStyle", "MakingTracksData", "DesignSystem"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
