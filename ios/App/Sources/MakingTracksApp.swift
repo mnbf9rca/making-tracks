@@ -35,6 +35,7 @@ struct MakingTracksApp: App {
     private static let simulatedLatitude = argumentValue("--ui-testing-location-latitude").flatMap(Double.init)
     private static let simulatedLongitude = argumentValue("--ui-testing-location-longitude").flatMap(Double.init)
     private static let uiTestingOfflineProgress = argumentValue("--ui-testing-offline-progress").flatMap(Double.init)
+    private static let uiTestingOfflineWaiting = arguments.contains("--ui-testing-offline-waiting")
     private static let uiTestingCoverageBBoxes = coverageBBoxArguments()
     private static let debugHideFixtureChrome = arguments.contains("--ui-testing-hide-fixture-chrome")
     private static let debugUseDenseFixturePins = arguments.contains("--ui-testing-dense-pins")
@@ -57,6 +58,7 @@ struct MakingTracksApp: App {
     private static let simulatedLatitude: Double? = nil
     private static let simulatedLongitude: Double? = nil
     private static let uiTestingOfflineProgress: Double? = nil
+    private static let uiTestingOfflineWaiting = false
     private static let uiTestingCoverageBBoxes: [CoverageBBox] = []
     private static let debugHideFixtureChrome = false
     private static let debugUseDenseFixturePins = false
@@ -348,7 +350,10 @@ struct MakingTracksApp: App {
 
     private static var offlineDownloadProgress: OfflineDownloadProgress? {
         guard isFixtureMap, let uiTestingOfflineProgress else { return nil }
-        return OfflineDownloadProgress(fractionComplete: uiTestingOfflineProgress)
+        return OfflineDownloadProgress(
+            fractionComplete: uiTestingOfflineProgress,
+            isWaitingForConnectivity: uiTestingOfflineWaiting
+        )
     }
 
     private static func resetUITestingThemeIfNeeded() {

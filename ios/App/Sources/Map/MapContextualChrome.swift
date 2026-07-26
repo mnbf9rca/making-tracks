@@ -11,7 +11,9 @@ struct MapDownloadProgressToast: View {
                 ? "Offline maps \(progress.statusText)"
                 : "Offline maps",
             surfaceAction: MaterialToastSurfaceAction(
-                accessibilityLabel: "Offline maps download",
+                accessibilityLabel: progress.isWaitingForConnectivity
+                    ? "Offline maps download, \(progress.statusText)"
+                    : "Offline maps download",
                 accessibilityHint: "Opens Offline maps",
                 accessibilityIdentifier: "map.download-progress",
                 action: onOpenOfflineMaps

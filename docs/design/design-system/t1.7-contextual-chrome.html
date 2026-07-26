@@ -33,10 +33,10 @@
   .toast-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
   .message { min-width: 0; flex: 1; font-size: 17px; line-height: 1.25; }
   .icon { flex: none; display: grid; width: 22px; height: 22px; place-items: center; color: var(--accent); }
-  .action { flex: none; min-width: 44px; height: 44px; display: grid; place-items: center; border-radius: 9px; font-size: 15px; font-weight: 600; white-space: nowrap; }
+  .action { flex: none; min-width: 44px; height: 44px; display: grid; place-items: center; border-radius: 999px; font-size: 15px; font-weight: 600; white-space: nowrap; }
   .quiet { color: var(--muted); }
-  .filled { padding: 0 12px; background: var(--accent); color: var(--accent-contrast); }
-  .tonal { padding: 0 12px; background: rgba(10,107,92,.12); color: var(--accent); }
+  .filled { padding: 0 16px; background: var(--accent); color: var(--accent-contrast); }
+  .tonal { padding: 0 16px; background: rgba(10,107,92,.12); color: var(--accent); }
   .dismiss { color: var(--ink); font-size: 23px; font-weight: 400; }
   .download { display: grid; gap: 8px; }
   .progress-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
@@ -69,7 +69,7 @@
   <div class="corner locate" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24"><circle class="stroke" cx="12" cy="12" r="5"/><path class="stroke" d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg></div>
   <div class="toast-stack">
     <section class="state" aria-label="Offline maps download state">
-      <div class="state-label">Offline maps · whole surface opens settings</div>
+      <div class="state-label">Offline maps · whole surface opens Offline maps</div>
       <div class="toast download">
         <div class="toast-row"><span class="icon"><svg width="22" height="22" viewBox="0 0 24 24"><circle class="stroke" cx="12" cy="12" r="9"/><path class="stroke" d="M12 6v9m-3-3 3 3 3-3M8 18h8"/></svg></span><div class="progress-head message"><span>Offline maps</span><span class="count">42%</span></div></div>
         <div class="track"><div class="fill"></div></div>
@@ -81,7 +81,7 @@
     </section>
     <section class="state" aria-label="Nearby prompt state">
       <div class="state-label">Nearby prompt · filled response + dismiss</div>
-      <div class="toast"><div class="toast-row"><div class="message">You&rsquo;re near a place</div><div class="action filled">Seen it</div><div class="action dismiss" aria-label="Dismiss nearby prompt">×</div></div></div>
+      <div class="toast"><div class="toast-row"><div class="message">You&#39;re near Ghost Sign — seen it?</div><div class="action filled">Seen it</div><div class="action dismiss" aria-label="Dismiss nearby prompt">×</div></div></div>
     </section>
     <section class="state" aria-label="Hidden undo state">
       <div class="state-label">Hidden place · tonal undo</div>
