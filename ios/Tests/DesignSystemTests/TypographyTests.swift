@@ -12,6 +12,7 @@ final class TypographyTests: XCTestCase {
             .heroTitle,
             .evocativeSubline,
             .button,
+            .action,
             .label,
             .metadata,
             .body,

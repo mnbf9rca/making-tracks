@@ -527,6 +527,19 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
+    func testLocationSettingsGearOwnsInlineIconRole() throws {
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: MapLocationOffToast(onOpenSettings: {}).body
+                )
+            ),
+            .inline
+        )
+    }
+
+    @MainActor
     func testMapDoorBarRendersAtStandardAndAX5DynamicType() {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
             let renderer = ImageRenderer(
@@ -540,10 +553,11 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
-    func testTracksDoorHeroIconRendersAtRatifiedTwentyTwoPointScale() throws {
+    func testTracksDoorHeroIconUsesHeroRole() throws {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
             let actual = try tracksDoorRenderedSize(
-                TracksDoorHeroIconGlyph(systemName: "figure.walk"),
+                TracksDoorHeroIconGlyph(systemName: "figure.walk")
+                    .font(.largeTitle),
                 dynamicTypeSize: dynamicTypeSize
             )
             let expected = try tracksDoorRenderedSize(
@@ -557,15 +571,14 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
-    func testTracksDoorNewListIconUsesRatifiedButtonScale() throws {
+    func testTracksDoorNewListIconUsesInlineRole() throws {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
             let actual = try tracksDoorRenderedSize(
                 TracksDoorNewListIcon(systemName: "plus"),
                 dynamicTypeSize: dynamicTypeSize
             )
             let expected = try tracksDoorRenderedSize(
-                Image(systemName: "plus")
-                    .font(Typography.font(for: .button)),
+                RatifiedTracksDoorInlineIcon(systemName: "plus"),
                 dynamicTypeSize: dynamicTypeSize
             )
 
@@ -575,7 +588,42 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
-    func testTracksDoorRetraceCueUsesRatifiedTypeGapAndChevronScale() throws {
+    func testTracksDoorIconsWireRatifiedRolesAtPointOfUse() throws {
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: TracksDoorHeroIconGlyph(
+                        systemName: "figure.walk"
+                    ).body
+                )
+            ),
+            .hero
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: TracksDoorNewListIcon(
+                        systemName: "plus"
+                    ).body
+                )
+            ),
+            .inline
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: TracksDoorRetraceCue().body
+                )
+            ),
+            .accessory
+        )
+    }
+
+    @MainActor
+    func testTracksDoorRetraceCueUsesRatifiedActionRoleGapAndChevronScale() throws {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
             let actual = try tracksDoorRenderedSize(
                 TracksDoorRetraceCue(),
@@ -3852,11 +3900,52 @@ private func appConstructedRegionIndexWithMalformedSearchCompactPath() -> Region
     )
 }
 
+private func firstDescendant<Descendant>(
+    of type: Descendant.Type,
+    in value: Any
+) -> Descendant? {
+    if let value = value as? Descendant {
+        return value
+    }
+    for child in Mirror(reflecting: value).children {
+        if let descendant = firstDescendant(
+            of: type,
+            in: child.value
+        ) {
+            return descendant
+        }
+    }
+    return nil
+}
+
 private struct RatifiedTracksDoorHeroIcon: View {
     let systemName: String
 
-    /// ia-doors.html frame 3 ratifies the hero glyph at a 22pt scale.
-    @ScaledMetric(relativeTo: .body) private var pointSize = 22.0
+    @ScaledMetric(relativeTo: .headline) private var pointSize = 22.0
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: pointSize, weight: .medium))
+            .symbolRenderingMode(.monochrome)
+    }
+}
+
+private struct RatifiedTracksDoorInlineIcon: View {
+    let systemName: String
+
+    @ScaledMetric(relativeTo: .subheadline) private var pointSize = 15.0
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: pointSize, weight: .medium))
+            .symbolRenderingMode(.monochrome)
+    }
+}
+
+private struct RatifiedTracksDoorAccessoryIcon: View {
+    let systemName: String
+
+    @ScaledMetric(relativeTo: .caption2) private var pointSize = 11.0
 
     var body: some View {
         Image(systemName: systemName)
@@ -3866,17 +3955,14 @@ private struct RatifiedTracksDoorHeroIcon: View {
 }
 
 private struct RatifiedTracksDoorRetraceCue: View {
-    /// ia-doors.html .action ratifies 13pt/600 type and a 3pt gap.
-    @ScaledMetric(relativeTo: .footnote) private var pointSize = 13.0
-
+    /// R12 / ia-doors.html:428-431 and :753 ratify SF 13/600 type and a 3pt gap.
     var body: some View {
         HStack(spacing: 3) {
             Text("Retrace")
-            Image(systemName: "chevron.right")
-                .font(Typography.font(for: .label))
+            RatifiedTracksDoorAccessoryIcon(systemName: "chevron.right")
                 .accessibilityHidden(true)
         }
-        .font(.system(size: pointSize, weight: .semibold))
+        .font(.system(.footnote, design: .default, weight: .semibold))
         .fixedSize(horizontal: true, vertical: true)
     }
 }

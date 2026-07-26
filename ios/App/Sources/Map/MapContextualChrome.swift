@@ -34,7 +34,7 @@ struct MapLocationOffToast: View {
         ) {
             Button(action: onOpenSettings) {
                 Image(systemName: "gearshape.fill")
-                    .symbolRenderingMode(.monochrome)
+                    .iconRole(.inline)
             }
             .accessibilityLabel("Settings")
             .accessibilityHint("Opens location settings")
