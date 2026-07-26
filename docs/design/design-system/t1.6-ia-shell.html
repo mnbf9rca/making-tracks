@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=390, initial-scale=1">
+<title>T1.6 IA shell implementation evidence</title>
+<style>
+  @font-face {
+    font-family: "Newsreader";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader16pt-Bold.ttf");
+    font-weight: 700;
+  }
+  @font-face {
+    font-family: "Newsreader";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader16pt-Italic.ttf");
+    font-style: italic;
+  }
+  * { box-sizing: border-box; }
+  :root {
+    --ground: #F4F1EA;
+    --water: #C9DBE2;
+    --park: #DCE5D4;
+    --road: #C9BFA8;
+    --road-minor: #DDD5C2;
+    --surface: #FBFAF2;
+    --surface-raised: #FFFFFF;
+    --ink: #2B2823;
+    --muted: #6B675F;
+    --accent: #0A6B5C;
+    --hairline: rgba(43, 40, 35, 0.14);
+    --shadow: rgba(43, 40, 35, 0.14);
+    --scrim: rgba(43, 40, 35, 0.35);
+    --pin: #E4572E;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    --serif: "Newsreader", Georgia, serif;
+  }
+  html, body {
+    margin: 0;
+    width: 390px;
+    height: 2532px;
+    overflow: hidden;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+  }
+  .frame {
+    position: relative;
+    width: 390px;
+    height: 844px;
+    overflow: hidden;
+    background: var(--ground);
+  }
+  .frame + .frame { border-top: 1px solid var(--ink); }
+  .map {
+    position: absolute;
+    inset: 0;
+    width: 390px;
+    height: 844px;
+  }
+  .status {
+    position: absolute;
+    z-index: 9;
+    top: 10px;
+    left: 24px;
+    right: 24px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 650;
+  }
+  .state-label {
+    position: absolute;
+    z-index: 8;
+    top: 48px;
+    left: 16px;
+    padding: 6px 9px;
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+  .locate {
+    position: absolute;
+    z-index: 8;
+    right: 16px;
+    bottom: 156px;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--hairline);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--accent);
+    box-shadow: 0 3px 8px var(--shadow);
+  }
+  .doors {
+    position: absolute;
+    z-index: 8;
+    left: 16px;
+    right: 16px;
+    bottom: 46px;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+  }
+  .door {
+    min-width: 112px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 18px;
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: 0 3px 8px var(--shadow);
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .door svg { color: var(--accent); }
+  .attribution {
+    position: absolute;
+    z-index: 8;
+    left: 0;
+    right: 0;
+    bottom: 18px;
+    color: var(--muted);
+    font-size: 11px;
+    text-align: center;
+  }
+  .scrim {
+    position: absolute;
+    z-index: 10;
+    inset: 0;
+    background: var(--scrim);
+  }
+  .sheet {
+    position: absolute;
+    z-index: 11;
+    top: 230px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 10px 16px 24px;
+    border-radius: 22px 22px 0 0;
+    background: var(--surface);
+    box-shadow: 0 -6px 18px rgba(43, 40, 35, 0.16);
+  }
+  .grabber {
+    width: 36px;
+    height: 5px;
+    margin: 0 auto;
+    border-radius: 999px;
+    background: var(--hairline);
+  }
+  .close {
+    width: 44px;
+    height: 44px;
+    margin-left: auto;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    font-size: 25px;
+    font-weight: 300;
+  }
+  .sheet h1 {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: 34px;
+    line-height: 1.08;
+  }
+  .sheet .subline {
+    margin: 5px 0 18px;
+    color: var(--muted);
+    font-family: var(--serif);
+    font-size: 18px;
+    font-style: italic;
+  }
+  .row {
+    min-height: 84px;
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+  }
+  .row.raised {
+    margin-bottom: 8px;
+    border-radius: 14px;
+    background: var(--surface-raised);
+  }
+  .row.hairline { border-bottom: 1px solid var(--hairline); }
+  .row-icon {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    color: var(--accent);
+  }
+  .row-title {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+  .row-subtitle {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.3;
+  }
+  svg.icon {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+</style>
+</head>
+<body>
+
+<section class="frame" aria-label="Map home at 390 by 844">
+  <svg class="map" viewBox="0 0 390 844" aria-hidden="true">
+    <rect width="390" height="844" fill="var(--ground)"/>
+    <path d="M-25 295 C50 250 112 278 164 307 C238 348 280 289 425 258 L425 388 C320 376 270 424 204 405 C115 380 63 358 -25 414Z" fill="var(--water)"/>
+    <path d="M250 40 C328 67 348 133 333 208 C321 266 355 306 410 326 L410 0 L250 0Z" fill="var(--park)"/>
+    <g fill="none" stroke-linecap="round">
+      <path d="M-35 175 C62 204 146 194 227 142 C292 100 340 109 425 152" stroke="var(--road)" stroke-width="17"/>
+      <path d="M35 875 C78 708 170 614 239 519 C305 428 332 284 355 -24" stroke="var(--road)" stroke-width="16"/>
+      <path d="M-20 478 C84 448 157 470 238 517 C303 554 350 577 416 570" stroke="var(--road-minor)" stroke-width="9"/>
+      <path d="M32 646 C93 596 147 617 203 574 C256 533 300 554 354 500" stroke="#2D8C83" stroke-width="6" stroke-dasharray="1 9"/>
+    </g>
+    <g fill="var(--pin)" stroke="#fff" stroke-width="1.5">
+      <circle cx="72" cy="211" r="10"/><circle cx="166" cy="390" r="10"/>
+      <circle cx="302" cy="524" r="10"/><circle cx="93" cy="590" r="10"/>
+    </g>
+  </svg>
+  <div class="status"><span>9:41</span><span>● ◔ ▰</span></div>
+  <div class="state-label">HOME · 390×844 · NORTH-UP</div>
+  <div class="locate" aria-label="Locate me">
+    <svg class="icon" viewBox="0 0 24 24"><path d="M20 4 5 10l6 3 3 6Z"/></svg>
+  </div>
+  <div class="doors">
+    <div class="door">
+      <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>
+      World
+    </div>
+    <div class="door">
+      <svg class="icon" viewBox="0 0 24 24"><path d="M8 4c2 1 3 4 2 6S6 12 5 10 5 5 8 4ZM16 12c2 1 3 4 2 6s-4 2-5 0 0-5 3-6Z"/></svg>
+      Tracks
+    </div>
+  </div>
+  <div class="attribution">© OpenStreetMap</div>
+</section>
+
+<section class="frame" aria-label="World door open at 390 by 844">
+  <svg class="map" viewBox="0 0 390 844" aria-hidden="true">
+    <rect width="390" height="844" fill="var(--ground)"/>
+    <path d="M-25 295 C50 250 112 278 164 307 C238 348 280 289 425 258 L425 388 C320 376 270 424 204 405 C115 380 63 358 -25 414Z" fill="var(--water)"/>
+    <path d="M-35 175 C62 204 146 194 227 142 C292 100 340 109 425 152" fill="none" stroke="var(--road)" stroke-width="17"/>
+  </svg>
+  <div class="status"><span>9:41</span><span>● ◔ ▰</span></div>
+  <div class="state-label">WORLD OPEN · 390×844</div>
+  <div class="scrim"></div>
+  <article class="sheet">
+    <div class="grabber"></div>
+    <div class="close" aria-label="Close">×</div>
+    <h1>World</h1>
+    <p class="subline">what’s out there</p>
+    <div class="row raised">
+      <div class="row-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 12h3M11 12h9M4 17h8M16 17h4"/><circle cx="16" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="14" cy="17" r="2"/></svg></div>
+      <div><div class="row-title">Scope</div><div class="row-subtitle">What the map shows</div></div>
+    </div>
+    <div class="row hairline">
+      <div class="row-icon"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/></svg></div>
+      <div><div class="row-title">Settings</div><div class="row-subtitle">Appearance, data, location, and storage</div></div>
+    </div>
+    <div class="row hairline">
+      <div class="row-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M5 4h6a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3ZM19 4h-5v16h2a3 3 0 0 0 3-3Z"/></svg></div>
+      <div><div class="row-title">About</div><div class="row-subtitle">The story, privacy, and licences</div></div>
+    </div>
+  </article>
+</section>
+
+<section class="frame" aria-label="Tracks door open at 390 by 844">
+  <svg class="map" viewBox="0 0 390 844" aria-hidden="true">
+    <rect width="390" height="844" fill="var(--ground)"/>
+    <path d="M-25 295 C50 250 112 278 164 307 C238 348 280 289 425 258 L425 388 C320 376 270 424 204 405 C115 380 63 358 -25 414Z" fill="var(--water)"/>
+    <path d="M-35 175 C62 204 146 194 227 142 C292 100 340 109 425 152" fill="none" stroke="var(--road)" stroke-width="17"/>
+  </svg>
+  <div class="status"><span>9:41</span><span>● ◔ ▰</span></div>
+  <div class="state-label">TRACKS OPEN · 390×844</div>
+  <div class="scrim"></div>
+  <article class="sheet">
+    <div class="grabber"></div>
+    <div class="close" aria-label="Close">×</div>
+    <h1>Tracks</h1>
+    <p class="subline">your story through the world</p>
+    <div class="row raised">
+      <div class="row-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M8 4c2 1 3 4 2 6S6 12 5 10 5 5 8 4ZM16 12c2 1 3 4 2 6s-4 2-5 0 0-5 3-6Z"/></svg></div>
+      <div><div class="row-title">My tracks</div><div class="row-subtitle">Places you’ve seen</div></div>
+    </div>
+    <div class="row hairline">
+      <div class="row-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M6 6h14M6 12h14M6 18h14"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg></div>
+      <div><div class="row-title">Lists</div><div class="row-subtitle">Saved places and collections</div></div>
+    </div>
+  </article>
+</section>
+
+</body>
+</html>
