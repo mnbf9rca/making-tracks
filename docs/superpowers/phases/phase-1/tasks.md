@@ -680,7 +680,7 @@ Host tests only unless you touch `project.yml`. No render — nothing visual cha
 - **Depends on:** **T1.8 merged** — this migrates that door's icons off their interim path, so it edits files T1.8 owns until it lands
 - **Owner:** codex4
 - **Review tier:** `sourcery` + `opus`
-- **Status:** tests green — implementation `7859e76e`; 464 host tests, 0 failures; app-target gate queued on the fleet simulator lock
+- **Status:** ready for review — implementation `b5480fa8`; 472 host tests and 288 app-target gate tests, 0 failures; warnings-as-errors Release build green
 - **Branch:** `wp-508-icon-role` — cut from a freshly-fetched `ios`
 - **Contracts consumed:** T1.2 font roles, T1.3 control styles, T1.8's door surfaces.
 
