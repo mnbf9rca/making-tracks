@@ -479,9 +479,9 @@ Full gate plus renders of each of the four states.
 - **Branch:** `wp-470-tracks-door-unify-266` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC21 (My tracks and Lists parts), AC22 (**you inherit it**: T1.6 wired this door provisionally, so you are the task that can silently drop a destination), AC24, AC28, plus AC5 (Newsreader titles), AC12 (the progress bar), AC15/AC16 (what you extract from `MapScreen.swift` as this surface adopts), AC26/AC27/AC29
 - **Depends on:** T1.6, T1.4, **T1.2** — the hero and list-row titles are story-voice text, so this task needs the font-role API, which is not a transitive dependency of T1.6 or T1.4
-- **Owner:** unclaimed
+- **Owner:** codex3
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed
+- **Status:** PR open — [#506](https://github.com/mnbf9rca/making-tracks/pull/506), branch `wp-470-tracks-door-unify-266`, review-fix code head `6bdfc9e4` gated at `006e1ef9`; Release build; 454 host tests, 208 app tests and 76 UI tests, 0 failures
 - **Contracts consumed:** T1.1 tokens, T1.2 font roles, T1.4 rows + progress component, T1.6's door surface.
 - **Ruled renders:** `coherence.png` frame 4, `ia-doors.png` frame 3
 

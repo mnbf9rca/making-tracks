@@ -649,7 +649,6 @@ struct ViewportCameraRequest: Sendable, Equatable {
 }
 
 enum MapShellDestination: Hashable {
-    case lists
     case listDetail(Int64)
     case tracks
     case offlineMaps
@@ -722,6 +721,11 @@ final class AppShellModel {
         listDetailVisitFilter = visitFilter
         deepLinkDestination = .listDetail(listID)
         presentedDoor = .tracks
+    }
+
+    func prepareTracksHistory() {
+        tracksFocusPlaceID = nil
+        listDetailVisitFilter = .all
     }
 
     private func prepareDoorRoot(_ door: MapDoor) {
@@ -2201,10 +2205,7 @@ enum MapEmptyRegionSurface: Equatable {
 
 extension AppShellModel {
     func openListsDeepLink() {
-        tracksFocusPlaceID = nil
-        listDetailVisitFilter = .all
-        deepLinkDestination = .lists
-        presentedDoor = .tracks
+        openTracksDoor()
     }
 
     func openTracksDeepLink(focusingPlaceID placeID: String? = nil) {
@@ -5021,7 +5022,10 @@ private struct MapDoorSheetIntegration: View {
         MapDoorSheet(
             door: door,
             deepLinkDestination: shell.deepLinkDestination,
-            openScope: openScope
+            model: model,
+            openScope: openScope,
+            prepareTracksHistory: shell.prepareTracksHistory,
+            onListDeleted: onListDeleted
         ) { destination in
             destinationView(destination)
         }
@@ -5030,14 +5034,6 @@ private struct MapDoorSheetIntegration: View {
     @ViewBuilder
     private func destinationView(_ destination: MapShellDestination) -> some View {
         switch destination {
-        case .lists:
-            ListsView(
-                model: model,
-                onShowOnMap: showListOnMapAndDismiss,
-                onListRenamed: onListRenamed,
-                onListDeleted: onListDeleted,
-                onDone: { dismiss() }
-            )
         case let .listDetail(listID):
             ListDetailDeepLinkView(
                 model: model,
@@ -5179,162 +5175,6 @@ private struct TrackListDetailDeepLinkView: View {
         }
         list = await model.lists().first { $0.isSystem && $0.kind == PlaceList.trackKind }
         didLoad = true
-    }
-}
-
-private struct ListsView: View {
-    let model: MapScreenModel?
-    let onShowOnMap: @MainActor (PlaceList, TracksVisitFilter) -> Void
-    let onListRenamed: @MainActor (PlaceList) -> Void
-    let onListDeleted: @MainActor (Int64) -> Void
-    let onDone: @MainActor () -> Void
-
-    @State private var lists: [PlaceList] = []
-    @State private var progress: [Int64: ListProgress] = [:]
-    @State private var draftName = ""
-    @State private var actionError: String?
-    @State private var pendingDeleteList: PlaceList?
-
-    var body: some View {
-        List {
-            Section {
-                HStack(spacing: 8) {
-                    TextField("New list", text: $draftName)
-                        .textInputAutocapitalization(.words)
-                        .accessibilityIdentifier("lists.create.name")
-                    Button {
-                        Task { await createList() }
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("Create list")
-                    .accessibilityIdentifier("lists.create")
-                }
-                if let actionError {
-                    Text(verbatim: actionError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .accessibilityIdentifier("lists.error")
-                }
-            }
-
-            Section {
-                ForEach(lists) { list in
-                    NavigationLink {
-                        ListDetailView(
-                            model: model,
-                            list: list,
-                            onChanged: { Task { await reload() } },
-                            onShowOnMap: onShowOnMap,
-                            onListRenamed: onListRenamed,
-                            onDone: onDone
-                        )
-                    } label: {
-                        listRow(list)
-                    }
-                    .accessibilityIdentifier("lists.row.\(list.id ?? -1)")
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        if !list.isSystem, let id = list.id {
-                            Button("Delete", role: .destructive) {
-                                pendingDeleteList = list
-                            }
-                            .accessibilityIdentifier("lists.delete.\(id)")
-                        }
-                    }
-                }
-            }
-        }
-        .navigationTitle("Lists")
-        .task { await reload() }
-        .refreshable { await reload() }
-        .toolbar {
-            Button {
-                Task { await reload() }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .accessibilityLabel("Refresh lists")
-        }
-        .confirmationDialog(
-            pendingDeleteList.map { "Delete \($0.name)?" } ?? "Delete list?",
-            isPresented: Binding(
-                get: { pendingDeleteList != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        pendingDeleteList = nil
-                    }
-                }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                guard let id = pendingDeleteList?.id else { return }
-                pendingDeleteList = nil
-                Task { await deleteList(id: id) }
-            }
-            .accessibilityIdentifier("lists.delete.confirm")
-            Button("Cancel", role: .cancel) {
-                pendingDeleteList = nil
-            }
-        }
-    }
-
-    private func listRow(_ list: PlaceList) -> some View {
-        let p = progress[list.id ?? -1] ?? ListProgress(visited: 0, total: 0)
-        return HStack(spacing: 12) {
-            Image(systemName: list.isSystem ? "bookmark.fill" : "list.bullet")
-                .frame(width: 24)
-                .foregroundStyle(list.isSystem ? Color.accentColor : Color.secondary)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(verbatim: list.name)
-                    .font(.body)
-                Text(verbatim: ListsCopy.progress(visited: p.visited, total: p.total))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(minHeight: 44, alignment: .leading)
-    }
-
-    @MainActor
-    private func reload() async {
-        guard let model else { return }
-        let nextLists = await model.lists()
-        var nextProgress: [Int64: ListProgress] = [:]
-        for list in nextLists {
-            guard let id = list.id else { continue }
-            nextProgress[id] = await model.listProgress(listID: id)
-        }
-        lists = nextLists
-        progress = nextProgress
-    }
-
-    @MainActor
-    private func createList() async {
-        guard let model else { return }
-        actionError = nil
-        do {
-            _ = try await model.createList(named: draftName)
-            draftName = ""
-            actionError = nil
-            await reload()
-        } catch {
-            actionError = ListsCopy.listNameCreateFailureMessage(for: error, draftName: draftName)
-        }
-    }
-
-    @MainActor
-    private func deleteList(id: Int64) async {
-        guard let model else { return }
-        do {
-            try await model.deleteList(id: id)
-            actionError = nil
-            await reload()
-            onListDeleted(id)
-        } catch {
-            actionError = "Could not delete that list."
-        }
     }
 }
 
