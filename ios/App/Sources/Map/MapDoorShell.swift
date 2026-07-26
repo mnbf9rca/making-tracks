@@ -102,8 +102,8 @@ enum WorldDoorRow: CaseIterable {
 }
 
 enum TracksDoorRow: CaseIterable {
-    case lists
     case myTracks
+    case lists
 
     var presentation: MapDoorRowPresentation {
         switch self {
@@ -116,7 +116,7 @@ enum TracksDoorRow: CaseIterable {
             )
         case .myTracks:
             MapDoorRowPresentation(
-                title: "My Tracks",
+                title: "My tracks",
                 subtitle: "Places you've seen",
                 systemImage: "shoeprints.fill",
                 accessibilityIdentifier: "tracks.row.my-tracks"
@@ -291,14 +291,14 @@ struct TracksDoorRootView: View {
             subtitle: "your story through the world"
         ) {
             MapDoorRaisedRow(
-                presentation: TracksDoorRow.lists.presentation
-            ) {
-                path.append(.lists)
-            }
-            MapDoorHairlineRow(
                 presentation: TracksDoorRow.myTracks.presentation
             ) {
                 path.append(.tracks)
+            }
+            MapDoorHairlineRow(
+                presentation: TracksDoorRow.lists.presentation
+            ) {
+                path.append(.lists)
             }
         }
     }

@@ -241,7 +241,7 @@ final class AppShellTests: XCTestCase {
 
     func testDoorRootsExposeOnlyRuledRows() {
         XCTAssertEqual(WorldDoorRow.allCases, [.scope, .settings, .about])
-        XCTAssertEqual(TracksDoorRow.allCases, [.lists, .myTracks])
+        XCTAssertEqual(TracksDoorRow.allCases, [.myTracks, .lists])
         XCTAssertFalse(WorldDoorRow.allCases.map(\.title).contains("Offline maps"))
         XCTAssertFalse(WorldDoorRow.allCases.map(\.title).contains("Coverage"))
     }

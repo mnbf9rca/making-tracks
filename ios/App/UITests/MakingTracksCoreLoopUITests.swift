@@ -436,12 +436,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertTrue(tracksDoor.waitForExistence(timeout: 5))
         tracksDoor.tap()
-        for identifier in ["tracks.row.lists", "tracks.row.my-tracks"] {
+        for identifier in ["tracks.row.my-tracks", "tracks.row.lists"] {
             let row = app.buttons[identifier]
             XCTAssertTrue(row.waitForExistence(timeout: 5))
             XCTAssertTrue(row.isHittable)
             XCTAssertGreaterThanOrEqual(row.frame.height, 44)
         }
+        XCTAssertLessThan(
+            app.buttons["tracks.row.my-tracks"].frame.minY,
+            app.buttons["tracks.row.lists"].frame.minY
+        )
     }
 
     func testAXResamplerUsesFreshSamplesAfterPredicateMiss() {
