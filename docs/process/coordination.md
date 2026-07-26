@@ -43,6 +43,16 @@ fable runs a loop **~every 30 minutes**: read `tasks.md` and the PR/CI states; m
 - **Two unanswered nudges** → the task is released back to the graph and an **incident line** is logged.
 - Status vocabulary: `claimed → branch → tests green → PR open → review clean → ready-to-merge` (plus `blocked: <reason>` / `released`).
 
+## Fleet economy
+
+How the fleet operates. These are standing practice, not concessions to circumstance.
+
+- **A builder is woken when work is claimable for them, and stands down when none is.** An idle seat costs nothing; a woken seat with nothing to claim costs a context and produces a nudge cycle. Availability is not a reason to assign.
+- **Briefs are lean and self-contained.** A builder should never need to ask a content question mid-run, and should never have to read past what their task requires to find it. Both failures cost the same thing twice — once in the asking, once in the waiting.
+- **Sequencing avoids known conflict pairs, even at the cost of parallelism.** Two agents editing the same region of a large file will conflict, and the rework costs more than the serialisation saved. Order the work so the conflict cannot arise rather than resolving it afterwards.
+- **A base advance that carries no code is verified by diff, not re-gated.** Confirm the delta touches no reviewed file — at file level, since a directory legitimately differs when a sibling task lands in the same module — and the prior gate evidence stands. **A code-bearing advance re-gates**, without argument.
+- **Handoffs name an exact head.** A clearance, a gate result and a merge all refer to one SHA, and whoever receives one verifies it matches before relying on it. A verdict attached to "the branch" is worthless the moment the branch moves.
+
 ## Taste-call protocol (spec §4)
 
 When the spec doesn't settle a judgment call:
@@ -74,6 +84,6 @@ Durable facts the fleet operates under (moved here from fable's session memory s
 
 **Phase 1 — Design system & IA.** Epic #466. Spec: `docs/superpowers/specs/2026-07-25-design-system-and-ia-design.md` (ratified, merged as PR #465). Task graph and status ledger: [`docs/superpowers/phases/phase-1/tasks.md`](../superpowers/phases/phase-1/tasks.md) — builders write their status lines there and the supervision loop reads it.
 
-Phase scope ruled by Rob: DS-1 (#467), DS-2 (#468), DS-4 (#470), with DS-5 (#471) as stretch. Nothing else from epic #466 this phase. For this phase the builder pool is **codex1–codex3** (codex4 stood down), and the stall threshold is the 45-minute default. The graph carries the acceptance criteria, the explicit non-goals and the open flags.
+Phase scope ruled by Rob: DS-1 (#467), DS-2 (#468), DS-4 (#470), with DS-5 (#471) as stretch. Nothing else from epic #466 this phase. The builder pool is **codex1–codex4**, and the stall threshold is the 45-minute default. The graph carries the acceptance criteria, the explicit non-goals and the open flags.
 
 Pre-phase and issue-routed work continues to use `docs/superpowers/phases/pre-phase/tasks.md`.
