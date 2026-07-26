@@ -184,7 +184,7 @@ public struct MaterialChip: View {
     @ViewBuilder
     private var styledButton: some View {
         let button = Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: MaterialChipGeometry.labelSpacing) {
                 if let systemImage {
                     Image(systemName: systemImage)
                         .font(Self.iconFont)
@@ -203,11 +203,31 @@ public struct MaterialChip: View {
 
         switch state.style {
         case .filled:
-            button.buttonStyle(MaterialFilledButtonStyle(theme: theme))
+            button.buttonStyle(MaterialChipButtonStyle(
+                appearance: .filled(tokens: theme.tokens)
+            ))
+            .contentShape(
+                .interaction,
+                Capsule().inset(by: -MaterialChipGeometry.hitOutset)
+            )
         case .tonal:
-            button.buttonStyle(MaterialTonalButtonStyle(theme: theme))
+            button.buttonStyle(MaterialChipButtonStyle(
+                appearance: .tonal(tokens: theme.tokens)
+            ))
+            .contentShape(
+                .interaction,
+                Capsule().inset(by: -MaterialChipGeometry.hitOutset)
+            )
         }
     }
+}
+
+private enum MaterialChipGeometry {
+    static let visualHeight: CGFloat = 22
+    static let horizontalPadding: CGFloat = 9
+    static let labelSpacing: CGFloat = 4
+    static let minimumHitTarget: CGFloat = 44
+    static let hitOutset = (minimumHitTarget - visualHeight) / 2
 }
 
 enum MaterialChipStyle: Equatable, Sendable {
@@ -221,6 +241,49 @@ enum MaterialChipStyle: Equatable, Sendable {
         case .tonal:
             .tonal(tokens: theme.tokens)
         }
+    }
+}
+
+private struct MaterialChipButtonStyle: ButtonStyle {
+    let appearance: MaterialControlAppearance
+
+    func makeBody(configuration: Configuration) -> some View {
+        MaterialChipStyleBody(
+            configuration: configuration,
+            appearance: appearance
+        )
+    }
+}
+
+private struct MaterialChipStyleBody: View {
+    let configuration: ButtonStyle.Configuration
+    let appearance: MaterialControlAppearance
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        configuration.label
+            .foregroundStyle(appearance.foreground.swiftUIColor)
+            .padding(.horizontal, MaterialChipGeometry.horizontalPadding)
+            .frame(minHeight: MaterialChipGeometry.visualHeight)
+            .background(backgroundStyle, in: Capsule())
+            .opacity(controlOpacity)
+    }
+
+    private var backgroundStyle: AnyShapeStyle {
+        guard let background = appearance.background else {
+            return AnyShapeStyle(Color.clear)
+        }
+        return AnyShapeStyle(
+            background.swiftUIColor.opacity(appearance.backgroundOpacity)
+        )
+    }
+
+    private var controlOpacity: Double {
+        guard isEnabled else {
+            return 0.46
+        }
+        return configuration.isPressed ? 0.78 : 1
     }
 }
 

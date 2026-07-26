@@ -127,6 +127,50 @@ private struct RenderedPixelRaster {
         return Double(matches) / Double(region.count)
     }
 
+    func verticalTokenBounds(
+        _ token: RenderedRGB,
+        in frame: CGRect,
+        tolerance: Int = 5
+    ) -> ClosedRange<CGFloat>? {
+        let clipped = frame.intersection(appFrame)
+        guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else {
+            return nil
+        }
+
+        let scaleX = CGFloat(width) / appFrame.width
+        let scaleY = CGFloat(height) / appFrame.height
+        let minX = max(0, Int(((clipped.minX - appFrame.minX) * scaleX).rounded(.down)))
+        let maxX = min(width - 1, Int(((clipped.maxX - appFrame.minX) * scaleX).rounded(.up)))
+        let minY = max(0, Int(((clipped.minY - appFrame.minY) * scaleY).rounded(.down)))
+        let maxY = min(height - 1, Int(((clipped.maxY - appFrame.minY) * scaleY).rounded(.up)))
+        guard minX <= maxX, minY <= maxY else { return nil }
+
+        var firstMatchingRow: Int?
+        var lastMatchingRow: Int?
+        for y in minY...maxY {
+            for x in minX...maxX {
+                let offset = (y * bytesPerRow) + (x * 4)
+                let pixel = RenderedRGB(
+                    Int(pixels[offset]),
+                    Int(pixels[offset + 1]),
+                    Int(pixels[offset + 2])
+                )
+                if pixel.matches(token, tolerance: tolerance) {
+                    firstMatchingRow = firstMatchingRow ?? y
+                    lastMatchingRow = y
+                    break
+                }
+            }
+        }
+
+        guard let firstMatchingRow, let lastMatchingRow else { return nil }
+        return (
+            appFrame.minY + (CGFloat(firstMatchingRow) / scaleY)
+        )...(
+            appFrame.minY + (CGFloat(lastMatchingRow + 1) / scaleY)
+        )
+    }
+
     func representativeToken(
         _ token: RenderedRGB,
         in frame: CGRect,
@@ -800,6 +844,53 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         tapFixturePin(in: map)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
+    }
+
+    func testMaterialChipExtendsHitTargetBeyondVisualCapsule() {
+        let app = launch(reset: true, seedUserList: true)
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        openFixtureCard(in: map, app: app)
+        XCTAssertTrue(expandPlaceCardSheet(in: app))
+
+        let chip = app.buttons["Date night"]
+        XCTAssertTrue(scrollToHittable(chip, in: app))
+
+        // `contentShape(.interaction, ...)` expands the accessibility frame,
+        // so only rendered accent pixels identify the visible capsule.
+        let chipFrame = chip.frame
+        let screenshot = app.screenshot()
+        guard let raster = RenderedPixelRaster(
+            screenshot: screenshot,
+            appFrame: app.frame
+        ) else {
+            XCTFail("Could not decode the app screenshot")
+            return
+        }
+        guard let visualCapsuleBounds = raster.verticalTokenBounds(
+            RenderedRGB(10, 107, 92),
+            in: chipFrame,
+            tolerance: 8
+        ) else {
+            XCTFail("Could not locate the accent capsule pixels inside the chip")
+            return
+        }
+        let outsideVisualCapsule = CGPoint(
+            x: chipFrame.midX,
+            y: visualCapsuleBounds.lowerBound - 8
+        )
+        XCTAssertLessThan(
+            outsideVisualCapsule.y,
+            visualCapsuleBounds.lowerBound
+        )
+
+        let appFrame = app.frame
+        app.coordinate(withNormalizedOffset: CGVector(
+            dx: (outsideVisualCapsule.x - appFrame.minX) / appFrame.width,
+            dy: (outsideVisualCapsule.y - appFrame.minY) / appFrame.height
+        )).tap()
+
+        XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
     }
 
     func testPlaceCardKeepsSnowTokensInDarkSystemAppearance() throws {

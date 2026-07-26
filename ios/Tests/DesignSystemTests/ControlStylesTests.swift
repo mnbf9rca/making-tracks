@@ -101,6 +101,28 @@ final class ControlStylesTests: XCTestCase {
         XCTAssertEqual(styledWidthDelta, expectedWidthDelta, accuracy: 1)
     }
 
+    func testMaterialChipUsesRatifiedVisualHeightAndHorizontalPadding() throws {
+        let title = "Map"
+        let chip = MaterialChip(title, state: .active, action: {})
+        let styledTitle = Text(title)
+            .font(MaterialChip.titleFont)
+            .fixedSize(horizontal: false, vertical: true)
+
+        XCTAssertEqual(try renderedHeight(chip), 22)
+        XCTAssertEqual(
+            try renderedWidth(chip) - renderedWidth(styledTitle),
+            18,
+            accuracy: 1
+        )
+        XCTAssertEqual(
+            try renderedHeight(
+                Button("Save", action: {})
+                    .buttonStyle(MaterialFilledButtonStyle())
+            ),
+            44
+        )
+    }
+
     func testMaterialChipIconUsesTypographyLabelSizeAndMediumWeight() throws {
         let title = "Map"
 
@@ -130,7 +152,7 @@ final class ControlStylesTests: XCTestCase {
 
         XCTAssertEqual(
             iconAndTextWidth - textOnlyWidth,
-            expectedIconWidth + 5,
+            expectedIconWidth + 4,
             accuracy: 1
         )
     }
