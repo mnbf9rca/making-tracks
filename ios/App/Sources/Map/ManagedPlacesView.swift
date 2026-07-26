@@ -2,6 +2,24 @@ import DesignSystem
 import MakingTracksData
 import SwiftUI
 
+struct ManagedPlacesInlineIconGlyph: View {
+    let systemName: String
+
+    var body: some View {
+        Image(systemName: systemName)
+            .iconRole(.inline)
+    }
+}
+
+struct ManagedPlacesEmptyIconGlyph: View {
+    let systemName: String
+
+    var body: some View {
+        Image(systemName: systemName)
+            .iconRole(.hero)
+    }
+}
+
 struct ManagedPlacesPresentation: Equatable {
     let title: String
     let systemImage: String
@@ -105,7 +123,6 @@ struct ManagedPlacesState: Equatable {
         guard pendingPlaceIDs.remove(placeID) != nil else { return }
         if succeeded {
             places.removeAll { $0.placeID == placeID }
-            errorMessage = nil
         } else {
             errorMessage = failureMessage
         }
@@ -175,8 +192,7 @@ struct ManagedPlacesView: View {
 
     private var titleRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: mode.presentation.systemImage)
-                .font(Typography.font(for: .body))
+            ManagedPlacesInlineIconGlyph(systemName: mode.presentation.systemImage)
                 .foregroundStyle(
                     mode == .hidden
                         ? tokens.muted.swiftUIColor
@@ -199,10 +215,11 @@ struct ManagedPlacesView: View {
 
     private var emptyRow: some View {
         ContentUnavailableView {
-            Label(
-                mode.presentation.emptyTitle,
-                systemImage: mode.presentation.systemImage
-            )
+            Label {
+                Text(verbatim: mode.presentation.emptyTitle)
+            } icon: {
+                ManagedPlacesEmptyIconGlyph(systemName: mode.presentation.systemImage)
+            }
         } description: {
             Text(verbatim: mode.presentation.emptyGuidance)
         }
@@ -215,8 +232,7 @@ struct ManagedPlacesView: View {
     private func placeRow(_ place: ListPlace) -> some View {
         MaterialHairlineRow {
             HStack(alignment: .center, spacing: 12) {
-                Image(systemName: mode.presentation.systemImage)
-                    .font(Typography.font(for: .body))
+                ManagedPlacesInlineIconGlyph(systemName: mode.presentation.systemImage)
                     .foregroundStyle(
                         mode == .hidden
                             ? tokens.muted.swiftUIColor
@@ -258,8 +274,7 @@ struct ManagedPlacesView: View {
         } label: {
             switch mode {
             case .loved:
-                Image(systemName: "heart.slash")
-                    .font(Typography.font(for: .button))
+                ManagedPlacesInlineIconGlyph(systemName: "heart.slash")
             case .hidden:
                 Text("Unhide")
                     .font(Typography.font(for: .button))

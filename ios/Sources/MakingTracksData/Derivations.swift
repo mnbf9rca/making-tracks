@@ -376,6 +376,9 @@ extension AppDatabase {
                     FROM list_items li
                     JOIN place_snapshots ps ON ps.place_id = li.place_id
                     WHERE li.list_id = ?
+                    AND NOT EXISTS(
+                        SELECT 1 FROM hidden_places h WHERE h.place_id = li.place_id
+                    )
                     """,
                 arguments: [listID]
             ) ?? 0
@@ -387,6 +390,9 @@ extension AppDatabase {
                     JOIN place_snapshots ps ON ps.place_id = li.place_id
                     WHERE li.list_id = ?
                     AND EXISTS(SELECT 1 FROM visits v WHERE v.place_id = li.place_id)
+                    AND NOT EXISTS(
+                        SELECT 1 FROM hidden_places h WHERE h.place_id = li.place_id
+                    )
                     """,
                 arguments: [listID]
             ) ?? 0

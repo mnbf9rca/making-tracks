@@ -416,6 +416,15 @@ struct TracksDoorNewListIcon: View {
     }
 }
 
+struct TracksDoorVirtualRowIconGlyph: View {
+    let systemName: String
+
+    var body: some View {
+        Image(systemName: systemName)
+            .iconRole(.inline)
+    }
+}
+
 struct TracksDoorRootView: View {
     @Binding var path: [MapShellDestination]
     let model: MapScreenModel?
@@ -689,8 +698,7 @@ struct TracksDoorRootView: View {
         } label: {
             MaterialHairlineRow {
                 HStack(spacing: 12) {
-                    Image(systemName: presentation.systemImage)
-                        .font(Typography.font(for: .body))
+                    TracksDoorVirtualRowIconGlyph(systemName: presentation.systemImage)
                         .foregroundStyle(
                             quiet
                                 ? tokens.muted.swiftUIColor
@@ -714,6 +722,10 @@ struct TracksDoorRootView: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: presentation.title))
+        .accessibilityValue(
+            Text(verbatim: "\(count) \(count == 1 ? "place" : "places")")
+        )
         .accessibilityIdentifier(presentation.accessibilityIdentifier)
     }
 

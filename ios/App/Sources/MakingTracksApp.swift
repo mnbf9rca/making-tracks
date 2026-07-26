@@ -144,6 +144,10 @@ struct MakingTracksApp: App {
                         named: "Date night",
                         containingPlaceID: Self.primaryFixturePlaceID
                     )
+                    try database.seedUITestingUserList(
+                        named: "Date night",
+                        containingPlaceID: fixturePlaces[1].placeID
+                    )
                 } else if seedFixtureTracksDoorTextStress {
                     let longListName =
                         "Longest list **literal** 0123456789 0123456789 0123456789 "

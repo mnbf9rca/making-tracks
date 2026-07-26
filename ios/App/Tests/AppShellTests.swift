@@ -499,6 +499,27 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(state.places, [both])
         XCTAssertTrue(state.pendingPlaceIDs.isEmpty)
         XCTAssertEqual(state.errorMessage, "Could not update that loved place.")
+
+        var concurrentState = ManagedPlacesState(places: [loved, both])
+        concurrentState.beginAction(placeID: loved.placeID)
+        concurrentState.beginAction(placeID: both.placeID)
+        concurrentState.finishAction(
+            placeID: both.placeID,
+            succeeded: false,
+            failureMessage: "Could not update that loved place."
+        )
+        concurrentState.finishAction(
+            placeID: loved.placeID,
+            succeeded: true,
+            failureMessage: "unused"
+        )
+        XCTAssertEqual(concurrentState.places, [both])
+        XCTAssertTrue(concurrentState.pendingPlaceIDs.isEmpty)
+        XCTAssertEqual(
+            concurrentState.errorMessage,
+            "Could not update that loved place.",
+            "A later concurrent success must not erase another row's real failure."
+        )
     }
 
     func testLovedManagedPlaceMetadataNamesHiddenOverlapWithoutFilteringIt() {
@@ -516,6 +537,37 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(
             ManagedPlacesMode.hidden.metadata(for: both),
             "Historic Building"
+        )
+    }
+
+    @MainActor
+    func testManagedPlacesAndVirtualRowIconsOwnRatifiedRolesAtPointOfUse() throws {
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: ManagedPlacesInlineIconGlyph(systemName: "heart").body
+                )
+            ),
+            .inline
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: ManagedPlacesEmptyIconGlyph(systemName: "heart").body
+                )
+            ),
+            .hero
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: TracksDoorVirtualRowIconGlyph(systemName: "heart").body
+                )
+            ),
+            .inline
         )
     }
 

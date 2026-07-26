@@ -444,6 +444,8 @@ final class DerivationsTests: XCTestCase {
         XCTAssertEqual(context.visits.map(\.placeID), ["p_0", "p_4"])
         XCTAssertEqual(summary.features.count, 1)
         XCTAssertEqual(summary.connectableVisitCount, 2)
+        XCTAssertEqual(try db.listProgress(listID: 42).visited, 2)
+        XCTAssertEqual(try db.listProgress(listID: 42).total, 2)
     }
 
     func testNonSystemTrackKindRowsUseStoredMembershipNotVirtualTracks() throws {
@@ -529,7 +531,7 @@ final class DerivationsTests: XCTestCase {
             try insertVisit(
                 d,
                 placeID: "zulu",
-                timestamp: Date(timeIntervalSince1970: 20),
+                timestamp: Date(timeIntervalSince1970: 25),
                 verdict: .loved
             )
             try insertVisit(
@@ -550,17 +552,17 @@ final class DerivationsTests: XCTestCase {
 
         let places = try db.lovedPlaces()
 
-        XCTAssertEqual(places.map(\.placeID), ["recent", "alpha", "zulu"])
+        XCTAssertEqual(places.map(\.placeID), ["recent", "zulu", "alpha"])
         XCTAssertEqual(
             places.map(\.name),
-            ["Recent Arcade", "alpha memorial", "Zulu Garden"]
+            ["Recent Arcade", "Zulu Garden", "alpha memorial"]
         )
         XCTAssertEqual(
             places.map(\.category),
-            ["architecture", "memorial", "garden"]
+            ["architecture", "garden", "memorial"]
         )
         XCTAssertEqual(places.map(\.pinState.visit), [.loved, .loved, .loved])
-        XCTAssertEqual(places.map(\.pinState.hidden), [false, true, false])
+        XCTAssertEqual(places.map(\.pinState.hidden), [false, false, true])
     }
 
     func testHiddenPlacesJoinSnapshotsValidateRowsAndSortNewestFirst() throws {

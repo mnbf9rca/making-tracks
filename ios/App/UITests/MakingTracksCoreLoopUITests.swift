@@ -1843,11 +1843,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let hidden = app.buttons["tracks.row.hidden"]
         XCTAssertTrue(myTracks.waitForExistence(timeout: 5))
         XCTAssertTrue(dateNight.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            dateNight.value as? String,
+            "1 of 1 seen",
+            "A hidden stored-list membership must not contribute to n-of-m progress."
+        )
         XCTAssertTrue(scrollToHittable(newList, in: app))
         XCTAssertTrue(scrollToHittable(loved, in: app))
         XCTAssertTrue(scrollToHittable(hidden, in: app))
-        XCTAssertTrue(loved.label.contains("2"))
-        XCTAssertTrue(hidden.label.contains("2"))
+        XCTAssertEqual(loved.value as? String, "2 places")
+        XCTAssertEqual(hidden.value as? String, "2 places")
         assertMinimumInteractiveTarget(loved)
         assertMinimumInteractiveTarget(hidden)
         attachScreenshot(named: "loved-hidden-door")
@@ -1877,7 +1882,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         app.buttons["Back"].tap()
         XCTAssertTrue(scrollToHittable(loved, in: app))
-        XCTAssertTrue(loved.label.contains("1"))
+        XCTAssertEqual(loved.value as? String, "1 place")
         XCTAssertTrue(scrollToHittable(hidden, in: app))
         hidden.tap()
         XCTAssertTrue(app.collectionViews["tracks.hidden.surface"].waitForExistence(timeout: 5))
@@ -1903,7 +1908,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         app.buttons["Back"].tap()
         XCTAssertTrue(scrollToHittable(hidden, in: app))
-        XCTAssertTrue(hidden.label.contains("1"))
+        XCTAssertEqual(hidden.value as? String, "1 place")
+        XCTAssertTrue(scrollToHittable(dateNight, in: app))
+        XCTAssertEqual(
+            dateNight.value as? String,
+            "2 of 2 seen",
+            "Unhiding must restore the stored membership to visible progress."
+        )
     }
 
     func testHiddenSurfaceRoundTripsWithScopeWithoutChangingTrackCounts() {
@@ -1929,15 +1940,19 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openScope(in: app)
         let showHidden = "map.layers.show-hidden"
         XCTAssertTrue(app.switches[showHidden].waitForExistence(timeout: 5))
-        tapSwitch(in: app, identifier: showHidden, expectedValue: "1")
+        XCTAssertEqual(
+            app.switches[showHidden].value as? String,
+            "0",
+            "The unhide proof must begin with Include hidden off."
+        )
         app.buttons["map.layers.done"].tap()
-        XCTAssertTrue(waitForSourceFeatureCount(2, in: app))
+        XCTAssertTrue(waitForSourceFeatureCount(1, in: app))
 
         openTracksDoor(in: app)
         XCTAssertTrue(myTracks.waitForExistence(timeout: 5))
         XCTAssertTrue(
             myTracks.label.contains("2 visits"),
-            "Including hidden places in discovery must not add them to Tracks progress"
+            "Hidden places must not contribute to Tracks progress"
         )
         let hidden = app.buttons["tracks.row.hidden"]
         XCTAssertTrue(scrollToHittable(hidden, in: app))
@@ -1954,14 +1969,22 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             ),
             timeout: 5
         ))
-        app.buttons["Back"].tap()
+        XCTAssertTrue(app.buttons["door.destination.close"].waitForExistence(timeout: 5))
+        app.buttons["door.destination.close"].tap()
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            waitForSourceFeatureCount(2, in: app),
+            "Controller-routed unhide must restore discovery while Include hidden is off."
+        )
+
+        openTracksDoor(in: app)
         XCTAssertTrue(myTracks.waitForExistence(timeout: 5))
         XCTAssertTrue(
             myTracks.label.contains("3 visits"),
             "Live unhide must restore the visit to ordinary Tracks progress"
         )
         XCTAssertTrue(scrollToHittable(hidden, in: app))
-        XCTAssertTrue(hidden.label.contains("1"))
+        XCTAssertEqual(hidden.value as? String, "1 place")
     }
 
     func testLovedAndHiddenSurfacesRemainUsableAtAX5() {
