@@ -1,4 +1,5 @@
 import CoreLocation
+import DesignSystem
 import SwiftUI
 import MakingTracksData
 import MakingTracksMapStyle
@@ -40,6 +41,7 @@ struct MakingTracksApp: App {
     private static let debugHideFixtureChrome = arguments.contains("--ui-testing-hide-fixture-chrome")
     private static let debugUseDenseFixturePins = arguments.contains("--ui-testing-dense-pins")
     private static let debugUseReplayVisualFixture = arguments.contains("--ui-testing-replay-visual-seed")
+    private static let debugShowChipTargetFixture = arguments.contains("--ui-testing-chip-target")
     private static let primaryFixturePlaceID = "mt1_00000000000000000000000000"
 #else
     private static let forceFirstRunOnboarding = false
@@ -63,6 +65,7 @@ struct MakingTracksApp: App {
     private static let debugHideFixtureChrome = false
     private static let debugUseDenseFixturePins = false
     private static let debugUseReplayVisualFixture = false
+    private static let debugShowChipTargetFixture = false
 #endif
 
     init() {
@@ -304,25 +307,38 @@ struct MakingTracksApp: App {
 
     var body: some Scene {
         WindowGroup {
-            switch databaseStartup {
-            case .available(let database):
-                MakingTracksRootView(
-                    database: database,
-                    startupViewportArgument: Self.startupViewportArgument,
-                    isFixtureMap: Self.isFixtureMap,
-                    debugInstallOfflineRegion: Self.debugInstallOfflineRegion,
-                    debugForceTileNetworkOffline: Self.debugForceTileNetworkOffline,
-                    offlineDownloadProgress: Self.offlineDownloadProgress,
-                    debugCoverageBBoxes: Self.uiTestingCoverageBBoxes,
-                    debugExposeFixturePinDiagnostics: Self.debugExposeFixturePinDiagnostics,
-                    debugHideFixtureChrome: Self.debugHideFixtureChrome,
-                    debugUseDenseFixturePins: Self.debugUseDenseFixturePins,
-                    forceFirstRunOnboarding: Self.forceFirstRunOnboarding,
-                    locationManager: locationManager
-                )
-            case .failed(let surface):
-                DatabaseRecoveryView(surface: surface)
+#if DEBUG
+            if Self.debugShowChipTargetFixture {
+                ChipHitTargetFixture()
+            } else {
+                rootView
             }
+#else
+            rootView
+#endif
+        }
+    }
+
+    @ViewBuilder
+    private var rootView: some View {
+        switch databaseStartup {
+        case .available(let database):
+            MakingTracksRootView(
+                database: database,
+                startupViewportArgument: Self.startupViewportArgument,
+                isFixtureMap: Self.isFixtureMap,
+                debugInstallOfflineRegion: Self.debugInstallOfflineRegion,
+                debugForceTileNetworkOffline: Self.debugForceTileNetworkOffline,
+                offlineDownloadProgress: Self.offlineDownloadProgress,
+                debugCoverageBBoxes: Self.uiTestingCoverageBBoxes,
+                debugExposeFixturePinDiagnostics: Self.debugExposeFixturePinDiagnostics,
+                debugHideFixtureChrome: Self.debugHideFixtureChrome,
+                debugUseDenseFixturePins: Self.debugUseDenseFixturePins,
+                forceFirstRunOnboarding: Self.forceFirstRunOnboarding,
+                locationManager: locationManager
+            )
+        case .failed(let surface):
+            DatabaseRecoveryView(surface: surface)
         }
     }
 
@@ -416,6 +432,29 @@ struct MakingTracksApp: App {
         }
     }
 }
+
+#if DEBUG
+private struct ChipHitTargetFixture: View {
+    @State private var activationCount = 0
+
+    var body: some View {
+        VStack(spacing: 80) {
+            MaterialChip(
+                "Target chip",
+                state: .active
+            ) {
+                activationCount += 1
+            }
+            .accessibilityIdentifier("chip-target.fixture")
+
+            Text(verbatim: "\(activationCount)")
+                .accessibilityIdentifier("chip-target.activation-count")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(MaterialTheme.snow.tokens.background.swiftUIColor)
+    }
+}
+#endif
 
 enum DatabaseStartup {
     case available(AppDatabase)
