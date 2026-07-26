@@ -527,8 +527,8 @@ public struct MaterialToast: View {
     private func messageView(
         width: MaterialToastMessageWidth
     ) -> some View {
-        // Typography is intentionally inherited; T1.11 owns component role adoption.
         Text(verbatim: message)
+            .font(Typography.font(for: .body))
             .fixedSize(
                 horizontal: width.usesIntrinsicWidth,
                 vertical: true

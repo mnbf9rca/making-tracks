@@ -128,6 +128,36 @@ final class MaterialToastTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(renderedSize.height, 44)
     }
 
+    func testToastMessageOwnsTypographyBodyRole() throws {
+        let toast = MaterialToast(message: "Location services are unavailable")
+
+        let inheritedLargeTitleHeight = try renderedHeight(
+            toast.font(.largeTitle)
+        )
+        let bodyRoleHeight = try renderedHeight(
+            toast.font(Typography.font(for: .body))
+        )
+
+        XCTAssertEqual(inheritedLargeTitleHeight, bodyRoleHeight)
+    }
+
+    func testBuiltInToastActionOwnsTypographyButtonRole() throws {
+        let control = MaterialToastPrimaryActionButton(
+            action: MaterialToastAction("Open offline maps") {},
+            foreground: color(0x0A, 0x6B, 0x5C),
+            minimumTarget: CGSize(width: 44, height: 44)
+        )
+
+        let inheritedLargeTitleWidth = try renderedWidth(
+            control.font(.largeTitle)
+        )
+        let buttonRoleWidth = try renderedWidth(
+            control.font(Typography.font(for: .button))
+        )
+
+        XCTAssertEqual(inheritedLargeTitleWidth, buttonRoleWidth)
+    }
+
     func testRenderedNoProgressSurfaceButtonIsAtLeastFortyFourPointsInBothDimensions() {
         let toast = MaterialToast(
             message: "I",
@@ -145,6 +175,20 @@ final class MaterialToastTests: XCTestCase {
 
         XCTAssertGreaterThanOrEqual(renderedSize.width, 44)
         XCTAssertGreaterThanOrEqual(renderedSize.height, 44)
+    }
+
+    private func renderedHeight<Content: View>(_ content: Content) throws -> Int {
+        try render(content).height
+    }
+
+    private func renderedWidth<Content: View>(_ content: Content) throws -> Int {
+        try render(content).width
+    }
+
+    private func render<Content: View>(_ content: Content) throws -> CGImage {
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 1
+        return try XCTUnwrap(renderer.cgImage)
     }
 
 #endif

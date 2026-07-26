@@ -182,12 +182,12 @@ public struct MaterialChip: View {
             HStack(spacing: 5) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.caption.weight(.medium))
+                        .font(Typography.font(for: .label).weight(.medium))
                         .symbolRenderingMode(.monochrome)
                         .accessibilityHidden(true)
                 }
                 Text(verbatim: title)
-                    .font(.caption.weight(.semibold))
+                    .font(Typography.font(for: .label))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -229,7 +229,7 @@ private struct MaterialButtonStyleBody: View {
     var body: some View {
         configuration.label
             .labelStyle(MaterialControlLabelStyle())
-            .font(.subheadline.weight(.semibold))
+            .font(Typography.font(for: .button))
             .foregroundStyle(appearance.foreground.swiftUIColor)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -268,7 +268,7 @@ private struct MaterialControlLabelStyle: LabelStyle {
                 .font(.body.weight(.medium))
                 .symbolRenderingMode(.monochrome)
             configuration.title
-                .font(.subheadline.weight(.semibold))
+                .font(Typography.font(for: .button))
         }
     }
 }

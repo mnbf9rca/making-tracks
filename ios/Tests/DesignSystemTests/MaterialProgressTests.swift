@@ -135,6 +135,22 @@ final class MaterialProgressTests: XCTestCase {
         )
     }
 
+    func testProgressCountOwnsTypographyMetadataRole() throws {
+        let progress = MaterialProgress(
+            state: .count(completed: 3, total: 8)
+        )
+        .frame(width: 200)
+
+        let inheritedLargeTitleHeight = try render(
+            progress.font(.largeTitle)
+        ).height
+        let metadataRoleHeight = try render(
+            progress.font(Typography.font(for: .metadata))
+        ).height
+
+        XCTAssertEqual(inheritedLargeTitleHeight, metadataRoleHeight)
+    }
+
     func testAccessibilityHeaderFitsAtPhoneWidthWithoutCompressingCount() throws {
         let count = "8 of 8 landmarks seen"
         let progress = try render(
