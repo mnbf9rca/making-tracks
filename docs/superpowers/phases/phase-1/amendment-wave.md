@@ -230,8 +230,9 @@ post-merge edit a correction rather than a rewrite.
 
 **Outcome record.** The live merged bodies now carry separately headed, encounter-local corrections:
 
-- **#486:** records the 12pt/600 chip title as `ia-doors.html`-ratified evidence rather than a taste
-  guess, and scopes the flat 44pt wording's later supersession to R10's qualifying tiled controls.
+- **#486:** records `ia-doors.html`'s 12px/600 figure, mapped by AC35 to `MaterialChip`'s 12pt/600
+  title, as render-ratified evidence rather than a taste guess, and scopes the flat 44pt wording's
+  later supersession to R10's qualifying tiled controls.
 - **#503:** attributes the free-space touch-target proof to R10's target-floor record rather than
   AC29, without claiming that the oracle proves R10's separate tiling contract.
 
