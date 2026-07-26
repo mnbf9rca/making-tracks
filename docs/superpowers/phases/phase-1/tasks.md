@@ -455,7 +455,7 @@ Full gate required, plus renders of the map home with both doors and each door o
 - **Depends on:** T1.6
 - **Owner:** codex1
 - **Review tier:** `sourcery` + `opus`
-- **Status:** PR open — #511 https://github.com/mnbf9rca/making-tracks/pull/511
+- **Status:** review clean — #511; Opus and Sourcery cleared code head `1c07e87b`; 0 unresolved review findings
 - **Contracts consumed:** T1.1 tokens, T1.3 buttons (the nearby prompt's embedded action), T1.4 toast/pill family and progress component.
 
 **Two acceptance additions inherited from T1.4.** T1.4 built the family but mounts nothing — its diff touches no file under `ios/App/` — so two obligations that can only be proved at a real call site land here, on the task that does the mounting. They are anchored in this row rather than left in a review thread, which is what makes the deferral compliant rather than an unowned one:
