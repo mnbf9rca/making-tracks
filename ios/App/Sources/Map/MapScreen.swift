@@ -747,6 +747,15 @@ enum MenuDestination: Hashable {
     case about
 }
 
+enum MapDoor: Hashable, Identifiable {
+    case world
+    case tracks
+
+    var id: Self { self }
+}
+
+typealias MapShellDestination = MenuDestination
+
 enum OfflineDownloadSettings {
     static let allowsCellularDownloadsKey = "offline.downloads.allow-cellular"
     static let defaultAllowsCellularDownloads = false
@@ -786,14 +795,26 @@ struct DeferredOfflineMaintenanceDownloadRoute {
 
 @Observable
 final class AppShellModel {
+    var presentedDoor: MapDoor?
+    var deepLinkDestination: MapShellDestination?
     var isMenuPresented = false
     var deepLinkPath: MenuDestination?
     var tracksFocusPlaceID: String?
     var listDetailVisitFilter = TracksVisitFilter.all
 
+    func openWorldDoor() {
+        prepareDoorRoot(.world)
+    }
+
+    func openTracksDoor() {
+        prepareDoorRoot(.tracks)
+    }
+
     func openMenu() {
         tracksFocusPlaceID = nil
         listDetailVisitFilter = .all
+        presentedDoor = nil
+        deepLinkDestination = nil
         deepLinkPath = nil
         isMenuPresented = true
     }
@@ -801,8 +822,18 @@ final class AppShellModel {
     func openListDetailDeepLink(listID: Int64, visitFilter: TracksVisitFilter = .all) {
         tracksFocusPlaceID = nil
         listDetailVisitFilter = visitFilter
+        presentedDoor = .tracks
+        deepLinkDestination = .listDetail(listID)
         deepLinkPath = .listDetail(listID)
         isMenuPresented = true
+    }
+
+    private func prepareDoorRoot(_ door: MapDoor) {
+        tracksFocusPlaceID = nil
+        listDetailVisitFilter = .all
+        presentedDoor = door
+        deepLinkDestination = nil
+        deepLinkPath = nil
     }
 }
 
@@ -2277,6 +2308,8 @@ extension AppShellModel {
     func openListsDeepLink() {
         tracksFocusPlaceID = nil
         listDetailVisitFilter = .all
+        presentedDoor = .tracks
+        deepLinkDestination = .lists
         deepLinkPath = .lists
         isMenuPresented = true
     }
@@ -2284,6 +2317,8 @@ extension AppShellModel {
     func openTracksDeepLink(focusingPlaceID placeID: String? = nil) {
         tracksFocusPlaceID = placeID
         listDetailVisitFilter = .all
+        presentedDoor = .tracks
+        deepLinkDestination = .tracks
         deepLinkPath = .tracks
         isMenuPresented = true
     }
@@ -2291,6 +2326,8 @@ extension AppShellModel {
     func openOfflineMapsDeepLink() {
         tracksFocusPlaceID = nil
         listDetailVisitFilter = .all
+        presentedDoor = .world
+        deepLinkDestination = .offlineMaps
         deepLinkPath = .offlineMaps
         isMenuPresented = true
     }

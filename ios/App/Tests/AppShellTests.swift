@@ -67,46 +67,56 @@ final class AppShellTests: XCTestCase {
         XCTAssertGreaterThan(MapHomeChromeSpec.glyphHaloRadius, 0)
     }
 
-    func testAppShellModelSeparatesMenuPresentationFromDeepLinkRouting() {
+    func testAppShellModelOpensEachDoorAtItsRoot() {
         let shell = AppShellModel()
 
-        XCTAssertFalse(shell.isMenuPresented)
-        XCTAssertNil(shell.deepLinkPath)
+        XCTAssertNil(shell.presentedDoor)
+        XCTAssertNil(shell.deepLinkDestination)
 
-        shell.isMenuPresented = true
-        XCTAssertTrue(shell.isMenuPresented)
-        XCTAssertNil(shell.deepLinkPath)
+        shell.openWorldDoor()
+        XCTAssertEqual(shell.presentedDoor, .world)
+        XCTAssertNil(shell.deepLinkDestination)
 
-        shell.deepLinkPath = .offlineMaps
-        XCTAssertTrue(shell.isMenuPresented)
-        XCTAssertEqual(shell.deepLinkPath, .offlineMaps)
+        shell.openTracksDoor()
+        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertNil(shell.deepLinkDestination)
     }
 
-    func testAppShellModelCanRouteOfflineMapsDeepLink() {
+    func testAppShellModelRoutesOfflineMapsDeepLinkThroughWorldDoor() {
         let shell = AppShellModel()
 
         shell.openOfflineMapsDeepLink()
 
-        XCTAssertTrue(shell.isMenuPresented)
-        XCTAssertEqual(shell.deepLinkPath, .offlineMaps)
+        XCTAssertEqual(shell.presentedDoor, .world)
+        XCTAssertEqual(shell.deepLinkDestination, .offlineMaps)
     }
 
-    func testAppShellModelCanRouteListsDeepLink() {
+    func testAppShellModelRoutesListsDeepLinkThroughTracksDoor() {
         let shell = AppShellModel()
 
         shell.openListsDeepLink()
 
-        XCTAssertTrue(shell.isMenuPresented)
-        XCTAssertEqual(shell.deepLinkPath, .lists)
+        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertEqual(shell.deepLinkDestination, .lists)
     }
 
-    func testAppShellModelCanRouteTracksDeepLink() {
+    func testAppShellModelRoutesListDetailDeepLinkThroughListsPath() {
+        let shell = AppShellModel()
+
+        shell.openListDetailDeepLink(listID: 42, visitFilter: .loved)
+
+        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertEqual(shell.deepLinkDestination, .listDetail(42))
+        XCTAssertEqual(shell.listDetailVisitFilter, .loved)
+    }
+
+    func testAppShellModelRoutesTracksDeepLinkThroughTracksDoor() {
         let shell = AppShellModel()
 
         shell.openTracksDeepLink()
 
-        XCTAssertTrue(shell.isMenuPresented)
-        XCTAssertEqual(shell.deepLinkPath, .tracks)
+        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertEqual(shell.deepLinkDestination, .tracks)
         XCTAssertNil(shell.tracksFocusPlaceID)
     }
 
@@ -115,25 +125,26 @@ final class AppShellTests: XCTestCase {
 
         shell.openTracksDeepLink(focusingPlaceID: "p_repeat")
 
-        XCTAssertTrue(shell.isMenuPresented)
-        XCTAssertEqual(shell.deepLinkPath, .tracks)
+        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertEqual(shell.deepLinkDestination, .tracks)
         XCTAssertEqual(shell.tracksFocusPlaceID, "p_repeat")
     }
 
-    func testAppShellModelClearsTracksFocusForNormalMenuAndOtherDeepLinks() {
+    func testAppShellModelClearsTracksFocusForDoorRootsAndOtherDeepLinks() {
         let shell = AppShellModel()
         shell.openTracksDeepLink(focusingPlaceID: "p_repeat")
 
-        shell.openMenu()
+        shell.openWorldDoor()
 
-        XCTAssertTrue(shell.isMenuPresented)
-        XCTAssertNil(shell.deepLinkPath)
+        XCTAssertEqual(shell.presentedDoor, .world)
+        XCTAssertNil(shell.deepLinkDestination)
         XCTAssertNil(shell.tracksFocusPlaceID)
 
         shell.openTracksDeepLink(focusingPlaceID: "p_repeat")
         shell.openOfflineMapsDeepLink()
 
-        XCTAssertEqual(shell.deepLinkPath, .offlineMaps)
+        XCTAssertEqual(shell.presentedDoor, .world)
+        XCTAssertEqual(shell.deepLinkDestination, .offlineMaps)
         XCTAssertNil(shell.tracksFocusPlaceID)
     }
 
