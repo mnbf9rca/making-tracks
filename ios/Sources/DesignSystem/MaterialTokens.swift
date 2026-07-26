@@ -92,7 +92,7 @@ public enum SemanticColorToken: String, CaseIterable, Hashable, Sendable {
     case labels
     case labelHalo
     case boundaries
-    case trackLine
+    case trail
 }
 
 public struct PinTokenBlock: Hashable, Sendable {
@@ -138,7 +138,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
     public let labels: MaterialColor
     public let labelHalo: MaterialColor
     public let boundaries: MaterialColor
-    public let trackLine: MaterialColor
+    public let trail: MaterialColor
 
     public var pins: PinTokenBlock {
         .constant
@@ -169,7 +169,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         case .labels: labels
         case .labelHalo: labelHalo
         case .boundaries: boundaries
-        case .trackLine: trackLine
+        case .trail: trail
         }
     }
 
@@ -197,7 +197,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         labels: MaterialColor(red: 0x6B, green: 0x67, blue: 0x5F),
         labelHalo: MaterialColor(red: 0xF4, green: 0xF1, blue: 0xEA),
         boundaries: MaterialColor(red: 0x2B, green: 0x28, blue: 0x23, opacity: 0.14),
-        trackLine: MaterialColor(red: 0x2D, green: 0x8C, blue: 0x83)
+        trail: MaterialColor(red: 0x2D, green: 0x8C, blue: 0x83)
     )
 
     init(
@@ -224,7 +224,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         labels: MaterialColor,
         labelHalo: MaterialColor,
         boundaries: MaterialColor,
-        trackLine: MaterialColor
+        trail: MaterialColor
     ) {
         self.ground = ground
         self.water = water
@@ -249,7 +249,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         self.labels = labels
         self.labelHalo = labelHalo
         self.boundaries = boundaries
-        self.trackLine = trackLine
+        self.trail = trail
     }
 }
 
