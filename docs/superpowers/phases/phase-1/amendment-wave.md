@@ -159,7 +159,7 @@ Nothing else changes. If a value moves, you have exceeded the task.
 
 - **Serves:** the session's taste verdicts · **Review tier:** `sourcery` + `opus` · **Depends on:** none
 - **Owner:** codex1
-- **Status:** branch
+- **Status:** review clean
 - **Branch:** `wp-526-interaction-token-rows` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Add `disabledAlpha` (`0.46`) and `pressScale` (`0.98`) to the token sheet as
