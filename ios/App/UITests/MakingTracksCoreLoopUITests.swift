@@ -1054,11 +1054,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
 
         let appFrame = app.frame
-        func tap(_ point: CGPoint) {
+        func coordinate(at point: CGPoint) -> XCUICoordinate {
             app.coordinate(withNormalizedOffset: CGVector(
                 dx: (point.x - appFrame.minX) / appFrame.width,
                 dy: (point.y - appFrame.minY) / appFrame.height
-            )).tap()
+            ))
         }
 
         let activationCount = app.staticTexts["chip-target.activation-count"]
@@ -1078,10 +1078,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             ) == .completed
         }
 
-        tap(topOutsideVisualCapsule)
+        coordinate(at: topOutsideVisualCapsule).press(forDuration: 0.2)
         XCTAssertTrue(waitForActivationCount("1"))
 
-        tap(bottomOutsideVisualCapsule)
+        coordinate(at: bottomOutsideVisualCapsule).tap()
         XCTAssertTrue(waitForActivationCount("2"))
     }
 

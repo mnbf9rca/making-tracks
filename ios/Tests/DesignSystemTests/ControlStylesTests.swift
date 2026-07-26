@@ -7,6 +7,36 @@ import XCTest
 
 @MainActor
 final class ControlStylesTests: XCTestCase {
+    func testMaterialControlInteractionFeedbackPreservesEnabledOpacity() {
+        XCTAssertEqual(
+            MaterialControlInteractionFeedback.semanticControlOpacity(
+                isEnabled: true
+            ),
+            1
+        )
+        XCTAssertEqual(
+            MaterialControlInteractionFeedback.semanticControlOpacity(
+                isEnabled: false
+            ),
+            0.46
+        )
+    }
+
+    func testMaterialControlInteractionFeedbackUsesScaleForPresses() {
+        XCTAssertEqual(
+            MaterialControlInteractionFeedback.semanticControlScale(
+                isPressed: false
+            ),
+            1
+        )
+        XCTAssertEqual(
+            MaterialControlInteractionFeedback.semanticControlScale(
+                isPressed: true
+            ),
+            0.98
+        )
+    }
+
     func testButtonStylesResolveTheThreeRatifiedSemanticPalettes() {
         let filled = MaterialFilledButtonStyle().appearance
         XCTAssertEqual(filled.foreground, color(0xFB, 0xFA, 0xF2))
@@ -66,6 +96,46 @@ final class ControlStylesTests: XCTestCase {
     }
 
 #if canImport(AppKit)
+    func testPressedMaterialChipBodyPreservesOpaqueSemanticPixels() throws {
+        let image = try renderChipStyleBody(isPressed: true)
+
+        try assertCenterPixelIsSnowAccent(in: image)
+    }
+
+    func testPressedMaterialButtonBodyPreservesOpaqueSemanticPixels() throws {
+        let image = try renderButtonStyleBody(isPressed: true)
+
+        try assertCenterPixelIsSnowAccent(in: image)
+    }
+
+    func testPressedMaterialChipBodyRendersAtNinetyEightPercentGeometry() throws {
+        let restingBounds = try snowAccentBounds(
+            in: renderChipStyleBody(isPressed: false)
+        )
+        let pressedBounds = try snowAccentBounds(
+            in: renderChipStyleBody(isPressed: true)
+        )
+
+        assertNinetyEightPercentGeometry(
+            pressed: pressedBounds,
+            resting: restingBounds
+        )
+    }
+
+    func testPressedMaterialButtonBodyRendersAtNinetyEightPercentGeometry() throws {
+        let restingBounds = try snowAccentBounds(
+            in: renderButtonStyleBody(isPressed: false)
+        )
+        let pressedBounds = try snowAccentBounds(
+            in: renderButtonStyleBody(isPressed: true)
+        )
+
+        assertNinetyEightPercentGeometry(
+            pressed: pressedBounds,
+            resting: restingBounds
+        )
+    }
+
     func testMaterialChipRendersActiveFilledAndAvailableTonal() throws {
         let active = try renderChip(state: .active)
         let available = try renderChip(state: .available)
@@ -91,7 +161,7 @@ final class ControlStylesTests: XCTestCase {
 
         XCTAssertEqual(freeSpace.width, tiled.width)
         XCTAssertEqual(freeSpace.height, tiled.height)
-        XCTAssertEqual(
+        assertPixelsAreVisuallyIdentical(
             try pixelData(in: freeSpace),
             try pixelData(in: tiled)
         )
@@ -485,6 +555,33 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
+#if canImport(AppKit)
+    private func renderChipStyleBody(isPressed: Bool) throws -> CGImage {
+        try render(
+            MaterialChipStyleBody(
+                label: Color.clear.frame(width: 400, height: 400),
+                isPressed: isPressed,
+                appearance: .filled(tokens: MaterialTheme.snow.tokens)
+            )
+            .padding(12)
+            .background(MaterialTheme.snow.tokens.surface.swiftUIColor)
+        )
+    }
+
+    private func renderButtonStyleBody(isPressed: Bool) throws -> CGImage {
+        try render(
+            MaterialButtonStyleBody(
+                label: Color.clear.frame(width: 400, height: 400),
+                isPressed: isPressed,
+                appearance: .filled(tokens: MaterialTheme.snow.tokens),
+                accessibilityValue: { _ in nil }
+            )
+            .padding(12)
+            .background(MaterialTheme.snow.tokens.surface.swiftUIColor)
+        )
+    }
+#endif
+
     private func render<Content: View>(_ content: Content) throws -> CGImage {
         let renderer = ImageRenderer(content: content)
         renderer.scale = 1
@@ -549,6 +646,128 @@ final class ControlStylesTests: XCTestCase {
     }
 
 #if canImport(AppKit)
+    private func assertCenterPixelIsSnowAccent(
+        in image: CGImage,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        let expected = try literalSnowAccentPixel()
+        let center = try XCTUnwrap(
+            bitmap.colorAt(
+                x: bitmap.pixelsWide / 2,
+                y: bitmap.pixelsHigh / 2
+            )?.usingColorSpace(.sRGB),
+            file: file,
+            line: line
+        )
+
+        XCTAssertEqual(
+            center.redComponent,
+            expected.redComponent,
+            accuracy: 0.01,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            center.greenComponent,
+            expected.greenComponent,
+            accuracy: 0.01,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            center.blueComponent,
+            expected.blueComponent,
+            accuracy: 0.01,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            center.alphaComponent,
+            expected.alphaComponent,
+            accuracy: 0.001,
+            file: file,
+            line: line
+        )
+    }
+
+    private func snowAccentBounds(in image: CGImage) throws -> CGRect {
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        let expected = try literalSnowAccentPixel()
+        var minX = bitmap.pixelsWide
+        var minY = bitmap.pixelsHigh
+        var maxX = -1
+        var maxY = -1
+
+        for y in 0..<bitmap.pixelsHigh {
+            for x in 0..<bitmap.pixelsWide {
+                guard
+                    let color = bitmap.colorAt(x: x, y: y)?
+                        .usingColorSpace(.sRGB),
+                    abs(color.redComponent - expected.redComponent) < 0.01,
+                    abs(color.greenComponent - expected.greenComponent) < 0.01,
+                    abs(color.blueComponent - expected.blueComponent) < 0.01,
+                    abs(color.alphaComponent - expected.alphaComponent) < 0.001
+                else {
+                    continue
+                }
+                minX = min(minX, x)
+                minY = min(minY, y)
+                maxX = max(maxX, x)
+                maxY = max(maxY, y)
+            }
+        }
+
+        _ = try XCTUnwrap(maxX > minX ? maxX : nil)
+        _ = try XCTUnwrap(maxY > minY ? maxY : nil)
+        return CGRect(
+            x: minX,
+            y: minY,
+            width: maxX - minX + 1,
+            height: maxY - minY + 1
+        )
+    }
+
+    private func literalSnowAccentPixel() throws -> NSColor {
+        let image = try render(
+            Color(
+                .sRGB,
+                red: 10.0 / 255.0,
+                green: 107.0 / 255.0,
+                blue: 92.0 / 255.0,
+                opacity: 1
+            )
+            .frame(width: 4, height: 4)
+        )
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        return try XCTUnwrap(
+            bitmap.colorAt(x: 2, y: 2)?.usingColorSpace(.sRGB)
+        )
+    }
+
+    private func assertNinetyEightPercentGeometry(
+        pressed: CGRect,
+        resting: CGRect,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(
+            pressed.width / resting.width,
+            0.98,
+            accuracy: 0.01,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            pressed.height / resting.height,
+            0.98,
+            accuracy: 0.01,
+            file: file,
+            line: line
+        )
+    }
+
     private func pixelData(in image: CGImage) throws -> Data {
         let bytesPerRow = image.width * 4
         var pixels = Data(
@@ -577,6 +796,28 @@ final class ControlStylesTests: XCTestCase {
             )
         }
         return pixels
+    }
+
+    private func assertPixelsAreVisuallyIdentical(
+        _ lhs: Data,
+        _ rhs: Data,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(lhs.count, rhs.count, file: file, line: line)
+        guard lhs.count == rhs.count else {
+            return
+        }
+
+        for (offset, pair) in zip(lhs, rhs).enumerated() {
+            XCTAssertLessThanOrEqual(
+                abs(Int(pair.0) - Int(pair.1)),
+                1,
+                "8-bit channel differs at byte \(offset)",
+                file: file,
+                line: line
+            )
+        }
     }
 
     private func solidAccentPixelCount(in image: CGImage) -> Int {

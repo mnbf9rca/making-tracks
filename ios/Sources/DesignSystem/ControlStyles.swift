@@ -30,6 +30,16 @@ struct MaterialControlAppearance: Equatable, Sendable {
     }
 }
 
+enum MaterialControlInteractionFeedback {
+    static func semanticControlOpacity(isEnabled: Bool) -> Double {
+        isEnabled ? 1 : 0.46
+    }
+
+    static func semanticControlScale(isPressed: Bool) -> CGFloat {
+        isPressed ? 0.98 : 1
+    }
+}
+
 /// The accent-filled primary action. Adopting screens keep at most one visible.
 ///
 /// Use a SwiftUI `Label` when an action has an icon so the style can apply the
@@ -52,7 +62,8 @@ public struct MaterialFilledButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         MaterialButtonStyleBody(
-            configuration: configuration,
+            label: configuration.label,
+            isPressed: configuration.isPressed,
             appearance: appearance,
             accessibilityValue: accessibilityValue
         )
@@ -77,7 +88,8 @@ public struct MaterialTonalButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         MaterialButtonStyleBody(
-            configuration: configuration,
+            label: configuration.label,
+            isPressed: configuration.isPressed,
             appearance: appearance,
             accessibilityValue: accessibilityValue
         )
@@ -102,7 +114,8 @@ public struct MaterialQuietButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         MaterialButtonStyleBody(
-            configuration: configuration,
+            label: configuration.label,
+            isPressed: configuration.isPressed,
             appearance: appearance,
             accessibilityValue: accessibilityValue
         )
@@ -369,25 +382,36 @@ private struct MaterialChipButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         MaterialChipStyleBody(
-            configuration: configuration,
+            label: configuration.label,
+            isPressed: configuration.isPressed,
             appearance: appearance
         )
     }
 }
 
-private struct MaterialChipStyleBody: View {
-    let configuration: ButtonStyle.Configuration
+struct MaterialChipStyleBody<Label: View>: View {
+    let label: Label
+    let isPressed: Bool
     let appearance: MaterialControlAppearance
 
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
-        configuration.label
+        label
             .foregroundStyle(appearance.foreground.swiftUIColor)
             .padding(.horizontal, MaterialChipGeometry.horizontalPadding)
             .frame(minHeight: MaterialChipGeometry.visualHeight)
             .background(backgroundStyle, in: Capsule())
-            .opacity(controlOpacity)
+            .opacity(
+                MaterialControlInteractionFeedback.semanticControlOpacity(
+                    isEnabled: isEnabled
+                )
+            )
+            .scaleEffect(
+                MaterialControlInteractionFeedback.semanticControlScale(
+                    isPressed: isPressed
+                )
+            )
     }
 
     private var backgroundStyle: AnyShapeStyle {
@@ -399,23 +423,18 @@ private struct MaterialChipStyleBody: View {
         )
     }
 
-    private var controlOpacity: Double {
-        guard isEnabled else {
-            return 0.46
-        }
-        return configuration.isPressed ? 0.78 : 1
-    }
 }
 
-private struct MaterialButtonStyleBody: View {
-    let configuration: ButtonStyle.Configuration
+struct MaterialButtonStyleBody<Label: View>: View {
+    let label: Label
+    let isPressed: Bool
     let appearance: MaterialControlAppearance
     let accessibilityValue: (Bool) -> String?
 
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
-        configuration.label
+        label
             .labelStyle(MaterialControlLabelStyle())
             .font(Typography.font(for: .button))
             .foregroundStyle(appearance.foreground.swiftUIColor)
@@ -423,8 +442,17 @@ private struct MaterialButtonStyleBody: View {
             .padding(.vertical, 10)
             .frame(minHeight: 44)
             .background(backgroundStyle, in: Capsule())
+            .opacity(
+                MaterialControlInteractionFeedback.semanticControlOpacity(
+                    isEnabled: isEnabled
+                )
+            )
+            .scaleEffect(
+                MaterialControlInteractionFeedback.semanticControlScale(
+                    isPressed: isPressed
+                )
+            )
             .contentShape(Capsule())
-            .opacity(controlOpacity)
             .modifier(
                 OptionalAccessibilityValue(
                     value: accessibilityValue(isEnabled)
@@ -441,12 +469,6 @@ private struct MaterialButtonStyleBody: View {
         )
     }
 
-    private var controlOpacity: Double {
-        guard isEnabled else {
-            return 0.46
-        }
-        return configuration.isPressed ? 0.78 : 1
-    }
 }
 
 private struct MaterialControlLabelStyle: LabelStyle {
