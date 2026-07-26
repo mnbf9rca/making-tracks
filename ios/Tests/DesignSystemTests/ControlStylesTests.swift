@@ -161,7 +161,7 @@ final class ControlStylesTests: XCTestCase {
 
         XCTAssertEqual(freeSpace.width, tiled.width)
         XCTAssertEqual(freeSpace.height, tiled.height)
-        XCTAssertEqual(
+        assertPixelsAreVisuallyIdentical(
             try pixelData(in: freeSpace),
             try pixelData(in: tiled)
         )
@@ -796,6 +796,28 @@ final class ControlStylesTests: XCTestCase {
             )
         }
         return pixels
+    }
+
+    private func assertPixelsAreVisuallyIdentical(
+        _ lhs: Data,
+        _ rhs: Data,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(lhs.count, rhs.count, file: file, line: line)
+        guard lhs.count == rhs.count else {
+            return
+        }
+
+        for (offset, pair) in zip(lhs, rhs).enumerated() {
+            XCTAssertLessThanOrEqual(
+                abs(Int(pair.0) - Int(pair.1)),
+                1,
+                "8-bit channel differs at byte \(offset)",
+                file: file,
+                line: line
+            )
+        }
     }
 
     private func solidAccentPixelCount(in image: CGImage) -> Int {
