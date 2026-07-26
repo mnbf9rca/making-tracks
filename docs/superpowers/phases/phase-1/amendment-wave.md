@@ -219,14 +219,24 @@ only reason a migration is ever in scope.
 ## A7 — #522 post-merge annotations
 
 - **Serves:** #522 · **Review tier:** `sourcery` · **Depends on:** none
-- **Owner:** unclaimed
-- **Status:** unclaimed
+- **Owner:** codex3
+- **Status:** PR open
 - **Branch:** `wp-522-merged-body-annotations` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Annotate the merged bodies of **#486** and **#503** where their acceptance claims
 contradict the ratified graph, preserving the historical evidence. **Follow the #518 precedent
 exactly:** the annotation is added post-merge and **says so** — honest timing is what makes a
 post-merge edit a correction rather than a rewrite.
+
+**Outcome record.** The live merged bodies now carry separately headed, encounter-local corrections:
+
+- **#486:** records the 12pt/600 chip title as `ia-doors.html`-ratified evidence rather than a taste
+  guess, and scopes the flat 44pt wording's later supersession to R10's qualifying tiled controls.
+- **#503:** attributes the free-space touch-target proof to R10's target-floor record rather than
+  AC29, without claiming that the oracle proves R10's separate tiling contract.
+
+Each correction explicitly says it was added after that PR's merge and leaves the original claim
+visible above it as historical evidence.
 
 Docs-only; no code, no gate.
 
