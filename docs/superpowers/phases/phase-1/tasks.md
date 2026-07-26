@@ -195,6 +195,10 @@ Edges are "must have merged before this starts". Read them as a list, not as the
 
 T1.2 is easy to under-read as a leaf: three later tasks render story-voice titles, so the font-role API is a real upstream dependency for T1.8, T1.9 and T1.10, and it is **not** transitively supplied by T1.6 or T1.4.
 
+**"Claimable", defined once.** A task is claimable when it is **unclaimed *and* unblocked**. A task still waiting on its dependencies does not hold anything back — which is why the wave table can place T1.10 in wave 3 alongside T1.5 and T1.6 while T1.7–T1.9 are still blocked. A task **reserved to a named owner is not claimable by anyone else**, and says so in its own status. This definition governs the stretch rule on T1.10 and the reservation on T1.11.
+
+*(It lives here rather than in a task's `Status` field, where it used to sit: a status line is rewritten the moment a builder claims the task, so a definition parked there deletes itself at exactly the moment someone is reading the row. A mutable field is not a durable home.)*
+
 Suggested waves for a three-builder pool. **Wave 1 is intentionally serial** — T1.1 blocks everything, so keep it small and land it fast; the other two builders should claim T1.2 and T1.3 the moment it merges.
 
 | Wave | Tasks | Builders busy |
@@ -515,7 +519,7 @@ Full gate plus renders of the door and the hero landing.
 
 The Hidden row is **quiet** by design (spec §2): hiding becomes reversible in the open, without advertising itself.
 
-Reuse `showHiddenMode` if it fits — `PlaceCard(showHiddenMode:)` (`MapScreen.swift:8601`) already exposes an unhide affordance without normal hide ownership, pinned by `testShowHiddenModeExposesUnhideAffordanceWithoutNormalHideOwnership` (`UITests:2176`).
+Reuse `showHiddenMode` if it fits. T1.10 moved it without changing it: the seam is now `let showHiddenMode: Bool` on `PlaceCardSheet` (`ios/App/Sources/PlaceCard/PlaceCardSheet.swift:189`), wired from `layerVisibility.showHiddenPlaces` (`MapScreen.swift:2974`). **The mechanism is unchanged** — `PinState.hidden` → `PlaceCardActionSlots` → `[.unhide]`, same accessibility identifiers — and it is still pinned by `testShowHiddenModeExposesUnhideAffordanceWithoutNormalHideOwnership` (`ios/App/UITests/MakingTracksCoreLoopUITests.swift:2214`). It exposes an unhide affordance without normal hide ownership, which is the property this task needs.
 
 Existing coverage to keep green: `testSetHiddenIsIdempotentReversibleAndSnapshotsOnFirstInteraction` (`ios/Tests/MakingTracksDataTests/InteractionsTests.swift:545`), `testHiddenIsOrthogonalToSavedAndVisitState` (`:563`), `testSetLovedTrueMarksLatestVisitAndFalseClearsEveryLovedVisitForPlace` (`:358`), `testVerdictLovedIsRecordedAndReversible` (`:63`), `testHiddenAndListScopeOmissionsBridgeSilently` (`DerivationsTests.swift:418`).
 
@@ -529,9 +533,9 @@ Write host-level tests for the two new queries (`cd ios && swift test`) before t
 - **Branch:** `wp-471-place-card-tokens` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC30, AC31, AC32, AC33, plus AC5 (the place name is story voice), AC15/AC16 for this surface, AC26/AC27/AC29
 - **Depends on:** T1.1, T1.3, and **T1.2** if you move the card's title onto the story voice (the place name is one of spec §4's named Newsreader roles). If T1.2 has not merged, do the token and action-bar work and leave the title to a follow-up, saying so in the PR body.
-- **Owner:** unclaimed
+- **Owner:** codex2
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed — **stretch: claim only when no in-scope task is *claimable*.** "Claimable" means unclaimed *and* unblocked: a task still waiting on its dependencies does not hold this one back. That is why the wave table places T1.10 in wave 3 alongside T1.5 and T1.6 while T1.7-T1.9 are still blocked.
+- **Status:** branch
 - **Contracts consumed:** T1.1 tokens, T1.3 button styles, T1.2 font roles (title only).
 - **Ruled renders:** `coherence.png` frame 3 for the card, and `docs/design/2026-07-23-design-session/RULINGS.md` → *#376* for the photo-height ruling.
 

@@ -80,6 +80,10 @@ public enum SemanticColorToken: String, CaseIterable, Hashable, Sendable {
     case muted
     case accent
     case accentContrast
+    case love
+    case loveContainer
+    case warning
+    case warningContainer
     case eyebrow
     case hairline
     case scrim
@@ -122,6 +126,10 @@ public struct MaterialTokenSheet: Hashable, Sendable {
     public let muted: MaterialColor
     public let accent: MaterialColor
     public let accentContrast: MaterialColor
+    public let love: MaterialColor
+    public let loveContainer: MaterialColor
+    public let warning: MaterialColor
+    public let warningContainer: MaterialColor
     public let eyebrow: MaterialColor
     public let hairline: MaterialColor
     public let scrim: MaterialColor
@@ -149,6 +157,10 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         case .muted: muted
         case .accent: accent
         case .accentContrast: accentContrast
+        case .love: love
+        case .loveContainer: loveContainer
+        case .warning: warning
+        case .warningContainer: warningContainer
         case .eyebrow: eyebrow
         case .hairline: hairline
         case .scrim: scrim
@@ -173,6 +185,10 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         muted: MaterialColor(red: 0x6B, green: 0x67, blue: 0x5F),
         accent: MaterialColor(red: 0x0A, green: 0x6B, blue: 0x5C),
         accentContrast: MaterialColor(red: 0xFB, green: 0xFA, blue: 0xF2),
+        love: MaterialColor(red: 0xC4, green: 0x31, blue: 0x2B),
+        loveContainer: MaterialColor(red: 0xFC, green: 0xE3, blue: 0xE3),
+        warning: MaterialColor(red: 0x75, green: 0x57, blue: 0x1F),
+        warningContainer: MaterialColor(red: 0xF2, green: 0xE8, blue: 0xD1),
         eyebrow: MaterialColor(red: 0x8A, green: 0x5A, blue: 0x2B),
         hairline: MaterialColor(red: 0x2B, green: 0x28, blue: 0x23, opacity: 0.14),
         scrim: MaterialColor(red: 0x2B, green: 0x28, blue: 0x23, opacity: 0.35),
@@ -196,6 +212,10 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         muted: MaterialColor,
         accent: MaterialColor,
         accentContrast: MaterialColor,
+        love: MaterialColor,
+        loveContainer: MaterialColor,
+        warning: MaterialColor,
+        warningContainer: MaterialColor,
         eyebrow: MaterialColor,
         hairline: MaterialColor,
         scrim: MaterialColor,
@@ -217,6 +237,10 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         self.muted = muted
         self.accent = accent
         self.accentContrast = accentContrast
+        self.love = love
+        self.loveContainer = loveContainer
+        self.warning = warning
+        self.warningContainer = warningContainer
         self.eyebrow = eyebrow
         self.hairline = hairline
         self.scrim = scrim
