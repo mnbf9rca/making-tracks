@@ -14,6 +14,7 @@ public enum TypographyRole: CaseIterable, Hashable, Sendable {
     case heroTitle
     case evocativeSubline
     case button
+    case action
     case label
     case metadata
     case body
@@ -200,6 +201,14 @@ extension TypographyRole {
                 newsreaderName: nil,
                 pointSize: 15,
                 textStyle: .subheadline,
+                weight: .semibold,
+                isItalic: false
+            )
+        case .action:
+            Specification(
+                newsreaderName: nil,
+                pointSize: 13,
+                textStyle: .footnote,
                 weight: .semibold,
                 isItalic: false
             )

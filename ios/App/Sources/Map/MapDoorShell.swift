@@ -364,9 +364,6 @@ struct TracksDoorHeroTitle: View {
 }
 
 struct TracksDoorRetraceCue: View {
-    /// AC35 carve-out: ia-doors.html .action ratifies 13pt/600 type and a 3pt gap.
-    @ScaledMetric(relativeTo: .footnote) private var pointSize = 13.0
-
     var body: some View {
         HStack(spacing: 3) {
             Text("Retrace")
@@ -374,7 +371,8 @@ struct TracksDoorRetraceCue: View {
                 .iconRole(.accessory)
                 .accessibilityHidden(true)
         }
-        .font(.system(size: pointSize, weight: .semibold))
+        // R12: ia-doors.html:428-431 and :753 ratify Retrace at SF 13/600.
+        .font(Typography.font(for: .action))
         .fixedSize(horizontal: true, vertical: true)
     }
 }

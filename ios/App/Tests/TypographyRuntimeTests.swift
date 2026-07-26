@@ -56,6 +56,12 @@ final class TypographyRuntimeTests: XCTestCase {
             weight: .semibold
         ),
         .init(
+            role: .action,
+            pointSize: 13,
+            textStyle: .footnote,
+            weight: .semibold
+        ),
+        .init(
             role: .label,
             pointSize: 11,
             textStyle: .caption2,

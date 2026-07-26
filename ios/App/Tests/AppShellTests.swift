@@ -477,7 +477,7 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
-    func testTracksDoorRetraceCueUsesRatifiedTypeGapAndChevronScale() throws {
+    func testTracksDoorRetraceCueUsesRatifiedActionRoleGapAndChevronScale() throws {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
             let actual = try tracksDoorRenderedSize(
                 TracksDoorRetraceCue(),
@@ -3785,7 +3785,7 @@ private struct RatifiedTracksDoorHeroIcon: View {
 }
 
 private struct RatifiedTracksDoorRetraceCue: View {
-    /// ia-doors.html .action ratifies 13pt/600 type and a 3pt gap.
+    /// R12 / ia-doors.html:428-431 and :753 ratify SF 13/600 type and a 3pt gap.
     @ScaledMetric(relativeTo: .footnote) private var pointSize = 13.0
 
     var body: some View {
