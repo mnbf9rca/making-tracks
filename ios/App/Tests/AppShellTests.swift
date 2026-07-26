@@ -93,6 +93,13 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(WorldDoorRow.allCases.map(\.title).contains("Coverage"))
     }
 
+    func testQuietChromeUsesTokenSurfacesAndBareAttribution() {
+        XCTAssertEqual(MapDoorChromeSpec.attributionTypographyRole, .label)
+        XCTAssertFalse(MapDoorChromeSpec.attributionHasBackground)
+        XCTAssertEqual(MapDoorChromeSpec.locateMinimumHitTarget, 44)
+        XCTAssertTrue(MapDoorChromeSpec.usesBuiltInCompass)
+    }
+
     @MainActor
     func testMapDoorBarRendersAtStandardAndAX5DynamicType() {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {

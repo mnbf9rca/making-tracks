@@ -4,6 +4,7 @@ import Observation
 import SwiftUI
 import UIKit
 @preconcurrency import MapLibre
+import DesignSystem
 import MakingTracksCore
 import MakingTracksData
 import MakingTracksMapStyle
@@ -3843,11 +3844,8 @@ struct MapScreen: View {
 
     private var attributionText: some View {
         Text(verbatim: "© OpenStreetMap")
-            .font(.caption2)
-            .fontWeight(.semibold)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.ultraThinMaterial, in: Capsule())
+            .font(Typography.font(for: MapDoorChromeSpec.attributionTypographyRole))
+            .foregroundStyle(MaterialTheme.snow.tokens.muted.swiftUIColor)
             .accessibilityLabel("OpenStreetMap attribution")
             .accessibilityIdentifier("map.openstreetmap-attribution")
     }
@@ -4096,8 +4094,27 @@ struct MapScreen: View {
         } label: {
             Image(systemName: locateMeButtonSystemName)
                 .font(.title3)
-                .frame(width: 44, height: 44)
-                .background(.ultraThinMaterial, in: Circle())
+                .frame(
+                    width: MapDoorChromeSpec.locateMinimumHitTarget,
+                    height: MapDoorChromeSpec.locateMinimumHitTarget
+                )
+                .background(
+                    MaterialTheme.snow.tokens.surface.swiftUIColor,
+                    in: Circle()
+                )
+                .overlay {
+                    Circle()
+                        .stroke(
+                            MaterialTheme.snow.tokens.hairline.swiftUIColor,
+                            lineWidth: 1
+                        )
+                }
+                .shadow(
+                    color: MaterialTheme.snow.tokens.shadow.swiftUIColor,
+                    radius: 8,
+                    x: 0,
+                    y: 3
+                )
         }
         .accessibilityLabel(locateMeButtonAccessibilityLabel)
         .accessibilityHint("Centers the map on your location")

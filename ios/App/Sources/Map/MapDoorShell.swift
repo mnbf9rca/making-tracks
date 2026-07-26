@@ -7,6 +7,13 @@ struct MapDoorPresentation: Equatable {
     let accessibilityIdentifier: String
 }
 
+struct MapDoorChromeSpec {
+    static let attributionTypographyRole = TypographyRole.label
+    static let attributionHasBackground = false
+    static let locateMinimumHitTarget: CGFloat = 44
+    static let usesBuiltInCompass = true
+}
+
 struct MapDoorRowPresentation: Equatable {
     let title: String
     let subtitle: String
