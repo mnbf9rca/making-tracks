@@ -222,15 +222,31 @@ against the failing path and assert the fallback, not the happy path.
 survives even before full adoption; the four scattered teal definitions collapse into the
 token sheet.
 
-### State morphology — component law (**R15**)
+### State morphology — component law (**R15**), and the fourth category (**R16**)
 
-A control's **state is carried by its shape and its glyph, never by colour alone**:
+**A `state toggle` is the system's fourth component category** — *a control reporting a persistent
+fact*, alongside buttons, chips and the rest of §5's table. Its form law is R15:
 
 | State | Container | Glyph |
 |---|---|---|
 | **ON** | filled pill | filled glyph |
 | **OFF** | tonal | outline glyph |
 | **Momentary verb** (does a thing, holds no state) | quiet text | — |
+
+**State toggles sit outside the filled-action budget.** §5's *one filled per screen* continues to
+govern **actions only**. The reasoning, ratified verbatim:
+
+> **States are not buttons — the budget exists to stop screens shouting competing imperatives; an ON
+> state is not an imperative, it is a fact the control is reporting; three true facts are not three
+> CTAs.**
+
+**Rider — an ON pill fills with the state's own semantic token.** Within a state cluster, **seen**
+fills `accent`, **loved** fills the ratified `love` row, and **saved** fills `accent`'s
+tonal-strength companion. **Exact values are the re-render's job to prove against the AA gate.** The
+purpose is that three ON pills read as three differently-toned *facts* rather than three copies of
+the CTA colour, so a screen's single filled **action** stays unmistakable beside a fully-lit cluster.
+Morphology still carries the state signal — **fill plus glyph, never colour alone**; the tones exist
+to prevent CTA impersonation, not to replace the morphology.
 
 **Never-colour-alone applies to state**, not only to seen-state and progress. This is what makes a
 control's state legible without a legend: a filled pill with a filled glyph is on, a tonal pill with
