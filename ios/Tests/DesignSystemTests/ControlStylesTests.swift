@@ -84,7 +84,7 @@ final class ControlStylesTests: XCTestCase {
             MaterialChip(
                 "Trail",
                 state: .active,
-                neighborGap: 8,
+                neighborGaps: .all(8),
                 action: {}
             )
         )
@@ -148,45 +148,40 @@ final class ControlStylesTests: XCTestCase {
         XCTAssertEqual(MaterialChipGeometry.minimumHitTarget, 44)
         XCTAssertEqual(
             MaterialChipGeometry.hitOutset(
-                for: MaterialChipGeometry.visualHeight,
-                neighborGap: nil
+                for: MaterialChipGeometry.visualHeight
             ),
             11
         )
         XCTAssertEqual(
-            MaterialChipGeometry.hitOutset(for: 44, neighborGap: nil),
+            MaterialChipGeometry.hitOutset(for: 44),
             0
         )
         XCTAssertEqual(
-            MaterialChipGeometry.hitOutset(for: 80, neighborGap: nil),
+            MaterialChipGeometry.hitOutset(for: 80),
             0
         )
     }
 
     func testMaterialChipTiledHitTargetClipsOutsetToHalfNeighborGap() {
         XCTAssertEqual(
-            MaterialChipGeometry.hitOutset(for: 22, neighborGap: 8),
+            MaterialChipGeometry.tiledHitOutset(neighborGap: 8),
             4
         )
         XCTAssertEqual(
-            MaterialChipGeometry.hitOutset(for: 22, neighborGap: 44),
+            MaterialChipGeometry.tiledHitOutset(neighborGap: 44),
             11
         )
         XCTAssertEqual(
-            MaterialChipGeometry.hitOutset(for: 60, neighborGap: 0),
+            MaterialChipGeometry.tiledHitOutset(neighborGap: 0),
             0
         )
         XCTAssertEqual(
-            MaterialChipGeometry.hitOutset(for: 60, neighborGap: 8),
-            4
-        )
-        XCTAssertEqual(
-            MaterialChipGeometry.hitOutset(for: 80, neighborGap: 8),
-            4
+            MaterialChipGeometry.tiledHitOutset(neighborGap: nil),
+            11
         )
     }
 
-    func testMaterialChipTiledHitTargetsAssignGapToNearerNeighbor() {
+    func testMaterialChipTiledHitTargetsClipOnlyFacingSides() {
         let gap: CGFloat = 8
         let chipWidth: CGFloat = 60
         let leftRect = CGRect(
@@ -201,9 +196,12 @@ final class ControlStylesTests: XCTestCase {
             width: chipWidth,
             height: MaterialChipGeometry.visualHeight
         )
-        let shape = MaterialChipHitTargetShape(neighborGap: gap)
-        let leftTarget = shape.path(in: leftRect)
-        let rightTarget = shape.path(in: rightRect)
+        let leftTarget = MaterialChipHitTargetShape(
+            neighborGaps: MaterialChipNeighborGaps(trailing: gap)
+        ).path(in: leftRect)
+        let rightTarget = MaterialChipHitTargetShape(
+            neighborGaps: MaterialChipNeighborGaps(leading: gap)
+        ).path(in: rightRect)
         let centerY = leftRect.midY
         let samples = [
             (
@@ -241,6 +239,67 @@ final class ControlStylesTests: XCTestCase {
             )
             XCTAssertEqual(leftContains, sample.leftOwnsPoint)
         }
+
+        XCTAssertTrue(
+            leftTarget.contains(
+                CGPoint(x: leftRect.minX - 10, y: leftRect.midY)
+            ),
+            "The free run edge keeps its full 11pt outset"
+        )
+        XCTAssertTrue(
+            leftTarget.contains(
+                CGPoint(x: leftRect.midX, y: leftRect.minY - 10)
+            ),
+            "The free row edge keeps its full 11pt outset"
+        )
+    }
+
+    func testMaterialChipTiledHitTargetsUseIndependentAxisGaps() {
+        let rect = CGRect(
+            x: 20,
+            y: 20,
+            width: 60,
+            height: MaterialChipGeometry.visualHeight
+        )
+        let path = MaterialChipHitTargetShape(
+            neighborGaps: MaterialChipNeighborGaps(
+                top: 6,
+                leading: 8,
+                bottom: 10,
+                trailing: 12
+            )
+        ).path(in: rect)
+
+        XCTAssertEqual(path.boundingRect.minX, rect.minX - 4)
+        XCTAssertEqual(path.boundingRect.maxX, rect.maxX + 6)
+        XCTAssertEqual(path.boundingRect.minY, rect.minY - 3)
+        XCTAssertEqual(path.boundingRect.maxY, rect.maxY + 5)
+    }
+
+    func testMaterialChipTiledHitTargetsMirrorLeadingForRightToLeft() {
+        let rect = CGRect(
+            x: 20,
+            y: 20,
+            width: 60,
+            height: MaterialChipGeometry.visualHeight
+        )
+        let path = MaterialChipHitTargetShape(
+            neighborGaps: MaterialChipNeighborGaps(
+                leading: 8,
+                trailing: 12
+            )
+        ).path(in: rect)
+
+        XCTAssertEqual(path.boundingRect.minX, rect.minX - 4)
+        XCTAssertEqual(path.boundingRect.maxX, rect.maxX + 6)
+        XCTAssertEqual(path.boundingRect.width, rect.width + 10)
+        XCTAssertEqual(
+            MaterialChipHitTargetShape(
+                neighborGaps: .all(8)
+            ).layoutDirectionBehavior,
+            .mirrors(in: .rightToLeft),
+            "SwiftUI must mirror logical leading and trailing exactly once"
+        )
     }
 
     func testMaterialChipIconUsesTypographyLabelSizeAndMediumWeight() throws {
@@ -375,6 +434,55 @@ final class ControlStylesTests: XCTestCase {
 
     private func renderedWidth<Content: View>(_ content: Content) throws -> Int {
         try render(content).width
+    }
+
+    func testMaterialChipWiresTiledHitShapeIntoBothVisualStates() throws {
+        let gaps = MaterialChipNeighborGaps(
+            top: 6,
+            leading: 8,
+            bottom: 10,
+            trailing: 12
+        )
+
+        for state in [MaterialChipState.active, .available] {
+            let chip = MaterialChip(
+                "Chip",
+                state: state,
+                neighborGaps: gaps,
+                action: {}
+            )
+            let body = chip.body
+            let shape = try XCTUnwrap(
+                firstDescendant(
+                    of: MaterialChipHitTargetShape.self,
+                    in: body
+                )
+            )
+            let contentShapeKinds = try XCTUnwrap(
+                firstDescendant(
+                    of: ContentShapeKinds.self,
+                    in: body
+                )
+            )
+
+            XCTAssertEqual(shape.neighborGaps, gaps)
+            XCTAssertEqual(contentShapeKinds, .interaction)
+        }
+    }
+
+    private func firstDescendant<Descendant>(
+        of type: Descendant.Type,
+        in value: Any
+    ) -> Descendant? {
+        if let value = value as? Descendant {
+            return value
+        }
+        for child in Mirror(reflecting: value).children {
+            if let descendant = firstDescendant(of: type, in: child.value) {
+                return descendant
+            }
+        }
+        return nil
     }
 
 #if canImport(AppKit)

@@ -4,18 +4,21 @@ import XCTest
 
 @MainActor
 final class PublicControlStylesTests: XCTestCase {
-    func testLayoutsCanUsePublicChipGeometryAndSupplyNeighborGap() {
+    func testLayoutsCanUsePublicChipGeometryAndSupplyPerEdgeNeighborGaps() {
         XCTAssertEqual(MaterialChipGeometry.visualHeight, 22)
         XCTAssertEqual(MaterialChipGeometry.minimumHitTarget, 44)
         XCTAssertEqual(
-            MaterialChipGeometry.hitOutset(for: 22, neighborGap: 8),
+            MaterialChipGeometry.tiledHitOutset(neighborGap: 8),
             4
         )
 
         _ = MaterialChip(
             "Nearby",
             state: .available,
-            neighborGap: 8,
+            neighborGaps: MaterialChipNeighborGaps(
+                leading: 8,
+                trailing: 8
+            ),
             action: {}
         )
     }
