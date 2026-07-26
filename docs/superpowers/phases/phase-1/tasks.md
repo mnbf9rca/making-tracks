@@ -337,7 +337,7 @@ Host tests plus renders (390×844 and an AX variant, HTML committed).
 - **Depends on:** T1.1
 - **Owner:** codex3
 - **Review tier:** `sourcery` + `opus`
-- **Status:** PR open — #494
+- **Status:** ready-to-merge — #494; 443 host tests, 192 app tests and 70 UI tests, 0 failures; three exact-head critics + Opus cleared; CI green; zero review threads; Sourcery service-degradation evidence recorded in PR body after the one permitted retrigger, per fable ruling
 - **Contracts consumed:** T1.1's token sheet, including its constant pin block.
 - **Contracts produced:** none new, but you change `MapTheme`'s source of values, which `MLNMapViewRepresentable` and the theme picker both read — say so in the PR body.
 
