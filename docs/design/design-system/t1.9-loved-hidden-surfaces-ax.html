@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=390, initial-scale=1">
+<title>T1.9 Loved and Hidden surfaces AX5 implementation evidence</title>
+<style>
+  @font-face {
+    font-family: "Newsreader";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader16pt-SemiBold.ttf");
+    font-weight: 600;
+  }
+  * { box-sizing: border-box; }
+  :root {
+    --ground: #d7d2c6;
+    --surface: #fbfaf2;
+    --raised: #fff;
+    --ink: #2b2823;
+    --muted: #6b675f;
+    --accent: #0a6b5c;
+    --line: rgba(43,40,35,.14);
+    --scrim: rgba(43,40,35,.30);
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    --serif: "Newsreader", Georgia, serif;
+  }
+  html, body {
+    margin: 0;
+    width: 390px;
+    height: 2532px;
+    overflow: hidden;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+  }
+  .frame {
+    position: relative;
+    width: 390px;
+    height: 844px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .frame + .frame { border-top: 1px solid var(--ink); }
+  .status {
+    height: 48px;
+    padding: 12px 24px 0;
+    display: flex;
+    justify-content: space-between;
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .state {
+    position: absolute;
+    z-index: 8;
+    top: 52px;
+    left: 16px;
+    padding: 6px 9px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .map {
+    background:
+      linear-gradient(26deg, transparent 46%, rgba(128,119,96,.28) 47%, transparent 48%) 0 0/210px 180px,
+      linear-gradient(152deg, transparent 46%, rgba(128,119,96,.22) 47%, transparent 48%) 30px 20px/260px 220px,
+      var(--ground);
+  }
+  .scrim { position: absolute; inset: 0; background: var(--scrim); }
+  .sheet {
+    position: absolute;
+    top: 70px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 10px 16px 24px;
+    overflow: hidden;
+    border-radius: 22px 22px 0 0;
+    background: var(--surface);
+    box-shadow: 0 -5px 18px rgba(43,40,35,.16);
+  }
+  .grabber { width: 36px; height: 5px; margin: 0 auto; border-radius: 999px; background: var(--line); }
+  .close {
+    position: absolute;
+    top: 21px;
+    right: 17px;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    font-size: 29px;
+  }
+  h1 {
+    margin: 35px 0 0;
+    font-family: var(--serif);
+    font-size: 41px;
+    font-weight: 600;
+    line-height: 1;
+  }
+  .subline {
+    margin: 7px 0 14px;
+    color: var(--muted);
+    font-family: var(--serif);
+    font-size: 26px;
+    font-style: italic;
+    line-height: 1.05;
+  }
+  .hero {
+    min-height: 174px;
+    padding: 17px;
+    border-radius: 15px;
+    background: var(--raised);
+    box-shadow: 0 2px 6px rgba(43,40,35,.10);
+  }
+  .hero-lead { display: flex; align-items: flex-start; gap: 14px; }
+  .hero-icon { width: 38px; flex: 0 0 38px; color: var(--accent); font-size: 36px; text-align: center; }
+  .copy { min-width: 0; flex: 1; }
+  .title { font-family: var(--serif); font-size: 28px; font-weight: 600; line-height: 1.08; }
+  .meta { margin-top: 5px; color: var(--muted); font-size: 20px; line-height: 1.25; }
+  .retrace { margin: 16px 0 0 52px; color: var(--accent); font-size: 24px; font-weight: 600; }
+  .label { margin: 18px 0 7px; color: var(--muted); font-size: 17px; font-weight: 600; letter-spacing: 1.3px; }
+  .door-row {
+    min-height: 93px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .door-row .title { max-width: 220px; }
+  .row-icon { width: 38px; flex: 0 0 38px; color: var(--accent); font-size: 31px; text-align: center; }
+  .count { margin-left: auto; color: var(--muted); font-size: 23px; }
+  .quiet, .quiet .row-icon, .quiet .title { color: var(--muted); }
+  .new-list { display: none; }
+  nav {
+    height: 95px;
+    display: grid;
+    grid-template-columns: 1fr 1.9fr 1fr;
+    align-items: center;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  nav .back { color: var(--accent); font-size: 25px; font-weight: 600; }
+  nav .nav-title { text-align: center; font-size: 25px; font-weight: 600; line-height: 1.05; }
+  .managed { padding: 20px 16px 30px; }
+  .managed-heading { display: flex; align-items: flex-start; gap: 12px; padding-bottom: 18px; }
+  .managed-heading .heading-icon { width: 40px; flex: 0 0 40px; color: var(--accent); font-size: 34px; text-align: center; }
+  .managed-heading.quiet .heading-icon { color: var(--muted); }
+  .managed-heading h1 { margin: 0; font-size: 39px; line-height: 1.02; }
+  .place-row {
+    min-height: 176px;
+    display: grid;
+    grid-template-columns: 42px 1fr 84px;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .place-copy { min-width: 0; }
+  .place-title { font-family: var(--serif); font-size: 29px; font-weight: 600; line-height: 1.08; }
+  .place-row .meta { margin-top: 8px; font-size: 21px; }
+  .action {
+    min-width: 84px;
+    min-height: 62px;
+    display: grid;
+    place-items: center;
+    color: var(--accent);
+    font-size: 24px;
+    font-weight: 600;
+  }
+  .heart-action { font-size: 32px; }
+  .fold { position: absolute; z-index: 9; left: 0; right: 0; bottom: 0; border-top: 2px dashed #c0392b; }
+  .fold-label {
+    position: absolute;
+    z-index: 10;
+    right: 6px;
+    bottom: 4px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: rgba(251,250,242,.94);
+    color: #c0392b;
+    font-size: 9px;
+    font-weight: 700;
+  }
+</style>
+</head>
+<body>
+  <section class="frame map">
+    <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+    <div class="state">IMPLEMENTATION EVIDENCE · AX5 · SNOW</div>
+    <div class="scrim"></div>
+    <main class="sheet">
+      <div class="grabber"></div><div class="close">×</div>
+      <h1>Tracks</h1>
+      <div class="subline">your story through the world</div>
+      <div class="hero">
+        <div class="hero-lead"><span class="hero-icon">⌁</span><div class="copy"><div class="title">My tracks</div><div class="meta">2 visits · last: Spread East</div></div></div>
+        <div class="retrace">Retrace ›</div>
+      </div>
+      <div class="label">LISTS</div>
+      <div class="door-row"><span class="row-icon">♡</span><span class="title">Loved places</span><span class="count">2</span></div>
+      <div class="door-row quiet"><span class="row-icon">◉̸</span><span class="title">Hidden places</span><span class="count">2</span></div>
+    </main>
+    <div class="fold"></div><div class="fold-label">fold · 390 × 844</div>
+  </section>
+
+  <section class="frame">
+    <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+    <nav><span class="back">‹ Back</span><span class="nav-title">Loved places</span><span></span></nav>
+    <main class="managed">
+      <div class="managed-heading"><span class="heading-icon">♡</span><h1>Loved places</h1></div>
+      <div class="place-row">
+        <span class="row-icon">♡</span>
+        <div class="place-copy"><div class="place-title">Ghost Sign</div><div class="meta">Historic Building</div></div>
+        <div class="action heart-action" aria-label="Remove loved from Ghost Sign">♡̸</div>
+      </div>
+      <div class="place-row">
+        <span class="row-icon">♡</span>
+        <div class="place-copy"><div class="place-title">Art Deco Cinema</div><div class="meta">Historic Building · Hidden</div></div>
+        <div class="action heart-action" aria-label="Remove loved from Art Deco Cinema">♡̸</div>
+      </div>
+    </main>
+    <div class="fold"></div><div class="fold-label">fold · 390 × 844</div>
+  </section>
+
+  <section class="frame">
+    <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+    <nav><span class="back">‹ Back</span><span class="nav-title">Hidden places</span><span></span></nav>
+    <main class="managed">
+      <div class="managed-heading quiet"><span class="heading-icon">◉̸</span><h1>Hidden places</h1></div>
+      <div class="place-row quiet">
+        <span class="row-icon">◉̸</span>
+        <div class="place-copy"><div class="place-title">Art Deco Cinema</div><div class="meta">Historic Building</div></div>
+        <div class="action">Unhide</div>
+      </div>
+      <div class="place-row quiet">
+        <span class="row-icon">◉̸</span>
+        <div class="place-copy"><div class="place-title">Spread West</div><div class="meta">Historic Building</div></div>
+        <div class="action">Unhide</div>
+      </div>
+    </main>
+    <div class="fold"></div><div class="fold-label">fold · 390 × 844</div>
+  </section>
+</body>
+</html>

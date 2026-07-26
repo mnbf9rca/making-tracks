@@ -651,6 +651,8 @@ struct ViewportCameraRequest: Sendable, Equatable {
 enum MapShellDestination: Hashable {
     case listDetail(Int64)
     case tracks
+    case lovedPlaces
+    case hiddenPlaces
     case offlineMaps
     case settings
     case diagnostics
@@ -4985,6 +4987,10 @@ private struct MapDoorSheetIntegration: View {
                 onListRenamed: onListRenamed,
                 onDone: { dismiss() }
             )
+        case .lovedPlaces:
+            ManagedPlacesView(model: model, mode: .loved)
+        case .hiddenPlaces:
+            ManagedPlacesView(model: model, mode: .hidden)
         case .offlineMaps:
 #if DEBUG
             OfflineMapsView(
@@ -8920,6 +8926,20 @@ final class MapScreenModel {
         let db = database
         return await Task.detached {
             (try? db.listItems(listID: listID)) ?? []
+        }.value
+    }
+
+    func lovedPlaces() async -> [ListPlace] {
+        let db = database
+        return await Task.detached {
+            (try? db.lovedPlaces()) ?? []
+        }.value
+    }
+
+    func hiddenPlaces() async -> [ListPlace] {
+        let db = database
+        return await Task.detached {
+            (try? db.hiddenPlaces()) ?? []
         }.value
     }
 

@@ -241,11 +241,24 @@ final class AppShellTests: XCTestCase {
 
     func testDoorRootsExposeOnlyRuledRows() {
         XCTAssertEqual(WorldDoorRow.allCases, [.scope, .settings, .about])
-        XCTAssertEqual(TracksDoorRow.allCases, [.myTracks, .newList])
+        XCTAssertEqual(
+            TracksDoorRow.allCases,
+            [.myTracks, .newList, .lovedPlaces, .hiddenPlaces]
+        )
         XCTAssertFalse(WorldDoorRow.allCases.map(\.title).contains("Offline maps"))
         XCTAssertFalse(WorldDoorRow.allCases.map(\.title).contains("Coverage"))
-        XCTAssertFalse(TracksDoorRow.allCases.map(\.title).contains("Loved places"))
-        XCTAssertFalse(TracksDoorRow.allCases.map(\.title).contains("Hidden places"))
+        XCTAssertEqual(TracksDoorRow.lovedPlaces.presentation.title, "Loved places")
+        XCTAssertEqual(TracksDoorRow.lovedPlaces.presentation.systemImage, "heart")
+        XCTAssertEqual(
+            TracksDoorRow.lovedPlaces.presentation.accessibilityIdentifier,
+            "tracks.row.loved"
+        )
+        XCTAssertEqual(TracksDoorRow.hiddenPlaces.presentation.title, "Hidden places")
+        XCTAssertEqual(TracksDoorRow.hiddenPlaces.presentation.systemImage, "eye.slash")
+        XCTAssertEqual(
+            TracksDoorRow.hiddenPlaces.presentation.accessibilityIdentifier,
+            "tracks.row.hidden"
+        )
     }
 
     func testTracksDoorContentProjectsHeroAndEveryNonTrackListInDatabaseOrder() {
@@ -305,6 +318,28 @@ final class AppShellTests: XCTestCase {
                     lat: 0,
                     lon: 0
                 ),
+            ],
+            lovedPlaces: [
+                ListPlace(
+                    placeID: "loved",
+                    name: "Loved Place",
+                    category: "history",
+                    pinState: PinState(saved: false, visit: .loved)
+                ),
+                ListPlace(
+                    placeID: "both",
+                    name: "Loved and Hidden",
+                    category: "memorial",
+                    pinState: PinState(saved: false, visit: .loved, hidden: true)
+                ),
+            ],
+            hiddenPlaces: [
+                ListPlace(
+                    placeID: "both",
+                    name: "Loved and Hidden",
+                    category: "memorial",
+                    pinState: PinState(saved: false, visit: .loved, hidden: true)
+                ),
             ]
         )
 
@@ -338,6 +373,8 @@ final class AppShellTests: XCTestCase {
                 ),
             ]
         )
+        XCTAssertEqual(content.lovedCount, 2)
+        XCTAssertEqual(content.hiddenCount, 1)
     }
 
     func testTracksDoorContentHandlesEmptyHistoryAndMissingProgressWithoutInventingRows() {
@@ -364,7 +401,9 @@ final class AppShellTests: XCTestCase {
                 ),
             ],
             progress: [:],
-            visits: []
+            visits: [],
+            lovedPlaces: [],
+            hiddenPlaces: []
         )
 
         XCTAssertEqual(
@@ -382,6 +421,254 @@ final class AppShellTests: XCTestCase {
                 ),
             ]
         )
+        XCTAssertEqual(content.lovedCount, 0)
+        XCTAssertEqual(content.hiddenCount, 0)
+    }
+
+    func testManagedPlacesModesExposeRuledPresentationAndAccessibleActions() {
+        let loved = ManagedPlacesMode.loved.presentation
+        XCTAssertEqual(loved.title, "Loved places")
+        XCTAssertEqual(loved.systemImage, "heart")
+        XCTAssertEqual(loved.emptyTitle, "No loved places yet")
+        XCTAssertEqual(
+            loved.emptyGuidance,
+            "Love a place you’ve seen and it’ll wait here."
+        )
+        XCTAssertEqual(loved.surfaceIdentifier, "tracks.loved.surface")
+        XCTAssertEqual(loved.rowIdentifierPrefix, "tracks.loved.row")
+        XCTAssertEqual(loved.actionIdentifierPrefix, "tracks.loved.remove")
+        XCTAssertEqual(loved.failureMessage, "Could not update that loved place.")
+        XCTAssertEqual(
+            ManagedPlacesMode.loved.actionAccessibilityLabel(placeName: "Alpha Arch"),
+            "Remove loved from Alpha Arch"
+        )
+
+        let hidden = ManagedPlacesMode.hidden.presentation
+        XCTAssertEqual(hidden.title, "Hidden places")
+        XCTAssertEqual(hidden.systemImage, "eye.slash")
+        XCTAssertEqual(hidden.emptyTitle, "No hidden places")
+        XCTAssertEqual(
+            hidden.emptyGuidance,
+            "Places you hide will wait here until you bring them back."
+        )
+        XCTAssertEqual(hidden.surfaceIdentifier, "tracks.hidden.surface")
+        XCTAssertEqual(hidden.rowIdentifierPrefix, "tracks.hidden.row")
+        XCTAssertEqual(hidden.actionIdentifierPrefix, "tracks.hidden.unhide")
+        XCTAssertEqual(hidden.failureMessage, "Could not unhide that place.")
+        XCTAssertEqual(
+            ManagedPlacesMode.hidden.actionAccessibilityLabel(placeName: "Beta Plaque"),
+            "Unhide Beta Plaque"
+        )
+    }
+
+    func testManagedPlacesStateRemovesOnlySuccessfulMembershipAndRetainsFailures() {
+        let loved = ListPlace(
+            placeID: "loved",
+            name: "Loved Place",
+            category: "history",
+            pinState: PinState(saved: false, visit: .loved)
+        )
+        let both = ListPlace(
+            placeID: "both",
+            name: "Loved and Hidden",
+            category: "memorial",
+            pinState: PinState(saved: false, visit: .loved, hidden: true)
+        )
+        var state = ManagedPlacesState(places: [loved, both])
+
+        state.beginAction(placeID: loved.placeID)
+        state.beginAction(placeID: both.placeID)
+        XCTAssertTrue(state.isPending(placeID: loved.placeID))
+        XCTAssertTrue(state.isPending(placeID: both.placeID))
+
+        state.finishAction(
+            placeID: loved.placeID,
+            succeeded: true,
+            failureMessage: "unused"
+        )
+        XCTAssertEqual(state.places, [both])
+        XCTAssertFalse(state.isPending(placeID: loved.placeID))
+        XCTAssertTrue(state.isPending(placeID: both.placeID))
+        XCTAssertNil(state.errorMessage)
+
+        state.finishAction(
+            placeID: both.placeID,
+            succeeded: false,
+            failureMessage: "Could not update that loved place."
+        )
+        XCTAssertEqual(state.places, [both])
+        XCTAssertTrue(state.pendingPlaceIDs.isEmpty)
+        XCTAssertEqual(state.errorMessage, "Could not update that loved place.")
+
+        var concurrentState = ManagedPlacesState(places: [loved, both])
+        concurrentState.beginAction(placeID: loved.placeID)
+        concurrentState.beginAction(placeID: both.placeID)
+        concurrentState.finishAction(
+            placeID: both.placeID,
+            succeeded: false,
+            failureMessage: "Could not update that loved place."
+        )
+        concurrentState.finishAction(
+            placeID: loved.placeID,
+            succeeded: true,
+            failureMessage: "unused"
+        )
+        XCTAssertEqual(concurrentState.places, [both])
+        XCTAssertTrue(concurrentState.pendingPlaceIDs.isEmpty)
+        XCTAssertEqual(
+            concurrentState.errorMessage,
+            "Could not update that loved place.",
+            "A later concurrent success must not erase another row's real failure."
+        )
+    }
+
+    func testLovedManagedPlaceMetadataNamesHiddenOverlapWithoutFilteringIt() {
+        let both = ListPlace(
+            placeID: "both",
+            name: "Loved and Hidden",
+            category: "historic_building",
+            pinState: PinState(saved: false, visit: .loved, hidden: true)
+        )
+
+        XCTAssertEqual(
+            ManagedPlacesMode.loved.metadata(for: both),
+            "Historic Building · Hidden"
+        )
+        XCTAssertEqual(
+            ManagedPlacesMode.hidden.metadata(for: both),
+            "Historic Building"
+        )
+    }
+
+    @MainActor
+    func testManagedPlacesAndVirtualRowIconsOwnRatifiedRolesAtPointOfUse() throws {
+        let place = ListPlace(
+            placeID: "both",
+            name: "Loved and Hidden",
+            category: "historic_building",
+            pinState: PinState(saved: false, visit: .loved, hidden: true)
+        )
+        let lovedView = ManagedPlacesView(model: nil, mode: .loved)
+        let hiddenView = ManagedPlacesView(model: nil, mode: .hidden)
+        let tracksView = TracksDoorRootView(
+            path: .constant([]),
+            model: nil,
+            prepareTracksHistory: {},
+            onListDeleted: { _ in }
+        )
+
+        XCTAssertEqual(
+            descendants(
+                of: ManagedPlacesInlineIconGlyph.self,
+                in: lovedView.titleRow
+            ).count,
+            1
+        )
+        XCTAssertEqual(
+            descendants(
+                of: ManagedPlacesEmptyIconGlyph.self,
+                in: lovedView.emptyRow
+            ).count,
+            1
+        )
+        XCTAssertEqual(
+            descendants(
+                of: ManagedPlacesInlineIconGlyph.self,
+                in: lovedView.placeRow(place)
+            ).count,
+            2,
+            "A loved row must ratify both its row symbol and remove action."
+        )
+        XCTAssertEqual(
+            descendants(
+                of: ManagedPlacesInlineIconGlyph.self,
+                in: hiddenView.placeRow(place)
+            ).count,
+            1,
+            "A hidden row has one symbol; Unhide remains a text action."
+        )
+        XCTAssertEqual(
+            descendants(
+                of: TracksDoorVirtualRowIconGlyph.self,
+                in: tracksView.virtualPlacesRow(
+                    .lovedPlaces,
+                    count: 2,
+                    destination: .lovedPlaces
+                )
+            ).count,
+            1
+        )
+
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: ManagedPlacesInlineIconGlyph(systemName: "heart").body
+                )
+            ),
+            .inline
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: ManagedPlacesEmptyIconGlyph(systemName: "heart").body
+                )
+            ),
+            .hero
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: TracksDoorVirtualRowIconGlyph(systemName: "heart").body
+                )
+            ),
+            .inline
+        )
+    }
+
+    @MainActor
+    func testManagedPlacesActionCoordinatorRetainsRowAndShowsErrorWhenModelThrows() async throws {
+        let database = try AppDatabase.inMemory()
+        let unrelatedFixture = try PlaceRef(
+            placeID: "fixture",
+            name: "Fixture",
+            lat: 51.5,
+            lon: -0.1,
+            category: "memorial",
+            tier: 2,
+            schemaVersion: 1,
+            fetchedAt: Date(timeIntervalSince1970: 1),
+            rawJSON: "{}"
+        )
+        let model = try MapScreenModel(
+            database: database,
+            fixturePlaces: [unrelatedFixture]
+        )
+        let missing = ListPlace(
+            placeID: "missing",
+            name: "Missing snapshot",
+            category: "memorial",
+            pinState: PinState(saved: false, visit: .none, hidden: true)
+        )
+        var state = ManagedPlacesState(places: [missing])
+
+        await ManagedPlacesActionCoordinator.perform {
+            state.beginAction(placeID: missing.placeID)
+        } finish: { succeeded in
+            state.finishAction(
+                placeID: missing.placeID,
+                succeeded: succeeded,
+                failureMessage: "Could not unhide that place."
+            )
+        } operation: {
+            try await model.setHidden(placeID: missing.placeID, hidden: false)
+        }
+
+        XCTAssertEqual(state.places, [missing])
+        XCTAssertTrue(state.pendingPlaceIDs.isEmpty)
+        XCTAssertEqual(state.errorMessage, "Could not unhide that place.")
     }
 
     func testQuietChromeUsesTokenSurfacesAndBareAttribution() {
@@ -3781,6 +4068,20 @@ private func firstDescendant<Descendant>(
         }
     }
     return nil
+}
+
+private func descendants<Descendant>(
+    of type: Descendant.Type,
+    in value: Any
+) -> [Descendant] {
+    var matches: [Descendant] = []
+    if let value = value as? Descendant {
+        matches.append(value)
+    }
+    for child in Mirror(reflecting: value).children {
+        matches.append(contentsOf: descendants(of: type, in: child.value))
+    }
+    return matches
 }
 
 private struct RatifiedTracksDoorHeroIcon: View {

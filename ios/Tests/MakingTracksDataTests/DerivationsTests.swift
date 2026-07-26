@@ -444,6 +444,8 @@ final class DerivationsTests: XCTestCase {
         XCTAssertEqual(context.visits.map(\.placeID), ["p_0", "p_4"])
         XCTAssertEqual(summary.features.count, 1)
         XCTAssertEqual(summary.connectableVisitCount, 2)
+        XCTAssertEqual(try db.listProgress(listID: 42).visited, 2)
+        XCTAssertEqual(try db.listProgress(listID: 42).total, 2)
     }
 
     func testNonSystemTrackKindRowsUseStoredMembershipNotVirtualTracks() throws {
@@ -461,6 +463,169 @@ final class DerivationsTests: XCTestCase {
 
         XCTAssertEqual(try db.listItems(listID: 42).map(\.placeID), ["stored"])
         XCTAssertEqual(try db.listProgress(listID: 42).total, 1)
+    }
+
+    func testLovedPlacesAreSnapshotBackedDeduplicatedAndIncludeHiddenOverlap() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        try db.dbQueue.write { d in
+            try insertSnapshot(
+                d,
+                placeID: "recent",
+                name: "Recent Arcade",
+                category: "architecture",
+                lat: 51.50,
+                lon: -0.12,
+                tier: 2
+            )
+            try insertSnapshot(
+                d,
+                placeID: "alpha",
+                name: "alpha memorial",
+                category: "memorial",
+                lat: 51.51,
+                lon: -0.13,
+                tier: 3
+            )
+            try insertSnapshot(
+                d,
+                placeID: "zulu",
+                name: "Zulu Garden",
+                category: "garden",
+                lat: 51.52,
+                lon: -0.14,
+                tier: 1
+            )
+            try insertSnapshot(
+                d,
+                placeID: "ordinary",
+                name: "Ordinary Place",
+                category: "history",
+                lat: 51.53,
+                lon: -0.15,
+                tier: 2
+            )
+
+            try insertVisit(
+                d,
+                placeID: "recent",
+                timestamp: Date(timeIntervalSince1970: 30),
+                verdict: .loved
+            )
+            try insertVisit(
+                d,
+                placeID: "recent",
+                timestamp: Date(timeIntervalSince1970: 40)
+            )
+            try insertVisit(
+                d,
+                placeID: "alpha",
+                timestamp: Date(timeIntervalSince1970: 20),
+                verdict: .loved
+            )
+            try insertVisit(
+                d,
+                placeID: "zulu",
+                timestamp: Date(timeIntervalSince1970: 10),
+                verdict: .loved
+            )
+            try insertVisit(
+                d,
+                placeID: "zulu",
+                timestamp: Date(timeIntervalSince1970: 25),
+                verdict: .loved
+            )
+            try insertVisit(
+                d,
+                placeID: "ordinary",
+                timestamp: Date(timeIntervalSince1970: 50)
+            )
+            try insertVisit(
+                d,
+                placeID: "snapshotless",
+                timestamp: Date(timeIntervalSince1970: 60),
+                verdict: .loved
+            )
+            try d.execute(
+                sql: "INSERT INTO hidden_places (place_id, hidden_at) VALUES ('alpha', 70)"
+            )
+        }
+
+        let places = try db.lovedPlaces()
+
+        XCTAssertEqual(places.map(\.placeID), ["recent", "zulu", "alpha"])
+        XCTAssertEqual(
+            places.map(\.name),
+            ["Recent Arcade", "Zulu Garden", "alpha memorial"]
+        )
+        XCTAssertEqual(
+            places.map(\.category),
+            ["architecture", "garden", "memorial"]
+        )
+        XCTAssertEqual(places.map(\.pinState.visit), [.loved, .loved, .loved])
+        XCTAssertEqual(places.map(\.pinState.hidden), [false, false, true])
+    }
+
+    func testHiddenPlacesJoinSnapshotsValidateRowsAndSortNewestFirst() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 0) })
+        try db.dbQueue.write { d in
+            try insertSnapshot(
+                d,
+                placeID: "newest",
+                name: "Alpha Arch",
+                category: "architecture",
+                lat: 51.50,
+                lon: -0.12,
+                tier: 2
+            )
+            try insertSnapshot(
+                d,
+                placeID: "older",
+                name: "Beta Plaque",
+                category: "memorial",
+                lat: 51.51,
+                lon: -0.13,
+                tier: 3
+            )
+            try insertSnapshot(
+                d,
+                placeID: "invalid",
+                name: "Invalid Tier",
+                category: "history",
+                lat: 51.52,
+                lon: -0.14,
+                tier: 9
+            )
+            try insertSnapshot(
+                d,
+                placeID: "visible",
+                name: "Visible Garden",
+                category: "garden",
+                lat: 51.53,
+                lon: -0.15,
+                tier: 1
+            )
+
+            try insertVisit(
+                d,
+                placeID: "newest",
+                timestamp: Date(timeIntervalSince1970: 10),
+                verdict: .loved
+            )
+            try d.execute(
+                sql: """
+                    INSERT INTO hidden_places (place_id, hidden_at)
+                    VALUES ('snapshotless', 50), ('invalid', 40), ('newest', 30), ('older', 20)
+                    """
+            )
+        }
+
+        let places = try db.hiddenPlaces()
+
+        XCTAssertEqual(places.map(\.placeID), ["newest", "older"])
+        XCTAssertEqual(places.map(\.name), ["Alpha Arch", "Beta Plaque"])
+        XCTAssertEqual(places.map(\.category), ["architecture", "memorial"])
+        XCTAssertEqual(places.map(\.pinState.visit), [.loved, .none])
+        XCTAssertEqual(places.map(\.pinState.hidden), [true, true])
     }
 
     private func insertSnapshot(

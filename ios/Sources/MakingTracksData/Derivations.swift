@@ -47,6 +47,41 @@ extension AppDatabase {
         }
     }
 
+    public func lovedPlaces() throws -> [ListPlace] {
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT ps.place_id, ps.name, ps.lat, ps.lon, ps.category, ps.tier,
+                           MAX(v.visited_at) AS membership_at
+                    FROM visits v
+                    JOIN place_snapshots ps ON ps.place_id = v.place_id
+                    WHERE v.verdict = ?
+                    GROUP BY ps.place_id, ps.name, ps.lat, ps.lon, ps.category, ps.tier
+                    ORDER BY membership_at DESC, ps.name COLLATE NOCASE, ps.place_id
+                    """,
+                arguments: [Verdict.loved.rawValue]
+            )
+            return try Self.projectListPlaces(rows, db)
+        }
+    }
+
+    public func hiddenPlaces() throws -> [ListPlace] {
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT ps.place_id, ps.name, ps.lat, ps.lon, ps.category, ps.tier,
+                           h.hidden_at AS membership_at
+                    FROM hidden_places h
+                    JOIN place_snapshots ps ON ps.place_id = h.place_id
+                    ORDER BY membership_at DESC, ps.name COLLATE NOCASE, ps.place_id
+                    """
+            )
+            return try Self.projectListPlaces(rows, db)
+        }
+    }
+
     public func listMapFeatures(listID: Int64) throws -> [(MapPlace, PinState)] {
         try dbQueue.read { db in
             let places = try Self.listSnapshots(listID: listID, db)
@@ -214,6 +249,22 @@ extension AppDatabase {
         )
     }
 
+    private static func projectListPlaces(
+        _ rows: [Row],
+        _ db: Database
+    ) throws -> [ListPlace] {
+        let snapshots = rows.compactMap(Self.listSnapshotRow)
+        let states = try Self.viewportState(snapshots.map(\.placeID), db)
+        return snapshots.map { snapshot in
+            ListPlace(
+                placeID: snapshot.placeID,
+                name: snapshot.name,
+                category: snapshot.category,
+                pinState: states[snapshot.placeID] ?? PinState(saved: false, visit: .none)
+            )
+        }
+    }
+
     private static func trackVisitRow(_ row: Row) -> TrackVisit? {
         let id: Int64 = row["id"]
         let placeID: String = row["place_id"]
@@ -325,6 +376,9 @@ extension AppDatabase {
                     FROM list_items li
                     JOIN place_snapshots ps ON ps.place_id = li.place_id
                     WHERE li.list_id = ?
+                    AND NOT EXISTS(
+                        SELECT 1 FROM hidden_places h WHERE h.place_id = li.place_id
+                    )
                     """,
                 arguments: [listID]
             ) ?? 0
@@ -336,6 +390,9 @@ extension AppDatabase {
                     JOIN place_snapshots ps ON ps.place_id = li.place_id
                     WHERE li.list_id = ?
                     AND EXISTS(SELECT 1 FROM visits v WHERE v.place_id = li.place_id)
+                    AND NOT EXISTS(
+                        SELECT 1 FROM hidden_places h WHERE h.place_id = li.place_id
+                    )
                     """,
                 arguments: [listID]
             ) ?? 0

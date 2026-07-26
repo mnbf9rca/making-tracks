@@ -60,15 +60,24 @@ struct TracksDoorListContent: Equatable, Identifiable {
 }
 
 struct TracksDoorContent: Equatable {
-    static let empty = TracksDoorContent(hero: nil, lists: [])
+    static let empty = TracksDoorContent(
+        hero: nil,
+        lists: [],
+        lovedCount: 0,
+        hiddenCount: 0
+    )
 
     let hero: TracksDoorHeroContent?
     let lists: [TracksDoorListContent]
+    let lovedCount: Int
+    let hiddenCount: Int
 
     static func make(
         lists: [PlaceList],
         progress: [Int64: ListProgress],
-        visits: [TrackVisit]
+        visits: [TrackVisit],
+        lovedPlaces: [ListPlace],
+        hiddenPlaces: [ListPlace]
     ) -> TracksDoorContent {
         let trackList = lists.first {
             $0.isSystem && $0.kind == PlaceList.trackKind
@@ -102,7 +111,12 @@ struct TracksDoorContent: Equatable {
             )
         }
 
-        return TracksDoorContent(hero: hero, lists: listRows)
+        return TracksDoorContent(
+            hero: hero,
+            lists: listRows,
+            lovedCount: lovedPlaces.count,
+            hiddenCount: hiddenPlaces.count
+        )
     }
 }
 
@@ -164,6 +178,8 @@ enum WorldDoorRow: CaseIterable {
 enum TracksDoorRow: CaseIterable {
     case myTracks
     case newList
+    case lovedPlaces
+    case hiddenPlaces
 
     var presentation: MapDoorRowPresentation {
         switch self {
@@ -180,6 +196,20 @@ enum TracksDoorRow: CaseIterable {
                 subtitle: "Places you've seen",
                 systemImage: "shoeprints.fill",
                 accessibilityIdentifier: "tracks.row.my-tracks"
+            )
+        case .lovedPlaces:
+            MapDoorRowPresentation(
+                title: "Loved places",
+                subtitle: "Places you've loved",
+                systemImage: "heart",
+                accessibilityIdentifier: "tracks.row.loved"
+            )
+        case .hiddenPlaces:
+            MapDoorRowPresentation(
+                title: "Hidden places",
+                subtitle: "Places you've hidden",
+                systemImage: "eye.slash",
+                accessibilityIdentifier: "tracks.row.hidden"
             )
         }
     }
@@ -386,6 +416,15 @@ struct TracksDoorNewListIcon: View {
     }
 }
 
+struct TracksDoorVirtualRowIconGlyph: View {
+    let systemName: String
+
+    var body: some View {
+        Image(systemName: systemName)
+            .iconRole(.inline)
+    }
+}
+
 struct TracksDoorRootView: View {
     @Binding var path: [MapShellDestination]
     let model: MapScreenModel?
@@ -438,6 +477,25 @@ struct TracksDoorRootView: View {
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
 
+            virtualPlacesRow(
+                TracksDoorRow.lovedPlaces,
+                count: content.lovedCount,
+                destination: .lovedPlaces
+            )
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+
+            virtualPlacesRow(
+                TracksDoorRow.hiddenPlaces,
+                count: content.hiddenCount,
+                destination: .hiddenPlaces,
+                quiet: true
+            )
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+
             if let actionError {
                 Text(verbatim: actionError)
                     .font(Typography.font(for: .metadata))
@@ -456,6 +514,11 @@ struct TracksDoorRootView: View {
         .accessibilityIdentifier("tracks.root")
         .task { await reload() }
         .refreshable { await reload() }
+        .onChange(of: path) { previous, current in
+            if !previous.isEmpty, current.isEmpty {
+                Task { await reload() }
+            }
+        }
         .confirmationDialog(
             pendingDeleteList.map { "Delete \($0.name)?" } ?? "Delete list?",
             isPresented: Binding(
@@ -621,6 +684,51 @@ struct TracksDoorRootView: View {
         }
     }
 
+    func virtualPlacesRow(
+        _ row: TracksDoorRow,
+        count: Int,
+        destination: MapShellDestination,
+        quiet: Bool = false
+    ) -> some View {
+        let presentation = row.presentation
+        let primary = quiet ? tokens.muted.swiftUIColor : tokens.ink.swiftUIColor
+
+        return Button {
+            path.append(destination)
+        } label: {
+            MaterialHairlineRow {
+                HStack(spacing: 12) {
+                    TracksDoorVirtualRowIconGlyph(systemName: presentation.systemImage)
+                        .foregroundStyle(
+                            quiet
+                                ? tokens.muted.swiftUIColor
+                                : tokens.accent.swiftUIColor
+                        )
+                        .frame(width: 24)
+                        .accessibilityHidden(true)
+
+                    Text(verbatim: presentation.title)
+                        .font(Typography.font(for: .listRowTitle))
+                        .foregroundStyle(primary)
+
+                    Spacer(minLength: 8)
+
+                    Text(verbatim: String(count))
+                        .font(Typography.font(for: .metadata))
+                        .foregroundStyle(tokens.muted.swiftUIColor)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: presentation.title))
+        .accessibilityValue(
+            Text(verbatim: "\(count) \(count == 1 ? "place" : "places")")
+        )
+        .accessibilityIdentifier(presentation.accessibilityIdentifier)
+    }
+
     @MainActor
     private func reload() async {
         guard let model else { return }
@@ -635,10 +743,14 @@ struct TracksDoorRootView: View {
             progress[id] = await model.listProgress(listID: id)
         }
         let visits = await model.trackVisits()
+        let lovedPlaces = await model.lovedPlaces()
+        let hiddenPlaces = await model.hiddenPlaces()
         content = TracksDoorContent.make(
             lists: lists,
             progress: progress,
-            visits: visits
+            visits: visits,
+            lovedPlaces: lovedPlaces,
+            hiddenPlaces: hiddenPlaces
         )
     }
 
