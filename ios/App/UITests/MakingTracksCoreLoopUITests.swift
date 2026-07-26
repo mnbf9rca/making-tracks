@@ -1829,6 +1829,191 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.buttons["lists.detail.show-map"].exists)
     }
 
+    func testLovedAndHiddenSurfacesManagePlaceMembership() {
+        let app = launch(reset: true, seedManagedPlaces: true)
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openTracksDoor(in: app)
+
+        let myTracks = app.buttons["tracks.row.my-tracks"]
+        let dateNight = app.buttons.matching(identifierPrefix: "lists.row.").matching(
+            NSPredicate(format: "label CONTAINS %@", "Date night")
+        ).firstMatch
+        let newList = app.buttons["tracks.row.new-list"]
+        let loved = app.buttons["tracks.row.loved"]
+        let hidden = app.buttons["tracks.row.hidden"]
+        XCTAssertTrue(myTracks.waitForExistence(timeout: 5))
+        XCTAssertTrue(dateNight.waitForExistence(timeout: 5))
+        XCTAssertTrue(newList.waitForExistence(timeout: 5))
+        XCTAssertTrue(scrollToHittable(loved, in: app))
+        XCTAssertTrue(scrollToHittable(hidden, in: app))
+        XCTAssertTrue(loved.label.contains("2"))
+        XCTAssertTrue(hidden.label.contains("2"))
+        assertMinimumInteractiveTarget(loved)
+        assertMinimumInteractiveTarget(hidden)
+        attachScreenshot(named: "loved-hidden-door")
+
+        loved.tap()
+        XCTAssertTrue(app.collectionViews["tracks.loved.surface"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Loved places"].exists)
+        XCTAssertTrue(app.staticTexts["Historic Building · Hidden"].exists)
+        let ghostRow = element(
+            identifier: "tracks.loved.row.mt1_00000000000000000000000000",
+            in: app
+        )
+        let overlapRow = element(
+            identifier: "tracks.loved.row.mt1_00000000000000000000000001",
+            in: app
+        )
+        XCTAssertTrue(ghostRow.waitForExistence(timeout: 5))
+        XCTAssertTrue(overlapRow.exists)
+        let removeGhost = app.buttons[
+            "tracks.loved.remove.mt1_00000000000000000000000000"
+        ]
+        XCTAssertTrue(removeGhost.waitForExistence(timeout: 5))
+        assertMinimumInteractiveTarget(removeGhost)
+        removeGhost.tap()
+        XCTAssertTrue(waitForNonExistence(of: ghostRow, timeout: 5))
+        XCTAssertTrue(overlapRow.exists)
+        attachScreenshot(named: "loved-places")
+
+        app.buttons["Back"].tap()
+        XCTAssertTrue(scrollToHittable(loved, in: app))
+        XCTAssertTrue(loved.label.contains("1"))
+        XCTAssertTrue(scrollToHittable(hidden, in: app))
+        hidden.tap()
+        XCTAssertTrue(app.collectionViews["tracks.hidden.surface"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Hidden places"].exists)
+        let hiddenOverlapRow = element(
+            identifier: "tracks.hidden.row.mt1_00000000000000000000000001",
+            in: app
+        )
+        let hiddenOnlyRow = element(
+            identifier: "tracks.hidden.row.mt1_S0000000000000000000000001",
+            in: app
+        )
+        XCTAssertTrue(hiddenOverlapRow.waitForExistence(timeout: 5))
+        XCTAssertTrue(hiddenOnlyRow.exists)
+        let unhideOverlap = app.buttons[
+            "tracks.hidden.unhide.mt1_00000000000000000000000001"
+        ]
+        XCTAssertTrue(unhideOverlap.waitForExistence(timeout: 5))
+        assertMinimumInteractiveTarget(unhideOverlap)
+        unhideOverlap.tap()
+        XCTAssertTrue(waitForNonExistence(of: hiddenOverlapRow, timeout: 5))
+        XCTAssertTrue(hiddenOnlyRow.exists)
+        attachScreenshot(named: "hidden-places")
+
+        app.buttons["Back"].tap()
+        XCTAssertTrue(scrollToHittable(hidden, in: app))
+        XCTAssertTrue(hidden.label.contains("1"))
+    }
+
+    func testHiddenSurfaceRoundTripsWithScopeWithoutChangingTrackCounts() {
+        let app = launch(
+            reset: true,
+            pinDiagnostics: true,
+            seedManagedPlaces: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+        XCTAssertTrue(waitForSourceFeatureCount(1, in: app))
+
+        openTracksDoor(in: app)
+        let myTracks = app.buttons["tracks.row.my-tracks"]
+        XCTAssertTrue(myTracks.waitForExistence(timeout: 5))
+        XCTAssertTrue(myTracks.label.contains("2 visits"))
+        let loved = app.buttons["tracks.row.loved"]
+        XCTAssertTrue(scrollToHittable(loved, in: app))
+        loved.tap()
+        XCTAssertTrue(app.buttons["door.destination.close"].waitForExistence(timeout: 5))
+        app.buttons["door.destination.close"].tap()
+
+        openScope(in: app)
+        let showHidden = "map.layers.show-hidden"
+        XCTAssertTrue(app.switches[showHidden].waitForExistence(timeout: 5))
+        tapSwitch(in: app, identifier: showHidden, expectedValue: "1")
+        app.buttons["map.layers.done"].tap()
+        XCTAssertTrue(waitForSourceFeatureCount(2, in: app))
+
+        openTracksDoor(in: app)
+        XCTAssertTrue(myTracks.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            myTracks.label.contains("2 visits"),
+            "Including hidden places in discovery must not add them to Tracks progress"
+        )
+        let hidden = app.buttons["tracks.row.hidden"]
+        XCTAssertTrue(scrollToHittable(hidden, in: app))
+        hidden.tap()
+        let unhideOverlap = app.buttons[
+            "tracks.hidden.unhide.mt1_00000000000000000000000001"
+        ]
+        XCTAssertTrue(unhideOverlap.waitForExistence(timeout: 5))
+        unhideOverlap.tap()
+        XCTAssertTrue(waitForNonExistence(
+            of: element(
+                identifier: "tracks.hidden.row.mt1_00000000000000000000000001",
+                in: app
+            ),
+            timeout: 5
+        ))
+        app.buttons["Back"].tap()
+        XCTAssertTrue(myTracks.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            myTracks.label.contains("3 visits"),
+            "Live unhide must restore the visit to ordinary Tracks progress"
+        )
+        XCTAssertTrue(scrollToHittable(hidden, in: app))
+        XCTAssertTrue(hidden.label.contains("1"))
+    }
+
+    func testLovedAndHiddenSurfacesRemainUsableAtAX5() {
+        let app = launch(
+            reset: true,
+            accessibilityTextSize: true,
+            seedManagedPlaces: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openTracksDoor(in: app)
+
+        let loved = app.buttons["tracks.row.loved"]
+        let hidden = app.buttons["tracks.row.hidden"]
+        XCTAssertTrue(scrollToHittable(loved, in: app))
+        XCTAssertTrue(scrollToHittable(hidden, in: app))
+        assertMinimumInteractiveTarget(loved)
+        assertMinimumInteractiveTarget(hidden)
+        assertNoFrameIntersection(loved, hidden)
+
+        loved.tap()
+        XCTAssertTrue(app.collectionViews["tracks.loved.surface"].waitForExistence(timeout: 5))
+        let removeGhost = app.buttons[
+            "tracks.loved.remove.mt1_00000000000000000000000000"
+        ]
+        let removeOverlap = app.buttons[
+            "tracks.loved.remove.mt1_00000000000000000000000001"
+        ]
+        XCTAssertTrue(removeGhost.waitForExistence(timeout: 5))
+        XCTAssertTrue(removeOverlap.waitForExistence(timeout: 5))
+        assertMinimumInteractiveTarget(removeGhost)
+        assertMinimumInteractiveTarget(removeOverlap)
+        assertNoFrameIntersection(removeGhost, removeOverlap)
+        attachScreenshot(named: "loved-hidden-ax")
+
+        app.buttons["Back"].tap()
+        XCTAssertTrue(scrollToHittable(hidden, in: app))
+        hidden.tap()
+        let unhideOverlap = app.buttons[
+            "tracks.hidden.unhide.mt1_00000000000000000000000001"
+        ]
+        let unhideHiddenOnly = app.buttons[
+            "tracks.hidden.unhide.mt1_S0000000000000000000000001"
+        ]
+        XCTAssertTrue(unhideOverlap.waitForExistence(timeout: 5))
+        XCTAssertTrue(unhideHiddenOnly.waitForExistence(timeout: 5))
+        assertMinimumInteractiveTarget(unhideOverlap)
+        assertMinimumInteractiveTarget(unhideHiddenOnly)
+        assertNoFrameIntersection(unhideOverlap, unhideHiddenOnly)
+    }
+
     func testTrackGeometryDrawsConnectorFromSeededFixtureVisits() {
         let app = launch(reset: true, pinDiagnostics: true, seedTrackList: true)
 
@@ -3562,6 +3747,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         seedTrackListLovedVisit: Bool = false,
         seedTracksDoorTextStress: Bool = false,
         seedFocusedTracksRoute: Bool = false,
+        seedManagedPlaces: Bool = false,
         coverageBBoxes: [String] = [],
         resetOnboarding: Bool = false,
         forceDarkAppearance: Bool = false,
@@ -3652,6 +3838,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         if seedFocusedTracksRoute {
             app.launchArguments.append("--ui-testing-seed-focused-tracks-route")
+        }
+        if seedManagedPlaces {
+            app.launchArguments.append("--ui-testing-seed-managed-places")
         }
         if let offlineProgress {
             app.launchArguments.append("--ui-testing-offline-progress")
@@ -4655,6 +4844,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "tracks-static-geometry": "tracks-static-geometry",
         "tracks-door-unified": "tracks-door-unified",
         "tracks-door-unified-ax": "tracks-door-unified-ax",
+        "loved-hidden-door": "loved-hidden-door",
+        "loved-places": "loved-places",
+        "hidden-places": "hidden-places",
+        "loved-hidden-ax": "loved-hidden-ax",
         "tracks-unified-visit-editing": "tracks-unified-visit-editing",
         "my-tracks-rendered-oracle-light": "my-tracks-rendered-oracle-light",
         "my-tracks-rendered-oracle-dark": "my-tracks-rendered-oracle-dark",
