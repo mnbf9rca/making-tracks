@@ -220,7 +220,7 @@ only reason a migration is ever in scope.
 
 - **Serves:** #522 · **Review tier:** `sourcery` · **Depends on:** none
 - **Owner:** codex3
-- **Status:** tests green
+- **Status:** PR open
 - **Branch:** `wp-522-merged-body-annotations` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Annotate the merged bodies of **#486** and **#503** where their acceptance claims
