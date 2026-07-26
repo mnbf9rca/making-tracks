@@ -82,11 +82,16 @@ configuration.label
     )
     .contentShape(
         .interaction,
-        Capsule().inset(by: -MaterialChipGeometry.hitOutset)
+        MaterialChipHitTargetShape()
     )
 ```
 
 Change the chip label to `HStack(spacing: MaterialChipGeometry.labelSpacing)`, select filled/tonal appearance in the chip style, and leave all shared button styles untouched.
+
+The hit shape expands only dimensions below the 44pt minimum. Dense wrapped
+layouts can still make extended targets overlap; the component documents that
+distinct-action consumers must provide sufficient spacing or group-level hit
+arbitration. Current place-card chips share one action.
 
 - [ ] **Step 4: Run focused and full host tests and verify GREEN**
 
@@ -118,22 +123,32 @@ git commit -m "fix(ios): restore ratified chip geometry"
 
 - [ ] **Step 1: Write an XCUITest that taps outside the capsule**
 
-Seed the user list, open the fixture card, find its existing `Date night` button by label, and calculate a screen coordinate 8pt above the chip's reported visual frame:
+Launch a debug-only isolated `MaterialChip` fixture whose action increments a
+visible counter. Because the interaction shape expands the accessibility frame,
+derive the visible capsule midpoint from the largest contiguous band of rendered
+accent pixels, normalize its geometric edges using the specified 22pt visual
+height, and tap 11pt beyond both edges. This avoids anti-aliasing edge
+quantization and prevents a same-action parent or neighbour from masking a miss:
 
 ```swift
-let chip = app.buttons["Date night"]
-XCTAssertTrue(chip.waitForExistence(timeout: 5))
-let outsideVisualCapsule = app.coordinate(
-    withNormalizedOffset: CGVector(
-        dx: chip.frame.midX / app.frame.width,
-        dy: (chip.frame.minY - 8) / app.frame.height
-    )
-)
-outsideVisualCapsule.tap()
-XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
+let chip = app.buttons["chip-target.fixture"]
+let screenshot = app.screenshot()
+let visualBounds = raster.verticalTokenBounds(accent, in: chip.frame)
+let visualCenterY = (visualBounds.lowerBound + visualBounds.upperBound) / 2
+tap(CGPoint(x: chip.frame.midX, y: visualCenterY - 22))
+XCTAssertEqual(activationCount.label, "1")
+tap(CGPoint(x: chip.frame.midX, y: visualCenterY + 22))
+XCTAssertEqual(activationCount.label, "2")
 ```
 
-The production mutation this catches is removal or shrinking of the negative-inset interaction shape; a center tap or frame-height assertion would not catch that break.
+The UI test proves the real action fires outside the rendered capsule. The
+focused geometry test separately locks the exact 44pt minimum and 11pt
+outset; mutating the minimum from 44 to 40 makes that test fail.
+SwiftUI's platform button tolerance makes removal of the explicit shape
+behaviorally equivalent at this tested point, so that mutation is not claimed
+as UI-test teeth. The explicit derived shape remains the component-owned,
+deterministic guarantee rather than relying on undocumented platform fallback.
+A center tap or frame-height assertion would not prove the interaction outcome.
 
 - [ ] **Step 2: Run the single UI test against the pre-hit-area implementation and verify RED**
 

@@ -149,6 +149,12 @@ public enum MaterialChipState: Hashable, Sendable {
 ///
 /// `systemImage` accepts an SF Symbol name; arbitrary image content is
 /// intentionally outside the family.
+///
+/// The interaction shape expands each axis only when needed to reach the
+/// 44pt minimum. Dense wrapped layouts can still make extended targets
+/// overlap; SwiftUI then resolves the overlap by view order. Consumers with
+/// distinct adjacent actions must provide spacing at least equal to the sum
+/// of the facing outsets or perform group-level hit arbitration.
 public struct MaterialChip: View {
     /// `ia-doors.html` ratifies 12pt/600, which no `TypographyRole` expresses.
     static let titleFont = Font.caption.weight(.semibold)
@@ -208,7 +214,7 @@ public struct MaterialChip: View {
             ))
             .contentShape(
                 .interaction,
-                Capsule().inset(by: -MaterialChipGeometry.hitOutset)
+                MaterialChipHitTargetShape()
             )
         case .tonal:
             button.buttonStyle(MaterialChipButtonStyle(
@@ -216,18 +222,35 @@ public struct MaterialChip: View {
             ))
             .contentShape(
                 .interaction,
-                Capsule().inset(by: -MaterialChipGeometry.hitOutset)
+                MaterialChipHitTargetShape()
             )
         }
     }
 }
 
-private enum MaterialChipGeometry {
+enum MaterialChipGeometry {
     static let visualHeight: CGFloat = 22
     static let horizontalPadding: CGFloat = 9
     static let labelSpacing: CGFloat = 4
     static let minimumHitTarget: CGFloat = 44
-    static let hitOutset = (minimumHitTarget - visualHeight) / 2
+    static func hitOutset(for dimension: CGFloat) -> CGFloat {
+        max(0, (minimumHitTarget - dimension) / 2)
+    }
+}
+
+private struct MaterialChipHitTargetShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let horizontalOutset = MaterialChipGeometry.hitOutset(
+            for: rect.width
+        )
+        let verticalOutset = MaterialChipGeometry.hitOutset(
+            for: rect.height
+        )
+        return Capsule().path(in: rect.insetBy(
+            dx: -horizontalOutset,
+            dy: -verticalOutset
+        ))
+    }
 }
 
 enum MaterialChipStyle: Equatable, Sendable {

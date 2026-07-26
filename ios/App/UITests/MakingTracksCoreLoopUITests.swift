@@ -130,7 +130,8 @@ private struct RenderedPixelRaster {
     func verticalTokenBounds(
         _ token: RenderedRGB,
         in frame: CGRect,
-        tolerance: Int = 5
+        tolerance: Int = 5,
+        minimumMatchingWidth: CGFloat = 2
     ) -> ClosedRange<CGFloat>? {
         let clipped = frame.intersection(appFrame)
         guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else {
@@ -145,9 +146,15 @@ private struct RenderedPixelRaster {
         let maxY = min(height - 1, Int(((clipped.maxY - appFrame.minY) * scaleY).rounded(.up)))
         guard minX <= maxX, minY <= maxY else { return nil }
 
-        var firstMatchingRow: Int?
-        var lastMatchingRow: Int?
+        let minimumRun = max(
+            2,
+            Int((minimumMatchingWidth * scaleX).rounded(.up))
+        )
+        var matchingBands: [ClosedRange<Int>] = []
+        var bandStart: Int?
         for y in minY...maxY {
+            var longestRun = 0
+            var currentRun = 0
             for x in minX...maxX {
                 let offset = (y * bytesPerRow) + (x * 4)
                 let pixel = RenderedRGB(
@@ -156,18 +163,33 @@ private struct RenderedPixelRaster {
                     Int(pixels[offset + 2])
                 )
                 if pixel.matches(token, tolerance: tolerance) {
-                    firstMatchingRow = firstMatchingRow ?? y
-                    lastMatchingRow = y
-                    break
+                    currentRun += 1
+                    longestRun = max(longestRun, currentRun)
+                } else {
+                    currentRun = 0
                 }
             }
+
+            if longestRun >= minimumRun {
+                bandStart = bandStart ?? y
+            } else if let start = bandStart {
+                matchingBands.append(start...(y - 1))
+                bandStart = nil
+            }
+        }
+        if let bandStart {
+            matchingBands.append(bandStart...maxY)
         }
 
-        guard let firstMatchingRow, let lastMatchingRow else { return nil }
+        guard let largestBand = matchingBands.max(by: {
+            $0.count < $1.count
+        }) else {
+            return nil
+        }
         return (
-            appFrame.minY + (CGFloat(firstMatchingRow) / scaleY)
+            appFrame.minY + (CGFloat(largestBand.lowerBound) / scaleY)
         )...(
-            appFrame.minY + (CGFloat(lastMatchingRow + 1) / scaleY)
+            appFrame.minY + (CGFloat(largestBand.upperBound + 1) / scaleY)
         )
     }
 
@@ -904,17 +926,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     func testMaterialChipExtendsHitTargetBeyondVisualCapsule() {
-        let app = launch(reset: true, seedUserList: true)
-        let map = app.otherElements["map.surface"]
-        XCTAssertTrue(map.waitForExistence(timeout: 10))
-        openFixtureCard(in: map, app: app)
-        XCTAssertTrue(expandPlaceCardSheet(in: app))
-
-        let chip = app.buttons["Date night"]
-        XCTAssertTrue(scrollToHittable(chip, in: app))
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-chip-target"]
+        app.launch()
 
         // `contentShape(.interaction, ...)` expands the accessibility frame,
         // so only rendered accent pixels identify the visible capsule.
+        let chip = app.buttons["chip-target.fixture"]
+        XCTAssertTrue(chip.waitForExistence(timeout: 5))
         let chipFrame = chip.frame
         let screenshot = app.screenshot()
         guard let raster = RenderedPixelRaster(
@@ -932,22 +951,55 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             XCTFail("Could not locate the accent capsule pixels inside the chip")
             return
         }
-        let outsideVisualCapsule = CGPoint(
-            x: chipFrame.midX,
-            y: visualCapsuleBounds.lowerBound - 8
+        let visualCapsuleHeight: CGFloat = 22
+        let requiredHitOutset: CGFloat = 11
+        XCTAssertEqual(
+            visualCapsuleBounds.upperBound - visualCapsuleBounds.lowerBound,
+            visualCapsuleHeight,
+            accuracy: 1.5
         )
-        XCTAssertLessThan(
-            outsideVisualCapsule.y,
-            visualCapsuleBounds.lowerBound
+        let visualCenterY = (
+            visualCapsuleBounds.lowerBound + visualCapsuleBounds.upperBound
+        ) / 2
+        let topOutsideVisualCapsule = CGPoint(
+            x: chipFrame.midX,
+            y: visualCenterY - (visualCapsuleHeight / 2) - requiredHitOutset
+        )
+        let bottomOutsideVisualCapsule = CGPoint(
+            x: chipFrame.midX,
+            y: visualCenterY + (visualCapsuleHeight / 2) + requiredHitOutset
         )
 
         let appFrame = app.frame
-        app.coordinate(withNormalizedOffset: CGVector(
-            dx: (outsideVisualCapsule.x - appFrame.minX) / appFrame.width,
-            dy: (outsideVisualCapsule.y - appFrame.minY) / appFrame.height
-        )).tap()
+        func tap(_ point: CGPoint) {
+            app.coordinate(withNormalizedOffset: CGVector(
+                dx: (point.x - appFrame.minX) / appFrame.width,
+                dy: (point.y - appFrame.minY) / appFrame.height
+            )).tap()
+        }
 
-        XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
+        let activationCount = app.staticTexts["chip-target.activation-count"]
+        XCTAssertTrue(activationCount.waitForExistence(timeout: 5))
+        func waitForActivationCount(_ expected: String) -> Bool {
+            let predicate = NSPredicate(
+                format: "exists == true AND label == %@",
+                expected
+            )
+            let expectation = XCTNSPredicateExpectation(
+                predicate: predicate,
+                object: activationCount
+            )
+            return XCTWaiter.wait(
+                for: [expectation],
+                timeout: 5
+            ) == .completed
+        }
+
+        tap(topOutsideVisualCapsule)
+        XCTAssertTrue(waitForActivationCount("1"))
+
+        tap(bottomOutsideVisualCapsule)
+        XCTAssertTrue(waitForActivationCount("2"))
     }
 
     func testPlaceCardKeepsSnowTokensInDarkSystemAppearance() throws {

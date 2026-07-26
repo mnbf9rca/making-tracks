@@ -123,6 +123,18 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
+    func testMaterialChipHitTargetExpandsOnlyDimensionsBelowMinimum() {
+        XCTAssertEqual(MaterialChipGeometry.minimumHitTarget, 44)
+        XCTAssertEqual(
+            MaterialChipGeometry.hitOutset(
+                for: MaterialChipGeometry.visualHeight
+            ),
+            11
+        )
+        XCTAssertEqual(MaterialChipGeometry.hitOutset(for: 44), 0)
+        XCTAssertEqual(MaterialChipGeometry.hitOutset(for: 80), 0)
+    }
+
     func testMaterialChipIconUsesTypographyLabelSizeAndMediumWeight() throws {
         let title = "Map"
 
