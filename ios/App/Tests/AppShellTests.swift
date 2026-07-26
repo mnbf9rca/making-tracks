@@ -542,6 +542,63 @@ final class AppShellTests: XCTestCase {
 
     @MainActor
     func testManagedPlacesAndVirtualRowIconsOwnRatifiedRolesAtPointOfUse() throws {
+        let place = ListPlace(
+            placeID: "both",
+            name: "Loved and Hidden",
+            category: "historic_building",
+            pinState: PinState(saved: false, visit: .loved, hidden: true)
+        )
+        let lovedView = ManagedPlacesView(model: nil, mode: .loved)
+        let hiddenView = ManagedPlacesView(model: nil, mode: .hidden)
+        let tracksView = TracksDoorRootView(
+            path: .constant([]),
+            model: nil,
+            prepareTracksHistory: {},
+            onListDeleted: { _ in }
+        )
+
+        XCTAssertEqual(
+            descendants(
+                of: ManagedPlacesInlineIconGlyph.self,
+                in: lovedView.titleRow
+            ).count,
+            1
+        )
+        XCTAssertEqual(
+            descendants(
+                of: ManagedPlacesEmptyIconGlyph.self,
+                in: lovedView.emptyRow
+            ).count,
+            1
+        )
+        XCTAssertEqual(
+            descendants(
+                of: ManagedPlacesInlineIconGlyph.self,
+                in: lovedView.placeRow(place)
+            ).count,
+            2,
+            "A loved row must ratify both its row symbol and remove action."
+        )
+        XCTAssertEqual(
+            descendants(
+                of: ManagedPlacesInlineIconGlyph.self,
+                in: hiddenView.placeRow(place)
+            ).count,
+            1,
+            "A hidden row has one symbol; Unhide remains a text action."
+        )
+        XCTAssertEqual(
+            descendants(
+                of: TracksDoorVirtualRowIconGlyph.self,
+                in: tracksView.virtualPlacesRow(
+                    .lovedPlaces,
+                    count: 2,
+                    destination: .lovedPlaces
+                )
+            ).count,
+            1
+        )
+
         XCTAssertEqual(
             try XCTUnwrap(
                 firstDescendant(
@@ -569,6 +626,49 @@ final class AppShellTests: XCTestCase {
             ),
             .inline
         )
+    }
+
+    @MainActor
+    func testManagedPlacesActionCoordinatorRetainsRowAndShowsErrorWhenModelThrows() async throws {
+        let database = try AppDatabase.inMemory()
+        let unrelatedFixture = try PlaceRef(
+            placeID: "fixture",
+            name: "Fixture",
+            lat: 51.5,
+            lon: -0.1,
+            category: "memorial",
+            tier: 2,
+            schemaVersion: 1,
+            fetchedAt: Date(timeIntervalSince1970: 1),
+            rawJSON: "{}"
+        )
+        let model = try MapScreenModel(
+            database: database,
+            fixturePlaces: [unrelatedFixture]
+        )
+        let missing = ListPlace(
+            placeID: "missing",
+            name: "Missing snapshot",
+            category: "memorial",
+            pinState: PinState(saved: false, visit: .none, hidden: true)
+        )
+        var state = ManagedPlacesState(places: [missing])
+
+        await ManagedPlacesActionCoordinator.perform {
+            state.beginAction(placeID: missing.placeID)
+        } finish: { succeeded in
+            state.finishAction(
+                placeID: missing.placeID,
+                succeeded: succeeded,
+                failureMessage: "Could not unhide that place."
+            )
+        } operation: {
+            try await model.setHidden(placeID: missing.placeID, hidden: false)
+        }
+
+        XCTAssertEqual(state.places, [missing])
+        XCTAssertTrue(state.pendingPlaceIDs.isEmpty)
+        XCTAssertEqual(state.errorMessage, "Could not unhide that place.")
     }
 
     func testQuietChromeUsesTokenSurfacesAndBareAttribution() {
@@ -3968,6 +4068,20 @@ private func firstDescendant<Descendant>(
         }
     }
     return nil
+}
+
+private func descendants<Descendant>(
+    of type: Descendant.Type,
+    in value: Any
+) -> [Descendant] {
+    var matches: [Descendant] = []
+    if let value = value as? Descendant {
+        matches.append(value)
+    }
+    for child in Mirror(reflecting: value).children {
+        matches.append(contentsOf: descendants(of: type, in: child.value))
+    }
+    return matches
 }
 
 private struct RatifiedTracksDoorHeroIcon: View {

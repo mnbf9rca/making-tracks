@@ -133,6 +133,23 @@ struct ManagedPlacesState: Equatable {
     }
 }
 
+@MainActor
+enum ManagedPlacesActionCoordinator {
+    static func perform(
+        begin: () -> Void,
+        finish: (Bool) -> Void,
+        operation: () async throws -> Void
+    ) async {
+        begin()
+        do {
+            try await operation()
+            finish(true)
+        } catch {
+            finish(false)
+        }
+    }
+}
+
 struct ManagedPlacesView: View {
     let model: MapScreenModel?
     let mode: ManagedPlacesMode
@@ -190,7 +207,7 @@ struct ManagedPlacesView: View {
         .refreshable { await reload() }
     }
 
-    private var titleRow: some View {
+    var titleRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             ManagedPlacesInlineIconGlyph(systemName: mode.presentation.systemImage)
                 .foregroundStyle(
@@ -213,7 +230,7 @@ struct ManagedPlacesView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var emptyRow: some View {
+    var emptyRow: some View {
         ContentUnavailableView {
             Label {
                 Text(verbatim: mode.presentation.emptyTitle)
@@ -229,7 +246,7 @@ struct ManagedPlacesView: View {
         .accessibilityIdentifier("\(mode.presentation.surfaceIdentifier).empty")
     }
 
-    private func placeRow(_ place: ListPlace) -> some View {
+    func placeRow(_ place: ListPlace) -> some View {
         MaterialHairlineRow {
             HStack(alignment: .center, spacing: 12) {
                 ManagedPlacesInlineIconGlyph(systemName: mode.presentation.systemImage)
@@ -268,7 +285,7 @@ struct ManagedPlacesView: View {
     }
 
     @ViewBuilder
-    private func actionButton(for place: ListPlace) -> some View {
+    func actionButton(for place: ListPlace) -> some View {
         Button {
             Task { await performAction(for: place) }
         } label: {
@@ -311,25 +328,21 @@ struct ManagedPlacesView: View {
     @MainActor
     private func performAction(for place: ListPlace) async {
         guard let model, !state.isPending(placeID: place.placeID) else { return }
-        state.beginAction(placeID: place.placeID)
-        do {
+        await ManagedPlacesActionCoordinator.perform {
+            state.beginAction(placeID: place.placeID)
+        } finish: { succeeded in
+            state.finishAction(
+                placeID: place.placeID,
+                succeeded: succeeded,
+                failureMessage: mode.presentation.failureMessage
+            )
+        } operation: {
             switch mode {
             case .loved:
                 try await model.setLoved(placeID: place.placeID, loved: false)
             case .hidden:
                 try await model.setHidden(placeID: place.placeID, hidden: false)
             }
-            state.finishAction(
-                placeID: place.placeID,
-                succeeded: true,
-                failureMessage: mode.presentation.failureMessage
-            )
-        } catch {
-            state.finishAction(
-                placeID: place.placeID,
-                succeeded: false,
-                failureMessage: mode.presentation.failureMessage
-            )
         }
     }
 }

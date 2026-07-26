@@ -684,7 +684,7 @@ struct TracksDoorRootView: View {
         }
     }
 
-    private func virtualPlacesRow(
+    func virtualPlacesRow(
         _ row: TracksDoorRow,
         count: Int,
         destination: MapShellDestination,
