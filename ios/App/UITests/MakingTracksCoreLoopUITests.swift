@@ -800,12 +800,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
         XCTAssertTrue(sourceArticle.waitForExistence(timeout: 5))
         XCTAssertEqual(sourceArticle.label, "Wikipedia source article")
-        XCTAssertTrue(sourceArticle.isHittable)
         assertDoesNotExposeURL(sourceArticle)
         XCTAssertTrue(expandPlaceCardSheet(in: app))
+        XCTAssertTrue(sourceArticle.isHittable)
 
         XCTAssertTrue(photo.waitForExistence(timeout: 5))
         XCTAssertEqual(photo.label, "Photo of Ghost Sign")
+        XCTAssertGreaterThan(photo.frame.height, 132)
+        XCTAssertLessThanOrEqual(photo.frame.height, 260.5)
 
         let actionBar = app.otherElements["place-card.action-bar"]
         let saveButton = actionBar.buttons["place-card.save"]
@@ -851,6 +853,42 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         tapFixturePin(in: map)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
+    }
+
+    func testPlaceCardKeepsSnowTokensInDarkSystemAppearance() throws {
+        let app = launch(reset: true, forceDarkAppearance: true)
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        openFixtureCard(in: map, app: app)
+
+        let sheet = app.scrollViews.matching(
+            identifierPrefix: "place-card.instance."
+        ).firstMatch
+        let actionBar = app.otherElements["place-card.action-bar"]
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+        XCTAssertTrue(actionBar.waitForExistence(timeout: 5))
+        XCTAssertTrue(actionBar.buttons["place-card.visited"].isHittable)
+
+        let screenshot = app.screenshot()
+        let raster = try XCTUnwrap(
+            RenderedPixelRaster(screenshot: screenshot, appFrame: app.frame)
+        )
+        let cardFrame = sheet.frame.union(actionBar.frame)
+        XCTAssertGreaterThan(
+            raster.tokenCount(RenderedRGB(251, 250, 242), in: cardFrame, tolerance: 8),
+            1_000,
+            "Snow surface must remain #FBFAF2 under a dark system appearance."
+        )
+        XCTAssertGreaterThan(
+            raster.tokenCount(RenderedRGB(10, 107, 92), in: cardFrame, tolerance: 8),
+            250,
+            "The Snow accent-filled Seen control must not resolve to a system-dark colour."
+        )
+
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = "place-card-snow-under-dark-system"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     func testSavedTapReopensListPickerForPerListRemoval() {

@@ -20,6 +20,7 @@
 		78489B6DB316892B50A97831 /* PinCategorySymbolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AA103E16EBCD9EF3DABC9BB /* PinCategorySymbolTests.swift */; };
 		7856947E7D46610EA335891E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 63FDD03D128539278BC591EB /* Assets.xcassets */; };
 		78788452A4FEB6D53DD8EF44 /* Newsreader16pt-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E0D3E19BD0CBD3FCA3AF1319 /* Newsreader16pt-SemiBold.ttf */; };
+		7A6CC84AF434C17FE7633943 /* PlaceCardSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58714DEBC153020CC7FD67F3 /* PlaceCardSheet.swift */; };
 		860B88DB4E847DB9B041149A /* MakingTracksMapStyle in Frameworks */ = {isa = PBXBuildFile; productRef = 1340500250A212BB86356FB9 /* MakingTracksMapStyle */; };
 		915D71B1930B5DB4AEF0ABC3 /* Newsreader72pt-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A48E219EA55B851FD5EDD31F /* Newsreader72pt-SemiBold.ttf */; };
 		93D8C47C12062A4D16FC5BC5 /* TypographyRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1DFBB29DC117B5BFBE1E85F /* TypographyRuntimeTests.swift */; };
@@ -74,6 +75,7 @@
 		538B8CFCCBB98BEEE13D75E5 /* AppShellTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellTests.swift; sourceTree = "<group>"; };
 		549B3C04D699BA9D8D06A6D7 /* MakingTracksTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MakingTracksTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5609B54FBEF0F125C5EF2C90 /* MakingTracksUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MakingTracksUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		58714DEBC153020CC7FD67F3 /* PlaceCardSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceCardSheet.swift; sourceTree = "<group>"; };
 		5A925CD29D8E1456B66E9F7B /* WorldBasemapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorldBasemapTests.swift; sourceTree = "<group>"; };
 		63FDD03D128539278BC591EB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6879CA7F65FAB04C7987F924 /* HiddenMembershipTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiddenMembershipTracker.swift; sourceTree = "<group>"; };
@@ -121,6 +123,7 @@
 				2FF59CEFC1B7EB1B24AAAB55 /* OnboardingFlow.swift */,
 				1CB5F787D9335E6F6658C952 /* OSSCredits.json */,
 				C07738BF062CB3DA2EC726F0 /* Map */,
+				6BB310F23BF49DFFAF5F76B5 /* PlaceCard */,
 				D4ADE12C00B68366CBA521B4 /* Support */,
 			);
 			path = Sources;
@@ -140,6 +143,14 @@
 				5A925CD29D8E1456B66E9F7B /* WorldBasemapTests.swift */,
 			);
 			path = Tests;
+			sourceTree = "<group>";
+		};
+		6BB310F23BF49DFFAF5F76B5 /* PlaceCard */ = {
+			isa = PBXGroup;
+			children = (
+				58714DEBC153020CC7FD67F3 /* PlaceCardSheet.swift */,
+			);
+			path = PlaceCard;
 			sourceTree = "<group>";
 		};
 		701107F58BC2C1664B43E572 /* Packages */ = {
@@ -457,6 +468,7 @@
 				06447D7969A73B3EBB37BF48 /* MapLayerVisibility.swift in Sources */,
 				03DDC05F05147127FAC7FFA5 /* MapScreen.swift in Sources */,
 				12C5D166DC2E3F3E836B4BA0 /* OnboardingFlow.swift in Sources */,
+				7A6CC84AF434C17FE7633943 /* PlaceCardSheet.swift in Sources */,
 				0690E2BBD5D936C280A81F6C /* WorldBasemap.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

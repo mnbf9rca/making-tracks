@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T1.10 Snow place card accessibility size — 390×844</title>
+<style>
+  @font-face {
+    font-family: "Newsreader";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader72pt-SemiBold.ttf");
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 390px; height: 844px; overflow: hidden; }
+  body {
+    --ground: #F4F1EA;
+    --surface: #FBFAF2;
+    --road: #D7CBB2;
+    --ink: #2B2823;
+    --muted: #6B675F;
+    --accent: #0A6B5C;
+    --tonal: rgba(10, 107, 92, .12);
+    color: var(--ink);
+    background: var(--surface);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  }
+  .phone {
+    position: relative;
+    width: 390px;
+    height: 844px;
+    background: var(--surface);
+  }
+  .status {
+    position: absolute;
+    inset: 15px 21px auto;
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    font-weight: 650;
+  }
+  .sheet {
+    position: absolute;
+    inset: 47px 0 0;
+    overflow: hidden;
+    border-radius: 22px 22px 0 0;
+    background: var(--surface);
+  }
+  .grabber {
+    width: 36px;
+    height: 5px;
+    margin: 8px auto 7px;
+    border-radius: 4px;
+    background: rgba(107, 103, 95, .38);
+  }
+  .content {
+    height: 568px;
+    overflow: hidden;
+    padding: 2px 18px 180px;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .context {
+    color: var(--muted);
+    font-size: 16px;
+    font-weight: 680;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .more {
+    width: 52px;
+    height: 52px;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    font-size: 25px;
+    letter-spacing: 2px;
+  }
+  h1 {
+    margin: 0 0 8px;
+    font: 670 44px/1.02 "Newsreader", Georgia, serif;
+    letter-spacing: -.025em;
+  }
+  .type {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    color: var(--muted);
+    font-size: 19px;
+    font-weight: 580;
+  }
+  .swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: #B45D38;
+  }
+  .photo {
+    width: 354px;
+    height: 236px;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--road);
+  }
+  .photo svg { display: block; width: 100%; height: 100%; }
+  .caption {
+    margin: 8px 0 16px;
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1.25;
+  }
+  .summary {
+    margin: 0;
+    font-size: 23px;
+    line-height: 1.27;
+  }
+  .fade {
+    position: absolute;
+    inset: auto 0 253px;
+    height: 46px;
+    background: linear-gradient(transparent, var(--surface));
+  }
+  .actions {
+    position: absolute;
+    inset: auto 0 0;
+    display: grid;
+    gap: 8px;
+    padding: 10px 18px 18px;
+    background: var(--surface);
+  }
+  .button {
+    min-height: 64px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    font-size: 23px;
+    font-weight: 640;
+  }
+  .tonal { color: var(--accent); background: var(--tonal); }
+  .filled { color: var(--surface); background: var(--accent); }
+  .quiet { color: var(--muted); background: transparent; }
+  .home {
+    position: absolute;
+    inset: auto 128px 7px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--ink);
+  }
+</style>
+</head>
+<body>
+<main class="phone" aria-label="Accessibility-size Snow place-card render">
+  <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
+  <section class="sheet" aria-label="Large place card">
+    <div class="grabber"></div>
+    <div class="content">
+      <div class="header">
+        <span class="context">Nearby story</span>
+        <span class="more" aria-label="More">•••</span>
+      </div>
+      <h1>Colman’s Carrow Works</h1>
+      <div class="type"><span class="swatch"></span>Industrial heritage</div>
+      <div class="photo" aria-label="Historic view of the Carrow Works">
+        <svg viewBox="0 0 720 480" role="img" aria-label="Historic factory illustration">
+          <defs>
+            <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#c9dbe2"/><stop offset="1" stop-color="#e9e2d3"/></linearGradient>
+            <linearGradient id="brick" x2="0" y2="1"><stop stop-color="#a94f39"/><stop offset="1" stop-color="#71382d"/></linearGradient>
+          </defs>
+          <rect width="720" height="480" fill="url(#sky)"/>
+          <rect y="348" width="720" height="132" fill="#83755c"/>
+          <path d="M0 361 720 309v45L0 406z" fill="#d7cbb2"/>
+          <g fill="url(#brick)" stroke="#60352c" stroke-width="5">
+            <path d="M61 176h316v183H61z"/>
+            <path d="M377 235h281v124H377z"/>
+            <path d="M105 122h68v237h-68z"/>
+          </g>
+          <path d="M105 122h68l-34-57z" fill="#7d4134"/>
+          <g fill="#f3deae" stroke="#69473b" stroke-width="4">
+            <path d="M91 217h46v59H91zM164 217h46v59h-46zM237 217h46v59h-46zM310 217h46v59h-46z"/>
+            <path d="M409 268h54v54h-54zM493 268h54v54h-54zM577 268h54v54h-54z"/>
+          </g>
+          <path d="M206 176v-54h142v54" fill="#f0d365" stroke="#60352c" stroke-width="5"/>
+          <text x="277" y="158" text-anchor="middle" fill="#71382d" font-family="Georgia,serif" font-size="29" font-weight="700">COLMAN’S</text>
+        </svg>
+      </div>
+      <p class="caption">Carrow Works from the river, c. 1920 · Norfolk Record Office</p>
+      <p class="summary">For more than a century, the mustard works shaped this bend in the Wensum.</p>
+    </div>
+    <div class="fade"></div>
+    <div class="actions" aria-label="Place actions">
+      <div class="button tonal">Save</div>
+      <div class="button filled">Seen</div>
+      <div class="button quiet">Hide</div>
+    </div>
+  </section>
+  <div class="home"></div>
+</main>
+</body>
+</html>
