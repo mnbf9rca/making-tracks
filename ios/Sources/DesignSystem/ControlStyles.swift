@@ -162,9 +162,13 @@ public enum MaterialChipState: Hashable, Sendable {
 ///
 /// The interaction shape expands each axis only when needed to reach the
 /// 44pt minimum. Derived hit areas may overlap only when every overlapping
-/// control invokes the same action. Adjacent chips with distinct actions MUST
-/// use row spacing at least equal to the sum of their facing hit outsets, so
-/// their derived hit areas do not overlap.
+/// control invokes the same action; group-level hit arbitration is not a
+/// substitute for clearing hit areas of controls with distinct actions.
+/// Horizontally adjacent chips with distinct actions MUST have spacing between
+/// visual capsules at least equal to the sum of their facing horizontal hit
+/// outsets. Vertically, 22pt chips have 11pt hit outsets per side, so adjacent
+/// wrapped rows with distinct actions require at least 22pt between visual
+/// capsules.
 public struct MaterialChip: View {
     /// `ia-doors.html` ratifies 12pt/600, which no `TypographyRole` expresses.
     static let titleFont = Font.caption.weight(.semibold)
