@@ -387,9 +387,9 @@ Fold-or-file note: `TrackLineStyle` (`ios/Sources/MakingTracksMapStyle/TrackLine
 - **Branch:** `wp-468-ia-shell-doors` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC18, AC19, AC20, AC22, AC23, plus AC14 (the door pill icons and the retired chrome glyphs), AC15/AC16 (the chrome and door code you move out of `MapScreen.swift`), AC5 (any Newsreader text on the door surfaces), AC26/AC27/AC29 for the chrome and door surfaces
 - **Depends on:** T1.1, T1.3, T1.4
-- **Owner:** unclaimed
+- **Owner:** codex1
 - **Review tier:** `sourcery` + `greptile` + `opus` — **the phase's highest-risk task**
-- **Status:** unclaimed
+- **Status:** tests green — branch `wp-468-ia-shell-doors`, pushed at `5f8c7318`; Release build; 452 host tests, 201 app tests, 73 UI tests; 0 failures
 - **Contracts consumed:** T1.1 tokens, T1.3 buttons/chips, T1.4 sheet pattern. If any door text uses the story voice you also consume T1.2's font-role API — if T1.2 has not merged, use SF for the door pills (spec §5 specifies SF 600 for doors) and leave story-voice text to T1.8.
 - **Ruled render:** `docs/design/design-system/ia-doors.png` — certifies the **door pattern only**, not its row list. The render shows Offline maps and Coverage as World-door rows; spec §2 supersedes that. Implement spec §2's rows, not the render's.
 

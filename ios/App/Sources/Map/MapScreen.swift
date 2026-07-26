@@ -3,22 +3,11 @@ import Observation
 import SwiftUI
 import UIKit
 @preconcurrency import MapLibre
+import DesignSystem
 import MakingTracksCore
 import MakingTracksData
 import MakingTracksMapStyle
 import MakingTracksTiles
-
-struct MapHomeChromeSpec {
-    static let menuSymbolName = "line.3.horizontal"
-    static let menuGlyphPointSize: CGFloat = 30
-    static let hitTargetSide: CGFloat = 44
-    static let glyphHaloRadius: CGFloat = 1.2
-    static let glyphHaloYOffset: CGFloat = 1
-
-    static func layersSymbolName(isActive: Bool) -> String {
-        isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"
-    }
-}
 
 private enum MapOverlayChromeSpec {
     static let edgePadding: CGFloat = 16
@@ -659,7 +648,7 @@ struct ViewportCameraRequest: Sendable, Equatable {
     }
 }
 
-enum MenuDestination: Hashable {
+enum MapShellDestination: Hashable {
     case lists
     case listDetail(Int64)
     case tracks
@@ -667,6 +656,13 @@ enum MenuDestination: Hashable {
     case settings
     case diagnostics
     case about
+}
+
+enum MapDoor: Hashable, Identifiable {
+    case world
+    case tracks
+
+    var id: Self { self }
 }
 
 enum OfflineDownloadSettings {
@@ -708,23 +704,31 @@ struct DeferredOfflineMaintenanceDownloadRoute {
 
 @Observable
 final class AppShellModel {
-    var isMenuPresented = false
-    var deepLinkPath: MenuDestination?
+    var presentedDoor: MapDoor?
+    var deepLinkDestination: MapShellDestination?
     var tracksFocusPlaceID: String?
     var listDetailVisitFilter = TracksVisitFilter.all
 
-    func openMenu() {
-        tracksFocusPlaceID = nil
-        listDetailVisitFilter = .all
-        deepLinkPath = nil
-        isMenuPresented = true
+    func openWorldDoor() {
+        prepareDoorRoot(.world)
+    }
+
+    func openTracksDoor() {
+        prepareDoorRoot(.tracks)
     }
 
     func openListDetailDeepLink(listID: Int64, visitFilter: TracksVisitFilter = .all) {
         tracksFocusPlaceID = nil
         listDetailVisitFilter = visitFilter
-        deepLinkPath = .listDetail(listID)
-        isMenuPresented = true
+        deepLinkDestination = .listDetail(listID)
+        presentedDoor = .tracks
+    }
+
+    private func prepareDoorRoot(_ door: MapDoor) {
+        tracksFocusPlaceID = nil
+        listDetailVisitFilter = .all
+        presentedDoor = door
+        deepLinkDestination = nil
     }
 }
 
@@ -2199,22 +2203,22 @@ extension AppShellModel {
     func openListsDeepLink() {
         tracksFocusPlaceID = nil
         listDetailVisitFilter = .all
-        deepLinkPath = .lists
-        isMenuPresented = true
+        deepLinkDestination = .lists
+        presentedDoor = .tracks
     }
 
     func openTracksDeepLink(focusingPlaceID placeID: String? = nil) {
         tracksFocusPlaceID = placeID
         listDetailVisitFilter = .all
-        deepLinkPath = .tracks
-        isMenuPresented = true
+        deepLinkDestination = .tracks
+        presentedDoor = .tracks
     }
 
     func openOfflineMapsDeepLink() {
         tracksFocusPlaceID = nil
         listDetailVisitFilter = .all
-        deepLinkPath = .offlineMaps
-        isMenuPresented = true
+        deepLinkDestination = .offlineMaps
+        presentedDoor = .world
     }
 }
 
@@ -2472,6 +2476,7 @@ struct MapScreen: View {
     @AppStorage(Self.pinSizeMultiplierStorageKey) private var pinSizeMultiplier = PinSize.defaultMultiplier
     @AppStorage(Self.coverageShadingStorageKey) private var showCoverageShading = true
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var worldPMTilesURL: String? = WorldBasemap.pmtilesURL()
     @State private var features: [(MapPlace, PinState)] = []
     @State private var sourceFeatureCount = 0
@@ -2575,7 +2580,7 @@ struct MapScreen: View {
 
     var body: some View {
         ZStack {
-            GeometryReader { _ in
+            GeometryReader { proxy in
                 MLNMapViewRepresentable(
                 worldPMTilesURL: worldPMTilesURL,
                 regionPMTilesURL: regionPMTilesURL,
@@ -2821,12 +2826,12 @@ struct MapScreen: View {
                     }
                 }
                 .padding(.horizontal, MapOverlayChromeSpec.edgePadding)
-                .padding(.bottom, MapOverlayChromeSpec.listModeControlBottomPadding)
+                .padding(.bottom, listModeControlBottomPadding)
             }
             .overlay(alignment: .bottom) {
                 if let prompt = nearbyPromptCandidate {
                     nearbyPromptView(for: prompt)
-                        .padding(.bottom, 88)
+                        .padding(.bottom, nearbyPromptBottomPadding)
                         .padding(.horizontal, MapOverlayChromeSpec.edgePadding)
                 }
             }
@@ -2837,10 +2842,30 @@ struct MapScreen: View {
                         .padding(.horizontal, MapOverlayChromeSpec.edgePadding)
                 }
             }
+            .overlay(alignment: .bottom) {
+                MapDoorBar(
+                    openWorld: appShell.openWorldDoor,
+                    openTracks: appShell.openTracksDoor
+                )
+                .padding(.horizontal, MapOverlayChromeSpec.edgePadding)
+                .padding(
+                    .bottom,
+                    MapDoorChromeSpec.effectiveDoorBarBottomPadding(
+                        containerHeight: proxy.size.height,
+                        isPlaceCardPresented: cardPresentation.item != nil
+                    )
+                )
+            }
             }
         }
-        .sheet(isPresented: $appShell.isMenuPresented) {
-            AppMenuSheet(
+        .sheet(
+            item: $appShell.presentedDoor,
+            onDismiss: {
+                appShell.deepLinkDestination = nil
+            }
+        ) { door in
+            MapDoorSheetIntegration(
+                door: door,
                 shell: appShell,
                 model: model,
                 attribution: attribution,
@@ -2851,6 +2876,7 @@ struct MapScreen: View {
                 locationStatus: locationMenuStatus,
                 storageStatus: storageMenuStatus,
                 openLocationSettings: openLocationSettings,
+                openScope: openScopeFromWorld,
                 replayOnboarding: onReplayOnboarding,
                 onOfflineMapsChanged: refreshAfterOfflineMapsChanged,
                 onShowListOnMap: { list, filter in
@@ -2938,8 +2964,8 @@ struct MapScreen: View {
                 Task { await refreshStorageMenuStatus() }
             }
         }
-        .onChange(of: appShell.isMenuPresented) { _, isPresented in
-            guard isPresented else { return }
+        .onChange(of: appShell.presentedDoor) { _, presentedDoor in
+            guard presentedDoor != nil else { return }
             cardPresentation.dismiss()
             Task { await refreshStorageMenuStatus() }
         }
@@ -3245,11 +3271,33 @@ struct MapScreen: View {
     }
 
     private var auxiliaryBottomChromePadding: CGFloat {
-        activeListMap == nil ? MapOverlayChromeSpec.edgePadding : MapOverlayChromeSpec.listModeAuxiliaryBottomPadding
+        doorBarClearance + (
+            activeListMap == nil
+                ? MapOverlayChromeSpec.edgePadding
+                : MapOverlayChromeSpec.listModeAuxiliaryBottomPadding
+        )
     }
 
     private var hiddenToastBottomPadding: CGFloat {
-        activeListMap == nil ? MapOverlayChromeSpec.listModeControlBottomPadding : MapOverlayChromeSpec.listModeAuxiliaryBottomPadding
+        doorBarClearance + (
+            activeListMap == nil
+                ? MapOverlayChromeSpec.listModeControlBottomPadding
+                : MapOverlayChromeSpec.listModeAuxiliaryBottomPadding
+        )
+    }
+
+    private var doorBarClearance: CGFloat {
+        MapDoorChromeSpec.doorBarClearance(
+            isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+        )
+    }
+
+    private var listModeControlBottomPadding: CGFloat {
+        doorBarClearance + MapOverlayChromeSpec.listModeControlBottomPadding
+    }
+
+    private var nearbyPromptBottomPadding: CGFloat {
+        doorBarClearance + 88
     }
 
     private var selectedTheme: MapTheme {
@@ -3266,44 +3314,24 @@ struct MapScreen: View {
         VStack(alignment: .leading, spacing: 8) {
             if let activeListMap {
                 listMapNavigationChrome(activeListMap)
-                layersButton
                 listMapFilterChips(activeListMap)
-            } else {
+            } else if let offlineDownloadProgress = currentOfflineDownloadProgress {
                 Button {
-                    appShell.openMenu()
+                    appShell.openOfflineMapsDeepLink()
                 } label: {
-                    Image(systemName: MapHomeChromeSpec.menuSymbolName)
-                        .font(.system(size: MapHomeChromeSpec.menuGlyphPointSize, weight: .bold))
-                        .symbolRenderingMode(.monochrome)
-                        .foregroundStyle(mapBareGlyphStyle)
-                        .mapChromeGlyphHalo()
-                        .frame(width: MapHomeChromeSpec.hitTargetSide, height: MapHomeChromeSpec.hitTargetSide)
-                        .contentShape(Rectangle())
+                    Label(
+                        offlineDownloadProgress.isWaitingForConnectivity
+                            ? "Offline maps \(offlineDownloadProgress.statusText)"
+                            : "Offline maps \(offlineDownloadProgress.percentComplete)%",
+                        systemImage: "arrow.down.circle"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(.ultraThinMaterial, in: Capsule())
                 }
-                .accessibilityLabel("Menu")
-                .accessibilityHint("Opens app menu")
-                .accessibilityIdentifier("map.menu")
-
-                if let offlineDownloadProgress = currentOfflineDownloadProgress {
-                    Button {
-                        appShell.openOfflineMapsDeepLink()
-                    } label: {
-                        Label(
-                            offlineDownloadProgress.isWaitingForConnectivity
-                                ? "Offline maps \(offlineDownloadProgress.statusText)"
-                                : "Offline maps \(offlineDownloadProgress.percentComplete)%",
-                            systemImage: "arrow.down.circle"
-                        )
-                        .font(.caption.weight(.semibold))
-                        .lineLimit(1)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(.ultraThinMaterial, in: Capsule())
-                    }
-                    .accessibilityIdentifier("map.download-progress")
-                }
-
-                layersButton
+                .accessibilityIdentifier("map.download-progress")
             }
         }
     }
@@ -3727,11 +3755,8 @@ struct MapScreen: View {
 
     private var attributionText: some View {
         Text(verbatim: "© OpenStreetMap")
-            .font(.caption2)
-            .fontWeight(.semibold)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.ultraThinMaterial, in: Capsule())
+            .font(Typography.font(for: MapDoorChromeSpec.attributionTypographyRole))
+            .foregroundStyle(MaterialTheme.snow.tokens.muted.swiftUIColor)
             .accessibilityLabel("OpenStreetMap attribution")
             .accessibilityIdentifier("map.openstreetmap-attribution")
     }
@@ -3872,35 +3897,6 @@ struct MapScreen: View {
         MakingTracksLog.startup.info("offline refresh finished")
     }
 
-    private var layersButton: some View {
-        let visibility = layersSheetVisibility
-        return Button {
-            showLayers = true
-        } label: {
-            layersIcon
-                .frame(width: MapHomeChromeSpec.hitTargetSide, height: MapHomeChromeSpec.hitTargetSide)
-                .background(visibility.isDefault ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.accentColor), in: Circle())
-                .contentShape(Rectangle())
-        }
-        .accessibilityLabel("Layers")
-        .accessibilityHint("Shows map layer controls")
-        .accessibilityValue(visibility.isDefault ? "Default" : "Custom")
-        .accessibilityIdentifier("map.layers")
-    }
-
-    @ViewBuilder
-    private var layersIcon: some View {
-        let visibility = layersSheetVisibility
-        let icon = Image(systemName: MapHomeChromeSpec.layersSymbolName(isActive: !visibility.isDefault))
-            .font(.title3)
-            .foregroundStyle(visibility.isDefault ? AnyShapeStyle(.primary) : AnyShapeStyle(Color.white))
-        if visibility.isDefault {
-            icon.mapChromeGlyphHalo()
-        } else {
-            icon
-        }
-    }
-
     private var layersSheetVisibility: MapLayerVisibility {
         ListMapLayerVisibility.displayed(
             discoveryVisibility: layerVisibility,
@@ -3943,11 +3939,6 @@ struct MapScreen: View {
         }
     }
 
-    private var mapBareGlyphStyle: AnyShapeStyle {
-        // Current map themes are light paper palettes; revisit this if a dark basemap theme lands.
-        AnyShapeStyle(Color.black)
-    }
-
     private var locationChrome: some View {
         VStack(alignment: .trailing, spacing: 8) {
             if locationPermission.isLocationOff {
@@ -3980,8 +3971,27 @@ struct MapScreen: View {
         } label: {
             Image(systemName: locateMeButtonSystemName)
                 .font(.title3)
-                .frame(width: 44, height: 44)
-                .background(.ultraThinMaterial, in: Circle())
+                .frame(
+                    width: MapDoorChromeSpec.locateMinimumHitTarget,
+                    height: MapDoorChromeSpec.locateMinimumHitTarget
+                )
+                .background(
+                    MaterialTheme.snow.tokens.surface.swiftUIColor,
+                    in: Circle()
+                )
+                .overlay {
+                    Circle()
+                        .stroke(
+                            MaterialTheme.snow.tokens.hairline.swiftUIColor,
+                            lineWidth: 1
+                        )
+                }
+                .shadow(
+                    color: MaterialTheme.snow.tokens.shadow.swiftUIColor,
+                    radius: 8,
+                    x: 0,
+                    y: 3
+                )
         }
         .accessibilityLabel(locateMeButtonAccessibilityLabel)
         .accessibilityHint("Centers the map on your location")
@@ -4011,6 +4021,15 @@ struct MapScreen: View {
             return "Follow me with heading"
         default:
             return "Locate me"
+        }
+    }
+
+    private func openScopeFromWorld() {
+        appShell.presentedDoor = nil
+        appShell.deepLinkDestination = nil
+        Task { @MainActor in
+            await Task.yield()
+            showLayers = true
         }
     }
 
@@ -4977,7 +4996,8 @@ private extension MapEmptyRegionSurface {
     }
 }
 
-private struct AppMenuSheet: View {
+private struct MapDoorSheetIntegration: View {
+    let door: MapDoor
     @Bindable var shell: AppShellModel
     let model: MapScreenModel?
     let attribution: [Attribution]
@@ -4988,55 +5008,45 @@ private struct AppMenuSheet: View {
     let locationStatus: LocationMenuStatus
     let storageStatus: StorageMenuStatus
     let openLocationSettings: () -> Void
+    let openScope: () -> Void
     let replayOnboarding: @MainActor () -> Void
     let onOfflineMapsChanged: @MainActor () async -> Void
     let onShowListOnMap: @MainActor (PlaceList, TracksVisitFilter) -> Void
     let onListRenamed: @MainActor (PlaceList) -> Void
     let onListDeleted: @MainActor (Int64) -> Void
 
-    @State private var path: [MenuDestination] = []
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack(path: $path) {
-            AppMenuRootView(path: $path)
-                .navigationTitle("Menu")
-                .navigationDestination(for: MenuDestination.self) { destination in
-                    destinationView(destination)
-                }
-                .toolbar {
-                    Button("Done") { dismiss() }
-                        .accessibilityIdentifier("menu.done")
-                }
-        }
-        .onAppear {
-            applyDeepLinkIfNeeded(resetToRootWhenNoDeepLink: true)
-        }
-        .onChange(of: shell.deepLinkPath) { _, _ in
-            applyDeepLinkIfNeeded(resetToRootWhenNoDeepLink: false)
+        MapDoorSheet(
+            door: door,
+            deepLinkDestination: shell.deepLinkDestination,
+            openScope: openScope
+        ) { destination in
+            destinationView(destination)
         }
     }
 
     @ViewBuilder
-    private func destinationView(_ destination: MenuDestination) -> some View {
+    private func destinationView(_ destination: MapShellDestination) -> some View {
         switch destination {
         case .lists:
-            destinationWithDone(ListsView(
+            ListsView(
                 model: model,
                 onShowOnMap: showListOnMapAndDismiss,
                 onListRenamed: onListRenamed,
                 onListDeleted: onListDeleted,
                 onDone: { dismiss() }
-            ))
+            )
         case let .listDetail(listID):
-            destinationWithDone(ListDetailDeepLinkView(
+            ListDetailDeepLinkView(
                 model: model,
                 listID: listID,
                 visitFilter: shell.listDetailVisitFilter,
                 onShowOnMap: showListOnMapAndDismiss,
                 onListRenamed: onListRenamed,
                 onDone: { dismiss() }
-            ))
+            )
         case .tracks:
             TrackListDetailDeepLinkView(
                 model: model,
@@ -5047,57 +5057,30 @@ private struct AppMenuSheet: View {
             )
         case .offlineMaps:
 #if DEBUG
-            destinationWithDone(OfflineMapsView(
+            OfflineMapsView(
                 model: model,
                 seededProgress: seededOfflineDownloadProgress,
                 downloadSession: offlineDownloadSession,
                 storageStatus: storageStatus,
                 onOfflineMapsChanged: onOfflineMapsChanged
-            ))
+            )
 #else
-            destinationWithDone(OfflineMapsReleaseGatedView())
+            OfflineMapsReleaseGatedView()
 #endif
         case .settings:
-            destinationWithDone(SettingsView(
-                path: $path,
+            SettingsView(
                 selectedThemeID: $selectedThemeID,
                 pinSizeMultiplier: $pinSizeMultiplier,
                 locationStatus: locationStatus,
                 storageStatus: storageStatus,
                 openLocationSettings: openLocationSettings,
                 replayOnboarding: replayOnboardingAndDismiss
-            ))
+            )
         case .diagnostics:
-            destinationWithDone(DiagnosticsView(storageStatus: storageStatus))
+            DiagnosticsView(storageStatus: storageStatus)
         case .about:
-            destinationWithDone(AboutView(attribution: attribution))
+            AboutView(attribution: attribution)
         }
-    }
-
-    private func destinationWithDone<Content: View>(_ content: Content) -> some View {
-        content.toolbar {
-            Button("Done") { dismiss() }
-                .accessibilityIdentifier("menu.done")
-        }
-    }
-
-    private func applyDeepLinkIfNeeded(resetToRootWhenNoDeepLink: Bool) {
-        guard let destination = shell.deepLinkPath else {
-            if resetToRootWhenNoDeepLink {
-                path = []
-            }
-            return
-        }
-        if destination != .tracks {
-            shell.tracksFocusPlaceID = nil
-        }
-        switch destination {
-        case let .listDetail(listID):
-            path = [.lists, .listDetail(listID)]
-        default:
-            path = [destination]
-        }
-        shell.deepLinkPath = nil
     }
 
     private func replayOnboardingAndDismiss() {
@@ -5106,7 +5089,7 @@ private struct AppMenuSheet: View {
     }
 
     private func showListOnMapAndDismiss(_ list: PlaceList, filter: TracksVisitFilter = .all) {
-        shell.isMenuPresented = false
+        shell.presentedDoor = nil
         dismiss()
         onShowListOnMap(list, filter)
     }
@@ -5196,78 +5179,6 @@ private struct TrackListDetailDeepLinkView: View {
         }
         list = await model.lists().first { $0.isSystem && $0.kind == PlaceList.trackKind }
         didLoad = true
-    }
-}
-
-private struct AppMenuRootView: View {
-    @Binding var path: [MenuDestination]
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    var body: some View {
-        List {
-            Button {
-                path.append(.lists)
-            } label: {
-                menuRow(title: "Lists", subtitle: "Saved places and collections", systemImage: "list.bullet")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("menu.row.lists")
-
-            Button {
-                path.append(.tracks)
-            } label: {
-                menuRow(title: "Tracks", subtitle: "Places you've seen", systemImage: "clock.arrow.circlepath")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("menu.row.tracks")
-
-            Button {
-                path.append(.offlineMaps)
-            } label: {
-                menuRow(title: "Offline maps", subtitle: "Download regions for later", systemImage: "arrow.down.circle")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("menu.row.offline-maps")
-
-            Button {
-                path.append(.settings)
-            } label: {
-                menuRow(title: "Settings", subtitle: "Map theme, location, and storage", systemImage: "gearshape")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("menu.row.settings")
-
-            Button {
-                path.append(.about)
-            } label: {
-                menuRow(title: "About", subtitle: "Credits, attribution, and build info", systemImage: "info.circle")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("menu.row.about")
-        }
-    }
-
-    private func menuRow(title: String, subtitle: String, systemImage: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.headline)
-                .frame(width: 28)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.body)
-                if !dynamicTypeSize.isAccessibilitySize {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        .contentShape(Rectangle())
-        .foregroundStyle(.primary)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint(dynamicTypeSize.isAccessibilitySize ? subtitle : "")
     }
 }
 
@@ -7061,7 +6972,6 @@ private struct OfflineMapsView: View {
 #endif
 
 private struct SettingsView: View {
-    @Binding var path: [MenuDestination]
     @Binding var selectedThemeID: String
     @Binding var pinSizeMultiplier: Double
     let locationStatus: LocationMenuStatus
@@ -7150,9 +7060,7 @@ private struct SettingsView: View {
             }
 
             Section("Storage") {
-                Button {
-                    path.append(SettingsStorageNavigation.destination)
-                } label: {
+                NavigationLink(value: SettingsStorageNavigation.destination) {
                     SettingsStorageSummary(storageStatus: storageStatus)
                 }
                 .buttonStyle(.plain)
@@ -7160,9 +7068,7 @@ private struct SettingsView: View {
             }
 
             Section("Diagnostics") {
-                Button {
-                    path.append(.diagnostics)
-                } label: {
+                NavigationLink(value: MapShellDestination.diagnostics) {
                     HStack(spacing: 10) {
                         Image(systemName: "arrow.up.doc")
                             .foregroundStyle(.secondary)
@@ -7835,7 +7741,7 @@ private struct PinSizePreview: View {
 }
 
 enum SettingsStorageNavigation {
-    static let destination = MenuDestination.offlineMaps
+    static let destination = MapShellDestination.offlineMaps
 }
 
 private struct SettingsStorageSummary: View {
@@ -8247,13 +8153,6 @@ private struct LocationSettingsButton: UIViewRepresentable {
         @objc func tap() {
             action()
         }
-    }
-}
-
-private extension View {
-    func mapChromeGlyphHalo() -> some View {
-        shadow(color: Color.white.opacity(0.95), radius: MapHomeChromeSpec.glyphHaloRadius, x: 0, y: 0)
-            .shadow(color: Color.white.opacity(0.95), radius: 0.5, x: 0, y: MapHomeChromeSpec.glyphHaloYOffset)
     }
 }
 

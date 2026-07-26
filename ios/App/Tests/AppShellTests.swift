@@ -173,55 +173,149 @@ final class AppShellTests: XCTestCase {
         XCTAssertTrue(cardSource.contains("struct PlaceCardSheet: View"))
     }
 
-    func testMapHomeChromeUsesFilterGlyphAndChiplessMenuSpec() {
-        XCTAssertEqual(MapHomeChromeSpec.layersSymbolName(isActive: false), "line.3.horizontal.decrease.circle")
-        XCTAssertEqual(MapHomeChromeSpec.layersSymbolName(isActive: true), "line.3.horizontal.decrease.circle.fill")
-        XCTAssertEqual(MapHomeChromeSpec.menuSymbolName, "line.3.horizontal")
-        XCTAssertGreaterThanOrEqual(MapHomeChromeSpec.menuGlyphPointSize, 28)
-        XCTAssertGreaterThanOrEqual(MapHomeChromeSpec.hitTargetSide, 44)
-        XCTAssertGreaterThan(MapHomeChromeSpec.glyphHaloRadius, 0)
+    func testPersistentDoorChromeReservesStandardAndAccessibilityClearance() {
+        XCTAssertEqual(MapDoorChromeSpec.doorBarClearance(isAccessibilitySize: false), 68)
+        XCTAssertEqual(MapDoorChromeSpec.doorBarClearance(isAccessibilitySize: true), 124)
+        XCTAssertGreaterThan(
+            MapDoorChromeSpec.accessibilityDoorBarClearance,
+            MapDoorChromeSpec.standardDoorBarClearance
+        )
     }
 
-    func testAppShellModelSeparatesMenuPresentationFromDeepLinkRouting() {
+    func testDoorsMoveAboveAnOpenMediumPlaceCard() {
+        XCTAssertEqual(
+            MapDoorChromeSpec.effectiveDoorBarBottomPadding(
+                containerHeight: 844,
+                isPlaceCardPresented: false
+            ),
+            12
+        )
+        XCTAssertGreaterThan(
+            MapDoorChromeSpec.effectiveDoorBarBottomPadding(
+                containerHeight: 844,
+                isPlaceCardPresented: true
+            ),
+            844 / 2
+        )
+    }
+
+    func testDoorDestinationsAndAccessibilitySizesRequireLargeDetent() {
+        XCTAssertFalse(
+            MapDoorDetentPolicy.requiresLarge(
+                isAccessibilitySize: false,
+                hasDestination: false
+            )
+        )
+        XCTAssertTrue(
+            MapDoorDetentPolicy.requiresLarge(
+                isAccessibilitySize: true,
+                hasDestination: false
+            )
+        )
+        XCTAssertTrue(
+            MapDoorDetentPolicy.requiresLarge(
+                isAccessibilitySize: false,
+                hasDestination: true
+            )
+        )
+    }
+
+    func testMapDoorsExposeDistinctRuledPresentation() {
+        XCTAssertEqual(
+            MapDoor.world.presentation,
+            MapDoorPresentation(
+                title: "World",
+                systemImage: "globe.europe.africa",
+                accessibilityIdentifier: "map.door.world"
+            )
+        )
+        XCTAssertEqual(
+            MapDoor.tracks.presentation,
+            MapDoorPresentation(
+                title: "Tracks",
+                systemImage: "shoeprints.fill",
+                accessibilityIdentifier: "map.door.tracks"
+            )
+        )
+    }
+
+    func testDoorRootsExposeOnlyRuledRows() {
+        XCTAssertEqual(WorldDoorRow.allCases, [.scope, .settings, .about])
+        XCTAssertEqual(TracksDoorRow.allCases, [.myTracks, .lists])
+        XCTAssertFalse(WorldDoorRow.allCases.map(\.title).contains("Offline maps"))
+        XCTAssertFalse(WorldDoorRow.allCases.map(\.title).contains("Coverage"))
+    }
+
+    func testQuietChromeUsesTokenSurfacesAndBareAttribution() {
+        XCTAssertEqual(MapDoorChromeSpec.attributionTypographyRole, .label)
+        XCTAssertFalse(MapDoorChromeSpec.attributionHasBackground)
+        XCTAssertEqual(MapDoorChromeSpec.locateMinimumHitTarget, 44)
+        XCTAssertTrue(MapDoorChromeSpec.usesBuiltInCompass)
+    }
+
+    @MainActor
+    func testMapDoorBarRendersAtStandardAndAX5DynamicType() {
+        for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
+            let renderer = ImageRenderer(
+                content: MapDoorBar(openWorld: {}, openTracks: {})
+                    .environment(\.dynamicTypeSize, dynamicTypeSize)
+                    .frame(width: 390)
+            )
+
+            XCTAssertNotNil(renderer.uiImage)
+        }
+    }
+
+    func testAppShellModelOpensEachDoorAtItsRoot() {
         let shell = AppShellModel()
 
-        XCTAssertFalse(shell.isMenuPresented)
-        XCTAssertNil(shell.deepLinkPath)
+        XCTAssertNil(shell.presentedDoor)
+        XCTAssertNil(shell.deepLinkDestination)
 
-        shell.isMenuPresented = true
-        XCTAssertTrue(shell.isMenuPresented)
-        XCTAssertNil(shell.deepLinkPath)
+        shell.openWorldDoor()
+        XCTAssertEqual(shell.presentedDoor, .world)
+        XCTAssertNil(shell.deepLinkDestination)
 
-        shell.deepLinkPath = .offlineMaps
-        XCTAssertTrue(shell.isMenuPresented)
-        XCTAssertEqual(shell.deepLinkPath, .offlineMaps)
+        shell.openTracksDoor()
+        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertNil(shell.deepLinkDestination)
     }
 
-    func testAppShellModelCanRouteOfflineMapsDeepLink() {
+    func testAppShellModelRoutesOfflineMapsDeepLinkThroughWorldDoor() {
         let shell = AppShellModel()
 
         shell.openOfflineMapsDeepLink()
 
-        XCTAssertTrue(shell.isMenuPresented)
-        XCTAssertEqual(shell.deepLinkPath, .offlineMaps)
+        XCTAssertEqual(shell.presentedDoor, .world)
+        XCTAssertEqual(shell.deepLinkDestination, .offlineMaps)
     }
 
-    func testAppShellModelCanRouteListsDeepLink() {
+    func testAppShellModelRoutesListsDeepLinkThroughTracksDoor() {
         let shell = AppShellModel()
 
         shell.openListsDeepLink()
 
-        XCTAssertTrue(shell.isMenuPresented)
-        XCTAssertEqual(shell.deepLinkPath, .lists)
+        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertEqual(shell.deepLinkDestination, .lists)
     }
 
-    func testAppShellModelCanRouteTracksDeepLink() {
+    func testAppShellModelRoutesListDetailDeepLinkThroughListsPath() {
+        let shell = AppShellModel()
+
+        shell.openListDetailDeepLink(listID: 42, visitFilter: .loved)
+
+        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertEqual(shell.deepLinkDestination, .listDetail(42))
+        XCTAssertEqual(shell.listDetailVisitFilter, .loved)
+    }
+
+    func testAppShellModelRoutesTracksDeepLinkThroughTracksDoor() {
         let shell = AppShellModel()
 
         shell.openTracksDeepLink()
 
-        XCTAssertTrue(shell.isMenuPresented)
-        XCTAssertEqual(shell.deepLinkPath, .tracks)
+        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertEqual(shell.deepLinkDestination, .tracks)
         XCTAssertNil(shell.tracksFocusPlaceID)
     }
 
@@ -230,25 +324,26 @@ final class AppShellTests: XCTestCase {
 
         shell.openTracksDeepLink(focusingPlaceID: "p_repeat")
 
-        XCTAssertTrue(shell.isMenuPresented)
-        XCTAssertEqual(shell.deepLinkPath, .tracks)
+        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertEqual(shell.deepLinkDestination, .tracks)
         XCTAssertEqual(shell.tracksFocusPlaceID, "p_repeat")
     }
 
-    func testAppShellModelClearsTracksFocusForNormalMenuAndOtherDeepLinks() {
+    func testAppShellModelClearsTracksFocusForDoorRootsAndOtherDeepLinks() {
         let shell = AppShellModel()
         shell.openTracksDeepLink(focusingPlaceID: "p_repeat")
 
-        shell.openMenu()
+        shell.openWorldDoor()
 
-        XCTAssertTrue(shell.isMenuPresented)
-        XCTAssertNil(shell.deepLinkPath)
+        XCTAssertEqual(shell.presentedDoor, .world)
+        XCTAssertNil(shell.deepLinkDestination)
         XCTAssertNil(shell.tracksFocusPlaceID)
 
         shell.openTracksDeepLink(focusingPlaceID: "p_repeat")
         shell.openOfflineMapsDeepLink()
 
-        XCTAssertEqual(shell.deepLinkPath, .offlineMaps)
+        XCTAssertEqual(shell.presentedDoor, .world)
+        XCTAssertEqual(shell.deepLinkDestination, .offlineMaps)
         XCTAssertNil(shell.tracksFocusPlaceID)
     }
 

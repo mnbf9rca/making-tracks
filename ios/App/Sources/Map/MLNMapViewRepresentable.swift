@@ -1,6 +1,7 @@
 import CoreLocation
 import SwiftUI
 @preconcurrency import MapLibre
+import DesignSystem
 import MakingTracksData
 import MakingTracksMapStyle
 import MakingTracksTiles
@@ -229,6 +230,13 @@ struct MLNMapViewRepresentable: UIViewRepresentable {
         map.shouldRequestAuthorizationToUseLocationServices = false
         map.logoView.isHidden = true
         map.attributionButton.isHidden = true
+        map.showsCompassView = true
+        map.compassViewPosition = .topRight
+        map.compassViewMargins = CGPoint(x: 16, y: 12)
+        map.compassView.compassVisibility = .adaptive
+        map.compassView.tintColor = UIColor(
+            MaterialTheme.snow.tokens.muted.swiftUIColor
+        )
         map.showsUserLocation = showsUserLocation
         map.userTrackingMode = userTrackingMode
         map.setCenter(startupViewport.center, zoomLevel: Double(startupViewport.zoom), animated: false)
