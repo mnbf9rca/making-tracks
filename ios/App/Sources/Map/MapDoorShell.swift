@@ -345,6 +345,53 @@ struct WorldDoorRootView: View {
     }
 }
 
+struct TracksDoorHeroIconGlyph: View {
+    let systemName: String
+
+    /// AC35 carve-out: ia-doors.html frame 3 ratifies this hero glyph at a 22pt scale.
+    @ScaledMetric(relativeTo: .body) private var pointSize = 22.0
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: pointSize, weight: .medium))
+            .symbolRenderingMode(.monochrome)
+    }
+}
+
+struct TracksDoorHeroTitle: View {
+    let title: String
+
+    var body: some View {
+        Text(verbatim: title)
+            .font(Typography.font(for: .heroTitle))
+    }
+}
+
+struct TracksDoorRetraceCue: View {
+    /// AC35 carve-out: ia-doors.html .action ratifies 13pt/600 type and a 3pt gap.
+    @ScaledMetric(relativeTo: .footnote) private var pointSize = 13.0
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Text("Retrace")
+            Image(systemName: "chevron.right")
+                .font(Typography.font(for: .label))
+                .accessibilityHidden(true)
+        }
+        .font(.system(size: pointSize, weight: .semibold))
+        .fixedSize(horizontal: true, vertical: true)
+    }
+}
+
+struct TracksDoorNewListIcon: View {
+    let systemName: String
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(Typography.font(for: .button))
+    }
+}
+
 struct TracksDoorRootView: View {
     @Binding var path: [MapShellDestination]
     let model: MapScreenModel?
@@ -490,18 +537,19 @@ struct TracksDoorRootView: View {
     }
 
     private var heroIcon: some View {
-        Image(systemName: TracksDoorRow.myTracks.presentation.systemImage)
-            .font(Iconography.font(for: .standard))
-            .symbolRenderingMode(.monochrome)
-            .foregroundStyle(tokens.accent.swiftUIColor)
-            .accessibilityHidden(true)
+        TracksDoorHeroIconGlyph(
+            systemName: TracksDoorRow.myTracks.presentation.systemImage
+        )
+        .foregroundStyle(tokens.accent.swiftUIColor)
+        .accessibilityHidden(true)
     }
 
     private func heroCopy(_ hero: TracksDoorHeroContent) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(verbatim: TracksDoorRow.myTracks.presentation.title)
-                .font(Typography.font(for: .listRowTitle))
-                .foregroundStyle(tokens.ink.swiftUIColor)
+            TracksDoorHeroTitle(
+                title: TracksDoorRow.myTracks.presentation.title
+            )
+            .foregroundStyle(tokens.ink.swiftUIColor)
 
             Text(verbatim: hero.metadata)
                 .font(Typography.font(for: .metadata))
@@ -511,15 +559,8 @@ struct TracksDoorRootView: View {
     }
 
     private var retraceCue: some View {
-        HStack(spacing: 4) {
-            Text("Retrace")
-            Image(systemName: "chevron.right")
-                .font(Iconography.font(for: .compact))
-                .accessibilityHidden(true)
-        }
-        .font(Typography.font(for: .button))
-        .foregroundStyle(tokens.accent.swiftUIColor)
-        .fixedSize(horizontal: true, vertical: true)
+        TracksDoorRetraceCue()
+            .foregroundStyle(tokens.accent.swiftUIColor)
     }
 
     private func listRow(_ list: TracksDoorListContent) -> some View {
@@ -560,11 +601,12 @@ struct TracksDoorRootView: View {
                 Button {
                     Task { await createList() }
                 } label: {
-                    Image(systemName: TracksDoorRow.newList.presentation.systemImage)
-                        .font(Iconography.font(for: .standard))
-                        .foregroundStyle(tokens.accent.swiftUIColor)
-                        .frame(minWidth: 44, minHeight: 44)
-                        .contentShape(Rectangle())
+                    TracksDoorNewListIcon(
+                        systemName: TracksDoorRow.newList.presentation.systemImage
+                    )
+                    .foregroundStyle(tokens.accent.swiftUIColor)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Create list")
