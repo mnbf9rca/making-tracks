@@ -146,12 +146,15 @@ struct MapDoorBar: View {
 }
 
 struct MapDoorSheet<Destination: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let door: MapDoor
     let deepLinkDestination: MapShellDestination?
     let openScope: () -> Void
     let destination: (MapShellDestination) -> Destination
 
     @State private var path: [MapShellDestination] = []
+    @State private var selectedDetent = PresentationDetent.medium
 
     init(
         door: MapDoor,
@@ -179,6 +182,12 @@ struct MapDoorSheet<Destination: View>: View {
         }
         .onChange(of: deepLinkDestination) {
             applyDeepLink()
+        }
+        .presentationDetents([.medium, .large], selection: $selectedDetent)
+        .onAppear {
+            if dynamicTypeSize.isAccessibilitySize {
+                selectedDetent = .large
+            }
         }
     }
 

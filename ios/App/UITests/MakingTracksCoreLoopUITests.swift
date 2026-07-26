@@ -406,6 +406,44 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Layers"].waitForExistence(timeout: 5))
     }
 
+    func testDoorsRemainTappableAtAX5InDarkAppearance() {
+        let app = launch(
+            reset: true,
+            accessibilityTextSize: true,
+            forceDarkAppearance: true
+        )
+
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+
+        let worldDoor = app.buttons["map.door.world"]
+        let tracksDoor = app.buttons["map.door.tracks"]
+        XCTAssertTrue(worldDoor.waitForExistence(timeout: 5))
+        XCTAssertTrue(tracksDoor.waitForExistence(timeout: 5))
+        XCTAssertTrue(worldDoor.isHittable)
+        XCTAssertTrue(tracksDoor.isHittable)
+        XCTAssertGreaterThanOrEqual(worldDoor.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(tracksDoor.frame.height, 44)
+        assertNoFrameIntersection(worldDoor, tracksDoor)
+
+        worldDoor.tap()
+        for identifier in ["world.row.scope", "world.row.settings", "world.row.about"] {
+            let row = app.buttons[identifier]
+            XCTAssertTrue(row.waitForExistence(timeout: 5))
+            XCTAssertTrue(row.isHittable)
+            XCTAssertGreaterThanOrEqual(row.frame.height, 44)
+        }
+        app.buttons["Close"].tap()
+
+        XCTAssertTrue(tracksDoor.waitForExistence(timeout: 5))
+        tracksDoor.tap()
+        for identifier in ["tracks.row.lists", "tracks.row.my-tracks"] {
+            let row = app.buttons[identifier]
+            XCTAssertTrue(row.waitForExistence(timeout: 5))
+            XCTAssertTrue(row.isHittable)
+            XCTAssertGreaterThanOrEqual(row.frame.height, 44)
+        }
+    }
+
     func testAXResamplerUsesFreshSamplesAfterPredicateMiss() {
         var samples = ["stale", "Ghost Sign, Attraction, not visited"]
 
