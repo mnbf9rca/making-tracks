@@ -8,7 +8,10 @@ final class PublicControlStylesTests: XCTestCase {
         XCTAssertEqual(MaterialChipGeometry.visualHeight, 22)
         XCTAssertEqual(MaterialChipGeometry.minimumHitTarget, 44)
         XCTAssertEqual(
-            MaterialChipGeometry.tiledHitOutset(neighborGap: 8),
+            MaterialChipGeometry.tiledHitOutset(
+                for: MaterialChipGeometry.visualHeight,
+                neighborGap: 8
+            ),
             4
         )
 

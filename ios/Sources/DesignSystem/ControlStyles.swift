@@ -155,6 +155,7 @@ public enum MaterialChipState: Hashable, Sendable {
 /// supply their per-edge neighbor gaps so interaction cells fill those gaps
 /// without overlapping. Omitted edges retain the full free-space outset.
 /// Neighbor gaps change hit testing only, never visuals.
+/// Tiled interaction cells are rectangular so adjacent targets have no gaps.
 public struct MaterialChip: View {
     /// `ia-doors.html` ratifies 12pt/600, which no `TypographyRole` expresses.
     static let titleFont = Font.caption.weight(.semibold)
@@ -237,8 +238,10 @@ public struct MaterialChip: View {
 
 /// Distances from a chip to distinct-action neighbors on each edge.
 ///
-/// Supply `nil` for an edge facing free space. The component retains its
-/// full 11pt tiled outset there. Values must be finite and nonnegative.
+/// Supply `nil` for an edge facing free space. The component retains the
+/// dimension-aware free-space outset there, up to 11pt for the 22pt axis.
+/// Negative gaps normalize to zero; non-finite gaps normalize to `nil` so
+/// transient layout values fall back to free space.
 public struct MaterialChipNeighborGaps: Hashable, Sendable {
     public let top: CGFloat?
     public let leading: CGFloat?
@@ -251,14 +254,10 @@ public struct MaterialChipNeighborGaps: Hashable, Sendable {
         bottom: CGFloat? = nil,
         trailing: CGFloat? = nil
     ) {
-        Self.validate(top)
-        Self.validate(leading)
-        Self.validate(bottom)
-        Self.validate(trailing)
-        self.top = top
-        self.leading = leading
-        self.bottom = bottom
-        self.trailing = trailing
+        self.top = Self.normalized(top)
+        self.leading = Self.normalized(leading)
+        self.bottom = Self.normalized(bottom)
+        self.trailing = Self.normalized(trailing)
     }
 
     public static func all(_ gap: CGFloat) -> Self {
@@ -270,25 +269,25 @@ public struct MaterialChipNeighborGaps: Hashable, Sendable {
         )
     }
 
-    private static func validate(_ gap: CGFloat?) {
+    private static func normalized(_ gap: CGFloat?) -> CGFloat? {
         guard let gap else {
-            return
+            return nil
         }
-        precondition(
-            gap.isFinite && gap >= 0,
-            "MaterialChip neighbor gaps must be finite and nonnegative"
-        )
+        guard gap.isFinite else {
+            return nil
+        }
+        return max(0, gap)
     }
 }
 
 /// Public chip metrics for layouts that need to calculate row and column pitch.
 public enum MaterialChipGeometry {
     public static let visualHeight: CGFloat = 22
-    public static let horizontalPadding: CGFloat = 9
-    public static let labelSpacing: CGFloat = 4
+    static let horizontalPadding: CGFloat = 9
+    static let labelSpacing: CGFloat = 4
     public static let minimumHitTarget: CGFloat = 44
 
-    /// Returns the legacy free-space expansion needed to reach 44pt.
+    /// Returns the free-space expansion needed to reach 44pt.
     public static func hitOutset(for dimension: CGFloat) -> CGFloat {
         max(
             0,
@@ -296,20 +295,20 @@ public enum MaterialChipGeometry {
         )
     }
 
-    /// Returns half a neighbor gap capped at 11pt for a tiled interaction
-    /// cell. `nil` denotes a free edge and therefore returns the full 11pt.
-    public static func tiledHitOutset(neighborGap: CGFloat?) -> CGFloat {
-        let maximumTiledOutset = (
-            minimumHitTarget - visualHeight
-        ) / 2
+    /// Returns half a neighbor gap capped at the free-space expansion needed
+    /// for `dimension`. `nil` denotes a free edge and returns that expansion.
+    public static func tiledHitOutset(
+        for dimension: CGFloat,
+        neighborGap: CGFloat?
+    ) -> CGFloat {
+        let freeSpaceOutset = hitOutset(for: dimension)
         guard let neighborGap else {
-            return maximumTiledOutset
+            return freeSpaceOutset
         }
-        precondition(
-            neighborGap.isFinite && neighborGap >= 0,
-            "MaterialChip neighbor gaps must be finite and nonnegative"
-        )
-        return min(maximumTiledOutset, neighborGap / 2)
+        guard neighborGap.isFinite else {
+            return freeSpaceOutset
+        }
+        return min(freeSpaceOutset, max(0, neighborGap) / 2)
     }
 }
 
@@ -326,15 +325,19 @@ struct MaterialChipHitTargetShape: Shape {
         }
 
         let topOutset = MaterialChipGeometry.tiledHitOutset(
+            for: rect.height,
             neighborGap: neighborGaps.top
         )
         let leftOutset = MaterialChipGeometry.tiledHitOutset(
+            for: rect.width,
             neighborGap: neighborGaps.leading
         )
         let bottomOutset = MaterialChipGeometry.tiledHitOutset(
+            for: rect.height,
             neighborGap: neighborGaps.bottom
         )
         let rightOutset = MaterialChipGeometry.tiledHitOutset(
+            for: rect.width,
             neighborGap: neighborGaps.trailing
         )
         let targetRect = CGRect(

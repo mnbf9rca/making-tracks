@@ -164,26 +164,89 @@ final class ControlStylesTests: XCTestCase {
 
     func testMaterialChipTiledHitTargetClipsOutsetToHalfNeighborGap() {
         XCTAssertEqual(
-            MaterialChipGeometry.tiledHitOutset(neighborGap: 8),
+            MaterialChipGeometry.tiledHitOutset(
+                for: MaterialChipGeometry.visualHeight,
+                neighborGap: 8
+            ),
             4
         )
         XCTAssertEqual(
-            MaterialChipGeometry.tiledHitOutset(neighborGap: 44),
+            MaterialChipGeometry.tiledHitOutset(
+                for: MaterialChipGeometry.visualHeight,
+                neighborGap: 44
+            ),
             11
         )
         XCTAssertEqual(
-            MaterialChipGeometry.tiledHitOutset(neighborGap: 0),
+            MaterialChipGeometry.tiledHitOutset(
+                for: MaterialChipGeometry.visualHeight,
+                neighborGap: 0
+            ),
             0
         )
         XCTAssertEqual(
-            MaterialChipGeometry.tiledHitOutset(neighborGap: nil),
+            MaterialChipGeometry.tiledHitOutset(
+                for: MaterialChipGeometry.visualHeight,
+                neighborGap: nil
+            ),
             11
         )
+        XCTAssertEqual(
+            MaterialChipGeometry.tiledHitOutset(
+                for: MaterialChipGeometry.visualHeight,
+                neighborGap: -8
+            ),
+            0
+        )
+        XCTAssertEqual(
+            MaterialChipGeometry.tiledHitOutset(
+                for: MaterialChipGeometry.visualHeight,
+                neighborGap: .nan
+            ),
+            11
+        )
+        XCTAssertEqual(
+            MaterialChipGeometry.tiledHitOutset(
+                for: MaterialChipGeometry.visualHeight,
+                neighborGap: .infinity
+            ),
+            11
+        )
+        XCTAssertEqual(
+            MaterialChipGeometry.tiledHitOutset(
+                for: 60,
+                neighborGap: nil
+            ),
+            0,
+            "A free edge does not expand an axis already wider than 44pt"
+        )
+        XCTAssertEqual(
+            MaterialChipGeometry.tiledHitOutset(
+                for: 60,
+                neighborGap: 8
+            ),
+            0,
+            "A neighbor gap never creates expansion an axis does not need"
+        )
+    }
+
+    func testMaterialChipNeighborGapsNormalizeUnsafeLayoutValues() {
+        let gaps = MaterialChipNeighborGaps(
+            top: -8,
+            leading: .nan,
+            bottom: .infinity,
+            trailing: 8
+        )
+
+        XCTAssertEqual(gaps.top, 0)
+        XCTAssertNil(gaps.leading)
+        XCTAssertNil(gaps.bottom)
+        XCTAssertEqual(gaps.trailing, 8)
     }
 
     func testMaterialChipTiledHitTargetsClipOnlyFacingSides() {
         let gap: CGFloat = 8
-        let chipWidth: CGFloat = 60
+        let chipWidth = MaterialChipGeometry.visualHeight
         let leftRect = CGRect(
             x: 0,
             y: 0,
@@ -258,7 +321,7 @@ final class ControlStylesTests: XCTestCase {
         let rect = CGRect(
             x: 20,
             y: 20,
-            width: 60,
+            width: MaterialChipGeometry.visualHeight,
             height: MaterialChipGeometry.visualHeight
         )
         let path = MaterialChipHitTargetShape(
@@ -280,7 +343,7 @@ final class ControlStylesTests: XCTestCase {
         let rect = CGRect(
             x: 20,
             y: 20,
-            width: 60,
+            width: MaterialChipGeometry.visualHeight,
             height: MaterialChipGeometry.visualHeight
         )
         let path = MaterialChipHitTargetShape(
@@ -487,7 +550,33 @@ final class ControlStylesTests: XCTestCase {
 
 #if canImport(AppKit)
     private func pixelData(in image: CGImage) throws -> Data {
-        try XCTUnwrap(image.dataProvider?.data) as Data
+        let bytesPerRow = image.width * 4
+        var pixels = Data(
+            count: bytesPerRow * image.height
+        )
+        try pixels.withUnsafeMutableBytes { buffer in
+            let context = try XCTUnwrap(
+                CGContext(
+                    data: buffer.baseAddress,
+                    width: image.width,
+                    height: image.height,
+                    bitsPerComponent: 8,
+                    bytesPerRow: bytesPerRow,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                )
+            )
+            context.draw(
+                image,
+                in: CGRect(
+                    x: 0,
+                    y: 0,
+                    width: image.width,
+                    height: image.height
+                )
+            )
+        }
+        return pixels
     }
 
     private func solidAccentPixelCount(in image: CGImage) -> Int {
