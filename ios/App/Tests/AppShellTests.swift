@@ -58,13 +58,13 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(PlaceCardVisualSpec.tone(for: .unhide), .neutral)
     }
 
-    func testMapHomeChromeUsesFilterGlyphAndChiplessMenuSpec() {
-        XCTAssertEqual(MapHomeChromeSpec.layersSymbolName(isActive: false), "line.3.horizontal.decrease.circle")
-        XCTAssertEqual(MapHomeChromeSpec.layersSymbolName(isActive: true), "line.3.horizontal.decrease.circle.fill")
-        XCTAssertEqual(MapHomeChromeSpec.menuSymbolName, "line.3.horizontal")
-        XCTAssertGreaterThanOrEqual(MapHomeChromeSpec.menuGlyphPointSize, 28)
-        XCTAssertGreaterThanOrEqual(MapHomeChromeSpec.hitTargetSide, 44)
-        XCTAssertGreaterThan(MapHomeChromeSpec.glyphHaloRadius, 0)
+    func testPersistentDoorChromeReservesStandardAndAccessibilityClearance() {
+        XCTAssertEqual(MapDoorChromeSpec.doorBarClearance(isAccessibilitySize: false), 68)
+        XCTAssertEqual(MapDoorChromeSpec.doorBarClearance(isAccessibilitySize: true), 124)
+        XCTAssertGreaterThan(
+            MapDoorChromeSpec.accessibilityDoorBarClearance,
+            MapDoorChromeSpec.standardDoorBarClearance
+        )
     }
 
     func testMapDoorsExposeDistinctRuledPresentation() {

@@ -12,6 +12,13 @@ struct MapDoorChromeSpec {
     static let attributionHasBackground = false
     static let locateMinimumHitTarget: CGFloat = 44
     static let usesBuiltInCompass = true
+    static let doorBarBottomPadding: CGFloat = 12
+    static let standardDoorBarClearance: CGFloat = 68
+    static let accessibilityDoorBarClearance: CGFloat = 124
+
+    static func doorBarClearance(isAccessibilitySize: Bool) -> CGFloat {
+        isAccessibilitySize ? accessibilityDoorBarClearance : standardDoorBarClearance
+    }
 }
 
 struct MapDoorRowPresentation: Equatable {
