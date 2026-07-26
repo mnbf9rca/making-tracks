@@ -674,9 +674,9 @@ Host tests only unless you touch `project.yml`. No render — nothing visual cha
 - **Issue:** #508 · **Spec section:** §4, §5
 - **Acceptance criteria:** AC14, AC15, plus R11 (*Rulings* → R11)
 - **Depends on:** **T1.8 merged** — this migrates that door's icons off their interim path, so it edits files T1.8 owns until it lands
-- **Owner:** unclaimed — well-bounded, and a good first row for an idle seat once the dependency clears
+- **Owner:** codex4
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed
+- **Status:** branch — `wp-508-icon-role` at `536cc165`; R11 grounded, TDD baseline in progress
 - **Branch:** `wp-508-icon-role` — cut from a freshly-fetched `ios`
 - **Contracts consumed:** T1.2 font roles, T1.3 control styles, T1.8's door surfaces.
 
