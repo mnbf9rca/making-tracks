@@ -436,15 +436,17 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertTrue(tracksDoor.waitForExistence(timeout: 5))
         tracksDoor.tap()
-        for identifier in ["tracks.row.my-tracks", "tracks.row.lists"] {
-            let row = app.buttons[identifier]
-            XCTAssertTrue(row.waitForExistence(timeout: 5))
-            XCTAssertTrue(row.isHittable)
-            XCTAssertGreaterThanOrEqual(row.frame.height, 44)
-        }
+        let myTracksRow = app.buttons["tracks.row.my-tracks"]
+        let firstListRow = app.buttons.matching(identifierPrefix: "lists.row.").firstMatch
+        XCTAssertTrue(myTracksRow.waitForExistence(timeout: 5))
+        XCTAssertTrue(firstListRow.waitForExistence(timeout: 5))
+        XCTAssertTrue(myTracksRow.isHittable)
+        XCTAssertTrue(firstListRow.isHittable)
+        XCTAssertGreaterThanOrEqual(myTracksRow.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(firstListRow.frame.height, 44)
         XCTAssertLessThan(
-            app.buttons["tracks.row.my-tracks"].frame.minY,
-            app.buttons["tracks.row.lists"].frame.minY
+            myTracksRow.frame.minY,
+            firstListRow.frame.minY
         )
     }
 
@@ -942,10 +944,6 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
 
         openTracksDoor(in: app)
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        let dateNight = app.staticTexts["Date night"]
-        XCTAssertTrue(dateNight.waitForExistence(timeout: 5))
         let dateNightRow = app.buttons.matching(identifierPrefix: "lists.row.").matching(
             NSPredicate(format: "label CONTAINS %@", "Date night")
         ).firstMatch
@@ -957,7 +955,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let confirmDelete = app.buttons.matching(identifier: "lists.delete.confirm").firstMatch
         XCTAssertTrue(confirmDelete.waitForExistence(timeout: 5))
         confirmDelete.tap()
-        XCTAssertTrue(waitForNonExistence(of: dateNight, timeout: 5))
+        XCTAssertTrue(waitForNonExistence(of: dateNightRow, timeout: 5))
         app.buttons["Close"].tap()
 
         XCTAssertTrue(waitForAccessibilityPin(
@@ -1010,14 +1008,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         closePlaceCard(in: app)
 
         openTracksDoor(in: app)
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        app.buttons["lists.create"].tap()
+        let tracksRoot = app.collectionViews["tracks.root"]
+        XCTAssertTrue(tracksRoot.waitForExistence(timeout: 5))
+        tracksRoot.swipeUp()
+        let createList = app.buttons["lists.create"]
+        XCTAssertTrue(createList.isHittable)
+        createList.tap()
         let listsError = app.staticTexts["lists.error"]
         XCTAssertTrue(listsError.waitForExistence(timeout: 5))
         XCTAssertEqual(listsError.label, "Enter a list name.")
-        XCTAssertTrue(app.staticTexts["KL walk"].waitForExistence(timeout: 5))
-        app.staticTexts["KL walk"].tap()
+        openListFromTracksRoot(named: "KL walk", in: app)
 
         XCTAssertTrue(app.staticTexts["lists.detail.progress"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["lists.detail.progress"].label, "you've been to 1 of these · all seen")
@@ -1382,9 +1382,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
         openTracksDoor(in: app)
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        app.staticTexts["My tracks"].tap()
+        app.buttons["tracks.row.my-tracks"].tap()
 
         let trackSurface = app.collectionViews["lists.detail.surface.track"]
         XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
@@ -1496,48 +1494,31 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
     }
 
-    func testTracksDoorAndListsMyTracksReachSameScreenIdentity() {
-        let fromDoor = launch(reset: true, pinDiagnostics: true)
-        XCTAssertTrue(fromDoor.otherElements["map.surface"].waitForExistence(timeout: 10))
-        XCTAssertTrue(waitForMapToFinishLoading(in: fromDoor))
-        openTracksDoor(in: fromDoor)
-        fromDoor.buttons["tracks.row.my-tracks"].tap()
-        XCTAssertTrue(fromDoor.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
-        fromDoor.buttons["lists.detail.track.back"].tap()
-        let myTracksRow = fromDoor.buttons["tracks.row.my-tracks"]
-        XCTAssertTrue(myTracksRow.waitForExistence(timeout: 5))
-        myTracksRow.tap()
-        XCTAssertTrue(fromDoor.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
-        fromDoor.buttons["lists.detail.track.done"].tap()
-        XCTAssertTrue(fromDoor.otherElements["map.surface"].waitForExistence(timeout: 5))
-        XCTAssertTrue(
-            waitForNonExistence(
-                of: fromDoor.collectionViews["lists.detail.surface.track"],
-                timeout: 5
-            )
-        )
+    func testTracksDoorIsTheSingleListsSurface() {
+        let app = launch(reset: true, seedUserList: true, pinDiagnostics: true)
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+        openTracksDoor(in: app)
 
-        let fromLists = launch(reset: true, pinDiagnostics: true)
-        XCTAssertTrue(fromLists.otherElements["map.surface"].waitForExistence(timeout: 10))
-        XCTAssertTrue(waitForMapToFinishLoading(in: fromLists))
-        openTracksDoor(in: fromLists)
-        fromLists.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(fromLists.staticTexts["Lists"].waitForExistence(timeout: 5))
-        fromLists.staticTexts["My tracks"].tap()
-        XCTAssertTrue(fromLists.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
-        fromLists.buttons["lists.detail.track.back"].tap()
-        XCTAssertTrue(fromLists.navigationBars["Lists"].waitForExistence(timeout: 5))
-        XCTAssertTrue(fromLists.buttons["lists.create"].exists)
-        fromLists.staticTexts["My tracks"].tap()
-        XCTAssertTrue(fromLists.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
-        fromLists.buttons["lists.detail.track.done"].tap()
-        XCTAssertTrue(fromLists.otherElements["map.surface"].waitForExistence(timeout: 5))
-        XCTAssertTrue(
-            waitForNonExistence(
-                of: fromLists.collectionViews["lists.detail.surface.track"],
-                timeout: 5
-            )
-        )
+        let myTracks = app.buttons["tracks.row.my-tracks"]
+        let dateNight = app.buttons.matching(identifierPrefix: "lists.row.").matching(
+            NSPredicate(format: "label CONTAINS %@", "Date night")
+        ).firstMatch
+        XCTAssertTrue(myTracks.waitForExistence(timeout: 5))
+        XCTAssertTrue(dateNight.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["lists.create.name"].exists)
+        XCTAssertTrue(app.buttons["lists.create"].exists)
+        XCTAssertFalse(app.buttons["tracks.row.lists"].exists)
+        XCTAssertFalse(app.navigationBars["Lists"].exists)
+
+        myTracks.tap()
+        XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
+        app.buttons["lists.detail.track.back"].tap()
+
+        XCTAssertTrue(dateNight.waitForExistence(timeout: 5))
+        dateNight.tap()
+        XCTAssertTrue(app.collectionViews["lists.detail.surface.collection"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["lists.detail.show-map"].exists)
     }
 
     func testTrackGeometryDrawsConnectorFromSeededFixtureVisits() {
@@ -1549,9 +1530,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
 
         openTracksDoor(in: app)
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        app.staticTexts["Track pair"].tap()
+        openListFromTracksRoot(named: "Track pair", in: app)
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
@@ -1575,9 +1554,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForNonExistence(of: card, timeout: 5), card.debugDescription)
         XCTAssertFalse(app.descendants(matching: .any).matching(identifierPrefix: "place-card.").firstMatch.exists)
 
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        app.staticTexts["Replay week"].tap()
+        openListFromTracksRoot(named: "Replay week", in: app)
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
@@ -1599,9 +1576,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
 
         openTracksDoor(in: app)
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        app.staticTexts["Replay week"].tap()
+        openListFromTracksRoot(named: "Replay week", in: app)
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
 
@@ -1691,9 +1666,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForMapSurfaceToSettle(in: app))
 
         openTracksDoor(in: app)
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        app.staticTexts["Replay week"].tap()
+        openListFromTracksRoot(named: "Replay week", in: app)
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
 
@@ -1745,9 +1718,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
 
         openTracksDoor(in: app)
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        app.staticTexts["Replay week"].tap()
+        openListFromTracksRoot(named: "Replay week", in: app)
 
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
@@ -1781,9 +1752,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForMapToFinishLoading(in: lovedApp))
 
         openTracksDoor(in: lovedApp)
-        lovedApp.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(lovedApp.staticTexts["Lists"].waitForExistence(timeout: 5))
-        lovedApp.staticTexts["Replay week"].tap()
+        openListFromTracksRoot(named: "Replay week", in: lovedApp)
         XCTAssertTrue(lovedApp.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         lovedApp.buttons["lists.detail.show-map"].tap()
 
@@ -1818,9 +1787,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
 
         openTracksDoor(in: app)
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        app.staticTexts["Replay week"].tap()
+        openListFromTracksRoot(named: "Replay week", in: app)
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
@@ -1889,9 +1856,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
         openTracksDoor(in: app)
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        app.staticTexts["My tracks"].tap()
+        app.buttons["tracks.row.my-tracks"].tap()
         XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
@@ -1932,9 +1897,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
         openTracksDoor(in: app)
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        app.staticTexts["My tracks"].tap()
+        app.buttons["tracks.row.my-tracks"].tap()
         XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
@@ -1981,9 +1944,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
         openTracksDoor(in: app)
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        app.staticTexts["My tracks"].tap()
+        app.buttons["tracks.row.my-tracks"].tap()
         XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
@@ -2020,9 +1981,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
         openTracksDoor(in: app)
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        app.staticTexts["My tracks"].tap()
+        app.buttons["tracks.row.my-tracks"].tap()
         XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
@@ -2066,9 +2025,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
 
         openTracksDoor(in: app)
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        app.staticTexts["Track pair"].tap()
+        openListFromTracksRoot(named: "Track pair", in: app)
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
@@ -2092,9 +2049,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
 
         openTracksDoor(in: app)
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        app.staticTexts["My tracks"].tap()
+        app.buttons["tracks.row.my-tracks"].tap()
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
@@ -2112,9 +2067,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
 
         openTracksDoor(in: app)
-        app.buttons["tracks.row.lists"].tap()
-        XCTAssertTrue(app.staticTexts["Lists"].waitForExistence(timeout: 5))
-        app.staticTexts["Spread walk"].tap()
+        openListFromTracksRoot(named: "Spread walk", in: app)
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
 
@@ -2329,9 +2282,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         openTracksDoor(in: app)
         XCTAssertTrue(app.staticTexts["Tracks"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.buttons.matching(identifierPrefix: "tracks.row.").count, 2)
-        XCTAssertTrue(app.buttons["tracks.row.lists"].exists)
+        XCTAssertEqual(app.buttons.matching(identifierPrefix: "tracks.row.").count, 1)
+        XCTAssertFalse(app.buttons["tracks.row.lists"].exists)
         XCTAssertTrue(app.buttons["tracks.row.my-tracks"].exists)
+        XCTAssertTrue(app.buttons.matching(identifierPrefix: "lists.row.").firstMatch.exists)
+        XCTAssertTrue(app.textFields["lists.create.name"].exists)
+        XCTAssertTrue(app.buttons["lists.create"].exists)
         XCTAssertFalse(app.buttons["world.row.scope"].exists)
         XCTAssertFalse(app.buttons["world.row.settings"].exists)
         XCTAssertFalse(app.buttons["world.row.about"].exists)
@@ -3388,6 +3344,24 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let door = app.buttons["map.door.tracks"]
         XCTAssertTrue(door.waitForExistence(timeout: 5))
         door.tap()
+    }
+
+    private func openListFromTracksRoot(
+        named name: String,
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let row = app.buttons.matching(identifierPrefix: "lists.row.").matching(
+            NSPredicate(format: "label CONTAINS %@", name)
+        ).firstMatch
+        XCTAssertTrue(
+            scrollToHittable(row, in: app),
+            "Expected \(name) on the single Tracks root",
+            file: file,
+            line: line
+        )
+        row.tap()
     }
 
     private func openScope(in app: XCUIApplication) {

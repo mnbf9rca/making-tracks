@@ -241,9 +241,147 @@ final class AppShellTests: XCTestCase {
 
     func testDoorRootsExposeOnlyRuledRows() {
         XCTAssertEqual(WorldDoorRow.allCases, [.scope, .settings, .about])
-        XCTAssertEqual(TracksDoorRow.allCases, [.myTracks, .lists])
+        XCTAssertEqual(TracksDoorRow.allCases, [.myTracks, .newList])
         XCTAssertFalse(WorldDoorRow.allCases.map(\.title).contains("Offline maps"))
         XCTAssertFalse(WorldDoorRow.allCases.map(\.title).contains("Coverage"))
+        XCTAssertFalse(TracksDoorRow.allCases.map(\.title).contains("Loved places"))
+        XCTAssertFalse(TracksDoorRow.allCases.map(\.title).contains("Hidden places"))
+    }
+
+    func testTracksDoorContentProjectsHeroAndEveryNonTrackListInDatabaseOrder() {
+        let content = TracksDoorContent.make(
+            lists: [
+                PlaceList(
+                    id: 1,
+                    name: "My tracks",
+                    isSystem: true,
+                    kind: PlaceList.trackKind,
+                    createdAt: .distantPast
+                ),
+                PlaceList(
+                    id: 2,
+                    name: "Want to go",
+                    isSystem: true,
+                    createdAt: .distantPast
+                ),
+                PlaceList(
+                    id: 3,
+                    name: "Ghost signs",
+                    isSystem: false,
+                    createdAt: .distantPast
+                ),
+                PlaceList(
+                    id: 4,
+                    name: "KL follies",
+                    isSystem: false,
+                    createdAt: .distantPast
+                ),
+            ],
+            progress: [
+                2: ListProgress(visited: 1, total: 3),
+                3: ListProgress(visited: 4, total: 11),
+                4: ListProgress(visited: 7, total: 9),
+            ],
+            visits: [
+                TrackVisit(
+                    id: 10,
+                    placeID: "p1",
+                    visitedAt: Date(timeIntervalSince1970: 100),
+                    verdict: nil,
+                    name: "First",
+                    category: "memorial",
+                    tier: 1,
+                    lat: 0,
+                    lon: 0
+                ),
+                TrackVisit(
+                    id: 11,
+                    placeID: "p2",
+                    visitedAt: Date(timeIntervalSince1970: 200),
+                    verdict: nil,
+                    name: "Thean Hou Temple",
+                    category: "building",
+                    tier: 1,
+                    lat: 0,
+                    lon: 0
+                ),
+            ]
+        )
+
+        XCTAssertEqual(
+            content.hero,
+            TracksDoorHeroContent(
+                listID: 1,
+                metadata: "2 visits · last: Thean Hou Temple"
+            )
+        )
+        XCTAssertEqual(
+            content.lists,
+            [
+                TracksDoorListContent(
+                    id: 2,
+                    name: "Want to go",
+                    isSystem: true,
+                    progress: ListProgress(visited: 1, total: 3)
+                ),
+                TracksDoorListContent(
+                    id: 3,
+                    name: "Ghost signs",
+                    isSystem: false,
+                    progress: ListProgress(visited: 4, total: 11)
+                ),
+                TracksDoorListContent(
+                    id: 4,
+                    name: "KL follies",
+                    isSystem: false,
+                    progress: ListProgress(visited: 7, total: 9)
+                ),
+            ]
+        )
+    }
+
+    func testTracksDoorContentHandlesEmptyHistoryAndMissingProgressWithoutInventingRows() {
+        let content = TracksDoorContent.make(
+            lists: [
+                PlaceList(
+                    id: 1,
+                    name: "My tracks",
+                    isSystem: true,
+                    kind: PlaceList.trackKind,
+                    createdAt: .distantPast
+                ),
+                PlaceList(
+                    id: nil,
+                    name: "Unsaved",
+                    isSystem: false,
+                    createdAt: .distantPast
+                ),
+                PlaceList(
+                    id: 2,
+                    name: "Empty list",
+                    isSystem: false,
+                    createdAt: .distantPast
+                ),
+            ],
+            progress: [:],
+            visits: []
+        )
+
+        XCTAssertEqual(
+            content.hero,
+            TracksDoorHeroContent(listID: 1, metadata: "No visits yet")
+        )
+        XCTAssertEqual(
+            content.lists,
+            [
+                TracksDoorListContent(
+                    id: 2,
+                    name: "Empty list",
+                    isSystem: false,
+                    progress: ListProgress(visited: 0, total: 0)
+                ),
+            ]
+        )
     }
 
     func testQuietChromeUsesTokenSurfacesAndBareAttribution() {
@@ -296,7 +434,7 @@ final class AppShellTests: XCTestCase {
         shell.openListsDeepLink()
 
         XCTAssertEqual(shell.presentedDoor, .tracks)
-        XCTAssertEqual(shell.deepLinkDestination, .lists)
+        XCTAssertNil(shell.deepLinkDestination)
     }
 
     func testAppShellModelRoutesListDetailDeepLinkThroughListsPath() {

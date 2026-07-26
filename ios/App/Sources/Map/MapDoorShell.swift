@@ -1,4 +1,5 @@
 import DesignSystem
+import MakingTracksData
 import SwiftUI
 
 struct MapDoorPresentation: Equatable {
@@ -44,6 +45,65 @@ struct MapDoorRowPresentation: Equatable {
     let subtitle: String
     let systemImage: String
     let accessibilityIdentifier: String
+}
+
+struct TracksDoorHeroContent: Equatable {
+    let listID: Int64
+    let metadata: String
+}
+
+struct TracksDoorListContent: Equatable, Identifiable {
+    let id: Int64
+    let name: String
+    let isSystem: Bool
+    let progress: ListProgress
+}
+
+struct TracksDoorContent: Equatable {
+    static let empty = TracksDoorContent(hero: nil, lists: [])
+
+    let hero: TracksDoorHeroContent?
+    let lists: [TracksDoorListContent]
+
+    static func make(
+        lists: [PlaceList],
+        progress: [Int64: ListProgress],
+        visits: [TrackVisit]
+    ) -> TracksDoorContent {
+        let trackList = lists.first {
+            $0.isSystem && $0.kind == PlaceList.trackKind
+        }
+        let hero = trackList.flatMap { list -> TracksDoorHeroContent? in
+            guard let id = list.id else { return nil }
+            guard let lastVisit = visits.last else {
+                return TracksDoorHeroContent(
+                    listID: id,
+                    metadata: "No visits yet"
+                )
+            }
+            let visitNoun = visits.count == 1 ? "visit" : "visits"
+            return TracksDoorHeroContent(
+                listID: id,
+                metadata: "\(visits.count) \(visitNoun) · last: \(lastVisit.name)"
+            )
+        }
+
+        let listRows = lists.compactMap { list -> TracksDoorListContent? in
+            guard !(list.isSystem && list.kind == PlaceList.trackKind),
+                  let id = list.id
+            else {
+                return nil
+            }
+            return TracksDoorListContent(
+                id: id,
+                name: list.name,
+                isSystem: list.isSystem,
+                progress: progress[id] ?? ListProgress(visited: 0, total: 0)
+            )
+        }
+
+        return TracksDoorContent(hero: hero, lists: listRows)
+    }
 }
 
 extension MapDoor {
@@ -103,16 +163,16 @@ enum WorldDoorRow: CaseIterable {
 
 enum TracksDoorRow: CaseIterable {
     case myTracks
-    case lists
+    case newList
 
     var presentation: MapDoorRowPresentation {
         switch self {
-        case .lists:
+        case .newList:
             MapDoorRowPresentation(
-                title: "Lists",
-                subtitle: "Saved places and collections",
-                systemImage: "list.bullet",
-                accessibilityIdentifier: "tracks.row.lists"
+                title: "New list",
+                subtitle: "Create a list",
+                systemImage: "plus",
+                accessibilityIdentifier: "lists.create"
             )
         case .myTracks:
             MapDoorRowPresentation(
@@ -126,17 +186,6 @@ enum TracksDoorRow: CaseIterable {
 
     var title: String {
         presentation.title
-    }
-}
-
-extension MapShellDestination {
-    var listDetailPath: [MapShellDestination] {
-        switch self {
-        case let .listDetail(listID):
-            [.lists, .listDetail(listID)]
-        default:
-            [self]
-        }
     }
 }
 
@@ -169,7 +218,9 @@ struct MapDoorSheet<Destination: View>: View {
 
     let door: MapDoor
     let deepLinkDestination: MapShellDestination?
+    let model: MapScreenModel?
     let openScope: () -> Void
+    let onListDeleted: @MainActor (Int64) -> Void
     let destination: (MapShellDestination) -> Destination
 
     @State private var path: [MapShellDestination] = []
@@ -178,12 +229,16 @@ struct MapDoorSheet<Destination: View>: View {
     init(
         door: MapDoor,
         deepLinkDestination: MapShellDestination?,
+        model: MapScreenModel?,
         openScope: @escaping () -> Void,
+        onListDeleted: @escaping @MainActor (Int64) -> Void,
         @ViewBuilder destination: @escaping (MapShellDestination) -> Destination
     ) {
         self.door = door
         self.deepLinkDestination = deepLinkDestination
+        self.model = model
         self.openScope = openScope
+        self.onListDeleted = onListDeleted
         self.destination = destination
     }
 
@@ -219,12 +274,16 @@ struct MapDoorSheet<Destination: View>: View {
         case .world:
             WorldDoorRootView(path: $path, openScope: openScope)
         case .tracks:
-            TracksDoorRootView(path: $path)
+            TracksDoorRootView(
+                path: $path,
+                model: model,
+                onListDeleted: onListDeleted
+            )
         }
     }
 
     private func applyDeepLink() {
-        path = deepLinkDestination?.listDetailPath ?? []
+        path = deepLinkDestination.map { [$0] } ?? []
     }
 
     private func promoteDetentIfNeeded() {
@@ -284,22 +343,280 @@ struct WorldDoorRootView: View {
 
 struct TracksDoorRootView: View {
     @Binding var path: [MapShellDestination]
+    let model: MapScreenModel?
+    let onListDeleted: @MainActor (Int64) -> Void
+
+    @State private var content = TracksDoorContent.empty
+    @State private var draftName = ""
+    @State private var actionError: String?
+    @State private var pendingDeleteList: TracksDoorListContent?
+
+    private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
-        MapDoorRootLayout(
-            title: "Tracks",
-            subtitle: "your story through the world"
+        List {
+            tracksHeader
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+
+            if let hero = content.hero {
+                heroRow(hero)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
+
+            Text("Lists")
+                .font(Typography.font(for: .label))
+                .textCase(.uppercase)
+                .tracking(1.2)
+                .foregroundStyle(tokens.muted.swiftUIColor)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+
+            ForEach(content.lists) { list in
+                listRow(list)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
+
+            newListRow
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+
+            if let actionError {
+                Text(verbatim: actionError)
+                    .font(Typography.font(for: .metadata))
+                    .foregroundStyle(tokens.warning.swiftUIColor)
+                    .padding(.horizontal, 16)
+                    .accessibilityIdentifier("lists.error")
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(tokens.surface.swiftUIColor)
+        .navigationBarBackButtonHidden()
+        .accessibilityIdentifier("tracks.root")
+        .task { await reload() }
+        .refreshable { await reload() }
+        .confirmationDialog(
+            pendingDeleteList.map { "Delete \($0.name)?" } ?? "Delete list?",
+            isPresented: Binding(
+                get: { pendingDeleteList != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingDeleteList = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
         ) {
-            MapDoorRaisedRow(
-                presentation: TracksDoorRow.myTracks.presentation
-            ) {
-                path.append(.tracks)
+            Button("Delete", role: .destructive) {
+                guard let id = pendingDeleteList?.id else { return }
+                pendingDeleteList = nil
+                Task { await deleteList(id: id) }
             }
-            MapDoorHairlineRow(
-                presentation: TracksDoorRow.lists.presentation
-            ) {
-                path.append(.lists)
+            .accessibilityIdentifier("lists.delete.confirm")
+            Button("Cancel", role: .cancel) {
+                pendingDeleteList = nil
             }
+        }
+    }
+
+    private var tracksHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Tracks")
+                .font(Typography.font(for: .sheetTitle))
+                .foregroundStyle(tokens.ink.swiftUIColor)
+
+            Text("your story through the world")
+                .font(Typography.font(for: .evocativeSubline))
+                .foregroundStyle(tokens.muted.swiftUIColor)
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func heroRow(_ hero: TracksDoorHeroContent) -> some View {
+        Button {
+            path.append(.tracks)
+        } label: {
+            MaterialRaisedCardRow {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        heroIcon
+                        heroCopy(hero)
+                        Spacer(minLength: 8)
+                        retraceCue
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 12) {
+                            heroIcon
+                            heroCopy(hero)
+                        }
+                        retraceCue
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .padding(.horizontal, 16)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(
+            TracksDoorRow.myTracks.presentation.accessibilityIdentifier
+        )
+    }
+
+    private var heroIcon: some View {
+        Image(systemName: TracksDoorRow.myTracks.presentation.systemImage)
+            .font(.headline.weight(.medium))
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(tokens.accent.swiftUIColor)
+            .accessibilityHidden(true)
+    }
+
+    private func heroCopy(_ hero: TracksDoorHeroContent) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(verbatim: TracksDoorRow.myTracks.presentation.title)
+                .font(Typography.font(for: .listRowTitle))
+                .foregroundStyle(tokens.ink.swiftUIColor)
+
+            Text(verbatim: hero.metadata)
+                .font(Typography.font(for: .metadata))
+                .foregroundStyle(tokens.muted.swiftUIColor)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var retraceCue: some View {
+        Label("Retrace", systemImage: "map")
+            .font(Typography.font(for: .button))
+            .foregroundStyle(tokens.accent.swiftUIColor)
+            .fixedSize(horizontal: true, vertical: true)
+    }
+
+    private func listRow(_ list: TracksDoorListContent) -> some View {
+        Button {
+            path.append(.listDetail(list.id))
+        } label: {
+            MaterialHairlineRow {
+                MaterialProgress(
+                    state: .count(
+                        completed: list.progress.visited,
+                        total: list.progress.total,
+                        suffix: "seen"
+                    ),
+                    accessibilityLabel: "\(list.name) progress"
+                ) {
+                    Text(verbatim: list.name)
+                        .font(Typography.font(for: .listRowTitle))
+                        .foregroundStyle(tokens.ink.swiftUIColor)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("lists.row.\(list.id)")
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if !list.isSystem {
+                Button("Delete", role: .destructive) {
+                    pendingDeleteList = list
+                }
+                .accessibilityIdentifier("lists.delete.\(list.id)")
+            }
+        }
+    }
+
+    private var newListRow: some View {
+        MaterialHairlineRow {
+            HStack(spacing: 8) {
+                Button {
+                    Task { await createList() }
+                } label: {
+                    Image(systemName: TracksDoorRow.newList.presentation.systemImage)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(tokens.accent.swiftUIColor)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Create list")
+                .accessibilityIdentifier(
+                    TracksDoorRow.newList.presentation.accessibilityIdentifier
+                )
+
+                TextField("New list", text: $draftName)
+                    .font(Typography.font(for: .body))
+                    .foregroundStyle(tokens.ink.swiftUIColor)
+                    .textInputAutocapitalization(.words)
+                    .submitLabel(.done)
+                    .onSubmit {
+                        Task { await createList() }
+                    }
+                    .accessibilityIdentifier("lists.create.name")
+            }
+        }
+    }
+
+    @MainActor
+    private func reload() async {
+        guard let model else { return }
+        let lists = await model.lists()
+        var progress: [Int64: ListProgress] = [:]
+        for list in lists {
+            guard !(list.isSystem && list.kind == PlaceList.trackKind),
+                  let id = list.id
+            else {
+                continue
+            }
+            progress[id] = await model.listProgress(listID: id)
+        }
+        let visits = await model.trackVisits()
+        content = TracksDoorContent.make(
+            lists: lists,
+            progress: progress,
+            visits: visits
+        )
+    }
+
+    @MainActor
+    private func createList() async {
+        guard let model else { return }
+        actionError = nil
+        do {
+            _ = try await model.createList(named: draftName)
+            draftName = ""
+            await reload()
+        } catch {
+            actionError = ListsCopy.listNameCreateFailureMessage(
+                for: error,
+                draftName: draftName
+            )
+        }
+    }
+
+    @MainActor
+    private func deleteList(id: Int64) async {
+        guard let model else { return }
+        do {
+            try await model.deleteList(id: id)
+            actionError = nil
+            await reload()
+            onListDeleted(id)
+        } catch {
+            actionError = "Could not delete that list."
         }
     }
 }

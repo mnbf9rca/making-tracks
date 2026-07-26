@@ -201,7 +201,7 @@ Expected: FAIL because the root cannot accept explicit/live content and still re
 
 - [ ] **Step 3: Implement the minimal live Tracks root**
 
-Wire `MapDoorSheetIntegration.model` into `MapDoorSheet`, then render:
+Wire `MapDoorSheetIntegration.model` into `MapDoorSheet`. Give the Tracks root its own plain, transparent `List` so the existing destructive swipe action remains available without inventing a second management surface; keep `MapDoorRootLayout` for World. Render:
 
 ```swift
 MaterialRaisedCardRow {
@@ -261,9 +261,9 @@ MaterialHairlineRow {
 }
 ```
 
-Load all lists, load progress only for non-system custom lists, and load track visits once for hero metadata. Creation uses the existing model mutation, existing error copy, reloads content, and calls no new query.
+Load all lists, load progress for every non-track list (including protected system lists such as Want to Go), and load track visits once for hero metadata. Creation uses the existing model mutation, existing error copy, reloads content, and calls no new query.
 
-For non-system list deletion, retain a destructive context menu plus a named accessibility action; never expose that action on the system hero or any other system list.
+For non-system list deletion, retain the existing trailing swipe action and confirmation dialog with identifiers `lists.delete.<id>` and `lists.delete.confirm`; never expose that action on the system hero or any other system list.
 
 - [ ] **Step 4: Remove the duplicate `ListsView`**
 
