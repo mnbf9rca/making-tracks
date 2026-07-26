@@ -224,6 +224,6 @@ Fetch `origin/ios`, confirm the PR head SHA equals the verified local SHA,
 confirm only intended files changed, confirm the worktree is clean, and
 monitor required checks. Do not merge.
 
-The former published head was verified at `81999ff7`. Monitoring and
+The former published head was verified at `81999ff73b503181751ec10274aeb20f624418cb`. Monitoring and
 exact-head verification remain open because the controller, not this fix
 task, will push the final-review commit and update the live PR.
