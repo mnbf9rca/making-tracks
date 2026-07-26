@@ -240,14 +240,15 @@ struct ManagedPlacesView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier(
+                    "\(mode.presentation.rowIdentifierPrefix).\(place.placeID)"
+                )
 
                 actionButton(for: place)
             }
             .frame(minHeight: 44)
         }
-        .accessibilityIdentifier(
-            "\(mode.presentation.rowIdentifierPrefix).\(place.placeID)"
-        )
     }
 
     @ViewBuilder

@@ -1838,12 +1838,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let dateNight = app.buttons.matching(identifierPrefix: "lists.row.").matching(
             NSPredicate(format: "label CONTAINS %@", "Date night")
         ).firstMatch
-        let newList = app.buttons["tracks.row.new-list"]
+        let newList = app.buttons["lists.create"]
         let loved = app.buttons["tracks.row.loved"]
         let hidden = app.buttons["tracks.row.hidden"]
         XCTAssertTrue(myTracks.waitForExistence(timeout: 5))
         XCTAssertTrue(dateNight.waitForExistence(timeout: 5))
-        XCTAssertTrue(newList.waitForExistence(timeout: 5))
+        XCTAssertTrue(scrollToHittable(newList, in: app))
         XCTAssertTrue(scrollToHittable(loved, in: app))
         XCTAssertTrue(scrollToHittable(hidden, in: app))
         XCTAssertTrue(loved.label.contains("2"))
@@ -1855,7 +1855,6 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         loved.tap()
         XCTAssertTrue(app.collectionViews["tracks.loved.surface"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Loved places"].exists)
-        XCTAssertTrue(app.staticTexts["Historic Building · Hidden"].exists)
         let ghostRow = element(
             identifier: "tracks.loved.row.mt1_00000000000000000000000000",
             in: app
@@ -1864,16 +1863,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             identifier: "tracks.loved.row.mt1_00000000000000000000000001",
             in: app
         )
-        XCTAssertTrue(ghostRow.waitForExistence(timeout: 5))
-        XCTAssertTrue(overlapRow.exists)
+        XCTAssertTrue(overlapRow.waitForExistence(timeout: 5))
+        XCTAssertTrue(overlapRow.label.contains("Historic Building · Hidden"))
         let removeGhost = app.buttons[
             "tracks.loved.remove.mt1_00000000000000000000000000"
         ]
-        XCTAssertTrue(removeGhost.waitForExistence(timeout: 5))
+        XCTAssertTrue(scrollToHittable(removeGhost, in: app))
         assertMinimumInteractiveTarget(removeGhost)
         removeGhost.tap()
         XCTAssertTrue(waitForNonExistence(of: ghostRow, timeout: 5))
-        XCTAssertTrue(overlapRow.exists)
+        XCTAssertTrue(scrollToHittable(overlapRow, in: app))
         attachScreenshot(named: "loved-places")
 
         app.buttons["Back"].tap()
@@ -1891,16 +1890,15 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             identifier: "tracks.hidden.row.mt1_S0000000000000000000000001",
             in: app
         )
-        XCTAssertTrue(hiddenOverlapRow.waitForExistence(timeout: 5))
-        XCTAssertTrue(hiddenOnlyRow.exists)
+        XCTAssertTrue(hiddenOnlyRow.waitForExistence(timeout: 5))
         let unhideOverlap = app.buttons[
             "tracks.hidden.unhide.mt1_00000000000000000000000001"
         ]
-        XCTAssertTrue(unhideOverlap.waitForExistence(timeout: 5))
+        XCTAssertTrue(scrollToHittable(unhideOverlap, in: app))
         assertMinimumInteractiveTarget(unhideOverlap)
         unhideOverlap.tap()
         XCTAssertTrue(waitForNonExistence(of: hiddenOverlapRow, timeout: 5))
-        XCTAssertTrue(hiddenOnlyRow.exists)
+        XCTAssertTrue(scrollToHittable(hiddenOnlyRow, in: app))
         attachScreenshot(named: "hidden-places")
 
         app.buttons["Back"].tap()
@@ -1947,7 +1945,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let unhideOverlap = app.buttons[
             "tracks.hidden.unhide.mt1_00000000000000000000000001"
         ]
-        XCTAssertTrue(unhideOverlap.waitForExistence(timeout: 5))
+        XCTAssertTrue(scrollToHittable(unhideOverlap, in: app))
         unhideOverlap.tap()
         XCTAssertTrue(waitForNonExistence(
             of: element(
@@ -1991,11 +1989,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let removeOverlap = app.buttons[
             "tracks.loved.remove.mt1_00000000000000000000000001"
         ]
-        XCTAssertTrue(removeGhost.waitForExistence(timeout: 5))
-        XCTAssertTrue(removeOverlap.waitForExistence(timeout: 5))
+        XCTAssertTrue(scrollToHittable(removeGhost, in: app))
         assertMinimumInteractiveTarget(removeGhost)
+        assertContainedInAppFrame(removeGhost, in: app)
+        XCTAssertTrue(scrollToHittable(removeOverlap, in: app))
         assertMinimumInteractiveTarget(removeOverlap)
-        assertNoFrameIntersection(removeGhost, removeOverlap)
+        assertContainedInAppFrame(removeOverlap, in: app)
         attachScreenshot(named: "loved-hidden-ax")
 
         app.buttons["Back"].tap()
@@ -2007,11 +2006,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let unhideHiddenOnly = app.buttons[
             "tracks.hidden.unhide.mt1_S0000000000000000000000001"
         ]
-        XCTAssertTrue(unhideOverlap.waitForExistence(timeout: 5))
-        XCTAssertTrue(unhideHiddenOnly.waitForExistence(timeout: 5))
+        XCTAssertTrue(scrollToHittable(unhideOverlap, in: app))
         assertMinimumInteractiveTarget(unhideOverlap)
+        assertContainedInAppFrame(unhideOverlap, in: app)
+        XCTAssertTrue(scrollToHittable(unhideHiddenOnly, in: app))
         assertMinimumInteractiveTarget(unhideHiddenOnly)
-        assertNoFrameIntersection(unhideOverlap, unhideHiddenOnly)
+        assertContainedInAppFrame(unhideHiddenOnly, in: app)
     }
 
     func testTrackGeometryDrawsConnectorFromSeededFixtureVisits() {

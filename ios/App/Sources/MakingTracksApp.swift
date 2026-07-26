@@ -34,6 +34,7 @@ struct MakingTracksApp: App {
     private static let seedFixtureSpreadList = arguments.contains("--ui-testing-seed-spread-list")
     private static let seedFixtureTracksDoorTextStress = arguments.contains("--ui-testing-seed-tracks-door-text-stress")
     private static let seedFixtureFocusedTracksRoute = arguments.contains("--ui-testing-seed-focused-tracks-route")
+    private static let seedFixtureManagedPlaces = arguments.contains("--ui-testing-seed-managed-places")
     private static let simulatedLatitude = argumentValue("--ui-testing-location-latitude").flatMap(Double.init)
     private static let simulatedLongitude = argumentValue("--ui-testing-location-longitude").flatMap(Double.init)
     private static let uiTestingOfflineProgress = argumentValue("--ui-testing-offline-progress").flatMap(Double.init)
@@ -59,6 +60,7 @@ struct MakingTracksApp: App {
     private static let seedFixtureSpreadList = false
     private static let seedFixtureTracksDoorTextStress = false
     private static let seedFixtureFocusedTracksRoute = false
+    private static let seedFixtureManagedPlaces = false
     private static let simulatedLatitude: Double? = nil
     private static let simulatedLongitude: Double? = nil
     private static let uiTestingOfflineProgress: Double? = nil
@@ -114,7 +116,35 @@ struct MakingTracksApp: App {
                     try database.seedUITestingUserList(named: "Date night", containingPlaceID: Self.primaryFixturePlaceID)
                 }
                 let fixturePlaces = MapScreen.uiTestingFixturePlaces(dense: Self.debugUseDenseFixturePins)
-                if seedFixtureTracksDoorTextStress {
+                if seedFixtureManagedPlaces {
+                    let hiddenOnly = MapScreen.spreadFixturePlaces[0]
+                    let visibleOrdinary = MapScreen.spreadFixturePlaces[1]
+                    let seedStart = Date(timeIntervalSince1970: 1_000)
+                    try database.recordVisit(
+                        fixturePlaces[0],
+                        at: seedStart,
+                        verdict: .loved
+                    )
+                    try database.recordVisit(
+                        fixturePlaces[1],
+                        at: seedStart.addingTimeInterval(60),
+                        verdict: .loved
+                    )
+                    try database.recordVisit(
+                        hiddenOnly,
+                        at: seedStart.addingTimeInterval(120)
+                    )
+                    try database.recordVisit(
+                        visibleOrdinary,
+                        at: seedStart.addingTimeInterval(180)
+                    )
+                    try database.setHidden(fixturePlaces[1], true)
+                    try database.setHidden(hiddenOnly, true)
+                    try database.seedUITestingUserList(
+                        named: "Date night",
+                        containingPlaceID: Self.primaryFixturePlaceID
+                    )
+                } else if seedFixtureTracksDoorTextStress {
                     let longListName =
                         "Longest list **literal** 0123456789 0123456789 0123456789 "
                         + "0123456789 0123456789!"
