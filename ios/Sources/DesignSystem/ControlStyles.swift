@@ -161,14 +161,22 @@ public enum MaterialChipState: Hashable, Sendable {
 /// intentionally outside the family.
 ///
 /// The interaction shape expands each axis only when needed to reach the
-/// 44pt minimum. Derived hit areas may overlap only when every overlapping
-/// control invokes the same action; group-level hit arbitration is not a
-/// substitute for clearing hit areas of controls with distinct actions.
-/// Horizontally adjacent chips with distinct actions MUST have spacing between
-/// visual capsules at least equal to the sum of their facing horizontal hit
-/// outsets. Vertically, 22pt chips have 11pt hit outsets per side, so adjacent
-/// wrapped rows with distinct actions require at least 22pt between visual
-/// capsules.
+/// 44pt minimum. R10 requires multi-row flows of distinct-action controls to
+/// tile derived targets: they may abut but never overlap, so every screen point
+/// maps to exactly one control. A consuming layout clips each outset to
+/// `min(11pt, gap / 2)` per side: vertically the target reaches half the row
+/// gap (and equals row pitch), horizontally it reaches half the inter-chip gap.
+/// The full 11pt applies only where free space exists (single rows, run edges,
+/// and screen margins). Tiling targets are permitted only for reversible,
+/// immediately-legible actions (Principle 3 — one tap, nothing destroyed);
+/// destructive, navigational, or commitment-bearing controls keep full 44pt
+/// clearance without exception.
+///
+/// Today this component applies the free-space maximum (an 11pt derived outset)
+/// unconditionally; the tiling clip is not expressible with the current API.
+/// T1.13 supplies the enabling optional neighbour-gap parameter and public
+/// geometry, landing with the R10 records. Until then, consuming layouts must
+/// not claim that this component performs the tiling clip.
 public struct MaterialChip: View {
     /// `ia-doors.html` ratifies 12pt/600, which no `TypographyRole` expresses.
     static let titleFont = Font.caption.weight(.semibold)
