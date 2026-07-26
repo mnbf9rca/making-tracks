@@ -174,7 +174,7 @@ MT_RELEASE_GATE_MODE=build ./scripts/sim-lock.sh ./scripts/release-gate.sh
 ## Review budget
 
 - **Sourcery** on every PR, no cap tracking.
-- **opus design review** on all ten tasks. Every task in this phase either defines or changes a user-facing surface, and per fable's budget note this is deliberately preferred over additional Codex passes.
+- **opus design review** on every task. It was ten at decomposition; the build has since produced T1.12, T1.13 and T1.14 from review findings and rulings, and each carries the same tier. Every task in this phase either defines or changes a user-facing surface, and per fable's budget note this is deliberately preferred over additional Codex passes.
 - **Greptile: one slot, T1.6.** T1.6 deletes the entire menu navigation stack while ~70 XCUITests are pinned to its accessibility identifiers and five deep-link entry points must survive. It is the one task in this phase where a silent regression is both likely and expensive, which is what the "highest-risk" allocation is for.
 - **A second slot is fable's call, not mine.** T1.9 introduces new read queries over hidden/loved user state against a documented filter asymmetry. It is not a migration or a state machine, so I have not spent a slot on it — flagging it instead of quietly consuming budget.
 - **codex-r appears in no review tier.** Its remaining XHIGH pass this phase is the acceptance pass.
@@ -199,6 +199,9 @@ Edges are "must have merged before this starts". Read them as a list, not as the
 | T1.9 Loved + Hidden surfaces | T1.8, **T1.2** |
 | T1.10 place card *(stretch)* | T1.1, T1.3, **T1.2** (title only) |
 | T1.11 components adopt the typography role API *(follow-up)* | **T1.2 and T1.3, both merged**, and only once T1.2's API has settled |
+| T1.12 chip geometry reconciliation *(review-produced)* | — `ControlStyles` is merged code |
+| T1.13 `MaterialChip` tiling API *(R10-produced)* | — |
+| T1.14 `IconRole` *(R11-produced)* | **T1.8 merged** |
 
 T1.2 is easy to under-read as a leaf: three later tasks render story-voice titles, so the font-role API is a real upstream dependency for T1.8, T1.9 and T1.10, and it is **not** transitively supplied by T1.6 or T1.4.
 
@@ -616,7 +619,7 @@ Host tests only (`cd ios && swift test`) unless you touch `project.yml`. No rend
 ### T1.12 — Chip geometry reconciliation
 
 - **Issue:** #467 · **Spec section:** §5, §7
-- **Acceptance criteria:** AC10, AC29 (with the evidence clause below), AC27
+- **Acceptance criteria:** AC10, AC27, plus the 44pt target floor (*Rulings* → R10's scope line — **not** AC29, see the correction below) with the evidence clause below
 - **Depends on:** none — `ControlStyles` is merged code
 - **Owner:** codex2
 - **Review tier:** `sourcery` + `opus`
@@ -626,17 +629,68 @@ Host tests only (`cd ios && swift test`) unless you touch `project.yml`. No rend
 
 **Builder brief.** The chip currently renders through the button style at `minHeight: 44`, `padding(.horizontal, 16)`, `padding(.vertical, 10)`, `HStack(spacing: 5)`. `ia-doors.html` ratifies something much smaller: `.mt-ia .chip { height:22px; padding:0 9px; gap:4px }`. So the capsule ships at **twice its ratified height** with nearly twice the horizontal padding.
 
-**This is not a redesign, it is an unwinding.** The inflation was never ruled — it is the button style's geometry arriving by inheritance, the same accidental-value shape as the toast's inherited 17pt type. Ruled by fable as *application of existing law, not new design*: **AC29 requires a 44pt touch TARGET, not 44pt of pixels.**
+**This is not a redesign, it is an unwinding.** The inflation was never ruled — it is the button style's geometry arriving by inheritance, the same accidental-value shape as the toast's inherited 17pt type. Ruled by fable as *application of existing law, not new design*: **the floor is a 44pt touch TARGET, not 44pt of pixels.**
+
+> **Citation correction, landed with R10.** This ruling was recorded here as *"AC29 requires a 44pt touch target"*. **AC29 requires no such thing** — its text is VoiceOver labels, values and real accessibility actions, and the ratified spec states no target figure anywhere: §7's standing gates do not mention one. The floor's actual homes are the frozen T1.3 render (`docs/design/design-system/t1.3-buttons-chips.html:153`) and the task briefs. Its record is now **R10's scope line**. The ruling's substance was right; the citation was mine, and it went unchecked because nothing contested the number. R10 contests it, and an acceptance pass grading "AC29" would have found no target requirement in the criterion's text.
 
 Restore the ratified visual geometry — 22pt capsule, 9pt horizontal padding, 4pt gap — and obtain the 44pt target from **hit area rather than frame**. `MaterialChip` already applies `.contentShape(Capsule())`, so the mechanism is present; extend the hit region beyond the visual bounds rather than inflating the bounds.
 
-**AC29 evidence clause — this is the part that is easy to get wrong.** Prove the target by **hit-testing, not by measuring the frame**. A frame assertion would now be measuring the wrong thing, and a test that measures 22pt and calls it a failure is as bad as one that measures 44pt and calls it a pass.
+**Target evidence clause — this is the part that is easy to get wrong.** Prove the target by **hit-testing, not by measuring the frame**. A frame assertion would now be measuring the wrong thing, and a test that measures 22pt and calls it a failure is as bad as one that measures 44pt and calls it a pass.
 
 Do not change chip *type*: 12pt/600 title and 11pt icon are ratified (AC35's carve-out) and settled.
 
-**Overlap contract — restated after the designer's review, and this restatement is the binding form.** Derived hit areas may overlap **only among controls that share one action**. Wherever adjacent chips act differently, **row spacing must clear the hit outset**. The form this task shipped with is time-bombed: DS-3's Scope surface is a dense wrapped chip row with a **distinct action per category**, so it is the first surface where outset targets would let neighbouring chips steal each other's taps — and the failure would arrive as "the wrong filter toggled", which nobody debugs as a geometry bug. The constraint reaches its two future readers directly: `MaterialChip`'s doc comment carries it (codex2, micro-task), and it is on **#469**'s body so DS-3's mockup gate inherits it.
+**Overlap contract — superseded by R10; the history is kept because the reasoning still holds.** The designer's first restatement said derived hit areas may overlap only among controls sharing one action, and that adjacent distinct-action chips need **row spacing clearing the hit outset**. That diagnosis was right and its remedy was wrong: clearing the outset costs a 22pt chip a 44pt row pitch, which is not a dense surface any more. **R10 replaces "separate them" with "tile them"** — see *Rulings* → R10. The permanent part is why it was raised at all: DS-3's Scope surface has a **distinct action per category**, so it is the first surface where derived targets could let neighbouring chips steal each other's taps, and the failure arrives as *"the wrong filter toggled"*, which nobody debugs as a geometry bug.
 
 Renders before and after at 390×844 plus an AX variant, HTML committed — the whole point is a visible geometry change, so the render is the evidence.
+
+---
+
+### T1.13 — `MaterialChip` gains the API R10 requires
+
+- **Issue:** #467 · **Spec section:** §5, §7
+- **Acceptance criteria:** AC10, AC27, plus R10's tiling contract (*Rulings* → R10)
+- **Depends on:** none
+- **Owner:** unclaimed — claimable by any of the pool
+- **Review tier:** `sourcery` + `opus`
+- **Status:** unclaimed
+- **Deadline:** before DS-3 (#469) is **built**, which is next-phase work. There is no in-phase consumer, so this is comfortable rather than urgent — but it is a named row precisely so it does not become a deferral nobody owns.
+- **Branch:** `wp-467-chip-tiling-api` — cut from a freshly-fetched `ios`
+- **Contracts consumed:** T1.3 control styles, T1.12 geometry.
+
+**Builder brief.** R10 says min-clipping is the consuming layout's obligation. **Today the consuming layout cannot discharge it**, and that is the whole task. `MaterialChip` applies `.contentShape(.interaction, MaterialChipHitTargetShape())` *inside its own body*; `MaterialChipHitTargetShape` is `private`; `MaterialChipGeometry` is internal to `DesignSystem`, so the app module cannot read `visualHeight`, `minimumHitTarget` or `hitOutset(for:)`; and `init` takes no gap parameter. A layout therefore cannot clip the shape, cannot compute `min(11, gap/2)` from the component's own constants, and cannot pass the gap in. Its only options are to hardcode `11` and hope, or to reimplement the chip.
+
+**The split to build, and the reason it is this way round.** Add an optional neighbour-gap (or outset-limit) parameter defaulting to **free space** — the unconstrained 11pt maximum, which is today's behaviour and stays the default so nothing existing changes. The component performs the `min` itself; the caller supplies only the gap. **Arithmetic belongs in the component because that is where it is testable; knowledge of the gap belongs in the layout because that is where it exists.** A component that cannot see its siblings must not be asked to guess their spacing, and a layout should not be asked to re-derive a target rule it does not own. Make `MaterialChipGeometry` public so a layout can reason about pitch without hardcoding.
+
+**Tests must include a tiled-adjacency assertion** — two adjacent distinct-action chips at a gap smaller than 22pt, proving that a tap in the band between them reaches exactly one of them and that it is the nearer one. R10's actual requirement is *every screen point maps to exactly one control*, and a test that only measures one chip's outset cannot see the property that matters. The free-space default keeps its existing 11pt proof.
+
+Host tests only unless you touch `project.yml`. No render — nothing visual changes, and if something visual does change you have exceeded the task.
+
+---
+
+### T1.14 — `IconRole`: the icon scale becomes vocabulary
+
+- **Issue:** #467 · **Spec section:** §4, §5
+- **Acceptance criteria:** AC14, AC15, plus R11 (*Rulings* → R11)
+- **Depends on:** **T1.8 merged** — this migrates that door's icons off their interim path, so it edits files T1.8 owns until it lands
+- **Owner:** unclaimed — well-bounded, and a good first row for an idle seat once the dependency clears
+- **Review tier:** `sourcery` + `opus`
+- **Status:** unclaimed
+- **Branch:** `wp-467-icon-role` — cut from a freshly-fetched `ios`
+- **Contracts consumed:** T1.2 font roles, T1.3 control styles, T1.8's door surfaces.
+
+**Builder brief.** Build `IconRole` exactly as R11 ratifies it — three roles, closed set, paired to typography. R11's four points are all load-bearing; read them in the rulings section before you start, because three of them are constraints on the *shape* rather than the values.
+
+**Then migrate.** T1.8's door icons come off their cited literals — R11 point (4) retires that carve-out, so the AC35 exception list shrinks by one and your PR says which entry left it.
+
+**Three things you will find in the module that the brief for this row would otherwise let you discover the hard way:**
+
+1. **The `hero` role has no obvious typography partner.** R11 point (3) pairs each icon role to a `TypographyRole` and scales with it. `accessory` = 11 pairs exactly to `.label` (11pt), which is already `MaterialChip.iconFont`'s resolution; `inline` = 15 pairs to `.button` (15pt). **No role is 22pt**, and the hero icon sits beside a title whose own role is unsettled — `ia-doors` marks it `.t-serif.lg` at 18px and no role is 18pt either. **Do not invent the pairing.** If the hero-title question is still open when you claim this, raise it through fable rather than choosing; if it has been settled, the answer is probably that same role.
+2. **`coherence.html` ratifies a 17px icon beside a 15px label, and 17 is not one of the three roles.** Its live consumer is `MaterialControlLabelStyle` (`ControlStyles.swift:359`), holding `.font(.body.weight(.medium))` as one of AC35's two sanctioned exceptions. R11 retires **T1.8's** carve-out, not this one, so on the face of it the closed set does not cover a ratified icon size that exists in the codebase with a consumer. Two readings — the exception legitimately survives outside the scale, or the control-label icon should become `inline` and that is a visible change to a ratified pairing. **This is a designer question and R11's point (2) means you may not resolve it by adding a fourth role.** Flag it; do not absorb it.
+3. **Three icons in the module carry no font at all** and therefore inherit whatever ambient typography surrounds them: `MaterialSheetRows.swift:47` (the sheet's dismiss `xmark`), `MaterialToast.swift:517` (the toast's leading icon) and `:613` (the toast's dismiss `xmark`). That is the same leak direction T1.11's tests pin for *text* and nothing pins for icons. Whether each should adopt a role is a real decision with a visible outcome — take it deliberately, state it, and do not quietly font them all because they were in reach.
+
+**The closure test is the point of the closed set.** Pin the three-role property the way `SemanticColorToken`'s test pins the token enum — `MaterialTokensTests.swift:40` asserts `Set(expected.keys) == Set(SemanticColorToken.allCases)`, so a silently added case fails. Do the same here, and add the ambient-wrapper ownership test in T1.11's family: wrap in a font that would be wrong and assert the role's size still wins. An equality assertion against the role's own expression proves nothing — that is the exact failure this row exists to correct.
+
+Host tests only unless you touch `project.yml`. Renders only if a migrated icon changes size on a surface — and if one does, that is the news, so show it.
 
 ---
 
@@ -659,6 +713,16 @@ Judgment calls the ratified spec did not settle, and Rob's ruling on each. **Not
 - **R9 — Enabled interaction feedback must not alpha-composite a semantic token pair below AA — geometry, never whole-control opacity.** Ratified verbatim. **Scoping, in the designer's own terms:** *enabled* leaves disabled-state opacity legitimate — a disabled control is supposed to read as unavailable and AA does not govern it; *semantic token pair* leaves imagery alone — a photograph dimming under a press is not a token pair and this does not reach it. What it forbids is the whole-control fade as a press treatment, because compositing foreground and background uniformly toward the backdrop moves **both** and compresses the ratio between them. Press feedback is geometry: scale, inset, shape. → T1.3, T1.12, AC2.
   - **Consequence in the merged tree — verified, not assumed.** `MaterialChipStyleBody.controlOpacity` and `MaterialButtonStyleBody.controlOpacity` (`ios/Sources/DesignSystem/ControlStyles.swift:309`, `:351`) both return `configuration.isPressed ? 0.78 : 1` for the **enabled** state, applied to the composed control at `:293` and `:330`. On Snow's filled chip that takes the `accentContrast`-on-`accent` pair from **6.13:1 at rest to 3.88:1 while pressed** over `surface`, 3.92:1 over `ground` — below AA for the 12pt/600 label. The filled button carries the identical treatment. *(Arithmetic in sRGB gamma space, which is how the layer composites; it is a calculation, not a gate run.)*
   - **Why nothing caught it, which is the part worth keeping.** AC2 grades "every text/background pair **in a shipped material**", proven **in the token sheet**. A sheet-level test cannot see a runtime composite, and the pair it certifies is genuinely fine at rest — the gate is not weak, it is looking at a different object. Disposition is fable's: this is merged code no current task row owns and no builder introduced.
+- **R10 — Derived hit targets tile; they do not overlap.** Ratified verbatim: *in multi-row flows of distinct-action controls, derived hit targets **tile** (abut, never overlap); each outset is `min(11pt, gap/2)` per side — vertical target = row pitch, horizontal to half the inter-chip gap between distinct-action neighbours, full 11pt only in free space (single rows, run edges, margins). Every screen point maps to exactly one control: **ambiguity is forbidden, not proximity**.* Cited to iOS precedent — keyboard tiling, dense-row pitch-as-target. → T1.12 (supersedes its overlap contract), **T1.13** (the API that makes it possible), DS-3 #469.
+  - **Rider, verbatim:** *tiling permitted only for reversible, immediately-legible actions (Principle 3); destructive/navigational/commitment-bearing controls keep full 44pt without exception.* The citation is `docs/PRINCIPLES.md` → Product 3, **not** spec §1's third law — two numbered lists in two documents, and the spec cites the other one by name in its own §1. Product 3 is *"One tap, no ceremony, nothing destroyed … reversible, unconfirmed. Any feature that adds friction to this loop, or makes an action feel like a commitment, kills the core mechanic."* The rider's reasoning is that principle's own: a target you can tile is one whose mis-tap costs a second tap.
+  - **Scope line — this is where the 44pt floor lives, because no acceptance criterion owns it.** AC29's text is VoiceOver labels, values and real accessibility actions; the ratified spec states no target figure anywhere, §7 included. The floor is a platform obligation carried by the frozen T1.3 render and the task briefs. **R10 is its record**, and R10 is what DS-3's mockup gate and the acceptance pass cite for targets.
+  - **Frozen-render supersession, answered once so it is not re-litigated.** `t1.3-buttons-chips.html:153` states *"44pt minimum target"* flatly, and R10 makes that false for reversible tiled controls. **The render stays frozen and untouched** — this entry names the figure as superseded **for reversible tiled controls only**, and DS-3's mockup gate cites R10 rather than the render for targets. The precedent is epic #466's `ia-doors` embed, which carries the same annotation in its body: *"Predates one ruling … spec §2 is canonical. The door pattern is what this render certifies."* **A render certifies what it certifies; rulings say which parts still bind.**
+  - **The API this ruling assumes does not exist yet** — `MaterialChip` applies its hit shape internally, the shape is private and the geometry is internal, so a consuming layout has no way to clip anything. **T1.13** builds it. Until T1.13 lands, the component applies the free-space maximum unconditionally and says so.
+  - **The arithmetic is illustrative, not ratified.** 22pt capsule with an 8pt row gap gives outset `min(11, 4) = 4` and a ~30pt effective vertical target — *at an 8pt gap*, which is an assumption, not a ratified figure. **The only chip container `ia-doors.html` ratifies is `.mt-ia .chips` at `gap:6px`, `display:flex`, with no `flex-wrap`** — a single non-wrapping row, which at 6px would give outset 3 and a 28pt target. **The wrapped multi-row Scope flow is DS-3's design, not a ratified layout.** Record the rule; derive the number at the surface that has a gap.
+- **R11 — `IconRole` ships this phase; the icon scale becomes vocabulary rather than scattered literals.** Ratified. **The rationale is the evidence, and it is worth carrying because it decides future cases:** a builder invented a parallel icon scale the moment the vocabulary was missing, which is what every future surface will do — DS-3, DS-6 and DS-9 are all icon-dense — and scattered cited literals are precisely the debt the design system exists to kill. **AC35's carve-out is an escape hatch, not a home.** → T1.14, AC14, AC15, AC35.
+  - **Four points, all load-bearing.** (1) **Exactly three roles**, carrying the render's numbers verbatim — `hero` = 22, `inline` = 15, `accessory` = 11 — with **semantic names, never size names**: the number is the role's current value, not its identity, and a role called `icon22` cannot survive a re-ratification that a role called `hero` absorbs. (2) **The API is closed** — a fourth role requires session ratification, the same bar as a new token row. (3) **Each role pairs to a `TypographyRole` and scales with it through `UIFontMetrics`**, so an icon tracks Dynamic Type alongside the label it sits beside; this makes the existing Typography-resolved icons an explicit contract rather than a coincidence. (4) **T1.8's cited-literal carve-out is retired by this task** — the AC35 exception list shrinks by one, and the PR that shrinks it says which entry left.
+  - **The amendment session folds `IconRole`'s three rows into the component-metrics table as its code-side twin.** The division is the point: **the table ratifies, the API carries.** Numbers live where they can be read together; the code holds the vocabulary that consumes them.
+  - **Sequencing, so nothing waits on nothing.** T1.8's current fix round is unchanged and lands on the interim cited-literal path; T1.14 retires that path afterwards. Building the scale into a PR already in its fix round would be the third growth of a task that has grown twice.
 
 ---
 
