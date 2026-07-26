@@ -151,10 +151,10 @@ public enum MaterialChipState: Hashable, Sendable {
 /// intentionally outside the family.
 ///
 /// The interaction shape expands each axis only when needed to reach the
-/// 44pt minimum. Dense wrapped layouts can still make extended targets
-/// overlap; SwiftUI then resolves the overlap by view order. Consumers with
-/// distinct adjacent actions must provide spacing at least equal to the sum
-/// of the facing outsets or perform group-level hit arbitration.
+/// 44pt minimum. Derived hit areas may overlap only when every overlapping
+/// control invokes the same action. Adjacent chips with distinct actions MUST
+/// use row spacing at least equal to the sum of their facing hit outsets, so
+/// their derived hit areas do not overlap.
 public struct MaterialChip: View {
     /// `ia-doors.html` ratifies 12pt/600, which no `TypographyRole` expresses.
     static let titleFont = Font.caption.weight(.semibold)
