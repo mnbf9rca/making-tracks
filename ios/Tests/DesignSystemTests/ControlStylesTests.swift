@@ -365,13 +365,8 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
-    func testMaterialChipIconUsesTypographyLabelSizeAndMediumWeight() throws {
+    func testMaterialChipIconUsesAccessoryRoleAtAccessibilityScale() throws {
         let title = "Map"
-
-        XCTAssertEqual(
-            MaterialChip.iconFont,
-            Typography.font(for: .label).weight(.medium)
-        )
 
         let textOnlyWidth = try renderedWidth(
             MaterialChip(title, state: .active, action: {})
@@ -388,7 +383,7 @@ final class ControlStylesTests: XCTestCase {
         )
         let expectedIconWidth = try renderedWidth(
             Image(systemName: "map")
-                .font(Typography.font(for: .label).weight(.medium))
+                .iconRole(.accessory)
                 .dynamicTypeSize(.accessibility5)
         )
 

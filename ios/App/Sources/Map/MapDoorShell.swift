@@ -348,13 +348,9 @@ struct WorldDoorRootView: View {
 struct TracksDoorHeroIconGlyph: View {
     let systemName: String
 
-    /// AC35 carve-out: ia-doors.html frame 3 ratifies this hero glyph at a 22pt scale.
-    @ScaledMetric(relativeTo: .body) private var pointSize = 22.0
-
     var body: some View {
         Image(systemName: systemName)
-            .font(.system(size: pointSize, weight: .medium))
-            .symbolRenderingMode(.monochrome)
+            .iconRole(.hero)
     }
 }
 
@@ -375,7 +371,7 @@ struct TracksDoorRetraceCue: View {
         HStack(spacing: 3) {
             Text("Retrace")
             Image(systemName: "chevron.right")
-                .font(Typography.font(for: .label))
+                .iconRole(.accessory)
                 .accessibilityHidden(true)
         }
         .font(.system(size: pointSize, weight: .semibold))
@@ -388,7 +384,7 @@ struct TracksDoorNewListIcon: View {
 
     var body: some View {
         Image(systemName: systemName)
-            .font(Typography.font(for: .button))
+            .iconRole(.inline)
     }
 }
 

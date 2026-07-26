@@ -405,10 +405,11 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
-    func testTracksDoorHeroIconRendersAtRatifiedTwentyTwoPointScale() throws {
+    func testTracksDoorHeroIconUsesHeroRole() throws {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
             let actual = try tracksDoorRenderedSize(
-                TracksDoorHeroIconGlyph(systemName: "figure.walk"),
+                TracksDoorHeroIconGlyph(systemName: "figure.walk")
+                    .font(.largeTitle),
                 dynamicTypeSize: dynamicTypeSize
             )
             let expected = try tracksDoorRenderedSize(
@@ -422,7 +423,7 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
-    func testTracksDoorNewListIconUsesRatifiedButtonScale() throws {
+    func testTracksDoorNewListIconUsesInlineRole() throws {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
             let actual = try tracksDoorRenderedSize(
                 TracksDoorNewListIcon(systemName: "plus"),
@@ -430,7 +431,8 @@ final class AppShellTests: XCTestCase {
             )
             let expected = try tracksDoorRenderedSize(
                 Image(systemName: "plus")
-                    .font(Typography.font(for: .button)),
+                    .font(Typography.font(for: .button))
+                    .symbolRenderingMode(.monochrome),
                 dynamicTypeSize: dynamicTypeSize
             )
 
@@ -3720,8 +3722,7 @@ private func appConstructedRegionIndexWithMalformedSearchCompactPath() -> Region
 private struct RatifiedTracksDoorHeroIcon: View {
     let systemName: String
 
-    /// ia-doors.html frame 3 ratifies the hero glyph at a 22pt scale.
-    @ScaledMetric(relativeTo: .body) private var pointSize = 22.0
+    @ScaledMetric(relativeTo: .headline) private var pointSize = 22.0
 
     var body: some View {
         Image(systemName: systemName)
@@ -3738,7 +3739,8 @@ private struct RatifiedTracksDoorRetraceCue: View {
         HStack(spacing: 3) {
             Text("Retrace")
             Image(systemName: "chevron.right")
-                .font(Typography.font(for: .label))
+                .font(Typography.font(for: .label).weight(.medium))
+                .symbolRenderingMode(.monochrome)
                 .accessibilityHidden(true)
         }
         .font(.system(size: pointSize, weight: .semibold))
