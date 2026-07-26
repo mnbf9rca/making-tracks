@@ -151,10 +151,9 @@ public enum MaterialChipState: Hashable, Sendable {
 /// intentionally outside the family.
 ///
 /// The interaction shape expands each axis only when needed to reach the
-/// 44pt minimum. Dense wrapped layouts can still make extended targets
-/// overlap; SwiftUI then resolves the overlap by view order. Consumers with
-/// distinct adjacent actions must provide spacing at least equal to the sum
-/// of the facing outsets or perform group-level hit arbitration.
+/// 44pt free-space minimum. Layouts that tile reversible, distinct actions
+/// supply their nonnegative neighbor gap so interaction cells fill that gap
+/// without overlapping. The gap changes hit testing only, never visuals.
 public struct MaterialChip: View {
     /// `ia-doors.html` ratifies 12pt/600, which no `TypographyRole` expresses.
     static let titleFont = Font.caption.weight(.semibold)
@@ -167,6 +166,7 @@ public struct MaterialChip: View {
     private let systemImage: String?
     private let state: MaterialChipState
     private let theme: MaterialTheme
+    private let neighborGap: CGFloat?
     private let action: () -> Void
 
     public init(
@@ -174,12 +174,14 @@ public struct MaterialChip: View {
         systemImage: String? = nil,
         state: MaterialChipState,
         theme: MaterialTheme = .snow,
+        neighborGap: CGFloat? = nil,
         action: @escaping () -> Void
     ) {
         self.title = title
         self.systemImage = systemImage
         self.state = state
         self.theme = theme
+        self.neighborGap = neighborGap
         self.action = action
     }
 
@@ -214,7 +216,7 @@ public struct MaterialChip: View {
             ))
             .contentShape(
                 .interaction,
-                MaterialChipHitTargetShape()
+                MaterialChipHitTargetShape(neighborGap: neighborGap)
             )
         case .tonal:
             button.buttonStyle(MaterialChipButtonStyle(
@@ -222,34 +224,60 @@ public struct MaterialChip: View {
             ))
             .contentShape(
                 .interaction,
-                MaterialChipHitTargetShape()
+                MaterialChipHitTargetShape(neighborGap: neighborGap)
             )
         }
     }
 }
 
-enum MaterialChipGeometry {
-    static let visualHeight: CGFloat = 22
-    static let horizontalPadding: CGFloat = 9
-    static let labelSpacing: CGFloat = 4
-    static let minimumHitTarget: CGFloat = 44
-    static func hitOutset(for dimension: CGFloat) -> CGFloat {
-        max(0, (minimumHitTarget - dimension) / 2)
+/// Public chip metrics for layouts that need to calculate row and column pitch.
+public enum MaterialChipGeometry {
+    public static let visualHeight: CGFloat = 22
+    public static let horizontalPadding: CGFloat = 9
+    public static let labelSpacing: CGFloat = 4
+    public static let minimumHitTarget: CGFloat = 44
+
+    /// Returns the free-space expansion for `dimension`, or half the supplied
+    /// gap capped at the 11pt free-space maximum for a tiled interaction cell.
+    public static func hitOutset(
+        for dimension: CGFloat,
+        neighborGap: CGFloat? = nil
+    ) -> CGFloat {
+        let freeSpaceOutset = max(
+            0,
+            (minimumHitTarget - dimension) / 2
+        )
+        guard let neighborGap else {
+            return freeSpaceOutset
+        }
+        let maximumTiledOutset = max(
+            0,
+            (minimumHitTarget - visualHeight) / 2
+        )
+        return min(maximumTiledOutset, neighborGap / 2)
     }
 }
 
-private struct MaterialChipHitTargetShape: Shape {
+struct MaterialChipHitTargetShape: Shape {
+    let neighborGap: CGFloat?
+
     func path(in rect: CGRect) -> Path {
         let horizontalOutset = MaterialChipGeometry.hitOutset(
-            for: rect.width
+            for: rect.width,
+            neighborGap: neighborGap
         )
         let verticalOutset = MaterialChipGeometry.hitOutset(
-            for: rect.height
+            for: rect.height,
+            neighborGap: neighborGap
         )
-        return Capsule().path(in: rect.insetBy(
+        let targetRect = rect.insetBy(
             dx: -horizontalOutset,
             dy: -verticalOutset
-        ))
+        )
+        if neighborGap == nil {
+            return Capsule().path(in: targetRect)
+        }
+        return Rectangle().path(in: targetRect)
     }
 }
 
