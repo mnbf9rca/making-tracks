@@ -220,7 +220,7 @@ Suggested waves for a three-builder pool. **Wave 1 is intentionally serial** —
 - **Depends on:** none — **this is the critical path; everything else waits on it**
 - **Owner:** codex1
 - **Review tier:** `sourcery` + `opus`
-- **Status:** ready-to-merge
+- **Status:** merged as `d688fc5b` — final state recorded by the merger, on fable's authority (the `Status` field is the builder's until handoff and the merger's record thereafter).
 - **Contracts produced:** the material token sheet API — the type that names the semantic tokens, the accessor other modules call, and the constant pin block. **T1.2 through T1.10 all consume this**, so its shape is a cross-task contract: fix it in this PR and name it in the PR body, because four builders start against it the moment this merges (PRINCIPLES Engineering 18, contracts before parallelism).
 - **Contracts consumed:** none.
 
@@ -257,7 +257,7 @@ You changed `project.yml`, so the Release build must run even though your logic 
 - **Depends on:** T1.1
 - **Owner:** codex2
 - **Review tier:** `sourcery` + `opus`
-- **Status:** ready-to-merge
+- **Status:** merged as `5cbd74e9` — final state recorded by the merger, on fable's authority (the `Status` field is the builder's until handoff and the merger's record thereafter).
 - **Contracts produced:** the font-role API. **T1.6, T1.8, T1.9 and T1.10 all consume it** for titles and place names, so fix its shape here and name it in the PR body: callers ask for a *role* (display, sheet title, place name, list-row title, evocative sub-line, and the SF machinery roles), never for a font or a point size.
 - **Contracts consumed:** T1.1's token sheet.
 
@@ -290,7 +290,7 @@ AC6 needs **no About-screen code change**. `AboutView` (`MapScreen.swift:7968`) 
 - **Depends on:** T1.1
 - **Owner:** codex3
 - **Review tier:** `sourcery` + `opus`
-- **Status:** ready-to-merge — #486; `swift test`: 404 tests, 0 failures; Opus exact-head review cleared; CI green; Sourcery degradation evidence recorded in PR body per fable ruling
+- **Status:** merged as `42d7dd5f` — final state recorded by the merger, on fable's authority (the `Status` field is the builder's until handoff and the merger's record thereafter).
 - **Contracts produced:** the three `ButtonStyle`s and the chip family. **T1.6, T1.7, T1.8, T1.9 and T1.10 all consume them** — fix the names and the tone/state API here and name them in the PR body.
 - **Contracts consumed:** T1.1's token sheet.
 - **Gate:** the components are in a SwiftPM target, so their tests are host-only (`cd ios && swift test`). You changed no app-target file, so no fleet lock and no Release build are needed — **unless** you touch `project.yml`, in which case run `MT_RELEASE_GATE_MODE=build ./scripts/sim-lock.sh ./scripts/release-gate.sh`.
@@ -316,7 +316,7 @@ Ship a render of the three buttons and the chip states at 390×844 plus an AX va
 - **Depends on:** T1.1
 - **Owner:** codex1
 - **Review tier:** `sourcery` + `opus`
-- **Status:** ready-to-merge — #491; 441 host tests, 0 failures; Sourcery + Opus PASS; CI green
+- **Status:** merged as `9ac64a42` — final state recorded by the merger, on fable's authority (the `Status` field is the builder's until handoff and the merger's record thereafter).
 - **Contracts produced:** the sheet pattern, the two row types, the toast/pill family and the progress component. **T1.6, T1.7, T1.8 and T1.9 all consume them** — fix the API here and name it in the PR body.
 - **Contracts consumed:** T1.1's token sheet.
 - **Gate:** host-only (`cd ios && swift test`) unless you touch `project.yml`, as T1.3.
@@ -343,7 +343,7 @@ Host tests plus renders (390×844 and an AX variant, HTML committed).
 - **Depends on:** T1.1
 - **Owner:** codex3
 - **Review tier:** `sourcery` + `opus`
-- **Status:** ready-to-merge — #494; 443 host tests, 192 app tests and 70 UI tests, 0 failures; three exact-head critics + Opus cleared; CI green; zero review threads; Sourcery service-degradation evidence recorded in PR body after the one permitted retrigger, per fable ruling
+- **Status:** merged as `43c158a9` — final state recorded by the merger, on fable's authority (the `Status` field is the builder's until handoff and the merger's record thereafter).
 - **Contracts consumed:** T1.1's token sheet, including its constant pin block.
 - **Contracts produced:** none new, but you change `MapTheme`'s source of values, which `MLNMapViewRepresentable` and the theme picker both read — say so in the PR body.
 
@@ -535,7 +535,7 @@ Write host-level tests for the two new queries (`cd ios && swift test`) before t
 - **Depends on:** T1.1, T1.3, and **T1.2** if you move the card's title onto the story voice (the place name is one of spec §4's named Newsreader roles). If T1.2 has not merged, do the token and action-bar work and leave the title to a follow-up, saying so in the PR body.
 - **Owner:** codex2
 - **Review tier:** `sourcery` + `opus`
-- **Status:** branch
+- **Status:** merged as `1af22ef9` — final state recorded by the merger, on fable's authority (the `Status` field is the builder's until handoff and the merger's record thereafter).
 - **Contracts consumed:** T1.1 tokens, T1.3 button styles, T1.2 font roles (title only).
 - **Ruled renders:** `coherence.png` frame 3 for the card, and `docs/design/2026-07-23-design-session/RULINGS.md` → *#376* for the photo-height ruling.
 
@@ -577,7 +577,7 @@ Full gate plus renders of the card in snow, default and AX sizes.
 
 **Scope: rename-level, no visual change.** Two kinds of site, and they need different treatment:
 
-**(a) Literals to replace — `ios/Sources/DesignSystem/ControlStyles.swift` (T1.3).** `Typography.font(for: .button)` for the action text in `MaterialButtonStyleBody` and `MaterialControlLabelStyle`, and `Typography.font(for: .label)` for the chip's text and icon. **If you find yourself changing a rendered size or weight, stop.** That is a design change, not an adoption, and it needs a ruling rather than a commit.
+**(a) Literals to replace — `ios/Sources/DesignSystem/ControlStyles.swift` (T1.3).** `Typography.font(for: .button)` for the action text in `MaterialButtonStyleBody` and `MaterialControlLabelStyle`, and `Typography.font(for: .label)` for the chip's text and icon. **If you find yourself changing a rendered size or weight AWAY FROM a ratified figure, stop.** That is a design change, not an adoption, and it needs a ruling rather than a commit. The guard is about ratified values, not about motion — see *the guard, precisely* below.
 
 **(b) Roles to *supply* — T1.4's components, which have no literals to replace.** `MaterialToast.swift`, `MaterialProgress.swift` and `MaterialSheetRows.swift` contain **zero** `.font(` calls: they inherit whatever the adopting surface happens to set, so every adopter must remember the right voice and any one of them can silently get it wrong. Give each component the role for the text it owns:
 
@@ -585,7 +585,13 @@ Full gate plus renders of the card in snow, default and AX sizes.
 - `MaterialProgress` — the count text. The `leadingHeader` is caller-supplied and stays the caller's choice.
 - `MaterialSheetRows` — owns no text of its own; its content is caller-supplied. Nothing to do unless the close affordance gains a label.
 
-These are all **machinery voice** under spec §4, so they take SF roles, not Newsreader. The obvious mapping is `.body` for the toast message, `.button` for its action title and `.metadata` for the progress count — but confirm each against §4's machinery list rather than taking that from this row, and flag under `## Taste guesses` if you land somewhere else. **Supplying a role where a component previously inherited is still not a licence to change a rendered size**: if adopting a role visibly changes any component, that is a finding to raise, not a change to absorb.
+These are all **machinery voice** under spec §4, so they take SF roles, not Newsreader. The obvious mapping is `.body` for the toast message, `.button` for its action title and `.metadata` for the progress count — but confirm each against §4's machinery list rather than taking that from this row, and flag under `## Taste guesses` if you land somewhere else. **The guard, precisely.** Adopting a role in a component that previously *inherited* one will often change the rendered size — because an inherited value is an **unset default**, not a design decision. That is the task working, not the guard firing. Ruled (opus, on codex3's RED probes):
+
+- Changing a value **away from a ratified figure** — one in the frozen renders or the spec — is a redesign. Stop and raise it.
+- Changing an **unset default onto** its ratified figure is the adoption itself. Do it.
+- Where neither applies, build the defensible reading and flag it under `## Taste guesses`, as everywhere else.
+
+The two sites this settled, with their ratified figures read from `docs/design/design-system/coherence.html`: `MaterialToast`'s built-in action takes `.button` (15pt semibold), matching `.coh .act { font-size:15px; font-weight:600 }`; `MaterialProgress`'s count takes `.metadata` (13pt), matching `.coh .rowcount { font-size:13px; color:var(--muted) }` as used for "4 of 11 seen". Both currently inherit `.body` at 17pt, which matches neither. Nothing under `ios/App/Sources` consumes either component yet — T1.7 is their first consumer — so this changes no user-visible surface today, whereas freezing 17pt would hand T1.7 a contradiction with the same render, to be corrected on a live surface instead.
 
 **Why the values already line up.** T1.3's review corrected its action text from `.body` (17pt) to 15pt semibold, matching both the frozen coherence render (`.coh .act { font-size:15px; font-weight:600 }`) and T1.2's `.button` role (15pt, `.subheadline`, semibold). That correction is what makes this a rename. If T1.3 merged without it, this task is no longer rename-level and you should say so rather than absorbing a redesign.
 
