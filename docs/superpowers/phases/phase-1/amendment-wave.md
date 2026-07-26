@@ -219,8 +219,8 @@ only reason a migration is ever in scope.
 ## A7 — #522 post-merge annotations
 
 - **Serves:** #522 · **Review tier:** `sourcery` · **Depends on:** none
-- **Owner:** unclaimed
-- **Status:** unclaimed
+- **Owner:** codex3
+- **Status:** branch
 - **Branch:** `wp-522-merged-body-annotations` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Annotate the merged bodies of **#486** and **#503** where their acceptance claims
