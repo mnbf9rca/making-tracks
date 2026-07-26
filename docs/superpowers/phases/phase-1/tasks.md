@@ -652,7 +652,7 @@ Renders before and after at 390×844 plus an AX variant, HTML committed — the 
 - **Depends on:** none
 - **Owner:** codex4
 - **Review tier:** `sourcery` + `opus`
-- **Status:** PR #509 review fixes green — 462 host tests, 0 failures; Sourcery + opus re-review pending
+- **Status:** ready to merge — PR #509; 462 host tests, 0 failures; Sourcery + opus clear
 - **Deadline:** before DS-3 (#469) is **built**, which is next-phase work. There is no in-phase consumer, so this is comfortable rather than urgent — but it is a named row precisely so it does not become a deferral nobody owns.
 - **Branch:** `wp-508-chip-tiling-api` — cut from a freshly-fetched `ios`
 - **Contracts consumed:** T1.3 control styles, T1.12 geometry.
