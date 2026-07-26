@@ -568,7 +568,7 @@ Full gate plus renders of the card in snow, default and AX sizes.
 - **Depends on:** **T1.2 and T1.3, both merged** — and see the sequencing rule below, which is stricter than the edge
 - **Owner:** codex3
 - **Review tier:** `sourcery` + `opus`
-- **Status:** claimed — codex3; branch `wp-467-component-typography-adoption`
+- **Status:** tests green — branch `wp-467-component-typography-adoption`; 448 host tests, 0 failures; Opus ruled toast action `.button` and progress count `.metadata` against the frozen renders
 - **Branch:** `wp-467-component-typography-adoption` — cut from a freshly-fetched `ios`
 - **Contracts consumed:** T1.2's font-role API, T1.3's control styles.
 - **Contracts produced:** none. This task **removes** a second source of truth rather than adding one.

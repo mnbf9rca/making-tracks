@@ -589,6 +589,7 @@ struct MaterialToastPrimaryActionButton: View {
     var body: some View {
         Button(action: action.perform) {
             Text(verbatim: action.title)
+                .font(Typography.font(for: .button))
                 .frame(
                     minWidth: minimumTarget.width,
                     minHeight: minimumTarget.height

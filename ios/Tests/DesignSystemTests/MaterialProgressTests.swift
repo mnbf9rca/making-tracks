@@ -171,6 +171,7 @@ final class MaterialProgressTests: XCTestCase {
         )
         let standaloneCount = try render(
             Text(verbatim: count)
+                .font(Typography.font(for: .metadata))
                 .foregroundStyle(MaterialTheme.snow.tokens.muted.swiftUIColor)
                 .fixedSize(horizontal: true, vertical: true)
                 .dynamicTypeSize(.accessibility5)
