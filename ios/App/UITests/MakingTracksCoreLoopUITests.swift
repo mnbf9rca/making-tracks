@@ -2781,9 +2781,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         openTracksDoor(in: app)
         XCTAssertTrue(app.staticTexts["Tracks"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.buttons.matching(identifierPrefix: "tracks.row.").count, 1)
+        XCTAssertEqual(app.buttons.matching(identifierPrefix: "tracks.row.").count, 3)
         XCTAssertFalse(app.buttons["tracks.row.lists"].exists)
         XCTAssertTrue(app.buttons["tracks.row.my-tracks"].exists)
+        XCTAssertTrue(app.buttons["tracks.row.loved"].exists)
+        XCTAssertTrue(app.buttons["tracks.row.hidden"].exists)
         XCTAssertTrue(app.buttons.matching(identifierPrefix: "lists.row.").firstMatch.exists)
         XCTAssertTrue(app.textFields["lists.create.name"].exists)
         XCTAssertTrue(app.buttons["lists.create"].exists)
