@@ -31,7 +31,7 @@
 - Produces: `MaterialControlInteractionFeedback.semanticControlOpacity(isEnabled:) -> Double`
 - Produces: `MaterialControlInteractionFeedback.semanticControlScale(isPressed:) -> CGFloat`
 
-- [ ] **Step 1: Write the failing package policy tests**
+- [x] **Step 1: Write the failing package policy tests**
 
 Add independently derived branch assertions:
 
@@ -67,7 +67,7 @@ func testMaterialControlInteractionFeedbackUsesScaleForPresses() {
 }
 ```
 
-- [ ] **Step 2: Extend AC29 before changing production code**
+- [x] **Step 2: Extend AC29 before changing production code**
 
 In `testMaterialChipExtendsHitTargetBeyondVisualCapsule`, use an
 `XCUICoordinate` at the top 11pt outset edge and call:
@@ -80,7 +80,7 @@ XCTAssertTrue(waitForActivationCount("1"))
 Keep the bottom-edge tap and its second activation assertion. This preserves
 the existing edge check while exercising the pressed lifecycle.
 
-- [ ] **Step 3: Run the focused package tests to verify RED**
+- [x] **Step 3: Run the focused package tests to verify RED**
 
 Run:
 
@@ -89,11 +89,11 @@ swift test --filter ControlStylesTests
 ```
 
 Expected: compilation fails because
-`MaterialControlInteractionFeedback` does not exist. The UI preservation
-assertion is not expected to fail before the new scale exists; its purpose is
-to reject a modifier-order regression introduced by this task.
+`MaterialControlInteractionFeedback` does not exist. The UI assertion covers
+the pressed lifecycle and edge activation only. Modifier order is protected
+by code structure and adversarial review, not by AC29.
 
-- [ ] **Step 4: Implement the minimal shared policy**
+- [x] **Step 4: Implement the minimal shared policy**
 
 Add:
 
@@ -109,8 +109,11 @@ enum MaterialControlInteractionFeedback {
 }
 ```
 
-In both `MaterialChipStyleBody` and `MaterialButtonStyleBody`, replace the
-private pressed-opacity branch with:
+Expose both `MaterialChipStyleBody` and `MaterialButtonStyleBody` as narrow
+internal generic views accepting an explicit `label` and `isPressed`. Each
+production `ButtonStyle.makeBody` forwards `configuration.label` and
+`configuration.isPressed`. In both bodies, replace the private
+pressed-opacity branch with:
 
 ```swift
 .opacity(
@@ -120,15 +123,18 @@ private pressed-opacity branch with:
 )
 .scaleEffect(
     MaterialControlInteractionFeedback.semanticControlScale(
-        isPressed: configuration.isPressed
+        isPressed: isPressed
     )
 )
 ```
 
 Do not move `MaterialChip`'s outer
 `.contentShape(.interaction, MaterialChipHitTargetShape())`.
+In `MaterialButtonStyleBody`, apply `.scaleEffect` before
+`.contentShape(Capsule())` so the content shape is established around the
+scaled visual result.
 
-- [ ] **Step 5: Run the focused package tests to verify GREEN**
+- [x] **Step 5: Run the focused package tests to verify GREEN**
 
 Run:
 
@@ -138,14 +144,15 @@ swift test --filter ControlStylesTests
 
 Expected: all `ControlStylesTests` pass with no warnings.
 
-- [ ] **Step 6: Perform mutation checks**
+- [x] **Step 6: Perform mutation checks**
 
 Temporarily restore enabled opacity to `0.78`; rerun the focused test and
 confirm the opacity assertion fails. Restore `1`, temporarily return scale
-`1` while pressed, rerun, and confirm the scale assertion fails. Restore the
-approved implementation and rerun to green.
+`1` while pressed, rerun, and confirm the scale assertion fails. The final
+review fix repeats both mutations locally in each style body against rendered
+pixels and geometry. Restore the approved implementation and rerun to green.
 
-- [ ] **Step 7: Commit the behavior and tests**
+- [x] **Step 7: Commit the behavior and tests**
 
 ```bash
 git add ios/Sources/DesignSystem/ControlStyles.swift \
@@ -164,7 +171,7 @@ git commit -m "Preserve material control contrast while pressed"
 - Consumes: committed Task 1 behavior
 - Produces: exact-head host and simulator evidence, adversarial review accounting, Opus handoff
 
-- [ ] **Step 1: Run the host package gate**
+- [x] **Step 1: Run the host package gate**
 
 Run:
 
@@ -174,7 +181,7 @@ swift test
 
 Expected: the full package suite passes with zero failures.
 
-- [ ] **Step 2: Run the locked release gate**
+- [x] **Step 2: Run the locked release gate**
 
 Run:
 
@@ -185,7 +192,7 @@ Run:
 Expected: Release build, unit tests, and required simulator checks pass under
 the designated lock, including AC29.
 
-- [ ] **Step 3: Run adversarial reviews**
+- [x] **Step 3: Run adversarial reviews**
 
 Review the exact committed diff independently for:
 
@@ -196,12 +203,12 @@ Review the exact committed diff independently for:
 Resolve every Critical and Important finding before continuing, then rerun
 the affected gates.
 
-- [ ] **Step 4: Push and request Opus review**
+- [x] **Step 4: Push and request Opus review**
 
 Push the exact verified head, send its SHA to Fable through AMQ, and request
 the promised Opus review. Hold merge.
 
-- [ ] **Step 5: Update PR #505**
+- [x] **Step 5: Update PR #505**
 
 Replace the former comment-only/trivial-exception accounting with:
 
@@ -216,3 +223,7 @@ Replace the former comment-only/trivial-exception accounting with:
 Fetch `origin/ios`, confirm the PR head SHA equals the verified local SHA,
 confirm only intended files changed, confirm the worktree is clean, and
 monitor required checks. Do not merge.
+
+The former published head was verified at `81999ff7`. Monitoring and
+exact-head verification remain open because the controller, not this fix
+task, will push the final-review commit and update the live PR.

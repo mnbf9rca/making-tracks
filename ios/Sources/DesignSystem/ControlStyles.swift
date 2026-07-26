@@ -62,7 +62,8 @@ public struct MaterialFilledButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         MaterialButtonStyleBody(
-            configuration: configuration,
+            label: configuration.label,
+            isPressed: configuration.isPressed,
             appearance: appearance,
             accessibilityValue: accessibilityValue
         )
@@ -87,7 +88,8 @@ public struct MaterialTonalButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         MaterialButtonStyleBody(
-            configuration: configuration,
+            label: configuration.label,
+            isPressed: configuration.isPressed,
             appearance: appearance,
             accessibilityValue: accessibilityValue
         )
@@ -112,7 +114,8 @@ public struct MaterialQuietButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         MaterialButtonStyleBody(
-            configuration: configuration,
+            label: configuration.label,
+            isPressed: configuration.isPressed,
             appearance: appearance,
             accessibilityValue: accessibilityValue
         )
@@ -172,11 +175,11 @@ public enum MaterialChipState: Hashable, Sendable {
 /// destructive, navigational, or commitment-bearing controls keep full 44pt
 /// clearance without exception.
 ///
-/// Today this component applies the free-space maximum (an 11pt derived outset)
-/// unconditionally; the tiling clip is not expressible with the current API.
-/// T1.13 supplies the enabling optional neighbour-gap parameter and public
-/// geometry, landing with the R10 records. Until then, consuming layouts must
-/// not claim that this component performs the tiling clip.
+/// Today this component applies its unclipped free-space expansion
+/// unconditionally, up to 11pt per side on each axis to reach 44pt. T1.13
+/// supplies the enabling optional neighbour-gap parameter and public geometry,
+/// landing with the R10 records. Until then, consuming layouts must not claim
+/// that this component performs the tiling clip.
 public struct MaterialChip: View {
     /// `ia-doors.html` ratifies 12pt/600, which no `TypographyRole` expresses.
     static let titleFont = Font.caption.weight(.semibold)
@@ -294,20 +297,22 @@ private struct MaterialChipButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         MaterialChipStyleBody(
-            configuration: configuration,
+            label: configuration.label,
+            isPressed: configuration.isPressed,
             appearance: appearance
         )
     }
 }
 
-private struct MaterialChipStyleBody: View {
-    let configuration: ButtonStyle.Configuration
+struct MaterialChipStyleBody<Label: View>: View {
+    let label: Label
+    let isPressed: Bool
     let appearance: MaterialControlAppearance
 
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
-        configuration.label
+        label
             .foregroundStyle(appearance.foreground.swiftUIColor)
             .padding(.horizontal, MaterialChipGeometry.horizontalPadding)
             .frame(minHeight: MaterialChipGeometry.visualHeight)
@@ -319,7 +324,7 @@ private struct MaterialChipStyleBody: View {
             )
             .scaleEffect(
                 MaterialControlInteractionFeedback.semanticControlScale(
-                    isPressed: configuration.isPressed
+                    isPressed: isPressed
                 )
             )
     }
@@ -335,15 +340,16 @@ private struct MaterialChipStyleBody: View {
 
 }
 
-private struct MaterialButtonStyleBody: View {
-    let configuration: ButtonStyle.Configuration
+struct MaterialButtonStyleBody<Label: View>: View {
+    let label: Label
+    let isPressed: Bool
     let appearance: MaterialControlAppearance
     let accessibilityValue: (Bool) -> String?
 
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
-        configuration.label
+        label
             .labelStyle(MaterialControlLabelStyle())
             .font(Typography.font(for: .button))
             .foregroundStyle(appearance.foreground.swiftUIColor)
@@ -351,7 +357,6 @@ private struct MaterialButtonStyleBody: View {
             .padding(.vertical, 10)
             .frame(minHeight: 44)
             .background(backgroundStyle, in: Capsule())
-            .contentShape(Capsule())
             .opacity(
                 MaterialControlInteractionFeedback.semanticControlOpacity(
                     isEnabled: isEnabled
@@ -359,9 +364,10 @@ private struct MaterialButtonStyleBody: View {
             )
             .scaleEffect(
                 MaterialControlInteractionFeedback.semanticControlScale(
-                    isPressed: configuration.isPressed
+                    isPressed: isPressed
                 )
             )
+            .contentShape(Capsule())
             .modifier(
                 OptionalAccessibilityValue(
                     value: accessibilityValue(isEnabled)

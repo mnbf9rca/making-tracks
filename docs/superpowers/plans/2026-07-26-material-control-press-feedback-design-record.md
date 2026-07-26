@@ -14,8 +14,11 @@ pressed. They will mirror the established `PlaceCardActionAppearance` split:
 
 Both policies will live on one internal
 `MaterialControlInteractionFeedback` seam used by both style bodies. This
-keeps the two control families coherent and gives package tests a real,
-shared policy boundary.
+keeps the two control families coherent. Each style body also exposes a
+narrow internal boundary accepting an explicit label and pressed state;
+production `ButtonStyle.Configuration` forwards its real values into that
+boundary, and rendered package tests exercise the point of use without
+growing public API.
 
 ## Modifier order
 
@@ -35,13 +38,16 @@ not color.
 
 ## Verification
 
-Package tests will pin the enabled and disabled opacity branches and the
-pressed and resting scale branches through the shared policy seam. The
-existing AC29 UI test will add a press-duration activation at the 11pt
-outset edge, proving the outer hit target remains active during pressed
-feedback. The production mutation that must fail these tests is restoring an
-enabled pressed opacity below `1`, removing the `0.98` press scale, or moving
-the scale so it reduces the chip's interaction shape.
+Package tests pin the enabled and disabled opacity branches and the pressed
+and resting scale branches through the shared policy seam. Rendered
+point-of-use tests additionally verify that each pressed style body preserves
+the opaque semantic accent pixels and renders at 0.98 geometry. Body-local
+mutations restoring `0.78` opacity or removing the pressed scale must fail.
+
+The existing AC29 UI test adds a press-duration activation at the 11pt outset
+edge. It proves the pressed lifecycle and edge activation only. Modifier order
+is protected by code structure and adversarial review, not by AC29; no
+modifier-order mutation is claimed.
 
 No error path is introduced: the policy is deterministic from SwiftUI's
 `isEnabled` and `isPressed` state. Existing disabled opacity remains `0.46`.
