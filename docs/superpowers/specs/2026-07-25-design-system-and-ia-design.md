@@ -9,6 +9,17 @@ embedded in the epic.
 This document specifies; it does not implement. Each consuming issue carries its own mockup
 gate per the standing mockup law.
 
+**Amended once, by the 2026-07-26 design session** (designer + Rob), which is the immutability
+law's sanctioned channel for changing a ratified spec — a session ratification, not an edit.
+The amendment lands: R4's map rows, R7's tone quartet, `trail`, `hiddenPinColor`, `disabledAlpha`
+and `pressScale` into §3; the **component-metrics table** and **R15 state morphology** into §5;
+the **refined literal carve-out** into §4; and R13/R14's door changes into §2.
+
+**Sections describing state that is not yet built are marked *target*, with the owning task named**
+— per the authoring law that a spec may describe intent but must never let a reader mistake intent
+for the tree. The door rename, the Explore collapse and the R15 place-card re-render are all
+target; their code lands in the amendment wave.
+
 ---
 
 ## 1. Thesis
@@ -40,15 +51,25 @@ toast/pill family that appears only when it has something to say.
 
 **Doors are for things you do often; Settings is for things you set once.**
 
-### Door 1 — World (*what the map shows, right now*)
+### Door 1 — Explore (*what the map shows, right now*) — **R14**
 
-| Row | Content |
-|---|---|
-| **Scope** | The single ruled scope surface (2026-07-23 ruling): category chips, include-hidden, coverage shading. Absorbs today's Layers sheet and the floating filter chips. |
-| **Search** | Reserved slot. Search does not exist yet; it gets its own scoping issue in the epic and the door reserves its place. |
-| *(quiet bottom rows)* | **Settings** · **About** |
+**The door opens Scope directly.** There is no intermediate row list: tapping Explore presents the
+scope surface itself — category chips, include-hidden, coverage shading — absorbing today's Layers
+sheet and the floating filter chips. Settings and About are **quiet bottom rows** on that surface,
+the gear given the more prominent of the two. The **Search slot sits at the top** of the surface
+when DS-11 lands; until then the position is reserved and renders nothing, per the standing rule
+that a visible row which does nothing is a defect rather than a promise.
 
-### Door 2 — Tracks (*your story through the world*)
+**Target state — owning task: the R13/R14 door-rename + Explore-collapse row in the amendment
+wave.** The built door is still named *World* and still presents a row list; this section describes
+what that task delivers, not what ships today.
+
+### Door 2 — Journal (*your story through the world*) — **R13**
+
+**Renamed from *Tracks*.** *Making Tracks* remains the brand and the footprints icon survives; the
+subtitle is unchanged. What leaves is **"tracks" as a UI noun**: the word invites the route-recorder
+misreading that PRINCIPLES → Product 6 exists to prevent, and a door label is the one place the app
+cannot afford it.
 
 | Row | Content |
 |---|---|
@@ -56,6 +77,9 @@ toast/pill family that appears only when it has something to say.
 | **Lists** | With per-list progress (n of m seen, thin accent bar). |
 | **Loved places** | Virtual row — loving becomes visible and manageable. |
 | **Hidden places** | Quiet virtual row — hiding becomes reversible in the open, not a buried toggle. |
+
+**Target state — same owning task as R14.** The built door is still named *Tracks*; the accessibility
+identifiers and the rendered-order test naming migrate with the rename.
 
 ### Settings (cleaned)
 
@@ -105,6 +129,30 @@ pin/track layer constants. Semantic token names, one value column per material.
 | `scrim` | `rgba(43,40,35,0.35)` | `rgba(0,0,0,0.45)` |
 | `shadow` | soft, warm, low-alpha | themed (invisible-on-dark fixed) |
 | `pin` / `pinFaded` | `#E4572E` / 35% opacity | **identical — pins never theme** |
+| `hiddenPinColor` | `#767B82` | **identical — constant pin block** |
+| `mapBackground` (R4) | = `ground` | = `ground` |
+| `mapLabels` (R4) | = `muted` | = `muted` |
+| `mapLabelHalo` (R4) | = `ground` | = `ground` |
+| `mapBoundaries` (R4) | = `hairline` | = `hairline` |
+| `trail` (R8; code name `trackLine` until renamed) | `#2D8C83` | *owed at material time* |
+| `love` (R7) | `#C4312B` | *owed at material time* |
+| `loveContainer` (R7) | `#FCE3E3` | *owed at material time* |
+| `warning` (R7) | `#75571F` | *owed at material time* |
+| `warningContainer` (R7) | `#F2E8D1` | *owed at material time* |
+| `disabledAlpha` | `0.46` | `0.46` |
+| `pressScale` | `0.98` | `0.98` |
+
+**On the rows added by amendment.** `hiddenPinColor` joins the **constant pin block**, not the
+per-material columns: pins never theme, and hidden pins are *deliberately* de-emphasised, so the
+pin-pop gate does not apply to this one — DS-7's mud render validates that the de-emphasis stays
+legible. **R4's four map rows are independently valued rows, not compile-time aliases**; they are
+written here as equal to their current source token because that is their ratified value, and the
+distinction matters because R4's rider lets the AA gate escalate `mapLabels` on a material without
+dragging `muted` with it. **R7's quartet and `trail` carry Snow values only** — the sheet's AA gate
+covers them per material under R7's rider, so a mud column is *owed when mud ships* rather than
+guessable now. `disabledAlpha` and `pressScale` are **not colours**: they are the two interaction
+constants R9 left implicit, ratified here so a control's disabled dimming and its press geometry
+come from the sheet rather than from a literal in a style body.
 
 Notes: mud is warm dark-brown, never gray-black. The snow sheet is the ratified paper
 language made canonical (`defined-paper` `#F3EFE5` family); the existing four paper themes
@@ -134,6 +182,29 @@ New York: licence forbids bundling — retained only as runtime `design: .serif`
 **Machinery voice: SF** — buttons, labels, metadata, body copy, data. **On-map labels stay
 sans** (cartographic-practice research; serif belongs on cards, not tiny map labels).
 
+### The literal carve-out, refined — inert values only
+
+A figure ratified by a frozen render that **no role expresses** may stay a literal, provided the
+code names its ratifying file. The refinement: **that permission covers INERT literals only.**
+
+- **Inert** — the expression produces a value and nothing else. `Font.caption.weight(.semibold)`
+  hides no behaviour, so inlining it loses nothing.
+- **Behaviour-carrying** — the API the literal replaces does something *invisible* on the way to
+  its value: an availability check, a fallback, a metrics anchor, a closed-set guarantee. Inlining
+  such an API keeps the visible half and **silently drops the invisible half**, and an equality
+  test cannot tell, because the expression still equals itself.
+
+The worked case: a Newsreader role resolves a named face, applies `UIFontMetrics` scaling, **and
+falls back to a serif system font when the face is unavailable**. A hand-rolled
+`Font.custom(name:size:relativeTo:)` keeps the face and the scaling and drops the fallback — so the
+one text on the screen that carries the story voice renders sans, in exactly the failure the
+fallback exists to prevent, with every test still green.
+
+**Therefore:** a figure the role API cannot express is a carve-out candidate; a figure the role API
+*can* express is a **role**, and the carve-out is not the escape hatch for skipping one. Where a
+literal must carry behaviour, replicate the behaviour and **test the invisible half** — construct
+against the failing path and assert the fallback, not the happy path.
+
 ## 5. Components — one language
 
 | Component | Rule |
@@ -150,6 +221,64 @@ sans** (cartographic-practice research; serif belongs on cards, not tiny map lab
 `Color.accentColor` gets a real `AccentColor` asset (snow accent) so no stock-blue site
 survives even before full adoption; the four scattered teal definitions collapse into the
 token sheet.
+
+### State morphology — component law (**R15**)
+
+A control's **state is carried by its shape and its glyph, never by colour alone**:
+
+| State | Container | Glyph |
+|---|---|---|
+| **ON** | filled pill | filled glyph |
+| **OFF** | tonal | outline glyph |
+| **Momentary verb** (does a thing, holds no state) | quiet text | — |
+
+**Never-colour-alone applies to state**, not only to seen-state and progress. This is what makes a
+control's state legible without a legend: a filled pill with a filled glyph is on, a tonal pill with
+an outline glyph is off, and anything that is neither is a verb rather than a switch. **The place
+card is re-rendered under this rule** — target state, owning task in the amendment wave.
+
+*Why it is here rather than in a component's row:* it is the rule that decides which of the three
+button styles a control takes, so it governs the table above rather than sitting inside it.
+
+### Component metrics — the ratified numbers, beside their elements
+
+**The table ratifies; the API carries.** Every figure below is load-bearing and read from a frozen
+render; a builder takes the number from here, and the code holds the vocabulary that consumes it.
+The rule this table exists to enforce: **numbers belong in tables; renders certify feel;
+information that only exists as pixels gets under-read.**
+
+| Element | Metric | Source |
+|---|---|---|
+| Door pill | 44pt height, 999px radius, 15pt/600 label, 7pt gap, **19×19 icon**, 10pt between doors | `ia-doors` |
+| Sheet | 22pt top radius, 36×4 grabber, 6/14/14 padding | `ia-doors` |
+| Sheet title / subtitle | 26pt Newsreader 600 / 14pt sans | `ia-doors` |
+| Section label | 11pt/600 uppercase, `0.11em` tracking | `ia-doors` |
+| Raised card row | 14pt radius, 12pt padding, 10pt gap | `ia-doors` |
+| Row title (list) / row title (hero) | **17pt** / **18pt** Newsreader 600 | `ia-doors` `.t-serif` / `.t-serif.lg` |
+| Row metadata | 13pt sans | `ia-doors` `.t-meta` |
+| **Explore-surface row icon** | **20×20** | `ia-doors` (sliders, download, coverage) |
+| **Quiet bottom row icon** | **18×18** | `ia-doors` (gear, book, heart, eye-off) |
+| Quiet row title / metadata | 15pt/600 muted / 12pt | `ia-doors` `.row.quiet` |
+| Compass · locate | 34×34 · 36×36 control, **20×20 icon** | `ia-doors` |
+| Chip | 22pt height, 0/9 padding, 4pt gap, 12pt/600 label, **11×11 icon**; row gap 6pt | `ia-doors` `.chip` / `.chips` |
+| Action cue (*Retrace*) | 13pt/600, 3pt gap, **11×11 chevron** | `ia-doors` `.action` (**R12**) |
+| New-list affordance | **15×15 icon** | `ia-doors` |
+| Control-label icon beside a 15pt label | **17×17** | `coherence` `.coh .act` — ratified **pairing constant**, deliberately outside `IconRole`'s closed set |
+| Action-bar button | 15pt/600 label, 6pt icon gap, 8pt between buttons | `coherence` |
+| Attribution | 11pt bare muted text, never a pill | `ia-doors` |
+| Interaction target floor | 44pt, tiled per **R10** where the rider permits | R10 scope line |
+| Pin | 20px circle, white stroke glyph | `ia-doors` |
+| Place-card **More** control | 44×44 target, glyph at **`IconRole.hero` = 22** | ruled by this session — see the snap note below |
+
+**The snapped 21.** T1.10's *implementation* render drew the More control's glyph at **21px**
+(`t1.10-place-card.html:107`–`:114`, `.more { font-size: 21px }`). This session ruled that figure
+**presumptively an accident** and snapped it to `IconRole.hero`'s 22. Two things about it are worth
+keeping, because both explain why it survived every sweep that should have caught it: it lives in an
+**implementation render, not a frozen one**, so it was outside the ratified render set anyone would
+think to search; and it was a **`font-size` on a text span** — the control was drawn as a typed `•••`
+rather than as an icon — so it never appeared in an icon-size sweep either. **A figure in neither the
+ratified set nor the expected vocabulary is invisible to a careful search, which is the argument for
+this table stated from the other side.**
 
 ## 6. Iconography
 
