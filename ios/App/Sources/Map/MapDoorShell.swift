@@ -13,11 +13,29 @@ struct MapDoorChromeSpec {
     static let locateMinimumHitTarget: CGFloat = 44
     static let usesBuiltInCompass = true
     static let doorBarBottomPadding: CGFloat = 12
+    static let placeCardDoorGap: CGFloat = 28
     static let standardDoorBarClearance: CGFloat = 68
     static let accessibilityDoorBarClearance: CGFloat = 124
 
     static func doorBarClearance(isAccessibilitySize: Bool) -> CGFloat {
         isAccessibilitySize ? accessibilityDoorBarClearance : standardDoorBarClearance
+    }
+
+    static func effectiveDoorBarBottomPadding(
+        containerHeight: CGFloat,
+        isPlaceCardPresented: Bool
+    ) -> CGFloat {
+        guard isPlaceCardPresented else { return doorBarBottomPadding }
+        return (containerHeight / 2) + placeCardDoorGap
+    }
+}
+
+enum MapDoorDetentPolicy {
+    static func requiresLarge(
+        isAccessibilitySize: Bool,
+        hasDestination: Bool
+    ) -> Bool {
+        isAccessibilitySize || hasDestination
     }
 }
 
@@ -147,6 +165,7 @@ struct MapDoorBar: View {
 
 struct MapDoorSheet<Destination: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.dismiss) private var dismiss
 
     let door: MapDoor
     let deepLinkDestination: MapShellDestination?
@@ -169,25 +188,28 @@ struct MapDoorSheet<Destination: View>: View {
     }
 
     var body: some View {
-        MaterialSheet {
-            NavigationStack(path: $path) {
+        NavigationStack(path: $path) {
+            MaterialSheet {
                 root
-                    .navigationDestination(for: MapShellDestination.self) {
-                        destination($0)
-                    }
+            }
+            .navigationDestination(for: MapShellDestination.self) { destination in
+                destinationView(destination)
             }
         }
         .onAppear {
             applyDeepLink()
+            promoteDetentIfNeeded()
         }
         .onChange(of: deepLinkDestination) {
             applyDeepLink()
+            promoteDetentIfNeeded()
+        }
+        .onChange(of: path) {
+            promoteDetentIfNeeded()
         }
         .presentationDetents([.medium, .large], selection: $selectedDetent)
-        .onAppear {
-            if dynamicTypeSize.isAccessibilitySize {
-                selectedDetent = .large
-            }
+        .onChange(of: dynamicTypeSize) {
+            promoteDetentIfNeeded()
         }
     }
 
@@ -203,6 +225,33 @@ struct MapDoorSheet<Destination: View>: View {
 
     private func applyDeepLink() {
         path = deepLinkDestination?.listDetailPath ?? []
+    }
+
+    private func promoteDetentIfNeeded() {
+        if MapDoorDetentPolicy.requiresLarge(
+            isAccessibilitySize: dynamicTypeSize.isAccessibilitySize,
+            hasDestination: !path.isEmpty
+        ) {
+            selectedDetent = .large
+        }
+    }
+
+    @ViewBuilder
+    private func destinationView(_ shellDestination: MapShellDestination) -> some View {
+        if shellDestination == .tracks {
+            destination(shellDestination)
+        } else {
+            destination(shellDestination)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(action: dismiss.callAsFunction) {
+                            Image(systemName: "xmark")
+                        }
+                        .accessibilityLabel("Close")
+                        .accessibilityIdentifier("door.destination.close")
+                    }
+                }
+        }
     }
 }
 

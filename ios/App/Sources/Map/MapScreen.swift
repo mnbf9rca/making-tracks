@@ -2580,7 +2580,7 @@ struct MapScreen: View {
 
     var body: some View {
         ZStack {
-            GeometryReader { _ in
+            GeometryReader { proxy in
                 MLNMapViewRepresentable(
                 worldPMTilesURL: worldPMTilesURL,
                 regionPMTilesURL: regionPMTilesURL,
@@ -2848,7 +2848,13 @@ struct MapScreen: View {
                     openTracks: appShell.openTracksDoor
                 )
                 .padding(.horizontal, MapOverlayChromeSpec.edgePadding)
-                .padding(.bottom, MapDoorChromeSpec.doorBarBottomPadding)
+                .padding(
+                    .bottom,
+                    MapDoorChromeSpec.effectiveDoorBarBottomPadding(
+                        containerHeight: proxy.size.height,
+                        isPlaceCardPresented: cardPresentation.item != nil
+                    )
+                )
             }
             }
         }

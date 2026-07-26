@@ -182,6 +182,44 @@ final class AppShellTests: XCTestCase {
         )
     }
 
+    func testDoorsMoveAboveAnOpenMediumPlaceCard() {
+        XCTAssertEqual(
+            MapDoorChromeSpec.effectiveDoorBarBottomPadding(
+                containerHeight: 844,
+                isPlaceCardPresented: false
+            ),
+            12
+        )
+        XCTAssertGreaterThan(
+            MapDoorChromeSpec.effectiveDoorBarBottomPadding(
+                containerHeight: 844,
+                isPlaceCardPresented: true
+            ),
+            844 / 2
+        )
+    }
+
+    func testDoorDestinationsAndAccessibilitySizesRequireLargeDetent() {
+        XCTAssertFalse(
+            MapDoorDetentPolicy.requiresLarge(
+                isAccessibilitySize: false,
+                hasDestination: false
+            )
+        )
+        XCTAssertTrue(
+            MapDoorDetentPolicy.requiresLarge(
+                isAccessibilitySize: true,
+                hasDestination: false
+            )
+        )
+        XCTAssertTrue(
+            MapDoorDetentPolicy.requiresLarge(
+                isAccessibilitySize: false,
+                hasDestination: true
+            )
+        )
+    }
+
     func testMapDoorsExposeDistinctRuledPresentation() {
         XCTAssertEqual(
             MapDoor.world.presentation,
