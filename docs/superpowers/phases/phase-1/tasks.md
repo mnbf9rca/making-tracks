@@ -478,7 +478,7 @@ Full gate plus renders of each of the four states.
 - **Depends on:** T1.6, T1.4, **T1.2** — the hero and list-row titles are story-voice text, so this task needs the font-role API, which is not a transitive dependency of T1.6 or T1.4
 - **Owner:** codex3
 - **Review tier:** `sourcery` + `opus`
-- **Status:** branch
+- **Status:** tests green — branch `wp-470-tracks-door-unify-266`, gated code head `09aba854`; Release build; 455 host tests and 204 app tests, 0 failures; full UI aggregate ran 76 tests with 74 passes before the host-wide ENOSPC incident tainted the two failures and its result bundle, then those exact two cases reran clean-disk 2/2, 0 failures
 - **Contracts consumed:** T1.1 tokens, T1.2 font roles, T1.4 rows + progress component, T1.6's door surface.
 - **Ruled renders:** `coherence.png` frame 4, `ia-doors.png` frame 3
 
