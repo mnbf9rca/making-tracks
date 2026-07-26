@@ -48,7 +48,10 @@ Several spec statements are app-wide absolutes that *cannot* be true when Phase 
 - **AC16** Each surface's extraction from `MapScreen.swift` happens with that surface's adoption — no big-bang rewrite, no adoption without extraction. [§8]
 - **AC17** The map theme type consumes the material sheet, so map and UI have a single colour source. [§8]
 - **AC34** Pins visibly pop against `ground` in every shipped material — spec §3 states "the render is the check", so this is graded on a render, not a ratio. [§3 gates]
-- **AC35** Components **inside** `DesignSystem` resolve their type through the typography role API rather than defining their own font literals, so there is exactly one answer to what type a control uses. [§4 two voices, §8 single source. Added with T1.11 by fable's ruling: AC15 binds views *outside* the module and so does not reach a literal written inside it, which is the gap T1.11 closes.]
+- **AC35** Components **inside** `DesignSystem` resolve their type through the typography role API rather than defining their own font literals, so there is exactly one answer to what type a control uses. **Carve-out: a figure ratified by a frozen render that no `TypographyRole` expresses stays a literal**, provided it names its ratifying file in a code comment. Two worked examples define the shape:
+  - `MaterialChip.titleFont` — `ia-doors.html` ratifies `.mt-ia .chip` at **12px/600** and no role is 12pt. *(This corrects the record: T1.3's PR body calls that value a taste guess. It is not — it matches a frozen render. The mislabel came from my T1.3 review, which said "the render defines no chip type" having read only `coherence.html`; there are three frozen renders and `ia-doors.html` ratifies it.)*
+  - `MaterialControlLabelStyle`'s icon — `coherence.html` pairs a **17×17** icon with a 15px/600 label, and the role API has no icon concept at all.
+  The carve-out is for figures the API *cannot* express, never for a value someone prefers. [§4 two voices, §8 single source. Added with T1.11 by fable's ruling: AC15 binds views *outside* the module and so does not reach a literal written inside it. Carve-out added after T1.11, on the two examples above.]
 
 ### IA shell — issue #468, spec §2
 
@@ -154,6 +157,8 @@ MT_RELEASE_GATE_MODE=build ./scripts/sim-lock.sh ./scripts/release-gate.sh
 **When a criterion is impossible, flag it — do not amend it.** An acceptance criterion can be self-contradictory: this graph shipped one that required a hard minimum height *and* forbade the crop, letterbox and pillarbox that a hard minimum forces at extreme aspect ratios. If you find that, **prove it in your PR body and build to the defensible reading** — exactly as the taste-call protocol says. Do **not** edit the criterion in your own PR. The criterion is amended by the graph's author, so that the text you are graded against was not written by the party being graded. This is not a comment on anyone's judgment: the one time it happened this phase the builder was right, verified independently, and disclosed it plainly. Right once is not a licence, because the next such edit is reviewed by someone who now expects them.
 
 **Fold or file.** On finding a defect in a pre-existing component: **always log a tracker issue at the moment of discovery.** If the fix is small and cleanly encapsulated in your PR, fix it there, note it in the PR body, and close the issue on merge. Otherwise file and continue — never expand PR scope to chase it.
+
+**When the automated reviewer fails rather than falls silent.** Sourcery erroring is not Sourcery finding nothing, and the gate normally requires it to have *actually posted*. Under the scoped service-degradation ruling (fable, 2026-07-25T19:26Z — cited here as authority, not restated as new law) a PR may proceed on its remaining gates when the automated reviewer **fails**, and it is **per-PR with evidence every time, never a standing pass**. Record in a `## Sourcery` section of the PR body: the verbatim errored-run output, the run id, and the retrigger timestamps. That evidence burden is the whole distinction — positive proof of failure is strictly more information than silence, whereas an absent review with no explanation is exactly the "absence read as cleanliness" the gate exists to prevent. **Recover-first:** if the service comes back before merge the waiver evaporates and the real review is the gate — on #498 it did exactly that, which is what separates a degradation protocol from a loophole.
 
 **Standing gates for every PR under epic #466.** Reduced Motion and Reduce Transparency honoured; Dynamic Type including Newsreader via `UIFontMetrics`; AA contrast proven in the token sheet; never colour-alone; no colour or font literal outside the `DesignSystem` module. Scoped to the surfaces your task touches.
 
@@ -568,7 +573,7 @@ Full gate plus renders of the card in snow, default and AX sizes.
 - **Depends on:** **T1.2 and T1.3, both merged** — and see the sequencing rule below, which is stricter than the edge
 - **Owner:** codex3
 - **Review tier:** `sourcery` + `opus`
-- **Status:** tests green — branch `wp-467-component-typography-adoption`; 448 host tests, 0 failures; Opus ruled toast action `.button` and progress count `.metadata` against the frozen renders
+- **Status:** merged as `a379ab96` — final state recorded by the merger, on fable's authority (the `Status` field is the builder's until handoff and the merger's record thereafter).
 - **Branch:** `wp-467-component-typography-adoption` — cut from a freshly-fetched `ios`
 - **Contracts consumed:** T1.2's font-role API, T1.3's control styles.
 - **Contracts produced:** none. This task **removes** a second source of truth rather than adding one.
@@ -602,6 +607,32 @@ The two sites this settled, with their ratified figures read from `docs/design/d
 **Note on what this does *not* gate.** T1.3 merges on its own gate and does **not** block on T1.2. T1.6 needs T1.3 and T1.4 and must not inherit T1.2's fix latency; the door pills are SF 600 by spec §5 and need no role API. This row exists so that deferral is owned and tracked rather than loose (AGENTS.md → *Authoring law*, no unowned deferrals).
 
 Host tests only (`cd ios && swift test`) unless you touch `project.yml`. No render needed if nothing visual changes — and nothing visual should change.
+
+
+---
+
+### T1.12 — Chip geometry reconciliation
+
+- **Issue:** #467 · **Spec section:** §5, §7
+- **Acceptance criteria:** AC10, AC29 (with the evidence clause below), AC27
+- **Depends on:** none — `ControlStyles` is merged code
+- **Owner:** unclaimed
+- **Review tier:** `sourcery` + `opus`
+- **Status:** unclaimed
+- **Branch:** `wp-467-chip-geometry` — cut from a freshly-fetched `ios`
+- **Contracts consumed:** T1.1 tokens, T1.3 control styles.
+
+**Builder brief.** The chip currently renders through the button style at `minHeight: 44`, `padding(.horizontal, 16)`, `padding(.vertical, 10)`, `HStack(spacing: 5)`. `ia-doors.html` ratifies something much smaller: `.mt-ia .chip { height:22px; padding:0 9px; gap:4px }`. So the capsule ships at **twice its ratified height** with nearly twice the horizontal padding.
+
+**This is not a redesign, it is an unwinding.** The inflation was never ruled — it is the button style's geometry arriving by inheritance, the same accidental-value shape as the toast's inherited 17pt type. Ruled by fable as *application of existing law, not new design*: **AC29 requires a 44pt touch TARGET, not 44pt of pixels.**
+
+Restore the ratified visual geometry — 22pt capsule, 9pt horizontal padding, 4pt gap — and obtain the 44pt target from **hit area rather than frame**. `MaterialChip` already applies `.contentShape(Capsule())`, so the mechanism is present; extend the hit region beyond the visual bounds rather than inflating the bounds.
+
+**AC29 evidence clause — this is the part that is easy to get wrong.** Prove the target by **hit-testing, not by measuring the frame**. A frame assertion would now be measuring the wrong thing, and a test that measures 22pt and calls it a failure is as bad as one that measures 44pt and calls it a pass.
+
+Do not change chip *type*: 12pt/600 title and 11pt icon are ratified (AC35's carve-out) and settled.
+
+Renders before and after at 390×844 plus an AX variant, HTML committed — the whole point is a visible geometry change, so the render is the evidence.
 
 ---
 
