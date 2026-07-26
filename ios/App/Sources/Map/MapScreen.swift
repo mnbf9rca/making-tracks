@@ -772,16 +772,16 @@ enum TrackVisitRowDensitySpec {
 
 enum TrackVisitEditorVisualSpec {
     static let chromeMinimumHeight: CGFloat = 50
-    static let paperBackground = MapThemeColor.color(hex: "#f1eddf")
-    static let cardBackground = MapThemeColor.color(hex: "#fffdf7")
-    static let primaryText = MapThemeColor.color(hex: "#1c1c1e")
-    static let secondaryText = MapThemeColor.color(hex: "#64635d")
-    static let divider = MapThemeColor.color(hex: "#ddd8ca")
-    static let reorderHandle = MapThemeColor.color(hex: "#aaa89d")
-    static let accent = MapThemeColor.color(hex: "#0a6b5c")
-    static let accentSoft = MapThemeColor.color(hex: "#e3f0eb")
-    static let danger = MapThemeColor.color(hex: "#b42318")
-    static let dangerSoft = MapThemeColor.color(hex: "#f8e7e4")
+    static let paperBackground = MapThemeColor.color(css: "#f1eddf")
+    static let cardBackground = MapThemeColor.color(css: "#fffdf7")
+    static let primaryText = MapThemeColor.color(css: "#1c1c1e")
+    static let secondaryText = MapThemeColor.color(css: "#64635d")
+    static let divider = MapThemeColor.color(css: "#ddd8ca")
+    static let reorderHandle = MapThemeColor.color(css: "#aaa89d")
+    static let accent = MapThemeColor.color(css: "#0a6b5c")
+    static let accentSoft = MapThemeColor.color(css: "#e3f0eb")
+    static let danger = MapThemeColor.color(css: "#b42318")
+    static let dangerSoft = MapThemeColor.color(css: "#f8e7e4")
 }
 
 private struct TrackVisitRowBoundsPreferenceKey: PreferenceKey {
@@ -2723,7 +2723,7 @@ struct MapScreen: View {
             .overlay {
                 if didMapLoadFail {
                     ZStack {
-                        MapThemeColor.color(hex: selectedTheme.background)
+                        MapThemeColor.color(css: selectedTheme.background)
                             .ignoresSafeArea()
                         VStack(spacing: 8) {
                             Image(systemName: "map")
@@ -2741,7 +2741,7 @@ struct MapScreen: View {
                     .transition(.opacity)
                 } else if isMapLoading {
                     ZStack {
-                        MapThemeColor.color(hex: selectedTheme.background)
+                        MapThemeColor.color(css: selectedTheme.background)
                             .ignoresSafeArea()
                         ProgressView()
                             .padding(14)
@@ -7571,7 +7571,7 @@ private struct DiagnosticsView: View {
 }
 
 private enum DiagnosticsVisualSpec {
-    static let accent = MapThemeColor.color(hex: "#0a6b5c")
+    static let accent = MapThemeColor.color(css: "#0a6b5c")
 }
 
 private struct DiagnosticsDisclosureClass: Identifiable {
@@ -7776,7 +7776,7 @@ private struct PinSizePreview: View {
 
     var body: some View {
         ZStack {
-            MapThemeColor.color(hex: theme.background)
+            MapThemeColor.color(css: theme.background)
             dummyMapLines
             dummyPin
         }
@@ -7784,7 +7784,7 @@ private struct PinSizePreview: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(MapThemeColor.color(hex: theme.boundaries).opacity(0.55), lineWidth: 1)
+                .strokeBorder(MapThemeColor.color(css: theme.boundaries).opacity(0.55), lineWidth: 1)
         )
     }
 
@@ -7803,20 +7803,20 @@ private struct PinSizePreview: View {
                 path.move(to: CGPoint(x: size.width * 0.22, y: size.height * 0.88))
                 path.addLine(to: CGPoint(x: size.width * 0.62, y: size.height * 0.10))
             }
-            .stroke(MapThemeColor.color(hex: theme.roads), lineWidth: 5)
+            .stroke(MapThemeColor.color(css: theme.roads), lineWidth: 5)
 
             Path { path in
                 path.addRect(CGRect(x: size.width * 0.06, y: size.height * 0.10, width: size.width * 0.26, height: size.height * 0.22))
                 path.addRect(CGRect(x: size.width * 0.68, y: size.height * 0.66, width: size.width * 0.24, height: size.height * 0.18))
             }
-            .fill(MapThemeColor.color(hex: theme.parks).opacity(theme.showsParks ? 0.75 : 0.35))
+            .fill(MapThemeColor.color(css: theme.parks).opacity(theme.showsParks ? 0.75 : 0.35))
         }
     }
 
     private var dummyPin: some View {
         ZStack(alignment: .topTrailing) {
             Circle()
-                .fill(MapThemeColor.color(hex: PinLayers.pinColor))
+                .fill(MapThemeColor.color(css: PinLayers.pinColor))
                 .frame(width: CGFloat(metrics.circleDiameter), height: CGFloat(metrics.circleDiameter))
                 .overlay {
                     Image(systemName: "star.fill")
@@ -8547,20 +8547,79 @@ enum MapDeferredOfflineMaintenancePolicy {
 }
 
 enum MapThemeColor {
-    static func color(hex: String) -> Color {
-        Color(uiColor: uiColor(hex: hex))
+    struct Components {
+        let red: CGFloat
+        let green: CGFloat
+        let blue: CGFloat
+        let alpha: CGFloat
     }
 
-    static func uiColor(hex: String) -> UIColor {
-        let trimmed = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-        let value = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
-        guard value.count == 6, let rgb = Int(value, radix: 16) else {
-            return UIColor(red: 0.953, green: 0.937, blue: 0.898, alpha: 1)
+    static func color(css: String) -> Color {
+        guard let color = uiColor(css: css) else {
+            preconditionFailure("Unsupported map theme colour: \(css)")
         }
-        let red = CGFloat((rgb >> 16) & 0xff) / 255
-        let green = CGFloat((rgb >> 8) & 0xff) / 255
-        let blue = CGFloat(rgb & 0xff) / 255
-        return UIColor(red: red, green: green, blue: blue, alpha: 1)
+        return Color(uiColor: color)
+    }
+
+    static func uiColor(css: String) -> UIColor? {
+        guard let components = components(css: css) else {
+            return nil
+        }
+
+        return UIColor(
+            red: components.red,
+            green: components.green,
+            blue: components.blue,
+            alpha: components.alpha
+        )
+    }
+
+    static func components(css: String) -> Components? {
+        let trimmed = css.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hex = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
+        let isSixDigitHex = hex.utf8.count == 6 && hex.utf8.allSatisfy { byte in
+            (48...57).contains(byte) || (65...70).contains(byte) || (97...102).contains(byte)
+        }
+        if isSixDigitHex, let rgb = Int(hex, radix: 16) {
+            return Components(
+                red: CGFloat((rgb >> 16) & 0xff) / 255,
+                green: CGFloat((rgb >> 8) & 0xff) / 255,
+                blue: CGFloat(rgb & 0xff) / 255,
+                alpha: 1
+            )
+        }
+
+        guard trimmed.hasPrefix("rgba("), trimmed.hasSuffix(")") else {
+            return nil
+        }
+        let contents = trimmed.dropFirst(5).dropLast()
+        let fields = contents.split(separator: ",", omittingEmptySubsequences: false)
+        guard fields.count == 4,
+              let red = byte(from: fields[0]),
+              let green = byte(from: fields[1]),
+              let blue = byte(from: fields[2]),
+              let alpha = Double(String(fields[3]).trimmingCharacters(in: .whitespacesAndNewlines)),
+              alpha.isFinite,
+              (0...1).contains(alpha)
+        else {
+            return nil
+        }
+
+        return Components(
+            red: CGFloat(red) / 255,
+            green: CGFloat(green) / 255,
+            blue: CGFloat(blue) / 255,
+            alpha: CGFloat(alpha)
+        )
+    }
+
+    private static func byte(from field: Substring) -> Int? {
+        guard let value = Int(String(field).trimmingCharacters(in: .whitespacesAndNewlines)),
+              (0...255).contains(value)
+        else {
+            return nil
+        }
+        return value
     }
 }
 

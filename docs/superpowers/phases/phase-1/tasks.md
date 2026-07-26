@@ -337,9 +337,9 @@ Host tests plus renders (390×844 and an AX variant, HTML committed).
 - **Branch:** `wp-467-map-theme-tokens` — cut from a freshly-fetched `ios`
 - **Acceptance criteria:** AC3 (pin/track constants), AC17, AC34 (the pin-pop render is this task's evidence)
 - **Depends on:** T1.1
-- **Owner:** unclaimed
+- **Owner:** codex3
 - **Review tier:** `sourcery` + `opus`
-- **Status:** unclaimed
+- **Status:** ready-to-merge — #494; 443 host tests, 192 app tests and 70 UI tests, 0 failures; three exact-head critics + Opus cleared; CI green; zero review threads; Sourcery service-degradation evidence recorded in PR body after the one permitted retrigger, per fable ruling
 - **Contracts consumed:** T1.1's token sheet, including its constant pin block.
 - **Contracts produced:** none new, but you change `MapTheme`'s source of values, which `MLNMapViewRepresentable` and the theme picker both read — say so in the PR body.
 
