@@ -75,9 +75,68 @@ final class ControlStylesTests: XCTestCase {
 
         XCTAssertGreaterThan(activeAccentPixels, availableAccentPixels + 500)
     }
+
+    func testMaterialChipTitleUsesRatifiedCaptionSizeAndSemiboldWeight() throws {
+        let shortTitle = "Map"
+        let longTitle = "Map places"
+
+        XCTAssertEqual(
+            MaterialChip.titleFont,
+            Font.caption.weight(.semibold)
+        )
+
+        let styledWidthDelta = try renderedWidth(
+            MaterialChip(shortTitle, state: .active, action: {})
+        ) - renderedWidth(
+            MaterialChip(longTitle, state: .active, action: {})
+        )
+        let expectedWidthDelta = try renderedWidth(
+            Text(shortTitle)
+                .font(.caption.weight(.semibold))
+        ) - renderedWidth(
+            Text(longTitle)
+                .font(.caption.weight(.semibold))
+        )
+
+        XCTAssertEqual(styledWidthDelta, expectedWidthDelta, accuracy: 1)
+    }
+
+    func testMaterialChipIconUsesTypographyLabelSizeAndMediumWeight() throws {
+        let title = "Map"
+
+        XCTAssertEqual(
+            MaterialChip.iconFont,
+            Typography.font(for: .label).weight(.medium)
+        )
+
+        let textOnlyWidth = try renderedWidth(
+            MaterialChip(title, state: .active, action: {})
+                .dynamicTypeSize(.accessibility5)
+        )
+        let iconAndTextWidth = try renderedWidth(
+            MaterialChip(
+                title,
+                systemImage: "map",
+                state: .active,
+                action: {}
+            )
+            .dynamicTypeSize(.accessibility5)
+        )
+        let expectedIconWidth = try renderedWidth(
+            Image(systemName: "map")
+                .font(Typography.font(for: .label).weight(.medium))
+                .dynamicTypeSize(.accessibility5)
+        )
+
+        XCTAssertEqual(
+            iconAndTextWidth - textOnlyWidth,
+            expectedIconWidth + 5,
+            accuracy: 1
+        )
+    }
 #endif
 
-    func testMaterialFilledButtonPlainTextUsesSubheadlineSemibold() throws {
+    func testMaterialFilledButtonPlainTextUsesTypographyButtonRole() throws {
         let shortTitle = "Save"
         let longTitle = "Save place"
 
@@ -89,15 +148,15 @@ final class ControlStylesTests: XCTestCase {
                 .buttonStyle(MaterialFilledButtonStyle())
         )
         let expectedWidthDelta = try renderedWidth(
-            Text(shortTitle).font(.subheadline.weight(.semibold))
+            Text(shortTitle).font(Typography.font(for: .button))
         ) - renderedWidth(
-            Text(longTitle).font(.subheadline.weight(.semibold))
+            Text(longTitle).font(Typography.font(for: .button))
         )
 
         XCTAssertEqual(styledWidthDelta, expectedWidthDelta, accuracy: 1)
     }
 
-    func testMaterialFilledButtonLabelTitleUsesSubheadlineSemibold() throws {
+    func testMaterialFilledButtonLabelTitleUsesTypographyButtonRole() throws {
         let shortTitle = "Save"
         let longTitle = "Save place"
 
@@ -113,9 +172,9 @@ final class ControlStylesTests: XCTestCase {
             .buttonStyle(MaterialFilledButtonStyle())
         )
         let expectedWidthDelta = try renderedWidth(
-            Text(shortTitle).font(.subheadline.weight(.semibold))
+            Text(shortTitle).font(Typography.font(for: .button))
         ) - renderedWidth(
-            Text(longTitle).font(.subheadline.weight(.semibold))
+            Text(longTitle).font(Typography.font(for: .button))
         )
 
         XCTAssertEqual(styledWidthDelta, expectedWidthDelta, accuracy: 1)

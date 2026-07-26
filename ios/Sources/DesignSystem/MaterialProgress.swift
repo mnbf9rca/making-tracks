@@ -119,6 +119,7 @@ public struct MaterialProgress<LeadingHeader: View>: View {
 
     private func countText(_ visibleCount: String) -> some View {
         Text(verbatim: visibleCount)
+            .font(Typography.font(for: .metadata))
             .foregroundStyle(renderConfiguration.appearance.count.swiftUIColor)
             .fixedSize(horizontal: true, vertical: true)
     }

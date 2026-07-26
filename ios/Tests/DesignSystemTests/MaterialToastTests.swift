@@ -128,6 +128,88 @@ final class MaterialToastTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(renderedSize.height, 44)
     }
 
+    func testToastMessageOwnsTypographyBodyRole() throws {
+        let shortMessage = "Location"
+        let longMessage = "Location services are unavailable"
+        let actualWidthDelta = try renderedWidth(
+            MaterialToast(message: shortMessage)
+                .dynamicTypeSize(.accessibility5)
+        ) - renderedWidth(
+            MaterialToast(message: longMessage)
+                .dynamicTypeSize(.accessibility5)
+        )
+        let expectedWidthDelta = try renderedWidth(
+            Text(shortMessage)
+                .font(Typography.font(for: .body))
+                .dynamicTypeSize(.accessibility5)
+        ) - renderedWidth(
+            Text(longMessage)
+                .font(Typography.font(for: .body))
+                .dynamicTypeSize(.accessibility5)
+        )
+
+        XCTAssertEqual(actualWidthDelta, expectedWidthDelta, accuracy: 1)
+    }
+
+    func testBuiltInToastActionOwnsTypographyButtonRole() throws {
+        let shortTitle = "Open offline"
+        let longTitle = "Open offline maps"
+        let shortControl = MaterialToastPrimaryActionButton(
+            action: MaterialToastAction(shortTitle) {},
+            foreground: color(0x0A, 0x6B, 0x5C),
+            minimumTarget: CGSize(width: 44, height: 44)
+        )
+        let longControl = MaterialToastPrimaryActionButton(
+            action: MaterialToastAction(longTitle) {},
+            foreground: color(0x0A, 0x6B, 0x5C),
+            minimumTarget: CGSize(width: 44, height: 44)
+        )
+        let actualWidthDelta = try renderedWidth(
+            shortControl.dynamicTypeSize(.accessibility5)
+        ) - renderedWidth(
+            longControl.dynamicTypeSize(.accessibility5)
+        )
+        let expectedWidthDelta = try renderedWidth(
+            Text(shortTitle)
+                .font(Typography.font(for: .button))
+                .dynamicTypeSize(.accessibility5)
+        ) - renderedWidth(
+            Text(longTitle)
+                .font(Typography.font(for: .button))
+                .dynamicTypeSize(.accessibility5)
+        )
+
+        XCTAssertEqual(actualWidthDelta, expectedWidthDelta, accuracy: 1)
+    }
+
+    func testCustomToastActionKeepsCallerOwnedAmbientTypography() throws {
+        let shortTitle = "Open"
+        let longTitle = "Open offline maps"
+        let shortToast = MaterialToast(
+            message: "Download ready",
+            actionContent: {
+                Text(shortTitle)
+            }
+        )
+        .font(.largeTitle)
+        let longToast = MaterialToast(
+            message: "Download ready",
+            actionContent: {
+                Text(longTitle)
+            }
+        )
+        .font(.largeTitle)
+        let actualWidthDelta = try renderedWidth(shortToast)
+            - renderedWidth(longToast)
+        let expectedWidthDelta = try renderedWidth(
+            Text(shortTitle).font(.largeTitle)
+        ) - renderedWidth(
+            Text(longTitle).font(.largeTitle)
+        )
+
+        XCTAssertEqual(actualWidthDelta, expectedWidthDelta, accuracy: 1)
+    }
+
     func testRenderedNoProgressSurfaceButtonIsAtLeastFortyFourPointsInBothDimensions() {
         let toast = MaterialToast(
             message: "I",
@@ -145,6 +227,20 @@ final class MaterialToastTests: XCTestCase {
 
         XCTAssertGreaterThanOrEqual(renderedSize.width, 44)
         XCTAssertGreaterThanOrEqual(renderedSize.height, 44)
+    }
+
+    private func renderedHeight<Content: View>(_ content: Content) throws -> Int {
+        try render(content).height
+    }
+
+    private func renderedWidth<Content: View>(_ content: Content) throws -> Int {
+        try render(content).width
+    }
+
+    private func render<Content: View>(_ content: Content) throws -> CGImage {
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 1
+        return try XCTUnwrap(renderer.cgImage)
     }
 
 #endif
