@@ -175,8 +175,8 @@ wiring assertion: a mutation of the *sheet row* must fail, or the tokens are dec
 ## A5 — Quiet-control press feedback: the symbol-weight pulse
 
 - **Serves:** the session's gap ruling · **Review tier:** `sourcery` + `opus` · **Depends on:** A4
-- **Owner:** unclaimed
-- **Status:** unclaimed
+- **Owner:** codex1
+- **Status:** building
 - **Branch:** `wp-526-quiet-press-pulse` — cut from a freshly-fetched `ios`
 
 **Builder brief.** `quiet` is `background: nil`, `backgroundOpacity: 0`, so R9's geometry remedy has
