@@ -89,8 +89,11 @@ func testSavedPlaceCannotBeHiddenAndRejectedWriteDoesNotSnapshot() throws {
         )
     }
 
-    XCTAssertThrowsError(try db.setHidden(place, true)) {
-        XCTAssertEqual($0 as? AppDatabaseError, .savedPlaceCannotBeHidden)
+    XCTAssertThrowsError(try db.setHidden(place, true)) { error in
+        guard let databaseError = error as? AppDatabaseError else {
+            return XCTFail("Expected AppDatabaseError, got \(error)")
+        }
+        XCTAssertEqual(String(describing: databaseError), "savedPlaceCannotBeHidden")
     }
     XCTAssertEqual(try db.hiddenPlaceIDs(), [])
     XCTAssertNil(try db.snapshot(for: place.placeID))
@@ -153,7 +156,9 @@ cd ios
 swift test --filter 'InteractionsTests/(testHiddenRemainsOrthogonalToVisitState|testSavedPlaceCannotBeHiddenAndRejectedWriteDoesNotSnapshot|testSavingHiddenPlaceAutoUnhidesAndPreservesLovedVisit|testIdempotentSaveRepairsLegacySavedAndHiddenCoexistence|testRemovingLastMembershipAfterSaveDoesNotRehidePlace)'
 ```
 
-Expected: the visit-only test passes; the typed-error test does not compile until the case exists; both auto-unhide tests and the later-removal test fail with `hidden == true`.
+Expected: the visit-only test passes; the typed-error test fails because no
+error is thrown; both auto-unhide tests and the later-removal test fail with
+`hidden == true`.
 
 - [ ] **Step 3: Add the typed error and minimal transaction enforcement**
 
@@ -709,9 +714,15 @@ func testManagedPlacesStateRemovesHiddenRowAfterSaveAddition() {
     XCTAssertTrue(state.places.isEmpty)
 }
 
-func testListPickerMembershipChangeCarriesDirectionAndListID() {
-    XCTAssertEqual(ListPickerMembershipChange.added(listID: 7), .added(listID: 7))
-    XCTAssertNotEqual(ListPickerMembershipChange.added(listID: 7), .removed(listID: 7))
+func testListPickerMembershipChangeMapsPriorMembershipToCompletedDirection() {
+    XCTAssertEqual(
+        ListPickerMembershipChange.completed(wasMember: false, listID: 7),
+        .added(listID: 7)
+    )
+    XCTAssertEqual(
+        ListPickerMembershipChange.completed(wasMember: true, listID: 7),
+        .removed(listID: 7)
+    )
 }
 ```
 
@@ -729,6 +740,10 @@ Add:
 enum ListPickerMembershipChange: Equatable {
     case added(listID: Int64)
     case removed(listID: Int64)
+
+    static func completed(wasMember: Bool, listID: Int64) -> Self {
+        wasMember ? .removed(listID: listID) : .added(listID: listID)
+    }
 }
 ```
 
@@ -749,7 +764,7 @@ if wasMember {
 }
 actionError = nil
 await reload()
-onChanged(wasMember ? .removed(listID: id) : .added(listID: id))
+onChanged(.completed(wasMember: wasMember, listID: id))
 ```
 
 In `createAndAdd()`, report:
