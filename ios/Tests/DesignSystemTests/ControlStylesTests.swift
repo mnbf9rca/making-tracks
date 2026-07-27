@@ -81,12 +81,20 @@ final class ControlStylesTests: XCTestCase {
     }
 
     func testButtonStylesResolveTheirRatifiedPressFeedback() {
-        XCTAssertEqual(MaterialFilledButtonStyle().pressFeedback, .scale)
-        XCTAssertEqual(MaterialTonalButtonStyle().pressFeedback, .scale)
-        XCTAssertEqual(
-            MaterialQuietButtonStyle().pressFeedback,
-            .symbolWeightPulse
-        )
+        let filled = MaterialFilledButtonStyle().pressFeedback
+        let tonal = MaterialTonalButtonStyle().pressFeedback
+        let quiet = MaterialQuietButtonStyle().pressFeedback
+
+        XCTAssertEqual(filled, .scale)
+        XCTAssertEqual(tonal, .scale)
+        XCTAssertEqual(quiet, .symbolWeightPulse)
+
+        for feedback in [filled, tonal] {
+            XCTAssertEqual(feedback.symbolWeight(isPressed: false), .standard)
+            XCTAssertEqual(feedback.symbolWeight(isPressed: true), .standard)
+        }
+        XCTAssertEqual(quiet.symbolWeight(isPressed: false), .standard)
+        XCTAssertEqual(quiet.symbolWeight(isPressed: true), .emphasized)
     }
 
     func testChipStatesMapActiveToFilledAndAvailableToTonal() {
@@ -283,6 +291,42 @@ final class ControlStylesTests: XCTestCase {
         try assertQuietSymbolWeightPulse(
             resting: resting,
             pressed: pressed
+        )
+    }
+
+    func testQuietVisibleLabelKeepsTitleStableWhileItsIconPulses() throws {
+        let sheet = makeInteractionSheet(
+            disabledAlpha: 0.23,
+            pressScale: 1
+        )
+        let resting = try renderQuietButtonStyleBody(
+            isPressed: false,
+            tokens: sheet
+        ) {
+            Label("Settings", systemImage: "gearshape.fill")
+        }
+        let pressed = try renderQuietButtonStyleBody(
+            isPressed: true,
+            tokens: sheet
+        ) {
+            Label("Settings", systemImage: "gearshape.fill")
+        }
+
+        let restingTitleRegion = try trailingTitleRegion(in: resting)
+        let pressedTitleRegion = try trailingTitleRegion(in: pressed)
+        let restingTitleBounds = try nonTransparentBounds(in: restingTitleRegion)
+        XCTAssertGreaterThan(restingTitleBounds.width, 15)
+        XCTAssertGreaterThan(restingTitleBounds.height, 5)
+        assertPixelsAreVisuallyIdentical(
+            try pixelData(in: restingTitleRegion),
+            try pixelData(in: pressedTitleRegion)
+        )
+
+        let restingIconRegion = try leadingIconRegion(in: resting)
+        let pressedIconRegion = try leadingIconRegion(in: pressed)
+        XCTAssertGreaterThan(
+            mutedGlyphCoverage(in: pressedIconRegion),
+            mutedGlyphCoverage(in: restingIconRegion) + 500
         )
     }
 
@@ -1215,6 +1259,32 @@ final class ControlStylesTests: XCTestCase {
             y: minY,
             width: maxX - minX + 1,
             height: maxY - minY + 1
+        )
+    }
+
+    private func leadingIconRegion(in image: CGImage) throws -> CGImage {
+        try XCTUnwrap(
+            image.cropping(
+                to: CGRect(
+                    x: 0,
+                    y: 0,
+                    width: image.width / 2,
+                    height: image.height
+                )
+            )
+        )
+    }
+
+    private func trailingTitleRegion(in image: CGImage) throws -> CGImage {
+        try XCTUnwrap(
+            image.cropping(
+                to: CGRect(
+                    x: image.width / 2,
+                    y: 0,
+                    width: image.width / 2,
+                    height: image.height
+                )
+            )
         )
     }
 
