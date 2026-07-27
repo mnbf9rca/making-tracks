@@ -307,6 +307,32 @@ final class ControlStylesTests: XCTestCase {
             try pixelData(in: unscaledResting),
             try pixelData(in: unscaledPressed)
         )
+
+        let scaledSheet = makeInteractionSheet(
+            disabledAlpha: 0.23,
+            pressScale: 0.87
+        )
+        let scaledResting = try renderQuietButtonStyleBody(
+            isPressed: false,
+            tokens: scaledSheet
+        ) {
+            Text("Settings")
+                .font(.system(size: 60))
+        }
+        let scaledPressed = try renderQuietButtonStyleBody(
+            isPressed: true,
+            tokens: scaledSheet
+        ) {
+            Text("Settings")
+                .font(.system(size: 60))
+        }
+        let scaledRestingBounds = try nonTransparentBounds(in: scaledResting)
+        let scaledPressedBounds = try nonTransparentBounds(in: scaledPressed)
+        assertGeometry(
+            pressed: scaledPressedBounds,
+            resting: scaledRestingBounds,
+            scale: 0.87
+        )
     }
 
     func testMaterialChipRendersActiveFilledAndAvailableTonal() throws {
