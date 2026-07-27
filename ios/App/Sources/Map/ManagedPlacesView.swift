@@ -302,7 +302,11 @@ struct ManagedPlacesView: View {
         .contentShape(Rectangle())
         .buttonStyle(.plain)
         .disabled(state.isPending(placeID: place.placeID))
-        .opacity(state.isPending(placeID: place.placeID) ? 0.46 : 1)
+        .opacity(
+            state.isPending(placeID: place.placeID)
+                ? tokens.disabledAlpha
+                : 1
+        )
         .accessibilityLabel(
             mode.actionAccessibilityLabel(placeName: place.name)
         )

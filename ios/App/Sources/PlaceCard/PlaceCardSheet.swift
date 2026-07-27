@@ -69,12 +69,18 @@ enum PlaceCardActionAppearance {
         }
     }
 
-    static func semanticControlOpacity(isEnabled: Bool) -> Double {
-        isEnabled ? 1 : 0.46
+    static func semanticControlOpacity(
+        isEnabled: Bool,
+        tokens: MaterialTokenSheet
+    ) -> Double {
+        isEnabled ? 1 : tokens.disabledAlpha
     }
 
-    static func semanticControlScale(isPressed: Bool) -> CGFloat {
-        isPressed ? 0.98 : 1
+    static func semanticControlScale(
+        isPressed: Bool,
+        tokens: MaterialTokenSheet
+    ) -> CGFloat {
+        isPressed ? tokens.pressScale : 1
     }
 }
 
@@ -95,7 +101,8 @@ struct PlaceCardActionStyleModifier: ViewModifier {
             content.buttonStyle(
                 PlaceCardSemanticToneButtonStyle(
                     foreground: theme.tokens[foregroundToken].swiftUIColor,
-                    background: theme.tokens[backgroundToken].swiftUIColor
+                    background: theme.tokens[backgroundToken].swiftUIColor,
+                    tokens: theme.tokens
                 )
             )
         }
@@ -155,6 +162,7 @@ enum PlaceCardPhotoLayout {
 private struct PlaceCardSemanticToneButtonStyle: ButtonStyle {
     let foreground: Color
     let background: Color
+    let tokens: MaterialTokenSheet
 
     @Environment(\.isEnabled) private var isEnabled
 
@@ -169,12 +177,14 @@ private struct PlaceCardSemanticToneButtonStyle: ButtonStyle {
             .contentShape(Capsule())
             .opacity(
                 PlaceCardActionAppearance.semanticControlOpacity(
-                    isEnabled: isEnabled
+                    isEnabled: isEnabled,
+                    tokens: tokens
                 )
             )
             .scaleEffect(
                 PlaceCardActionAppearance.semanticControlScale(
-                    isPressed: configuration.isPressed
+                    isPressed: configuration.isPressed,
+                    tokens: tokens
                 )
             )
     }

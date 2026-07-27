@@ -10,13 +10,15 @@ final class ControlStylesTests: XCTestCase {
     func testMaterialControlInteractionFeedbackPreservesEnabledOpacity() {
         XCTAssertEqual(
             MaterialControlInteractionFeedback.semanticControlOpacity(
-                isEnabled: true
+                isEnabled: true,
+                tokens: MaterialTheme.snow.tokens
             ),
             1
         )
         XCTAssertEqual(
             MaterialControlInteractionFeedback.semanticControlOpacity(
-                isEnabled: false
+                isEnabled: false,
+                tokens: MaterialTheme.snow.tokens
             ),
             0.46
         )
@@ -25,15 +27,39 @@ final class ControlStylesTests: XCTestCase {
     func testMaterialControlInteractionFeedbackUsesScaleForPresses() {
         XCTAssertEqual(
             MaterialControlInteractionFeedback.semanticControlScale(
-                isPressed: false
+                isPressed: false,
+                tokens: MaterialTheme.snow.tokens
             ),
             1
         )
         XCTAssertEqual(
             MaterialControlInteractionFeedback.semanticControlScale(
-                isPressed: true
+                isPressed: true,
+                tokens: MaterialTheme.snow.tokens
             ),
             0.98
+        )
+    }
+
+    func testMaterialControlInteractionFeedbackReadsTheProvidedSheetRows() {
+        let sheet = makeInteractionSheet(
+            disabledAlpha: 0.23,
+            pressScale: 0.87
+        )
+
+        XCTAssertEqual(
+            MaterialControlInteractionFeedback.semanticControlOpacity(
+                isEnabled: false,
+                tokens: sheet
+            ),
+            0.23
+        )
+        XCTAssertEqual(
+            MaterialControlInteractionFeedback.semanticControlScale(
+                isPressed: true,
+                tokens: sheet
+            ),
+            0.87
         )
     }
 
@@ -52,6 +78,23 @@ final class ControlStylesTests: XCTestCase {
         XCTAssertEqual(quiet.foreground, color(0x6B, 0x67, 0x5F))
         XCTAssertNil(quiet.background)
         XCTAssertEqual(quiet.backgroundOpacity, 0)
+    }
+
+    func testButtonStylesResolveTheirRatifiedPressFeedback() {
+        let filled = MaterialFilledButtonStyle().pressFeedback
+        let tonal = MaterialTonalButtonStyle().pressFeedback
+        let quiet = MaterialQuietButtonStyle().pressFeedback
+
+        XCTAssertEqual(filled, .scale)
+        XCTAssertEqual(tonal, .scale)
+        XCTAssertEqual(quiet, .symbolWeightPulse)
+
+        for feedback in [filled, tonal] {
+            XCTAssertEqual(feedback.symbolWeight(isPressed: false), .standard)
+            XCTAssertEqual(feedback.symbolWeight(isPressed: true), .standard)
+        }
+        XCTAssertEqual(quiet.symbolWeight(isPressed: false), .standard)
+        XCTAssertEqual(quiet.symbolWeight(isPressed: true), .emphasized)
     }
 
     func testChipStatesMapActiveToFilledAndAvailableToTonal() {
@@ -96,6 +139,62 @@ final class ControlStylesTests: XCTestCase {
     }
 
 #if canImport(AppKit)
+    func testMaterialChipStyleBodyReadsProvidedInteractionRows() throws {
+        let sheet = makeInteractionSheet(
+            disabledAlpha: 0.23,
+            pressScale: 0.87
+        )
+        let restingBounds = try snowAccentBounds(
+            in: renderChipStyleBody(isPressed: false, tokens: sheet)
+        )
+        let pressedBounds = try snowAccentBounds(
+            in: renderChipStyleBody(isPressed: true, tokens: sheet)
+        )
+
+        assertGeometry(
+            pressed: pressedBounds,
+            resting: restingBounds,
+            scale: 0.87
+        )
+        try assertCenterAccentAlpha(
+            in: renderChipStyleBody(
+                isPressed: false,
+                tokens: sheet,
+                isEnabled: false,
+                overTransparency: true
+            ),
+            equals: 0.23
+        )
+    }
+
+    func testMaterialButtonStyleBodyReadsProvidedInteractionRows() throws {
+        let sheet = makeInteractionSheet(
+            disabledAlpha: 0.23,
+            pressScale: 0.87
+        )
+        let restingBounds = try snowAccentBounds(
+            in: renderButtonStyleBody(isPressed: false, tokens: sheet)
+        )
+        let pressedBounds = try snowAccentBounds(
+            in: renderButtonStyleBody(isPressed: true, tokens: sheet)
+        )
+
+        assertGeometry(
+            pressed: pressedBounds,
+            resting: restingBounds,
+            scale: 0.87
+        )
+        try assertCenterAccentAlpha(
+            in: renderButtonStyleBody(
+                isPressed: false,
+                tokens: sheet,
+                isEnabled: false,
+                overTransparency: true
+            ),
+            equals: 0.23
+        )
+    }
+
     func testPressedMaterialChipBodyPreservesOpaqueSemanticPixels() throws {
         let image = try renderChipStyleBody(isPressed: true)
 
@@ -133,6 +232,150 @@ final class ControlStylesTests: XCTestCase {
         assertNinetyEightPercentGeometry(
             pressed: pressedBounds,
             resting: restingBounds
+        )
+    }
+
+    func testQuietIconRoleBodyRetainsPressScaleAndPulsesSymbolWeight() throws {
+        let sheet = makeInteractionSheet(
+            disabledAlpha: 0.23,
+            pressScale: 0.87
+        )
+        let feedback = MaterialQuietButtonStyle().pressFeedback
+
+        XCTAssertEqual(feedback.scale(isPressed: false, tokens: sheet), 1)
+        XCTAssertEqual(feedback.scale(isPressed: true, tokens: sheet), 0.87)
+
+        let unscaledSheet = makeInteractionSheet(
+            disabledAlpha: 0.23,
+            pressScale: 1
+        )
+        let resting = try renderQuietButtonStyleBody(
+            isPressed: false,
+            tokens: unscaledSheet
+        ) {
+            Image(systemName: "gearshape.fill")
+                .iconRole(.inline)
+        }
+        let pressed = try renderQuietButtonStyleBody(
+            isPressed: true,
+            tokens: unscaledSheet
+        ) {
+            Image(systemName: "gearshape.fill")
+                .iconRole(.inline)
+        }
+
+        try assertQuietSymbolWeightPulse(
+            resting: resting,
+            pressed: pressed
+        )
+    }
+
+    func testQuietEmptyTitleLabelBodyPulsesSymbolWeight() throws {
+        let unscaledSheet = makeInteractionSheet(
+            disabledAlpha: 0.23,
+            pressScale: 1
+        )
+        let resting = try renderQuietButtonStyleBody(
+            isPressed: false,
+            tokens: unscaledSheet
+        ) {
+            Label("", systemImage: "gearshape.fill")
+        }
+        let pressed = try renderQuietButtonStyleBody(
+            isPressed: true,
+            tokens: unscaledSheet
+        ) {
+            Label("", systemImage: "gearshape.fill")
+        }
+
+        try assertQuietSymbolWeightPulse(
+            resting: resting,
+            pressed: pressed
+        )
+    }
+
+    func testQuietVisibleLabelKeepsTitleStableWhileItsIconPulses() throws {
+        let sheet = makeInteractionSheet(
+            disabledAlpha: 0.23,
+            pressScale: 1
+        )
+        let resting = try renderQuietButtonStyleBody(
+            isPressed: false,
+            tokens: sheet
+        ) {
+            Label("Settings", systemImage: "gearshape.fill")
+        }
+        let pressed = try renderQuietButtonStyleBody(
+            isPressed: true,
+            tokens: sheet
+        ) {
+            Label("Settings", systemImage: "gearshape.fill")
+        }
+
+        let restingTitleRegion = try trailingTitleRegion(in: resting)
+        let pressedTitleRegion = try trailingTitleRegion(in: pressed)
+        let restingTitleBounds = try nonTransparentBounds(in: restingTitleRegion)
+        XCTAssertGreaterThan(restingTitleBounds.width, 15)
+        XCTAssertGreaterThan(restingTitleBounds.height, 5)
+        assertPixelsAreVisuallyIdentical(
+            try pixelData(in: restingTitleRegion),
+            try pixelData(in: pressedTitleRegion)
+        )
+
+        let restingIconRegion = try leadingIconRegion(in: resting)
+        let pressedIconRegion = try leadingIconRegion(in: pressed)
+        XCTAssertGreaterThan(
+            mutedGlyphCoverage(in: pressedIconRegion),
+            mutedGlyphCoverage(in: restingIconRegion) + 500
+        )
+    }
+
+    func testQuietTextOnlyBodyRetainsPressScaleWithoutWeightPulse() throws {
+        let unscaledSheet = makeInteractionSheet(
+            disabledAlpha: 0.23,
+            pressScale: 1
+        )
+        let unscaledResting = try renderQuietButtonStyleBody(
+            isPressed: false,
+            tokens: unscaledSheet
+        ) {
+            Text("Settings")
+        }
+        let unscaledPressed = try renderQuietButtonStyleBody(
+            isPressed: true,
+            tokens: unscaledSheet
+        ) {
+            Text("Settings")
+        }
+        assertPixelsAreVisuallyIdentical(
+            try pixelData(in: unscaledResting),
+            try pixelData(in: unscaledPressed)
+        )
+
+        let scaledSheet = makeInteractionSheet(
+            disabledAlpha: 0.23,
+            pressScale: 0.87
+        )
+        let scaledResting = try renderQuietButtonStyleBody(
+            isPressed: false,
+            tokens: scaledSheet
+        ) {
+            Text("Settings")
+                .font(.system(size: 60))
+        }
+        let scaledPressed = try renderQuietButtonStyleBody(
+            isPressed: true,
+            tokens: scaledSheet
+        ) {
+            Text("Settings")
+                .font(.system(size: 60))
+        }
+        let scaledRestingBounds = try nonTransparentBounds(in: scaledResting)
+        let scaledPressedBounds = try nonTransparentBounds(in: scaledPressed)
+        assertGeometry(
+            pressed: scaledPressedBounds,
+            resting: scaledRestingBounds,
+            scale: 0.87
         )
     }
 
@@ -569,29 +812,106 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
+    private func makeInteractionSheet(
+        disabledAlpha: Double,
+        pressScale: CGFloat
+    ) -> MaterialTokenSheet {
+        let snow = MaterialTheme.snow.tokens
+        return MaterialTokenSheet(
+            ground: snow.ground,
+            water: snow.water,
+            park: snow.park,
+            road: snow.road,
+            roadMinor: snow.roadMinor,
+            surface: snow.surface,
+            surfaceRaised: snow.surfaceRaised,
+            ink: snow.ink,
+            muted: snow.muted,
+            accent: snow.accent,
+            accentContrast: snow.accentContrast,
+            love: snow.love,
+            loveContainer: snow.loveContainer,
+            warning: snow.warning,
+            warningContainer: snow.warningContainer,
+            eyebrow: snow.eyebrow,
+            hairline: snow.hairline,
+            scrim: snow.scrim,
+            shadow: snow.shadow,
+            background: snow.background,
+            labels: snow.labels,
+            labelHalo: snow.labelHalo,
+            boundaries: snow.boundaries,
+            trail: snow.trail,
+            disabledAlpha: disabledAlpha,
+            pressScale: pressScale
+        )
+    }
+
 #if canImport(AppKit)
-    private func renderChipStyleBody(isPressed: Bool) throws -> CGImage {
+    private func renderChipStyleBody(
+        isPressed: Bool,
+        tokens: MaterialTokenSheet = MaterialTheme.snow.tokens,
+        isEnabled: Bool = true,
+        overTransparency: Bool = false
+    ) throws -> CGImage {
         try render(
             MaterialChipStyleBody(
                 label: Color.clear.frame(width: 400, height: 400),
                 isPressed: isPressed,
-                appearance: .filled(tokens: MaterialTheme.snow.tokens)
+                appearance: .filled(tokens: tokens),
+                tokens: tokens
             )
             .padding(12)
-            .background(MaterialTheme.snow.tokens.surface.swiftUIColor)
+            .environment(\.isEnabled, isEnabled)
+            .background(
+                overTransparency
+                    ? Color.clear
+                    : MaterialTheme.snow.tokens.surface.swiftUIColor
+            )
         )
     }
 
-    private func renderButtonStyleBody(isPressed: Bool) throws -> CGImage {
+    private func renderButtonStyleBody(
+        isPressed: Bool,
+        tokens: MaterialTokenSheet = MaterialTheme.snow.tokens,
+        isEnabled: Bool = true,
+        overTransparency: Bool = false
+    ) throws -> CGImage {
         try render(
             MaterialButtonStyleBody(
                 label: Color.clear.frame(width: 400, height: 400),
                 isPressed: isPressed,
-                appearance: .filled(tokens: MaterialTheme.snow.tokens),
+                appearance: .filled(tokens: tokens),
+                tokens: tokens,
+                pressFeedback: .scale,
                 accessibilityValue: { _ in nil }
             )
             .padding(12)
-            .background(MaterialTheme.snow.tokens.surface.swiftUIColor)
+            .environment(\.isEnabled, isEnabled)
+            .background(
+                overTransparency
+                    ? Color.clear
+                    : MaterialTheme.snow.tokens.surface.swiftUIColor
+            )
+        )
+    }
+
+    private func renderQuietButtonStyleBody<Label: View>(
+        isPressed: Bool,
+        tokens: MaterialTokenSheet,
+        @ViewBuilder label: () -> Label
+    ) throws -> CGImage {
+        try render(
+            MaterialButtonStyleBody(
+                label: label(),
+                isPressed: isPressed,
+                appearance: .quiet(tokens: tokens),
+                tokens: tokens,
+                pressFeedback: MaterialQuietButtonStyle().pressFeedback,
+                accessibilityValue: { _ in nil }
+            )
+            .frame(width: 180, height: 96)
+            .background(Color.clear)
         )
     }
 #endif
@@ -706,6 +1026,31 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
+    private func assertCenterAccentAlpha(
+        in image: CGImage,
+        equals expected: CGFloat,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        let center = try XCTUnwrap(
+            bitmap.colorAt(
+                x: bitmap.pixelsWide / 2,
+                y: bitmap.pixelsHigh / 2
+            )?.usingColorSpace(.sRGB),
+            file: file,
+            line: line
+        )
+
+        XCTAssertEqual(
+            center.alphaComponent,
+            expected,
+            accuracy: 0.01,
+            file: file,
+            line: line
+        )
+    }
+
     private func snowAccentBounds(in image: CGImage) throws -> CGRect {
         let bitmap = NSBitmapImageRep(cgImage: image)
         let expected = try literalSnowAccentPixel()
@@ -760,6 +1105,189 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
+    private func literalSnowMutedPixel() throws -> NSColor {
+        let image = try render(
+            Color(
+                .sRGB,
+                red: 107.0 / 255.0,
+                green: 103.0 / 255.0,
+                blue: 95.0 / 255.0,
+                opacity: 1
+            )
+            .frame(width: 4, height: 4)
+        )
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        return try XCTUnwrap(
+            bitmap.colorAt(x: 2, y: 2)?.usingColorSpace(.sRGB)
+        )
+    }
+
+    private func assertQuietSymbolWeightPulse(
+        resting: CGImage,
+        pressed: CGImage,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        XCTAssertEqual(resting.width, pressed.width, file: file, line: line)
+        XCTAssertEqual(resting.height, pressed.height, file: file, line: line)
+
+        let expected = try literalSnowMutedPixel()
+        let restingBounds = try nonTransparentBounds(in: resting)
+        let pressedBounds = try nonTransparentBounds(in: pressed)
+        XCTAssertLessThan(restingBounds.width, 30, file: file, line: line)
+        XCTAssertLessThan(restingBounds.height, 30, file: file, line: line)
+        XCTAssertLessThan(pressedBounds.width, 30, file: file, line: line)
+        XCTAssertLessThan(pressedBounds.height, 30, file: file, line: line)
+
+        let restingCoverage = mutedGlyphCoverage(in: resting)
+        let pressedCoverage = mutedGlyphCoverage(in: pressed)
+        XCTAssertGreaterThan(
+            pressedCoverage,
+            restingCoverage + 500,
+            file: file,
+            line: line
+        )
+
+        let restingOpaquePixels = assertOpaquePixelsAreLiteralSnowMuted(
+            in: resting,
+            expected: expected,
+            file: file,
+            line: line
+        )
+        let pressedOpaquePixels = assertOpaquePixelsAreLiteralSnowMuted(
+            in: pressed,
+            expected: expected,
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThan(restingOpaquePixels, 20, file: file, line: line)
+        XCTAssertGreaterThan(pressedOpaquePixels, 20, file: file, line: line)
+    }
+
+    private func mutedGlyphCoverage(in image: CGImage) -> Int {
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        return (0..<bitmap.pixelsHigh).reduce(into: 0) { coverage, y in
+            for x in 0..<bitmap.pixelsWide {
+                guard let color = bitmap.colorAt(x: x, y: y)?
+                    .usingColorSpace(.sRGB) else {
+                    continue
+                }
+                coverage += Int((color.alphaComponent * 255).rounded())
+            }
+        }
+    }
+
+    private func assertOpaquePixelsAreLiteralSnowMuted(
+        in image: CGImage,
+        expected: NSColor,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> Int {
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        var count = 0
+
+        for y in 0..<bitmap.pixelsHigh {
+            for x in 0..<bitmap.pixelsWide {
+                guard
+                    let color = bitmap.colorAt(x: x, y: y)?
+                        .usingColorSpace(.sRGB),
+                    color.alphaComponent > 0.99
+                else {
+                    continue
+                }
+                count += 1
+                XCTAssertEqual(
+                    color.redComponent,
+                    expected.redComponent,
+                    accuracy: 0.01,
+                    file: file,
+                    line: line
+                )
+                XCTAssertEqual(
+                    color.greenComponent,
+                    expected.greenComponent,
+                    accuracy: 0.01,
+                    file: file,
+                    line: line
+                )
+                XCTAssertEqual(
+                    color.blueComponent,
+                    expected.blueComponent,
+                    accuracy: 0.01,
+                    file: file,
+                    line: line
+                )
+                XCTAssertEqual(
+                    color.alphaComponent,
+                    expected.alphaComponent,
+                    accuracy: 0.01,
+                    file: file,
+                    line: line
+                )
+            }
+        }
+        return count
+    }
+
+    private func nonTransparentBounds(in image: CGImage) throws -> CGRect {
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        var minX = bitmap.pixelsWide
+        var minY = bitmap.pixelsHigh
+        var maxX = -1
+        var maxY = -1
+
+        for y in 0..<bitmap.pixelsHigh {
+            for x in 0..<bitmap.pixelsWide {
+                guard
+                    let color = bitmap.colorAt(x: x, y: y)?
+                        .usingColorSpace(.sRGB),
+                    color.alphaComponent > 0.01
+                else {
+                    continue
+                }
+                minX = min(minX, x)
+                minY = min(minY, y)
+                maxX = max(maxX, x)
+                maxY = max(maxY, y)
+            }
+        }
+
+        _ = try XCTUnwrap(maxX > minX ? maxX : nil)
+        _ = try XCTUnwrap(maxY > minY ? maxY : nil)
+        return CGRect(
+            x: minX,
+            y: minY,
+            width: maxX - minX + 1,
+            height: maxY - minY + 1
+        )
+    }
+
+    private func leadingIconRegion(in image: CGImage) throws -> CGImage {
+        try XCTUnwrap(
+            image.cropping(
+                to: CGRect(
+                    x: 0,
+                    y: 0,
+                    width: image.width / 2,
+                    height: image.height
+                )
+            )
+        )
+    }
+
+    private func trailingTitleRegion(in image: CGImage) throws -> CGImage {
+        try XCTUnwrap(
+            image.cropping(
+                to: CGRect(
+                    x: image.width / 2,
+                    y: 0,
+                    width: image.width / 2,
+                    height: image.height
+                )
+            )
+        )
+    }
+
     private func assertNinetyEightPercentGeometry(
         pressed: CGRect,
         resting: CGRect,
@@ -776,6 +1304,29 @@ final class ControlStylesTests: XCTestCase {
         XCTAssertEqual(
             pressed.height / resting.height,
             0.98,
+            accuracy: 0.01,
+            file: file,
+            line: line
+        )
+    }
+
+    private func assertGeometry(
+        pressed: CGRect,
+        resting: CGRect,
+        scale: CGFloat,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(
+            pressed.width / resting.width,
+            scale,
+            accuracy: 0.01,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            pressed.height / resting.height,
+            scale,
             accuracy: 0.01,
             file: file,
             line: line
