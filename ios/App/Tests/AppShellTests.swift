@@ -812,7 +812,7 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
-    func testAdoptedSurfaceIconsWireExactRatifiedRolesAtPointOfUse() throws {
+    func testAdoptedSurfaceIconsWireOwnedRolesAtPointOfUse() throws {
         XCTAssertEqual(
             try XCTUnwrap(
                 firstDescendant(

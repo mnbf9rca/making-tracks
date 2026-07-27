@@ -867,8 +867,10 @@ struct MapDoorRowIconGlyph: View {
 
     var body: some View {
         Image(systemName: systemName)
-            // ia-doors.html:676,690,698 and :710,717 ratifies
-            // symbol-dependent 20px raised and 18px quiet row glyphs.
+            // ia-doors.html:676,690,698 and :710,717 ratifies 20px
+            // raised and 18px quiet row glyphs. IconRole expresses neither;
+            // retain this pre-existing 17pt literal unchanged and non-compliant
+            // pending the metrics-table/fourth-row-role amendment ruling.
             .font(.headline.weight(.medium))
             .symbolRenderingMode(.monochrome)
             .foregroundStyle(tokens.accent.swiftUIColor)
