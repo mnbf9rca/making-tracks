@@ -330,7 +330,7 @@ struct MapDoorSheet<Destination: View>: View {
     }
 
     @ViewBuilder
-    private func destinationView(_ shellDestination: MapShellDestination) -> some View {
+    func destinationView(_ shellDestination: MapShellDestination) -> some View {
         if shellDestination == .tracks {
             destination(shellDestination)
         } else {
@@ -338,13 +338,23 @@ struct MapDoorSheet<Destination: View>: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(action: dismiss.callAsFunction) {
-                            Image(systemName: "xmark")
+                            MapDoorDestinationCloseIconGlyph()
                         }
                         .accessibilityLabel("Close")
                         .accessibilityIdentifier("door.destination.close")
                     }
                 }
         }
+    }
+}
+
+struct MapDoorDestinationCloseIconGlyph: View {
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        Image(systemName: "xmark")
+            .iconRole(.inline)
+            .foregroundStyle(tokens.muted.swiftUIColor)
     }
 }
 
@@ -850,17 +860,31 @@ private struct MapDoorHairlineRow: View {
     }
 }
 
-private struct MapDoorRowLabel: View {
+struct MapDoorRowIconGlyph: View {
+    let systemName: String
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        Image(systemName: systemName)
+            // ia-doors.html:676,690,698 and :710,717 ratifies 20px
+            // raised and 18px quiet row glyphs. IconRole expresses neither;
+            // retain this pre-existing 17pt literal unchanged and non-compliant
+            // pending the metrics-table/fourth-row-role amendment ruling.
+            .font(.headline.weight(.medium))
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(tokens.accent.swiftUIColor)
+    }
+}
+
+struct MapDoorRowLabel: View {
     let presentation: MapDoorRowPresentation
 
     private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: presentation.systemImage)
-                .font(.headline.weight(.medium))
-                .symbolRenderingMode(.monochrome)
-                .foregroundStyle(tokens.accent.swiftUIColor)
+            MapDoorRowIconGlyph(systemName: presentation.systemImage)
                 .frame(width: 28)
                 .accessibilityHidden(true)
 
@@ -883,7 +907,19 @@ private struct MapDoorRowLabel: View {
     }
 }
 
-private struct MapDoorButton: View {
+struct MapDoorButtonIconGlyph: View {
+    let systemName: String
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        Image(systemName: systemName)
+            .iconRole(.inline)
+            .foregroundStyle(tokens.accent.swiftUIColor)
+    }
+}
+
+struct MapDoorButton: View {
     let door: MapDoor
     let action: () -> Void
 
@@ -895,10 +931,7 @@ private struct MapDoorButton: View {
 
         Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: presentation.systemImage)
-                    .font(.subheadline.weight(.medium))
-                    .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(tokens.accent.swiftUIColor)
+                MapDoorButtonIconGlyph(systemName: presentation.systemImage)
                     .accessibilityHidden(true)
 
                 Text(verbatim: presentation.title)

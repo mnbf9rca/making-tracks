@@ -338,7 +338,7 @@ struct PlaceCardSheet: View {
         )
     }
 
-    private var header: some View {
+    var header: some View {
         HStack {
             Spacer()
 
@@ -348,13 +348,11 @@ struct PlaceCardSheet: View {
                 }
                 .accessibilityIdentifier("place-card.add-to-list")
             } label: {
-                Image(systemName: PlaceCardLayout.closeSystemImageName)
-                    .font(Typography.font(for: .button))
+                PlaceCardMoreIconGlyph()
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(appearance.secondaryText)
             .accessibilityLabel("More")
             .accessibilityIdentifier("place-card.more")
         }
@@ -745,7 +743,27 @@ private struct PlaceCardActionBarHeightKey: PreferenceKey {
     }
 }
 
-private struct PlaceCardPhotoSlot: View {
+struct PlaceCardMoreIconGlyph: View {
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        Image(systemName: PlaceCardLayout.closeSystemImageName)
+            .iconRole(.hero)
+            .foregroundStyle(tokens.muted.swiftUIColor)
+    }
+}
+
+struct PlaceCardMissingPhotoIconGlyph: View {
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        Image(systemName: "photo")
+            .iconRole(.hero)
+            .foregroundStyle(tokens.muted.swiftUIColor)
+    }
+}
+
+struct PlaceCardPhotoSlot: View {
     let photo: PlaceCardPhoto
     let model: MapScreenModel?
     let appearance: PlaceCardAppearance
@@ -787,9 +805,7 @@ private struct PlaceCardPhotoSlot: View {
                     .scaledToFit()
                     .accessibilityHidden(true)
             } else if photo.thumbURL == nil || didFail {
-                Image(systemName: "photo")
-                    .imageScale(.large)
-                    .foregroundStyle(appearance.secondaryText)
+                PlaceCardMissingPhotoIconGlyph()
                     .accessibilityHidden(true)
             } else if !didFail {
                 ProgressView()
