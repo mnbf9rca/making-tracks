@@ -248,8 +248,8 @@ Docs-only; no code, no gate.
 
 - **Serves:** R14, R15 · **Depends on:** none · **This is the critical path**
 - **Pipeline:** build agent authors → **opus validates** → **Rob rules** → frozen
-- **Owner:** unclaimed
-- **Status:** unclaimed
+- **Owner:** codex4
+- **Status:** branch
 - **Branch:** `wp-526-explore-r15-renders` — cut from a freshly-fetched `ios`
 
 **Brief.** Two new frozen frames: the **Explore surface** as R14 collapses it (Scope directly, quiet
