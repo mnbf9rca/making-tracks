@@ -158,9 +158,9 @@ Nothing else changes. If a value moves, you have exceeded the task.
 ## A4 — `disabledAlpha` and `pressScale` become sheet rows
 
 - **Serves:** the session's taste verdicts · **Review tier:** `sourcery` + `opus` · **Depends on:** none
-- **Owner:** unclaimed
-- **Status:** unclaimed
-- **Branch:** `wp-526-interaction-constants` — cut from a freshly-fetched `ios`
+- **Owner:** codex1
+- **Status:** review clean
+- **Branch:** `wp-526-interaction-token-rows` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Add `disabledAlpha` (`0.46`) and `pressScale` (`0.98`) to the token sheet as
 ratified rows, and make `MaterialControlInteractionFeedback` **consume them** rather than holding

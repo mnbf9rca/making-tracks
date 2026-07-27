@@ -876,7 +876,9 @@ final class PinLayersTests: XCTestCase {
             labels: snow.labels,
             labelHalo: snow.labelHalo,
             boundaries: snow.boundaries,
-            trail: trail
+            trail: trail,
+            disabledAlpha: snow.disabledAlpha,
+            pressScale: snow.pressScale
         )
     }
 
