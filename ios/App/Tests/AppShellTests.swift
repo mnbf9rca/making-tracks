@@ -707,6 +707,211 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
+    func testAdoptedSurfaceIconsOwnFontRenderingAndTintAgainstHostileAmbientStyle() throws {
+        let glyphs: [(name: String, glyph: AnyView)] = [
+            (
+                "destination close",
+                AnyView(MapDoorDestinationCloseIconGlyph())
+            ),
+            (
+                "door row",
+                AnyView(MapDoorRowIconGlyph(systemName: "cloud.sun.rain.fill"))
+            ),
+            (
+                "door button",
+                AnyView(MapDoorButtonIconGlyph(systemName: "globe"))
+            ),
+            (
+                "place-card More",
+                AnyView(PlaceCardMoreIconGlyph())
+            ),
+            (
+                "missing-photo fallback",
+                AnyView(PlaceCardMissingPhotoIconGlyph())
+            ),
+        ]
+
+        for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
+            for glyph in glyphs {
+                let expected = try renderedAppGlyph(
+                    glyph.glyph,
+                    dynamicTypeSize: dynamicTypeSize
+                )
+                let actual = try renderedAppGlyph(
+                    glyph.glyph
+                        .font(.largeTitle.bold())
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(Color.red, Color.blue),
+                    dynamicTypeSize: dynamicTypeSize
+                )
+
+                XCTAssertEqual(
+                    actual,
+                    expected,
+                    "\(glyph.name) must override hostile ambient font, palette rendering, and tint"
+                )
+            }
+        }
+    }
+
+    @MainActor
+    func testAdoptedSurfaceConsumersWireOwnedGlyphsAtPointOfUse() {
+        let destinationSheet = MapDoorSheet(
+            door: .world,
+            deepLinkDestination: nil,
+            model: nil,
+            openScope: {},
+            prepareTracksHistory: {},
+            onListDeleted: { _ in }
+        ) { _ in
+            EmptyView()
+        }
+        let rowPresentation = MapDoorRowPresentation(
+            title: "Settings",
+            subtitle: "preferences",
+            systemImage: "gearshape",
+            accessibilityIdentifier: "world.row.settings"
+        )
+        let placeCard = PlaceCardSheet(
+            placeID: "mt1_00000000000000000000000000",
+            model: nil,
+            onHide: { _, _ in },
+            onManageVisits: { _ in },
+            setNearbyPromptSuppressed: { _, _ in false },
+            showHiddenMode: false
+        )
+        let photoSlot = PlaceCardPhotoSlot(
+            photo: PlaceCardPhoto(
+                accessibilityLabel: "Photo unavailable",
+                attribution: "Fixture"
+            ),
+            model: nil,
+            appearance: PlaceCardAppearance(theme: .snow)
+        )
+
+        XCTAssertEqual(
+            descendants(
+                of: MapDoorDestinationCloseIconGlyph.self,
+                in: destinationSheet.destinationView(.settings)
+            ).count,
+            1
+        )
+        XCTAssertEqual(
+            descendants(
+                of: MapDoorRowIconGlyph.self,
+                in: MapDoorRowLabel(presentation: rowPresentation).body
+            ).count,
+            1
+        )
+        XCTAssertEqual(
+            descendants(
+                of: MapDoorButtonIconGlyph.self,
+                in: MapDoorButton(door: .world, action: {}).body
+            ).count,
+            1
+        )
+        XCTAssertEqual(
+            descendants(
+                of: PlaceCardMoreIconGlyph.self,
+                in: placeCard.header
+            ).count,
+            1
+        )
+        XCTAssertEqual(
+            descendants(
+                of: PlaceCardMissingPhotoIconGlyph.self,
+                in: photoSlot.body
+            ).count,
+            1
+        )
+    }
+
+    @MainActor
+    func testAdoptedSurfaceIconsWireOwnedRolesAtPointOfUse() throws {
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: MapDoorDestinationCloseIconGlyph().body
+                )
+            ),
+            .inline
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: MapDoorButtonIconGlyph(systemName: "globe").body
+                )
+            ),
+            .inline
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: PlaceCardMoreIconGlyph().body
+                )
+            ),
+            .hero
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: PlaceCardMissingPhotoIconGlyph().body
+                )
+            ),
+            .hero
+        )
+    }
+
+    @MainActor
+    func testAdoptedSurfaceLiteralIconsMatchFrozenRenderTypography() throws {
+        let rowRenderingMode = try XCTUnwrap(
+            firstDescendant(
+                of: SymbolRenderingMode.self,
+                in: MapDoorRowIconGlyph(systemName: "gearshape").body
+            )
+        )
+        XCTAssertEqual(
+            String(reflecting: rowRenderingMode),
+            String(reflecting: SymbolRenderingMode.monochrome),
+            "The cited row literal must explicitly own its symbol rendering mode."
+        )
+
+        let glyphs: [
+            (
+                name: String,
+                actual: AnyView,
+                expected: AnyView
+            )
+        ] = [
+            (
+                "door row",
+                AnyView(MapDoorRowIconGlyph(systemName: "gearshape")),
+                AnyView(RatifiedMapDoorRowIcon(systemName: "gearshape"))
+            ),
+        ]
+
+        for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
+            for glyph in glyphs {
+                XCTAssertEqual(
+                    try renderedAppGlyph(
+                        glyph.actual,
+                        dynamicTypeSize: dynamicTypeSize
+                    ),
+                    try renderedAppGlyph(
+                        glyph.expected,
+                        dynamicTypeSize: dynamicTypeSize
+                    ),
+                    "\(glyph.name) must match the frozen render's size and medium weight"
+                )
+            }
+        }
+    }
+
+    @MainActor
     func testMapDoorBarRendersAtStandardAndAX5DynamicType() {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
             let renderer = ImageRenderer(
@@ -4111,6 +4316,19 @@ private struct RatifiedTracksDoorHeroIcon: View {
     }
 }
 
+private struct RatifiedMapDoorRowIcon: View {
+    let systemName: String
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.headline.weight(.medium))
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(tokens.accent.swiftUIColor)
+    }
+}
+
 private struct RatifiedTracksDoorInlineIcon: View {
     let systemName: String
 
@@ -4161,6 +4379,34 @@ private struct RatifiedTracksDoorHeroTitle: View {
                 )
             )
     }
+}
+
+private struct RenderedAppGlyph: Equatable {
+    let width: Int
+    let height: Int
+    let rgba: Data
+}
+
+@MainActor
+private func renderedAppGlyph<Content: View>(
+    _ content: Content,
+    dynamicTypeSize: DynamicTypeSize
+) throws -> RenderedAppGlyph {
+    let renderer = ImageRenderer(
+        content: content
+            .environment(\.dynamicTypeSize, dynamicTypeSize)
+            .frame(width: 96, height: 96)
+    )
+    renderer.scale = 1
+    let image = try XCTUnwrap(renderer.uiImage)
+    let cgImage = try XCTUnwrap(image.cgImage)
+    let data = try XCTUnwrap(cgImage.dataProvider?.data)
+
+    return RenderedAppGlyph(
+        width: cgImage.width,
+        height: cgImage.height,
+        rgba: data as Data
+    )
 }
 
 @MainActor
