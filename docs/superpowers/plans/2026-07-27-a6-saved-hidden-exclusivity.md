@@ -683,7 +683,7 @@ git commit -m "feat(app): mirror save-driven auto-unhide"
 **Files:**
 - Modify: `ios/App/Sources/Map/MapScreen.swift:7714-7800`
 - Modify: `ios/App/Sources/Map/ManagedPlacesView.swift:153-355`
-- Modify: `ios/App/Sources/PlaceCard/PlaceCardSheet.swift:246-257`
+- Modify: `ios/App/Sources/PlaceCard/PlaceCardSheet.swift:260-271`
 - Modify: `ios/App/Tests/AppShellTests.swift`
 
 **Interfaces:**
