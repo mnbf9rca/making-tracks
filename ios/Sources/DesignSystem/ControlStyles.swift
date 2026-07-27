@@ -49,6 +49,7 @@ enum MaterialControlInteractionFeedback {
 enum MaterialControlPressFeedback: Equatable, Sendable {
     case scale
     case symbolWeightPulse
+    case textInset(points: CGFloat)
 
     func scale(isPressed: Bool, tokens: MaterialTokenSheet) -> CGFloat {
         MaterialControlInteractionFeedback.semanticControlScale(
@@ -63,6 +64,20 @@ enum MaterialControlPressFeedback: Equatable, Sendable {
             .standard
         case .symbolWeightPulse:
             isPressed ? .emphasized : .standard
+        case .textInset:
+            .standard
+        }
+    }
+
+    func verticalOffset(isPressed: Bool, isEnabled: Bool) -> CGFloat {
+        guard isPressed, isEnabled else {
+            return 0
+        }
+        return switch self {
+        case let .textInset(points):
+            points
+        case .scale, .symbolWeightPulse:
+            0
         }
     }
 }
@@ -138,17 +153,36 @@ public struct MaterialTonalButtonStyle: ButtonStyle {
 /// The muted, background-free action for controls that should visually recede.
 public struct MaterialQuietButtonStyle: ButtonStyle {
     private let theme: MaterialTheme
+    let pressFeedback: MaterialControlPressFeedback
 
     public init(theme: MaterialTheme = .snow) {
+        self.init(theme: theme, pressFeedback: .symbolWeightPulse)
+    }
+
+    private init(
+        theme: MaterialTheme,
+        pressFeedback: MaterialControlPressFeedback
+    ) {
         self.theme = theme
+        self.pressFeedback = pressFeedback
+    }
+
+    /// The text-only quiet variant ruled by `amendment-wave.md` A9.
+    ///
+    /// The 1pt figure is builder-proposed pending component-metrics
+    /// ratification. It is three device pixels at @3x: perceptible beside the
+    /// existing 0.98 scale without making a quiet action read as a primary CTA.
+    public static func textOnly(
+        theme: MaterialTheme = .snow
+    ) -> MaterialQuietButtonStyle {
+        MaterialQuietButtonStyle(
+            theme: theme,
+            pressFeedback: .textInset(points: 1)
+        )
     }
 
     var appearance: MaterialControlAppearance {
         .quiet(tokens: theme.tokens)
-    }
-
-    var pressFeedback: MaterialControlPressFeedback {
-        .symbolWeightPulse
     }
 
     func accessibilityValue(isEnabled: Bool) -> String? {
@@ -507,6 +541,12 @@ struct MaterialButtonStyleBody<Label: View>: View {
                 pressFeedback.scale(
                     isPressed: isPressed,
                     tokens: tokens
+                )
+            )
+            .offset(
+                y: pressFeedback.verticalOffset(
+                    isPressed: isPressed,
+                    isEnabled: isEnabled
                 )
             )
             .contentShape(Capsule())
