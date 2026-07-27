@@ -79,6 +79,22 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .unsee(isEnabled: false)), .quiet)
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .seenDisabled), .quiet)
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .unhide), .quiet)
+        XCTAssertTrue(
+            PlaceCardActionAppearance.usesQuietTextPressInset(for: .hide)
+        )
+        XCTAssertTrue(
+            PlaceCardActionAppearance.usesQuietTextPressInset(for: .unhide)
+        )
+        XCTAssertFalse(
+            PlaceCardActionAppearance.usesQuietTextPressInset(
+                for: .unsee(isEnabled: false)
+            )
+        )
+        XCTAssertFalse(
+            PlaceCardActionAppearance.usesQuietTextPressInset(
+                for: .seenDisabled
+            )
+        )
         XCTAssertEqual(
             PlaceCardActionAppearance.semanticControlOpacity(
                 isEnabled: false,

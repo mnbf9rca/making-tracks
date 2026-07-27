@@ -84,10 +84,12 @@ final class ControlStylesTests: XCTestCase {
         let filled = MaterialFilledButtonStyle().pressFeedback
         let tonal = MaterialTonalButtonStyle().pressFeedback
         let quiet = MaterialQuietButtonStyle().pressFeedback
+        let quietText = MaterialQuietButtonStyle.textOnly().pressFeedback
 
         XCTAssertEqual(filled, .scale)
         XCTAssertEqual(tonal, .scale)
         XCTAssertEqual(quiet, .symbolWeightPulse)
+        XCTAssertEqual(quietText, .textInset(points: 1))
 
         for feedback in [filled, tonal] {
             XCTAssertEqual(feedback.symbolWeight(isPressed: false), .standard)
@@ -95,6 +97,16 @@ final class ControlStylesTests: XCTestCase {
         }
         XCTAssertEqual(quiet.symbolWeight(isPressed: false), .standard)
         XCTAssertEqual(quiet.symbolWeight(isPressed: true), .emphasized)
+        XCTAssertEqual(quietText.symbolWeight(isPressed: false), .standard)
+        XCTAssertEqual(quietText.symbolWeight(isPressed: true), .standard)
+        XCTAssertEqual(
+            quietText.verticalOffset(isPressed: true, isEnabled: true),
+            1
+        )
+        XCTAssertEqual(
+            quietText.verticalOffset(isPressed: true, isEnabled: false),
+            0
+        )
     }
 
     func testChipStatesMapActiveToFilledAndAvailableToTonal() {
@@ -330,26 +342,54 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
-    func testQuietTextOnlyBodyRetainsPressScaleWithoutWeightPulse() throws {
+    func testQuietTextOnlyBodyAddsRuledInsetToPressScale() throws {
+        let feedback = MaterialQuietButtonStyle.textOnly().pressFeedback
         let unscaledSheet = makeInteractionSheet(
             disabledAlpha: 0.23,
             pressScale: 1
         )
         let unscaledResting = try renderQuietButtonStyleBody(
             isPressed: false,
-            tokens: unscaledSheet
+            tokens: unscaledSheet,
+            pressFeedback: feedback
         ) {
             Text("Settings")
         }
         let unscaledPressed = try renderQuietButtonStyleBody(
             isPressed: true,
-            tokens: unscaledSheet
+            tokens: unscaledSheet,
+            pressFeedback: feedback
+        ) {
+            Text("Settings")
+        }
+        let unscaledRestingBounds = try nonTransparentBounds(in: unscaledResting)
+        let unscaledPressedBounds = try nonTransparentBounds(in: unscaledPressed)
+        XCTAssertEqual(unscaledPressedBounds.minX, unscaledRestingBounds.minX)
+        XCTAssertEqual(
+            unscaledPressedBounds.minY,
+            unscaledRestingBounds.minY + 1
+        )
+        XCTAssertEqual(unscaledPressedBounds.size, unscaledRestingBounds.size)
+
+        let disabledResting = try renderQuietButtonStyleBody(
+            isPressed: false,
+            isEnabled: false,
+            tokens: unscaledSheet,
+            pressFeedback: feedback
+        ) {
+            Text("Settings")
+        }
+        let disabledPressed = try renderQuietButtonStyleBody(
+            isPressed: true,
+            isEnabled: false,
+            tokens: unscaledSheet,
+            pressFeedback: feedback
         ) {
             Text("Settings")
         }
         assertPixelsAreVisuallyIdentical(
-            try pixelData(in: unscaledResting),
-            try pixelData(in: unscaledPressed)
+            try pixelData(in: disabledResting),
+            try pixelData(in: disabledPressed)
         )
 
         let scaledSheet = makeInteractionSheet(
@@ -358,14 +398,16 @@ final class ControlStylesTests: XCTestCase {
         )
         let scaledResting = try renderQuietButtonStyleBody(
             isPressed: false,
-            tokens: scaledSheet
+            tokens: scaledSheet,
+            pressFeedback: feedback
         ) {
             Text("Settings")
                 .font(.system(size: 60))
         }
         let scaledPressed = try renderQuietButtonStyleBody(
             isPressed: true,
-            tokens: scaledSheet
+            tokens: scaledSheet,
+            pressFeedback: feedback
         ) {
             Text("Settings")
                 .font(.system(size: 60))
@@ -898,7 +940,10 @@ final class ControlStylesTests: XCTestCase {
 
     private func renderQuietButtonStyleBody<Label: View>(
         isPressed: Bool,
+        isEnabled: Bool = true,
         tokens: MaterialTokenSheet,
+        pressFeedback: MaterialControlPressFeedback =
+            MaterialQuietButtonStyle().pressFeedback,
         @ViewBuilder label: () -> Label
     ) throws -> CGImage {
         try render(
@@ -907,9 +952,10 @@ final class ControlStylesTests: XCTestCase {
                 isPressed: isPressed,
                 appearance: .quiet(tokens: tokens),
                 tokens: tokens,
-                pressFeedback: MaterialQuietButtonStyle().pressFeedback,
+                pressFeedback: pressFeedback,
                 accessibilityValue: { _ in nil }
             )
+            .disabled(!isEnabled)
             .frame(width: 180, height: 96)
             .background(Color.clear)
         )
