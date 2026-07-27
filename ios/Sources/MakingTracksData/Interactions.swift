@@ -175,6 +175,10 @@ extension AppDatabase {
                     error.extendedResultCode == .SQLITE_CONSTRAINT_UNIQUE {
                 // Idempotent save: only an existing (list_id, place_id) row is ignored.
             }
+            try db.execute(
+                sql: "DELETE FROM hidden_places WHERE place_id = ?",
+                arguments: [place.placeID]
+            )
         }
     }
 
@@ -309,6 +313,14 @@ extension AppDatabase {
     public func setHidden(_ place: PlaceRef, _ hidden: Bool) throws {
         try dbQueue.write { db in
             if hidden {
+                let isSaved = try Bool.fetchOne(
+                    db,
+                    sql: "SELECT EXISTS(SELECT 1 FROM list_items WHERE place_id = ?)",
+                    arguments: [place.placeID]
+                ) ?? false
+                guard !isSaved else {
+                    throw AppDatabaseError.savedPlaceCannotBeHidden
+                }
                 try snapshotIfNeeded(place, db)
                 try db.execute(
                     sql: """
