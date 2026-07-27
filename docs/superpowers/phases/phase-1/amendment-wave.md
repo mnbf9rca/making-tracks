@@ -260,15 +260,20 @@ and the **place card under R15** in the state combinations its action bar can re
 freeze.** That table is the phase's answer to four separate misattributions, one of them from the
 design authority; a new frozen render that does not feed it recreates the problem it solved.
 
-**Acceptance evidence for the R15 card frame — R16's rider is proved here or nowhere.** The rider
+**Acceptance evidence for the R15 card frame — amended by designer ruling, 2026-07-27.** The rider
 names *which* semantic token each ON state fills — **seen** `accent`, **loved** the ratified `love`
 row, **saved** `accent`'s tonal-strength companion — and leaves the **values** to this render to prove
-**against the AA gate**. So the frame is not accepted on looking right: it must **show the fully-lit
-cluster** (saved + seen + loved simultaneously ON, the worst case) and carry the **contrast figures
-per ON pill** as its evidence. The purpose the gate is protecting is stated in R16: three ON pills
-must read as three differently-toned *facts* while the screen's single filled **action** stays
-unmistakable beside them — so the render also has to place a filled action next to the lit cluster,
-or it has not tested the thing the rider exists for.
+**against the AA gate**. The frame shows the **fully-lit cluster alone** (saved + seen + loved
+simultaneously ON, the worst case) and carries the **contrast figures per ON pill** as its evidence.
+
+The earlier version of this criterion also demanded a filled action beside the cluster. The ratified
+grammar cannot produce that frame: on the fully-lit card, Hide is absent by exclusivity and every
+remaining slot is a state pill — no filled action legitimately exists on that screen, and naming one
+would fabricate UI to satisfy evidence, which is worse than weakening the evidence. **R16's
+CTA-distinguishability clause is not weakened; its test is relocated to where its subject actually
+exists:** no Phase 1 adopted surface pairs a filled action with a state cluster, so **the first DS-3
+or DS-6 render that does must carry the filled-beside-cluster proof** as part of its own acceptance
+evidence.
 
 **If a value fails the gate, that is a finding for the designer, not a substitution.** `saved`'s
 tonal-strength companion is the likely candidate. Raise it through fable; do not pick a passing colour.
