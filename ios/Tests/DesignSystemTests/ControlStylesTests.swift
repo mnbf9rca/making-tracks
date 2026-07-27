@@ -122,6 +122,62 @@ final class ControlStylesTests: XCTestCase {
     }
 
 #if canImport(AppKit)
+    func testMaterialChipStyleBodyReadsProvidedInteractionRows() throws {
+        let sheet = makeInteractionSheet(
+            disabledAlpha: 0.23,
+            pressScale: 0.87
+        )
+        let restingBounds = try snowAccentBounds(
+            in: renderChipStyleBody(isPressed: false, tokens: sheet)
+        )
+        let pressedBounds = try snowAccentBounds(
+            in: renderChipStyleBody(isPressed: true, tokens: sheet)
+        )
+
+        assertGeometry(
+            pressed: pressedBounds,
+            resting: restingBounds,
+            scale: 0.87
+        )
+        try assertCenterAccentAlpha(
+            in: renderChipStyleBody(
+                isPressed: false,
+                tokens: sheet,
+                isEnabled: false,
+                overTransparency: true
+            ),
+            equals: 0.23
+        )
+    }
+
+    func testMaterialButtonStyleBodyReadsProvidedInteractionRows() throws {
+        let sheet = makeInteractionSheet(
+            disabledAlpha: 0.23,
+            pressScale: 0.87
+        )
+        let restingBounds = try snowAccentBounds(
+            in: renderButtonStyleBody(isPressed: false, tokens: sheet)
+        )
+        let pressedBounds = try snowAccentBounds(
+            in: renderButtonStyleBody(isPressed: true, tokens: sheet)
+        )
+
+        assertGeometry(
+            pressed: pressedBounds,
+            resting: restingBounds,
+            scale: 0.87
+        )
+        try assertCenterAccentAlpha(
+            in: renderButtonStyleBody(
+                isPressed: false,
+                tokens: sheet,
+                isEnabled: false,
+                overTransparency: true
+            ),
+            equals: 0.23
+        )
+    }
+
     func testPressedMaterialChipBodyPreservesOpaqueSemanticPixels() throws {
         let image = try renderChipStyleBody(isPressed: true)
 
@@ -631,30 +687,50 @@ final class ControlStylesTests: XCTestCase {
     }
 
 #if canImport(AppKit)
-    private func renderChipStyleBody(isPressed: Bool) throws -> CGImage {
+    private func renderChipStyleBody(
+        isPressed: Bool,
+        tokens: MaterialTokenSheet = MaterialTheme.snow.tokens,
+        isEnabled: Bool = true,
+        overTransparency: Bool = false
+    ) throws -> CGImage {
         try render(
             MaterialChipStyleBody(
                 label: Color.clear.frame(width: 400, height: 400),
                 isPressed: isPressed,
-                appearance: .filled(tokens: MaterialTheme.snow.tokens),
-                tokens: MaterialTheme.snow.tokens
+                appearance: .filled(tokens: tokens),
+                tokens: tokens
             )
             .padding(12)
-            .background(MaterialTheme.snow.tokens.surface.swiftUIColor)
+            .environment(\.isEnabled, isEnabled)
+            .background(
+                overTransparency
+                    ? Color.clear
+                    : MaterialTheme.snow.tokens.surface.swiftUIColor
+            )
         )
     }
 
-    private func renderButtonStyleBody(isPressed: Bool) throws -> CGImage {
+    private func renderButtonStyleBody(
+        isPressed: Bool,
+        tokens: MaterialTokenSheet = MaterialTheme.snow.tokens,
+        isEnabled: Bool = true,
+        overTransparency: Bool = false
+    ) throws -> CGImage {
         try render(
             MaterialButtonStyleBody(
                 label: Color.clear.frame(width: 400, height: 400),
                 isPressed: isPressed,
-                appearance: .filled(tokens: MaterialTheme.snow.tokens),
-                tokens: MaterialTheme.snow.tokens,
+                appearance: .filled(tokens: tokens),
+                tokens: tokens,
                 accessibilityValue: { _ in nil }
             )
             .padding(12)
-            .background(MaterialTheme.snow.tokens.surface.swiftUIColor)
+            .environment(\.isEnabled, isEnabled)
+            .background(
+                overTransparency
+                    ? Color.clear
+                    : MaterialTheme.snow.tokens.surface.swiftUIColor
+            )
         )
     }
 #endif
@@ -769,6 +845,31 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
+    private func assertCenterAccentAlpha(
+        in image: CGImage,
+        equals expected: CGFloat,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        let center = try XCTUnwrap(
+            bitmap.colorAt(
+                x: bitmap.pixelsWide / 2,
+                y: bitmap.pixelsHigh / 2
+            )?.usingColorSpace(.sRGB),
+            file: file,
+            line: line
+        )
+
+        XCTAssertEqual(
+            center.alphaComponent,
+            expected,
+            accuracy: 0.01,
+            file: file,
+            line: line
+        )
+    }
+
     private func snowAccentBounds(in image: CGImage) throws -> CGRect {
         let bitmap = NSBitmapImageRep(cgImage: image)
         let expected = try literalSnowAccentPixel()
@@ -839,6 +940,29 @@ final class ControlStylesTests: XCTestCase {
         XCTAssertEqual(
             pressed.height / resting.height,
             0.98,
+            accuracy: 0.01,
+            file: file,
+            line: line
+        )
+    }
+
+    private func assertGeometry(
+        pressed: CGRect,
+        resting: CGRect,
+        scale: CGFloat,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(
+            pressed.width / resting.width,
+            scale,
+            accuracy: 0.01,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            pressed.height / resting.height,
+            scale,
             accuracy: 0.01,
             file: file,
             line: line
