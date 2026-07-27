@@ -46,6 +46,35 @@ enum MaterialControlInteractionFeedback {
     }
 }
 
+enum MaterialControlPressFeedback: Equatable, Sendable {
+    case scale
+    case symbolWeightPulse
+
+    func scale(isPressed: Bool, tokens: MaterialTokenSheet) -> CGFloat {
+        switch self {
+        case .scale:
+            MaterialControlInteractionFeedback.semanticControlScale(
+                isPressed: isPressed,
+                tokens: tokens
+            )
+        case .symbolWeightPulse:
+            MaterialControlInteractionFeedback.semanticControlScale(
+                isPressed: isPressed,
+                tokens: tokens
+            )
+        }
+    }
+
+    func symbolWeight(isPressed: Bool) -> MaterialControlSymbolWeight {
+        switch self {
+        case .scale:
+            .standard
+        case .symbolWeightPulse:
+            isPressed ? .emphasized : .standard
+        }
+    }
+}
+
 /// The accent-filled primary action. Adopting screens keep at most one visible.
 ///
 /// Use a SwiftUI `Label` when an action has an icon so the style can apply the
@@ -62,6 +91,10 @@ public struct MaterialFilledButtonStyle: ButtonStyle {
         .filled(tokens: theme.tokens)
     }
 
+    var pressFeedback: MaterialControlPressFeedback {
+        .scale
+    }
+
     func accessibilityValue(isEnabled: Bool) -> String? {
         isEnabled ? nil : "Unavailable"
     }
@@ -72,6 +105,7 @@ public struct MaterialFilledButtonStyle: ButtonStyle {
             isPressed: configuration.isPressed,
             appearance: appearance,
             tokens: theme.tokens,
+            pressFeedback: pressFeedback,
             accessibilityValue: accessibilityValue
         )
     }
@@ -89,6 +123,10 @@ public struct MaterialTonalButtonStyle: ButtonStyle {
         .tonal(tokens: theme.tokens)
     }
 
+    var pressFeedback: MaterialControlPressFeedback {
+        .scale
+    }
+
     func accessibilityValue(isEnabled: Bool) -> String? {
         isEnabled ? nil : "Unavailable"
     }
@@ -99,6 +137,7 @@ public struct MaterialTonalButtonStyle: ButtonStyle {
             isPressed: configuration.isPressed,
             appearance: appearance,
             tokens: theme.tokens,
+            pressFeedback: pressFeedback,
             accessibilityValue: accessibilityValue
         )
     }
@@ -116,6 +155,10 @@ public struct MaterialQuietButtonStyle: ButtonStyle {
         .quiet(tokens: theme.tokens)
     }
 
+    var pressFeedback: MaterialControlPressFeedback {
+        .symbolWeightPulse
+    }
+
     func accessibilityValue(isEnabled: Bool) -> String? {
         isEnabled ? nil : "Unavailable"
     }
@@ -126,6 +169,7 @@ public struct MaterialQuietButtonStyle: ButtonStyle {
             isPressed: configuration.isPressed,
             appearance: appearance,
             tokens: theme.tokens,
+            pressFeedback: pressFeedback,
             accessibilityValue: accessibilityValue
         )
     }
@@ -443,12 +487,17 @@ struct MaterialButtonStyleBody<Label: View>: View {
     let isPressed: Bool
     let appearance: MaterialControlAppearance
     let tokens: MaterialTokenSheet
+    let pressFeedback: MaterialControlPressFeedback
     let accessibilityValue: (Bool) -> String?
 
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         label
+            .environment(
+                \.materialControlSymbolWeight,
+                pressFeedback.symbolWeight(isPressed: isPressed)
+            )
             .labelStyle(MaterialControlLabelStyle())
             .font(Typography.font(for: .button))
             .foregroundStyle(appearance.foreground.swiftUIColor)
@@ -463,7 +512,7 @@ struct MaterialButtonStyleBody<Label: View>: View {
                 )
             )
             .scaleEffect(
-                MaterialControlInteractionFeedback.semanticControlScale(
+                pressFeedback.scale(
                     isPressed: isPressed,
                     tokens: tokens
                 )
@@ -488,10 +537,12 @@ struct MaterialButtonStyleBody<Label: View>: View {
 }
 
 private struct MaterialControlLabelStyle: LabelStyle {
+    @Environment(\.materialControlSymbolWeight) private var symbolWeight
+
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 6) {
             configuration.icon
-                .font(.body.weight(.medium))
+                .font(.body.weight(symbolWeight.swiftUI))
                 .symbolRenderingMode(.monochrome)
             configuration.title
                 .font(Typography.font(for: .button))
