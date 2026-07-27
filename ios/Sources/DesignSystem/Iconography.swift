@@ -1,5 +1,28 @@
 import SwiftUI
 
+enum MaterialControlSymbolWeight: Equatable, Sendable {
+    case standard
+    case emphasized
+
+    var swiftUI: Font.Weight {
+        switch self {
+        case .standard: .medium
+        case .emphasized: .semibold
+        }
+    }
+}
+
+private struct MaterialControlSymbolWeightKey: EnvironmentKey {
+    static let defaultValue = MaterialControlSymbolWeight.standard
+}
+
+extension EnvironmentValues {
+    var materialControlSymbolWeight: MaterialControlSymbolWeight {
+        get { self[MaterialControlSymbolWeightKey.self] }
+        set { self[MaterialControlSymbolWeightKey.self] = newValue }
+    }
+}
+
 public enum IconRole: CaseIterable, Hashable, Sendable {
     case hero
     case inline
@@ -31,6 +54,7 @@ public extension View {
 private struct IconRoleModifier: ViewModifier {
     private let role: IconRole
     @ScaledMetric private var pointSize: CGFloat
+    @Environment(\.materialControlSymbolWeight) private var symbolWeight
 
     init(role: IconRole) {
         self.role = role
@@ -42,7 +66,7 @@ private struct IconRoleModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .font(.system(size: pointSize, weight: .medium))
+            .font(.system(size: pointSize, weight: symbolWeight.swiftUI))
             .symbolRenderingMode(.monochrome)
     }
 }
