@@ -97,8 +97,22 @@ struct PlaceCardActionStyleModifier: ViewModifier {
     let action: PlaceCardAction
     let theme: MaterialTheme
 
-    @ViewBuilder
     func body(content: Content) -> some View {
+        PlaceCardActionStyledContent(
+            content: content,
+            action: action,
+            theme: theme
+        )
+    }
+}
+
+struct PlaceCardActionStyledContent<Content: View>: View {
+    let content: Content
+    let action: PlaceCardAction
+    let theme: MaterialTheme
+
+    @ViewBuilder
+    var body: some View {
         switch PlaceCardActionAppearance.style(for: action) {
         case .filled:
             content.buttonStyle(MaterialFilledButtonStyle(theme: theme))

@@ -1,4 +1,4 @@
-import DesignSystem
+@testable import DesignSystem
 import Foundation
 import SwiftUI
 import UIKit
@@ -134,6 +134,40 @@ final class AppShellTests: XCTestCase {
             XCTAssertLessThanOrEqual(
                 actions.filter { PlaceCardActionAppearance.style(for: $0) == .filled }.count,
                 1
+            )
+        }
+    }
+
+    @MainActor
+    func testPlaceCardActionStyleMountsQuietTextInsetOnlyWhereRuled() {
+        let cases: [
+            (
+                action: PlaceCardAction,
+                expected: MaterialControlPressFeedback
+            )
+        ] = [
+            (.hide, .textInset(points: 1)),
+            (.unhide, .textInset(points: 1)),
+            (.unsee(isEnabled: false), .symbolWeightPulse),
+            (.seenDisabled, .symbolWeightPulse),
+        ]
+
+        for testCase in cases {
+            let body = PlaceCardActionStyledContent(
+                content: Text(verbatim: testCase.action.title),
+                action: testCase.action,
+                theme: .snow
+            ).body
+            let mountedStyles = descendants(
+                of: MaterialQuietButtonStyle.self,
+                in: body
+            )
+
+            XCTAssertEqual(mountedStyles.count, 1)
+            XCTAssertEqual(
+                mountedStyles.first?.pressFeedback,
+                testCase.expected,
+                "\(testCase.action) must mount the ruled quiet feedback strategy"
             )
         }
     }

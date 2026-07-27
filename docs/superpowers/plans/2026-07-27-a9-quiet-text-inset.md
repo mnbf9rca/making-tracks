@@ -119,9 +119,9 @@ func verticalOffset(isPressed: Bool, isEnabled: Bool) -> CGFloat {
 ```
 
 Map `.textInset` to `.standard` symbol weight and retain the existing
-token-backed `pressScale` for every strategy. Apply the returned offset after
-the button's existing content shape so only rendered geometry moves; the
-44pt layout and hit target remain stable.
+token-backed `pressScale` for every strategy. Apply the returned offset before
+the button's outer content shape: `offset` preserves the original layout
+dimensions, while the outer shape stays rooted in the stable 44pt hit target.
 
 - [ ] **Step 2: Add the cited text-only quiet factory**
 
