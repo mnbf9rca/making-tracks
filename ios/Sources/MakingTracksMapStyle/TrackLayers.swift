@@ -7,7 +7,7 @@ public enum TrackLayers {
     public static let activeLineLayerID = "tracks-line-active"
     public static let activeArcPhase = "active"
     public static let trackSegmentPhaseProperty = "track_segment_phase"
-    public static let lineColor = MaterialTheme.snow.tokens.trackLine.mapStyleString.lowercased()
+    public static let lineColor = lineColor(tokens: MaterialTheme.snow.tokens)
     public static let activeLineColor = "#db5344"
     public static let lineCap = "round"
     public static let lineJoin = "round"
@@ -21,14 +21,7 @@ public enum TrackLayers {
     public static let lineDotGap = 9.0
     public static let lineDashPatternValues = [lineDotLength / lineWidth, lineDotGap / lineWidth]
     public static let activeLineDashPatternValues = [lineDotLength / activeLineWidth, lineDotGap / activeLineWidth]
-    public static let lineStyle = TrackLineStyle(
-        cap: lineCap,
-        join: lineJoin,
-        color: lineColor,
-        opacity: lineOpacity,
-        width: lineWidth,
-        dashPattern: lineDashPatternValues
-    )
+    public static let lineStyle = lineStyle(tokens: MaterialTheme.snow.tokens)
     public static let activeLineStyle = TrackLineStyle(
         cap: lineCap,
         join: lineJoin,
@@ -47,10 +40,25 @@ public enum TrackLayers {
     public static let arcInterpolationPointCount = 9
 
     public static func trackLayers() -> [JSONValue] {
+        trackLayers(tokens: MaterialTheme.snow.tokens)
+    }
+
+    static func trackLayers(tokens: MaterialTokenSheet) -> [JSONValue] {
         [
-            lineLayer(id: lineLayerID, style: lineStyle, filter: nil),
+            lineLayer(id: lineLayerID, style: lineStyle(tokens: tokens), filter: nil),
             lineLayer(id: activeLineLayerID, style: activeLineStyle, filter: activeArcFilter()),
         ]
+    }
+
+    static func lineStyle(tokens: MaterialTokenSheet) -> TrackLineStyle {
+        TrackLineStyle(
+            cap: lineCap,
+            join: lineJoin,
+            color: lineColor(tokens: tokens),
+            opacity: lineOpacity,
+            width: lineWidth,
+            dashPattern: lineDashPatternValues
+        )
     }
 
     public static func activeArcFilter() -> JSONValue {
@@ -83,5 +91,9 @@ public enum TrackLayers {
         ]
         layer["filter"] = filter
         return .object(layer)
+    }
+
+    private static func lineColor(tokens: MaterialTokenSheet) -> String {
+        tokens.trail.mapStyleString.lowercased()
     }
 }

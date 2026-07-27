@@ -31,12 +31,39 @@ struct MaterialControlAppearance: Equatable, Sendable {
 }
 
 enum MaterialControlInteractionFeedback {
-    static func semanticControlOpacity(isEnabled: Bool) -> Double {
-        isEnabled ? 1 : 0.46
+    static func semanticControlOpacity(
+        isEnabled: Bool,
+        tokens: MaterialTokenSheet
+    ) -> Double {
+        isEnabled ? 1 : tokens.disabledAlpha
     }
 
-    static func semanticControlScale(isPressed: Bool) -> CGFloat {
-        isPressed ? 0.98 : 1
+    static func semanticControlScale(
+        isPressed: Bool,
+        tokens: MaterialTokenSheet
+    ) -> CGFloat {
+        isPressed ? tokens.pressScale : 1
+    }
+}
+
+enum MaterialControlPressFeedback: Equatable, Sendable {
+    case scale
+    case symbolWeightPulse
+
+    func scale(isPressed: Bool, tokens: MaterialTokenSheet) -> CGFloat {
+        MaterialControlInteractionFeedback.semanticControlScale(
+            isPressed: isPressed,
+            tokens: tokens
+        )
+    }
+
+    func symbolWeight(isPressed: Bool) -> MaterialControlSymbolWeight {
+        switch self {
+        case .scale:
+            .standard
+        case .symbolWeightPulse:
+            isPressed ? .emphasized : .standard
+        }
     }
 }
 
@@ -56,6 +83,10 @@ public struct MaterialFilledButtonStyle: ButtonStyle {
         .filled(tokens: theme.tokens)
     }
 
+    var pressFeedback: MaterialControlPressFeedback {
+        .scale
+    }
+
     func accessibilityValue(isEnabled: Bool) -> String? {
         isEnabled ? nil : "Unavailable"
     }
@@ -65,6 +96,8 @@ public struct MaterialFilledButtonStyle: ButtonStyle {
             label: configuration.label,
             isPressed: configuration.isPressed,
             appearance: appearance,
+            tokens: theme.tokens,
+            pressFeedback: pressFeedback,
             accessibilityValue: accessibilityValue
         )
     }
@@ -82,6 +115,10 @@ public struct MaterialTonalButtonStyle: ButtonStyle {
         .tonal(tokens: theme.tokens)
     }
 
+    var pressFeedback: MaterialControlPressFeedback {
+        .scale
+    }
+
     func accessibilityValue(isEnabled: Bool) -> String? {
         isEnabled ? nil : "Unavailable"
     }
@@ -91,6 +128,8 @@ public struct MaterialTonalButtonStyle: ButtonStyle {
             label: configuration.label,
             isPressed: configuration.isPressed,
             appearance: appearance,
+            tokens: theme.tokens,
+            pressFeedback: pressFeedback,
             accessibilityValue: accessibilityValue
         )
     }
@@ -108,6 +147,10 @@ public struct MaterialQuietButtonStyle: ButtonStyle {
         .quiet(tokens: theme.tokens)
     }
 
+    var pressFeedback: MaterialControlPressFeedback {
+        .symbolWeightPulse
+    }
+
     func accessibilityValue(isEnabled: Bool) -> String? {
         isEnabled ? nil : "Unavailable"
     }
@@ -117,6 +160,8 @@ public struct MaterialQuietButtonStyle: ButtonStyle {
             label: configuration.label,
             isPressed: configuration.isPressed,
             appearance: appearance,
+            tokens: theme.tokens,
+            pressFeedback: pressFeedback,
             accessibilityValue: accessibilityValue
         )
     }
@@ -224,7 +269,8 @@ public struct MaterialChip: View {
         switch state.style {
         case .filled:
             button.buttonStyle(MaterialChipButtonStyle(
-                appearance: .filled(tokens: theme.tokens)
+                appearance: .filled(tokens: theme.tokens),
+                tokens: theme.tokens
             ))
             .contentShape(
                 .interaction,
@@ -234,7 +280,8 @@ public struct MaterialChip: View {
             )
         case .tonal:
             button.buttonStyle(MaterialChipButtonStyle(
-                appearance: .tonal(tokens: theme.tokens)
+                appearance: .tonal(tokens: theme.tokens),
+                tokens: theme.tokens
             ))
             .contentShape(
                 .interaction,
@@ -376,12 +423,14 @@ enum MaterialChipStyle: Equatable, Sendable {
 
 private struct MaterialChipButtonStyle: ButtonStyle {
     let appearance: MaterialControlAppearance
+    let tokens: MaterialTokenSheet
 
     func makeBody(configuration: Configuration) -> some View {
         MaterialChipStyleBody(
             label: configuration.label,
             isPressed: configuration.isPressed,
-            appearance: appearance
+            appearance: appearance,
+            tokens: tokens
         )
     }
 }
@@ -390,6 +439,7 @@ struct MaterialChipStyleBody<Label: View>: View {
     let label: Label
     let isPressed: Bool
     let appearance: MaterialControlAppearance
+    let tokens: MaterialTokenSheet
 
     @Environment(\.isEnabled) private var isEnabled
 
@@ -401,12 +451,14 @@ struct MaterialChipStyleBody<Label: View>: View {
             .background(backgroundStyle, in: Capsule())
             .opacity(
                 MaterialControlInteractionFeedback.semanticControlOpacity(
-                    isEnabled: isEnabled
+                    isEnabled: isEnabled,
+                    tokens: tokens
                 )
             )
             .scaleEffect(
                 MaterialControlInteractionFeedback.semanticControlScale(
-                    isPressed: isPressed
+                    isPressed: isPressed,
+                    tokens: tokens
                 )
             )
     }
@@ -426,12 +478,18 @@ struct MaterialButtonStyleBody<Label: View>: View {
     let label: Label
     let isPressed: Bool
     let appearance: MaterialControlAppearance
+    let tokens: MaterialTokenSheet
+    let pressFeedback: MaterialControlPressFeedback
     let accessibilityValue: (Bool) -> String?
 
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         label
+            .environment(
+                \.materialControlSymbolWeight,
+                pressFeedback.symbolWeight(isPressed: isPressed)
+            )
             .labelStyle(MaterialControlLabelStyle())
             .font(Typography.font(for: .button))
             .foregroundStyle(appearance.foreground.swiftUIColor)
@@ -441,12 +499,14 @@ struct MaterialButtonStyleBody<Label: View>: View {
             .background(backgroundStyle, in: Capsule())
             .opacity(
                 MaterialControlInteractionFeedback.semanticControlOpacity(
-                    isEnabled: isEnabled
+                    isEnabled: isEnabled,
+                    tokens: tokens
                 )
             )
             .scaleEffect(
-                MaterialControlInteractionFeedback.semanticControlScale(
-                    isPressed: isPressed
+                pressFeedback.scale(
+                    isPressed: isPressed,
+                    tokens: tokens
                 )
             )
             .contentShape(Capsule())
@@ -469,10 +529,12 @@ struct MaterialButtonStyleBody<Label: View>: View {
 }
 
 private struct MaterialControlLabelStyle: LabelStyle {
+    @Environment(\.materialControlSymbolWeight) private var symbolWeight
+
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 6) {
             configuration.icon
-                .font(.body.weight(.medium))
+                .font(.body.weight(symbolWeight.swiftUI))
                 .symbolRenderingMode(.monochrome)
             configuration.title
                 .font(Typography.font(for: .button))

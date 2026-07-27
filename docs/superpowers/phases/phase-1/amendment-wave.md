@@ -47,6 +47,7 @@ Edges are "must have merged before this starts."
 | **A5** quiet-control feedback (symbol-weight pulse) | **A4** |
 | **A6** #517 enforcement package | — |
 | **A7** #522 post-merge annotations | — |
+| **A9** text-only quiet controls get the ruled inset | — *(A4 `ab01f970` and A5 `4a2dacb8` are merged; the seam exists)* |
 
 **A8 is the critical path and it is not a build task.** Per the render pipeline: a build agent
 authors, **opus validates**, **Rob rules**. A1's Explore surface and A2's card are graded against
@@ -141,8 +142,8 @@ Renders: the card in every state combination the bar can reach, default and AX, 
 ## A3 — `trackLine` becomes `trail`
 
 - **Serves:** R8's naming rider · **Review tier:** `sourcery` + `opus` · **Depends on:** none
-- **Owner:** unclaimed
-- **Status:** unclaimed
+- **Owner:** codex3
+- **Status:** review clean
 - **Branch:** `wp-526-trail-token-rename` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Rename the token `trackLine` → `trail` — the `SemanticColorToken` case, the
@@ -158,9 +159,9 @@ Nothing else changes. If a value moves, you have exceeded the task.
 ## A4 — `disabledAlpha` and `pressScale` become sheet rows
 
 - **Serves:** the session's taste verdicts · **Review tier:** `sourcery` + `opus` · **Depends on:** none
-- **Owner:** unclaimed
-- **Status:** unclaimed
-- **Branch:** `wp-526-interaction-constants` — cut from a freshly-fetched `ios`
+- **Owner:** codex1
+- **Status:** review clean
+- **Branch:** `wp-526-interaction-token-rows` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Add `disabledAlpha` (`0.46`) and `pressScale` (`0.98`) to the token sheet as
 ratified rows, and make `MaterialControlInteractionFeedback` **consume them** rather than holding
@@ -175,8 +176,8 @@ wiring assertion: a mutation of the *sheet row* must fail, or the tokens are dec
 ## A5 — Quiet-control press feedback: the symbol-weight pulse
 
 - **Serves:** the session's gap ruling · **Review tier:** `sourcery` + `opus` · **Depends on:** A4
-- **Owner:** unclaimed
-- **Status:** unclaimed
+- **Owner:** codex1
+- **Status:** building
 - **Branch:** `wp-526-quiet-press-pulse` — cut from a freshly-fetched `ios`
 
 **Builder brief.** `quiet` is `background: nil`, `backgroundOpacity: 0`, so R9's geometry remedy has
@@ -219,14 +220,25 @@ only reason a migration is ever in scope.
 ## A7 — #522 post-merge annotations
 
 - **Serves:** #522 · **Review tier:** `sourcery` · **Depends on:** none
-- **Owner:** unclaimed
-- **Status:** unclaimed
+- **Owner:** codex3
+- **Status:** PR open
 - **Branch:** `wp-522-merged-body-annotations` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Annotate the merged bodies of **#486** and **#503** where their acceptance claims
 contradict the ratified graph, preserving the historical evidence. **Follow the #518 precedent
 exactly:** the annotation is added post-merge and **says so** — honest timing is what makes a
 post-merge edit a correction rather than a rewrite.
+
+**Outcome record.** The live merged bodies now carry separately headed, encounter-local corrections:
+
+- **#486:** records `ia-doors.html`'s 12px/600 figure, mapped by AC35 to `MaterialChip`'s 12pt/600
+  title, as render-ratified evidence rather than a taste guess, and scopes the flat 44pt wording's
+  later supersession to R10's qualifying tiled controls.
+- **#503:** attributes the free-space touch-target proof to R10's target-floor record rather than
+  AC29, without claiming that the oracle proves R10's separate tiling contract.
+
+Each correction explicitly says it was added after that PR's merge and leaves the original claim
+visible above it as historical evidence.
 
 Docs-only; no code, no gate.
 
@@ -260,6 +272,35 @@ or it has not tested the thing the rider exists for.
 
 **If a value fails the gate, that is a finding for the designer, not a substitution.** `saved`'s
 tonal-strength companion is the likely candidate. Raise it through fable; do not pick a passing colour.
+
+---
+
+## A9 — Text-only quiet controls get the ruled inset
+
+- **Serves:** the R9 family; Rob's ruling on the A5 text-only gap (2026-07-27) · **Spec section:** §5 · **Review tier:** `sourcery` + `opus`
+- **Depends on:** none — **immediately claimable**. A4 (`ab01f970`) put `disabledAlpha`/`pressScale` in the sheet and A5 (`4a2dacb8`) built `MaterialControlPressFeedback`; both are merged, so the seam this extends already exists.
+
+**Builder brief.** A5 gave icon-bearing quiet controls a symbol-weight pulse. **A text-only quiet control has no symbol to pulse**, so its enabled press feedback is still the `0.98` scale alone — which on a text run is the same effectively-nothing that R9's family exists to eliminate. Apply the **ratified quiet-only inset**. This is the fallback doing the job it was drafted for, not new taste.
+
+**The three live instances, and which is which.** `actionLabel(_:title:)` in `PlaceCardSheet` renders `Text` only — no icon — so every place-card action-bar control is text-only. Of those, `.quiet` resolves for four actions and **only two are enabled**:
+
+| control | state | this row |
+|---|---|---|
+| **Hide** (`.hide`) | enabled | **gains the inset** |
+| **Unhide** (`.unhide`) | enabled | **gains the inset** |
+| Un-see (`.unsee(isEnabled: false)`) | disabled | untouched — R9 governs *enabled* feedback only |
+| Seen (`.seenDisabled`) | disabled | untouched, same reason |
+
+**The location-off Settings gear (`MapContextualChrome.swift:41`) is icon-bearing and keeps the pulse.** If your change alters it, you have exceeded the row.
+
+**Mechanism is ruled; the figure is not.** Geometry, **never opacity** — restoring opacity is what R9 forbids and this row is the second-most likely place to reach for it. **Propose the inset's value as a cited literal**, with the reasoning in `## Taste guesses`; the component-metrics table ratifies it afterwards, the same path every figure in this system has walked.
+
+**Acceptance — the inverted test.** `testQuietTextOnlyBodyRetainsPressScaleWithoutWeightPulse` currently pins *do-nothing* as intended behaviour. **It must be inverted to pin the inset, not deleted:** a test enshrining deadness must not survive as law, and a reader of the diff should be able to see the moment the expectation flipped. State in the PR body which assertion changed and why.
+
+**Evidence — the artifact the judgement needs.** This is an appearance change on a mounted control, so the acceptance evidence is a **before/after pair of a text-only quiet control at rest and pressed, default size and AX**, and:
+
+1. **The capture must hold the press.** `XCUIElement.press(forDuration:)` **does not raise `ButtonStyle.Configuration.isPressed` during the nominal hold** — A5 proved this with a live-configuration diagnostic, after its first render pair turned out to be bit-identical in the region under test. Use whatever A5 used; do not assume a method named `press` presses.
+2. **The measurement goes beside the images.** State the dark-pixel count and bounding box for the control's glyph region in both frames. A5's first pair *looked* like a press and contained none — **a render is not self-evidencing, and the number is what makes it evidence.** If your two frames are identical in the measured region, the capture failed, whatever the filenames say.
 
 ---
 
