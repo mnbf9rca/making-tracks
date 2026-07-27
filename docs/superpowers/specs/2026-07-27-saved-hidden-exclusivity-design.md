@@ -2,7 +2,7 @@
 
 **Task:** Amendment wave A6  
 **Serves:** #517 and #526  
-**Status:** Approved by Rob on 2026-07-27; awaiting written-spec review
+**Status:** Approved by Rob on 2026-07-27; written-spec review passed
 
 ## Context
 
@@ -25,6 +25,22 @@ hidden, but never both. This exclusion crosses two otherwise independent axes:
 Rob approved the remaining enforcement and affordance mechanics on 2026-07-27:
 a typed database rejection, four visible place-card slots where required,
 tonal Unhide plus quiet Save, and a list picker that stays open until Done.
+
+The written-spec review passed on 2026-07-27 with these binding rulings:
+
+- **No re-hide after membership removal:** *"The auto-unhide fired on explicit
+  save intent and already happened atomically; re-hiding on later edits would
+  make hiding a side effect of list editing, and hiding must only ever be an
+  explicit act. The user who strips every membership ends unsaved-and-visible,
+  one tap from re-hiding if that's what they meant."*
+- **Defensive saved-and-hidden rendering:** *"Rendered as saved, the stuck
+  hidden flag would have no affordance (Hide is absent while saved) and the
+  state could never be escaped; rendered as hidden, Unhide is the escape hatch
+  that heals the record to a legal state. Defensive rendering should always
+  expose the exit."*
+- **Loved keeps disabled Un-see:** *"The grammar table's disabled Un-see while
+  loved is right — it teaches the dependency (loved implies seen) instead of
+  hiding it."*
 
 ## Goals
 
