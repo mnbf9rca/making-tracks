@@ -47,6 +47,7 @@ Edges are "must have merged before this starts."
 | **A5** quiet-control feedback (symbol-weight pulse) | **A4** |
 | **A6** #517 enforcement package | — |
 | **A7** #522 post-merge annotations | — |
+| **A9** text-only quiet controls get the ruled inset | — *(A4 `ab01f970` and A5 `4a2dacb8` are merged; the seam exists)* |
 
 **A8 is the critical path and it is not a build task.** Per the render pipeline: a build agent
 authors, **opus validates**, **Rob rules**. A1's Explore surface and A2's card are graded against
@@ -271,6 +272,35 @@ or it has not tested the thing the rider exists for.
 
 **If a value fails the gate, that is a finding for the designer, not a substitution.** `saved`'s
 tonal-strength companion is the likely candidate. Raise it through fable; do not pick a passing colour.
+
+---
+
+## A9 — Text-only quiet controls get the ruled inset
+
+- **Serves:** the R9 family; Rob's ruling on the A5 text-only gap (2026-07-27) · **Spec section:** §5 · **Review tier:** `sourcery` + `opus`
+- **Depends on:** none — **immediately claimable**. A4 (`ab01f970`) put `disabledAlpha`/`pressScale` in the sheet and A5 (`4a2dacb8`) built `MaterialControlPressFeedback`; both are merged, so the seam this extends already exists.
+
+**Builder brief.** A5 gave icon-bearing quiet controls a symbol-weight pulse. **A text-only quiet control has no symbol to pulse**, so its enabled press feedback is still the `0.98` scale alone — which on a text run is the same effectively-nothing that R9's family exists to eliminate. Apply the **ratified quiet-only inset**. This is the fallback doing the job it was drafted for, not new taste.
+
+**The three live instances, and which is which.** `actionLabel(_:title:)` in `PlaceCardSheet` renders `Text` only — no icon — so every place-card action-bar control is text-only. Of those, `.quiet` resolves for four actions and **only two are enabled**:
+
+| control | state | this row |
+|---|---|---|
+| **Hide** (`.hide`) | enabled | **gains the inset** |
+| **Unhide** (`.unhide`) | enabled | **gains the inset** |
+| Un-see (`.unsee(isEnabled: false)`) | disabled | untouched — R9 governs *enabled* feedback only |
+| Seen (`.seenDisabled`) | disabled | untouched, same reason |
+
+**The location-off Settings gear (`MapContextualChrome.swift:41`) is icon-bearing and keeps the pulse.** If your change alters it, you have exceeded the row.
+
+**Mechanism is ruled; the figure is not.** Geometry, **never opacity** — restoring opacity is what R9 forbids and this row is the second-most likely place to reach for it. **Propose the inset's value as a cited literal**, with the reasoning in `## Taste guesses`; the component-metrics table ratifies it afterwards, the same path every figure in this system has walked.
+
+**Acceptance — the inverted test.** `testQuietTextOnlyBodyRetainsPressScaleWithoutWeightPulse` currently pins *do-nothing* as intended behaviour. **It must be inverted to pin the inset, not deleted:** a test enshrining deadness must not survive as law, and a reader of the diff should be able to see the moment the expectation flipped. State in the PR body which assertion changed and why.
+
+**Evidence — the artifact the judgement needs.** This is an appearance change on a mounted control, so the acceptance evidence is a **before/after pair of a text-only quiet control at rest and pressed, default size and AX**, and:
+
+1. **The capture must hold the press.** `XCUIElement.press(forDuration:)` **does not raise `ButtonStyle.Configuration.isPressed` during the nominal hold** — A5 proved this with a live-configuration diagnostic, after its first render pair turned out to be bit-identical in the region under test. Use whatever A5 used; do not assume a method named `press` presses.
+2. **The measurement goes beside the images.** State the dark-pixel count and bounding box for the control's glyph region in both frames. A5's first pair *looked* like a press and contained none — **a render is not self-evidencing, and the number is what makes it evidence.** If your two frames are identical in the measured region, the capture failed, whatever the filenames say.
 
 ---
 
