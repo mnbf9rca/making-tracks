@@ -51,18 +51,10 @@ enum MaterialControlPressFeedback: Equatable, Sendable {
     case symbolWeightPulse
 
     func scale(isPressed: Bool, tokens: MaterialTokenSheet) -> CGFloat {
-        switch self {
-        case .scale:
-            MaterialControlInteractionFeedback.semanticControlScale(
-                isPressed: isPressed,
-                tokens: tokens
-            )
-        case .symbolWeightPulse:
-            MaterialControlInteractionFeedback.semanticControlScale(
-                isPressed: isPressed,
-                tokens: tokens
-            )
-        }
+        MaterialControlInteractionFeedback.semanticControlScale(
+            isPressed: isPressed,
+            tokens: tokens
+        )
     }
 
     func symbolWeight(isPressed: Bool) -> MaterialControlSymbolWeight {
