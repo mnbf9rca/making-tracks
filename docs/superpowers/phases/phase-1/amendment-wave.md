@@ -303,6 +303,9 @@ tonal-strength companion is the likely candidate. Raise it through fable; do not
 
 - **Serves:** the R9 family; Rob's ruling on the A5 text-only gap (2026-07-27) · **Spec section:** §5 · **Review tier:** `sourcery` + `opus`
 - **Depends on:** none — **immediately claimable**. A4 (`ab01f970`) put `disabledAlpha`/`pressScale` in the sheet and A5 (`4a2dacb8`) built `MaterialControlPressFeedback`; both are merged, so the seam this extends already exists.
+- **Owner:** codex1
+- **Status:** branch
+- **Branch:** `wp-526-quiet-text-inset` — cut from a freshly-fetched `ios`
 
 **Builder brief.** A5 gave icon-bearing quiet controls a symbol-weight pulse. **A text-only quiet control has no symbol to pulse**, so its enabled press feedback is still the `0.98` scale alone — which on a text run is the same effectively-nothing that R9's family exists to eliminate. Apply the **ratified quiet-only inset**. This is the fallback doing the job it was drafted for, not new taste.
 

@@ -82,21 +82,50 @@ enum PlaceCardActionAppearance {
     ) -> CGFloat {
         isPressed ? tokens.pressScale : 1
     }
+
+    static func usesQuietTextPressInset(for action: PlaceCardAction) -> Bool {
+        switch action {
+        case .hide, .unhide:
+            true
+        case .save, .seen, .love, .unlove, .unsee, .seenDisabled:
+            false
+        }
+    }
 }
 
 struct PlaceCardActionStyleModifier: ViewModifier {
     let action: PlaceCardAction
     let theme: MaterialTheme
 
-    @ViewBuilder
     func body(content: Content) -> some View {
+        PlaceCardActionStyledContent(
+            content: content,
+            action: action,
+            theme: theme
+        )
+    }
+}
+
+struct PlaceCardActionStyledContent<Content: View>: View {
+    let content: Content
+    let action: PlaceCardAction
+    let theme: MaterialTheme
+
+    @ViewBuilder
+    var body: some View {
         switch PlaceCardActionAppearance.style(for: action) {
         case .filled:
             content.buttonStyle(MaterialFilledButtonStyle(theme: theme))
         case .tonal:
             content.buttonStyle(MaterialTonalButtonStyle(theme: theme))
         case .quiet:
-            content.buttonStyle(MaterialQuietButtonStyle(theme: theme))
+            if PlaceCardActionAppearance.usesQuietTextPressInset(for: action) {
+                content.buttonStyle(
+                    MaterialQuietButtonStyle.textOnly(theme: theme)
+                )
+            } else {
+                content.buttonStyle(MaterialQuietButtonStyle(theme: theme))
+            }
         case let .semantic(foregroundToken, backgroundToken):
             content.buttonStyle(
                 PlaceCardSemanticToneButtonStyle(
