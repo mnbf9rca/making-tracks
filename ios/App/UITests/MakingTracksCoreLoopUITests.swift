@@ -1916,18 +1916,22 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let saveHiddenOnly = app.buttons[
             "tracks.hidden.save.mt1_S0000000000000000000000001"
         ]
-        XCTAssertTrue(scrollToHittable(unhideOverlap, in: app))
+        XCTAssertTrue(scrollToFullyContained(saveOverlap, in: app))
+        assertContainedInAppFrame(hiddenOverlapRow, in: app)
         assertMinimumInteractiveTarget(unhideOverlap)
         assertContainedInAppFrame(unhideOverlap, in: app)
-        XCTAssertTrue(scrollToHittable(saveOverlap, in: app))
         assertMinimumInteractiveTarget(saveOverlap)
         assertContainedInAppFrame(saveOverlap, in: app)
-        XCTAssertTrue(scrollToHittable(unhideHiddenOnly, in: app))
+        assertHorizontallyOrdered(hiddenOverlapRow, unhideOverlap)
+        assertHorizontallyOrdered(unhideOverlap, saveOverlap)
+        XCTAssertTrue(scrollToFullyContained(saveHiddenOnly, in: app))
+        assertContainedInAppFrame(hiddenOnlyRow, in: app)
         assertMinimumInteractiveTarget(unhideHiddenOnly)
         assertContainedInAppFrame(unhideHiddenOnly, in: app)
-        XCTAssertTrue(scrollToHittable(saveHiddenOnly, in: app))
         assertMinimumInteractiveTarget(saveHiddenOnly)
         assertContainedInAppFrame(saveHiddenOnly, in: app)
+        assertHorizontallyOrdered(hiddenOnlyRow, unhideHiddenOnly)
+        assertHorizontallyOrdered(unhideHiddenOnly, saveHiddenOnly)
         attachScreenshot(named: "a6-hidden-actions")
         XCTAssertTrue(scrollToHittable(unhideOverlap, in: app))
         unhideOverlap.tap()
@@ -2113,18 +2117,22 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         assertMinimumInteractiveTarget(unhideOverlap)
         assertContainedInAppFrame(unhideOverlap, in: app)
         XCTAssertTrue(scrollToFullyContained(saveOverlap, in: app))
+        assertContainedInAppFrame(hiddenOverlapRow, in: app)
         assertMinimumInteractiveTarget(saveOverlap)
         assertContainedInAppFrame(saveOverlap, in: app)
         assertNoFrameIntersection(unhideOverlap, saveOverlap)
         assertVerticallyOrdered(hiddenOverlapRow, unhideOverlap)
+        assertVerticallyOrdered(unhideOverlap, saveOverlap)
         XCTAssertTrue(scrollToHittable(unhideHiddenOnly, in: app))
         assertMinimumInteractiveTarget(unhideHiddenOnly)
         assertContainedInAppFrame(unhideHiddenOnly, in: app)
         XCTAssertTrue(scrollToFullyContained(saveHiddenOnly, in: app))
+        assertContainedInAppFrame(hiddenOnlyRow, in: app)
         assertMinimumInteractiveTarget(saveHiddenOnly)
         assertContainedInAppFrame(saveHiddenOnly, in: app)
         assertNoFrameIntersection(unhideHiddenOnly, saveHiddenOnly)
         assertVerticallyOrdered(hiddenOnlyRow, unhideHiddenOnly)
+        assertVerticallyOrdered(unhideHiddenOnly, saveHiddenOnly)
         attachScreenshot(named: "a6-hidden-actions-ax")
     }
 
@@ -3349,8 +3357,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(hideButton.waitForExistence(timeout: 5))
         XCTAssertEqual(actionBar.buttons.count, 3)
         attachScreenshot(named: "place-card-a11y")
-        XCTAssertGreaterThan(visitedButton.frame.minY, saveButton.frame.minY)
-        XCTAssertGreaterThan(hideButton.frame.minY, visitedButton.frame.minY)
+        assertVerticalActionStack([saveButton, visitedButton, hideButton], in: app)
 
         visitedButton.tap()
         let lovedButton = actionBar.buttons["place-card.loved"]
@@ -3362,12 +3369,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForButtonEnabled(true, identifier: "place-card.unsee", in: app))
         XCTAssertTrue(actionBar.buttons["place-card.hide"].waitForExistence(timeout: 5))
         XCTAssertEqual(actionBar.buttons.count, 4)
+        assertVerticalActionStack([saveButton, lovedButton, unseeButton, hideButton], in: app)
 
         lovedButton.tap()
         XCTAssertEqual(actionBar.buttons.count, 4)
         XCTAssertTrue(waitForButtonLabel("Unlove", identifier: "place-card.loved", in: app))
         XCTAssertTrue(waitForButtonEnabled(false, identifier: "place-card.unsee", in: app))
         XCTAssertTrue(actionBar.buttons["place-card.hide"].exists)
+        assertVerticalActionStack([saveButton, lovedButton, unseeButton, hideButton], in: app)
     }
 
     func testLocateMeChromeExplainsWhenLocationIsDeniedAtAX5() throws {
@@ -4543,6 +4552,36 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             file: file,
             line: line
         )
+    }
+
+    private func assertHorizontallyOrdered(
+        _ leading: XCUIElement,
+        _ trailing: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertGreaterThanOrEqual(
+            trailing.frame.minX,
+            leading.frame.maxX,
+            "\(trailing.identifier) frame \(trailing.frame) must sit after \(leading.identifier) frame \(leading.frame)",
+            file: file,
+            line: line
+        )
+    }
+
+    private func assertVerticalActionStack(
+        _ buttons: [XCUIElement],
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        for button in buttons {
+            assertMinimumInteractiveTarget(button, file: file, line: line)
+            assertContainedInAppFrame(button, in: app, file: file, line: line)
+        }
+        for (upper, lower) in zip(buttons, buttons.dropFirst()) {
+            assertVerticallyOrdered(upper, lower, file: file, line: line)
+        }
     }
 
     private func assertListMapFilterChromePlacement(

@@ -96,6 +96,38 @@ final class InteractionsTests: XCTestCase {
         XCTAssertThrowsError(try db.addToList(ref("p_missing"), listID: 404))
     }
 
+    func testFailedSaveRollsBackMembershipAndPreservesHiddenUserIntent() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_save_rollback", name: "Rollback place")
+        let visitID = try db.recordVisit(place, verdict: .loved)
+        try db.setHidden(place, true)
+        let snapshotBefore = try XCTUnwrap(try db.snapshot(for: place.placeID))
+        let visitBefore = try XCTUnwrap(try db.visit(id: visitID))
+        try db.dbQueue.write { database in
+            try database.execute(sql: """
+                CREATE TRIGGER reject_hidden_delete
+                BEFORE DELETE ON hidden_places
+                WHEN OLD.place_id = 'p_save_rollback'
+                BEGIN
+                    SELECT RAISE(ABORT, 'hidden delete rejected');
+                END
+                """)
+        }
+
+        XCTAssertThrowsError(try db.addToList(place, listID: 1))
+
+        XCTAssertEqual(try db.listMemberships(containing: place.placeID), [])
+        XCTAssertTrue(try db.hiddenPlaceIDs().contains(place.placeID))
+        XCTAssertEqual(try db.snapshot(for: place.placeID), snapshotBefore)
+        let visitAfter = try XCTUnwrap(try db.visit(id: visitID))
+        XCTAssertEqual(visitAfter.id, visitBefore.id)
+        XCTAssertEqual(visitAfter.placeID, visitBefore.placeID)
+        XCTAssertEqual(visitAfter.visitedAt, visitBefore.visitedAt)
+        XCTAssertEqual(visitAfter.verdict, visitBefore.verdict)
+        XCTAssertEqual(visitAfter.createdAt, visitBefore.createdAt)
+        XCTAssertEqual(visitAfter.visitOrder, visitBefore.visitOrder)
+    }
+
     func testWantToGoListIDReturnsSeededSystemList() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
 

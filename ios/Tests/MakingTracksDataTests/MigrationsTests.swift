@@ -225,12 +225,18 @@ final class MigrationsTests: XCTestCase {
 
         XCTAssertEqual(try db.appliedMigrations, ["v1", "v2", "v3", "v4", "v5", "v6"])
         XCTAssertEqual(try db.hiddenPlaceIDs(), ["hidden-only"])
+        XCTAssertEqual(try db.listMemberships(containing: "system-coexisting"), [1])
         XCTAssertEqual(try db.listMemberships(containing: "coexisting"), [3, 2])
         XCTAssertEqual(try db.listMemberships(containing: "saved-only"), [2])
+        XCTAssertEqual(
+            try db.viewportState(["system-coexisting"])["system-coexisting"],
+            PinState(saved: true, visit: .none, hidden: false)
+        )
         XCTAssertEqual(
             try db.viewportState(["coexisting"])["coexisting"],
             PinState(saved: true, visit: .loved, hidden: false)
         )
+        XCTAssertEqual(try db.snapshot(for: "system-coexisting")?.name, "System coexisting")
         XCTAssertEqual(try db.snapshot(for: "coexisting")?.name, "Coexisting")
         XCTAssertEqual(try db.snapshot(for: "saved-only")?.name, "Saved only")
         XCTAssertEqual(try db.snapshot(for: "hidden-only")?.name, "Hidden only")
@@ -338,16 +344,22 @@ final class MigrationsTests: XCTestCase {
             try db.execute(
                 sql: """
                     INSERT INTO list_items (list_id, place_id, added_at)
-                    VALUES (2, 'coexisting', ?), (2, 'saved-only', ?)
+                    VALUES
+                        (1, 'system-coexisting', ?),
+                        (2, 'coexisting', ?),
+                        (2, 'saved-only', ?)
                     """,
-                arguments: [timestamp, timestamp]
+                arguments: [timestamp, timestamp, timestamp]
             )
             try db.execute(
                 sql: """
                     INSERT INTO hidden_places (place_id, hidden_at)
-                    VALUES ('coexisting', ?), ('hidden-only', ?)
+                    VALUES
+                        ('system-coexisting', ?),
+                        ('coexisting', ?),
+                        ('hidden-only', ?)
                     """,
-                arguments: [timestamp, timestamp]
+                arguments: [timestamp, timestamp, timestamp]
             )
             try db.execute(
                 sql: """
@@ -358,6 +370,7 @@ final class MigrationsTests: XCTestCase {
                 arguments: [timestamp, timestamp]
             )
             for (placeID, name) in [
+                ("system-coexisting", "System coexisting"),
                 ("coexisting", "Coexisting"),
                 ("saved-only", "Saved only"),
                 ("hidden-only", "Hidden only"),
