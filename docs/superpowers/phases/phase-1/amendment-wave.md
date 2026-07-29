@@ -249,7 +249,7 @@ Docs-only; no code, no gate.
 - **Serves:** R14, R15 · **Depends on:** none · **This is the critical path**
 - **Pipeline:** build agent authors → **opus validates** → **Rob rules** → frozen
 - **Owner:** codex4
-- **Status:** branch
+- **Status:** review clean — awaiting Rob's `accentContainer` construction ruling at validated artifact SHA `028af54ee25739a8c97e97f788aba7cf60579137`
 - **Branch:** `wp-526-explore-r15-renders` — cut from a freshly-fetched `ios`
 
 **Brief.** Two new frozen frames: the **Explore surface** as R14 collapses it (Scope directly, quiet
