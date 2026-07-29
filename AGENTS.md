@@ -2,7 +2,8 @@
 
 **Two files exist because app work never checks out `develop`.** iOS branches are cut from `ios`, so
 `develop`'s tree — and the agent law in it — is not on disk here. This file exists to point at that law and
-to carry the few iOS-specific deltas. It is not a second copy, and nothing here overrides it.
+to carry the few iOS-specific deltas. It is not a second copy; a delta below takes precedence only where it
+explicitly differs.
 
 **The law is `develop`'s `AGENTS.md`.** Read it first:
 
@@ -29,6 +30,11 @@ The app-specific facts an agent needs are stated in `develop`'s file, in these s
 - **Review gates**, point 3: run the Release build and simulator test gate as
   `./scripts/sim-lock.sh ./scripts/release-gate.sh`. Warnings-as-errors is set on the app target in
   `ios/App/project.yml`, which lives on this branch.
+- **iOS simulator** and `docs/process/ios-simulator.md`: their single `agent-ios-tests` identity, retired
+  global lock, and commands containing its hardcoded UDID are superseded on this branch by *The simulators
+  have one entry point* below and the seat table in `docs/ios-gate-ledger.md`. Their unaffected simulator
+  safety and disk-hygiene rules still apply. The inherited weekly-cleanup procedure is also superseded;
+  fleet-wide maintenance uses the exclusive protocol in the iOS gate ledger.
 
 ## CI on this branch
 
@@ -38,10 +44,12 @@ mapping, the count and classification rules, and the run ledger are in
 [`docs/ios-gate-ledger.md`](docs/ios-gate-ledger.md), which lives only on this branch. CI never replaces
 the host gate.
 
-## The simulator has one entry point
+## The simulators have one entry point
 
-`scripts/sim-lock.sh` is the only thing that touches the designated simulator. Build, test, boot, shutdown,
-erase, delete — all of it goes through it, and it is the only thing that takes the lock.
+`scripts/sim-lock.sh` is the only thing that touches a gate simulator. Build, test, boot, shutdown, erase,
+delete — all of it goes through the script. Each seat exports its assigned `MT_RELEASE_GATE_DESTINATION`
+from the table in [`docs/ios-gate-ledger.md`](docs/ios-gate-ledger.md) → *Host Gate Seats* before invoking
+it.
 
 ```bash
 ./scripts/sim-lock.sh <command>    # run under the lock
@@ -49,15 +57,28 @@ erase, delete — all of it goes through it, and it is the only thing that takes
 ./scripts/sim-lock.sh --erase      # destructive ops, under the lock
 ```
 
-**Never read the lock file by hand to decide whether the simulator is free.** The file tells you who holds
-the lock, not who is using the simulator, and those differ. `--status` checks both and reports HELD if
-either fires; a bare `lsof` on the lock reports FREE while a build is mid-flight without it.
+The script takes a stable per-simulator lock derived from the destination UDID, so two gates aimed at the
+same simulator serialize. A stable global counting semaphore caps aggregate gate concurrency at
+`MT_GATE_MAX_CONCURRENT` (default `2`); different simulators may run together only within that cap. The
+host ceiling is `2`; the setting may lower concurrency to `1` but cannot enlarge it.
+Cap `1` takes an exclusive admission lock, so it waits for both ordinary gates and prevents new ones; use
+it for fleet-wide maintenance.
+`MT_SIM_LOCK_WAIT` is a per-stage timeout for the simulator lock, admission policy, and global slot; a
+command blocked at all three stages can therefore wait up to three times that value.
 
-This applies to coordinators as much as builders. Running `simctl erase` because the lock looked free is the
-incident this exists to prevent (incidents → *A hand-checked lock erased a running gate*).
+**Never read a lock file by hand to decide whether a simulator is free.** The file tells you who holds one
+inode, not who is using the simulator, and those differ. `--status` checks both and reports HELD if either
+fires; it fails closed if the process table cannot be inspected. A bare `lsof` on a lock can report FREE
+while a build is mid-flight without it. This applies to coordinators as much as builders. Running
+`simctl erase` because the lock looked free is the incident this exists to prevent (incidents → *A
+hand-checked lock erased a running gate*).
 
 `scripts/release-gate.sh` no longer takes the lock and refuses to run outside it. Two lock-takers is how the
 paths drifted apart.
+
+The wrapper's lock descriptors intentionally pass to every descendant. If `--status` still names a holder
+after the wrapper exits, a surviving background descendant owns the locks: stop that process before
+retrying, and never delete or replace a lock file as recovery.
 
 ## Adding to this file
 
