@@ -489,8 +489,14 @@
     line-height: 1.1;
   }
 
+  .renderer {
+    margin: 3px 0 0;
+    color: var(--muted);
+    font: 8.5px/1.15 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+
   .evidence h3 {
-    margin: 9px 0 4px;
+    margin: 7px 0 2px;
     color: var(--eyebrow);
     font-size: 10px;
     font-weight: 700;
@@ -499,7 +505,7 @@
   }
 
   .facts {
-    margin: 8px 0 0;
+    margin: 6px 0 0;
     padding: 0;
     list-style: none;
     color: var(--ink);
@@ -508,7 +514,7 @@
   }
 
   .facts li {
-    padding: 2px 0 2px 14px;
+    padding: 1px 0 1px 14px;
     position: relative;
   }
 
@@ -568,8 +574,8 @@
   }
 
   .candidate-note {
-    margin: 8px 0 0;
-    padding-top: 6px;
+    margin: 5px 0 0;
+    padding-top: 4px;
     border-top: 1px solid var(--hairline);
     color: var(--eyebrow);
     font-size: 9.5px;
@@ -735,6 +741,7 @@
     <aside class="evidence" aria-label="Default-size evidence">
       <p class="evidence-kicker">Default target</p>
       <h2>Exact 390×844 canvas</h2>
+      <p class="renderer">Renderer: Playwright-bundled Chromium/headless shell 151.0.7922.34</p>
       <ul class="facts">
         <li>Search renders nothing.</li>
         <li>Scope is the root.</li>
@@ -834,6 +841,7 @@
     <aside class="evidence" aria-label="Accessibility-size evidence">
       <p class="evidence-kicker">Accessibility-size target</p>
       <h2>Exact 390×844 canvas</h2>
+      <p class="renderer">Renderer: Playwright-bundled Chromium/headless shell 151.0.7922.34</p>
       <ul class="facts">
         <li>Search renders nothing.</li>
         <li>Scope is the root.</li>
