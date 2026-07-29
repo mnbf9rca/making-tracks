@@ -639,7 +639,7 @@ final class InteractionsTests: XCTestCase {
             guard let databaseError = error as? AppDatabaseError else {
                 return XCTFail("Expected AppDatabaseError, got \(error)")
             }
-            XCTAssertEqual(String(describing: databaseError), "savedPlaceCannotBeHidden")
+            XCTAssertEqual(databaseError, .savedPlaceCannotBeHidden)
         }
         XCTAssertEqual(try db.listMemberships(containing: place.placeID), [listID])
         XCTAssertEqual(try db.hiddenPlaceIDs(), [])

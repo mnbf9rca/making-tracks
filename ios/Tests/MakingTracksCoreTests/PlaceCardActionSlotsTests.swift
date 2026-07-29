@@ -51,7 +51,6 @@ final class PlaceCardActionSlotsTests: XCTestCase {
 
         XCTAssertFalse(NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: .save))
         XCTAssertFalse(NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: .unsee(isEnabled: true)))
-        XCTAssertFalse(NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: .seenDisabled))
         XCTAssertFalse(NearbyPromptSuppressionPolicy.suppressesPromptImmediately(for: .unhide))
     }
 
@@ -64,7 +63,6 @@ final class PlaceCardActionSlotsTests: XCTestCase {
         XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .love))
         XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .hide))
         XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .save))
-        XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .seenDisabled))
     }
 
     func testPlaceCardContentBottomPaddingClearsFadeAndActionBar() {

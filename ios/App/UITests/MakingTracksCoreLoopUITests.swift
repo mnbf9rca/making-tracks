@@ -2113,26 +2113,36 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
         XCTAssertTrue(hiddenOverlapRow.waitForExistence(timeout: 5))
         XCTAssertTrue(hiddenOnlyRow.waitForExistence(timeout: 5))
-        XCTAssertTrue(scrollToHittable(unhideOverlap, in: app))
+        XCTAssertTrue(scrollToFullyContained(saveOverlap, in: app))
         assertMinimumInteractiveTarget(unhideOverlap)
         assertContainedInAppFrame(unhideOverlap, in: app)
-        XCTAssertTrue(scrollToFullyContained(saveOverlap, in: app))
         assertContainedInAppFrame(hiddenOverlapRow, in: app)
         assertMinimumInteractiveTarget(saveOverlap)
         assertContainedInAppFrame(saveOverlap, in: app)
         assertNoFrameIntersection(unhideOverlap, saveOverlap)
         assertVerticallyOrdered(hiddenOverlapRow, unhideOverlap)
         assertVerticallyOrdered(unhideOverlap, saveOverlap)
-        XCTAssertTrue(scrollToHittable(unhideHiddenOnly, in: app))
+        XCTAssertEqual(
+            unhideOverlap.frame.minX,
+            saveOverlap.frame.minX,
+            accuracy: 1,
+            "AX Hidden actions must share the leading edge."
+        )
+        XCTAssertTrue(scrollToFullyContained(saveHiddenOnly, in: app))
         assertMinimumInteractiveTarget(unhideHiddenOnly)
         assertContainedInAppFrame(unhideHiddenOnly, in: app)
-        XCTAssertTrue(scrollToFullyContained(saveHiddenOnly, in: app))
         assertContainedInAppFrame(hiddenOnlyRow, in: app)
         assertMinimumInteractiveTarget(saveHiddenOnly)
         assertContainedInAppFrame(saveHiddenOnly, in: app)
         assertNoFrameIntersection(unhideHiddenOnly, saveHiddenOnly)
         assertVerticallyOrdered(hiddenOnlyRow, unhideHiddenOnly)
         assertVerticallyOrdered(unhideHiddenOnly, saveHiddenOnly)
+        XCTAssertEqual(
+            unhideHiddenOnly.frame.minX,
+            saveHiddenOnly.frame.minX,
+            accuracy: 1,
+            "AX Hidden actions must share the leading edge."
+        )
         attachScreenshot(named: "a6-hidden-actions-ax")
     }
 

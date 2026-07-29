@@ -7720,13 +7720,45 @@ enum ListPickerMembershipChange: Equatable {
     }
 }
 
+struct ListPickerMembershipState: Equatable {
+    private(set) var memberships: Set<Int64>
+    private(set) var isUpdating = false
+
+    init(memberships: Set<Int64> = []) {
+        self.memberships = memberships
+    }
+
+    func contains(_ listID: Int64) -> Bool {
+        memberships.contains(listID)
+    }
+
+    mutating func beginToggle(listID: Int64) -> ListPickerMembershipChange? {
+        guard beginMutation() else { return nil }
+        return .completed(wasMember: memberships.contains(listID), listID: listID)
+    }
+
+    mutating func beginMutation() -> Bool {
+        guard !isUpdating else { return false }
+        isUpdating = true
+        return true
+    }
+
+    mutating func replaceMemberships(_ memberships: Set<Int64>) {
+        self.memberships = memberships
+    }
+
+    mutating func finishMutation() {
+        isUpdating = false
+    }
+}
+
 struct ListPickerView: View {
     let placeID: String
     let model: MapScreenModel?
     let onChanged: @MainActor (ListPickerMembershipChange) -> Void
 
     @State private var lists: [PlaceList] = []
-    @State private var memberships: Set<Int64> = []
+    @State private var membershipState = ListPickerMembershipState()
     @State private var newListName = ""
     @State private var actionError: String?
     @Environment(\.dismiss) private var dismiss
@@ -7746,6 +7778,7 @@ struct ListPickerView: View {
                         }
                         .accessibilityLabel("Create list and add place")
                         .accessibilityIdentifier("list-picker.create")
+                        .disabled(membershipState.isUpdating)
                     }
                     if let actionError {
                         Text(verbatim: actionError)
@@ -7763,13 +7796,14 @@ struct ListPickerView: View {
                             HStack {
                                 Text(verbatim: list.name)
                                 Spacer()
-                                if let id = list.id, memberships.contains(id) {
+                                if let id = list.id, membershipState.contains(id) {
                                     Image(systemName: "checkmark")
                                         .accessibilityLabel("In list")
                                 }
                             }
                         }
                         .accessibilityIdentifier("list-picker.row.\(list.id ?? -1)")
+                        .disabled(list.id == nil || membershipState.isUpdating)
                     }
                 }
             }
@@ -7777,6 +7811,7 @@ struct ListPickerView: View {
             .toolbar {
                 Button("Done") { dismiss() }
                     .accessibilityIdentifier("list-picker.done")
+                    .disabled(membershipState.isUpdating)
             }
             .task { await reload() }
         }
@@ -7787,22 +7822,29 @@ struct ListPickerView: View {
         guard let model else { return }
         let nextLists = await model.lists()
         lists = nextLists
-        memberships = Set(await model.listMemberships(containing: placeID))
+        membershipState.replaceMemberships(
+            Set(await model.listMemberships(containing: placeID))
+        )
     }
 
     @MainActor
     private func toggle(_ list: PlaceList) async {
-        guard let id = list.id, let model else { return }
+        guard
+            let id = list.id,
+            let model,
+            let change = membershipState.beginToggle(listID: id)
+        else { return }
+        defer { membershipState.finishMutation() }
         do {
-            let wasMember = memberships.contains(id)
-            if wasMember {
+            switch change {
+            case .removed:
                 try await model.removeFromList(placeID: placeID, listID: id)
-            } else {
+            case .added:
                 try await model.addToList(placeID: placeID, listID: id)
             }
             actionError = nil
             await reload()
-            onChanged(.completed(wasMember: wasMember, listID: id))
+            onChanged(change)
         } catch {
             actionError = "Could not update that list."
         }
@@ -7810,7 +7852,8 @@ struct ListPickerView: View {
 
     @MainActor
     private func createAndAdd() async {
-        guard let model else { return }
+        guard let model, membershipState.beginMutation() else { return }
+        defer { membershipState.finishMutation() }
         actionError = nil
         let trimmedName = newListName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {

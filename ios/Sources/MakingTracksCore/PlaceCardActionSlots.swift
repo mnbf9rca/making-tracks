@@ -7,14 +7,13 @@ public enum PlaceCardAction: Sendable, Equatable {
     case unlove
     case hide
     case unsee(isEnabled: Bool)
-    case seenDisabled
     case unhide
 
     public var title: String {
         switch self {
         case .save:
             return "Save"
-        case .seen, .seenDisabled:
+        case .seen:
             return "Seen"
         case .love:
             return "Love"
@@ -33,8 +32,6 @@ public enum PlaceCardAction: Sendable, Equatable {
         switch self {
         case .unsee(isEnabled: let isEnabled):
             return isEnabled
-        case .seenDisabled:
-            return false
         case .save, .seen, .love, .unlove, .hide, .unhide:
             return true
         }
@@ -46,7 +43,7 @@ public enum PlaceCardAction: Sendable, Equatable {
             return isSaved
                 ? "Double-tap to choose lists."
                 : "Double-tap to choose list."
-        case .seen, .love, .unlove, .hide, .unsee, .seenDisabled, .unhide:
+        case .seen, .love, .unlove, .hide, .unsee, .unhide:
             return nil
         }
     }
@@ -57,7 +54,7 @@ public enum NearbyPromptSuppressionPolicy {
         switch action {
         case .seen, .love, .unlove, .hide:
             return true
-        case .save, .unsee, .seenDisabled, .unhide:
+        case .save, .unsee, .unhide:
             return false
         }
     }
@@ -66,7 +63,7 @@ public enum NearbyPromptSuppressionPolicy {
         switch action {
         case .unsee(isEnabled: true), .unhide:
             return true
-        case .save, .seen, .love, .unlove, .hide, .unsee(isEnabled: false), .seenDisabled:
+        case .save, .seen, .love, .unlove, .hide, .unsee(isEnabled: false):
             return false
         }
     }

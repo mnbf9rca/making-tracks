@@ -78,7 +78,6 @@ final class AppShellTests: XCTestCase {
             warningStyle
         )
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .unsee(isEnabled: false)), .quiet)
-        XCTAssertEqual(PlaceCardActionAppearance.style(for: .seenDisabled), .quiet)
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .unhide), .quiet)
         XCTAssertTrue(
             PlaceCardActionAppearance.usesQuietTextPressInset(for: .hide)
@@ -89,11 +88,6 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(
             PlaceCardActionAppearance.usesQuietTextPressInset(
                 for: .unsee(isEnabled: false)
-            )
-        )
-        XCTAssertFalse(
-            PlaceCardActionAppearance.usesQuietTextPressInset(
-                for: .seenDisabled
             )
         )
         XCTAssertEqual(
@@ -125,17 +119,20 @@ final class AppShellTests: XCTestCase {
             0.98
         )
 
-        let actionSets: [[PlaceCardAction]] = [
-            [.save, .seen, .hide],
-            [.save, .love, .unsee(isEnabled: true)],
-            [.save, .unlove, .unsee(isEnabled: false)],
-            [.save, .seenDisabled, .unhide],
-        ]
-        for actions in actionSets {
-            XCTAssertLessThanOrEqual(
-                actions.filter { PlaceCardActionAppearance.style(for: $0) == .filled }.count,
-                1
-            )
+        for saved in [false, true] {
+            for visit in [VisitState.none, .visited, .loved] {
+                for hidden in [false, true] {
+                    let state = PinState(saved: saved, visit: visit, hidden: hidden)
+                    let actions = PlaceCardActionSlots(pinState: state).actions
+                    XCTAssertLessThanOrEqual(
+                        actions.filter {
+                            PlaceCardActionAppearance.style(for: $0) == .filled
+                        }.count,
+                        1,
+                        "\(state)"
+                    )
+                }
+            }
         }
     }
 
@@ -150,7 +147,6 @@ final class AppShellTests: XCTestCase {
             (.hide, .textInset(points: 1)),
             (.unhide, .textInset(points: 1)),
             (.unsee(isEnabled: false), .symbolWeightPulse),
-            (.seenDisabled, .symbolWeightPulse),
         ]
 
         for testCase in cases {
@@ -502,7 +498,8 @@ final class AppShellTests: XCTestCase {
         )
         XCTAssertEqual(loved.surfaceIdentifier, "tracks.loved.surface")
         XCTAssertEqual(loved.rowIdentifierPrefix, "tracks.loved.row")
-        XCTAssertEqual(loved.actionIdentifierPrefix, "tracks.loved.remove")
+        XCTAssertEqual(loved.primaryActionIdentifierPrefix, "tracks.loved.remove")
+        XCTAssertNil(loved.secondaryActionIdentifierPrefix)
         XCTAssertEqual(loved.failureMessage, "Could not update that loved place.")
         XCTAssertEqual(
             ManagedPlacesMode.loved.actionAccessibilityLabel(placeName: "Alpha Arch"),
@@ -519,7 +516,16 @@ final class AppShellTests: XCTestCase {
         )
         XCTAssertEqual(hidden.surfaceIdentifier, "tracks.hidden.surface")
         XCTAssertEqual(hidden.rowIdentifierPrefix, "tracks.hidden.row")
-        XCTAssertEqual(hidden.actionIdentifierPrefix, "tracks.hidden.unhide")
+        XCTAssertEqual(hidden.primaryActionIdentifierPrefix, "tracks.hidden.unhide")
+        XCTAssertEqual(hidden.secondaryActionIdentifierPrefix, "tracks.hidden.save")
+        XCTAssertEqual(
+            hidden.primaryActionIdentifier(placeID: "hidden"),
+            "tracks.hidden.unhide.hidden"
+        )
+        XCTAssertEqual(
+            hidden.secondaryActionIdentifier(placeID: "hidden"),
+            "tracks.hidden.save.hidden"
+        )
         XCTAssertEqual(hidden.failureMessage, "Could not unhide that place.")
         XCTAssertEqual(
             ManagedPlacesMode.hidden.actionAccessibilityLabel(placeName: "Beta Plaque"),
@@ -611,6 +617,20 @@ final class AppShellTests: XCTestCase {
             ListPickerMembershipChange.completed(wasMember: true, listID: 7),
             .removed(listID: 7)
         )
+    }
+
+    func testListPickerMembershipStateSerializesTogglesUntilReloadCompletes() {
+        var state = ListPickerMembershipState(memberships: [7])
+
+        XCTAssertEqual(state.beginToggle(listID: 7), .removed(listID: 7))
+        XCTAssertTrue(state.isUpdating)
+        XCTAssertNil(state.beginToggle(listID: 8))
+
+        state.replaceMemberships([])
+        state.finishMutation()
+
+        XCTAssertFalse(state.isUpdating)
+        XCTAssertEqual(state.beginToggle(listID: 7), .added(listID: 7))
     }
 
     func testLovedManagedPlaceMetadataNamesHiddenOverlapWithoutFilteringIt() {

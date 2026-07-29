@@ -8,6 +8,7 @@ struct ManagedPlacesInlineIconGlyph: View {
     var body: some View {
         Image(systemName: systemName)
             .iconRole(.inline)
+            .fixedSize()
     }
 }
 
@@ -27,8 +28,20 @@ struct ManagedPlacesPresentation: Equatable {
     let emptyGuidance: String
     let surfaceIdentifier: String
     let rowIdentifierPrefix: String
-    let actionIdentifierPrefix: String
+    let primaryActionIdentifierPrefix: String
+    let secondaryActionIdentifierPrefix: String?
     let failureMessage: String
+
+    func primaryActionIdentifier(placeID: String) -> String {
+        "\(primaryActionIdentifierPrefix).\(placeID)"
+    }
+
+    func secondaryActionIdentifier(placeID: String) -> String {
+        guard let secondaryActionIdentifierPrefix else {
+            preconditionFailure("This managed-places mode has no secondary action.")
+        }
+        return "\(secondaryActionIdentifierPrefix).\(placeID)"
+    }
 }
 
 enum ManagedPlacesMode: Equatable {
@@ -45,7 +58,8 @@ enum ManagedPlacesMode: Equatable {
                 emptyGuidance: "Love a place you’ve seen and it’ll wait here.",
                 surfaceIdentifier: "tracks.loved.surface",
                 rowIdentifierPrefix: "tracks.loved.row",
-                actionIdentifierPrefix: "tracks.loved.remove",
+                primaryActionIdentifierPrefix: "tracks.loved.remove",
+                secondaryActionIdentifierPrefix: nil,
                 failureMessage: "Could not update that loved place."
             )
         case .hidden:
@@ -56,7 +70,8 @@ enum ManagedPlacesMode: Equatable {
                 emptyGuidance: "Places you hide will wait here until you bring them back.",
                 surfaceIdentifier: "tracks.hidden.surface",
                 rowIdentifierPrefix: "tracks.hidden.row",
-                actionIdentifierPrefix: "tracks.hidden.unhide",
+                primaryActionIdentifierPrefix: "tracks.hidden.unhide",
+                secondaryActionIdentifierPrefix: "tracks.hidden.save",
                 failureMessage: "Could not unhide that place."
             )
         }
@@ -292,7 +307,7 @@ struct ManagedPlacesView: View {
                         ? tokens.muted.swiftUIColor
                         : tokens.accent.swiftUIColor
                 )
-                .frame(width: 24)
+                .frame(minWidth: 24)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -341,12 +356,12 @@ struct ManagedPlacesView: View {
                 mode.actionAccessibilityLabel(placeName: place.name)
             )
             .accessibilityIdentifier(
-                "\(mode.presentation.actionIdentifierPrefix).\(place.placeID)"
+                mode.presentation.primaryActionIdentifier(placeID: place.placeID)
             )
 
         case .hidden:
             let layout = dynamicTypeSize.isAccessibilitySize
-                ? AnyLayout(VStackLayout(alignment: .trailing, spacing: 6))
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
                 : AnyLayout(HStackLayout(spacing: 8))
 
             layout {
@@ -355,14 +370,18 @@ struct ManagedPlacesView: View {
                 }
                 .buttonStyle(MaterialTonalButtonStyle())
                 .accessibilityLabel("Unhide \(place.name)")
-                .accessibilityIdentifier("tracks.hidden.unhide.\(place.placeID)")
+                .accessibilityIdentifier(
+                    mode.presentation.primaryActionIdentifier(placeID: place.placeID)
+                )
 
                 Button("Save") {
                     saveTarget = place
                 }
                 .buttonStyle(MaterialQuietButtonStyle())
                 .accessibilityLabel("Save \(place.name)")
-                .accessibilityIdentifier("tracks.hidden.save.\(place.placeID)")
+                .accessibilityIdentifier(
+                    mode.presentation.secondaryActionIdentifier(placeID: place.placeID)
+                )
             }
             .disabled(state.isPending(placeID: place.placeID))
         }
