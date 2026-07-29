@@ -9163,24 +9163,22 @@ final class MapScreenModel {
 
     private func cardSource(for placeID: String) async -> CardSource? {
         if let fixturePlace = fixturePlaces[placeID] {
-            if let snapshot = try? database.snapshot(for: placeID),
-               let placeRef = try? PlaceRef(
-                placeID: snapshot.placeID,
-                name: snapshot.name,
-                lat: snapshot.lat,
-                lon: snapshot.lon,
-                category: snapshot.category,
-                tier: snapshot.tier,
-                schemaVersion: snapshot.snapshotSchemaVersion,
-                fetchedAt: snapshot.fetchedAt,
-                rawJSON: snapshot.snapshotJSON
-               ) {
-                return .snapshot(placeRef, snapshot)
+            if let source = snapshotCardSource(for: placeID) {
+                return source
             }
             return .tile(fixturePlace)
         }
-        guard let tileClient = tileClient(for: selectedRegionID) else { return nil }
-        return await PlaceResolver(tile: tileClient, snapshots: database).source(for: placeID)
+        if let tileClient = tileClient(for: selectedRegionID) {
+            return await PlaceResolver(tile: tileClient, snapshots: database).source(for: placeID)
+        }
+        return snapshotCardSource(for: placeID)
+    }
+
+    private func snapshotCardSource(for placeID: String) -> CardSource? {
+        guard let snapshot = try? database.snapshot(for: placeID) else { return nil }
+        let source = CardSource.actionSafeSnapshot(snapshot)
+        guard source != .unavailable else { return nil }
+        return source
     }
 
     private func actionPlaceRef(for placeID: String) async -> PlaceRef? {

@@ -1,10 +1,11 @@
 @testable import DesignSystem
 import Foundation
+import GRDB
 import SwiftUI
 import UIKit
 import XCTest
 import MakingTracksCore
-import MakingTracksData
+@testable import MakingTracksData
 import MakingTracksMapStyle
 @testable import MakingTracksTiles
 @testable import MakingTracks
@@ -783,6 +784,68 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(model.hiddenIDs.contains(place.placeID))
         XCTAssertTrue(model.consumeHiddenMembershipChange(overlapping: [place.placeID]))
         XCTAssertFalse(model.consumeHiddenMembershipChange(overlapping: [place.placeID]))
+    }
+
+    @MainActor
+    func testAddingOversizedSnapshotOnlyHiddenPlaceToListUsesActionSafeSource() async throws {
+        let database = try AppDatabase.inMemory()
+        let snapshotOnlyPlace = try PlaceRef(
+            placeID: "snapshot-only-hidden-save",
+            name: "Snapshot-only hidden save",
+            lat: 51.5,
+            lon: -0.1,
+            category: "memorial",
+            tier: 2,
+            schemaVersion: 1,
+            fetchedAt: Date(timeIntervalSince1970: 1),
+            rawJSON: "{}"
+        )
+        let unrelatedFixture = try PlaceRef(
+            placeID: "fixture",
+            name: "Fixture",
+            lat: 51.6,
+            lon: -0.2,
+            category: "museum",
+            tier: 2,
+            schemaVersion: 1,
+            fetchedAt: Date(timeIntervalSince1970: 1),
+            rawJSON: "{}"
+        )
+        try database.setHidden(snapshotOnlyPlace, true)
+        let originalSnapshot = try XCTUnwrap(
+            database.snapshot(for: snapshotOnlyPlace.placeID)
+        )
+        let oversizedSnapshot = PlaceSnapshot(
+            placeID: originalSnapshot.placeID,
+            name: originalSnapshot.name,
+            lat: originalSnapshot.lat,
+            lon: originalSnapshot.lon,
+            category: originalSnapshot.category,
+            tier: originalSnapshot.tier,
+            snapshotJSON: String(repeating: "x", count: PlaceRef.maxRawJSONBytes + 1),
+            snapshotSchemaVersion: originalSnapshot.snapshotSchemaVersion,
+            fetchedAt: originalSnapshot.fetchedAt
+        )
+        try await database.dbQueue.write { database in
+            try oversizedSnapshot.update(database)
+        }
+        let model = try MapScreenModel(
+            database: database,
+            fixturePlaces: [unrelatedFixture]
+        )
+        let wantToGoListID = try database.wantToGoListID()
+
+        try await model.addToList(
+            placeID: snapshotOnlyPlace.placeID,
+            listID: wantToGoListID
+        )
+
+        XCTAssertEqual(
+            try database.listMemberships(containing: snapshotOnlyPlace.placeID),
+            [wantToGoListID]
+        )
+        XCTAssertFalse(try database.hiddenPlaceIDs().contains(snapshotOnlyPlace.placeID))
+        XCTAssertFalse(model.hiddenIDs.contains(snapshotOnlyPlace.placeID))
     }
 
     @MainActor

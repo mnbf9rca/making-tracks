@@ -1957,6 +1957,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let placeID = "mt1_S0000000000000000000000001"
         let row = element(identifier: "tracks.hidden.row.\(placeID)", in: app)
         let save = app.buttons["tracks.hidden.save.\(placeID)"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
         XCTAssertTrue(scrollToHittable(save, in: app))
         assertMinimumInteractiveTarget(save)
         save.tap()
@@ -1964,14 +1965,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
         let wantToGo = app.buttons["list-picker.row.1"]
         XCTAssertTrue(wantToGo.waitForExistence(timeout: 5))
+        let selectedWantToGo = app.buttons.matching(NSPredicate(
+            format: "identifier == %@ AND label CONTAINS %@",
+            "list-picker.row.1",
+            "In list"
+        )).firstMatch
         wantToGo.tap()
-        XCTAssertTrue(waitForNonExistence(of: row, timeout: 5))
+        XCTAssertTrue(selectedWantToGo.waitForExistence(timeout: 5))
         XCTAssertTrue(app.navigationBars["Add to list"].exists)
         wantToGo.tap()
-        XCTAssertTrue(waitForNonExistence(of: row, timeout: 2))
+        XCTAssertTrue(waitForNonExistence(of: selectedWantToGo, timeout: 5))
         XCTAssertTrue(app.navigationBars["Add to list"].exists)
         app.buttons["list-picker.done"].tap()
         XCTAssertFalse(app.navigationBars["Add to list"].waitForExistence(timeout: 2))
+        XCTAssertTrue(waitForNonExistence(of: row, timeout: 5))
     }
 
     func testHiddenSurfaceRoundTripsWithScopeWithoutChangingTrackCounts() {
