@@ -541,6 +541,10 @@ extension AppDatabase {
                 )
                 try visit.insert(db)
                 try db.execute(
+                    sql: "DELETE FROM hidden_places WHERE place_id = ?",
+                    arguments: [place.placeID]
+                )
+                try db.execute(
                     sql: """
                         INSERT OR IGNORE INTO list_items (list_id, place_id, added_at)
                         VALUES (?, ?, ?)
@@ -569,6 +573,10 @@ extension AppDatabase {
                 listID = db.lastInsertedRowID
             }
 
+            try db.execute(
+                sql: "DELETE FROM hidden_places WHERE place_id = ?",
+                arguments: [placeID]
+            )
             try db.execute(
                 sql: """
                     INSERT OR IGNORE INTO list_items (list_id, place_id, added_at)

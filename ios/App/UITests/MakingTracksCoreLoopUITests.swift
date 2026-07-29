@@ -985,12 +985,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let actionBar = app.otherElements["place-card.action-bar"]
         let saveButton = actionBar.buttons["place-card.save"]
         let seenButton = actionBar.buttons["place-card.visited"]
-        let hideButton = actionBar.buttons["place-card.hide"]
         XCTAssertTrue(actionBar.waitForExistence(timeout: 5))
-        XCTAssertEqual(actionBar.buttons.count, 3)
+        XCTAssertEqual(actionBar.buttons.count, 2)
         XCTAssertTrue(saveButton.exists)
         XCTAssertTrue(seenButton.exists)
-        XCTAssertTrue(hideButton.exists)
+        XCTAssertFalse(actionBar.buttons["place-card.hide"].exists)
         XCTAssertTrue(app.buttons["place-card.more"].exists)
         app.buttons["place-card.more"].tap()
         let addToListButton = app.buttons["place-card.add-to-list"]
@@ -1000,7 +999,6 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["list-picker.done"].tap()
         XCTAssertFalse(app.buttons["place-card.add-to-list"].exists)
         XCTAssertEqual(seenButton.label, "Seen")
-        XCTAssertEqual(hideButton.label, "Hide")
         let saveFrameBeforeAttributionScroll = saveButton.frame
         XCTAssertTrue(chips.waitForExistence(timeout: 5))
         XCTAssertTrue(chips.label.contains("Date night"))
@@ -1019,13 +1017,22 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         ])
         XCTAssertLessThan(abs(saveButton.frame.minY - saveFrameBeforeAttributionScroll.minY), 3)
         XCTAssertTrue(saveButton.isHittable)
+        XCTAssertFalse(actionBar.buttons["place-card.hide"].exists)
+    }
 
-        hideButton.tap()
-        XCTAssertTrue(app.staticTexts["Hidden — Undo"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
+    func testSavedPlaceCardOmitsHideAcrossVisitStates() {
+        let app = launch(reset: true, seedUserList: true)
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        openFixtureCard(in: map, app: app)
 
-        tapFixturePin(in: map)
-        XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
+        let actionBar = app.otherElements["place-card.action-bar"]
+        XCTAssertTrue(actionBar.waitForExistence(timeout: 5))
+        XCTAssertFalse(actionBar.buttons["place-card.hide"].exists)
+        actionBar.buttons["place-card.visited"].tap()
+        XCTAssertFalse(actionBar.buttons["place-card.hide"].exists)
+        actionBar.buttons["place-card.loved"].tap()
+        XCTAssertFalse(actionBar.buttons["place-card.hide"].exists)
     }
 
     func testMaterialChipExtendsHitTargetBeyondVisualCapsule() {
@@ -1895,12 +1902,34 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             identifier: "tracks.hidden.row.mt1_S0000000000000000000000001",
             in: app
         )
+        XCTAssertTrue(hiddenOverlapRow.waitForExistence(timeout: 5))
         XCTAssertTrue(hiddenOnlyRow.waitForExistence(timeout: 5))
         let unhideOverlap = app.buttons[
             "tracks.hidden.unhide.mt1_00000000000000000000000001"
         ]
+        let saveOverlap = app.buttons[
+            "tracks.hidden.save.mt1_00000000000000000000000001"
+        ]
+        let unhideHiddenOnly = app.buttons[
+            "tracks.hidden.unhide.mt1_S0000000000000000000000001"
+        ]
+        let saveHiddenOnly = app.buttons[
+            "tracks.hidden.save.mt1_S0000000000000000000000001"
+        ]
         XCTAssertTrue(scrollToHittable(unhideOverlap, in: app))
         assertMinimumInteractiveTarget(unhideOverlap)
+        assertContainedInAppFrame(unhideOverlap, in: app)
+        XCTAssertTrue(scrollToHittable(saveOverlap, in: app))
+        assertMinimumInteractiveTarget(saveOverlap)
+        assertContainedInAppFrame(saveOverlap, in: app)
+        XCTAssertTrue(scrollToHittable(unhideHiddenOnly, in: app))
+        assertMinimumInteractiveTarget(unhideHiddenOnly)
+        assertContainedInAppFrame(unhideHiddenOnly, in: app)
+        XCTAssertTrue(scrollToHittable(saveHiddenOnly, in: app))
+        assertMinimumInteractiveTarget(saveHiddenOnly)
+        assertContainedInAppFrame(saveHiddenOnly, in: app)
+        attachScreenshot(named: "a6-hidden-actions")
+        XCTAssertTrue(scrollToHittable(unhideOverlap, in: app))
         unhideOverlap.tap()
         XCTAssertTrue(waitForNonExistence(of: hiddenOverlapRow, timeout: 5))
         XCTAssertTrue(scrollToHittable(hiddenOnlyRow, in: app))
@@ -1912,9 +1941,37 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(scrollToHittable(dateNight, in: app))
         XCTAssertEqual(
             dateNight.value as? String,
-            "2 of 2 seen",
-            "Unhiding must restore the stored membership to visible progress."
+            "1 of 1 seen",
+            "Unhiding an unsaved place must not change Date night progress."
         )
+    }
+
+    func testHiddenSurfaceSaveAutoUnhidesAndKeepsPickerOpen() {
+        let app = launch(reset: true, seedManagedPlaces: true)
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openTracksDoor(in: app)
+        let hidden = app.buttons["tracks.row.hidden"]
+        XCTAssertTrue(scrollToHittable(hidden, in: app))
+        hidden.tap()
+
+        let placeID = "mt1_S0000000000000000000000001"
+        let row = element(identifier: "tracks.hidden.row.\(placeID)", in: app)
+        let save = app.buttons["tracks.hidden.save.\(placeID)"]
+        XCTAssertTrue(scrollToHittable(save, in: app))
+        assertMinimumInteractiveTarget(save)
+        save.tap()
+
+        XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
+        let wantToGo = app.buttons["list-picker.row.1"]
+        XCTAssertTrue(wantToGo.waitForExistence(timeout: 5))
+        wantToGo.tap()
+        XCTAssertTrue(waitForNonExistence(of: row, timeout: 5))
+        XCTAssertTrue(app.navigationBars["Add to list"].exists)
+        wantToGo.tap()
+        XCTAssertTrue(waitForNonExistence(of: row, timeout: 2))
+        XCTAssertTrue(app.navigationBars["Add to list"].exists)
+        app.buttons["list-picker.done"].tap()
+        XCTAssertFalse(app.navigationBars["Add to list"].waitForExistence(timeout: 2))
     }
 
     func testHiddenSurfaceRoundTripsWithScopeWithoutChangingTrackCounts() {
@@ -2026,15 +2083,30 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let unhideOverlap = app.buttons[
             "tracks.hidden.unhide.mt1_00000000000000000000000001"
         ]
+        let saveOverlap = app.buttons[
+            "tracks.hidden.save.mt1_00000000000000000000000001"
+        ]
         let unhideHiddenOnly = app.buttons[
             "tracks.hidden.unhide.mt1_S0000000000000000000000001"
+        ]
+        let saveHiddenOnly = app.buttons[
+            "tracks.hidden.save.mt1_S0000000000000000000000001"
         ]
         XCTAssertTrue(scrollToHittable(unhideOverlap, in: app))
         assertMinimumInteractiveTarget(unhideOverlap)
         assertContainedInAppFrame(unhideOverlap, in: app)
+        XCTAssertTrue(scrollToHittable(saveOverlap, in: app))
+        assertMinimumInteractiveTarget(saveOverlap)
+        assertContainedInAppFrame(saveOverlap, in: app)
+        assertNoFrameIntersection(unhideOverlap, saveOverlap)
         XCTAssertTrue(scrollToHittable(unhideHiddenOnly, in: app))
         assertMinimumInteractiveTarget(unhideHiddenOnly)
         assertContainedInAppFrame(unhideHiddenOnly, in: app)
+        XCTAssertTrue(scrollToHittable(saveHiddenOnly, in: app))
+        assertMinimumInteractiveTarget(saveHiddenOnly)
+        assertContainedInAppFrame(saveHiddenOnly, in: app)
+        assertNoFrameIntersection(unhideHiddenOnly, saveHiddenOnly)
+        attachScreenshot(named: "a6-hidden-actions-ax")
     }
 
     func testTrackGeometryDrawsConnectorFromSeededFixtureVisits() {
@@ -3266,16 +3338,17 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let unseeButton = actionBar.buttons["place-card.unsee"]
         XCTAssertTrue(lovedButton.waitForExistence(timeout: 5))
         XCTAssertTrue(unseeButton.waitForExistence(timeout: 5))
-        XCTAssertEqual(actionBar.buttons.count, 3)
         XCTAssertTrue(waitForButtonLabel("Love", identifier: "place-card.loved", in: app))
         XCTAssertTrue(waitForButtonLabel("Un-see", identifier: "place-card.unsee", in: app))
         XCTAssertTrue(waitForButtonEnabled(true, identifier: "place-card.unsee", in: app))
+        XCTAssertTrue(actionBar.buttons["place-card.hide"].waitForExistence(timeout: 5))
+        XCTAssertEqual(actionBar.buttons.count, 4)
 
         lovedButton.tap()
-        XCTAssertEqual(actionBar.buttons.count, 3)
+        XCTAssertEqual(actionBar.buttons.count, 4)
         XCTAssertTrue(waitForButtonLabel("Unlove", identifier: "place-card.loved", in: app))
         XCTAssertTrue(waitForButtonEnabled(false, identifier: "place-card.unsee", in: app))
-        XCTAssertFalse(actionBar.buttons["place-card.hide"].exists)
+        XCTAssertTrue(actionBar.buttons["place-card.hide"].exists)
     }
 
     func testLocateMeChromeExplainsWhenLocationIsDeniedAtAX5() throws {
@@ -4873,6 +4946,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "loved-places": "loved-places",
         "hidden-places": "hidden-places",
         "loved-hidden-ax": "loved-hidden-ax",
+        "a6-hidden-actions": "a6-hidden-actions",
+        "a6-hidden-actions-ax": "a6-hidden-actions-ax",
         "tracks-unified-visit-editing": "tracks-unified-visit-editing",
         "my-tracks-rendered-oracle-light": "my-tracks-rendered-oracle-light",
         "my-tracks-rendered-oracle-dark": "my-tracks-rendered-oracle-dark",

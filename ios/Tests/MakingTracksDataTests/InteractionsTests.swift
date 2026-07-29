@@ -636,6 +636,36 @@ final class InteractionsTests: XCTestCase {
         XCTAssertFalse(try db.hiddenPlaceIDs().contains(place.placeID))
     }
 
+    func testSeedUITestingTrackListRepairsHiddenMembership() throws {
+        // Mutation caught: UI track fixtures inserting a saved membership without repairing hidden state.
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_seeded_track_hidden")
+        try db.setHidden(place, true)
+
+        try db.seedUITestingTrackList(named: "Fixture track", places: [place])
+
+        XCTAssertEqual(
+            try db.viewportState([place.placeID])[place.placeID],
+            PinState(saved: true, visit: .visited, hidden: false)
+        )
+        XCTAssertFalse(try db.hiddenPlaceIDs().contains(place.placeID))
+    }
+
+    func testSeedUITestingUserListRepairsHiddenMembership() throws {
+        // Mutation caught: UI user-list fixtures inserting a saved membership without repairing hidden state.
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_seeded_user_hidden")
+        try db.setHidden(place, true)
+
+        try db.seedUITestingUserList(named: "Fixture list", containingPlaceID: place.placeID)
+
+        XCTAssertEqual(
+            try db.viewportState([place.placeID])[place.placeID],
+            PinState(saved: true, visit: .none, hidden: false)
+        )
+        XCTAssertFalse(try db.hiddenPlaceIDs().contains(place.placeID))
+    }
+
     func testRemovingLastMembershipAfterSaveDoesNotRehidePlace() throws {
         // Mutation caught: deriving hidden state from membership removal instead of preserving its repaired state.
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
