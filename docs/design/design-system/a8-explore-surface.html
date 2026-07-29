@@ -465,7 +465,7 @@
   .evidence {
     width: 318px;
     height: 844px;
-    padding: 13px;
+    padding: 8px 13px;
     overflow: hidden;
     border: 1px solid var(--hairline);
     border-radius: 18px;
@@ -496,7 +496,7 @@
   }
 
   .evidence h3 {
-    margin: 7px 0 2px;
+    margin: 5px 0 2px;
     color: var(--eyebrow);
     font-size: 10px;
     font-weight: 700;
@@ -535,7 +535,7 @@
 
   .metrics th,
   .metrics td {
-    padding: 3px 0;
+    padding: 2px 0;
     border-top: 1px solid var(--hairline);
     text-align: left;
     vertical-align: top;
@@ -570,11 +570,11 @@
   }
 
   .proposal li + li {
-    margin-top: 3px;
+    margin-top: 2px;
   }
 
   .candidate-note {
-    margin: 5px 0 0;
+    margin: 4px 0 0;
     padding-top: 4px;
     border-top: 1px solid var(--hairline);
     color: var(--eyebrow);
@@ -634,8 +634,41 @@
       </g>
     </symbol>
 
-    <symbol id="icon-check" viewBox="0 0 24 24">
-      <path d="M4.5 12.6 9.5 17.6 19.5 6.6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Canonical filled category symbols mirror PinLayers.categorySymbolNames. -->
+    <symbol id="icon-hammer-fill" viewBox="0 0 24 24">
+      <path fill="currentColor" d="m13.7 3.1 7.2 7.2-2.7 2.7-2.3-2.3-8.8 10a2 2 0 0 1-3-2.7l9.6-9.2-2.6-2.6 2.6-3.1Z"/>
+    </symbol>
+    <symbol id="icon-paintpalette-fill" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M12 2.2A9.8 9.8 0 0 0 2.2 12c0 5.4 4.4 9.8 9.8 9.8h1.7a2.5 2.5 0 0 0 0-5h-1.2a1.8 1.8 0 0 1 0-3.6h3.7c3.1 0 5.6-2.5 5.6-5.6 0-3-4.4-5.4-9.8-5.4Z"/>
+      <g fill="var(--accent)">
+        <circle cx="7.2" cy="9.2" r="1.25"/>
+        <circle cx="10.3" cy="5.9" r="1.25"/>
+        <circle cx="15" cy="6.1" r="1.25"/>
+      </g>
+    </symbol>
+    <symbol id="icon-star-fill" viewBox="0 0 24 24">
+      <path fill="currentColor" d="m12 2.1 3 6.1 6.7 1-4.9 4.7 1.2 6.7-6-3.1-6 3.1 1.2-6.7-4.9-4.7 6.7-1 3-6.1Z"/>
+    </symbol>
+    <symbol id="icon-buildings-fill" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M2.5 7.2h8.6v14.3H2.5V7.2Zm9.9-4.7h9.1v19h-9.1v-19Z"/>
+      <g fill="var(--accent)">
+        <path d="M5.1 10h1.6v1.9H5.1zm0 4h1.6v1.9H5.1zm3.1-4h1.6v1.9H8.2zm0 4h1.6v1.9H8.2zm7-8.5h1.7v2h-1.7zm3.1 0H20v2h-1.7zm-3.1 4.2h1.7v2h-1.7zm3.1 0H20v2h-1.7zm-3.1 4.2h1.7v2h-1.7zm3.1 0H20v2h-1.7Z"/>
+      </g>
+    </symbol>
+    <symbol id="icon-flag-fill" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M5 2.2h2.2v19.6H5V2.2Zm3.4 1.2h10.9l-2.8 4.2 2.8 4.2H8.4V3.4Z"/>
+    </symbol>
+    <symbol id="icon-camera-fill" viewBox="0 0 24 24">
+      <path fill="currentColor" fill-rule="evenodd" d="M7.2 4.1h9.6l1.5 2.3h2.1c1 0 1.9.9 1.9 1.9v10.1c0 1-.9 1.9-1.9 1.9H3.6c-1 0-1.9-.9-1.9-1.9V8.3c0-1 .9-1.9 1.9-1.9h2.1l1.5-2.3ZM12 17.3a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4Z"/>
+      <circle cx="12" cy="13.1" r="2.2" fill="currentColor"/>
+    </symbol>
+    <symbol id="icon-columns-fill" viewBox="0 0 24 24">
+      <path fill="currentColor" d="m12 2 10 4.4v2.1H2V6.4L12 2ZM3.1 19.3h17.8v2.3H3.1v-2.3Zm1.6-9.6h2.6v8.4H4.7V9.7Zm6 0h2.6v8.4h-2.6V9.7Zm6 0h2.6v8.4h-2.6V9.7Z"/>
+    </symbol>
+    <symbol id="icon-question-fill" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10" fill="currentColor"/>
+      <path d="M9.4 9a2.8 2.8 0 0 1 5.5.8c0 2.4-2.9 2.7-2.9 4.7" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round"/>
+      <circle cx="12" cy="18" r="1.2" fill="var(--accent)"/>
     </symbol>
     <symbol id="icon-eye-off" viewBox="0 0 24 24">
       <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -647,6 +680,9 @@
     <symbol id="icon-coverage" viewBox="0 0 24 24">
       <path d="M5 9.6 9.4 4.6 16.2 5.8 19.6 12 16 18.8 8 18.2Z"
             fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 2.6"/>
+    </symbol>
+    <symbol id="icon-bookmark-fill" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M6.2 3.5c0-1.1.9-2 2-2h7.6c1.1 0 2 .9 2 2v18.1c0 .7-.8 1.1-1.4.7L12 19l-4.4 3.3c-.6.4-1.4 0-1.4-.7V3.5Z"/>
     </symbol>
     <symbol id="icon-gear" viewBox="0 0 24 24">
       <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -692,14 +728,14 @@
         <section class="scope" aria-label="Scope">
           <h3 class="section-label">Scope</h3>
           <div class="chips" aria-label="Visible categories">
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Archaeological</span>
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Artwork</span>
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Attraction</span>
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Historic Building</span>
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Memorial</span>
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Museum</span>
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Religious</span>
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Other</span>
+            <span class="chip" data-category="Archaeological" data-symbol="hammer.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-hammer-fill"/></svg>Archaeological</span>
+            <span class="chip" data-category="Artwork" data-symbol="paintpalette.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-paintpalette-fill"/></svg>Artwork</span>
+            <span class="chip" data-category="Attraction" data-symbol="star.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-star-fill"/></svg>Attraction</span>
+            <span class="chip" data-category="Historic Building" data-symbol="building.2.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-buildings-fill"/></svg>Historic Building</span>
+            <span class="chip" data-category="Memorial" data-symbol="flag.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-flag-fill"/></svg>Memorial</span>
+            <span class="chip" data-category="Museum" data-symbol="camera.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-camera-fill"/></svg>Museum</span>
+            <span class="chip" data-category="Religious" data-symbol="building.columns.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-columns-fill"/></svg>Religious</span>
+            <span class="chip" data-category="Other" data-symbol="questionmark.circle.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-question-fill"/></svg>Other</span>
           </div>
 
           <div class="scope-rows">
@@ -707,6 +743,11 @@
               <svg class="scope-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-eye-off"/></svg>
               <div class="scope-copy">Include hidden places</div>
               <span class="switch" aria-label="Off"></span>
+            </div>
+            <div class="scope-row is-on">
+              <svg class="scope-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bookmark-fill"/></svg>
+              <div class="scope-copy">Show saved places</div>
+              <span class="switch is-on" aria-label="On"></span>
             </div>
             <div class="scope-row is-on">
               <svg class="scope-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-coverage"/></svg>
@@ -747,7 +788,7 @@
         <li>Scope is the root.</li>
         <li>Settings and About are quiet bottom rows.</li>
         <li>Settings uses the stronger accent treatment while About remains muted.</li>
-        <li>Map defaults shown: every category visible, hidden off, coverage on.</li>
+        <li>Map defaults shown: every canonical category visible; hidden OFF, saved ON, coverage ON.</li>
       </ul>
 
       <h3>Established component-metrics rows · spec §5</h3>
@@ -768,11 +809,11 @@
       <h3>Candidate new metrics · not established rows</h3>
       <ul class="proposal">
         <li><strong>Sheet placement:</strong> 62pt large-detent top; 12pt grabber-to-title gap.</li>
-        <li><strong>Scope control row:</strong> 52pt minimum; 15pt/600 label; established 20×20 icon; 10pt gap; 6/2 padding; 44×28 switch with 22pt knob at 3/19pt offsets; 1pt hairlines.</li>
+        <li><strong>Scope control rows (3):</strong> 52pt minimum each; 15pt/600 label; established 20×20 icon; 10pt gap; 6/2 padding; 44×28 switch with 22pt knob at 3/19pt offsets; 1pt hairlines.</li>
         <li><strong>Scope block rhythm:</strong> 18pt header-to-label; 11pt label-to-chips; 14pt chips-to-controls; row minimum yields to wrapped content.</li>
         <li><strong>Quiet destination row:</strong> 9/2 padding; 10pt gap; 12×12 chevron; 2pt title-to-metadata gap.</li>
       </ul>
-      <p class="candidate-note">Candidate evidence only. Reviewer validation and Rob’s taste ruling precede any freeze or spec-table amendment.</p>
+      <p class="candidate-note">Candidate evidence only. Canonical symbols and the Saved row reflect Rob’s ruling; reviewer delta validation precedes any freeze or spec-table amendment.</p>
     </aside>
 
     <section class="phone ax" aria-label="Accessibility-size Explore surface, exact 390 by 844 canvas">
@@ -792,14 +833,14 @@
         <section class="scope" aria-label="Scope">
           <h3 class="section-label">Scope</h3>
           <div class="chips" aria-label="Visible categories">
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Archaeological</span>
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Artwork</span>
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Attraction</span>
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Historic Building</span>
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Memorial</span>
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Museum</span>
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Religious</span>
-            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Other</span>
+            <span class="chip" data-category="Archaeological" data-symbol="hammer.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-hammer-fill"/></svg>Archaeological</span>
+            <span class="chip" data-category="Artwork" data-symbol="paintpalette.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-paintpalette-fill"/></svg>Artwork</span>
+            <span class="chip" data-category="Attraction" data-symbol="star.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-star-fill"/></svg>Attraction</span>
+            <span class="chip" data-category="Historic Building" data-symbol="building.2.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-buildings-fill"/></svg>Historic Building</span>
+            <span class="chip" data-category="Memorial" data-symbol="flag.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-flag-fill"/></svg>Memorial</span>
+            <span class="chip" data-category="Museum" data-symbol="camera.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-camera-fill"/></svg>Museum</span>
+            <span class="chip" data-category="Religious" data-symbol="building.columns.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-columns-fill"/></svg>Religious</span>
+            <span class="chip" data-category="Other" data-symbol="questionmark.circle.fill"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-question-fill"/></svg>Other</span>
           </div>
 
           <div class="scope-rows">
@@ -807,6 +848,11 @@
               <svg class="scope-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-eye-off"/></svg>
               <div class="scope-copy">Include hidden places</div>
               <span class="switch" aria-label="Off"></span>
+            </div>
+            <div class="scope-row is-on">
+              <svg class="scope-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bookmark-fill"/></svg>
+              <div class="scope-copy">Show saved places</div>
+              <span class="switch is-on" aria-label="On"></span>
             </div>
             <div class="scope-row is-on">
               <svg class="scope-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-coverage"/></svg>
@@ -845,10 +891,10 @@
       <ul class="facts">
         <li>Search renders nothing.</li>
         <li>Scope is the root.</li>
-        <li>Chips wrap and control rows grow inside the sheet.</li>
-        <li>The sheet body is a semantic scroll region; Settings and About follow Scope at its bottom.</li>
-        <li>Settings and About are quiet bottom rows.</li>
-        <li>Settings uses the stronger accent treatment while About remains muted.</li>
+        <li>Canonical-symbol chips wrap; all three control rows grow inside the sheet.</li>
+        <li>Rows stay ordered hidden OFF → saved ON → coverage ON.</li>
+        <li>The semantic scroll region keeps both quiet bottom destinations fully visible at scrollTop 0.</li>
+        <li>Settings uses stronger accent treatment while About remains muted.</li>
       </ul>
 
       <h3>Established component-metrics rows · spec §5</h3>
@@ -869,10 +915,10 @@
       <h3>Candidate AX scaling proposals · not established rows</h3>
       <ul class="proposal">
         <li><strong>Sheet / labels / chips:</strong> 48pt large-detent top; 10pt grabber gap; 41/22pt title/subtitle with 6pt gap; 17pt section label; chips 38pt minimum with 19pt/600 label, 18×18 icon, 5/14 padding, 6pt label gap and 8pt row gap.</li>
-        <li><strong>AX Scope:</strong> 86pt row minimum; 23pt/600 label; 30×30 icon; 14pt gap; 10/2 padding; 51×31 switch with 25pt knob at 3/23pt offsets; 14/9/14pt block rhythm; minimum yields to content.</li>
+        <li><strong>AX Scope (3 rows):</strong> 86pt row minimum each; 23pt/600 label; 30×30 icon; 14pt gap; 10/2 padding; 51×31 switch with 25pt knob at 3/23pt offsets; 14/9/14pt block rhythm; minimum yields to content.</li>
         <li><strong>AX quiet rows:</strong> 4pt block inset; 28×28 icon; 24/18pt title/metadata; 18×18 chevron; 14pt content gap; 10/2 padding; 4pt title-to-metadata gap.</li>
       </ul>
-      <p class="candidate-note">Candidate evidence only. The bottom destinations remain reachable in the large-detent scroll presentation; Search remains structural and absent.</p>
+      <p class="candidate-note">Candidate evidence only. The third row consumes the prior flexible gap; both bottom destinations remain fully reachable without clipping. Search remains structural and absent.</p>
     </aside>
   </main>
 </body>

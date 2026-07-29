@@ -20,7 +20,12 @@
     --muted: #6b675f;
     --accent: #0a6b5c;
     --accent-contrast: #fbfaf2;
-    --saved-container: #dee9e0;
+    /* Decision-record rendering only; explicitly rejected, never a token. */
+    --saved-rejected: #dee9e0;
+    /* Ruled opaque comparison values; labels are not token names. */
+    --comparison-calm: #dfedeb;
+    --comparison-balanced: #d4ede9;
+    --comparison-vivid: #caece6;
     --love: #c4312b;
     --eyebrow: #8a5a2b;
     --hairline: rgba(43, 40, 35, 0.14);
@@ -302,7 +307,7 @@
   }
 
   .saved {
-    background: var(--saved-container);
+    background: var(--saved-rejected);
     color: var(--accent);
   }
 
@@ -446,10 +451,10 @@
   }
 
   .evidence .lead {
-    margin: 7px 0 13px;
+    margin: 5px 0 8px;
     color: var(--muted);
-    font-size: 13px;
-    line-height: 1.4;
+    font-size: 11px;
+    line-height: 1.3;
   }
 
   .renderer {
@@ -458,21 +463,85 @@
     font: 10px/1.3 ui-monospace, "SFMono-Regular", Menlo, monospace;
   }
 
-  .ratio {
-    margin-bottom: 10px;
-    padding: 10px;
+  .rejected-record {
+    margin-bottom: 6px;
+    padding: 7px 8px;
     border: 1px solid var(--hairline);
-    border-radius: 12px;
+    border-left: 4px solid var(--love);
+    border-radius: 10px;
     background: var(--surface);
   }
 
-  .ratio-head {
+  .decision-head,
+  .comparison-head,
+  .unchanged-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    font-size: 14px;
     font-weight: 700;
+  }
+
+  .decision-head {
+    color: var(--love);
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+  }
+
+  .decision-head code,
+  .comparison-head code {
+    color: var(--ink);
+    font: 700 10px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+    letter-spacing: 0;
+  }
+
+  .decision-copy {
+    margin: 4px 0 0;
+    color: var(--muted);
+    font-size: 9.5px;
+    line-height: 1.25;
+  }
+
+  .comparison-list {
+    display: grid;
+    gap: 4px;
+  }
+
+  .comparison {
+    padding: 6px 8px;
+    border: 1px solid var(--hairline);
+    border-radius: 9px;
+    background: var(--surface);
+  }
+
+  .comparison-head {
+    font-size: 10.5px;
+  }
+
+  .candidate-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .candidate-swatch {
+    width: 11px;
+    height: 11px;
+    flex: 0 0 11px;
+    border: 1px solid rgba(43, 40, 35, 0.18);
+    border-radius: 50%;
+  }
+
+  .candidate-swatch.calm {
+    background: var(--comparison-calm);
+  }
+
+  .candidate-swatch.balanced {
+    background: var(--comparison-balanced);
+  }
+
+  .candidate-swatch.vivid {
+    background: var(--comparison-vivid);
   }
 
   .ratio-value {
@@ -480,61 +549,47 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .pair {
-    margin: 6px 0 0;
+  .metric-line {
+    margin: 3px 0 0;
     color: var(--muted);
-    font: 12px/1.25 ui-monospace, "SFMono-Regular", Menlo, monospace;
+    font: 9px/1.2 ui-monospace, "SFMono-Regular", Menlo, monospace;
   }
 
-  .derivation {
-    margin: 4px 0 0;
-    color: var(--muted);
-    font: 9.5px/1.25 var(--sans);
-  }
-
-  .swatches {
-    margin-top: 7px;
+  .unchanged {
+    margin-top: 5px;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 4px;
   }
 
-  .swatches span {
-    height: 10px;
-    border-radius: 999px;
-  }
-
-  .saved-fg,
-  .seen-bg {
-    background: var(--accent);
-  }
-
-  .saved-bg {
-    background: var(--saved-container);
-  }
-
-  .contrast-fg {
+  .unchanged-card {
+    padding: 6px 8px;
     border: 1px solid var(--hairline);
-    background: var(--accent-contrast);
+    border-radius: 9px;
+    background: var(--surface);
   }
 
-  .love-bg {
-    background: var(--love);
+  .unchanged-head {
+    font-size: 10.5px;
+  }
+
+  .unchanged-card .metric-line {
+    font-size: 8.5px;
   }
 
   .gate {
-    margin: 13px 0;
-    padding: 11px 12px;
+    margin: 7px 0;
+    padding: 7px 8px;
     border-left: 4px solid var(--accent);
     background: rgba(10, 107, 92, 0.08);
-    font-size: 13px;
+    font-size: 10px;
     font-weight: 650;
-    line-height: 1.35;
+    line-height: 1.28;
   }
 
   .evidence h3 {
-    margin: 15px 0 7px;
-    font-size: 12px;
+    margin: 7px 0 4px;
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -542,22 +597,22 @@
 
   .facts {
     margin: 0;
-    padding-left: 18px;
+    padding-left: 15px;
     color: var(--muted);
-    font-size: 12px;
-    line-height: 1.4;
+    font-size: 9.5px;
+    line-height: 1.25;
   }
 
   .facts li + li {
-    margin-top: 5px;
+    margin-top: 2px;
   }
 
   .candidate-note {
-    margin: 14px 0 0;
+    margin: 7px 0 0;
     color: var(--eyebrow);
-    font-size: 11px;
+    font-size: 9.5px;
     font-weight: 650;
-    line-height: 1.35;
+    line-height: 1.25;
   }
 </style>
 </head>
@@ -652,26 +707,43 @@
     <p class="evidence-kicker">Default target</p>
     <h2>Exact 390×844 canvas</h2>
     <p class="renderer">Renderer: Playwright-bundled Chromium/headless shell 151.0.7922.34</p>
-    <p class="lead">All three persistent facts are simultaneously ON. Each uses the R15 filled-pill plus filled-glyph morphology.</p>
+    <p class="lead">The phone retains the old Saved rendering only as the rejected decision record; no live candidate is applied. Seen and Loved remain unchanged.</p>
 
-    <div class="ratio">
-      <div class="ratio-head"><span>Saved</span><span class="ratio-value">5.15:1</span></div>
-      <p class="pair">FG #0A6B5C · BG #DEE9E0</p>
-      <p class="derivation">Candidate derivation pending Rob: BG #DEE9E0 is Snow accent #0A6B5C composited over Snow surface #FBFAF2 at 12% alpha (88% surface), then channel-rounded; implied α: R 0.1203 · G 0.1189 · B 0.1200.</p>
-      <div class="swatches"><span class="saved-fg"></span><span class="saved-bg"></span></div>
-    </div>
-    <div class="ratio">
-      <div class="ratio-head"><span>Seen</span><span class="ratio-value">6.13:1</span></div>
-      <p class="pair">FG #FBFAF2 · BG #0A6B5C</p>
-      <div class="swatches"><span class="contrast-fg"></span><span class="seen-bg"></span></div>
-    </div>
-    <div class="ratio">
-      <div class="ratio-head"><span>Loved</span><span class="ratio-value">5.25:1</span></div>
-      <p class="pair">FG #FBFAF2 · BG #C4312B</p>
-      <div class="swatches"><span class="contrast-fg"></span><span class="love-bg"></span></div>
+    <div class="rejected-record">
+      <div class="decision-head"><span>REJECTED · DEAD RECORD</span><code>#DEE9E0</code></div>
+      <p class="decision-copy">12% #0A6B5C over #FBFAF2, channel-rounded (α R 0.1203 · G 0.1189 · B 0.1200). Mechanical composite; not a candidate or token.</p>
     </div>
 
-    <p class="gate">Every foreground/background pair clears the 4.5:1 body-text gate. The cluster contains no action, per the amended A8 criterion.</p>
+    <div class="comparison-list" aria-label="Exactly three designed opaque Saved candidates">
+      <div class="comparison" data-candidate="Calm">
+        <div class="comparison-head"><span class="candidate-name"><i class="candidate-swatch calm"></i>Calm</span><span class="ratio-value">5.34:1</span></div>
+        <p class="metric-line"><code>#DFEDEB</code> · h171.43° · Δ +0.71° · sat 28.00%</p>
+        <p class="metric-line">ink #0A6B5C · implied-α spread 0.0695</p>
+      </div>
+      <div class="comparison" data-candidate="Balanced">
+        <div class="comparison-head"><span class="candidate-name"><i class="candidate-swatch balanced"></i>Balanced</span><span class="ratio-value">5.23:1</span></div>
+        <p class="metric-line"><code>#D4EDE9</code> · h170.40° · Δ −0.32° · sat 40.98%</p>
+        <p class="metric-line">ink #0A6B5C · implied-α spread 0.1018</p>
+      </div>
+      <div class="comparison" data-candidate="Vivid">
+        <div class="comparison-head"><span class="candidate-name"><i class="candidate-swatch vivid"></i>Vivid</span><span class="ratio-value">5.09:1</span></div>
+        <p class="metric-line"><code>#CAECE6</code> · h169.41° · Δ −1.31° · sat 47.22%</p>
+        <p class="metric-line">ink #0A6B5C · implied-α spread 0.1233</p>
+      </div>
+    </div>
+
+    <div class="unchanged" aria-label="Unchanged state fills">
+      <div class="unchanged-card">
+        <div class="unchanged-head"><span>Seen</span><span class="ratio-value">6.13:1</span></div>
+        <p class="metric-line">#FBFAF2 on #0A6B5C</p>
+      </div>
+      <div class="unchanged-card">
+        <div class="unchanged-head"><span>Loved</span><span class="ratio-value">5.25:1</span></div>
+        <p class="metric-line">#FBFAF2 on #C4312B</p>
+      </div>
+    </div>
+
+    <p class="gate">Exactly three designed opaque candidates are shown against accent ink #0A6B5C. All clear 4.5:1; none is ratified. Differing implied-channel alphas prove none is a single accent-over-surface composite. The cluster contains no action.</p>
 
     <h3>Established §5 metrics</h3>
     <ul class="facts">
@@ -681,7 +753,7 @@
       <li>6pt glyph-to-label gap; 8pt between pills.</li>
       <li>More remains a separate 44pt control.</li>
     </ul>
-    <p class="candidate-note">Candidate evidence only. Reviewer validation and Rob’s ruling precede any freeze or token/spec-table amendment.</p>
+    <p class="candidate-note">Candidate evidence only. Reviewer delta validation precedes Rob’s final Saved value pick; no token/spec-table amendment has been made.</p>
   </aside>
 
   <section class="phone ax" aria-label="Accessibility-size fully-lit place card, exact 390 by 844 canvas">
@@ -724,26 +796,43 @@
     <p class="evidence-kicker">Accessibility target</p>
     <h2>Exact 390×844 canvas</h2>
     <p class="renderer">Renderer: Playwright-bundled Chromium/headless shell 151.0.7922.34</p>
-    <p class="lead">The base 15pt/17×17 pairing stress-scales to 23pt/25×25. The three pills stack, remain wholly visible, and preserve 64pt targets.</p>
+    <p class="lead">The AX phone retains the old Saved rendering only as the rejected decision record; no live candidate is applied. Seen and Loved remain unchanged.</p>
 
-    <div class="ratio">
-      <div class="ratio-head"><span>Saved</span><span class="ratio-value">5.15:1</span></div>
-      <p class="pair">FG #0A6B5C · BG #DEE9E0</p>
-      <p class="derivation">Candidate derivation pending Rob: BG #DEE9E0 is Snow accent #0A6B5C composited over Snow surface #FBFAF2 at 12% alpha (88% surface), then channel-rounded; implied α: R 0.1203 · G 0.1189 · B 0.1200.</p>
-      <div class="swatches"><span class="saved-fg"></span><span class="saved-bg"></span></div>
-    </div>
-    <div class="ratio">
-      <div class="ratio-head"><span>Seen</span><span class="ratio-value">6.13:1</span></div>
-      <p class="pair">FG #FBFAF2 · BG #0A6B5C</p>
-      <div class="swatches"><span class="contrast-fg"></span><span class="seen-bg"></span></div>
-    </div>
-    <div class="ratio">
-      <div class="ratio-head"><span>Loved</span><span class="ratio-value">5.25:1</span></div>
-      <p class="pair">FG #FBFAF2 · BG #C4312B</p>
-      <div class="swatches"><span class="contrast-fg"></span><span class="love-bg"></span></div>
+    <div class="rejected-record">
+      <div class="decision-head"><span>REJECTED · DEAD RECORD</span><code>#DEE9E0</code></div>
+      <p class="decision-copy">12% #0A6B5C over #FBFAF2, channel-rounded (α R 0.1203 · G 0.1189 · B 0.1200). Mechanical composite; not a candidate or token.</p>
     </div>
 
-    <p class="gate">Every foreground/background pair clears the 4.5:1 body-text gate. The cluster contains no action, per the amended A8 criterion.</p>
+    <div class="comparison-list" aria-label="Exactly three designed opaque Saved candidates">
+      <div class="comparison" data-candidate="Calm">
+        <div class="comparison-head"><span class="candidate-name"><i class="candidate-swatch calm"></i>Calm</span><span class="ratio-value">5.34:1</span></div>
+        <p class="metric-line"><code>#DFEDEB</code> · h171.43° · Δ +0.71° · sat 28.00%</p>
+        <p class="metric-line">ink #0A6B5C · implied-α spread 0.0695</p>
+      </div>
+      <div class="comparison" data-candidate="Balanced">
+        <div class="comparison-head"><span class="candidate-name"><i class="candidate-swatch balanced"></i>Balanced</span><span class="ratio-value">5.23:1</span></div>
+        <p class="metric-line"><code>#D4EDE9</code> · h170.40° · Δ −0.32° · sat 40.98%</p>
+        <p class="metric-line">ink #0A6B5C · implied-α spread 0.1018</p>
+      </div>
+      <div class="comparison" data-candidate="Vivid">
+        <div class="comparison-head"><span class="candidate-name"><i class="candidate-swatch vivid"></i>Vivid</span><span class="ratio-value">5.09:1</span></div>
+        <p class="metric-line"><code>#CAECE6</code> · h169.41° · Δ −1.31° · sat 47.22%</p>
+        <p class="metric-line">ink #0A6B5C · implied-α spread 0.1233</p>
+      </div>
+    </div>
+
+    <div class="unchanged" aria-label="Unchanged state fills">
+      <div class="unchanged-card">
+        <div class="unchanged-head"><span>Seen</span><span class="ratio-value">6.13:1</span></div>
+        <p class="metric-line">#FBFAF2 on #0A6B5C</p>
+      </div>
+      <div class="unchanged-card">
+        <div class="unchanged-head"><span>Loved</span><span class="ratio-value">5.25:1</span></div>
+        <p class="metric-line">#FBFAF2 on #C4312B</p>
+      </div>
+    </div>
+
+    <p class="gate">Exactly three designed opaque candidates are shown against accent ink #0A6B5C. All clear 4.5:1; none is ratified. Differing implied-channel alphas prove none is a single accent-over-surface composite. The cluster contains no action.</p>
 
     <h3>AX stress evidence</h3>
     <ul class="facts">
@@ -753,7 +842,7 @@
       <li>No Hide and no fabricated filled action appear.</li>
       <li>The More control remains available at the top of the card.</li>
     </ul>
-    <p class="candidate-note">Candidate evidence only. Ratios are invariant under type scaling; this packet does not claim frozen status.</p>
+    <p class="candidate-note">Candidate evidence only. Reviewer delta validation precedes Rob’s final Saved value pick; this packet does not claim frozen status.</p>
   </aside>
 </main>
 </body>
