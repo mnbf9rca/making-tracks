@@ -6,7 +6,7 @@
 
 **Architecture:** Add one self-contained HTML source and one PNG packet per ruled surface. Each packet contains an exact 390×844 default frame, an exact 390×844 accessibility-size frame, and an evidence panel beside the frames; the phone frames show only legitimate target UI, while annotations and measurements remain outside the phone canvas. Reuse ratified Snow tokens and component metrics, propose only the minimum new metrics, and keep the assets labelled `CANDIDATE` until reviewer validation and Rob's ruling.
 
-**Tech Stack:** Static HTML/CSS/SVG, locally installed headless Google Chrome, WCAG 2.x sRGB contrast calculations, PNG pixel inspection, repository Markdown lint.
+**Tech Stack:** Static HTML/CSS/SVG, the locally installed Chromium browser (Brave on this machine), WCAG 2.x sRGB contrast calculations, PNG pixel inspection, repository Markdown lint.
 
 ## Global Constraints
 
@@ -79,7 +79,7 @@ Print the foreground/background hex pairs and ratios next to the default and AX 
 
 - [ ] **Step 1: Capture with local Chrome**
 
-Use `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` in headless mode with `--force-device-scale-factor=1`, `--hide-scrollbars`, no background networking or component updates, and dedicated profiles under `/private/tmp/chrome-a8-*`. Size each browser window to the HTML packet's declared canvas.
+Use `/Applications/Brave Browser.app/Contents/MacOS/Brave Browser` in headless mode with `--force-device-scale-factor=1`, `--hide-scrollbars`, no background networking or component updates, and dedicated profiles under `/private/tmp/chrome-a8-*`. Size each browser window to the HTML packet's declared canvas.
 
 - [ ] **Step 2: Verify PNG dimensions and colours**
 
