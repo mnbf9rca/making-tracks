@@ -147,6 +147,15 @@
     box-shadow: 0 -6px 18px rgba(43, 40, 35, 0.16);
   }
 
+  .sheet-scroll {
+    min-height: 0;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    outline: none;
+  }
+
   .grabber {
     width: 36px;
     height: 4px;
@@ -333,6 +342,16 @@
     top: 48px;
   }
 
+  .phone.ax .sheet-scroll {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+
+  .phone.ax .sheet-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
   .phone.ax .grabber {
     margin-bottom: 10px;
   }
@@ -446,7 +465,7 @@
   .evidence {
     width: 318px;
     height: 844px;
-    padding: 16px;
+    padding: 13px;
     overflow: hidden;
     border: 1px solid var(--hairline);
     border-radius: 18px;
@@ -471,7 +490,7 @@
   }
 
   .evidence h3 {
-    margin: 14px 0 5px;
+    margin: 9px 0 4px;
     color: var(--eyebrow);
     font-size: 10px;
     font-weight: 700;
@@ -480,16 +499,16 @@
   }
 
   .facts {
-    margin: 11px 0 0;
+    margin: 8px 0 0;
     padding: 0;
     list-style: none;
     color: var(--ink);
-    font-size: 12px;
-    line-height: 1.34;
+    font-size: 11px;
+    line-height: 1.25;
   }
 
   .facts li {
-    padding: 3px 0 3px 14px;
+    padding: 2px 0 2px 14px;
     position: relative;
   }
 
@@ -504,13 +523,13 @@
   .metrics {
     width: 100%;
     border-collapse: collapse;
-    font-size: 10.5px;
-    line-height: 1.23;
+    font-size: 9.5px;
+    line-height: 1.16;
   }
 
   .metrics th,
   .metrics td {
-    padding: 4px 0;
+    padding: 3px 0;
     border-top: 1px solid var(--hairline);
     text-align: left;
     vertical-align: top;
@@ -527,24 +546,33 @@
     color: var(--muted);
   }
 
+  .metric-source {
+    display: block;
+    margin-top: 1px;
+    color: var(--eyebrow);
+    font-size: 8.5px;
+    font-weight: 600;
+    line-height: 1.18;
+  }
+
   .proposal {
     margin: 0;
     padding-left: 17px;
     color: var(--muted);
-    font-size: 10.5px;
-    line-height: 1.28;
+    font-size: 9.5px;
+    line-height: 1.2;
   }
 
   .proposal li + li {
-    margin-top: 5px;
+    margin-top: 3px;
   }
 
   .candidate-note {
-    margin: 12px 0 0;
-    padding-top: 9px;
+    margin: 8px 0 0;
+    padding-top: 6px;
     border-top: 1px solid var(--hairline);
     color: var(--eyebrow);
-    font-size: 10.5px;
+    font-size: 9.5px;
     font-weight: 700;
     line-height: 1.3;
   }
@@ -648,6 +676,7 @@
 
       <div class="sheet">
         <div class="grabber"></div>
+        <div class="sheet-scroll">
         <header>
           <h2 class="sheet-title">Explore</h2>
           <p class="sheet-subtitle">what the map shows right now</p>
@@ -699,6 +728,7 @@
             <svg class="quiet-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron"/></svg>
           </div>
         </nav>
+        </div>
       </div>
     </section>
 
@@ -713,25 +743,27 @@
         <li>Map defaults shown: every category visible, hidden off, coverage on.</li>
       </ul>
 
-      <h3>Reused component-metrics rows</h3>
+      <h3>Established component-metrics rows · spec §5</h3>
       <table class="metrics">
         <tbody>
-          <tr><th>Sheet</th><td>22pt radius · 36×4 grabber · 6/14/14 padding</td></tr>
-          <tr><th>Sheet title / subtitle</th><td>26pt Newsreader 600 / 14pt sans</td></tr>
-          <tr><th>Section label</th><td>11pt/600 uppercase · 0.11em tracking</td></tr>
-          <tr><th>Chip</th><td>22pt · 0/9 padding · 4pt gap · 12pt/600 · 11×11 icon · 6pt row gap</td></tr>
-          <tr><th>Explore-surface row icon</th><td>20×20</td></tr>
-          <tr><th>Quiet bottom row icon</th><td>18×18</td></tr>
-          <tr><th>Quiet row title / metadata</th><td>15pt/600 muted / 12pt</td></tr>
-          <tr><th>Interaction target floor</th><td>44pt minimum</td></tr>
-          <tr><th>Pin</th><td>20px circle · white stroke glyph</td></tr>
+          <tr><th>Sheet</th><td>22pt radius · 36×4 grabber · 6/14/14 padding<span class="metric-source">§5 row “Sheet” · source: ia-doors</span></td></tr>
+          <tr><th>Sheet title / subtitle</th><td>26pt Newsreader 600 / 14pt sans<span class="metric-source">§5 row “Sheet title / subtitle” · source: ia-doors</span></td></tr>
+          <tr><th>Section label</th><td>11pt/600 uppercase · 0.11em tracking<span class="metric-source">§5 row “Section label” · source: ia-doors</span></td></tr>
+          <tr><th>Chip</th><td>22pt · 0/9 padding · 4pt gap · 12pt/600 · 11×11 icon · 6pt row gap<span class="metric-source">§5 row “Chip” · source: ia-doors .chip / .chips</span></td></tr>
+          <tr><th>Explore-surface row icon</th><td>20×20<span class="metric-source">§5 row “Explore-surface row icon” · source: ia-doors</span></td></tr>
+          <tr><th>Quiet bottom row icon</th><td>18×18<span class="metric-source">§5 row “Quiet bottom row icon” · source: ia-doors</span></td></tr>
+          <tr><th>Quiet row title / metadata</th><td>15pt/600 muted / 12pt<span class="metric-source">§5 row “Quiet row title / metadata” · source: ia-doors .row.quiet</span></td></tr>
+          <tr><th>Interaction target floor</th><td>44pt minimum<span class="metric-source">§5 row “Interaction target floor” · source: R10 scope line</span></td></tr>
+          <tr><th>Pin</th><td>20px circle · white stroke glyph<span class="metric-source">§5 row “Pin” · source: ia-doors</span></td></tr>
         </tbody>
       </table>
 
-      <h3>Proposed Scope-row metrics</h3>
+      <h3>Candidate new metrics · not established rows</h3>
       <ul class="proposal">
-        <li><strong>Scope control row:</strong> 52pt minimum; 15pt/600 label; 20×20 icon; 10pt content gap; 44×28 switch; 1pt hairline separators.</li>
+        <li><strong>Sheet placement:</strong> 62pt large-detent top; 12pt grabber-to-title gap.</li>
+        <li><strong>Scope control row:</strong> 52pt minimum; 15pt/600 label; established 20×20 icon; 10pt gap; 6/2 padding; 44×28 switch with 22pt knob at 3/19pt offsets; 1pt hairlines.</li>
         <li><strong>Scope block rhythm:</strong> 18pt header-to-label; 11pt label-to-chips; 14pt chips-to-controls; row minimum yields to wrapped content.</li>
+        <li><strong>Quiet destination row:</strong> 9/2 padding; 10pt gap; 12×12 chevron; 2pt title-to-metadata gap.</li>
       </ul>
       <p class="candidate-note">Candidate evidence only. Reviewer validation and Rob’s taste ruling precede any freeze or spec-table amendment.</p>
     </aside>
@@ -743,6 +775,7 @@
 
       <div class="sheet">
         <div class="grabber"></div>
+        <div class="sheet-scroll" role="region" aria-label="Explore contents; scroll to Settings and About" tabindex="0">
         <header>
           <h2 class="sheet-title">Explore</h2>
           <p class="sheet-subtitle">what the map shows right now</p>
@@ -794,6 +827,7 @@
             <svg class="quiet-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron"/></svg>
           </div>
         </nav>
+        </div>
       </div>
     </section>
 
@@ -804,29 +838,31 @@
         <li>Search renders nothing.</li>
         <li>Scope is the root.</li>
         <li>Chips wrap and control rows grow inside the sheet.</li>
+        <li>The sheet body is a semantic scroll region; Settings and About follow Scope at its bottom.</li>
         <li>Settings and About are quiet bottom rows.</li>
         <li>Settings uses the stronger accent treatment while About remains muted.</li>
       </ul>
 
-      <h3>Reused component-metrics rows</h3>
+      <h3>Established component-metrics rows · spec §5</h3>
       <table class="metrics">
         <tbody>
-          <tr><th>Sheet</th><td>22pt radius · 36×4 grabber · 6/14/14 padding</td></tr>
-          <tr><th>Sheet title / subtitle</th><td>26pt Newsreader 600 / 14pt sans, Dynamic Type scaled</td></tr>
-          <tr><th>Section label</th><td>11pt/600 uppercase · 0.11em tracking, scaled</td></tr>
-          <tr><th>Chip</th><td>22pt base · 0/9 padding · 4pt gap · 12pt/600 · 11×11 icon · 6pt row gap</td></tr>
-          <tr><th>Explore-surface row icon</th><td>20×20 base, paired-role scaled</td></tr>
-          <tr><th>Quiet bottom row icon</th><td>18×18 base, paired-role scaled</td></tr>
-          <tr><th>Quiet row title / metadata</th><td>15pt/600 muted / 12pt, scaled</td></tr>
-          <tr><th>Interaction target floor</th><td>44pt minimum; content may grow</td></tr>
-          <tr><th>Pin</th><td>20px circle · white stroke glyph</td></tr>
+          <tr><th>Sheet</th><td>Base: 22pt radius · 36×4 grabber · 6/14/14 padding<span class="metric-source">§5 row “Sheet” · source: ia-doors</span></td></tr>
+          <tr><th>Sheet title / subtitle</th><td>Base: 26pt Newsreader 600 / 14pt sans<span class="metric-source">§5 row “Sheet title / subtitle” · source: ia-doors</span></td></tr>
+          <tr><th>Section label</th><td>Base: 11pt/600 uppercase · 0.11em tracking<span class="metric-source">§5 row “Section label” · source: ia-doors</span></td></tr>
+          <tr><th>Chip</th><td>Base: 22pt · 0/9 padding · 4pt gap · 12pt/600 · 11×11 icon · 6pt row gap<span class="metric-source">§5 row “Chip” · source: ia-doors .chip / .chips</span></td></tr>
+          <tr><th>Explore-surface row icon</th><td>Base: 20×20<span class="metric-source">§5 row “Explore-surface row icon” · source: ia-doors</span></td></tr>
+          <tr><th>Quiet bottom row icon</th><td>Base: 18×18<span class="metric-source">§5 row “Quiet bottom row icon” · source: ia-doors</span></td></tr>
+          <tr><th>Quiet row title / metadata</th><td>Base: 15pt/600 muted / 12pt<span class="metric-source">§5 row “Quiet row title / metadata” · source: ia-doors .row.quiet</span></td></tr>
+          <tr><th>Interaction target floor</th><td>44pt minimum; content may grow<span class="metric-source">§5 row “Interaction target floor” · source: R10 scope line</span></td></tr>
+          <tr><th>Pin</th><td>20px circle · white stroke glyph<span class="metric-source">§5 row “Pin” · source: ia-doors</span></td></tr>
         </tbody>
       </table>
 
-      <h3>Proposed Scope-row metrics</h3>
+      <h3>Candidate AX scaling proposals · not established rows</h3>
       <ul class="proposal">
-        <li><strong>AX Scope control row:</strong> 86pt minimum; 23pt/600 label; 30×30 icon; 14pt content gap; 51×31 switch; minimum yields to wrapped content.</li>
-        <li><strong>AX Scope block:</strong> 14pt header-to-label; 9pt label-to-chips; chips wrap at 38pt minimum with 19pt/600 labels; 14pt chips-to-controls.</li>
+        <li><strong>Sheet / labels / chips:</strong> 48pt large-detent top; 10pt grabber gap; 41/22pt title/subtitle with 6pt gap; 17pt section label; chips 38pt minimum with 19pt/600 label, 18×18 icon, 5/14 padding, 6pt label gap and 8pt row gap.</li>
+        <li><strong>AX Scope:</strong> 86pt row minimum; 23pt/600 label; 30×30 icon; 14pt gap; 10/2 padding; 51×31 switch with 25pt knob at 3/23pt offsets; 14/9/14pt block rhythm; minimum yields to content.</li>
+        <li><strong>AX quiet rows:</strong> 4pt block inset; 28×28 icon; 24/18pt title/metadata; 18×18 chevron; 14pt content gap; 10/2 padding; 4pt title-to-metadata gap.</li>
       </ul>
       <p class="candidate-note">Candidate evidence only. The bottom destinations remain reachable in the large-detent scroll presentation; Search remains structural and absent.</p>
     </aside>
