@@ -92,8 +92,8 @@ Never unlink, rename, symlink, or truncate the lock file.
 Open each stable slot file in numeric order and try `flock -n` on its descriptor. If all slots are occupied, close the unsuccessful descriptors, emit a bounded waiting message, poll until a slot opens or `MT_SIM_LOCK_WAIT` expires, and retain the winning descriptor until the child exits.
 
 Before slot selection, hold a stable shared policy lock for ordinary cap-2 gates or its exclusive form for
-a cap-1 maintenance command. This makes lowering to one host-wide rather than a caller-local view of slot
-1.
+a cap-1 maintenance command. This makes lowering the cap a host-wide operation rather than a caller-local
+view of slot 1.
 
 - [x] **Step 4: Preserve re-entrancy and destructive-operation safety**
 
