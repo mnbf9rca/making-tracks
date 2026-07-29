@@ -665,7 +665,9 @@ final class AppShellTests: XCTestCase {
             }
         }
 
-        for _ in 0..<100 where !state.isUpdating {
+        var attempts = 0
+        while !state.isUpdating, attempts < 100 {
+            attempts += 1
             await Task.yield()
         }
         XCTAssertTrue(state.isUpdating)

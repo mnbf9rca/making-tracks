@@ -7765,6 +7765,8 @@ enum ListPickerReloadCoordinator {
         load: () async -> ListPickerSnapshot,
         apply: (ListPickerSnapshot) -> Void
     ) async {
+        // An overlapping mutation owns freshness; callers must not treat this
+        // Void return as proof that a new snapshot was published.
         guard begin() else { return }
         defer { finish() }
         apply(await load())
