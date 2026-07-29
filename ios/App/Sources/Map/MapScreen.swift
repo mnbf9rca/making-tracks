@@ -9059,8 +9059,20 @@ final class MapScreenModel {
     }
 
     func addToList(placeID: String, listID: Int64) async throws {
-        guard let placeRef = await actionPlaceRef(for: placeID) else { throw MapScreenActionError.placeUnavailable }
-        try coreLoop.addToList(placeRef, listID: listID)
+        guard let placeRef = await actionPlaceRef(for: placeID) else {
+            throw MapScreenActionError.placeUnavailable
+        }
+        let rollback = hiddenTracker.hiddenIDs.contains(placeID)
+            ? hiddenTracker.beginSetHidden(placeID: placeID, hidden: false)
+            : nil
+        do {
+            try coreLoop.addToList(placeRef, listID: listID)
+        } catch {
+            if let rollback {
+                hiddenTracker.rollback(rollback)
+            }
+            throw error
+        }
         MakingTracksLog.flowEvent("verdict changed", fields: placeFields(placeRef) + [
             .public("action", "add-to-list"),
             .public("listID", String(listID)),

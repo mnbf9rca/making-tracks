@@ -686,6 +686,62 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(state.errorMessage, "Could not unhide that place.")
     }
 
+    @MainActor
+    func testAddingHiddenPlaceToListMirrorsAutoUnhideAndMarksOneRefresh() async throws {
+        let database = try AppDatabase.inMemory()
+        let place = try PlaceRef(
+            placeID: "hidden-save",
+            name: "Hidden save",
+            lat: 51.5,
+            lon: -0.1,
+            category: "memorial",
+            tier: 2,
+            schemaVersion: 1,
+            fetchedAt: Date(timeIntervalSince1970: 1),
+            rawJSON: "{}"
+        )
+        try database.setHidden(place, true)
+        let model = try MapScreenModel(database: database, fixturePlaces: [place])
+
+        try await model.addToList(placeID: place.placeID, listID: database.wantToGoListID())
+
+        XCTAssertFalse(model.hiddenIDs.contains(place.placeID))
+        XCTAssertTrue(model.consumeHiddenMembershipChange(overlapping: [place.placeID]))
+        XCTAssertFalse(model.consumeHiddenMembershipChange(overlapping: [place.placeID]))
+    }
+
+    @MainActor
+    func testFailedSaveRollsBackOptimisticAutoUnhide() async throws {
+        let database = try AppDatabase.inMemory()
+        let place = try PlaceRef(
+            placeID: "hidden-save-failure",
+            name: "Hidden save failure",
+            lat: 51.5,
+            lon: -0.1,
+            category: "memorial",
+            tier: 2,
+            schemaVersion: 1,
+            fetchedAt: Date(timeIntervalSince1970: 1),
+            rawJSON: "{}"
+        )
+        try database.setHidden(place, true)
+        let model = try MapScreenModel(database: database, fixturePlaces: [place])
+        let lists = await model.lists()
+        let trackListID = try XCTUnwrap(
+            lists.first { $0.isSystem && $0.kind == PlaceList.trackKind }?.id
+        )
+
+        do {
+            try await model.addToList(placeID: place.placeID, listID: trackListID)
+            XCTFail("Expected protected track-list write to fail")
+        } catch {
+            XCTAssertEqual(error as? AppDatabaseError, .systemListIsProtected)
+        }
+
+        XCTAssertTrue(model.hiddenIDs.contains(place.placeID))
+        XCTAssertFalse(model.consumeHiddenMembershipChange(overlapping: [place.placeID]))
+    }
+
     func testQuietChromeUsesTokenSurfacesAndBareAttribution() {
         XCTAssertEqual(MapDoorChromeSpec.attributionTypographyRole, .label)
         XCTAssertFalse(MapDoorChromeSpec.attributionHasBackground)
