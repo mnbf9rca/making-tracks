@@ -465,6 +465,25 @@ def test_release_gate_removes_result_bundle_after_failure(tmp_path):
     assert not result_bundle.exists()
 
 
+def test_release_gate_preserves_ci_result_bundle_for_postprocessing(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    xcbeautify = fakebin / "xcbeautify"
+    xcbeautify.write_text("cat\n", encoding="utf-8")
+    xcbeautify.chmod(xcbeautify.stat().st_mode | stat.S_IXUSR)
+    env = _env(fakebin, log)
+    env.pop("MT_SIM_LOCK")
+    env["MT_RELEASE_GATE_SKIP_LOCK"] = "1"
+    env["GITHUB_ACTIONS"] = "true"
+    env["MT_RELEASE_GATE_FAKE_CREATE_RESULT"] = "1"
+    result_bundle = log.parent / "release-gate-run" / "MakingTracksTests.xcresult"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert result_bundle.is_dir()
+
+
 def test_release_gate_logs_failed_phase_timing_before_exiting(tmp_path):
     repo = _init_repo(tmp_path)
     fakebin, log = _fake_tools(tmp_path)

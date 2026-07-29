@@ -191,7 +191,9 @@ prune_derived_data_if_stale
 mkdir -p "$DERIVED_DATA"
 [ "${MT_RELEASE_GATE_RESULT_BUNDLE:-}" = "" ] || RESULT_BUNDLE="$MT_RELEASE_GATE_RESULT_BUNDLE"
 rm -rf "$RESULT_BUNDLE"
-trap 'rm -rf "$RESULT_BUNDLE"' EXIT
+if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+  trap 'rm -rf "$RESULT_BUNDLE"' EXIT
+fi
 
 phase "simulator boot" xcrun simctl bootstatus "$(destination_udid)" -b
 

@@ -99,7 +99,10 @@ lock_holders() {
   matches="$("$LSOF_BIN" -t -- "$LOCK" 2>&1)" || lsof_rc=$?
   case "$lsof_rc" in
     0) printf '%s\n' "$matches" ;;
-    1) return 0 ;;
+    1)
+      [ -z "$matches" ] || die "cannot inspect simulator lock $LOCK (lsof status 1): $matches"
+      return 0
+      ;;
     *) die "cannot inspect simulator lock $LOCK (lsof status $lsof_rc): $matches" ;;
   esac
 }
@@ -184,8 +187,41 @@ destructive() {
 
 # --- run under the lock -------------------------------------------------------
 
+acquire_gate_policy() {
+  local flock_rc=0
+  local policy_path="$LOCK_ROOT/making-tracks-gate-policy.lock"
+  local policy_kind
+  local policy_option
+
+  exec 7>>"$policy_path"
+  if [ "$GATE_MAX_CONCURRENT" -eq 1 ]; then
+    policy_kind="fleet-exclusive"
+    policy_option="-x"
+  else
+    policy_kind="shared"
+    policy_option="-s"
+  fi
+
+  "$FLOCK_BIN" "$policy_option" -n 7 || flock_rc=$?
+  case "$flock_rc" in
+    0) return 0 ;;
+    1) ;;
+    *) die "could not acquire $policy_kind gate admission (flock status $flock_rc)" ;;
+  esac
+
+  echo "sim-lock: waiting for $policy_kind gate admission (timeout ${LOCK_WAIT_SECONDS}s)" >&2
+  flock_rc=0
+  "$FLOCK_BIN" "$policy_option" -w "$LOCK_WAIT_SECONDS" 7 || flock_rc=$?
+  case "$flock_rc" in
+    0) ;;
+    1) die "timed out after ${LOCK_WAIT_SECONDS}s waiting for $policy_kind gate admission" ;;
+    *) die "could not acquire $policy_kind gate admission (flock status $flock_rc)" ;;
+  esac
+}
+
 acquire_gate_slot() {
   local elapsed
+  local flock_rc
   local slot
   local slot_path
   local started="$SECONDS"
@@ -195,10 +231,13 @@ acquire_gate_slot() {
     for ((slot = 1; slot <= GATE_MAX_CONCURRENT; slot++)); do
       slot_path="$LOCK_ROOT/making-tracks-gate-slot-$slot.lock"
       exec 9>>"$slot_path"
-      if "$FLOCK_BIN" -n 9; then
-        return 0
-      fi
-      exec 9>&-
+      flock_rc=0
+      "$FLOCK_BIN" -n 9 || flock_rc=$?
+      case "$flock_rc" in
+        0) return 0 ;;
+        1) exec 9>&- ;;
+        *) die "could not inspect or acquire global gate slot $slot (flock status $flock_rc)" ;;
+      esac
     done
 
     elapsed=$((SECONDS - started))
@@ -277,6 +316,7 @@ run_locked() {
     esac
   fi
 
+  acquire_gate_policy
   acquire_gate_slot
 
   local rc=0

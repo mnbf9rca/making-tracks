@@ -23,6 +23,7 @@ RELEASE_UDID_A="TEST-DERIVED-AAAA-$$"
 RELEASE_UDID_B="TEST-DERIVED-BBBB-$$"
 RELEASE_RUN_DIR_A="/private/tmp/release-gate-$RELEASE_UDID_A"
 RELEASE_RUN_DIR_B="/private/tmp/release-gate-$RELEASE_UDID_B"
+RELEASE_MARKERS="$TMP/release-markers"
 
 pass=0; fail=0
 cleanup() {
@@ -30,9 +31,11 @@ cleanup() {
   local started
 
   if [ -d "$TMP" ]; then
-    while IFS= read -r started; do
-      touch "${started%.started}.release"
-    done < <(find "$TMP" -type f -name '*.started' 2>/dev/null)
+    if [ -f "$RELEASE_MARKERS" ]; then
+      while IFS= read -r started; do
+        [ -z "$started" ] || touch "$started"
+      done <"$RELEASE_MARKERS"
+    fi
   fi
   sleep 0.05
   for child in $(jobs -pr); do
@@ -96,6 +99,21 @@ wait_for_path() {
   return 1
 }
 
+wait_for_pattern() {
+  local path="$1"
+  local pattern="$2"
+  local remaining=150
+
+  while [ "$remaining" -gt 0 ]; do
+    if [ -f "$path" ] && grep -q -- "$pattern" "$path"; then
+      return 0
+    fi
+    sleep 0.02
+    remaining=$((remaining-1))
+  done
+  return 1
+}
+
 record_ok() {
   echo "  ok    $1"
   pass=$((pass+1))
@@ -105,6 +123,10 @@ record_fail() {
   echo "  FAIL  $1"
   [ -z "${2:-}" ] || echo "        $2"
   fail=$((fail+1))
+}
+
+register_release() {
+  printf '%s\n' "$1.release" >>"$RELEASE_MARKERS"
 }
 
 start_holder() {
@@ -138,14 +160,22 @@ start_default_cap_holder() {
 }
 
 check() {
-  local name="$1" expected="$2" actual="$3"
-  if echo "$actual" | head -1 | grep -qx -- "$expected"; then
+  local actual
+  local actual_rc
+  local expected="$2"
+  local expected_rc="$3"
+  local name="$1"
+
+  actual_rc=0
+  actual="$(run_status)" || actual_rc=$?
+  if echo "$actual" | head -1 | grep -qx -- "$expected" &&
+     [ "$actual_rc" -eq "$expected_rc" ]; then
     echo "  ok    $name"
     pass=$((pass+1))
   else
     echo "  FAIL  $name"
-    echo "        expected first line: $expected"
-    echo "        got: $(echo "$actual" | head -1)"
+    echo "        expected first line/status: $expected/$expected_rc"
+    echo "        got: $(echo "$actual" | head -1)/$actual_rc"
     fail=$((fail+1))
   fi
 }
@@ -156,14 +186,14 @@ touch "$LOCK"
 echo "sim-lock --status:"
 
 # 1. Neither signal — the only case that may report FREE.
-check "free when nothing holds it and nothing uses the sim" "FREE" "$(run_status)"
+check "free when nothing holds it and nothing uses the sim" "FREE" 0
 
 # 2. Lock held, no process naming the UDID. This is the between-phases case:
 #    a gate that has finished building and has not started testing.
 "$FLOCK_BIN" -x "$LOCK" -c 'sleep 4' &
 lock_pid=$!
 sleep 0.5
-check "held when the lock is taken but no process names the UDID" "HELD" "$(run_status)"
+check "held when the lock is taken but no process names the UDID" "HELD" 1
 wait "$lock_pid" 2>/dev/null
 
 # 3. Process using the simulator, lock NOT taken. This is the incident case:
@@ -173,7 +203,7 @@ wait "$lock_pid" 2>/dev/null
 (exec -a "xcodebuild -destination platform=iOS Simulator,id=$FAKE_UDID" sleep 4) &
 fake_pid=$!
 sleep 0.5
-check "held when the sim is in use WITHOUT the lock" "HELD" "$(run_status)"
+check "held when the sim is in use WITHOUT the lock" "HELD" 1
 kill "$fake_pid" 2>/dev/null
 wait 2>/dev/null
 
@@ -182,7 +212,7 @@ wait 2>/dev/null
 (exec -a "launchd_sim $FAKE_UDID" sleep 4) &
 launchd_pid=$!
 sleep 0.5
-check "free when only idle launchd_sim names the UDID" "FREE" "$(run_status)"
+check "free when only idle launchd_sim names the UDID" "FREE" 0
 kill "$launchd_pid" 2>/dev/null
 wait 2>/dev/null
 
@@ -204,7 +234,7 @@ wait 2>/dev/null
 # 6. Back to free once everything exits — proves the signals clear rather than
 #    latching, so a stale HELD cannot wedge the fleet.
 sleep 0.3
-check "free again after holders exit" "FREE" "$(run_status)"
+check "free again after holders exit" "FREE" 0
 
 # 7. Process enumeration failure is not evidence that the simulator is idle.
 #    If this branch returns FREE, destructive work can race an unknown holder.
@@ -252,6 +282,28 @@ if [ "$lsof_error_rc" -ne 0 ] &&
 else
   record_fail "fails closed when simulator lock inspection fails" \
     "status=$lsof_error_rc output='$(echo "$lsof_error_out" | head -1)'"
+fi
+
+LSOF_RC1_ERROR="$TMP/lsof-rc1-error"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "lookup failed" >&2' 'exit 1' >"$LSOF_RC1_ERROR"
+chmod +x "$LSOF_RC1_ERROR"
+set +e
+lsof_rc1_error_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+  MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+  MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
+  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+  MT_SIM_LOCK_TEST_LSOF_BIN="$LSOF_RC1_ERROR" \
+  "$SIM_LOCK" --status 2>&1
+)"
+lsof_rc1_error_rc=$?
+set -e
+if [ "$lsof_rc1_error_rc" -ne 0 ] &&
+   echo "$lsof_rc1_error_out" | grep -q "cannot inspect simulator lock"; then
+  record_ok "fails closed when lsof returns status 1 with diagnostics"
+else
+  record_fail "fails closed when lsof returns status 1 with diagnostics" \
+    "status=$lsof_rc1_error_rc output='$(echo "$lsof_rc1_error_out" | head -1)'"
 fi
 
 echo
@@ -417,22 +469,54 @@ else
     "status=$flock_error_rc output='$(echo "$flock_error_out" | head -1)'"
 fi
 
+FLOCK_SLOT_ERROR="$TMP/flock-slot-error"
+FLOCK_SLOT_ERROR_COUNT="$TMP/flock-slot-error-count"
+# shellcheck disable=SC2016 # Expanded when the fake flock program runs.
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'count=0' \
+  '[ ! -f "$MT_TEST_FLOCK_COUNT" ] || count="$(cat "$MT_TEST_FLOCK_COUNT")"' \
+  'count=$((count + 1))' \
+  'printf "%s\n" "$count" >"$MT_TEST_FLOCK_COUNT"' \
+  '[ "$count" -le 2 ] && exit 0' \
+  'exit 2' >"$FLOCK_SLOT_ERROR"
+chmod +x "$FLOCK_SLOT_ERROR"
+set +e
+flock_slot_error_out="$(
+  MT_TEST_FLOCK_COUNT="$FLOCK_SLOT_ERROR_COUNT" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_UDID="TEST-FLOCK-SLOT-ERROR" \
+    MT_SIM_LOCK_TEST_FLOCK_BIN="$FLOCK_SLOT_ERROR" \
+    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=TEST-FLOCK-SLOT-ERROR" \
+    "$SIM_LOCK" true 2>&1
+)"
+flock_slot_error_rc=$?
+set -e
+if [ "$flock_slot_error_rc" -ne 0 ] &&
+   echo "$flock_slot_error_out" | grep -q "global gate slot.*flock status 2"; then
+  record_ok "reports slot-level flock errors instead of polling them as contention"
+else
+  record_fail "reports slot-level flock errors instead of polling them as contention" \
+    "status=$flock_slot_error_rc output='$(echo "$flock_slot_error_out" | head -1)'"
+fi
+
 echo
 echo "sim-lock per-simulator concurrency:"
 
 SAME_A="$TMP/same-a"
 SAME_B="$TMP/same-b"
+register_release "$SAME_A"
 start_holder "TEST-SAME-SIM" "$SAME_A" >"$SAME_A.log" 2>&1 &
 same_a_pid=$!
 if wait_for_path "$SAME_A.started"; then
   run_gate_for "TEST-SAME-SIM" touch "$SAME_B.started" >"$SAME_B.log" 2>&1 &
   same_b_pid=$!
-  sleep 0.3
-  if [ ! -e "$SAME_B.started" ]; then
+  if wait_for_pattern "$SAME_B.log" "waiting for" && [ ! -e "$SAME_B.started" ]; then
     record_ok "serializes two commands targeting the same simulator"
   else
     record_fail "serializes two commands targeting the same simulator" \
-      "second command started while the first still held the simulator"
+      "second command did not reach a blocked lock state"
   fi
   touch "$SAME_A.release"
   wait "$same_a_pid" 2>/dev/null
@@ -452,6 +536,8 @@ fi
 
 CROSS_A="$TMP/cross-a"
 CROSS_B="$TMP/cross-b"
+register_release "$CROSS_A"
+register_release "$CROSS_B"
 start_holder "TEST-CROSS-SIM-A" "$CROSS_A" >"$CROSS_A.log" 2>&1 &
 cross_a_pid=$!
 if wait_for_path "$CROSS_A.started"; then
@@ -479,6 +565,9 @@ echo "sim-lock global gate cap:"
 CAP_A="$TMP/cap-a"
 CAP_B="$TMP/cap-b"
 CAP_C="$TMP/cap-c"
+register_release "$CAP_A"
+register_release "$CAP_B"
+register_release "$CAP_C"
 start_default_cap_holder "TEST-CAP-SIM-A" "$CAP_A" >"$CAP_A.log" 2>&1 &
 cap_a_pid=$!
 start_default_cap_holder "TEST-CAP-SIM-B" "$CAP_B" >"$CAP_B.log" 2>&1 &
@@ -489,8 +578,8 @@ wait_for_path "$CAP_B.started" || cap_setup_ok=0
 if [ "$cap_setup_ok" -eq 1 ]; then
   start_default_cap_holder "TEST-CAP-SIM-C" "$CAP_C" >"$CAP_C.log" 2>&1 &
   cap_c_pid=$!
-  sleep 0.3
-  if [ ! -e "$CAP_C.started" ]; then
+  if wait_for_pattern "$CAP_C.log" "waiting for one of 2 global gate slots" &&
+     [ ! -e "$CAP_C.started" ]; then
     touch "$CAP_A.release"
     if wait_for_path "$CAP_C.started"; then
       record_ok "queues a third gate until one of two global slots opens"
@@ -545,6 +634,73 @@ else
     "status=$noncanonical_cap_rc output='$noncanonical_cap_out'"
 fi
 
+# A cap-1 invocation is a fleet-exclusive maintenance admission, not merely a
+# caller that ignores slot 2. It waits for both ordinary holders, then blocks
+# new ordinary gates until it exits.
+EXCLUSIVE_A="$TMP/exclusive-a"
+EXCLUSIVE_B="$TMP/exclusive-b"
+EXCLUSIVE_C="$TMP/exclusive-c"
+EXCLUSIVE_D="$TMP/exclusive-d"
+register_release "$EXCLUSIVE_A"
+register_release "$EXCLUSIVE_B"
+register_release "$EXCLUSIVE_C"
+register_release "$EXCLUSIVE_D"
+start_default_cap_holder "TEST-EXCLUSIVE-A" "$EXCLUSIVE_A" >"$EXCLUSIVE_A.log" 2>&1 &
+exclusive_a_pid=$!
+start_default_cap_holder "TEST-EXCLUSIVE-B" "$EXCLUSIVE_B" >"$EXCLUSIVE_B.log" 2>&1 &
+exclusive_b_pid=$!
+exclusive_setup_ok=1
+wait_for_path "$EXCLUSIVE_A.started" || exclusive_setup_ok=0
+wait_for_path "$EXCLUSIVE_B.started" || exclusive_setup_ok=0
+if [ "$exclusive_setup_ok" -eq 1 ]; then
+  MT_GATE_MAX_CONCURRENT=1 start_holder "TEST-EXCLUSIVE-C" "$EXCLUSIVE_C" >"$EXCLUSIVE_C.log" 2>&1 &
+  exclusive_c_pid=$!
+  exclusive_c_waiting=0
+  wait_for_pattern "$EXCLUSIVE_C.log" "waiting for fleet-exclusive gate admission" ||
+    exclusive_c_waiting=1
+  touch "$EXCLUSIVE_A.release"
+  wait "$exclusive_a_pid" 2>/dev/null
+  sleep 0.3
+  cap_one_waited_for_both=0
+  [ ! -e "$EXCLUSIVE_C.started" ] || cap_one_waited_for_both=1
+  touch "$EXCLUSIVE_B.release"
+  wait "$exclusive_b_pid" 2>/dev/null
+  cap_one_started=0
+  wait_for_path "$EXCLUSIVE_C.started" || cap_one_started=1
+
+  start_default_cap_holder "TEST-EXCLUSIVE-D" "$EXCLUSIVE_D" >"$EXCLUSIVE_D.log" 2>&1 &
+  exclusive_d_pid=$!
+  exclusive_d_waiting=0
+  wait_for_pattern "$EXCLUSIVE_D.log" "waiting for shared gate admission" ||
+    exclusive_d_waiting=1
+  default_waited_for_exclusive=0
+  [ ! -e "$EXCLUSIVE_D.started" ] || default_waited_for_exclusive=1
+  touch "$EXCLUSIVE_C.release"
+  wait "$exclusive_c_pid" 2>/dev/null
+  default_started=0
+  wait_for_path "$EXCLUSIVE_D.started" || default_started=1
+  touch "$EXCLUSIVE_D.release"
+  wait "$exclusive_d_pid" 2>/dev/null
+
+  if [ "$exclusive_c_waiting" -eq 0 ] &&
+     [ "$exclusive_d_waiting" -eq 0 ] &&
+     [ "$cap_one_waited_for_both" -eq 0 ] &&
+     [ "$cap_one_started" -eq 0 ] &&
+     [ "$default_waited_for_exclusive" -eq 0 ] &&
+     [ "$default_started" -eq 0 ]; then
+    record_ok "makes a cap-1 invocation fleet-exclusive against default gates"
+  else
+    record_fail "makes a cap-1 invocation fleet-exclusive against default gates" \
+      "cap1_waiting=$exclusive_c_waiting default_waiting=$exclusive_d_waiting waited_for_both=$cap_one_waited_for_both cap1_started=$cap_one_started default_waited=$default_waited_for_exclusive default_started=$default_started"
+  fi
+else
+  record_fail "makes a cap-1 invocation fleet-exclusive against default gates" \
+    "two ordinary gates did not start"
+  touch "$EXCLUSIVE_A.release" "$EXCLUSIVE_B.release"
+  wait "$exclusive_a_pid" 2>/dev/null
+  wait "$exclusive_b_pid" 2>/dev/null
+fi
+
 echo
 echo "sim-lock stable lock inode:"
 
@@ -552,6 +708,8 @@ INODE_UDID="TEST-INODE-SIM"
 INODE_LOCK="$LOCK_ROOT/making-tracks-sim-$INODE_UDID.lock"
 INODE_HOLDER_A="$TMP/inode-holder-a"
 INODE_HOLDER_B="$TMP/inode-holder-b"
+register_release "$INODE_HOLDER_A"
+register_release "$INODE_HOLDER_B"
 mkdir -p "$LOCK_ROOT"
 touch "$INODE_LOCK"
 inode_before="$(stat -f %i "$INODE_LOCK")"
@@ -560,8 +718,13 @@ inode_a_pid=$!
 if wait_for_path "$INODE_HOLDER_A.started" && [ -f "$INODE_LOCK" ]; then
   start_holder "$INODE_UDID" "$INODE_HOLDER_B" >"$INODE_HOLDER_B.log" 2>&1 &
   inode_b_pid=$!
-  sleep 0.3
+  waiter_ready=0
+  wait_for_pattern "$INODE_HOLDER_B.log" "waiting for" || waiter_ready=1
   inode_during="$(stat -f %i "$INODE_LOCK")"
+  expected_inode_locked=0
+  exec 6>>"$INODE_LOCK"
+  "$FLOCK_BIN" -n 6 && expected_inode_locked=1
+  exec 6>&-
   contender_queued=0
   [ ! -e "$INODE_HOLDER_B.started" ] || contender_queued=1
   touch "$INODE_HOLDER_A.release"
@@ -571,14 +734,16 @@ if wait_for_path "$INODE_HOLDER_A.started" && [ -f "$INODE_LOCK" ]; then
   touch "$INODE_HOLDER_B.release"
   wait "$inode_b_pid" 2>/dev/null
   inode_after="$(stat -f %i "$INODE_LOCK")"
-  if [ "$contender_queued" -eq 0 ] &&
+  if [ "$waiter_ready" -eq 0 ] &&
+     [ "$expected_inode_locked" -eq 0 ] &&
+     [ "$contender_queued" -eq 0 ] &&
      [ "$contender_started" -eq 0 ] &&
      [ "$inode_before" = "$inode_during" ] &&
      [ "$inode_before" = "$inode_after" ]; then
     record_ok "serializes contenders through one stable lock inode"
   else
     record_fail "serializes contenders through one stable lock inode" \
-      "queued=$contender_queued started_after_release=$contender_started inode before=$inode_before during=$inode_during after=$inode_after"
+      "waiter_ready=$waiter_ready expected_inode_locked=$expected_inode_locked queued=$contender_queued started_after_release=$contender_started inode before=$inode_before during=$inode_during after=$inode_after"
   fi
 else
   record_fail "serializes contenders through one stable lock inode" \

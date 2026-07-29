@@ -16,8 +16,8 @@
 - Same-simulator work serialises; different simulators may overlap; no more than `MT_GATE_MAX_CONCURRENT` locked commands overlap globally (default `2`).
 - `MT_RELEASE_GATE_DESTINATION` is mandatory and must contain exactly one comma-delimited
   `id=<simulator-udid>` field.
-- `MT_GATE_MAX_CONCURRENT` defaults to the host ceiling of `2` and may lower it to `1`; a caller cannot
-  enlarge the host-wide ceiling.
+- `MT_GATE_MAX_CONCURRENT` defaults to the host ceiling of `2`. Value `1` takes fleet-exclusive admission
+  for maintenance; a caller cannot enlarge the host-wide ceiling.
 - The test harness must exercise real process, lock, and timing effects; it must not inspect source text. Process-detection cases run with host process-list access because the sandbox denies `pgrep`.
 - The per-seat simulator table is recorded in the iOS gate's operational ledger because `docs/INFRA.md` is develop-owned and deliberately absent from the `ios` tree.
 
@@ -46,7 +46,9 @@ Add tests that prove:
 1. two commands targeting the same UDID never overlap;
 2. commands targeting different UDIDs do overlap;
 3. with `MT_GATE_MAX_CONCURRENT=2`, a third different-UDID command stays queued until either holder exits;
-4. while one process holds the per-UDID lock, another invocation observes the same inode and cannot acquire it even if a retired path exists.
+4. while one process holds the expected per-UDID lock inode, an independent nonblocking `flock` and a
+   second wrapper invocation both prove it cannot be acquired; after release, the contender runs on the
+   same unchanged inode.
 
 Each test records start/end markers in a temp directory and derives its expected ordering from literal marker relationships, not from implementation helpers.
 
@@ -88,6 +90,10 @@ Never unlink, rename, symlink, or truncate the lock file.
 - [x] **Step 3: Acquire one global semaphore slot**
 
 Open each stable slot file in numeric order and try `flock -n` on its descriptor. If all slots are occupied, close the unsuccessful descriptors, emit a bounded waiting message, poll until a slot opens or `MT_SIM_LOCK_WAIT` expires, and retain the winning descriptor until the child exits.
+
+Before slot selection, hold a stable shared policy lock for ordinary cap-2 gates or its exclusive form for
+a cap-1 maintenance command. This makes lowering to one host-wide rather than a caller-local view of slot
+1.
 
 - [x] **Step 4: Preserve re-entrancy and destructive-operation safety**
 

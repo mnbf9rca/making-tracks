@@ -20,6 +20,19 @@ host-wide ceiling are `2`; operators may lower the setting to `1`, but callers c
 Lock files are stable `/private/tmp` files and are never deleted or replaced. Same-simulator serialization
 and the global cap are separate gates: acquiring one never substitutes for the other.
 
+### Fleet-exclusive maintenance
+
+`MT_GATE_MAX_CONCURRENT=1` takes an exclusive policy lock. It waits for every ordinary cap-2 gate to exit,
+and ordinary gates cannot enter until the maintenance command finishes. This supersedes the single-fleet-
+lock weekly-cleanup claim in `develop`'s simulator runbook.
+
+Export one seat destination from the table, then wrap each maintenance operation through the same entry
+point. Do not embed a different or retired UDID inside a nested shell command.
+
+```bash
+MT_GATE_MAX_CONCURRENT=1 ./scripts/sim-lock.sh xcrun simctl --set testing delete all
+```
+
 ## Classification Rule
 
 A red run is infra only when all of the following hold:
