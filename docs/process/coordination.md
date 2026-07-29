@@ -7,8 +7,8 @@ Standing reference for the phase-cycle workflow (`docs/superpowers/specs/2026-07
 | Seat | Model / effort | Does |
 |---|---|---|
 | Rob | human | Design sessions, taste rulings, ratifies amendments, promotes `develop` → `main` |
-| fable | Fable 5 | Coordination, budget/dependency checks, merges, the supervision loop, verification. Session is disposable |
-| opus | Opus | Drafts phase specs, wireframe layouts, decomposition; per-PR design review where a task's review tier calls for it; spawns clean-context read-only subagents where fresh eyes are needed |
+| planner | Fable 5 | Coordination, budget/dependency checks, merges, the supervision loop, verification. Session is disposable |
+| reviewer | Opus | Drafts phase specs, wireframe layouts, decomposition; per-PR design review where a task's review tier calls for it; spawns clean-context read-only subagents where fresh eyes are needed |
 | codex-r | GPT-5.6-Sol, xhigh | Reviewer seat: bounded adversarial passes only (one spec attack + one acceptance pass per phase). Context persists — cannot be remotely cleared. Joins at the fleet restart |
 | codex1–4 | GPT-5.6-Sol, high | Build, one uniform pool (app, pipeline, VPS — work items are work items). Effort stays at high until two phases of defect data exist under this workflow, then revisit |
 
@@ -17,26 +17,26 @@ Legacy handles `codex` (bare) and `claude` are **dead** — do not route to them
 ## AMQ conventions
 
 - **Root:** `.agent-mail`. **Fleet session: `collab`.** The base tree is *not* drained by agents, so every send must use `--session collab` (`amq send --to <handle> --session collab …`). The inline `<handle>@<project>:<session>` form is cross-**project** routing only — do not use it for same-project session sends.
-- **Handles:** `fable`, `opus`, `codex1`–`codex4`, `user` (Rob), `codex-r` (from the restart).
-- **Threads:** `p2p/<a>__<b>` for a pair (e.g. `p2p/fable__opus`); `gate/<topic>` addressed to `user` for human-action gates (a decision or promotion only Rob can make).
+- **Handles:** `planner`, `reviewer`, `codex1`–`codex4`, `user` (Rob), `codex-r` (from the restart).
+- **Threads:** `p2p/<a>__<b>` for a pair (e.g. `p2p/planner__reviewer`); `gate/<topic>` addressed to `user` for human-action gates (a decision or promotion only Rob can make).
 - **Kinds** (amq defaults): `review_request`, `question`, `todo`, `status`, `decision`, plus `answer`/`review_response`. Set `priority` (`urgent`/`normal`/`low`) to match.
 - **Drain-and-act:** drain with `amq drain --include-body`, act on the message, then reply on its thread.
 - **Seat rule** (spec §8): a fresh session boots on `AGENTS.md` + this file + the current `tasks.md`; nothing load-bearing lives only in a session.
 
 ## Merge law (Rob, 2026-07-21)
 
-- Merges **execute from fable's seat** unless delegated per-merge.
+- Merges **execute from planner's seat** unless delegated per-merge.
 - A reviewer's "cleared to merge" is **gate input, not authorization** — clearance and execution are separate.
-- The executor **announces every merge as their first act**: a `p2p` message to fable carrying the **PR number + merged SHA**.
+- The executor **announces every merge as their first act**: a `p2p` message to planner carrying the **PR number + merged SHA**.
 - GitHub's `mergedBy` is a shared token and proves nothing about who authorized the merge — the announcement is the record.
 - Branch/PR mechanics live in `AGENTS.md` → **Branch discipline** and **Review gates**: PR-only onto `develop`/`ios` (never push directly); no agent self-merges its own PR; `main` is Rob-only; promotions to `main` are merge commits, feature PRs squash into `develop`/`ios`.
 
 ## Supervision-loop contract (spec §2.3)
 
-fable runs a loop **~every 30 minutes**: read `tasks.md` and the PR/CI states; merge ready PRs per the merge law (announce PR + SHA first); assign next tasks; nudge stalls.
+planner runs a loop **~every 30 minutes**: read `tasks.md` and the PR/CI states; merge ready PRs per the merge law (announce PR + SHA first); assign next tasks; nudge stalls.
 
-- **Dual channel** (Rob, 2026-07-24; supersedes "builders talk to the tree, not to fable"): all agents — builders included — announce events to fable via AMQ (completion, blockers, handoffs), **and** write status to `tasks.md`. AMQ is the event channel so fable learns of completions without waiting for the next loop pass; `tasks.md` is the durable record the loop reads to catch a stuck agent — no progress, or a reply that never came. An event announced only on AMQ or only in `tasks.md` is half-delivered.
-- **Claim state is authoritative only with fable, never from the tree.** A builder's status line rides their own branch until their PR merges, so the `tasks.md` on a long-lived branch **structurally lags** every claim made since the last merge: a task reading `unclaimed` there may already be claimed and branched. The AMQ event channel carries claims in real time and terminates at fable, so fable is the only place that knows. Ask; do not infer. This is the one question where reading the tree is the wrong instinct — it is otherwise the right one, which is exactly what makes the trap easy to walk into.
+- **Dual channel** (Rob, 2026-07-24; supersedes "builders talk to the tree, not to planner"): all agents — builders included — announce events to planner via AMQ (completion, blockers, handoffs), **and** write status to `tasks.md`. AMQ is the event channel so planner learns of completions without waiting for the next loop pass; `tasks.md` is the durable record the loop reads to catch a stuck agent — no progress, or a reply that never came. An event announced only on AMQ or only in `tasks.md` is half-delivered.
+- **Claim state is authoritative only with planner, never from the tree.** A builder's status line rides their own branch until their PR merges, so the `tasks.md` on a long-lived branch **structurally lags** every claim made since the last merge: a task reading `unclaimed` there may already be claimed and branched. The AMQ event channel carries claims in real time and terminates at planner, so planner is the only place that knows. Ask; do not infer. This is the one question where reading the tree is the wrong instinct — it is otherwise the right one, which is exactly what makes the trap easy to walk into.
 - **No active phase** (Rob, 2026-07-25): when no phase `tasks.md` exists, status goes to `docs/superpowers/phases/pre-phase/tasks.md` — same format, same stall rules. The ledger must be an **in-worktree file**: agents recover from crashes by reading it, and the supervision loop reads it to spot stuck work; neither works from GitHub comments. **Tracker issues stay clean** — an issue records the work item and its outcome, not running status; do not post status essays or progress commentary as issue comments.
 - **Stall** = a claimed task with **no status change for 45 minutes** (tunable per phase in the `tasks.md` header).
 - **Nudge** = an AMQ message quoting the last status line and the builder-brief pointer.
@@ -72,10 +72,10 @@ When the spec doesn't settle a judgment call:
 
 ## Standing items
 
-Durable facts the fleet operates under (moved here from fable's session memory so a restart preserves them).
+Durable facts the fleet operates under (moved here from planner's session memory so a restart preserves them).
 
 1. **Signing** (ruleset, verified 2026-07-23): long-lived branches require signed commits. Agents sign via the 1Password socket, biometric on first use per session; tree-preserving re-sign amends carry gate evidence forward.
-2. **Pre-auth "flip at 2"** (Rob, 2026-07-22): at 2 consecutive counting greens, fable executes the ruleset change (`ios-release-gate` required) + the CI-merge-authority amendment without further ask. **Currently PARKED** pending the self-hosted-runner decision (new MacBook ~2026-07-29). Count state lives in `docs/ios-gate-ledger.md`.
+2. **Pre-auth "flip at 2"** (Rob, 2026-07-22): at 2 consecutive counting greens, planner executes the ruleset change (`ios-release-gate` required) + the CI-merge-authority amendment without further ask. **Currently PARKED** pending the self-hosted-runner decision (new MacBook ~2026-07-29). Count state lives in `docs/ios-gate-ledger.md`.
 3. **Standing goal** (Rob, 2026-07-20): drain epic #335 and its sub-issues to the MVP bar before new design threads. Per spec §9, **Phase 1 begins after this completes**.
 4. **CI-gate amendment candidates** pending Rob's ruling: build-hash assertion as gate provenance; `Package.resolved` lint (swift test rewrites the MapLibre pin); "pin to the environment you do not control".
 5. **Rob's device artifacts** sync to `.mt-data/screenshots/` and `.mt-data/diagnostics/` in the repo root — check there before asking Rob for files.
