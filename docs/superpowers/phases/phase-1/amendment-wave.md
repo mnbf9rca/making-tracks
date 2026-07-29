@@ -197,7 +197,7 @@ First mounted instance to verify against: T1.7's location-off Settings gear.
 - **Serves:** #517 (Rob) · **Review tier:** `sourcery` + `opus` · **Depends on:** none
 - **Greptile slot recommended** — see *budget note*
 - **Owner:** codex2
-- **Status:** branch
+- **Status:** tests green
 - **Branch:** `wp-517-saved-hidden-exclusivity` — cut from a freshly-fetched `ios` *(already cut)*
 
 **Builder brief.** Four parts, and the third is a data migration:
