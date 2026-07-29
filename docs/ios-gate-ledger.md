@@ -24,7 +24,8 @@ and the global cap are separate gates: acquiring one never substitutes for the o
 
 `MT_GATE_MAX_CONCURRENT=1` takes an exclusive policy lock. It waits for every ordinary cap-2 gate to exit,
 and ordinary gates cannot enter until the maintenance command finishes. This supersedes the single-fleet-
-lock weekly-cleanup claim in `develop`'s simulator runbook.
+The admission lock does not promise fairness; run fleet-exclusive maintenance in a quiet window so a
+steady stream of ordinary shared admissions cannot starve it until the timeout.
 
 Export one seat destination from the table, then wrap each maintenance operation through the same entry
 point. Do not embed a different or retired UDID inside a nested shell command.

@@ -84,6 +84,7 @@ def _fake_tools(tmp_path: Path) -> tuple[Path, Path]:
         "  done\n"
         "fi\n"
         'if [ -n "${MT_RELEASE_GATE_XCODEBUILD_STDOUT:-}" ]; then printf "%s\\n" "$MT_RELEASE_GATE_XCODEBUILD_STDOUT"; fi\n'
+        'if [ "${MT_RELEASE_GATE_FAIL_TEST:-}" = "1" ] && [ "$1" = "test-without-building" ]; then exit 65; fi\n'
         'if [ "${MT_RELEASE_GATE_FAIL_XCODEBUILD:-}" = "1" ]; then exit 65; fi\n',
         encoding="utf-8",
     )
@@ -438,7 +439,7 @@ def test_release_gate_keeps_derived_data_when_xcodebuild_fails(tmp_path):
     assert derived_data.exists()
 
 
-def test_release_gate_removes_result_bundle_after_success(tmp_path):
+def test_release_gate_preserves_result_bundle_after_success(tmp_path):
     repo = _init_repo(tmp_path)
     fakebin, log = _fake_tools(tmp_path)
     env = _env(fakebin, log)
@@ -448,35 +449,30 @@ def test_release_gate_removes_result_bundle_after_success(tmp_path):
     result = _run([str(SCRIPT)], repo, env=env)
 
     assert result.returncode == 0, result.stderr
-    assert not result_bundle.exists()
+    assert result_bundle.is_dir()
 
 
-def test_release_gate_removes_result_bundle_after_failure(tmp_path):
+def test_release_gate_preserves_result_bundle_after_failure(tmp_path):
     repo = _init_repo(tmp_path)
     fakebin, log = _fake_tools(tmp_path)
     env = _env(fakebin, log)
     env["MT_RELEASE_GATE_FAKE_CREATE_RESULT"] = "1"
-    env["MT_RELEASE_GATE_FAIL_XCODEBUILD"] = "1"
+    env["MT_RELEASE_GATE_FAIL_TEST"] = "1"
     result_bundle = log.parent / "release-gate-run" / "MakingTracksTests.xcresult"
 
     result = _run([str(SCRIPT)], repo, env=env)
 
     assert result.returncode == 65
-    assert not result_bundle.exists()
+    assert result_bundle.is_dir()
 
 
-def test_release_gate_preserves_ci_result_bundle_for_postprocessing(tmp_path):
+def test_release_gate_preserves_caller_named_result_bundle(tmp_path):
     repo = _init_repo(tmp_path)
     fakebin, log = _fake_tools(tmp_path)
-    xcbeautify = fakebin / "xcbeautify"
-    xcbeautify.write_text("cat\n", encoding="utf-8")
-    xcbeautify.chmod(xcbeautify.stat().st_mode | stat.S_IXUSR)
     env = _env(fakebin, log)
-    env.pop("MT_SIM_LOCK")
-    env["MT_RELEASE_GATE_SKIP_LOCK"] = "1"
-    env["GITHUB_ACTIONS"] = "true"
     env["MT_RELEASE_GATE_FAKE_CREATE_RESULT"] = "1"
-    result_bundle = log.parent / "release-gate-run" / "MakingTracksTests.xcresult"
+    result_bundle = tmp_path / "caller-owned" / "Shard.xcresult"
+    env["MT_RELEASE_GATE_RESULT_BUNDLE"] = str(result_bundle)
 
     result = _run([str(SCRIPT)], repo, env=env)
 

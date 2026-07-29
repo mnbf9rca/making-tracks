@@ -63,6 +63,8 @@ same simulator serialize. A stable global counting semaphore caps aggregate gate
 host ceiling is `2`; the setting may lower concurrency to `1` but cannot enlarge it.
 Cap `1` takes an exclusive admission lock, so it waits for both ordinary gates and prevents new ones; use
 it for fleet-wide maintenance.
+`MT_SIM_LOCK_WAIT` is a per-stage timeout for the simulator lock, admission policy, and global slot; a
+command blocked at all three stages can therefore wait up to three times that value.
 
 **Never read a lock file by hand to decide whether a simulator is free.** The file tells you who holds one
 inode, not who is using the simulator, and those differ. `--status` checks both and reports HELD if either
@@ -73,6 +75,10 @@ hand-checked lock erased a running gate*).
 
 `scripts/release-gate.sh` no longer takes the lock and refuses to run outside it. Two lock-takers is how the
 paths drifted apart.
+
+The wrapper's lock descriptors intentionally pass to every descendant. If `--status` still names a holder
+after the wrapper exits, a surviving background descendant owns the locks: stop that process before
+retrying, and never delete or replace a lock file as recovery.
 
 ## Adding to this file
 

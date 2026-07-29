@@ -264,6 +264,32 @@ else
     "status=$pgrep_error_rc output='$(echo "$pgrep_error_out" | head -1)'"
 fi
 
+PGREP_WARNING="$TMP/pgrep-warning"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'echo "pgrep: warning: cannot read process table entry" >&2' \
+  'exit 0' >"$PGREP_WARNING"
+chmod +x "$PGREP_WARNING"
+set +e
+pgrep_warning_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+  MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+  MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
+  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+  MT_SIM_LOCK_TEST_PGREP_BIN="$PGREP_WARNING" \
+  "$SIM_LOCK" --status 2>&1
+)"
+pgrep_warning_rc=$?
+set -e
+if [ "$pgrep_warning_rc" -eq 0 ] &&
+   echo "$pgrep_warning_out" | head -1 | grep -qx "FREE" &&
+   ! echo "$pgrep_warning_out" | grep -q "pid(s): pgrep:"; then
+  record_ok "keeps pgrep diagnostics out of the process id stream"
+else
+  record_fail "keeps pgrep diagnostics out of the process id stream" \
+    "status=$pgrep_warning_rc output='$(echo "$pgrep_warning_out" | head -2 | tr '\n' ' ')'"
+fi
+
 # Lock inspection errors are also unknown state, not evidence that the lock is
 # free during the gap between xcodebuild phases.
 LSOF_ERROR="$TMP/lsof-error"
@@ -536,6 +562,49 @@ else
     "first holder did not start"
   touch "$SAME_A.release"
   wait "$same_a_pid" 2>/dev/null
+fi
+
+# The lsof lookup on a contended simulator is only decoration for the waiting
+# message. A normal no-match status with a benign diagnostic must not abort the
+# queued command.
+DIAGNOSTIC_UDID="TEST-DIAGNOSTIC-SIM"
+DIAGNOSTIC_HOLDER="$TMP/diagnostic-holder"
+DIAGNOSTIC_WAITER="$TMP/diagnostic-waiter"
+LSOF_NO_MATCH_WARNING="$TMP/lsof-no-match-warning"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'echo "lsof: WARNING: cannot stat() nfs file system" >&2' \
+  'exit 1' >"$LSOF_NO_MATCH_WARNING"
+chmod +x "$LSOF_NO_MATCH_WARNING"
+register_release "$DIAGNOSTIC_HOLDER"
+start_holder "$DIAGNOSTIC_UDID" "$DIAGNOSTIC_HOLDER" >"$DIAGNOSTIC_HOLDER.log" 2>&1 &
+diagnostic_holder_pid=$!
+if wait_for_path "$DIAGNOSTIC_HOLDER.started"; then
+  # shellcheck disable=SC2016 # Expanded by the child sh, not this harness.
+  MT_SIM_LOCK_TEST_MODE=1 \
+  MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+  MT_SIM_LOCK_TEST_UDID="$DIAGNOSTIC_UDID" \
+  MT_SIM_LOCK_TEST_LSOF_BIN="$LSOF_NO_MATCH_WARNING" \
+  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$DIAGNOSTIC_UDID" \
+  MT_SIM_LOCK_WAIT=5 \
+    "$SIM_LOCK" sh -c 'touch "$1.started"' sh "$DIAGNOSTIC_WAITER" \
+    >"$DIAGNOSTIC_WAITER.log" 2>&1 &
+  diagnostic_waiter_pid=$!
+  wait_for_pattern "$DIAGNOSTIC_WAITER.log" "waiting for simulator $DIAGNOSTIC_UDID lock" || true
+  touch "$DIAGNOSTIC_HOLDER.release"
+  wait "$diagnostic_holder_pid" 2>/dev/null || true
+  diagnostic_waiter_rc=0
+  wait "$diagnostic_waiter_pid" 2>/dev/null || diagnostic_waiter_rc=$?
+  if [ "$diagnostic_waiter_rc" -eq 0 ] &&
+     [ -f "$DIAGNOSTIC_WAITER.started" ]; then
+    record_ok "queued gate ignores non-fatal lsof diagnostics"
+  else
+    record_fail "queued gate ignores non-fatal lsof diagnostics" \
+      "status=$diagnostic_waiter_rc output='$(head -1 "$DIAGNOSTIC_WAITER.log" 2>/dev/null)'"
+  fi
+else
+  record_fail "queued gate ignores non-fatal lsof diagnostics" \
+    "holder did not start"
 fi
 
 CROSS_A="$TMP/cross-a"

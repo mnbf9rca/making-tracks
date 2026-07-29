@@ -8,6 +8,11 @@
 # Per-simulator locks let different seats run concurrently. Stable global slot
 # locks cap aggregate gate load. Every lock is opened once and flocked by file
 # descriptor; lock paths are never removed or replaced (#497).
+#
+# File descriptors 7, 8 and 9 deliberately remain open across the wrapped
+# command and its descendants. That inheritance keeps all three locks held
+# across shell/xcodebuild process transitions; closing them in the child would
+# reintroduce the split-ownership incident this wrapper prevents.
 
 set -euo pipefail
 
@@ -39,6 +44,7 @@ fi
 [ -x "$LSOF_BIN" ] || die "lsof not executable at $LSOF_BIN"
 [ -x "$PGREP_BIN" ] || die "pgrep not executable at $PGREP_BIN"
 [ -x "$PS_BIN" ] || die "ps not executable at $PS_BIN"
+umask 077
 
 case "$LOCK_WAIT_SECONDS" in
   0|[1-9]|[1-9][0-9]*) ;;
@@ -93,33 +99,57 @@ LOCK="$LOCK_ROOT/making-tracks-sim-$UDID.lock"
 # Reporting FREE requires both to be silent.
 
 lock_holders() {
+  local diagnostics=""
+  local diagnostics_file
   local lsof_rc=0
   local matches
+  local mode="${1:-strict}"
 
   [ -e "$LOCK" ] || return 0
-  matches="$("$LSOF_BIN" -t -- "$LOCK" 2>&1)" || lsof_rc=$?
+  diagnostics_file="$(mktemp "$LOCK_ROOT/.making-tracks-lsof.XXXXXX")" || {
+    [ "$mode" = "advisory" ] && return 0
+    die "cannot create temporary output for simulator lock inspection"
+  }
+  matches="$("$LSOF_BIN" -t -- "$LOCK" 2>"$diagnostics_file")" || lsof_rc=$?
+  diagnostics="$(<"$diagnostics_file")"
+  rm -f "$diagnostics_file"
   case "$lsof_rc" in
     0) printf '%s\n' "$matches" ;;
     1)
-      [ -z "$matches" ] || die "cannot inspect simulator lock $LOCK (lsof status 1): $matches"
+      if [ -n "$diagnostics" ] && [ "$mode" != "advisory" ]; then
+        die "cannot inspect simulator lock $LOCK (lsof status 1): $diagnostics"
+      fi
       return 0
       ;;
-    *) die "cannot inspect simulator lock $LOCK (lsof status $lsof_rc): $matches" ;;
+    *)
+      [ "$mode" = "advisory" ] && return 0
+      die "cannot inspect simulator lock $LOCK (lsof status $lsof_rc): $diagnostics"
+      ;;
   esac
 }
 
 udid_users() {
   # pgrep exit 1 is a valid empty result. Any other error means we do not know
   # whether the simulator is idle, so fail closed (#545).
+  local diagnostics=""
+  local diagnostics_file
   local matches
   local pgrep_rc=0
   local pid
 
-  matches="$("$PGREP_BIN" -f -- "$UDID" 2>&1)" || pgrep_rc=$?
+  diagnostics_file="$(mktemp "$LOCK_ROOT/.making-tracks-pgrep.XXXXXX")" ||
+    die "cannot create temporary output for simulator process inspection"
+  matches="$("$PGREP_BIN" -f -- "$UDID" 2>"$diagnostics_file")" || pgrep_rc=$?
+  diagnostics="$(<"$diagnostics_file")"
+  rm -f "$diagnostics_file"
   case "$pgrep_rc" in
     0) ;;
-    1) return 0 ;;
-    *) die "cannot inspect simulator processes for $UDID (pgrep status $pgrep_rc): $matches" ;;
+    1)
+      [ -z "$diagnostics" ] ||
+        die "cannot inspect simulator processes for $UDID (pgrep status 1): $diagnostics"
+      return 0
+      ;;
+    *) die "cannot inspect simulator processes for $UDID (pgrep status $pgrep_rc): $diagnostics" ;;
   esac
 
   while IFS= read -r pid; do
@@ -302,7 +332,7 @@ run_locked() {
     [ "$flock_rc" -eq 1 ] ||
       die "could not inspect or acquire simulator $UDID lock (flock status $flock_rc)"
     local holders
-    holders="$(lock_holders)"
+    holders="$(lock_holders advisory)"
     if [ -n "$holders" ]; then
       echo "sim-lock: waiting for pid(s) $(echo "$holders" | tr '\n' ' ') on $UDID (timeout ${LOCK_WAIT_SECONDS}s)" >&2
     else

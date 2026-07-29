@@ -8,9 +8,8 @@
 # This script does not take the lock itself. Two lock-takers is how the lock
 # path drifted apart in the first place, so there is exactly one.
 #
-# Successful and failed runs keep this invocation's DerivedData warm. Local
-# result bundles are removed on exit after xcodebuild emits test counts; CI
-# owns explicit bundles long enough to extract coverage evidence and upload.
+# Successful runs keep this invocation's DerivedData warm; failed runs keep
+# DerivedData and the .xcresult for diagnosis.
 set -euo pipefail
 
 PROJECT="ios/App/MakingTracks.xcodeproj"
@@ -192,9 +191,6 @@ prune_derived_data_if_stale
 mkdir -p "$DERIVED_DATA"
 [ "${MT_RELEASE_GATE_RESULT_BUNDLE:-}" = "" ] || RESULT_BUNDLE="$MT_RELEASE_GATE_RESULT_BUNDLE"
 rm -rf "$RESULT_BUNDLE"
-if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
-  trap 'rm -rf "$RESULT_BUNDLE"' EXIT
-fi
 
 phase "simulator boot" xcrun simctl bootstatus "$(destination_udid)" -b
 
