@@ -15,10 +15,12 @@ these assets are its visual record and are embedded in the implementation epic.
 | `t1.10-place-card-ax.{html,png}` | Accessibility-size place card at the large detent with a scroll fade and vertically stacked action controls. |
 | `t1.10-place-card-dark-system.png` | Runtime UI-test capture with the simulator forced to dark appearance. The map and place card remain on the Snow material sheet; its source and pixel oracle live in `MakingTracksCoreLoopUITests.testPlaceCardKeepsSnowTokensInDarkSystemAppearance`. |
 
-## A8 candidate packets — awaiting delta validation and final Saved ruling
+## A8 candidate packets — delta validated, awaiting final Saved ruling
 
 These packets reflect Rob's post-validation Explore and opaque-container rulings.
-They now await reviewer delta validation and Rob's final Saved value pick; they are
+Reviewer delta validation passed at artifact commit
+`4ca99e0ac82dd304b5f7077ab79eee099e60a13b`; they now await Rob's final Saved
+value pick. They are
 **not** part of the frozen design-session record, none of the three Saved comparison
 values is ratified, and the ratified component-metrics table remains unchanged.
 
@@ -28,21 +30,21 @@ values is ratified, and the ratified component-metrics table remains unchanged.
 | `a8-r15-place-card.html` + `a8-r15-place-card.png` | R15/R16's fully lit Snow place-card cluster at default and accessibility-size 390×844 frames: Saved, Seen, and Loved remain simultaneously ON, `#DEE9E0` is explicitly rejected as the dead composite record, and exactly three opaque Saved candidates are compared without selecting one. |
 
 Both packets name `Playwright-bundled Chromium/headless shell 151.0.7922.34` as
-their renderer. The following is the complete candidate metrics packet for reviewer
-delta validation and Rob's final Saved ruling, not a spec-table amendment.
+their renderer. The following is the reviewer-validated candidate metrics packet
+for Rob's final Saved ruling, not a spec-table amendment.
 
 | Candidate metric | Value | Exact candidate source | Status |
 |---|---|---|---|
 | Explore sheet placement | 62pt large-detent top; 12pt grabber-to-title gap | `a8-explore-surface.html` | Previously validated; unchanged by ruling delta |
-| Selected category-chip symbols | Archaeological `hammer.fill`; Artwork `paintpalette.fill`; Attraction `star.fill`; Historic Building `building.2.fill`; Memorial `flag.fill`; Museum `camera.fill`; Religious `building.columns.fill`; Other `questionmark.circle.fill`; filled selected-chip morphology and 11×11 default / 18×18 AX icon geometry retained | `a8-explore-surface.html` | Ruled mapping demonstrated; pending delta validation |
-| Scope control rows (3) | Ordered Include hidden places OFF → Show saved places ON → Show coverage shading ON; each 52pt minimum; 15pt/600 label; 20×20 established icon; 10pt gap; 6/2 padding; 44×28 switch; 22pt knob at 3/19pt offsets; 1pt hairlines | `a8-explore-surface.html` | Ruled row/default demonstrated; pending delta validation |
+| Selected category-chip symbols | Archaeological `hammer.fill`; Artwork `paintpalette.fill`; Attraction `star.fill`; Historic Building `building.2.fill`; Memorial `flag.fill`; Museum `camera.fill`; Religious `building.columns.fill`; Other `questionmark.circle.fill`; filled selected-chip morphology and 11×11 default / 18×18 AX icon geometry retained | `a8-explore-surface.html` | Reviewer delta validated; awaiting Rob's final ruling |
+| Scope control rows (3) | Ordered Include hidden places OFF → Show saved places ON → Show coverage shading ON; each 52pt minimum; 15pt/600 label; 20×20 established icon; 10pt gap; 6/2 padding; 44×28 switch; 22pt knob at 3/19pt offsets; 1pt hairlines | `a8-explore-surface.html` | Reviewer delta validated; awaiting Rob's final ruling |
 | Scope block rhythm | 18pt header-to-label; 11pt label-to-chips; 14pt chips-to-controls; row minimum yields to wrapped content | `a8-explore-surface.html` | Previously validated; unchanged by ruling delta |
 | Quiet destination row | 9/2 padding; 10pt gap; 12×12 chevron; 2pt title-to-metadata gap | `a8-explore-surface.html` | Previously validated; unchanged by ruling delta |
 | AX sheet / labels / chips | 48pt large-detent top; 10pt grabber gap; 41/22pt title/subtitle with 6pt gap; 17pt section label; chips 38pt minimum with 19pt/600 label, 18×18 icon, 5/14 padding, 6pt label gap and 8pt row gap | `a8-explore-surface.html` | Previously validated; unchanged by ruling delta |
-| AX Scope stress scaling and reachability | Three 86pt-minimum rows; 23pt/600 label; 30×30 icon; 14pt gap; 10/2 padding; 51×31 switch; 25pt knob at 3/23pt offsets; 14/9/14pt block rhythm; the third row consumes the prior flexible gap while the semantic scroll region keeps Settings and About fully visible at scrollTop 0 | `a8-explore-surface.html` | Candidate AX evidence; pending delta validation |
+| AX Scope stress scaling and reachability | Three 86pt-minimum rows; 23pt/600 label; 30×30 icon; 14pt gap; 10/2 padding; 51×31 switch; 25pt knob at 3/23pt offsets; 14/9/14pt block rhythm; the third row consumes the prior flexible gap while the semantic scroll region keeps Settings and About fully visible at scrollTop 0 | `a8-explore-surface.html` | Reviewer delta validated; awaiting Rob's final ruling |
 | AX quiet rows | 4pt block inset; 28×28 icon; 24/18pt title/metadata; 18×18 chevron; 14pt content gap; 10/2 padding; 4pt title-to-metadata gap | `a8-explore-surface.html` | Previously validated; unchanged by ruling delta |
 | ON state-pill geometry | 44pt minimum target; 15pt/600 label; 17×17 filled glyph; 6pt glyph-to-label gap; 8pt between pills; separate 44pt More control | `a8-r15-place-card.html` | Established §5 metrics; unchanged by ruling delta |
-| Saved container decision and opaque comparison | `#DEE9E0` is REJECTED: dead 12%-accent-over-surface composite, not a candidate/token. Exactly three designed opaque candidates against ink `#0A6B5C`, none ratified: Calm `#DFEDEB`, h171.43°, Δ +0.71°, sat 28.00%, 5.34:1, spread 0.0695; Balanced `#D4EDE9`, h170.40°, Δ −0.32°, sat 40.98%, 5.23:1, spread 0.1018; Vivid `#CAECE6`, h169.41°, Δ −1.31°, sat 47.22%, 5.09:1, spread 0.1233. Both evidence columns show the three backgrounds at real Saved-pill scale—44pt target, 17×17 bookmark, 15pt/600 label, 6pt gap—against each adjacent phone's live Seen pill; the comparisons remain unselected and unapplied. All three hue deltas are tighter than the ratified containers; saturation discriminates, with 28.00% / 40.98% / 47.22% below warningContainer 55.93% and loveContainer 80.65%, Vivid nearest. Seen remains `#FBFAF2` on `#0A6B5C` = 6.13:1; Loved remains `#FBFAF2` on `#C4312B` = 5.25:1; no action appears. | `a8-r15-place-card.html` | Ruled comparison demonstrated; pending final pill-scale delta validation and Saved value pick |
+| Saved container decision and opaque comparison | `#DEE9E0` is REJECTED: dead 12%-accent-over-surface composite, not a candidate/token. Exactly three designed opaque candidates against ink `#0A6B5C`, none ratified: Calm `#DFEDEB`, h171.43°, Δ +0.71°, sat 28.00%, 5.34:1, spread 0.0695; Balanced `#D4EDE9`, h170.40°, Δ −0.32°, sat 40.98%, 5.23:1, spread 0.1018; Vivid `#CAECE6`, h169.41°, Δ −1.31°, sat 47.22%, 5.09:1, spread 0.1233. Both evidence columns show the three backgrounds at real Saved-pill scale—44pt target, 17×17 bookmark, 15pt/600 label, 6pt gap—against each adjacent phone's live Seen pill; the comparisons remain unselected and unapplied. All three hue deltas are tighter than the ratified containers; saturation discriminates, with 28.00% / 40.98% / 47.22% below warningContainer 55.93% and loveContainer 80.65%, Vivid nearest. Seen remains `#FBFAF2` on `#0A6B5C` = 6.13:1; Loved remains `#FBFAF2` on `#C4312B` = 5.25:1; no action appears. | `a8-r15-place-card.html` | Reviewer delta validated; awaiting Rob's Saved value pick |
 | AX state-pill stress scaling | 23pt label; 25×25 filled glyph; three stacked 64pt targets; 8pt inter-pill gap | `a8-r15-place-card.html` | Previously validated; unchanged by ruling delta |
 
 ## Implementation evidence
