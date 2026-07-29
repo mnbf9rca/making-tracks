@@ -7752,6 +7752,25 @@ struct ListPickerMembershipState: Equatable {
     }
 }
 
+struct ListPickerSnapshot {
+    let lists: [PlaceList]
+    let memberships: Set<Int64>
+}
+
+@MainActor
+enum ListPickerReloadCoordinator {
+    static func perform(
+        begin: () -> Bool,
+        finish: () -> Void,
+        load: () async -> ListPickerSnapshot,
+        apply: (ListPickerSnapshot) -> Void
+    ) async {
+        guard begin() else { return }
+        defer { finish() }
+        apply(await load())
+    }
+}
+
 struct ListPickerView: View {
     let placeID: String
     let model: MapScreenModel?
@@ -7820,11 +7839,30 @@ struct ListPickerView: View {
     @MainActor
     private func reload() async {
         guard let model else { return }
+        await ListPickerReloadCoordinator.perform {
+            membershipState.beginMutation()
+        } finish: {
+            membershipState.finishMutation()
+        } load: {
+            await loadSnapshot(using: model)
+        } apply: { snapshot in
+            applySnapshot(snapshot)
+        }
+    }
+
+    @MainActor
+    private func loadSnapshot(using model: MapScreenModel) async -> ListPickerSnapshot {
         let nextLists = await model.lists()
-        lists = nextLists
-        membershipState.replaceMemberships(
-            Set(await model.listMemberships(containing: placeID))
+        let nextMemberships = Set(
+            await model.listMemberships(containing: placeID)
         )
+        return ListPickerSnapshot(lists: nextLists, memberships: nextMemberships)
+    }
+
+    @MainActor
+    private func applySnapshot(_ snapshot: ListPickerSnapshot) {
+        lists = snapshot.lists
+        membershipState.replaceMemberships(snapshot.memberships)
     }
 
     @MainActor
@@ -7843,7 +7881,7 @@ struct ListPickerView: View {
                 try await model.addToList(placeID: placeID, listID: id)
             }
             actionError = nil
-            await reload()
+            applySnapshot(await loadSnapshot(using: model))
             onChanged(change)
         } catch {
             actionError = "Could not update that list."
@@ -7866,7 +7904,7 @@ struct ListPickerView: View {
             try await model.addToList(placeID: placeID, listID: id)
             newListName = ""
             actionError = nil
-            await reload()
+            applySnapshot(await loadSnapshot(using: model))
             onChanged(.added(listID: id))
         } catch {
             actionError = ListsCopy.listNameCreateFailureMessage(for: error, draftName: trimmedName)

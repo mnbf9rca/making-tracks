@@ -633,6 +633,55 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(state.beginToggle(listID: 7), .added(listID: 7))
     }
 
+    @MainActor
+    func testListPickerInitialReloadBlocksTogglesUntilCompleteSnapshotPublishes() async {
+        var state = ListPickerMembershipState()
+        var publishedSnapshot: ListPickerSnapshot?
+        let (releaseLoad, releaseLoadContinuation) = AsyncStream<Void>.makeStream()
+
+        let reload = Task { @MainActor in
+            await ListPickerReloadCoordinator.perform {
+                state.beginMutation()
+            } finish: {
+                state.finishMutation()
+            } load: {
+                for await _ in releaseLoad {
+                    break
+                }
+                return ListPickerSnapshot(
+                    lists: [
+                        PlaceList(
+                            id: 7,
+                            name: "Trip",
+                            isSystem: false,
+                            createdAt: Date(timeIntervalSince1970: 0)
+                        )
+                    ],
+                    memberships: [7]
+                )
+            } apply: { snapshot in
+                publishedSnapshot = snapshot
+                state.replaceMemberships(snapshot.memberships)
+            }
+        }
+
+        for _ in 0..<100 where !state.isUpdating {
+            await Task.yield()
+        }
+        XCTAssertTrue(state.isUpdating)
+        XCTAssertNil(publishedSnapshot)
+        XCTAssertNil(state.beginToggle(listID: 7))
+
+        releaseLoadContinuation.yield()
+        releaseLoadContinuation.finish()
+        await reload.value
+
+        XCTAssertEqual(publishedSnapshot?.lists.map(\.id), [7])
+        XCTAssertEqual(publishedSnapshot?.memberships, [7])
+        XCTAssertFalse(state.isUpdating)
+        XCTAssertEqual(state.beginToggle(listID: 7), .removed(listID: 7))
+    }
+
     func testLovedManagedPlaceMetadataNamesHiddenOverlapWithoutFilteringIt() {
         let both = ListPlace(
             placeID: "both",
