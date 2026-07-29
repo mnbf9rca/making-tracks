@@ -1,6 +1,6 @@
 # A8 Explore and R15 Render Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Author the two A8 candidate render packets that let the reviewer validate R14's collapsed Explore surface and R15/R16's fully-lit place-card state cluster before Rob rules them frozen.
 
@@ -16,11 +16,37 @@
 - Settings and About are quiet bottom rows; Settings' gear is the more prominent of the two.
 - The R15 frame shows the fully-lit state cluster alone: Saved, Seen, and Loved simultaneously ON; no fabricated filled action appears beside it.
 - ON state is carried by filled pill plus filled glyph, never colour alone.
-- Seen uses `accent` `#0A6B5C`; Loved uses `love` `#C4312B`; Saved uses the existing tonal-strength recipe, 12% `accent` composited over `surface`, yielding `#DEE9E0`.
-- Per-pill foreground/background contrast is printed beside the R15 image: Saved `#0A6B5C` on `#DEE9E0` = `5.15:1`; Seen `#FBFAF2` on `#0A6B5C` = `6.13:1`; Loved `#FBFAF2` on `#C4312B` = `5.25:1`.
+- Seen uses `accent` `#0A6B5C`; Loved uses `love` `#C4312B`. Saved's former 12%-accent-over-surface `#DEE9E0` construction is a **rejected decision record**, not a candidate token.
+- The replacement Saved comparison contains three designed opaque candidates, none ratified: Calm `#DFEDEB`, Balanced `#D4EDE9`, and Vivid `#CAECE6`. Each keeps accent ink `#0A6B5C`, remains within `1.31°` of accent's `170.72°` hue, and clears the 4.5:1 body-text gate.
+- Per-pill foreground/background contrast is printed beside the R15 image. Seen remains `#FBFAF2` on `#0A6B5C` = `6.13:1`; Loved remains `#FBFAF2` on `#C4312B` = `5.25:1`; Saved's comparison prints the hue, hue delta, saturation, contrast, and non-composite proof for every candidate.
 - HTML captures use Playwright-bundled Chromium only, never the system browser; renderer name and version appear beside both packets.
 - Every new load-bearing figure is proposed in the spec's component-metrics table with its candidate source. Existing figures cite their existing table row rather than being silently redefined.
 - Candidate assets become frozen only after reviewer validation and Rob's ruling.
+
+---
+
+## Post-validation Rob rulings — 2026-07-29
+
+These rulings supersede the original Saved construction and extend the Explore frame before freeze:
+
+1. Place-type chips keep the filled-chip selected morphology but replace the generic checkmark with
+   the canonical category pin symbol. A second checkmark is deliberately not added.
+2. Scope gains a `Show saved places` row, default ON, between `Include hidden places` and coverage.
+   This preserves today's discovery-map default.
+3. Container tokens are designed opaque colours in the `loveContainer` / `warningContainer` family,
+   never mechanical composites. `#DEE9E0` remains visible only as the labelled rejected candidate
+   that caused the rule to be made.
+4. The approved Saved comparison is:
+
+| Candidate | Hex | Hue | Delta from accent | Saturation | Contrast with `#0A6B5C` | Implied-alpha spread |
+|---|---|---:|---:|---:|---:|---:|
+| Calm | `#DFEDEB` | `171.43°` | `+0.71°` | `28.00%` | `5.34:1` | `0.0695` |
+| Balanced | `#D4EDE9` | `170.40°` | `−0.32°` | `40.98%` | `5.23:1` | `0.1018` |
+| Vivid | `#CAECE6` | `169.41°` | `−1.31°` | `47.22%` | `5.09:1` | `0.1233` |
+
+The differing per-channel implied alphas prove these are not a single accent-over-surface composite.
+The names are comparison labels, not token names. Rob picks and ratifies the actual value only after
+reviewer delta validation.
 
 ---
 
@@ -36,7 +62,7 @@
 
 - [ ] **Step 1: Build the default 390×844 phone**
 
-Render the Snow map under a large-detent sheet titled `Explore` with subtitle `what the map shows right now`. The first visible content is the Scope control set: category chips followed by `Include hidden places` and `Show coverage shading`. Keep the Search slot structural and invisible—no disabled row, placeholder, empty rectangle, or fabricated copy.
+Render the Snow map under a large-detent sheet titled `Explore` with subtitle `what the map shows right now`. The first visible content is the Scope control set: category chips with their canonical pin symbols, followed by `Include hidden places` OFF, `Show saved places` ON, and `Show coverage shading` ON. Keep the Search slot structural and invisible—no disabled row, placeholder, empty rectangle, or fabricated copy.
 
 - [ ] **Step 2: Build the AX 390×844 phone**
 
@@ -60,13 +86,13 @@ Beside each phone, state: exact `390×844` canvas; Search renders nothing; Scope
 
 Use the existing Snow place-card content and More control. Replace only the action bar with Saved, Seen, and Loved simultaneously ON. Give each pill a filled SF-style glyph and matching label; do not show Hide or any filled action.
 
-- [ ] **Step 2: Apply the ruled semantic fills**
+- [ ] **Step 2: Preserve the rejected Saved record and compare opaque candidates**
 
-Use Saved `#DEE9E0` with accent foreground, Seen `#0A6B5C` with `accentContrast`, and Loved `#C4312B` with `accentContrast`. Keep the 44pt target floor, 15pt/600 labels, 17×17 glyph pairing, 6pt label gap, and 8pt between pills.
+Keep the original Saved `#DEE9E0` render labelled `REJECTED`: it is the dead 12%-composite candidate, not a value. Beside it compare Calm `#DFEDEB`, Balanced `#D4EDE9`, and Vivid `#CAECE6` as designed opaque candidates with accent foreground. Seen remains `#0A6B5C` with `accentContrast`, and Loved remains `#C4312B` with `accentContrast`. Keep the 44pt target floor, 15pt/600 labels, 17×17 glyph pairing, 6pt label gap, and 8pt between pills.
 
 - [ ] **Step 3: Put the contrast proof beside both images**
 
-Print the foreground/background hex pairs and ratios next to the default and AX phones. State explicitly that every pair clears the 4.5:1 body-text gate and that the cluster contains no action, per the amended A8 criterion.
+Print the foreground/background hex pairs and ratios next to the default and AX phones. For each Saved candidate also print hue, delta from accent's hue, saturation, and the implied-alpha spread proving it is not a mechanical composite. State explicitly that every live comparison clears the 4.5:1 body-text gate, none is ratified, and the cluster contains no action, per the amended A8 criterion.
 
 ### Task 3: Render and verify the packets
 
@@ -141,3 +167,47 @@ After reviewer validation, raise the human gate through the planner/reviewer wor
 - [ ] **Step 5: Apply the ruling and complete repository gates**
 
 Fold any ruled changes, remove `candidate` markers only if Rob approves, update A8's ledger transition in both the tree and AMQ, run the docs-only gate set, re-ground on fresh `origin/ios`, inspect the two-dot diff, and open a ready PR into `ios` with `sourcery-review`, `track-b-ios`, and `wp`.
+
+### Task 6: Apply Rob's post-validation Explore and container-token rulings
+
+**Files:**
+- Modify: `docs/design/design-system/a8-explore-surface.html`
+- Recapture: `docs/design/design-system/a8-explore-surface.png`
+- Modify: `docs/design/design-system/a8-r15-place-card.html`
+- Recapture: `docs/design/design-system/a8-r15-place-card.png`
+- Modify: `docs/design/design-system/README.md`
+
+**Interfaces:**
+- Consumes: Rob's approved canonical-icon interpretation, Saved-visibility wording/default, opaque-container law, and three-candidate comparison
+- Produces: two updated candidate packets and an exact pushed SHA for reviewer delta validation and Rob's final value pick
+
+- [ ] **Step 1: Replace generic category checks with canonical symbols**
+
+Use the existing category registry mapping: Archaeological `hammer`, Artwork `paint palette`,
+Attraction `star`, Historic Building `two buildings`, Memorial `flag`, Museum `camera`,
+Religious `columns`, and Other `question mark`. Preserve the filled-chip selected morphology.
+
+- [ ] **Step 2: Add the Saved visibility row**
+
+Add `Show saved places` with a bookmark icon and an ON switch between Include hidden and coverage
+in both default and AX frames. Account for the third row in the candidate metrics and prove the AX
+bottom destinations remain reachable.
+
+- [ ] **Step 3: Replace the settled-looking Saved evidence with the ruled comparison**
+
+Label `#DEE9E0` rejected and retain its composite derivation as the decision record. Add the three
+approved candidate swatches and the complete metrics in the beside-frame evidence; do not apply a
+candidate as though Rob had picked it.
+
+- [ ] **Step 4: Recapture and verify both packets**
+
+Use only Playwright-bundled Chromium/headless shell `151.0.7922.34` at DSF 1. Verify 1540×980
+PNGs, exact 390×844 phones, evidence-panel fit, scroll reachability, canonical icon inventory,
+Saved row ordering/default, rejected/candidate labels, colour samples, HSL figures, WCAG ratios,
+and deterministic repeat-capture hashes.
+
+- [ ] **Step 5: Update discovery and route the exact SHA**
+
+Update the README's candidate metrics/status without touching the frozen table or ratified spec,
+run docs checks, commit signed, push and verify the exact remote SHA, then request scoped reviewer
+delta validation before Rob picks the Saved value.
