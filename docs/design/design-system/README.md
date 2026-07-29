@@ -40,7 +40,7 @@ validation and Rob's ruling, not a spec-table amendment.
 | AX Scope stress scaling | 86pt row minimum; 23pt/600 label; 30×30 icon; 14pt gap; 10/2 padding; 51×31 switch; 25pt knob at 3/23pt offsets; 14/9/14pt block rhythm; minimum yields to content | `a8-explore-surface.html` | Candidate AX evidence; pending validation and ruling |
 | AX quiet rows | 4pt block inset; 28×28 icon; 24/18pt title/metadata; 18×18 chevron; 14pt content gap; 10/2 padding; 4pt title-to-metadata gap | `a8-explore-surface.html` | Candidate AX evidence; pending validation and ruling |
 | ON state-pill geometry | 44pt minimum target; 15pt/600 label; 17×17 filled glyph; 6pt glyph-to-label gap; 8pt between pills; separate 44pt More control | `a8-r15-place-card.html` | Established §5 metrics demonstrated by candidate |
-| ON state semantic fills and contrast | Saved: #0A6B5C on #DEE9E0 = 5.15:1; Seen: #FBFAF2 on #0A6B5C = 6.13:1; Loved: #FBFAF2 on #C4312B = 5.25:1 | `a8-r15-place-card.html` | Candidate evidence; pending validation and ruling |
+| ON state semantic fills and contrast | Saved: #0A6B5C on #DEE9E0 = 5.15:1; candidate derivation pending Rob: BG #DEE9E0 is Snow accent #0A6B5C composited over Snow surface #FBFAF2 at 12% alpha (88% surface), then channel-rounded; implied α: R 0.1203 / G 0.1189 / B 0.1200. Seen: #FBFAF2 on #0A6B5C = 6.13:1; Loved: #FBFAF2 on #C4312B = 5.25:1 | `a8-r15-place-card.html` | Candidate evidence; pending validation and ruling |
 | AX state-pill stress scaling | 23pt label; 25×25 filled glyph; three stacked 64pt targets; 8pt inter-pill gap | `a8-r15-place-card.html` | Candidate AX evidence; pending validation and ruling |
 
 ## Implementation evidence
