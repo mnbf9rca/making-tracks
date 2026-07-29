@@ -1,0 +1,835 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1540, initial-scale=1">
+<title>A8 candidate — collapsed Explore surface</title>
+<style>
+  @font-face {
+    font-family: "Newsreader";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader16pt-SemiBold.ttf");
+    font-weight: 600;
+  }
+
+  :root {
+    --packet: #e9e5db;
+    --ground: #f4f1ea;
+    --water: #c9dbe2;
+    --park: #dce5d4;
+    --road: #c9bfa8;
+    --road-minor: #ddd5c2;
+    --surface: #fbfaf2;
+    --surface-raised: #ffffff;
+    --ink: #2b2823;
+    --muted: #6b675f;
+    --accent: #0a6b5c;
+    --accent-contrast: #fbfaf2;
+    --eyebrow: #8a5a2b;
+    --hairline: rgba(43, 40, 35, 0.14);
+    --scrim: rgba(43, 40, 35, 0.35);
+    --pin: #e4572e;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    width: 1540px;
+    height: 980px;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  body {
+    padding: 20px;
+    background: var(--packet);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .packet-head {
+    height: 76px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+  }
+
+  .packet-head h1 {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1.08;
+  }
+
+  .packet-head p {
+    margin: 5px 0 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.35;
+  }
+
+  .candidate-mark {
+    padding: 7px 10px;
+    border: 1px solid var(--eyebrow);
+    border-radius: 999px;
+    color: var(--eyebrow);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+  }
+
+  .packet-grid {
+    display: grid;
+    grid-template-columns: 390px 318px 390px 318px;
+    gap: 22px;
+    align-items: start;
+  }
+
+  .phone {
+    position: relative;
+    width: 390px;
+    height: 844px;
+    overflow: hidden;
+    border: 1px solid rgba(43, 40, 35, 0.62);
+    border-radius: 46px;
+    background: var(--ground);
+    box-shadow: 0 12px 28px rgba(43, 40, 35, 0.13), 0 2px 6px rgba(43, 40, 35, 0.08);
+  }
+
+  .map {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .status {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 46px;
+    padding: 13px 25px 0;
+    display: flex;
+    justify-content: space-between;
+    color: var(--ink);
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .scrim {
+    position: absolute;
+    inset: 0;
+    background: var(--scrim);
+  }
+
+  .sheet {
+    position: absolute;
+    z-index: 3;
+    top: 62px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 6px 14px 14px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 22px 22px 0 0;
+    background: var(--surface);
+    box-shadow: 0 -6px 18px rgba(43, 40, 35, 0.16);
+  }
+
+  .grabber {
+    width: 36px;
+    height: 4px;
+    margin: 0 auto 12px;
+    flex: none;
+    border-radius: 999px;
+    background: rgba(43, 40, 35, 0.18);
+  }
+
+  .sheet-title {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+  }
+
+  .sheet-subtitle {
+    margin: 3px 0 0;
+    color: var(--muted);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.3;
+  }
+
+  .scope {
+    margin-top: 18px;
+    flex: none;
+  }
+
+  .section-label {
+    margin: 0 0 11px 2px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.11em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .chip {
+    height: 22px;
+    padding: 0 9px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .chip-icon {
+    width: 11px;
+    height: 11px;
+    flex: 0 0 11px;
+  }
+
+  .scope-rows {
+    margin-top: 14px;
+    border-top: 1px solid var(--hairline);
+  }
+
+  .scope-row {
+    min-height: 52px;
+    padding: 6px 2px;
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .scope-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--muted);
+  }
+
+  .scope-row.is-on .scope-icon {
+    color: var(--accent);
+  }
+
+  .scope-copy {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  .switch {
+    position: relative;
+    width: 44px;
+    height: 28px;
+    border-radius: 999px;
+    background: rgba(10, 107, 92, 0.12);
+    box-shadow: inset 0 0 0 1px var(--hairline);
+  }
+
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--surface-raised);
+    box-shadow: 0 1px 3px rgba(43, 40, 35, 0.24);
+  }
+
+  .switch.is-on {
+    background: var(--accent);
+    box-shadow: none;
+  }
+
+  .switch.is-on::after {
+    left: 19px;
+  }
+
+  .quiet-bottom {
+    margin-top: auto;
+    padding-top: 8px;
+    flex: none;
+  }
+
+  .quiet-row {
+    padding: 9px 2px;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) 12px;
+    align-items: center;
+    gap: 10px;
+    border-top: 1px solid var(--hairline);
+    color: var(--muted);
+  }
+
+  .quiet-icon {
+    width: 18px;
+    height: 18px;
+    color: var(--muted);
+  }
+
+  .quiet-title {
+    color: var(--muted);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.15;
+  }
+
+  .quiet-meta {
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .quiet-chevron {
+    width: 12px;
+    height: 12px;
+    color: var(--muted);
+  }
+
+  .quiet-row.settings .quiet-icon,
+  .quiet-row.settings .quiet-chevron {
+    color: var(--accent);
+  }
+
+  .quiet-row.settings .quiet-title {
+    color: var(--ink);
+  }
+
+  /* Accessibility-size stress frame: the same order, with wrapping and growing rows. */
+  .phone.ax .sheet {
+    top: 48px;
+  }
+
+  .phone.ax .grabber {
+    margin-bottom: 10px;
+  }
+
+  .phone.ax .sheet-title {
+    font-size: 41px;
+    line-height: 1;
+  }
+
+  .phone.ax .sheet-subtitle {
+    margin-top: 6px;
+    font-size: 22px;
+    line-height: 1.08;
+  }
+
+  .phone.ax .scope {
+    margin-top: 14px;
+  }
+
+  .phone.ax .section-label {
+    margin-bottom: 9px;
+    font-size: 17px;
+  }
+
+  .phone.ax .chips {
+    gap: 8px;
+  }
+
+  .phone.ax .chip {
+    min-height: 38px;
+    height: auto;
+    padding: 5px 14px;
+    gap: 6px;
+    font-size: 19px;
+    line-height: 1.1;
+  }
+
+  .phone.ax .chip-icon {
+    width: 18px;
+    height: 18px;
+    flex-basis: 18px;
+  }
+
+  .phone.ax .scope-rows {
+    margin-top: 14px;
+  }
+
+  .phone.ax .scope-row {
+    min-height: 86px;
+    padding: 10px 2px;
+    grid-template-columns: 30px minmax(0, 1fr) 51px;
+    gap: 14px;
+  }
+
+  .phone.ax .scope-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .phone.ax .scope-copy {
+    font-size: 23px;
+    line-height: 1.08;
+  }
+
+  .phone.ax .switch {
+    width: 51px;
+    height: 31px;
+  }
+
+  .phone.ax .switch::after {
+    top: 3px;
+    width: 25px;
+    height: 25px;
+  }
+
+  .phone.ax .switch.is-on::after {
+    left: 23px;
+  }
+
+  .phone.ax .quiet-bottom {
+    padding-top: 4px;
+  }
+
+  .phone.ax .quiet-row {
+    padding: 10px 2px;
+    grid-template-columns: 28px minmax(0, 1fr) 18px;
+    gap: 14px;
+  }
+
+  .phone.ax .quiet-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .phone.ax .quiet-title {
+    font-size: 24px;
+    line-height: 1.05;
+  }
+
+  .phone.ax .quiet-meta {
+    margin-top: 4px;
+    font-size: 18px;
+    line-height: 1.12;
+  }
+
+  .phone.ax .quiet-chevron {
+    width: 18px;
+    height: 18px;
+  }
+
+  .evidence {
+    width: 318px;
+    height: 844px;
+    padding: 16px;
+    overflow: hidden;
+    border: 1px solid var(--hairline);
+    border-radius: 18px;
+    background: rgba(251, 250, 242, 0.88);
+  }
+
+  .evidence-kicker {
+    margin: 0 0 5px;
+    color: var(--eyebrow);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .evidence h2 {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.1;
+  }
+
+  .evidence h3 {
+    margin: 14px 0 5px;
+    color: var(--eyebrow);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+  }
+
+  .facts {
+    margin: 11px 0 0;
+    padding: 0;
+    list-style: none;
+    color: var(--ink);
+    font-size: 12px;
+    line-height: 1.34;
+  }
+
+  .facts li {
+    padding: 3px 0 3px 14px;
+    position: relative;
+  }
+
+  .facts li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .metrics {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10.5px;
+    line-height: 1.23;
+  }
+
+  .metrics th,
+  .metrics td {
+    padding: 4px 0;
+    border-top: 1px solid var(--hairline);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .metrics th {
+    width: 39%;
+    padding-right: 8px;
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  .metrics td {
+    color: var(--muted);
+  }
+
+  .proposal {
+    margin: 0;
+    padding-left: 17px;
+    color: var(--muted);
+    font-size: 10.5px;
+    line-height: 1.28;
+  }
+
+  .proposal li + li {
+    margin-top: 5px;
+  }
+
+  .candidate-note {
+    margin: 12px 0 0;
+    padding-top: 9px;
+    border-top: 1px solid var(--hairline);
+    color: var(--eyebrow);
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+</style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="map-snow" viewBox="0 0 300 620">
+      <rect width="300" height="620" fill="#f4f1ea"/>
+      <path d="M20 470C60 438 132 444 152 490C170 532 120 578 68 566C28 556 4 502 20 470Z" fill="#dce5d4"/>
+      <path d="M212 96C246 84 288 100 296 132C302 158 276 176 250 168C222 160 204 122 212 96Z" fill="#dce5d4"/>
+      <path d="M-10 90C60 122 92 58 150 100C208 142 236 202 250 268C262 330 218 384 258 456C288 510 300 570 288 636"
+            fill="none" stroke="#c9dbe2" stroke-width="24" stroke-linecap="round"/>
+      <g fill="none" stroke="#ddd5c2" stroke-width="4.5" stroke-linecap="round">
+        <path d="M200-10C206 90 240 150 234 250C228 350 200 380 214 470"/>
+        <path d="M-10 300C58 286 120 322 190 300C250 282 282 262 320 280"/>
+        <path d="M118 640C134 540 190 498 250 520C288 534 306 556 320 546"/>
+        <path d="M58 58C110 76 142 40 202 56"/>
+      </g>
+      <g fill="none" stroke="#c9bfa8" stroke-width="7" stroke-linecap="round">
+        <path d="M-10 182C60 164 110 210 166 200C218 190 258 152 320 176"/>
+        <path d="M40-10C56 120 28 222 70 330C110 434 122 522 100 644"/>
+        <path d="M-10 430C70 414 150 456 230 434C272 422 300 400 320 406"/>
+      </g>
+      <g stroke-linecap="round" stroke-linejoin="round">
+        <g transform="translate(112 96)">
+          <circle r="10" fill="#e4572e"/>
+          <path d="M0-4 1.15-1.25 4.05-.95 1.85 1.05 2.45 3.9 0 2.4-2.45 3.9-1.85 1.05-4.05-.95-1.15-1.25Z"
+                fill="none" stroke="#fff" stroke-width="1.3"/>
+        </g>
+        <g transform="translate(196 138)">
+          <circle r="10" fill="#e4572e"/>
+          <g fill="none" stroke="#fff" stroke-width="1.3">
+            <rect x="-4.2" y="-2.4" width="8.4" height="6.4" rx="1.6"/>
+            <path d="M-1.5-2.4-.8-3.9H.8L1.5-2.4"/>
+            <circle cy=".8" r="1.5"/>
+          </g>
+        </g>
+        <g transform="translate(72 216)">
+          <circle r="10" fill="#e4572e"/>
+          <g fill="none" stroke="#fff" stroke-width="1.3">
+            <path d="M-3.6-3.4H3.6M-4 3.6H4M-2.1-3.4V3.6M2.1-3.4V3.6"/>
+          </g>
+        </g>
+        <g transform="translate(148 332)">
+          <circle r="10" fill="#e4572e"/>
+          <g fill="none" stroke="#fff" stroke-width="1.3">
+            <rect x="-4.2" y="-2.4" width="8.4" height="6.4" rx="1.6"/>
+            <path d="M-1.5-2.4-.8-3.9H.8L1.5-2.4"/>
+            <circle cy=".8" r="1.5"/>
+          </g>
+        </g>
+      </g>
+    </symbol>
+
+    <symbol id="icon-check" viewBox="0 0 24 24">
+      <path d="M4.5 12.6 9.5 17.6 19.5 6.6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-eye-off" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.4 6.2A8.7 8.7 0 0 1 12 6c5.2 0 8.8 6 8.8 6a17.6 17.6 0 0 1-3 3.6"/>
+        <path d="M6.6 6.8A16.6 16.6 0 0 0 3.2 12S6.8 18 12 18a8.6 8.6 0 0 0 3.6-.8"/>
+        <path d="M10.3 10.4a2.4 2.4 0 0 0 3.3 3.4M3.4 3.4 20.6 20.6"/>
+      </g>
+    </symbol>
+    <symbol id="icon-coverage" viewBox="0 0 24 24">
+      <path d="M5 9.6 9.4 4.6 16.2 5.8 19.6 12 16 18.8 8 18.2Z"
+            fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 2.6"/>
+    </symbol>
+    <symbol id="icon-gear" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="6.4"/>
+        <circle cx="12" cy="12" r="2.5"/>
+        <path d="M12 5.6V2.9M12 18.4v2.7M18.4 12h2.7M5.6 12H2.9M16.5 7.5l1.9-1.9M5.6 18.4l1.9-1.9M16.5 16.5l1.9 1.9M5.6 5.6l1.9 1.9"/>
+      </g>
+    </symbol>
+    <symbol id="icon-book" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 5.4A2.4 2.4 0 0 1 7.4 3H19v13.2H7.4A2.4 2.4 0 0 0 5 18.6Z"/>
+        <path d="M5 18.6A2.4 2.4 0 0 1 7.4 16.2H19V21H7.4A2.4 2.4 0 0 1 5 18.6Z"/>
+      </g>
+    </symbol>
+    <symbol id="icon-chevron" viewBox="0 0 24 24">
+      <path d="M9.5 5 16.5 12 9.5 19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+  </svg>
+
+  <header class="packet-head">
+    <div>
+      <h1>Explore opens Scope directly</h1>
+      <p>R14 collapsed-surface candidate · Snow · default and accessibility-size targets</p>
+    </div>
+    <div class="candidate-mark">CANDIDATE · NOT FROZEN</div>
+  </header>
+
+  <main class="packet-grid">
+    <section class="phone" aria-label="Default-size Explore surface, exact 390 by 844 canvas">
+      <svg class="map" viewBox="0 0 300 620" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="scrim"></div>
+
+      <div class="sheet">
+        <div class="grabber"></div>
+        <header>
+          <h2 class="sheet-title">Explore</h2>
+          <p class="sheet-subtitle">what the map shows right now</p>
+        </header>
+
+        <!-- The DS-11 Search slot is reserved above Scope and intentionally renders no element. -->
+        <section class="scope" aria-label="Scope">
+          <h3 class="section-label">Scope</h3>
+          <div class="chips" aria-label="Visible categories">
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Archaeological</span>
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Artwork</span>
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Attraction</span>
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Historic Building</span>
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Memorial</span>
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Museum</span>
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Religious</span>
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Other</span>
+          </div>
+
+          <div class="scope-rows">
+            <div class="scope-row">
+              <svg class="scope-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-eye-off"/></svg>
+              <div class="scope-copy">Include hidden places</div>
+              <span class="switch" aria-label="Off"></span>
+            </div>
+            <div class="scope-row is-on">
+              <svg class="scope-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-coverage"/></svg>
+              <div class="scope-copy">Show coverage shading</div>
+              <span class="switch is-on" aria-label="On"></span>
+            </div>
+          </div>
+        </section>
+
+        <nav class="quiet-bottom" aria-label="Explore destinations">
+          <div class="quiet-row settings">
+            <svg class="quiet-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-gear"/></svg>
+            <div>
+              <div class="quiet-title">Settings</div>
+              <div class="quiet-meta">appearance, data, location, storage</div>
+            </div>
+            <svg class="quiet-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron"/></svg>
+          </div>
+          <div class="quiet-row">
+            <svg class="quiet-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-book"/></svg>
+            <div>
+              <div class="quiet-title">About</div>
+              <div class="quiet-meta">the story · privacy · licences</div>
+            </div>
+            <svg class="quiet-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron"/></svg>
+          </div>
+        </nav>
+      </div>
+    </section>
+
+    <aside class="evidence" aria-label="Default-size evidence">
+      <p class="evidence-kicker">Default target</p>
+      <h2>Exact 390×844 canvas</h2>
+      <ul class="facts">
+        <li>Search renders nothing.</li>
+        <li>Scope is the root.</li>
+        <li>Settings and About are quiet bottom rows.</li>
+        <li>Settings uses the stronger accent treatment while About remains muted.</li>
+        <li>Map defaults shown: every category visible, hidden off, coverage on.</li>
+      </ul>
+
+      <h3>Reused component-metrics rows</h3>
+      <table class="metrics">
+        <tbody>
+          <tr><th>Sheet</th><td>22pt radius · 36×4 grabber · 6/14/14 padding</td></tr>
+          <tr><th>Sheet title / subtitle</th><td>26pt Newsreader 600 / 14pt sans</td></tr>
+          <tr><th>Section label</th><td>11pt/600 uppercase · 0.11em tracking</td></tr>
+          <tr><th>Chip</th><td>22pt · 0/9 padding · 4pt gap · 12pt/600 · 11×11 icon · 6pt row gap</td></tr>
+          <tr><th>Explore-surface row icon</th><td>20×20</td></tr>
+          <tr><th>Quiet bottom row icon</th><td>18×18</td></tr>
+          <tr><th>Quiet row title / metadata</th><td>15pt/600 muted / 12pt</td></tr>
+          <tr><th>Interaction target floor</th><td>44pt minimum</td></tr>
+          <tr><th>Pin</th><td>20px circle · white stroke glyph</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Proposed Scope-row metrics</h3>
+      <ul class="proposal">
+        <li><strong>Scope control row:</strong> 52pt minimum; 15pt/600 label; 20×20 icon; 10pt content gap; 44×28 switch; 1pt hairline separators.</li>
+        <li><strong>Scope block rhythm:</strong> 18pt header-to-label; 11pt label-to-chips; 14pt chips-to-controls; row minimum yields to wrapped content.</li>
+      </ul>
+      <p class="candidate-note">Candidate evidence only. Reviewer validation and Rob’s taste ruling precede any freeze or spec-table amendment.</p>
+    </aside>
+
+    <section class="phone ax" aria-label="Accessibility-size Explore surface, exact 390 by 844 canvas">
+      <svg class="map" viewBox="0 0 300 620" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="scrim"></div>
+
+      <div class="sheet">
+        <div class="grabber"></div>
+        <header>
+          <h2 class="sheet-title">Explore</h2>
+          <p class="sheet-subtitle">what the map shows right now</p>
+        </header>
+
+        <!-- The DS-11 Search slot is reserved above Scope and intentionally renders no element. -->
+        <section class="scope" aria-label="Scope">
+          <h3 class="section-label">Scope</h3>
+          <div class="chips" aria-label="Visible categories">
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Archaeological</span>
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Artwork</span>
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Attraction</span>
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Historic Building</span>
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Memorial</span>
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Museum</span>
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Religious</span>
+            <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>Other</span>
+          </div>
+
+          <div class="scope-rows">
+            <div class="scope-row">
+              <svg class="scope-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-eye-off"/></svg>
+              <div class="scope-copy">Include hidden places</div>
+              <span class="switch" aria-label="Off"></span>
+            </div>
+            <div class="scope-row is-on">
+              <svg class="scope-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-coverage"/></svg>
+              <div class="scope-copy">Show coverage shading</div>
+              <span class="switch is-on" aria-label="On"></span>
+            </div>
+          </div>
+        </section>
+
+        <nav class="quiet-bottom" aria-label="Explore destinations">
+          <div class="quiet-row settings">
+            <svg class="quiet-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-gear"/></svg>
+            <div>
+              <div class="quiet-title">Settings</div>
+              <div class="quiet-meta">appearance, data, location, storage</div>
+            </div>
+            <svg class="quiet-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron"/></svg>
+          </div>
+          <div class="quiet-row">
+            <svg class="quiet-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-book"/></svg>
+            <div>
+              <div class="quiet-title">About</div>
+              <div class="quiet-meta">the story · privacy · licences</div>
+            </div>
+            <svg class="quiet-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron"/></svg>
+          </div>
+        </nav>
+      </div>
+    </section>
+
+    <aside class="evidence" aria-label="Accessibility-size evidence">
+      <p class="evidence-kicker">Accessibility-size target</p>
+      <h2>Exact 390×844 canvas</h2>
+      <ul class="facts">
+        <li>Search renders nothing.</li>
+        <li>Scope is the root.</li>
+        <li>Chips wrap and control rows grow inside the sheet.</li>
+        <li>Settings and About are quiet bottom rows.</li>
+        <li>Settings uses the stronger accent treatment while About remains muted.</li>
+      </ul>
+
+      <h3>Reused component-metrics rows</h3>
+      <table class="metrics">
+        <tbody>
+          <tr><th>Sheet</th><td>22pt radius · 36×4 grabber · 6/14/14 padding</td></tr>
+          <tr><th>Sheet title / subtitle</th><td>26pt Newsreader 600 / 14pt sans, Dynamic Type scaled</td></tr>
+          <tr><th>Section label</th><td>11pt/600 uppercase · 0.11em tracking, scaled</td></tr>
+          <tr><th>Chip</th><td>22pt base · 0/9 padding · 4pt gap · 12pt/600 · 11×11 icon · 6pt row gap</td></tr>
+          <tr><th>Explore-surface row icon</th><td>20×20 base, paired-role scaled</td></tr>
+          <tr><th>Quiet bottom row icon</th><td>18×18 base, paired-role scaled</td></tr>
+          <tr><th>Quiet row title / metadata</th><td>15pt/600 muted / 12pt, scaled</td></tr>
+          <tr><th>Interaction target floor</th><td>44pt minimum; content may grow</td></tr>
+          <tr><th>Pin</th><td>20px circle · white stroke glyph</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Proposed Scope-row metrics</h3>
+      <ul class="proposal">
+        <li><strong>AX Scope control row:</strong> 86pt minimum; 23pt/600 label; 30×30 icon; 14pt content gap; 51×31 switch; minimum yields to wrapped content.</li>
+        <li><strong>AX Scope block:</strong> 14pt header-to-label; 9pt label-to-chips; chips wrap at 38pt minimum with 19pt/600 labels; 14pt chips-to-controls.</li>
+      </ul>
+      <p class="candidate-note">Candidate evidence only. The bottom destinations remain reachable in the large-detent scroll presentation; Search remains structural and absent.</p>
+    </aside>
+  </main>
+</body>
+</html>
