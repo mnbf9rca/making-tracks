@@ -264,9 +264,35 @@ else
     "status=$pgrep_error_rc output='$(echo "$pgrep_error_out" | head -1)'"
 fi
 
+PGREP_SUCCESS="$TMP/pgrep-success"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'echo 99999' \
+  'exit 0' >"$PGREP_SUCCESS"
+chmod +x "$PGREP_SUCCESS"
+set +e
+pgrep_success_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+  MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+  MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
+  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+  MT_SIM_LOCK_TEST_PGREP_BIN="$PGREP_SUCCESS" \
+  "$SIM_LOCK" --status 2>&1
+)"
+pgrep_success_rc=$?
+set -e
+if [ "$pgrep_success_rc" -eq 1 ] &&
+   echo "$pgrep_success_out" | grep -q "simulator in use by pid(s): 99999"; then
+  record_ok "accepts silent successful process enumeration"
+else
+  record_fail "accepts silent successful process enumeration" \
+    "status=$pgrep_success_rc output='$(echo "$pgrep_success_out" | head -2 | tr '\n' ' ')'"
+fi
+
 PGREP_WARNING="$TMP/pgrep-warning"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
+  'echo 99999' \
   'echo "pgrep: warning: cannot read process table entry" >&2' \
   'exit 0' >"$PGREP_WARNING"
 chmod +x "$PGREP_WARNING"
@@ -281,17 +307,70 @@ pgrep_warning_out="$(
 )"
 pgrep_warning_rc=$?
 set -e
-if [ "$pgrep_warning_rc" -eq 0 ] &&
-   echo "$pgrep_warning_out" | head -1 | grep -qx "FREE" &&
-   ! echo "$pgrep_warning_out" | grep -q "pid(s): pgrep:"; then
-  record_ok "keeps pgrep diagnostics out of the process id stream"
+if [ "$pgrep_warning_rc" -ne 0 ] &&
+   echo "$pgrep_warning_out" | grep -q "cannot inspect simulator processes.*pgrep: warning"; then
+  record_ok "fails closed when successful process enumeration emits diagnostics"
 else
-  record_fail "keeps pgrep diagnostics out of the process id stream" \
+  record_fail "fails closed when successful process enumeration emits diagnostics" \
     "status=$pgrep_warning_rc output='$(echo "$pgrep_warning_out" | head -2 | tr '\n' ' ')'"
 fi
 
 # Lock inspection errors are also unknown state, not evidence that the lock is
 # free during the gap between xcodebuild phases.
+PGREP_NONE="$TMP/pgrep-none"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 1' >"$PGREP_NONE"
+chmod +x "$PGREP_NONE"
+
+LSOF_SUCCESS="$TMP/lsof-success"
+printf '%s\n' '#!/usr/bin/env bash' 'echo 99999' 'exit 0' >"$LSOF_SUCCESS"
+chmod +x "$LSOF_SUCCESS"
+set +e
+lsof_success_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+  MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+  MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
+  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+  MT_SIM_LOCK_TEST_LSOF_BIN="$LSOF_SUCCESS" \
+  MT_SIM_LOCK_TEST_PGREP_BIN="$PGREP_NONE" \
+  "$SIM_LOCK" --status 2>&1
+)"
+lsof_success_rc=$?
+set -e
+if [ "$lsof_success_rc" -eq 1 ] &&
+   echo "$lsof_success_out" | grep -q "lock held by pid(s): 99999"; then
+  record_ok "accepts silent successful lock inspection"
+else
+  record_fail "accepts silent successful lock inspection" \
+    "status=$lsof_success_rc output='$(echo "$lsof_success_out" | head -2 | tr '\n' ' ')'"
+fi
+
+LSOF_SUCCESS_WARNING="$TMP/lsof-success-warning"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'echo 99999' \
+  'echo "lsof: warning: partial file table" >&2' \
+  'exit 0' >"$LSOF_SUCCESS_WARNING"
+chmod +x "$LSOF_SUCCESS_WARNING"
+set +e
+lsof_success_warning_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+  MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+  MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
+  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+  MT_SIM_LOCK_TEST_LSOF_BIN="$LSOF_SUCCESS_WARNING" \
+  MT_SIM_LOCK_TEST_PGREP_BIN="$PGREP_NONE" \
+  "$SIM_LOCK" --status 2>&1
+)"
+lsof_success_warning_rc=$?
+set -e
+if [ "$lsof_success_warning_rc" -ne 0 ] &&
+   echo "$lsof_success_warning_out" | grep -q "cannot inspect simulator lock.*lsof: warning"; then
+  record_ok "fails closed when successful lock inspection emits diagnostics"
+else
+  record_fail "fails closed when successful lock inspection emits diagnostics" \
+    "status=$lsof_success_warning_rc output='$(echo "$lsof_success_warning_out" | head -2 | tr '\n' ' ')'"
+fi
+
 LSOF_ERROR="$TMP/lsof-error"
 printf '%s\n' '#!/usr/bin/env bash' 'exit 2' >"$LSOF_ERROR"
 chmod +x "$LSOF_ERROR"

@@ -114,7 +114,12 @@ lock_holders() {
   diagnostics="$(<"$diagnostics_file")"
   rm -f "$diagnostics_file"
   case "$lsof_rc" in
-    0) printf '%s\n' "$matches" ;;
+    0)
+      if [ -n "$diagnostics" ] && [ "$mode" != "advisory" ]; then
+        die "cannot inspect simulator lock $LOCK (lsof status 0 with diagnostics): $diagnostics"
+      fi
+      printf '%s\n' "$matches"
+      ;;
     1)
       if [ -n "$diagnostics" ] && [ "$mode" != "advisory" ]; then
         die "cannot inspect simulator lock $LOCK (lsof status 1): $diagnostics"
@@ -143,7 +148,10 @@ udid_users() {
   diagnostics="$(<"$diagnostics_file")"
   rm -f "$diagnostics_file"
   case "$pgrep_rc" in
-    0) ;;
+    0)
+      [ -z "$diagnostics" ] ||
+        die "cannot inspect simulator processes for $UDID (pgrep status 0 with diagnostics): $diagnostics"
+      ;;
     1)
       [ -z "$diagnostics" ] ||
         die "cannot inspect simulator processes for $UDID (pgrep status 1): $diagnostics"
