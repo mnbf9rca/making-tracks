@@ -16,6 +16,8 @@ Format: one line per transition, newest last:
 - 2026-07-29T14:35Z codex3 #497 tests green — adversarial fixes at `c13e6e3` plus follow-up working tree: host harness 33 passed / 0 failed and established release-gate suite 23 passed / 0 failed; exact lock identity, fresh-seat status, CI result ownership, Bash 3.2, fleet-exclusive cap-1 admission, flock/lsof failures and concurrency-test readiness are pinned; syntax, ShellCheck, agent-law lint and diff check clean
 - 2026-07-29T15:50Z codex3 #497 tests green — gate-tested code head `e51ad6a`: host lock harness 38 passed / 0 failed on three consecutive runs, release-gate script suite 23 passed / 0 failed, and the host simulator gate passed 220 unit tests plus 81 UI tests with 0 failures; independent review cleared scripts, tests, docs and contracts at `e51ad6a` (full-gate evidence recorded here separately)
 - 2026-07-29T15:54Z codex3 #497 PR open — draft PR #547 targets `ios` from `wp-infra-sim-concurrency`; required labels `sourcery-review`, `track-b-ios` and `wp` applied; planner retains merge ownership
+- 2026-07-29T16:27Z codex3 #497 review clean — Sourcery passed on `a21f2d6`; its typo finding was fixed, both inline threads were answered and resolved, and the remaining parser/harness notes were documented as non-blocking maintainability follow-ups
+- 2026-07-29T16:27Z codex3 #497 ready-to-merge — PR #547 host gate is green (220 unit + 81 UI, 0 failures), CI Release/build-for-testing and unit jobs plus `ios-release-gate` passed on `a21f2d6`, and all required labels are present; final ledger-only head pending planner handoff
 
 ## Done (pre-phase)
 
