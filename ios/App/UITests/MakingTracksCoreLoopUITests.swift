@@ -948,7 +948,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 2))
     }
 
-    func testPlaceCardOverhaulRendersHierarchyAndHideAction() {
+    func testPlaceCardOverhaulRendersHierarchyForSavedPlace() {
         let app = launch(reset: true, seedUserList: true)
 
         let map = app.otherElements["map.surface"]
@@ -1853,7 +1853,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(
             dateNight.value as? String,
             "1 of 1 seen",
-            "A hidden stored-list membership must not contribute to n-of-m progress."
+            "Only the visible saved primary fixture belongs to Date night."
         )
         XCTAssertTrue(scrollToHittable(newList, in: app))
         XCTAssertTrue(scrollToHittable(loved, in: app))
