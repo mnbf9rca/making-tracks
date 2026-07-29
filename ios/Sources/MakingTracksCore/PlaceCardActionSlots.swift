@@ -76,19 +76,22 @@ public struct PlaceCardActionSlots: Sendable, Equatable {
     public let actions: [PlaceCardAction]
 
     public init(pinState: PinState) {
-        if pinState.hidden {
-            actions = [.save, .seenDisabled, .unhide]
-            return
-        }
-
+        var next: [PlaceCardAction] = [.save]
         switch pinState.visit {
         case .none:
-            actions = [.save, .seen, .hide]
+            next.append(.seen)
         case .visited:
-            actions = [.save, .love, .unsee(isEnabled: true)]
+            next.append(contentsOf: [.love, .unsee(isEnabled: true)])
         case .loved:
-            actions = [.save, .unlove, .unsee(isEnabled: false)]
+            next.append(contentsOf: [.unlove, .unsee(isEnabled: false)])
         }
+
+        if pinState.hidden {
+            next.append(.unhide)
+        } else if !pinState.saved {
+            next.append(.hide)
+        }
+        actions = next
     }
 
 }

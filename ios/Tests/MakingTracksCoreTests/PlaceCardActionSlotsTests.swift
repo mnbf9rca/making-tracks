@@ -3,19 +3,25 @@ import XCTest
 @testable import MakingTracksData
 
 final class PlaceCardActionSlotsTests: XCTestCase {
-    func testVisiblePlaceSlotsFollowRuledSeenLoveStateMachine() {
-        XCTAssertEqual(
-            PlaceCardActionSlots(pinState: PinState(saved: false, visit: .none)).actions,
-            [.save, .seen, .hide]
-        )
-        XCTAssertEqual(
-            PlaceCardActionSlots(pinState: PinState(saved: false, visit: .visited)).actions,
-            [.save, .love, .unsee(isEnabled: true)]
-        )
-        XCTAssertEqual(
-            PlaceCardActionSlots(pinState: PinState(saved: false, visit: .loved)).actions,
-            [.save, .unlove, .unsee(isEnabled: false)]
-        )
+    func testActionSlotsCoverSavedHiddenAndVisitAxes() {
+        let cases: [(PinState, [PlaceCardAction])] = [
+            (PinState(saved: false, visit: .none, hidden: false), [.save, .seen, .hide]),
+            (PinState(saved: false, visit: .visited, hidden: false), [.save, .love, .unsee(isEnabled: true), .hide]),
+            (PinState(saved: false, visit: .loved, hidden: false), [.save, .unlove, .unsee(isEnabled: false), .hide]),
+            (PinState(saved: true, visit: .none, hidden: false), [.save, .seen]),
+            (PinState(saved: true, visit: .visited, hidden: false), [.save, .love, .unsee(isEnabled: true)]),
+            (PinState(saved: true, visit: .loved, hidden: false), [.save, .unlove, .unsee(isEnabled: false)]),
+            (PinState(saved: false, visit: .none, hidden: true), [.save, .seen, .unhide]),
+            (PinState(saved: false, visit: .visited, hidden: true), [.save, .love, .unsee(isEnabled: true), .unhide]),
+            (PinState(saved: false, visit: .loved, hidden: true), [.save, .unlove, .unsee(isEnabled: false), .unhide]),
+            (PinState(saved: true, visit: .none, hidden: true), [.save, .seen, .unhide]),
+            (PinState(saved: true, visit: .visited, hidden: true), [.save, .love, .unsee(isEnabled: true), .unhide]),
+            (PinState(saved: true, visit: .loved, hidden: true), [.save, .unlove, .unsee(isEnabled: false), .unhide]),
+        ]
+
+        for (state, expected) in cases {
+            XCTAssertEqual(PlaceCardActionSlots(pinState: state).actions, expected, "\(state)")
+        }
     }
 
     func testDisabledLovedUnseeKeepsTheDeliberatelyOmittedLovedToUnseenEdgeOutOfTheUI() {
@@ -59,19 +65,6 @@ final class PlaceCardActionSlotsTests: XCTestCase {
         XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .hide))
         XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .save))
         XCTAssertFalse(NearbyPromptSuppressionPolicy.clearsPromptSuppressionOnSuccess(for: .seenDisabled))
-    }
-
-    func testHiddenPlaceOffersOnlyUnhideBackTowardUnseen() {
-        XCTAssertEqual(
-            PlaceCardActionSlots(pinState: PinState(saved: false, visit: .none, hidden: true)).actions,
-            [.save, .seenDisabled, .unhide]
-        )
-    }
-
-    func testHiddenFallbackStillKeepsThreeSlots() {
-        let slots = PlaceCardActionSlots(pinState: PinState(saved: false, visit: .none, hidden: true))
-
-        XCTAssertEqual(slots.actions, [.save, .seenDisabled, .unhide])
     }
 
     func testPlaceCardContentBottomPaddingClearsFadeAndActionBar() {
