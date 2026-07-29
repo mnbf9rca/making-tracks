@@ -9,7 +9,7 @@ Standing reference for the phase-cycle workflow (`docs/superpowers/specs/2026-07
 | Rob | human | Design sessions, taste rulings, ratifies amendments, promotes `develop` → `main` |
 | planner | Fable 5 | Coordination, budget/dependency checks, merges, the supervision loop, verification. Session is disposable |
 | reviewer | Opus | Drafts phase specs, wireframe layouts, decomposition; per-PR design review where a task's review tier calls for it; spawns clean-context read-only subagents where fresh eyes are needed |
-| codex-r | GPT-5.6-Sol, xhigh | Reviewer seat: bounded adversarial passes only (one spec attack + one acceptance pass per phase). Context persists — cannot be remotely cleared. Joins at the fleet restart |
+| codex-r | GPT-5.6-Sol, xhigh | Adversarial seat: bounded attack passes only (one spec attack + one acceptance pass per phase). Context persists — cannot be remotely cleared. Joins at the fleet restart |
 | codex1–4 | GPT-5.6-Sol, high | Build, one uniform pool (app, pipeline, VPS — work items are work items). Effort stays at high until two phases of defect data exist under this workflow, then revisit |
 
 Legacy handles `codex` (bare) and `claude` are **dead** — do not route to them.
