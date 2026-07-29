@@ -2099,20 +2099,32 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let saveHiddenOnly = app.buttons[
             "tracks.hidden.save.mt1_S0000000000000000000000001"
         ]
+        let hiddenOverlapRow = element(
+            identifier: "tracks.hidden.row.mt1_00000000000000000000000001",
+            in: app
+        )
+        let hiddenOnlyRow = element(
+            identifier: "tracks.hidden.row.mt1_S0000000000000000000000001",
+            in: app
+        )
+        XCTAssertTrue(hiddenOverlapRow.waitForExistence(timeout: 5))
+        XCTAssertTrue(hiddenOnlyRow.waitForExistence(timeout: 5))
         XCTAssertTrue(scrollToHittable(unhideOverlap, in: app))
         assertMinimumInteractiveTarget(unhideOverlap)
         assertContainedInAppFrame(unhideOverlap, in: app)
-        XCTAssertTrue(scrollToHittable(saveOverlap, in: app))
+        XCTAssertTrue(scrollToFullyContained(saveOverlap, in: app))
         assertMinimumInteractiveTarget(saveOverlap)
         assertContainedInAppFrame(saveOverlap, in: app)
         assertNoFrameIntersection(unhideOverlap, saveOverlap)
+        assertVerticallyOrdered(hiddenOverlapRow, unhideOverlap)
         XCTAssertTrue(scrollToHittable(unhideHiddenOnly, in: app))
         assertMinimumInteractiveTarget(unhideHiddenOnly)
         assertContainedInAppFrame(unhideHiddenOnly, in: app)
-        XCTAssertTrue(scrollToHittable(saveHiddenOnly, in: app))
+        XCTAssertTrue(scrollToFullyContained(saveHiddenOnly, in: app))
         assertMinimumInteractiveTarget(saveHiddenOnly)
         assertContainedInAppFrame(saveHiddenOnly, in: app)
         assertNoFrameIntersection(unhideHiddenOnly, saveHiddenOnly)
+        assertVerticallyOrdered(hiddenOnlyRow, unhideHiddenOnly)
         attachScreenshot(named: "a6-hidden-actions-ax")
     }
 
@@ -4518,6 +4530,21 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
     }
 
+    private func assertVerticallyOrdered(
+        _ upper: XCUIElement,
+        _ lower: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertGreaterThanOrEqual(
+            lower.frame.minY,
+            upper.frame.maxY,
+            "\(lower.identifier) frame \(lower.frame) must sit below \(upper.identifier) frame \(upper.frame)",
+            file: file,
+            line: line
+        )
+    }
+
     private func assertListMapFilterChromePlacement(
         _ filter: XCUIElement,
         in app: XCUIApplication,
@@ -4833,6 +4860,26 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
 
         return element.exists && element.isHittable
+    }
+
+    @discardableResult
+    private func scrollToFullyContained(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+        func isFullyContained() -> Bool {
+            element.exists && element.isHittable && app.frame.contains(element.frame)
+        }
+
+        if element.waitForExistence(timeout: 2), isFullyContained() {
+            return true
+        }
+
+        for _ in 0..<5 {
+            scrollTarget(in: app).swipeUp()
+            if element.waitForExistence(timeout: 1), isFullyContained() {
+                return true
+            }
+        }
+
+        return isFullyContained()
     }
 
     private func scrollTarget(in app: XCUIApplication) -> XCUIElement {

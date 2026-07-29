@@ -267,40 +267,55 @@ struct ManagedPlacesView: View {
 
     func placeRow(_ place: ListPlace) -> some View {
         MaterialHairlineRow {
-            HStack(alignment: .center, spacing: 12) {
-                ManagedPlacesInlineIconGlyph(systemName: mode.presentation.systemImage)
+            if mode == .hidden, dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 12) {
+                    placeIdentity(place)
+                    actionButton(for: place)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(alignment: .center, spacing: 12) {
+                    placeIdentity(place)
+                    actionButton(for: place)
+                }
+                .frame(minHeight: 44)
+            }
+        }
+    }
+
+    func placeIdentity(_ place: ListPlace) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            ManagedPlacesInlineIconGlyph(systemName: mode.presentation.systemImage)
+                .foregroundStyle(
+                    mode == .hidden
+                        ? tokens.muted.swiftUIColor
+                        : tokens.accent.swiftUIColor
+                )
+                .frame(width: 24)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: place.name)
+                    .font(Typography.font(for: .listRowTitle))
                     .foregroundStyle(
                         mode == .hidden
                             ? tokens.muted.swiftUIColor
-                            : tokens.accent.swiftUIColor
+                            : tokens.ink.swiftUIColor
                     )
-                    .frame(width: 24)
-                    .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: place.name)
-                        .font(Typography.font(for: .listRowTitle))
-                        .foregroundStyle(
-                            mode == .hidden
-                                ? tokens.muted.swiftUIColor
-                                : tokens.ink.swiftUIColor
-                        )
-
-                    Text(verbatim: mode.metadata(for: place))
-                        .font(Typography.font(for: .metadata))
-                        .foregroundStyle(tokens.muted.swiftUIColor)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier(
-                    "\(mode.presentation.rowIdentifierPrefix).\(place.placeID)"
-                )
-
-                actionButton(for: place)
+                Text(verbatim: mode.metadata(for: place))
+                    .font(Typography.font(for: .metadata))
+                    .foregroundStyle(tokens.muted.swiftUIColor)
             }
-            .frame(minHeight: 44)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(
+                "\(mode.presentation.rowIdentifierPrefix).\(place.placeID)"
+            )
         }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
     }
 
     @ViewBuilder
