@@ -181,14 +181,18 @@ check() {
 }
 
 mkdir -p "$LOCK_ROOT"
-touch "$LOCK"
 
 echo "sim-lock --status:"
 
-# 1. Neither signal — the only case that may report FREE.
+# 1. A seat that has never run has no lock path yet and is free.
+check "free before the seat lock file has ever been created" "FREE" 0
+
+# 2. Neither signal on an existing stable path — the only other case that may
+#    report FREE.
+touch "$LOCK"
 check "free when nothing holds it and nothing uses the sim" "FREE" 0
 
-# 2. Lock held, no process naming the UDID. This is the between-phases case:
+# 3. Lock held, no process naming the UDID. This is the between-phases case:
 #    a gate that has finished building and has not started testing.
 "$FLOCK_BIN" -x "$LOCK" -c 'sleep 4' &
 lock_pid=$!
@@ -196,7 +200,7 @@ sleep 0.5
 check "held when the lock is taken but no process names the UDID" "HELD" 1
 wait "$lock_pid" 2>/dev/null
 
-# 3. Process using the simulator, lock NOT taken. This is the incident case:
+# 4. Process using the simulator, lock NOT taken. This is the incident case:
 #    a hand-check of the lock file reports FREE while work is in flight.
 # Rename the process's argv so pgrep -f matches the UDID, the way a real
 # xcodebuild destination argument would.
@@ -207,7 +211,7 @@ check "held when the sim is in use WITHOUT the lock" "HELD" 1
 kill "$fake_pid" 2>/dev/null
 wait 2>/dev/null
 
-# 4. CoreSimulator's idle launchd_sim process names the UDID but is not work.
+# 5. CoreSimulator's idle launchd_sim process names the UDID but is not work.
 #    Treating it as a holder wedges the shared simulator after every boot.
 (exec -a "launchd_sim $FAKE_UDID" sleep 4) &
 launchd_pid=$!
@@ -216,7 +220,7 @@ check "free when only idle launchd_sim names the UDID" "FREE" 0
 kill "$launchd_pid" 2>/dev/null
 wait 2>/dev/null
 
-# 5. The warning fires on the dangerous case specifically.
+# 6. The warning fires on the dangerous case specifically.
 (exec -a "xcodebuild -destination platform=iOS Simulator,id=$FAKE_UDID" sleep 3) &
 warn_pid=$!
 sleep 0.5
@@ -231,12 +235,12 @@ fi
 kill "$warn_pid" 2>/dev/null
 wait 2>/dev/null
 
-# 6. Back to free once everything exits — proves the signals clear rather than
+# 7. Back to free once everything exits — proves the signals clear rather than
 #    latching, so a stale HELD cannot wedge the fleet.
 sleep 0.3
 check "free again after holders exit" "FREE" 0
 
-# 7. Process enumeration failure is not evidence that the simulator is idle.
+# 8. Process enumeration failure is not evidence that the simulator is idle.
 #    If this branch returns FREE, destructive work can race an unknown holder.
 PGREP_ERROR="$TMP/pgrep-error"
 printf '%s\n' '#!/usr/bin/env bash' 'exit 2' >"$PGREP_ERROR"

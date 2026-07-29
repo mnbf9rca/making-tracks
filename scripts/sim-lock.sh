@@ -96,6 +96,7 @@ lock_holders() {
   local lsof_rc=0
   local matches
 
+  [ -e "$LOCK" ] || return 0
   matches="$("$LSOF_BIN" -t -- "$LOCK" 2>&1)" || lsof_rc=$?
   case "$lsof_rc" in
     0) printf '%s\n' "$matches" ;;

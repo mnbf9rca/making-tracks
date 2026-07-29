@@ -135,7 +135,8 @@ Expected: all tests pass and the missing-destination case performs no git fetch,
 Run: `python -m pytest pipeline/tests/test_release_gate_script.py -q`
 
 Expected: the established release-gate contract suite passes with explicit matching destination/lock
-identities, malformed and duplicate destination rejection, and result-bundle cleanup on success and failure.
+identities, malformed and duplicate destination rejection, local result-bundle cleanup on success and
+failure, and CI bundle preservation for postprocessing/upload.
 
 ### Task 4: Record machine facts and execute the gates
 

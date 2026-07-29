@@ -13,7 +13,7 @@ Format: one line per transition, newest last:
 - 2026-07-29T13:40Z codex3 #497 branch — `wp-infra-sim-concurrency` at `bde9c0a21beaa90ab2e358b2da2e966567ea9fac`; #497 inode-swap evidence grounded and baseline harness recorded at 8 passed / 3 failed after installing Homebrew `flock`
 - 2026-07-29T13:44Z codex3 #497 branch — baseline correction: sandboxed `pgrep` cannot enumerate host processes; unchanged harness passes 11 passed / 0 failed with host access, so #544 is not a repository defect and is queued for not-planned closure
 - 2026-07-29T14:01Z codex3 #497 tests green — host harness 16 passed / 0 failed on three consecutive runs; Bash syntax, ShellCheck and agent-law lint clean; teeth proven for same-sim serialization, two-slot cap, stable inode, fail-closed process inspection (#545), required destination and per-UDID DerivedData
-- 2026-07-29T14:35Z codex3 #497 tests green — adversarial fixes at `c13e6e3` plus follow-up working tree: host harness 32 passed / 0 failed and established release-gate suite 23 passed / 0 failed; exact lock identity, CI result ownership, Bash 3.2, fleet-exclusive cap-1 admission, flock/lsof failures and concurrency-test readiness are pinned; syntax, ShellCheck, agent-law lint and diff check clean
+- 2026-07-29T14:35Z codex3 #497 tests green — adversarial fixes at `c13e6e3` plus follow-up working tree: host harness 33 passed / 0 failed and established release-gate suite 23 passed / 0 failed; exact lock identity, fresh-seat status, CI result ownership, Bash 3.2, fleet-exclusive cap-1 admission, flock/lsof failures and concurrency-test readiness are pinned; syntax, ShellCheck, agent-law lint and diff check clean
 
 ## Done (pre-phase)
 

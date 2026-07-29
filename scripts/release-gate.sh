@@ -8,8 +8,9 @@
 # This script does not take the lock itself. Two lock-takers is how the lock
 # path drifted apart in the first place, so there is exactly one.
 #
-# Successful and failed runs keep this invocation's DerivedData warm. Result
-# bundles are removed on exit after xcodebuild has emitted the test counts.
+# Successful and failed runs keep this invocation's DerivedData warm. Local
+# result bundles are removed on exit after xcodebuild emits test counts; CI
+# owns explicit bundles long enough to extract coverage evidence and upload.
 set -euo pipefail
 
 PROJECT="ios/App/MakingTracks.xcodeproj"
