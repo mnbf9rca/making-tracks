@@ -425,6 +425,7 @@
   }
 
   .evidence {
+    position: relative;
     height: 844px;
     padding: 16px;
     overflow: hidden;
@@ -542,6 +543,107 @@
 
   .candidate-swatch.vivid {
     background: var(--comparison-vivid);
+  }
+
+  .pill-compare {
+    position: absolute;
+    z-index: 1;
+    right: 16px;
+    bottom: 12px;
+    left: 16px;
+    margin: 0;
+    padding: 6px 0;
+    border-top: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    background: rgba(251, 250, 242, 0.96);
+  }
+
+  .phone.ax + .evidence .pill-compare {
+    bottom: 80px;
+  }
+
+  .pill-compare-head {
+    margin-bottom: 5px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--eyebrow);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.15;
+    text-transform: uppercase;
+  }
+
+  .pill-compare-head span:last-child {
+    color: var(--muted);
+    font-size: 8px;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .pill-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .pill-option {
+    min-width: 0;
+  }
+
+  .pill-option-name {
+    margin: 0 0 3px;
+    color: var(--muted);
+    font-size: 8.5px;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+  }
+
+  .candidate-pill {
+    width: 100%;
+    height: 44px;
+    min-height: 44px;
+    padding: 0 5px;
+    border: 0;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--accent);
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .candidate-pill.calm {
+    background: var(--comparison-calm);
+  }
+
+  .candidate-pill.balanced {
+    background: var(--comparison-balanced);
+  }
+
+  .candidate-pill.vivid {
+    background: var(--comparison-vivid);
+  }
+
+  .candidate-pill .state-glyph {
+    width: 17px;
+    height: 17px;
+    flex-basis: 17px;
+  }
+
+  .saturation-context {
+    margin: 5px 0 0;
+    color: var(--muted);
+    font-size: 8.5px;
+    line-height: 1.24;
   }
 
   .ratio-value {
@@ -714,6 +816,34 @@
       <p class="decision-copy">12% #0A6B5C over #FBFAF2, channel-rounded (α R 0.1203 · G 0.1189 · B 0.1200). Mechanical composite; not a candidate or token.</p>
     </div>
 
+    <div class="pill-compare" aria-label="Pill-scale Saved candidate comparison outside the phone">
+      <div class="pill-compare-head"><span>Pill-scale comparison</span><span>against adjacent live Seen pill</span></div>
+      <p class="saturation-context">All three hue deltas are tighter than the ratified containers. Saturation is the discriminating axis: Calm 28.00%, Balanced 40.98%, and Vivid 47.22% are below warningContainer 55.93% and loveContainer 80.65%; Vivid is nearest. These comparisons remain unselected and unapplied.</p>
+      <div class="pill-strip">
+        <div class="pill-option" data-candidate-pill="Calm">
+          <p class="pill-option-name">Calm</p>
+          <div class="candidate-pill calm" role="img" aria-label="Calm unselected Saved pill comparison">
+            <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#bookmark-fill"/></svg>
+            <span>Saved</span>
+          </div>
+        </div>
+        <div class="pill-option" data-candidate-pill="Balanced">
+          <p class="pill-option-name">Balanced</p>
+          <div class="candidate-pill balanced" role="img" aria-label="Balanced unselected Saved pill comparison">
+            <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#bookmark-fill"/></svg>
+            <span>Saved</span>
+          </div>
+        </div>
+        <div class="pill-option" data-candidate-pill="Vivid">
+          <p class="pill-option-name">Vivid</p>
+          <div class="candidate-pill vivid" role="img" aria-label="Vivid unselected Saved pill comparison">
+            <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#bookmark-fill"/></svg>
+            <span>Saved</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="comparison-list" aria-label="Exactly three designed opaque Saved candidates">
       <div class="comparison" data-candidate="Calm">
         <div class="comparison-head"><span class="candidate-name"><i class="candidate-swatch calm"></i>Calm</span><span class="ratio-value">5.34:1</span></div>
@@ -745,14 +875,6 @@
 
     <p class="gate">Exactly three designed opaque candidates are shown against accent ink #0A6B5C. All clear 4.5:1; none is ratified. Differing implied-channel alphas prove none is a single accent-over-surface composite. The cluster contains no action.</p>
 
-    <h3>Established §5 metrics</h3>
-    <ul class="facts">
-      <li>44pt minimum targets.</li>
-      <li>15pt/600 labels.</li>
-      <li>17×17 filled glyphs paired with labels.</li>
-      <li>6pt glyph-to-label gap; 8pt between pills.</li>
-      <li>More remains a separate 44pt control.</li>
-    </ul>
     <p class="candidate-note">Candidate evidence only. Reviewer delta validation precedes Rob’s final Saved value pick; no token/spec-table amendment has been made.</p>
   </aside>
 
@@ -803,6 +925,34 @@
       <p class="decision-copy">12% #0A6B5C over #FBFAF2, channel-rounded (α R 0.1203 · G 0.1189 · B 0.1200). Mechanical composite; not a candidate or token.</p>
     </div>
 
+    <div class="pill-compare" aria-label="Pill-scale Saved candidate comparison outside the phone">
+      <div class="pill-compare-head"><span>Pill-scale comparison</span><span>against adjacent live Seen pill</span></div>
+      <p class="saturation-context">All three hue deltas are tighter than the ratified containers. Saturation is the discriminating axis: Calm 28.00%, Balanced 40.98%, and Vivid 47.22% are below warningContainer 55.93% and loveContainer 80.65%; Vivid is nearest. These comparisons remain unselected and unapplied.</p>
+      <div class="pill-strip">
+        <div class="pill-option" data-candidate-pill="Calm">
+          <p class="pill-option-name">Calm</p>
+          <div class="candidate-pill calm" role="img" aria-label="Calm unselected Saved pill comparison">
+            <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#bookmark-fill"/></svg>
+            <span>Saved</span>
+          </div>
+        </div>
+        <div class="pill-option" data-candidate-pill="Balanced">
+          <p class="pill-option-name">Balanced</p>
+          <div class="candidate-pill balanced" role="img" aria-label="Balanced unselected Saved pill comparison">
+            <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#bookmark-fill"/></svg>
+            <span>Saved</span>
+          </div>
+        </div>
+        <div class="pill-option" data-candidate-pill="Vivid">
+          <p class="pill-option-name">Vivid</p>
+          <div class="candidate-pill vivid" role="img" aria-label="Vivid unselected Saved pill comparison">
+            <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#bookmark-fill"/></svg>
+            <span>Saved</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="comparison-list" aria-label="Exactly three designed opaque Saved candidates">
       <div class="comparison" data-candidate="Calm">
         <div class="comparison-head"><span class="candidate-name"><i class="candidate-swatch calm"></i>Calm</span><span class="ratio-value">5.34:1</span></div>
@@ -834,14 +984,6 @@
 
     <p class="gate">Exactly three designed opaque candidates are shown against accent ink #0A6B5C. All clear 4.5:1; none is ratified. Differing implied-channel alphas prove none is a single accent-over-surface composite. The cluster contains no action.</p>
 
-    <h3>AX stress evidence</h3>
-    <ul class="facts">
-      <li>Three ON facts retain filled glyph plus filled pill.</li>
-      <li>Stacking preserves the ruled 8pt inter-pill gap.</li>
-      <li>Each target exceeds the 44pt floor.</li>
-      <li>No Hide and no fabricated filled action appear.</li>
-      <li>The More control remains available at the top of the card.</li>
-    </ul>
     <p class="candidate-note">Candidate evidence only. Reviewer delta validation precedes Rob’s final Saved value pick; this packet does not claim frozen status.</p>
   </aside>
 </main>
