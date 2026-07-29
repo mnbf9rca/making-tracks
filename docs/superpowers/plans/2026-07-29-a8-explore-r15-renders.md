@@ -6,7 +6,7 @@
 
 **Architecture:** Add one self-contained HTML source and one PNG packet per ruled surface. Each packet contains an exact 390×844 default frame, an exact 390×844 accessibility-size frame, and an evidence panel beside the frames; the phone frames show only legitimate target UI, while annotations and measurements remain outside the phone canvas. Reuse ratified Snow tokens and component metrics, propose only the minimum new metrics, and keep the assets labelled `CANDIDATE` until reviewer validation and Rob's ruling.
 
-**Tech Stack:** Static HTML/CSS/SVG, the locally installed Chromium browser (Brave on this machine), WCAG 2.x sRGB contrast calculations, PNG pixel inspection, repository Markdown lint.
+**Tech Stack:** Static HTML/CSS/SVG, Playwright-bundled Chromium/headless shell `151.0.7922.34`, WCAG 2.x sRGB contrast calculations, PNG pixel inspection, repository Markdown lint.
 
 ## Global Constraints
 
@@ -18,6 +18,7 @@
 - ON state is carried by filled pill plus filled glyph, never colour alone.
 - Seen uses `accent` `#0A6B5C`; Loved uses `love` `#C4312B`; Saved uses the existing tonal-strength recipe, 12% `accent` composited over `surface`, yielding `#DEE9E0`.
 - Per-pill foreground/background contrast is printed beside the R15 image: Saved `#0A6B5C` on `#DEE9E0` = `5.15:1`; Seen `#FBFAF2` on `#0A6B5C` = `6.13:1`; Loved `#FBFAF2` on `#C4312B` = `5.25:1`.
+- HTML captures use Playwright-bundled Chromium only, never the system browser; renderer name and version appear beside both packets.
 - Every new load-bearing figure is proposed in the spec's component-metrics table with its candidate source. Existing figures cite their existing table row rather than being silently redefined.
 - Candidate assets become frozen only after reviewer validation and Rob's ruling.
 
@@ -77,9 +78,9 @@ Print the foreground/background hex pairs and ratios next to the default and AX 
 - Consumes: the two self-contained HTML sources
 - Produces: deterministic PNG packets and exact measurement evidence
 
-- [ ] **Step 1: Capture with local Chrome**
+- [ ] **Step 1: Capture with Playwright-bundled Chromium**
 
-Use `/Applications/Brave Browser.app/Contents/MacOS/Brave Browser` in headless mode with `--force-device-scale-factor=1`, `--hide-scrollbars`, no background networking or component updates, and dedicated profiles under `/private/tmp/chrome-a8-*`. Size each browser window to the HTML packet's declared canvas.
+Use the Playwright-bundled Chromium/headless-shell install under `~/Library/Caches/ms-playwright` through the locally installed Playwright runtime. Do not use Brave or another system browser. Capture at device scale factor 1 with each browser viewport set to the HTML packet's declared canvas.
 
 - [ ] **Step 2: Verify PNG dimensions and colours**
 
@@ -87,7 +88,7 @@ Use `sips` for dimensions and a local pixel reader for the exact state-pill fore
 
 - [ ] **Step 3: Inspect both PNGs at original detail**
 
-Confirm the phone canvases are exactly 390×844, no frame clips, the AX layouts remain readable, the Explore frame has no visible Search placeholder, and the R15 cluster contains only the three state toggles.
+Confirm the phone canvases are exactly 390×844, no frame clips, the AX layouts remain readable, the Explore frame has no visible Search placeholder, and the R15 cluster contains only the three state toggles. Record `Playwright-bundled Chromium/headless shell 151.0.7922.34` beside each packet.
 
 ### Task 4: Wire the candidate artifact record
 
