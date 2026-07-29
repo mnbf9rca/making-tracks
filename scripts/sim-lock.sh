@@ -1,63 +1,69 @@
 #!/usr/bin/env bash
-# The only way to touch the designated iOS simulator.
+# The only way to touch a Making Tracks gate simulator.
 #
 # Everything that boots, builds against, tests against, erases or deletes the
-# designated simulator runs through here. Nothing else takes the lock, and
-# nothing else calls simctl against this UDID.
+# selected simulator runs through here. Nothing else takes its lock, and
+# nothing else calls simctl against its UDID.
 #
-# Why a single entry point: a lock file records who holds the lock, not who is
-# using the simulator. A hand-check of the file reports FREE while a build is
-# mid-flight without it, and acting on that reading destroys the run.
+# Per-simulator locks let different seats run concurrently. Stable global slot
+# locks cap aggregate gate load. Every lock is opened once and flocked by file
+# descriptor; lock paths are never removed or replaced (#497).
 
 set -euo pipefail
 
-UDID="C4A64D49-24A2-4429-B6E2-AD9A14142A99"
-LOCK="/private/tmp/making-tracks-ios-tests.lock"
-RETIRED_LOCK="/tmp/agent-ios-sim.lock"
+DESTINATION="${MT_RELEASE_GATE_DESTINATION:-}"
+LOCK_ROOT="/private/tmp"
 FLOCK_BIN="/opt/homebrew/bin/flock"
+PGREP_BIN="/usr/bin/pgrep"
+PS_BIN="/bin/ps"
 LOCK_WAIT_SECONDS="${MT_SIM_LOCK_WAIT:-1800}"
+GATE_MAX_CONCURRENT="${MT_GATE_MAX_CONCURRENT:-2}"
 
 die() { echo "sim-lock: $1" >&2; exit 1; }
 
 # Test seams. Guarded so they cannot be reached in normal use.
 if [ -n "${MT_SIM_LOCK_TEST_MODE:-}" ]; then
   [ "${MT_SIM_LOCK_TEST_MODE}" = "1" ] || die "MT_SIM_LOCK_TEST_MODE must be 1 or unset"
-  LOCK="${MT_SIM_LOCK_TEST_LOCK:-$LOCK}"
-  UDID="${MT_SIM_LOCK_TEST_UDID:-$UDID}"
+  LOCK_ROOT="${MT_SIM_LOCK_TEST_ROOT:-$LOCK_ROOT}"
   FLOCK_BIN="${MT_SIM_LOCK_TEST_FLOCK_BIN:-$FLOCK_BIN}"
-  RETIRED_LOCK="${MT_SIM_LOCK_TEST_RETIRED_LOCK:-$RETIRED_LOCK}"
+  PGREP_BIN="${MT_SIM_LOCK_TEST_PGREP_BIN:-$PGREP_BIN}"
+  PS_BIN="${MT_SIM_LOCK_TEST_PS_BIN:-$PS_BIN}"
+  if [ -n "${MT_SIM_LOCK_TEST_UDID:-}" ]; then
+    DESTINATION="platform=iOS Simulator,id=$MT_SIM_LOCK_TEST_UDID"
+  fi
 fi
 
 [ -x "$FLOCK_BIN" ] || die "flock not executable at $FLOCK_BIN"
+[ -x "$PGREP_BIN" ] || die "pgrep not executable at $PGREP_BIN"
+[ -x "$PS_BIN" ] || die "ps not executable at $PS_BIN"
 
-# --- the retired path must stay an alias --------------------------------------
-#
-# /private/tmp is cleared on reboot, so a symlink made by hand does not survive.
-# Once it is gone the retired path becomes a separate regular file, the lock
-# splits in two, and the lock leg of --status watches only the canonical side.
-# That is the original regression returning silently. Assert it on every run
-# rather than trusting that someone made it once.
-#
-# flock locks the resolved inode, so a symlinked alias shares the lock.
+case "$LOCK_WAIT_SECONDS" in
+  ""|*[!0-9]*) die "MT_SIM_LOCK_WAIT must be a non-negative integer" ;;
+esac
+case "$GATE_MAX_CONCURRENT" in
+  ""|*[!0-9]*|0) die "MT_GATE_MAX_CONCURRENT must be a positive integer" ;;
+esac
 
-ensure_retired_alias() {
-  if [ -L "$RETIRED_LOCK" ]; then
-    [ "$(readlink "$RETIRED_LOCK")" = "$LOCK" ] && return 0
-    ln -sfn "$LOCK" "$RETIRED_LOCK"
-    return 0
-  fi
+destination_udid() {
+  local value
 
-  if [ -e "$RETIRED_LOCK" ]; then
-    # A regular file. If anything holds it, a run is using the retired path now
-    # and replacing it would split the lock underneath that run.
-    if lsof -t -- "$RETIRED_LOCK" >/dev/null 2>&1; then
-      die "$RETIRED_LOCK is a regular file and in use — a run holds the retired path. Wait for it, then re-run."
-    fi
-    rm -f "$RETIRED_LOCK"
-  fi
-
-  ln -sfn "$LOCK" "$RETIRED_LOCK"
+  [ -n "$DESTINATION" ] ||
+    die "MT_RELEASE_GATE_DESTINATION is required; export this seat's destination from wp-infra-sim-concurrency"
+  case "$DESTINATION" in
+    *id=*) value="${DESTINATION#*id=}" ;;
+    *) die "MT_RELEASE_GATE_DESTINATION must include id=<simulator-udid>" ;;
+  esac
+  value="${value%%,*}"
+  case "$value" in
+    ""|*[!A-Za-z0-9-]*)
+      die "MT_RELEASE_GATE_DESTINATION contains an invalid simulator UDID"
+      ;;
+  esac
+  printf '%s\n' "$value"
 }
+
+UDID="$(destination_udid)"
+LOCK="$LOCK_ROOT/making-tracks-sim-$UDID.lock"
 
 # --- status -------------------------------------------------------------------
 #
@@ -75,18 +81,29 @@ lock_holders() {
 }
 
 udid_users() {
-  # Excludes this script so a --status call never reports itself.
+  # pgrep exit 1 is a valid empty result. Any other error means we do not know
+  # whether the simulator is idle, so fail closed (#545).
+  local matches
+  local pgrep_rc=0
   local pid
-  { pgrep -f -- "$UDID" 2>/dev/null || true; } | while IFS= read -r pid; do
+
+  matches="$("$PGREP_BIN" -f -- "$UDID" 2>&1)" || pgrep_rc=$?
+  case "$pgrep_rc" in
+    0) ;;
+    1) return 0 ;;
+    *) die "cannot inspect simulator processes for $UDID (pgrep status $pgrep_rc): $matches" ;;
+  esac
+
+  while IFS= read -r pid; do
     [ "$pid" != "$$" ] || continue
     process_is_idle_launchd_sim "$pid" && continue
     echo "$pid"
-  done
+  done <<<"$matches"
 }
 
 process_is_idle_launchd_sim() {
   local command
-  command="$(ps -p "$1" -o command= 2>/dev/null || true)"
+  command="$("$PS_BIN" -p "$1" -o command= 2>/dev/null || true)"
   case "$command" in
     launchd_sim\ *|*/launchd_sim\ *) return 0 ;;
     *) return 1 ;;
@@ -143,36 +160,74 @@ destructive() {
 
 # --- run under the lock -------------------------------------------------------
 
+acquire_gate_slot() {
+  local candidate_fd
+  local elapsed
+  local slot
+  local slot_path
+  local started="$SECONDS"
+  local waiting_reported=0
+
+  while true; do
+    for ((slot = 1; slot <= GATE_MAX_CONCURRENT; slot++)); do
+      slot_path="$LOCK_ROOT/making-tracks-gate-slot-$slot.lock"
+      exec {candidate_fd}>>"$slot_path"
+      if "$FLOCK_BIN" -n "$candidate_fd"; then
+        return 0
+      fi
+      exec {candidate_fd}>&-
+    done
+
+    elapsed=$((SECONDS - started))
+    if [ "$elapsed" -ge "$LOCK_WAIT_SECONDS" ]; then
+      die "timed out after ${LOCK_WAIT_SECONDS}s waiting for one of $GATE_MAX_CONCURRENT global gate slots"
+    fi
+    if [ "$waiting_reported" -eq 0 ]; then
+      echo "sim-lock: waiting for one of $GATE_MAX_CONCURRENT global gate slots (timeout ${LOCK_WAIT_SECONDS}s)" >&2
+      waiting_reported=1
+    fi
+    sleep 0.1
+  done
+}
+
 run_locked() {
   [ "$#" -gt 0 ] || die "no command given"
 
-  # Re-entrancy: a locked command that calls back into sim-lock.sh already holds
-  # the lock. Re-flocking the same file from a child blocks on the parent and
-  # deadlocks with no output, so run through instead.
+  # Re-entrancy for the same selected simulator. A nested command targeting a
+  # different simulator must not inherit authority from the outer lock.
   if [ "${MT_SIM_LOCK:-}" = "1" ]; then
+    [ "${MT_SIM_LOCK_UDID:-$UDID}" = "$UDID" ] ||
+      die "nested invocation changed simulator from $MT_SIM_LOCK_UDID to $UDID"
     exec "$@"
   fi
 
-  ensure_retired_alias
+  mkdir -p "$LOCK_ROOT"
+  umask 077
 
-  local holders
-  holders="$(lock_holders)"
-  if [ -n "$holders" ]; then
-    echo "sim-lock: waiting for pid(s) $(echo "$holders" | tr '\n' ' ') (timeout ${LOCK_WAIT_SECONDS}s)" >&2
+  local sim_lock_fd
+  exec {sim_lock_fd}>>"$LOCK"
+  if ! "$FLOCK_BIN" -n "$sim_lock_fd"; then
+    local holders
+    holders="$(lock_holders)"
+    if [ -n "$holders" ]; then
+      echo "sim-lock: waiting for pid(s) $(echo "$holders" | tr '\n' ' ') on $UDID (timeout ${LOCK_WAIT_SECONDS}s)" >&2
+    else
+      echo "sim-lock: waiting for simulator $UDID lock (timeout ${LOCK_WAIT_SECONDS}s)" >&2
+    fi
+    "$FLOCK_BIN" -w "$LOCK_WAIT_SECONDS" "$sim_lock_fd" ||
+      die "timed out after ${LOCK_WAIT_SECONDS}s waiting for simulator $UDID"
   fi
 
-  # -w bounds the wait so a stale holder cannot hang an agent indefinitely.
+  acquire_gate_slot
+
   local rc=0
-  MT_SIM_LOCK=1 "$FLOCK_BIN" -w "$LOCK_WAIT_SECONDS" "$LOCK" "$@" || rc=$?
-  if [ "$rc" -eq 1 ] && [ -n "$(lock_holders)" ]; then
-    die "timed out after ${LOCK_WAIT_SECONDS}s waiting for the simulator lock"
-  fi
+  MT_SIM_LOCK=1 MT_SIM_LOCK_UDID="$UDID" "$@" || rc=$?
   return "$rc"
 }
 
 usage() {
   cat <<'USAGE'
-sim-lock.sh — the only way to touch the designated iOS simulator
+sim-lock.sh — the only way to touch a Making Tracks gate simulator
 
   sim-lock.sh <command> [args...]   run the command holding the lock
   sim-lock.sh --status              report HELD or FREE (exit 0 = FREE, 1 = HELD)
@@ -180,8 +235,12 @@ sim-lock.sh — the only way to touch the designated iOS simulator
   sim-lock.sh --shutdown            shut it down, under the lock
   sim-lock.sh --boot                boot it, under the lock
 
-Never read the lock file by hand to decide whether the simulator is free. The
-file records who holds the lock, not who is using the simulator.
+MT_RELEASE_GATE_DESTINATION must name the seat's simulator with id=<UDID>.
+Same-simulator work serializes, while stable global slot locks cap aggregate
+concurrency (MT_GATE_MAX_CONCURRENT, default 2).
+
+Never read lock files by hand to decide whether a simulator is free. A file
+records who holds its inode, not every process that may be using the simulator.
 USAGE
 }
 

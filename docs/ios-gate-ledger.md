@@ -2,6 +2,24 @@
 
 This ledger records iOS gate count-watch decisions that affect whether a run counts, resets, or consumes the infra budget.
 
+## Host Gate Seats
+
+Every builder seat has one gate simulator. The seat exports the literal destination below as
+`MT_RELEASE_GATE_DESTINATION` before any `scripts/sim-lock.sh` or `scripts/release-gate.sh` invocation.
+`sim-lock.sh` derives a stable per-simulator lock from its UDID. Different simulators may run concurrently,
+but the global counting semaphore admits at most `MT_GATE_MAX_CONCURRENT` gates at once; the default is
+`2`.
+
+| Seat | Simulator | `MT_RELEASE_GATE_DESTINATION` |
+| --- | --- | --- |
+| `codex1` | `mt-gate-codex1` | `platform=iOS Simulator,id=8749271C-95FD-4270-A754-401F77E7AEB6` |
+| `codex2` | `mt-gate-codex2` | `platform=iOS Simulator,id=BACC2CF8-C1F8-4C92-B058-47B0AC0B128D` |
+| `codex3` | `mt-gate-codex3` | `platform=iOS Simulator,id=AC60FA71-9449-4F15-A259-5E4A3E832839` |
+| `codex4` | `mt-gate-codex4` | `platform=iOS Simulator,id=42D1482C-DE04-49AA-990D-1884ED9B855D` |
+
+Lock files are stable `/private/tmp` files and are never deleted or replaced. Same-simulator serialization
+and the global cap are separate gates: acquiring one never substitutes for the other.
+
 ## Classification Rule
 
 A red run is infra only when all of the following hold:

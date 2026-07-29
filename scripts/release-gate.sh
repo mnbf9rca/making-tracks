@@ -15,9 +15,26 @@ set -euo pipefail
 PROJECT="ios/App/MakingTracks.xcodeproj"
 PBXPROJ="$PROJECT/project.pbxproj"
 SCHEME="MakingTracks"
-UDID="C4A64D49-24A2-4429-B6E2-AD9A14142A99"
-DESTINATION="${MT_RELEASE_GATE_DESTINATION:-platform=iOS Simulator,id=$UDID}"
-RUN_DIR="${MT_RELEASE_GATE_RUN_DIR:-/private/tmp/release-gate-${AM_ME:-agent}}"
+DESTINATION="${MT_RELEASE_GATE_DESTINATION:-}"
+[ -n "$DESTINATION" ] || {
+  echo "release-gate: refused: MT_RELEASE_GATE_DESTINATION is required; export this seat's destination from wp-infra-sim-concurrency" >&2
+  exit 1
+}
+case "$DESTINATION" in
+  *id=*) GATE_UDID="${DESTINATION#*id=}" ;;
+  *)
+    echo "release-gate: refused: MT_RELEASE_GATE_DESTINATION must include id=<simulator-udid>" >&2
+    exit 1
+    ;;
+esac
+GATE_UDID="${GATE_UDID%%,*}"
+case "$GATE_UDID" in
+  ""|*[!A-Za-z0-9-]*)
+    echo "release-gate: refused: MT_RELEASE_GATE_DESTINATION contains an invalid simulator UDID" >&2
+    exit 1
+    ;;
+esac
+RUN_DIR="${MT_RELEASE_GATE_RUN_DIR:-/private/tmp/release-gate-$GATE_UDID}"
 DERIVED_DATA="${MT_RELEASE_GATE_DERIVED_DATA:-$RUN_DIR/DerivedData}"
 RESULT_BUNDLE="$RUN_DIR/MakingTracksTests.xcresult"
 MODE="${MT_RELEASE_GATE_MODE:-full}"
@@ -132,15 +149,7 @@ populate_test_plan_args() {
 }
 
 destination_udid() {
-  case "$DESTINATION" in
-    *id=*)
-      value="${DESTINATION#*id=}"
-      echo "${value%%,*}"
-      ;;
-    *)
-      refuse "MT_RELEASE_GATE_DESTINATION must include id=<simulator-udid>"
-      ;;
-  esac
+  printf '%s\n' "$GATE_UDID"
 }
 
 lock_is_satisfied() {

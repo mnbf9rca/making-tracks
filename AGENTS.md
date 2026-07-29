@@ -2,7 +2,8 @@
 
 **Two files exist because app work never checks out `develop`.** iOS branches are cut from `ios`, so
 `develop`'s tree — and the agent law in it — is not on disk here. This file exists to point at that law and
-to carry the few iOS-specific deltas. It is not a second copy, and nothing here overrides it.
+to carry the few iOS-specific deltas. It is not a second copy; a delta below takes precedence only where it
+explicitly differs.
 
 **The law is `develop`'s `AGENTS.md`.** Read it first:
 
@@ -38,10 +39,12 @@ mapping, the count and classification rules, and the run ledger are in
 [`docs/ios-gate-ledger.md`](docs/ios-gate-ledger.md), which lives only on this branch. CI never replaces
 the host gate.
 
-## The simulator has one entry point
+## The simulators have one entry point
 
-`scripts/sim-lock.sh` is the only thing that touches the designated simulator. Build, test, boot, shutdown,
-erase, delete — all of it goes through it, and it is the only thing that takes the lock.
+`scripts/sim-lock.sh` is the only thing that touches a gate simulator. Build, test, boot, shutdown, erase,
+delete — all of it goes through the script. Each seat exports its assigned `MT_RELEASE_GATE_DESTINATION`
+from the table in [`docs/ios-gate-ledger.md`](docs/ios-gate-ledger.md) → *Host Gate Seats* before invoking
+it.
 
 ```bash
 ./scripts/sim-lock.sh <command>    # run under the lock
@@ -49,12 +52,16 @@ erase, delete — all of it goes through it, and it is the only thing that takes
 ./scripts/sim-lock.sh --erase      # destructive ops, under the lock
 ```
 
-**Never read the lock file by hand to decide whether the simulator is free.** The file tells you who holds
-the lock, not who is using the simulator, and those differ. `--status` checks both and reports HELD if
-either fires; a bare `lsof` on the lock reports FREE while a build is mid-flight without it.
+The script takes a stable per-simulator lock derived from the destination UDID, so two gates aimed at the
+same simulator serialize. A stable global counting semaphore caps aggregate gate concurrency at
+`MT_GATE_MAX_CONCURRENT` (default `2`); different simulators may run together only within that cap.
 
-This applies to coordinators as much as builders. Running `simctl erase` because the lock looked free is the
-incident this exists to prevent (incidents → *A hand-checked lock erased a running gate*).
+**Never read a lock file by hand to decide whether a simulator is free.** The file tells you who holds one
+inode, not who is using the simulator, and those differ. `--status` checks both and reports HELD if either
+fires; it fails closed if the process table cannot be inspected. A bare `lsof` on a lock can report FREE
+while a build is mid-flight without it. This applies to coordinators as much as builders. Running
+`simctl erase` because the lock looked free is the incident this exists to prevent (incidents → *A
+hand-checked lock erased a running gate*).
 
 `scripts/release-gate.sh` no longer takes the lock and refuses to run outside it. Two lock-takers is how the
 paths drifted apart.
