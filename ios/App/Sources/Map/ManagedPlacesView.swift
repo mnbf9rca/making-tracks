@@ -128,6 +128,12 @@ struct ManagedPlacesState: Equatable {
         }
     }
 
+    mutating func removePlace(placeID: String) {
+        places.removeAll { $0.placeID == placeID }
+        pendingPlaceIDs.remove(placeID)
+        errorMessage = nil
+    }
+
     func isPending(placeID: String) -> Bool {
         pendingPlaceIDs.contains(placeID)
     }
@@ -156,6 +162,8 @@ struct ManagedPlacesView: View {
 
     @State private var state = ManagedPlacesState(places: [])
     @State private var didLoad = false
+    @State private var saveTarget: ListPlace?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let tokens = MaterialTheme.snow.tokens
 
@@ -205,6 +213,17 @@ struct ManagedPlacesView: View {
         .accessibilityIdentifier(mode.presentation.surfaceIdentifier)
         .task { await reload() }
         .refreshable { await reload() }
+        .sheet(item: $saveTarget) { place in
+            ListPickerView(
+                placeID: place.placeID,
+                model: model,
+                onChanged: { change in
+                    if case .added = change {
+                        state.removePlace(placeID: place.placeID)
+                    }
+                }
+            )
+        }
     }
 
     var titleRow: some View {
@@ -286,33 +305,52 @@ struct ManagedPlacesView: View {
 
     @ViewBuilder
     func actionButton(for place: ListPlace) -> some View {
-        Button {
-            Task { await performAction(for: place) }
-        } label: {
-            switch mode {
-            case .loved:
+        switch mode {
+        case .loved:
+            Button {
+                Task { await performAction(for: place) }
+            } label: {
                 ManagedPlacesInlineIconGlyph(systemName: "heart.slash")
-            case .hidden:
-                Text("Unhide")
-                    .font(Typography.font(for: .button))
             }
+            .foregroundStyle(tokens.accent.swiftUIColor)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .disabled(state.isPending(placeID: place.placeID))
+            .opacity(
+                state.isPending(placeID: place.placeID)
+                    ? tokens.disabledAlpha
+                    : 1
+            )
+            .accessibilityLabel(
+                mode.actionAccessibilityLabel(placeName: place.name)
+            )
+            .accessibilityIdentifier(
+                "\(mode.presentation.actionIdentifierPrefix).\(place.placeID)"
+            )
+
+        case .hidden:
+            let layout = dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .trailing, spacing: 6))
+                : AnyLayout(HStackLayout(spacing: 8))
+
+            layout {
+                Button("Unhide") {
+                    Task { await performAction(for: place) }
+                }
+                .buttonStyle(MaterialTonalButtonStyle())
+                .accessibilityLabel("Unhide \(place.name)")
+                .accessibilityIdentifier("tracks.hidden.unhide.\(place.placeID)")
+
+                Button("Save") {
+                    saveTarget = place
+                }
+                .buttonStyle(MaterialQuietButtonStyle())
+                .accessibilityLabel("Save \(place.name)")
+                .accessibilityIdentifier("tracks.hidden.save.\(place.placeID)")
+            }
+            .disabled(state.isPending(placeID: place.placeID))
         }
-        .foregroundStyle(tokens.accent.swiftUIColor)
-        .frame(minWidth: 44, minHeight: 44)
-        .contentShape(Rectangle())
-        .buttonStyle(.plain)
-        .disabled(state.isPending(placeID: place.placeID))
-        .opacity(
-            state.isPending(placeID: place.placeID)
-                ? tokens.disabledAlpha
-                : 1
-        )
-        .accessibilityLabel(
-            mode.actionAccessibilityLabel(placeName: place.name)
-        )
-        .accessibilityIdentifier(
-            "\(mode.presentation.actionIdentifierPrefix).\(place.placeID)"
-        )
     }
 
     @MainActor

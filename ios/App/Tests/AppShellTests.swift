@@ -537,6 +537,31 @@ final class AppShellTests: XCTestCase {
         )
     }
 
+    func testManagedPlacesStateRemovesHiddenRowAfterSaveAddition() {
+        let hidden = ListPlace(
+            placeID: "hidden",
+            name: "Hidden",
+            category: "memorial",
+            pinState: PinState(saved: false, visit: .none, hidden: true)
+        )
+        var state = ManagedPlacesState(places: [hidden])
+
+        state.removePlace(placeID: hidden.placeID)
+
+        XCTAssertTrue(state.places.isEmpty)
+    }
+
+    func testListPickerMembershipChangeMapsPriorMembershipToCompletedDirection() {
+        XCTAssertEqual(
+            ListPickerMembershipChange.completed(wasMember: false, listID: 7),
+            .added(listID: 7)
+        )
+        XCTAssertEqual(
+            ListPickerMembershipChange.completed(wasMember: true, listID: 7),
+            .removed(listID: 7)
+        )
+    }
+
     func testLovedManagedPlaceMetadataNamesHiddenOverlapWithoutFilteringIt() {
         let both = ListPlace(
             placeID: "both",

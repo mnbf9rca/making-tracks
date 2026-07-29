@@ -7711,10 +7711,19 @@ private struct CreditEntryView: View {
     }
 }
 
+enum ListPickerMembershipChange: Equatable {
+    case added(listID: Int64)
+    case removed(listID: Int64)
+
+    static func completed(wasMember: Bool, listID: Int64) -> Self {
+        wasMember ? .removed(listID: listID) : .added(listID: listID)
+    }
+}
+
 struct ListPickerView: View {
     let placeID: String
     let model: MapScreenModel?
-    let onChanged: @MainActor () -> Void
+    let onChanged: @MainActor (ListPickerMembershipChange) -> Void
 
     @State private var lists: [PlaceList] = []
     @State private var memberships: Set<Int64> = []
@@ -7785,14 +7794,15 @@ struct ListPickerView: View {
     private func toggle(_ list: PlaceList) async {
         guard let id = list.id, let model else { return }
         do {
-            if memberships.contains(id) {
+            let wasMember = memberships.contains(id)
+            if wasMember {
                 try await model.removeFromList(placeID: placeID, listID: id)
             } else {
                 try await model.addToList(placeID: placeID, listID: id)
             }
             actionError = nil
             await reload()
-            onChanged()
+            onChanged(.completed(wasMember: wasMember, listID: id))
         } catch {
             actionError = "Could not update that list."
         }
@@ -7814,7 +7824,7 @@ struct ListPickerView: View {
             newListName = ""
             actionError = nil
             await reload()
-            onChanged()
+            onChanged(.added(listID: id))
         } catch {
             actionError = ListsCopy.listNameCreateFailureMessage(for: error, draftName: trimmedName)
         }

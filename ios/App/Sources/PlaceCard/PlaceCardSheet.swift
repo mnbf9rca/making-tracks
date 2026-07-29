@@ -260,7 +260,7 @@ struct PlaceCardSheet: View {
             ListPickerView(
                 placeID: placeID,
                 model: model,
-                onChanged: {
+                onChanged: { _ in
                     Task { await refreshCard() }
                 }
             )
