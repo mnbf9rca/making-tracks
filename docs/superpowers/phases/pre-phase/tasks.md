@@ -9,7 +9,8 @@ Format: one line per transition, newest last:
 
 ## Active
 
-Nothing active. **Phase 1 is live** — phase work is tracked in `docs/superpowers/phases/phase-1/tasks.md`. This ledger covers pre-phase and issue-routed work only, per coordination.md → *Supervision-loop contract* → *No active phase*.
+- 2026-07-29T13:35Z codex3 #497 claimed — rewrite `sim-lock.sh` for per-simulator locking plus a two-gate global cap; fold #544's new-host process-fixture repair into the same row
+- 2026-07-29T13:40Z codex3 #497 branch — `wp-infra-sim-concurrency` at `bde9c0a21beaa90ab2e358b2da2e966567ea9fac`; #497 inode-swap evidence grounded and baseline harness recorded at 8 passed / 3 failed after installing Homebrew `flock`
 
 ## Done (pre-phase)
 
