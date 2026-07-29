@@ -15,6 +15,32 @@ these assets are its visual record and are embedded in the implementation epic.
 | `t1.10-place-card-ax.{html,png}` | Accessibility-size place card at the large detent with a scroll fade and vertically stacked action controls. |
 | `t1.10-place-card-dark-system.png` | Runtime UI-test capture with the simulator forced to dark appearance. The map and place card remain on the Snow material sheet; its source and pixel oracle live in `MakingTracksCoreLoopUITests.testPlaceCardKeepsSnowTokensInDarkSystemAppearance`. |
 
+## A8 candidate packets — awaiting validation and ruling
+
+These packets are candidate evidence for the A8 amendment work. They await reviewer
+validation and Rob's ruling; they are **not** part of the frozen design-session
+record, and the ratified component-metrics table remains unchanged until that ruling.
+
+| Candidate sources and capture | What the packet proves |
+|---|---|
+| `a8-explore-surface.html` + `a8-explore-surface.png` | R14's collapsed Snow Explore surface at default and accessibility-size 390×844 frames: Scope opens directly, Search renders nothing, and Settings/About remain quiet bottom destinations. |
+| `a8-r15-place-card.html` + `a8-r15-place-card.png` | R15/R16's fully lit Snow place-card cluster at default and accessibility-size 390×844 frames: Saved, Seen, and Loved are simultaneously ON as filled pills with filled glyphs, with per-pill AA contrast evidence. |
+
+Both packets name `Playwright-bundled Chromium/headless shell 151.0.7922.34` as
+their renderer. The following is the complete candidate metrics packet for reviewer
+validation and Rob's ruling, not a spec-table amendment.
+
+| Candidate metric | Value | Exact candidate source | Status |
+|---|---|---|---|
+| Explore sheet placement | 62pt large-detent top; 12pt grabber-to-title gap | `a8-explore-surface.html` | Proposed; pending validation and ruling |
+| Scope control row | 52pt minimum; 15pt/600 label; 20×20 established icon; 10pt gap; 6/2 padding; 44×28 switch; 22pt knob at 3/19pt offsets; 1pt hairlines | `a8-explore-surface.html` | Proposed; pending validation and ruling |
+| Scope block rhythm | 18pt header-to-label; 11pt label-to-chips; 14pt chips-to-controls; row minimum yields to wrapped content | `a8-explore-surface.html` | Proposed; pending validation and ruling |
+| Quiet destination row | 9/2 padding; 10pt gap; 12×12 chevron; 2pt title-to-metadata gap | `a8-explore-surface.html` | Proposed; pending validation and ruling |
+| AX Scope stress scaling | 86pt row minimum; 23pt/600 label; 30×30 icon; 14pt gap; 10/2 padding; 51×31 switch; 25pt knob at 3/23pt offsets; 14/9/14pt block rhythm; minimum yields to content | `a8-explore-surface.html` | Candidate AX evidence; pending validation and ruling |
+| ON state-pill geometry | 44pt minimum target; 15pt/600 label; 17×17 filled glyph; 6pt glyph-to-label gap; 8pt between pills; separate 44pt More control | `a8-r15-place-card.html` | Established §5 metrics demonstrated by candidate |
+| ON state semantic fills and contrast | Saved: #0A6B5C on #DEE9E0 = 5.15:1; Seen: #FBFAF2 on #0A6B5C = 6.13:1; Loved: #FBFAF2 on #C4312B = 5.25:1 | `a8-r15-place-card.html` | Candidate evidence; pending validation and ruling |
+| AX state-pill stress scaling | 23pt label; 25×25 filled glyph; three stacked 64pt targets; 8pt inter-pill gap | `a8-r15-place-card.html` | Candidate AX evidence; pending validation and ruling |
+
 ## Implementation evidence
 
 These renders record shipped implementation changes; they are not frozen design-session rulings.
