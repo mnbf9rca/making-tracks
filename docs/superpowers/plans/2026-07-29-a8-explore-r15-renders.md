@@ -71,6 +71,8 @@ Print the foreground/background hex pairs and ratios next to the default and AX 
 ### Task 3: Render and verify the packets
 
 **Files:**
+- Modify as needed for capture provenance or capture-only corrections: `docs/design/design-system/a8-explore-surface.html`
+- Modify as needed for capture provenance or capture-only corrections: `docs/design/design-system/a8-r15-place-card.html`
 - Create: `docs/design/design-system/a8-explore-surface.png`
 - Create: `docs/design/design-system/a8-r15-place-card.png`
 
