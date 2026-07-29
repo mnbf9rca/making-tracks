@@ -8,8 +8,8 @@
 # This script does not take the lock itself. Two lock-takers is how the lock
 # path drifted apart in the first place, so there is exactly one.
 #
-# Successful runs keep this invocation's DerivedData warm; failed runs keep
-# DerivedData and the .xcresult for diagnosis.
+# Successful and failed runs keep this invocation's DerivedData warm. Result
+# bundles are removed on exit after xcodebuild has emitted the test counts.
 set -euo pipefail
 
 PROJECT="ios/App/MakingTracks.xcodeproj"
@@ -20,14 +20,22 @@ DESTINATION="${MT_RELEASE_GATE_DESTINATION:-}"
   echo "release-gate: refused: MT_RELEASE_GATE_DESTINATION is required; export this seat's destination from wp-infra-sim-concurrency" >&2
   exit 1
 }
-case "$DESTINATION" in
-  *id=*) GATE_UDID="${DESTINATION#*id=}" ;;
+DESTINATION_FIELDS=",$DESTINATION,"
+case "$DESTINATION_FIELDS" in
+  *,id=*) DESTINATION_AFTER_ID="${DESTINATION_FIELDS#*,id=}" ;;
   *)
     echo "release-gate: refused: MT_RELEASE_GATE_DESTINATION must include id=<simulator-udid>" >&2
     exit 1
     ;;
 esac
-GATE_UDID="${GATE_UDID%%,*}"
+GATE_UDID="${DESTINATION_AFTER_ID%%,*}"
+DESTINATION_REMAINDER="${DESTINATION_AFTER_ID#"$GATE_UDID"}"
+case "$DESTINATION_REMAINDER" in
+  *,id=*)
+    echo "release-gate: refused: MT_RELEASE_GATE_DESTINATION must contain exactly one id=<simulator-udid>" >&2
+    exit 1
+    ;;
+esac
 case "$GATE_UDID" in
   ""|*[!A-Za-z0-9-]*)
     echo "release-gate: refused: MT_RELEASE_GATE_DESTINATION contains an invalid simulator UDID" >&2
@@ -153,8 +161,14 @@ destination_udid() {
 }
 
 lock_is_satisfied() {
-  [ "${MT_SIM_LOCK:-}" = "1" ] && return 0
-  [ "${MT_RELEASE_GATE_SKIP_LOCK:-}" = "1" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]
+  if [ "${MT_RELEASE_GATE_SKIP_LOCK:-}" = "1" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+    return 0
+  fi
+  [ "${MT_SIM_LOCK:-}" = "1" ] || return 1
+  [ -n "${MT_SIM_LOCK_UDID:-}" ] ||
+    refuse "simulator lock identity is missing (MT_SIM_LOCK_UDID)"
+  [ "$MT_SIM_LOCK_UDID" = "$GATE_UDID" ] ||
+    refuse "simulator lock is for simulator $MT_SIM_LOCK_UDID, not $GATE_UDID"
 }
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || refuse "not inside a git worktree"
@@ -177,6 +191,7 @@ prune_derived_data_if_stale
 mkdir -p "$DERIVED_DATA"
 [ "${MT_RELEASE_GATE_RESULT_BUNDLE:-}" = "" ] || RESULT_BUNDLE="$MT_RELEASE_GATE_RESULT_BUNDLE"
 rm -rf "$RESULT_BUNDLE"
+trap 'rm -rf "$RESULT_BUNDLE"' EXIT
 
 phase "simulator boot" xcrun simctl bootstatus "$(destination_udid)" -b
 

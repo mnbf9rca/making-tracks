@@ -30,6 +30,10 @@ The app-specific facts an agent needs are stated in `develop`'s file, in these s
 - **Review gates**, point 3: run the Release build and simulator test gate as
   `./scripts/sim-lock.sh ./scripts/release-gate.sh`. Warnings-as-errors is set on the app target in
   `ios/App/project.yml`, which lives on this branch.
+- **iOS simulator** and `docs/process/ios-simulator.md`: their single `agent-ios-tests` identity, retired
+  global lock, and commands containing its hardcoded UDID are superseded on this branch by *The simulators
+  have one entry point* below and the seat table in `docs/ios-gate-ledger.md`. Their unaffected simulator
+  safety and disk-hygiene rules still apply.
 
 ## CI on this branch
 
@@ -54,7 +58,8 @@ it.
 
 The script takes a stable per-simulator lock derived from the destination UDID, so two gates aimed at the
 same simulator serialize. A stable global counting semaphore caps aggregate gate concurrency at
-`MT_GATE_MAX_CONCURRENT` (default `2`); different simulators may run together only within that cap.
+`MT_GATE_MAX_CONCURRENT` (default `2`); different simulators may run together only within that cap. The
+host ceiling is `2`; the setting may lower concurrency to `1` but cannot enlarge it.
 
 **Never read a lock file by hand to decide whether a simulator is free.** The file tells you who holds one
 inode, not who is using the simulator, and those differ. `--status` checks both and reports HELD if either

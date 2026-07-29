@@ -7,8 +7,8 @@ This ledger records iOS gate count-watch decisions that affect whether a run cou
 Every builder seat has one gate simulator. The seat exports the literal destination below as
 `MT_RELEASE_GATE_DESTINATION` before any `scripts/sim-lock.sh` or `scripts/release-gate.sh` invocation.
 `sim-lock.sh` derives a stable per-simulator lock from its UDID. Different simulators may run concurrently,
-but the global counting semaphore admits at most `MT_GATE_MAX_CONCURRENT` gates at once; the default is
-`2`.
+but the global counting semaphore admits at most `MT_GATE_MAX_CONCURRENT` gates at once. The default and
+host-wide ceiling are `2`; operators may lower the setting to `1`, but callers cannot enlarge it.
 
 | Seat | Simulator | `MT_RELEASE_GATE_DESTINATION` |
 | --- | --- | --- |

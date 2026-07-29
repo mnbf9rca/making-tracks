@@ -6,7 +6,7 @@
 
 **Architecture:** `sim-lock.sh` parses the simulator UDID from the required `MT_RELEASE_GATE_DESTINATION`, opens a stable per-UDID lock file once, and holds `flock` on that open descriptor for the whole child command. After the simulator lock is held, it acquires one of `MT_GATE_MAX_CONCURRENT` stable global slot files; the default is two, and the slot descriptor remains open until the child exits. `release-gate.sh` rejects missing destinations before doing work and keys its default run/DerivedData directory from the destination UDID.
 
-**Tech Stack:** Bash 5, Homebrew `flock`, ShellCheck, `scripts/sim-lock-tests.sh`
+**Tech Stack:** macOS Bash 3.2+, Homebrew `flock`, ShellCheck, `scripts/sim-lock-tests.sh`, pytest
 
 ## Global Constraints
 
@@ -14,7 +14,10 @@
 - The literal branch is `wp-infra-sim-concurrency`.
 - Lock files live under `/private/tmp`, are opened with `O_CREAT`, are locked by open file descriptor, and are never deleted or replaced.
 - Same-simulator work serialises; different simulators may overlap; no more than `MT_GATE_MAX_CONCURRENT` locked commands overlap globally (default `2`).
-- `MT_RELEASE_GATE_DESTINATION` is mandatory and must contain `id=<simulator-udid>`.
+- `MT_RELEASE_GATE_DESTINATION` is mandatory and must contain exactly one comma-delimited
+  `id=<simulator-udid>` field.
+- `MT_GATE_MAX_CONCURRENT` defaults to the host ceiling of `2` and may lower it to `1`; a caller cannot
+  enlarge the host-wide ceiling.
 - The test harness must exercise real process, lock, and timing effects; it must not inspect source text. Process-detection cases run with host process-list access because the sandbox denies `pgrep`.
 - The per-seat simulator table is recorded in the iOS gate's operational ledger because `docs/INFRA.md` is develop-owned and deliberately absent from the `ios` tree.
 
@@ -73,11 +76,11 @@ Reject an unset destination or a value without `id=<simulator-udid>`. Restrict t
 
 - [x] **Step 2: Open the simulator lock once and acquire it by descriptor**
 
-Use Bash descriptor allocation with append/create semantics:
+Use fixed descriptors compatible with the macOS system Bash and append/create semantics:
 
 ```bash
-exec {sim_lock_fd}>>"$sim_lock_path"
-"$FLOCK_BIN" -w "$LOCK_WAIT_SECONDS" "$sim_lock_fd"
+exec 8>>"$sim_lock_path"
+"$FLOCK_BIN" -w "$LOCK_WAIT_SECONDS" 8
 ```
 
 Never unlink, rename, symlink, or truncate the lock file.
@@ -88,7 +91,10 @@ Open each stable slot file in numeric order and try `flock -n` on its descriptor
 
 - [x] **Step 4: Preserve re-entrancy and destructive-operation safety**
 
-A nested invocation with `MT_SIM_LOCK=1` executes directly. `--status` still returns HELD if either the selected simulator lock or a non-idle process using that UDID is visible. `--erase`, `--shutdown`, and `--boot` continue to use only the selected UDID.
+A nested invocation executes directly only when `MT_SIM_LOCK=1` and `MT_SIM_LOCK_UDID` exactly matches the
+selected destination. `--status` still returns HELD if either the selected simulator lock or a non-idle
+process using that UDID is visible, and fails closed when either inspection boundary errors. `--erase`,
+`--shutdown`, and `--boot` continue to use only the selected UDID.
 
 - [x] **Step 5: Run the harness and verify GREEN**
 
@@ -119,6 +125,11 @@ Keep `MT_RELEASE_GATE_RUN_DIR` and `MT_RELEASE_GATE_DERIVED_DATA` as explicit ov
 Run: `./scripts/sim-lock-tests.sh`
 
 Expected: all tests pass and the missing-destination case performs no git fetch, simulator, or xcode action.
+
+Run: `python -m pytest pipeline/tests/test_release_gate_script.py -q`
+
+Expected: the established release-gate contract suite passes with explicit matching destination/lock
+identities, malformed and duplicate destination rejection, and result-bundle cleanup on success and failure.
 
 ### Task 4: Record machine facts and execute the gates
 

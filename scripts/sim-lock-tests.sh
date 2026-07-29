@@ -19,13 +19,26 @@ FAKE_UDID="TEST-UDID-0000-1111-2222-333344445555"
 FLOCK_BIN="/opt/homebrew/bin/flock"
 RELEASE_FIXTURE_SEAT="sim-lock-test-$$"
 RELEASE_LEGACY_RUN_DIR="/private/tmp/release-gate-$RELEASE_FIXTURE_SEAT"
-RELEASE_UDID_A="TEST-DERIVED-AAAA"
-RELEASE_UDID_B="TEST-DERIVED-BBBB"
+RELEASE_UDID_A="TEST-DERIVED-AAAA-$$"
+RELEASE_UDID_B="TEST-DERIVED-BBBB-$$"
 RELEASE_RUN_DIR_A="/private/tmp/release-gate-$RELEASE_UDID_A"
 RELEASE_RUN_DIR_B="/private/tmp/release-gate-$RELEASE_UDID_B"
 
 pass=0; fail=0
 cleanup() {
+  local child
+  local started
+
+  if [ -d "$TMP" ]; then
+    while IFS= read -r started; do
+      touch "${started%.started}.release"
+    done < <(find "$TMP" -type f -name '*.started' 2>/dev/null)
+  fi
+  sleep 0.05
+  for child in $(jobs -pr); do
+    kill "$child" 2>/dev/null || true
+  done
+  wait 2>/dev/null || true
   rm -rf \
     "$TMP" \
     "$RELEASE_LEGACY_RUN_DIR" \
@@ -33,8 +46,6 @@ cleanup() {
     "$RELEASE_RUN_DIR_B"
 }
 trap cleanup EXIT
-
-RETIRED="$TMP/retired.lock"
 
 run_status() {
   MT_SIM_LOCK_TEST_MODE=1 \
@@ -106,6 +117,24 @@ start_holder() {
     while [ ! -e "$1.release" ]; do sleep 0.02; done
     touch "$1.finished"
   ' sh "$marker"
+}
+
+start_default_cap_holder() {
+  local udid="$1"
+  local marker="$2"
+
+  # shellcheck disable=SC2016 # Expanded by the child sh, not this harness.
+  env -u MT_GATE_MAX_CONCURRENT \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_UDID="$udid" \
+    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$udid" \
+    MT_SIM_LOCK_WAIT=5 \
+    "$SIM_LOCK" sh -c '
+      touch "$1.started"
+      while [ ! -e "$1.release" ]; do sleep 0.02; done
+      touch "$1.finished"
+    ' sh "$marker"
 }
 
 check() {
@@ -201,24 +230,28 @@ else
     "status=$pgrep_error_rc output='$(echo "$pgrep_error_out" | head -1)'"
 fi
 
-echo
-echo "sim-lock retired-path retirement:"
-
-# 8. The per-seat design has no canonical target for the retired global alias.
-#    Touching or replacing it can split an inode underneath a legacy holder,
-#    which is #497's failure shape. New invocations leave it completely alone.
-rm -f "$RETIRED"
-printf '%s\n' "legacy-sentinel" >"$RETIRED"
-retired_inode_before="$(stat -f %i "$RETIRED")"
-run_gate_for "TEST-RETIRED-UNTOUCHED" true >/dev/null 2>&1 || true
-retired_inode_after="$(stat -f %i "$RETIRED")"
-if [ ! -L "$RETIRED" ] &&
-   [ "$retired_inode_before" = "$retired_inode_after" ] &&
-   [ "$(cat "$RETIRED")" = "legacy-sentinel" ]; then
-  record_ok "never deletes or replaces the retired global lock path"
+# Lock inspection errors are also unknown state, not evidence that the lock is
+# free during the gap between xcodebuild phases.
+LSOF_ERROR="$TMP/lsof-error"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 2' >"$LSOF_ERROR"
+chmod +x "$LSOF_ERROR"
+set +e
+lsof_error_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+  MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+  MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
+  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+  MT_SIM_LOCK_TEST_LSOF_BIN="$LSOF_ERROR" \
+  "$SIM_LOCK" --status 2>&1
+)"
+lsof_error_rc=$?
+set -e
+if [ "$lsof_error_rc" -ne 0 ] &&
+   echo "$lsof_error_out" | grep -q "cannot inspect simulator lock"; then
+  record_ok "fails closed when simulator lock inspection fails"
 else
-  record_fail "never deletes or replaces the retired global lock path" \
-    "the retired path changed during a new per-simulator invocation"
+  record_fail "fails closed when simulator lock inspection fails" \
+    "status=$lsof_error_rc output='$(echo "$lsof_error_out" | head -1)'"
 fi
 
 echo
@@ -253,6 +286,137 @@ else
   echo "        got: $out"; fail=$((fail+1))
 fi
 
+# Re-entry is authority for one exact simulator, not a general bypass. Missing
+# identity and a changed identity must both be rejected.
+set +e
+missing_reentry_out="$(
+  env -u MT_SIM_LOCK_UDID \
+    MT_SIM_LOCK=1 \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_UDID="TEST-REENTRY-MISSING" \
+    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=TEST-REENTRY-MISSING" \
+    "$SIM_LOCK" true 2>&1
+)"
+missing_reentry_rc=$?
+mismatched_reentry_out="$(
+  MT_SIM_LOCK=1 \
+    MT_SIM_LOCK_UDID="TEST-REENTRY-OUTER" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_UDID="TEST-REENTRY-INNER" \
+    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=TEST-REENTRY-INNER" \
+    "$SIM_LOCK" true 2>&1
+)"
+mismatched_reentry_rc=$?
+set -e
+if [ "$missing_reentry_rc" -ne 0 ] &&
+   echo "$missing_reentry_out" | grep -q "missing simulator identity"; then
+  record_ok "rejects re-entry without the outer simulator identity"
+else
+  record_fail "rejects re-entry without the outer simulator identity" \
+    "status=$missing_reentry_rc output='$missing_reentry_out'"
+fi
+if [ "$mismatched_reentry_rc" -ne 0 ] &&
+   echo "$mismatched_reentry_out" | grep -q "changed simulator"; then
+  record_ok "rejects re-entry for a different simulator"
+else
+  record_fail "rejects re-entry for a different simulator" \
+    "status=$mismatched_reentry_rc output='$mismatched_reentry_out'"
+fi
+
+set +e
+malformed_sim_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,grid=NOT-AN-ID" \
+    "$SIM_LOCK" true 2>&1
+)"
+malformed_sim_rc=$?
+set -e
+if [ "$malformed_sim_rc" -ne 0 ] &&
+   echo "$malformed_sim_out" | grep -q "must include id="; then
+  record_ok "rejects a destination whose grid field merely ends in id"
+else
+  record_fail "rejects a destination whose grid field merely ends in id" \
+    "status=$malformed_sim_rc output='$malformed_sim_out'"
+fi
+
+set +e
+duplicate_id_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=FIRST,id=SECOND" \
+    "$SIM_LOCK" true 2>&1
+)"
+duplicate_id_rc=$?
+set -e
+if [ "$duplicate_id_rc" -ne 0 ] &&
+   echo "$duplicate_id_out" | grep -q "exactly one id="; then
+  record_ok "rejects a destination containing multiple id fields"
+else
+  record_fail "rejects a destination containing multiple id fields" \
+    "status=$duplicate_id_rc output='$duplicate_id_out'"
+fi
+
+set +e
+mismatched_command_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_UDID="TEST-COMMAND-OUTER" \
+    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=TEST-COMMAND-OUTER" \
+    "$SIM_LOCK" xcodebuild \
+      -destination "platform=iOS Simulator,id=TEST-COMMAND-INNER" 2>&1
+)"
+mismatched_command_rc=$?
+set -e
+if [ "$mismatched_command_rc" -ne 0 ] &&
+   echo "$mismatched_command_out" | grep -q "command targets simulator"; then
+  record_ok "rejects a wrapped command targeting a different simulator"
+else
+  record_fail "rejects a wrapped command targeting a different simulator" \
+    "status=$mismatched_command_rc output='$(echo "$mismatched_command_out" | head -1)'"
+fi
+
+set +e
+bash32_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_UDID="TEST-BASH32" \
+    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=TEST-BASH32" \
+    /bin/bash "$SIM_LOCK" true 2>&1
+)"
+bash32_rc=$?
+set -e
+if [ "$bash32_rc" -eq 0 ]; then
+  record_ok "runs with the macOS system Bash"
+else
+  record_fail "runs with the macOS system Bash" \
+    "status=$bash32_rc output='$(echo "$bash32_out" | head -1)'"
+fi
+
+FLOCK_ERROR="$TMP/flock-error"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 2' >"$FLOCK_ERROR"
+chmod +x "$FLOCK_ERROR"
+set +e
+flock_error_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_UDID="TEST-FLOCK-ERROR" \
+    MT_SIM_LOCK_TEST_FLOCK_BIN="$FLOCK_ERROR" \
+    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=TEST-FLOCK-ERROR" \
+    "$SIM_LOCK" true 2>&1
+)"
+flock_error_rc=$?
+set -e
+if [ "$flock_error_rc" -ne 0 ] &&
+   echo "$flock_error_out" | grep -q "flock status 2"; then
+  record_ok "reports flock operational errors instead of calling them contention"
+else
+  record_fail "reports flock operational errors instead of calling them contention" \
+    "status=$flock_error_rc output='$(echo "$flock_error_out" | head -1)'"
+fi
+
 echo
 echo "sim-lock per-simulator concurrency:"
 
@@ -272,6 +436,12 @@ if wait_for_path "$SAME_A.started"; then
   fi
   touch "$SAME_A.release"
   wait "$same_a_pid" 2>/dev/null
+  if wait_for_path "$SAME_B.started"; then
+    record_ok "runs the queued same-simulator command after release"
+  else
+    record_fail "runs the queued same-simulator command after release" \
+      "second command was rejected or stayed queued after the first released"
+  fi
   wait "$same_b_pid" 2>/dev/null
 else
   record_fail "serializes two commands targeting the same simulator" \
@@ -309,15 +479,15 @@ echo "sim-lock global gate cap:"
 CAP_A="$TMP/cap-a"
 CAP_B="$TMP/cap-b"
 CAP_C="$TMP/cap-c"
-MT_GATE_MAX_CONCURRENT=2 start_holder "TEST-CAP-SIM-A" "$CAP_A" >"$CAP_A.log" 2>&1 &
+start_default_cap_holder "TEST-CAP-SIM-A" "$CAP_A" >"$CAP_A.log" 2>&1 &
 cap_a_pid=$!
-MT_GATE_MAX_CONCURRENT=2 start_holder "TEST-CAP-SIM-B" "$CAP_B" >"$CAP_B.log" 2>&1 &
+start_default_cap_holder "TEST-CAP-SIM-B" "$CAP_B" >"$CAP_B.log" 2>&1 &
 cap_b_pid=$!
 cap_setup_ok=1
 wait_for_path "$CAP_A.started" || cap_setup_ok=0
 wait_for_path "$CAP_B.started" || cap_setup_ok=0
 if [ "$cap_setup_ok" -eq 1 ]; then
-  MT_GATE_MAX_CONCURRENT=2 start_holder "TEST-CAP-SIM-C" "$CAP_C" >"$CAP_C.log" 2>&1 &
+  start_default_cap_holder "TEST-CAP-SIM-C" "$CAP_C" >"$CAP_C.log" 2>&1 &
   cap_c_pid=$!
   sleep 0.3
   if [ ! -e "$CAP_C.started" ]; then
@@ -345,33 +515,76 @@ else
   wait "$cap_b_pid" 2>/dev/null
 fi
 
+set +e
+oversized_cap_out="$(
+  MT_GATE_MAX_CONCURRENT=3 \
+    run_gate_for "TEST-CAP-OVERSIZED" true 2>&1
+)"
+oversized_cap_rc=$?
+set -e
+if [ "$oversized_cap_rc" -ne 0 ] &&
+   echo "$oversized_cap_out" | grep -q "cannot exceed the host ceiling of 2"; then
+  record_ok "rejects a caller that tries to enlarge the host-wide cap"
+else
+  record_fail "rejects a caller that tries to enlarge the host-wide cap" \
+    "status=$oversized_cap_rc output='$oversized_cap_out'"
+fi
+
+set +e
+noncanonical_cap_out="$(
+  MT_GATE_MAX_CONCURRENT=08 \
+    run_gate_for "TEST-CAP-NONCANONICAL" true 2>&1
+)"
+noncanonical_cap_rc=$?
+set -e
+if [ "$noncanonical_cap_rc" -ne 0 ] &&
+   echo "$noncanonical_cap_out" | grep -q "must be 1 or 2"; then
+  record_ok "rejects leading-zero cap values before arithmetic"
+else
+  record_fail "rejects leading-zero cap values before arithmetic" \
+    "status=$noncanonical_cap_rc output='$noncanonical_cap_out'"
+fi
+
 echo
 echo "sim-lock stable lock inode:"
 
 INODE_UDID="TEST-INODE-SIM"
 INODE_LOCK="$LOCK_ROOT/making-tracks-sim-$INODE_UDID.lock"
-INODE_HOLDER="$TMP/inode-holder"
+INODE_HOLDER_A="$TMP/inode-holder-a"
+INODE_HOLDER_B="$TMP/inode-holder-b"
 mkdir -p "$LOCK_ROOT"
 touch "$INODE_LOCK"
 inode_before="$(stat -f %i "$INODE_LOCK")"
-start_holder "$INODE_UDID" "$INODE_HOLDER" >"$INODE_HOLDER.log" 2>&1 &
-inode_pid=$!
-if wait_for_path "$INODE_HOLDER.started" && [ -f "$INODE_LOCK" ]; then
+start_holder "$INODE_UDID" "$INODE_HOLDER_A" >"$INODE_HOLDER_A.log" 2>&1 &
+inode_a_pid=$!
+if wait_for_path "$INODE_HOLDER_A.started" && [ -f "$INODE_LOCK" ]; then
+  start_holder "$INODE_UDID" "$INODE_HOLDER_B" >"$INODE_HOLDER_B.log" 2>&1 &
+  inode_b_pid=$!
+  sleep 0.3
   inode_during="$(stat -f %i "$INODE_LOCK")"
-  touch "$INODE_HOLDER.release"
-  wait "$inode_pid" 2>/dev/null
+  contender_queued=0
+  [ ! -e "$INODE_HOLDER_B.started" ] || contender_queued=1
+  touch "$INODE_HOLDER_A.release"
+  wait "$inode_a_pid" 2>/dev/null
+  contender_started=0
+  wait_for_path "$INODE_HOLDER_B.started" || contender_started=1
+  touch "$INODE_HOLDER_B.release"
+  wait "$inode_b_pid" 2>/dev/null
   inode_after="$(stat -f %i "$INODE_LOCK")"
-  if [ "$inode_before" = "$inode_during" ] && [ "$inode_before" = "$inode_after" ]; then
-    record_ok "keeps the per-simulator lock file on one stable inode"
+  if [ "$contender_queued" -eq 0 ] &&
+     [ "$contender_started" -eq 0 ] &&
+     [ "$inode_before" = "$inode_during" ] &&
+     [ "$inode_before" = "$inode_after" ]; then
+    record_ok "serializes contenders through one stable lock inode"
   else
-    record_fail "keeps the per-simulator lock file on one stable inode" \
-      "inode changed: before=$inode_before during=$inode_during after=$inode_after"
+    record_fail "serializes contenders through one stable lock inode" \
+      "queued=$contender_queued started_after_release=$contender_started inode before=$inode_before during=$inode_during after=$inode_after"
   fi
 else
-  record_fail "keeps the per-simulator lock file on one stable inode" \
+  record_fail "serializes contenders through one stable lock inode" \
     "holder did not use the expected per-simulator lock path"
-  touch "$INODE_HOLDER.release"
-  wait "$inode_pid" 2>/dev/null
+  touch "$INODE_HOLDER_A.release"
+  wait "$inode_a_pid" 2>/dev/null
 fi
 
 echo
@@ -398,6 +611,31 @@ printf '%s\n' \
   'printf "%s\n" "$*" >>"$MT_TEST_XCODEBUILD_LOG"' >"$FAKE_BIN/xcodebuild"
 chmod +x "$FAKE_BIN/git" "$FAKE_BIN/xcrun" "$FAKE_BIN/xcodebuild"
 
+rm -f "$XCODEBUILD_LOG"
+set +e
+mismatched_gate_out="$(
+  PATH="$FAKE_BIN:$PATH" \
+    MT_TEST_REPO_ROOT="$HERE/.." \
+    MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
+    MT_SIM_LOCK=1 \
+    MT_SIM_LOCK_UDID="$RELEASE_UDID_A" \
+    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$RELEASE_UDID_B" \
+    MT_RELEASE_GATE_MODE=build \
+    "$RELEASE_GATE" 2>&1
+)"
+mismatched_gate_rc=$?
+set -e
+if [ "$mismatched_gate_rc" -ne 0 ] &&
+   echo "$mismatched_gate_out" | grep -q "lock is for simulator" &&
+   [ ! -e "$XCODEBUILD_LOG" ]; then
+  record_ok "rejects a release gate targeting a different simulator than its lock"
+else
+  record_fail "rejects a release gate targeting a different simulator than its lock" \
+    "status=$mismatched_gate_rc output='$(echo "$mismatched_gate_out" | head -1)'"
+fi
+
+rm -f "$XCODEBUILD_LOG"
+set +e
 missing_destination_out="$(
   env -u MT_RELEASE_GATE_DESTINATION \
     PATH="$FAKE_BIN:$PATH" \
@@ -407,12 +645,62 @@ missing_destination_out="$(
     MT_RELEASE_GATE_MODE=build \
     AM_ME="$RELEASE_FIXTURE_SEAT" \
     "$RELEASE_GATE" 2>&1
-)" || true
-if echo "$missing_destination_out" | grep -q "wp-infra-sim-concurrency"; then
+)"
+missing_destination_rc=$?
+set -e
+if [ "$missing_destination_rc" -ne 0 ] &&
+   echo "$missing_destination_out" | grep -q "wp-infra-sim-concurrency" &&
+   [ ! -e "$XCODEBUILD_LOG" ]; then
   record_ok "refuses an unset destination with the simulator-row message"
 else
   record_fail "refuses an unset destination with the simulator-row message" \
-    "got: $(echo "$missing_destination_out" | head -1)"
+    "status=$missing_destination_rc got: $(echo "$missing_destination_out" | head -1)"
+fi
+
+rm -f "$XCODEBUILD_LOG"
+set +e
+malformed_gate_out="$(
+  PATH="$FAKE_BIN:$PATH" \
+    MT_TEST_REPO_ROOT="$HERE/.." \
+    MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
+    MT_SIM_LOCK=1 \
+    MT_SIM_LOCK_UDID="NOT-AN-ID" \
+    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,grid=NOT-AN-ID" \
+    MT_RELEASE_GATE_MODE=build \
+    "$RELEASE_GATE" 2>&1
+)"
+malformed_gate_rc=$?
+set -e
+if [ "$malformed_gate_rc" -ne 0 ] &&
+   echo "$malformed_gate_out" | grep -q "must include id=" &&
+   [ ! -e "$XCODEBUILD_LOG" ]; then
+  record_ok "release gate rejects a destination without an exact id field"
+else
+  record_fail "release gate rejects a destination without an exact id field" \
+    "status=$malformed_gate_rc output='$(echo "$malformed_gate_out" | head -1)'"
+fi
+
+rm -f "$XCODEBUILD_LOG"
+set +e
+duplicate_gate_out="$(
+  PATH="$FAKE_BIN:$PATH" \
+    MT_TEST_REPO_ROOT="$HERE/.." \
+    MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
+    MT_SIM_LOCK=1 \
+    MT_SIM_LOCK_UDID="FIRST" \
+    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=FIRST,id=SECOND" \
+    MT_RELEASE_GATE_MODE=build \
+    "$RELEASE_GATE" 2>&1
+)"
+duplicate_gate_rc=$?
+set -e
+if [ "$duplicate_gate_rc" -ne 0 ] &&
+   echo "$duplicate_gate_out" | grep -q "exactly one id=" &&
+   [ ! -e "$XCODEBUILD_LOG" ]; then
+  record_ok "release gate rejects multiple destination id fields"
+else
+  record_fail "release gate rejects multiple destination id fields" \
+    "status=$duplicate_gate_rc output='$(echo "$duplicate_gate_out" | head -1)'"
 fi
 
 run_release_fixture() {
@@ -422,6 +710,7 @@ run_release_fixture() {
   MT_TEST_REPO_ROOT="$HERE/.." \
   MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
   MT_SIM_LOCK=1 \
+  MT_SIM_LOCK_UDID="$udid" \
   MT_RELEASE_GATE_MODE=build \
   MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$udid" \
   AM_ME="$RELEASE_FIXTURE_SEAT" \
@@ -431,11 +720,13 @@ run_release_fixture() {
 
 derived_a="$(run_release_fixture "$RELEASE_UDID_A")"
 derived_b="$(run_release_fixture "$RELEASE_UDID_B")"
-if [ -n "$derived_a" ] && [ -n "$derived_b" ] && [ "$derived_a" != "$derived_b" ]; then
-  record_ok "derives distinct default DerivedData paths from destination UDIDs"
+expected_a="-derivedDataPath /private/tmp/release-gate-$RELEASE_UDID_A/DerivedData"
+expected_b="-derivedDataPath /private/tmp/release-gate-$RELEASE_UDID_B/DerivedData"
+if [ "$derived_a" = "$expected_a" ] && [ "$derived_b" = "$expected_b" ]; then
+  record_ok "derives the exact default DerivedData path for each destination UDID"
 else
-  record_fail "derives distinct default DerivedData paths from destination UDIDs" \
-    "first='$derived_a' second='$derived_b'"
+  record_fail "derives the exact default DerivedData path for each destination UDID" \
+    "first='$derived_a' expected='$expected_a' second='$derived_b' expected='$expected_b'"
 fi
 
 echo

@@ -14,6 +14,7 @@ set -euo pipefail
 DESTINATION="${MT_RELEASE_GATE_DESTINATION:-}"
 LOCK_ROOT="/private/tmp"
 FLOCK_BIN="/opt/homebrew/bin/flock"
+LSOF_BIN="/usr/sbin/lsof"
 PGREP_BIN="/usr/bin/pgrep"
 PS_BIN="/bin/ps"
 LOCK_WAIT_SECONDS="${MT_SIM_LOCK_WAIT:-1800}"
@@ -26,6 +27,7 @@ if [ -n "${MT_SIM_LOCK_TEST_MODE:-}" ]; then
   [ "${MT_SIM_LOCK_TEST_MODE}" = "1" ] || die "MT_SIM_LOCK_TEST_MODE must be 1 or unset"
   LOCK_ROOT="${MT_SIM_LOCK_TEST_ROOT:-$LOCK_ROOT}"
   FLOCK_BIN="${MT_SIM_LOCK_TEST_FLOCK_BIN:-$FLOCK_BIN}"
+  LSOF_BIN="${MT_SIM_LOCK_TEST_LSOF_BIN:-$LSOF_BIN}"
   PGREP_BIN="${MT_SIM_LOCK_TEST_PGREP_BIN:-$PGREP_BIN}"
   PS_BIN="${MT_SIM_LOCK_TEST_PS_BIN:-$PS_BIN}"
   if [ -n "${MT_SIM_LOCK_TEST_UDID:-}" ]; then
@@ -34,26 +36,38 @@ if [ -n "${MT_SIM_LOCK_TEST_MODE:-}" ]; then
 fi
 
 [ -x "$FLOCK_BIN" ] || die "flock not executable at $FLOCK_BIN"
+[ -x "$LSOF_BIN" ] || die "lsof not executable at $LSOF_BIN"
 [ -x "$PGREP_BIN" ] || die "pgrep not executable at $PGREP_BIN"
 [ -x "$PS_BIN" ] || die "ps not executable at $PS_BIN"
 
 case "$LOCK_WAIT_SECONDS" in
-  ""|*[!0-9]*) die "MT_SIM_LOCK_WAIT must be a non-negative integer" ;;
+  0|[1-9]|[1-9][0-9]*) ;;
+  *) die "MT_SIM_LOCK_WAIT must be a canonical non-negative integer" ;;
 esac
 case "$GATE_MAX_CONCURRENT" in
-  ""|*[!0-9]*|0) die "MT_GATE_MAX_CONCURRENT must be a positive integer" ;;
+  1|2) ;;
+  [3-9]|[1-9][0-9]*)
+    die "MT_GATE_MAX_CONCURRENT cannot exceed the host ceiling of 2"
+    ;;
+  *) die "MT_GATE_MAX_CONCURRENT must be 1 or 2" ;;
 esac
 
-destination_udid() {
+parse_destination_udid() {
+  local fields
+  local remainder
   local value
+  local value_and_remainder
 
-  [ -n "$DESTINATION" ] ||
-    die "MT_RELEASE_GATE_DESTINATION is required; export this seat's destination from wp-infra-sim-concurrency"
-  case "$DESTINATION" in
-    *id=*) value="${DESTINATION#*id=}" ;;
+  fields=",$1,"
+  case "$fields" in
+    *,id=*) value_and_remainder="${fields#*,id=}" ;;
     *) die "MT_RELEASE_GATE_DESTINATION must include id=<simulator-udid>" ;;
   esac
-  value="${value%%,*}"
+  value="${value_and_remainder%%,*}"
+  remainder="${value_and_remainder#"$value"}"
+  case "$remainder" in
+    *,id=*) die "MT_RELEASE_GATE_DESTINATION must contain exactly one id=<simulator-udid>" ;;
+  esac
   case "$value" in
     ""|*[!A-Za-z0-9-]*)
       die "MT_RELEASE_GATE_DESTINATION contains an invalid simulator UDID"
@@ -62,7 +76,9 @@ destination_udid() {
   printf '%s\n' "$value"
 }
 
-UDID="$(destination_udid)"
+[ -n "$DESTINATION" ] ||
+  die "MT_RELEASE_GATE_DESTINATION is required; export this seat's destination from wp-infra-sim-concurrency"
+UDID="$(parse_destination_udid "$DESTINATION")"
 LOCK="$LOCK_ROOT/making-tracks-sim-$UDID.lock"
 
 # --- status -------------------------------------------------------------------
@@ -77,7 +93,15 @@ LOCK="$LOCK_ROOT/making-tracks-sim-$UDID.lock"
 # Reporting FREE requires both to be silent.
 
 lock_holders() {
-  lsof -t -- "$LOCK" 2>/dev/null || true
+  local lsof_rc=0
+  local matches
+
+  matches="$("$LSOF_BIN" -t -- "$LOCK" 2>&1)" || lsof_rc=$?
+  case "$lsof_rc" in
+    0) printf '%s\n' "$matches" ;;
+    1) return 0 ;;
+    *) die "cannot inspect simulator lock $LOCK (lsof status $lsof_rc): $matches" ;;
+  esac
 }
 
 udid_users() {
@@ -161,7 +185,6 @@ destructive() {
 # --- run under the lock -------------------------------------------------------
 
 acquire_gate_slot() {
-  local candidate_fd
   local elapsed
   local slot
   local slot_path
@@ -171,11 +194,11 @@ acquire_gate_slot() {
   while true; do
     for ((slot = 1; slot <= GATE_MAX_CONCURRENT; slot++)); do
       slot_path="$LOCK_ROOT/making-tracks-gate-slot-$slot.lock"
-      exec {candidate_fd}>>"$slot_path"
-      if "$FLOCK_BIN" -n "$candidate_fd"; then
+      exec 9>>"$slot_path"
+      if "$FLOCK_BIN" -n 9; then
         return 0
       fi
-      exec {candidate_fd}>&-
+      exec 9>&-
     done
 
     elapsed=$((SECONDS - started))
@@ -190,13 +213,41 @@ acquire_gate_slot() {
   done
 }
 
+validate_command_destination() {
+  local command_destination
+  local command_udid
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -destination)
+        shift
+        [ "$#" -gt 0 ] || die "wrapped command has -destination without a value"
+        command_destination="$1"
+        command_udid="$(parse_destination_udid "$command_destination")"
+        [ "$command_udid" = "$UDID" ] ||
+          die "wrapped command targets simulator $command_udid while the lock is for $UDID"
+        ;;
+      -destination=*)
+        command_destination="${1#-destination=}"
+        command_udid="$(parse_destination_udid "$command_destination")"
+        [ "$command_udid" = "$UDID" ] ||
+          die "wrapped command targets simulator $command_udid while the lock is for $UDID"
+        ;;
+    esac
+    shift
+  done
+}
+
 run_locked() {
   [ "$#" -gt 0 ] || die "no command given"
+  validate_command_destination "$@"
 
   # Re-entrancy for the same selected simulator. A nested command targeting a
   # different simulator must not inherit authority from the outer lock.
   if [ "${MT_SIM_LOCK:-}" = "1" ]; then
-    [ "${MT_SIM_LOCK_UDID:-$UDID}" = "$UDID" ] ||
+    [ -n "${MT_SIM_LOCK_UDID:-}" ] ||
+      die "nested invocation is missing simulator identity MT_SIM_LOCK_UDID"
+    [ "$MT_SIM_LOCK_UDID" = "$UDID" ] ||
       die "nested invocation changed simulator from $MT_SIM_LOCK_UDID to $UDID"
     exec "$@"
   fi
@@ -204,9 +255,12 @@ run_locked() {
   mkdir -p "$LOCK_ROOT"
   umask 077
 
-  local sim_lock_fd
-  exec {sim_lock_fd}>>"$LOCK"
-  if ! "$FLOCK_BIN" -n "$sim_lock_fd"; then
+  local flock_rc=0
+  exec 8>>"$LOCK"
+  "$FLOCK_BIN" -n 8 || flock_rc=$?
+  if [ "$flock_rc" -ne 0 ]; then
+    [ "$flock_rc" -eq 1 ] ||
+      die "could not inspect or acquire simulator $UDID lock (flock status $flock_rc)"
     local holders
     holders="$(lock_holders)"
     if [ -n "$holders" ]; then
@@ -214,8 +268,13 @@ run_locked() {
     else
       echo "sim-lock: waiting for simulator $UDID lock (timeout ${LOCK_WAIT_SECONDS}s)" >&2
     fi
-    "$FLOCK_BIN" -w "$LOCK_WAIT_SECONDS" "$sim_lock_fd" ||
-      die "timed out after ${LOCK_WAIT_SECONDS}s waiting for simulator $UDID"
+    flock_rc=0
+    "$FLOCK_BIN" -w "$LOCK_WAIT_SECONDS" 8 || flock_rc=$?
+    case "$flock_rc" in
+      0) ;;
+      1) die "timed out after ${LOCK_WAIT_SECONDS}s waiting for simulator $UDID" ;;
+      *) die "could not acquire simulator $UDID lock (flock status $flock_rc)" ;;
+    esac
   fi
 
   acquire_gate_slot
