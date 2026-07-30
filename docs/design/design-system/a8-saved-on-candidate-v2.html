@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1540, initial-scale=1">
+<title>Saved ON candidate panel v2</title>
+<style>
+  @font-face {
+    font-family: "Newsreader";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader72pt-SemiBold.ttf");
+    font-weight: 600;
+  }
+
+  :root {
+    --packet: #e9e5db;
+    --surface: #fbfaf2;
+    --ink: #2b2823;
+    --muted: #6b675f;
+    --accent: #0a6b5c;
+    --accent-contrast: #fbfaf2;
+    --off: #dee9e0;
+    --love: #c4312b;
+    --eyebrow: #8a5a2b;
+    --hairline: rgba(43, 40, 35, 0.16);
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    width: 1540px;
+    height: 980px;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  body {
+    padding: 20px;
+    background: var(--packet);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .packet-head {
+    height: 90px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+  }
+
+  h1, h2, p { margin-top: 0; }
+
+  .packet-head h1 {
+    margin-bottom: 4px;
+    font: 600 30px/1.08 var(--serif);
+  }
+
+  .packet-head p {
+    margin-bottom: 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.3;
+  }
+
+  .provenance {
+    min-width: 315px;
+    padding: 8px 10px;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: rgba(251, 250, 242, 0.7);
+    color: var(--muted);
+    font: 10px/1.35 ui-monospace, "SFMono-Regular", Menlo, monospace;
+    text-align: right;
+  }
+
+  .packet-grid {
+    height: 850px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+  }
+
+  .candidate {
+    height: 850px;
+    padding: 15px;
+    overflow: hidden;
+    border: 1px solid var(--hairline);
+    border-radius: 18px;
+    background: rgba(251, 250, 242, 0.78);
+  }
+
+  .candidate-head {
+    min-height: 48px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .kicker {
+    margin-bottom: 3px;
+    color: var(--eyebrow);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+  }
+
+  .candidate h2 {
+    margin-bottom: 0;
+    font: 600 25px/1.05 var(--serif);
+  }
+
+  .status {
+    flex: 0 0 auto;
+    padding: 6px 8px;
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .status.winner {
+    background: var(--accent);
+    color: var(--accent-contrast);
+  }
+
+  .section-label {
+    margin: 10px 0 5px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .state-axis {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .axis-arrow {
+    color: var(--muted);
+    font-size: 19px;
+    line-height: 1;
+  }
+
+  .state-pill {
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font: 600 15px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    white-space: nowrap;
+  }
+
+  .state-glyph { width: 17px; height: 17px; flex: 0 0 17px; }
+
+  .saved-off { background: var(--off); color: var(--accent); }
+  .saved-on { background: var(--candidate-fill); color: var(--accent-contrast); }
+  .seen-on { background: var(--accent); color: var(--accent-contrast); }
+  .loved-on { background: var(--love); color: var(--accent-contrast); }
+
+  .fully-lit {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  .fully-lit .state-pill { min-width: 0; padding: 0 8px; }
+
+  .reversal {
+    margin: 5px 0 0;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.25;
+  }
+
+  .metrics {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+
+  .metrics-title {
+    margin-bottom: 5px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 18px;
+  }
+
+  .metric-row {
+    min-width: 0;
+    padding: 2px 0;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    border-top: 1px solid rgba(43, 40, 35, 0.08);
+    color: var(--muted);
+    font-size: 10px;
+  }
+
+  .metric-row strong {
+    color: var(--ink);
+    font: 700 10px/1.2 ui-monospace, "SFMono-Regular", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .prominent {
+    margin: 7px 0 0;
+    padding: 7px 8px;
+    border-left: 4px solid var(--candidate-fill);
+    background: color-mix(in srgb, var(--candidate-fill) 10%, var(--surface));
+    color: var(--ink);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  .checks {
+    margin-top: 10px;
+    display: grid;
+    gap: 4px;
+  }
+
+  .check {
+    min-height: 33px;
+    padding: 5px 7px;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 6px;
+    border-radius: 7px;
+    background: rgba(43, 40, 35, 0.045);
+    color: var(--muted);
+    font-size: 9.5px;
+    line-height: 1.22;
+  }
+
+  .check[data-gate="hard"] { border-left: 3px solid var(--accent); }
+  .check-number { color: var(--accent); font-weight: 800; }
+  .check strong { color: var(--ink); }
+
+  .candidate-note {
+    margin: 9px 0 0;
+    color: var(--muted);
+    font-size: 9px;
+    line-height: 1.25;
+  }
+
+  .packet-note {
+    margin: 7px 0 0;
+    color: var(--eyebrow);
+    font-size: 9px;
+    line-height: 1.22;
+  }
+
+  html[data-mode="ax"] .state-pill {
+    min-height: 64px;
+    gap: 8px;
+    font-size: 23px;
+  }
+
+  html[data-mode="ax"] .state-glyph {
+    width: 25px;
+    height: 25px;
+    flex-basis: 25px;
+  }
+
+  html[data-mode="ax"] .fully-lit {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  html[data-mode="ax"] .state-axis .state-pill { padding: 0 16px; }
+  html[data-mode="ax"] .fully-lit .state-pill { padding: 0 16px; }
+  html[data-mode="ax"] .section-label { margin-top: 8px; }
+  html[data-mode="ax"] .metrics { margin-top: 8px; }
+  html[data-mode="ax"] .checks { margin-top: 8px; gap: 3px; }
+  html[data-mode="ax"] .check { min-height: 29px; padding-top: 4px; padding-bottom: 4px; }
+  html[data-mode="ax"] .candidate-note { margin-top: 6px; }
+</style>
+<script>
+  const candidates = Object.freeze([
+    {
+      id: "accent-reuse",
+      name: "Accent reuse",
+      fill: "#0A6B5C",
+      hue: "170.7216°",
+      hueDelta: "0.0000°",
+      saturation: "82.9060%",
+      lightness: "22.9412%",
+      luminance: "0.113526",
+      ink: "6.1330:1",
+      off: "5.1484:1",
+      seen: "1.0000:1",
+      loved: "1.1684:1",
+      status: "Fallback only"
+    },
+    {
+      id: "deep-companion",
+      name: "Deep Companion",
+      fill: "#08483E",
+      hue: "170.6250°",
+      hueDelta: "−0.0966°",
+      saturation: "80.0000%",
+      lightness: "15.6863%",
+      luminance: "0.050342",
+      ink: "9.9950:1",
+      off: "8.3903:1",
+      seen: "1.6297:1",
+      loved: "1.9042:1",
+      status: "Default winner"
+    }
+  ]);
+
+  const requestedMode = new URLSearchParams(location.search).get("mode");
+  document.documentElement.dataset.mode =
+    requestedMode === "ax" ? "ax" : "default";
+</script>
+</head>
+<body>
+<svg width="0" height="0" aria-hidden="true">
+  <defs>
+    <symbol id="bookmark-outline" viewBox="0 0 24 24">
+      <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M6.3 3.4c0-1 .8-1.8 1.8-1.8h7.8c1 0 1.8.8 1.8 1.8v18.1c0 .7-.8 1.1-1.4.7L12 18.9l-4.3 3.3c-.6.4-1.4 0-1.4-.7V3.4Z"/>
+    </symbol>
+    <symbol id="bookmark-fill" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M6.3 3.4c0-1 .8-1.8 1.8-1.8h7.8c1 0 1.8.8 1.8 1.8v18.1c0 .7-.8 1.1-1.4.7L12 18.9l-4.3 3.3c-.6.4-1.4 0-1.4-.7V3.4Z"/>
+    </symbol>
+    <symbol id="eye-fill" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M12 4.1c5.4 0 9.4 5.3 10.3 6.7.5.7.5 1.7 0 2.4-.9 1.4-4.9 6.7-10.3 6.7S2.6 14.6 1.7 13.2a2.2 2.2 0 0 1 0-2.4C2.6 9.4 6.6 4.1 12 4.1Z"/>
+      <circle cx="12" cy="12" r="3.2" fill="var(--accent)"/>
+    </symbol>
+    <symbol id="heart-fill" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M12 21.1C9.7 19.1 3.1 14.9 2.2 9.4 1.5 5.3 4 2.6 7.2 2.6c2 0 3.8 1.1 4.8 2.7 1-1.6 2.8-2.7 4.8-2.7 3.2 0 5.7 2.7 5 6.8-.9 5.5-7.5 9.7-9.8 11.7Z"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="packet-head">
+  <div>
+    <h1>Saved ON candidate panel</h1>
+    <p>R16 evidence · light-on-dark Saved inversion · two candidates, no product action or CTA</p>
+    <p class="packet-note">#D4EDE9 is retired from Saved ON without prejudice; it is not a candidate.</p>
+  </div>
+  <div class="provenance">Renderer: Playwright-bundled Chromium/headless shell 151.0.7922.34<br>Canvas: 1540×980 · device scale factor 1 · mode: <span data-mode-label></span></div>
+</header>
+
+<main class="packet-grid" id="candidates" aria-label="Saved ON candidate comparison"></main>
+
+<script>
+  const metricNames = ["fill", "hue", "hueDelta", "saturation", "lightness", "luminance", "ink", "off", "seen", "loved"];
+  const metricLabels = {
+    fill: "Fill", hue: "Hue", hueDelta: "Δ from accent", saturation: "HSL saturation",
+    lightness: "HSL lightness", luminance: "Relative luminance", ink: "#FBFAF2 against fill",
+    off: "Fill against OFF #DEE9E0", seen: "Fill against Seen #0A6B5C", loved: "Fill against Loved #C4312B"
+  };
+  const pill = (fact, state, label, glyph, className) => `
+    <div class="state-pill ${className}" data-fact="${fact}" data-state="${state}">
+      <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#${glyph}"/></svg>
+      <span>${label}</span>
+    </div>`;
+  const checks = (candidate) => [
+    ["1", "hard", `<strong>Ink AA hard gate.</strong> #FBFAF2 on ${candidate.fill} = ${candidate.ink}; ≥ 4.5:1 for 15pt/600.`],
+    ["2", "", `<strong>Versus Saved OFF.</strong> ${candidate.fill} against fixed OFF composite #DEE9E0 = ${candidate.off}; stated, no floor.`],
+    ["3", "", `<strong>Versus Seen ON.</strong> ${candidate.fill} against live Seen #0A6B5C = ${candidate.seen}; stated pick evidence, no floor.`],
+    ["4", "", `<strong>Versus Loved ON.</strong> ${candidate.fill} against live Loved #C4312B = ${candidate.loved}; stated cluster evidence, no floor.`],
+    ["5", "hard", `<strong>Saved OFF invariant hard gate.</strong> #0A6B5C on #DEE9E0 = 5.1484:1 with an outline bookmark.`],
+    ["6", "", `<strong>Fully-lit cluster.</strong> Saved, Seen, and Loved render simultaneously ON at the exact target geometry.`],
+    ["7", "hard", `<strong>Independent state morphology hard gate.</strong> ON is light-on-dark + filled bookmark; OFF is dark-on-tonal + outline bookmark.`]
+  ].map(([number, gate, text]) => `<div class="check" data-check${gate ? ` data-gate="${gate}"` : ""}><span class="check-number">${number}</span><span>${text}</span></div>`).join("");
+
+  document.querySelector("[data-mode-label]").textContent = document.documentElement.dataset.mode;
+  document.querySelector("#candidates").innerHTML = candidates.map((candidate) => `
+    <article class="candidate" data-candidate="${candidate.id}" style="--candidate-fill: ${candidate.fill}">
+      <header class="candidate-head">
+        <div><div class="kicker">Saved ON candidate</div><h2>${candidate.name}</h2></div>
+        <span class="status${candidate.id === "deep-companion" ? " winner" : ""}">${candidate.status}</span>
+      </header>
+      <p class="section-label">State axis · fact identity stays first</p>
+      <div class="state-axis" data-state-axis>
+        ${pill("saved", "off", "Saved", "bookmark-outline", "saved-off")}
+        <span class="axis-arrow" aria-hidden="true">→</span>
+        ${pill("saved", "on", "Saved", "bookmark-fill", "saved-on")}
+      </div>
+      <p class="section-label">Fully lit · three independent facts</p>
+      <div class="fully-lit" data-fully-lit aria-label="Saved, Seen, and Loved simultaneously on">
+        ${pill("saved", "on", "Saved", "bookmark-fill", "saved-on")}
+        ${pill("seen", "on", "Seen", "eye-fill", "seen-on")}
+        ${pill("loved", "on", "Loved", "heart-fill", "loved-on")}
+      </div>
+      ${candidate.id === "deep-companion" ? `<p class="reversal">DEFAULT WINNER unless this rendered cluster reads as a confusing third semantic or a hard gate fails.</p>` : ""}
+      <section class="metrics" aria-label="${candidate.name} measurements">
+        <div class="metrics-title">Exact candidate metrics · renderer above</div>
+        <div class="metric-grid">${metricNames.map((name) => `<div class="metric-row"><span>${metricLabels[name]}</span><strong data-metric="${name}">${candidate[name]}</strong></div>`).join("")}</div>
+      </section>
+      ${candidate.id === "accent-reuse" ? `<p class="prominent">Prominent trade: Saved ON and Seen ON use the same #0A6B5C fill — exactly ${candidate.seen}.</p>` : ""}
+      <section class="checks" aria-label="Seven candidate checks">${checks(candidate)}</section>
+      <p class="candidate-note">${candidate.id === "deep-companion" ? "Distinction comes from depth within the accent hue; its historical 56–81% saturation band is context, not a gate. Taste guesses: Cool-shift Deep #064852 imports blue/water semantics and lowers ink, Seen, and Loved separation; Softer Cool #0B4D56 gives up those measures without a binding benefit, so neither is presented." : "Comparison label only, not a production token name."}</p>
+    </article>`).join("");
+</script>
+</body>
+</html>
