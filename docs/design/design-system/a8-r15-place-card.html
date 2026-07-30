@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1540, initial-scale=1">
+<title>A8 frozen — R15 fully-lit place card</title>
+<style>
+  @font-face {
+    font-family: "Newsreader";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader72pt-SemiBold.ttf");
+    font-weight: 600;
+  }
+
+  :root {
+    --packet: #e9e5db;
+    --ground: #f4f1ea;
+    --surface: #fbfaf2;
+    --road: #d7cbb2;
+    --ink: #2b2823;
+    --muted: #6b675f;
+    --accent: #0a6b5c;
+    --accent-contrast: #fbfaf2;
+    --accent-container: #d4ede9;
+    --love: #c4312b;
+    --eyebrow: #8a5a2b;
+    --hairline: rgba(43, 40, 35, 0.14);
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    width: 1540px;
+    height: 980px;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  body {
+    padding: 20px;
+    background: var(--packet);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .packet-head {
+    height: 76px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+  }
+
+  .packet-head h1 {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1.08;
+  }
+
+  .packet-head p {
+    margin: 5px 0 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.35;
+  }
+
+  .frozen-mark {
+    padding: 7px 10px;
+    border: 1px solid var(--eyebrow);
+    border-radius: 999px;
+    color: var(--eyebrow);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+  }
+
+  .packet-grid {
+    display: grid;
+    grid-template-columns: 390px 318px 390px 318px;
+    gap: 22px;
+    align-items: start;
+  }
+
+  .phone {
+    position: relative;
+    width: 390px;
+    height: 844px;
+    overflow: hidden;
+    border-radius: 46px;
+    background:
+      linear-gradient(33deg, transparent 0 28%, rgba(215, 203, 178, 0.86) 28% 30%, transparent 30% 100%),
+      linear-gradient(144deg, transparent 0 48%, rgba(215, 203, 178, 0.72) 48% 50%, transparent 50% 100%),
+      radial-gradient(circle at 76% 14%, #c9dbe2 0 10%, transparent 10.5%),
+      var(--ground);
+    box-shadow:
+      inset 0 0 0 1px rgba(43, 40, 35, 0.62),
+      0 12px 28px rgba(43, 40, 35, 0.13),
+      0 2px 6px rgba(43, 40, 35, 0.08);
+  }
+
+  .status {
+    position: absolute;
+    z-index: 2;
+    inset: 15px 21px auto;
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    font-weight: 650;
+  }
+
+  .map-label {
+    position: absolute;
+    top: 70px;
+    left: 18px;
+    padding: 7px 11px;
+    border-radius: 999px;
+    background: rgba(251, 250, 242, 0.9);
+    box-shadow: 0 2px 10px rgba(43, 40, 35, 0.1);
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .pin {
+    position: absolute;
+    top: 117px;
+    left: 278px;
+    width: 31px;
+    height: 31px;
+    border: 4px solid var(--surface);
+    border-radius: 50% 50% 50% 8px;
+    background: var(--accent);
+    box-shadow: 0 4px 10px rgba(43, 40, 35, 0.18);
+    transform: rotate(-45deg);
+  }
+
+  .pin::after {
+    content: "";
+    position: absolute;
+    inset: 7px;
+    border-radius: 50%;
+    background: var(--surface);
+  }
+
+  .sheet {
+    position: absolute;
+    inset: 169px 0 0;
+    overflow: hidden;
+    border-radius: 22px 22px 0 0;
+    background: var(--surface);
+    box-shadow: 0 -8px 28px rgba(43, 40, 35, 0.13);
+  }
+
+  .grabber {
+    width: 36px;
+    height: 4px;
+    margin: 8px auto 5px;
+    border-radius: 4px;
+    background: rgba(107, 103, 95, 0.38);
+  }
+
+  .content {
+    height: 585px;
+    overflow: hidden;
+    padding: 4px 18px 120px;
+  }
+
+  .card-header {
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .context {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .more {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--sans);
+    font-size: 22px;
+    letter-spacing: 2px;
+    appearance: none;
+  }
+
+  .place-title {
+    margin: 2px 0 6px;
+    font: 650 33px/1.03 var(--serif);
+    letter-spacing: -0.02em;
+  }
+
+  .type {
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 570;
+  }
+
+  .swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    background: #b45d38;
+  }
+
+  .photo {
+    width: 354px;
+    height: 236px;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--road);
+  }
+
+  .photo svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .caption {
+    margin: 7px 0 14px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  .summary {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.42;
+  }
+
+  .source {
+    display: inline-block;
+    margin-top: 12px;
+    color: var(--accent);
+    font-size: 15px;
+    font-weight: 620;
+    text-decoration: none;
+  }
+
+  .fade {
+    position: absolute;
+    inset: auto 0 92px;
+    height: 38px;
+    background: linear-gradient(transparent, var(--surface));
+  }
+
+  .actions {
+    position: absolute;
+    inset: auto 0 0;
+    padding: 10px 18px 17px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    background: var(--surface);
+  }
+
+  .state-pill {
+    min-width: 0;
+    min-height: 44px;
+    padding: 0;
+    border-radius: 999px;
+    border: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    appearance: none;
+  }
+
+  .state-glyph {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 17px;
+  }
+
+  .saved {
+    background: var(--accent-container);
+    color: var(--accent);
+  }
+
+  .seen {
+    background: var(--accent);
+    color: var(--accent-contrast);
+  }
+
+  .loved {
+    background: var(--love);
+    color: var(--accent-contrast);
+  }
+
+  .home {
+    position: absolute;
+    inset: auto 128px 7px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--ink);
+  }
+
+  .phone.ax {
+    background: var(--surface);
+  }
+
+  .phone.ax .sheet {
+    inset: 47px 0 0;
+    border-radius: 22px 22px 0 0;
+    box-shadow: none;
+  }
+
+  .phone.ax .content {
+    height: 590px;
+    padding-bottom: 255px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+
+  .phone.ax .content::-webkit-scrollbar {
+    display: none;
+  }
+
+  .phone.ax .card-header {
+    min-height: 50px;
+  }
+
+  .phone.ax .context {
+    font-size: 17px;
+  }
+
+  .phone.ax .more {
+    width: 52px;
+    height: 52px;
+    font-size: 25px;
+  }
+
+  .phone.ax .place-title {
+    margin: 0 0 8px;
+    font-size: 44px;
+    font-weight: 670;
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+  }
+
+  .phone.ax .type {
+    margin-bottom: 14px;
+    gap: 10px;
+    font-size: 19px;
+    font-weight: 580;
+  }
+
+  .phone.ax .swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+  }
+
+  .phone.ax .caption {
+    margin: 8px 0 16px;
+    font-size: 16px;
+    line-height: 1.25;
+  }
+
+  .phone.ax .summary {
+    font-size: 23px;
+    line-height: 1.27;
+  }
+
+  .phone.ax .source {
+    display: none;
+  }
+
+  .phone.ax .fade {
+    inset: auto 0 253px;
+    height: 46px;
+  }
+
+  .phone.ax .actions {
+    padding: 10px 18px 18px;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .phone.ax .state-pill {
+    min-height: 64px;
+    gap: 8px;
+    font-size: 23px;
+  }
+
+  .phone.ax .state-glyph {
+    width: 25px;
+    height: 25px;
+    flex-basis: 25px;
+  }
+
+  .evidence {
+    position: relative;
+    height: 844px;
+    padding: 16px;
+    overflow: hidden;
+    border: 1px solid var(--hairline);
+    border-radius: 18px;
+    background: rgba(251, 250, 242, 0.76);
+  }
+
+  .evidence-kicker {
+    margin: 0 0 4px;
+    color: var(--eyebrow);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+  }
+
+  .evidence h2 {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: 23px;
+    font-weight: 600;
+    line-height: 1.1;
+  }
+
+  .evidence .lead {
+    margin: 5px 0 8px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  .renderer {
+    margin: 5px 0 0;
+    color: var(--muted);
+    font: 10px/1.3 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+
+  .unchanged-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-weight: 700;
+  }
+
+  .ratio-value {
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .metric-line {
+    margin: 3px 0 0;
+    color: var(--muted);
+    font: 9px/1.2 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+
+  .unchanged {
+    margin-top: 5px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+
+  .unchanged-card {
+    padding: 6px 8px;
+    border: 1px solid var(--hairline);
+    border-radius: 9px;
+    background: var(--surface);
+  }
+
+  .unchanged-head {
+    font-size: 10.5px;
+  }
+
+  .unchanged-card .metric-line {
+    font-size: 8.5px;
+  }
+
+  .gate {
+    margin: 7px 0;
+    padding: 7px 8px;
+    border-left: 4px solid var(--accent);
+    background: rgba(10, 107, 92, 0.08);
+    font-size: 10px;
+    font-weight: 650;
+    line-height: 1.28;
+  }
+
+  .evidence h3 {
+    margin: 7px 0 4px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .facts {
+    margin: 0;
+    padding-left: 15px;
+    color: var(--muted);
+    font-size: 9.5px;
+    line-height: 1.25;
+  }
+
+  .facts li + li {
+    margin-top: 2px;
+  }
+
+  .frozen-note {
+    margin: 7px 0 0;
+    color: var(--eyebrow);
+    font-size: 9.5px;
+    font-weight: 650;
+    line-height: 1.25;
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" aria-hidden="true">
+  <defs>
+    <symbol id="bookmark-fill" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M6.3 3.4c0-1 .8-1.8 1.8-1.8h7.8c1 0 1.8.8 1.8 1.8v18.1c0 .7-.8 1.1-1.4.7L12 18.9l-4.3 3.3c-.6.4-1.4 0-1.4-.7V3.4Z"/>
+    </symbol>
+    <symbol id="eye-fill" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M12 4.1c5.4 0 9.4 5.3 10.3 6.7.5.7.5 1.7 0 2.4-.9 1.4-4.9 6.7-10.3 6.7S2.6 14.6 1.7 13.2a2.2 2.2 0 0 1 0-2.4C2.6 9.4 6.6 4.1 12 4.1Z"/>
+      <circle cx="12" cy="12" r="3.2" fill="var(--accent)"/>
+    </symbol>
+    <symbol id="heart-fill" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M12 21.1C9.7 19.1 3.1 14.9 2.2 9.4 1.5 5.3 4 2.6 7.2 2.6c2 0 3.8 1.1 4.8 2.7 1-1.6 2.8-2.7 4.8-2.7 3.2 0 5.7 2.7 5 6.8-.9 5.5-7.5 9.7-9.8 11.7Z"/>
+    </symbol>
+    <symbol id="factory" viewBox="0 0 720 480">
+      <defs>
+        <linearGradient id="factory-sky" x2="0" y2="1"><stop stop-color="#c9dbe2"/><stop offset="1" stop-color="#e9e2d3"/></linearGradient>
+        <linearGradient id="factory-brick" x2="0" y2="1"><stop stop-color="#a94f39"/><stop offset="1" stop-color="#71382d"/></linearGradient>
+      </defs>
+      <rect width="720" height="480" fill="url(#factory-sky)"/>
+      <rect y="348" width="720" height="132" fill="#83755c"/>
+      <path d="M0 361 720 309v45L0 406z" fill="#d7cbb2"/>
+      <g fill="url(#factory-brick)" stroke="#60352c" stroke-width="5">
+        <path d="M61 176h316v183H61z"/>
+        <path d="M377 235h281v124H377z"/>
+        <path d="M105 122h68v237h-68z"/>
+      </g>
+      <path d="M105 122h68l-34-57z" fill="#7d4134"/>
+      <g fill="#f3deae" stroke="#69473b" stroke-width="4">
+        <path d="M91 217h46v59H91zM164 217h46v59h-46zM237 217h46v59h-46zM310 217h46v59h-46z"/>
+        <path d="M409 268h54v54h-54zM493 268h54v54h-54zM577 268h54v54h-54z"/>
+      </g>
+      <path d="M206 176v-54h142v54" fill="#f0d365" stroke="#60352c" stroke-width="5"/>
+      <text x="277" y="158" text-anchor="middle" fill="#71382d" font-family="Georgia,serif" font-size="29" font-weight="700">COLMAN’S</text>
+      <g opacity="0.22" fill="#fbfaf2"><circle cx="604" cy="88" r="58"/><circle cx="630" cy="119" r="45"/></g>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="packet-head">
+  <div>
+    <h1>Three true facts, fully lit</h1>
+    <p>R15/R16 place-card frozen packet · Snow · default and accessibility-size targets · per-pill AA evidence</p>
+  </div>
+  <div class="frozen-mark">FROZEN</div>
+</header>
+
+<main class="packet-grid">
+  <section class="phone" aria-label="Default-size fully-lit place card, exact 390 by 844 canvas">
+    <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
+    <div class="map-label">Making Tracks · Norwich</div>
+    <div class="pin" aria-hidden="true"></div>
+
+    <section class="sheet" aria-label="Place card">
+      <div class="grabber"></div>
+      <div class="content">
+        <div class="card-header">
+          <span class="context">Nearby story</span>
+          <button class="more" type="button" aria-label="More">•••</button>
+        </div>
+        <h2 class="place-title">Colman’s Carrow Works</h2>
+        <div class="type"><span class="swatch"></span>Industrial heritage</div>
+        <div class="photo">
+          <svg viewBox="0 0 720 480" role="img" aria-label="Historic factory illustration"><use href="#factory"/></svg>
+        </div>
+        <p class="caption">Carrow Works from the river, c. 1920 · Norfolk Record Office</p>
+        <p class="summary">For more than a century, the mustard works shaped this bend in the Wensum—and the lives of thousands who crossed its gates.</p>
+        <a class="source" href="#">Read the source article ↗</a>
+      </div>
+      <div class="fade"></div>
+      <div class="actions" aria-label="Place state toggles: Saved, Seen, and Loved are on">
+        <button class="state-pill saved" type="button" aria-pressed="true" aria-label="Saved">
+          <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#bookmark-fill"/></svg>
+          <span>Saved</span>
+        </button>
+        <button class="state-pill seen" type="button" aria-pressed="true" aria-label="Seen">
+          <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#eye-fill"/></svg>
+          <span>Seen</span>
+        </button>
+        <button class="state-pill loved" type="button" aria-pressed="true" aria-label="Loved">
+          <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#heart-fill"/></svg>
+          <span>Loved</span>
+        </button>
+      </div>
+    </section>
+    <div class="home"></div>
+  </section>
+
+  <aside class="evidence" aria-label="Default-size contrast evidence">
+    <p class="evidence-kicker">Default target</p>
+    <h2>Exact 390×844 canvas</h2>
+    <p class="renderer">Renderer: Playwright-bundled Chromium/headless shell 151.0.7922.34</p>
+    <p class="lead">Saved uses the ratified designed opaque <code>accentContainer</code>; Seen and Loved remain unchanged.</p>
+
+    <div class="unchanged" aria-label="Unchanged state fills">
+      <div class="unchanged-card">
+        <div class="unchanged-head"><span>Seen</span><span class="ratio-value">6.13:1</span></div>
+        <p class="metric-line">#FBFAF2 on #0A6B5C</p>
+      </div>
+      <div class="unchanged-card">
+        <div class="unchanged-head"><span>Loved</span><span class="ratio-value">5.25:1</span></div>
+        <p class="metric-line">#FBFAF2 on #C4312B</p>
+      </div>
+    </div>
+
+    <p class="gate"><code>accentContainer = #D4EDE9</code> · designed opaque · ratified by Rob on 2026-07-30 · h170.40° · Δ −0.32° from accent · sat 40.98% · 5.23:1 against ink <code>#0A6B5C</code>. The cluster contains no action.</p>
+    <p class="frozen-note"><code>#DEE9E0</code> is the rejected mechanical composite; see the git-history decision record.</p>
+  </aside>
+
+  <section class="phone ax" aria-label="Accessibility-size fully-lit place card, exact 390 by 844 canvas">
+    <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
+    <section class="sheet" aria-label="Accessibility-size place card">
+      <div class="grabber"></div>
+      <div class="content" role="region" aria-label="Place details; scroll for full story" tabindex="0">
+        <div class="card-header">
+          <span class="context">Nearby story</span>
+          <button class="more" type="button" aria-label="More">•••</button>
+        </div>
+        <h2 class="place-title">Colman’s Carrow Works</h2>
+        <div class="type"><span class="swatch"></span>Industrial heritage</div>
+        <div class="photo">
+          <svg viewBox="0 0 720 480" role="img" aria-label="Historic factory illustration"><use href="#factory"/></svg>
+        </div>
+        <p class="caption">Carrow Works from the river, c. 1920 · Norfolk Record Office</p>
+        <p class="summary">For more than a century, the mustard works shaped this bend in the Wensum.</p>
+      </div>
+      <div class="fade"></div>
+      <div class="actions" aria-label="Place state toggles: Saved, Seen, and Loved are on">
+        <button class="state-pill saved" type="button" aria-pressed="true" aria-label="Saved">
+          <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#bookmark-fill"/></svg>
+          <span>Saved</span>
+        </button>
+        <button class="state-pill seen" type="button" aria-pressed="true" aria-label="Seen">
+          <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#eye-fill"/></svg>
+          <span>Seen</span>
+        </button>
+        <button class="state-pill loved" type="button" aria-pressed="true" aria-label="Loved">
+          <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#heart-fill"/></svg>
+          <span>Loved</span>
+        </button>
+      </div>
+    </section>
+    <div class="home"></div>
+  </section>
+
+  <aside class="evidence" aria-label="Accessibility-size contrast evidence">
+    <p class="evidence-kicker">Accessibility target</p>
+    <h2>Exact 390×844 canvas</h2>
+    <p class="renderer">Renderer: Playwright-bundled Chromium/headless shell 151.0.7922.34</p>
+    <p class="lead">Saved uses the ratified designed opaque <code>accentContainer</code>; Seen and Loved remain unchanged.</p>
+
+    <div class="unchanged" aria-label="Unchanged state fills">
+      <div class="unchanged-card">
+        <div class="unchanged-head"><span>Seen</span><span class="ratio-value">6.13:1</span></div>
+        <p class="metric-line">#FBFAF2 on #0A6B5C</p>
+      </div>
+      <div class="unchanged-card">
+        <div class="unchanged-head"><span>Loved</span><span class="ratio-value">5.25:1</span></div>
+        <p class="metric-line">#FBFAF2 on #C4312B</p>
+      </div>
+    </div>
+
+    <p class="gate"><code>accentContainer = #D4EDE9</code> · designed opaque · ratified by Rob on 2026-07-30 · h170.40° · Δ −0.32° from accent · sat 40.98% · 5.23:1 against ink <code>#0A6B5C</code>. The cluster contains no action.</p>
+    <p class="frozen-note">Frozen record: the ratified measurement above applies to this AX target.</p>
+  </aside>
+</main>
+</body>
+</html>

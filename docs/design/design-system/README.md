@@ -15,6 +15,23 @@ these assets are its visual record and are embedded in the implementation epic.
 | `t1.10-place-card-ax.{html,png}` | Accessibility-size place card at the large detent with a scroll fade and vertically stacked action controls. |
 | `t1.10-place-card-dark-system.png` | Runtime UI-test capture with the simulator forced to dark appearance. The map and place card remain on the Snow material sheet; its source and pixel oracle live in `MakingTracksCoreLoopUITests.testPlaceCardKeepsSnowTokensInDarkSystemAppearance`. |
 
+## A8 frozen packets — exact-SHA freeze validated
+
+Rob ratified `accentContainer = #D4EDE9` as designed opaque on 2026-07-30:
+hue `170.40°`, delta `−0.32°` from accent, saturation `40.98%`, and `5.23:1`
+against ink `#0A6B5C`. The ratified component-metrics table records that value.
+`#DEE9E0` is the rejected mechanical composite; the decision record is retained in
+git history. Reviewer freeze validation passed at exact remote head
+`0682865dff178ff43ea3e1374685328f565d8cd1`.
+
+| Frozen sources and capture | What the packet proves |
+|---|---|
+| `a8-explore-surface.html` + `a8-explore-surface.png` | R14's collapsed Snow Explore surface at default and accessibility-size 390×844 frames: Scope opens directly, selected category chips use the canonical pin symbols, Show saved places is ON between hidden OFF and coverage ON, Search renders nothing, and Settings/About remain reachable quiet bottom destinations. |
+| `a8-r15-place-card.html` + `a8-r15-place-card.png` | R15/R16's fully lit Snow place-card cluster at default and accessibility-size 390×844 frames: Saved uses ratified opaque `accentContainer` `#D4EDE9` with accent ink `#0A6B5C`; Saved, Seen, and Loved are simultaneously ON; no action appears. |
+
+Both packets name `Playwright-bundled Chromium/headless shell 151.0.7922.34` as
+their renderer and are labelled `FROZEN`.
+
 ## Implementation evidence
 
 These renders record shipped implementation changes; they are not frozen design-session rulings.
