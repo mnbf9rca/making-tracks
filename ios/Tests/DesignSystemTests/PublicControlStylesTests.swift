@@ -4,6 +4,16 @@ import XCTest
 
 @MainActor
 final class PublicControlStylesTests: XCTestCase {
+    func testLayoutsCanUsePublicStateToggleButtonStyle() {
+        _ = Button("Saved", action: {})
+            .buttonStyle(
+                MaterialStateToggleButtonStyle(
+                    foreground: .accent,
+                    background: .accentContainer
+                )
+            )
+    }
+
     func testLayoutsCanUsePublicChipGeometryAndSupplyPerEdgeNeighborGaps() {
         XCTAssertEqual(MaterialChipGeometry.visualHeight, 22)
         XCTAssertEqual(MaterialChipGeometry.minimumHitTarget, 44)

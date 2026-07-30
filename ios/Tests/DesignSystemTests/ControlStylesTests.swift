@@ -109,6 +109,18 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
+    func testStateToggleStyleResolvesOpaqueSemanticPalette() {
+        let style = MaterialStateToggleButtonStyle(
+            foreground: .accent,
+            background: .accentContainer
+        )
+
+        XCTAssertEqual(style.appearance.foreground, MaterialTheme.snow.tokens.accent)
+        XCTAssertEqual(style.appearance.background, MaterialTheme.snow.tokens.accentContainer)
+        XCTAssertEqual(style.appearance.backgroundOpacity, 1)
+        XCTAssertEqual(style.pressFeedback, .scale)
+    }
+
     func testChipStatesMapActiveToFilledAndAvailableToTonal() {
         let active = MaterialChipState.active.appearance
         XCTAssertEqual(active.foreground, color(0xFB, 0xFA, 0xF2))

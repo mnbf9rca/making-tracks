@@ -201,6 +201,43 @@ public struct MaterialQuietButtonStyle: ButtonStyle {
     }
 }
 
+public struct MaterialStateToggleButtonStyle: ButtonStyle {
+    private let foreground: SemanticColorToken
+    private let background: SemanticColorToken
+    private let theme: MaterialTheme
+
+    public init(
+        foreground: SemanticColorToken,
+        background: SemanticColorToken,
+        theme: MaterialTheme = .snow
+    ) {
+        self.foreground = foreground
+        self.background = background
+        self.theme = theme
+    }
+
+    var appearance: MaterialControlAppearance {
+        MaterialControlAppearance(
+            foreground: theme.tokens[foreground],
+            background: theme.tokens[background],
+            backgroundOpacity: 1
+        )
+    }
+
+    var pressFeedback: MaterialControlPressFeedback { .scale }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        MaterialButtonStyleBody(
+            label: configuration.label,
+            isPressed: configuration.isPressed,
+            appearance: appearance,
+            tokens: theme.tokens,
+            pressFeedback: pressFeedback,
+            accessibilityValue: { $0 ? nil : "Unavailable" }
+        )
+    }
+}
+
 /// The complete chip state vocabulary: filled when active, tonal when available.
 public enum MaterialChipState: Hashable, Sendable {
     case active
