@@ -263,6 +263,11 @@ render; a builder takes the number from here, and the code holds the vocabulary 
 The rule this table exists to enforce: **numbers belong in tables; renders certify feel;
 information that only exists as pixels gets under-read.**
 
+The first table contains **ratified** system law. The second preserves **MEASURED** facts from the
+A8 frozen Explore render; those rows are visually distinct provenance, not ratified metrics, and
+are carried as Open Flag 5 in Phase 1's next-design-session batch for wholesale ratification or
+amendment.
+
 | Element | Metric | Source |
 |---|---|---|
 | Door pill | 44pt height, 999px radius, 15pt/600 label, 7pt gap, **19×19 icon**, 10pt between doors | `ia-doors` |
@@ -286,6 +291,18 @@ information that only exists as pixels gets under-read.**
 | Interaction target floor | 44pt, tiled per **R10** where the rider permits | R10 scope line |
 | Pin | 20px circle, white stroke glyph | `ia-doors` |
 | Place-card **More** control | 44×44 target, glyph at **`IconRole.hero` = 22** | ruled by this session — see the snap note below |
+
+#### Measured A8 Explore frozen-render facts — not system law
+
+| Element | Metric | Source |
+|---|---|---|
+| Explore default sheet placement | 62pt large-detent top; 12pt grabber-to-title gap | **MEASURED — measured from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54`; not ratified** |
+| Explore default Scope control rows (3) | 52pt minimum each; 15pt/600 label; 20×20 icon; 10pt gap; 6/2 padding; 44×28 switch with 22pt knob at 3/19pt offsets; 1pt hairlines | **MEASURED — measured from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54`; not ratified** |
+| Explore default Scope block rhythm | 18pt header-to-label; 11pt label-to-chips; 14pt chips-to-controls; row minimum yields to wrapped content | **MEASURED — measured from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54`; not ratified** |
+| Explore default quiet destination row | 9/2 padding; 10pt gap; 12×12 chevron; 2pt title-to-metadata gap | **MEASURED — measured from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54`; not ratified** |
+| Explore AX sheet / labels / chips | 48pt large-detent top; 10pt grabber gap; 41/22pt title/subtitle with 6pt gap; 17pt section label; chips 38pt minimum with 19pt/600 label, 18×18 icon, 5/14 padding, 6pt label gap and 8pt row gap | **MEASURED — measured from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54`; not ratified** |
+| Explore AX Scope control rows (3) | 86pt row minimum each; 23pt/600 label; 30×30 icon; 14pt gap; 10/2 padding; 51×31 switch with 25pt knob at 3/23pt offsets; 14/9/14pt block rhythm; minimum yields to content | **MEASURED — measured from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54`; not ratified** |
+| Explore AX quiet rows | 4pt block inset; 28×28 icon; 24/18pt title/metadata; 18×18 chevron; 14pt content gap; 10/2 padding; 4pt title-to-metadata gap | **MEASURED — measured from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54`; not ratified** |
 
 **The snapped 21.** T1.10's *implementation* render drew the More control's glyph at **21px**
 (`t1.10-place-card.html:107`–`:114`, `.more { font-size: 21px }`). This session ruled that figure
