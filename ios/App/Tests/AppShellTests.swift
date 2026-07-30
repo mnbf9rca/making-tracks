@@ -350,7 +350,7 @@ final class AppShellTests: XCTestCase {
             ExploreScopeControl.includeHidden.presentation,
             ExploreScopeControlPresentation(
                 title: "Include hidden places",
-                systemImage: "eye.slash",
+                icon: .system("eye.slash"),
                 accessibilityIdentifier: "map.layers.show-hidden"
             )
         )
@@ -358,7 +358,7 @@ final class AppShellTests: XCTestCase {
             ExploreScopeControl.coverageShading.presentation,
             ExploreScopeControlPresentation(
                 title: "Show offline coverage shading",
-                systemImage: "map",
+                icon: .coverageShading,
                 accessibilityIdentifier: "map.layers.coverage-shading"
             )
         )
@@ -387,20 +387,28 @@ final class AppShellTests: XCTestCase {
 
         let topLeading = ExploreCategoryChipTopology.neighborGaps(
             rowIndex: 0,
-            rowCount: 3,
-            itemIndex: 0,
-            itemCount: 3
+            rowItemCounts: [3, 3, 2],
+            itemIndex: 0
         )
         XCTAssertNil(topLeading.top)
         XCTAssertNil(topLeading.leading)
         XCTAssertEqual(topLeading.bottom, 6)
         XCTAssertEqual(topLeading.trailing, 6)
 
+        let raggedMiddleTrailing = ExploreCategoryChipTopology.neighborGaps(
+            rowIndex: 1,
+            rowItemCounts: [3, 3, 2],
+            itemIndex: 2
+        )
+        XCTAssertEqual(raggedMiddleTrailing.top, 6)
+        XCTAssertEqual(raggedMiddleTrailing.leading, 6)
+        XCTAssertNil(raggedMiddleTrailing.bottom)
+        XCTAssertNil(raggedMiddleTrailing.trailing)
+
         let bottomTrailing = ExploreCategoryChipTopology.neighborGaps(
             rowIndex: 2,
-            rowCount: 3,
-            itemIndex: 1,
-            itemCount: 2
+            rowItemCounts: [3, 3, 2],
+            itemIndex: 1
         )
         XCTAssertEqual(bottomTrailing.top, 6)
         XCTAssertEqual(bottomTrailing.leading, 6)

@@ -51,8 +51,13 @@ struct MapDoorRowPresentation: Equatable {
 
 struct ExploreScopeControlPresentation: Equatable {
     let title: String
-    let systemImage: String
+    let icon: ExploreScopeControlIcon
     let accessibilityIdentifier: String
+}
+
+enum ExploreScopeControlIcon: Equatable {
+    case system(String)
+    case coverageShading
 }
 
 enum ExploreScopeControl: CaseIterable {
@@ -64,13 +69,13 @@ enum ExploreScopeControl: CaseIterable {
         case .includeHidden:
             ExploreScopeControlPresentation(
                 title: "Include hidden places",
-                systemImage: "eye.slash",
+                icon: .system("eye.slash"),
                 accessibilityIdentifier: "map.layers.show-hidden"
             )
         case .coverageShading:
             ExploreScopeControlPresentation(
                 title: "Show offline coverage shading",
-                systemImage: "map",
+                icon: .coverageShading,
                 accessibilityIdentifier: "map.layers.coverage-shading"
             )
         }
@@ -92,14 +97,19 @@ enum ExploreCategoryChipTopology {
 
     static func neighborGaps(
         rowIndex: Int,
-        rowCount: Int,
-        itemIndex: Int,
-        itemCount: Int
+        rowItemCounts: [Int],
+        itemIndex: Int
     ) -> MaterialChipNeighborGaps {
-        MaterialChipNeighborGaps(
-            top: rowIndex == 0 ? nil : gap,
+        let itemCount = rowItemCounts[rowIndex]
+        let hasTopNeighbor = rowIndex > 0 && rowItemCounts[rowIndex - 1] > itemIndex
+        let hasBottomNeighbor =
+            rowIndex + 1 < rowItemCounts.count
+            && rowItemCounts[rowIndex + 1] > itemIndex
+
+        return MaterialChipNeighborGaps(
+            top: hasTopNeighbor ? gap : nil,
             leading: itemIndex == 0 ? nil : gap,
-            bottom: rowIndex == rowCount - 1 ? nil : gap,
+            bottom: hasBottomNeighbor ? gap : nil,
             trailing: itemIndex == itemCount - 1 ? nil : gap
         )
     }
@@ -447,6 +457,7 @@ struct ExploreDoorRootView: View {
                 visibility.categories,
                 isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
             )
+            let rowItemCounts = categoryRows.map(\.count)
             VStack(alignment: .leading, spacing: ExploreCategoryChipTopology.gap) {
                 ForEach(categoryRows.indices, id: \.self) { rowIndex in
                     let row = categoryRows[rowIndex]
@@ -460,9 +471,8 @@ struct ExploreDoorRootView: View {
                                 size: dynamicTypeSize.isAccessibilitySize ? .expanded : .compact,
                                 neighborGaps: ExploreCategoryChipTopology.neighborGaps(
                                     rowIndex: rowIndex,
-                                    rowCount: categoryRows.count,
-                                    itemIndex: itemIndex,
-                                    itemCount: row.count
+                                    rowItemCounts: rowItemCounts,
+                                    itemIndex: itemIndex
                                 )
                             ) {
                                 var next = visibility
@@ -554,9 +564,10 @@ private struct ExploreScopeToggleRow: View {
 
         Toggle(isOn: $isOn) {
             HStack(spacing: 10) {
-                Image(systemName: presentation.systemImage)
-                    .font(.system(size: iconSize, weight: .medium))
-                    .symbolRenderingMode(.monochrome)
+                ExploreScopeControlGlyph(
+                    icon: presentation.icon,
+                    size: iconSize
+                )
                     .foregroundStyle(
                         isOn
                             ? tokens.accent.swiftUIColor
@@ -581,6 +592,59 @@ private struct ExploreScopeToggleRow: View {
                 .frame(height: 1)
         }
         .accessibilityIdentifier(presentation.accessibilityIdentifier)
+    }
+}
+
+private struct ExploreScopeControlGlyph: View {
+    let icon: ExploreScopeControlIcon
+    let size: CGFloat
+
+    @ViewBuilder
+    var body: some View {
+        switch icon {
+        case let .system(systemName):
+            Image(systemName: systemName)
+                .font(.system(size: size, weight: .medium))
+                .symbolRenderingMode(.monochrome)
+        case .coverageShading:
+            ExploreCoverageGlyphShape()
+                .stroke(
+                    style: StrokeStyle(
+                        lineWidth: 1.8,
+                        lineCap: .round,
+                        lineJoin: .round,
+                        dash: [3, 2.6]
+                    )
+                )
+                .frame(width: size, height: size)
+        }
+    }
+}
+
+private struct ExploreCoverageGlyphShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let points = [
+            CGPoint(x: 5 / 24, y: 9.6 / 24),
+            CGPoint(x: 9.4 / 24, y: 4.6 / 24),
+            CGPoint(x: 16.2 / 24, y: 5.8 / 24),
+            CGPoint(x: 19.6 / 24, y: 12 / 24),
+            CGPoint(x: 16 / 24, y: 18.8 / 24),
+            CGPoint(x: 8 / 24, y: 18.2 / 24),
+        ].map { point in
+            CGPoint(
+                x: rect.minX + point.x * rect.width,
+                y: rect.minY + point.y * rect.height
+            )
+        }
+
+        var path = Path()
+        guard let first = points.first else {
+            return path
+        }
+        path.move(to: first)
+        points.dropFirst().forEach { path.addLine(to: $0) }
+        path.closeSubpath()
+        return path
     }
 }
 
