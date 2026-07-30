@@ -13,10 +13,11 @@ public enum PinFeatureFilter {
 
     public static func discoveryFeatures(
         _ features: [(MapPlace, PinState)],
-        showHidden: Bool
+        showHidden: Bool,
+        showSaved: Bool
     ) -> [(MapPlace, PinState)] {
         features.filter { _, state in
-            showHidden || !state.hidden
+            (showHidden || !state.hidden) && (showSaved || !state.saved)
         }
     }
 }

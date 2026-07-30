@@ -1,5 +1,6 @@
 import DesignSystem
 import MakingTracksData
+import MakingTracksMapStyle
 import SwiftUI
 
 struct MapDoorPresentation: Equatable {
@@ -33,10 +34,11 @@ struct MapDoorChromeSpec {
 
 enum MapDoorDetentPolicy {
     static func requiresLarge(
+        door: MapDoor,
         isAccessibilitySize: Bool,
         hasDestination: Bool
     ) -> Bool {
-        isAccessibilitySize || hasDestination
+        door == .explore || isAccessibilitySize || hasDestination
     }
 }
 
@@ -47,28 +49,101 @@ struct MapDoorRowPresentation: Equatable {
     let accessibilityIdentifier: String
 }
 
-struct TracksDoorHeroContent: Equatable {
+struct ExploreScopeControlPresentation: Equatable {
+    let title: String
+    let icon: ExploreScopeControlIcon
+    let accessibilityIdentifier: String
+}
+
+enum ExploreScopeControlIcon: Equatable {
+    case system(String)
+    case coverageShading
+}
+
+enum ExploreScopeControl: CaseIterable {
+    case includeHidden
+    case showSaved
+    case coverageShading
+
+    var presentation: ExploreScopeControlPresentation {
+        switch self {
+        case .includeHidden:
+            ExploreScopeControlPresentation(
+                title: "Include hidden places",
+                icon: .system("eye.slash"),
+                accessibilityIdentifier: "map.layers.show-hidden"
+            )
+        case .showSaved:
+            ExploreScopeControlPresentation(
+                title: "Show saved places",
+                icon: .system("bookmark"),
+                accessibilityIdentifier: "map.layers.show-saved"
+            )
+        case .coverageShading:
+            ExploreScopeControlPresentation(
+                title: "Show coverage shading",
+                icon: .coverageShading,
+                accessibilityIdentifier: "map.layers.coverage-shading"
+            )
+        }
+    }
+}
+
+enum ExploreCategoryChipTopology {
+    static let gap: CGFloat = 6
+
+    static func rows(
+        _ categories: [MapLayerCategory],
+        isAccessibilitySize: Bool
+    ) -> [[MapLayerCategory]] {
+        let rowCapacity = isAccessibilitySize ? 2 : 3
+        return stride(from: 0, to: categories.count, by: rowCapacity).map { start in
+            Array(categories[start ..< min(start + rowCapacity, categories.count)])
+        }
+    }
+
+    static func neighborGaps(
+        rowIndex: Int,
+        rowItemCounts: [Int],
+        itemIndex: Int
+    ) -> MaterialChipNeighborGaps {
+        let itemCount = rowItemCounts[rowIndex]
+        let hasTopNeighbor = rowIndex > 0 && rowItemCounts[rowIndex - 1] > itemIndex
+        let hasBottomNeighbor =
+            rowIndex + 1 < rowItemCounts.count
+            && rowItemCounts[rowIndex + 1] > itemIndex
+
+        return MaterialChipNeighborGaps(
+            top: hasTopNeighbor ? gap : nil,
+            leading: itemIndex == 0 ? nil : gap,
+            bottom: hasBottomNeighbor ? gap : nil,
+            trailing: itemIndex == itemCount - 1 ? nil : gap
+        )
+    }
+}
+
+struct JournalDoorHeroContent: Equatable {
     let listID: Int64
     let metadata: String
 }
 
-struct TracksDoorListContent: Equatable, Identifiable {
+struct JournalDoorListContent: Equatable, Identifiable {
     let id: Int64
     let name: String
     let isSystem: Bool
     let progress: ListProgress
 }
 
-struct TracksDoorContent: Equatable {
-    static let empty = TracksDoorContent(
+struct JournalDoorContent: Equatable {
+    static let empty = JournalDoorContent(
         hero: nil,
         lists: [],
         lovedCount: 0,
         hiddenCount: 0
     )
 
-    let hero: TracksDoorHeroContent?
-    let lists: [TracksDoorListContent]
+    let hero: JournalDoorHeroContent?
+    let lists: [JournalDoorListContent]
     let lovedCount: Int
     let hiddenCount: Int
 
@@ -78,32 +153,32 @@ struct TracksDoorContent: Equatable {
         visits: [TrackVisit],
         lovedPlaces: [ListPlace],
         hiddenPlaces: [ListPlace]
-    ) -> TracksDoorContent {
+    ) -> JournalDoorContent {
         let trackList = lists.first {
             $0.isSystem && $0.kind == PlaceList.trackKind
         }
-        let hero = trackList.flatMap { list -> TracksDoorHeroContent? in
+        let hero = trackList.flatMap { list -> JournalDoorHeroContent? in
             guard let id = list.id else { return nil }
             guard let lastVisit = visits.last else {
-                return TracksDoorHeroContent(
+                return JournalDoorHeroContent(
                     listID: id,
                     metadata: "No visits yet"
                 )
             }
             let visitNoun = visits.count == 1 ? "visit" : "visits"
-            return TracksDoorHeroContent(
+            return JournalDoorHeroContent(
                 listID: id,
                 metadata: "\(visits.count) \(visitNoun) · last: \(lastVisit.name)"
             )
         }
 
-        let listRows = lists.compactMap { list -> TracksDoorListContent? in
+        let listRows = lists.compactMap { list -> JournalDoorListContent? in
             guard !(list.isSystem && list.kind == PlaceList.trackKind),
                   let id = list.id
             else {
                 return nil
             }
-            return TracksDoorListContent(
+            return JournalDoorListContent(
                 id: id,
                 name: list.name,
                 isSystem: list.isSystem,
@@ -111,7 +186,7 @@ struct TracksDoorContent: Equatable {
             )
         }
 
-        return TracksDoorContent(
+        return JournalDoorContent(
             hero: hero,
             lists: listRows,
             lovedCount: lovedPlaces.count,
@@ -123,49 +198,41 @@ struct TracksDoorContent: Equatable {
 extension MapDoor {
     var presentation: MapDoorPresentation {
         switch self {
-        case .world:
+        case .explore:
             MapDoorPresentation(
-                title: "World",
+                title: "Explore",
                 systemImage: "globe.europe.africa",
-                accessibilityIdentifier: "map.door.world"
+                accessibilityIdentifier: "map.door.explore"
             )
-        case .tracks:
+        case .journal:
             MapDoorPresentation(
-                title: "Tracks",
+                title: "Journal",
                 systemImage: "shoeprints.fill",
-                accessibilityIdentifier: "map.door.tracks"
+                accessibilityIdentifier: "map.door.journal"
             )
         }
     }
 }
 
-enum WorldDoorRow: CaseIterable {
-    case scope
+enum ExploreDoorRow: CaseIterable {
     case settings
     case about
 
     var presentation: MapDoorRowPresentation {
         switch self {
-        case .scope:
-            MapDoorRowPresentation(
-                title: "Scope",
-                subtitle: "What the map shows",
-                systemImage: "slider.horizontal.3",
-                accessibilityIdentifier: "world.row.scope"
-            )
         case .settings:
             MapDoorRowPresentation(
                 title: "Settings",
-                subtitle: "Appearance, data, location, and storage",
+                subtitle: "appearance, data, location, storage",
                 systemImage: "gearshape",
-                accessibilityIdentifier: "world.row.settings"
+                accessibilityIdentifier: "explore.row.settings"
             )
         case .about:
             MapDoorRowPresentation(
                 title: "About",
-                subtitle: "The story, privacy, and licences",
+                subtitle: "the story · privacy · licences",
                 systemImage: "book.closed",
-                accessibilityIdentifier: "world.row.about"
+                accessibilityIdentifier: "explore.row.about"
             )
         }
     }
@@ -175,7 +242,7 @@ enum WorldDoorRow: CaseIterable {
     }
 }
 
-enum TracksDoorRow: CaseIterable {
+enum JournalDoorRow: CaseIterable {
     case myTracks
     case newList
     case lovedPlaces
@@ -195,21 +262,21 @@ enum TracksDoorRow: CaseIterable {
                 title: "My tracks",
                 subtitle: "Places you've seen",
                 systemImage: "shoeprints.fill",
-                accessibilityIdentifier: "tracks.row.my-tracks"
+                accessibilityIdentifier: "journal.row.my-tracks"
             )
         case .lovedPlaces:
             MapDoorRowPresentation(
                 title: "Loved places",
                 subtitle: "Places you've loved",
                 systemImage: "heart",
-                accessibilityIdentifier: "tracks.row.loved"
+                accessibilityIdentifier: "journal.row.loved"
             )
         case .hiddenPlaces:
             MapDoorRowPresentation(
                 title: "Hidden places",
                 subtitle: "Places you've hidden",
                 systemImage: "eye.slash",
-                accessibilityIdentifier: "tracks.row.hidden"
+                accessibilityIdentifier: "journal.row.hidden"
             )
         }
     }
@@ -220,8 +287,8 @@ enum TracksDoorRow: CaseIterable {
 }
 
 struct MapDoorBar: View {
-    let openWorld: () -> Void
-    let openTracks: () -> Void
+    let openExplore: () -> Void
+    let openJournal: () -> Void
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -237,8 +304,8 @@ struct MapDoorBar: View {
 
     @ViewBuilder
     private var doorButtons: some View {
-        MapDoorButton(door: .world, action: openWorld)
-        MapDoorButton(door: .tracks, action: openTracks)
+        MapDoorButton(door: .explore, action: openExplore)
+        MapDoorButton(door: .journal, action: openJournal)
     }
 }
 
@@ -249,7 +316,7 @@ struct MapDoorSheet<Destination: View>: View {
     let door: MapDoor
     let deepLinkDestination: MapShellDestination?
     let model: MapScreenModel?
-    let openScope: () -> Void
+    @Binding var visibility: MapLayerVisibility
     let prepareTracksHistory: () -> Void
     let onListDeleted: @MainActor (Int64) -> Void
     let destination: (MapShellDestination) -> Destination
@@ -261,7 +328,7 @@ struct MapDoorSheet<Destination: View>: View {
         door: MapDoor,
         deepLinkDestination: MapShellDestination?,
         model: MapScreenModel?,
-        openScope: @escaping () -> Void,
+        visibility: Binding<MapLayerVisibility>,
         prepareTracksHistory: @escaping () -> Void,
         onListDeleted: @escaping @MainActor (Int64) -> Void,
         @ViewBuilder destination: @escaping (MapShellDestination) -> Destination
@@ -269,7 +336,7 @@ struct MapDoorSheet<Destination: View>: View {
         self.door = door
         self.deepLinkDestination = deepLinkDestination
         self.model = model
-        self.openScope = openScope
+        _visibility = visibility
         self.prepareTracksHistory = prepareTracksHistory
         self.onListDeleted = onListDeleted
         self.destination = destination
@@ -304,10 +371,10 @@ struct MapDoorSheet<Destination: View>: View {
     @ViewBuilder
     private var root: some View {
         switch door {
-        case .world:
-            WorldDoorRootView(path: $path, openScope: openScope)
-        case .tracks:
-            TracksDoorRootView(
+        case .explore:
+            ExploreDoorRootView(path: $path, visibility: $visibility)
+        case .journal:
+            JournalDoorRootView(
                 path: $path,
                 model: model,
                 prepareTracksHistory: prepareTracksHistory,
@@ -322,6 +389,7 @@ struct MapDoorSheet<Destination: View>: View {
 
     private func promoteDetentIfNeeded() {
         if MapDoorDetentPolicy.requiresLarge(
+            door: door,
             isAccessibilitySize: dynamicTypeSize.isAccessibilitySize,
             hasDestination: !path.isEmpty
         ) {
@@ -358,34 +426,312 @@ struct MapDoorDestinationCloseIconGlyph: View {
     }
 }
 
-struct WorldDoorRootView: View {
+struct ExploreDoorRootView: View {
     @Binding var path: [MapShellDestination]
-    let openScope: () -> Void
+    @Binding var visibility: MapLayerVisibility
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
         MapDoorRootLayout(
-            title: "World",
-            subtitle: "what’s out there"
+            title: "Explore",
+            subtitle: "what the map shows right now"
         ) {
-            MapDoorRaisedRow(
-                presentation: WorldDoorRow.scope.presentation,
-                action: openScope
+            HStack(alignment: .firstTextBaseline) {
+                Text("Scope")
+                    .font(Typography.font(for: .label))
+                    .textCase(.uppercase)
+                    .tracking(1.2)
+                    .foregroundStyle(tokens.muted.swiftUIColor)
+
+                Spacer(minLength: 8)
+
+                Button(visibility.toggleAllCategoriesTitle) {
+                    var next = visibility
+                    next.toggleAllCategories()
+                    visibility = next
+                }
+                .font(Typography.font(for: .metadata))
+                .foregroundStyle(tokens.accent.swiftUIColor)
+                .accessibilityIdentifier("map.layers.show-all-categories")
+            }
+            .padding(.top, 10)
+            .padding(.horizontal, 2)
+
+            let categoryRows = ExploreCategoryChipTopology.rows(
+                visibility.categories,
+                isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
             )
-            MapDoorHairlineRow(
-                presentation: WorldDoorRow.settings.presentation
+            let rowItemCounts = categoryRows.map(\.count)
+            VStack(alignment: .leading, spacing: ExploreCategoryChipTopology.gap) {
+                ForEach(categoryRows.indices, id: \.self) { rowIndex in
+                    let row = categoryRows[rowIndex]
+                    HStack(spacing: ExploreCategoryChipTopology.gap) {
+                        ForEach(row.indices, id: \.self) { itemIndex in
+                            let category = row[itemIndex]
+                            MaterialChip(
+                                category.title,
+                                systemImage: PinLayers.categorySymbolNames[category.iconName] ?? "mappin",
+                                state: visibility.isCategoryVisible(category.id) ? .active : .available,
+                                size: dynamicTypeSize.isAccessibilitySize ? .expanded : .compact,
+                                neighborGaps: ExploreCategoryChipTopology.neighborGaps(
+                                    rowIndex: rowIndex,
+                                    rowItemCounts: rowItemCounts,
+                                    itemIndex: itemIndex
+                                )
+                            ) {
+                                var next = visibility
+                                next.setCategory(
+                                    category.id,
+                                    visible: !visibility.isCategoryVisible(category.id)
+                                )
+                                visibility = next
+                            }
+                            .accessibilityIdentifier("map.layers.category.\(category.id)")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.vertical, 5)
+
+            VStack(spacing: 0) {
+                ExploreScopeToggleRow(
+                    control: .includeHidden,
+                    isOn: hiddenPlacesBinding,
+                    minimumHeight: scopeControlMinimumHeight
+                )
+                ExploreScopeToggleRow(
+                    control: .showSaved,
+                    isOn: savedPlacesBinding,
+                    minimumHeight: scopeControlMinimumHeight
+                )
+                ExploreScopeToggleRow(
+                    control: .coverageShading,
+                    isOn: coverageShadingBinding,
+                    minimumHeight: scopeControlMinimumHeight
+                )
+            }
+            .padding(.top, 3)
+
+            Spacer(minLength: 16)
+
+            ExploreQuietDestinationRow(
+                presentation: ExploreDoorRow.settings.presentation,
+                prominent: true
             ) {
                 path.append(.settings)
             }
-            MapDoorHairlineRow(
-                presentation: WorldDoorRow.about.presentation
+            ExploreQuietDestinationRow(
+                presentation: ExploreDoorRow.about.presentation,
+                prominent: false
             ) {
                 path.append(.about)
             }
         }
+        .accessibilityIdentifier("explore.root")
+    }
+
+    private var scopeControlMinimumHeight: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 86 : 52
+    }
+
+    private var hiddenPlacesBinding: Binding<Bool> {
+        Binding(
+            get: { visibility.showHiddenPlaces },
+            set: { visible in
+                var next = visibility
+                next.showHiddenPlaces = visible
+                visibility = next
+            }
+        )
+    }
+
+    private var coverageShadingBinding: Binding<Bool> {
+        Binding(
+            get: { visibility.showCoverageShading },
+            set: { visible in
+                var next = visibility
+                next.showCoverageShading = visible
+                visibility = next
+            }
+        )
+    }
+
+    private var savedPlacesBinding: Binding<Bool> {
+        Binding(
+            get: { visibility.showSavedPlaces },
+            set: { visible in
+                var next = visibility
+                next.showSavedPlaces = visible
+                visibility = next
+            }
+        )
     }
 }
 
-struct TracksDoorHeroIconGlyph: View {
+private struct ExploreScopeToggleRow: View {
+    let control: ExploreScopeControl
+    @Binding var isOn: Bool
+    let minimumHeight: CGFloat
+
+    @ScaledMetric(relativeTo: .body)
+    private var iconSize = ExploreSurfaceIconGeometry.scopeControl
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        let presentation = control.presentation
+
+        Toggle(isOn: $isOn) {
+            HStack(spacing: 10) {
+                ExploreScopeControlGlyph(
+                    icon: presentation.icon,
+                    size: iconSize
+                )
+                    .foregroundStyle(
+                        isOn
+                            ? tokens.accent.swiftUIColor
+                            : tokens.muted.swiftUIColor
+                    )
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+
+                Text(verbatim: presentation.title)
+                    .font(Typography.font(for: .button))
+                    .foregroundStyle(tokens.ink.swiftUIColor)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .toggleStyle(.switch)
+        .padding(.horizontal, 2)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, minHeight: minimumHeight, alignment: .leading)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(tokens.hairline.swiftUIColor)
+                .frame(height: 1)
+        }
+        .accessibilityIdentifier(presentation.accessibilityIdentifier)
+    }
+}
+
+private struct ExploreScopeControlGlyph: View {
+    let icon: ExploreScopeControlIcon
+    let size: CGFloat
+
+    @ViewBuilder
+    var body: some View {
+        switch icon {
+        case let .system(systemName):
+            Image(systemName: systemName)
+                .font(.system(size: size, weight: .medium))
+                .symbolRenderingMode(.monochrome)
+        case .coverageShading:
+            ExploreCoverageGlyphShape()
+                .stroke(
+                    style: StrokeStyle(
+                        lineWidth: 1.8,
+                        lineCap: .round,
+                        lineJoin: .round,
+                        dash: [3, 2.6]
+                    )
+                )
+                .frame(width: size, height: size)
+        }
+    }
+}
+
+private struct ExploreCoverageGlyphShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let points = [
+            CGPoint(x: 5 / 24, y: 9.6 / 24),
+            CGPoint(x: 9.4 / 24, y: 4.6 / 24),
+            CGPoint(x: 16.2 / 24, y: 5.8 / 24),
+            CGPoint(x: 19.6 / 24, y: 12 / 24),
+            CGPoint(x: 16 / 24, y: 18.8 / 24),
+            CGPoint(x: 8 / 24, y: 18.2 / 24),
+        ].map { point in
+            CGPoint(
+                x: rect.minX + point.x * rect.width,
+                y: rect.minY + point.y * rect.height
+            )
+        }
+
+        var path = Path()
+        guard let first = points.first else {
+            return path
+        }
+        path.move(to: first)
+        points.dropFirst().forEach { path.addLine(to: $0) }
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct ExploreQuietDestinationRow: View {
+    let presentation: MapDoorRowPresentation
+    let prominent: Bool
+    let action: () -> Void
+
+    @ScaledMetric(relativeTo: .body)
+    private var iconSize = ExploreSurfaceIconGeometry.quietDestination
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        Button(action: action) {
+            MaterialHairlineRow {
+                HStack(spacing: 10) {
+                    Image(systemName: presentation.systemImage)
+                        .font(.system(size: iconSize, weight: .medium))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(
+                            prominent
+                                ? tokens.accent.swiftUIColor
+                                : tokens.muted.swiftUIColor
+                        )
+                        .frame(width: 24)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: presentation.title)
+                            .font(Typography.font(for: .listRowTitle))
+                            .foregroundStyle(
+                                prominent
+                                    ? tokens.ink.swiftUIColor
+                                    : tokens.muted.swiftUIColor
+                            )
+                        Text(verbatim: presentation.subtitle)
+                            .font(Typography.font(for: .metadata))
+                            .foregroundStyle(tokens.muted.swiftUIColor)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    Spacer(minLength: 8)
+
+                    Image(systemName: "chevron.right")
+                        .iconRole(.accessory)
+                        .foregroundStyle(
+                            prominent
+                                ? tokens.accent.swiftUIColor
+                                : tokens.muted.swiftUIColor
+                        )
+                        .accessibilityHidden(true)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(presentation.accessibilityIdentifier)
+    }
+}
+
+struct JournalDoorHeroIconGlyph: View {
     let systemName: String
 
     var body: some View {
@@ -394,7 +740,7 @@ struct TracksDoorHeroIconGlyph: View {
     }
 }
 
-struct TracksDoorHeroTitle: View {
+struct JournalDoorHeroTitle: View {
     let title: String
 
     var body: some View {
@@ -403,7 +749,7 @@ struct TracksDoorHeroTitle: View {
     }
 }
 
-struct TracksDoorRetraceCue: View {
+struct JournalDoorRetraceCue: View {
     var body: some View {
         HStack(spacing: 3) {
             Text("Retrace")
@@ -417,7 +763,7 @@ struct TracksDoorRetraceCue: View {
     }
 }
 
-struct TracksDoorNewListIcon: View {
+struct JournalDoorNewListIcon: View {
     let systemName: String
 
     var body: some View {
@@ -426,7 +772,7 @@ struct TracksDoorNewListIcon: View {
     }
 }
 
-struct TracksDoorVirtualRowIconGlyph: View {
+struct JournalDoorVirtualRowIconGlyph: View {
     let systemName: String
 
     var body: some View {
@@ -435,7 +781,7 @@ struct TracksDoorVirtualRowIconGlyph: View {
     }
 }
 
-struct TracksDoorRootView: View {
+struct JournalDoorRootView: View {
     @Binding var path: [MapShellDestination]
     let model: MapScreenModel?
     let prepareTracksHistory: () -> Void
@@ -443,16 +789,16 @@ struct TracksDoorRootView: View {
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    @State private var content = TracksDoorContent.empty
+    @State private var content = JournalDoorContent.empty
     @State private var draftName = ""
     @State private var actionError: String?
-    @State private var pendingDeleteList: TracksDoorListContent?
+    @State private var pendingDeleteList: JournalDoorListContent?
 
     private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
         List {
-            tracksHeader
+            journalHeader
                 .listRowInsets(EdgeInsets())
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -488,7 +834,7 @@ struct TracksDoorRootView: View {
                 .listRowBackground(Color.clear)
 
             virtualPlacesRow(
-                TracksDoorRow.lovedPlaces,
+                JournalDoorRow.lovedPlaces,
                 count: content.lovedCount,
                 destination: .lovedPlaces
             )
@@ -497,7 +843,7 @@ struct TracksDoorRootView: View {
             .listRowBackground(Color.clear)
 
             virtualPlacesRow(
-                TracksDoorRow.hiddenPlaces,
+                JournalDoorRow.hiddenPlaces,
                 count: content.hiddenCount,
                 destination: .hiddenPlaces,
                 quiet: true
@@ -521,7 +867,7 @@ struct TracksDoorRootView: View {
         .scrollContentBackground(.hidden)
         .background(tokens.surface.swiftUIColor)
         .navigationBarBackButtonHidden()
-        .accessibilityIdentifier("tracks.root")
+        .accessibilityIdentifier("journal.root")
         .task { await reload() }
         .refreshable { await reload() }
         .onChange(of: path) { previous, current in
@@ -553,9 +899,9 @@ struct TracksDoorRootView: View {
         }
     }
 
-    private var tracksHeader: some View {
+    private var journalHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Tracks")
+            Text("Journal")
                 .font(Typography.font(for: .sheetTitle))
                 .foregroundStyle(tokens.ink.swiftUIColor)
 
@@ -568,7 +914,7 @@ struct TracksDoorRootView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func heroRow(_ hero: TracksDoorHeroContent) -> some View {
+    private func heroRow(_ hero: JournalDoorHeroContent) -> some View {
         Button {
             prepareTracksHistory()
             path.append(.tracks)
@@ -599,22 +945,22 @@ struct TracksDoorRootView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(
-            TracksDoorRow.myTracks.presentation.accessibilityIdentifier
+            JournalDoorRow.myTracks.presentation.accessibilityIdentifier
         )
     }
 
     private var heroIcon: some View {
-        TracksDoorHeroIconGlyph(
-            systemName: TracksDoorRow.myTracks.presentation.systemImage
+        JournalDoorHeroIconGlyph(
+            systemName: JournalDoorRow.myTracks.presentation.systemImage
         )
         .foregroundStyle(tokens.accent.swiftUIColor)
         .accessibilityHidden(true)
     }
 
-    private func heroCopy(_ hero: TracksDoorHeroContent) -> some View {
+    private func heroCopy(_ hero: JournalDoorHeroContent) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            TracksDoorHeroTitle(
-                title: TracksDoorRow.myTracks.presentation.title
+            JournalDoorHeroTitle(
+                title: JournalDoorRow.myTracks.presentation.title
             )
             .foregroundStyle(tokens.ink.swiftUIColor)
 
@@ -626,11 +972,11 @@ struct TracksDoorRootView: View {
     }
 
     private var retraceCue: some View {
-        TracksDoorRetraceCue()
+        JournalDoorRetraceCue()
             .foregroundStyle(tokens.accent.swiftUIColor)
     }
 
-    private func listRow(_ list: TracksDoorListContent) -> some View {
+    private func listRow(_ list: JournalDoorListContent) -> some View {
         Button {
             path.append(.listDetail(list.id))
         } label: {
@@ -668,8 +1014,8 @@ struct TracksDoorRootView: View {
                 Button {
                     Task { await createList() }
                 } label: {
-                    TracksDoorNewListIcon(
-                        systemName: TracksDoorRow.newList.presentation.systemImage
+                    JournalDoorNewListIcon(
+                        systemName: JournalDoorRow.newList.presentation.systemImage
                     )
                     .foregroundStyle(tokens.accent.swiftUIColor)
                     .frame(minWidth: 44, minHeight: 44)
@@ -678,7 +1024,7 @@ struct TracksDoorRootView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Create list")
                 .accessibilityIdentifier(
-                    TracksDoorRow.newList.presentation.accessibilityIdentifier
+                    JournalDoorRow.newList.presentation.accessibilityIdentifier
                 )
 
                 TextField("New list", text: $draftName)
@@ -695,7 +1041,7 @@ struct TracksDoorRootView: View {
     }
 
     func virtualPlacesRow(
-        _ row: TracksDoorRow,
+        _ row: JournalDoorRow,
         count: Int,
         destination: MapShellDestination,
         quiet: Bool = false
@@ -708,7 +1054,7 @@ struct TracksDoorRootView: View {
         } label: {
             MaterialHairlineRow {
                 HStack(spacing: 12) {
-                    TracksDoorVirtualRowIconGlyph(systemName: presentation.systemImage)
+                    JournalDoorVirtualRowIconGlyph(systemName: presentation.systemImage)
                         .foregroundStyle(
                             quiet
                                 ? tokens.muted.swiftUIColor
@@ -755,7 +1101,7 @@ struct TracksDoorRootView: View {
         let visits = await model.trackVisits()
         let lovedPlaces = await model.lovedPlaces()
         let hiddenPlaces = await model.hiddenPlaces()
-        content = TracksDoorContent.make(
+        content = JournalDoorContent.make(
             lists: lists,
             progress: progress,
             visits: visits,
@@ -810,21 +1156,27 @@ private struct MapDoorRootLayout<Content: View>: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(verbatim: title)
-                    .font(Typography.font(for: .sheetTitle))
-                    .foregroundStyle(MaterialTheme.snow.tokens.ink.swiftUIColor)
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(verbatim: title)
+                        .font(Typography.font(for: .sheetTitle))
+                        .foregroundStyle(MaterialTheme.snow.tokens.ink.swiftUIColor)
 
-                Text(verbatim: subtitle)
-                    .font(Typography.font(for: .evocativeSubline))
-                    .foregroundStyle(MaterialTheme.snow.tokens.muted.swiftUIColor)
-                    .padding(.bottom, 8)
+                    Text(verbatim: subtitle)
+                        .font(Typography.font(for: .evocativeSubline))
+                        .foregroundStyle(MaterialTheme.snow.tokens.muted.swiftUIColor)
+                        .padding(.bottom, 8)
 
-                content
+                    content
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
+                .frame(
+                    minHeight: proxy.size.height,
+                    alignment: .top
+                )
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 24)
         }
         .navigationBarBackButtonHidden()
     }

@@ -530,6 +530,33 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
+    func testMaterialChipExpandedSizeOwnsFrozenAccessibilityGeometry() throws {
+        XCTAssertEqual(MaterialChipSize.expanded.minimumHeight, 38)
+        XCTAssertEqual(MaterialChipSize.expanded.horizontalPadding, 14)
+        XCTAssertEqual(MaterialChipSize.expanded.verticalPadding, 5)
+        XCTAssertEqual(MaterialChipSize.expanded.labelSpacing, 6)
+
+        let title = "Map"
+        let chip = MaterialChip(
+            title,
+            state: .active,
+            size: .expanded,
+            action: {}
+        )
+        .dynamicTypeSize(.accessibility5)
+        let styledTitle = Text(title)
+            .font(MaterialChip.titleFont)
+            .fixedSize(horizontal: false, vertical: true)
+            .dynamicTypeSize(.accessibility5)
+
+        XCTAssertGreaterThanOrEqual(try renderedHeight(chip), 38)
+        XCTAssertEqual(
+            try renderedWidth(chip) - renderedWidth(styledTitle),
+            28,
+            accuracy: 1
+        )
+    }
+
     func testMaterialChipFreeSpaceHitTargetExpandsOnlyDimensionsBelowMinimum() {
         XCTAssertEqual(MaterialChipGeometry.minimumHitTarget, 44)
         XCTAssertEqual(
@@ -933,7 +960,8 @@ final class ControlStylesTests: XCTestCase {
                 label: Color.clear.frame(width: 400, height: 400),
                 isPressed: isPressed,
                 appearance: .filled(tokens: tokens),
-                tokens: tokens
+                tokens: tokens,
+                size: .compact
             )
             .padding(12)
             .environment(\.isEnabled, isEnabled)

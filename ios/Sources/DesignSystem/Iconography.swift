@@ -45,6 +45,12 @@ public enum IconRole: CaseIterable, Hashable, Sendable {
     }
 }
 
+/// Ratified pairing constants for the Explore surface; these are not new icon roles.
+public enum ExploreSurfaceIconGeometry {
+    public static let scopeControl: CGFloat = 20
+    public static let quietDestination: CGFloat = 18
+}
+
 public extension View {
     func iconRole(_ role: IconRole) -> some View {
         modifier(IconRoleModifier(role: role))

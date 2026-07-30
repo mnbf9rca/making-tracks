@@ -300,21 +300,31 @@ final class AppShellTests: XCTestCase {
         )
     }
 
-    func testDoorDestinationsAndAccessibilitySizesRequireLargeDetent() {
+    func testExploreRootDestinationsAndAccessibilitySizesRequireLargeDetent() {
         XCTAssertFalse(
             MapDoorDetentPolicy.requiresLarge(
+                door: .journal,
                 isAccessibilitySize: false,
                 hasDestination: false
             )
         )
         XCTAssertTrue(
             MapDoorDetentPolicy.requiresLarge(
+                door: .explore,
+                isAccessibilitySize: false,
+                hasDestination: false
+            )
+        )
+        XCTAssertTrue(
+            MapDoorDetentPolicy.requiresLarge(
+                door: .journal,
                 isAccessibilitySize: true,
                 hasDestination: false
             )
         )
         XCTAssertTrue(
             MapDoorDetentPolicy.requiresLarge(
+                door: .journal,
                 isAccessibilitySize: false,
                 hasDestination: true
             )
@@ -323,47 +333,134 @@ final class AppShellTests: XCTestCase {
 
     func testMapDoorsExposeDistinctRuledPresentation() {
         XCTAssertEqual(
-            MapDoor.world.presentation,
+            MapDoor.explore.presentation,
             MapDoorPresentation(
-                title: "World",
+                title: "Explore",
                 systemImage: "globe.europe.africa",
-                accessibilityIdentifier: "map.door.world"
+                accessibilityIdentifier: "map.door.explore"
             )
         )
         XCTAssertEqual(
-            MapDoor.tracks.presentation,
+            MapDoor.journal.presentation,
             MapDoorPresentation(
-                title: "Tracks",
+                title: "Journal",
                 systemImage: "shoeprints.fill",
-                accessibilityIdentifier: "map.door.tracks"
+                accessibilityIdentifier: "map.door.journal"
             )
         )
     }
 
     func testDoorRootsExposeOnlyRuledRows() {
-        XCTAssertEqual(WorldDoorRow.allCases, [.scope, .settings, .about])
+        XCTAssertEqual(ExploreDoorRow.allCases, [.settings, .about])
         XCTAssertEqual(
-            TracksDoorRow.allCases,
+            JournalDoorRow.allCases,
             [.myTracks, .newList, .lovedPlaces, .hiddenPlaces]
         )
-        XCTAssertFalse(WorldDoorRow.allCases.map(\.title).contains("Offline maps"))
-        XCTAssertFalse(WorldDoorRow.allCases.map(\.title).contains("Coverage"))
-        XCTAssertEqual(TracksDoorRow.lovedPlaces.presentation.title, "Loved places")
-        XCTAssertEqual(TracksDoorRow.lovedPlaces.presentation.systemImage, "heart")
+        XCTAssertFalse(ExploreDoorRow.allCases.map(\.title).contains("Offline maps"))
+        XCTAssertFalse(ExploreDoorRow.allCases.map(\.title).contains("Coverage"))
+        XCTAssertEqual(JournalDoorRow.lovedPlaces.presentation.title, "Loved places")
+        XCTAssertEqual(JournalDoorRow.lovedPlaces.presentation.systemImage, "heart")
         XCTAssertEqual(
-            TracksDoorRow.lovedPlaces.presentation.accessibilityIdentifier,
-            "tracks.row.loved"
+            JournalDoorRow.lovedPlaces.presentation.accessibilityIdentifier,
+            "journal.row.loved"
         )
-        XCTAssertEqual(TracksDoorRow.hiddenPlaces.presentation.title, "Hidden places")
-        XCTAssertEqual(TracksDoorRow.hiddenPlaces.presentation.systemImage, "eye.slash")
+        XCTAssertEqual(JournalDoorRow.hiddenPlaces.presentation.title, "Hidden places")
+        XCTAssertEqual(JournalDoorRow.hiddenPlaces.presentation.systemImage, "eye.slash")
         XCTAssertEqual(
-            TracksDoorRow.hiddenPlaces.presentation.accessibilityIdentifier,
-            "tracks.row.hidden"
+            JournalDoorRow.hiddenPlaces.presentation.accessibilityIdentifier,
+            "journal.row.hidden"
+        )
+        XCTAssertEqual(
+            ExploreDoorRow.settings.presentation.accessibilityIdentifier,
+            "explore.row.settings"
+        )
+        XCTAssertEqual(
+            ExploreDoorRow.about.presentation.accessibilityIdentifier,
+            "explore.row.about"
         )
     }
 
-    func testTracksDoorContentProjectsHeroAndEveryNonTrackListInDatabaseOrder() {
-        let content = TracksDoorContent.make(
+    func testExploreRootExposesCompleteScopeControlsInRuledOrder() {
+        XCTAssertEqual(
+            ExploreScopeControl.allCases,
+            [.includeHidden, .showSaved, .coverageShading]
+        )
+        XCTAssertEqual(
+            ExploreScopeControl.includeHidden.presentation,
+            ExploreScopeControlPresentation(
+                title: "Include hidden places",
+                icon: .system("eye.slash"),
+                accessibilityIdentifier: "map.layers.show-hidden"
+            )
+        )
+        XCTAssertEqual(
+            ExploreScopeControl.showSaved.presentation,
+            ExploreScopeControlPresentation(
+                title: "Show saved places",
+                icon: .system("bookmark"),
+                accessibilityIdentifier: "map.layers.show-saved"
+            )
+        )
+        XCTAssertEqual(
+            ExploreScopeControl.coverageShading.presentation,
+            ExploreScopeControlPresentation(
+                title: "Show coverage shading",
+                icon: .coverageShading,
+                accessibilityIdentifier: "map.layers.coverage-shading"
+            )
+        )
+    }
+
+    func testExploreCategoryChipRowsExposeOnlyActualNeighbours() {
+        let visibility = MapLayerVisibility()
+        XCTAssertEqual(
+            ExploreCategoryChipTopology.rows(
+                visibility.categories,
+                isAccessibilitySize: false
+            ).map(\.count),
+            [3, 3, 2]
+        )
+        XCTAssertEqual(
+            ExploreCategoryChipTopology.rows(
+                visibility.categories,
+                isAccessibilitySize: true
+            ).map(\.count),
+            [2, 2, 2, 2]
+        )
+
+        let topLeading = ExploreCategoryChipTopology.neighborGaps(
+            rowIndex: 0,
+            rowItemCounts: [3, 3, 2],
+            itemIndex: 0
+        )
+        XCTAssertNil(topLeading.top)
+        XCTAssertNil(topLeading.leading)
+        XCTAssertEqual(topLeading.bottom, 6)
+        XCTAssertEqual(topLeading.trailing, 6)
+
+        let raggedMiddleTrailing = ExploreCategoryChipTopology.neighborGaps(
+            rowIndex: 1,
+            rowItemCounts: [3, 3, 2],
+            itemIndex: 2
+        )
+        XCTAssertEqual(raggedMiddleTrailing.top, 6)
+        XCTAssertEqual(raggedMiddleTrailing.leading, 6)
+        XCTAssertNil(raggedMiddleTrailing.bottom)
+        XCTAssertNil(raggedMiddleTrailing.trailing)
+
+        let bottomTrailing = ExploreCategoryChipTopology.neighborGaps(
+            rowIndex: 2,
+            rowItemCounts: [3, 3, 2],
+            itemIndex: 1
+        )
+        XCTAssertEqual(bottomTrailing.top, 6)
+        XCTAssertEqual(bottomTrailing.leading, 6)
+        XCTAssertNil(bottomTrailing.bottom)
+        XCTAssertNil(bottomTrailing.trailing)
+    }
+
+    func testJournalDoorContentProjectsHeroAndEveryNonTrackListInDatabaseOrder() {
+        let content = JournalDoorContent.make(
             lists: [
                 PlaceList(
                     id: 1,
@@ -446,7 +543,7 @@ final class AppShellTests: XCTestCase {
 
         XCTAssertEqual(
             content.hero,
-            TracksDoorHeroContent(
+            JournalDoorHeroContent(
                 listID: 1,
                 metadata: "2 visits · last: Thean Hou Temple"
             )
@@ -454,19 +551,19 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(
             content.lists,
             [
-                TracksDoorListContent(
+                JournalDoorListContent(
                     id: 2,
                     name: "Want to go",
                     isSystem: true,
                     progress: ListProgress(visited: 1, total: 3)
                 ),
-                TracksDoorListContent(
+                JournalDoorListContent(
                     id: 3,
                     name: "Ghost signs",
                     isSystem: false,
                     progress: ListProgress(visited: 4, total: 11)
                 ),
-                TracksDoorListContent(
+                JournalDoorListContent(
                     id: 4,
                     name: "KL follies",
                     isSystem: false,
@@ -478,8 +575,8 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(content.hiddenCount, 1)
     }
 
-    func testTracksDoorContentHandlesEmptyHistoryAndMissingProgressWithoutInventingRows() {
-        let content = TracksDoorContent.make(
+    func testJournalDoorContentHandlesEmptyHistoryAndMissingProgressWithoutInventingRows() {
+        let content = JournalDoorContent.make(
             lists: [
                 PlaceList(
                     id: 1,
@@ -509,12 +606,12 @@ final class AppShellTests: XCTestCase {
 
         XCTAssertEqual(
             content.hero,
-            TracksDoorHeroContent(listID: 1, metadata: "No visits yet")
+            JournalDoorHeroContent(listID: 1, metadata: "No visits yet")
         )
         XCTAssertEqual(
             content.lists,
             [
-                TracksDoorListContent(
+                JournalDoorListContent(
                     id: 2,
                     name: "Empty list",
                     isSystem: false,
@@ -751,7 +848,7 @@ final class AppShellTests: XCTestCase {
         )
         let lovedView = ManagedPlacesView(model: nil, mode: .loved)
         let hiddenView = ManagedPlacesView(model: nil, mode: .hidden)
-        let tracksView = TracksDoorRootView(
+        let tracksView = JournalDoorRootView(
             path: .constant([]),
             model: nil,
             prepareTracksHistory: {},
@@ -790,7 +887,7 @@ final class AppShellTests: XCTestCase {
         )
         XCTAssertEqual(
             descendants(
-                of: TracksDoorVirtualRowIconGlyph.self,
+                of: JournalDoorVirtualRowIconGlyph.self,
                 in: tracksView.virtualPlacesRow(
                     .lovedPlaces,
                     count: 2,
@@ -822,7 +919,7 @@ final class AppShellTests: XCTestCase {
             try XCTUnwrap(
                 firstDescendant(
                     of: IconRole.self,
-                    in: TracksDoorVirtualRowIconGlyph(systemName: "heart").body
+                    in: JournalDoorVirtualRowIconGlyph(systemName: "heart").body
                 )
             ),
             .inline
@@ -1061,10 +1158,10 @@ final class AppShellTests: XCTestCase {
     @MainActor
     func testAdoptedSurfaceConsumersWireOwnedGlyphsAtPointOfUse() {
         let destinationSheet = MapDoorSheet(
-            door: .world,
+            door: .explore,
             deepLinkDestination: nil,
             model: nil,
-            openScope: {},
+            visibility: .constant(MapLayerVisibility()),
             prepareTracksHistory: {},
             onListDeleted: { _ in }
         ) { _ in
@@ -1074,7 +1171,7 @@ final class AppShellTests: XCTestCase {
             title: "Settings",
             subtitle: "preferences",
             systemImage: "gearshape",
-            accessibilityIdentifier: "world.row.settings"
+            accessibilityIdentifier: "explore.row.settings"
         )
         let placeCard = PlaceCardSheet(
             placeID: "mt1_00000000000000000000000000",
@@ -1110,7 +1207,7 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(
             descendants(
                 of: MapDoorButtonIconGlyph.self,
-                in: MapDoorButton(door: .world, action: {}).body
+                in: MapDoorButton(door: .explore, action: {}).body
             ).count,
             1
         )
@@ -1219,7 +1316,7 @@ final class AppShellTests: XCTestCase {
     func testMapDoorBarRendersAtStandardAndAX5DynamicType() {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
             let renderer = ImageRenderer(
-                content: MapDoorBar(openWorld: {}, openTracks: {})
+                content: MapDoorBar(openExplore: {}, openJournal: {})
                     .environment(\.dynamicTypeSize, dynamicTypeSize)
                     .frame(width: 390)
             )
@@ -1229,15 +1326,15 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
-    func testTracksDoorHeroIconUsesHeroRole() throws {
+    func testJournalDoorHeroIconUsesHeroRole() throws {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
-            let actual = try tracksDoorRenderedSize(
-                TracksDoorHeroIconGlyph(systemName: "figure.walk")
+            let actual = try journalDoorRenderedSize(
+                JournalDoorHeroIconGlyph(systemName: "figure.walk")
                     .font(.largeTitle),
                 dynamicTypeSize: dynamicTypeSize
             )
-            let expected = try tracksDoorRenderedSize(
-                RatifiedTracksDoorHeroIcon(systemName: "figure.walk"),
+            let expected = try journalDoorRenderedSize(
+                RatifiedJournalDoorHeroIcon(systemName: "figure.walk"),
                 dynamicTypeSize: dynamicTypeSize
             )
 
@@ -1247,14 +1344,14 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
-    func testTracksDoorNewListIconUsesInlineRole() throws {
+    func testJournalDoorNewListIconUsesInlineRole() throws {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
-            let actual = try tracksDoorRenderedSize(
-                TracksDoorNewListIcon(systemName: "plus"),
+            let actual = try journalDoorRenderedSize(
+                JournalDoorNewListIcon(systemName: "plus"),
                 dynamicTypeSize: dynamicTypeSize
             )
-            let expected = try tracksDoorRenderedSize(
-                RatifiedTracksDoorInlineIcon(systemName: "plus"),
+            let expected = try journalDoorRenderedSize(
+                RatifiedJournalDoorInlineIcon(systemName: "plus"),
                 dynamicTypeSize: dynamicTypeSize
             )
 
@@ -1264,12 +1361,12 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
-    func testTracksDoorIconsWireRatifiedRolesAtPointOfUse() throws {
+    func testJournalDoorIconsWireRatifiedRolesAtPointOfUse() throws {
         XCTAssertEqual(
             try XCTUnwrap(
                 firstDescendant(
                     of: IconRole.self,
-                    in: TracksDoorHeroIconGlyph(
+                    in: JournalDoorHeroIconGlyph(
                         systemName: "figure.walk"
                     ).body
                 )
@@ -1280,7 +1377,7 @@ final class AppShellTests: XCTestCase {
             try XCTUnwrap(
                 firstDescendant(
                     of: IconRole.self,
-                    in: TracksDoorNewListIcon(
+                    in: JournalDoorNewListIcon(
                         systemName: "plus"
                     ).body
                 )
@@ -1291,7 +1388,7 @@ final class AppShellTests: XCTestCase {
             try XCTUnwrap(
                 firstDescendant(
                     of: IconRole.self,
-                    in: TracksDoorRetraceCue().body
+                    in: JournalDoorRetraceCue().body
                 )
             ),
             .accessory
@@ -1299,14 +1396,14 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
-    func testTracksDoorRetraceCueUsesRatifiedActionRoleGapAndChevronScale() throws {
+    func testJournalDoorRetraceCueUsesRatifiedActionRoleGapAndChevronScale() throws {
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
-            let actual = try tracksDoorRenderedSize(
-                TracksDoorRetraceCue(),
+            let actual = try journalDoorRenderedSize(
+                JournalDoorRetraceCue(),
                 dynamicTypeSize: dynamicTypeSize
             )
-            let expected = try tracksDoorRenderedSize(
-                RatifiedTracksDoorRetraceCue(),
+            let expected = try journalDoorRenderedSize(
+                RatifiedJournalDoorRetraceCue(),
                 dynamicTypeSize: dynamicTypeSize
             )
 
@@ -1316,23 +1413,23 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
-    func testTracksDoorHeroTitleKeepsRatifiedEighteenPointHierarchy() throws {
+    func testJournalDoorHeroTitleKeepsRatifiedEighteenPointHierarchy() throws {
         let shortTitle = "My"
         let longTitle = "My tracks"
 
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
-            let actualDelta = try tracksDoorRenderedSize(
-                TracksDoorHeroTitle(title: shortTitle),
+            let actualDelta = try journalDoorRenderedSize(
+                JournalDoorHeroTitle(title: shortTitle),
                 dynamicTypeSize: dynamicTypeSize
-            ).width - tracksDoorRenderedSize(
-                TracksDoorHeroTitle(title: longTitle),
+            ).width - journalDoorRenderedSize(
+                JournalDoorHeroTitle(title: longTitle),
                 dynamicTypeSize: dynamicTypeSize
             ).width
-            let expectedDelta = try tracksDoorRenderedSize(
-                RatifiedTracksDoorHeroTitle(title: shortTitle),
+            let expectedDelta = try journalDoorRenderedSize(
+                RatifiedJournalDoorHeroTitle(title: shortTitle),
                 dynamicTypeSize: dynamicTypeSize
-            ).width - tracksDoorRenderedSize(
-                RatifiedTracksDoorHeroTitle(title: longTitle),
+            ).width - journalDoorRenderedSize(
+                RatifiedJournalDoorHeroTitle(title: longTitle),
                 dynamicTypeSize: dynamicTypeSize
             ).width
 
@@ -1340,36 +1437,36 @@ final class AppShellTests: XCTestCase {
         }
     }
 
-    func testAppShellModelOpensEachDoorAtItsRoot() {
+    func testAppShellModelOpensJournalAndExploreAtTheirRoots() {
         let shell = AppShellModel()
 
         XCTAssertNil(shell.presentedDoor)
         XCTAssertNil(shell.deepLinkDestination)
 
-        shell.openWorldDoor()
-        XCTAssertEqual(shell.presentedDoor, .world)
+        shell.openExploreDoor()
+        XCTAssertEqual(shell.presentedDoor, .explore)
         XCTAssertNil(shell.deepLinkDestination)
 
-        shell.openTracksDoor()
-        XCTAssertEqual(shell.presentedDoor, .tracks)
+        shell.openJournalDoor()
+        XCTAssertEqual(shell.presentedDoor, .journal)
         XCTAssertNil(shell.deepLinkDestination)
     }
 
-    func testAppShellModelRoutesOfflineMapsDeepLinkThroughWorldDoor() {
+    func testAppShellModelRoutesOfflineMapsDeepLinkThroughExploreDoor() {
         let shell = AppShellModel()
 
         shell.openOfflineMapsDeepLink()
 
-        XCTAssertEqual(shell.presentedDoor, .world)
+        XCTAssertEqual(shell.presentedDoor, .explore)
         XCTAssertEqual(shell.deepLinkDestination, .offlineMaps)
     }
 
-    func testAppShellModelRoutesListsDeepLinkThroughTracksDoor() {
+    func testAppShellModelRoutesListsDeepLinkThroughJournalDoor() {
         let shell = AppShellModel()
 
         shell.openListsDeepLink()
 
-        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertEqual(shell.presentedDoor, .journal)
         XCTAssertNil(shell.deepLinkDestination)
     }
 
@@ -1378,17 +1475,17 @@ final class AppShellTests: XCTestCase {
 
         shell.openListDetailDeepLink(listID: 42, visitFilter: .loved)
 
-        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertEqual(shell.presentedDoor, .journal)
         XCTAssertEqual(shell.deepLinkDestination, .listDetail(42))
         XCTAssertEqual(shell.listDetailVisitFilter, .loved)
     }
 
-    func testAppShellModelRoutesTracksDeepLinkThroughTracksDoor() {
+    func testAppShellModelRoutesTracksDeepLinkThroughJournalDoor() {
         let shell = AppShellModel()
 
         shell.openTracksDeepLink()
 
-        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertEqual(shell.presentedDoor, .journal)
         XCTAssertEqual(shell.deepLinkDestination, .tracks)
         XCTAssertNil(shell.tracksFocusPlaceID)
     }
@@ -1398,7 +1495,7 @@ final class AppShellTests: XCTestCase {
 
         shell.openTracksDeepLink(focusingPlaceID: "p_repeat")
 
-        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertEqual(shell.presentedDoor, .journal)
         XCTAssertEqual(shell.deepLinkDestination, .tracks)
         XCTAssertEqual(shell.tracksFocusPlaceID, "p_repeat")
     }
@@ -1411,24 +1508,24 @@ final class AppShellTests: XCTestCase {
 
         XCTAssertNil(shell.tracksFocusPlaceID)
         XCTAssertEqual(shell.listDetailVisitFilter, .all)
-        XCTAssertEqual(shell.presentedDoor, .tracks)
+        XCTAssertEqual(shell.presentedDoor, .journal)
         XCTAssertEqual(shell.deepLinkDestination, .tracks)
     }
 
-    func testAppShellModelClearsTracksFocusForDoorRootsAndOtherDeepLinks() {
+    func testAppShellModelClearsTrackFocusForJournalAndExploreRootsAndOtherDeepLinks() {
         let shell = AppShellModel()
         shell.openTracksDeepLink(focusingPlaceID: "p_repeat")
 
-        shell.openWorldDoor()
+        shell.openExploreDoor()
 
-        XCTAssertEqual(shell.presentedDoor, .world)
+        XCTAssertEqual(shell.presentedDoor, .explore)
         XCTAssertNil(shell.deepLinkDestination)
         XCTAssertNil(shell.tracksFocusPlaceID)
 
         shell.openTracksDeepLink(focusingPlaceID: "p_repeat")
         shell.openOfflineMapsDeepLink()
 
-        XCTAssertEqual(shell.presentedDoor, .world)
+        XCTAssertEqual(shell.presentedDoor, .explore)
         XCTAssertEqual(shell.deepLinkDestination, .offlineMaps)
         XCTAssertNil(shell.tracksFocusPlaceID)
     }
@@ -4608,7 +4705,7 @@ private func descendants<Descendant>(
     return matches
 }
 
-private struct RatifiedTracksDoorHeroIcon: View {
+private struct RatifiedJournalDoorHeroIcon: View {
     let systemName: String
 
     @ScaledMetric(relativeTo: .headline) private var pointSize = 22.0
@@ -4633,7 +4730,7 @@ private struct RatifiedMapDoorRowIcon: View {
     }
 }
 
-private struct RatifiedTracksDoorInlineIcon: View {
+private struct RatifiedJournalDoorInlineIcon: View {
     let systemName: String
 
     @ScaledMetric(relativeTo: .subheadline) private var pointSize = 15.0
@@ -4645,7 +4742,7 @@ private struct RatifiedTracksDoorInlineIcon: View {
     }
 }
 
-private struct RatifiedTracksDoorAccessoryIcon: View {
+private struct RatifiedJournalDoorAccessoryIcon: View {
     let systemName: String
 
     @ScaledMetric(relativeTo: .caption2) private var pointSize = 11.0
@@ -4657,12 +4754,12 @@ private struct RatifiedTracksDoorAccessoryIcon: View {
     }
 }
 
-private struct RatifiedTracksDoorRetraceCue: View {
+private struct RatifiedJournalDoorRetraceCue: View {
     /// R12 / ia-doors.html:428-431 and :753 ratify SF 13/600 type and a 3pt gap.
     var body: some View {
         HStack(spacing: 3) {
             Text("Retrace")
-            RatifiedTracksDoorAccessoryIcon(systemName: "chevron.right")
+            RatifiedJournalDoorAccessoryIcon(systemName: "chevron.right")
                 .accessibilityHidden(true)
         }
         .font(.system(.footnote, design: .default, weight: .semibold))
@@ -4670,7 +4767,7 @@ private struct RatifiedTracksDoorRetraceCue: View {
     }
 }
 
-private struct RatifiedTracksDoorHeroTitle: View {
+private struct RatifiedJournalDoorHeroTitle: View {
     let title: String
 
     var body: some View {
@@ -4714,7 +4811,7 @@ private func renderedAppGlyph<Content: View>(
 }
 
 @MainActor
-private func tracksDoorRenderedSize<Content: View>(
+private func journalDoorRenderedSize<Content: View>(
     _ content: Content,
     dynamicTypeSize: DynamicTypeSize
 ) throws -> CGSize {

@@ -481,19 +481,70 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
     }
 
-    func testMapHomeExposesBothDoorsAndScopeOpensLayers() {
+    func testMapHomeExposesBothDoorsAndExploreOpensScopeDirectly() {
         let app = launch(reset: true, pinDiagnostics: true)
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
-        XCTAssertTrue(app.buttons["map.door.world"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["map.door.tracks"].exists)
+        XCTAssertTrue(app.buttons["map.door.explore"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["map.door.journal"].exists)
         XCTAssertFalse(app.buttons["map.menu"].exists)
         XCTAssertFalse(app.buttons["map.layers"].exists)
 
-        app.buttons["map.door.world"].tap()
-        app.buttons["world.row.scope"].tap()
-        XCTAssertTrue(app.navigationBars["Layers"].waitForExistence(timeout: 5))
+        app.buttons["map.door.explore"].tap()
+        XCTAssertTrue(app.scrollViews["explore.root"].waitForExistence(timeout: 5))
+        let showHidden = app.switches["map.layers.show-hidden"]
+        let showSaved = app.switches["map.layers.show-saved"]
+        let coverageShading = app.switches["map.layers.coverage-shading"]
+        XCTAssertTrue(showHidden.exists)
+        XCTAssertTrue(showSaved.exists)
+        XCTAssertTrue(coverageShading.exists)
+        XCTAssertEqual(showHidden.value as? String, "0")
+        XCTAssertEqual(showSaved.value as? String, "1")
+        XCTAssertEqual(coverageShading.value as? String, "1")
+        XCTAssertLessThan(showHidden.frame.minY, showSaved.frame.minY)
+        XCTAssertLessThan(showSaved.frame.minY, coverageShading.frame.minY)
+        XCTAssertEqual(
+            showSaved.frame.minY - showHidden.frame.minY,
+            52,
+            accuracy: 1,
+            "The hidden Scope row must keep the measured 52pt pitch."
+        )
+        XCTAssertEqual(
+            coverageShading.frame.minY - showSaved.frame.minY,
+            52,
+            accuracy: 1,
+            "The saved Scope row must keep the measured 52pt pitch."
+        )
+        XCTAssertEqual(
+            showHidden.frame.height,
+            showSaved.frame.height,
+            accuracy: 0.5
+        )
+        XCTAssertEqual(
+            showSaved.frame.height,
+            coverageShading.frame.height,
+            accuracy: 0.5
+        )
+        XCTAssertTrue(app.buttons["map.layers.category.historic_building"].exists)
+        XCTAssertFalse(app.buttons["world.row.scope"].exists)
+        let exploreRoot = app.scrollViews["explore.root"]
+        let about = app.buttons["explore.row.about"]
+        XCTAssertTrue(about.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(
+            exploreRoot.frame.maxY - about.frame.maxY,
+            64,
+            // The root frame includes the 34pt home-indicator safe area; the
+            // content adds its deliberate 24pt bottom inset.
+            "Quiet Explore destinations must remain bottom rows in the large detent."
+        )
+        attachScreenshot(named: "explore-door-default")
+
+        app.buttons["Close"].tap()
+        XCTAssertTrue(app.buttons["map.door.journal"].waitForExistence(timeout: 5))
+        app.buttons["map.door.journal"].tap()
+        XCTAssertTrue(app.collectionViews["journal.root"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "journal-door-default")
     }
 
     func testDoorsRemainTappableAtAX5InDarkAppearance() {
@@ -505,28 +556,49 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
 
-        let worldDoor = app.buttons["map.door.world"]
-        let tracksDoor = app.buttons["map.door.tracks"]
-        XCTAssertTrue(worldDoor.waitForExistence(timeout: 5))
-        XCTAssertTrue(tracksDoor.waitForExistence(timeout: 5))
-        XCTAssertTrue(worldDoor.isHittable)
-        XCTAssertTrue(tracksDoor.isHittable)
-        XCTAssertGreaterThanOrEqual(worldDoor.frame.height, 44)
-        XCTAssertGreaterThanOrEqual(tracksDoor.frame.height, 44)
-        assertNoFrameIntersection(worldDoor, tracksDoor)
+        let exploreDoor = app.buttons["map.door.explore"]
+        let journalDoor = app.buttons["map.door.journal"]
+        XCTAssertTrue(exploreDoor.waitForExistence(timeout: 5))
+        XCTAssertTrue(journalDoor.waitForExistence(timeout: 5))
+        XCTAssertTrue(exploreDoor.isHittable)
+        XCTAssertTrue(journalDoor.isHittable)
+        XCTAssertGreaterThanOrEqual(exploreDoor.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(journalDoor.frame.height, 44)
+        assertNoFrameIntersection(exploreDoor, journalDoor)
 
-        worldDoor.tap()
-        for identifier in ["world.row.scope", "world.row.settings", "world.row.about"] {
-            let row = app.buttons[identifier]
-            XCTAssertTrue(row.waitForExistence(timeout: 5))
-            XCTAssertTrue(row.isHittable)
-            XCTAssertGreaterThanOrEqual(row.frame.height, 44)
+        exploreDoor.tap()
+        let historicBuildings = app.buttons["map.layers.category.historic_building"]
+        XCTAssertTrue(scrollToHittable(historicBuildings, in: app))
+        XCTAssertGreaterThanOrEqual(
+            historicBuildings.frame.height,
+            38,
+            "AX category chips must mount the frozen expanded visual geometry."
+        )
+        for identifier in [
+            "map.layers.show-hidden",
+            "map.layers.show-saved",
+            "map.layers.coverage-shading",
+            "explore.row.settings",
+            "explore.row.about",
+        ] {
+            let control = element(identifier: identifier, in: app)
+            XCTAssertTrue(scrollToHittable(control, in: app))
+            XCTAssertTrue(control.isHittable)
+            XCTAssertGreaterThanOrEqual(control.frame.height, 44)
+            if identifier.hasPrefix("map.layers.") {
+                XCTAssertGreaterThanOrEqual(
+                    control.frame.height,
+                    86,
+                    "AX Scope rows must mount the frozen expanded minimum height."
+                )
+            }
         }
+        attachScreenshot(named: "explore-door-ax")
         app.buttons["Close"].tap()
 
-        XCTAssertTrue(tracksDoor.waitForExistence(timeout: 5))
-        tracksDoor.tap()
-        let myTracksRow = app.buttons["tracks.row.my-tracks"]
+        XCTAssertTrue(journalDoor.waitForExistence(timeout: 5))
+        journalDoor.tap()
+        let myTracksRow = app.buttons["journal.row.my-tracks"]
         let firstListRow = app.buttons.matching(identifierPrefix: "lists.row.").firstMatch
         XCTAssertTrue(myTracksRow.waitForExistence(timeout: 5))
         XCTAssertTrue(firstListRow.waitForExistence(timeout: 5))
@@ -546,11 +618,49 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             ),
             "AX5 Retrace cue must remain inside the My tracks hero"
         )
-        XCTAssertEqual(screenshotExportNames["tracks-door-unified-ax"], "tracks-door-unified-ax")
-        attachScreenshot(named: "tracks-door-unified-ax")
+        XCTAssertEqual(screenshotExportNames["journal-door-ax"], "journal-door-ax")
+        attachScreenshot(named: "journal-door-ax")
     }
 
-    func testTracksDoorPreservesLiteralLongContentAndProgressAtAX5() {
+    func testExploreSavedVisibilityFiltersOnlySavedDiscoveryPinsAndKeepsCategoryScope() {
+        let app = launch(
+            reset: true,
+            seedUserList: true,
+            pinDiagnostics: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+        XCTAssertTrue(waitForSourceFeatureCount(2, in: app))
+
+        openScope(in: app)
+        let showSaved = "map.layers.show-saved"
+        let attractionCategory = "map.layers.category.attraction"
+        XCTAssertTrue(app.switches[showSaved].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.switches[showSaved].value as? String, "1")
+        XCTAssertEqual(app.buttons[attractionCategory].value as? String, "Selected")
+
+        tapSwitch(in: app, identifier: showSaved, expectedValue: "0")
+        XCTAssertEqual(app.buttons[attractionCategory].value as? String, "Selected")
+        app.buttons["Close"].tap()
+
+        XCTAssertTrue(
+            waitForSourceFeatureCount(1, in: app),
+            "Show saved OFF must remove exactly the saved fixture discovery pin."
+        )
+
+        openScope(in: app)
+        XCTAssertEqual(app.switches[showSaved].value as? String, "0")
+        XCTAssertEqual(app.buttons[attractionCategory].value as? String, "Selected")
+        tapSwitch(in: app, identifier: showSaved, expectedValue: "1")
+        app.buttons["Close"].tap()
+
+        XCTAssertTrue(
+            waitForSourceFeatureCount(2, in: app),
+            "Show saved ON must restore the saved fixture discovery pin."
+        )
+    }
+
+    func testJournalDoorPreservesLiteralLongContentAndProgressAtAX5() {
         let placeName =
             "[Riverside](https://example.com) **Plaques** "
             + String(repeating: "x", count: 155)
@@ -563,13 +673,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let app = launch(
             reset: true,
             accessibilityTextSize: true,
-            seedTracksDoorTextStress: true
+            seedJournalDoorTextStress: true
         )
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
 
-        let hero = app.buttons["tracks.row.my-tracks"]
+        let hero = app.buttons["journal.row.my-tracks"]
         let metadata = app.staticTexts.matching(
             NSPredicate(
                 format: "label == %@",
@@ -853,8 +963,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let app = launch(reset: true, resetOnboarding: true)
         completeOnboardingSelectingUK(in: app)
 
-        openWorldDoor(in: app)
-        app.buttons["world.row.settings"].tap()
+        openExploreDoor(in: app)
+        app.buttons["explore.row.settings"].tap()
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
         let replayOnboardingButton = app.buttons["settings.replay-onboarding"]
         XCTAssertTrue(scrollToHittable(replayOnboardingButton, in: app))
@@ -1198,7 +1308,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             failure: "Expected rendered bookmark badge pixels before deleting the containing list"
         )
 
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
         let dateNightRow = app.buttons.matching(identifierPrefix: "lists.row.").matching(
             NSPredicate(format: "label CONTAINS %@", "Date night")
         ).firstMatch
@@ -1262,8 +1372,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(listChips.label.contains("Want to go"))
         closePlaceCard(in: app)
 
-        openTracksDoor(in: app)
-        let tracksRoot = app.collectionViews["tracks.root"]
+        openJournalDoor(in: app)
+        let tracksRoot = app.collectionViews["journal.root"]
         XCTAssertTrue(tracksRoot.waitForExistence(timeout: 5))
         tracksRoot.swipeUp()
         let createList = app.buttons["lists.create"]
@@ -1273,7 +1383,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(listsError.waitForExistence(timeout: 5))
         XCTAssertEqual(listsError.label, "Enter a list name.")
 
-        let rootListName = "Tracks root proof"
+        let rootListName = "Journal root proof"
         let rootListField = app.textFields["lists.create.name"]
         rootListField.tap()
         rootListField.typeText(rootListName)
@@ -1290,7 +1400,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.collectionViews["lists.detail.surface.collection"].exists)
         app.buttons["door.destination.close"].tap()
 
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
         openListFromTracksRoot(named: "KL walk", in: app)
 
         XCTAssertTrue(app.staticTexts["lists.detail.progress"].waitForExistence(timeout: 5))
@@ -1303,8 +1413,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["map.list-mode.title"].label, "KL walk")
         XCTAssertTrue(app.buttons["map.list-mode.back"].exists)
         XCTAssertFalse(app.buttons["map.list-mode.close"].exists)
-        XCTAssertTrue(app.buttons["map.door.world"].exists)
-        XCTAssertTrue(app.buttons["map.door.tracks"].exists)
+        XCTAssertTrue(app.buttons["map.door.explore"].exists)
+        XCTAssertTrue(app.buttons["map.door.journal"].exists)
         XCTAssertTrue(waitForSourceFeatureCount(1, in: app))
         XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
 
@@ -1328,7 +1438,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         assertNoFrameIntersection(locateButton, listModeControl)
         assertNoFrameIntersection(attribution, listModeControl)
         openScope(in: app)
-        app.buttons["map.layers.done"].tap()
+        app.buttons["Close"].tap()
         attachScreenshot(named: "list-map-polished-chrome")
         freshLayerButton.tap()
         XCTAssertTrue(waitForSourceFeatureCount(0, in: app))
@@ -1341,7 +1451,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForNonExistence(of: app.staticTexts["map.list-mode.title"], timeout: 5))
     }
 
-    func testTracksDoorOpensUnifiedMyTracksVisitEditor() {
+    func testJournalDoorOpensUnifiedMyTracksVisitEditor() {
         let app = launch(reset: true, pinDiagnostics: true)
 
         let map = app.otherElements["map.surface"]
@@ -1352,9 +1462,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["place-card.visited"].tap()
         closePlaceCard(in: app)
 
-        openTracksDoor(in: app)
-        XCTAssertTrue(app.buttons["tracks.row.my-tracks"].waitForExistence(timeout: 5))
-        app.buttons["tracks.row.my-tracks"].tap()
+        openJournalDoor(in: app)
+        XCTAssertTrue(app.buttons["journal.row.my-tracks"].waitForExistence(timeout: 5))
+        app.buttons["journal.row.my-tracks"].tap()
 
         let trackDetail = app.collectionViews["lists.detail.surface.track"]
         XCTAssertTrue(trackDetail.waitForExistence(timeout: 5))
@@ -1393,8 +1503,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             hideFixtureChrome: true
         )
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openTracksDoor(in: app)
-        app.buttons["tracks.row.my-tracks"].tap()
+        openJournalDoor(in: app)
+        app.buttons["journal.row.my-tracks"].tap()
 
         let trackSurface = app.collectionViews["lists.detail.surface.track"]
         XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
@@ -1427,8 +1537,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             hideFixtureChrome: true
         )
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openTracksDoor(in: app)
-        app.buttons["tracks.row.my-tracks"].tap()
+        openJournalDoor(in: app)
+        app.buttons["journal.row.my-tracks"].tap()
 
         let trackSurface = app.collectionViews["lists.detail.surface.track"]
         XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
@@ -1468,8 +1578,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             hideFixtureChrome: true
         )
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openTracksDoor(in: app)
-        app.buttons["tracks.row.my-tracks"].tap()
+        openJournalDoor(in: app)
+        app.buttons["journal.row.my-tracks"].tap()
 
         let trackSurface = app.collectionViews["lists.detail.surface.track"]
         XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
@@ -1543,8 +1653,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             hideFixtureChrome: true
         )
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openTracksDoor(in: app)
-        app.buttons["tracks.row.my-tracks"].tap()
+        openJournalDoor(in: app)
+        app.buttons["journal.row.my-tracks"].tap()
 
         let trackSurface = app.collectionViews["lists.detail.surface.track"]
         XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
@@ -1655,8 +1765,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             hideFixtureChrome: true
         )
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openTracksDoor(in: app)
-        app.buttons["tracks.row.my-tracks"].tap()
+        openJournalDoor(in: app)
+        app.buttons["journal.row.my-tracks"].tap()
 
         let trackSurface = app.collectionViews["lists.detail.surface.track"]
         XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
@@ -1723,8 +1833,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             hideFixtureChrome: true
         )
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openTracksDoor(in: app)
-        app.buttons["tracks.row.my-tracks"].tap()
+        openJournalDoor(in: app)
+        app.buttons["journal.row.my-tracks"].tap()
         XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
 
         let back = app.buttons["lists.detail.track.back"]
@@ -1788,7 +1898,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(summary.label, "Choose the visit")
         app.buttons["lists.detail.track.back"].tap()
 
-        let hero = app.buttons["tracks.row.my-tracks"]
+        let hero = app.buttons["journal.row.my-tracks"]
         XCTAssertTrue(hero.waitForExistence(timeout: 5))
         hero.tap()
         XCTAssertTrue(summary.waitForExistence(timeout: 5))
@@ -1800,13 +1910,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["lists.detail.track.focus-message"].exists)
     }
 
-    func testTracksDoorIsTheSingleListsSurface() {
+    func testJournalDoorIsTheSingleListsSurface() {
         let app = launch(reset: true, seedUserList: true, pinDiagnostics: true)
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
 
-        let myTracks = app.buttons["tracks.row.my-tracks"]
+        let myTracks = app.buttons["journal.row.my-tracks"]
         let dateNight = app.buttons.matching(identifierPrefix: "lists.row.").matching(
             NSPredicate(format: "label CONTAINS %@", "Date night")
         ).firstMatch
@@ -1821,10 +1931,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Retrace"].exists)
         XCTAssertTrue(app.textFields["lists.create.name"].exists)
         XCTAssertTrue(app.buttons["lists.create"].exists)
-        XCTAssertFalse(app.buttons["tracks.row.lists"].exists)
+        XCTAssertFalse(app.buttons["journal.row.lists"].exists)
         XCTAssertFalse(app.navigationBars["Lists"].exists)
-        XCTAssertEqual(screenshotExportNames["tracks-door-unified"], "tracks-door-unified")
-        attachScreenshot(named: "tracks-door-unified")
+        XCTAssertEqual(screenshotExportNames["journal-door-default"], "journal-door-default")
+        attachScreenshot(named: "journal-door-default")
 
         myTracks.tap()
         XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
@@ -1839,15 +1949,15 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     func testLovedAndHiddenSurfacesManagePlaceMembership() {
         let app = launch(reset: true, seedManagedPlaces: true)
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
 
-        let myTracks = app.buttons["tracks.row.my-tracks"]
+        let myTracks = app.buttons["journal.row.my-tracks"]
         let dateNight = app.buttons.matching(identifierPrefix: "lists.row.").matching(
             NSPredicate(format: "label CONTAINS %@", "Date night")
         ).firstMatch
         let newList = app.buttons["lists.create"]
-        let loved = app.buttons["tracks.row.loved"]
-        let hidden = app.buttons["tracks.row.hidden"]
+        let loved = app.buttons["journal.row.loved"]
+        let hidden = app.buttons["journal.row.hidden"]
         XCTAssertTrue(myTracks.waitForExistence(timeout: 5))
         XCTAssertTrue(dateNight.waitForExistence(timeout: 5))
         XCTAssertEqual(
@@ -1953,8 +2063,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     func testHiddenSurfaceSaveAutoUnhidesAndKeepsPickerOpen() {
         let app = launch(reset: true, seedManagedPlaces: true)
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openTracksDoor(in: app)
-        let hidden = app.buttons["tracks.row.hidden"]
+        openJournalDoor(in: app)
+        let hidden = app.buttons["journal.row.hidden"]
         XCTAssertTrue(scrollToHittable(hidden, in: app))
         hidden.tap()
 
@@ -1995,11 +2105,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
         XCTAssertTrue(waitForSourceFeatureCount(1, in: app))
 
-        openTracksDoor(in: app)
-        let myTracks = app.buttons["tracks.row.my-tracks"]
+        openJournalDoor(in: app)
+        let myTracks = app.buttons["journal.row.my-tracks"]
         XCTAssertTrue(myTracks.waitForExistence(timeout: 5))
         XCTAssertTrue(myTracks.label.contains("2 visits"))
-        let loved = app.buttons["tracks.row.loved"]
+        let loved = app.buttons["journal.row.loved"]
         XCTAssertTrue(scrollToHittable(loved, in: app))
         loved.tap()
         XCTAssertTrue(app.buttons["door.destination.close"].waitForExistence(timeout: 5))
@@ -2013,16 +2123,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             "0",
             "The unhide proof must begin with Include hidden off."
         )
-        app.buttons["map.layers.done"].tap()
+        app.buttons["Close"].tap()
         XCTAssertTrue(waitForSourceFeatureCount(1, in: app))
 
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
         XCTAssertTrue(myTracks.waitForExistence(timeout: 5))
         XCTAssertTrue(
             myTracks.label.contains("2 visits"),
             "Hidden places must not contribute to Tracks progress"
         )
-        let hidden = app.buttons["tracks.row.hidden"]
+        let hidden = app.buttons["journal.row.hidden"]
         XCTAssertTrue(scrollToHittable(hidden, in: app))
         hidden.tap()
         let unhideOverlap = app.buttons[
@@ -2045,7 +2155,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             "Controller-routed unhide must restore discovery while Include hidden is off."
         )
 
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
         XCTAssertTrue(myTracks.waitForExistence(timeout: 5))
         XCTAssertTrue(
             myTracks.label.contains("3 visits"),
@@ -2062,10 +2172,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             seedManagedPlaces: true
         )
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
 
-        let loved = app.buttons["tracks.row.loved"]
-        let hidden = app.buttons["tracks.row.hidden"]
+        let loved = app.buttons["journal.row.loved"]
+        let hidden = app.buttons["journal.row.hidden"]
         XCTAssertTrue(scrollToHittable(loved, in: app))
         XCTAssertTrue(scrollToHittable(hidden, in: app))
         assertMinimumInteractiveTarget(loved)
@@ -2154,7 +2264,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
         XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
 
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
         openListFromTracksRoot(named: "Track pair", in: app)
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
@@ -2164,7 +2274,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "tracks-static-geometry")
     }
 
-    func testOpeningTracksDoorDismissesOpenPlaceCardBeforeReplayEntry() {
+    func testOpeningJournalDoorDismissesOpenPlaceCardBeforeReplayEntry() {
         let app = launch(reset: true, pinDiagnostics: true, seedMultiDayTrackList: true)
 
         let map = app.otherElements["map.surface"]
@@ -2175,7 +2285,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let card = app.scrollViews.matching(identifierPrefix: "place-card.instance.").firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 5))
 
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
         XCTAssertTrue(waitForNonExistence(of: card, timeout: 5), card.debugDescription)
         XCTAssertFalse(app.descendants(matching: .any).matching(identifierPrefix: "place-card.").firstMatch.exists)
 
@@ -2200,7 +2310,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(map.waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
 
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
         openListFromTracksRoot(named: "Replay week", in: app)
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
@@ -2290,7 +2400,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(map.waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapSurfaceToSettle(in: app))
 
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
         openListFromTracksRoot(named: "Replay week", in: app)
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
@@ -2342,7 +2452,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(map.waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
 
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
         openListFromTracksRoot(named: "Replay week", in: app)
 
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
@@ -2376,7 +2486,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(lovedApp.otherElements["map.surface"].waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: lovedApp))
 
-        openTracksDoor(in: lovedApp)
+        openJournalDoor(in: lovedApp)
         openListFromTracksRoot(named: "Replay week", in: lovedApp)
         XCTAssertTrue(lovedApp.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         lovedApp.buttons["lists.detail.show-map"].tap()
@@ -2411,7 +2521,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(map.waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
 
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
         openListFromTracksRoot(named: "Replay week", in: app)
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
@@ -2480,8 +2590,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openTracksDoor(in: app)
-        app.buttons["tracks.row.my-tracks"].tap()
+        openJournalDoor(in: app)
+        app.buttons["journal.row.my-tracks"].tap()
         XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
@@ -2521,8 +2631,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openTracksDoor(in: app)
-        app.buttons["tracks.row.my-tracks"].tap()
+        openJournalDoor(in: app)
+        app.buttons["journal.row.my-tracks"].tap()
         XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
@@ -2539,9 +2649,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         ))
 
         let attraction = "map.layers.category.attraction"
-        XCTAssertTrue(scrollToHittable(app.switches[attraction], in: app))
-        tapSwitch(in: app, identifier: attraction, expectedValue: "1")
-        app.buttons["map.layers.done"].tap()
+        XCTAssertTrue(scrollToHittable(app.buttons[attraction], in: app))
+        tapCategoryChip(in: app, identifier: attraction, expectedValue: "Selected")
+        app.buttons["Close"].tap()
 
         XCTAssertTrue(waitForTrackReplayCounter("Visit 2 of 2", in: app))
         XCTAssertTrue(waitForTrackReplayArrival(
@@ -2568,8 +2678,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openTracksDoor(in: app)
-        app.buttons["tracks.row.my-tracks"].tap()
+        openJournalDoor(in: app)
+        app.buttons["journal.row.my-tracks"].tap()
         XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
@@ -2580,9 +2690,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         toggleAll.tap()
 
         let other = "map.layers.category.uncategorized"
-        XCTAssertTrue(scrollToHittable(app.switches[other], in: app))
-        tapSwitch(in: app, identifier: other, expectedValue: "1")
-        app.buttons["map.layers.done"].tap()
+        XCTAssertTrue(scrollToHittable(app.buttons[other], in: app))
+        tapCategoryChip(in: app, identifier: other, expectedValue: "Selected")
+        app.buttons["Close"].tap()
 
         XCTAssertTrue(waitForTrackReplayCounter("Visit 3 of 3", in: app))
         XCTAssertTrue(waitForTrackReplayArrival(
@@ -2605,8 +2715,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let app = launch(reset: true, seedVisitsEditorVisual: true)
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openTracksDoor(in: app)
-        app.buttons["tracks.row.my-tracks"].tap()
+        openJournalDoor(in: app)
+        app.buttons["journal.row.my-tracks"].tap()
         XCTAssertTrue(app.collectionViews["lists.detail.surface.track"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
@@ -2615,7 +2725,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let toggleAll = app.buttons["map.layers.show-all-categories"]
         XCTAssertTrue(scrollToHittable(toggleAll, in: app))
         toggleAll.tap()
-        app.buttons["map.layers.done"].tap()
+        app.buttons["Close"].tap()
 
         let filter = element(identifier: "map.list-mode.filter.loved", in: app)
         XCTAssertTrue(filter.waitForExistence(timeout: 5))
@@ -2649,7 +2759,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(map.waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
 
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
         openListFromTracksRoot(named: "Track pair", in: app)
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
@@ -2673,8 +2783,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
         XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
 
-        openTracksDoor(in: app)
-        app.buttons["tracks.row.my-tracks"].tap()
+        openJournalDoor(in: app)
+        app.buttons["journal.row.my-tracks"].tap()
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
@@ -2691,7 +2801,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(map.waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapToFinishLoading(in: app))
 
-        openTracksDoor(in: app)
+        openJournalDoor(in: app)
         openListFromTracksRoot(named: "Spread walk", in: app)
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
@@ -2793,9 +2903,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         openScope(in: app)
         let historicBuildings = "map.layers.category.historic_building"
-        XCTAssertTrue(app.switches[historicBuildings].waitForExistence(timeout: 5))
-        tapSwitch(in: app, identifier: historicBuildings, expectedValue: "0")
-        app.buttons["map.layers.done"].tap()
+        XCTAssertTrue(app.buttons[historicBuildings].waitForExistence(timeout: 5))
+        tapCategoryChip(
+            in: app,
+            identifier: historicBuildings,
+            expectedValue: "Not selected"
+        )
+        app.buttons["Close"].tap()
 
         XCTAssertTrue(waitForNonExistence(
             of: app.buttons["map.pin.mt1_00000000000000000000000001"],
@@ -2805,9 +2919,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 2))
 
         openScope(in: app)
-        XCTAssertTrue(app.switches[historicBuildings].waitForExistence(timeout: 5))
-        tapSwitch(in: app, identifier: historicBuildings, expectedValue: "1")
-        app.buttons["map.layers.done"].tap()
+        XCTAssertTrue(app.buttons[historicBuildings].waitForExistence(timeout: 5))
+        tapCategoryChip(in: app, identifier: historicBuildings, expectedValue: "Selected")
+        app.buttons["Close"].tap()
         XCTAssertTrue(waitForAccessibilityPin(
             in: app,
             placeID: "mt1_00000000000000000000000001",
@@ -2832,7 +2946,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(toggleAll.label, "Hide all categories")
         toggleAll.tap()
         XCTAssertTrue(waitForButtonLabel("Show all categories", identifier: "map.layers.show-all-categories", in: app))
-        app.buttons["map.layers.done"].tap()
+        app.buttons["Close"].tap()
 
         tapFixturePin(in: map)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
@@ -2844,7 +2958,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForButtonLabel("Show all categories", identifier: "map.layers.show-all-categories", in: app))
         toggleAll.tap()
         XCTAssertTrue(waitForButtonLabel("Hide all categories", identifier: "map.layers.show-all-categories", in: app))
-        app.buttons["map.layers.done"].tap()
+        app.buttons["Close"].tap()
 
         openFixtureCard(in: map, app: app)
         closePlaceCard(in: app)
@@ -2866,7 +2980,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let showHidden = "map.layers.show-hidden"
         XCTAssertTrue(app.switches[showHidden].waitForExistence(timeout: 5))
         tapSwitch(in: app, identifier: showHidden, expectedValue: "1")
-        app.buttons["map.layers.done"].tap()
+        app.buttons["Close"].tap()
 
         openFixtureCard(in: map, app: app)
         XCTAssertTrue(app.buttons["place-card.unhide"].waitForExistence(timeout: 5))
@@ -2887,16 +3001,18 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(app.buttons["map.openstreetmap-attribution"].exists)
         XCTAssertTrue(app.staticTexts["map.openstreetmap-attribution"].waitForExistence(timeout: 5))
 
-        openWorldDoor(in: app)
-        XCTAssertTrue(app.staticTexts["World"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.buttons.matching(identifierPrefix: "world.row.").count, 3)
-        XCTAssertTrue(app.buttons["world.row.scope"].exists)
-        XCTAssertTrue(app.buttons["world.row.settings"].exists)
-        XCTAssertTrue(app.buttons["world.row.about"].exists)
-        XCTAssertFalse(app.buttons["tracks.row.lists"].exists)
-        XCTAssertFalse(app.buttons["tracks.row.my-tracks"].exists)
+        openExploreDoor(in: app)
+        XCTAssertTrue(app.staticTexts["Explore"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["explore.root"].exists)
+        XCTAssertFalse(app.buttons["world.row.scope"].exists)
+        XCTAssertTrue(app.switches["map.layers.show-hidden"].exists)
+        XCTAssertTrue(app.switches["map.layers.coverage-shading"].exists)
+        XCTAssertTrue(app.buttons["explore.row.settings"].exists)
+        XCTAssertTrue(app.buttons["explore.row.about"].exists)
+        XCTAssertFalse(app.buttons["journal.row.lists"].exists)
+        XCTAssertFalse(app.buttons["journal.row.my-tracks"].exists)
 
-        app.buttons["world.row.about"].tap()
+        app.buttons["explore.row.about"].tap()
         XCTAssertTrue(app.staticTexts["About"].waitForExistence(timeout: 5))
         let versionLabel = app.staticTexts["about.app-version"]
         XCTAssertTrue(versionLabel.waitForExistence(timeout: 5))
@@ -2911,19 +3027,19 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(element(identifier: "about.openstreetmap-copyright", in: app).waitForExistence(timeout: 5))
         app.buttons["Close"].tap()
 
-        openTracksDoor(in: app)
-        XCTAssertTrue(app.staticTexts["Tracks"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.buttons.matching(identifierPrefix: "tracks.row.").count, 3)
-        XCTAssertFalse(app.buttons["tracks.row.lists"].exists)
-        XCTAssertTrue(app.buttons["tracks.row.my-tracks"].exists)
-        XCTAssertTrue(app.buttons["tracks.row.loved"].exists)
-        XCTAssertTrue(app.buttons["tracks.row.hidden"].exists)
+        openJournalDoor(in: app)
+        XCTAssertTrue(app.staticTexts["Journal"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons.matching(identifierPrefix: "journal.row.").count, 3)
+        XCTAssertFalse(app.buttons["journal.row.lists"].exists)
+        XCTAssertTrue(app.buttons["journal.row.my-tracks"].exists)
+        XCTAssertTrue(app.buttons["journal.row.loved"].exists)
+        XCTAssertTrue(app.buttons["journal.row.hidden"].exists)
         XCTAssertTrue(app.buttons.matching(identifierPrefix: "lists.row.").firstMatch.exists)
         XCTAssertTrue(app.textFields["lists.create.name"].exists)
         XCTAssertTrue(app.buttons["lists.create"].exists)
         XCTAssertFalse(app.buttons["world.row.scope"].exists)
-        XCTAssertFalse(app.buttons["world.row.settings"].exists)
-        XCTAssertFalse(app.buttons["world.row.about"].exists)
+        XCTAssertFalse(app.buttons["explore.row.settings"].exists)
+        XCTAssertFalse(app.buttons["explore.row.about"].exists)
         app.buttons["Close"].tap()
     }
 
@@ -2949,11 +3065,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         activeDownloadApp.buttons["Close"].tap()
 
         XCTAssertTrue(activeMap.waitForExistence(timeout: 5))
-        openWorldDoor(in: activeDownloadApp)
-        XCTAssertTrue(activeDownloadApp.staticTexts["World"].waitForExistence(timeout: 5))
-        XCTAssertTrue(activeDownloadApp.buttons["world.row.scope"].exists)
-        XCTAssertTrue(activeDownloadApp.buttons["world.row.settings"].exists)
-        XCTAssertTrue(activeDownloadApp.buttons["world.row.about"].exists)
+        openExploreDoor(in: activeDownloadApp)
+        XCTAssertTrue(activeDownloadApp.staticTexts["Explore"].waitForExistence(timeout: 5))
+        XCTAssertTrue(activeDownloadApp.switches["map.layers.show-hidden"].exists)
+        XCTAssertTrue(activeDownloadApp.switches["map.layers.coverage-shading"].exists)
+        XCTAssertTrue(activeDownloadApp.buttons["explore.row.settings"].exists)
+        XCTAssertTrue(activeDownloadApp.buttons["explore.row.about"].exists)
         activeDownloadApp.buttons["Close"].tap()
     }
 
@@ -2981,8 +3098,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
-        openWorldDoor(in: app)
-        app.buttons["world.row.settings"].tap()
+        openExploreDoor(in: app)
+        app.buttons["explore.row.settings"].tap()
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["settings.theme.selected"].exists)
         XCTAssertTrue(app.buttons["settings.theme.defined-paper"].exists)
@@ -3002,8 +3119,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
 
-        openWorldDoor(in: app)
-        app.buttons["world.row.settings"].tap()
+        openExploreDoor(in: app)
+        app.buttons["explore.row.settings"].tap()
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
         let storageRow = app.buttons["settings.storage.manage"]
         XCTAssertTrue(scrollToHittable(storageRow, in: app))
@@ -3016,8 +3133,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         // This asserts structural presence under a dark launch, not dark-color legibility.
         let app = launch(reset: true, forceDarkAppearance: true)
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openWorldDoor(in: app)
-        app.buttons["world.row.settings"].tap()
+        openExploreDoor(in: app)
+        app.buttons["explore.row.settings"].tap()
         let diagnostics = app.buttons["settings.diagnostics.export"]
         XCTAssertTrue(scrollToHittable(diagnostics, in: app))
         diagnostics.tap()
@@ -3056,8 +3173,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     func testDiagnosticsAXXXLKeepsClassLabelsAndDropsSupportingBlurbs() {
         let app = launch(reset: true, accessibilityTextSize: true)
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openWorldDoor(in: app)
-        app.buttons["world.row.settings"].tap()
+        openExploreDoor(in: app)
+        app.buttons["explore.row.settings"].tap()
         let diagnostics = app.buttons["settings.diagnostics.export"]
         XCTAssertTrue(scrollToHittable(diagnostics, in: app))
         diagnostics.tap()
@@ -3115,8 +3232,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     func testDiagnosticsShareSheetDismissalKeepsPreparedArtifact() {
         let app = launch(reset: true)
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
-        openWorldDoor(in: app)
-        app.buttons["world.row.settings"].tap()
+        openExploreDoor(in: app)
+        app.buttons["explore.row.settings"].tap()
         let diagnostics = app.buttons["settings.diagnostics.export"]
         XCTAssertTrue(scrollToHittable(diagnostics, in: app))
         diagnostics.tap()
@@ -3148,17 +3265,17 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(map.waitForExistence(timeout: 10))
         XCTAssertTrue(waitForMapTheme("defined-paper", in: app))
 
-        let worldDoor = app.buttons["map.door.world"]
-        let tracksDoor = app.buttons["map.door.tracks"]
-        XCTAssertTrue(worldDoor.waitForExistence(timeout: 5))
-        XCTAssertTrue(tracksDoor.waitForExistence(timeout: 5))
-        XCTAssertGreaterThanOrEqual(worldDoor.frame.width, 44)
-        XCTAssertGreaterThanOrEqual(worldDoor.frame.height, 44)
-        XCTAssertGreaterThanOrEqual(tracksDoor.frame.width, 44)
-        XCTAssertGreaterThanOrEqual(tracksDoor.frame.height, 44)
-        XCTAssertGreaterThan(worldDoor.frame.minY, map.frame.midY)
-        XCTAssertGreaterThan(tracksDoor.frame.minY, map.frame.midY)
-        XCTAssertLessThan(worldDoor.frame.maxX, tracksDoor.frame.minX)
+        let exploreDoor = app.buttons["map.door.explore"]
+        let journalDoor = app.buttons["map.door.journal"]
+        XCTAssertTrue(exploreDoor.waitForExistence(timeout: 5))
+        XCTAssertTrue(journalDoor.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(exploreDoor.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(exploreDoor.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(journalDoor.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(journalDoor.frame.height, 44)
+        XCTAssertGreaterThan(exploreDoor.frame.minY, map.frame.midY)
+        XCTAssertGreaterThan(journalDoor.frame.minY, map.frame.midY)
+        XCTAssertLessThan(exploreDoor.frame.maxX, journalDoor.frame.minX)
         attachScreenshot(named: "map-home-chrome-defined-paper")
 
         for themeID in ["snow", "street-contrast", "verdant-kl"] {
@@ -3168,12 +3285,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         openScope(in: app)
         let historicBuildings = "map.layers.category.historic_building"
-        XCTAssertTrue(app.switches[historicBuildings].waitForExistence(timeout: 5))
-        tapSwitch(in: app, identifier: historicBuildings, expectedValue: "0")
-        app.buttons["map.layers.done"].tap()
+        XCTAssertTrue(app.buttons[historicBuildings].waitForExistence(timeout: 5))
+        tapCategoryChip(
+            in: app,
+            identifier: historicBuildings,
+            expectedValue: "Not selected"
+        )
+        app.buttons["Close"].tap()
         openScope(in: app)
-        XCTAssertTrue(waitForElementValue("0", identifier: historicBuildings, in: app))
-        app.buttons["map.layers.done"].tap()
+        XCTAssertTrue(waitForElementValue(
+            "Not selected",
+            identifier: historicBuildings,
+            in: app
+        ))
+        app.buttons["Close"].tap()
 
         selectMapTheme("snow", in: app)
 
@@ -3192,17 +3317,17 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let coverageShading = "map.layers.coverage-shading"
         XCTAssertTrue(app.switches[coverageShading].waitForExistence(timeout: 5))
         tapSwitch(in: app, identifier: coverageShading, expectedValue: "0")
-        app.buttons["map.layers.done"].tap()
+        app.buttons["Close"].tap()
 
         openScope(in: app)
         XCTAssertTrue(app.switches[coverageShading].waitForExistence(timeout: 5))
         XCTAssertTrue(waitForElementValue("0", identifier: coverageShading, in: app))
         tapSwitch(in: app, identifier: coverageShading, expectedValue: "1")
-        app.buttons["map.layers.done"].tap()
+        app.buttons["Close"].tap()
 
         openScope(in: app)
         XCTAssertTrue(waitForElementValue("1", identifier: coverageShading, in: app))
-        app.buttons["map.layers.done"].tap()
+        app.buttons["Close"].tap()
     }
 
     func testPinSizeScreenshotsAcrossThemes() {
@@ -3328,8 +3453,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             "pin-layer-size:80% circle:true icon:true bookmark:true heart:true"
         )
 
-        openWorldDoor(in: app)
-        app.buttons["world.row.settings"].tap()
+        openExploreDoor(in: app)
+        app.buttons["explore.row.settings"].tap()
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
         let slider = app.sliders["settings.pin-size"]
         XCTAssertTrue(scrollToHittable(slider, in: app))
@@ -3799,8 +3924,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
-        openWorldDoor(in: app)
-        app.buttons["world.row.about"].tap()
+        openExploreDoor(in: app)
+        app.buttons["explore.row.about"].tap()
         XCTAssertTrue(app.staticTexts["About"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Build"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Open source acknowledgements"].waitForExistence(timeout: 5))
@@ -3843,8 +3968,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10), file: file, line: line)
         let loading = app.otherElements["map.loading"]
         XCTAssertTrue(!loading.exists || loading.waitForNonExistence(timeout: 10), file: file, line: line)
-        openTracksDoor(in: app)
-        app.buttons["tracks.row.my-tracks"].tap()
+        openJournalDoor(in: app)
+        app.buttons["journal.row.my-tracks"].tap()
 
         let trackSurface = app.collectionViews["lists.detail.surface.track"]
         XCTAssertTrue(trackSurface.waitForExistence(timeout: 5), file: file, line: line)
@@ -4140,7 +4265,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         seedTrackList: Bool = false,
         seedMultiDayTrackList: Bool = false,
         seedTrackListLovedVisit: Bool = false,
-        seedTracksDoorTextStress: Bool = false,
+        seedJournalDoorTextStress: Bool = false,
         seedFocusedTracksRoute: Bool = false,
         seedManagedPlaces: Bool = false,
         coverageBBoxes: [String] = [],
@@ -4228,8 +4353,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         if seedTrackListLovedVisit {
             app.launchArguments.append("--ui-testing-seed-track-list-loved-visit")
         }
-        if seedTracksDoorTextStress {
-            app.launchArguments.append("--ui-testing-seed-tracks-door-text-stress")
+        if seedJournalDoorTextStress {
+            app.launchArguments.append("--ui-testing-seed-journal-door-text-stress")
         }
         if seedFocusedTracksRoute {
             app.launchArguments.append("--ui-testing-seed-focused-tracks-route")
@@ -4271,8 +4396,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     private func selectMapTheme(_ themeID: String, in app: XCUIApplication) {
-        openWorldDoor(in: app)
-        app.buttons["world.row.settings"].tap()
+        openExploreDoor(in: app)
+        app.buttons["explore.row.settings"].tap()
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
         let themeButton = app.buttons["settings.theme.\(themeID)"]
         XCTAssertTrue(scrollToHittable(themeButton, in: app))
@@ -4311,14 +4436,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
     }
 
-    private func openWorldDoor(in app: XCUIApplication) {
-        let door = app.buttons["map.door.world"]
+    private func openExploreDoor(in app: XCUIApplication) {
+        let door = app.buttons["map.door.explore"]
         XCTAssertTrue(door.waitForExistence(timeout: 5))
         door.tap()
     }
 
-    private func openTracksDoor(in app: XCUIApplication) {
-        let door = app.buttons["map.door.tracks"]
+    private func openJournalDoor(in app: XCUIApplication) {
+        let door = app.buttons["map.door.journal"]
         XCTAssertTrue(door.waitForExistence(timeout: 5))
         door.tap()
     }
@@ -4334,7 +4459,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(
             scrollToHittable(row, in: app),
-            "Expected \(name) on the single Tracks root",
+            "Expected \(name) on the single Journal root",
             file: file,
             line: line
         )
@@ -4342,11 +4467,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     private func openScope(in app: XCUIApplication) {
-        openWorldDoor(in: app)
-        let scope = app.buttons["world.row.scope"]
-        XCTAssertTrue(scope.waitForExistence(timeout: 5))
-        scope.tap()
-        XCTAssertTrue(app.navigationBars["Layers"].waitForExistence(timeout: 5))
+        openExploreDoor(in: app)
+        XCTAssertTrue(app.scrollViews["explore.root"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.switches["map.layers.show-hidden"].exists)
+        XCTAssertTrue(app.switches["map.layers.coverage-shading"].exists)
     }
 
     private func closePlaceCard(in app: XCUIApplication) {
@@ -4586,6 +4710,33 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let finalDescription = finalElement.exists ? finalElement.debugDescription : "missing switch"
         XCTFail(
             "Switch \(identifier) value was \(result.observed ?? "missing"), expected \(expectedValue); \(finalDescription)"
+        )
+    }
+
+    private func tapCategoryChip(
+        in app: XCUIApplication,
+        identifier: String,
+        expectedValue: String
+    ) {
+        let chip = app.buttons[identifier]
+        guard scrollToHittable(chip, in: app) else {
+            XCTFail("Category chip \(identifier) did not appear")
+            return
+        }
+
+        chip.tap()
+        let result = AXValueWaiter.wait(expected: expectedValue, timeout: 5) {
+            AXElementReadback.value(for: identifier) {
+                let current = app.buttons[$0]
+                return (exists: current.exists, value: { current.value as? String })
+            }
+        }
+        guard !result.matched else { return }
+
+        let finalElement = app.buttons[identifier]
+        let finalDescription = finalElement.exists ? finalElement.debugDescription : "missing chip"
+        XCTFail(
+            "Category chip \(identifier) value was \(result.observed ?? "missing"), expected \(expectedValue); \(finalDescription)"
         )
     }
 
@@ -4862,21 +5013,21 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let map = app.otherElements["map.surface"]
         let title = app.staticTexts["map.list-mode.title"]
         let back = app.buttons["map.list-mode.back"]
-        let worldDoor = app.buttons["map.door.world"]
-        let tracksDoor = app.buttons["map.door.tracks"]
+        let exploreDoor = app.buttons["map.door.explore"]
+        let journalDoor = app.buttons["map.door.journal"]
         XCTAssertTrue(map.exists, "map.surface missing before list-map chrome placement assertion", file: file, line: line)
         XCTAssertTrue(filter.exists, file: file, line: line)
         XCTAssertTrue(title.exists, file: file, line: line)
         XCTAssertTrue(back.exists, file: file, line: line)
-        XCTAssertTrue(worldDoor.exists, file: file, line: line)
-        XCTAssertTrue(tracksDoor.exists, file: file, line: line)
+        XCTAssertTrue(exploreDoor.exists, file: file, line: line)
+        XCTAssertTrue(journalDoor.exists, file: file, line: line)
         XCTAssertLessThan(filter.frame.midX, map.frame.midX, file: file, line: line)
-        XCTAssertGreaterThan(worldDoor.frame.minY, filter.frame.maxY, file: file, line: line)
-        XCTAssertGreaterThan(tracksDoor.frame.minY, filter.frame.maxY, file: file, line: line)
+        XCTAssertGreaterThan(exploreDoor.frame.minY, filter.frame.maxY, file: file, line: line)
+        XCTAssertGreaterThan(journalDoor.frame.minY, filter.frame.maxY, file: file, line: line)
         assertNoFrameIntersection(filter, title, file: file, line: line)
         assertNoFrameIntersection(filter, back, file: file, line: line)
-        assertNoFrameIntersection(filter, worldDoor, file: file, line: line)
-        assertNoFrameIntersection(filter, tracksDoor, file: file, line: line)
+        assertNoFrameIntersection(filter, exploreDoor, file: file, line: line)
+        assertNoFrameIntersection(filter, journalDoor, file: file, line: line)
     }
 
     private func waitForProjectedFixturePinCount(_ count: Int, in app: XCUIApplication) -> Bool {
@@ -5319,8 +5470,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "credits-a11y": "credits-a11y",
         "diagnostics-preprepare-exclusions-dark": "diagnostics-preprepare-exclusions-dark",
         "tracks-static-geometry": "tracks-static-geometry",
-        "tracks-door-unified": "tracks-door-unified",
-        "tracks-door-unified-ax": "tracks-door-unified-ax",
+        "explore-door-default": "explore-door-default",
+        "explore-door-ax": "explore-door-ax",
+        "journal-door-default": "journal-door-default",
+        "journal-door-ax": "journal-door-ax",
         "loved-hidden-door": "loved-hidden-door",
         "loved-places": "loved-places",
         "hidden-places": "hidden-places",

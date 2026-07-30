@@ -423,7 +423,11 @@ final class PinLayersTests: XCTestCase {
             (hiddenArtwork, PinState(saved: false, visit: .none, hidden: true)),
         ]
 
-        let sourceFeatures = PinFeatureFilter.discoveryFeatures(features, showHidden: true)
+        let sourceFeatures = PinFeatureFilter.discoveryFeatures(
+            features,
+            showHidden: true,
+            showSaved: true
+        )
         XCTAssertEqual(sourceFeatures.map(\.0.id), ["visible-museum", "hidden-museum", "hidden-artwork"])
 
         let museumFilter = PinLayers.categoryVisibilityFilter(visibleCategories: ["museum"])!

@@ -11,11 +11,12 @@ struct MapLayerCategory: Identifiable, Equatable, Sendable {
 struct MapLayerVisibility: Equatable, Sendable {
     let categories: [MapLayerCategory]
     var showHiddenPlaces: Bool
+    var showSavedPlaces: Bool
     var showCoverageShading: Bool
     private(set) var visibleCategories: Set<String>?
 
     var isDefault: Bool {
-        !showHiddenPlaces && visibleCategories == nil
+        !showHiddenPlaces && showSavedPlaces && visibleCategories == nil
     }
 
     var toggleAllCategoriesTitle: String {
@@ -30,17 +31,27 @@ struct MapLayerVisibility: Equatable, Sendable {
     init(
         categories: [MapLayerCategory] = MapLayerVisibility.defaultCategories,
         showHiddenPlaces: Bool = false,
+        showSavedPlaces: Bool = true,
         showCoverageShading: Bool = true,
         visibleCategories: Set<String>? = nil
     ) {
         self.categories = categories
         self.showHiddenPlaces = showHiddenPlaces
+        self.showSavedPlaces = showSavedPlaces
         self.showCoverageShading = showCoverageShading
         self.visibleCategories = visibleCategories
     }
 
     func isCategoryVisible(_ categoryID: String) -> Bool {
         visibleCategories?.contains(categoryID) ?? true
+    }
+
+    func requiresDiscoveryFeatureRefresh(
+        appliedShowHiddenPlaces: Bool,
+        appliedShowSavedPlaces: Bool
+    ) -> Bool {
+        showHiddenPlaces != appliedShowHiddenPlaces
+            || showSavedPlaces != appliedShowSavedPlaces
     }
 
     mutating func setCategory(_ categoryID: String, visible: Bool) {
@@ -98,6 +109,7 @@ enum ListMapLayerVisibility {
         return MapLayerVisibility(
             categories: discoveryVisibility.categories,
             showHiddenPlaces: discoveryVisibility.showHiddenPlaces,
+            showSavedPlaces: discoveryVisibility.showSavedPlaces,
             showCoverageShading: discoveryVisibility.showCoverageShading,
             visibleCategories: visitFilter.categories
         )

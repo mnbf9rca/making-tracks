@@ -12,7 +12,11 @@ final class PinFeatureFilterTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: false).map(\.0.id),
+            PinFeatureFilter.discoveryFeatures(
+                features,
+                showHidden: false,
+                showSaved: true
+            ).map(\.0.id),
             ["t1", "t2", "t3", "t4"]
         )
     }
@@ -26,7 +30,11 @@ final class PinFeatureFilterTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: false).map(\.0.id),
+            PinFeatureFilter.discoveryFeatures(
+                features,
+                showHidden: false,
+                showSaved: true
+            ).map(\.0.id),
             ["visible-t4"]
         )
     }
@@ -42,7 +50,11 @@ final class PinFeatureFilterTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: true).map(\.0.id),
+            PinFeatureFilter.discoveryFeatures(
+                features,
+                showHidden: true,
+                showSaved: true
+            ).map(\.0.id),
             ["hidden-t2", "hidden-t4", "visible-t4"]
         )
     }
@@ -70,12 +82,66 @@ final class PinFeatureFilterTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: false).map(\.0.id),
+            PinFeatureFilter.discoveryFeatures(
+                features,
+                showHidden: false,
+                showSaved: true
+            ).map(\.0.id),
             ["visible"]
         )
         XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: true).map(\.0.id),
+            PinFeatureFilter.discoveryFeatures(
+                features,
+                showHidden: true,
+                showSaved: true
+            ).map(\.0.id),
             ["visible", "hidden"]
+        )
+    }
+
+    func testSavedPinsAreExcludedOnlyWhenShowSavedIsDisabled() {
+        let unsavedAttraction = MapPlace(
+            id: "unsaved-attraction",
+            lat: 51.5,
+            lon: -0.12,
+            tier: 1,
+            category: "attraction"
+        )
+        let savedMuseum = MapPlace(
+            id: "saved-museum",
+            lat: 51.6,
+            lon: -0.11,
+            tier: 2,
+            category: "museum"
+        )
+        let hiddenMuseum = MapPlace(
+            id: "hidden-museum",
+            lat: 51.7,
+            lon: -0.10,
+            tier: 2,
+            category: "museum"
+        )
+        let features = [
+            (unsavedAttraction, PinState(saved: false, visit: .none, hidden: false)),
+            (savedMuseum, PinState(saved: true, visit: .none, hidden: false)),
+            (hiddenMuseum, PinState(saved: false, visit: .none, hidden: true)),
+        ]
+
+        XCTAssertEqual(
+            PinFeatureFilter.discoveryFeatures(
+                features,
+                showHidden: false,
+                showSaved: true
+            ).map(\.0.id),
+            ["unsaved-attraction", "saved-museum"]
+        )
+        XCTAssertEqual(
+            PinFeatureFilter.discoveryFeatures(
+                features,
+                showHidden: false,
+                showSaved: false
+            ).map(\.0.id),
+            ["unsaved-attraction"]
         )
     }
 
@@ -92,11 +158,19 @@ final class PinFeatureFilterTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: false).map(\.0.id),
+            PinFeatureFilter.discoveryFeatures(
+                features,
+                showHidden: false,
+                showSaved: true
+            ).map(\.0.id),
             ["attraction", "museum", "future"]
         )
         XCTAssertEqual(
-            PinFeatureFilter.discoveryFeatures(features, showHidden: true).map(\.0.id),
+            PinFeatureFilter.discoveryFeatures(
+                features,
+                showHidden: true,
+                showSaved: true
+            ).map(\.0.id),
             ["attraction", "hidden-museum", "museum", "future"]
         )
     }
