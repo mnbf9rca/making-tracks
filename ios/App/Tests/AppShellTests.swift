@@ -1,10 +1,11 @@
 @testable import DesignSystem
 import Foundation
+import GRDB
 import SwiftUI
 import UIKit
 import XCTest
 import MakingTracksCore
-import MakingTracksData
+@testable import MakingTracksData
 import MakingTracksMapStyle
 @testable import MakingTracksTiles
 @testable import MakingTracks
@@ -77,7 +78,6 @@ final class AppShellTests: XCTestCase {
             warningStyle
         )
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .unsee(isEnabled: false)), .quiet)
-        XCTAssertEqual(PlaceCardActionAppearance.style(for: .seenDisabled), .quiet)
         XCTAssertEqual(PlaceCardActionAppearance.style(for: .unhide), .quiet)
         XCTAssertTrue(
             PlaceCardActionAppearance.usesQuietTextPressInset(for: .hide)
@@ -88,11 +88,6 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(
             PlaceCardActionAppearance.usesQuietTextPressInset(
                 for: .unsee(isEnabled: false)
-            )
-        )
-        XCTAssertFalse(
-            PlaceCardActionAppearance.usesQuietTextPressInset(
-                for: .seenDisabled
             )
         )
         XCTAssertEqual(
@@ -124,17 +119,20 @@ final class AppShellTests: XCTestCase {
             0.98
         )
 
-        let actionSets: [[PlaceCardAction]] = [
-            [.save, .seen, .hide],
-            [.save, .love, .unsee(isEnabled: true)],
-            [.save, .unlove, .unsee(isEnabled: false)],
-            [.save, .seenDisabled, .unhide],
-        ]
-        for actions in actionSets {
-            XCTAssertLessThanOrEqual(
-                actions.filter { PlaceCardActionAppearance.style(for: $0) == .filled }.count,
-                1
-            )
+        for saved in [false, true] {
+            for visit in [VisitState.none, .visited, .loved] {
+                for hidden in [false, true] {
+                    let state = PinState(saved: saved, visit: visit, hidden: hidden)
+                    let actions = PlaceCardActionSlots(pinState: state).actions
+                    XCTAssertLessThanOrEqual(
+                        actions.filter {
+                            PlaceCardActionAppearance.style(for: $0) == .filled
+                        }.count,
+                        1,
+                        "\(state)"
+                    )
+                }
+            }
         }
     }
 
@@ -149,7 +147,6 @@ final class AppShellTests: XCTestCase {
             (.hide, .textInset(points: 1)),
             (.unhide, .textInset(points: 1)),
             (.unsee(isEnabled: false), .symbolWeightPulse),
-            (.seenDisabled, .symbolWeightPulse),
         ]
 
         for testCase in cases {
@@ -501,7 +498,8 @@ final class AppShellTests: XCTestCase {
         )
         XCTAssertEqual(loved.surfaceIdentifier, "tracks.loved.surface")
         XCTAssertEqual(loved.rowIdentifierPrefix, "tracks.loved.row")
-        XCTAssertEqual(loved.actionIdentifierPrefix, "tracks.loved.remove")
+        XCTAssertEqual(loved.primaryActionIdentifierPrefix, "tracks.loved.remove")
+        XCTAssertNil(loved.secondaryActionIdentifierPrefix)
         XCTAssertEqual(loved.failureMessage, "Could not update that loved place.")
         XCTAssertEqual(
             ManagedPlacesMode.loved.actionAccessibilityLabel(placeName: "Alpha Arch"),
@@ -518,7 +516,16 @@ final class AppShellTests: XCTestCase {
         )
         XCTAssertEqual(hidden.surfaceIdentifier, "tracks.hidden.surface")
         XCTAssertEqual(hidden.rowIdentifierPrefix, "tracks.hidden.row")
-        XCTAssertEqual(hidden.actionIdentifierPrefix, "tracks.hidden.unhide")
+        XCTAssertEqual(hidden.primaryActionIdentifierPrefix, "tracks.hidden.unhide")
+        XCTAssertEqual(hidden.secondaryActionIdentifierPrefix, "tracks.hidden.save")
+        XCTAssertEqual(
+            hidden.primaryActionIdentifier(placeID: "hidden"),
+            "tracks.hidden.unhide.hidden"
+        )
+        XCTAssertEqual(
+            hidden.secondaryActionIdentifier(placeID: "hidden"),
+            "tracks.hidden.save.hidden"
+        )
         XCTAssertEqual(hidden.failureMessage, "Could not unhide that place.")
         XCTAssertEqual(
             ManagedPlacesMode.hidden.actionAccessibilityLabel(placeName: "Beta Plaque"),
@@ -585,6 +592,96 @@ final class AppShellTests: XCTestCase {
             "Could not update that loved place.",
             "A later concurrent success must not erase another row's real failure."
         )
+    }
+
+    func testManagedPlacesStateRemovesHiddenRowAfterSaveAddition() {
+        let hidden = ListPlace(
+            placeID: "hidden",
+            name: "Hidden",
+            category: "memorial",
+            pinState: PinState(saved: false, visit: .none, hidden: true)
+        )
+        var state = ManagedPlacesState(places: [hidden])
+
+        state.removePlace(placeID: hidden.placeID)
+
+        XCTAssertTrue(state.places.isEmpty)
+    }
+
+    func testListPickerMembershipChangeMapsPriorMembershipToCompletedDirection() {
+        XCTAssertEqual(
+            ListPickerMembershipChange.completed(wasMember: false, listID: 7),
+            .added(listID: 7)
+        )
+        XCTAssertEqual(
+            ListPickerMembershipChange.completed(wasMember: true, listID: 7),
+            .removed(listID: 7)
+        )
+    }
+
+    func testListPickerMembershipStateSerializesTogglesUntilReloadCompletes() {
+        var state = ListPickerMembershipState(memberships: [7])
+
+        XCTAssertEqual(state.beginToggle(listID: 7), .removed(listID: 7))
+        XCTAssertTrue(state.isUpdating)
+        XCTAssertNil(state.beginToggle(listID: 8))
+
+        state.replaceMemberships([])
+        state.finishMutation()
+
+        XCTAssertFalse(state.isUpdating)
+        XCTAssertEqual(state.beginToggle(listID: 7), .added(listID: 7))
+    }
+
+    @MainActor
+    func testListPickerInitialReloadBlocksTogglesUntilCompleteSnapshotPublishes() async {
+        var state = ListPickerMembershipState()
+        var publishedSnapshot: ListPickerSnapshot?
+        let (releaseLoad, releaseLoadContinuation) = AsyncStream<Void>.makeStream()
+
+        let reload = Task { @MainActor in
+            await ListPickerReloadCoordinator.perform {
+                state.beginMutation()
+            } finish: {
+                state.finishMutation()
+            } load: {
+                for await _ in releaseLoad {
+                    break
+                }
+                return ListPickerSnapshot(
+                    lists: [
+                        PlaceList(
+                            id: 7,
+                            name: "Trip",
+                            isSystem: false,
+                            createdAt: Date(timeIntervalSince1970: 0)
+                        )
+                    ],
+                    memberships: [7]
+                )
+            } apply: { snapshot in
+                publishedSnapshot = snapshot
+                state.replaceMemberships(snapshot.memberships)
+            }
+        }
+
+        var attempts = 0
+        while !state.isUpdating, attempts < 100 {
+            attempts += 1
+            await Task.yield()
+        }
+        XCTAssertTrue(state.isUpdating)
+        XCTAssertNil(publishedSnapshot)
+        XCTAssertNil(state.beginToggle(listID: 7))
+
+        releaseLoadContinuation.yield()
+        releaseLoadContinuation.finish()
+        await reload.value
+
+        XCTAssertEqual(publishedSnapshot?.lists.map(\.id), [7])
+        XCTAssertEqual(publishedSnapshot?.memberships, [7])
+        XCTAssertFalse(state.isUpdating)
+        XCTAssertEqual(state.beginToggle(listID: 7), .removed(listID: 7))
     }
 
     func testLovedManagedPlaceMetadataNamesHiddenOverlapWithoutFilteringIt() {
@@ -734,6 +831,124 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(state.places, [missing])
         XCTAssertTrue(state.pendingPlaceIDs.isEmpty)
         XCTAssertEqual(state.errorMessage, "Could not unhide that place.")
+    }
+
+    @MainActor
+    func testAddingHiddenPlaceToListMirrorsAutoUnhideAndMarksOneRefresh() async throws {
+        let database = try AppDatabase.inMemory()
+        let place = try PlaceRef(
+            placeID: "hidden-save",
+            name: "Hidden save",
+            lat: 51.5,
+            lon: -0.1,
+            category: "memorial",
+            tier: 2,
+            schemaVersion: 1,
+            fetchedAt: Date(timeIntervalSince1970: 1),
+            rawJSON: "{}"
+        )
+        try database.setHidden(place, true)
+        let model = try MapScreenModel(database: database, fixturePlaces: [place])
+
+        try await model.addToList(placeID: place.placeID, listID: database.wantToGoListID())
+
+        XCTAssertFalse(model.hiddenIDs.contains(place.placeID))
+        XCTAssertTrue(model.consumeHiddenMembershipChange(overlapping: [place.placeID]))
+        XCTAssertFalse(model.consumeHiddenMembershipChange(overlapping: [place.placeID]))
+    }
+
+    @MainActor
+    func testAddingOversizedSnapshotOnlyHiddenPlaceToListUsesActionSafeSource() async throws {
+        let database = try AppDatabase.inMemory()
+        let snapshotOnlyPlace = try PlaceRef(
+            placeID: "snapshot-only-hidden-save",
+            name: "Snapshot-only hidden save",
+            lat: 51.5,
+            lon: -0.1,
+            category: "memorial",
+            tier: 2,
+            schemaVersion: 1,
+            fetchedAt: Date(timeIntervalSince1970: 1),
+            rawJSON: "{}"
+        )
+        let unrelatedFixture = try PlaceRef(
+            placeID: "fixture",
+            name: "Fixture",
+            lat: 51.6,
+            lon: -0.2,
+            category: "museum",
+            tier: 2,
+            schemaVersion: 1,
+            fetchedAt: Date(timeIntervalSince1970: 1),
+            rawJSON: "{}"
+        )
+        try database.setHidden(snapshotOnlyPlace, true)
+        let originalSnapshot = try XCTUnwrap(
+            database.snapshot(for: snapshotOnlyPlace.placeID)
+        )
+        let oversizedSnapshot = PlaceSnapshot(
+            placeID: originalSnapshot.placeID,
+            name: originalSnapshot.name,
+            lat: originalSnapshot.lat,
+            lon: originalSnapshot.lon,
+            category: originalSnapshot.category,
+            tier: originalSnapshot.tier,
+            snapshotJSON: String(repeating: "x", count: PlaceRef.maxRawJSONBytes + 1),
+            snapshotSchemaVersion: originalSnapshot.snapshotSchemaVersion,
+            fetchedAt: originalSnapshot.fetchedAt
+        )
+        try await database.dbQueue.write { database in
+            try oversizedSnapshot.update(database)
+        }
+        let model = try MapScreenModel(
+            database: database,
+            fixturePlaces: [unrelatedFixture]
+        )
+        let wantToGoListID = try database.wantToGoListID()
+
+        try await model.addToList(
+            placeID: snapshotOnlyPlace.placeID,
+            listID: wantToGoListID
+        )
+
+        XCTAssertEqual(
+            try database.listMemberships(containing: snapshotOnlyPlace.placeID),
+            [wantToGoListID]
+        )
+        XCTAssertFalse(try database.hiddenPlaceIDs().contains(snapshotOnlyPlace.placeID))
+        XCTAssertFalse(model.hiddenIDs.contains(snapshotOnlyPlace.placeID))
+    }
+
+    @MainActor
+    func testFailedSaveRollsBackOptimisticAutoUnhide() async throws {
+        let database = try AppDatabase.inMemory()
+        let place = try PlaceRef(
+            placeID: "hidden-save-failure",
+            name: "Hidden save failure",
+            lat: 51.5,
+            lon: -0.1,
+            category: "memorial",
+            tier: 2,
+            schemaVersion: 1,
+            fetchedAt: Date(timeIntervalSince1970: 1),
+            rawJSON: "{}"
+        )
+        try database.setHidden(place, true)
+        let model = try MapScreenModel(database: database, fixturePlaces: [place])
+        let lists = await model.lists()
+        let trackListID = try XCTUnwrap(
+            lists.first { $0.isSystem && $0.kind == PlaceList.trackKind }?.id
+        )
+
+        do {
+            try await model.addToList(placeID: place.placeID, listID: trackListID)
+            XCTFail("Expected protected track-list write to fail")
+        } catch {
+            XCTAssertEqual(error as? AppDatabaseError, .systemListIsProtected)
+        }
+
+        XCTAssertTrue(model.hiddenIDs.contains(place.placeID))
+        XCTAssertFalse(model.consumeHiddenMembershipChange(overlapping: [place.placeID]))
     }
 
     func testQuietChromeUsesTokenSurfacesAndBareAttribution() {

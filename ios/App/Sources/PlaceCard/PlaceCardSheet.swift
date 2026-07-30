@@ -64,7 +64,7 @@ enum PlaceCardActionAppearance {
             .semantic(foreground: .love, background: .loveContainer)
         case .unsee(isEnabled: true):
             .semantic(foreground: .warning, background: .warningContainer)
-        case .hide, .unsee(isEnabled: false), .seenDisabled, .unhide:
+        case .hide, .unsee(isEnabled: false), .unhide:
             .quiet
         }
     }
@@ -87,7 +87,7 @@ enum PlaceCardActionAppearance {
         switch action {
         case .hide, .unhide:
             true
-        case .save, .seen, .love, .unlove, .unsee, .seenDisabled:
+        case .save, .seen, .love, .unlove, .unsee:
             false
         }
     }
@@ -289,7 +289,7 @@ struct PlaceCardSheet: View {
             ListPickerView(
                 placeID: placeID,
                 model: model,
-                onChanged: {
+                onChanged: { _ in
                     Task { await refreshCard() }
                 }
             )
@@ -530,14 +530,6 @@ struct PlaceCardSheet: View {
             .accessibilityIdentifier("place-card.unsee")
             .accessibilityValue("Seen")
             .disabled(!isEnabled)
-        case .seenDisabled:
-            Button {} label: {
-                actionLabel(action)
-            }
-            .modifier(PlaceCardActionStyleModifier(action: action, theme: theme))
-            .accessibilityIdentifier("place-card.visited")
-            .accessibilityValue("Hidden")
-            .disabled(true)
         case .unhide:
             unhideButton()
         }

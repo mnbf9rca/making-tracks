@@ -196,8 +196,8 @@ First mounted instance to verify against: T1.7's location-off Settings gear.
 
 - **Serves:** #517 (Rob) · **Review tier:** `sourcery` + `opus` · **Depends on:** none
 - **Greptile slot recommended** — see *budget note*
-- **Owner:** unclaimed
-- **Status:** unclaimed
+- **Owner:** codex2
+- **Status:** tests green
 - **Branch:** `wp-517-saved-hidden-exclusivity` — cut from a freshly-fetched `ios` *(already cut)*
 
 **Builder brief.** Four parts, and the third is a data migration:
@@ -214,6 +214,25 @@ First mounted instance to verify against: T1.7's location-off Settings gear.
 
 Seen-marking stays on the card. A migration here is in scope **because Rob ruled it**; that is the
 only reason a migration is ever in scope.
+
+**Enforcement mechanics ruled by Rob, 2026-07-27 — build these exact shapes:**
+
+1. **Typed rejection:** add `savedPlaceCannotBeHidden`; do not silently no-op. *"The UI not offering
+   the path is a presentation fact; the database enforcing it is a contract. Silent no-ops are how
+   state machines rot — a future UI bug should fail a test loudly, not leave a user wondering why
+   nothing happened."* Saved-and-hidden mutual exclusivity is the invariant enforced from the
+   database up.
+2. **Four card slots are accepted:** the full unsaved Seen/Loved grammar is three state controls
+   plus one rightmost quiet Hide verb. *"Four controls in two categories is legible where four peer
+   buttons wouldn't be."* The existing accessibility HStack-to-VStack reflow owns the size axis.
+3. **Hidden rows use tonal Unhide plus quiet Save:** affordance weight follows frequency of intent;
+   Unhide is the common action and Save-from-hidden is the rarer deliberate act.
+4. **The picker stays open until Done:** it is a multi-assignment editing surface. Dismissing after
+   the first selection would force re-entry for every additional list.
+
+The complete approved mechanics, transaction boundaries, migration preservation contract, action
+matrix and test strategy live in
+[`2026-07-27-saved-hidden-exclusivity-design.md`](../../specs/2026-07-27-saved-hidden-exclusivity-design.md).
 
 ---
 

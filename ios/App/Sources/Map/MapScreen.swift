@@ -7711,13 +7711,75 @@ private struct CreditEntryView: View {
     }
 }
 
+enum ListPickerMembershipChange: Equatable {
+    case added(listID: Int64)
+    case removed(listID: Int64)
+
+    static func completed(wasMember: Bool, listID: Int64) -> Self {
+        wasMember ? .removed(listID: listID) : .added(listID: listID)
+    }
+}
+
+struct ListPickerMembershipState: Equatable {
+    private(set) var memberships: Set<Int64>
+    private(set) var isUpdating = false
+
+    init(memberships: Set<Int64> = []) {
+        self.memberships = memberships
+    }
+
+    func contains(_ listID: Int64) -> Bool {
+        memberships.contains(listID)
+    }
+
+    mutating func beginToggle(listID: Int64) -> ListPickerMembershipChange? {
+        guard beginMutation() else { return nil }
+        return .completed(wasMember: memberships.contains(listID), listID: listID)
+    }
+
+    mutating func beginMutation() -> Bool {
+        guard !isUpdating else { return false }
+        isUpdating = true
+        return true
+    }
+
+    mutating func replaceMemberships(_ memberships: Set<Int64>) {
+        self.memberships = memberships
+    }
+
+    mutating func finishMutation() {
+        isUpdating = false
+    }
+}
+
+struct ListPickerSnapshot {
+    let lists: [PlaceList]
+    let memberships: Set<Int64>
+}
+
+@MainActor
+enum ListPickerReloadCoordinator {
+    static func perform(
+        begin: () -> Bool,
+        finish: () -> Void,
+        load: () async -> ListPickerSnapshot,
+        apply: (ListPickerSnapshot) -> Void
+    ) async {
+        // An overlapping mutation owns freshness; callers must not treat this
+        // Void return as proof that a new snapshot was published.
+        guard begin() else { return }
+        defer { finish() }
+        apply(await load())
+    }
+}
+
 struct ListPickerView: View {
     let placeID: String
     let model: MapScreenModel?
-    let onChanged: @MainActor () -> Void
+    let onChanged: @MainActor (ListPickerMembershipChange) -> Void
 
     @State private var lists: [PlaceList] = []
-    @State private var memberships: Set<Int64> = []
+    @State private var membershipState = ListPickerMembershipState()
     @State private var newListName = ""
     @State private var actionError: String?
     @Environment(\.dismiss) private var dismiss
@@ -7737,6 +7799,7 @@ struct ListPickerView: View {
                         }
                         .accessibilityLabel("Create list and add place")
                         .accessibilityIdentifier("list-picker.create")
+                        .disabled(membershipState.isUpdating)
                     }
                     if let actionError {
                         Text(verbatim: actionError)
@@ -7754,13 +7817,14 @@ struct ListPickerView: View {
                             HStack {
                                 Text(verbatim: list.name)
                                 Spacer()
-                                if let id = list.id, memberships.contains(id) {
+                                if let id = list.id, membershipState.contains(id) {
                                     Image(systemName: "checkmark")
                                         .accessibilityLabel("In list")
                                 }
                             }
                         }
                         .accessibilityIdentifier("list-picker.row.\(list.id ?? -1)")
+                        .disabled(list.id == nil || membershipState.isUpdating)
                     }
                 }
             }
@@ -7768,6 +7832,7 @@ struct ListPickerView: View {
             .toolbar {
                 Button("Done") { dismiss() }
                     .accessibilityIdentifier("list-picker.done")
+                    .disabled(membershipState.isUpdating)
             }
             .task { await reload() }
         }
@@ -7776,23 +7841,50 @@ struct ListPickerView: View {
     @MainActor
     private func reload() async {
         guard let model else { return }
+        await ListPickerReloadCoordinator.perform {
+            membershipState.beginMutation()
+        } finish: {
+            membershipState.finishMutation()
+        } load: {
+            await loadSnapshot(using: model)
+        } apply: { snapshot in
+            applySnapshot(snapshot)
+        }
+    }
+
+    @MainActor
+    private func loadSnapshot(using model: MapScreenModel) async -> ListPickerSnapshot {
         let nextLists = await model.lists()
-        lists = nextLists
-        memberships = Set(await model.listMemberships(containing: placeID))
+        let nextMemberships = Set(
+            await model.listMemberships(containing: placeID)
+        )
+        return ListPickerSnapshot(lists: nextLists, memberships: nextMemberships)
+    }
+
+    @MainActor
+    private func applySnapshot(_ snapshot: ListPickerSnapshot) {
+        lists = snapshot.lists
+        membershipState.replaceMemberships(snapshot.memberships)
     }
 
     @MainActor
     private func toggle(_ list: PlaceList) async {
-        guard let id = list.id, let model else { return }
+        guard
+            let id = list.id,
+            let model,
+            let change = membershipState.beginToggle(listID: id)
+        else { return }
+        defer { membershipState.finishMutation() }
         do {
-            if memberships.contains(id) {
+            switch change {
+            case .removed:
                 try await model.removeFromList(placeID: placeID, listID: id)
-            } else {
+            case .added:
                 try await model.addToList(placeID: placeID, listID: id)
             }
             actionError = nil
-            await reload()
-            onChanged()
+            applySnapshot(await loadSnapshot(using: model))
+            onChanged(change)
         } catch {
             actionError = "Could not update that list."
         }
@@ -7800,7 +7892,8 @@ struct ListPickerView: View {
 
     @MainActor
     private func createAndAdd() async {
-        guard let model else { return }
+        guard let model, membershipState.beginMutation() else { return }
+        defer { membershipState.finishMutation() }
         actionError = nil
         let trimmedName = newListName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
@@ -7813,8 +7906,8 @@ struct ListPickerView: View {
             try await model.addToList(placeID: placeID, listID: id)
             newListName = ""
             actionError = nil
-            await reload()
-            onChanged()
+            applySnapshot(await loadSnapshot(using: model))
+            onChanged(.added(listID: id))
         } catch {
             actionError = ListsCopy.listNameCreateFailureMessage(for: error, draftName: trimmedName)
         }
@@ -9059,8 +9152,20 @@ final class MapScreenModel {
     }
 
     func addToList(placeID: String, listID: Int64) async throws {
-        guard let placeRef = await actionPlaceRef(for: placeID) else { throw MapScreenActionError.placeUnavailable }
-        try coreLoop.addToList(placeRef, listID: listID)
+        guard let placeRef = await actionPlaceRef(for: placeID) else {
+            throw MapScreenActionError.placeUnavailable
+        }
+        let rollback = hiddenTracker.hiddenIDs.contains(placeID)
+            ? hiddenTracker.beginSetHidden(placeID: placeID, hidden: false)
+            : nil
+        do {
+            try coreLoop.addToList(placeRef, listID: listID)
+        } catch {
+            if let rollback {
+                hiddenTracker.rollback(rollback)
+            }
+            throw error
+        }
         MakingTracksLog.flowEvent("verdict changed", fields: placeFields(placeRef) + [
             .public("action", "add-to-list"),
             .public("listID", String(listID)),
@@ -9141,24 +9246,22 @@ final class MapScreenModel {
 
     private func cardSource(for placeID: String) async -> CardSource? {
         if let fixturePlace = fixturePlaces[placeID] {
-            if let snapshot = try? database.snapshot(for: placeID),
-               let placeRef = try? PlaceRef(
-                placeID: snapshot.placeID,
-                name: snapshot.name,
-                lat: snapshot.lat,
-                lon: snapshot.lon,
-                category: snapshot.category,
-                tier: snapshot.tier,
-                schemaVersion: snapshot.snapshotSchemaVersion,
-                fetchedAt: snapshot.fetchedAt,
-                rawJSON: snapshot.snapshotJSON
-               ) {
-                return .snapshot(placeRef, snapshot)
+            if let source = snapshotCardSource(for: placeID) {
+                return source
             }
             return .tile(fixturePlace)
         }
-        guard let tileClient = tileClient(for: selectedRegionID) else { return nil }
-        return await PlaceResolver(tile: tileClient, snapshots: database).source(for: placeID)
+        if let tileClient = tileClient(for: selectedRegionID) {
+            return await PlaceResolver(tile: tileClient, snapshots: database).source(for: placeID)
+        }
+        return snapshotCardSource(for: placeID)
+    }
+
+    private func snapshotCardSource(for placeID: String) -> CardSource? {
+        guard let snapshot = try? database.snapshot(for: placeID) else { return nil }
+        let source = CardSource.actionSafeSnapshot(snapshot)
+        guard source != .unavailable else { return nil }
+        return source
     }
 
     private func actionPlaceRef(for placeID: String) async -> PlaceRef? {
