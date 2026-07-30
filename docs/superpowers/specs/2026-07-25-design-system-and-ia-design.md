@@ -281,6 +281,7 @@ information that only exists as pixels gets under-read.**
 | New-list affordance | **15×15 icon** | `ia-doors` |
 | Control-label icon beside a 15pt label | **17×17** | `coherence` `.coh .act` — ratified **pairing constant**, deliberately outside `IconRole`'s closed set |
 | Action-bar button | 15pt/600 label, 6pt icon gap, 8pt between buttons | `coherence` |
+| Saved `accentContainer` | designed opaque **`#D4EDE9`**; hue **170.40°**, delta **−0.32°** from `accent`, saturation **40.98%**, **5.23:1** against ink **`#0A6B5C`** | A8 frozen packet; ratified by Rob on 2026-07-30 |
 | Attribution | 11pt bare muted text, never a pill | `ia-doors` |
 | Interaction target floor | 44pt, tiled per **R10** where the rider permits | R10 scope line |
 | Pin | 20px circle, white stroke glyph | `ia-doors` |

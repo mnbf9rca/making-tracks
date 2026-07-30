@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=1540, initial-scale=1">
-<title>A8 candidate — R15 fully-lit place card</title>
+<title>A8 frozen — R15 fully-lit place card</title>
 <style>
   @font-face {
     font-family: "Newsreader";
@@ -20,12 +20,7 @@
     --muted: #6b675f;
     --accent: #0a6b5c;
     --accent-contrast: #fbfaf2;
-    /* Decision-record rendering only; explicitly rejected, never a token. */
-    --saved-rejected: #dee9e0;
-    /* Ruled opaque comparison values; labels are not token names. */
-    --comparison-calm: #dfedeb;
-    --comparison-balanced: #d4ede9;
-    --comparison-vivid: #caece6;
+    --accent-container: #d4ede9;
     --love: #c4312b;
     --eyebrow: #8a5a2b;
     --hairline: rgba(43, 40, 35, 0.14);
@@ -76,7 +71,7 @@
     line-height: 1.35;
   }
 
-  .candidate-mark {
+  .frozen-mark {
     padding: 7px 10px;
     border: 1px solid var(--eyebrow);
     border-radius: 999px;
@@ -307,7 +302,7 @@
   }
 
   .saved {
-    background: var(--saved-rejected);
+    background: var(--accent-container);
     color: var(--accent);
   }
 
@@ -464,186 +459,12 @@
     font: 10px/1.3 ui-monospace, "SFMono-Regular", Menlo, monospace;
   }
 
-  .rejected-record {
-    margin-bottom: 6px;
-    padding: 7px 8px;
-    border: 1px solid var(--hairline);
-    border-left: 4px solid var(--love);
-    border-radius: 10px;
-    background: var(--surface);
-  }
-
-  .decision-head,
-  .comparison-head,
   .unchanged-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
     font-weight: 700;
-  }
-
-  .decision-head {
-    color: var(--love);
-    font-size: 10.5px;
-    letter-spacing: 0.04em;
-  }
-
-  .decision-head code,
-  .comparison-head code {
-    color: var(--ink);
-    font: 700 10px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-    letter-spacing: 0;
-  }
-
-  .decision-copy {
-    margin: 4px 0 0;
-    color: var(--muted);
-    font-size: 9.5px;
-    line-height: 1.25;
-  }
-
-  .comparison-list {
-    display: grid;
-    gap: 4px;
-  }
-
-  .comparison {
-    padding: 6px 8px;
-    border: 1px solid var(--hairline);
-    border-radius: 9px;
-    background: var(--surface);
-  }
-
-  .comparison-head {
-    font-size: 10.5px;
-  }
-
-  .candidate-name {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-  }
-
-  .candidate-swatch {
-    width: 11px;
-    height: 11px;
-    flex: 0 0 11px;
-    border: 1px solid rgba(43, 40, 35, 0.18);
-    border-radius: 50%;
-  }
-
-  .candidate-swatch.calm {
-    background: var(--comparison-calm);
-  }
-
-  .candidate-swatch.balanced {
-    background: var(--comparison-balanced);
-  }
-
-  .candidate-swatch.vivid {
-    background: var(--comparison-vivid);
-  }
-
-  .pill-compare {
-    position: absolute;
-    z-index: 1;
-    right: 16px;
-    bottom: 12px;
-    left: 16px;
-    margin: 0;
-    padding: 6px 0;
-    border-top: 1px solid var(--hairline);
-    border-bottom: 1px solid var(--hairline);
-    background: rgba(251, 250, 242, 0.96);
-  }
-
-  .phone.ax + .evidence .pill-compare {
-    bottom: 80px;
-  }
-
-  .pill-compare-head {
-    margin-bottom: 5px;
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-    color: var(--eyebrow);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    line-height: 1.15;
-    text-transform: uppercase;
-  }
-
-  .pill-compare-head span:last-child {
-    color: var(--muted);
-    font-size: 8px;
-    letter-spacing: 0;
-    text-transform: none;
-  }
-
-  .pill-strip {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 4px;
-  }
-
-  .pill-option {
-    min-width: 0;
-  }
-
-  .pill-option-name {
-    margin: 0 0 3px;
-    color: var(--muted);
-    font-size: 8.5px;
-    font-weight: 700;
-    line-height: 1;
-    text-align: center;
-  }
-
-  .candidate-pill {
-    width: 100%;
-    height: 44px;
-    min-height: 44px;
-    padding: 0 5px;
-    border: 0;
-    border-radius: 999px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    color: var(--accent);
-    font-family: var(--sans);
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 1;
-    white-space: nowrap;
-  }
-
-  .candidate-pill.calm {
-    background: var(--comparison-calm);
-  }
-
-  .candidate-pill.balanced {
-    background: var(--comparison-balanced);
-  }
-
-  .candidate-pill.vivid {
-    background: var(--comparison-vivid);
-  }
-
-  .candidate-pill .state-glyph {
-    width: 17px;
-    height: 17px;
-    flex-basis: 17px;
-  }
-
-  .saturation-context {
-    margin: 5px 0 0;
-    color: var(--muted);
-    font-size: 8.5px;
-    line-height: 1.24;
   }
 
   .ratio-value {
@@ -709,7 +530,7 @@
     margin-top: 2px;
   }
 
-  .candidate-note {
+  .frozen-note {
     margin: 7px 0 0;
     color: var(--eyebrow);
     font-size: 9.5px;
@@ -759,9 +580,9 @@
 <header class="packet-head">
   <div>
     <h1>Three true facts, fully lit</h1>
-    <p>R15/R16 place-card candidate · Snow · default and accessibility-size targets · per-pill AA evidence</p>
+    <p>R15/R16 place-card frozen packet · Snow · default and accessibility-size targets · per-pill AA evidence</p>
   </div>
-  <div class="candidate-mark">CANDIDATE · NOT FROZEN</div>
+  <div class="frozen-mark">FROZEN</div>
 </header>
 
 <main class="packet-grid">
@@ -809,58 +630,7 @@
     <p class="evidence-kicker">Default target</p>
     <h2>Exact 390×844 canvas</h2>
     <p class="renderer">Renderer: Playwright-bundled Chromium/headless shell 151.0.7922.34</p>
-    <p class="lead">The phone retains the old Saved rendering only as the rejected decision record; no live candidate is applied. Seen and Loved remain unchanged.</p>
-
-    <div class="rejected-record">
-      <div class="decision-head"><span>REJECTED · DEAD RECORD</span><code>#DEE9E0</code></div>
-      <p class="decision-copy">12% #0A6B5C over #FBFAF2, channel-rounded (α R 0.1203 · G 0.1189 · B 0.1200). Mechanical composite; not a candidate or token.</p>
-    </div>
-
-    <div class="pill-compare" aria-label="Pill-scale Saved candidate comparison outside the phone">
-      <div class="pill-compare-head"><span>Pill-scale comparison</span><span>against adjacent live Seen pill</span></div>
-      <p class="saturation-context">All three hue deltas are tighter than the ratified containers. Saturation is the discriminating axis: Calm 28.00%, Balanced 40.98%, and Vivid 47.22% are below warningContainer 55.93% and loveContainer 80.65%; Vivid is nearest. These comparisons remain unselected and unapplied.</p>
-      <div class="pill-strip">
-        <div class="pill-option" data-candidate-pill="Calm">
-          <p class="pill-option-name">Calm</p>
-          <div class="candidate-pill calm" role="img" aria-label="Calm unselected Saved pill comparison">
-            <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#bookmark-fill"/></svg>
-            <span>Saved</span>
-          </div>
-        </div>
-        <div class="pill-option" data-candidate-pill="Balanced">
-          <p class="pill-option-name">Balanced</p>
-          <div class="candidate-pill balanced" role="img" aria-label="Balanced unselected Saved pill comparison">
-            <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#bookmark-fill"/></svg>
-            <span>Saved</span>
-          </div>
-        </div>
-        <div class="pill-option" data-candidate-pill="Vivid">
-          <p class="pill-option-name">Vivid</p>
-          <div class="candidate-pill vivid" role="img" aria-label="Vivid unselected Saved pill comparison">
-            <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#bookmark-fill"/></svg>
-            <span>Saved</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="comparison-list" aria-label="Exactly three designed opaque Saved candidates">
-      <div class="comparison" data-candidate="Calm">
-        <div class="comparison-head"><span class="candidate-name"><i class="candidate-swatch calm"></i>Calm</span><span class="ratio-value">5.34:1</span></div>
-        <p class="metric-line"><code>#DFEDEB</code> · h171.43° · Δ +0.71° · sat 28.00%</p>
-        <p class="metric-line">ink #0A6B5C · implied-α spread 0.0695</p>
-      </div>
-      <div class="comparison" data-candidate="Balanced">
-        <div class="comparison-head"><span class="candidate-name"><i class="candidate-swatch balanced"></i>Balanced</span><span class="ratio-value">5.23:1</span></div>
-        <p class="metric-line"><code>#D4EDE9</code> · h170.40° · Δ −0.32° · sat 40.98%</p>
-        <p class="metric-line">ink #0A6B5C · implied-α spread 0.1018</p>
-      </div>
-      <div class="comparison" data-candidate="Vivid">
-        <div class="comparison-head"><span class="candidate-name"><i class="candidate-swatch vivid"></i>Vivid</span><span class="ratio-value">5.09:1</span></div>
-        <p class="metric-line"><code>#CAECE6</code> · h169.41° · Δ −1.31° · sat 47.22%</p>
-        <p class="metric-line">ink #0A6B5C · implied-α spread 0.1233</p>
-      </div>
-    </div>
+    <p class="lead">Saved uses the ratified designed opaque <code>accentContainer</code>; Seen and Loved remain unchanged.</p>
 
     <div class="unchanged" aria-label="Unchanged state fills">
       <div class="unchanged-card">
@@ -873,9 +643,8 @@
       </div>
     </div>
 
-    <p class="gate">Exactly three designed opaque candidates are shown against accent ink #0A6B5C. All clear 4.5:1; none is ratified. Differing implied-channel alphas prove none is a single accent-over-surface composite. The cluster contains no action.</p>
-
-    <p class="candidate-note">Candidate evidence only. Reviewer delta validation precedes Rob’s final Saved value pick; no token/spec-table amendment has been made.</p>
+    <p class="gate"><code>accentContainer = #D4EDE9</code> · designed opaque · ratified by Rob on 2026-07-30 · h170.40° · Δ −0.32° from accent · sat 40.98% · 5.23:1 against ink <code>#0A6B5C</code>. The cluster contains no action.</p>
+    <p class="frozen-note"><code>#DEE9E0</code> is the rejected mechanical composite; see the git-history decision record.</p>
   </aside>
 
   <section class="phone ax" aria-label="Accessibility-size fully-lit place card, exact 390 by 844 canvas">
@@ -918,58 +687,7 @@
     <p class="evidence-kicker">Accessibility target</p>
     <h2>Exact 390×844 canvas</h2>
     <p class="renderer">Renderer: Playwright-bundled Chromium/headless shell 151.0.7922.34</p>
-    <p class="lead">The AX phone retains the old Saved rendering only as the rejected decision record; no live candidate is applied. Seen and Loved remain unchanged.</p>
-
-    <div class="rejected-record">
-      <div class="decision-head"><span>REJECTED · DEAD RECORD</span><code>#DEE9E0</code></div>
-      <p class="decision-copy">12% #0A6B5C over #FBFAF2, channel-rounded (α R 0.1203 · G 0.1189 · B 0.1200). Mechanical composite; not a candidate or token.</p>
-    </div>
-
-    <div class="pill-compare" aria-label="Pill-scale Saved candidate comparison outside the phone">
-      <div class="pill-compare-head"><span>Pill-scale comparison</span><span>against adjacent live Seen pill</span></div>
-      <p class="saturation-context">All three hue deltas are tighter than the ratified containers. Saturation is the discriminating axis: Calm 28.00%, Balanced 40.98%, and Vivid 47.22% are below warningContainer 55.93% and loveContainer 80.65%; Vivid is nearest. These comparisons remain unselected and unapplied.</p>
-      <div class="pill-strip">
-        <div class="pill-option" data-candidate-pill="Calm">
-          <p class="pill-option-name">Calm</p>
-          <div class="candidate-pill calm" role="img" aria-label="Calm unselected Saved pill comparison">
-            <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#bookmark-fill"/></svg>
-            <span>Saved</span>
-          </div>
-        </div>
-        <div class="pill-option" data-candidate-pill="Balanced">
-          <p class="pill-option-name">Balanced</p>
-          <div class="candidate-pill balanced" role="img" aria-label="Balanced unselected Saved pill comparison">
-            <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#bookmark-fill"/></svg>
-            <span>Saved</span>
-          </div>
-        </div>
-        <div class="pill-option" data-candidate-pill="Vivid">
-          <p class="pill-option-name">Vivid</p>
-          <div class="candidate-pill vivid" role="img" aria-label="Vivid unselected Saved pill comparison">
-            <svg class="state-glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#bookmark-fill"/></svg>
-            <span>Saved</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="comparison-list" aria-label="Exactly three designed opaque Saved candidates">
-      <div class="comparison" data-candidate="Calm">
-        <div class="comparison-head"><span class="candidate-name"><i class="candidate-swatch calm"></i>Calm</span><span class="ratio-value">5.34:1</span></div>
-        <p class="metric-line"><code>#DFEDEB</code> · h171.43° · Δ +0.71° · sat 28.00%</p>
-        <p class="metric-line">ink #0A6B5C · implied-α spread 0.0695</p>
-      </div>
-      <div class="comparison" data-candidate="Balanced">
-        <div class="comparison-head"><span class="candidate-name"><i class="candidate-swatch balanced"></i>Balanced</span><span class="ratio-value">5.23:1</span></div>
-        <p class="metric-line"><code>#D4EDE9</code> · h170.40° · Δ −0.32° · sat 40.98%</p>
-        <p class="metric-line">ink #0A6B5C · implied-α spread 0.1018</p>
-      </div>
-      <div class="comparison" data-candidate="Vivid">
-        <div class="comparison-head"><span class="candidate-name"><i class="candidate-swatch vivid"></i>Vivid</span><span class="ratio-value">5.09:1</span></div>
-        <p class="metric-line"><code>#CAECE6</code> · h169.41° · Δ −1.31° · sat 47.22%</p>
-        <p class="metric-line">ink #0A6B5C · implied-α spread 0.1233</p>
-      </div>
-    </div>
+    <p class="lead">Saved uses the ratified designed opaque <code>accentContainer</code>; Seen and Loved remain unchanged.</p>
 
     <div class="unchanged" aria-label="Unchanged state fills">
       <div class="unchanged-card">
@@ -982,9 +700,8 @@
       </div>
     </div>
 
-    <p class="gate">Exactly three designed opaque candidates are shown against accent ink #0A6B5C. All clear 4.5:1; none is ratified. Differing implied-channel alphas prove none is a single accent-over-surface composite. The cluster contains no action.</p>
-
-    <p class="candidate-note">Candidate evidence only. Reviewer delta validation precedes Rob’s final Saved value pick; this packet does not claim frozen status.</p>
+    <p class="gate"><code>accentContainer = #D4EDE9</code> · designed opaque · ratified by Rob on 2026-07-30 · h170.40° · Δ −0.32° from accent · sat 40.98% · 5.23:1 against ink <code>#0A6B5C</code>. The cluster contains no action.</p>
+    <p class="frozen-note">Frozen record: the ratified measurement above applies to this AX target.</p>
   </aside>
 </main>
 </body>
