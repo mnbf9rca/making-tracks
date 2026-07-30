@@ -104,8 +104,8 @@ Renders of both doors at 390×844 plus an AX variant, graded against A8's frames
 
 - **Serves:** R15 · **Spec section:** §5 · **Review tier:** `sourcery` + `opus`
 - **Depends on:** A8's R15 card frame, **A4**
-- **Owner:** unclaimed
-- **Status:** unclaimed
+- **Owner:** codex3
+- **Status:** branch
 - **Branch:** `wp-526-place-card-state-morphology` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Re-implement the place card's action bar under R15: **ON = filled pill + filled
