@@ -493,8 +493,39 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         app.buttons["map.door.explore"].tap()
         XCTAssertTrue(app.scrollViews["explore.root"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.switches["map.layers.show-hidden"].exists)
-        XCTAssertTrue(app.switches["map.layers.coverage-shading"].exists)
+        let showHidden = app.switches["map.layers.show-hidden"]
+        let showSaved = app.switches["map.layers.show-saved"]
+        let coverageShading = app.switches["map.layers.coverage-shading"]
+        XCTAssertTrue(showHidden.exists)
+        XCTAssertTrue(showSaved.exists)
+        XCTAssertTrue(coverageShading.exists)
+        XCTAssertEqual(showHidden.value as? String, "0")
+        XCTAssertEqual(showSaved.value as? String, "1")
+        XCTAssertEqual(coverageShading.value as? String, "1")
+        XCTAssertLessThan(showHidden.frame.minY, showSaved.frame.minY)
+        XCTAssertLessThan(showSaved.frame.minY, coverageShading.frame.minY)
+        XCTAssertEqual(
+            showSaved.frame.minY - showHidden.frame.minY,
+            52,
+            accuracy: 1,
+            "The hidden Scope row must keep the measured 52pt pitch."
+        )
+        XCTAssertEqual(
+            coverageShading.frame.minY - showSaved.frame.minY,
+            52,
+            accuracy: 1,
+            "The saved Scope row must keep the measured 52pt pitch."
+        )
+        XCTAssertEqual(
+            showHidden.frame.height,
+            showSaved.frame.height,
+            accuracy: 0.5
+        )
+        XCTAssertEqual(
+            showSaved.frame.height,
+            coverageShading.frame.height,
+            accuracy: 0.5
+        )
         XCTAssertTrue(app.buttons["map.layers.category.historic_building"].exists)
         XCTAssertFalse(app.buttons["world.row.scope"].exists)
         let exploreRoot = app.scrollViews["explore.root"]
@@ -545,6 +576,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
         for identifier in [
             "map.layers.show-hidden",
+            "map.layers.show-saved",
             "map.layers.coverage-shading",
             "explore.row.settings",
             "explore.row.about",
@@ -553,6 +585,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             XCTAssertTrue(scrollToHittable(control, in: app))
             XCTAssertTrue(control.isHittable)
             XCTAssertGreaterThanOrEqual(control.frame.height, 44)
+            if identifier.hasPrefix("map.layers.") {
+                XCTAssertGreaterThanOrEqual(
+                    control.frame.height,
+                    86,
+                    "AX Scope rows must mount the frozen expanded minimum height."
+                )
+            }
         }
         attachScreenshot(named: "explore-door-ax")
         app.buttons["Close"].tap()
@@ -581,6 +620,44 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
         XCTAssertEqual(screenshotExportNames["journal-door-ax"], "journal-door-ax")
         attachScreenshot(named: "journal-door-ax")
+    }
+
+    func testExploreSavedVisibilityFiltersOnlySavedDiscoveryPinsAndKeepsCategoryScope() {
+        let app = launch(
+            reset: true,
+            seedUserList: true,
+            pinDiagnostics: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+        XCTAssertTrue(waitForSourceFeatureCount(2, in: app))
+
+        openScope(in: app)
+        let showSaved = "map.layers.show-saved"
+        let attractionCategory = "map.layers.category.attraction"
+        XCTAssertTrue(app.switches[showSaved].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.switches[showSaved].value as? String, "1")
+        XCTAssertEqual(app.buttons[attractionCategory].value as? String, "Selected")
+
+        tapSwitch(in: app, identifier: showSaved, expectedValue: "0")
+        XCTAssertEqual(app.buttons[attractionCategory].value as? String, "Selected")
+        app.buttons["Close"].tap()
+
+        XCTAssertTrue(
+            waitForSourceFeatureCount(1, in: app),
+            "Show saved OFF must remove exactly the saved fixture discovery pin."
+        )
+
+        openScope(in: app)
+        XCTAssertEqual(app.switches[showSaved].value as? String, "0")
+        XCTAssertEqual(app.buttons[attractionCategory].value as? String, "Selected")
+        tapSwitch(in: app, identifier: showSaved, expectedValue: "1")
+        app.buttons["Close"].tap()
+
+        XCTAssertTrue(
+            waitForSourceFeatureCount(2, in: app),
+            "Show saved ON must restore the saved fixture discovery pin."
+        )
     }
 
     func testJournalDoorPreservesLiteralLongContentAndProgressAtAX5() {

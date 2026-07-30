@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=390, initial-scale=1">
+<title>A10 saved-visibility implementation evidence</title>
+<!--
+  Grading authority: frozen a8-explore-surface.png at exact remote head
+  0682865dff178ff43ea3e1374685328f565d8cd1. Scope-row figures are from
+  the Measured A8 Explore frozen-render facts table at artifact SHA
+  f492296e932d8f3225362875f466f6d40504fe54: MEASURED, not ratified.
+  Renderer: Playwright-bundled Chromium/headless shell 151.0.7922.34.
+-->
+<style>
+  @font-face {
+    font-family: "Newsreader";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader16pt-SemiBold.ttf");
+    font-weight: 600;
+  }
+
+  :root {
+    --ground: #f4f1ea;
+    --water: #c9dbe2;
+    --park: #dce5d4;
+    --road: #c9bfa8;
+    --surface: #fbfaf2;
+    --raised: #ffffff;
+    --ink: #2b2823;
+    --muted: #6b675f;
+    --accent: #0a6b5c;
+    --hairline: rgba(43, 40, 35, 0.14);
+    --scrim: rgba(43, 40, 35, 0.35);
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    --serif: "Newsreader", Georgia, serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html,
+  body {
+    width: 390px;
+    height: 844px;
+    margin: 0;
+    overflow: hidden;
+    color: var(--ink);
+    background: var(--ground);
+    font-family: var(--sans);
+  }
+
+  .phone {
+    position: relative;
+    width: 390px;
+    height: 844px;
+    overflow: hidden;
+    background:
+      linear-gradient(22deg, transparent 0 46%, var(--road) 47% 49%, transparent 50%),
+      radial-gradient(ellipse at 18% 25%, var(--park) 0 12%, transparent 13%),
+      linear-gradient(112deg, var(--ground) 0 55%, var(--water) 56% 68%, var(--ground) 69%);
+  }
+
+  .status {
+    position: absolute;
+    z-index: 4;
+    inset: 0 0 auto;
+    height: 46px;
+    padding: 13px 25px 0;
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .scrim {
+    position: absolute;
+    inset: 0;
+    background: var(--scrim);
+  }
+
+  .sheet {
+    position: absolute;
+    z-index: 2;
+    inset: 62px 0 0;
+    padding: 10px 16px 14px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 22px 22px 0 0;
+    background: var(--surface);
+    box-shadow: 0 -6px 18px rgba(43, 40, 35, 0.16);
+  }
+
+  .sheet > * { flex-shrink: 0; }
+
+  .grabber {
+    width: 36px;
+    height: 5px;
+    margin: 0 auto 3px;
+    border-radius: 999px;
+    background: var(--hairline);
+  }
+
+  .close {
+    width: 44px;
+    height: 44px;
+    margin-left: auto;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    font-size: 25px;
+    line-height: 1;
+  }
+
+  h1 {
+    margin: -5px 0 0;
+    font-family: var(--serif);
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1.1;
+  }
+
+  .subtitle {
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.3;
+  }
+
+  .scope-head {
+    margin: 18px 2px 11px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+
+  .section-label {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+  }
+
+  .scope-all {
+    color: var(--accent);
+    font-size: 12px;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .chip {
+    min-height: 22px;
+    padding: 2px 9px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 999px;
+    color: var(--surface);
+    background: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .chip-icon {
+    width: 11px;
+    height: 11px;
+    flex: 0 0 auto;
+  }
+
+  .ax .chip-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .scope-rows {
+    margin-top: 14px;
+    border-top: 1px solid var(--hairline);
+  }
+
+  .scope-row {
+    min-height: 52px;
+    padding: 6px 2px;
+    display: grid;
+    grid-template-columns: 24px 1fr 44px;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--hairline);
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .scope-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--accent);
+  }
+
+  .scope-row:first-child .scope-icon { color: var(--muted); }
+
+  .switch {
+    position: relative;
+    width: 44px;
+    height: 28px;
+    border-radius: 999px;
+    background: rgba(107, 103, 95, .28);
+  }
+
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: white;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .2);
+  }
+
+  .switch.on { background: var(--accent); }
+  .switch.on::after { left: 19px; }
+
+  .quiet {
+    margin-top: auto;
+    border-top: 1px solid var(--hairline);
+  }
+
+  .quiet-row {
+    min-height: 54px;
+    padding: 9px 2px;
+    display: grid;
+    grid-template-columns: 24px 1fr 12px;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--hairline);
+    color: var(--muted);
+  }
+
+  .quiet-row.settings { color: var(--accent); }
+
+  .quiet-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .quiet-chevron {
+    width: 12px;
+    height: 12px;
+  }
+
+  .ax .quiet-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .ax .quiet-chevron {
+    width: 18px;
+    height: 18px;
+  }
+
+  .quiet-title {
+    color: inherit;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .quiet-row.settings .quiet-title { color: var(--ink); }
+
+  .quiet-meta {
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .hero {
+    margin-top: 18px;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: 38px 1fr auto;
+    align-items: center;
+    gap: 12px;
+    border-radius: 14px;
+    background: var(--raised);
+    box-shadow: 0 6px 16px rgba(43, 40, 35, .13);
+  }
+
+  .hero-icon {
+    width: 27px;
+    height: 27px;
+    color: var(--accent);
+  }
+
+  .hero-title {
+    font-family: var(--serif);
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .meta,
+  .count {
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .retrace {
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .journal-label {
+    margin: 18px 2px 8px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .11em;
+  }
+
+  .list-row {
+    min-height: 52px;
+    padding: 8px 2px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .list-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .list-title {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .track {
+    height: 4px;
+    margin-top: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(107, 103, 95, .20);
+  }
+
+  .track span {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+  }
+
+  .new-list,
+  .virtual {
+    min-height: 48px;
+    padding: 8px 2px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--hairline);
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .new-list,
+  .virtual i {
+    color: var(--accent);
+  }
+
+  .virtual .count {
+    margin: 0 0 0 auto;
+  }
+
+  .fold {
+    position: absolute;
+    z-index: 5;
+    inset: auto 0 0;
+    height: 1px;
+    background: #e4572e;
+  }
+
+  .symbol-defs {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+  }
+
+  .phone.journal:not(.ax) .sheet { top: 396px; }
+  .ax .sheet { top: 48px; }
+  .ax h1 { font-size: 41px; }
+  .ax .subtitle { margin-top: 6px; font-size: 22px; }
+  .ax .scope-head { margin-top: 14px; margin-bottom: 9px; }
+  .ax .section-label,
+  .ax .journal-label { font-size: 17px; }
+  .ax .scope-all { font-size: 17px; }
+  .ax .chips { gap: 8px; }
+  .ax .chip {
+    min-height: 38px;
+    padding: 5px 14px;
+    gap: 6px;
+    font-size: 19px;
+  }
+  .ax .scope-row {
+    min-height: 86px;
+    grid-template-columns: 30px 1fr 51px;
+    gap: 14px;
+    font-size: 23px;
+  }
+  .ax .scope-icon { width: 30px; height: 30px; }
+  .ax .switch { width: 51px; height: 31px; }
+  .ax .switch::after { width: 25px; height: 25px; }
+  .ax .switch.on::after { left: 23px; }
+  .ax .quiet-row {
+    min-height: 86px;
+    grid-template-columns: 30px 1fr 18px;
+    gap: 14px;
+  }
+  .ax .quiet-title { font-size: 24px; }
+  .ax .quiet-meta { margin-top: 4px; font-size: 18px; }
+  .ax .hero {
+    grid-template-columns: 48px 1fr;
+    align-items: start;
+  }
+  .ax .hero-icon { width: 36px; height: 36px; }
+  .ax .hero-title { font-size: 29px; }
+  .ax .meta { font-size: 18px; line-height: 1.25; }
+  .ax .retrace {
+    grid-column: 1 / -1;
+    font-size: 19px;
+  }
+  .ax .journal-label { margin-top: 14px; }
+  .ax .list-row { min-height: 78px; }
+  .ax .list-title { font-size: 23px; }
+  .ax .count { font-size: 18px; }
+  .ax .new-list,
+  .ax .virtual {
+    min-height: 72px;
+    font-size: 23px;
+  }
+</style>
+</head>
+<body>
+<svg class="symbol-defs" aria-hidden="true">
+  <!-- Canonical category paths mirror PinLayers.categorySymbolNames. -->
+  <symbol id="icon-hammer-fill" viewBox="0 0 24 24">
+    <path fill="currentColor" d="m13.7 3.1 7.2 7.2-2.7 2.7-2.3-2.3-8.8 10a2 2 0 0 1-3-2.7l9.6-9.2-2.6-2.6 2.6-3.1Z"/>
+  </symbol>
+  <symbol id="icon-paintpalette-fill" viewBox="0 0 24 24">
+    <path fill="currentColor" d="M12 2.2A9.8 9.8 0 0 0 2.2 12c0 5.4 4.4 9.8 9.8 9.8h1.7a2.5 2.5 0 0 0 0-5h-1.2a1.8 1.8 0 0 1 0-3.6h3.7c3.1 0 5.6-2.5 5.6-5.6 0-3-4.4-5.4-9.8-5.4Z"/>
+    <g fill="var(--accent)"><circle cx="7.2" cy="9.2" r="1.25"/><circle cx="10.3" cy="5.9" r="1.25"/><circle cx="15" cy="6.1" r="1.25"/></g>
+  </symbol>
+  <symbol id="icon-star-fill" viewBox="0 0 24 24">
+    <path fill="currentColor" d="m12 2.1 3 6.1 6.7 1-4.9 4.7 1.2 6.7-6-3.1-6 3.1 1.2-6.7-4.9-4.7 6.7-1 3-6.1Z"/>
+  </symbol>
+  <symbol id="icon-buildings-fill" viewBox="0 0 24 24">
+    <path fill="currentColor" d="M2.5 7.2h8.6v14.3H2.5V7.2Zm9.9-4.7h9.1v19h-9.1v-19Z"/>
+    <g fill="var(--accent)"><path d="M5.1 10h1.6v1.9H5.1zm0 4h1.6v1.9H5.1zm3.1-4h1.6v1.9H8.2zm0 4h1.6v1.9H8.2zm7-8.5h1.7v2h-1.7zm3.1 0H20v2h-1.7zm-3.1 4.2h1.7v2h-1.7zm3.1 0H20v2h-1.7zm-3.1 4.2h1.7v2h-1.7zm3.1 0H20v2h-1.7Z"/></g>
+  </symbol>
+  <symbol id="icon-flag-fill" viewBox="0 0 24 24">
+    <path fill="currentColor" d="M5 2.2h2.2v19.6H5V2.2Zm3.4 1.2h10.9l-2.8 4.2 2.8 4.2H8.4V3.4Z"/>
+  </symbol>
+  <symbol id="icon-camera-fill" viewBox="0 0 24 24">
+    <path fill="currentColor" fill-rule="evenodd" d="M7.2 4.1h9.6l1.5 2.3h2.1c1 0 1.9.9 1.9 1.9v10.1c0 1-.9 1.9-1.9 1.9H3.6c-1 0-1.9-.9-1.9-1.9V8.3c0-1 .9-1.9 1.9-1.9h2.1l1.5-2.3ZM12 17.3a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4Z"/>
+    <circle cx="12" cy="13.1" r="2.2" fill="currentColor"/>
+  </symbol>
+  <symbol id="icon-columns-fill" viewBox="0 0 24 24">
+    <path fill="currentColor" d="m12 2 10 4.4v2.1H2V6.4L12 2ZM3.1 19.3h17.8v2.3H3.1v-2.3Zm1.6-9.6h2.6v8.4H4.7V9.7Zm6 0h2.6v8.4h-2.6V9.7Zm6 0h2.6v8.4h-2.6V9.7Z"/>
+  </symbol>
+  <symbol id="icon-question-fill" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10" fill="currentColor"/>
+    <path d="M9.4 9a2.8 2.8 0 0 1 5.5.8c0 2.4-2.9 2.7-2.9 4.7" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round"/>
+    <circle cx="12" cy="18" r="1.2" fill="var(--accent)"/>
+  </symbol>
+  <symbol id="icon-eye-off" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10.4 6.2A8.7 8.7 0 0 1 12 6c5.2 0 8.8 6 8.8 6a17.6 17.6 0 0 1-3 3.6"/>
+      <path d="M6.6 6.8A16.6 16.6 0 0 0 3.2 12S6.8 18 12 18a8.6 8.6 0 0 0 3.6-.8"/>
+      <path d="M10.3 10.4a2.4 2.4 0 0 0 3.3 3.4M3.4 3.4 20.6 20.6"/>
+    </g>
+  </symbol>
+  <symbol id="icon-bookmark" viewBox="0 0 24 24">
+    <path d="M6.4 3.2h11.2v17.6L12 17.1l-5.6 3.7V3.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="icon-coverage" viewBox="0 0 24 24">
+    <path d="M5 9.6 9.4 4.6 16.2 5.8 19.6 12 16 18.8 8 18.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 2.6"/>
+  </symbol>
+  <symbol id="icon-gear" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="6.4"/><circle cx="12" cy="12" r="2.5"/>
+      <path d="M12 5.6V2.9M12 18.4v2.7M18.4 12h2.7M5.6 12H2.9M16.5 7.5l1.9-1.9M5.6 18.4l1.9-1.9M16.5 16.5l1.9 1.9M5.6 5.6l1.9 1.9"/>
+    </g>
+  </symbol>
+  <symbol id="icon-book" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 5.4A2.4 2.4 0 0 1 7.4 3H19v13.2H7.4A2.4 2.4 0 0 0 5 18.6Z"/>
+      <path d="M5 18.6A2.4 2.4 0 0 1 7.4 16.2H19V21H7.4A2.4 2.4 0 0 1 5 18.6Z"/>
+    </g>
+  </symbol>
+  <symbol id="icon-chevron" viewBox="0 0 24 24">
+    <path d="M9.5 5 16.5 12 9.5 19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="icon-footprints" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.8">
+      <ellipse cx="8.4" cy="7.9" rx="2.7" ry="3.9" transform="rotate(-13 8.4 7.9)"/>
+      <ellipse cx="7.9" cy="14" rx="2.2" ry="2.3" transform="rotate(-13 7.9 14)"/>
+      <ellipse cx="15.6" cy="12.2" rx="2.7" ry="3.9" transform="rotate(13 15.6 12.2)"/>
+      <ellipse cx="16.1" cy="18.3" rx="2.2" ry="2.3" transform="rotate(13 16.1 18.3)"/>
+    </g>
+  </symbol>
+</svg>
+<main class="phone" id="phone">
+  <div class="status"><span>9:41</span><span>●●● ◉ ▰</span></div>
+  <div class="scrim"></div>
+  <section class="sheet" id="surface"></section>
+  <div class="fold" aria-label="390 by 844 fold"></div>
+</main>
+
+<template id="explore">
+  <div class="grabber"></div><div class="close">×</div>
+  <h1>Explore</h1>
+  <div class="subtitle">what the map shows right now</div>
+  <!-- DS-11 reserves the Search position and renders nothing in A10. -->
+  <div class="scope-head">
+    <span class="section-label">Scope</span>
+    <span class="scope-all">Hide all categories</span>
+  </div>
+  <div class="chips">
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-hammer-fill"/></svg>Archaeological</span>
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-paintpalette-fill"/></svg>Artwork</span>
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-star-fill"/></svg>Attraction</span>
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-buildings-fill"/></svg>Historic Building</span>
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-flag-fill"/></svg>Memorial</span>
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-camera-fill"/></svg>Museum</span>
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-columns-fill"/></svg>Religious</span>
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-question-fill"/></svg>Other</span>
+  </div>
+  <div class="scope-rows">
+    <div class="scope-row">
+      <svg class="scope-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-eye-off"/></svg>
+      <span>Include hidden places</span>
+      <span class="switch"></span>
+    </div>
+    <div class="scope-row">
+      <svg class="scope-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bookmark"/></svg>
+      <span>Show saved places</span>
+      <span class="switch on"></span>
+    </div>
+    <div class="scope-row">
+      <svg class="scope-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-coverage"/></svg>
+      <span>Show coverage shading</span>
+      <span class="switch on"></span>
+    </div>
+  </div>
+  <div class="quiet">
+    <div class="quiet-row settings">
+      <svg class="quiet-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-gear"/></svg>
+      <div><div class="quiet-title">Settings</div><div class="quiet-meta">appearance, data, location, storage</div></div>
+      <svg class="quiet-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron"/></svg>
+    </div>
+    <div class="quiet-row">
+      <svg class="quiet-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-book"/></svg>
+      <div><div class="quiet-title">About</div><div class="quiet-meta">the story · privacy · licences</div></div>
+      <svg class="quiet-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron"/></svg>
+    </div>
+  </div>
+</template>
+
+<template id="journal">
+  <div class="grabber"></div><div class="close">×</div>
+  <h1>Journal</h1>
+  <div class="subtitle">your story through the world</div>
+  <div class="hero">
+    <svg class="hero-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-footprints"/></svg>
+    <div><div class="hero-title">My tracks</div><div class="meta">214 visits · last: Riverside Plaques</div></div>
+    <span class="retrace">Retrace ›</span>
+  </div>
+  <div class="journal-label">LISTS</div>
+  <div class="list-row">
+    <div class="list-top"><span class="list-title">Ghost signs</span><span class="count">4 of 11 seen</span></div>
+    <div class="track"><span style="width:36%"></span></div>
+  </div>
+  <div class="list-row">
+    <div class="list-top"><span class="list-title">KL follies</span><span class="count">7 of 9 seen</span></div>
+    <div class="track"><span style="width:78%"></span></div>
+  </div>
+  <div class="new-list"><span>＋</span><span>New list</span></div>
+  <div class="virtual"><i>♡</i><span>Loved places</span><span class="count">8</span></div>
+  <div class="virtual"><i>◌</i><span>Hidden places</span><span class="count">3</span></div>
+</template>
+
+<script>
+  const params = new URLSearchParams(location.search);
+  const variant = params.get("variant") || "explore";
+  const isJournal = variant.startsWith("journal");
+  const isAX = variant.endsWith("-ax");
+  document.getElementById("phone").classList.toggle("journal", isJournal);
+  document.getElementById("phone").classList.toggle("ax", isAX);
+  document.getElementById("surface").append(
+    document.getElementById(isJournal ? "journal" : "explore").content.cloneNode(true)
+  );
+  document.title = `A10 saved visibility ${variant} implementation evidence · 390×844`;
+</script>
+</body>
+</html>

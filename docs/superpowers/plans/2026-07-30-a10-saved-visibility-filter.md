@@ -32,8 +32,8 @@
 - `ios/App/Sources/Map/MapDoorShell.swift` — ruled presentation, row order, bookmark glyph, and binding.
 - `ios/App/Tests/AppShellTests.swift` — invert A1's deliberate saved-row absence assertion into the complete row contract.
 - `ios/App/UITests/MakingTracksCoreLoopUITests.swift` — default/AX presence, state, order, hit target, and render capture.
-- `docs/design/design-system/a1-journal-explore-doors.html` — update the implementation render source with A10's third Scope row and provenance.
-- `docs/design/design-system/a1-explore-door.png` and `docs/design/design-system/a1-explore-door-ax.png` — recaptured 390×844 evidence.
+- `docs/design/design-system/a10-saved-visibility-filter.html` — A10-specific implementation render source with the third Scope row and provenance; A1's historical evidence remains unchanged.
+- `docs/design/design-system/a10-saved-visibility-filter.png` and `docs/design/design-system/a10-saved-visibility-filter-ax.png` — deterministic 390×844 A10 evidence.
 - `docs/design/design-system/README.md` — update the Explore implementation artifact record.
 - `docs/superpowers/phases/phase-1/amendment-wave.md` — advance only A10's builder-owned status.
 
@@ -150,9 +150,9 @@ Then run complete `AppShellTests` to catch ordering, case exhaustiveness, and sh
 
 **Files:**
 - Modify: `ios/App/UITests/MakingTracksCoreLoopUITests.swift`
-- Modify: `docs/design/design-system/a1-journal-explore-doors.html`
-- Recapture: `docs/design/design-system/a1-explore-door.png`
-- Recapture: `docs/design/design-system/a1-explore-door-ax.png`
+- Create: `docs/design/design-system/a10-saved-visibility-filter.html`
+- Create: `docs/design/design-system/a10-saved-visibility-filter.png`
+- Create: `docs/design/design-system/a10-saved-visibility-filter-ax.png`
 - Modify: `docs/design/design-system/README.md`
 
 - [ ] **Step 1: Add failing default and AX UI assertions**
