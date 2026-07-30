@@ -48,6 +48,7 @@ Edges are "must have merged before this starts."
 | **A6** #517 enforcement package | — |
 | **A7** #522 post-merge annotations | — |
 | **A9** text-only quiet controls get the ruled inset | — *(A4 `ab01f970` and A5 `4a2dacb8` are merged; the seam exists)* |
+| **A10** saved-visibility filter | **A1** *(the Explore surface must exist to mount the control; A8's metrics dependency satisfied — merged as `7e92339c`)* |
 
 **A8 is the critical path and it is not a build task.** Per the render pipeline: a build agent
 authors, **opus validates**, **Rob rules**. A1's Explore surface and A2's card are graded against
@@ -330,6 +331,72 @@ tonal-strength companion is the likely candidate. Raise it through fable; do not
 2. **The measurement goes beside the images.** State the dark-pixel count and bounding box for the control's glyph region in both frames. A5's first pair *looked* like a press and contained none — **a render is not self-evidencing, and the number is what makes it evidence.** If your two frames are identical in the measured region, the capture failed, whatever the filenames say.
 
 ---
+
+## A10 — The saved-visibility filter gets a row
+
+- **Serves:** Rob's ruling of 2026-07-30 on the Show-saved-places control he added during A8 · **Spec section:** §2 — **but see the gap note below; §2 predates this control and does not cover it** · **Review tier:** `sourcery` + `reviewer`
+- **Depends on:** **A1.** Verified against the tree at authoring: the Explore surface does not exist yet — the doors are still `"World"` and `"Tracks"` (`ios/App/Sources/Map/MapDoorShell.swift:128`, `:134`), and the two existing filter toggles mount in the Layers sheet's `List`/`Section` (`MapScreen.swift` ~`:8171`–`:8190`, identifier `map.layers.show-hidden`). There is no Scope surface to mount a third row on until A1 **merges** — claimed-and-building is not enough. *(Claim record at scaffolding: A1 is claimed by codex1, status branch.)*
+- **A8 metrics dependency: satisfied.** A8 merged as `7e92339c` after this row was authored; the MEASURED rows cited below are on `ios`.
+- **Owner:** unclaimed
+- **Status:** unclaimed
+- **Branch:** `wp-526-saved-visibility-filter` — cut from a freshly-fetched `ios`
+
+**Why this row exists at all.** codex1 found the gap while grounding A1: the frozen Explore frame shows a Show-saved-places toggle, and **nothing owns its behaviour.** Spec §2 predates the control, A1's brief predates it, and the tree has no saved-filter seam. A control that appears in a frozen frame with no row behind it is a figure in neither the ratified set nor the code — the same shape as the snapped 21, arriving from the other direction.
+
+**The ruled facts, which bind this row (Rob, 2026-07-30).** Label **"Show saved places"**. Default **ON**, preserving today's discovery map. **OFF hides saved places while leaving other filters unchanged.** Geometry is the frozen frame's 52pt Scope row with a bookmark icon.
+
+**The metrics are MEASURED, not ratified.** The row's geometry comes from the A8 spec's *Measured A8 Explore frozen-render facts — not system law* table: `52pt minimum each; 15pt/600 label; 20×20 icon; 10pt gap; 6/2 padding; 44×28 switch with 22pt knob at 3/19pt offsets; 1pt hairlines`. Build to those figures and **cite them as measured**; they await wholesale ratification or amendment as Phase 1 next-session Open Flag 5. Do not describe them in a PR body as ratified metrics.
+
+### The seam, located rather than described
+
+Three distinct places, and a builder who finds only the first will ship a toggle that does nothing:
+
+| what | where | note |
+|---|---|---|
+| filter **state** | `ios/App/Sources/Map/MapLayerVisibility.swift` — `showHiddenPlaces`, `showCoverageShading`, `visibleCategories` | add `showSavedPlaces: Bool = true` here; the `init` default carries Rob's ON |
+| filter **application** | `ios/Sources/MakingTracksMapStyle/PinFeatureFilter.swift:14`–`:21`, `discoveryFeatures(_:showHidden:)` | this is the only toggleable filter in the codebase; the saved predicate belongs beside `showHidden || !state.hidden` |
+| filter **plumbing** | `MapScreen.setShowHidden(_:)` `:8969`; applied-guard `appliedShowHiddenPlaces` `:2509` and `:4358`–`:4361`; call sites `:8905`, `:8922` | the guard re-applies only on change; a saved filter needs the analogous guard or it re-renders on every visibility mutation |
+
+**`isDefault` is the trap, and its polarity is inverted from every other member.** `MapLayerVisibility.swift:17` reads `!showHiddenPlaces && visibleCategories == nil`. Because saved defaults **ON**, the correct term is `showSavedPlaces`, **not** `!showSavedPlaces` — the one place in this row where copying the neighbouring line produces a silent inversion.
+
+Two things make this easy to get wrong and hard to catch:
+
+1. **`isDefault` has no production consumer.** It is referenced only by `MapLayerVisibilityTests.swift:52` and `:57`. So omitting the new member breaks nothing that runs, and no existing test fails. The test is the only guard, which means **the test must be extended in the same commit as the member**.
+2. **`showCoverageShading` also defaults true and is deliberately excluded from `isDefault`.** That precedent is not a licence to exclude saved. Coverage shading changes how the basemap is *presented*; the saved filter *removes content*. Include it. If you disagree, that is a `## Taste guesses` entry with the alternative stated — not a silent omission.
+
+### The asymmetry question — route it, do not decide it
+
+Hidden's filtering is **not one pattern**, so there is nothing for saved to copy consistently. Every function in `Derivations.swift` on current `ios` was checked individually rather than asserting a group property:
+
+- **references `hidden_places`:** `hiddenPlaces()` `:76`, `listMemberships(containing:)` `:116`, `trackGeometryContext` `:195`, `hiddenPlaceIDs()` `:352`, `listProgress(listID:)` `:380` and `:394`, `trackListSnapshots` `:437`, `viewportState` `:504`
+- **does not:** `lists()`, `listItems(listID:)`, `lovedPlaces()`, `listMapFeatures(listID:)`, `trackVisits(…)`, `visit(id:)`, `placeIDs(forVisitIDs:)`, `isSeen(_:)`, `seen(among:)`, `visitCount(placeID:)`, `userListNames(containing:)`
+
+And one of those non-filtering cases is **ruled, not accidental**: `lovedPlaces()` returns loved places regardless of hidden state, and `AppShellTests.swift:687` — `testLovedManagedPlaceMetadataNamesHiddenOverlapWithoutFilteringIt` — pins that the Loved surface **names the overlap instead of filtering it**.
+
+So the honest position for this row: **whether the saved filter reaches beyond map pins into track and list derivations is a designer question, and this row routes it rather than answering it.** Build the map-pin filter, which the ruling covers unambiguously ("hides saved places" on the surface the toggle sits above), and **raise the derivation reach to Rob through planner** before touching any function in the first list. Do not infer a rule from hidden's behaviour; hidden does not have one rule.
+
+### A6 shrinks the interaction space, and the row should say so out loud
+
+`#548` merged as `d33cea71`, so **saved and hidden are mutually exclusive from the database up** — `addToList` deletes the hidden row inside the same write transaction and `setHidden` throws `savedPlaceCannotBeHidden`. Therefore the two filters act on **disjoint populations**: no place can be affected by both. Four toggle combinations exist and **none of them has an interaction to specify** — each filter independently removes a set the other cannot contain. Say this explicitly in the PR body. It is the reason this row is small, and a reader who does not know it will look for a combination matrix that does not need to exist.
+
+### Ownership boundary
+
+**DS-3 (#469) owns merging the Layers sheet and the filter chips into one Scope surface.** This row adds one control to whatever surface exists when it is claimed; it does not restructure that surface, and it does not pre-empt DS-3's picker. Follow **A1's identifier convention** for the relocated Scope rows rather than inventing one — today's is `map.layers.show-hidden`, and that identifier belongs to a sheet A1 dismantles.
+
+### Acceptance
+
+1. **Graded against the frozen frame.** Renders of the Scope block at 390×844, default and AX, showing three control rows in the ruled order — Include hidden **OFF**, Show saved places **ON**, Show coverage shading **ON** — matching A8's frozen Explore frame. State which frame SHA you graded against.
+2. **The inverted default test.** A test asserting the default is ON is worthless alone: it passes if the property is simply initialised true and never read. Assert **both polarities through the filter**: default ON shows a saved place among the display features, and flipping to OFF removes exactly that place while leaving an unsaved, unhidden place and a category selection untouched. A test that cannot fail when the default flips is not pinning the default.
+3. **`isDefault` covers the new member**, with the extended assertion in the same commit, per the trap note above.
+4. **No behaviour change to the other two filters.** If your diff alters include-hidden or coverage shading, you have exceeded the row.
+
+### Evidence
+
+Standing law applies unchanged and is not restated here. The two additions specific to this row:
+
+- **The render is not self-evidencing.** State the measured row height for all three Scope rows in both frames, not just that they "look 52pt". A8's own review turned on measuring rather than eyeballing, and the 52pt figure is MEASURED-not-ratified, so it is precisely the number a reader will want checked.
+- **Name the derivation decision you did not make.** The PR body must record that the derivation reach was routed to Rob and state what the merged code does — map pins only — so the next reader does not read "saved filter" as a system-wide predicate. An unrecorded non-decision reads as a decision.
+
 
 ## Budget note
 
