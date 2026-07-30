@@ -63,8 +63,8 @@ render loop.
 
 - **Serves:** R13, R14 · **Spec section:** §2 · **Review tier:** `sourcery` + `opus`
 - **Depends on:** A8's Explore frame
-- **Owner:** unclaimed
-- **Status:** unclaimed
+- **Owner:** codex1
+- **Status:** PR open
 - **Branch:** `wp-526-journal-explore-doors` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Rename Door 2 *Tracks* → **Journal** and Door 1 *World* → **Explore**, and

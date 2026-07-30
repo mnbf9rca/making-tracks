@@ -660,8 +660,8 @@ enum MapShellDestination: Hashable {
 }
 
 enum MapDoor: Hashable, Identifiable {
-    case world
-    case tracks
+    case explore
+    case journal
 
     var id: Self { self }
 }
@@ -710,19 +710,19 @@ final class AppShellModel {
     var tracksFocusPlaceID: String?
     var listDetailVisitFilter = TracksVisitFilter.all
 
-    func openWorldDoor() {
-        prepareDoorRoot(.world)
+    func openExploreDoor() {
+        prepareDoorRoot(.explore)
     }
 
-    func openTracksDoor() {
-        prepareDoorRoot(.tracks)
+    func openJournalDoor() {
+        prepareDoorRoot(.journal)
     }
 
     func openListDetailDeepLink(listID: Int64, visitFilter: TracksVisitFilter = .all) {
         tracksFocusPlaceID = nil
         listDetailVisitFilter = visitFilter
         deepLinkDestination = .listDetail(listID)
-        presentedDoor = .tracks
+        presentedDoor = .journal
     }
 
     func prepareTracksHistory() {
@@ -2207,21 +2207,21 @@ enum MapEmptyRegionSurface: Equatable {
 
 extension AppShellModel {
     func openListsDeepLink() {
-        openTracksDoor()
+        openJournalDoor()
     }
 
     func openTracksDeepLink(focusingPlaceID placeID: String? = nil) {
         tracksFocusPlaceID = placeID
         listDetailVisitFilter = .all
         deepLinkDestination = .tracks
-        presentedDoor = .tracks
+        presentedDoor = .journal
     }
 
     func openOfflineMapsDeepLink() {
         tracksFocusPlaceID = nil
         listDetailVisitFilter = .all
         deepLinkDestination = .offlineMaps
-        presentedDoor = .world
+        presentedDoor = .explore
     }
 }
 
@@ -2504,7 +2504,6 @@ struct MapScreen: View {
     @State private var appShell = AppShellModel()
     @State private var storageMenuStatus = StorageMenuStatus.loading
     @State private var cardPresentation = PlaceCardPresentation()
-    @State private var showLayers = false
     @State private var layerVisibility = MapLayerVisibility()
     @State private var appliedShowHiddenPlaces = false
     @State private var loadState: TileLoadState = .unavailable
@@ -2855,8 +2854,8 @@ struct MapScreen: View {
             }
             .overlay(alignment: .bottom) {
                 MapDoorBar(
-                    openWorld: appShell.openWorldDoor,
-                    openTracks: appShell.openTracksDoor
+                    openExplore: appShell.openExploreDoor,
+                    openJournal: appShell.openJournalDoor
                 )
                 .padding(.horizontal, MapOverlayChromeSpec.edgePadding)
                 .padding(
@@ -2887,7 +2886,7 @@ struct MapScreen: View {
                 locationStatus: locationMenuStatus,
                 storageStatus: storageMenuStatus,
                 openLocationSettings: openLocationSettings,
-                openScope: openScopeFromWorld,
+                visibility: layersSheetVisibilityBinding,
                 replayOnboarding: onReplayOnboarding,
                 onOfflineMapsChanged: refreshAfterOfflineMapsChanged,
                 onShowListOnMap: { list, filter in
@@ -2985,15 +2984,6 @@ struct MapScreen: View {
             Task { @MainActor in
                 await applyLayerVisibility(visibility)
             }
-        }
-        .sheet(isPresented: $showLayers) {
-            LayersSheet(
-                visibility: layersSheetVisibilityBinding
-            )
-                .presentationDetents([.medium, .large])
-                .onAppear {
-                    logSheetOpened("layers")
-                }
         }
         .sheet(item: cardPresentationItemBinding) { presentation in
             PlaceCardSheet(
@@ -3996,15 +3986,6 @@ struct MapScreen: View {
         }
     }
 
-    private func openScopeFromWorld() {
-        appShell.presentedDoor = nil
-        appShell.deepLinkDestination = nil
-        Task { @MainActor in
-            await Task.yield()
-            showLayers = true
-        }
-    }
-
     private var nearbyPromptCandidate: NearbyPromptCandidate? {
         guard showsUserLocation,
               userTrackingMode != .none,
@@ -4945,7 +4926,7 @@ private struct MapDoorSheetIntegration: View {
     let locationStatus: LocationMenuStatus
     let storageStatus: StorageMenuStatus
     let openLocationSettings: () -> Void
-    let openScope: () -> Void
+    let visibility: Binding<MapLayerVisibility>
     let replayOnboarding: @MainActor () -> Void
     let onOfflineMapsChanged: @MainActor () async -> Void
     let onShowListOnMap: @MainActor (PlaceList, TracksVisitFilter) -> Void
@@ -4959,7 +4940,7 @@ private struct MapDoorSheetIntegration: View {
             door: door,
             deepLinkDestination: shell.deepLinkDestination,
             model: model,
-            openScope: openScope,
+            visibility: visibility,
             prepareTracksHistory: shell.prepareTracksHistory,
             onListDeleted: onListDeleted
         ) { destination in
@@ -8159,82 +8140,6 @@ private struct TrackFilterPickerSheet: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier(accessibilityIdentifier)
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
-    }
-}
-
-private struct LayersSheet: View {
-    @Binding var visibility: MapLayerVisibility
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    Toggle(
-                        "Include hidden places",
-                        isOn: Binding(
-                            get: { visibility.showHiddenPlaces },
-                            set: { visible in
-                                var next = visibility
-                                next.showHiddenPlaces = visible
-                                visibility = next
-                            }
-                        )
-                    )
-                        .accessibilityIdentifier("map.layers.show-hidden")
-
-                    Toggle(
-                        "Show offline coverage shading",
-                        isOn: Binding(
-                            get: { visibility.showCoverageShading },
-                            set: { visible in
-                                var next = visibility
-                                next.showCoverageShading = visible
-                                visibility = next
-                            }
-                        )
-                    )
-                    .accessibilityIdentifier("map.layers.coverage-shading")
-                }
-
-                Section("Categories") {
-                    ForEach(visibility.categories) { category in
-                        Toggle(
-                            isOn: Binding(
-                                get: { visibility.isCategoryVisible(category.id) },
-                                set: { visible in
-                                    var next = visibility
-                                    next.setCategory(category.id, visible: visible)
-                                    visibility = next
-                                }
-                            )
-                        ) {
-                            Label {
-                                Text(verbatim: category.title)
-                            } icon: {
-                                Image(systemName: PinLayers.categorySymbolNames[category.iconName] ?? "mappin")
-                            }
-                        }
-                        .accessibilityIdentifier("map.layers.category.\(category.id)")
-                    }
-                    Button(visibility.toggleAllCategoriesTitle) {
-                        var next = visibility
-                        next.toggleAllCategories()
-                        visibility = next
-                    }
-                    .accessibilityIdentifier("map.layers.show-all-categories")
-                }
-            }
-            .navigationTitle("Layers")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                    .accessibilityIdentifier("map.layers.done")
-                }
-            }
-        }
     }
 }
 
