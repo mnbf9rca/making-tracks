@@ -62,6 +62,7 @@ enum ExploreScopeControlIcon: Equatable {
 
 enum ExploreScopeControl: CaseIterable {
     case includeHidden
+    case showSaved
     case coverageShading
 
     var presentation: ExploreScopeControlPresentation {
@@ -71,6 +72,12 @@ enum ExploreScopeControl: CaseIterable {
                 title: "Include hidden places",
                 icon: .system("eye.slash"),
                 accessibilityIdentifier: "map.layers.show-hidden"
+            )
+        case .showSaved:
+            ExploreScopeControlPresentation(
+                title: "Show saved places",
+                icon: .system("bookmark"),
+                accessibilityIdentifier: "map.layers.show-saved"
             )
         case .coverageShading:
             ExploreScopeControlPresentation(
@@ -497,6 +504,11 @@ struct ExploreDoorRootView: View {
                     minimumHeight: scopeControlMinimumHeight
                 )
                 ExploreScopeToggleRow(
+                    control: .showSaved,
+                    isOn: savedPlacesBinding,
+                    minimumHeight: scopeControlMinimumHeight
+                )
+                ExploreScopeToggleRow(
                     control: .coverageShading,
                     isOn: coverageShadingBinding,
                     minimumHeight: scopeControlMinimumHeight
@@ -543,6 +555,17 @@ struct ExploreDoorRootView: View {
             set: { visible in
                 var next = visibility
                 next.showCoverageShading = visible
+                visibility = next
+            }
+        )
+    }
+
+    private var savedPlacesBinding: Binding<Bool> {
+        Binding(
+            get: { visibility.showSavedPlaces },
+            set: { visible in
+                var next = visibility
+                next.showSavedPlaces = visible
                 visibility = next
             }
         )

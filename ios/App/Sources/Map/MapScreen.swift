@@ -2506,6 +2506,7 @@ struct MapScreen: View {
     @State private var cardPresentation = PlaceCardPresentation()
     @State private var layerVisibility = MapLayerVisibility()
     @State private var appliedShowHiddenPlaces = false
+    @State private var appliedShowSavedPlaces = true
     @State private var loadState: TileLoadState = .unavailable
     @State private var isMapReady = false
     @State private var didMapLoadFail = false
@@ -3895,6 +3896,7 @@ struct MapScreen: View {
         layerVisibility = MapLayerVisibility(
             categories: layerVisibility.categories,
             showHiddenPlaces: visibility.showHiddenPlaces,
+            showSavedPlaces: visibility.showSavedPlaces,
             showCoverageShading: visibility.showCoverageShading,
             visibleCategories: layerVisibility.visibleCategories
         )
@@ -4014,7 +4016,9 @@ struct MapScreen: View {
         MakingTracksLog.startup.info("map start started fixture=\(fixture, privacy: .public)")
         ensureModel()
         model?.setShowHidden(layerVisibility.showHiddenPlaces)
+        model?.setShowSaved(layerVisibility.showSavedPlaces)
         appliedShowHiddenPlaces = layerVisibility.showHiddenPlaces
+        appliedShowSavedPlaces = layerVisibility.showSavedPlaces
 #if DEBUG
         if let debugInstallOfflineRegion, let model {
             let progressID = UUID()
@@ -4336,10 +4340,15 @@ struct MapScreen: View {
 
     @MainActor
     private func applyLayerVisibility(_ visibility: MapLayerVisibility) async {
-        guard visibility.showHiddenPlaces != appliedShowHiddenPlaces else { return }
+        guard visibility.requiresDiscoveryFeatureRefresh(
+            appliedShowHiddenPlaces: appliedShowHiddenPlaces,
+            appliedShowSavedPlaces: appliedShowSavedPlaces
+        ) else { return }
         guard let model else { return }
         model.setShowHidden(visibility.showHiddenPlaces)
+        model.setShowSaved(visibility.showSavedPlaces)
         appliedShowHiddenPlaces = visibility.showHiddenPlaces
+        appliedShowSavedPlaces = visibility.showSavedPlaces
         guard activeListMap == nil else {
             await refreshActiveListMap()
             return
@@ -8367,6 +8376,7 @@ final class MapScreenModel {
     private var selectedRegionID = MapRegion.malaysiaSingaporeBrunei.rawValue
     private var hiddenTracker: HiddenMembershipTracker
     private var showHiddenPlaces = false
+    private var showSavedPlaces = true
 
     var changes: AsyncStream<Set<String>> { coreLoop.changes }
 
@@ -8807,7 +8817,11 @@ final class MapScreenModel {
                 return (place, states[fixturePlace.placeID] ?? PinState(saved: false, visit: .none))
             }
             return ViewportFeatures(
-                display: PinFeatureFilter.discoveryFeatures(sourceFeatures, showHidden: showHiddenPlaces),
+                display: PinFeatureFilter.discoveryFeatures(
+                    sourceFeatures,
+                    showHidden: showHiddenPlaces,
+                    showSaved: showSavedPlaces
+                ),
                 nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures),
                 sourceCount: sourceFeatures.count,
                 flowMetrics: nil
@@ -8824,7 +8838,8 @@ final class MapScreenModel {
         return ViewportFeatures(
             display: PinFeatureFilter.discoveryFeatures(
                 sourceFeatures,
-                showHidden: showHiddenPlaces
+                showHidden: showHiddenPlaces,
+                showSaved: showSavedPlaces
             ),
             nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures),
             sourceCount: sourceFeatures.count,
@@ -8847,7 +8862,11 @@ final class MapScreenModel {
                 return (place, states[fixturePlace.placeID] ?? PinState(saved: false, visit: .none))
             }
             return ViewportFeatures(
-                display: PinFeatureFilter.discoveryFeatures(sourceFeatures, showHidden: showHiddenPlaces),
+                display: PinFeatureFilter.discoveryFeatures(
+                    sourceFeatures,
+                    showHidden: showHiddenPlaces,
+                    showSaved: showSavedPlaces
+                ),
                 nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures),
                 sourceCount: sourceFeatures.count,
                 flowMetrics: nil
@@ -8863,7 +8882,8 @@ final class MapScreenModel {
         return ViewportFeatures(
             display: PinFeatureFilter.discoveryFeatures(
                 sourceFeatures,
-                showHidden: showHiddenPlaces
+                showHidden: showHiddenPlaces,
+                showSaved: showSavedPlaces
             ),
             nearbyPrompt: PinFeatureFilter.nearbyPromptFeatures(sourceFeatures),
             sourceCount: sourceFeatures.count,
@@ -8873,6 +8893,10 @@ final class MapScreenModel {
 
     func setShowHidden(_ showHidden: Bool) {
         showHiddenPlaces = showHidden
+    }
+
+    func setShowSaved(_ showSaved: Bool) {
+        showSavedPlaces = showSaved
     }
 
     func states(for ids: Set<String>) async -> [String: PinState] {

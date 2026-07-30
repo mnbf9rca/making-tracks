@@ -57,6 +57,88 @@ final class MapLayerVisibilityTests: XCTestCase {
         XCTAssertTrue(visibility.isDefault)
     }
 
+    func testSavedPlacesDefaultOnAndParticipateInDefaultFilterStateAndDiscoveryFiltering() {
+        let unsaved = MapPlace(
+            id: "unsaved-attraction",
+            lat: 51.5,
+            lon: -0.12,
+            tier: 1,
+            category: "attraction"
+        )
+        let saved = MapPlace(
+            id: "saved-museum",
+            lat: 51.6,
+            lon: -0.11,
+            tier: 2,
+            category: "museum"
+        )
+        let features = [
+            (unsaved, PinState(saved: false, visit: .none, hidden: false)),
+            (saved, PinState(saved: true, visit: .none, hidden: false)),
+        ]
+        var visibility = MapLayerVisibility()
+
+        XCTAssertTrue(visibility.showSavedPlaces)
+        XCTAssertTrue(visibility.isDefault)
+        XCTAssertEqual(
+            PinFeatureFilter.discoveryFeatures(
+                features,
+                showHidden: visibility.showHiddenPlaces,
+                showSaved: visibility.showSavedPlaces
+            ).map(\.0.id),
+            ["unsaved-attraction", "saved-museum"]
+        )
+
+        visibility.showSavedPlaces = false
+
+        XCTAssertFalse(visibility.isDefault)
+        XCTAssertEqual(
+            PinFeatureFilter.discoveryFeatures(
+                features,
+                showHidden: visibility.showHiddenPlaces,
+                showSaved: visibility.showSavedPlaces
+            ).map(\.0.id),
+            ["unsaved-attraction"]
+        )
+
+        visibility.showSavedPlaces = true
+
+        XCTAssertTrue(visibility.isDefault)
+    }
+
+    func testDiscoveryFeatureRefreshDetectsSavedOrHiddenChangesOnly() {
+        let applied = MapLayerVisibility()
+        var savedChanged = applied
+        savedChanged.showSavedPlaces = false
+        var hiddenChanged = applied
+        hiddenChanged.showHiddenPlaces = true
+        var coverageChanged = applied
+        coverageChanged.showCoverageShading = false
+        var categoriesChanged = applied
+        categoriesChanged.setCategory("museum", visible: false)
+
+        XCTAssertFalse(applied.requiresDiscoveryFeatureRefresh(
+            appliedShowHiddenPlaces: applied.showHiddenPlaces,
+            appliedShowSavedPlaces: applied.showSavedPlaces
+        ))
+        XCTAssertTrue(savedChanged.requiresDiscoveryFeatureRefresh(
+            appliedShowHiddenPlaces: applied.showHiddenPlaces,
+            appliedShowSavedPlaces: applied.showSavedPlaces
+        ))
+        XCTAssertTrue(hiddenChanged.requiresDiscoveryFeatureRefresh(
+            appliedShowHiddenPlaces: applied.showHiddenPlaces,
+            appliedShowSavedPlaces: applied.showSavedPlaces
+        ))
+        XCTAssertFalse(coverageChanged.requiresDiscoveryFeatureRefresh(
+            appliedShowHiddenPlaces: applied.showHiddenPlaces,
+            appliedShowSavedPlaces: applied.showSavedPlaces
+        ))
+        XCTAssertFalse(categoriesChanged.requiresDiscoveryFeatureRefresh(
+            appliedShowHiddenPlaces: applied.showHiddenPlaces,
+            appliedShowSavedPlaces: applied.showSavedPlaces
+        ))
+    }
+
     func testDefaultCategoriesExposeFallbackBucket() {
         let visibility = MapLayerVisibility()
 
@@ -102,13 +184,17 @@ final class MapLayerVisibilityTests: XCTestCase {
     }
 
     func testListMapDisplaysVisitFilterCategoriesWithoutChangingDiscoveryVisibility() {
-        let discovery = MapLayerVisibility(visibleCategories: ["museum"])
+        let discovery = MapLayerVisibility(
+            showSavedPlaces: false,
+            visibleCategories: ["museum"]
+        )
         let displayed = ListMapLayerVisibility.displayed(
             discoveryVisibility: discovery,
             visitFilter: TracksVisitFilter(categories: ["attraction"])
         )
 
         XCTAssertEqual(displayed.visibleCategories, ["attraction"])
+        XCTAssertFalse(displayed.showSavedPlaces)
         XCTAssertEqual(discovery.visibleCategories, ["museum"])
     }
 

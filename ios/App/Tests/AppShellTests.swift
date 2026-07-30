@@ -341,10 +341,10 @@ final class AppShellTests: XCTestCase {
         )
     }
 
-    func testExploreRootExposesCurrentScopeControlsWithoutInventingSavedFiltering() {
+    func testExploreRootExposesCompleteScopeControlsInRuledOrder() {
         XCTAssertEqual(
             ExploreScopeControl.allCases,
-            [.includeHidden, .coverageShading]
+            [.includeHidden, .showSaved, .coverageShading]
         )
         XCTAssertEqual(
             ExploreScopeControl.includeHidden.presentation,
@@ -355,16 +355,20 @@ final class AppShellTests: XCTestCase {
             )
         )
         XCTAssertEqual(
+            ExploreScopeControl.showSaved.presentation,
+            ExploreScopeControlPresentation(
+                title: "Show saved places",
+                icon: .system("bookmark"),
+                accessibilityIdentifier: "map.layers.show-saved"
+            )
+        )
+        XCTAssertEqual(
             ExploreScopeControl.coverageShading.presentation,
             ExploreScopeControlPresentation(
                 title: "Show coverage shading",
                 icon: .coverageShading,
                 accessibilityIdentifier: "map.layers.coverage-shading"
             )
-        )
-        XCTAssertFalse(
-            ExploreScopeControl.allCases.map(\.presentation.title)
-                .contains("Show saved places")
         )
     }
 
