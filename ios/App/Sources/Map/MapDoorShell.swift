@@ -77,6 +77,34 @@ enum ExploreScopeControl: CaseIterable {
     }
 }
 
+enum ExploreCategoryChipTopology {
+    static let gap: CGFloat = 6
+
+    static func rows(
+        _ categories: [MapLayerCategory],
+        isAccessibilitySize: Bool
+    ) -> [[MapLayerCategory]] {
+        let rowCapacity = isAccessibilitySize ? 2 : 3
+        return stride(from: 0, to: categories.count, by: rowCapacity).map { start in
+            Array(categories[start ..< min(start + rowCapacity, categories.count)])
+        }
+    }
+
+    static func neighborGaps(
+        rowIndex: Int,
+        rowCount: Int,
+        itemIndex: Int,
+        itemCount: Int
+    ) -> MaterialChipNeighborGaps {
+        MaterialChipNeighborGaps(
+            top: rowIndex == 0 ? nil : gap,
+            leading: itemIndex == 0 ? nil : gap,
+            bottom: rowIndex == rowCount - 1 ? nil : gap,
+            trailing: itemIndex == itemCount - 1 ? nil : gap
+        )
+    }
+}
+
 struct JournalDoorHeroContent: Equatable {
     let listID: Int64
     let metadata: String
@@ -415,22 +443,39 @@ struct ExploreDoorRootView: View {
             .padding(.top, 10)
             .padding(.horizontal, 2)
 
-            FlowLayout(spacing: 6) {
-                ForEach(visibility.categories) { category in
-                    MaterialChip(
-                        category.title,
-                        systemImage: PinLayers.categorySymbolNames[category.iconName] ?? "mappin",
-                        state: visibility.isCategoryVisible(category.id) ? .active : .available,
-                        neighborGaps: .all(6)
-                    ) {
-                        var next = visibility
-                        next.setCategory(
-                            category.id,
-                            visible: !visibility.isCategoryVisible(category.id)
-                        )
-                        visibility = next
+            let categoryRows = ExploreCategoryChipTopology.rows(
+                visibility.categories,
+                isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+            )
+            VStack(alignment: .leading, spacing: ExploreCategoryChipTopology.gap) {
+                ForEach(categoryRows.indices, id: \.self) { rowIndex in
+                    let row = categoryRows[rowIndex]
+                    HStack(spacing: ExploreCategoryChipTopology.gap) {
+                        ForEach(row.indices, id: \.self) { itemIndex in
+                            let category = row[itemIndex]
+                            MaterialChip(
+                                category.title,
+                                systemImage: PinLayers.categorySymbolNames[category.iconName] ?? "mappin",
+                                state: visibility.isCategoryVisible(category.id) ? .active : .available,
+                                size: dynamicTypeSize.isAccessibilitySize ? .expanded : .compact,
+                                neighborGaps: ExploreCategoryChipTopology.neighborGaps(
+                                    rowIndex: rowIndex,
+                                    rowCount: categoryRows.count,
+                                    itemIndex: itemIndex,
+                                    itemCount: row.count
+                                )
+                            ) {
+                                var next = visibility
+                                next.setCategory(
+                                    category.id,
+                                    visible: !visibility.isCategoryVisible(category.id)
+                                )
+                                visibility = next
+                            }
+                            .accessibilityIdentifier("map.layers.category.\(category.id)")
+                        }
                     }
-                    .accessibilityIdentifier("map.layers.category.\(category.id)")
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .padding(.vertical, 5)
@@ -499,6 +544,9 @@ private struct ExploreScopeToggleRow: View {
     @Binding var isOn: Bool
     let minimumHeight: CGFloat
 
+    @ScaledMetric(relativeTo: .body)
+    private var iconSize = ExploreSurfaceIconGeometry.scopeControl
+
     private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
@@ -507,8 +555,13 @@ private struct ExploreScopeToggleRow: View {
         Toggle(isOn: $isOn) {
             HStack(spacing: 10) {
                 Image(systemName: presentation.systemImage)
-                    .iconRole(.hero)
-                    .foregroundStyle(tokens.accent.swiftUIColor)
+                    .font(.system(size: iconSize, weight: .medium))
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(
+                        isOn
+                            ? tokens.accent.swiftUIColor
+                            : tokens.muted.swiftUIColor
+                    )
                     .frame(width: 24)
                     .accessibilityHidden(true)
 
@@ -536,6 +589,9 @@ private struct ExploreQuietDestinationRow: View {
     let prominent: Bool
     let action: () -> Void
 
+    @ScaledMetric(relativeTo: .body)
+    private var iconSize = ExploreSurfaceIconGeometry.quietDestination
+
     private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
@@ -543,7 +599,8 @@ private struct ExploreQuietDestinationRow: View {
             MaterialHairlineRow {
                 HStack(spacing: 10) {
                     Image(systemName: presentation.systemImage)
-                        .iconRole(.inline)
+                        .font(.system(size: iconSize, weight: .medium))
+                        .symbolRenderingMode(.monochrome)
                         .foregroundStyle(
                             prominent
                                 ? tokens.accent.swiftUIColor
@@ -1012,21 +1069,27 @@ private struct MapDoorRootLayout<Content: View>: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(verbatim: title)
-                    .font(Typography.font(for: .sheetTitle))
-                    .foregroundStyle(MaterialTheme.snow.tokens.ink.swiftUIColor)
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(verbatim: title)
+                        .font(Typography.font(for: .sheetTitle))
+                        .foregroundStyle(MaterialTheme.snow.tokens.ink.swiftUIColor)
 
-                Text(verbatim: subtitle)
-                    .font(Typography.font(for: .evocativeSubline))
-                    .foregroundStyle(MaterialTheme.snow.tokens.muted.swiftUIColor)
-                    .padding(.bottom, 8)
+                    Text(verbatim: subtitle)
+                        .font(Typography.font(for: .evocativeSubline))
+                        .foregroundStyle(MaterialTheme.snow.tokens.muted.swiftUIColor)
+                        .padding(.bottom, 8)
 
-                content
+                    content
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
+                .frame(
+                    minHeight: proxy.size.height,
+                    alignment: .top
+                )
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 24)
         }
         .navigationBarBackButtonHidden()
     }

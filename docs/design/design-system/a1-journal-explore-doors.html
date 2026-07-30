@@ -74,11 +74,15 @@
     z-index: 2;
     inset: 62px 0 0;
     padding: 10px 16px 14px;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
     border-radius: 22px 22px 0 0;
     background: var(--surface);
     box-shadow: 0 -6px 18px rgba(43, 40, 35, 0.16);
   }
+
+  .sheet > * { flex-shrink: 0; }
 
   .grabber {
     width: 36px;
@@ -154,10 +158,10 @@
     line-height: 1;
   }
 
-  .chip i {
+  .chip-icon {
     width: 11px;
-    font-style: normal;
-    text-align: center;
+    height: 11px;
+    flex: 0 0 auto;
   }
 
   .scope-rows {
@@ -178,9 +182,12 @@
   }
 
   .scope-icon {
+    width: 20px;
+    height: 20px;
     color: var(--accent);
-    font-size: 20px;
   }
+
+  .scope-row:first-child .scope-icon { color: var(--muted); }
 
   .switch {
     position: relative;
@@ -206,7 +213,7 @@
   .switch.on::after { left: 19px; }
 
   .quiet {
-    margin-top: 16px;
+    margin-top: auto;
     border-top: 1px solid var(--hairline);
   }
 
@@ -222,6 +229,16 @@
   }
 
   .quiet-row.settings { color: var(--accent); }
+
+  .quiet-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .quiet-chevron {
+    width: 12px;
+    height: 12px;
+  }
 
   .quiet-title {
     color: inherit;
@@ -250,8 +267,9 @@
   }
 
   .hero-icon {
+    width: 27px;
+    height: 27px;
     color: var(--accent);
-    font-size: 27px;
   }
 
   .hero-title {
@@ -341,6 +359,14 @@
     background: #e4572e;
   }
 
+  .symbol-defs {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+  }
+
+  .phone.journal:not(.ax) .sheet { top: 396px; }
   .ax .sheet { top: 48px; }
   .ax h1 { font-size: 41px; }
   .ax .subtitle { margin-top: 6px; font-size: 22px; }
@@ -361,11 +387,10 @@
     gap: 14px;
     font-size: 23px;
   }
-  .ax .scope-icon { font-size: 30px; }
+  .ax .scope-icon { width: 30px; height: 30px; }
   .ax .switch { width: 51px; height: 31px; }
   .ax .switch::after { width: 25px; height: 25px; }
   .ax .switch.on::after { left: 23px; }
-  .ax .quiet { margin-top: 14px; }
   .ax .quiet-row {
     min-height: 86px;
     grid-template-columns: 30px 1fr 18px;
@@ -377,7 +402,7 @@
     grid-template-columns: 48px 1fr;
     align-items: start;
   }
-  .ax .hero-icon { font-size: 36px; }
+  .ax .hero-icon { width: 36px; height: 36px; }
   .ax .hero-title { font-size: 29px; }
   .ax .meta { font-size: 18px; line-height: 1.25; }
   .ax .retrace {
@@ -396,6 +421,71 @@
 </style>
 </head>
 <body>
+<svg class="symbol-defs" aria-hidden="true">
+  <!-- Canonical category paths mirror PinLayers.categorySymbolNames. -->
+  <symbol id="icon-hammer-fill" viewBox="0 0 24 24">
+    <path fill="currentColor" d="m13.7 3.1 7.2 7.2-2.7 2.7-2.3-2.3-8.8 10a2 2 0 0 1-3-2.7l9.6-9.2-2.6-2.6 2.6-3.1Z"/>
+  </symbol>
+  <symbol id="icon-paintpalette-fill" viewBox="0 0 24 24">
+    <path fill="currentColor" d="M12 2.2A9.8 9.8 0 0 0 2.2 12c0 5.4 4.4 9.8 9.8 9.8h1.7a2.5 2.5 0 0 0 0-5h-1.2a1.8 1.8 0 0 1 0-3.6h3.7c3.1 0 5.6-2.5 5.6-5.6 0-3-4.4-5.4-9.8-5.4Z"/>
+    <g fill="var(--accent)"><circle cx="7.2" cy="9.2" r="1.25"/><circle cx="10.3" cy="5.9" r="1.25"/><circle cx="15" cy="6.1" r="1.25"/></g>
+  </symbol>
+  <symbol id="icon-star-fill" viewBox="0 0 24 24">
+    <path fill="currentColor" d="m12 2.1 3 6.1 6.7 1-4.9 4.7 1.2 6.7-6-3.1-6 3.1 1.2-6.7-4.9-4.7 6.7-1 3-6.1Z"/>
+  </symbol>
+  <symbol id="icon-buildings-fill" viewBox="0 0 24 24">
+    <path fill="currentColor" d="M2.5 7.2h8.6v14.3H2.5V7.2Zm9.9-4.7h9.1v19h-9.1v-19Z"/>
+    <g fill="var(--accent)"><path d="M5.1 10h1.6v1.9H5.1zm0 4h1.6v1.9H5.1zm3.1-4h1.6v1.9H8.2zm0 4h1.6v1.9H8.2zm7-8.5h1.7v2h-1.7zm3.1 0H20v2h-1.7zm-3.1 4.2h1.7v2h-1.7zm3.1 0H20v2h-1.7zm-3.1 4.2h1.7v2h-1.7zm3.1 0H20v2h-1.7Z"/></g>
+  </symbol>
+  <symbol id="icon-flag-fill" viewBox="0 0 24 24">
+    <path fill="currentColor" d="M5 2.2h2.2v19.6H5V2.2Zm3.4 1.2h10.9l-2.8 4.2 2.8 4.2H8.4V3.4Z"/>
+  </symbol>
+  <symbol id="icon-camera-fill" viewBox="0 0 24 24">
+    <path fill="currentColor" fill-rule="evenodd" d="M7.2 4.1h9.6l1.5 2.3h2.1c1 0 1.9.9 1.9 1.9v10.1c0 1-.9 1.9-1.9 1.9H3.6c-1 0-1.9-.9-1.9-1.9V8.3c0-1 .9-1.9 1.9-1.9h2.1l1.5-2.3ZM12 17.3a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4Z"/>
+    <circle cx="12" cy="13.1" r="2.2" fill="currentColor"/>
+  </symbol>
+  <symbol id="icon-columns-fill" viewBox="0 0 24 24">
+    <path fill="currentColor" d="m12 2 10 4.4v2.1H2V6.4L12 2ZM3.1 19.3h17.8v2.3H3.1v-2.3Zm1.6-9.6h2.6v8.4H4.7V9.7Zm6 0h2.6v8.4h-2.6V9.7Zm6 0h2.6v8.4h-2.6V9.7Z"/>
+  </symbol>
+  <symbol id="icon-question-fill" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10" fill="currentColor"/>
+    <path d="M9.4 9a2.8 2.8 0 0 1 5.5.8c0 2.4-2.9 2.7-2.9 4.7" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round"/>
+    <circle cx="12" cy="18" r="1.2" fill="var(--accent)"/>
+  </symbol>
+  <symbol id="icon-eye-off" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10.4 6.2A8.7 8.7 0 0 1 12 6c5.2 0 8.8 6 8.8 6a17.6 17.6 0 0 1-3 3.6"/>
+      <path d="M6.6 6.8A16.6 16.6 0 0 0 3.2 12S6.8 18 12 18a8.6 8.6 0 0 0 3.6-.8"/>
+      <path d="M10.3 10.4a2.4 2.4 0 0 0 3.3 3.4M3.4 3.4 20.6 20.6"/>
+    </g>
+  </symbol>
+  <symbol id="icon-coverage" viewBox="0 0 24 24">
+    <path d="M5 9.6 9.4 4.6 16.2 5.8 19.6 12 16 18.8 8 18.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 2.6"/>
+  </symbol>
+  <symbol id="icon-gear" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="6.4"/><circle cx="12" cy="12" r="2.5"/>
+      <path d="M12 5.6V2.9M12 18.4v2.7M18.4 12h2.7M5.6 12H2.9M16.5 7.5l1.9-1.9M5.6 18.4l1.9-1.9M16.5 16.5l1.9 1.9M5.6 5.6l1.9 1.9"/>
+    </g>
+  </symbol>
+  <symbol id="icon-book" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 5.4A2.4 2.4 0 0 1 7.4 3H19v13.2H7.4A2.4 2.4 0 0 0 5 18.6Z"/>
+      <path d="M5 18.6A2.4 2.4 0 0 1 7.4 16.2H19V21H7.4A2.4 2.4 0 0 1 5 18.6Z"/>
+    </g>
+  </symbol>
+  <symbol id="icon-chevron" viewBox="0 0 24 24">
+    <path d="M9.5 5 16.5 12 9.5 19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="icon-footprints" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.8">
+      <ellipse cx="8.4" cy="7.9" rx="2.7" ry="3.9" transform="rotate(-13 8.4 7.9)"/>
+      <ellipse cx="7.9" cy="14" rx="2.2" ry="2.3" transform="rotate(-13 7.9 14)"/>
+      <ellipse cx="15.6" cy="12.2" rx="2.7" ry="3.9" transform="rotate(13 15.6 12.2)"/>
+      <ellipse cx="16.1" cy="18.3" rx="2.2" ry="2.3" transform="rotate(13 16.1 18.3)"/>
+    </g>
+  </symbol>
+</svg>
 <main class="phone" id="phone">
   <div class="status"><span>9:41</span><span>●●● ◉ ▰</span></div>
   <div class="scrim"></div>
@@ -413,37 +503,37 @@
     <span class="scope-all">Hide all categories</span>
   </div>
   <div class="chips">
-    <span class="chip"><i>⌘</i>Archaeological</span>
-    <span class="chip"><i>◈</i>Artwork</span>
-    <span class="chip"><i>★</i>Attraction</span>
-    <span class="chip"><i>▦</i>Historic Building</span>
-    <span class="chip"><i>⚑</i>Memorial</span>
-    <span class="chip"><i>◉</i>Museum</span>
-    <span class="chip"><i>▥</i>Religious</span>
-    <span class="chip"><i>?</i>Other</span>
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-hammer-fill"/></svg>Archaeological</span>
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-paintpalette-fill"/></svg>Artwork</span>
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-star-fill"/></svg>Attraction</span>
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-buildings-fill"/></svg>Historic Building</span>
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-flag-fill"/></svg>Memorial</span>
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-camera-fill"/></svg>Museum</span>
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-columns-fill"/></svg>Religious</span>
+    <span class="chip"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-question-fill"/></svg>Other</span>
   </div>
   <div class="scope-rows">
     <div class="scope-row">
-      <span class="scope-icon">◌</span>
+      <svg class="scope-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-eye-off"/></svg>
       <span>Include hidden places</span>
       <span class="switch"></span>
     </div>
     <div class="scope-row">
-      <span class="scope-icon">▧</span>
+      <svg class="scope-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-coverage"/></svg>
       <span>Show offline coverage shading</span>
       <span class="switch on"></span>
     </div>
   </div>
   <div class="quiet">
     <div class="quiet-row settings">
-      <span>⚙</span>
+      <svg class="quiet-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-gear"/></svg>
       <div><div class="quiet-title">Settings</div><div class="quiet-meta">appearance, data, location, storage</div></div>
-      <span>›</span>
+      <svg class="quiet-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron"/></svg>
     </div>
     <div class="quiet-row">
-      <span>▤</span>
+      <svg class="quiet-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-book"/></svg>
       <div><div class="quiet-title">About</div><div class="quiet-meta">the story · privacy · licences</div></div>
-      <span>›</span>
+      <svg class="quiet-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron"/></svg>
     </div>
   </div>
 </template>
@@ -453,7 +543,7 @@
   <h1>Journal</h1>
   <div class="subtitle">your story through the world</div>
   <div class="hero">
-    <span class="hero-icon">♟</span>
+    <svg class="hero-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-footprints"/></svg>
     <div><div class="hero-title">My tracks</div><div class="meta">214 visits · last: Riverside Plaques</div></div>
     <span class="retrace">Retrace ›</span>
   </div>
@@ -476,6 +566,7 @@
   const variant = params.get("variant") || "explore";
   const isJournal = variant.startsWith("journal");
   const isAX = variant.endsWith("-ax");
+  document.getElementById("phone").classList.toggle("journal", isJournal);
   document.getElementById("phone").classList.toggle("ax", isAX);
   document.getElementById("surface").append(
     document.getElementById(isJournal ? "journal" : "explore").content.cloneNode(true)

@@ -368,6 +368,46 @@ final class AppShellTests: XCTestCase {
         )
     }
 
+    func testExploreCategoryChipRowsExposeOnlyActualNeighbours() {
+        let visibility = MapLayerVisibility()
+        XCTAssertEqual(
+            ExploreCategoryChipTopology.rows(
+                visibility.categories,
+                isAccessibilitySize: false
+            ).map(\.count),
+            [3, 3, 2]
+        )
+        XCTAssertEqual(
+            ExploreCategoryChipTopology.rows(
+                visibility.categories,
+                isAccessibilitySize: true
+            ).map(\.count),
+            [2, 2, 2, 2]
+        )
+
+        let topLeading = ExploreCategoryChipTopology.neighborGaps(
+            rowIndex: 0,
+            rowCount: 3,
+            itemIndex: 0,
+            itemCount: 3
+        )
+        XCTAssertNil(topLeading.top)
+        XCTAssertNil(topLeading.leading)
+        XCTAssertEqual(topLeading.bottom, 6)
+        XCTAssertEqual(topLeading.trailing, 6)
+
+        let bottomTrailing = ExploreCategoryChipTopology.neighborGaps(
+            rowIndex: 2,
+            rowCount: 3,
+            itemIndex: 1,
+            itemCount: 2
+        )
+        XCTAssertEqual(bottomTrailing.top, 6)
+        XCTAssertEqual(bottomTrailing.leading, 6)
+        XCTAssertNil(bottomTrailing.bottom)
+        XCTAssertNil(bottomTrailing.trailing)
+    }
+
     func testJournalDoorContentProjectsHeroAndEveryNonTrackListInDatabaseOrder() {
         let content = JournalDoorContent.make(
             lists: [

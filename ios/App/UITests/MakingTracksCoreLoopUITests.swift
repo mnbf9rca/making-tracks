@@ -497,6 +497,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.switches["map.layers.coverage-shading"].exists)
         XCTAssertTrue(app.buttons["map.layers.category.historic_building"].exists)
         XCTAssertFalse(app.buttons["world.row.scope"].exists)
+        let exploreRoot = app.scrollViews["explore.root"]
+        let about = app.buttons["explore.row.about"]
+        XCTAssertTrue(about.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(
+            exploreRoot.frame.maxY - about.frame.maxY,
+            64,
+            // The root frame includes the 34pt home-indicator safe area; the
+            // content adds its deliberate 24pt bottom inset.
+            "Quiet Explore destinations must remain bottom rows in the large detent."
+        )
         attachScreenshot(named: "explore-door-default")
 
         app.buttons["Close"].tap()
@@ -526,6 +536,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         assertNoFrameIntersection(exploreDoor, journalDoor)
 
         exploreDoor.tap()
+        let historicBuildings = app.buttons["map.layers.category.historic_building"]
+        XCTAssertTrue(scrollToHittable(historicBuildings, in: app))
+        XCTAssertGreaterThanOrEqual(
+            historicBuildings.frame.height,
+            38,
+            "AX category chips must mount the frozen expanded visual geometry."
+        )
         for identifier in [
             "map.layers.show-hidden",
             "map.layers.coverage-shading",

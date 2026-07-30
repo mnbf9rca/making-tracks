@@ -237,6 +237,40 @@ public enum MaterialChipState: Hashable, Sendable {
     }
 }
 
+/// Visual geometry for the compact chip family and its ruled accessibility expansion.
+public enum MaterialChipSize: Hashable, Sendable {
+    case compact
+    case expanded
+
+    public var minimumHeight: CGFloat {
+        switch self {
+        case .compact: 22
+        case .expanded: 38
+        }
+    }
+
+    public var horizontalPadding: CGFloat {
+        switch self {
+        case .compact: 9
+        case .expanded: 14
+        }
+    }
+
+    public var verticalPadding: CGFloat {
+        switch self {
+        case .compact: 0
+        case .expanded: 5
+        }
+    }
+
+    public var labelSpacing: CGFloat {
+        switch self {
+        case .compact: 4
+        case .expanded: 6
+        }
+    }
+}
+
 /// A token-backed capsule control with explicit selected and disabled semantics.
 ///
 /// `systemImage` accepts an SF Symbol name; arbitrary image content is
@@ -257,6 +291,7 @@ public struct MaterialChip: View {
     private let title: String
     private let systemImage: String?
     private let state: MaterialChipState
+    private let size: MaterialChipSize
     private let theme: MaterialTheme
     private let neighborGaps: MaterialChipNeighborGaps?
     private let action: () -> Void
@@ -265,6 +300,7 @@ public struct MaterialChip: View {
         _ title: String,
         systemImage: String? = nil,
         state: MaterialChipState,
+        size: MaterialChipSize = .compact,
         theme: MaterialTheme = .snow,
         neighborGaps: MaterialChipNeighborGaps? = nil,
         action: @escaping () -> Void
@@ -272,6 +308,7 @@ public struct MaterialChip: View {
         self.title = title
         self.systemImage = systemImage
         self.state = state
+        self.size = size
         self.theme = theme
         self.neighborGaps = neighborGaps
         self.action = action
@@ -284,7 +321,7 @@ public struct MaterialChip: View {
     @ViewBuilder
     private var styledButton: some View {
         let button = Button(action: action) {
-            HStack(spacing: MaterialChipGeometry.labelSpacing) {
+            HStack(spacing: size.labelSpacing) {
                 if let systemImage {
                     Image(systemName: systemImage)
                         .iconRole(.accessory)
@@ -304,7 +341,8 @@ public struct MaterialChip: View {
         case .filled:
             button.buttonStyle(MaterialChipButtonStyle(
                 appearance: .filled(tokens: theme.tokens),
-                tokens: theme.tokens
+                tokens: theme.tokens,
+                size: size
             ))
             .contentShape(
                 .interaction,
@@ -315,7 +353,8 @@ public struct MaterialChip: View {
         case .tonal:
             button.buttonStyle(MaterialChipButtonStyle(
                 appearance: .tonal(tokens: theme.tokens),
-                tokens: theme.tokens
+                tokens: theme.tokens,
+                size: size
             ))
             .contentShape(
                 .interaction,
@@ -458,13 +497,15 @@ enum MaterialChipStyle: Equatable, Sendable {
 private struct MaterialChipButtonStyle: ButtonStyle {
     let appearance: MaterialControlAppearance
     let tokens: MaterialTokenSheet
+    let size: MaterialChipSize
 
     func makeBody(configuration: Configuration) -> some View {
         MaterialChipStyleBody(
             label: configuration.label,
             isPressed: configuration.isPressed,
             appearance: appearance,
-            tokens: tokens
+            tokens: tokens,
+            size: size
         )
     }
 }
@@ -474,14 +515,16 @@ struct MaterialChipStyleBody<Label: View>: View {
     let isPressed: Bool
     let appearance: MaterialControlAppearance
     let tokens: MaterialTokenSheet
+    let size: MaterialChipSize
 
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         label
             .foregroundStyle(appearance.foreground.swiftUIColor)
-            .padding(.horizontal, MaterialChipGeometry.horizontalPadding)
-            .frame(minHeight: MaterialChipGeometry.visualHeight)
+            .padding(.horizontal, size.horizontalPadding)
+            .padding(.vertical, size.verticalPadding)
+            .frame(minHeight: size.minimumHeight)
             .background(backgroundStyle, in: Capsule())
             .opacity(
                 MaterialControlInteractionFeedback.semanticControlOpacity(
