@@ -108,9 +108,11 @@ a clean third fact or as a confusing third semantic beside live Seen and Loved.
 Two alternatives were considered and are recorded only as Taste guesses:
 
 - **Cool-shift Deep `#064852`** — not presented because its `+17.17°` hue shift
-  adds blue/water semantics without improving a binding requirement.
+  adds blue/water semantics and it is lower than Deep Companion on ink,
+  Seen separation, and Loved separation.
 - **Softer Cool `#0B4D56`** — not presented because it gives up sibling
-  separation without gaining a binding benefit.
+  separation and ink margin relative to Deep Companion without gaining a
+  binding benefit.
 
 ## Artifact topology
 
