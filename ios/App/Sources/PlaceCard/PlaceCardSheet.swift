@@ -43,44 +43,88 @@ enum PlaceCardLayout {
     static let actionBarHorizontalPadding: CGFloat = 18
 }
 
+struct PlaceCardActionPresentation: Equatable {
+    let title: String
+    let systemImage: String?
+    let style: PlaceCardActionStyle
+}
+
 enum PlaceCardActionStyle: Equatable {
-    case filled
     case tonal
     case quiet
-    case semantic(
+    case state(
         foreground: SemanticColorToken,
         background: SemanticColorToken
     )
 }
 
 enum PlaceCardActionAppearance {
-    static func style(for action: PlaceCardAction) -> PlaceCardActionStyle {
+    static func presentation(
+        for action: PlaceCardAction,
+        isSaved: Bool
+    ) -> PlaceCardActionPresentation {
         switch action {
-        case .seen:
-            .filled
+        case .save where isSaved:
+            PlaceCardActionPresentation(
+                title: "Saved",
+                systemImage: "bookmark.fill",
+                style: .state(
+                    foreground: .accent,
+                    background: .accentContainer
+                )
+            )
         case .save:
-            .tonal
-        case .love, .unlove:
-            .semantic(foreground: .love, background: .loveContainer)
-        case .unsee(isEnabled: true):
-            .semantic(foreground: .warning, background: .warningContainer)
-        case .hide, .unsee(isEnabled: false), .unhide:
-            .quiet
+            PlaceCardActionPresentation(
+                title: "Save",
+                systemImage: "bookmark",
+                style: .tonal
+            )
+        case .seen:
+            PlaceCardActionPresentation(
+                title: "Seen",
+                systemImage: "eye",
+                style: .tonal
+            )
+        case .unsee:
+            PlaceCardActionPresentation(
+                title: "Seen",
+                systemImage: "eye.fill",
+                style: .state(
+                    foreground: .accentContrast,
+                    background: .accent
+                )
+            )
+        case .love:
+            PlaceCardActionPresentation(
+                title: "Love",
+                systemImage: "heart",
+                style: .state(
+                    foreground: .love,
+                    background: .loveContainer
+                )
+            )
+        case .unlove:
+            PlaceCardActionPresentation(
+                title: "Loved",
+                systemImage: "heart.fill",
+                style: .state(
+                    foreground: .accentContrast,
+                    background: .love
+                )
+            )
+        case .hide:
+            PlaceCardActionPresentation(
+                title: "Hide",
+                systemImage: nil,
+                style: .quiet
+            )
+        case .unhide:
+            PlaceCardActionPresentation(
+                title: "Unhide",
+                systemImage: nil,
+                style: .quiet
+            )
         }
-    }
-
-    static func semanticControlOpacity(
-        isEnabled: Bool,
-        tokens: MaterialTokenSheet
-    ) -> Double {
-        isEnabled ? 1 : tokens.disabledAlpha
-    }
-
-    static func semanticControlScale(
-        isPressed: Bool,
-        tokens: MaterialTokenSheet
-    ) -> CGFloat {
-        isPressed ? tokens.pressScale : 1
     }
 
     static func usesQuietTextPressInset(for action: PlaceCardAction) -> Bool {
@@ -95,12 +139,14 @@ enum PlaceCardActionAppearance {
 
 struct PlaceCardActionStyleModifier: ViewModifier {
     let action: PlaceCardAction
+    let isSaved: Bool
     let theme: MaterialTheme
 
     func body(content: Content) -> some View {
         PlaceCardActionStyledContent(
             content: content,
             action: action,
+            isSaved: isSaved,
             theme: theme
         )
     }
@@ -109,13 +155,15 @@ struct PlaceCardActionStyleModifier: ViewModifier {
 struct PlaceCardActionStyledContent<Content: View>: View {
     let content: Content
     let action: PlaceCardAction
+    let isSaved: Bool
     let theme: MaterialTheme
 
     @ViewBuilder
     var body: some View {
-        switch PlaceCardActionAppearance.style(for: action) {
-        case .filled:
-            content.buttonStyle(MaterialFilledButtonStyle(theme: theme))
+        switch PlaceCardActionAppearance.presentation(
+            for: action,
+            isSaved: isSaved
+        ).style {
         case .tonal:
             content.buttonStyle(MaterialTonalButtonStyle(theme: theme))
         case .quiet:
@@ -126,12 +174,12 @@ struct PlaceCardActionStyledContent<Content: View>: View {
             } else {
                 content.buttonStyle(MaterialQuietButtonStyle(theme: theme))
             }
-        case let .semantic(foregroundToken, backgroundToken):
+        case let .state(foregroundToken, backgroundToken):
             content.buttonStyle(
-                PlaceCardSemanticToneButtonStyle(
-                    foreground: theme.tokens[foregroundToken].swiftUIColor,
-                    background: theme.tokens[backgroundToken].swiftUIColor,
-                    tokens: theme.tokens
+                MaterialStateToggleButtonStyle(
+                    foreground: foregroundToken,
+                    background: backgroundToken,
+                    theme: theme
                 )
             )
         }
@@ -185,37 +233,6 @@ enum PlaceCardPhotoLayout {
             ? min(containerWidth, clampedHeight * aspectRatio)
             : containerWidth
         return CGSize(width: frameWidth, height: clampedHeight)
-    }
-}
-
-private struct PlaceCardSemanticToneButtonStyle: ButtonStyle {
-    let foreground: Color
-    let background: Color
-    let tokens: MaterialTokenSheet
-
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(Typography.font(for: .button))
-            .foregroundStyle(foreground)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .frame(minHeight: 44)
-            .background(background, in: Capsule())
-            .contentShape(Capsule())
-            .opacity(
-                PlaceCardActionAppearance.semanticControlOpacity(
-                    isEnabled: isEnabled,
-                    tokens: tokens
-                )
-            )
-            .scaleEffect(
-                PlaceCardActionAppearance.semanticControlScale(
-                    isPressed: configuration.isPressed,
-                    tokens: tokens
-                )
-            )
     }
 }
 
@@ -457,7 +474,7 @@ struct PlaceCardSheet: View {
         let slots = PlaceCardActionSlots(pinState: card.pinState).actions
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
-            : AnyLayout(HStackLayout(spacing: 10))
+            : AnyLayout(HStackLayout(spacing: 8))
 
         VStack(alignment: .leading, spacing: 8) {
             if let actionError {
@@ -495,27 +512,39 @@ struct PlaceCardSheet: View {
             Button {
                 startAction { await setVisited(true, action: .seen) }
             } label: {
-                actionLabel(action)
+                actionLabel(action, isSaved: card.pinState.saved)
             }
-            .modifier(PlaceCardActionStyleModifier(action: action, theme: theme))
+            .modifier(PlaceCardActionStyleModifier(
+                action: action,
+                isSaved: card.pinState.saved,
+                theme: theme
+            ))
             .accessibilityIdentifier("place-card.visited")
             .accessibilityValue("Not seen")
         case .love:
             Button {
                 startAction { await setLoved(true, action: .love) }
             } label: {
-                actionLabel(action)
+                actionLabel(action, isSaved: card.pinState.saved)
             }
-            .modifier(PlaceCardActionStyleModifier(action: action, theme: theme))
+            .modifier(PlaceCardActionStyleModifier(
+                action: action,
+                isSaved: card.pinState.saved,
+                theme: theme
+            ))
             .accessibilityIdentifier("place-card.loved")
             .accessibilityValue("Not loved")
         case .unlove:
             Button {
                 startAction { await setLoved(false, action: .unlove) }
             } label: {
-                actionLabel(action)
+                actionLabel(action, isSaved: card.pinState.saved)
             }
-            .modifier(PlaceCardActionStyleModifier(action: action, theme: theme))
+            .modifier(PlaceCardActionStyleModifier(
+                action: action,
+                isSaved: card.pinState.saved,
+                theme: theme
+            ))
             .accessibilityIdentifier("place-card.loved")
             .accessibilityValue("Loved")
         case .hide:
@@ -524,14 +553,18 @@ struct PlaceCardSheet: View {
             Button {
                 startAction { await setVisited(false, action: action) }
             } label: {
-                actionLabel(action)
+                actionLabel(action, isSaved: card.pinState.saved)
             }
-            .modifier(PlaceCardActionStyleModifier(action: action, theme: theme))
+            .modifier(PlaceCardActionStyleModifier(
+                action: action,
+                isSaved: card.pinState.saved,
+                theme: theme
+            ))
             .accessibilityIdentifier("place-card.unsee")
             .accessibilityValue("Seen")
             .disabled(!isEnabled)
         case .unhide:
-            unhideButton()
+            unhideButton(card)
         }
     }
 
@@ -539,7 +572,7 @@ struct PlaceCardSheet: View {
         Button {
             showListPicker = true
         } label: {
-            actionLabel(.save, title: card.pinState.saved ? "Saved" : "Save")
+            actionLabel(.save, isSaved: card.pinState.saved)
         }
         .highPriorityGesture(
             LongPressGesture(minimumDuration: 0.5)
@@ -547,7 +580,11 @@ struct PlaceCardSheet: View {
                     showListPicker = true
                 }
         )
-        .modifier(PlaceCardActionStyleModifier(action: .save, theme: theme))
+        .modifier(PlaceCardActionStyleModifier(
+            action: .save,
+            isSaved: card.pinState.saved,
+            theme: theme
+        ))
         .accessibilityIdentifier("place-card.save")
         .accessibilityValue(card.pinState.saved ? "Saved" : "Not saved")
         .accessibilityHint(
@@ -559,27 +596,48 @@ struct PlaceCardSheet: View {
         Button {
             startAction { await setHidden(card) }
         } label: {
-            actionLabel(.hide)
+            actionLabel(.hide, isSaved: card.pinState.saved)
         }
-        .modifier(PlaceCardActionStyleModifier(action: .hide, theme: theme))
+        .modifier(PlaceCardActionStyleModifier(
+            action: .hide,
+            isSaved: card.pinState.saved,
+            theme: theme
+        ))
         .accessibilityIdentifier("place-card.hide")
         .accessibilityValue("Not hidden")
     }
 
-    private func unhideButton() -> some View {
+    private func unhideButton(_ card: PlaceCardModel) -> some View {
         Button {
             startAction { await setHidden(false) }
         } label: {
-            actionLabel(.unhide)
+            actionLabel(.unhide, isSaved: card.pinState.saved)
         }
-        .modifier(PlaceCardActionStyleModifier(action: .unhide, theme: theme))
+        .modifier(PlaceCardActionStyleModifier(
+            action: .unhide,
+            isSaved: card.pinState.saved,
+            theme: theme
+        ))
         .accessibilityIdentifier("place-card.unhide")
         .accessibilityValue("Hidden")
     }
 
-    private func actionLabel(_ action: PlaceCardAction, title: String? = nil) -> some View {
-        Text(verbatim: title ?? action.title)
+    @ViewBuilder
+    private func actionLabel(_ action: PlaceCardAction, isSaved: Bool) -> some View {
+        let presentation = PlaceCardActionAppearance.presentation(
+            for: action,
+            isSaved: isSaved
+        )
+        if let systemImage = presentation.systemImage {
+            Label(
+                presentation.title,
+                systemImage: systemImage
+            )
             .frame(maxWidth: .infinity)
+        } else {
+            Text(verbatim: presentation.title)
+                .frame(maxWidth: .infinity)
+        }
     }
 
     private func loadCard() async {
