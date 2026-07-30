@@ -74,7 +74,7 @@ enum ExploreScopeControl: CaseIterable {
             )
         case .coverageShading:
             ExploreScopeControlPresentation(
-                title: "Show offline coverage shading",
+                title: "Show coverage shading",
                 icon: .coverageShading,
                 accessibilityIdentifier: "map.layers.coverage-shading"
             )
