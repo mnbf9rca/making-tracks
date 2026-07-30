@@ -365,6 +365,7 @@ Expected: the selected `testPlaceCardActionsUseStateMorphology` passes.
 Run through the designated simulator:
 
 ```bash
+MAKING_TRACKS_EXPORT_UI_TEST_SCREENSHOTS=1 \
 ./scripts/sim-lock.sh xcodebuild test \
   -project ios/App/MakingTracks.xcodeproj \
   -scheme MakingTracks \
