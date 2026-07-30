@@ -219,6 +219,25 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
+    func testDisabledStateTogglePreservesOpaqueSemanticFill() throws {
+        let image = try render(
+            Button(action: {}) {
+                Color.clear.frame(width: 400, height: 400)
+            }
+            .buttonStyle(
+                MaterialStateToggleButtonStyle(
+                    foreground: .accentContrast,
+                    background: .accent
+                )
+            )
+            .disabled(true)
+            .padding(12)
+            .background(Color.clear)
+        )
+
+        try assertCenterAccentAlpha(in: image, equals: 1)
+    }
+
     func testPressedMaterialChipBodyPreservesOpaqueSemanticPixels() throws {
         let image = try renderChipStyleBody(isPressed: true)
 

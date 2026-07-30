@@ -3530,6 +3530,124 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
     }
 
+    func testPlaceCardSavedLovedStateRetainsOpaqueSeenFact() {
+        for accessibilityTextSize in [false, true] {
+            let app = launch(
+                reset: true,
+                accessibilityTextSize: accessibilityTextSize,
+                seedUserList: true
+            )
+            let map = app.otherElements["map.surface"]
+            XCTAssertTrue(map.waitForExistence(timeout: 10))
+            openFixtureCard(in: map, app: app)
+
+            let sheet = app.scrollViews.matching(
+                identifierPrefix: "place-card.instance."
+            ).firstMatch
+            XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+            if !accessibilityTextSize {
+                XCTAssertTrue(expandPlaceCardSheet(in: app))
+            }
+
+            let actionBar = app.otherElements["place-card.action-bar"]
+            XCTAssertTrue(actionBar.waitForExistence(timeout: 5))
+            let saveButton = actionBar.buttons["place-card.save"]
+            XCTAssertTrue(saveButton.waitForExistence(timeout: 5))
+            XCTAssertEqual(saveButton.label, "Saved")
+
+            let visitedButton = actionBar.buttons["place-card.visited"]
+            XCTAssertTrue(visitedButton.waitForExistence(timeout: 5))
+            visitedButton.tap()
+
+            let lovedButton = actionBar.buttons["place-card.loved"]
+            XCTAssertTrue(lovedButton.waitForExistence(timeout: 5))
+            XCTAssertEqual(lovedButton.label, "Love")
+            lovedButton.tap()
+
+            XCTAssertTrue(waitForButtonLabel(
+                "Loved",
+                identifier: "place-card.loved",
+                in: app
+            ))
+            let seenButton = actionBar.buttons["place-card.unsee"]
+            XCTAssertTrue(seenButton.waitForExistence(timeout: 5))
+            XCTAssertEqual(seenButton.label, "Seen")
+            XCTAssertFalse(seenButton.isEnabled)
+
+            let visibleButtons = [saveButton, lovedButton, seenButton]
+            for button in visibleButtons {
+                assertMinimumInteractiveTarget(button)
+            }
+            if accessibilityTextSize {
+                assertVerticalActionStack(visibleButtons, in: app)
+                for (upper, lower) in zip(
+                    visibleButtons,
+                    visibleButtons.dropFirst()
+                ) {
+                    XCTAssertEqual(
+                        lower.frame.minY - upper.frame.maxY,
+                        8,
+                        accuracy: 1
+                    )
+                }
+            } else {
+                for (leading, trailing) in zip(
+                    visibleButtons,
+                    visibleButtons.dropFirst()
+                ) {
+                    assertHorizontallyOrdered(leading, trailing)
+                    assertNoFrameIntersection(leading, trailing)
+                    XCTAssertEqual(
+                        trailing.frame.minX - leading.frame.maxX,
+                        8,
+                        accuracy: 1
+                    )
+                }
+            }
+
+            let appFrame = app.windows.firstMatch.exists
+                ? app.windows.firstMatch.frame
+                : app.frame
+            XCTAssertEqual(appFrame.width, 402, accuracy: 0.5)
+            XCTAssertEqual(appFrame.height, 874, accuracy: 0.5)
+
+            let name = [
+                "place-card-r15",
+                accessibilityTextSize ? "ax" : "default",
+                "saved",
+                "loved",
+            ].joined(separator: "-")
+            let screenshot = attachScreenshot(
+                named: name,
+                forceExport: true
+            )
+            guard let raster = RenderedPixelRaster(
+                screenshot: screenshot,
+                appFrame: appFrame
+            ) else {
+                XCTFail("Could not decode saved+loved state render")
+                app.terminate()
+                continue
+            }
+            let accentCoverage = raster.tokenCoverage(
+                RenderedRGB(10, 107, 92),
+                in: seenButton.frame
+            )
+            XCTAssertGreaterThan(
+                accentCoverage,
+                0.4,
+                "Disabled Seen must preserve its opaque accent fact fill"
+            )
+            print(
+                "PLACE_CARD_R15_METRICS mode=\(accessibilityTextSize ? "ax" : "default") "
+                    + "frames=\(visibleButtons.map(\.frame)) "
+                    + "seenAccentCoverage=\(accentCoverage)"
+            )
+
+            app.terminate()
+        }
+    }
+
     func testLocateMeChromeExplainsWhenLocationIsDeniedAtAX5() throws {
         let app = launch(
             reset: true,
@@ -4986,16 +5104,18 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         return (values["x"] ?? -1, values["y"] ?? -1)
     }
 
+    @discardableResult
     private func attachScreenshot(
         named name: String,
         forceExport: Bool = false
-    ) {
+    ) -> XCUIScreenshot {
         let screenshot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
         exportScreenshot(screenshot, named: name, force: forceExport)
+        return screenshot
     }
 
     private func exportScreenshot(

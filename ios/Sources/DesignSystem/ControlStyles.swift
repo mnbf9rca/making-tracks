@@ -46,6 +46,26 @@ enum MaterialControlInteractionFeedback {
     }
 }
 
+enum MaterialControlDisabledAppearance {
+    case dim
+    case preserveSemanticState
+
+    func opacity(
+        isEnabled: Bool,
+        tokens: MaterialTokenSheet
+    ) -> Double {
+        switch self {
+        case .dim:
+            MaterialControlInteractionFeedback.semanticControlOpacity(
+                isEnabled: isEnabled,
+                tokens: tokens
+            )
+        case .preserveSemanticState:
+            1
+        }
+    }
+}
+
 enum MaterialControlPressFeedback: Equatable, Sendable {
     case scale
     case symbolWeightPulse
@@ -233,6 +253,7 @@ public struct MaterialStateToggleButtonStyle: ButtonStyle {
             appearance: appearance,
             tokens: theme.tokens,
             pressFeedback: pressFeedback,
+            disabledAppearance: .preserveSemanticState,
             accessibilityValue: { $0 ? nil : "Unavailable" }
         )
     }
@@ -551,6 +572,7 @@ struct MaterialButtonStyleBody<Label: View>: View {
     let appearance: MaterialControlAppearance
     let tokens: MaterialTokenSheet
     let pressFeedback: MaterialControlPressFeedback
+    var disabledAppearance: MaterialControlDisabledAppearance = .dim
     let accessibilityValue: (Bool) -> String?
 
     @Environment(\.isEnabled) private var isEnabled
@@ -569,7 +591,7 @@ struct MaterialButtonStyleBody<Label: View>: View {
             .frame(minHeight: 44)
             .background(backgroundStyle, in: Capsule())
             .opacity(
-                MaterialControlInteractionFeedback.semanticControlOpacity(
+                disabledAppearance.opacity(
                     isEnabled: isEnabled,
                     tokens: tokens
                 )
