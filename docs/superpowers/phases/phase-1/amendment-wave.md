@@ -337,8 +337,8 @@ tonal-strength companion is the likely candidate. Raise it through fable; do not
 - **Serves:** Rob's ruling of 2026-07-30 on the Show-saved-places control he added during A8 · **Spec section:** §2 — **but see the gap note below; §2 predates this control and does not cover it** · **Review tier:** `sourcery` + `reviewer`
 - **Depends on:** **A1.** Verified against the tree at authoring: the Explore surface does not exist yet — the doors are still `"World"` and `"Tracks"` (`ios/App/Sources/Map/MapDoorShell.swift:128`, `:134`), and the two existing filter toggles mount in the Layers sheet's `List`/`Section` (`MapScreen.swift` ~`:8171`–`:8190`, identifier `map.layers.show-hidden`). There is no Scope surface to mount a third row on until A1 **merges** — claimed-and-building is not enough. *(Claim record at scaffolding: A1 is claimed by codex1, status branch.)*
 - **A8 metrics dependency: satisfied.** A8 merged as `7e92339c` after this row was authored; the MEASURED rows cited below are on `ios`.
-- **Owner:** unclaimed
-- **Status:** unclaimed
+- **Owner:** codex2
+- **Status:** branch — `wp-526-saved-visibility-filter`
 - **Branch:** `wp-526-saved-visibility-filter` — cut from a freshly-fetched `ios`
 
 **Why this row exists at all.** codex1 found the gap while grounding A1: the frozen Explore frame shows a Show-saved-places toggle, and **nothing owns its behaviour.** Spec §2 predates the control, A1's brief predates it, and the tree has no saved-filter seam. A control that appears in a frozen frame with no row behind it is a figure in neither the ratified set nor the code — the same shape as the snapped 21, arriving from the other direction.
