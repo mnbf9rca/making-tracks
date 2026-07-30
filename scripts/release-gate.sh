@@ -15,9 +15,34 @@ set -euo pipefail
 PROJECT="ios/App/MakingTracks.xcodeproj"
 PBXPROJ="$PROJECT/project.pbxproj"
 SCHEME="MakingTracks"
-UDID="C4A64D49-24A2-4429-B6E2-AD9A14142A99"
-DESTINATION="${MT_RELEASE_GATE_DESTINATION:-platform=iOS Simulator,id=$UDID}"
-RUN_DIR="${MT_RELEASE_GATE_RUN_DIR:-/private/tmp/release-gate-${AM_ME:-agent}}"
+DESTINATION="${MT_RELEASE_GATE_DESTINATION:-}"
+[ -n "$DESTINATION" ] || {
+  echo "release-gate: refused: MT_RELEASE_GATE_DESTINATION is required; export this seat's destination from wp-infra-sim-concurrency" >&2
+  exit 1
+}
+DESTINATION_FIELDS=",$DESTINATION,"
+case "$DESTINATION_FIELDS" in
+  *,id=*) DESTINATION_AFTER_ID="${DESTINATION_FIELDS#*,id=}" ;;
+  *)
+    echo "release-gate: refused: MT_RELEASE_GATE_DESTINATION must include id=<simulator-udid>" >&2
+    exit 1
+    ;;
+esac
+GATE_UDID="${DESTINATION_AFTER_ID%%,*}"
+DESTINATION_REMAINDER="${DESTINATION_AFTER_ID#"$GATE_UDID"}"
+case "$DESTINATION_REMAINDER" in
+  *,id=*)
+    echo "release-gate: refused: MT_RELEASE_GATE_DESTINATION must contain exactly one id=<simulator-udid>" >&2
+    exit 1
+    ;;
+esac
+case "$GATE_UDID" in
+  ""|*[!A-Za-z0-9-]*)
+    echo "release-gate: refused: MT_RELEASE_GATE_DESTINATION contains an invalid simulator UDID" >&2
+    exit 1
+    ;;
+esac
+RUN_DIR="${MT_RELEASE_GATE_RUN_DIR:-/private/tmp/release-gate-$GATE_UDID}"
 DERIVED_DATA="${MT_RELEASE_GATE_DERIVED_DATA:-$RUN_DIR/DerivedData}"
 RESULT_BUNDLE="$RUN_DIR/MakingTracksTests.xcresult"
 MODE="${MT_RELEASE_GATE_MODE:-full}"
@@ -132,20 +157,18 @@ populate_test_plan_args() {
 }
 
 destination_udid() {
-  case "$DESTINATION" in
-    *id=*)
-      value="${DESTINATION#*id=}"
-      echo "${value%%,*}"
-      ;;
-    *)
-      refuse "MT_RELEASE_GATE_DESTINATION must include id=<simulator-udid>"
-      ;;
-  esac
+  printf '%s\n' "$GATE_UDID"
 }
 
 lock_is_satisfied() {
-  [ "${MT_SIM_LOCK:-}" = "1" ] && return 0
-  [ "${MT_RELEASE_GATE_SKIP_LOCK:-}" = "1" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]
+  if [ "${MT_RELEASE_GATE_SKIP_LOCK:-}" = "1" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+    return 0
+  fi
+  [ "${MT_SIM_LOCK:-}" = "1" ] || return 1
+  [ -n "${MT_SIM_LOCK_UDID:-}" ] ||
+    refuse "simulator lock identity is missing (MT_SIM_LOCK_UDID)"
+  [ "$MT_SIM_LOCK_UDID" = "$GATE_UDID" ] ||
+    refuse "simulator lock is for simulator $MT_SIM_LOCK_UDID, not $GATE_UDID"
 }
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || refuse "not inside a git worktree"

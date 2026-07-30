@@ -76,7 +76,15 @@ def _fake_tools(tmp_path: Path) -> tuple[Path, Path]:
     xcodebuild.write_text(
         "#!/bin/sh\n"
         'echo "xcodebuild:$*" >> "$MT_RELEASE_GATE_LOG"\n'
+        'if [ "${MT_RELEASE_GATE_FAKE_CREATE_RESULT:-}" = "1" ]; then\n'
+        "  previous=\n"
+        '  for argument in "$@"; do\n'
+        '    if [ "$previous" = "-resultBundlePath" ]; then mkdir -p "$argument"; fi\n'
+        '    previous="$argument"\n'
+        "  done\n"
+        "fi\n"
         'if [ -n "${MT_RELEASE_GATE_XCODEBUILD_STDOUT:-}" ]; then printf "%s\\n" "$MT_RELEASE_GATE_XCODEBUILD_STDOUT"; fi\n'
+        'if [ "${MT_RELEASE_GATE_FAIL_TEST:-}" = "1" ] && [ "$1" = "test-without-building" ]; then exit 65; fi\n'
         'if [ "${MT_RELEASE_GATE_FAIL_XCODEBUILD:-}" = "1" ]; then exit 65; fi\n',
         encoding="utf-8",
     )
@@ -90,6 +98,8 @@ def _env(fakebin: Path, log: Path) -> dict[str, str]:
     env["PATH"] = f"{fakebin}:{env['PATH']}"
     env["AM_ME"] = "test-agent"
     env["MT_SIM_LOCK"] = "1"
+    env["MT_SIM_LOCK_UDID"] = UDID
+    env["MT_RELEASE_GATE_DESTINATION"] = f"platform=iOS Simulator,id={UDID}"
     env["MT_RELEASE_GATE_TEST_MODE"] = "1"
     env["MT_RELEASE_GATE_RUN_DIR"] = str(log.parent / "release-gate-run")
     env["MT_RELEASE_GATE_LOG"] = str(log)
@@ -144,6 +154,61 @@ def test_release_gate_refuses_when_not_run_through_sim_lock(tmp_path):
         "release-gate: refused: must be run through scripts/sim-lock.sh "
         "(which holds the simulator lock)"
     )
+    assert not log.exists()
+
+
+def test_release_gate_refuses_when_lock_identity_is_missing(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env.pop("MT_SIM_LOCK_UDID")
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 1
+    assert "lock identity is missing" in result.stderr
+    assert not log.exists()
+
+
+def test_release_gate_refuses_when_lock_is_for_another_simulator(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env["MT_SIM_LOCK_UDID"] = "ANOTHER-UDID"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 1
+    assert f"lock is for simulator ANOTHER-UDID, not {UDID}" in result.stderr
+    assert not log.exists()
+
+
+def test_release_gate_refuses_destination_without_exact_id_field(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env["MT_RELEASE_GATE_DESTINATION"] = "platform=iOS Simulator,grid=NOT-AN-ID"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 1
+    assert "must include id=<simulator-udid>" in result.stderr
+    assert not log.exists()
+
+
+def test_release_gate_refuses_multiple_destination_id_fields(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env["MT_RELEASE_GATE_DESTINATION"] = (
+        "platform=iOS Simulator,id=FIRST-UDID,id=SECOND-UDID"
+    )
+    env["MT_SIM_LOCK_UDID"] = "FIRST-UDID"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 1
+    assert "must contain exactly one id=<simulator-udid>" in result.stderr
     assert not log.exists()
 
 
@@ -205,6 +270,7 @@ def test_release_gate_destination_override_replaces_all_udid_uses(tmp_path):
     fakebin, log = _fake_tools(tmp_path)
     env = _env(fakebin, log)
     env["MT_RELEASE_GATE_DESTINATION"] = "platform=iOS Simulator,id=RUNNER-UDID"
+    env["MT_SIM_LOCK_UDID"] = "RUNNER-UDID"
 
     result = _run([str(SCRIPT)], repo, env=env)
 
@@ -371,6 +437,47 @@ def test_release_gate_keeps_derived_data_when_xcodebuild_fails(tmp_path):
 
     assert result.returncode == 65
     assert derived_data.exists()
+
+
+def test_release_gate_preserves_result_bundle_after_success(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env["MT_RELEASE_GATE_FAKE_CREATE_RESULT"] = "1"
+    result_bundle = log.parent / "release-gate-run" / "MakingTracksTests.xcresult"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert result_bundle.is_dir()
+
+
+def test_release_gate_preserves_result_bundle_after_failure(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env["MT_RELEASE_GATE_FAKE_CREATE_RESULT"] = "1"
+    env["MT_RELEASE_GATE_FAIL_TEST"] = "1"
+    result_bundle = log.parent / "release-gate-run" / "MakingTracksTests.xcresult"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 65
+    assert result_bundle.is_dir()
+
+
+def test_release_gate_preserves_caller_named_result_bundle(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env["MT_RELEASE_GATE_FAKE_CREATE_RESULT"] = "1"
+    result_bundle = tmp_path / "caller-owned" / "Shard.xcresult"
+    env["MT_RELEASE_GATE_RESULT_BUNDLE"] = str(result_bundle)
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert result_bundle.is_dir()
 
 
 def test_release_gate_logs_failed_phase_timing_before_exiting(tmp_path):
