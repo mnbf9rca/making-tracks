@@ -109,10 +109,11 @@ Two alternatives were considered and are recorded only as Taste guesses:
 
 - **Cool-shift Deep `#064852`** — not presented because its `+17.17°` hue shift
   adds blue/water semantics and it is lower than Deep Companion on ink,
-  Seen separation, and Loved separation.
+  Seen separation, and Loved separation: `9.7534:1`, `1.5903:1`, and
+  `1.8582:1`, respectively.
 - **Softer Cool `#0B4D56`** — not presented because it gives up sibling
   separation and ink margin relative to Deep Companion without gaining a
-  binding benefit.
+  binding benefit: ink `9.0755:1`, Seen `1.4798:1`, and Loved `1.7290:1`.
 
 ## Artifact topology
 
