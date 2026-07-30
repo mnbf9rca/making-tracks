@@ -766,7 +766,7 @@ Records, not actions. Nothing here is claimable in Phase 1. They live here so th
 - **R9's geometry remedy assumes a boundary to move, and `quiet` controls have none.** `quiet` is `background: nil`, `backgroundOpacity: 0`, so an icon-only quiet control's enabled press feedback fell from a clearly visible 22% dim to roughly **0.35pt of motion on a 17pt glyph** — effectively nothing. Filled and tonal kept their feedback because a capsule edge moves visibly; quiet lost its. The remedy, if the fleet wants perceptible feedback there, is **another geometry** — an inset, a brief symbol-weight shift — and **never restored opacity**, which is the thing R9 forbids. First mounted instance: T1.7's location-off Settings gear, where choosing quiet remains correct because an inconspicuous control should be inconspicuous. R9's scope, therefore the designer's call.
   - *Companion evidence — the taste-call protocol working.* T1.7 declared, before R9 existed, that it *"rejected the quiet treatment for Undo: it reduced the only recovery affordance too far against the transient toast surface."* The later ruling made quiet weaker still, so that reasoning gained force rather than needing rescue. **A guess that a subsequent ruling strengthens is evidence the protocol produces durable reasoning, not merely defensible choices.**
 
-### The component-metrics table's batch — four items, one of them an agenda question
+### The component-metrics table's batch — five items, one of them an agenda question
 
 *Assembled here so the batch lives in one place rather than across a record, a PR body and a thread. The session decides; nothing below is claimable.*
 
