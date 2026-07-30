@@ -244,7 +244,7 @@ govern **actions only**. The reasoning, ratified verbatim:
 fills `accent`, **loved** fills the ratified `love` row, and **saved** fills an **accent-family dark
 fill carrying `accentContrast` ink** *(amended by designer ruling 2026-07-30; "tonal-strength
 companion" is retired from this rider — same-ink ON/OFF pairs cap at 1.43:1 separation by
-arithmetic, so saved adopts the two-ink inversion seen and loved already use)*. **Exact values are
+arithmetic for a free pair, lower still once either value is pinned, so saved adopts the two-ink inversion seen and loved already use)*. **Exact values are
 the re-render's job to prove against the AA gate.** The
 purpose is that three ON pills read as three differently-toned *facts* rather than three copies of
 the CTA colour, so a screen's single filled **action** stays unmistakable beside a fully-lit cluster.
