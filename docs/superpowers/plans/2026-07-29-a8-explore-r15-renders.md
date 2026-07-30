@@ -50,6 +50,20 @@ reviewer delta validation.
 
 ---
 
+## Final Rob ruling — 2026-07-30
+
+Rob ratified Balanced `#D4EDE9` as the designed opaque `accentContainer` value under
+construction law A: hue `170.40°`, delta `−0.32°` from accent, saturation `40.98%`,
+and `5.23:1` contrast with accent ink `#0A6B5C`.
+
+The frozen artifacts apply this value to Saved and contain no candidate strip or
+dead-composite evidence box. The rejected mechanical composite `#DEE9E0` survives
+as one-line provenance in the packet/README and as the full decision record in git
+history and the PR body. Explore and R15 freeze together after a deterministic
+recapture and reviewer validation of the exact pushed freeze SHA.
+
+---
+
 ### Task 1: Author the collapsed Explore candidate packet
 
 **Files:**
@@ -211,3 +225,55 @@ and deterministic repeat-capture hashes.
 Update the README's candidate metrics/status without touching the frozen table or ratified spec,
 run docs checks, commit signed, push and verify the exact remote SHA, then request scoped reviewer
 delta validation before Rob picks the Saved value.
+
+### Task 7: Apply Rob's final Saved ruling and freeze both packets
+
+**Files:**
+- Modify: `docs/design/design-system/a8-explore-surface.html`
+- Recapture: `docs/design/design-system/a8-explore-surface.png`
+- Modify: `docs/design/design-system/a8-r15-place-card.html`
+- Recapture: `docs/design/design-system/a8-r15-place-card.png`
+- Modify: `docs/design/design-system/README.md`
+- Modify: `docs/superpowers/specs/2026-07-25-design-system-and-ia-design.md`
+- Modify: `docs/superpowers/phases/phase-1/amendment-wave.md`
+
+**Interfaces:**
+- Consumes: reviewer validation at artifact commit `4ca99e0ac82dd304b5f7077ab79eee099e60a13b`
+  and Rob's final Balanced ruling
+- Produces: two frozen packets, one ratified `accentContainer` metric row, and an exact pushed
+  SHA for freeze validation
+
+- [ ] **Step 1: Apply the ratified Saved container**
+
+Set the Saved pill fill to designed opaque `accentContainer` `#D4EDE9` in both R15 phone frames,
+with accent ink `#0A6B5C`. Remove the three-candidate comparison strips, rejected-decision boxes,
+and candidate-only metrics from the frozen packet. Keep the legitimate Saved, Seen, and Loved
+cluster with no filled action.
+
+- [ ] **Step 2: Freeze both packet records**
+
+Relabel both Explore and R15 packets `FROZEN`. Replace candidate-only notes with the ruling:
+`accentContainer = #D4EDE9`, designed opaque, ratified by Rob on `2026-07-30`, hue `170.40°`,
+delta `−0.32°`, saturation `40.98%`, and `5.23:1` against ink `#0A6B5C`. Keep one concise line
+identifying `#DEE9E0` as the rejected mechanical composite and pointing to the git-history
+decision record.
+
+- [ ] **Step 3: Ratify the component metric**
+
+Add `accentContainer` to the spec's component-metrics table with the full ruled value and
+provenance. Do not change production tokens or Swift.
+
+- [ ] **Step 4: Recapture and verify both frozen packets**
+
+Use only Playwright-bundled Chromium/headless shell `151.0.7922.34` at DSF 1. Verify exact
+declared packet dimensions, exact 390×844 phones, no clipping or overlap, R14 Scope/defaults
+and bottom-destination reachability, R15 Saved/Seen/Loved ON states, exact state colours,
+ratified measurement text, removal of all candidate comparison UI, and deterministic
+repeat-capture hashes. Inspect both PNGs at original detail.
+
+- [ ] **Step 5: Record and route the freeze**
+
+Update README and A8 status to frozen pending exact-SHA freeze validation, run the docs-only
+gate set, commit signed, push and verify the remote SHA, then send the reviewer the exact SHA,
+both hashes, dimensions, and freeze evidence. Do not open the final PR until freeze validation
+passes.
