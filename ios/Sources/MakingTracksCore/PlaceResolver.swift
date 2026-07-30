@@ -17,23 +17,9 @@ public enum CardSource: Sendable, Equatable {
     case tile(PlaceRef)
     case snapshot(PlaceRef, PlaceSnapshot)
     case unavailable
-}
 
-public struct PlaceResolver<Tile: TileResolving, Snapshots: SnapshotReading>: Sendable {
-    private let tile: Tile
-    private let snapshots: Snapshots
-
-    public init(tile: Tile, snapshots: Snapshots) {
-        self.tile = tile
-        self.snapshots = snapshots
-    }
-
-    public func source(for placeID: String) async -> CardSource {
-        if let placeRef = await tile.placeRef(for: placeID) {
-            return .tile(placeRef)
-        }
-        guard let snapshot = try? snapshots.snapshot(for: placeID),
-              let rawJSON = Self.actionRawJSON(for: snapshot),
+    public static func actionSafeSnapshot(_ snapshot: PlaceSnapshot) -> Self {
+        guard let rawJSON = actionRawJSON(for: snapshot),
               let placeRef = try? PlaceRef(
                 placeID: snapshot.placeID,
                 name: snapshot.name,
@@ -63,5 +49,25 @@ public struct PlaceResolver<Tile: TileResolving, Snapshots: SnapshotReading>: Se
             return nil
         }
         return String(decoding: data, as: UTF8.self)
+    }
+}
+
+public struct PlaceResolver<Tile: TileResolving, Snapshots: SnapshotReading>: Sendable {
+    private let tile: Tile
+    private let snapshots: Snapshots
+
+    public init(tile: Tile, snapshots: Snapshots) {
+        self.tile = tile
+        self.snapshots = snapshots
+    }
+
+    public func source(for placeID: String) async -> CardSource {
+        if let placeRef = await tile.placeRef(for: placeID) {
+            return .tile(placeRef)
+        }
+        guard let snapshot = try? snapshots.snapshot(for: placeID) else {
+            return .unavailable
+        }
+        return .actionSafeSnapshot(snapshot)
     }
 }

@@ -94,6 +94,19 @@ extension AppDatabase {
             }
         }
 
+        register("v6") { db in
+            try db.execute(
+                sql: """
+                    DELETE FROM hidden_places
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM list_items
+                        WHERE list_items.place_id = hidden_places.place_id
+                    )
+                    """
+            )
+        }
+
         return (migrator, identifiers)
     }
 

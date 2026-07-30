@@ -26,6 +26,18 @@ final class InteractionsTests: XCTestCase {
         )
     }
 
+    private func rejectFixtureMemberships(in database: AppDatabase) throws {
+        try database.dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TRIGGER reject_fixture_memberships
+                BEFORE INSERT ON list_items
+                BEGIN
+                    SELECT RAISE(ABORT, 'fixture membership rejected');
+                END
+                """)
+        }
+    }
+
     func testMarkingSeenSnapshotsOnFirstInteractionWithProvenance() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         _ = try db.recordVisit(ref("p1", fetchedAt: Date(timeIntervalSince1970: 77)))
@@ -82,6 +94,38 @@ final class InteractionsTests: XCTestCase {
     func testSaveToMissingListThrowsInsteadOfDroppingUserIntent() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         XCTAssertThrowsError(try db.addToList(ref("p_missing"), listID: 404))
+    }
+
+    func testFailedSaveRollsBackMembershipAndPreservesHiddenUserIntent() throws {
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_save_rollback", name: "Rollback place")
+        let visitID = try db.recordVisit(place, verdict: .loved)
+        try db.setHidden(place, true)
+        let snapshotBefore = try XCTUnwrap(try db.snapshot(for: place.placeID))
+        let visitBefore = try XCTUnwrap(try db.visit(id: visitID))
+        try db.dbQueue.write { database in
+            try database.execute(sql: """
+                CREATE TRIGGER reject_hidden_delete
+                BEFORE DELETE ON hidden_places
+                WHEN OLD.place_id = 'p_save_rollback'
+                BEGIN
+                    SELECT RAISE(ABORT, 'hidden delete rejected');
+                END
+                """)
+        }
+
+        XCTAssertThrowsError(try db.addToList(place, listID: 1))
+
+        XCTAssertEqual(try db.listMemberships(containing: place.placeID), [])
+        XCTAssertTrue(try db.hiddenPlaceIDs().contains(place.placeID))
+        XCTAssertEqual(try db.snapshot(for: place.placeID), snapshotBefore)
+        let visitAfter = try XCTUnwrap(try db.visit(id: visitID))
+        XCTAssertEqual(visitAfter.id, visitBefore.id)
+        XCTAssertEqual(visitAfter.placeID, visitBefore.placeID)
+        XCTAssertEqual(visitAfter.visitedAt, visitBefore.visitedAt)
+        XCTAssertEqual(visitAfter.verdict, visitBefore.verdict)
+        XCTAssertEqual(visitAfter.createdAt, visitBefore.createdAt)
+        XCTAssertEqual(visitAfter.visitOrder, visitBefore.visitOrder)
     }
 
     func testWantToGoListIDReturnsSeededSystemList() throws {
@@ -282,18 +326,17 @@ final class InteractionsTests: XCTestCase {
 
         try db.addToList(customPlace, listID: custom.id!)
         try db.addToList(wantPlace, listID: try db.wantToGoListID())
-        try db.setHidden(customPlace, true)
         _ = try db.recordVisit(customPlace)
 
         let rows = try db.listItems(listID: custom.id!)
         XCTAssertEqual(rows.map(\.placeID), ["p_custom"])
         XCTAssertEqual(rows[0].name, "Custom Place")
-        XCTAssertEqual(rows[0].pinState, PinState(saved: true, visit: .visited, hidden: true))
+        XCTAssertEqual(rows[0].pinState, PinState(saved: true, visit: .visited, hidden: false))
 
         let features = try db.listMapFeatures(listID: custom.id!)
         XCTAssertEqual(features.map(\.0.id), ["p_custom"])
         XCTAssertEqual(features[0].0.lat, customPlace.lat)
-        XCTAssertEqual(features[0].1, PinState(saved: true, visit: .visited, hidden: true))
+        XCTAssertEqual(features[0].1, PinState(saved: true, visit: .visited, hidden: false))
     }
 
     func testListMembershipLookupUsesExactRowsNotDisplayFeed() throws {
@@ -560,23 +603,157 @@ final class InteractionsTests: XCTestCase {
         XCTAssertEqual(try db.viewportState(["p_hidden"])["p_hidden"], PinState(saved: false, visit: .none, hidden: false))
     }
 
-    func testHiddenIsOrthogonalToSavedAndVisitState() throws {
+    func testHiddenRemainsOrthogonalToVisitState() throws {
+        // Mutation caught: treating any visit as a saved membership would reject this hide.
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         let place = try ref("p_hidden_loved")
-        try db.addToList(place, listID: try db.wantToGoListID())
         _ = try db.recordVisit(place, verdict: .loved)
         try db.setHidden(place, true)
 
         XCTAssertEqual(
             try db.viewportState([place.placeID])[place.placeID],
-            PinState(saved: true, visit: .loved, hidden: true)
+            PinState(saved: false, visit: .loved, hidden: true)
         )
 
         try db.setHidden(place, false)
 
         XCTAssertEqual(
             try db.viewportState([place.placeID])[place.placeID],
+            PinState(saved: false, visit: .loved, hidden: false)
+        )
+    }
+
+    func testSavedPlaceCannotBeHiddenAndRejectedWriteDoesNotSnapshot() throws {
+        // Mutation caught: mutating saved, hidden, or snapshot state before rejecting a saved place.
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_saved_hide_rejected")
+        let listID = try db.wantToGoListID()
+        try db.dbQueue.write {
+            try $0.execute(
+                sql: "INSERT INTO list_items (list_id, place_id, added_at) VALUES (?, ?, ?)",
+                arguments: [listID, place.placeID, Date(timeIntervalSince1970: 50)]
+            )
+        }
+
+        XCTAssertThrowsError(try db.setHidden(place, true)) { error in
+            guard let databaseError = error as? AppDatabaseError else {
+                return XCTFail("Expected AppDatabaseError, got \(error)")
+            }
+            XCTAssertEqual(databaseError, .savedPlaceCannotBeHidden)
+        }
+        XCTAssertEqual(try db.listMemberships(containing: place.placeID), [listID])
+        XCTAssertEqual(try db.hiddenPlaceIDs(), [])
+        XCTAssertNil(try db.snapshot(for: place.placeID))
+    }
+
+    func testSavingHiddenPlaceAutoUnhidesAndPreservesLovedVisit() throws {
+        // Mutation caught: adding a membership without removing the place's hidden state.
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_hidden_then_saved")
+        _ = try db.recordVisit(place, verdict: .loved)
+        try db.setHidden(place, true)
+
+        try db.addToList(place, listID: try db.wantToGoListID())
+
+        XCTAssertEqual(
+            try db.viewportState([place.placeID])[place.placeID],
             PinState(saved: true, visit: .loved, hidden: false)
+        )
+    }
+
+    func testIdempotentSaveRepairsLegacySavedAndHiddenCoexistence() throws {
+        // Mutation caught: skipping the unhide repair when the membership insert is a duplicate.
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_legacy_coexistence")
+        let listID = try db.wantToGoListID()
+        try db.addToList(place, listID: listID)
+        try db.dbQueue.write {
+            try $0.execute(
+                sql: "INSERT INTO hidden_places (place_id, hidden_at) VALUES (?, ?)",
+                arguments: [place.placeID, Date(timeIntervalSince1970: 75)]
+            )
+        }
+
+        try db.addToList(place, listID: listID)
+
+        XCTAssertEqual(try db.listMemberships(containing: place.placeID), [listID])
+        XCTAssertFalse(try db.hiddenPlaceIDs().contains(place.placeID))
+    }
+
+    func testSeedUITestingTrackListRepairsHiddenMembership() throws {
+        // Mutation caught: UI track fixtures inserting a saved membership without repairing hidden state.
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let first = try ref("p_seeded_track_hidden_1")
+        let second = try ref("p_seeded_track_hidden_2")
+        try db.setHidden(first, true)
+        try db.setHidden(second, true)
+
+        try db.seedUITestingTrackList(named: "Fixture track", places: [first, second])
+
+        XCTAssertEqual(
+            try db.viewportState([first.placeID])[first.placeID],
+            PinState(saved: true, visit: .visited, hidden: false)
+        )
+        XCTAssertEqual(
+            try db.viewportState([second.placeID])[second.placeID],
+            PinState(saved: true, visit: .visited, hidden: false)
+        )
+        XCTAssertFalse(try db.hiddenPlaceIDs().contains(first.placeID))
+        XCTAssertFalse(try db.hiddenPlaceIDs().contains(second.placeID))
+    }
+
+    func testSeedUITestingUserListRepairsHiddenMembership() throws {
+        // Mutation caught: UI user-list fixtures inserting a saved membership without repairing hidden state.
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_seeded_user_hidden")
+        try db.setHidden(place, true)
+
+        try db.seedUITestingUserList(named: "Fixture list", containingPlaceID: place.placeID)
+
+        XCTAssertEqual(
+            try db.viewportState([place.placeID])[place.placeID],
+            PinState(saved: true, visit: .none, hidden: false)
+        )
+        XCTAssertFalse(try db.hiddenPlaceIDs().contains(place.placeID))
+    }
+
+    func testSeedUITestingTrackListRollsBackHiddenRepairWhenMembershipFails() throws {
+        // Mutation caught: committing an unhide before a later fixture membership write fails.
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_seeded_track_rollback")
+        try db.setHidden(place, true)
+        try rejectFixtureMemberships(in: db)
+
+        XCTAssertThrowsError(try db.seedUITestingTrackList(named: "Fixture track", places: [place]))
+
+        XCTAssertTrue(try db.hiddenPlaceIDs().contains(place.placeID))
+    }
+
+    func testSeedUITestingUserListRollsBackHiddenRepairWhenMembershipFails() throws {
+        // Mutation caught: committing an unhide before a later fixture membership write fails.
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_seeded_user_rollback")
+        try db.setHidden(place, true)
+        try rejectFixtureMemberships(in: db)
+
+        XCTAssertThrowsError(try db.seedUITestingUserList(named: "Fixture list", containingPlaceID: place.placeID))
+
+        XCTAssertTrue(try db.hiddenPlaceIDs().contains(place.placeID))
+    }
+
+    func testRemovingLastMembershipAfterSaveDoesNotRehidePlace() throws {
+        // Mutation caught: deriving hidden state from membership removal instead of preserving its repaired state.
+        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let place = try ref("p_hidden_save_then_remove")
+        let listID = try db.wantToGoListID()
+        try db.setHidden(place, true)
+        try db.addToList(place, listID: listID)
+
+        try db.removeFromList(placeID: place.placeID, listID: listID)
+
+        XCTAssertEqual(
+            try db.viewportState([place.placeID])[place.placeID],
+            PinState(saved: false, visit: .none, hidden: false)
         )
     }
 

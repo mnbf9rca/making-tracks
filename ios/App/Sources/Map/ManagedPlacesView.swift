@@ -8,6 +8,7 @@ struct ManagedPlacesInlineIconGlyph: View {
     var body: some View {
         Image(systemName: systemName)
             .iconRole(.inline)
+            .fixedSize()
     }
 }
 
@@ -27,8 +28,20 @@ struct ManagedPlacesPresentation: Equatable {
     let emptyGuidance: String
     let surfaceIdentifier: String
     let rowIdentifierPrefix: String
-    let actionIdentifierPrefix: String
+    let primaryActionIdentifierPrefix: String
+    let secondaryActionIdentifierPrefix: String?
     let failureMessage: String
+
+    func primaryActionIdentifier(placeID: String) -> String {
+        "\(primaryActionIdentifierPrefix).\(placeID)"
+    }
+
+    func secondaryActionIdentifier(placeID: String) -> String {
+        guard let secondaryActionIdentifierPrefix else {
+            preconditionFailure("This managed-places mode has no secondary action.")
+        }
+        return "\(secondaryActionIdentifierPrefix).\(placeID)"
+    }
 }
 
 enum ManagedPlacesMode: Equatable {
@@ -45,7 +58,8 @@ enum ManagedPlacesMode: Equatable {
                 emptyGuidance: "Love a place you’ve seen and it’ll wait here.",
                 surfaceIdentifier: "tracks.loved.surface",
                 rowIdentifierPrefix: "tracks.loved.row",
-                actionIdentifierPrefix: "tracks.loved.remove",
+                primaryActionIdentifierPrefix: "tracks.loved.remove",
+                secondaryActionIdentifierPrefix: nil,
                 failureMessage: "Could not update that loved place."
             )
         case .hidden:
@@ -56,7 +70,8 @@ enum ManagedPlacesMode: Equatable {
                 emptyGuidance: "Places you hide will wait here until you bring them back.",
                 surfaceIdentifier: "tracks.hidden.surface",
                 rowIdentifierPrefix: "tracks.hidden.row",
-                actionIdentifierPrefix: "tracks.hidden.unhide",
+                primaryActionIdentifierPrefix: "tracks.hidden.unhide",
+                secondaryActionIdentifierPrefix: "tracks.hidden.save",
                 failureMessage: "Could not unhide that place."
             )
         }
@@ -128,6 +143,12 @@ struct ManagedPlacesState: Equatable {
         }
     }
 
+    mutating func removePlace(placeID: String) {
+        places.removeAll { $0.placeID == placeID }
+        pendingPlaceIDs.remove(placeID)
+        errorMessage = nil
+    }
+
     func isPending(placeID: String) -> Bool {
         pendingPlaceIDs.contains(placeID)
     }
@@ -156,6 +177,8 @@ struct ManagedPlacesView: View {
 
     @State private var state = ManagedPlacesState(places: [])
     @State private var didLoad = false
+    @State private var saveTarget: ListPlace?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let tokens = MaterialTheme.snow.tokens
 
@@ -205,6 +228,17 @@ struct ManagedPlacesView: View {
         .accessibilityIdentifier(mode.presentation.surfaceIdentifier)
         .task { await reload() }
         .refreshable { await reload() }
+        .sheet(item: $saveTarget) { place in
+            ListPickerView(
+                placeID: place.placeID,
+                model: model,
+                onChanged: { change in
+                    if case .added = change {
+                        state.removePlace(placeID: place.placeID)
+                    }
+                }
+            )
+        }
     }
 
     var titleRow: some View {
@@ -248,71 +282,109 @@ struct ManagedPlacesView: View {
 
     func placeRow(_ place: ListPlace) -> some View {
         MaterialHairlineRow {
-            HStack(alignment: .center, spacing: 12) {
-                ManagedPlacesInlineIconGlyph(systemName: mode.presentation.systemImage)
+            if mode == .hidden, dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 12) {
+                    placeIdentity(place)
+                    actionButton(for: place)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(alignment: .center, spacing: 12) {
+                    placeIdentity(place)
+                    actionButton(for: place)
+                }
+                .frame(minHeight: 44)
+            }
+        }
+    }
+
+    func placeIdentity(_ place: ListPlace) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            ManagedPlacesInlineIconGlyph(systemName: mode.presentation.systemImage)
+                .foregroundStyle(
+                    mode == .hidden
+                        ? tokens.muted.swiftUIColor
+                        : tokens.accent.swiftUIColor
+                )
+                .frame(minWidth: 24)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: place.name)
+                    .font(Typography.font(for: .listRowTitle))
                     .foregroundStyle(
                         mode == .hidden
                             ? tokens.muted.swiftUIColor
-                            : tokens.accent.swiftUIColor
+                            : tokens.ink.swiftUIColor
                     )
-                    .frame(width: 24)
-                    .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: place.name)
-                        .font(Typography.font(for: .listRowTitle))
-                        .foregroundStyle(
-                            mode == .hidden
-                                ? tokens.muted.swiftUIColor
-                                : tokens.ink.swiftUIColor
-                        )
-
-                    Text(verbatim: mode.metadata(for: place))
-                        .font(Typography.font(for: .metadata))
-                        .foregroundStyle(tokens.muted.swiftUIColor)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier(
-                    "\(mode.presentation.rowIdentifierPrefix).\(place.placeID)"
-                )
-
-                actionButton(for: place)
+                Text(verbatim: mode.metadata(for: place))
+                    .font(Typography.font(for: .metadata))
+                    .foregroundStyle(tokens.muted.swiftUIColor)
             }
-            .frame(minHeight: 44)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(
+                "\(mode.presentation.rowIdentifierPrefix).\(place.placeID)"
+            )
         }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
     }
 
     @ViewBuilder
     func actionButton(for place: ListPlace) -> some View {
-        Button {
-            Task { await performAction(for: place) }
-        } label: {
-            switch mode {
-            case .loved:
+        switch mode {
+        case .loved:
+            Button {
+                Task { await performAction(for: place) }
+            } label: {
                 ManagedPlacesInlineIconGlyph(systemName: "heart.slash")
-            case .hidden:
-                Text("Unhide")
-                    .font(Typography.font(for: .button))
             }
+            .foregroundStyle(tokens.accent.swiftUIColor)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .disabled(state.isPending(placeID: place.placeID))
+            .opacity(
+                state.isPending(placeID: place.placeID)
+                    ? tokens.disabledAlpha
+                    : 1
+            )
+            .accessibilityLabel(
+                mode.actionAccessibilityLabel(placeName: place.name)
+            )
+            .accessibilityIdentifier(
+                mode.presentation.primaryActionIdentifier(placeID: place.placeID)
+            )
+
+        case .hidden:
+            let layout = dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+                : AnyLayout(HStackLayout(spacing: 8))
+
+            layout {
+                Button("Unhide") {
+                    Task { await performAction(for: place) }
+                }
+                .buttonStyle(MaterialTonalButtonStyle())
+                .accessibilityLabel("Unhide \(place.name)")
+                .accessibilityIdentifier(
+                    mode.presentation.primaryActionIdentifier(placeID: place.placeID)
+                )
+
+                Button("Save") {
+                    saveTarget = place
+                }
+                .buttonStyle(MaterialQuietButtonStyle())
+                .accessibilityLabel("Save \(place.name)")
+                .accessibilityIdentifier(
+                    mode.presentation.secondaryActionIdentifier(placeID: place.placeID)
+                )
+            }
+            .disabled(state.isPending(placeID: place.placeID))
         }
-        .foregroundStyle(tokens.accent.swiftUIColor)
-        .frame(minWidth: 44, minHeight: 44)
-        .contentShape(Rectangle())
-        .buttonStyle(.plain)
-        .disabled(state.isPending(placeID: place.placeID))
-        .opacity(
-            state.isPending(placeID: place.placeID)
-                ? tokens.disabledAlpha
-                : 1
-        )
-        .accessibilityLabel(
-            mode.actionAccessibilityLabel(placeName: place.name)
-        )
-        .accessibilityIdentifier(
-            "\(mode.presentation.actionIdentifierPrefix).\(place.placeID)"
-        )
     }
 
     @MainActor

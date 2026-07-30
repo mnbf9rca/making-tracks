@@ -7,4 +7,5 @@ public enum AppDatabaseError: Error, Equatable {
     case emptyListName
     case listNameTooLong
     case systemListIsProtected
+    case savedPlaceCannotBeHidden
 }
