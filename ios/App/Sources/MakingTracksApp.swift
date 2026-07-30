@@ -32,7 +32,7 @@ struct MakingTracksApp: App {
     private static let seedFixtureMultiDayTrackList = arguments.contains("--ui-testing-seed-multiday-track-list")
     private static let seedFixtureTrackListLovedVisit = arguments.contains("--ui-testing-seed-track-list-loved-visit")
     private static let seedFixtureSpreadList = arguments.contains("--ui-testing-seed-spread-list")
-    private static let seedFixtureTracksDoorTextStress = arguments.contains("--ui-testing-seed-tracks-door-text-stress")
+    private static let seedFixtureJournalDoorTextStress = arguments.contains("--ui-testing-seed-journal-door-text-stress")
     private static let seedFixtureFocusedTracksRoute = arguments.contains("--ui-testing-seed-focused-tracks-route")
     private static let seedFixtureManagedPlaces = arguments.contains("--ui-testing-seed-managed-places")
     private static let simulatedLatitude = argumentValue("--ui-testing-location-latitude").flatMap(Double.init)
@@ -58,7 +58,7 @@ struct MakingTracksApp: App {
     private static let seedFixtureMultiDayTrackList = false
     private static let seedFixtureTrackListLovedVisit = false
     private static let seedFixtureSpreadList = false
-    private static let seedFixtureTracksDoorTextStress = false
+    private static let seedFixtureJournalDoorTextStress = false
     private static let seedFixtureFocusedTracksRoute = false
     private static let seedFixtureManagedPlaces = false
     private static let simulatedLatitude: Double? = nil
@@ -144,7 +144,7 @@ struct MakingTracksApp: App {
                         named: "Date night",
                         containingPlaceID: Self.primaryFixturePlaceID
                     )
-                } else if seedFixtureTracksDoorTextStress {
+                } else if seedFixtureJournalDoorTextStress {
                     let longListName =
                         "Longest list **literal** 0123456789 0123456789 0123456789 "
                         + "0123456789 0123456789!"
@@ -154,7 +154,7 @@ struct MakingTracksApp: App {
                     )
                     try database.seedUITestingTrackVisits([
                         fixturePlaces[0],
-                        Self.tracksDoorTextStressPlace,
+                        Self.journalDoorTextStressPlace,
                     ])
                 } else if seedFixtureFocusedTracksRoute {
                     try database.seedUITestingTrackVisits([
@@ -223,7 +223,7 @@ struct MakingTracksApp: App {
     }()
 
 #if DEBUG
-    private static let tracksDoorTextStressPlace: PlaceRef = {
+    private static let journalDoorTextStressPlace: PlaceRef = {
         let name =
             "[Riverside](https://example.com) **Plaques** "
             + String(repeating: "x", count: 155)
