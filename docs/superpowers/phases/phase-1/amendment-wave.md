@@ -249,7 +249,7 @@ Docs-only; no code, no gate.
 - **Serves:** R14, R15 · **Depends on:** none · **This is the critical path**
 - **Pipeline:** build agent authors → **opus validates** → **Rob rules** → frozen
 - **Owner:** codex4
-- **Status:** FROZEN — Rob ratified `accentContainer` `#D4EDE9`; pending exact-SHA freeze validation
+- **Status:** FROZEN — Rob ratified `accentContainer` `#D4EDE9`; reviewer freeze validation passed at exact head `0682865dff178ff43ea3e1374685328f565d8cd1`
 - **Branch:** `wp-526-explore-r15-renders` — cut from a freshly-fetched `ios`
 
 **Brief.** Two new frozen frames: the **Explore surface** as R14 collapses it (Scope directly, quiet

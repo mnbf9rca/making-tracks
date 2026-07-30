@@ -15,13 +15,14 @@ these assets are its visual record and are embedded in the implementation epic.
 | `t1.10-place-card-ax.{html,png}` | Accessibility-size place card at the large detent with a scroll fade and vertically stacked action controls. |
 | `t1.10-place-card-dark-system.png` | Runtime UI-test capture with the simulator forced to dark appearance. The map and place card remain on the Snow material sheet; its source and pixel oracle live in `MakingTracksCoreLoopUITests.testPlaceCardKeepsSnowTokensInDarkSystemAppearance`. |
 
-## A8 frozen packets — exact-SHA freeze validation pending
+## A8 frozen packets — exact-SHA freeze validated
 
 Rob ratified `accentContainer = #D4EDE9` as designed opaque on 2026-07-30:
 hue `170.40°`, delta `−0.32°` from accent, saturation `40.98%`, and `5.23:1`
 against ink `#0A6B5C`. The ratified component-metrics table records that value.
 `#DEE9E0` is the rejected mechanical composite; the decision record is retained in
-git history. Exact-SHA freeze validation remains pending controller routing.
+git history. Reviewer freeze validation passed at exact remote head
+`0682865dff178ff43ea3e1374685328f565d8cd1`.
 
 | Frozen sources and capture | What the packet proves |
 |---|---|
