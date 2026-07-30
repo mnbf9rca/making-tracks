@@ -271,10 +271,11 @@ For every row, assert `PlaceCardActionAppearance.presentation(for:isSaved:)` equ
 Use the designated simulator and the reusable derived-data path:
 
 ```bash
+MT_RELEASE_GATE_DESTINATION='platform=iOS Simulator,id=AC60FA71-9449-4F15-A259-5E4A3E832839' \
 ./scripts/sim-lock.sh xcodebuild test \
   -project ios/App/MakingTracks.xcodeproj \
   -scheme MakingTracks \
-  -destination 'platform=iOS Simulator,id=C4A64D49-24A2-4429-B6E2-AD9A14142A99' \
+  -destination 'platform=iOS Simulator,id=AC60FA71-9449-4F15-A259-5E4A3E832839' \
   -derivedDataPath /private/tmp/dd-codex3 \
   -parallel-testing-enabled NO \
   -disable-concurrent-destination-testing \
@@ -344,7 +345,14 @@ Before each capture, assert the action identifiers and exact state labels for th
 For unseen, assert outline-bearing labels `Save`/`Saved`, `Seen`, and no Loved ON label. For seen,
 assert `Seen` and `Love`; for loved, assert `Seen` and `Loved`. At AX size, call
 `assertVerticalActionStack`; at default size, assert horizontal ordering and no frame intersections.
-Name the twelve captures:
+Name and force-export the twelve captures so the matrix produces artifacts even when xcodebuild
+does not propagate the shell environment into the UI runner:
+
+```swift
+attachScreenshot(named: name, forceExport: true)
+```
+
+Use these names:
 
 ```text
 place-card-r15-{default|ax}-{unsaved|saved}-{unseen|seen|loved}
@@ -365,11 +373,11 @@ Expected: the selected `testPlaceCardActionsUseStateMorphology` passes.
 Run through the designated simulator:
 
 ```bash
-MAKING_TRACKS_EXPORT_UI_TEST_SCREENSHOTS=1 \
+MT_RELEASE_GATE_DESTINATION='platform=iOS Simulator,id=AC60FA71-9449-4F15-A259-5E4A3E832839' \
 ./scripts/sim-lock.sh xcodebuild test \
   -project ios/App/MakingTracks.xcodeproj \
   -scheme MakingTracks \
-  -destination 'platform=iOS Simulator,id=C4A64D49-24A2-4429-B6E2-AD9A14142A99' \
+  -destination 'platform=iOS Simulator,id=AC60FA71-9449-4F15-A259-5E4A3E832839' \
   -derivedDataPath /private/tmp/dd-codex3 \
   -parallel-testing-enabled NO \
   -disable-concurrent-destination-testing \
@@ -428,6 +436,7 @@ If the ancestry check fails, merge `origin/ios` in a signed commit, resolve only
 Run:
 
 ```bash
+MT_RELEASE_GATE_DESTINATION='platform=iOS Simulator,id=AC60FA71-9449-4F15-A259-5E4A3E832839' \
 ./scripts/sim-lock.sh ./scripts/release-gate.sh
 ```
 
