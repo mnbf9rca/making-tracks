@@ -79,6 +79,7 @@ public enum SemanticColorToken: String, CaseIterable, Hashable, Sendable {
     case ink
     case muted
     case accent
+    case accentContainer
     case accentContrast
     case love
     case loveContainer
@@ -125,6 +126,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
     public let ink: MaterialColor
     public let muted: MaterialColor
     public let accent: MaterialColor
+    public let accentContainer: MaterialColor
     public let accentContrast: MaterialColor
     public let love: MaterialColor
     public let loveContainer: MaterialColor
@@ -158,6 +160,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         case .ink: ink
         case .muted: muted
         case .accent: accent
+        case .accentContainer: accentContainer
         case .accentContrast: accentContrast
         case .love: love
         case .loveContainer: loveContainer
@@ -186,6 +189,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         ink: MaterialColor(red: 0x2B, green: 0x28, blue: 0x23),
         muted: MaterialColor(red: 0x6B, green: 0x67, blue: 0x5F),
         accent: MaterialColor(red: 0x0A, green: 0x6B, blue: 0x5C),
+        accentContainer: MaterialColor(red: 0xD4, green: 0xED, blue: 0xE9),
         accentContrast: MaterialColor(red: 0xFB, green: 0xFA, blue: 0xF2),
         love: MaterialColor(red: 0xC4, green: 0x31, blue: 0x2B),
         loveContainer: MaterialColor(red: 0xFC, green: 0xE3, blue: 0xE3),
@@ -215,6 +219,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         ink: MaterialColor,
         muted: MaterialColor,
         accent: MaterialColor,
+        accentContainer: MaterialColor,
         accentContrast: MaterialColor,
         love: MaterialColor,
         loveContainer: MaterialColor,
@@ -242,6 +247,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         self.ink = ink
         self.muted = muted
         self.accent = accent
+        self.accentContainer = accentContainer
         self.accentContrast = accentContrast
         self.love = love
         self.loveContainer = loveContainer

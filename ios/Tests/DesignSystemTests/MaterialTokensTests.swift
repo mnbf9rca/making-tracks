@@ -26,6 +26,7 @@ final class MaterialTokensTests: XCTestCase {
             .ink: color(0x2B, 0x28, 0x23),
             .muted: color(0x6B, 0x67, 0x5F),
             .accent: color(0x0A, 0x6B, 0x5C),
+            .accentContainer: color(0xD4, 0xED, 0xE9),
             .accentContrast: color(0xFB, 0xFA, 0xF2),
             .love: color(0xC4, 0x31, 0x2B),
             .loveContainer: color(0xFC, 0xE3, 0xE3),
@@ -147,6 +148,24 @@ final class MaterialTokensTests: XCTestCase {
             }
 
             assertContrast(
+                sheet.accent,
+                sheet.accentContainer,
+                minimum: 4.5,
+                label: "accent/accentContainer Saved state"
+            )
+            assertContrast(
+                sheet.accentContrast,
+                sheet.accent,
+                minimum: 4.5,
+                label: "accentContrast/accent Seen state"
+            )
+            assertContrast(
+                sheet.accentContrast,
+                sheet.love,
+                minimum: 4.5,
+                label: "accentContrast/love Loved state"
+            )
+            assertContrast(
                 sheet.accentContrast,
                 sheet.accent,
                 minimum: 3.0,
@@ -202,6 +221,7 @@ final class MaterialTokensTests: XCTestCase {
             ink: snow.ink,
             muted: snow.muted,
             accent: snow.accent,
+            accentContainer: snow.accentContainer,
             accentContrast: snow.accentContrast,
             love: snow.love,
             loveContainer: snow.loveContainer,

@@ -870,6 +870,7 @@ final class ControlStylesTests: XCTestCase {
             ink: snow.ink,
             muted: snow.muted,
             accent: snow.accent,
+            accentContainer: snow.accentContainer,
             accentContrast: snow.accentContrast,
             love: snow.love,
             loveContainer: snow.loveContainer,
