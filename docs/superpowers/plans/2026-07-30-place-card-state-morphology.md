@@ -12,6 +12,7 @@
 
 - Build from `origin/ios` exact base `7e92339ceb38c8c91925d656fe2fbd434c741adb` on `wp-526-place-card-state-morphology`.
 - A8's frozen `docs/design/design-system/a8-r15-place-card.png` is the visual authority.
+- The assigned codex3 seat renders 402×874pt while A8's design canvas is 390×844; grade morphology, tokens, component geometry, and AA at component level, and grade wrapping/reflow behaviorally on the assigned seat.
 - `accentContainer` is designed opaque `#D4EDE9`; accent ink `#0A6B5C` over it must clear the 4.5:1 AA gate.
 - ON state is a filled pill plus filled glyph; OFF state is tonal plus outline glyph; state is never communicated by colour alone.
 - Seen ON uses `accent`; Loved ON uses `love`; Saved ON uses `accentContainer`.
@@ -387,7 +388,10 @@ MT_RELEASE_GATE_DESTINATION='platform=iOS Simulator,id=AC60FA71-9449-4F15-A259-5
 Expected: the render matrix passes and exports twelve non-empty PNGs. Inspect all twelve at original
 detail: ON pills have opaque semantic fills and filled glyphs, OFF pills are tonal with outline
 glyphs, momentary controls are quiet, default rows do not collide, AX rows form a leading-aligned
-vertical stack, and the saved+seen+loved frame matches A8's fully-lit cluster.
+vertical stack, and the saved+seen+loved frame matches A8's fully-lit cluster. Record one evidence
+sentence that the assigned seat is 402×874pt versus A8's 390×844 design canvas, and grade the
+component figures beside the renders: 44pt default minimum pill height, 17pt glyph, 15pt/600 label,
+6pt icon gap, 8pt cluster gap, plus Saved/Seen/Loved ON contrast 5.23:1/6.13:1/5.25:1.
 
 - [ ] **Step 9: Commit the app slice**
 
