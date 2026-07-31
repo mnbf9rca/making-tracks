@@ -367,9 +367,10 @@ Host tests for the store and the derivation reach (`cd ios && swift test`), then
 - **Issue:** #469 · **Serves:** P2R-4, P2R-5(a)(b), P2R-6, R10 · **Spec section:** §2, §5, §7
 - **Acceptance criteria:** AC2.8, AC2.9, AC2.11, AC2.12, AC2.13, AC2.19; AC2.5 as consumer
 - **Depends on:** **T2.5 ruled by Rob** (not merged — ruled), and **T2.7**
-- **Owner:** unclaimed
+- **Branch:** `wp-t2-8-impl`
+- **Owner:** codex4
 - **Review tier:** `sourcery` + `reviewer` (second Greptile slot is planner's call — see *Review budget*)
-- **Status:** unclaimed — **W-1 gate satisfied; blocked only until T2.7 merges**
+- **Status:** branch — 2026-07-31T11:42Z; T2.7 merged at `2105250`; W-1 ruled; implementing test-first with Rob's pre-release legacy-migration deletion folded in
 - **Contracts consumed:** T2.7's persisted scope set and default predicate; T2.2's roles if the picker draws row glyphs; T2.1's distinct Scope-control 20/15 pairing and `.button` anchor.
 
 **Builder brief.** Build the picker W-1 draws. **The surface already exists** — `ExploreDoorRootView` (`MapDoorShell.swift:429`–`575`) with the three scope toggle rows (`ExploreScopeControl`, `:63`–`:90`), the category chip flow at the ratified 6pt gap, and `ExploreCategoryChipTopology`'s R10 neighbour-gap wiring (`:92`–`:124`). You are rebuilding it to the ruled wireframe, not starting it.
