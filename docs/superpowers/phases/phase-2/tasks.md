@@ -122,7 +122,7 @@ Decisions this graph cannot take. Each names the owner and what is blocked.
 
 ## Dependency graph
 
-Edges are "must have merged before this starts" — except the two wireframe edges, are **must have been ruled by Rob** — a strictly later moment than merge.
+Edges are "must have merged before this starts" — except the two wireframe edges, which are **must have been ruled by Rob** — a strictly later moment than merge.
 
 | Task | Depends on |
 |---|---|
