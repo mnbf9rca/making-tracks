@@ -35,6 +35,17 @@ of the historical packet passed at exact remote head
 Both packets name `Playwright-bundled Chromium/headless shell 151.0.7922.34` as
 their renderer and are labelled `FROZEN`.
 
+## Candidate decision evidence
+
+These renders record ratified design decisions supported by comparison
+artifacts. They are decision provenance, not shipped implementation changes or
+frozen design-session packets; production wiring requires separate
+implementation evidence.
+
+| Asset | What it shows |
+|---|---|
+| `a8-saved-on-candidate-v2.html` + `a8-saved-on-candidate-v2-{default,ax}.png` | Saved ON candidate decision evidence at exact `1540×980` DSF1 captures. Each candidate shows Saved OFF/ON, simultaneous Saved/Seen/Loved ON, and all seven ruled checks at frozen A8 default or AX geometry. On 2026-07-31 Rob ratified Deep Companion `#08483E` as the accent-family dark Saved ON fill carrying `accentContrast` ink with the explicit pick “Deep is fine”; panel SHA `4421612` is the decision provenance. Accent reuse `#0A6B5C` is the rejected alternative. This evidence does not claim the ratified fill is wired into production code. Captured with Playwright-bundled Chromium/headless shell `151.0.7922.34`; byte-identical repeat SHA-256 values are `d7070aa1d97f769c57e6ad603d280d39b6a6c2a8947f787f7985f1bb48b67402` (default) and `0859dfd2532f3dca4d0182368e2df53b1393d1afb55f039b6c3d8fbba40c4eff` (AX). Frozen `a8-r15-place-card.png` remains unchanged at `7704a185ebb872ed61017db757a24c20be0a5c2870bde8b575007398972c733b`. |
+
 ## Implementation evidence
 
 These renders record shipped implementation changes; they are not frozen design-session rulings.
