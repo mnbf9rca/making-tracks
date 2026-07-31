@@ -310,9 +310,9 @@ Host-only unless you touch `project.yml`.
 - **Serves:** W-2, gating #472 · **Spec section:** §2, §5
 - **Acceptance criteria:** AC2.14, AC2.16, AC2.17, AC2.18 (drawn)
 - **Depends on:** none — claimable immediately
-- **Owner:** unclaimed · **Pipeline:** build agent authors → **reviewer validates** → **Rob rules**
+- **Owner:** codex2 · **Pipeline:** build agent authors → **reviewer validates** → **Rob rules**
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** unclaimed
+- **Status:** branch — `wp-472-w2-impl` from `origin/ios@39dae0a`
 - **Unblocks:** T2.9 and T2.10, **on Rob's ruling**
 - **RULED (Rob, 2026-07-31, relayed in planner's chat):** verbatim — *"568 mockups look good."* Approved **as drawn**, both taste guesses included: Settings as hub-with-focused-subareas; licences as tap-through sub-areas. T2.6 completes at ruled; T2.9/T2.10 unblocked that moment. Assignment at unblock: T2.9 → codex2, T2.10 → codex3.
 
