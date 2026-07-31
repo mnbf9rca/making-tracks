@@ -10,6 +10,7 @@ Standing reference for the phase-cycle workflow (`docs/superpowers/specs/2026-07
 | planner | Fable 5 | Coordination, budget/dependency checks, merges, the supervision loop, verification. Session is disposable |
 | reviewer | Opus | Drafts phase specs, wireframe layouts, decomposition; per-PR design review where a task's review tier calls for it; spawns clean-context read-only subagents where fresh eyes are needed |
 | codex-r | GPT-5.6-Sol, xhigh | Adversarial seat: bounded attack passes only (one spec attack + one acceptance pass per phase). Context persists — cannot be remotely cleared. Joins at the fleet restart |
+| fable-design | (design-facilitation role, not an AMQ seat) | Facilitates design sessions with Rob and the external designer; named in session-batch items and the design-system README since 2026-07-25. Routes through Rob; has no inbox |
 | codex1–4 | GPT-5.6-Sol, high | Build, one uniform pool (app, pipeline, VPS — work items are work items). Effort stays at high until two phases of defect data exist under this workflow, then revisit |
 
 Legacy handles `codex` (bare) and `claude` are **dead** — do not route to them.
@@ -28,6 +29,7 @@ Legacy handles `codex` (bare) and `claude` are **dead** — do not route to them
 - Merges **execute from planner's seat** unless delegated per-merge.
 - A reviewer's "cleared to merge" is **gate input, not authorization** — clearance and execution are separate.
 - The executor **announces every merge as their first act**: a `p2p` message to planner carrying the **PR number + merged SHA**.
+- **Tree hashes, not ancestry or SHAs, answer content questions.** Under squash-merge, "did the reviewed head land?" is answered by comparing tree hashes (`git rev-parse <commit>^{tree}` or `<commit>:ios`) — ancestry checks false-alarm on every squashed PR. Review clearances anchor to the `ios/` subtree hash: any later head with a matching subtree hash carries the clearance forward without re-review; any mismatch (even whitespace) sends it back.
 - GitHub's `mergedBy` is a shared token and proves nothing about who authorized the merge — the announcement is the record.
 - Branch/PR mechanics live in `AGENTS.md` → **Branch discipline** and **Review gates**: PR-only onto `develop`/`ios` (never push directly); no agent self-merges its own PR; `main` is Rob-only; promotions to `main` are merge commits, feature PRs squash into `develop`/`ios`.
 
