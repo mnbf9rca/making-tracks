@@ -3021,6 +3021,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["The map is fresh snow."].exists)
         XCTAssertTrue(app.staticTexts["Private by construction"].exists)
         XCTAssertTrue(app.staticTexts["Nothing you save leaves unless you choose to share it."].exists)
+        attachScreenshot(named: "t2.10-about", forceExport: true)
         let versionLabel = app.staticTexts["about.app-version"]
         XCTAssertTrue(versionLabel.waitForExistence(timeout: 5))
         XCTAssertEqual(versionLabel.label, try expectedAppVersionLabel())
@@ -3050,6 +3051,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(scrollToHittable(softwareLicences, in: app))
         softwareLicences.tap()
         XCTAssertTrue(app.staticTexts["Software licences"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "t2.10-software-licences", forceExport: true)
         for identifier in [
             "credits.oss.GRDB.swift|7.11.1",
             "credits.oss.MapLibre Native iOS / maplibre-gl-native-distribution|6.27.0",
@@ -3063,6 +3065,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(scrollToHittable(dataLicences, in: app))
         dataLicences.tap()
         XCTAssertTrue(app.staticTexts["Data licences"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "t2.10-data-licences", forceExport: true)
         XCTAssertTrue(
             scrollToExistence(
                 of: element(identifier: "about.openstreetmap-copyright", in: app),
@@ -3997,6 +4000,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["About"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["The map is fresh snow."].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Private by construction"].exists)
+        attachScreenshot(named: "t2.10-about-ax", forceExport: true)
         XCTAssertEqual(try buildCommitLabel(in: app), "Build \(try currentGitCommit())")
 
         let softwareLicences = app.buttons["about.software-licences"]
@@ -4010,6 +4014,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(scrollToHittable(softwareLicences, in: app))
         softwareLicences.tap()
         XCTAssertTrue(app.staticTexts["Software licences"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "t2.10-software-licences-ax", forceExport: true)
         let grdbCredit = element(identifier: "credits.oss.GRDB.swift|7.11.1", in: app)
         XCTAssertTrue(scrollToExistence(of: grdbCredit, in: app))
         let mapLibreCredit = element(
@@ -4047,6 +4052,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(scrollToHittable(dataLicences, in: app))
         dataLicences.tap()
         XCTAssertTrue(app.staticTexts["Data licences"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "t2.10-data-licences-ax", forceExport: true)
         XCTAssertTrue(
             scrollToExistence(
                 of: element(identifier: "about.openstreetmap-copyright", in: app),
@@ -5584,6 +5590,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "place-card-r15-ax-hidden-seen": "place-card-r15-ax-hidden-seen",
         "place-card-r15-ax-hidden-loved": "place-card-r15-ax-hidden-loved",
         "credits-a11y": "credits-a11y",
+        "t2.10-about": "t2.10-about",
+        "t2.10-software-licences": "t2.10-software-licences",
+        "t2.10-data-licences": "t2.10-data-licences",
+        "t2.10-about-ax": "t2.10-about-ax",
+        "t2.10-software-licences-ax": "t2.10-software-licences-ax",
+        "t2.10-data-licences-ax": "t2.10-data-licences-ax",
         "diagnostics-preprepare-exclusions-dark": "diagnostics-preprepare-exclusions-dark",
         "tracks-static-geometry": "tracks-static-geometry",
         "explore-door-default": "explore-door-default",
