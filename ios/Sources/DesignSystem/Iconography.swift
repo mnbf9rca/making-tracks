@@ -27,12 +27,16 @@ public enum IconRole: CaseIterable, Hashable, Sendable {
     case hero
     case inline
     case accessory
+    case rowRaised
+    case rowQuiet
 
     public var pointSize: CGFloat {
         switch self {
         case .hero: 22
         case .inline: 15
         case .accessory: 11
+        case .rowRaised: 20
+        case .rowQuiet: 18
         }
     }
 
@@ -41,6 +45,8 @@ public enum IconRole: CaseIterable, Hashable, Sendable {
         case .hero: .heroTitle
         case .inline: .button
         case .accessory: .label
+        case .rowRaised: .listRowTitle
+        case .rowQuiet: .button
         }
     }
 }

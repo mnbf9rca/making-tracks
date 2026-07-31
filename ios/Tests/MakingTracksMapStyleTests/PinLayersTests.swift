@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 import MakingTracksData
 @testable import DesignSystem
@@ -28,6 +29,7 @@ final class PinLayersTests: XCTestCase {
 
     func testPinAndTrackLayerValuesComeFromTheTokenSheet() throws {
         XCTAssertEqual(PinLayers.pinColor, PinTokenBlock.constant.pin.mapStyleString)
+        XCTAssertEqual(PinLayers.hiddenPinColor, PinTokenBlock.constant.hiddenPin.mapStyleString)
         XCTAssertEqual(FADED_OPACITY, PinTokenBlock.constant.pinFaded.opacity)
         XCTAssertEqual(TrackLayers.lineColor, MaterialTheme.snow.tokens.trail.mapStyleString.lowercased())
 
@@ -37,6 +39,22 @@ final class PinLayersTests: XCTestCase {
         let layer = try XCTUnwrap(layer(id: TrackLayers.lineLayerID, in: TrackLayers.trackLayers(tokens: tokens)))
         guard case let .object(paint)? = layer["paint"] else { return XCTFail("line paint") }
         XCTAssertEqual(paint["line-color"], .string("#010203"))
+    }
+
+    func testHiddenPinColorReadsConstantPinBlockAtPointOfUse() throws {
+        let testFileURL = URL(fileURLWithPath: #filePath)
+        let packageRoot = testFileURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot.appendingPathComponent("Sources/MakingTracksMapStyle/PinLayers.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertTrue(
+            source.contains(
+                "public static let hiddenPinColor = PinTokenBlock.constant.hiddenPin.mapStyleString"
+            )
+        )
     }
 
     func testTracksModeKeepsVisitedPinsFullStrengthWithoutLyingAboutVisitState() {

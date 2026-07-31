@@ -35,6 +35,16 @@ of the historical packet passed at exact remote head
 Both packets name `Playwright-bundled Chromium/headless shell 151.0.7922.34` as
 their renderer and are labelled `FROZEN`.
 
+## Phase 2 wireframe proposals — awaiting ruling
+
+These artifacts are authored under the Phase 2 mockup gate. They are proposals until reviewer
+validation and Rob's explicit ruling; they are not frozen renders and do not amend the ratified
+spec by existing.
+
+| Asset | What it shows |
+|---|---|
+| [`t2.5-explore-picker.html`](t2.5-explore-picker.html) + `t2.5-explore-picker-{default,adjusted,list,lists,lists-empty,lists-ax,ax}.png` + `t2.5-explore-door-{default,active,active-ax}.png` | W-1's DS-3 Explore picker proposal across ten exact 390×844 phone frames, each paired with live DOM measurements in its 820×884 evidence capture. Default and adjusted discovery scope, the OF4 list-context merge and bounded membership child, empty and AX stress, and default/active/active-AX Explore-door states are shown. [`t2.5-explore-picker.md`](t2.5-explore-picker.md) is the constraint/provenance record and identifier annex. Captured with Playwright-bundled Chromium/headless shell `151.0.7922.34`. |
+
 ## Candidate decision evidence
 
 These renders record ratified design decisions supported by comparison

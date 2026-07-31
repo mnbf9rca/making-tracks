@@ -87,6 +87,7 @@ final class MaterialTokensTests: XCTestCase {
         XCTAssertEqual(pins, .constant)
         XCTAssertEqual(pins.pin, color(0xE4, 0x57, 0x2E))
         XCTAssertEqual(pins.pinFaded, color(0xE4, 0x57, 0x2E, opacity: 0.35))
+        XCTAssertEqual(pins.hiddenPin, color(0x76, 0x7B, 0x82))
     }
 
     func testMapRowsCanVaryWithoutChangingTheirInitialSourceTokens() {
