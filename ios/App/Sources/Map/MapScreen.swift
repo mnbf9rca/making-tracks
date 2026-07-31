@@ -2458,7 +2458,6 @@ struct MapScreen: View {
     static let themeStorageKey = "map.theme.id"
     static let pinSizeMultiplierStorageKey = "map.pinSize.multiplier"
     static let scopeStorageKey = DiscoveryScopeStore.storageKey
-    static let coverageShadingStorageKey = DiscoveryScopeStore.legacyCoverageShadingKey
 
     let database: AppDatabase
     let startupViewport: ViewportSeed
@@ -2986,9 +2985,10 @@ struct MapScreen: View {
             Task { await refreshStorageMenuStatus() }
         }
         .onChange(of: layerVisibility) { _, visibility in
-            DiscoveryScopeStore(userDefaults: .standard).save(
-                visibility.discoveryScope
-            )
+            let didSaveScope = DiscoveryScopeStore(
+                userDefaults: .standard
+            ).save(visibility.discoveryScope)
+            assert(didSaveScope, "Discovery scope validation failed")
             Task { @MainActor in
                 await applyLayerVisibility(visibility)
             }

@@ -29,7 +29,7 @@ final class DiscoveryScopeStoreTests: XCTestCase {
                 showCoverageShading: false
             )
 
-            store.save(scope)
+            XCTAssertTrue(store.save(scope))
 
             XCTAssertEqual(store.load(), scope)
             let data = try XCTUnwrap(defaults.data(forKey: DiscoveryScopeStore.storageKey))
@@ -59,37 +59,22 @@ final class DiscoveryScopeStoreTests: XCTestCase {
         }
     }
 
-    func testVersionZeroMigratesDeterministicallyAndRewritesVersionOne() throws {
+    func testVersionZeroDegradesToDefaultsWithoutRewritingTheRecord() throws {
         try withStore { defaults, store in
+            let versionZero = Data(
+                """
+                {"version":0,"categories":["museum"],"showHiddenPlaces":true,"showSavedPlaces":false,"showCoverageShading":false}
+                """.utf8
+            )
             defaults.set(
-                Data(
-                    """
-                    {"version":0,"categories":["museum"],"showHiddenPlaces":true,"showSavedPlaces":false,"showCoverageShading":false}
-                    """.utf8
-                ),
+                versionZero,
                 forKey: DiscoveryScopeStore.storageKey
             )
 
+            XCTAssertEqual(store.load(), .defaults)
             XCTAssertEqual(
-                store.load(),
-                DiscoveryScope(
-                    visibleCategoryIDs: ["museum"],
-                    includeHidden: true,
-                    showSaved: false,
-                    showCoverageShading: false
-                )
-            )
-
-            let migratedData = try XCTUnwrap(
-                defaults.data(forKey: DiscoveryScopeStore.storageKey)
-            )
-            let migratedObject = try XCTUnwrap(
-                JSONSerialization.jsonObject(with: migratedData) as? [String: Any]
-            )
-            XCTAssertEqual(migratedObject["version"] as? Int, 1)
-            XCTAssertEqual(
-                migratedObject["visibleCategoryIDs"] as? [String],
-                ["museum"]
+                defaults.data(forKey: DiscoveryScopeStore.storageKey),
+                versionZero
             )
         }
     }
@@ -121,7 +106,7 @@ final class DiscoveryScopeStoreTests: XCTestCase {
             XCTAssertEqual(store.load(), .defaults)
 
             let empty = DiscoveryScope(visibleCategoryIDs: [])
-            store.save(empty)
+            XCTAssertTrue(store.save(empty))
             XCTAssertEqual(store.load(), empty)
             XCTAssertEqual(store.load().visibleCategoryIDs, [])
         }
@@ -191,48 +176,28 @@ final class DiscoveryScopeStoreTests: XCTestCase {
         }
     }
 
-    func testLegacyCoverageValuesBothMigrateWithoutLosingFalse() throws {
-        for legacyValue in [false, true] {
-            try withStore { defaults, store in
-                defaults.set(
-                    legacyValue,
-                    forKey: DiscoveryScopeStore.legacyCoverageShadingKey
-                )
+    func testInvalidSaveReportsFailureWithoutReplacingValidRecord() throws {
+        try withStore { _, store in
+            let valid = DiscoveryScope(includeHidden: true)
+            XCTAssertTrue(store.save(valid))
 
-                let loaded = store.load()
-
-                XCTAssertEqual(
-                    loaded,
-                    DiscoveryScope(showCoverageShading: legacyValue)
+            let invalid = DiscoveryScope(
+                visibleCategoryIDs: Set(
+                    (0 ... 128).map { "category-\($0)" }
                 )
-                XCTAssertNotNil(
-                    defaults.data(forKey: DiscoveryScopeStore.storageKey)
-                )
-                XCTAssertNil(
-                    defaults.object(
-                        forKey: DiscoveryScopeStore.legacyCoverageShadingKey
-                    )
-                )
-            }
+            )
+            XCTAssertFalse(store.save(invalid))
+            XCTAssertEqual(store.load(), valid)
         }
     }
 
-    func testResetRemovesCurrentAndLegacyRecords() throws {
+    func testResetRemovesCurrentRecord() throws {
         try withStore { defaults, store in
-            store.save(DiscoveryScope(includeHidden: true))
-            defaults.set(
-                false,
-                forKey: DiscoveryScopeStore.legacyCoverageShadingKey
-            )
+            XCTAssertTrue(store.save(DiscoveryScope(includeHidden: true)))
 
             store.reset()
 
             XCTAssertNil(defaults.object(forKey: DiscoveryScopeStore.storageKey))
-            XCTAssertNil(
-                defaults.object(
-                    forKey: DiscoveryScopeStore.legacyCoverageShadingKey
-                )
-            )
         }
     }
 

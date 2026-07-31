@@ -27,7 +27,6 @@ public struct DiscoveryScope: Equatable, Sendable {
 
 public struct DiscoveryScopeStore {
     public static let storageKey = "map.scope.record"
-    public static let legacyCoverageShadingKey = "map.coverageShading.visible"
 
     private static let currentVersion = 1
     // Defensive parsing caps. Tune only with a measured need from the finite category taxonomy.
@@ -43,7 +42,7 @@ public struct DiscoveryScopeStore {
 
     public func load() -> DiscoveryScope {
         guard let storedObject = userDefaults.object(forKey: Self.storageKey) else {
-            return migrateLegacyCoverageShading()
+            return .defaults
         }
         guard let data = storedObject as? Data else {
             return .defaults
@@ -73,53 +72,21 @@ public struct DiscoveryScopeStore {
                 showCoverageShading: record.showCoverageShading
             ) ?? .defaults
 
-        case 0:
-            guard let record = try? JSONDecoder().decode(
-                RecordV0.self,
-                from: data
-            ) else {
-                return .defaults
-            }
-            guard let scope = Self.scope(
-                visibleCategoryIDs: record.categories,
-                includeHidden: record.showHiddenPlaces,
-                showSaved: record.showSavedPlaces,
-                showCoverageShading: record.showCoverageShading
-            ) else {
-                return .defaults
-            }
-            _ = persist(scope)
-            return scope
-
         default:
             return .defaults
         }
     }
 
-    public func save(_ scope: DiscoveryScope) {
-        _ = persist(scope)
+    /// An explicit save intentionally replaces any stored record, including a
+    /// newer-version record that `load()` previously degraded to defaults.
+    /// The post-downgrade user choice wins over preserving opaque future data.
+    @discardableResult
+    public func save(_ scope: DiscoveryScope) -> Bool {
+        persist(scope)
     }
 
     public func reset() {
         userDefaults.removeObject(forKey: Self.storageKey)
-        userDefaults.removeObject(forKey: Self.legacyCoverageShadingKey)
-    }
-
-    private func migrateLegacyCoverageShading() -> DiscoveryScope {
-        guard let legacyObject = userDefaults.object(
-            forKey: Self.legacyCoverageShadingKey
-        ) else {
-            return .defaults
-        }
-        guard let legacyValue = legacyObject as? Bool else {
-            return .defaults
-        }
-
-        let scope = DiscoveryScope(showCoverageShading: legacyValue)
-        if persist(scope) {
-            userDefaults.removeObject(forKey: Self.legacyCoverageShadingKey)
-        }
-        return scope
     }
 
     @discardableResult
@@ -188,14 +155,6 @@ public struct DiscoveryScopeStore {
 
 private struct VersionEnvelope: Decodable {
     let version: Int
-}
-
-private struct RecordV0: Decodable {
-    let version: Int
-    let categories: [String]?
-    let showHiddenPlaces: Bool
-    let showSavedPlaces: Bool
-    let showCoverageShading: Bool
 }
 
 private struct RecordV1: Codable {
