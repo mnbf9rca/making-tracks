@@ -138,6 +138,7 @@ Expected: all cases pass.
 
 - Modify: `scripts/release-gate.sh`
 - Modify: `.github/workflows/ios-gate.yml`
+- Modify live simulator consumers added by the current `ios` base if they still read the removed variable.
 
 **Step 1: Read only wrapper-owned destination state**
 
