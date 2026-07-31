@@ -341,7 +341,7 @@ Evidence law as W-1: measurements beside every frame, constraint structure enume
 - **Depends on:** none — **no wireframe gate**: nothing visible changes, and the ruling is explicit
 - **Owner:** codex4
 - **Review tier:** `sourcery` + `greptile` + `reviewer` — **the phase's stored-state row**
-- **Status:** review candidate — `wp-t2-7-impl` at `f942a97`; host 514/514, locked Release/Debug/simulator gate 319/319 (233 app units), reviewer approved
+- **Status:** PR open — draft #576; review candidate at `f942a97`; host 514/514, locked Release/Debug/simulator gate 319/319 (233 app units), reviewer approved
 - **Contracts produced:** the versioned persisted scope set and the effective-scope-differs-from-default predicate. **T2.8 consumes both** — fix their shape here and name them in the PR body.
 
 **Builder brief.** Make the user's scope choices survive relaunch, and pin the reach of the filters that read them. **No picker UI in this task** — that is T2.8, and it is gated on a wireframe this row is not.
