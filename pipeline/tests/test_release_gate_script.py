@@ -99,7 +99,7 @@ def _env(fakebin: Path, log: Path) -> dict[str, str]:
     env["AM_ME"] = "test-agent"
     env["MT_SIM_LOCK"] = "1"
     env["MT_SIM_LOCK_UDID"] = UDID
-    env["MT_RELEASE_GATE_DESTINATION"] = f"platform=iOS Simulator,id={UDID}"
+    env["MT_SIM_LOCK_DESTINATION"] = f"platform=iOS Simulator,id={UDID}"
     env["MT_RELEASE_GATE_TEST_MODE"] = "1"
     env["MT_RELEASE_GATE_RUN_DIR"] = str(log.parent / "release-gate-run")
     env["MT_RELEASE_GATE_LOG"] = str(log)
@@ -151,7 +151,7 @@ def test_release_gate_refuses_when_not_run_through_sim_lock(tmp_path):
 
     assert result.returncode == 1
     assert result.stderr.strip() == (
-        "release-gate: refused: must be run through scripts/sim-lock.sh "
+        "release-gate: refused: must be run through scripts/sim-lock.sh --seat <seat> "
         "(which holds the simulator lock)"
     )
     assert not log.exists()
@@ -167,6 +167,34 @@ def test_release_gate_refuses_when_lock_identity_is_missing(tmp_path):
 
     assert result.returncode == 1
     assert "lock identity is missing" in result.stderr
+    assert not log.exists()
+
+
+def test_release_gate_ignores_removed_public_destination_contract(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env.pop("MT_SIM_LOCK_DESTINATION")
+    env["MT_RELEASE_GATE_DESTINATION"] = f"platform=iOS Simulator,id={UDID}"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 1
+    assert "MT_SIM_LOCK_DESTINATION is missing" in result.stderr
+    assert not log.exists()
+
+
+def test_release_gate_ignores_ci_destination_outside_actions_skip_lock(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env.pop("MT_SIM_LOCK_DESTINATION")
+    env["MT_RELEASE_GATE_CI_DESTINATION"] = f"platform=iOS Simulator,id={UDID}"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 1
+    assert "MT_SIM_LOCK_DESTINATION is missing" in result.stderr
     assert not log.exists()
 
 
@@ -187,7 +215,7 @@ def test_release_gate_refuses_destination_without_exact_id_field(tmp_path):
     repo = _init_repo(tmp_path)
     fakebin, log = _fake_tools(tmp_path)
     env = _env(fakebin, log)
-    env["MT_RELEASE_GATE_DESTINATION"] = "platform=iOS Simulator,grid=NOT-AN-ID"
+    env["MT_SIM_LOCK_DESTINATION"] = "platform=iOS Simulator,grid=NOT-AN-ID"
 
     result = _run([str(SCRIPT)], repo, env=env)
 
@@ -200,7 +228,7 @@ def test_release_gate_refuses_multiple_destination_id_fields(tmp_path):
     repo = _init_repo(tmp_path)
     fakebin, log = _fake_tools(tmp_path)
     env = _env(fakebin, log)
-    env["MT_RELEASE_GATE_DESTINATION"] = (
+    env["MT_SIM_LOCK_DESTINATION"] = (
         "platform=iOS Simulator,id=FIRST-UDID,id=SECOND-UDID"
     )
     env["MT_SIM_LOCK_UDID"] = "FIRST-UDID"
@@ -209,6 +237,20 @@ def test_release_gate_refuses_multiple_destination_id_fields(tmp_path):
 
     assert result.returncode == 1
     assert "must contain exactly one id=<simulator-udid>" in result.stderr
+    assert not log.exists()
+
+
+def test_release_gate_refuses_fleet_wide_destination_selector(tmp_path):
+    repo = _init_repo(tmp_path)
+    fakebin, log = _fake_tools(tmp_path)
+    env = _env(fakebin, log)
+    env["MT_SIM_LOCK_DESTINATION"] = "platform=iOS Simulator,id=all"
+    env["MT_SIM_LOCK_UDID"] = "all"
+
+    result = _run([str(SCRIPT)], repo, env=env)
+
+    assert result.returncode == 1
+    assert "valid CoreSimulator UUID" in result.stderr
     assert not log.exists()
 
 
@@ -225,7 +267,7 @@ def test_release_gate_skip_lock_refuses_outside_github_actions(tmp_path):
 
     assert result.returncode == 1
     assert result.stderr.strip() == (
-        "release-gate: refused: must be run through scripts/sim-lock.sh "
+        "release-gate: refused: must be run through scripts/sim-lock.sh --seat <seat> "
         "(which holds the simulator lock)"
     )
     assert not log.exists()
@@ -242,7 +284,7 @@ def test_release_gate_github_actions_refuses_without_skip_lock(tmp_path):
 
     assert result.returncode == 1
     assert result.stderr.strip() == (
-        "release-gate: refused: must be run through scripts/sim-lock.sh "
+        "release-gate: refused: must be run through scripts/sim-lock.sh --seat <seat> "
         "(which holds the simulator lock)"
     )
     assert not log.exists()
@@ -256,7 +298,9 @@ def test_release_gate_skip_lock_runs_only_inside_github_actions(tmp_path):
     xcbeautify.chmod(xcbeautify.stat().st_mode | stat.S_IXUSR)
     env = _env(fakebin, log)
     env.pop("MT_SIM_LOCK")
+    env.pop("MT_SIM_LOCK_DESTINATION")
     env["MT_RELEASE_GATE_SKIP_LOCK"] = "1"
+    env["MT_RELEASE_GATE_CI_DESTINATION"] = f"platform=iOS Simulator,id={UDID}"
     env["GITHUB_ACTIONS"] = "true"
 
     result = _run([str(SCRIPT)], repo, env=env)
@@ -265,21 +309,22 @@ def test_release_gate_skip_lock_runs_only_inside_github_actions(tmp_path):
     assert log.exists()
 
 
-def test_release_gate_destination_override_replaces_all_udid_uses(tmp_path):
+def test_release_gate_private_destination_replaces_all_udid_uses(tmp_path):
     repo = _init_repo(tmp_path)
     fakebin, log = _fake_tools(tmp_path)
     env = _env(fakebin, log)
-    env["MT_RELEASE_GATE_DESTINATION"] = "platform=iOS Simulator,id=RUNNER-UDID"
-    env["MT_SIM_LOCK_UDID"] = "RUNNER-UDID"
+    runner_udid = "22222222-2222-4222-8222-222222222222"
+    env["MT_SIM_LOCK_DESTINATION"] = f"platform=iOS Simulator,id={runner_udid}"
+    env["MT_SIM_LOCK_UDID"] = runner_udid
 
     result = _run([str(SCRIPT)], repo, env=env)
 
     assert result.returncode == 0, result.stderr
     lines = log.read_text(encoding="utf-8").splitlines()
-    assert lines[0] == "xcrun:simctl bootstatus RUNNER-UDID -b"
+    assert lines[0] == f"xcrun:simctl bootstatus {runner_udid} -b"
     destination_lines = [line for line in lines if "-destination" in line]
     assert len(destination_lines) == 3
-    assert all("platform=iOS Simulator,id=RUNNER-UDID" in line for line in destination_lines)
+    assert all(f"platform=iOS Simulator,id={runner_udid}" in line for line in destination_lines)
     assert not any(UDID in line for line in lines)
 
 
@@ -505,7 +550,9 @@ def test_release_gate_ci_prettifies_xcodebuild_and_preserves_raw_logs(tmp_path):
     xcbeautify.chmod(xcbeautify.stat().st_mode | stat.S_IXUSR)
     env = _env(fakebin, log)
     env.pop("MT_SIM_LOCK")
+    env.pop("MT_SIM_LOCK_DESTINATION")
     env["MT_RELEASE_GATE_SKIP_LOCK"] = "1"
+    env["MT_RELEASE_GATE_CI_DESTINATION"] = f"platform=iOS Simulator,id={UDID}"
     env["GITHUB_ACTIONS"] = "true"
     env["MT_RELEASE_GATE_XCODEBUILD_STDOUT"] = "raw xcodebuild output"
 
@@ -533,7 +580,9 @@ def test_release_gate_ci_formatter_does_not_mask_xcodebuild_failure(tmp_path):
     xcbeautify.chmod(xcbeautify.stat().st_mode | stat.S_IXUSR)
     env = _env(fakebin, log)
     env.pop("MT_SIM_LOCK")
+    env.pop("MT_SIM_LOCK_DESTINATION")
     env["MT_RELEASE_GATE_SKIP_LOCK"] = "1"
+    env["MT_RELEASE_GATE_CI_DESTINATION"] = f"platform=iOS Simulator,id={UDID}"
     env["GITHUB_ACTIONS"] = "true"
     env["MT_RELEASE_GATE_FAIL_XCODEBUILD"] = "1"
     env["MT_RELEASE_GATE_XCODEBUILD_STDOUT"] = "raw failed output"

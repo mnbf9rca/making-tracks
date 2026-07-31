@@ -119,7 +119,7 @@ jobs:
           {
             echo "MT_CI_SIMULATOR_DEVICE_TYPE=$device_type"
             echo "MT_CI_SIMULATOR_UDID=$udid"
-            echo "MT_RELEASE_GATE_DESTINATION=platform=iOS Simulator,id=$udid"
+            echo "MT_RELEASE_GATE_CI_DESTINATION=platform=iOS Simulator,id=$udid"
           } >> "$GITHUB_ENV"
           {
             echo "simulator_name=$MT_CI_SIMULATOR_NAME"
@@ -459,7 +459,7 @@ jobs:
           {
             echo "MT_CI_SIMULATOR_DEVICE_TYPE=$device_type"
             echo "MT_CI_SIMULATOR_UDID=$udid"
-            echo "MT_RELEASE_GATE_DESTINATION=platform=iOS Simulator,id=$udid"
+            echo "MT_RELEASE_GATE_CI_DESTINATION=platform=iOS Simulator,id=$udid"
           } >> "$GITHUB_ENV"
           {
             echo "simulator_name=$MT_CI_SIMULATOR_NAME"
@@ -727,7 +727,7 @@ jobs:
           {
             echo "MT_CI_SIMULATOR_DEVICE_TYPE=$device_type"
             echo "MT_CI_SIMULATOR_UDID=$udid"
-            echo "MT_RELEASE_GATE_DESTINATION=platform=iOS Simulator,id=$udid"
+            echo "MT_RELEASE_GATE_CI_DESTINATION=platform=iOS Simulator,id=$udid"
           } >> "$GITHUB_ENV"
           {
             echo "git_sha=${GITHUB_SHA}"

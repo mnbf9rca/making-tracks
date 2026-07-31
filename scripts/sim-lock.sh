@@ -16,7 +16,12 @@
 
 set -euo pipefail
 
-DESTINATION="${MT_RELEASE_GATE_DESTINATION:-}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SEAT_LEDGER="$SCRIPT_DIR/../docs/ios-gate-ledger.md"
+SEAT=""
+DESTINATION=""
+UDID=""
+LOCK=""
 LOCK_ROOT="/private/tmp"
 FLOCK_BIN="/opt/homebrew/bin/flock"
 LSOF_BIN="/usr/sbin/lsof"
@@ -35,9 +40,7 @@ if [ -n "${MT_SIM_LOCK_TEST_MODE:-}" ]; then
   LSOF_BIN="${MT_SIM_LOCK_TEST_LSOF_BIN:-$LSOF_BIN}"
   PGREP_BIN="${MT_SIM_LOCK_TEST_PGREP_BIN:-$PGREP_BIN}"
   PS_BIN="${MT_SIM_LOCK_TEST_PS_BIN:-$PS_BIN}"
-  if [ -n "${MT_SIM_LOCK_TEST_UDID:-}" ]; then
-    DESTINATION="platform=iOS Simulator,id=$MT_SIM_LOCK_TEST_UDID"
-  fi
+  SEAT_LEDGER="${MT_SIM_LOCK_TEST_LEDGER:-$SEAT_LEDGER}"
 fi
 
 [ -x "$FLOCK_BIN" ] || die "flock not executable at $FLOCK_BIN"
@@ -67,25 +70,138 @@ parse_destination_udid() {
   fields=",$1,"
   case "$fields" in
     *,id=*) value_and_remainder="${fields#*,id=}" ;;
-    *) die "MT_RELEASE_GATE_DESTINATION must include id=<simulator-udid>" ;;
+    *) die "simulator destination must include id=<simulator-udid>" ;;
   esac
   value="${value_and_remainder%%,*}"
   remainder="${value_and_remainder#"$value"}"
   case "$remainder" in
-    *,id=*) die "MT_RELEASE_GATE_DESTINATION must contain exactly one id=<simulator-udid>" ;;
+    *,id=*) die "simulator destination must contain exactly one id=<simulator-udid>" ;;
   esac
   case "$value" in
     ""|*[!A-Za-z0-9-]*)
-      die "MT_RELEASE_GATE_DESTINATION contains an invalid simulator UDID"
+      die "simulator destination contains an invalid simulator UDID"
       ;;
   esac
+  if ! { [ -n "${MT_SIM_LOCK_TEST_MODE:-}" ] &&
+         [ "${MT_SIM_LOCK_TEST_UDID:-}" = "$value" ]; } &&
+     ! is_core_simulator_uuid "$value"; then
+    die "simulator destination id must be a valid CoreSimulator UUID"
+  fi
   printf '%s\n' "$value"
 }
 
-[ -n "$DESTINATION" ] ||
-  die "MT_RELEASE_GATE_DESTINATION is required; export this seat's destination from wp-infra-sim-concurrency"
-UDID="$(parse_destination_udid "$DESTINATION")"
-LOCK="$LOCK_ROOT/making-tracks-sim-$UDID.lock"
+is_core_simulator_uuid() {
+  [[ "$1" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]
+}
+
+resolve_seat_destination() {
+  local count
+  local destination
+  local result
+
+  [ -r "$SEAT_LEDGER" ] || die "cannot read host gate seat ledger: $SEAT_LEDGER"
+  result="$(
+    awk -F '|' -v wanted="$1" '
+      function trim(value) {
+        gsub(/^[[:space:]]+/, "", value)
+        gsub(/[[:space:]]+$/, "", value)
+        return value
+      }
+      function unquote(value) {
+        if (substr(value, 1, 1) == "`" &&
+            substr(value, length(value), 1) == "`") {
+          return substr(value, 2, length(value) - 2)
+        }
+        return value
+      }
+      {
+        sub(/\r$/, "", $0)
+        if ($0 == "## Host Gate Seats") {
+          section_count++
+          in_section = 1
+          next
+        }
+        if ($0 ~ /^## /) {
+          in_section = 0
+          in_rows = 0
+          next
+        }
+        if (!in_section) {
+          next
+        }
+        if (!header_seen) {
+          if (NF == 5 && trim($2) == "Seat" &&
+              trim($3) == "Simulator" && trim($4) == "Destination") {
+            header_seen = 1
+            expect_separator = 1
+          }
+          next
+        }
+        if (expect_separator) {
+          if ($0 ~ /^[[:space:]]*$/) {
+            next
+          }
+          if (NF == 5 && trim($2) == "---" &&
+              trim($3) == "---" && trim($4) == "---") {
+            expect_separator = 0
+            in_rows = 1
+            next
+          }
+          malformed = 1
+          expect_separator = 0
+          next
+        }
+        if (!in_rows) {
+          next
+        }
+        if ($0 !~ /^[[:space:]]*\|/) {
+          in_rows = 0
+          next
+        }
+        if (NF != 5) {
+          malformed = 1
+          next
+        }
+
+        seat = unquote(trim($2))
+        simulator = unquote(trim($3))
+        row_destination = unquote(trim($4))
+        if (seat == "" || simulator == "" || row_destination == "") {
+          malformed = 1
+          next
+        }
+        row_count++
+        if (seat == wanted) {
+          count++
+          destination = row_destination
+        }
+      }
+      END {
+        if (section_count != 1 || header_seen != 1 ||
+            expect_separator || row_count == 0 || malformed) {
+          exit 2
+        }
+        printf "%d\t%s\n", count, destination
+      }
+    ' "$SEAT_LEDGER"
+  )" || die "malformed Host Gate Seats table in $SEAT_LEDGER"
+
+  count="${result%%$'\t'*}"
+  destination="${result#*$'\t'}"
+  [ "$count" = "1" ] ||
+    die "seat $1 must appear exactly once in host gate seat ledger (found $count)"
+  [ -n "$destination" ] || die "seat $1 has an empty destination in host gate seat ledger"
+  printf '%s\n' "$destination"
+}
+
+select_seat() {
+  DESTINATION="$(resolve_seat_destination "$SEAT")"
+  if [ -n "${MT_SIM_LOCK_TEST_MODE:-}" ] && [ -n "${MT_SIM_LOCK_TEST_UDID:-}" ]; then
+    DESTINATION="platform=iOS Simulator,id=$MT_SIM_LOCK_TEST_UDID"
+  fi
+  UDID="$(parse_destination_udid "$DESTINATION")"
+  LOCK="$LOCK_ROOT/making-tracks-sim-$UDID.lock"
+}
 
 # --- status -------------------------------------------------------------------
 #
@@ -217,8 +333,8 @@ destructive() {
       fi
       set -- xcrun simctl erase "$UDID"
       ;;
-    shutdown) set -- xcrun simctl shutdown "$UDID" ;;
-    boot)     set -- xcrun simctl bootstatus "$UDID" -b ;;
+    shutdown) set -- xcrun simctl shutdown ;;
+    boot)     set -- xcrun simctl bootstatus -b ;;
     *) die "unknown operation: $action" ;;
   esac
   run_locked "$@"
@@ -304,20 +420,58 @@ validate_command_destination() {
         command_udid="$(parse_destination_udid "$command_destination")"
         [ "$command_udid" = "$UDID" ] ||
           die "wrapped command targets simulator $command_udid while the lock is for $UDID"
+        [ "$command_destination" = "$DESTINATION" ] ||
+          die "wrapped command destination does not exactly match seat $SEAT destination"
         ;;
       -destination=*)
         command_destination="${1#-destination=}"
         command_udid="$(parse_destination_udid "$command_destination")"
         [ "$command_udid" = "$UDID" ] ||
           die "wrapped command targets simulator $command_udid while the lock is for $UDID"
+        [ "$command_destination" = "$DESTINATION" ] ||
+          die "wrapped command destination does not exactly match seat $SEAT destination"
         ;;
     esac
     shift
   done
 }
 
+command_has_destination() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -destination|-destination=*) return 0 ;;
+    esac
+    shift
+  done
+  return 1
+}
+
 run_locked() {
+  local simctl_verb
+
   [ "$#" -gt 0 ] || die "no command given"
+  if [ "$1" = "xcodebuild" ] && ! command_has_destination "$@"; then
+    set -- "$@" -destination "$DESTINATION"
+  fi
+  if [ "$#" -ge 3 ] && [ "$1" = "xcrun" ] && [ "$2" = "simctl" ]; then
+    simctl_verb="$3"
+    case "$simctl_verb" in
+      bootstatus|shutdown|launch|terminate|install|uninstall|io|get_app_container|spawn)
+        shift 3
+        if [ "$#" -gt 0 ]; then
+          case "$1" in
+            all|booted)
+              die "omit the simulator target after simctl $simctl_verb; seat $SEAT supplies it"
+              ;;
+          esac
+          if is_core_simulator_uuid "$1"; then
+            die "omit the simulator target after simctl $simctl_verb; seat $SEAT supplies it"
+          fi
+        fi
+        set -- xcrun simctl "$simctl_verb" "$UDID" "$@"
+        ;;
+    esac
+  fi
   validate_command_destination "$@"
 
   # Re-entrancy for the same selected simulator. A nested command targeting a
@@ -359,7 +513,10 @@ run_locked() {
   acquire_gate_slot
 
   local rc=0
-  MT_SIM_LOCK=1 MT_SIM_LOCK_UDID="$UDID" "$@" || rc=$?
+  MT_SIM_LOCK=1 \
+    MT_SIM_LOCK_UDID="$UDID" \
+    MT_SIM_LOCK_DESTINATION="$DESTINATION" \
+    "$@" || rc=$?
   return "$rc"
 }
 
@@ -367,15 +524,15 @@ usage() {
   cat <<'USAGE'
 sim-lock.sh — the only way to touch a Making Tracks gate simulator
 
-  sim-lock.sh <command> [args...]   run the command holding the lock
-  sim-lock.sh --status              report HELD or FREE (exit 0 = FREE, 1 = HELD)
-  sim-lock.sh --erase               erase the simulator, under the lock
-  sim-lock.sh --shutdown            shut it down, under the lock
-  sim-lock.sh --boot                boot it, under the lock
+  sim-lock.sh --seat <seat> <command> [args...]   run holding the seat lock
+  sim-lock.sh --seat <seat> --status              report HELD or FREE
+  sim-lock.sh --seat <seat> --erase               erase under the lock
+  sim-lock.sh --seat <seat> --shutdown            shut down under the lock
+  sim-lock.sh --seat <seat> --boot                boot under the lock
 
-MT_RELEASE_GATE_DESTINATION must name the seat's simulator with id=<UDID>.
-Same-simulator work serializes, while stable global slot locks cap aggregate
-concurrency (MT_GATE_MAX_CONCURRENT, default 2).
+<seat> is one of codex1, codex2, codex3 or codex4. Its destination is resolved
+from docs/ios-gate-ledger.md. Same-simulator work serializes, while stable
+global slot locks cap aggregate concurrency (MT_GATE_MAX_CONCURRENT, default 2).
 
 Never read lock files by hand to decide whether a simulator is free. A file
 records who holds its inode, not every process that may be using the simulator.
@@ -383,11 +540,24 @@ USAGE
 }
 
 case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+esac
+
+[ "${1:-}" = "--seat" ] || die "--seat <seat> is required before the command"
+[ "$#" -ge 2 ] || die "--seat requires a seat name"
+SEAT="$2"
+case "$SEAT" in
+  codex1|codex2|codex3|codex4) ;;
+  *) die "unknown seat: $SEAT (expected codex1, codex2, codex3 or codex4)" ;;
+esac
+shift 2
+select_seat
+
+case "${1:-}" in
   --status)   shift; status ;;
   --erase)    shift; destructive erase ;;
   --shutdown) shift; destructive shutdown ;;
   --boot)     shift; destructive boot ;;
-  -h|--help)  usage ;;
   "")         usage; exit 1 ;;
   --*)        die "unknown flag: $1" ;;
   *)          run_locked "$@" ;;
