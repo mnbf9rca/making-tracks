@@ -583,7 +583,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             "explore.row.about",
         ] {
             let control = element(identifier: identifier, in: app)
-            XCTAssertTrue(scrollToHittable(control, in: app))
+            let isQuietDestination = identifier.hasPrefix("explore.row.")
+            XCTAssertTrue(
+                isQuietDestination
+                    ? scrollToFullyContained(control, in: app)
+                    : scrollToHittable(control, in: app)
+            )
             XCTAssertTrue(control.isHittable)
             XCTAssertGreaterThanOrEqual(control.frame.height, 44)
             if identifier.hasPrefix("map.layers.") {
@@ -592,6 +597,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                     86,
                     "AX Scope rows must mount the frozen expanded minimum height."
                 )
+            } else {
+                assertContainedInAppFrame(control, in: app)
             }
         }
         attachScreenshot(named: "explore-door-ax")
@@ -621,6 +628,86 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
         XCTAssertEqual(screenshotExportNames["journal-door-ax"], "journal-door-ax")
         attachScreenshot(named: "journal-door-ax")
+    }
+
+    func testDoorGlyphEvidenceFixturePinsColumnsAndCopySeparation() {
+        struct Metrics {
+            let raisedIcon: CGRect
+            let raisedCopy: CGRect
+            let quietIcon: CGRect
+            let quietCopy: CGRect
+        }
+
+        func capture(variant: String, accessibility5: Bool) -> Metrics {
+            let app = XCUIApplication()
+            app.launchArguments = [
+                "--ui-testing-door-glyph-fixture",
+                variant,
+            ]
+            if accessibility5 {
+                app.launchArguments += [
+                    "-UIPreferredContentSizeCategoryName",
+                    "UICTContentSizeCategoryAccessibilityXXXL",
+                    "-AppleInterfaceStyle",
+                    "Dark",
+                ]
+            }
+            app.launch()
+
+            let state = app.staticTexts["door-glyph.fixture.state"]
+            XCTAssertTrue(state.waitForExistence(timeout: 5))
+
+            let raisedIcon = element(identifier: "door-glyph.fixture.raised.icon", in: app)
+            let raisedCopy = element(identifier: "door-glyph.fixture.raised.copy", in: app)
+            let quietIcon = element(identifier: "door-glyph.fixture.quiet.icon", in: app)
+            let quietCopy = element(identifier: "door-glyph.fixture.quiet.copy", in: app)
+            for element in [raisedIcon, raisedCopy, quietIcon, quietCopy] {
+                XCTAssertTrue(element.waitForExistence(timeout: 5))
+                assertContainedInAppFrame(element, in: app)
+            }
+
+            let suffix = accessibility5 ? "ax" : "default"
+            attachScreenshot(
+                named: "t2.3-door-glyph-\(variant)-\(suffix)",
+                forceExport: true
+            )
+
+            let metrics = Metrics(
+                raisedIcon: raisedIcon.frame,
+                raisedCopy: raisedCopy.frame,
+                quietIcon: quietIcon.frame,
+                quietCopy: quietCopy.frame
+            )
+            app.terminate()
+            return metrics
+        }
+
+        let beforeDefault = capture(variant: "before", accessibility5: false)
+        let afterDefault = capture(variant: "after", accessibility5: false)
+        let beforeAX = capture(variant: "before", accessibility5: true)
+        let afterAX = capture(variant: "after", accessibility5: true)
+
+        XCTAssertEqual(beforeDefault.raisedIcon.width, 26, accuracy: 1)
+        XCTAssertEqual(beforeDefault.quietIcon.width, 26, accuracy: 1)
+        XCTAssertEqual(afterDefault.raisedIcon.width, 30, accuracy: 1)
+        XCTAssertEqual(afterDefault.quietIcon.width, 27, accuracy: 1)
+        XCTAssertEqual(beforeAX.raisedIcon.width, 80, accuracy: 1)
+        XCTAssertEqual(beforeAX.quietIcon.width, 80, accuracy: 1)
+        XCTAssertEqual(afterAX.raisedIcon.width, 85, accuracy: 1)
+        XCTAssertEqual(afterAX.quietIcon.width, 79, accuracy: 1)
+
+        for metrics in [beforeDefault, afterDefault, afterAX] {
+            XCTAssertGreaterThanOrEqual(
+                metrics.raisedCopy.minX - metrics.raisedIcon.maxX,
+                11.9
+            )
+            XCTAssertGreaterThanOrEqual(
+                metrics.quietCopy.minX - metrics.quietIcon.maxX,
+                11.9
+            )
+        }
+        XCTAssertLessThan(beforeAX.raisedCopy.minX - beforeAX.raisedIcon.maxX, 0)
+        XCTAssertLessThan(beforeAX.quietCopy.minX - beforeAX.quietIcon.maxX, 0)
     }
 
     func testExploreSavedVisibilityFiltersOnlySavedDiscoveryPinsAndKeepsCategoryScope() {
@@ -5666,6 +5753,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "diagnostics-preprepare-exclusions-dark": "diagnostics-preprepare-exclusions-dark",
         "tracks-static-geometry": "tracks-static-geometry",
         "explore-door-default": "explore-door-default",
+        "t2.3-door-glyph-before-default": "t2.3-door-glyph-before-default",
+        "t2.3-door-glyph-after-default": "t2.3-door-glyph-after-default",
+        "t2.3-door-glyph-before-ax": "t2.3-door-glyph-before-ax",
+        "t2.3-door-glyph-after-ax": "t2.3-door-glyph-after-ax",
         "explore-door-ax": "explore-door-ax",
         "journal-door-default": "journal-door-default",
         "journal-door-ax": "journal-door-ax",
