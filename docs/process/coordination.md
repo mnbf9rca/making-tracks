@@ -31,6 +31,7 @@ Legacy handles `codex` (bare) and `claude` are **dead** — do not route to them
 - The executor **announces every merge as their first act**: a `p2p` message to planner carrying the **PR number + merged SHA**.
 - **Tree hashes, not ancestry or SHAs, answer content questions.** Under squash-merge, "did the reviewed head land?" is answered by comparing tree hashes (`git rev-parse <commit>^{tree}` or `<commit>:ios`) — ancestry checks false-alarm on every squashed PR. Review clearances anchor to the `ios/` subtree hash: any later head with a matching subtree hash carries the clearance forward without re-review; any mismatch (even whitespace) sends it back.
 - GitHub's `mergedBy` is a shared token and proves nothing about who authorized the merge — the announcement is the record.
+- **Planner-authored docs/process PRs: planner self-merges once gates are clean** (Rob, 2026-07-31: stop routing these merges to him). The no-self-merge rule continues to bind builders' PRs; coordination artifacts are the coordinator's to land.
 - Branch/PR mechanics live in `AGENTS.md` → **Branch discipline** and **Review gates**: PR-only onto `develop`/`ios` (never push directly); no agent self-merges its own PR; `main` is Rob-only; promotions to `main` are merge commits, feature PRs squash into `develop`/`ios`.
 
 ## Supervision-loop contract (spec §2.3)
@@ -54,6 +55,7 @@ How the fleet operates. These are standing practice, not concessions to circumst
 - **Sequencing avoids known conflict pairs, even at the cost of parallelism.** Two agents editing the same region of a large file will conflict, and the rework costs more than the serialisation saved. Order the work so the conflict cannot arise rather than resolving it afterwards.
 - **A base advance that carries no code is verified by diff, not re-gated.** Confirm the delta touches no reviewed file — at file level, since a directory legitimately differs when a sibling task lands in the same module — and the prior gate evidence stands. **A code-bearing advance re-gates**, without argument.
 - **Handoffs name an exact head.** A clearance, a gate result and a merge all refer to one SHA, and whoever receives one verifies it matches before relying on it. A verdict attached to "the branch" is worthless the moment the branch moves.
+- **One checkout per seat.** The primary worktree (`/Users/rob/git/making-tracks`) belongs to Rob's own use and planner's coordination; every other seat works in `.worktrees/<branch>` for anything that touches the tree. Two agents sharing a checkout collide on `git checkout`, not on edits — the victim sees a phantom "my file vanished", not a git error (surfaced by reviewer, 2026-07-31).
 
 ## Taste-call protocol (spec §4)
 
@@ -95,8 +97,8 @@ Durable facts the fleet operates under (moved here from planner's session memory
 
 ## Current phase
 
-**Phase 1 — Design system & IA.** Epic #466. Spec: `docs/superpowers/specs/2026-07-25-design-system-and-ia-design.md` (ratified, merged as PR #465). Task graph and status ledger: [`docs/superpowers/phases/phase-1/tasks.md`](../superpowers/phases/phase-1/tasks.md) — builders write their status lines there and the supervision loop reads it.
+**Phase 2 — the World door: DS-3 (#469) + DS-6 (#472).** Epic #466. Spec: `docs/superpowers/specs/2026-07-25-design-system-and-ia-design.md` (ratified #465, amended #524 + the amendment wave). Session rulings: [`docs/superpowers/phases/phase-2/design-session-rulings.md`](../superpowers/phases/phase-2/design-session-rulings.md) (P2R-1…P2R-10, W-1/W-2, merged #563). Task graph and status ledger: [`docs/superpowers/phases/phase-2/tasks.md`](../superpowers/phases/phase-2/tasks.md) — builders write their status lines there and the supervision loop reads it.
 
-Phase scope ruled by Rob: DS-1 (#467), DS-2 (#468), DS-4 (#470), with DS-5 (#471) as stretch. Nothing else from epic #466 this phase. The builder pool is **codex1–codex4**, and the stall threshold is the 45-minute default. The graph carries the acceptance criteria, the explicit non-goals and the open flags.
+Nothing else from epic #466 this phase. The builder pool is **codex1–codex4**, and the stall threshold is the 45-minute default. Wireframe rows carry the extended status vocabulary (`… → awaiting ruling → ruled`) and unblock their dependants at **ruled**, not merge. Phase 1 closed at 34/35 with the remainder parked in #520; T2.3 completes it at 35/35.
 
 Pre-phase and issue-routed work continues to use `docs/superpowers/phases/pre-phase/tasks.md`.
