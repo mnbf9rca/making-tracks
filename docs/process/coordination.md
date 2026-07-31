@@ -95,8 +95,8 @@ Durable facts the fleet operates under (moved here from planner's session memory
 
 ## Current phase
 
-**Phase 1 — Design system & IA.** Epic #466. Spec: `docs/superpowers/specs/2026-07-25-design-system-and-ia-design.md` (ratified, merged as PR #465). Task graph and status ledger: [`docs/superpowers/phases/phase-1/tasks.md`](../superpowers/phases/phase-1/tasks.md) — builders write their status lines there and the supervision loop reads it.
+**Phase 2 — the World door: DS-3 (#469) + DS-6 (#472).** Epic #466. Spec: `docs/superpowers/specs/2026-07-25-design-system-and-ia-design.md` (ratified #465, amended #524 + the amendment wave). Session rulings: [`docs/superpowers/phases/phase-2/design-session-rulings.md`](../superpowers/phases/phase-2/design-session-rulings.md) (P2R-1…P2R-10, W-1/W-2, merged #563). Task graph and status ledger: [`docs/superpowers/phases/phase-2/tasks.md`](../superpowers/phases/phase-2/tasks.md) — builders write their status lines there and the supervision loop reads it.
 
-Phase scope ruled by Rob: DS-1 (#467), DS-2 (#468), DS-4 (#470), with DS-5 (#471) as stretch. Nothing else from epic #466 this phase. The builder pool is **codex1–codex4**, and the stall threshold is the 45-minute default. The graph carries the acceptance criteria, the explicit non-goals and the open flags.
+Nothing else from epic #466 this phase. The builder pool is **codex1–codex4**, and the stall threshold is the 45-minute default. Wireframe rows carry the extended status vocabulary (`… → awaiting ruling → ruled`) and unblock their dependants at **ruled**, not merge. Phase 1 closed at 34/35 with the remainder parked in #520; T2.3 completes it at 35/35.
 
 Pre-phase and issue-routed work continues to use `docs/superpowers/phases/pre-phase/tasks.md`.
