@@ -122,17 +122,19 @@ and therefore quiet.
 > buttons — the budget exists to stop screens shouting competing imperatives; an ON state is not an
 > imperative, it is a fact the control is reporting; three true facts are not three CTAs."*
 >
-> **Apply R16's rider:** within the cluster, an ON pill fills with **the state's own semantic token** —
-> **seen** `accent`, **loved** the ratified `love` row, **saved** `accent`'s tonal-strength companion —
-> so three ON pills read as three differently-toned facts rather than three copies of the CTA colour.
-> Morphology still carries the state: **fill plus glyph, never colour alone.**
+> **Apply amended R16's rider:** within the cluster, an ON pill fills with **the state's own semantic
+> token** — **seen** `accent`, **loved** the ratified `love` row, and **saved**
+> `accentDeepContainer` with `accentContrast` ink — so three ON pills read as three differently-toned
+> facts rather than three copies of the CTA colour. Morphology still carries the state: **fill plus
+> glyph, never colour alone.** The same-ink Saved structure was retired by #555/#556 after arithmetic
+> proved its separation ceiling; Deep Companion **`#08483E`** was ratified from the v2 panel at
+> `442161239dacb3aab8df0392039de22ae39ba98d`.
 >
-> **The stop survives as a fallback for what the rider leaves open.** The rider names *which* token
-> each state fills, not its value, and **A8's render proves those values against the AA gate**. If a
-> value fails — `saved`'s tonal-strength companion is the likely one — that is a **flag to the
-> designer through fable, not a builder invention**. Reading B (glyph-only, containers tonal) was
-> **rejected on evidence** and must not be reintroduced as a workaround: it puts state legibility on
-> the smallest mark on the control, which is the defect R15 exists to fix.
+> **The stop survives as a fallback for what the rider leaves open.** A failing value is a **flag to
+> the designer through fable, not a builder invention**. That stop fired for Saved: the original
+> `accentContainer` **`#D4EDE9`** remains historical A8 evidence but is retired from the Saved role
+> without prejudice. Reading B (glyph-only, containers tonal) remains **rejected on evidence**: it
+> puts state legibility on the smallest mark on the control, which is the defect R15 exists to fix.
 
 The `place-card.*` identifiers are contracts and survive unchanged.
 
@@ -269,7 +271,7 @@ Docs-only; no code, no gate.
 - **Serves:** R14, R15 · **Depends on:** none · **This is the critical path**
 - **Pipeline:** build agent authors → **opus validates** → **Rob rules** → frozen
 - **Owner:** codex4
-- **Status:** FROZEN — Rob ratified `accentContainer` `#D4EDE9`; reviewer freeze validation passed at exact head `0682865dff178ff43ea3e1374685328f565d8cd1`
+- **Status:** FROZEN — the packet remains frozen at exact reviewed head `0682865dff178ff43ea3e1374685328f565d8cd1`; its historical `accentContainer` `#D4EDE9` was later retired from the Saved role by amended R16, and Deep Companion `#08483E` was ratified through the v2 panel at `442161239dacb3aab8df0392039de22ae39ba98d`
 - **Branch:** `wp-526-explore-r15-renders` — cut from a freshly-fetched `ios`
 
 **Brief.** Two new frozen frames: the **Explore surface** as R14 collapses it (Scope directly, quiet

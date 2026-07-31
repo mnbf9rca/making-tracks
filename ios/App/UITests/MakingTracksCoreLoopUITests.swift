@@ -3516,10 +3516,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     func testPlaceCardStateMorphologyRenderMatrix() {
         let configurations = [
-            (saved: false, accessibilityTextSize: false),
-            (saved: true, accessibilityTextSize: false),
-            (saved: false, accessibilityTextSize: true),
-            (saved: true, accessibilityTextSize: true),
+            (name: "unsaved", saved: false, hidden: false, accessibilityTextSize: false),
+            (name: "saved", saved: true, hidden: false, accessibilityTextSize: false),
+            (name: "hidden", saved: false, hidden: true, accessibilityTextSize: false),
+            (name: "unsaved", saved: false, hidden: false, accessibilityTextSize: true),
+            (name: "saved", saved: true, hidden: false, accessibilityTextSize: true),
+            (name: "hidden", saved: false, hidden: true, accessibilityTextSize: true),
         ]
         let states: [(name: String, action: String?)] = [
             (name: "unseen", action: nil),
@@ -3535,6 +3537,15 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             )
             let map = app.otherElements["map.surface"]
             XCTAssertTrue(map.waitForExistence(timeout: 10))
+            if configuration.hidden {
+                app.buttons["debug.hide-fixture"].tap()
+                XCTAssertTrue(waitForFixtureHidden(true, in: app))
+                openScope(in: app)
+                let showHidden = "map.layers.show-hidden"
+                XCTAssertTrue(app.switches[showHidden].waitForExistence(timeout: 5))
+                tapSwitch(in: app, identifier: showHidden, expectedValue: "1")
+                app.buttons["Close"].tap()
+            }
             openFixtureCard(in: map, app: app)
 
             let sheet = app.scrollViews.matching(
@@ -3620,15 +3631,24 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 }
 
                 let hideButton = actionBar.buttons["place-card.hide"]
-                if configuration.saved {
+                let unhideButton = actionBar.buttons["place-card.unhide"]
+                let visibleButtons: [XCUIElement]
+                if configuration.hidden {
                     XCTAssertFalse(hideButton.exists)
+                    XCTAssertTrue(unhideButton.waitForExistence(timeout: 5))
+                    XCTAssertEqual(unhideButton.label, "Unhide")
+                    visibleButtons = stateButtons + [unhideButton]
+                } else if configuration.saved {
+                    XCTAssertFalse(hideButton.exists)
+                    XCTAssertFalse(unhideButton.exists)
+                    visibleButtons = stateButtons
                 } else {
+                    XCTAssertFalse(unhideButton.exists)
                     XCTAssertTrue(hideButton.waitForExistence(timeout: 5))
                     XCTAssertEqual(hideButton.label, "Hide")
+                    visibleButtons = stateButtons + [hideButton]
                 }
-                let visibleButtons = configuration.saved
-                    ? stateButtons
-                    : stateButtons + [hideButton]
+                XCTAssertEqual(actionBar.buttons.count, visibleButtons.count)
 
                 if configuration.accessibilityTextSize {
                     assertVerticalActionStack(visibleButtons, in: app)
@@ -3645,7 +3665,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 let name = [
                     "place-card-r15",
                     configuration.accessibilityTextSize ? "ax" : "default",
-                    configuration.saved ? "saved" : "unsaved",
+                    configuration.name,
                     state.name,
                 ].joined(separator: "-")
                 attachScreenshot(named: name, forceExport: true)
@@ -5461,12 +5481,18 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "place-card-r15-default-saved-unseen": "place-card-r15-default-saved-unseen",
         "place-card-r15-default-saved-seen": "place-card-r15-default-saved-seen",
         "place-card-r15-default-saved-loved": "place-card-r15-default-saved-loved",
+        "place-card-r15-default-hidden-unseen": "place-card-r15-default-hidden-unseen",
+        "place-card-r15-default-hidden-seen": "place-card-r15-default-hidden-seen",
+        "place-card-r15-default-hidden-loved": "place-card-r15-default-hidden-loved",
         "place-card-r15-ax-unsaved-unseen": "place-card-r15-ax-unsaved-unseen",
         "place-card-r15-ax-unsaved-seen": "place-card-r15-ax-unsaved-seen",
         "place-card-r15-ax-unsaved-loved": "place-card-r15-ax-unsaved-loved",
         "place-card-r15-ax-saved-unseen": "place-card-r15-ax-saved-unseen",
         "place-card-r15-ax-saved-seen": "place-card-r15-ax-saved-seen",
         "place-card-r15-ax-saved-loved": "place-card-r15-ax-saved-loved",
+        "place-card-r15-ax-hidden-unseen": "place-card-r15-ax-hidden-unseen",
+        "place-card-r15-ax-hidden-seen": "place-card-r15-ax-hidden-seen",
+        "place-card-r15-ax-hidden-loved": "place-card-r15-ax-hidden-loved",
         "credits-a11y": "credits-a11y",
         "diagnostics-preprepare-exclusions-dark": "diagnostics-preprepare-exclusions-dark",
         "tracks-static-geometry": "tracks-static-geometry",

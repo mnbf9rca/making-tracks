@@ -69,8 +69,8 @@ final class AppShellTests: XCTestCase {
                     title: "Saved",
                     systemImage: "bookmark.fill",
                     style: .state(
-                        foreground: .accent,
-                        background: .accentContainer
+                        foreground: .accentContrast,
+                        background: .accentDeepContainer
                     )
                 )
             ),

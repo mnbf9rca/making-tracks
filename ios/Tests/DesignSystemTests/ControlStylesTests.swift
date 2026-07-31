@@ -72,7 +72,10 @@ final class ControlStylesTests: XCTestCase {
         let tonal = MaterialTonalButtonStyle().appearance
         XCTAssertEqual(tonal.foreground, color(0x0A, 0x6B, 0x5C))
         XCTAssertEqual(tonal.background, color(0x0A, 0x6B, 0x5C))
-        XCTAssertEqual(tonal.backgroundOpacity, 0.12)
+        XCTAssertEqual(
+            tonal.backgroundOpacity,
+            MaterialTheme.snow.tokens.tonalContainerCompositeOpacity
+        )
 
         let quiet = MaterialQuietButtonStyle().appearance
         XCTAssertEqual(quiet.foreground, color(0x6B, 0x67, 0x5F))
@@ -130,7 +133,23 @@ final class ControlStylesTests: XCTestCase {
         let available = MaterialChipState.available.appearance
         XCTAssertEqual(available.foreground, color(0x0A, 0x6B, 0x5C))
         XCTAssertEqual(available.background, color(0x0A, 0x6B, 0x5C))
-        XCTAssertEqual(available.backgroundOpacity, 0.12)
+        XCTAssertEqual(
+            available.backgroundOpacity,
+            MaterialTheme.snow.tokens.tonalContainerCompositeOpacity
+        )
+    }
+
+    func testTonalAppearanceReadsCompositeOpacityFromProvidedSheet() {
+        let sheet = makeInteractionSheet(
+            disabledAlpha: 0.23,
+            pressScale: 0.87,
+            tonalContainerCompositeOpacity: 0.27
+        )
+
+        XCTAssertEqual(
+            MaterialControlAppearance.tonal(tokens: sheet).backgroundOpacity,
+            0.27
+        )
     }
 
     func testDisabledButtonsAndChipsExposeSpokenState() {
@@ -914,7 +933,8 @@ final class ControlStylesTests: XCTestCase {
 
     private func makeInteractionSheet(
         disabledAlpha: Double,
-        pressScale: CGFloat
+        pressScale: CGFloat,
+        tonalContainerCompositeOpacity: Double = 0.12
     ) -> MaterialTokenSheet {
         let snow = MaterialTheme.snow.tokens
         return MaterialTokenSheet(
@@ -929,6 +949,7 @@ final class ControlStylesTests: XCTestCase {
             muted: snow.muted,
             accent: snow.accent,
             accentContainer: snow.accentContainer,
+            accentDeepContainer: snow.accentDeepContainer,
             accentContrast: snow.accentContrast,
             love: snow.love,
             loveContainer: snow.loveContainer,
@@ -943,6 +964,7 @@ final class ControlStylesTests: XCTestCase {
             labelHalo: snow.labelHalo,
             boundaries: snow.boundaries,
             trail: snow.trail,
+            tonalContainerCompositeOpacity: tonalContainerCompositeOpacity,
             disabledAlpha: disabledAlpha,
             pressScale: pressScale
         )

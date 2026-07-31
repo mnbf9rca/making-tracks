@@ -4,7 +4,11 @@
 
 **Goal:** Make every place-card state control report ON with a filled pill and filled glyph, OFF with a tonal pill and outline glyph, while keeping momentary verbs quiet and preserving the A6 action grammar.
 
-**Architecture:** Add the ratified opaque `accentContainer` to the Snow semantic token sheet and add a reusable DesignSystem state-toggle button style for opaque semantic state fills. Keep action presence and order in `PlaceCardActionSlots`; the app owns a small presentation mapping from each existing action plus Saved state to title, SF Symbol, and style.
+**Architecture:** Keep the historical opaque `accentContainer`, add the ratified Saved ON
+`accentDeepContainer`, and expose tonal-container compositing through
+`tonalContainerCompositeOpacity`. A reusable DesignSystem state-toggle button style owns opaque
+semantic state fills. Keep action presence and order in `PlaceCardActionSlots`; the app owns a small
+presentation mapping from each existing action plus Saved state to title, SF Symbol, and style.
 
 **Tech Stack:** Swift 6, SwiftUI, XCTest, Swift Package Manager, Xcode 26.5, Making Tracks DesignSystem
 
@@ -13,9 +17,11 @@
 - Build from `origin/ios` exact base `7e92339ceb38c8c91925d656fe2fbd434c741adb` on `wp-526-place-card-state-morphology`.
 - A8's frozen `docs/design/design-system/a8-r15-place-card.png` is the visual authority.
 - The assigned codex3 seat renders 402×874pt while A8's design canvas is 390×844; grade morphology, tokens, component geometry, and AA at component level, and grade wrapping/reflow behaviorally on the assigned seat.
-- `accentContainer` is designed opaque `#D4EDE9`; accent ink `#0A6B5C` over it must clear the 4.5:1 AA gate.
+- Historical `accentContainer` `#D4EDE9` is retired from the Saved role without prejudice.
+- Saved ON uses ratified opaque `accentDeepContainer` `#08483E` with `accentContrast` ink; it must
+  clear the v2 panel's ink, OFF-wash, Seen, and Loved separation gates.
 - ON state is a filled pill plus filled glyph; OFF state is tonal plus outline glyph; state is never communicated by colour alone.
-- Seen ON uses `accent`; Loved ON uses `love`; Saved ON uses `accentContainer`.
+- Seen ON uses `accent`; Loved ON uses `love`; Saved ON uses `accentDeepContainer`.
 - State toggles are the R16 fourth component category and sit outside the filled-action budget.
 - Hide, Unhide, and `place-card.more` remain quiet momentary verbs.
 - Do not change action presence or ordering established by `PlaceCardActionSlots`.
@@ -25,7 +31,26 @@
 
 ---
 
-### Task 1: Ratified Saved Container Token
+## Final Review Amendment — Binding 2026-07-31
+
+The original Task 1 below records the first A8 implementation faithfully, but its **Saved role is
+superseded**. Exact-head review found that Saved ON `#D4EDE9` and Saved OFF's 12% accent wash
+composited over `surface` to `#DEE9E0`, only 1.015:1 apart. Amended R16 at
+`ecf98db7778ad7b4ca7f08487e375fd45005f7d3` / `1afcc3febb7b18a676a654305fea9af591c52eb3`
+requires the two-ink inversion already used by Seen and Loved.
+
+The binding replacement is:
+
+- `accentDeepContainer = #08483E`, `accentContrast` ink, designer pick 2026-07-30 and Rob
+  ratification 2026-07-31 via v2 panel SHA
+  `442161239dacb3aab8df0392039de22ae39ba98d`;
+- panel checks: ink 9.995:1, Saved OFF 8.390:1, Seen 1.630:1, Loved 1.904:1;
+- `tonalContainerCompositeOpacity = 0.12` becomes a named public DesignSystem row. This is
+  **root-cause hygiene**, not the remedy: it makes the OFF composite computable during future
+  ratification rather than leaving the opacity as an unrelated literal;
+- the reachable render matrix is default/AX × unsaved/saved/hidden × unseen/seen/loved: 18 renders.
+
+### Task 1: Initial Saved Container Token *(historical; Saved role superseded above)*
 
 **Files:**
 - Modify: `ios/Sources/DesignSystem/MaterialTokens.swift`
@@ -254,7 +279,7 @@ Define an exhaustive expected table in `AppShellTests`:
 ```swift
 let cases: [(PlaceCardAction, Bool, PlaceCardActionPresentation)] = [
     (.save, false, .init(title: "Save", systemImage: "bookmark", style: .tonal)),
-    (.save, true, .init(title: "Saved", systemImage: "bookmark.fill", style: .state(foreground: .accent, background: .accentContainer))),
+    (.save, true, .init(title: "Saved", systemImage: "bookmark.fill", style: .state(foreground: .accentContrast, background: .accentDeepContainer))),
     (.seen, false, .init(title: "Seen", systemImage: "eye", style: .tonal)),
     (.unsee(isEnabled: true), false, .init(title: "Seen", systemImage: "eye.fill", style: .state(foreground: .accentContrast, background: .accent))),
     (.unsee(isEnabled: false), false, .init(title: "Seen", systemImage: "eye.fill", style: .state(foreground: .accentContrast, background: .accent))),
@@ -330,8 +355,8 @@ Change the default action-row spacing from `10` to the frozen component metric `
 
 - [ ] **Step 6: Add the default-size and AX render matrix**
 
-Add `testPlaceCardStateMorphologyRenderMatrix` to `MakingTracksCoreLoopUITests`. For each tuple
-`(saved: false/true, accessibilityTextSize: false/true)`, launch a reset fixture app, open and expand
+Add `testPlaceCardStateMorphologyRenderMatrix` to `MakingTracksCoreLoopUITests`. For each default/AX
+tuple in the unsaved, saved, and hidden card families, launch a reset fixture app, open and expand
 the primary fixture card, then capture these three reachable visit states:
 
 ```swift
@@ -346,7 +371,10 @@ Before each capture, assert the action identifiers and exact state labels for th
 For unseen, assert outline-bearing labels `Save`/`Saved`, `Seen`, and no Loved ON label. For seen,
 assert `Seen` and `Love`; for loved, assert `Seen` and `Loved`. At AX size, call
 `assertVerticalActionStack`; at default size, assert horizontal ordering and no frame intersections.
-Name and force-export the twelve captures so the matrix produces artifacts even when xcodebuild
+For hidden cards, assert `place-card.unhide` is the quiet rightmost terminal control, Hide is absent,
+and the state-action order otherwise remains unchanged. Hidden is reachable: `PlaceCardActionSlots`
+appends `.unhide` whenever `pinState.hidden`, and the existing Show Hidden UI path opens that card.
+Name and force-export the eighteen captures so the matrix produces artifacts even when xcodebuild
 does not propagate the shell environment into the UI runner:
 
 ```swift
@@ -356,12 +384,11 @@ attachScreenshot(named: name, forceExport: true)
 Use these names:
 
 ```text
-place-card-r15-{default|ax}-{unsaved|saved}-{unseen|seen|loved}
+place-card-r15-{default|ax}-{unsaved|saved|hidden}-{unseen|seen|loved}
 ```
 
-Add all twelve names to `screenshotExportNames`. These are the evidence set for grading every
-reachable Saved × visit-state combination against A8; hidden is not a reachable card state under
-the A4/A6 grammar.
+Add all eighteen names to `screenshotExportNames`. These are the evidence set for grading every
+reachable card-family × visit-state combination against A8 and A6's merged hidden-card grammar.
 
 - [ ] **Step 7: Run the focused app test and verify GREEN**
 
@@ -385,13 +412,15 @@ MT_RELEASE_GATE_DESTINATION='platform=iOS Simulator,id=AC60FA71-9449-4F15-A259-5
   -only-testing:MakingTracksUITests/MakingTracksCoreLoopUITests/testPlaceCardStateMorphologyRenderMatrix
 ```
 
-Expected: the render matrix passes and exports twelve non-empty PNGs. Inspect all twelve at original
+Expected: the render matrix passes and exports eighteen non-empty PNGs. Inspect all eighteen at original
 detail: ON pills have opaque semantic fills and filled glyphs, OFF pills are tonal with outline
-glyphs, momentary controls are quiet, default rows do not collide, AX rows form a leading-aligned
-vertical stack, and the saved+seen+loved frame matches A8's fully-lit cluster. Record one evidence
+glyphs, momentary controls are quiet, hidden rows end with quiet Unhide rather than Hide, default
+rows do not collide, AX rows form a leading-aligned vertical stack, and the saved+seen+loved frame
+matches A8's morphology/geometry plus the v2 panel's superseding Saved colour ruling. Record one evidence
 sentence that the assigned seat is 402×874pt versus A8's 390×844 design canvas, and grade the
 component figures beside the renders: 44pt default minimum pill height, 17pt glyph, 15pt/600 label,
-6pt icon gap, 8pt cluster gap, plus Saved/Seen/Loved ON contrast 5.23:1/6.13:1/5.25:1.
+6pt icon gap, 8pt cluster gap, plus Saved ink/OFF/Seen/Loved contrast
+9.995:1/8.390:1/1.630:1/1.904:1 and Seen/Loved ink contrast 6.13:1/5.25:1.
 
 - [ ] **Step 9: Commit the app slice**
 

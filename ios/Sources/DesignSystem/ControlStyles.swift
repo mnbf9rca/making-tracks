@@ -17,7 +17,7 @@ struct MaterialControlAppearance: Equatable, Sendable {
         MaterialControlAppearance(
             foreground: tokens.accent,
             background: tokens.accent,
-            backgroundOpacity: 0.12
+            backgroundOpacity: tokens.tonalContainerCompositeOpacity
         )
     }
 

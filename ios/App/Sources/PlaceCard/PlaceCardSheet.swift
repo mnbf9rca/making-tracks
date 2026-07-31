@@ -69,8 +69,8 @@ enum PlaceCardActionAppearance {
                 title: "Saved",
                 systemImage: "bookmark.fill",
                 style: .state(
-                    foreground: .accent,
-                    background: .accentContainer
+                    foreground: .accentContrast,
+                    background: .accentDeepContainer
                 )
             )
         case .save:

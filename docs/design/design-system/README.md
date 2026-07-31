@@ -19,15 +19,18 @@ these assets are its visual record and are embedded in the implementation epic.
 
 Rob ratified `accentContainer = #D4EDE9` as designed opaque on 2026-07-30:
 hue `170.40°`, delta `−0.32°` from accent, saturation `40.98%`, and `5.23:1`
-against ink `#0A6B5C`. The ratified component-metrics table records that value.
-`#DEE9E0` is the rejected mechanical composite; the decision record is retained in
-git history. Reviewer freeze validation passed at exact remote head
+against ink `#0A6B5C`. This remains the frozen A8 record, but amended R16 later
+retired it from the Saved role without prejudice. Saved now uses Deep Companion
+`accentDeepContainer = #08483E` with `accentContrast` ink, ratified through the v2
+panel at `442161239dacb3aab8df0392039de22ae39ba98d`. `#DEE9E0` remains the
+computable OFF wash rather than a live opaque token. Reviewer freeze validation
+of the historical packet passed at exact remote head
 `0682865dff178ff43ea3e1374685328f565d8cd1`.
 
 | Frozen sources and capture | What the packet proves |
 |---|---|
 | `a8-explore-surface.html` + `a8-explore-surface.png` | R14's collapsed Snow Explore surface at default and accessibility-size 390×844 frames: Scope opens directly, selected category chips use the canonical pin symbols, Show saved places is ON between hidden OFF and coverage ON, Search renders nothing, and Settings/About remain reachable quiet bottom destinations. |
-| `a8-r15-place-card.html` + `a8-r15-place-card.png` | R15/R16's fully lit Snow place-card cluster at default and accessibility-size 390×844 frames: Saved uses ratified opaque `accentContainer` `#D4EDE9` with accent ink `#0A6B5C`; Saved, Seen, and Loved are simultaneously ON; no action appears. |
+| `a8-r15-place-card.html` + `a8-r15-place-card.png` | Historical R15/R16 fully lit Snow place-card cluster at default and accessibility-size 390×844 frames: Saved uses the then-ratified opaque `accentContainer` `#D4EDE9` with accent ink `#0A6B5C`; Saved, Seen, and Loved are simultaneously ON; no action appears. Its geometry and morphology remain authoritative, while amended R16 and the v2 panel supersede its Saved color. |
 
 Both packets name `Playwright-bundled Chromium/headless shell 151.0.7922.34` as
 their renderer and are labelled `FROZEN`.

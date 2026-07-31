@@ -868,6 +868,7 @@ final class PinLayersTests: XCTestCase {
             muted: snow.muted,
             accent: snow.accent,
             accentContainer: snow.accentContainer,
+            accentDeepContainer: snow.accentDeepContainer,
             accentContrast: snow.accentContrast,
             love: snow.love,
             loveContainer: snow.loveContainer,
@@ -882,6 +883,7 @@ final class PinLayersTests: XCTestCase {
             labelHalo: snow.labelHalo,
             boundaries: snow.boundaries,
             trail: trail,
+            tonalContainerCompositeOpacity: snow.tonalContainerCompositeOpacity,
             disabledAlpha: snow.disabledAlpha,
             pressScale: snow.pressScale
         )
