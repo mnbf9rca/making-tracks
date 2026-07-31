@@ -2835,6 +2835,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         let collection = app.scrollViews["explore.scope.list-visits.lists.collection"]
         XCTAssertTrue(collection.exists)
+        XCTAssertEqual(collection.frame.height, 350, accuracy: 1)
         let options = app.buttons.matching(
             identifierPrefix: "explore.scope.list-visits.list."
         )
@@ -2844,15 +2845,17 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             "The active Date night list is excluded, leaving the one long literal fixture list."
         )
         for option in options.allElementsBoundByIndex {
-            XCTAssertTrue(scrollToFullyContained(option, in: app, maxSwipes: 40))
             XCTAssertGreaterThanOrEqual(option.frame.height, 86)
-            assertContainedInAppFrame(option, in: app)
+            XCTAssertLessThanOrEqual(option.frame.height, collection.frame.height)
+            XCTAssertTrue(
+                collection.frame.contains(option.frame),
+                "\(option.identifier) frame \(option.frame) escapes collection frame \(collection.frame)"
+            )
         }
 
         let longOption = options.matching(
             NSPredicate(format: "label == %@", longListName)
         ).firstMatch
-        XCTAssertTrue(scrollToFullyContained(longOption, in: app, maxSwipes: 40))
         XCTAssertEqual(longOption.label, longListName)
         longOption.tap()
         XCTAssertTrue(waitForElementValue(
@@ -2867,6 +2870,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         assertMinimumInteractiveTarget(clear)
         assertContainedInAppFrame(clear, in: app)
         assertNoFrameIntersection(collection, clear)
+        assertNoFrameIntersection(longOption, clear)
         attachScreenshot(named: "explore-scope-other-lists-ax", forceExport: true)
         exportMeasurements(
             named: "explore-scope-other-lists-ax",

@@ -917,35 +917,57 @@ private struct ExploreClearScopeRow: View {
     let includesListFilter: Bool
     let action: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
         Button(action: action) {
-            MaterialHairlineRow {
-                HStack(spacing: 10) {
-                    Image(systemName: "arrow.counterclockwise")
-                        .iconRole(.rowQuiet)
-                        .foregroundStyle(tokens.muted.swiftUIColor)
-                        .frame(width: 24)
-                        .accessibilityHidden(true)
+            HStack(spacing: dynamicTypeSize.isAccessibilitySize ? 14 : 10) {
+                Image(systemName: "arrow.counterclockwise")
+                    .font(.system(
+                        size: dynamicTypeSize.isAccessibilitySize ? 28 : 18,
+                        weight: .medium
+                    ))
+                    .foregroundStyle(tokens.muted.swiftUIColor)
+                    .frame(width: dynamicTypeSize.isAccessibilitySize ? 28 : 18)
+                    .accessibilityHidden(true)
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Clear scope")
-                            .font(Typography.font(for: .button))
-                            .foregroundStyle(tokens.muted.swiftUIColor)
-                        Text(
-                            includesListFilter
-                                ? "Reset this list filter and discovery defaults"
-                                : "Restore discovery defaults"
+                VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 4 : 2) {
+                    Text("Clear scope")
+                        .font(
+                            dynamicTypeSize.isAccessibilitySize
+                                ? .system(size: 23, weight: .semibold)
+                                : Typography.font(for: .button)
                         )
-                            .font(Typography.font(for: .metadata))
-                            .foregroundStyle(tokens.muted.swiftUIColor)
-                    }
-
-                    Spacer(minLength: 8)
+                        .foregroundStyle(tokens.muted.swiftUIColor)
+                    Text(
+                        includesListFilter
+                            ? dynamicTypeSize.isAccessibilitySize
+                                ? "Reset list filter and discovery defaults"
+                                : "Reset this list filter and discovery defaults"
+                            : "Restore discovery defaults"
+                    )
+                        .font(
+                            dynamicTypeSize.isAccessibilitySize
+                                ? .system(size: 17)
+                                : Typography.font(for: .metadata)
+                        )
+                        .foregroundStyle(tokens.muted.swiftUIColor)
                 }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
+
+                Spacer(minLength: 8)
+            }
+            .padding(.horizontal, 2)
+            .padding(.vertical, 8)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: dynamicTypeSize.isAccessibilitySize ? 54 : 58,
+                alignment: .leading
+            )
+            .contentShape(Rectangle())
+            .overlay(alignment: .bottom) {
+                tokens.hairline.swiftUIColor.frame(height: 1)
             }
         }
         .buttonStyle(.plain)
@@ -967,21 +989,45 @@ private struct ExploreOtherListsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button(action: onBack) {
-                Label("Scope", systemImage: "chevron.left")
-                    .font(Typography.font(for: .button))
-                    .foregroundStyle(tokens.accent.swiftUIColor)
-                    .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 54 : 44)
-                    .contentShape(Rectangle())
+                HStack(spacing: dynamicTypeSize.isAccessibilitySize ? 8 : 5) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(
+                            size: dynamicTypeSize.isAccessibilitySize ? 20 : 14,
+                            weight: .semibold
+                        ))
+                        .accessibilityHidden(true)
+                    Text("Scope")
+                        .font(
+                            dynamicTypeSize.isAccessibilitySize
+                                ? .system(size: 23, weight: .semibold)
+                                : Typography.font(for: .button)
+                        )
+                }
+                .foregroundStyle(tokens.accent.swiftUIColor)
+                .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 54 : 44)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("explore.scope.list-visits.lists.back")
 
             Text("Other lists")
-                .font(Typography.font(for: .sheetTitle))
+                .font(
+                    dynamicTypeSize.isAccessibilitySize
+                        ? .system(size: 41, weight: .semibold, design: .serif)
+                        : Typography.font(for: .sheetTitle)
+                )
                 .foregroundStyle(tokens.ink.swiftUIColor)
 
-            Text("narrow \(listScope.activeListName) visits by saved-list membership")
-                .font(Typography.font(for: .evocativeSubline))
+            Text(
+                dynamicTypeSize.isAccessibilitySize
+                    ? "saved-list membership"
+                    : "narrow \(listScope.activeListName) visits by saved-list membership"
+            )
+                .font(
+                    dynamicTypeSize.isAccessibilitySize
+                        ? .system(size: 22, design: .serif).italic()
+                        : Typography.font(for: .evocativeSubline)
+                )
                 .foregroundStyle(tokens.muted.swiftUIColor)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 4)
@@ -1000,7 +1046,7 @@ private struct ExploreOtherListsView: View {
                         }
                     }
                 }
-                .frame(maxHeight: dynamicTypeSize.isAccessibilitySize ? 350 : 360)
+                .frame(height: dynamicTypeSize.isAccessibilitySize ? 350 : 360)
                 .accessibilityIdentifier("explore.scope.list-visits.lists.collection")
             }
 
@@ -1034,29 +1080,23 @@ private struct ExploreOtherListsView: View {
             }
             listScope.filter.wrappedValue = filter
         } label: {
-            MaterialHairlineRow {
-                Group {
-                    if dynamicTypeSize.isAccessibilitySize {
-                        VStack(alignment: .leading, spacing: 8) {
-                            listOptionTitle(option)
-                            listOptionStatus(isSelected: isSelected)
-                        }
-                    } else {
-                        HStack(spacing: 10) {
-                            listOptionTitle(option)
+            HStack(spacing: dynamicTypeSize.isAccessibilitySize ? 12 : 10) {
+                listOptionTitle(option)
 
-                            Spacer(minLength: 8)
+                Spacer(minLength: 8)
 
-                            listOptionStatus(isSelected: isSelected)
-                        }
-                    }
-                }
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: dynamicTypeSize.isAccessibilitySize ? 86 : 52,
-                    alignment: .leading
-                )
-                .contentShape(Rectangle())
+                listOptionStatus(isSelected: isSelected)
+            }
+            .padding(.horizontal, 2)
+            .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 10 : 7)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: dynamicTypeSize.isAccessibilitySize ? 86 : 52,
+                alignment: .leading
+            )
+            .contentShape(Rectangle())
+            .overlay(alignment: .bottom) {
+                tokens.hairline.swiftUIColor.frame(height: 1)
             }
         }
         .buttonStyle(.plain)
@@ -1067,7 +1107,11 @@ private struct ExploreOtherListsView: View {
 
     private func listOptionTitle(_ option: ExploreScopeListOption) -> some View {
         Text(verbatim: option.title)
-            .font(Typography.font(for: .button))
+            .font(
+                dynamicTypeSize.isAccessibilitySize
+                    ? .system(size: 23, weight: .semibold)
+                    : Typography.font(for: .button)
+            )
             .foregroundStyle(tokens.ink.swiftUIColor)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -1075,18 +1119,27 @@ private struct ExploreOtherListsView: View {
     private func listOptionStatus(isSelected: Bool) -> some View {
         HStack(spacing: 5) {
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .iconRole(.accessory)
+                .font(.system(
+                    size: dynamicTypeSize.isAccessibilitySize ? 18 : 12,
+                    weight: .medium
+                ))
                 .accessibilityHidden(true)
             Text(isSelected ? "Included" : "Off")
-                .font(.caption.weight(.semibold))
+                .font(.system(
+                    size: dynamicTypeSize.isAccessibilitySize ? 17 : 11,
+                    weight: .semibold
+                ))
         }
         .foregroundStyle(
             isSelected
                 ? tokens.accentContrast.swiftUIColor
                 : tokens.accent.swiftUIColor
         )
-        .padding(.horizontal, 9)
-        .frame(minHeight: 28)
+        .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 11 : 9)
+        .frame(
+            minWidth: dynamicTypeSize.isAccessibilitySize ? 98 : 78,
+            minHeight: dynamicTypeSize.isAccessibilitySize ? 44 : 28
+        )
         .background(
             isSelected
                 ? tokens.accent.swiftUIColor
