@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>W-2 · Settings + About wireframe record</title>
+<style>
+  * { box-sizing: border-box; }
+  /* W-2 consumes the app's checked-in faces; keep these URLs in sync if the app font directory moves. */
+  @font-face {
+    font-family: "Newsreader Display";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader72pt-SemiBold.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 600;
+  }
+  @font-face {
+    font-family: "Newsreader Text";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader16pt-SemiBold.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 600;
+  }
+  :root {
+    --ground: #F4F1EA;
+    --surface: #FBFAF2;
+    --surface-raised: #FFFFFF;
+    --ink: #2B2823;
+    --muted: #6B675F;
+    --accent: #0A6B5C;
+    --accent-wash: #DDECE7;
+    --eyebrow: #8A5A2B;
+    --hairline: rgba(43, 40, 35, 0.14);
+    --evidence: #1F2933;
+    --evidence-muted: #52606D;
+    --evidence-line: #CBD2D9;
+    --warning: #8B2E24;
+  }
+  /* Ruled 390×844 device frame plus its adjacent evidence panel; the render script captures this 900² canvas. */
+  html, body {
+    width: 900px;
+    height: 900px;
+    margin: 0;
+    overflow: hidden;
+  }
+  body {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    grid-template-columns: 390px 1fr;
+    gap: 0;
+    background: #E8E5DE;
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  }
+
+  /* The phone viewport is exactly the ruled 390 × 844 frame. */
+  .frame-column {
+    width: 390px;
+    height: 900px;
+    padding-top: 28px;
+    background: #D8D4CB;
+  }
+  .phone {
+    position: relative;
+    width: 390px;
+    height: 844px;
+    overflow: hidden;
+    background: var(--ground);
+    box-shadow: 0 12px 30px rgba(43, 40, 35, 0.18);
+  }
+  .map {
+    position: absolute;
+    inset: 0;
+    opacity: 0.6;
+  }
+  .map path {
+    fill: none;
+    stroke-linecap: round;
+  }
+  .sheet {
+    position: absolute;
+    inset: 12px 0 0;
+    overflow: hidden;
+    border-radius: 22px 22px 0 0;
+    background: var(--surface);
+  }
+  .grabber {
+    width: 36px;
+    height: 4px;
+    margin: 10px auto 0;
+    border-radius: 999px;
+    background: var(--hairline);
+  }
+  .close {
+    position: absolute;
+    z-index: 2;
+    top: 10px;
+    right: 10px;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 20px;
+  }
+  .content {
+    height: calc(100% - 18px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: none;
+    padding: 8px 18px 20px;
+  }
+  .content::-webkit-scrollbar { display: none; }
+  .eyebrow {
+    margin-right: 48px;
+    color: var(--eyebrow);
+    font-size: 11px;
+    line-height: 1.2;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+  }
+  h1 {
+    margin: 4px 48px 2px 0;
+    font-family: "Newsreader Display", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-size: 26px;
+    line-height: 1.1;
+    font-weight: 600;
+    letter-spacing: -0.35px;
+  }
+  .subtitle {
+    margin: 0 48px 10px 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.3;
+  }
+  .section-label {
+    margin: 10px 0 6px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.15;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+  }
+  .raised {
+    overflow: hidden;
+    border-radius: 14px;
+    background: var(--surface-raised);
+  }
+  .group-row {
+    position: relative;
+    width: 100%;
+    min-height: 75px;
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr) 18px;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px 9px 12px;
+    border: 0;
+    border-bottom: 1px solid var(--hairline);
+    background: transparent;
+    color: var(--ink);
+    text-align: left;
+    font: inherit;
+  }
+  .group-row:last-child {
+    border-bottom: 0;
+  }
+  .group-icon {
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    color: var(--accent);
+  }
+  .group-icon svg {
+    width: 20px;
+    height: 20px;
+    display: block;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .row-copy {
+    min-width: 0;
+  }
+  .row-title {
+    display: block;
+    font-family: "Newsreader Text", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.15;
+    font-weight: 600;
+  }
+  .row-meta {
+    display: block;
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.25;
+  }
+  .chevron {
+    color: var(--muted);
+    font-size: 20px;
+    line-height: 1;
+    text-align: right;
+  }
+  .theme-chips {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 2px;
+    vertical-align: -1px;
+  }
+  .theme-chip {
+    width: 9px;
+    height: 9px;
+    border: 1px solid rgba(43, 40, 35, 0.18);
+    border-radius: 50%;
+  }
+  .theme-chip.selected {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .story-card {
+    padding: 14px;
+    border-radius: 14px;
+    background: var(--surface-raised);
+  }
+  .story-card h2 {
+    margin: 0 0 5px;
+    font-family: "Newsreader Display", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-size: 19px;
+    line-height: 1.15;
+    font-weight: 600;
+  }
+  .story-card p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  .privacy-card {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 10px;
+    margin-top: 8px;
+    padding: 12px 14px;
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+    color: var(--ink);
+  }
+  .privacy-card svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .privacy-copy {
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  .privacy-link {
+    display: inline-block;
+    min-height: 44px;
+    padding-top: 7px;
+    color: var(--accent);
+    font-weight: 650;
+    text-decoration: none;
+  }
+  .build {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 9px 1px 0;
+    border-top: 1px solid var(--hairline);
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.3;
+  }
+  .build code {
+    font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  .fold {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-top: 2px dashed #C0392B;
+    pointer-events: none;
+  }
+  .fold-label {
+    position: absolute;
+    right: 6px;
+    bottom: 4px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: rgba(251, 250, 242, 0.96);
+    color: #A52920;
+    font-size: 9px;
+    font-weight: 700;
+    pointer-events: none;
+  }
+
+  /* AX5 variant: geometry yields to wrapped content; no fixed row height. */
+  body.ax .content {
+    padding: 7px 14px 16px;
+  }
+  body.ax .content::-webkit-scrollbar {
+    display: block;
+    width: 4px;
+  }
+  body.ax .content::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(43, 40, 35, 0.28);
+  }
+  body.ax .eyebrow {
+    font-size: 17px;
+    letter-spacing: 0.07em;
+  }
+  body.ax h1 {
+    margin-top: 5px;
+    font-size: 41px;
+    line-height: 1.02;
+  }
+  body.ax .subtitle {
+    margin-bottom: 7px;
+    font-size: 21px;
+    line-height: 1.2;
+  }
+  body.ax .section-label {
+    margin: 7px 0 4px;
+    font-size: 17px;
+    letter-spacing: 0.07em;
+  }
+  body.ax .group-row {
+    min-height: 120px;
+    grid-template-columns: 32px minmax(0, 1fr) 22px;
+    gap: 10px;
+    padding: 10px 9px;
+  }
+  body.ax .group-icon,
+  body.ax .group-icon svg {
+    width: 30px;
+    height: 30px;
+  }
+  body.ax .row-title {
+    font-size: 27px;
+    line-height: 1.08;
+  }
+  body.ax .row-meta {
+    margin-top: 4px;
+    font-size: 18px;
+    line-height: 1.15;
+  }
+  body.ax .chevron {
+    font-size: 30px;
+  }
+  body.ax .theme-chip {
+    width: 14px;
+    height: 14px;
+  }
+  body.ax .story-card {
+    padding: 12px;
+  }
+  body.ax .story-card h2 {
+    font-size: 30px;
+    line-height: 1.08;
+  }
+  body.ax .story-card p {
+    font-size: 22px;
+    line-height: 1.28;
+  }
+  body.ax .privacy-card {
+    margin-top: 7px;
+    padding: 10px 12px;
+  }
+  body.ax .privacy-copy {
+    font-size: 21px;
+    line-height: 1.25;
+  }
+  body.ax .privacy-link {
+    font-size: 21px;
+  }
+  body.ax .build {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    margin-top: 7px;
+    padding-top: 7px;
+    font-size: 17px;
+  }
+
+  .evidence {
+    width: 510px;
+    height: 900px;
+    overflow: hidden;
+    padding: 22px 24px;
+    background: #F8F9FA;
+    color: var(--evidence);
+    border-left: 1px solid #BBC1C7;
+  }
+  .record-kicker {
+    color: var(--warning);
+    font-size: 11px;
+    line-height: 1.2;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .evidence h2 {
+    margin: 3px 0 2px;
+    font-size: 22px;
+    line-height: 1.12;
+  }
+  .variant-name {
+    margin-bottom: 10px;
+    color: var(--evidence-muted);
+    font-size: 12px;
+  }
+  .evidence h3 {
+    margin: 10px 0 4px;
+    padding-top: 8px;
+    border-top: 1px solid var(--evidence-line);
+    font-size: 12px;
+    line-height: 1.2;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .evidence p,
+  .evidence li {
+    font-size: 10px;
+    line-height: 1.27;
+  }
+  .evidence p {
+    margin: 4px 0;
+  }
+  .evidence ol,
+  .evidence ul {
+    margin: 4px 0;
+    padding-left: 18px;
+  }
+  .evidence li + li {
+    margin-top: 1px;
+  }
+  .measurements {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 8px;
+    margin: 5px 0 0;
+  }
+  .measurement {
+    padding: 4px 6px;
+    border-radius: 5px;
+    background: #E9EEF2;
+    font-size: 10px;
+    line-height: 1.25;
+  }
+  .measurement strong {
+    display: block;
+    color: var(--evidence-muted);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .ruling {
+    padding: 7px 8px;
+    border-left: 3px solid var(--accent);
+    background: #EDF7F4;
+  }
+  .proof {
+    padding: 7px 8px;
+    border-left: 3px solid var(--warning);
+    background: #F8ECEA;
+    font-weight: 650;
+  }
+</style>
+</head>
+<body>
+<div class="frame-column">
+  <main class="phone" id="phone" aria-label="390 by 844 wireframe">
+    <svg class="map" viewBox="0 0 390 844" aria-hidden="true">
+      <path d="M-20 138 C100 114 140 169 220 148 S350 91 420 119" stroke="#C9BFA8" stroke-width="15"/>
+      <path d="M32 0 C80 108 47 178 92 267 S160 395 126 488" stroke="#DDD5C2" stroke-width="8"/>
+      <path d="M270 0 C232 116 289 166 248 260 S283 399 356 468" stroke="#C9DBE2" stroke-width="36"/>
+    </svg>
+    <section class="sheet" id="sheet" aria-label="Snow material sheet">
+      <div class="grabber" aria-hidden="true"></div>
+      <button class="close" type="button" aria-label="Close">×</button>
+      <div class="content" id="content"></div>
+      <div class="fold"></div>
+      <div class="fold-label">fold · 390 × 844</div>
+    </section>
+  </main>
+</div>
+
+<aside class="evidence" aria-label="Wireframe measurements and design record">
+  <div class="record-kicker">W-2 · pre-ruling wireframe</div>
+  <h2>Settings + About</h2>
+  <div class="variant-name" id="variant-name"></div>
+
+  <h3>Constraint structure — enumerated first</h3>
+  <ol id="constraints"></ol>
+
+  <h3>Measured frame</h3>
+  <div class="measurements" id="measurements"></div>
+  <p><strong>Qualifier:</strong> 44pt is the minimum target for navigational and action rows. It is not claimed as a minimum for inert copy. AX rows yield to wrapped content; no maximum row height is adopted.</p>
+
+  <h3>Content mapping</h3>
+  <ul id="mapping"></ul>
+
+  <h3 id="ruling-heading">Coverage ruling</h3>
+  <p class="ruling" id="ruling-record">OF1 at <code>origin/ios@a63abb4</code>: the coverage-shading switch lives only in the map’s filter picker. Settings’ Coverage group is data only — published regions, sources, extents — with no shading switch.</p>
+
+  <h3>Accessibility scope</h3>
+  <p>AX5 wraps instead of clipping. Rows expose a label, value/summary, and action. Selection is named as well as marked. The solid Snow surface is the Reduce Transparency fallback; there is no motion. No state relies on colour alone.</p>
+
+  <h3>P2R-7 record — verbatim</h3>
+  <p class="proof">this surface does not pair a filled action with a state cluster; the R16 proof obligation travels to the first surface that does.</p>
+</aside>
+
+<script>
+  const icons = {
+    appearance: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z"/></svg>',
+    offline: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5h16v10H4z"/><path d="M8 8.5V6h8v2.5M12 11v5M9.5 13.5 12 16l2.5-2.5"/></svg>',
+    coverage: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 6 5-2 6 2 5-2v14l-5 2-6-2-5 2z"/><path d="M9 4v14M15 6v14"/></svg>',
+    map: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 6 5-2 6 2 5-2v14l-5 2-6-2-5 2z"/><path d="M9 4v14M15 6v14"/><circle cx="12" cy="11" r="1.8"/></svg>',
+    location: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.2 6-11a6 6 0 1 0-12 0c0 5.8 6 11 6 11z"/><circle cx="12" cy="10" r="2"/></svg>',
+    diagnostics: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h9l3 3v13H6z"/><path d="M15 4v4h4M9 12h6M9 16h6"/></svg>',
+    replay: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7H3V3"/><path d="M4 7a9 9 0 1 1-1 8"/><path d="m10 9 5 3-5 3z"/></svg>',
+    software: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-4 5 4 5M16 7l4 5-4 5M14 4l-4 16"/></svg>',
+    data: '<svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>'
+  };
+
+  const themeDots = `
+    <span class="theme-chips" aria-hidden="true">
+      <span class="theme-chip selected" style="background:#F4F1EA"></span>
+      <span class="theme-chip" style="background:#EAE4D3"></span>
+      <span class="theme-chip" style="background:#C4B7A0"></span>
+      <span class="theme-chip" style="background:#CFE1BC"></span>
+    </span>`;
+
+  function groupRow(icon, title, meta, value) {
+    return `
+      <button class="group-row" type="button" aria-label="${title}. ${value || meta}">
+        <span class="group-icon">${icons[icon]}</span>
+        <span class="row-copy">
+          <span class="row-title">${title}</span>
+          <span class="row-meta">${meta}</span>
+        </span>
+        <span class="chevron" aria-hidden="true">›</span>
+      </button>`;
+  }
+
+  function settingsMarkup() {
+    return `
+      <div class="eyebrow">Making Tracks</div>
+      <h1>Settings</h1>
+      <p class="subtitle">Things you set once, grouped into material subareas.</p>
+      <div class="section-label">Settings groups</div>
+      <div class="raised settings-groups">
+        ${groupRow("appearance", "Appearance", `Snow selected ${themeDots} · four existing presets`, "Snow selected. Four existing presets.")}
+        ${groupRow("offline", "Offline maps", "Packs · downloads · per-pack storage", "Manage offline regions, downloads, and per-pack storage.")}
+        ${groupRow("coverage", "Coverage", "Published regions · sources · extents", "Coverage data only. No shading control.")}
+        ${groupRow("map", "Map & data", "Cellular downloads · pin size", "Cellular download policy and pin size setting.")}
+        ${groupRow("location", "Location", "Permission and system settings", "Location permission and system settings.")}
+        ${groupRow("diagnostics", "Diagnostics", "Review or export local logs", "Review, prepare, share, or delete local logs.")}
+        ${groupRow("replay", "Replay welcome", "Return to the existing welcome flow", "Replay the existing welcome flow.")}
+      </div>`;
+  }
+
+  function aboutMarkup() {
+    return `
+      <div class="eyebrow">Making Tracks</div>
+      <h1>About</h1>
+      <p class="subtitle">The story, the privacy promise, and the credits.</p>
+      <article class="story-card">
+        <h2>The map is fresh snow.</h2>
+        <p>Moving through the world marks it. Places come from open data including Wikipedia, OpenStreetMap, and heritage registers.</p>
+      </article>
+      <section class="privacy-card" aria-label="Privacy promise">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        <div class="privacy-copy">
+          <strong>Private by construction</strong><br>
+          Nothing you save leaves unless you choose to share it.<br>
+          <a class="privacy-link" href="https://making-tracks.app/privacy">Privacy policy</a>
+        </div>
+      </section>
+      <div class="section-label">Licences</div>
+      <div class="raised licence-groups">
+        ${groupRow("software", "Software licences", "GRDB.swift · MapLibre · Newsreader OFL · Noto Sans", "Four manifest entries, including the Newsreader Open Font License.")}
+        ${groupRow("data", "Data licences", "OpenStreetMap · Wikipedia · regional sources", "OpenStreetMap copyright, Wikipedia, and per-region source attribution.")}
+      </div>
+      <div class="build">
+        <span>Version 1.0 (1)</span>
+        <code>Build &lt;commit&gt; · illustrative</code>
+      </div>`;
+  }
+
+  const query = new URLSearchParams(location.search);
+  const variant = query.get("variant") || "settings";
+  const ax = variant.endsWith("-ax");
+  const screen = variant.startsWith("about") ? "about" : "settings";
+  document.body.classList.toggle("ax", ax);
+  document.getElementById("content").innerHTML = screen === "settings" ? settingsMarkup() : aboutMarkup();
+  document.getElementById("variant-name").textContent =
+    `${screen === "settings" ? "Settings root" : "About root"} · ${ax ? "AX5 stress" : "default size"} · exact 390 × 844 frame`;
+
+  const constraints = screen === "settings" ? [
+    "One Snow material sheet: 22pt top radius, solid surface, 36×4 grabber, one close convention.",
+    "Seven ruled groups are first-class DS-1 hairline rows inside one raised card; each row opens a focused material subarea.",
+    "Target T2.9: Appearance preserves the current four-theme picker; Offline maps owns packs/downloads/storage; Coverage is data-only; Map & data owns cellular policy + pin size.",
+    "Satisfiable vertical system: 832px sheet, 814px scroll viewport, fixed 44px close above scrolling content; full-width row targets abut on hairlines and never overlap.",
+    "AX5 increases type and icon roles; copy has a measured width and rows yield to wrapped content inside the reachable scroll region."
+  ] : [
+    "One Snow material sheet: story and privacy form the opening hierarchy before any attribution content.",
+    "Software licences and Data licences are separate DS-1 destination rows, not headings in one flat text run.",
+    "Target T2.10: Software consumes every OSSCredits entry; Data consumes OSM, Wikipedia, and per-region attribution; all content remains verbatim plain text.",
+    "Satisfiable vertical system: 832px sheet, 814px scroll viewport, fixed 44px close above scrolling content; licence destinations are independent targets.",
+    "AX5 increases type and row geometry; copy has a measured width and wraps inside the reachable scroll region."
+  ];
+  document.getElementById("constraints").innerHTML = constraints.map(item => `<li>${item}</li>`).join("");
+
+  const mapping = screen === "settings" ? [
+    "<strong>Appearance:</strong> dots only summarize selection; the subarea names Snow, Defined Paper, Street Contrast and Verdant KL, retaining IDs and selection semantics.",
+    "<strong>Storage → Offline maps:</strong> retain all states and <code>settings.storage.manage</code>; separately test progress-pill and empty-region callers.",
+    "<strong>Coverage:</strong> both published regions, source sets, extents; no shading switch (OF1 <code>a63abb4</code>).",
+    "<strong>Downloads + Pins → Map & data:</strong> cellular toggle/Wi-Fi help; pin preview, spoken value, slider range/step.",
+    "<strong>Location/Diagnostics/Onboarding:</strong> retain dynamic actions plus <code>settings.diagnostics.export</code> and <code>settings.replay-onboarding</code>.",
+    "<strong>Taste guess for Rob:</strong> root-as-hub with focused subareas; alternative considered was one long inline settings sheet."
+  ] : [
+    "<strong>Current → target T2.10:</strong> approved fresh-snow line joins the current open-data explanation; exact saved-activity privacy promise and privacy-policy link remain.",
+    "<strong>Software:</strong> preserve every entry’s name, acknowledgement, category/version, HTTPS License action, and full <code>Text(verbatim:)</code> notice—including Newsreader OFL.",
+    "<strong>Data:</strong> preserve every attribution source, licence and verbatim text; OSM copyright link remains functional; Wikipedia and per-region sources stay present.",
+    "<strong>Target tests (T2.10):</strong> pin pre/post counts + names and rendered notice text; neutering <code>credit.noticeText</code> must turn the test red.",
+    "<strong>Build:</strong> version and commit remain in About.",
+    "<strong>Taste guess for Rob:</strong> licence areas are destination sub-sheets; alternative considered was expanded inline sections."
+  ];
+  document.getElementById("mapping").innerHTML = mapping.map(item => `<li>${item}</li>`).join("");
+  if (screen === "about") {
+    document.getElementById("ruling-heading").textContent = "Licence preservation";
+    document.getElementById("ruling-record").innerHTML =
+      "Target <strong>T2.10</strong> changes structure only. OSS and manifest-controlled strings remain bounded, plain, and verbatim; acknowledgements, versions, notices, licence actions, OSM copyright, and dynamic per-region attribution are not editable copy.";
+  }
+
+  function px(value) {
+    return `${Math.round(value)}px`;
+  }
+  function addMeasurement(label, value) {
+    const node = document.createElement("div");
+    node.className = "measurement";
+    node.innerHTML = `<strong>${label}</strong>${value}`;
+    document.getElementById("measurements").appendChild(node);
+  }
+  function recordMeasurements() {
+    window.scrollTo(0, 0);
+    const phone = document.getElementById("phone").getBoundingClientRect();
+    const sheet = document.getElementById("sheet").getBoundingClientRect();
+    const content = document.getElementById("content");
+    const close = document.querySelector(".close").getBoundingClientRect();
+    const title = document.querySelector("h1").getBoundingClientRect();
+    const rows = [...document.querySelectorAll(".group-row")].map(node => node.getBoundingClientRect());
+    const rowCopy = document.querySelector(".row-copy").getBoundingClientRect();
+    const smallestRow = rows.length ? Math.min(...rows.map(row => row.height)) : 0;
+    const largestRow = rows.length ? Math.max(...rows.map(row => row.height)) : 0;
+    const totalRows = rows.reduce((total, row) => total + row.height, 0);
+    const scrollState = content.scrollHeight > content.clientHeight ? "scroll required" : "fits";
+    addMeasurement("frame", `${px(phone.width)} × ${px(phone.height)}`);
+    addMeasurement("sheet", `${px(sheet.width)} × ${px(sheet.height)} · r22`);
+    addMeasurement("scroll budget", `${px(content.clientHeight)} viewport / ${px(content.scrollHeight)} content · ${scrollState}`);
+    addMeasurement("row range", `${px(smallestRow)}–${px(largestRow)} · content-yielding`);
+    addMeasurement("row system", `${px(totalRows)} total · ${px(rowCopy.width)} copy width`);
+    addMeasurement("close target", `${px(close.width)} × ${px(close.height)} · fixed`);
+    const newsreaderLoaded = document.fonts.check(`600 ${ax ? 41 : 26}px "Newsreader Display"`);
+    addMeasurement("title", `${px(title.height)} · Newsreader ${newsreaderLoaded ? "loaded" : "MISSING"}`);
+  }
+  document.fonts.ready.then(() => {
+    requestAnimationFrame(() => requestAnimationFrame(recordMeasurements));
+  });
+</script>
+</body>
+</html>

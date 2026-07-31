@@ -310,9 +310,9 @@ Host-only unless you touch `project.yml`.
 - **Serves:** W-2, gating #472 · **Spec section:** §2, §5
 - **Acceptance criteria:** AC2.14, AC2.16, AC2.17, AC2.18 (drawn)
 - **Depends on:** none — claimable immediately
-- **Owner:** unclaimed · **Pipeline:** build agent authors → **reviewer validates** → **Rob rules**
+- **Owner:** codex2 · **Pipeline:** build agent authors → **reviewer validates** → **Rob rules**
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** unclaimed
+- **Status:** ruled — Rob approved #568's Settings + About default/AX artifacts as drawn
 - **Unblocks:** T2.9 and T2.10, **on Rob's ruling**
 - **RULED (Rob, 2026-07-31, relayed in planner's chat):** verbatim — *"568 mockups look good."* Approved **as drawn**, both taste guesses included: Settings as hub-with-focused-subareas; licences as tap-through sub-areas. T2.6 completes at ruled; T2.9/T2.10 unblocked that moment. Assignment at unblock: T2.9 → codex2, T2.10 → codex3.
 
@@ -392,7 +392,7 @@ Full gate plus renders of the picker at default and AX with measurements beside 
 - **Depends on:** **T2.6 ruled by Rob**
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** unclaimed — **blocked until W-2 is ruled**
+- **Status:** unclaimed — unblocked by Rob's W-2 ruling
 - **Contracts consumed:** T1.4's sheet/row patterns, T1.1 tokens, T1.2 font roles.
 
 **Builder brief.** Rebuild `SettingsView` (`MapScreen.swift:6744`–`:6900`) to W-2's grouping on **DS-1 rows and sheets — no system `List` chrome**. Today's sections are Map theme, Downloads, Pins, Location, Storage, Diagnostics, Onboarding; the ruled grouping is Appearance · Offline maps · Coverage · Map & data · Location · Diagnostics · Replay welcome. **The mapping between the two is W-2's to have drawn**; if a today-section has no ruled home, flag it rather than inventing one.
@@ -420,7 +420,7 @@ Full gate plus renders of each Settings group at default and AX.
 - **Depends on:** **T2.6 ruled by Rob**
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** unclaimed — **blocked until W-2 is ruled**
+- **Status:** unclaimed — unblocked by Rob's W-2 ruling
 
 **Builder brief.** Rebuild `AboutView` (`MapScreen.swift:7566`–`:7900`) to W-2: the **story and the privacy promise up top**, then **Software licences** and **Data licences** as proper sub-areas rather than one flat run. DS-1 rows and sheets; no system `List` chrome.
 
