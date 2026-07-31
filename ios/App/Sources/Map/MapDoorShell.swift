@@ -85,10 +85,21 @@ enum ExploreScopePolicy {
         listFilter: TracksVisitFilter?,
         showVisited: Bool
     ) -> State {
-        State(
-            discoveryScope: .defaults,
-            listFilter: showVisited && listFilter != nil ? .all : listFilter
+        let clearsListFilter = clearIncludesListFilter(
+            listFilter: listFilter,
+            showVisited: showVisited
         )
+        return State(
+            discoveryScope: .defaults,
+            listFilter: clearsListFilter ? .all : listFilter
+        )
+    }
+
+    static func clearIncludesListFilter(
+        listFilter: TracksVisitFilter?,
+        showVisited: Bool
+    ) -> Bool {
+        showVisited && listFilter?.isActive == true
     }
 }
 
@@ -591,7 +602,10 @@ struct ExploreDoorRootView: View {
 
             if isScopeAdjusted {
                 ExploreClearScopeRow(
-                    includesListFilter: listScope != nil,
+                    includesListFilter: ExploreScopePolicy.clearIncludesListFilter(
+                        listFilter: listScope?.filter.wrappedValue,
+                        showVisited: listScope?.showVisited.wrappedValue ?? false
+                    ),
                     action: clearScope
                 )
             }
@@ -987,13 +1001,17 @@ private struct ExploreOtherListsView: View {
                     }
                 }
                 .frame(maxHeight: dynamicTypeSize.isAccessibilitySize ? 350 : 360)
+                .accessibilityIdentifier("explore.scope.list-visits.lists.collection")
             }
 
             Spacer(minLength: 8)
 
             if isScopeAdjusted {
                 ExploreClearScopeRow(
-                    includesListFilter: true,
+                    includesListFilter: ExploreScopePolicy.clearIncludesListFilter(
+                        listFilter: listScope.filter.wrappedValue,
+                        showVisited: listScope.showVisited.wrappedValue
+                    ),
                     action: onClear
                 )
             }
@@ -1017,35 +1035,21 @@ private struct ExploreOtherListsView: View {
             listScope.filter.wrappedValue = filter
         } label: {
             MaterialHairlineRow {
-                HStack(spacing: 10) {
-                    Text(verbatim: option.title)
-                        .font(Typography.font(for: .button))
-                        .foregroundStyle(tokens.ink.swiftUIColor)
-                        .fixedSize(horizontal: false, vertical: true)
+                Group {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(alignment: .leading, spacing: 8) {
+                            listOptionTitle(option)
+                            listOptionStatus(isSelected: isSelected)
+                        }
+                    } else {
+                        HStack(spacing: 10) {
+                            listOptionTitle(option)
 
-                    Spacer(minLength: 8)
+                            Spacer(minLength: 8)
 
-                    HStack(spacing: 5) {
-                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                            .iconRole(.accessory)
-                            .accessibilityHidden(true)
-                        Text(isSelected ? "Included" : "Off")
-                            .font(.caption.weight(.semibold))
+                            listOptionStatus(isSelected: isSelected)
+                        }
                     }
-                    .foregroundStyle(
-                        isSelected
-                            ? tokens.accentContrast.swiftUIColor
-                            : tokens.accent.swiftUIColor
-                    )
-                    .padding(.horizontal, 9)
-                    .frame(minHeight: 28)
-                    .background(
-                        isSelected
-                            ? tokens.accent.swiftUIColor
-                            : tokens.accent.swiftUIColor.opacity(0.12),
-                        in: Capsule()
-                    )
-                    .accessibilityHidden(true)
                 }
                 .frame(
                     maxWidth: .infinity,
@@ -1061,6 +1065,37 @@ private struct ExploreOtherListsView: View {
         .accessibilityIdentifier("explore.scope.list-visits.list.\(option.id)")
     }
 
+    private func listOptionTitle(_ option: ExploreScopeListOption) -> some View {
+        Text(verbatim: option.title)
+            .font(Typography.font(for: .button))
+            .foregroundStyle(tokens.ink.swiftUIColor)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func listOptionStatus(isSelected: Bool) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .iconRole(.accessory)
+                .accessibilityHidden(true)
+            Text(isSelected ? "Included" : "Off")
+                .font(.caption.weight(.semibold))
+        }
+        .foregroundStyle(
+            isSelected
+                ? tokens.accentContrast.swiftUIColor
+                : tokens.accent.swiftUIColor
+        )
+        .padding(.horizontal, 9)
+        .frame(minHeight: 28)
+        .background(
+            isSelected
+                ? tokens.accent.swiftUIColor
+                : tokens.accent.swiftUIColor.opacity(0.12),
+            in: Capsule()
+        )
+        .accessibilityHidden(true)
+    }
+
     private var isScopeAdjusted: Bool {
         ExploreScopePolicy.isAdjusted(
             discoveryScope: visibility.discoveryScope,
@@ -1070,9 +1105,10 @@ private struct ExploreOtherListsView: View {
     }
 }
 
-private struct ExploreScopeToggleRow: View {
+struct ExploreScopeToggleRow: View {
     let control: ExploreScopeControl
     @Binding var isOn: Bool
+    private let dynamicTypeSizeOverride: DynamicTypeSize?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: ScopeControlIconGeometry.relativeTextStyle)
@@ -1080,9 +1116,19 @@ private struct ExploreScopeToggleRow: View {
 
     private let tokens = MaterialTheme.snow.tokens
 
+    init(
+        control: ExploreScopeControl,
+        isOn: Binding<Bool>,
+        dynamicTypeSizeOverride: DynamicTypeSize? = nil
+    ) {
+        self.control = control
+        _isOn = isOn
+        self.dynamicTypeSizeOverride = dynamicTypeSizeOverride
+    }
+
     var body: some View {
         let presentation = control.presentation
-        let isAccessibilitySize = dynamicTypeSize.isAccessibilitySize
+        let isAccessibilitySize = (dynamicTypeSizeOverride ?? dynamicTypeSize).isAccessibilitySize
         let resolvedIconSize = ScopeControlIconGeometry.resolvedPointSize(
             scaledPointSize: iconSize,
             isAccessibilitySize: isAccessibilitySize
@@ -1125,7 +1171,7 @@ private struct ExploreScopeToggleRow: View {
     }
 }
 
-private struct ExploreScopeControlGlyph: View {
+struct ExploreScopeControlGlyph: View {
     let icon: ExploreScopeControlIcon
     let size: CGFloat
 

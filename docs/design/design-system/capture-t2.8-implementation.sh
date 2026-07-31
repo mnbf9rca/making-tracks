@@ -43,6 +43,7 @@ cd "$ROOT"
     -only-testing:MakingTracksUITests/MakingTracksCoreLoopUITests/testExploreDoorIndicatorAndClearScopeRoundTrip \
     -only-testing:MakingTracksUITests/MakingTracksCoreLoopUITests/testLovedTrackChipDrivesMapSource \
     -only-testing:MakingTracksUITests/MakingTracksCoreLoopUITests/testExploreOtherListsDrillInUpdatesLiveAndClearStaysOutsideCollection \
+    -only-testing:MakingTracksUITests/MakingTracksCoreLoopUITests/testExploreOtherListsAX5KeepsLongLiteralRowsAndFixedActionsContained \
     -only-testing:MakingTracksUITests/MakingTracksCoreLoopUITests/testExploreOtherListsEmptyStateNamesExcludedLists
 
 trap cleanup_results EXIT
@@ -54,6 +55,7 @@ declare -a captures=(
   explore-door-scope-adjusted
   explore-scope-list-open
   explore-scope-other-lists
+  explore-scope-other-lists-ax
   explore-scope-other-lists-empty
 )
 

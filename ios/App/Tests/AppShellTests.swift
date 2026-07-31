@@ -2292,6 +2292,24 @@ final class AppShellTests: XCTestCase {
             showCoverageShading: false
         )
 
+        XCTAssertTrue(
+            ExploreScopePolicy.clearIncludesListFilter(
+                listFilter: .loved,
+                showVisited: true
+            )
+        )
+        XCTAssertFalse(
+            ExploreScopePolicy.clearIncludesListFilter(
+                listFilter: .loved,
+                showVisited: false
+            )
+        )
+        XCTAssertFalse(
+            ExploreScopePolicy.clearIncludesListFilter(
+                listFilter: .all,
+                showVisited: true
+            )
+        )
         XCTAssertEqual(
             ExploreScopePolicy.cleared(
                 discoveryScope: adjustedDiscovery,
@@ -2314,6 +2332,27 @@ final class AppShellTests: XCTestCase {
                 listFilter: .loved
             )
         )
+    }
+
+    @MainActor
+    func testExploreScopeToggleRowForwardsRatifiedGeometryToItsLiveGlyph() throws {
+        let cases: [(DynamicTypeSize, CGFloat)] = [
+            (.large, 20),
+            (.accessibility5, 30),
+        ]
+
+        for (dynamicTypeSize, expectedSize) in cases {
+            let row = ExploreScopeToggleRow(
+                control: .includeHidden,
+                isOn: .constant(false),
+                dynamicTypeSizeOverride: dynamicTypeSize
+            )
+            let glyphs = descendants(of: ExploreScopeControlGlyph.self, in: row.body)
+            XCTAssertEqual(glyphs.count, 1)
+            let glyph = try XCTUnwrap(glyphs.first)
+            XCTAssertEqual(glyph.icon, ExploreScopeControl.includeHidden.presentation.icon)
+            XCTAssertEqual(glyph.size, expectedSize)
+        }
     }
 
     func testExploreOtherListsExcludeSystemAndActiveThenSortStably() {

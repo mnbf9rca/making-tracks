@@ -2803,6 +2803,136 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
     }
 
+    func testExploreOtherListsAX5KeepsLongLiteralRowsAndFixedActionsContained() {
+        let longListName =
+            "Longest list **literal** 0123456789 0123456789 0123456789 "
+            + "0123456789 0123456789!"
+        XCTAssertEqual(longListName.unicodeScalars.count, 80)
+
+        let app = launch(
+            reset: true,
+            accessibilityTextSize: true,
+            seedUserList: true,
+            seedJournalDoorTextStress: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openJournalDoor(in: app)
+        openListFromTracksRoot(named: "Date night", in: app)
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+
+        openScope(in: app)
+        let otherLists = app.buttons["explore.scope.list-visits.lists"]
+        XCTAssertTrue(scrollToHittable(otherLists, in: app))
+        otherLists.tap()
+
+        let root = app.otherElements["explore.scope.list-visits.lists.root"]
+        XCTAssertTrue(root.waitForExistence(timeout: 5))
+        let back = app.buttons["explore.scope.list-visits.lists.back"]
+        XCTAssertTrue(back.isHittable)
+        assertMinimumInteractiveTarget(back)
+        assertContainedInAppFrame(back, in: app)
+
+        let collection = app.scrollViews["explore.scope.list-visits.lists.collection"]
+        XCTAssertTrue(collection.exists)
+        let options = app.buttons.matching(
+            identifierPrefix: "explore.scope.list-visits.list."
+        )
+        XCTAssertEqual(
+            options.count,
+            1,
+            "The active Date night list is excluded, leaving the one long literal fixture list."
+        )
+        for option in options.allElementsBoundByIndex {
+            XCTAssertTrue(scrollToFullyContained(option, in: app, maxSwipes: 40))
+            XCTAssertGreaterThanOrEqual(option.frame.height, 86)
+            assertContainedInAppFrame(option, in: app)
+        }
+
+        let longOption = options.matching(
+            NSPredicate(format: "label == %@", longListName)
+        ).firstMatch
+        XCTAssertTrue(scrollToFullyContained(longOption, in: app, maxSwipes: 40))
+        XCTAssertEqual(longOption.label, longListName)
+        longOption.tap()
+        XCTAssertTrue(waitForElementValue(
+            "Included",
+            identifier: longOption.identifier,
+            in: app
+        ))
+
+        let clear = app.buttons["explore.scope.clear"]
+        XCTAssertTrue(clear.waitForExistence(timeout: 5))
+        XCTAssertTrue(clear.isHittable)
+        assertMinimumInteractiveTarget(clear)
+        assertContainedInAppFrame(clear, in: app)
+        assertNoFrameIntersection(collection, clear)
+        attachScreenshot(named: "explore-scope-other-lists-ax", forceExport: true)
+        exportMeasurements(
+            named: "explore-scope-other-lists-ax",
+            elements: [
+                ("root", root),
+                ("back", back),
+                ("collection", collection),
+                ("long-list", longOption),
+                ("clear", clear),
+            ],
+            notes: [
+                "dynamic-type: AX5",
+                "long-list-unicode-scalars: 80",
+                "long-list-value: Included",
+            ]
+        )
+    }
+
+    func testEditingListFilterFromFreshPromotesTracksAndUpdatesTheMap() {
+        let app = launch(
+            reset: true,
+            seedUserList: true,
+            pinDiagnostics: true,
+            seedMultiDayTrackList: true,
+            seedTrackListLovedVisit: true,
+            startupViewport: "kl-street"
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForMapToFinishLoading(in: app))
+        openJournalDoor(in: app)
+        openListFromTracksRoot(named: "Date night", in: app)
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForMapSurfaceToSettle(in: app))
+
+        let fresh = app.buttons["map.list-mode.fresh"]
+        let tracks = app.buttons["map.list-mode.tracks"]
+        XCTAssertTrue(fresh.waitForExistence(timeout: 5))
+        XCTAssertTrue(tracks.exists)
+        fresh.tap()
+        XCTAssertTrue(waitForElementValue(
+            "Selected",
+            identifier: "map.list-mode.fresh",
+            in: app
+        ))
+        XCTAssertEqual(tracks.value as? String, "Not selected")
+
+        openScope(in: app)
+        let loved = app.buttons["explore.scope.list-visits.loved"]
+        XCTAssertTrue(scrollToHittable(loved, in: app))
+        loved.tap()
+        XCTAssertTrue(waitForElementValue(
+            "Selected",
+            identifier: "map.list-mode.tracks",
+            in: app
+        ))
+        XCTAssertEqual(fresh.value as? String, "Not selected")
+        app.buttons["Close"].tap()
+
+        let exploreDoor = app.buttons["map.door.explore"]
+        XCTAssertTrue(exploreDoor.waitForExistence(timeout: 5))
+        XCTAssertEqual(exploreDoor.value as? String, "Scope adjusted")
+        XCTAssertTrue(waitForSourceFeatureCount(1, in: app))
+        XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
+    }
+
     func testTrackCategoryFilterScopesReplayDisplayAndCamera() {
         let app = launch(
             reset: true,
@@ -5972,6 +6102,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "my-tracks-burst-readout": "my-tracks-burst-readout",
         "explore-scope-list-open": "explore-scope-list-open",
         "explore-scope-other-lists": "explore-scope-other-lists",
+        "explore-scope-other-lists-ax": "explore-scope-other-lists-ax",
         "explore-scope-other-lists-empty": "explore-scope-other-lists-empty",
         "track-replay-pin-arrival": "track-replay-pin-arrival",
         "track-replay-scrub-frame-00": "track-replay-scrub-frame-00",
