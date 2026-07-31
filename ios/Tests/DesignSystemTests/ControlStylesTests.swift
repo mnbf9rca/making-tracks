@@ -422,19 +422,25 @@ final class ControlStylesTests: XCTestCase {
         }
         let unscaledRestingBounds = try nonTransparentBounds(in: unscaledResting)
         let unscaledPressedBounds = try nonTransparentBounds(in: unscaledPressed)
+        let defaultDisplacement =
+            unscaledPressedBounds.minY - unscaledRestingBounds.minY
         XCTAssertEqual(unscaledPressedBounds.minX, unscaledRestingBounds.minX)
-        XCTAssertEqual(
-            unscaledPressedBounds.minY,
-            unscaledRestingBounds.minY + 1
-        )
+        XCTAssertEqual(defaultDisplacement, 1)
         XCTAssertEqual(unscaledPressedBounds.size, unscaledRestingBounds.size)
 
+        // SwiftUI documents that macOS ignores Dynamic Type changes, so this
+        // host ImageRenderer cannot resolve @ScaledMetric at AX:
+        // https://developer.apple.com/documentation/swiftui/environmentvalues/dynamictypesize
+        // Inject the simulated iOS-resolved value through the actual
+        // MaterialButtonStyleBody path. T2.3's required default/AX simulator
+        // renders provide the device-real @ScaledMetric proof.
+        let simulatedAccessibilityInset: CGFloat = 3
         let accessibilityResting = try renderQuietButtonStyleBody(
             isPressed: false,
             tokens: unscaledSheet,
             pressFeedback: feedback,
             dynamicTypeSize: .accessibility5,
-            renderScale: 3
+            resolvedTextInsetPoints: simulatedAccessibilityInset
         ) {
             Text("Settings")
         }
@@ -443,7 +449,7 @@ final class ControlStylesTests: XCTestCase {
             tokens: unscaledSheet,
             pressFeedback: feedback,
             dynamicTypeSize: .accessibility5,
-            renderScale: 3
+            resolvedTextInsetPoints: simulatedAccessibilityInset
         ) {
             Text("Settings")
         }
@@ -453,10 +459,13 @@ final class ControlStylesTests: XCTestCase {
         let accessibilityPressedBounds = try nonTransparentBounds(
             in: accessibilityPressed
         )
-        XCTAssertGreaterThan(
-            accessibilityPressedBounds.minY - accessibilityRestingBounds.minY,
-            3
+        let accessibilityDisplacement =
+            accessibilityPressedBounds.minY - accessibilityRestingBounds.minY
+        XCTAssertEqual(
+            accessibilityDisplacement,
+            simulatedAccessibilityInset
         )
+        XCTAssertGreaterThan(accessibilityDisplacement, defaultDisplacement)
 
         let disabledResting = try renderQuietButtonStyleBody(
             isPressed: false,
@@ -1064,7 +1073,7 @@ final class ControlStylesTests: XCTestCase {
         pressFeedback: MaterialControlPressFeedback =
             MaterialQuietButtonStyle().pressFeedback,
         dynamicTypeSize: DynamicTypeSize = .large,
-        renderScale: CGFloat = 1,
+        resolvedTextInsetPoints: CGFloat? = nil,
         @ViewBuilder label: () -> Label
     ) throws -> CGImage {
         try render(
@@ -1074,23 +1083,20 @@ final class ControlStylesTests: XCTestCase {
                 appearance: .quiet(tokens: tokens),
                 tokens: tokens,
                 pressFeedback: pressFeedback,
+                resolvedTextInsetPoints: resolvedTextInsetPoints,
                 accessibilityValue: { _ in nil }
             )
             .disabled(!isEnabled)
             .environment(\.dynamicTypeSize, dynamicTypeSize)
             .frame(width: 180, height: 96)
-            .background(Color.clear),
-            scale: renderScale
+            .background(Color.clear)
         )
     }
 #endif
 
-    private func render<Content: View>(
-        _ content: Content,
-        scale: CGFloat = 1
-    ) throws -> CGImage {
+    private func render<Content: View>(_ content: Content) throws -> CGImage {
         let renderer = ImageRenderer(content: content)
-        renderer.scale = scale
+        renderer.scale = 1
         return try XCTUnwrap(renderer.cgImage)
     }
 

@@ -629,6 +629,7 @@ struct MaterialButtonStyleBody<Label: View>: View {
     let pressFeedback: MaterialControlPressFeedback
     var disabledAppearance: MaterialControlDisabledAppearance = .dim
     let accessibilityValue: (Bool) -> String?
+    private let resolvedTextInsetPoints: CGFloat?
 
     @ScaledMetric private var scaledTextInsetPoints: CGFloat
     @Environment(\.isEnabled) private var isEnabled
@@ -640,6 +641,7 @@ struct MaterialButtonStyleBody<Label: View>: View {
         tokens: MaterialTokenSheet,
         pressFeedback: MaterialControlPressFeedback,
         disabledAppearance: MaterialControlDisabledAppearance = .dim,
+        resolvedTextInsetPoints: CGFloat? = nil,
         accessibilityValue: @escaping (Bool) -> String?
     ) {
         self.label = label
@@ -648,6 +650,7 @@ struct MaterialButtonStyleBody<Label: View>: View {
         self.tokens = tokens
         self.pressFeedback = pressFeedback
         self.disabledAppearance = disabledAppearance
+        self.resolvedTextInsetPoints = resolvedTextInsetPoints
         self.accessibilityValue = accessibilityValue
         _scaledTextInsetPoints = ScaledMetric(
             wrappedValue: pressFeedback.textInsetBasePoints,
@@ -684,7 +687,8 @@ struct MaterialButtonStyleBody<Label: View>: View {
                 y: pressFeedback.verticalOffset(
                     isPressed: isPressed,
                     isEnabled: isEnabled,
-                    scaledTextInsetPoints: scaledTextInsetPoints
+                    scaledTextInsetPoints:
+                        resolvedTextInsetPoints ?? scaledTextInsetPoints
                 )
             )
             .contentShape(Capsule())
