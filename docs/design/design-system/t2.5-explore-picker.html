@@ -168,6 +168,10 @@
     gap: 8px;
   }
 
+  .section-heading.has-toggle {
+    position: relative;
+  }
+
   .section-label {
     margin: 0;
     color: var(--muted);
@@ -179,7 +183,15 @@
   }
 
   .toggle-all {
-    margin-left: auto;
+    position: absolute;
+    right: -8px;
+    bottom: 0;
+    min-width: 72px;
+    min-height: 44px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     color: var(--accent);
     font-size: 12px;
     font-weight: 600;
@@ -217,6 +229,15 @@
     width: 11px;
     height: 11px;
     flex: 0 0 11px;
+    fill: currentColor;
+    stroke: none;
+  }
+
+  .chip:not(.is-on) .chip-icon.state-glyph {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linejoin: round;
   }
 
   .scope-rows {
@@ -297,6 +318,20 @@
     line-height: 1.2;
   }
 
+  .discovery-context {
+    margin-top: 14px;
+    padding-top: 11px;
+    border-top: 1px solid var(--hairline);
+  }
+
+  .discovery-context .section-heading {
+    margin-bottom: 4px;
+  }
+
+  .discovery-context .scope-rows {
+    margin-top: 9px;
+  }
+
   .clear-scope {
     min-height: 44px;
     padding: 8px 2px;
@@ -316,6 +351,27 @@
   .clear-scope span {
     font-size: 15px;
     font-weight: 600;
+  }
+
+  .clear-scope.has-meta {
+    min-height: 58px;
+  }
+
+  .clear-copy {
+    min-width: 0;
+  }
+
+  .clear-copy .clear-title {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .clear-copy .clear-meta {
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.2;
   }
 
   .quiet-bottom {
@@ -478,6 +534,29 @@
     font-size: 22px;
   }
 
+  .phone.ax .clear-copy .clear-title {
+    font-size: 22px;
+  }
+
+  .phone.ax .clear-copy .clear-meta {
+    margin-top: 4px;
+    font-size: 17px;
+  }
+
+  .phone.ax-list .sheet-scroll {
+    padding-bottom: 90px;
+  }
+
+  .phone.ax-list .list-note {
+    font-size: 17px;
+    line-height: 1.18;
+  }
+
+  .phone.ax-list .discovery-context {
+    margin-top: 18px;
+    padding-top: 14px;
+  }
+
   .phone.ax .quiet-bottom {
     padding-top: 4px;
   }
@@ -572,8 +651,8 @@
   }
 
   .scope-badge {
-    width: 60px;
-    height: 18px;
+    width: 68px;
+    height: 22px;
     margin-left: 2px;
     padding: 0 6px;
     display: inline-flex;
@@ -583,15 +662,61 @@
     border-radius: 999px;
     background: var(--accent);
     color: var(--accent-contrast);
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.02em;
     white-space: nowrap;
   }
 
   .scope-badge svg {
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
+  }
+
+  .phone.ax-door .door-bar {
+    left: 8px;
+    right: 8px;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .phone.ax-door .door {
+    min-height: 68px;
+    padding: 8px 12px;
+    gap: 8px;
+    font-size: 21px;
+  }
+
+  .phone.ax-door .door > svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .phone.ax-door .explore-door {
+    display: grid;
+    grid-template-columns: 28px auto;
+    grid-template-rows: auto auto;
+    column-gap: 8px;
+    row-gap: 4px;
+  }
+
+  .phone.ax-door .scope-badge {
+    grid-column: 1 / -1;
+    width: auto;
+    height: 28px;
+    margin-left: 0;
+    padding: 0 9px;
+    gap: 5px;
+    font-size: 15px;
+  }
+
+  .phone.ax-door .scope-badge svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .phone.ax-door .attribution {
+    bottom: 108px;
   }
 
   .evidence {
@@ -794,16 +919,24 @@
       <path d="M9.5 5 16.5 12 9.5 19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
     </symbol>
     <symbol id="icon-category" viewBox="0 0 24 24">
-      <path fill="currentColor" d="m12 2.2 3 6 6.7 1-4.8 4.7 1.1 6.7-6-3.2-6 3.2 1.1-6.7-4.8-4.7 6.7-1 3-6Z"/>
+      <path d="m12 2.2 3 6 6.7 1-4.8 4.7 1.1 6.7-6-3.2-6 3.2 1.1-6.7-4.8-4.7 6.7-1 3-6Z"/>
     </symbol>
     <symbol id="icon-heart" viewBox="0 0 24 24">
-      <path fill="currentColor" d="M12 21 3.7 13A5.7 5.7 0 0 1 12 5.3 5.7 5.7 0 0 1 20.3 13L12 21Z"/>
+      <path d="M12 21 3.7 13A5.7 5.7 0 0 1 12 5.3 5.7 5.7 0 0 1 20.3 13L12 21Z"/>
     </symbol>
-    <symbol id="icon-list" viewBox="0 0 24 24">
+    <symbol id="icon-list-on" viewBox="0 0 24 24">
+      <g fill="currentColor">
+        <rect x="8" y="4.5" width="12" height="3" rx="1.5"/>
+        <rect x="8" y="10.5" width="12" height="3" rx="1.5"/>
+        <rect x="8" y="16.5" width="12" height="3" rx="1.5"/>
+        <circle cx="4" cy="6" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="4" cy="18" r="2"/>
+      </g>
+    </symbol>
+    <symbol id="icon-list-off" viewBox="0 0 24 24">
       <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M8 6h12M8 12h12M8 18h12"/>
+        <circle cx="4" cy="6" r="1.5"/><circle cx="4" cy="12" r="1.5"/><circle cx="4" cy="18" r="1.5"/>
       </g>
-      <g fill="currentColor"><circle cx="4" cy="6" r="1.5"/><circle cx="4" cy="12" r="1.5"/><circle cx="4" cy="18" r="1.5"/></g>
     </symbol>
     <symbol id="icon-locate" viewBox="0 0 24 24">
       <path d="m20.5 3.5-7 17-2.2-7.1-7.8-2.1 17-7.8Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
@@ -820,16 +953,16 @@
         <div class="sheet-scroll">
           <header><h1 class="sheet-title">Explore</h1><p class="sheet-subtitle">what the map shows right now</p></header>
           <section class="scope">
-            <div class="section-heading"><h2 class="section-label">Scope</h2><span class="toggle-all">Hide all</span></div>
+            <div class="section-heading has-toggle"><h2 class="section-label">Scope</h2><span class="toggle-all">Hide all</span></div>
             <div class="chips">
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Archaeological</span>
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Artwork</span>
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Attraction</span>
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Historic Building</span>
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Memorial</span>
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Museum</span>
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Religious</span>
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Other</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Archaeological</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Artwork</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Attraction</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Historic Building</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Memorial</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Museum</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Religious</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Other</span>
             </div>
             <div class="scope-rows">
               <div class="scope-row"><svg class="scope-icon"><use href="#icon-eye-off"/></svg><span class="scope-copy">Include hidden places</span><span class="switch"></span></div>
@@ -852,7 +985,7 @@
       <h2>State proof</h2>
       <ul class="facts">
         <li>All category chips ON; hidden OFF; saved ON; coverage ON.</li>
-        <li>Switch morphology preserves P2R-4's ratified row class.</li>
+        <li>OF5 proposal keeps switches inside P2R-4's ratified geometry.</li>
         <li>Settings and About remain separate navigational rows.</li>
       </ul>
       <h2>Measured beside the frame</h2>
@@ -861,10 +994,11 @@
         <tr><th>Sheet</th><td data-box=".sheet"></td></tr>
         <tr><th>Scope rows</th><td data-box=".scope-row"></td></tr>
         <tr><th>Switches</th><td data-box=".switch"></td></tr>
+        <tr><th>Hide-all target</th><td data-box=".toggle-all"></td></tr>
         <tr><th>Visible chips</th><td data-box=".chip"></td></tr>
-        <tr><th>Chip flow</th><td>22pt capsule · 6pt gap · 28pt interior pitch<span class="source">R10 internal outset = min(11, 6/2) = 3pt; free edges = 11pt</span></td></tr>
+        <tr><th>Chip flow</th><td>22pt capsule · 6pt gap · 28pt interior pitch<span class="source">Neighbour outset 3pt; free vertical 11pt, horizontal 0pt</span></td></tr>
         <tr><th>Block rhythm</th><td>18 / 11 / 14pt<span class="source">MEASURED A8; OF2 default, not ratified system law</span></td></tr>
-        <tr><th>Contrast</th><td>ink/surface 14.02:1 · muted/surface 5.38:1 · white/accent 6.13:1</td></tr>
+        <tr><th>Contrast</th><td>ink/surface 14.02:1 · muted/surface 5.38:1 · accentContrast/accent 6.13:1</td></tr>
       </table>
       <p class="record-note"><strong>Target qualification:</strong> chip tiling applies only to these reversible, immediately-legible state controls. Navigational bottom rows retain full 44pt targets.</p>
     </aside>
@@ -880,16 +1014,16 @@
         <div class="sheet-scroll">
           <header><h1 class="sheet-title">Explore</h1><p class="sheet-subtitle">what the map shows right now</p></header>
           <section class="scope">
-            <div class="section-heading"><h2 class="section-label">Scope</h2><span class="toggle-all">Show all</span></div>
+            <div class="section-heading has-toggle"><h2 class="section-label">Scope</h2><span class="toggle-all">Show all</span></div>
             <div class="chips">
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Archaeological</span>
-              <span class="chip"><svg class="chip-icon"><use href="#icon-category"/></svg>Artwork</span>
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Attraction</span>
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Historic Building</span>
-              <span class="chip"><svg class="chip-icon"><use href="#icon-category"/></svg>Memorial</span>
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Museum</span>
-              <span class="chip"><svg class="chip-icon"><use href="#icon-category"/></svg>Religious</span>
-              <span class="chip"><svg class="chip-icon"><use href="#icon-category"/></svg>Other</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Archaeological</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Artwork</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Attraction</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Historic Building</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Memorial</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Museum</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Religious</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Other</span>
             </div>
             <div class="scope-rows">
               <div class="scope-row is-on"><svg class="scope-icon"><use href="#icon-eye-off"/></svg><span class="scope-copy">Include hidden places</span><span class="switch is-on"></span></div>
@@ -912,7 +1046,7 @@
       <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
       <h2>State proof</h2>
       <ul class="facts">
-        <li>Filled versus tonal chip morphology carries category state without colour alone.</li>
+        <li>ON filled glyph/pill versus OFF outline glyph/tonal carries category state.</li>
         <li>Switch position and track shape carry row state without colour alone.</li>
         <li>Clear scope restores category-all, hidden OFF, saved ON, coverage ON.</li>
       </ul>
@@ -922,10 +1056,11 @@
         <tr><th>Scope rows</th><td data-box=".scope-row"></td></tr>
         <tr><th>Clear scope</th><td data-box=".clear-scope"></td></tr>
         <tr><th>Quiet destinations</th><td data-box=".quiet-row"></td></tr>
+        <tr><th>Show-all target</th><td data-box=".toggle-all"></td></tr>
         <tr><th>Visible chips</th><td data-box=".chip"></td></tr>
-        <tr><th>Chip target tiling</th><td>3pt internal outset · 11pt free-edge outset<span class="source">6pt actual gap; every inter-chip point maps to one nearer control</span></td></tr>
+        <tr><th>Chip target tiling</th><td>28pt pitch · 3pt neighbour outset<span class="source">Free vertical 11pt; free horizontal 0pt for chips already ≥44pt wide</span></td></tr>
         <tr><th>Clear target</th><td>44pt full-width; no target reduction</td></tr>
-        <tr><th>Contrast</th><td>ink/surface 14.02:1 · muted/surface 5.38:1 · white/accent 6.13:1</td></tr>
+        <tr><th>Contrast</th><td>ink/surface 14.02:1 · muted/surface 5.38:1 · accentContrast/accent 6.13:1</td></tr>
       </table>
       <p class="record-note"><strong>P2R-5:</strong> persistence gets a visible one-tap exit. The row is absent at default so no dead control advertises an action that changes nothing.</p>
     </aside>
@@ -939,32 +1074,37 @@
       <div class="sheet">
         <div class="grabber"></div>
         <div class="sheet-scroll">
-          <header><h1 class="sheet-title">Explore</h1><p class="sheet-subtitle">what the KL weekend map shows</p></header>
+          <header><h1 class="sheet-title">Explore</h1><p class="sheet-subtitle">scope for this list and your discovery map</p></header>
           <section class="scope">
-            <div class="section-heading"><h2 class="section-label">Scope</h2><span class="toggle-all">Show all</span></div>
+            <div class="section-heading has-toggle"><h2 class="section-label">This list map</h2><span class="toggle-all">Show all</span></div>
+            <p class="list-note">Categories below narrow KL weekend visits.</p>
             <div class="chips">
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Archaeological</span>
-              <span class="chip"><svg class="chip-icon"><use href="#icon-category"/></svg>Artwork</span>
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Attraction</span>
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Historic Building</span>
-              <span class="chip"><svg class="chip-icon"><use href="#icon-category"/></svg>Memorial</span>
-              <span class="chip"><svg class="chip-icon"><use href="#icon-category"/></svg>Museum</span>
-            </div>
-            <div class="scope-rows">
-              <div class="scope-row"><svg class="scope-icon"><use href="#icon-eye-off"/></svg><span class="scope-copy">Include hidden places</span><span class="switch"></span></div>
-              <div class="scope-row is-on"><svg class="scope-icon"><use href="#icon-bookmark"/></svg><span class="scope-copy">Show saved places</span><span class="switch is-on"></span></div>
-              <div class="scope-row is-on"><svg class="scope-icon"><use href="#icon-coverage"/></svg><span class="scope-copy">Show coverage shading</span><span class="switch is-on"></span></div>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Archaeological</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Artwork</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Attraction</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Historic Building</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Memorial</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Museum</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Religious</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Other</span>
             </div>
             <section class="list-context">
               <div class="section-heading"><h2 class="section-label">Visits in this list</h2></div>
-              <p class="list-note">Category choices above apply to this list map.</p>
               <div class="chips">
-                <span class="chip is-on"><svg class="chip-icon"><use href="#icon-heart"/></svg>Loved</span>
-                <span class="chip"><svg class="chip-icon"><use href="#icon-list"/></svg>Want to go</span>
-                <span class="chip is-on"><svg class="chip-icon"><use href="#icon-list"/></svg>Architecture</span>
+                <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-heart"/></svg>Loved</span>
+              </div>
+              <div class="quiet-row membership-row"><svg class="quiet-icon"><use href="#icon-list-on"/></svg><div><div class="quiet-title">Other lists</div><div class="quiet-meta">Architecture · 1 selected</div></div><svg class="quiet-chevron"><use href="#icon-chevron"/></svg></div>
+            </section>
+            <section class="discovery-context">
+              <div class="section-heading"><h2 class="section-label">Discovery map defaults</h2></div>
+              <p class="list-note">Apply after leaving this list; never filter its story.</p>
+              <div class="scope-rows">
+                <div class="scope-row"><svg class="scope-icon"><use href="#icon-eye-off"/></svg><span class="scope-copy">Include hidden places</span><span class="switch"></span></div>
+                <div class="scope-row is-on"><svg class="scope-icon"><use href="#icon-bookmark"/></svg><span class="scope-copy">Show saved places</span><span class="switch is-on"></span></div>
+                <div class="scope-row is-on"><svg class="scope-icon"><use href="#icon-coverage"/></svg><span class="scope-copy">Show coverage shading</span><span class="switch is-on"></span></div>
               </div>
             </section>
-            <div class="clear-scope"><svg><use href="#icon-reset"/></svg><span>Clear scope</span></div>
+            <div class="clear-scope has-meta"><svg><use href="#icon-reset"/></svg><div class="clear-copy"><div class="clear-title">Clear scope</div><div class="clear-meta">Reset this list filter and discovery defaults</div></div></div>
           </section>
           <nav class="quiet-bottom">
             <div class="quiet-row settings"><svg class="quiet-icon"><use href="#icon-gear"/></svg><div><div class="quiet-title">Settings</div><div class="quiet-meta">appearance, data, location, storage</div></div><svg class="quiet-chevron"><use href="#icon-chevron"/></svg></div>
@@ -976,14 +1116,15 @@
     <aside class="evidence">
       <p class="kicker">Picker · active list map</p>
       <h1>OF4: contextual, not conflated</h1>
-      <p class="subtitle">The category grid uses the existing list/discovery bridge. Only list-specific visit states appear in the contextual group.</p>
+      <p class="subtitle">Current-list filters and discovery defaults share one picker, but their ownership and reach are visibly separate.</p>
       <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
       <h2>Merge proof</h2>
       <ul class="facts">
         <li>No floating chip overlay and no second filter sheet remain.</li>
-        <li>Loved and cross-list membership are visibly scoped to this list map.</li>
-        <li>No filled Apply action; every state change is live and reversible.</li>
-        <li>Clear scope resets discovery scope plus the contextual list filter.</li>
+        <li>Categories and Loved are visibly scoped to this list map.</li>
+        <li>Other-list membership uses a bounded, full-target in-picker drill-in.</li>
+        <li>Discovery rows explicitly do not filter the list story (P2R-8).</li>
+        <li>Clear says it resets both domains; no filled Apply action exists.</li>
       </ul>
       <h2>Measured beside the frame</h2>
       <table class="metrics">
@@ -991,10 +1132,12 @@
         <tr><th>Scope rows</th><td data-box=".scope-row"></td></tr>
         <tr><th>List group</th><td data-box=".list-context"></td></tr>
         <tr><th>State chips</th><td data-box=".list-context .chip"></td></tr>
+        <tr><th>Lists target</th><td data-box=".membership-row"></td></tr>
+        <tr><th>Show-all target</th><td data-box=".toggle-all"></td></tr>
         <tr><th>Clear scope</th><td data-box=".clear-scope"></td></tr>
-        <tr><th>Chip target tiling</th><td>3pt toward neighbours · 11pt at free edges<span class="source">6pt actual gap; reversible state controls only</span></td></tr>
+        <tr><th>Chip target tiling</th><td>28pt pitch · 3pt neighbour outset<span class="source">Free vertical 11pt; free horizontal 0pt where width is already ≥44pt</span></td></tr>
         <tr><th>Navigation targets</th><td data-box=".quiet-row"></td></tr>
-        <tr><th>Contrast</th><td>ink/surface 14.02:1 · muted/surface 5.38:1 · white/accent 6.13:1</td></tr>
+        <tr><th>Contrast</th><td>ink/surface 14.02:1 · muted/surface 5.38:1 · accentContrast/accent 6.13:1</td></tr>
       </table>
       <p class="record-note"><strong>P2R-7:</strong> this surface does not pair a filled action with a state cluster; the R16 proof obligation travels to the first surface that does.</p>
     </aside>
@@ -1010,16 +1153,16 @@
         <div class="sheet-scroll" data-scroll-top="80">
           <header><h1 class="sheet-title">Explore</h1><p class="sheet-subtitle">what the map shows right now</p></header>
           <section class="scope">
-            <div class="section-heading"><h2 class="section-label">Scope</h2><span class="toggle-all">Show all</span></div>
+            <div class="section-heading has-toggle"><h2 class="section-label">Scope</h2><span class="toggle-all">Show all</span></div>
             <div class="chips">
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Archaeological</span>
-              <span class="chip"><svg class="chip-icon"><use href="#icon-category"/></svg>Artwork</span>
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Attraction</span>
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Historic Building</span>
-              <span class="chip"><svg class="chip-icon"><use href="#icon-category"/></svg>Memorial</span>
-              <span class="chip is-on"><svg class="chip-icon"><use href="#icon-category"/></svg>Museum</span>
-              <span class="chip"><svg class="chip-icon"><use href="#icon-category"/></svg>Religious</span>
-              <span class="chip"><svg class="chip-icon"><use href="#icon-category"/></svg>Other</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Archaeological</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Artwork</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Attraction</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Historic Building</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Memorial</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Museum</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Religious</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Other</span>
             </div>
             <div class="scope-rows">
               <div class="scope-row is-on"><svg class="scope-icon"><use href="#icon-eye-off"/></svg><span class="scope-copy">Include hidden places</span><span class="switch is-on"></span></div>
@@ -1045,15 +1188,16 @@
         <li>AX chips wrap and grow; text remains untruncated.</li>
         <li>All Scope rows preserve the ratified 86pt minimum.</li>
         <li>Clear scope and navigational rows keep full targets.</li>
-        <li>State is carried by fill/outline, switch position, glyph, and VoiceOver value—not colour alone.</li>
+        <li>Chip fill/outline, switch position, glyph, and VoiceOver value carry state—not colour alone.</li>
       </ul>
       <h2>Measured beside the frame</h2>
       <table class="metrics">
         <tr><th>Phone</th><td data-box=".phone"></td></tr>
         <tr><th>Scope rows</th><td data-box=".scope-row"></td></tr>
         <tr><th>Switches</th><td data-box=".switch"></td></tr>
+        <tr><th>Show-all target</th><td data-box=".toggle-all"></td></tr>
         <tr><th>AX chips</th><td data-box=".chip"></td></tr>
-        <tr><th>AX chip flow</th><td>38pt minimum · 8pt gap · 46pt interior pitch<span class="source">R10 internal outset = min(11, 8/2) = 4pt</span></td></tr>
+        <tr><th>AX chip flow</th><td>38pt minimum · 8pt gap · 46pt interior pitch<span class="source">Neighbour 4pt; free vertical 3pt, horizontal 0pt</span></td></tr>
         <tr><th>Clear scope</th><td data-box=".clear-scope"></td></tr>
         <tr><th>Destinations</th><td data-box=".quiet-row"></td></tr>
         <tr><th>Scroll region</th><td data-scroll-box=".sheet-scroll"></td></tr>
@@ -1115,7 +1259,7 @@
     <aside class="evidence">
       <p class="kicker">Explore door · adjusted scope</p>
       <h1>The reason stays on the map</h1>
-      <p class="subtitle">The textual badge appears whenever effective map scope differs from default, including an active contextual list filter.</p>
+      <p class="subtitle">The textual badge appears for non-default discovery scope or an active list filter while the list map is in Tracks mode.</p>
       <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
       <h2>State proof</h2>
       <ul class="facts">
@@ -1133,7 +1277,7 @@
         <tr><th>Indicator contrast</th><td>accent-contrast/accent 6.13:1</td></tr>
         <tr><th>Door contrast</th><td>ink/surface 14.02:1 · accent/surface 6.13:1</td></tr>
       </table>
-      <p class="record-note"><strong>P2R-5a:</strong> a thin map never leaves its reason hidden behind an unmarked door. The copy avoids “filtered,” because include-hidden can broaden scope and coverage changes presentation.</p>
+      <p class="record-note"><strong>P2R-5a:</strong> a thin map never leaves its reason hidden behind an unmarked door. A retained list filter is dormant in Fresh mode and does not activate this badge by itself.</p>
     </aside>
   </article>
 
