@@ -46,6 +46,15 @@ implementation evidence.
 |---|---|
 | `a8-saved-on-candidate-v2.html` + `a8-saved-on-candidate-v2-{default,ax}.png` | Saved ON candidate decision evidence at exact `1540×980` DSF1 captures. Each candidate shows Saved OFF/ON, simultaneous Saved/Seen/Loved ON, and all seven ruled checks at frozen A8 default or AX geometry. On 2026-07-31 Rob ratified Deep Companion `#08483E` as the accent-family dark Saved ON fill carrying `accentContrast` ink with the explicit pick “Deep is fine”; panel SHA `4421612` is the decision provenance. Accent reuse `#0A6B5C` is the rejected alternative. This evidence does not claim the ratified fill is wired into production code. Captured with Playwright-bundled Chromium/headless shell `151.0.7922.34`; byte-identical repeat SHA-256 values are `d7070aa1d97f769c57e6ad603d280d39b6a6c2a8947f787f7985f1bb48b67402` (default) and `0859dfd2532f3dca4d0182368e2df53b1393d1afb55f039b6c3d8fbba40c4eff` (AX). Frozen `a8-r15-place-card.png` remains unchanged at `7704a185ebb872ed61017db757a24c20be0a5c2870bde8b575007398972c733b`. |
 
+## Phase 2 wireframes awaiting ruling
+
+These are authored mockup-gate records. They become frozen design evidence only after reviewer
+validation and Rob's ruling.
+
+| Asset | What it shows |
+|---|---|
+| `w2-settings-about.html` + `w2-settings{,-ax}.png` + `w2-about{,-ax}.png` | W-2 Settings and About at exact 390×844 default and AX5 frames, each with its constraint structure and measurements beside it. Settings maps all seven ruled groups into DS-1 material subareas; OF1 at `origin/ios@a63abb4` is visible as a data-only Coverage row with no shading switch. About leads with story and privacy, then separates Software licences from Data licences. The record carries P2R-7's required sentence verbatim. Pre-ruling: reviewer validation and Rob's taste ruling are still required. Captured at DSF1 with Chromium headless shell `151.0.7922.34`; a repeated default Settings capture was byte-identical. SHA-256: `f719063d620f17f083cac4076ecccef46f4aab4546efd9bb32024a2a942c9298` (Settings), `3df805692155d8ff9f679ea3477e30fd5f4b957ff9d925efc6e538616fe21e27` (Settings AX5), `6b56a47bbd30679f6042329ce10ce22262739902df14524205a87dd58a4674c1` (About), `db4a19cbdad171d8d7a138da9744b463f761f184d78201c2fb10d82aaf47b7b6` (About AX5). |
+
 ## Implementation evidence
 
 These renders record shipped implementation changes; they are not frozen design-session rulings.
