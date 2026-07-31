@@ -45,7 +45,7 @@ final class MapLayerVisibilityTests: XCTestCase {
         XCTAssertTrue(visibility.showHiddenPlaces)
     }
 
-    func testCoverageShadingDefaultsOnButDoesNotAffectDefaultFilterState() {
+    func testCoverageShadingParticipatesInEffectiveDefaultScope() {
         var visibility = MapLayerVisibility()
 
         XCTAssertTrue(visibility.showCoverageShading)
@@ -54,7 +54,73 @@ final class MapLayerVisibilityTests: XCTestCase {
         visibility.showCoverageShading = false
 
         XCTAssertFalse(visibility.showCoverageShading)
+        XCTAssertFalse(visibility.isDefault)
+
+        visibility.showCoverageShading = true
+
         XCTAssertTrue(visibility.isDefault)
+    }
+
+    func testDiscoveryScopeRoundTripsAllFourChoices() {
+        let categories = [
+            MapLayerCategory(
+                id: "history",
+                title: "History",
+                iconName: "pin-category-history"
+            ),
+            MapLayerCategory(
+                id: "museum",
+                title: "Museum",
+                iconName: "pin-category-museum"
+            ),
+        ]
+        let scope = DiscoveryScope(
+            visibleCategoryIDs: ["museum"],
+            includeHidden: true,
+            showSaved: false,
+            showCoverageShading: false
+        )
+
+        let visibility = MapLayerVisibility(
+            categories: categories,
+            scope: scope
+        )
+
+        XCTAssertEqual(visibility.visibleCategories, ["museum"])
+        XCTAssertTrue(visibility.showHiddenPlaces)
+        XCTAssertFalse(visibility.showSavedPlaces)
+        XCTAssertFalse(visibility.showCoverageShading)
+        XCTAssertEqual(visibility.discoveryScope, scope)
+        XCTAssertFalse(visibility.isDefault)
+    }
+
+    func testRemovedPersistedCategoriesDegradeToAllWithoutLosingOtherChoices() {
+        let categories = [
+            MapLayerCategory(
+                id: "history",
+                title: "History",
+                iconName: "pin-category-history"
+            ),
+            MapLayerCategory(
+                id: "museum",
+                title: "Museum",
+                iconName: "pin-category-museum"
+            ),
+        ]
+        let visibility = MapLayerVisibility(
+            categories: categories,
+            scope: DiscoveryScope(
+                visibleCategoryIDs: ["removed-category"],
+                includeHidden: true,
+                showSaved: false,
+                showCoverageShading: false
+            )
+        )
+
+        XCTAssertNil(visibility.visibleCategories)
+        XCTAssertTrue(visibility.showHiddenPlaces)
+        XCTAssertFalse(visibility.showSavedPlaces)
+        XCTAssertFalse(visibility.showCoverageShading)
     }
 
     func testSavedPlacesDefaultOnAndParticipateInDefaultFilterStateAndDiscoveryFiltering() {

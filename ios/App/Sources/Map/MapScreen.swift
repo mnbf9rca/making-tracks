@@ -2457,7 +2457,8 @@ final class OfflineRegionDownloadSession {
 struct MapScreen: View {
     static let themeStorageKey = "map.theme.id"
     static let pinSizeMultiplierStorageKey = "map.pinSize.multiplier"
-    static let coverageShadingStorageKey = "map.coverageShading.visible"
+    static let scopeStorageKey = DiscoveryScopeStore.storageKey
+    static let coverageShadingStorageKey = DiscoveryScopeStore.legacyCoverageShadingKey
 
     let database: AppDatabase
     let startupViewport: ViewportSeed
@@ -2477,7 +2478,6 @@ struct MapScreen: View {
     @AppStorage(Self.themeStorageKey) private var selectedThemeID = MapTheme.definedPaper.id
     @AppStorage(OfflineDownloadSettings.allowsCellularDownloadsKey) private var allowsCellularDownloads = OfflineDownloadSettings.defaultAllowsCellularDownloads
     @AppStorage(Self.pinSizeMultiplierStorageKey) private var pinSizeMultiplier = PinSize.defaultMultiplier
-    @AppStorage(Self.coverageShadingStorageKey) private var showCoverageShading = true
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var worldPMTilesURL: String? = WorldBasemap.pmtilesURL()
@@ -2577,7 +2577,12 @@ struct MapScreen: View {
         self.locationManager = locationManager
         _features = State(initialValue: isFixtureMap ? Self.initialFixtureFeatures(dense: debugUseDenseFixturePins) : [])
         _installedCoverageBBoxes = State(initialValue: debugCoverageBBoxes)
-        _layerVisibility = State(initialValue: MapLayerVisibility(showCoverageShading: UserDefaults.standard.object(forKey: Self.coverageShadingStorageKey) as? Bool ?? true))
+        let discoveryScope = DiscoveryScopeStore(
+            userDefaults: .standard
+        ).load()
+        _layerVisibility = State(
+            initialValue: MapLayerVisibility(scope: discoveryScope)
+        )
         _locationPermission = StateObject(wrappedValue: locationPermission ?? LocationPermission(manager: locationManager))
     }
 
@@ -2981,7 +2986,9 @@ struct MapScreen: View {
             Task { await refreshStorageMenuStatus() }
         }
         .onChange(of: layerVisibility) { _, visibility in
-            showCoverageShading = visibility.showCoverageShading
+            DiscoveryScopeStore(userDefaults: .standard).save(
+                visibility.discoveryScope
+            )
             Task { @MainActor in
                 await applyLayerVisibility(visibility)
             }
