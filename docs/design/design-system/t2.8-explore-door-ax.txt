@@ -1,0 +1,7 @@
+capture: explore-door-ax
+dynamic-type: AX5
+include-hidden: x=12.67 y=-360.67 width=373.33 height=184.67
+show-saved: x=16.00 y=-166.00 width=370.00 height=184.67
+coverage-shading: x=16.00 y=28.67 width=370.00 height=184.67
+settings: x=16.00 y=271.33 width=370.00 height=286.33
+about: x=16.00 y=581.67 width=370.00 height=234.33

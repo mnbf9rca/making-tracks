@@ -1,0 +1,5 @@
+capture: explore-scope-list-open
+context: Replay week
+root: x=0.00 y=121.00 width=402.00 height=753.00
+loved-visits: x=16.00 y=409.33 width=71.00 height=44.00
+other-lists: x=16.00 y=466.33 width=370.00 height=60.33
