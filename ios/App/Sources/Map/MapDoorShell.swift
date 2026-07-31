@@ -1083,12 +1083,16 @@ private struct ExploreScopeToggleRow: View {
     var body: some View {
         let presentation = control.presentation
         let isAccessibilitySize = dynamicTypeSize.isAccessibilitySize
+        let resolvedIconSize = ScopeControlIconGeometry.resolvedPointSize(
+            scaledPointSize: iconSize,
+            isAccessibilitySize: isAccessibilitySize
+        )
 
         Toggle(isOn: $isOn) {
             HStack(spacing: isAccessibilitySize ? 14 : 10) {
                 ExploreScopeControlGlyph(
                     icon: presentation.icon,
-                    size: iconSize
+                    size: resolvedIconSize
                 )
                     .foregroundStyle(
                         isOn

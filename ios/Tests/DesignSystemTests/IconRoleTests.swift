@@ -25,10 +25,26 @@ final class IconRoleTests: XCTestCase {
         }
     }
 
-    func testScopeControlUsesTwentyPointButtonAnchoredGeometry() {
+    func testScopeControlUsesRatifiedButtonAnchoredGeometryPair() {
         XCTAssertEqual(ScopeControlIconGeometry.pointSize, 20)
+        XCTAssertEqual(ScopeControlIconGeometry.accessibilityPointSize, 30)
         XCTAssertEqual(ScopeControlIconGeometry.typographyRole, .button)
         XCTAssertEqual(ScopeControlIconGeometry.relativeTextStyle, .subheadline)
+        XCTAssertEqual(
+            ScopeControlIconGeometry.resolvedPointSize(
+                scaledPointSize: 20,
+                isAccessibilitySize: false
+            ),
+            20
+        )
+        XCTAssertEqual(
+            ScopeControlIconGeometry.resolvedPointSize(
+                scaledPointSize: 47,
+                isAccessibilitySize: true
+            ),
+            30,
+            "P2R-4 fixes the AX Scope-control glyph at 30pt even when the live button anchor scales higher."
+        )
     }
 
 #if canImport(AppKit)

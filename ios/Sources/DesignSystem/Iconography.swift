@@ -60,8 +60,16 @@ public enum ExploreSurfaceIconGeometry {
 /// despite sharing its current point size.
 public enum ScopeControlIconGeometry {
     public static let pointSize: CGFloat = 20
+    public static let accessibilityPointSize: CGFloat = 30
     public static let typographyRole = TypographyRole.button
     public static let relativeTextStyle = Font.TextStyle.subheadline
+
+    public static func resolvedPointSize(
+        scaledPointSize: CGFloat,
+        isAccessibilitySize: Bool
+    ) -> CGFloat {
+        isAccessibilitySize ? accessibilityPointSize : scaledPointSize
+    }
 }
 
 public extension View {
