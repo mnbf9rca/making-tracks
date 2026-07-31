@@ -7570,14 +7570,73 @@ private struct SettingsStorageSummary: View {
     }
 }
 
+struct AboutSoftwareLicenceEntry: Identifiable {
+    let acknowledgement: String
+    let category: String
+    let licenseURL: URL?
+    let name: String
+    let noticeText: String
+    let versionOrPin: String
+
+    var id: String { "\(name)|\(versionOrPin)" }
+
+    init(credit: OSSCreditEntry) {
+        acknowledgement = credit.acknowledgement
+        category = credit.category
+        licenseURL = credit.licenseURL
+        name = credit.name
+        noticeText = credit.noticeText
+        versionOrPin = credit.versionOrPin
+    }
+}
+
+struct AboutDataLicenceEntry {
+    let name: String
+    let license: String?
+    let text: String
+    let licenseURL: URL?
+
+    static let openStreetMap = AboutDataLicenceEntry(
+        name: "OpenStreetMap",
+        license: nil,
+        text: "Map data © OpenStreetMap contributors.",
+        licenseURL: URL(string: "https://www.openstreetmap.org/copyright")!
+    )
+}
+
+struct AboutLicenceInventory {
+    let software: [AboutSoftwareLicenceEntry]
+    let data: [AboutDataLicenceEntry]
+
+    init(softwareCredits: [OSSCreditEntry], attribution: [Attribution]) {
+        software = softwareCredits.map(AboutSoftwareLicenceEntry.init)
+        data = [AboutDataLicenceEntry.openStreetMap] + attribution.map { item in
+            AboutDataLicenceEntry(
+                name: item.source,
+                license: item.license,
+                text: item.text,
+                licenseURL: nil
+            )
+        }
+    }
+}
+
 private struct AboutView: View {
     let attribution: [Attribution]
 
+    private let tokens = MaterialTheme.snow.tokens
+
     private static let buildCommit = loadBuildCommit()
     private static let appVersion = loadAppVersion()
-    private static let ossCredits = OSSCreditsManifest.load()?.credits ?? []
-    private static let osmCopyrightURL = URL(string: "https://www.openstreetmap.org/copyright")!
+    private static let softwareCredits = OSSCreditsManifest.load()?.credits ?? []
     private static let privacyPolicyURL = URL(string: "https://making-tracks.app/privacy")!
+
+    private var licenceInventory: AboutLicenceInventory {
+        AboutLicenceInventory(
+            softwareCredits: Self.softwareCredits,
+            attribution: attribution
+        )
+    }
 
     private static func loadBuildCommit() -> String {
         guard let url = Bundle.main.url(forResource: "BuildInfo", withExtension: "plist"),
@@ -7606,102 +7665,279 @@ private struct AboutView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Open data")
-                        .font(.headline)
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Making Tracks")
+                        .font(Typography.font(for: .label))
+                        .textCase(.uppercase)
+                        .tracking(1.2)
+                        .foregroundStyle(tokens.muted.swiftUIColor)
+
+                    Text("About")
+                        .font(Typography.font(for: .sheetTitle))
+                        .foregroundStyle(tokens.ink.swiftUIColor)
                         .accessibilityAddTraits(.isHeader)
-                    Text("Places come from open data including Wikipedia, OpenStreetMap, and heritage registers.")
-                    Text(OnboardingCopy.savedActivityPrivacy)
-                        .accessibilityIdentifier("about.privacy-saved-activity")
+
+                    Text("The story, the privacy promise, and the credits.")
+                        .font(Typography.font(for: .evocativeSubline))
+                        .foregroundStyle(tokens.muted.swiftUIColor)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+
+                MaterialRaisedCardRow {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("The map is fresh snow.")
+                            .font(Typography.font(for: .heroTitle))
+                            .foregroundStyle(tokens.ink.swiftUIColor)
+                            .accessibilityAddTraits(.isHeader)
+                        Text(
+                            "Moving through the world marks it. Places come from open data "
+                                + "including Wikipedia, OpenStreetMap, and heritage registers."
+                        )
+                        .font(Typography.font(for: .body))
+                        .foregroundStyle(tokens.ink.swiftUIColor)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Build")
-                        .font(.headline)
-                        .accessibilityAddTraits(.isHeader)
+                MaterialRaisedCardRow {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "lock")
+                            .iconRole(.inline)
+                            .foregroundStyle(tokens.accent.swiftUIColor)
+                            .accessibilityHidden(true)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Private by construction")
+                                .font(Typography.font(for: .listRowTitle))
+                                .foregroundStyle(tokens.ink.swiftUIColor)
+                                .accessibilityAddTraits(.isHeader)
+                            Text(OnboardingCopy.savedActivityPrivacy)
+                                .font(Typography.font(for: .body))
+                                .foregroundStyle(tokens.ink.swiftUIColor)
+                                .accessibilityIdentifier("about.privacy-saved-activity")
+                            Link(destination: Self.privacyPolicyURL) {
+                                Text("Privacy policy")
+                                    .font(Typography.font(for: .button))
+                            }
+                            .foregroundStyle(tokens.accent.swiftUIColor)
+                            .frame(minWidth: 44, minHeight: 45, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .accessibilityValue(Self.privacyPolicyURL.absoluteString)
+                            .accessibilityIdentifier("about.privacy-policy")
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                Text("Licences")
+                    .font(Typography.font(for: .label))
+                    .textCase(.uppercase)
+                    .tracking(1.2)
+                    .foregroundStyle(tokens.muted.swiftUIColor)
+                    .padding(.top, 4)
+                    .accessibilityAddTraits(.isHeader)
+
+                MaterialRaisedCardRow {
+                    VStack(spacing: 0) {
+                        AboutLicenceDestinationLink(
+                            title: "Software licences",
+                            summary: "GRDB.swift · MapLibre · Newsreader OFL · Noto Sans",
+                            systemImage: "chevron.left.forwardslash.chevron.right",
+                            accessibilityIdentifier: "about.software-licences"
+                        ) {
+                            SoftwareLicencesView(credits: licenceInventory.software)
+                        }
+
+                        AboutLicenceDestinationLink(
+                            title: "Data licences",
+                            summary: "OpenStreetMap · Wikipedia · regional sources",
+                            systemImage: "cylinder.split.1x2",
+                            accessibilityIdentifier: "about.data-licences"
+                        ) {
+                            DataLicencesView(entries: licenceInventory.data)
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
                     Text(verbatim: "Version \(Self.appVersion)")
-                        .font(.caption)
+                        .font(Typography.font(for: .metadata))
+                        .foregroundStyle(tokens.muted.swiftUIColor)
                         .accessibilityIdentifier("about.app-version")
                     Text(verbatim: "Build \(Self.buildCommit)")
-                        .font(.caption)
-                        .fontDesign(.monospaced)
+                        .font(Typography.font(for: .data))
+                        .foregroundStyle(tokens.muted.swiftUIColor)
                         .accessibilityIdentifier("credits.build-commit")
                 }
+                .padding(.top, 2)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 28)
+        }
+        .accessibilityIdentifier("about.root")
+        .background(tokens.surface.swiftUIColor)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
 
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Privacy")
-                        .font(.headline)
-                        .accessibilityAddTraits(.isHeader)
-                    Link(destination: Self.privacyPolicyURL) {
-                        Text("Privacy policy")
+private struct AboutLicenceDestinationLink<Destination: View>: View {
+    let title: String
+    let summary: String
+    let systemImage: String
+    let accessibilityIdentifier: String
+    @ViewBuilder let destination: () -> Destination
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        NavigationLink(destination: destination) {
+            MaterialHairlineRow {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: systemImage)
+                        .iconRole(.inline)
+                        .foregroundStyle(tokens.accent.swiftUIColor)
+                        .frame(width: 24)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(verbatim: title)
+                            .font(Typography.font(for: .listRowTitle))
+                            .foregroundStyle(tokens.ink.swiftUIColor)
+                        Text(verbatim: summary)
+                            .font(Typography.font(for: .metadata))
+                            .foregroundStyle(tokens.muted.swiftUIColor)
                     }
-                    .accessibilityValue(Self.privacyPolicyURL.absoluteString)
-                    .accessibilityIdentifier("about.privacy-policy")
-                }
+                    .fixedSize(horizontal: false, vertical: true)
 
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Map attribution")
-                        .font(.headline)
-                        .accessibilityAddTraits(.isHeader)
-                    Text("Map data © OpenStreetMap contributors.")
-                    Link(destination: Self.osmCopyrightURL) {
-                        Text("OpenStreetMap copyright")
+                    Spacer(minLength: 8)
+
+                    Image(systemName: "chevron.right")
+                        .iconRole(.accessory)
+                        .foregroundStyle(tokens.muted.swiftUIColor)
+                        .accessibilityHidden(true)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityValue(summary)
+        .accessibilityHint("Opens \(title.lowercased())")
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+}
+
+private struct SoftwareLicencesView: View {
+    let credits: [AboutSoftwareLicenceEntry]
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        ScrollView {
+            MaterialRaisedCardRow {
+                VStack(spacing: 0) {
+                    ForEach(credits) { credit in
+                        MaterialHairlineRow {
+                            OpenSourceCreditView(credit: credit)
+                        }
                     }
-                    .accessibilityValue(Self.osmCopyrightURL.absoluteString)
-                    .accessibilityIdentifier("about.openstreetmap-copyright")
                 }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 28)
+        }
+        .accessibilityIdentifier("about.software-licences.root")
+        .background(tokens.surface.swiftUIColor)
+        .navigationTitle("Software licences")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
 
-                if !attribution.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Manifest attribution")
-                            .font(.headline)
-                            .accessibilityAddTraits(.isHeader)
-                        VStack(alignment: .leading, spacing: 12) {
-                            ForEach(Array(attribution.enumerated()), id: \.offset) { _, item in
+private struct DataLicencesView: View {
+    let entries: [AboutDataLicenceEntry]
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        ScrollView {
+            MaterialRaisedCardRow {
+                VStack(spacing: 0) {
+                    ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                        MaterialHairlineRow {
+                            if let licenseURL = entry.licenseURL {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(verbatim: entry.name)
+                                        .font(Typography.font(for: .listRowTitle))
+                                        .foregroundStyle(tokens.ink.swiftUIColor)
+                                        .accessibilityIdentifier("about.openstreetmap-name")
+                                    if let license = entry.license {
+                                        Text(verbatim: license)
+                                            .font(Typography.font(for: .metadata))
+                                            .foregroundStyle(tokens.muted.swiftUIColor)
+                                    }
+                                    Text(verbatim: entry.text)
+                                        .font(Typography.font(for: .body))
+                                        .foregroundStyle(tokens.ink.swiftUIColor)
+                                        .accessibilityIdentifier("about.openstreetmap-attribution")
+                                    Link(destination: licenseURL) {
+                                        Text("OpenStreetMap copyright")
+                                            .font(Typography.font(for: .button))
+                                    }
+                                    .foregroundStyle(tokens.accent.swiftUIColor)
+                                    .frame(minWidth: 44, minHeight: 45, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                    .accessibilityValue(licenseURL.absoluteString)
+                                    .accessibilityIdentifier("about.openstreetmap-copyright")
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            } else {
                                 CreditEntryView(
-                                    title: item.source,
-                                    subtitle: item.license,
-                                    text: item.text
+                                    title: entry.name,
+                                    subtitle: entry.license,
+                                    text: entry.text
                                 )
                             }
                         }
                     }
                 }
-
-                if !Self.ossCredits.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Open source acknowledgements")
-                            .font(.headline)
-                            .accessibilityAddTraits(.isHeader)
-                        VStack(alignment: .leading, spacing: 20) {
-                            ForEach(Self.ossCredits) { credit in
-                                OpenSourceCreditView(credit: credit)
-                            }
-                        }
-                    }
-                }
             }
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.bottom, 28)
         }
-        .navigationTitle("About")
+        .accessibilityIdentifier("about.data-licences.root")
+        .background(tokens.surface.swiftUIColor)
+        .navigationTitle("Data licences")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
 private struct CreditEntryView: View {
     let title: String
-    let subtitle: String
+    let subtitle: String?
     let text: String
+
+    private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(verbatim: title)
-                .font(.headline)
-            Text(verbatim: subtitle)
-                .font(.subheadline)
+                .font(Typography.font(for: .listRowTitle))
+                .foregroundStyle(tokens.ink.swiftUIColor)
+            if let subtitle {
+                Text(verbatim: subtitle)
+                    .font(Typography.font(for: .metadata))
+                    .foregroundStyle(tokens.muted.swiftUIColor)
+            }
             Text(verbatim: text)
-                .font(.body)
+                .font(Typography.font(for: .body))
+                .foregroundStyle(tokens.ink.swiftUIColor)
         }
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("credits.manifest.\(title)")
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -7912,32 +8148,44 @@ struct ListPickerView: View {
 }
 
 private struct OpenSourceCreditView: View {
-    let credit: OSSCreditEntry
+    let credit: AboutSoftwareLicenceEntry
+
+    private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(verbatim: credit.name)
-                    .font(.headline)
+                    .font(Typography.font(for: .listRowTitle))
+                    .foregroundStyle(tokens.ink.swiftUIColor)
                 Text(verbatim: credit.acknowledgement)
-                    .font(.subheadline)
+                    .font(Typography.font(for: .body))
+                    .foregroundStyle(tokens.ink.swiftUIColor)
                 Text(verbatim: "\(credit.category) | \(credit.versionOrPin)")
-                    .font(.caption)
+                    .font(Typography.font(for: .metadata))
+                    .foregroundStyle(tokens.muted.swiftUIColor)
             }
+            .fixedSize(horizontal: false, vertical: true)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("credits.oss.\(credit.id)")
             if let licenseURL = credit.licenseURL {
                 Link(destination: licenseURL) {
                     Text("License")
-                        .font(.caption)
+                        .font(Typography.font(for: .button))
                 }
+                .foregroundStyle(tokens.accent.swiftUIColor)
+                .frame(minWidth: 44, minHeight: 45, alignment: .leading)
+                .contentShape(Rectangle())
                 .accessibilityLabel("License for \(credit.name)")
                 .accessibilityValue(licenseURL.absoluteString)
                 .accessibilityIdentifier("credits.oss.\(credit.id).license")
             }
             Text(verbatim: credit.noticeText)
-                .font(.footnote)
+                .font(Typography.font(for: .data))
+                .foregroundStyle(tokens.ink.swiftUIColor)
+                .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
+                .accessibilityIdentifier("credits.oss.\(credit.id).notice")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
