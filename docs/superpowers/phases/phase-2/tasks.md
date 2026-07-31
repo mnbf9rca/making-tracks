@@ -261,9 +261,9 @@ Full gate — you changed an app-target surface.
 - **Serves:** P2R-9's second rider; spec §8 · **Spec section:** §3, §8
 - **Acceptance criteria:** AC2.6
 - **Depends on:** none
-- **Owner:** unclaimed
+- **Owner:** codex2
 - **Review tier:** `sourcery`
-- **Status:** unclaimed
+- **Status:** branch — `wp-466-t2-4-impl`; implementation in progress
 
 **Builder brief.** The smallest row in the phase, and it exists because the amendment landed the **sheet** side and not the **code** side. `PinLayers.pinColor` reads `PinTokenBlock.constant.pin.mapStyleString` (`ios/Sources/MakingTracksMapStyle/PinLayers.swift:5`); the line below it, `hiddenPinColor`, is still a raw `"#767B82"` string literal (`:6`) even though spec §3 now carries it as a constant-pin-block row and §8 says pin layer constants come from that block. Wire it the way `pinColor` is wired.
 
