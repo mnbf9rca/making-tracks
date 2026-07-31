@@ -7585,13 +7585,13 @@ struct AboutSoftwareLicenceEntry: Identifiable {
 
 struct AboutDataLicenceEntry {
     let name: String
-    let license: String
+    let license: String?
     let text: String
     let licenseURL: URL?
 
     static let openStreetMap = AboutDataLicenceEntry(
         name: "OpenStreetMap",
-        license: "Open Database License",
+        license: nil,
         text: "Map data © OpenStreetMap contributors.",
         licenseURL: URL(string: "https://www.openstreetmap.org/copyright")!
     )
@@ -7715,6 +7715,8 @@ private struct AboutView: View {
                                     .font(Typography.font(for: .button))
                             }
                             .foregroundStyle(tokens.accent.swiftUIColor)
+                            .frame(minWidth: 44, minHeight: 45, alignment: .leading)
+                            .contentShape(Rectangle())
                             .accessibilityValue(Self.privacyPolicyURL.absoluteString)
                             .accessibilityIdentifier("about.privacy-policy")
                         }
@@ -7865,17 +7867,23 @@ private struct DataLicencesView: View {
                                     Text(verbatim: entry.name)
                                         .font(Typography.font(for: .listRowTitle))
                                         .foregroundStyle(tokens.ink.swiftUIColor)
-                                    Text(verbatim: entry.license)
-                                        .font(Typography.font(for: .metadata))
-                                        .foregroundStyle(tokens.muted.swiftUIColor)
+                                        .accessibilityIdentifier("about.openstreetmap-name")
+                                    if let license = entry.license {
+                                        Text(verbatim: license)
+                                            .font(Typography.font(for: .metadata))
+                                            .foregroundStyle(tokens.muted.swiftUIColor)
+                                    }
                                     Text(verbatim: entry.text)
                                         .font(Typography.font(for: .body))
                                         .foregroundStyle(tokens.ink.swiftUIColor)
+                                        .accessibilityIdentifier("about.openstreetmap-attribution")
                                     Link(destination: licenseURL) {
                                         Text("OpenStreetMap copyright")
                                             .font(Typography.font(for: .button))
                                     }
                                     .foregroundStyle(tokens.accent.swiftUIColor)
+                                    .frame(minWidth: 44, minHeight: 45, alignment: .leading)
+                                    .contentShape(Rectangle())
                                     .accessibilityValue(licenseURL.absoluteString)
                                     .accessibilityIdentifier("about.openstreetmap-copyright")
                                 }
@@ -7903,7 +7911,7 @@ private struct DataLicencesView: View {
 
 private struct CreditEntryView: View {
     let title: String
-    let subtitle: String
+    let subtitle: String?
     let text: String
 
     private let tokens = MaterialTheme.snow.tokens
@@ -7913,9 +7921,11 @@ private struct CreditEntryView: View {
             Text(verbatim: title)
                 .font(Typography.font(for: .listRowTitle))
                 .foregroundStyle(tokens.ink.swiftUIColor)
-            Text(verbatim: subtitle)
-                .font(Typography.font(for: .metadata))
-                .foregroundStyle(tokens.muted.swiftUIColor)
+            if let subtitle {
+                Text(verbatim: subtitle)
+                    .font(Typography.font(for: .metadata))
+                    .foregroundStyle(tokens.muted.swiftUIColor)
+            }
             Text(verbatim: text)
                 .font(Typography.font(for: .body))
                 .foregroundStyle(tokens.ink.swiftUIColor)
@@ -8157,6 +8167,8 @@ private struct OpenSourceCreditView: View {
                         .font(Typography.font(for: .button))
                 }
                 .foregroundStyle(tokens.accent.swiftUIColor)
+                .frame(minWidth: 44, minHeight: 45, alignment: .leading)
+                .contentShape(Rectangle())
                 .accessibilityLabel("License for \(credit.name)")
                 .accessibilityValue(licenseURL.absoluteString)
                 .accessibilityIdentifier("credits.oss.\(credit.id).license")
@@ -8166,6 +8178,7 @@ private struct OpenSourceCreditView: View {
                 .foregroundStyle(tokens.ink.swiftUIColor)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
+                .accessibilityIdentifier("credits.oss.\(credit.id).notice")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

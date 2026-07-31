@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import UIKit
 import XCTest
@@ -3031,17 +3032,22 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(privacyPolicy.waitForExistence(timeout: 5))
         XCTAssertEqual(privacyPolicy.label, "Privacy policy")
         XCTAssertEqual(privacyPolicy.value as? String, "https://making-tracks.app/privacy")
+        XCTAssertTrue(privacyPolicy.isHittable)
+        assertMinimumInteractiveTarget(privacyPolicy)
+        assertContainedInAppFrame(privacyPolicy, in: app)
         XCTAssertFalse(app.staticTexts["Open source acknowledgements"].exists)
 
         let softwareLicences = app.buttons["about.software-licences"]
         let dataLicences = app.buttons["about.data-licences"]
         XCTAssertTrue(scrollToHittable(softwareLicences, in: app))
+        XCTAssertEqual(softwareLicences.label, "Software licences")
         XCTAssertEqual(
             softwareLicences.value as? String,
             "GRDB.swift · MapLibre · Newsreader OFL · Noto Sans"
         )
         assertMinimumInteractiveTarget(softwareLicences)
         XCTAssertTrue(scrollToHittable(dataLicences, in: app))
+        XCTAssertEqual(dataLicences.label, "Data licences")
         XCTAssertEqual(
             dataLicences.value as? String,
             "OpenStreetMap · Wikipedia · regional sources"
@@ -3052,13 +3058,46 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         softwareLicences.tap()
         XCTAssertTrue(app.staticTexts["Software licences"].waitForExistence(timeout: 5))
         attachScreenshot(named: "t2.10-software-licences", forceExport: true)
-        for identifier in [
-            "credits.oss.GRDB.swift|7.11.1",
-            "credits.oss.MapLibre Native iOS / maplibre-gl-native-distribution|6.27.0",
-            "credits.oss.Newsreader|productiontype/Newsreader commit cfcb4f7af0e52c25e8df2a2431814c8e5fe2e155; static TTF instances",
-            "credits.oss.Noto Sans glyph PBF mirror|protomaps/basemaps-assets commit 028c18f713baecad011301ff7a69acc39bcc2ae7; Noto Sans Regular",
-        ] {
-            XCTAssertTrue(scrollToExistence(of: element(identifier: identifier, in: app), in: app))
+        let softwareExpectations = [
+            (
+                id: "GRDB.swift|7.11.1",
+                noticeDigest: "5477c7feb396cb058cf402697c9ef59c0221a68d63921d74f44670cb488d1a7f",
+                licenseURL: "https://github.com/groue/GRDB.swift/blob/master/LICENSE"
+            ),
+            (
+                id: "MapLibre Native iOS / maplibre-gl-native-distribution|6.27.0",
+                noticeDigest: "691bbc091d6a3c1bd6f5c488612baf9635658bcfe2692e87f885a19e7315ba4f",
+                licenseURL: "https://github.com/maplibre/maplibre-native/blob/main/LICENSE.md"
+            ),
+            (
+                id: "Newsreader|productiontype/Newsreader commit cfcb4f7af0e52c25e8df2a2431814c8e5fe2e155; static TTF instances",
+                noticeDigest: "fdfad38143ec470553cae82a1e45320bdd1b9ec70415d37bd0171051d8a4ded8",
+                licenseURL: "https://github.com/productiontype/Newsreader/blob/cfcb4f7af0e52c25e8df2a2431814c8e5fe2e155/OFL.txt"
+            ),
+            (
+                id: "Noto Sans glyph PBF mirror|protomaps/basemaps-assets commit 028c18f713baecad011301ff7a69acc39bcc2ae7; Noto Sans Regular",
+                noticeDigest: "9eba12c12d46c3b966acaf5c82a33283fe48903a70618b99cb32e384cc216654",
+                licenseURL: "https://openfontlicense.org/"
+            ),
+        ]
+        let lastLicense = element(
+            identifier: "credits.oss.\(softwareExpectations.last!.id).license",
+            in: app
+        )
+        XCTAssertTrue(lastLicense.exists)
+        XCTAssertFalse(lastLicense.isHittable, "The endpoint must begin off-screen so traversal has teeth")
+        for expectation in softwareExpectations {
+            let notice = element(identifier: "credits.oss.\(expectation.id).notice", in: app)
+            XCTAssertTrue(notice.waitForExistence(timeout: 5))
+            XCTAssertEqual(sha256(notice.label), expectation.noticeDigest)
+
+            let license = element(identifier: "credits.oss.\(expectation.id).license", in: app)
+            XCTAssertTrue(scrollToFullyContained(license, in: app, maxSwipes: 80))
+            XCTAssertEqual(license.elementType, .button)
+            XCTAssertTrue(license.isEnabled)
+            XCTAssertEqual(license.value as? String, expectation.licenseURL)
+            assertMinimumInteractiveTarget(license)
+            assertContainedInAppFrame(license, in: app)
         }
         app.buttons["Back"].tap()
 
@@ -3066,15 +3105,19 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         dataLicences.tap()
         XCTAssertTrue(app.staticTexts["Data licences"].waitForExistence(timeout: 5))
         attachScreenshot(named: "t2.10-data-licences", forceExport: true)
-        XCTAssertTrue(
-            scrollToExistence(
-                of: element(identifier: "about.openstreetmap-copyright", in: app),
-                in: app
-            )
-        )
-        XCTAssertTrue(
-            scrollToExistence(of: element(identifier: "credits.manifest.osm", in: app), in: app)
-        )
+        let osmText = app.staticTexts["about.openstreetmap-attribution"]
+        XCTAssertTrue(osmText.waitForExistence(timeout: 5))
+        XCTAssertEqual(osmText.label, "Map data © OpenStreetMap contributors.")
+        let osmCopyright = element(identifier: "about.openstreetmap-copyright", in: app)
+        XCTAssertTrue(scrollToFullyContained(osmCopyright, in: app, maxSwipes: 10))
+        XCTAssertEqual(osmCopyright.value as? String, "https://www.openstreetmap.org/copyright")
+        assertMinimumInteractiveTarget(osmCopyright)
+        assertContainedInAppFrame(osmCopyright, in: app)
+        let runtimeAttribution = element(identifier: "credits.manifest.osm", in: app)
+        XCTAssertTrue(scrollToFullyContained(runtimeAttribution, in: app, maxSwipes: 10))
+        XCTAssertTrue(runtimeAttribution.label.contains("osm"))
+        XCTAssertTrue(runtimeAttribution.label.contains("ODbL-1.0"))
+        XCTAssertTrue(runtimeAttribution.label.contains("OSM credit"))
         app.buttons["Back"].tap()
         app.buttons["Close"].tap()
 
@@ -4002,6 +4045,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Private by construction"].exists)
         attachScreenshot(named: "t2.10-about-ax", forceExport: true)
         XCTAssertEqual(try buildCommitLabel(in: app), "Build \(try currentGitCommit())")
+        let privacyPolicy = element(identifier: "about.privacy-policy", in: app)
+        XCTAssertTrue(scrollToFullyContained(privacyPolicy, in: app, maxSwipes: 10))
+        assertMinimumInteractiveTarget(privacyPolicy)
+        assertContainedInAppFrame(privacyPolicy, in: app)
 
         let softwareLicences = app.buttons["about.software-licences"]
         let dataLicences = app.buttons["about.data-licences"]
@@ -4015,53 +4062,34 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         softwareLicences.tap()
         XCTAssertTrue(app.staticTexts["Software licences"].waitForExistence(timeout: 5))
         attachScreenshot(named: "t2.10-software-licences-ax", forceExport: true)
-        let grdbCredit = element(identifier: "credits.oss.GRDB.swift|7.11.1", in: app)
-        XCTAssertTrue(scrollToExistence(of: grdbCredit, in: app))
-        let mapLibreCredit = element(
-            identifier: "credits.oss.MapLibre Native iOS / maplibre-gl-native-distribution|6.27.0",
-            in: app
-        )
-        XCTAssertTrue(scrollToExistence(of: mapLibreCredit, in: app))
-        let mapLibreLicense = element(
-            identifier: "credits.oss.MapLibre Native iOS / maplibre-gl-native-distribution|6.27.0.license",
-            in: app
-        )
-        XCTAssertTrue(scrollToExistence(of: mapLibreLicense, in: app))
-        XCTAssertEqual(mapLibreLicense.elementType, .button)
-        XCTAssertTrue(mapLibreLicense.isEnabled)
-        XCTAssertTrue(
-            scrollToExistence(
-                of: element(
-                    identifier: "credits.oss.Newsreader|productiontype/Newsreader commit cfcb4f7af0e52c25e8df2a2431814c8e5fe2e155; static TTF instances",
-                    in: app
-                ),
-                in: app
-            )
-        )
-        XCTAssertTrue(
-            scrollToExistence(
-                of: element(
-                    identifier: "credits.oss.Noto Sans glyph PBF mirror|protomaps/basemaps-assets commit 028c18f713baecad011301ff7a69acc39bcc2ae7; Noto Sans Regular",
-                    in: app
-                ),
-                in: app
-            )
-        )
+        let softwareIDs = [
+            "GRDB.swift|7.11.1",
+            "MapLibre Native iOS / maplibre-gl-native-distribution|6.27.0",
+            "Newsreader|productiontype/Newsreader commit cfcb4f7af0e52c25e8df2a2431814c8e5fe2e155; static TTF instances",
+            "Noto Sans glyph PBF mirror|protomaps/basemaps-assets commit 028c18f713baecad011301ff7a69acc39bcc2ae7; Noto Sans Regular",
+        ]
+        let lastLicense = element(identifier: "credits.oss.\(softwareIDs.last!).license", in: app)
+        XCTAssertTrue(lastLicense.exists)
+        XCTAssertFalse(lastLicense.isHittable, "The AX endpoint must begin off-screen")
+        for id in softwareIDs {
+            let license = element(identifier: "credits.oss.\(id).license", in: app)
+            XCTAssertTrue(scrollToFullyContained(license, in: app, maxSwipes: 120))
+            assertMinimumInteractiveTarget(license)
+            assertContainedInAppFrame(license, in: app)
+        }
 
         app.buttons["Back"].tap()
         XCTAssertTrue(scrollToHittable(dataLicences, in: app))
         dataLicences.tap()
         XCTAssertTrue(app.staticTexts["Data licences"].waitForExistence(timeout: 5))
         attachScreenshot(named: "t2.10-data-licences-ax", forceExport: true)
-        XCTAssertTrue(
-            scrollToExistence(
-                of: element(identifier: "about.openstreetmap-copyright", in: app),
-                in: app
-            )
-        )
-        XCTAssertTrue(
-            scrollToExistence(of: element(identifier: "credits.manifest.osm", in: app), in: app)
-        )
+        let osmCopyright = element(identifier: "about.openstreetmap-copyright", in: app)
+        XCTAssertTrue(scrollToFullyContained(osmCopyright, in: app, maxSwipes: 10))
+        assertMinimumInteractiveTarget(osmCopyright)
+        assertContainedInAppFrame(osmCopyright, in: app)
+        let runtimeAttribution = element(identifier: "credits.manifest.osm", in: app)
+        XCTAssertTrue(scrollToFullyContained(runtimeAttribution, in: app, maxSwipes: 10))
+        XCTAssertTrue(runtimeAttribution.label.contains("ODbL-1.0"))
     }
 
     private func assertMyTracksRenderedPixelOracle(
@@ -5443,7 +5471,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     @discardableResult
-    private func scrollToFullyContained(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+    private func scrollToFullyContained(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maxSwipes: Int = 5
+    ) -> Bool {
         func isFullyContained() -> Bool {
             element.exists && element.isHittable && app.frame.contains(element.frame)
         }
@@ -5452,7 +5484,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             return true
         }
 
-        for _ in 0..<5 {
+        for _ in 0..<maxSwipes {
             scrollTarget(in: app).swipeUp()
             if element.waitForExistence(timeout: 1), isFullyContained() {
                 return true
@@ -5460,6 +5492,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
 
         return isFullyContained()
+    }
+
+    private func sha256(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 
     private func scrollTarget(in app: XCUIApplication) -> XCUIElement {

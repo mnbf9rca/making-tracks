@@ -37,6 +37,8 @@ final class AppShellTests: XCTestCase {
             XCTAssertEqual(rendered.versionOrPin, loaded.versionOrPin)
             XCTAssertEqual(rendered.licenseURL, loaded.licenseURL)
             XCTAssertEqual(rendered.noticeText, loaded.noticeText)
+            let licenseURL = try XCTUnwrap(rendered.licenseURL)
+            XCTAssertEqual(licenseURL.scheme, "https")
         }
     }
 
@@ -63,7 +65,7 @@ final class AppShellTests: XCTestCase {
             inventory.data.map(\.name),
             ["OpenStreetMap", "Wikipedia", "Regional heritage register"]
         )
-        XCTAssertEqual(inventory.data[0].license, "Open Database License")
+        XCTAssertNil(inventory.data[0].license)
         XCTAssertEqual(
             inventory.data[0].text,
             "Map data © OpenStreetMap contributors."
