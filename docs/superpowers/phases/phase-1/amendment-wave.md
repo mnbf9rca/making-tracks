@@ -33,6 +33,8 @@ re-grounding on this file's merge. Do not write another seat's status.
 
 ---
 
+**WAVE COMPLETE (2026-07-31): all ten rows shipped.** Related merges outside the rows: infra sim-concurrency `51146cc4` (#547, closes #497/#545); R16 two-ink amendment `ecf98db7` (#555) + bound qualifier `1afcc3fe` (#556); session batch `a7df4ed7` (#539); handle renames `8b513946` (#542) + `bde9c0a2` (#543). Phase 1 acceptance: 34/35 final (designer-accepted; #520 parked on the session agenda).
+
 ## Dependency graph
 
 Edges are "must have merged before this starts."
@@ -64,7 +66,7 @@ render loop.
 - **Serves:** R13, R14 · **Spec section:** §2 · **Review tier:** `sourcery` + `opus`
 - **Depends on:** A8's Explore frame
 - **Owner:** codex1
-- **Status:** PR open
+- **Status:** shipped — merged as `2a91e7b55e37db85614be0dba520c865df96a1fd` (#552)
 - **Branch:** `wp-526-journal-explore-doors` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Rename Door 2 *Tracks* → **Journal** and Door 1 *World* → **Explore**, and
@@ -106,7 +108,7 @@ Renders of both doors at 390×844 plus an AX variant, graded against A8's frames
 - **Serves:** R15 · **Spec section:** §5 · **Review tier:** `sourcery` + `opus`
 - **Depends on:** A8's R15 card frame, **A4**
 - **Owner:** codex3
-- **Status:** review
+- **Status:** shipped — merged as `bb11eb0862c65c2407e7a590c068b1d3cd8b9aba` (#554); Saved ON = ratified Deep Companion `accentDeepContainer #08483E` per amended R16
 - **Branch:** `wp-526-place-card-state-morphology` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Re-implement the place card's action bar under R15: **ON = filled pill + filled
@@ -146,7 +148,7 @@ Renders: the card in every state combination the bar can reach, default and AX, 
 
 - **Serves:** R8's naming rider · **Review tier:** `sourcery` + `opus` · **Depends on:** none
 - **Owner:** codex3
-- **Status:** review clean
+- **Status:** shipped — merged as `f1456e42` (#530); trail-qualifier expiry `3c6c22cd` (#531)
 - **Branch:** `wp-526-trail-token-rename` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Rename the token `trackLine` → `trail` — the `SemanticColorToken` case, the
@@ -163,7 +165,7 @@ Nothing else changes. If a value moves, you have exceeded the task.
 
 - **Serves:** the session's taste verdicts · **Review tier:** `sourcery` + `opus` · **Depends on:** none
 - **Owner:** codex1
-- **Status:** review clean
+- **Status:** shipped — merged as `ab01f9701e57460e33f1ae9c6a514638b0ab9fb3` (#534)
 - **Branch:** `wp-526-interaction-token-rows` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Add `disabledAlpha` (`0.46`) and `pressScale` (`0.98`) to the token sheet as
@@ -180,7 +182,7 @@ wiring assertion: a mutation of the *sheet row* must fail, or the tokens are dec
 
 - **Serves:** the session's gap ruling · **Review tier:** `sourcery` + `opus` · **Depends on:** A4
 - **Owner:** codex1
-- **Status:** building
+- **Status:** shipped — merged as `4a2dacb82c8fc816995e06809a1b6a2f113e93f4` (#536)
 - **Branch:** `wp-526-quiet-press-pulse` — cut from a freshly-fetched `ios`
 
 **Builder brief.** `quiet` is `background: nil`, `backgroundOpacity: 0`, so R9's geometry remedy has
@@ -200,7 +202,7 @@ First mounted instance to verify against: T1.7's location-off Settings gear.
 - **Serves:** #517 (Rob) · **Review tier:** `sourcery` + `opus` · **Depends on:** none
 - **Greptile slot recommended** — see *budget note*
 - **Owner:** codex2
-- **Status:** tests green
+- **Status:** shipped — merged as `d33cea71e0652dd8dc3dc735cf8ec0cea2c712df` (#548); #517 closed
 - **Branch:** `wp-517-saved-hidden-exclusivity` — cut from a freshly-fetched `ios` *(already cut)*
 
 **Builder brief.** Four parts, and the third is a data migration:
@@ -243,7 +245,7 @@ matrix and test strategy live in
 
 - **Serves:** #522 · **Review tier:** `sourcery` · **Depends on:** none
 - **Owner:** codex3
-- **Status:** PR open
+- **Status:** shipped — merged as `52944fd9` (#532) + `e853d53c` (#533); #522 closed
 - **Branch:** `wp-522-merged-body-annotations` — cut from a freshly-fetched `ios`
 
 **Builder brief.** Annotate the merged bodies of **#486** and **#503** where their acceptance claims
@@ -271,7 +273,7 @@ Docs-only; no code, no gate.
 - **Serves:** R14, R15 · **Depends on:** none · **This is the critical path**
 - **Pipeline:** build agent authors → **opus validates** → **Rob rules** → frozen
 - **Owner:** codex4
-- **Status:** FROZEN — the packet remains frozen at exact reviewed head `0682865dff178ff43ea3e1374685328f565d8cd1`; its historical `accentContainer` `#D4EDE9` was later retired from the Saved role by amended R16, and Deep Companion `#08483E` was ratified through the v2 panel at `442161239dacb3aab8df0392039de22ae39ba98d`
+- **Status:** shipped/FROZEN — freeze merged as `7e92339ceb38c8c91925d656fe2fbd434c741adb` (#550), criterion amendment `5f3c4a70` (#540), Saved decision record `107eca44` (#557); the packet remains frozen at exact reviewed head `0682865dff178ff43ea3e1374685328f565d8cd1`; its historical `accentContainer` `#D4EDE9` was later retired from the Saved role by amended R16, and Deep Companion `#08483E` was ratified through the v2 panel at `442161239dacb3aab8df0392039de22ae39ba98d`
 - **Branch:** `wp-526-explore-r15-renders` — cut from a freshly-fetched `ios`
 
 **Brief.** Two new frozen frames: the **Explore surface** as R14 collapses it (Scope directly, quiet
@@ -307,7 +309,7 @@ tonal-strength companion is the likely candidate. Raise it through fable; do not
 - **Serves:** the R9 family; Rob's ruling on the A5 text-only gap (2026-07-27) · **Spec section:** §5 · **Review tier:** `sourcery` + `opus`
 - **Depends on:** none — **immediately claimable**. A4 (`ab01f970`) put `disabledAlpha`/`pressScale` in the sheet and A5 (`4a2dacb8`) built `MaterialControlPressFeedback`; both are merged, so the seam this extends already exists.
 - **Owner:** codex1
-- **Status:** branch
+- **Status:** shipped — scaffold `4c580c4f` (#537); build merged as `7cce89fa9d0dcfb78b157cda09ef293cb6b41a30` (#538)
 - **Branch:** `wp-526-quiet-text-inset` — cut from a freshly-fetched `ios`
 
 **Builder brief.** A5 gave icon-bearing quiet controls a symbol-weight pulse. **A text-only quiet control has no symbol to pulse**, so its enabled press feedback is still the `0.98` scale alone — which on a text run is the same effectively-nothing that R9's family exists to eliminate. Apply the **ratified quiet-only inset**. This is the fallback doing the job it was drafted for, not new taste.
@@ -340,7 +342,7 @@ tonal-strength companion is the likely candidate. Raise it through fable; do not
 - **Depends on:** **A1.** Verified against the tree at authoring: the Explore surface does not exist yet — the doors are still `"World"` and `"Tracks"` (`ios/App/Sources/Map/MapDoorShell.swift:128`, `:134`), and the two existing filter toggles mount in the Layers sheet's `List`/`Section` (`MapScreen.swift` ~`:8171`–`:8190`, identifier `map.layers.show-hidden`). There is no Scope surface to mount a third row on until A1 **merges** — claimed-and-building is not enough. *(Claim record at scaffolding: A1 is claimed by codex1, status branch.)*
 - **A8 metrics dependency: satisfied.** A8 merged as `7e92339c` after this row was authored; the MEASURED rows cited below are on `ios`.
 - **Owner:** codex2
-- **Status:** ready-to-merge — [#553](https://github.com/mnbf9rca/making-tracks/pull/553)
+- **Status:** shipped — merged as `17cedbcf96adec3512c2531fe3b6d30688539196` (#553)
 - **Branch:** `wp-526-saved-visibility-filter` — cut from a freshly-fetched `ios`
 
 **Why this row exists at all.** codex1 found the gap while grounding A1: the frozen Explore frame shows a Show-saved-places toggle, and **nothing owns its behaviour.** Spec §2 predates the control, A1's brief predates it, and the tree has no saved-filter seam. A control that appears in a frozen frame with no row behind it is a figure in neither the ratified set nor the code — the same shape as the snapped 21, arriving from the other direction.
