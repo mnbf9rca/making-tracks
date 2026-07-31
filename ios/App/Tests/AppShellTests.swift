@@ -3030,6 +3030,60 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(settingsSource.contains("map.layers.coverage-shading"))
     }
 
+    func testFocusedSettingsControlsOwnMinimumHitRegionsAtInteractiveBoundary() throws {
+        let appRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let mapSource = try String(
+            contentsOf: appRoot.appendingPathComponent("Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+
+        func sourceSlice(from startMarker: String, to endMarker: String) throws -> String {
+            let start = try XCTUnwrap(mapSource.range(of: startMarker)?.lowerBound)
+            let end = try XCTUnwrap(
+                mapSource.range(
+                    of: endMarker,
+                    range: start..<mapSource.endIndex
+                )?.lowerBound
+            )
+            return String(mapSource[start..<end])
+        }
+
+        func compacted(_ source: String) -> String {
+            source.filter { !$0.isWhitespace }
+        }
+
+        let appearanceSource = try sourceSlice(
+            from: "private struct SettingsAppearanceView",
+            to: "private struct SettingsCoverageView"
+        )
+        XCTAssertTrue(compacted(appearanceSource).contains(
+            "}.frame(maxWidth:.infinity,minHeight:44,alignment:.leading)" +
+                ".contentShape(Rectangle())}.buttonStyle(.plain)"
+        ))
+
+        let mapAndDataSource = try sourceSlice(
+            from: "private struct SettingsMapAndDataView",
+            to: "private struct SettingsLocationView"
+        )
+        XCTAssertTrue(compacted(mapAndDataSource).contains(
+            "}.frame(maxWidth:.infinity,minHeight:44,alignment:.leading)" +
+                ".contentShape(Rectangle())" +
+                ".accessibilityIdentifier(\"settings.downloads.allow-cellular\")"
+        ))
+
+        let locationSource = try sourceSlice(
+            from: "private struct SettingsLocationView",
+            to: "private struct DiagnosticsView"
+        )
+        XCTAssertTrue(compacted(locationSource).contains(
+            "Button(action:openLocationSettings){Text(\"Settings\")" +
+                ".frame(minWidth:44,minHeight:44).contentShape(Rectangle())}" +
+                ".accessibilityIdentifier(\"settings.location.open-system\")"
+        ))
+    }
+
     func testOfflineDownloadProgressBoundsInvalidFractions() {
         XCTAssertEqual(OfflineDownloadProgress(fractionComplete: .nan).percentComplete, 0)
         XCTAssertEqual(OfflineDownloadProgress(fractionComplete: .infinity).percentComplete, 0)

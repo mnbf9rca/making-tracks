@@ -7120,8 +7120,9 @@ private struct SettingsAppearanceView: View {
                                         .accessibilityHidden(true)
                                 }
                             }
-                            .contentShape(Rectangle())
                         }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityValue(isSelected ? "Selected" : "Not selected")
@@ -7249,6 +7250,8 @@ private struct SettingsMapAndDataView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
                     .accessibilityIdentifier("settings.downloads.allow-cellular")
                 }
             }
@@ -7332,8 +7335,12 @@ private struct SettingsLocationView: View {
                         Label(locationStatus.label, systemImage: "location")
                         Spacer()
                         if locationStatus.canOpenSettings {
-                            Button("Settings", action: openLocationSettings)
-                                .accessibilityIdentifier("settings.location.open-system")
+                            Button(action: openLocationSettings) {
+                                Text("Settings")
+                                    .frame(minWidth: 44, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .accessibilityIdentifier("settings.location.open-system")
                         }
                     }
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
