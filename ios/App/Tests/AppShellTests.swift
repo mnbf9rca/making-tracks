@@ -3264,8 +3264,256 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(metrics.badgeIconScale, pinSize.badgeIconScale)
     }
 
-    func testSettingsStorageNavigationTargetsOfflineMaps() {
+    func testSettingsStorageNavigationTargetsOfflineMapsAndOwnsProductionRoute() throws {
         XCTAssertEqual(SettingsStorageNavigation.destination, .offlineMaps)
+
+        let appRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let mapSource = try String(
+            contentsOf: appRoot.appendingPathComponent("Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+        let groupsStart = try XCTUnwrap(
+            mapSource.range(of: "enum SettingsGroup: CaseIterable")?.lowerBound
+        )
+        let groupsEnd = try XCTUnwrap(
+            mapSource.range(
+                of: "enum MapDoor:",
+                range: groupsStart..<mapSource.endIndex
+            )?.lowerBound
+        )
+        let groupsSource = String(mapSource[groupsStart..<groupsEnd])
+            .filter { !$0.isWhitespace }
+
+        XCTAssertTrue(
+            groupsSource.contains("case.offlineMaps:SettingsStorageNavigation.destination"),
+            "The Settings row must consume the retained Offline maps route helper."
+        )
+    }
+
+    func testSettingsGroupsMatchRuledW2OrderAndRoutes() {
+        XCTAssertEqual(SettingsGroup.allCases, [
+            .appearance, .offlineMaps, .coverage, .mapAndData,
+            .location, .diagnostics, .replayWelcome,
+        ])
+        XCTAssertEqual(SettingsGroup.allCases.map(\.presentation), [
+            .init(title: "Appearance", subtitle: "Four existing presets", systemImage: "circle.lefthalf.filled", accessibilityIdentifier: "settings.group.appearance"),
+            .init(title: "Offline maps", subtitle: "Packs · downloads · per-pack storage", systemImage: "tray.and.arrow.down", accessibilityIdentifier: "settings.storage.manage"),
+            .init(title: "Coverage", subtitle: "Published regions · sources · extents", systemImage: "map", accessibilityIdentifier: "settings.group.coverage"),
+            .init(title: "Map & data", subtitle: "Cellular downloads · pin size", systemImage: "map.circle", accessibilityIdentifier: "settings.group.map-data"),
+            .init(title: "Location", subtitle: "Permission and system settings", systemImage: "location", accessibilityIdentifier: "settings.group.location"),
+            .init(title: "Diagnostics", subtitle: "Review or export local logs", systemImage: "arrow.up.doc", accessibilityIdentifier: "settings.diagnostics.export"),
+            .init(title: "Replay welcome", subtitle: "Return to the existing welcome flow", systemImage: "arrow.counterclockwise.circle", accessibilityIdentifier: "settings.replay-onboarding"),
+        ])
+        XCTAssertEqual(SettingsGroup.appearance.destination, .settingsAppearance)
+        XCTAssertEqual(SettingsGroup.offlineMaps.destination, .offlineMaps)
+        XCTAssertEqual(SettingsGroup.coverage.destination, .settingsCoverage)
+        XCTAssertEqual(SettingsGroup.mapAndData.destination, .settingsMapAndData)
+        XCTAssertEqual(SettingsGroup.location.destination, .settingsLocation)
+        XCTAssertEqual(SettingsGroup.diagnostics.destination, .diagnostics)
+        XCTAssertNil(SettingsGroup.replayWelcome.destination)
+    }
+
+    func testEverySettingsGroupSymbolResolvesToUIImage() {
+        for group in SettingsGroup.allCases {
+            let presentation = group.presentation
+            XCTAssertNotNil(
+                UIImage(systemName: presentation.systemImage),
+                "\(presentation.title) uses missing SF Symbol \(presentation.systemImage)"
+            )
+        }
+    }
+
+    func testSettingsCoverageContractIsDataOnly() {
+        let coverage = SettingsGroup.coverage.presentation
+        XCTAssertEqual(coverage.subtitle, "Published regions · sources · extents")
+        XCTAssertFalse(coverage.subtitle.localizedCaseInsensitiveContains("shading"))
+    }
+
+    func testSettingsHubUsesMaterialRowsWithoutSystemListChrome() throws {
+        let appRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let mapSource = try String(
+            contentsOf: appRoot.appendingPathComponent("Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+        let settingsStart = try XCTUnwrap(
+            mapSource.range(of: "private struct SettingsView")?.lowerBound
+        )
+        let diagnosticsStart = try XCTUnwrap(
+            mapSource.range(
+                of: "private struct DiagnosticsView",
+                range: settingsStart..<mapSource.endIndex
+            )?.lowerBound
+        )
+        let settingsSource = String(mapSource[settingsStart..<diagnosticsStart])
+
+        XCTAssertFalse(settingsSource.contains("List {"))
+        XCTAssertTrue(settingsSource.contains("MaterialHairlineRow"))
+        XCTAssertTrue(settingsSource.contains("SettingsGroup.allCases"))
+        XCTAssertFalse(settingsSource.contains("map.layers.coverage-shading"))
+    }
+
+    func testOfflineMapContextualCallersKeepTheirDeepLinkAtPointOfUse() throws {
+        let appRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let mapSource = try String(
+            contentsOf: appRoot.appendingPathComponent("Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+
+        func sourceSlice(from startMarker: String, to endMarker: String) throws -> String {
+            let start = try XCTUnwrap(mapSource.range(of: startMarker)?.lowerBound)
+            let end = try XCTUnwrap(
+                mapSource.range(
+                    of: endMarker,
+                    range: start..<mapSource.endIndex
+                )?.lowerBound
+            )
+            return String(mapSource[start..<end])
+        }
+
+        func compacted(_ source: String) -> String {
+            source.filter { !$0.isWhitespace }
+        }
+
+        let emptyRegionSource = try sourceSlice(
+            from: "if let surface = emptyRegionSurface",
+            to: ".animation(.easeInOut(duration: 0.2), value: isMapLoading)"
+        )
+        XCTAssertTrue(
+            compacted(emptyRegionSource).contains(
+                "MapEmptyRegionSurfaceView(surface:surface){" +
+                    "appShell.openOfflineMapsDeepLink()}"
+            ),
+            "The empty-region card must retain its contextual Offline maps route."
+        )
+
+        let progressPillSource = try sourceSlice(
+            from: "private var shellChrome: some View",
+            to: "private func listMapNavigationChrome"
+        )
+        XCTAssertTrue(
+            compacted(progressPillSource).contains(
+                "MapDownloadProgressToast(progress:offlineDownloadProgress," +
+                    "onOpenOfflineMaps:appShell.openOfflineMapsDeepLink)"
+            ),
+            "The progress pill must retain its independent contextual Offline maps route."
+        )
+    }
+
+    func testSettingsRenderEvidencePinsThemeAcrossDefaultAndAccessibilityLaunches() throws {
+        let appRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let uiTestSource = try String(
+            contentsOf: appRoot.appendingPathComponent(
+                "UITests/MakingTracksCoreLoopUITests.swift"
+            ),
+            encoding: .utf8
+        )
+        let start = try XCTUnwrap(
+            uiTestSource.range(
+                of: "func testSettingsHubRendersEveryDestinationAtDefaultAndAccessibilityTextSizes()"
+            )?.lowerBound
+        )
+        let end = try XCTUnwrap(
+            uiTestSource.range(
+                of: "func testSettingsStorageRowNavigatesToOfflineMaps()",
+                range: start..<uiTestSource.endIndex
+            )?.lowerBound
+        )
+        let renderSource = String(uiTestSource[start..<end])
+            .filter { !$0.isWhitespace }
+
+        XCTAssertTrue(
+            renderSource.contains("fortextSizein[\"default\",\"ax\"]"),
+            "The render evidence must exercise the same deterministic launch for default and AX."
+        )
+        XCTAssertTrue(
+            renderSource.contains("resetTheme:true,theme:\"snow\""),
+            "Every Settings render launch must reset and pin the Snow theme."
+        )
+        XCTAssertTrue(
+            renderSource.contains("assertSettingsRootRenderContract(in:app,accessibilityTextSize:textSize==\"ax\")"),
+            "The render oracle must measure every Settings root row at both text sizes."
+        )
+        XCTAssertTrue(
+            renderSource.contains("interactiveIdentifiers:"),
+            "Focused pages must identify controls whose 44-point hit regions are measured."
+        )
+        XCTAssertTrue(
+            renderSource.contains("visibleIdentifiers:"),
+            "Focused pages must identify non-interactive content whose containment is measured."
+        )
+    }
+
+    func testFocusedSettingsControlsOwnMinimumHitRegionsAtInteractiveBoundary() throws {
+        let appRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let mapSource = try String(
+            contentsOf: appRoot.appendingPathComponent("Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+
+        func sourceSlice(from startMarker: String, to endMarker: String) throws -> String {
+            let start = try XCTUnwrap(mapSource.range(of: startMarker)?.lowerBound)
+            let end = try XCTUnwrap(
+                mapSource.range(
+                    of: endMarker,
+                    range: start..<mapSource.endIndex
+                )?.lowerBound
+            )
+            return String(mapSource[start..<end])
+        }
+
+        func compacted(_ source: String) -> String {
+            source.filter { !$0.isWhitespace }
+        }
+
+        let appearanceSource = try sourceSlice(
+            from: "private struct SettingsAppearanceView",
+            to: "private struct SettingsCoverageView"
+        )
+        XCTAssertTrue(compacted(appearanceSource).contains(
+            "}.frame(maxWidth:.infinity,minHeight:44,alignment:.leading)" +
+                ".contentShape(Rectangle())}.buttonStyle(.plain)"
+        ))
+
+        let mapAndDataSource = try sourceSlice(
+            from: "private struct SettingsMapAndDataView",
+            to: "private struct SettingsLocationView"
+        )
+        let compactedMapAndDataSource = compacted(mapAndDataSource)
+        XCTAssertTrue(compactedMapAndDataSource.contains(
+            "MaterialToggleHairlineRow(isOn:$allowsCellularDownloads){" +
+                "VStack(alignment:.leading,spacing:3){" +
+                "Text(\"Allowcellulardownloads\")" +
+                "Text(\"OffkeepsofflinemapswaitingforWi-Fi.\")" +
+                ".font(.caption).foregroundStyle(.secondary)}}" +
+                ".accessibilityIdentifier(\"settings.downloads.allow-cellular\")"
+        ))
+        XCTAssertTrue(compactedMapAndDataSource.contains(
+            "Slider(value:pinSizeBinding," +
+                "in:PinSize.minimumMultiplier...PinSize.maximumMultiplier,step:0.1)" +
+                ".frame(maxWidth:.infinity,minHeight:44)" +
+                ".contentShape(Rectangle())" +
+                ".accessibilityLabel(\"Pinsize\")"
+        ))
+
+        let locationSource = try sourceSlice(
+            from: "private struct SettingsLocationView",
+            to: "private struct DiagnosticsView"
+        )
+        XCTAssertTrue(compacted(locationSource).contains(
+            "Button(action:openLocationSettings){Text(\"Settings\")" +
+                ".frame(minWidth:44,minHeight:44).contentShape(Rectangle())}" +
+                ".accessibilityIdentifier(\"settings.location.open-system\")"
+        ))
     }
 
     func testOfflineDownloadProgressBoundsInvalidFractions() {

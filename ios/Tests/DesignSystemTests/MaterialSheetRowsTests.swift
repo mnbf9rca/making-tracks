@@ -35,6 +35,17 @@ final class MaterialSheetRowsTests: XCTestCase {
         XCTAssertEqual(appearance.divider, MaterialTheme.snow.tokens.hairline)
     }
 
+    func testToggleHairlineRowOwnsHairlineStylingAndMinimumInteractiveHeight() {
+        let row = MaterialToggleHairlineRow(isOn: .constant(false)) {
+            Text("Toggle")
+        }
+
+        XCTAssertNil(row.appearance.background)
+        XCTAssertNil(row.appearance.cornerRadius)
+        XCTAssertEqual(row.appearance.divider, MaterialTheme.snow.tokens.hairline)
+        XCTAssertEqual(row.minimumInteractiveHeight, 44)
+    }
+
 #if canImport(AppKit)
     func testRenderedSheetCloseGlyphUsesResolvedMutedToken() throws {
         let renderer = ImageRenderer(
