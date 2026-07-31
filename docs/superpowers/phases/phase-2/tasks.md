@@ -418,9 +418,9 @@ Full gate plus renders of each Settings group at default and AX.
 - **Issue:** #472 · **Serves:** W-2 · **Spec section:** §2, §5
 - **Acceptance criteria:** AC2.16, AC2.19
 - **Depends on:** **T2.6 ruled by Rob**
-- **Owner:** unclaimed
+- **Owner:** codex3
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** unclaimed — **blocked until W-2 is ruled**
+- **Status:** branch — `wp-t2-10-impl`
 
 **Builder brief.** Rebuild `AboutView` (`MapScreen.swift:7566`–`:7900`) to W-2: the **story and the privacy promise up top**, then **Software licences** and **Data licences** as proper sub-areas rather than one flat run. DS-1 rows and sheets; no system `List` chrome.
 
