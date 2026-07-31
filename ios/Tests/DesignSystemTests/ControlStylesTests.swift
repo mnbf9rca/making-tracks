@@ -103,12 +103,27 @@ final class ControlStylesTests: XCTestCase {
         XCTAssertEqual(quietText.symbolWeight(isPressed: false), .standard)
         XCTAssertEqual(quietText.symbolWeight(isPressed: true), .standard)
         XCTAssertEqual(
-            quietText.verticalOffset(isPressed: true, isEnabled: true),
-            1
+            quietText.verticalOffset(
+                isPressed: true,
+                isEnabled: true,
+                scaledTextInsetPoints: 3
+            ),
+            3
         )
         XCTAssertEqual(
-            quietText.verticalOffset(isPressed: true, isEnabled: false),
+            quietText.verticalOffset(
+                isPressed: true,
+                isEnabled: false,
+                scaledTextInsetPoints: 3
+            ),
             0
+        )
+    }
+
+    func testQuietTextInsetUsesItsPairedButtonTypographyAnchor() {
+        assertTypographyTextStyle(
+            MaterialControlPressFeedback.textInsetTypographyAnchor,
+            equals: TypographyRole.button.specification.textStyle
         )
     }
 
@@ -414,11 +429,10 @@ final class ControlStylesTests: XCTestCase {
         }
         let unscaledRestingBounds = try nonTransparentBounds(in: unscaledResting)
         let unscaledPressedBounds = try nonTransparentBounds(in: unscaledPressed)
+        let defaultDisplacement =
+            unscaledPressedBounds.minY - unscaledRestingBounds.minY
         XCTAssertEqual(unscaledPressedBounds.minX, unscaledRestingBounds.minX)
-        XCTAssertEqual(
-            unscaledPressedBounds.minY,
-            unscaledRestingBounds.minY + 1
-        )
+        XCTAssertEqual(defaultDisplacement, 1)
         XCTAssertEqual(unscaledPressedBounds.size, unscaledRestingBounds.size)
 
         let disabledResting = try renderQuietButtonStyleBody(
@@ -1048,6 +1062,33 @@ final class ControlStylesTests: XCTestCase {
         let renderer = ImageRenderer(content: content)
         renderer.scale = 1
         return try XCTUnwrap(renderer.cgImage)
+    }
+
+    private func assertTypographyTextStyle(
+        _ actual: TypographyTextStyle,
+        equals expected: TypographyTextStyle,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let matches = switch (actual, expected) {
+        case (.largeTitle, .largeTitle),
+            (.title1, .title1),
+            (.title2, .title2),
+            (.headline, .headline),
+            (.body, .body),
+            (.subheadline, .subheadline),
+            (.footnote, .footnote),
+            (.caption2, .caption2):
+            true
+        default:
+            false
+        }
+        XCTAssertTrue(
+            matches,
+            "Expected \(expected), got \(actual)",
+            file: file,
+            line: line
+        )
     }
 
     private func renderedHeight<Content: View>(_ content: Content) throws -> Int {
