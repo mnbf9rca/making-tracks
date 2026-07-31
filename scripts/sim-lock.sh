@@ -4,6 +4,8 @@
 # Everything that boots, builds against, tests against, erases or deletes the
 # selected simulator runs through here. Nothing else takes its lock, and
 # nothing else calls simctl against its UDID.
+# An explicit `simctl --set` selects a separate simulator set and passes through
+# unchanged; seat-target injection applies to direct `simctl <verb>` commands.
 #
 # Per-simulator locks let different seats run concurrently. Stable global slot
 # locks cap aggregate gate load. Every lock is opened once and flocked by file
@@ -456,7 +458,7 @@ run_locked() {
   if [ "$#" -ge 3 ] && [ "$1" = "xcrun" ] && [ "$2" = "simctl" ]; then
     simctl_verb="$3"
     case "$simctl_verb" in
-      bootstatus|shutdown|launch|terminate|install|uninstall|io|get_app_container|spawn|erase)
+      bootstatus|shutdown|launch|terminate|install|uninstall|io|get_app_container|spawn|erase|delete)
         shift 3
         if [ "$#" -gt 0 ]; then
           case "$1" in

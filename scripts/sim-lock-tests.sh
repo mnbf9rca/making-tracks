@@ -559,6 +559,69 @@ fi
 
 rm -f "$CLI_SIMCTL_LOG"
 set +e
+injected_simctl_delete_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcrun simctl delete 2>&1
+)"
+injected_simctl_delete_rc=$?
+set -e
+if [ "$injected_simctl_delete_rc" -eq 0 ] &&
+   [ "$(<"$CLI_SIMCTL_LOG")" = "simctl delete $FAKE_UDID" ]; then
+  record_ok "injects the selected seat UUID into simctl delete"
+else
+  record_fail "injects the selected seat UUID into simctl delete" \
+    "status=$injected_simctl_delete_rc output='$injected_simctl_delete_out' args='$(head -1 "$CLI_SIMCTL_LOG" 2>/dev/null)'"
+fi
+
+for explicit_delete_target in "$OTHER_SEAT_UDID" all; do
+  rm -f "$CLI_SIMCTL_LOG"
+  explicit_simctl_delete_target_rc=0
+  explicit_simctl_delete_target_out="$(
+    PATH="$CLI_FAKE_BIN:$PATH" \
+      MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+      MT_SIM_LOCK_TEST_MODE=1 \
+      MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+      MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+      "$SIM_LOCK" --seat codex1 xcrun simctl delete \
+        "$explicit_delete_target" 2>&1
+  )" || explicit_simctl_delete_target_rc=$?
+  if [ "$explicit_simctl_delete_target_rc" -ne 0 ] &&
+     echo "$explicit_simctl_delete_target_out" | grep -q \
+       "omit the simulator target after simctl delete" &&
+     [ ! -e "$CLI_SIMCTL_LOG" ]; then
+    record_ok "rejects the positional simctl delete target $explicit_delete_target"
+  else
+    record_fail "rejects the positional simctl delete target $explicit_delete_target" \
+      "status=$explicit_simctl_delete_target_rc output='$(echo "$explicit_simctl_delete_target_out" | head -1)'"
+  fi
+done
+
+rm -f "$CLI_SIMCTL_LOG"
+set +e
+testing_set_delete_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcrun simctl --set testing delete all 2>&1
+)"
+testing_set_delete_rc=$?
+set -e
+if [ "$testing_set_delete_rc" -eq 0 ] &&
+   [ "$(<"$CLI_SIMCTL_LOG")" = "simctl --set testing delete all" ]; then
+  record_ok "leaves an explicit non-gate simulator set target unchanged"
+else
+  record_fail "leaves an explicit non-gate simulator set target unchanged" \
+    "status=$testing_set_delete_rc output='$testing_set_delete_out' args='$(head -1 "$CLI_SIMCTL_LOG" 2>/dev/null)'"
+fi
+
+rm -f "$CLI_SIMCTL_LOG"
+set +e
 destructive_erase_out="$(
   PATH="$CLI_FAKE_BIN:$PATH" \
     MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
