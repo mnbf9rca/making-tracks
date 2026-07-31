@@ -582,7 +582,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             "explore.row.about",
         ] {
             let control = element(identifier: identifier, in: app)
-            XCTAssertTrue(scrollToHittable(control, in: app))
+            let isQuietDestination = identifier.hasPrefix("explore.row.")
+            XCTAssertTrue(
+                isQuietDestination
+                    ? scrollToFullyContained(control, in: app)
+                    : scrollToHittable(control, in: app)
+            )
             XCTAssertTrue(control.isHittable)
             XCTAssertGreaterThanOrEqual(control.frame.height, 44)
             if identifier.hasPrefix("map.layers.") {
@@ -591,6 +596,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                     86,
                     "AX Scope rows must mount the frozen expanded minimum height."
                 )
+            } else {
+                assertContainedInAppFrame(control, in: app)
             }
         }
         attachScreenshot(named: "explore-door-ax")

@@ -1153,7 +1153,7 @@ final class AppShellTests: XCTestCase {
 
         XCTAssertEqual(
             descendants(
-                of: ExploreQuietDestinationIconGlyph.self,
+                of: ExploreQuietDestinationIconColumn.self,
                 in: row.body
             ).count,
             1
@@ -1192,6 +1192,45 @@ final class AppShellTests: XCTestCase {
                 "Quiet destinations must stay medium under an emphasized control environment."
             )
         }
+    }
+
+    @MainActor
+    func testExploreQuietDestinationOwnsScaledIconColumnAtAX5() throws {
+        let presentation = ExploreDoorRow.settings.presentation
+        let row = ExploreQuietDestinationRow(
+            presentation: presentation,
+            prominent: true,
+            action: {}
+        )
+
+        XCTAssertEqual(
+            descendants(
+                of: ExploreQuietDestinationIconColumn.self,
+                in: row.body
+            ).count,
+            1,
+            "Quiet destinations must reserve the scaled glyph width inside the row."
+        )
+
+        let defaultSize = try journalDoorRenderedSize(
+            ExploreQuietDestinationIconColumn(
+                systemName: presentation.systemImage
+            ),
+            dynamicTypeSize: .large
+        )
+        let accessibilitySize = try journalDoorRenderedSize(
+            ExploreQuietDestinationIconColumn(
+                systemName: presentation.systemImage
+            ),
+            dynamicTypeSize: .accessibility5
+        )
+
+        XCTAssertEqual(defaultSize.width, 24, accuracy: 0.5)
+        XCTAssertGreaterThan(
+            accessibilitySize.width,
+            defaultSize.width,
+            "The icon column must grow with rowQuiet so the AX5 glyph cannot overlap the copy."
+        )
     }
 
     @MainActor

@@ -682,7 +682,7 @@ struct ExploreQuietDestinationRow: View {
         Button(action: action) {
             MaterialHairlineRow {
                 HStack(spacing: 10) {
-                    ExploreQuietDestinationIconGlyph(
+                    ExploreQuietDestinationIconColumn(
                         systemName: presentation.systemImage
                     )
                         .foregroundStyle(
@@ -690,7 +690,6 @@ struct ExploreQuietDestinationRow: View {
                                 ? tokens.accent.swiftUIColor
                                 : tokens.muted.swiftUIColor
                         )
-                        .frame(width: 24)
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -725,6 +724,17 @@ struct ExploreQuietDestinationRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(presentation.accessibilityIdentifier)
+    }
+}
+
+struct ExploreQuietDestinationIconColumn: View {
+    let systemName: String
+
+    @ScaledMetric(relativeTo: .subheadline) private var width = 24.0
+
+    var body: some View {
+        ExploreQuietDestinationIconGlyph(systemName: systemName)
+            .frame(width: width)
     }
 }
 
