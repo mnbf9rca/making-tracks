@@ -224,6 +224,56 @@ else
     "status=$legacy_destination_rc output='$(echo "$legacy_destination_out" | head -1)'"
 fi
 
+echo
+echo "live simulator consumer contract:"
+
+consumer_scripts=(
+  "$HERE/../docs/design/design-system/capture-t2.8-implementation.sh"
+  "$HERE/../docs/design/design-system/regenerate-t2.3-door-glyph.sh"
+  "$HERE/../docs/design/design-system/regenerate-t2.9-settings.sh"
+  "$HERE/../docs/design/design-system/regenerate-t2.10-about.sh"
+)
+
+for consumer in "${consumer_scripts[@]}"; do
+  consumer_name="$(basename "$consumer")"
+  set +e
+  consumer_out="$(
+    env -u MT_SIM_LOCK_DESTINATION -u MT_SIM_LOCK -u MT_SIM_LOCK_UDID \
+      MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+      "$consumer" 2>&1
+  )"
+  consumer_rc=$?
+  set -e
+  if [ "$consumer_rc" -ne 0 ] &&
+     echo "$consumer_out" | grep -q "MT_SIM_LOCK_DESTINATION is required"; then
+    record_ok "$consumer_name ignores the removed public destination"
+  else
+    record_fail "$consumer_name ignores the removed public destination" \
+      "status=$consumer_rc output='$(echo "$consumer_out" | head -1)'"
+  fi
+done
+
+for consumer in "${consumer_scripts[@]}"; do
+  consumer_name="$(basename "$consumer")"
+  set +e
+  consumer_out="$(
+    env -u MT_RELEASE_GATE_DESTINATION -u MT_SIM_LOCK -u MT_SIM_LOCK_UDID \
+      MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+      MT_RELEASE_GATE_DERIVED_DATA=/private/tmp/dd-consumer-contract \
+      "$consumer" 2>&1
+  )"
+  consumer_rc=$?
+  set -e
+  if [ "$consumer_rc" -ne 0 ] &&
+     echo "$consumer_out" | grep -q \
+       "invoke through scripts/sim-lock.sh --seat <seat>"; then
+    record_ok "$consumer_name rejects an unowned simulator destination"
+  else
+    record_fail "$consumer_name rejects an unowned simulator destination" \
+      "status=$consumer_rc output='$(echo "$consumer_out" | head -1)'"
+  fi
+done
+
 set +e
 unknown_seat_out="$(
   MT_SIM_LOCK_TEST_MODE=1 \
