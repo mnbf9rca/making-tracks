@@ -1,11 +1,11 @@
 Making Tracks T2.8 implementation captures
-git: 4c627c8d409a9259018e604449bd796709d9f3e9
+git: d2007cf3072a1403e50557979fb965fe08c01bfb
 destination: platform=iOS Simulator,id=42D1482C-DE04-49AA-990D-1884ED9B855D
 capture: XCUIScreen.main.screenshot via Xcode UI testing
 capture-tool: Xcode 26.6
 capture-tool: Build version 17F113
 
-78ad0ac9dc1b3983ae052287eb226ee23e289b76ef3f22e504aa2ee0cf7c5965  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-door-default.png
+3f139fa7386822d12980dd4071af6a86fce89321cbd35845cd07f48aeabf78b5  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-door-default.png
   /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-door-default.png
     pixelWidth: 1206
     pixelHeight: 2622
@@ -17,7 +17,7 @@ capture-tool: Build version 17F113
   show-saved: x=16.00 y=384.00 width=370.00 height=40.00
   coverage-shading: x=16.00 y=436.00 width=370.00 height=40.00
   about: x=16.00 y=755.67 width=370.00 height=60.33
-c562dfd942f71dc7fae58be3088c30d0a22f555b047860c98677ec367a6a5de4  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-door-ax.png
+85905be76724f150a8c3e0dcf2dfbe1d551188e1af524f012c9b323d09a38635  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-door-ax.png
   /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-door-ax.png
     pixelWidth: 1206
     pixelHeight: 2622
@@ -28,21 +28,21 @@ c562dfd942f71dc7fae58be3088c30d0a22f555b047860c98677ec367a6a5de4  /Users/rob/git
   coverage-shading: x=16.00 y=28.67 width=370.00 height=184.67
   settings: x=16.00 y=271.33 width=370.00 height=286.33
   about: x=16.00 y=581.67 width=370.00 height=234.33
-034b2461ad414f00d1295791e7dbf440c48105ef2bf817a13212b73c9d2dfc26  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-door-scope-default.png
+beebe04239a0abab6686717966a099652197dd7258c6aafb94e40aeb5682c898  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-door-scope-default.png
   /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-door-scope-default.png
     pixelWidth: 1206
     pixelHeight: 2622
   capture: explore-door-scope-default
   accessibility-value: Default scope
   explore-door: x=80.67 y=784.00 width=115.67 height=44.00
-d733127dfd1e51e12b7d26b411eacb807cb65fbfc1de9ccc33003567454b394d  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-door-scope-adjusted.png
+7cfa5d2a6dc9317f481617470daf51615c2130674c3a4c86683e6c0f1503f45a  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-door-scope-adjusted.png
   /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-door-scope-adjusted.png
     pixelWidth: 1206
     pixelHeight: 2622
   capture: explore-door-scope-adjusted
   accessibility-value: Scope adjusted
   explore-door: x=80.67 y=784.00 width=115.67 height=44.00
-00c4ba5bf643207dd26c6b55332c5b84f70fef03d1d97d21ad1c315ee6f4c315  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-scope-list-open.png
+018e5267e15d35fc439565ac62971795c6821beae6c7ac20042695eff10b7920  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-scope-list-open.png
   /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-scope-list-open.png
     pixelWidth: 1206
     pixelHeight: 2622
@@ -51,22 +51,35 @@ d733127dfd1e51e12b7d26b411eacb807cb65fbfc1de9ccc33003567454b394d  /Users/rob/git
   root: x=0.00 y=121.00 width=402.00 height=753.00
   loved-visits: x=16.00 y=409.33 width=71.00 height=44.00
   other-lists: x=16.00 y=466.33 width=370.00 height=60.33
-640be603e6f30e540c70e2e16de99274ca3a34c993e04e29935d7c5871581629  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-scope-other-lists.png
+b1c833c008b2c9aee3e182a5bbb88d4eb00baaf57a3594705f0a6eacd93f6f6e  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-scope-other-lists.png
   /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-scope-other-lists.png
     pixelWidth: 1206
     pixelHeight: 2622
   capture: explore-scope-other-lists
   selected-list-value: Included
   root: x=16.00 y=62.00 width=370.00 height=754.00
-  back: x=16.00 y=62.00 width=64.67 height=44.00
-  selected-list: x=16.00 y=191.00 width=370.00 height=68.33
-  clear: x=16.00 y=755.67 width=370.00 height=60.33
-4df4c67d24b75dc63562778dd47cf7c1abca00a14fc964983fbf660bee133c93  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-scope-other-lists-empty.png
+  back: x=16.00 y=62.00 width=60.67 height=44.00
+  selected-list: x=16.00 y=175.00 width=370.00 height=52.00
+  clear: x=16.00 y=758.00 width=370.00 height=58.00
+066372846ed4eb2882e969fd3baabc7941918e13b961c25a3e494c63d00b161f  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-scope-other-lists-ax.png
+  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-scope-other-lists-ax.png
+    pixelWidth: 1206
+    pixelHeight: 2622
+  capture: explore-scope-other-lists-ax
+  dynamic-type: AX5
+  long-list-unicode-scalars: 80
+  long-list-value: Included
+  root: x=16.00 y=62.00 width=370.00 height=754.00
+  back: x=16.00 y=62.00 width=89.67 height=54.00
+  collection: x=16.00 y=219.33 width=370.00 height=350.00
+  long-list: x=16.00 y=219.33 width=370.00 height=212.33
+  clear: x=16.00 y=748.00 width=370.00 height=68.00
+077b11a3748b2f1f00202f0e3af6879e5428caad31b73ca18eff1ac3565dceea  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-scope-other-lists-empty.png
   /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-scope-other-lists-empty.png
     pixelWidth: 1206
     pixelHeight: 2622
   capture: explore-scope-other-lists-empty
   option-count: 0
   root: x=16.00 y=62.00 width=366.83 height=177.17
-  back: x=16.00 y=62.00 width=64.67 height=44.00
+  back: x=16.00 y=62.00 width=60.67 height=44.00
   empty: x=19.17 y=196.83 width=363.67 height=42.33
