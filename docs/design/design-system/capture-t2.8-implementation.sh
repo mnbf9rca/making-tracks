@@ -60,11 +60,17 @@ declare -a captures=(
 for name in "${captures[@]}"; do
   source="$ARTIFACTS/$name.png"
   target="$OUTPUT/t2.8-$name.png"
+  measurements="$ARTIFACTS/$name.txt"
   [ -s "$source" ] || {
     echo "capture-t2.8-implementation: missing capture $source" >&2
     exit 1
   }
+  [ -s "$measurements" ] || {
+    echo "capture-t2.8-implementation: missing measurements $measurements" >&2
+    exit 1
+  }
   cp "$source" "$target"
+  cp "$measurements" "$OUTPUT/t2.8-$name.txt"
 done
 
 metadata="$OUTPUT/t2.8-implementation-captures.txt"
@@ -79,6 +85,7 @@ metadata="$OUTPUT/t2.8-implementation-captures.txt"
     target="$OUTPUT/t2.8-$name.png"
     shasum -a 256 "$target"
     sips -g pixelWidth -g pixelHeight "$target" | sed 's/^/  /'
+    sed 's/^/  /' "$OUTPUT/t2.8-$name.txt"
   done
 } > "$metadata"
 

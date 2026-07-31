@@ -539,6 +539,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             "Quiet Explore destinations must remain bottom rows in the large detent."
         )
         attachScreenshot(named: "explore-door-default", forceExport: true)
+        exportMeasurements(
+            named: "explore-door-default",
+            elements: [
+                ("root", exploreRoot),
+                ("include-hidden", showHidden),
+                ("show-saved", showSaved),
+                ("coverage-shading", coverageShading),
+                ("about", about),
+            ],
+            notes: [
+                "hidden-to-saved-pitch: \(showSaved.frame.minY - showHidden.frame.minY)",
+                "saved-to-coverage-pitch: \(coverageShading.frame.minY - showSaved.frame.minY)",
+            ]
+        )
 
         app.buttons["Close"].tap()
         XCTAssertTrue(app.buttons["map.door.journal"].waitForExistence(timeout: 5))
@@ -594,6 +608,17 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             }
         }
         attachScreenshot(named: "explore-door-ax", forceExport: true)
+        exportMeasurements(
+            named: "explore-door-ax",
+            elements: [
+                ("include-hidden", app.switches["explore.scope.include-hidden"]),
+                ("show-saved", app.switches["explore.scope.show-saved"]),
+                ("coverage-shading", app.switches["explore.scope.coverage-shading"]),
+                ("settings", app.buttons["explore.row.settings"]),
+                ("about", app.buttons["explore.row.about"]),
+            ],
+            notes: ["dynamic-type: AX5"]
+        )
         app.buttons["Close"].tap()
 
         XCTAssertTrue(journalDoor.waitForExistence(timeout: 5))
@@ -668,6 +693,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(exploreDoor.waitForExistence(timeout: 5))
         XCTAssertEqual(exploreDoor.value as? String, "Default scope")
         attachScreenshot(named: "explore-door-scope-default", forceExport: true)
+        exportMeasurements(
+            named: "explore-door-scope-default",
+            elements: [("explore-door", exploreDoor)],
+            notes: ["accessibility-value: Default scope"]
+        )
 
         exploreDoor.tap()
         tapSwitch(
@@ -681,6 +711,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(exploreDoor.waitForExistence(timeout: 5))
         XCTAssertEqual(exploreDoor.value as? String, "Scope adjusted")
         attachScreenshot(named: "explore-door-scope-adjusted", forceExport: true)
+        exportMeasurements(
+            named: "explore-door-scope-adjusted",
+            elements: [("explore-door", exploreDoor)],
+            notes: ["accessibility-value: Scope adjusted"]
+        )
 
         exploreDoor.tap()
         XCTAssertTrue(scrollToHittable(clear, in: app))
@@ -2568,6 +2603,15 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(scrollToHittable(lovedFilter, in: lovedApp))
         XCTAssertTrue(lovedFilter.waitForExistence(timeout: 5))
         attachScreenshot(named: "explore-scope-list-open", forceExport: true)
+        exportMeasurements(
+            named: "explore-scope-list-open",
+            elements: [
+                ("root", lovedApp.scrollViews["explore.root"]),
+                ("loved-visits", lovedFilter),
+                ("other-lists", lovedApp.buttons["explore.scope.list-visits.lists"]),
+            ],
+            notes: ["context: Replay week"]
+        )
         XCTAssertEqual(lovedFilter.value as? String, "Not selected")
         lovedFilter.tap()
         XCTAssertTrue(waitForElementValue("Selected", identifier: "explore.scope.list-visits.loved", in: lovedApp))
@@ -2609,7 +2653,6 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(option.label, "Date night")
         XCTAssertEqual(option.value as? String, "Off")
         XCTAssertGreaterThanOrEqual(option.frame.height, 52)
-        attachScreenshot(named: "explore-scope-other-lists", forceExport: true)
         option.tap()
         XCTAssertTrue(waitForElementValue(
             "Included",
@@ -2619,6 +2662,17 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let clear = app.buttons["explore.scope.clear"]
         XCTAssertTrue(clear.exists)
         XCTAssertTrue(clear.isHittable)
+        attachScreenshot(named: "explore-scope-other-lists", forceExport: true)
+        exportMeasurements(
+            named: "explore-scope-other-lists",
+            elements: [
+                ("root", app.otherElements["explore.scope.list-visits.lists.root"]),
+                ("back", back),
+                ("selected-list", option),
+                ("clear", clear),
+            ],
+            notes: ["selected-list-value: Included"]
+        )
 
         back.tap()
         XCTAssertTrue(otherLists.waitForExistence(timeout: 5))
@@ -2650,6 +2704,15 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
         XCTAssertTrue(app.buttons["explore.scope.list-visits.lists.back"].isHittable)
         attachScreenshot(named: "explore-scope-other-lists-empty", forceExport: true)
+        exportMeasurements(
+            named: "explore-scope-other-lists-empty",
+            elements: [
+                ("root", app.otherElements["explore.scope.list-visits.lists.root"]),
+                ("back", app.buttons["explore.scope.list-visits.lists.back"]),
+                ("empty", empty),
+            ],
+            notes: ["option-count: 0"]
+        )
     }
 
     func testTrackCategoryFilterScopesReplayDisplayAndCamera() {
@@ -5444,6 +5507,33 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             XCTAssertGreaterThan(byteCount, 0, "Exported screenshot should not be empty: \(fileURL.path)")
         } catch {
             XCTFail("Failed to export screenshot \(name): \(error)")
+        }
+    }
+
+    private func exportMeasurements(
+        named name: String,
+        elements: [(String, XCUIElement)],
+        notes: [String] = []
+    ) {
+        let directory = URL(fileURLWithPath: "/private/tmp/making-tracks-artifacts", isDirectory: true)
+        let fileURL = directory.appendingPathComponent(name).appendingPathExtension("txt")
+        let frames = elements.map { label, element in
+            let frame = element.frame
+            return String(
+                format: "%@: x=%.2f y=%.2f width=%.2f height=%.2f",
+                label,
+                frame.minX,
+                frame.minY,
+                frame.width,
+                frame.height
+            )
+        }
+        let contents = (["capture: \(name)"] + notes + frames).joined(separator: "\n") + "\n"
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try contents.write(to: fileURL, atomically: true, encoding: .utf8)
+        } catch {
+            XCTFail("Failed to export measurements for \(name): \(error)")
         }
     }
 
