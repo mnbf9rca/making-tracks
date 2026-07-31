@@ -44,6 +44,7 @@ struct MakingTracksApp: App {
     private static let debugUseDenseFixturePins = arguments.contains("--ui-testing-dense-pins")
     private static let debugUseReplayVisualFixture = arguments.contains("--ui-testing-replay-visual-seed")
     private static let debugShowChipTargetFixture = arguments.contains("--ui-testing-chip-target")
+    private static let debugDoorGlyphFixtureVariant = argumentValue("--ui-testing-door-glyph-fixture")
     private static let primaryFixturePlaceID = "mt1_00000000000000000000000000"
 #else
     private static let forceFirstRunOnboarding = false
@@ -340,7 +341,9 @@ struct MakingTracksApp: App {
     var body: some Scene {
         WindowGroup {
 #if DEBUG
-            if Self.debugShowChipTargetFixture {
+            if let variant = Self.debugDoorGlyphFixtureVariant {
+                DoorGlyphEvidenceFixture(legacy: variant == "before")
+            } else if Self.debugShowChipTargetFixture {
                 ChipHitTargetFixture()
             } else {
                 rootView

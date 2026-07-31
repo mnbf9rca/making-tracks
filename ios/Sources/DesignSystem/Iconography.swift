@@ -51,11 +51,6 @@ public enum IconRole: CaseIterable, Hashable, Sendable {
     }
 }
 
-/// Ratified pairing constant for the Explore quiet destination row.
-public enum ExploreSurfaceIconGeometry {
-    public static let quietDestination: CGFloat = 18
-}
-
 /// P2R-4's Scope-control icon is semantically distinct from `rowRaised`
 /// despite sharing its current point size.
 public enum ScopeControlIconGeometry {

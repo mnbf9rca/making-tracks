@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import UIKit
 import XCTest
@@ -596,7 +597,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             "explore.row.about",
         ] {
             let control = element(identifier: identifier, in: app)
-            XCTAssertTrue(scrollToHittable(control, in: app))
+            let isQuietDestination = identifier.hasPrefix("explore.row.")
+            XCTAssertTrue(
+                isQuietDestination
+                    ? scrollToFullyContained(control, in: app)
+                    : scrollToHittable(control, in: app)
+            )
             XCTAssertTrue(control.isHittable)
             XCTAssertGreaterThanOrEqual(control.frame.height, 44)
             if identifier.hasPrefix("explore.scope.") {
@@ -605,6 +611,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                     86,
                     "AX Scope rows must mount the frozen expanded minimum height."
                 )
+            } else {
+                assertContainedInAppFrame(control, in: app)
             }
         }
         attachScreenshot(named: "explore-door-ax", forceExport: true)
@@ -645,6 +653,86 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
         XCTAssertEqual(screenshotExportNames["journal-door-ax"], "journal-door-ax")
         attachScreenshot(named: "journal-door-ax")
+    }
+
+    func testDoorGlyphEvidenceFixturePinsColumnsAndCopySeparation() {
+        struct Metrics {
+            let raisedIcon: CGRect
+            let raisedCopy: CGRect
+            let quietIcon: CGRect
+            let quietCopy: CGRect
+        }
+
+        func capture(variant: String, accessibility5: Bool) -> Metrics {
+            let app = XCUIApplication()
+            app.launchArguments = [
+                "--ui-testing-door-glyph-fixture",
+                variant,
+            ]
+            if accessibility5 {
+                app.launchArguments += [
+                    "-UIPreferredContentSizeCategoryName",
+                    "UICTContentSizeCategoryAccessibilityXXXL",
+                    "-AppleInterfaceStyle",
+                    "Dark",
+                ]
+            }
+            app.launch()
+
+            let state = app.staticTexts["door-glyph.fixture.state"]
+            XCTAssertTrue(state.waitForExistence(timeout: 5))
+
+            let raisedIcon = element(identifier: "door-glyph.fixture.raised.icon", in: app)
+            let raisedCopy = element(identifier: "door-glyph.fixture.raised.copy", in: app)
+            let quietIcon = element(identifier: "door-glyph.fixture.quiet.icon", in: app)
+            let quietCopy = element(identifier: "door-glyph.fixture.quiet.copy", in: app)
+            for element in [raisedIcon, raisedCopy, quietIcon, quietCopy] {
+                XCTAssertTrue(element.waitForExistence(timeout: 5))
+                assertContainedInAppFrame(element, in: app)
+            }
+
+            let suffix = accessibility5 ? "ax" : "default"
+            attachScreenshot(
+                named: "t2.3-door-glyph-\(variant)-\(suffix)",
+                forceExport: true
+            )
+
+            let metrics = Metrics(
+                raisedIcon: raisedIcon.frame,
+                raisedCopy: raisedCopy.frame,
+                quietIcon: quietIcon.frame,
+                quietCopy: quietCopy.frame
+            )
+            app.terminate()
+            return metrics
+        }
+
+        let beforeDefault = capture(variant: "before", accessibility5: false)
+        let afterDefault = capture(variant: "after", accessibility5: false)
+        let beforeAX = capture(variant: "before", accessibility5: true)
+        let afterAX = capture(variant: "after", accessibility5: true)
+
+        XCTAssertEqual(beforeDefault.raisedIcon.width, 26, accuracy: 1)
+        XCTAssertEqual(beforeDefault.quietIcon.width, 26, accuracy: 1)
+        XCTAssertEqual(afterDefault.raisedIcon.width, 30, accuracy: 1)
+        XCTAssertEqual(afterDefault.quietIcon.width, 27, accuracy: 1)
+        XCTAssertEqual(beforeAX.raisedIcon.width, 80, accuracy: 1)
+        XCTAssertEqual(beforeAX.quietIcon.width, 80, accuracy: 1)
+        XCTAssertEqual(afterAX.raisedIcon.width, 85, accuracy: 1)
+        XCTAssertEqual(afterAX.quietIcon.width, 79, accuracy: 1)
+
+        for metrics in [beforeDefault, afterDefault, afterAX] {
+            XCTAssertGreaterThanOrEqual(
+                metrics.raisedCopy.minX - metrics.raisedIcon.maxX,
+                11.9
+            )
+            XCTAssertGreaterThanOrEqual(
+                metrics.quietCopy.minX - metrics.quietIcon.maxX,
+                11.9
+            )
+        }
+        XCTAssertLessThan(beforeAX.raisedCopy.minX - beforeAX.raisedIcon.maxX, 0)
+        XCTAssertLessThan(beforeAX.quietCopy.minX - beforeAX.quietIcon.maxX, 0)
     }
 
     func testExploreSavedVisibilityFiltersOnlySavedDiscoveryPinsAndKeepsCategoryScope() {
@@ -3207,6 +3295,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         app.buttons["explore.row.about"].tap()
         XCTAssertTrue(app.staticTexts["About"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.staticTexts["The story, the privacy promise, and the credits."]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.staticTexts["The map is fresh snow."].exists)
+        XCTAssertTrue(app.staticTexts["Private by construction"].exists)
+        XCTAssertTrue(app.staticTexts["Nothing you save leaves unless you choose to share it."].exists)
+        attachScreenshot(named: "t2.10-about", forceExport: true)
         let versionLabel = app.staticTexts["about.app-version"]
         XCTAssertTrue(versionLabel.waitForExistence(timeout: 5))
         XCTAssertEqual(versionLabel.label, try expectedAppVersionLabel())
@@ -3216,8 +3312,93 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(privacyPolicy.waitForExistence(timeout: 5))
         XCTAssertEqual(privacyPolicy.label, "Privacy policy")
         XCTAssertEqual(privacyPolicy.value as? String, "https://making-tracks.app/privacy")
-        XCTAssertTrue(app.staticTexts["Open source acknowledgements"].waitForExistence(timeout: 5))
-        XCTAssertTrue(element(identifier: "about.openstreetmap-copyright", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(privacyPolicy.isHittable)
+        assertMinimumInteractiveTarget(privacyPolicy)
+        assertContainedInAppFrame(privacyPolicy, in: app)
+        XCTAssertFalse(app.staticTexts["Open source acknowledgements"].exists)
+
+        let softwareLicences = app.buttons["about.software-licences"]
+        let dataLicences = app.buttons["about.data-licences"]
+        XCTAssertTrue(scrollToHittable(softwareLicences, in: app))
+        XCTAssertEqual(softwareLicences.label, "Software licences")
+        XCTAssertEqual(
+            softwareLicences.value as? String,
+            "GRDB.swift · MapLibre · Newsreader OFL · Noto Sans"
+        )
+        assertMinimumInteractiveTarget(softwareLicences)
+        XCTAssertTrue(scrollToHittable(dataLicences, in: app))
+        XCTAssertEqual(dataLicences.label, "Data licences")
+        XCTAssertEqual(
+            dataLicences.value as? String,
+            "OpenStreetMap · Wikipedia · regional sources"
+        )
+        assertMinimumInteractiveTarget(dataLicences)
+
+        XCTAssertTrue(scrollToHittable(softwareLicences, in: app))
+        softwareLicences.tap()
+        XCTAssertTrue(app.staticTexts["Software licences"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "t2.10-software-licences", forceExport: true)
+        let softwareExpectations = [
+            (
+                id: "GRDB.swift|7.11.1",
+                noticeDigest: "5477c7feb396cb058cf402697c9ef59c0221a68d63921d74f44670cb488d1a7f",
+                licenseURL: "https://github.com/groue/GRDB.swift/blob/master/LICENSE"
+            ),
+            (
+                id: "MapLibre Native iOS / maplibre-gl-native-distribution|6.27.0",
+                noticeDigest: "691bbc091d6a3c1bd6f5c488612baf9635658bcfe2692e87f885a19e7315ba4f",
+                licenseURL: "https://github.com/maplibre/maplibre-native/blob/main/LICENSE.md"
+            ),
+            (
+                id: "Newsreader|productiontype/Newsreader commit cfcb4f7af0e52c25e8df2a2431814c8e5fe2e155; static TTF instances",
+                noticeDigest: "fdfad38143ec470553cae82a1e45320bdd1b9ec70415d37bd0171051d8a4ded8",
+                licenseURL: "https://github.com/productiontype/Newsreader/blob/cfcb4f7af0e52c25e8df2a2431814c8e5fe2e155/OFL.txt"
+            ),
+            (
+                id: "Noto Sans glyph PBF mirror|protomaps/basemaps-assets commit 028c18f713baecad011301ff7a69acc39bcc2ae7; Noto Sans Regular",
+                noticeDigest: "9eba12c12d46c3b966acaf5c82a33283fe48903a70618b99cb32e384cc216654",
+                licenseURL: "https://openfontlicense.org/"
+            ),
+        ]
+        let lastLicense = element(
+            identifier: "credits.oss.\(softwareExpectations.last!.id).license",
+            in: app
+        )
+        XCTAssertTrue(lastLicense.exists)
+        XCTAssertFalse(lastLicense.isHittable, "The endpoint must begin off-screen so traversal has teeth")
+        for expectation in softwareExpectations {
+            let notice = element(identifier: "credits.oss.\(expectation.id).notice", in: app)
+            XCTAssertTrue(notice.waitForExistence(timeout: 5))
+            XCTAssertEqual(sha256(notice.label), expectation.noticeDigest)
+
+            let license = element(identifier: "credits.oss.\(expectation.id).license", in: app)
+            XCTAssertTrue(scrollToFullyContained(license, in: app, maxSwipes: 80))
+            XCTAssertEqual(license.elementType, .button)
+            XCTAssertTrue(license.isEnabled)
+            XCTAssertEqual(license.value as? String, expectation.licenseURL)
+            assertMinimumInteractiveTarget(license)
+            assertContainedInAppFrame(license, in: app)
+        }
+        app.buttons["Back"].tap()
+
+        XCTAssertTrue(scrollToHittable(dataLicences, in: app))
+        dataLicences.tap()
+        XCTAssertTrue(app.staticTexts["Data licences"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "t2.10-data-licences", forceExport: true)
+        let osmText = app.staticTexts["about.openstreetmap-attribution"]
+        XCTAssertTrue(osmText.waitForExistence(timeout: 5))
+        XCTAssertEqual(osmText.label, "Map data © OpenStreetMap contributors.")
+        let osmCopyright = element(identifier: "about.openstreetmap-copyright", in: app)
+        XCTAssertTrue(scrollToFullyContained(osmCopyright, in: app, maxSwipes: 10))
+        XCTAssertEqual(osmCopyright.value as? String, "https://www.openstreetmap.org/copyright")
+        assertMinimumInteractiveTarget(osmCopyright)
+        assertContainedInAppFrame(osmCopyright, in: app)
+        let runtimeAttribution = element(identifier: "credits.manifest.osm", in: app)
+        XCTAssertTrue(scrollToFullyContained(runtimeAttribution, in: app, maxSwipes: 10))
+        XCTAssertTrue(runtimeAttribution.label.contains("osm"))
+        XCTAssertTrue(runtimeAttribution.label.contains("ODbL-1.0"))
+        XCTAssertTrue(runtimeAttribution.label.contains("OSM credit"))
+        app.buttons["Back"].tap()
         app.buttons["Close"].tap()
 
         openJournalDoor(in: app)
@@ -4169,25 +4350,55 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openExploreDoor(in: app)
         app.buttons["explore.row.about"].tap()
         XCTAssertTrue(app.staticTexts["About"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Build"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Open source acknowledgements"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["The map is fresh snow."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Private by construction"].exists)
+        attachScreenshot(named: "t2.10-about-ax", forceExport: true)
         XCTAssertEqual(try buildCommitLabel(in: app), "Build \(try currentGitCommit())")
-        let grdbCredit = element(identifier: "credits.oss.GRDB.swift|7.11.1", in: app)
-        XCTAssertTrue(scrollToExistence(of: grdbCredit, in: app))
+        let privacyPolicy = element(identifier: "about.privacy-policy", in: app)
+        XCTAssertTrue(scrollToFullyContained(privacyPolicy, in: app, maxSwipes: 10))
+        assertMinimumInteractiveTarget(privacyPolicy)
+        assertContainedInAppFrame(privacyPolicy, in: app)
 
-        let mapLibreCredit = element(
-            identifier: "credits.oss.MapLibre Native iOS / maplibre-gl-native-distribution|6.27.0",
-            in: app
-        )
-        XCTAssertTrue(scrollToExistence(of: mapLibreCredit, in: app))
-        let mapLibreLicense = element(
-            identifier: "credits.oss.MapLibre Native iOS / maplibre-gl-native-distribution|6.27.0.license",
-            in: app
-        )
-        XCTAssertTrue(scrollToExistence(of: mapLibreLicense, in: app))
-        XCTAssertEqual(mapLibreLicense.elementType, .button)
-        XCTAssertTrue(mapLibreLicense.isEnabled)
-        attachScreenshot(named: "credits-a11y")
+        let softwareLicences = app.buttons["about.software-licences"]
+        let dataLicences = app.buttons["about.data-licences"]
+        XCTAssertTrue(scrollToHittable(softwareLicences, in: app))
+        assertMinimumInteractiveTarget(softwareLicences)
+        XCTAssertTrue(scrollToHittable(dataLicences, in: app))
+        assertMinimumInteractiveTarget(dataLicences)
+        assertNoFrameIntersection(softwareLicences, dataLicences)
+
+        XCTAssertTrue(scrollToHittable(softwareLicences, in: app))
+        softwareLicences.tap()
+        XCTAssertTrue(app.staticTexts["Software licences"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "t2.10-software-licences-ax", forceExport: true)
+        let softwareIDs = [
+            "GRDB.swift|7.11.1",
+            "MapLibre Native iOS / maplibre-gl-native-distribution|6.27.0",
+            "Newsreader|productiontype/Newsreader commit cfcb4f7af0e52c25e8df2a2431814c8e5fe2e155; static TTF instances",
+            "Noto Sans glyph PBF mirror|protomaps/basemaps-assets commit 028c18f713baecad011301ff7a69acc39bcc2ae7; Noto Sans Regular",
+        ]
+        let lastLicense = element(identifier: "credits.oss.\(softwareIDs.last!).license", in: app)
+        XCTAssertTrue(lastLicense.exists)
+        XCTAssertFalse(lastLicense.isHittable, "The AX endpoint must begin off-screen")
+        for id in softwareIDs {
+            let license = element(identifier: "credits.oss.\(id).license", in: app)
+            XCTAssertTrue(scrollToFullyContained(license, in: app, maxSwipes: 120))
+            assertMinimumInteractiveTarget(license)
+            assertContainedInAppFrame(license, in: app)
+        }
+
+        app.buttons["Back"].tap()
+        XCTAssertTrue(scrollToHittable(dataLicences, in: app))
+        dataLicences.tap()
+        XCTAssertTrue(app.staticTexts["Data licences"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "t2.10-data-licences-ax", forceExport: true)
+        let osmCopyright = element(identifier: "about.openstreetmap-copyright", in: app)
+        XCTAssertTrue(scrollToFullyContained(osmCopyright, in: app, maxSwipes: 10))
+        assertMinimumInteractiveTarget(osmCopyright)
+        assertContainedInAppFrame(osmCopyright, in: app)
+        let runtimeAttribution = element(identifier: "credits.manifest.osm", in: app)
+        XCTAssertTrue(scrollToFullyContained(runtimeAttribution, in: app, maxSwipes: 10))
+        XCTAssertTrue(runtimeAttribution.label.contains("ODbL-1.0"))
     }
 
     private func assertMyTracksRenderedPixelOracle(
@@ -5570,7 +5781,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     @discardableResult
-    private func scrollToFullyContained(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+    private func scrollToFullyContained(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maxSwipes: Int = 5
+    ) -> Bool {
         func isFullyContained() -> Bool {
             element.exists && element.isHittable && app.frame.contains(element.frame)
         }
@@ -5579,7 +5794,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             return true
         }
 
-        for _ in 0..<5 {
+        for _ in 0..<maxSwipes {
             scrollTarget(in: app).swipeUp()
             if element.waitForExistence(timeout: 1), isFullyContained() {
                 return true
@@ -5587,6 +5802,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
 
         return isFullyContained()
+    }
+
+    private func sha256(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 
     private func scrollTarget(in app: XCUIApplication) -> XCUIElement {
@@ -5717,9 +5938,19 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "place-card-r15-ax-hidden-seen": "place-card-r15-ax-hidden-seen",
         "place-card-r15-ax-hidden-loved": "place-card-r15-ax-hidden-loved",
         "credits-a11y": "credits-a11y",
+        "t2.10-about": "t2.10-about",
+        "t2.10-software-licences": "t2.10-software-licences",
+        "t2.10-data-licences": "t2.10-data-licences",
+        "t2.10-about-ax": "t2.10-about-ax",
+        "t2.10-software-licences-ax": "t2.10-software-licences-ax",
+        "t2.10-data-licences-ax": "t2.10-data-licences-ax",
         "diagnostics-preprepare-exclusions-dark": "diagnostics-preprepare-exclusions-dark",
         "tracks-static-geometry": "tracks-static-geometry",
         "explore-door-default": "explore-door-default",
+        "t2.3-door-glyph-before-default": "t2.3-door-glyph-before-default",
+        "t2.3-door-glyph-after-default": "t2.3-door-glyph-after-default",
+        "t2.3-door-glyph-before-ax": "t2.3-door-glyph-before-ax",
+        "t2.3-door-glyph-after-ax": "t2.3-door-glyph-after-ax",
         "explore-door-ax": "explore-door-ax",
         "explore-door-scope-default": "explore-door-scope-default",
         "explore-door-scope-adjusted": "explore-door-scope-adjusted",
