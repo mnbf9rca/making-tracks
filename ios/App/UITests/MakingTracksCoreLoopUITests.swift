@@ -3336,7 +3336,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             captureSettingsDestination(
                 rowIdentifier: "settings.group.appearance",
                 title: "Appearance",
+                subtitle: "Choose how the map looks.",
                 screenshotName: "settings-appearance-\(textSize)",
+                accessibilityTextSize: textSize == "ax",
+                minimumAXSubtitleHeight: 70,
                 interactiveIdentifiers: [
                     "settings.theme.defined-paper",
                     "settings.theme.snow",
@@ -3357,7 +3360,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             captureSettingsDestination(
                 rowIdentifier: "settings.group.coverage",
                 title: "Coverage",
+                subtitle: "Where published map data comes from and how far it reaches.",
                 screenshotName: "settings-coverage-\(textSize)",
+                accessibilityTextSize: textSize == "ax",
+                minimumAXSubtitleHeight: 70,
                 visibleIdentifiers: [
                     "settings.coverage.published-regions",
                     "settings.coverage.sources",
@@ -3368,7 +3374,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             captureSettingsDestination(
                 rowIdentifier: "settings.group.map-data",
                 title: "Map & data",
+                subtitle: "Download policy and map pin sizing.",
                 screenshotName: "settings-map-data-\(textSize)",
+                accessibilityTextSize: textSize == "ax",
+                minimumAXSubtitleHeight: 70,
                 interactiveIdentifiers: [
                     "settings.downloads.allow-cellular",
                     "settings.pin-size",
@@ -3378,7 +3387,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             captureSettingsDestination(
                 rowIdentifier: "settings.group.location",
                 title: "Location",
+                subtitle: "Permission status and the existing system settings action.",
                 screenshotName: "settings-location-\(textSize)",
+                accessibilityTextSize: textSize == "ax",
+                minimumAXSubtitleHeight: 70,
                 interactiveIdentifiers: ["settings.location.open-system"],
                 in: app
             )
@@ -4835,7 +4847,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     private func captureSettingsDestination(
         rowIdentifier: String,
         title: String,
+        subtitle: String? = nil,
         screenshotName: String,
+        accessibilityTextSize: Bool = false,
+        minimumAXSubtitleHeight: CGFloat? = nil,
         interactiveIdentifiers: [String] = [],
         visibleIdentifiers: [String] = [],
         in app: XCUIApplication,
@@ -4856,6 +4871,26 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             file: file,
             line: line
         )
+        if let subtitle {
+            let renderedSubtitle = app.staticTexts[subtitle]
+            XCTAssertTrue(
+                renderedSubtitle.waitForExistence(timeout: 5),
+                "\(title): rendered subtitle",
+                file: file,
+                line: line
+            )
+            XCTAssertEqual(renderedSubtitle.label, subtitle, file: file, line: line)
+            assertContainedInAppFrame(renderedSubtitle, in: app, file: file, line: line)
+            if accessibilityTextSize, let minimumAXSubtitleHeight {
+                XCTAssertGreaterThanOrEqual(
+                    renderedSubtitle.frame.height,
+                    minimumAXSubtitleHeight,
+                    "\(title): the AX-XXXL subtitle must occupy multiple rendered lines",
+                    file: file,
+                    line: line
+                )
+            }
+        }
         attachScreenshot(named: screenshotName)
         for identifier in visibleIdentifiers {
             let visibleElement = element(identifier: identifier, in: app)
@@ -4903,40 +4938,46 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             (
                 identifier: "settings.group.appearance",
                 label: "Appearance",
-                value: "Snow selected. Four existing presets."
+                value: "Snow selected. Four existing presets.",
+                minimumAXHeight: CGFloat(350)
             ),
             (
                 identifier: "settings.storage.manage",
                 label: "Offline maps",
-                value: "Packs · downloads · per-pack storage"
+                value: "Packs · downloads · per-pack storage",
+                minimumAXHeight: CGFloat(270)
             ),
             (
                 identifier: "settings.group.coverage",
                 label: "Coverage",
-                value: "Published regions · sources · extents"
+                value: "Published regions · sources · extents",
+                minimumAXHeight: CGFloat(240)
             ),
             (
                 identifier: "settings.group.map-data",
                 label: "Map & data",
-                value: "Cellular downloads · pin size"
+                value: "Cellular downloads · pin size",
+                minimumAXHeight: CGFloat(290)
             ),
             (
                 identifier: "settings.group.location",
                 label: "Location",
-                value: "Permission and system settings"
+                value: "Permission and system settings",
+                minimumAXHeight: CGFloat(240)
             ),
             (
                 identifier: "settings.diagnostics.export",
                 label: "Diagnostic log",
-                value: "Review, prepare, share, or delete local logs."
+                value: "Review, prepare, share, or delete local logs.",
+                minimumAXHeight: CGFloat(245)
             ),
             (
                 identifier: "settings.replay-onboarding",
                 label: "Replay welcome",
-                value: "Return to the existing welcome flow"
+                value: "Return to the existing welcome flow",
+                minimumAXHeight: CGFloat(290)
             ),
         ]
-        let minimumHeight: CGFloat = accessibilityTextSize ? 120 : 75
 
         for expectation in rows {
             let row = app.buttons[expectation.identifier]
@@ -4956,8 +4997,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             )
             XCTAssertGreaterThanOrEqual(
                 row.frame.height,
-                minimumHeight - 0.5,
-                expectation.identifier,
+                (accessibilityTextSize ? expectation.minimumAXHeight : 75) - 0.5,
+                accessibilityTextSize
+                    ? "\(expectation.identifier): AX-XXXL copy must occupy its natural wrapped height"
+                    : expectation.identifier,
                 file: file,
                 line: line
             )
