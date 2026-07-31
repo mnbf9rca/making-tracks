@@ -1,8 +1,10 @@
 # Saved ON Candidate Panel v2 — Design
 
 **Status:** Approved for implementation by planner on 2026-07-30 and updated
-for the designer's three riders. Both candidate fills remain unratified until
-reviewer validation and the designer's pick through Rob.
+for the designer's three riders. On 2026-07-31 Rob ratified Deep Companion
+`#08483E` as the accent-family dark Saved ON fill carrying `accentContrast`
+ink with the explicit pick “Deep is fine”; panel SHA `4421612` is the decision
+provenance. Accent reuse `#0A6B5C` is the rejected alternative.
 
 ## Purpose
 
@@ -37,10 +39,10 @@ was retired in
 same-ink separation statement was then qualified for pinned values at
 `1afcc3febb7b18a676a654305fea9af591c52eb3` (PR #556).
 
-The panel presents exactly two candidates:
+The panel presents the two alternatives evaluated for the decision:
 
-1. **Accent reuse** — `#0A6B5C`.
-2. **Deep Companion** — `#08483E`.
+1. **Accent reuse** — `#0A6B5C`, rejected.
+2. **Deep Companion** — `#08483E`, ratified.
 
 These are comparison labels, not token names.
 
@@ -67,10 +69,12 @@ explicitly called hard gates below are pass/fail bars.
 7. **Independent state morphology — hard gate.** Saved ON is light-on-dark
    with a filled bookmark; Saved OFF is dark-on-tonal with an outline bookmark.
 
-Sibling-fill differences have no numeric acceptance floor, but the designer's
-pick rule is binding: Deep Companion wins by default because it is
-distinguishable from Seen. Accent reuse is acceptable only if the rendered Deep
-Companion reads as a confusing third semantic or fails a hard gate.
+Sibling-fill differences have no numeric acceptance floor. Before the human
+pick, the binding comparison rule made Deep Companion the default because it
+is distinguishable from Seen and reserved Accent reuse as the fallback only if
+Deep Companion read as a confusing third semantic or failed a hard gate. Rob's
+explicit pick ratified Deep Companion and closed that fallback; Accent reuse is
+the rejected alternative.
 
 ## Candidate measurements
 
@@ -101,9 +105,11 @@ Deep Companion gains distinction through depth inside accent's own hue
 also happens to sit inside the historical `56–81%` container band, but that
 retired light-container band is context, not a current acceptance rule.
 
-Deep Companion is therefore the default winner. The fully-lit cluster rows
-exist to test the single allowed reversal: whether that dark companion reads as
-a clean third fact or as a confusing third semantic beside live Seen and Loved.
+Deep Companion was therefore the default winner during comparison. The
+fully-lit cluster rows tested the single allowed reversal: whether that dark
+companion read as a clean third fact or as a confusing third semantic beside
+live Seen and Loved. The explicit human pick settled that comparison in Deep
+Companion's favour.
 
 Two alternatives were considered and are recorded only as Taste guesses:
 
@@ -171,13 +177,13 @@ scaled screenshots to make the evidence fit.
 - Loved ON: `#FBFAF2` label and filled heart on `#C4312B`.
 - Candidate 1 intentionally shares Seen's fill. Its `1.0000:1` measurement and
   the resulting cluster trade stay visible.
-- Candidate 2 is labelled the default winner, subject only to a rendered
-  confusing-semantic finding or hard-gate failure.
+- Candidate 2 carries the panel's pre-decision default-winner label; the
+  subsequent human pick ratifies it as the Saved ON fill.
 - The packet carries no action, CTA, fabricated state, or new product copy.
 
-## Validation and handoff
+## Validation and decision record
 
-Before the panel reaches the designer:
+The pre-decision evidence gate required:
 
 1. Recompute every published colour figure independently from the exact hexes.
 2. Verify both captures are `1540×980`, use the sanctioned renderer, and each
@@ -188,10 +194,9 @@ Before the panel reaches the designer:
    no `ios/`, script, workflow, test, or ledger change.
 5. Send the exact pushed SHA, both PNG digests, and all seven checks to the
    reviewer.
-6. After reviewer PASS, route the two candidates to the designer through Rob.
-   Deep Companion is the default pick; Accent reuse is the fallback only if the
-   rendered cluster triggers the ruled confusing-semantic exception or a hard
-   gate fails.
 
-No candidate becomes a production token or frozen packet merely by appearing
-in this evidence.
+After reviewer validation, Rob selected Deep Companion on 2026-07-31 with
+“Deep is fine”; the validated panel at SHA `4421612` is the decision
+provenance. Ratification settles the Saved ON fill design, but it does not by
+itself wire the fill into production code, create a production token, or turn
+the panel into a frozen implementation packet.

@@ -496,21 +496,25 @@ Chromium/headless shell 151.0.7922.34, POSIX `shasum`, macOS `sips`.
 **Interfaces:**
 
 - Consumes: the two exact SHA-256 values from Task 2.
-- Produces: a discoverable implementation-evidence row with renderer,
-  dimensions, repeat-capture result, default-winner rule, and frozen-anchor
-  digest.
+- Produces: a discoverable candidate-decision-evidence row with renderer,
+  dimensions, repeat-capture result, ratified decision provenance, and
+  frozen-anchor digest, without claiming shipped production wiring.
 
 - [ ] **Step 1: Add the README evidence row**
 
-  Under **Implementation evidence**, add a row naming
+  Under **Candidate decision evidence**, add a row naming
   `a8-saved-on-candidate-v2.html` and
   `a8-saved-on-candidate-v2-{default,ax}.png`. State:
 
   - the captures are exact `1540×980` DSF1;
   - each candidate includes Saved OFF/ON, simultaneous Saved/Seen/Loved ON,
     and all seven ruled checks at frozen A8 default or AX geometry;
-  - Deep Companion `#08483E` is the default winner and accent reuse `#0A6B5C`
-    is limited to the ruled fallback;
+  - Rob ratified Deep Companion `#08483E` as the accent-family dark Saved ON
+    fill carrying `accentContrast` ink on 2026-07-31 with the explicit pick
+    “Deep is fine”; panel SHA `4421612` is the decision provenance;
+  - accent reuse `#0A6B5C` is the rejected alternative;
+  - the row records a ratified design decision, not shipped or frozen
+    implementation evidence, and does not claim production wiring;
   - the renderer is Playwright-bundled Chromium/headless shell
     `151.0.7922.34`;
   - the default and AX repeat SHA-256 values are the literal 64-hex outputs
