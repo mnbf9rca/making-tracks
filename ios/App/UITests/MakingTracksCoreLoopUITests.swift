@@ -1156,7 +1156,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         // `contentShape(.interaction, ...)` expands the accessibility frame,
         // so only rendered accent pixels identify the visible capsule.
-        let chip = app.buttons["chip-target.fixture"]
+        let chip = app.buttons["chip-target.left"]
         XCTAssertTrue(chip.waitForExistence(timeout: 5))
         let chipFrame = chip.frame
         let screenshot = app.screenshot()
@@ -1224,6 +1224,51 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         coordinate(at: bottomOutsideVisualCapsule).tap()
         XCTAssertTrue(waitForActivationCount("2"))
+    }
+
+    func testMaterialChipTiledAdjacencyRoutesGapToExactlyOneNearerAction() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-testing-fixture-map",
+            "--ui-testing-reset-database",
+            "--ui-testing-chip-target",
+        ]
+        app.launch()
+
+        let left = app.buttons["chip-target.left"]
+        let right = app.buttons["chip-target.right"]
+        XCTAssertTrue(left.waitForExistence(timeout: 5))
+        XCTAssertTrue(right.waitForExistence(timeout: 5))
+        let visibleGap = right.frame.minX - left.frame.maxX
+        XCTAssertGreaterThan(visibleGap, 0)
+        XCTAssertLessThan(visibleGap, 22)
+
+        let appFrame = app.frame
+        func coordinate(at point: CGPoint) -> XCUICoordinate {
+            app.coordinate(withNormalizedOffset: CGVector(
+                dx: (point.x - appFrame.minX) / appFrame.width,
+                dy: (point.y - appFrame.minY) / appFrame.height
+            ))
+        }
+        func waitForCount(_ identifier: String, _ expected: String) -> Bool {
+            let label = app.staticTexts[identifier]
+            let predicate = NSPredicate(
+                format: "exists == true AND label == %@",
+                expected
+            )
+            return XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: predicate, object: label)],
+                timeout: 5
+            ) == .completed
+        }
+
+        coordinate(at: CGPoint(x: left.frame.maxX + 1, y: left.frame.midY)).tap()
+        XCTAssertTrue(waitForCount("chip-target.left-count", "1"))
+        XCTAssertTrue(waitForCount("chip-target.right-count", "0"))
+
+        coordinate(at: CGPoint(x: right.frame.minX - 1, y: right.frame.midY)).tap()
+        XCTAssertTrue(waitForCount("chip-target.left-count", "1"))
+        XCTAssertTrue(waitForCount("chip-target.right-count", "1"))
     }
 
     func testPlaceCardKeepsSnowTokensInDarkSystemAppearance() throws {

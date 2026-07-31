@@ -139,28 +139,3 @@ struct MapLayerVisibility: Equatable, Sendable {
             .joined(separator: " ")
     }
 }
-
-enum ListMapLayerVisibility {
-    static func displayed(
-        discoveryVisibility: MapLayerVisibility,
-        visitFilter: TracksVisitFilter?
-    ) -> MapLayerVisibility {
-        guard let visitFilter else { return discoveryVisibility }
-        return MapLayerVisibility(
-            categories: discoveryVisibility.categories,
-            showHiddenPlaces: discoveryVisibility.showHiddenPlaces,
-            showSavedPlaces: discoveryVisibility.showSavedPlaces,
-            showCoverageShading: discoveryVisibility.showCoverageShading,
-            visibleCategories: visitFilter.categories
-        )
-    }
-
-    static func updating(
-        visitFilter: TracksVisitFilter,
-        from visibility: MapLayerVisibility
-    ) -> TracksVisitFilter {
-        var next = visitFilter
-        next.categories = visibility.visibleCategories
-        return next
-    }
-}

@@ -25,6 +25,12 @@ final class IconRoleTests: XCTestCase {
         }
     }
 
+    func testScopeControlUsesTwentyPointButtonAnchoredGeometry() {
+        XCTAssertEqual(ScopeControlIconGeometry.pointSize, 20)
+        XCTAssertEqual(ScopeControlIconGeometry.typographyRole, .button)
+        XCTAssertEqual(ScopeControlIconGeometry.relativeTextStyle, .subheadline)
+    }
+
 #if canImport(AppKit)
     func testRoleOwnsScaleWeightAndMonochromeRenderingAgainstAnAmbientFont() throws {
         let contracts: [(IconRole, CGFloat, Font.TextStyle)] = [

@@ -55,6 +55,120 @@ struct ExploreScopeControlPresentation: Equatable {
     let accessibilityIdentifier: String
 }
 
+enum ExploreScopePolicy {
+    struct State: Equatable {
+        let discoveryScope: DiscoveryScope
+        let listFilter: TracksVisitFilter?
+    }
+
+    static func isAdjusted(
+        discoveryScope: DiscoveryScope,
+        listFilter: TracksVisitFilter?,
+        showVisited: Bool
+    ) -> Bool {
+        discoveryScope.differsFromDefault
+            || (showVisited && listFilter?.isActive == true)
+    }
+
+    static func effectiveCategoryIDs(
+        discoveryScope: DiscoveryScope,
+        listFilter: TracksVisitFilter?
+    ) -> Set<String>? {
+        if let listFilter {
+            return listFilter.categories
+        }
+        return discoveryScope.visibleCategoryIDs
+    }
+
+    static func cleared(
+        discoveryScope _: DiscoveryScope,
+        listFilter: TracksVisitFilter?,
+        showVisited: Bool
+    ) -> State {
+        State(
+            discoveryScope: .defaults,
+            listFilter: showVisited && listFilter != nil ? .all : listFilter
+        )
+    }
+}
+
+struct ExploreScopeListOption: Equatable, Identifiable {
+    let id: Int64
+    let title: String
+}
+
+struct ExploreListScopeContext {
+    let activeListID: Int64
+    let activeListName: String
+    let filter: Binding<TracksVisitFilter>
+    let showVisited: Binding<Bool>
+    let listOptions: [ExploreScopeListOption]
+}
+
+enum ExploreScopeListOptions {
+    static func eligible(
+        from lists: [PlaceList],
+        excludingActiveListID activeListID: Int64
+    ) -> [ExploreScopeListOption] {
+        lists.compactMap { list in
+            guard !list.isSystem,
+                  let id = list.id,
+                  id != activeListID
+            else {
+                return nil
+            }
+            return ExploreScopeListOption(id: id, title: list.name)
+        }
+        .sorted { lhs, rhs in
+            let lhsKey = lhs.title.lowercased()
+            let rhsKey = rhs.title.lowercased()
+            if lhsKey == rhsKey {
+                return lhs.id < rhs.id
+            }
+            return lhsKey < rhsKey
+        }
+    }
+
+    static func summary(
+        selectedIDs: Set<Int64>,
+        options: [ExploreScopeListOption]
+    ) -> String {
+        let selected = options.filter { selectedIDs.contains($0.id) }
+        guard let first = selected.first else {
+            return "None selected"
+        }
+        guard selected.count > 1 else {
+            return first.title
+        }
+        return "\(first.title) · \(selected.count) selected"
+    }
+}
+
+enum ExploreCategorySymbolPair {
+    struct Symbols: Equatable {
+        let selected: String
+        let available: String
+    }
+
+    private static let pairs: [String: Symbols] = [
+        "pin-category-archaeological": Symbols(selected: "hammer.fill", available: "hammer"),
+        "pin-category-artwork": Symbols(selected: "paintpalette.fill", available: "paintpalette"),
+        "pin-category-attraction": Symbols(selected: "star.fill", available: "star"),
+        "pin-category-historic-building": Symbols(selected: "building.2.fill", available: "building.2"),
+        "pin-category-memorial": Symbols(selected: "flag.fill", available: "flag"),
+        "pin-category-museum": Symbols(selected: "camera.fill", available: "camera"),
+        "pin-category-religious": Symbols(selected: "building.columns.fill", available: "building.columns"),
+        PinLayers.fallbackCategoryIconName: Symbols(
+            selected: "questionmark.circle.fill",
+            available: "questionmark.circle"
+        ),
+    ]
+
+    static func symbols(for iconName: String) -> Symbols {
+        pairs[iconName] ?? pairs[PinLayers.fallbackCategoryIconName]!
+    }
+}
+
 enum ExploreScopeControlIcon: Equatable {
     case system(String)
     case coverageShading
@@ -289,6 +403,7 @@ enum JournalDoorRow: CaseIterable {
 struct MapDoorBar: View {
     let openExplore: () -> Void
     let openJournal: () -> Void
+    var isExploreScopeAdjusted = false
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -304,7 +419,11 @@ struct MapDoorBar: View {
 
     @ViewBuilder
     private var doorButtons: some View {
-        MapDoorButton(door: .explore, action: openExplore)
+        MapDoorButton(
+            door: .explore,
+            isScopeAdjusted: isExploreScopeAdjusted,
+            action: openExplore
+        )
         MapDoorButton(door: .journal, action: openJournal)
     }
 }
@@ -317,6 +436,7 @@ struct MapDoorSheet<Destination: View>: View {
     let deepLinkDestination: MapShellDestination?
     let model: MapScreenModel?
     @Binding var visibility: MapLayerVisibility
+    let listScope: ExploreListScopeContext?
     let prepareTracksHistory: () -> Void
     let onListDeleted: @MainActor (Int64) -> Void
     let destination: (MapShellDestination) -> Destination
@@ -329,6 +449,7 @@ struct MapDoorSheet<Destination: View>: View {
         deepLinkDestination: MapShellDestination?,
         model: MapScreenModel?,
         visibility: Binding<MapLayerVisibility>,
+        listScope: ExploreListScopeContext? = nil,
         prepareTracksHistory: @escaping () -> Void,
         onListDeleted: @escaping @MainActor (Int64) -> Void,
         @ViewBuilder destination: @escaping (MapShellDestination) -> Destination
@@ -337,6 +458,7 @@ struct MapDoorSheet<Destination: View>: View {
         self.deepLinkDestination = deepLinkDestination
         self.model = model
         _visibility = visibility
+        self.listScope = listScope
         self.prepareTracksHistory = prepareTracksHistory
         self.onListDeleted = onListDeleted
         self.destination = destination
@@ -372,7 +494,11 @@ struct MapDoorSheet<Destination: View>: View {
     private var root: some View {
         switch door {
         case .explore:
-            ExploreDoorRootView(path: $path, visibility: $visibility)
+            ExploreDoorRootView(
+                path: $path,
+                visibility: $visibility,
+                listScope: listScope
+            )
         case .journal:
             JournalDoorRootView(
                 path: $path,
@@ -429,92 +555,46 @@ struct MapDoorDestinationCloseIconGlyph: View {
 struct ExploreDoorRootView: View {
     @Binding var path: [MapShellDestination]
     @Binding var visibility: MapLayerVisibility
+    let listScope: ExploreListScopeContext?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showsOtherLists = false
 
     private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
         MapDoorRootLayout(
             title: "Explore",
-            subtitle: "what the map shows right now"
+            subtitle: listScope == nil
+                ? "what the map shows right now"
+                : "scope for this list and your discovery map"
         ) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Scope")
-                    .font(Typography.font(for: .label))
-                    .textCase(.uppercase)
-                    .tracking(1.2)
+            if listScope != nil {
+                scopeSectionLabel("This list map")
+                Text("Categories below narrow visits in this list.")
+                    .font(Typography.font(for: .metadata))
                     .foregroundStyle(tokens.muted.swiftUIColor)
-
-                Spacer(minLength: 8)
-
-                Button(visibility.toggleAllCategoriesTitle) {
-                    var next = visibility
-                    next.toggleAllCategories()
-                    visibility = next
-                }
-                .font(Typography.font(for: .metadata))
-                .foregroundStyle(tokens.accent.swiftUIColor)
-                .accessibilityIdentifier("map.layers.show-all-categories")
             }
-            .padding(.top, 10)
-            .padding(.horizontal, 2)
+            categoryHeader
+            categoryChips
 
-            let categoryRows = ExploreCategoryChipTopology.rows(
-                visibility.categories,
-                isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
-            )
-            let rowItemCounts = categoryRows.map(\.count)
-            VStack(alignment: .leading, spacing: ExploreCategoryChipTopology.gap) {
-                ForEach(categoryRows.indices, id: \.self) { rowIndex in
-                    let row = categoryRows[rowIndex]
-                    HStack(spacing: ExploreCategoryChipTopology.gap) {
-                        ForEach(row.indices, id: \.self) { itemIndex in
-                            let category = row[itemIndex]
-                            MaterialChip(
-                                category.title,
-                                systemImage: PinLayers.categorySymbolNames[category.iconName] ?? "mappin",
-                                state: visibility.isCategoryVisible(category.id) ? .active : .available,
-                                size: dynamicTypeSize.isAccessibilitySize ? .expanded : .compact,
-                                neighborGaps: ExploreCategoryChipTopology.neighborGaps(
-                                    rowIndex: rowIndex,
-                                    rowItemCounts: rowItemCounts,
-                                    itemIndex: itemIndex
-                                )
-                            ) {
-                                var next = visibility
-                                next.setCategory(
-                                    category.id,
-                                    visible: !visibility.isCategoryVisible(category.id)
-                                )
-                                visibility = next
-                            }
-                            .accessibilityIdentifier("map.layers.category.\(category.id)")
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
+            if let listScope {
+                listVisitControls(listScope)
+
+                scopeSectionLabel("Discovery map defaults")
+                Text("Apply after leaving this list; never filter its story.")
+                    .font(Typography.font(for: .metadata))
+                    .foregroundStyle(tokens.muted.swiftUIColor)
             }
-            .padding(.vertical, 5)
 
-            VStack(spacing: 0) {
-                ExploreScopeToggleRow(
-                    control: .includeHidden,
-                    isOn: hiddenPlacesBinding,
-                    minimumHeight: scopeControlMinimumHeight
-                )
-                ExploreScopeToggleRow(
-                    control: .showSaved,
-                    isOn: savedPlacesBinding,
-                    minimumHeight: scopeControlMinimumHeight
-                )
-                ExploreScopeToggleRow(
-                    control: .coverageShading,
-                    isOn: coverageShadingBinding,
-                    minimumHeight: scopeControlMinimumHeight
+            discoveryScopeRows
+
+            if isScopeAdjusted {
+                ExploreClearScopeRow(
+                    includesListFilter: listScope != nil,
+                    action: clearScope
                 )
             }
-            .padding(.top, 3)
 
             Spacer(minLength: 16)
 
@@ -532,10 +612,211 @@ struct ExploreDoorRootView: View {
             }
         }
         .accessibilityIdentifier("explore.root")
+        .navigationDestination(isPresented: $showsOtherLists) {
+            if let listScope {
+                ExploreOtherListsView(
+                    visibility: $visibility,
+                    listScope: listScope,
+                    onBack: { showsOtherLists = false },
+                    onClear: clearScope
+                )
+            }
+        }
     }
 
-    private var scopeControlMinimumHeight: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 86 : 52
+    @ViewBuilder
+    private var categoryHeader: some View {
+        HStack(alignment: .firstTextBaseline) {
+            if listScope == nil {
+                scopeSectionLabel("Scope")
+            }
+
+            Spacer(minLength: 8)
+
+            Button(toggleAllCategoriesTitle, action: toggleAllCategories)
+                .font(Typography.font(for: .metadata))
+                .foregroundStyle(tokens.accent.swiftUIColor)
+                .frame(minHeight: 44)
+        }
+        .padding(.horizontal, 2)
+    }
+
+    private var categoryChips: some View {
+        let categoryRows = ExploreCategoryChipTopology.rows(
+            visibility.categories,
+            isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+        )
+        let rowItemCounts = categoryRows.map(\.count)
+        return VStack(alignment: .leading, spacing: ExploreCategoryChipTopology.gap) {
+            ForEach(categoryRows.indices, id: \.self) { rowIndex in
+                let row = categoryRows[rowIndex]
+                HStack(spacing: ExploreCategoryChipTopology.gap) {
+                    ForEach(row.indices, id: \.self) { itemIndex in
+                        let category = row[itemIndex]
+                        let isVisible = isCategoryVisible(category.id)
+                        let symbols = ExploreCategorySymbolPair.symbols(
+                            for: category.iconName
+                        )
+                        MaterialChip(
+                            category.title,
+                            systemImage: isVisible
+                                ? symbols.selected
+                                : symbols.available,
+                            state: isVisible ? .active : .available,
+                            size: dynamicTypeSize.isAccessibilitySize
+                                ? .expanded
+                                : .compact,
+                            neighborGaps: ExploreCategoryChipTopology.neighborGaps(
+                                rowIndex: rowIndex,
+                                rowItemCounts: rowItemCounts,
+                                itemIndex: itemIndex
+                            )
+                        ) {
+                            setCategory(category.id, visible: !isVisible)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.bottom, listScope == nil ? 5 : 10)
+    }
+
+    @ViewBuilder
+    private func listVisitControls(_ context: ExploreListScopeContext) -> some View {
+        scopeSectionLabel("Visits in this list")
+
+        let loved = context.filter.wrappedValue.lovedOnly
+        MaterialChip(
+            "Loved",
+            systemImage: loved ? "heart.fill" : "heart",
+            state: loved ? .active : .available,
+            size: dynamicTypeSize.isAccessibilitySize ? .expanded : .compact
+        ) {
+            var filter = context.filter.wrappedValue
+            filter.lovedOnly.toggle()
+            context.filter.wrappedValue = filter
+        }
+
+        ExploreOtherListsRow(
+            summary: ExploreScopeListOptions.summary(
+                selectedIDs: context.filter.wrappedValue.listIDs,
+                options: context.listOptions
+            ),
+            action: { showsOtherLists = true }
+        )
+    }
+
+    private var discoveryScopeRows: some View {
+        VStack(spacing: 0) {
+            ExploreScopeToggleRow(
+                control: .includeHidden,
+                isOn: hiddenPlacesBinding
+            )
+            ExploreScopeToggleRow(
+                control: .showSaved,
+                isOn: savedPlacesBinding
+            )
+            ExploreScopeToggleRow(
+                control: .coverageShading,
+                isOn: coverageShadingBinding
+            )
+        }
+        .padding(.top, listScope == nil ? 3 : 0)
+    }
+
+    private var effectiveCategoryIDs: Set<String>? {
+        ExploreScopePolicy.effectiveCategoryIDs(
+            discoveryScope: visibility.discoveryScope,
+            listFilter: listScope?.filter.wrappedValue
+        )
+    }
+
+    private var allCategoryIDs: Set<String> {
+        Set(visibility.categories.map(\.id))
+    }
+
+    private func isCategoryVisible(_ categoryID: String) -> Bool {
+        effectiveCategoryIDs?.contains(categoryID) ?? true
+    }
+
+    private var toggleAllCategoriesTitle: String {
+        let allVisible = effectiveCategoryIDs == nil
+            || effectiveCategoryIDs == allCategoryIDs
+        return allVisible ? "Hide all" : "Show all"
+    }
+
+    private func setCategory(_ categoryID: String, visible: Bool) {
+        guard allCategoryIDs.contains(categoryID) else { return }
+        var next = effectiveCategoryIDs ?? allCategoryIDs
+        if visible {
+            next.insert(categoryID)
+        } else {
+            next.remove(categoryID)
+        }
+        setEffectiveCategoryIDs(next == allCategoryIDs ? nil : next)
+    }
+
+    private func toggleAllCategories() {
+        let allVisible = effectiveCategoryIDs == nil
+            || effectiveCategoryIDs == allCategoryIDs
+        setEffectiveCategoryIDs(allVisible ? [] : nil)
+    }
+
+    private func setEffectiveCategoryIDs(_ categoryIDs: Set<String>?) {
+        if let listScope {
+            var filter = listScope.filter.wrappedValue
+            filter.categories = categoryIDs
+            listScope.filter.wrappedValue = filter
+        } else {
+            var next = visibility
+            next.showAllCategories()
+            if let categoryIDs {
+                for category in next.categories {
+                    next.setCategory(
+                        category.id,
+                        visible: categoryIDs.contains(category.id)
+                    )
+                }
+            }
+            visibility = next
+        }
+    }
+
+    private var isScopeAdjusted: Bool {
+        ExploreScopePolicy.isAdjusted(
+            discoveryScope: visibility.discoveryScope,
+            listFilter: listScope?.filter.wrappedValue,
+            showVisited: listScope?.showVisited.wrappedValue ?? false
+        )
+    }
+
+    private func clearScope() {
+        let cleared = ExploreScopePolicy.cleared(
+            discoveryScope: visibility.discoveryScope,
+            listFilter: listScope?.filter.wrappedValue,
+            showVisited: listScope?.showVisited.wrappedValue ?? false
+        )
+        visibility = MapLayerVisibility(
+            categories: visibility.categories,
+            scope: cleared.discoveryScope
+        )
+        if let listScope,
+           let listFilter = cleared.listFilter,
+           listFilter != listScope.filter.wrappedValue
+        {
+            listScope.filter.wrappedValue = listFilter
+        }
+    }
+
+    private func scopeSectionLabel(_ title: String) -> some View {
+        Text(verbatim: title)
+            .font(Typography.font(for: .label))
+            .textCase(.uppercase)
+            .tracking(1.2)
+            .foregroundStyle(tokens.muted.swiftUIColor)
+            .padding(.top, 10)
+            .padding(.horizontal, 2)
     }
 
     private var hiddenPlacesBinding: Binding<Bool> {
@@ -544,17 +825,6 @@ struct ExploreDoorRootView: View {
             set: { visible in
                 var next = visibility
                 next.showHiddenPlaces = visible
-                visibility = next
-            }
-        )
-    }
-
-    private var coverageShadingBinding: Binding<Bool> {
-        Binding(
-            get: { visibility.showCoverageShading },
-            set: { visible in
-                var next = visibility
-                next.showCoverageShading = visible
                 visibility = next
             }
         )
@@ -570,23 +840,242 @@ struct ExploreDoorRootView: View {
             }
         )
     }
+
+    private var coverageShadingBinding: Binding<Bool> {
+        Binding(
+            get: { visibility.showCoverageShading },
+            set: { visible in
+                var next = visibility
+                next.showCoverageShading = visible
+                visibility = next
+            }
+        )
+    }
+}
+
+private struct ExploreOtherListsRow: View {
+    let summary: String
+    let action: () -> Void
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        Button(action: action) {
+            MaterialHairlineRow {
+                HStack(spacing: 10) {
+                    Image(systemName: "list.bullet")
+                        .iconRole(.rowQuiet)
+                        .foregroundStyle(tokens.muted.swiftUIColor)
+                        .frame(width: 24)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Other lists")
+                            .font(Typography.font(for: .button))
+                            .foregroundStyle(tokens.ink.swiftUIColor)
+                        Text(verbatim: summary)
+                            .font(Typography.font(for: .metadata))
+                            .foregroundStyle(tokens.muted.swiftUIColor)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Image(systemName: "chevron.right")
+                        .iconRole(.accessory)
+                        .foregroundStyle(tokens.muted.swiftUIColor)
+                        .accessibilityHidden(true)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Other lists")
+        .accessibilityValue(Text(verbatim: summary))
+    }
+}
+
+private struct ExploreClearScopeRow: View {
+    let includesListFilter: Bool
+    let action: () -> Void
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        Button(action: action) {
+            MaterialHairlineRow {
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .iconRole(.rowQuiet)
+                        .foregroundStyle(tokens.muted.swiftUIColor)
+                        .frame(width: 24)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Clear scope")
+                            .font(Typography.font(for: .button))
+                            .foregroundStyle(tokens.muted.swiftUIColor)
+                        Text(
+                            includesListFilter
+                                ? "Reset this list filter and discovery defaults"
+                                : "Restore discovery defaults"
+                        )
+                            .font(Typography.font(for: .metadata))
+                            .foregroundStyle(tokens.muted.swiftUIColor)
+                    }
+
+                    Spacer(minLength: 8)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Clear scope")
+    }
+}
+
+private struct ExploreOtherListsView: View {
+    @Binding var visibility: MapLayerVisibility
+    let listScope: ExploreListScopeContext
+    let onBack: () -> Void
+    let onClear: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button(action: onBack) {
+                Label("Scope", systemImage: "chevron.left")
+                    .font(Typography.font(for: .button))
+                    .foregroundStyle(tokens.accent.swiftUIColor)
+                    .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 54 : 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Text("Other lists")
+                .font(Typography.font(for: .sheetTitle))
+                .foregroundStyle(tokens.ink.swiftUIColor)
+
+            Text("narrow \(listScope.activeListName) visits by saved-list membership")
+                .font(Typography.font(for: .evocativeSubline))
+                .foregroundStyle(tokens.muted.swiftUIColor)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 4)
+
+            if listScope.listOptions.isEmpty {
+                Text("No other saved lists; the active and system lists are excluded.")
+                    .font(Typography.font(for: .body))
+                    .foregroundStyle(tokens.muted.swiftUIColor)
+                    .frame(maxWidth: .infinity, minHeight: 86)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(listScope.listOptions) { option in
+                            listOptionRow(option)
+                        }
+                    }
+                }
+                .frame(maxHeight: dynamicTypeSize.isAccessibilitySize ? 350 : 360)
+            }
+
+            Spacer(minLength: 8)
+
+            if isScopeAdjusted {
+                ExploreClearScopeRow(
+                    includesListFilter: true,
+                    action: onClear
+                )
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 24)
+        .navigationBarBackButtonHidden()
+    }
+
+    private func listOptionRow(_ option: ExploreScopeListOption) -> some View {
+        let isSelected = listScope.filter.wrappedValue.listIDs.contains(option.id)
+        return Button {
+            var filter = listScope.filter.wrappedValue
+            if isSelected {
+                filter.listIDs.remove(option.id)
+            } else {
+                filter.listIDs.insert(option.id)
+            }
+            listScope.filter.wrappedValue = filter
+        } label: {
+            MaterialHairlineRow {
+                HStack(spacing: 10) {
+                    Text(verbatim: option.title)
+                        .font(Typography.font(for: .button))
+                        .foregroundStyle(tokens.ink.swiftUIColor)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Spacer(minLength: 8)
+
+                    HStack(spacing: 5) {
+                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                            .iconRole(.accessory)
+                            .accessibilityHidden(true)
+                        Text(isSelected ? "Included" : "Off")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(
+                        isSelected
+                            ? tokens.accentContrast.swiftUIColor
+                            : tokens.accent.swiftUIColor
+                    )
+                    .padding(.horizontal, 9)
+                    .frame(minHeight: 28)
+                    .background(
+                        isSelected
+                            ? tokens.accent.swiftUIColor
+                            : tokens.accent.swiftUIColor.opacity(0.12),
+                        in: Capsule()
+                    )
+                    .accessibilityHidden(true)
+                }
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: dynamicTypeSize.isAccessibilitySize ? 86 : 52,
+                    alignment: .leading
+                )
+                .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: option.title))
+        .accessibilityValue(isSelected ? "Included" : "Off")
+    }
+
+    private var isScopeAdjusted: Bool {
+        ExploreScopePolicy.isAdjusted(
+            discoveryScope: visibility.discoveryScope,
+            listFilter: listScope.filter.wrappedValue,
+            showVisited: listScope.showVisited.wrappedValue
+        )
+    }
 }
 
 private struct ExploreScopeToggleRow: View {
     let control: ExploreScopeControl
     @Binding var isOn: Bool
-    let minimumHeight: CGFloat
 
-    @ScaledMetric(relativeTo: .body)
-    private var iconSize = ExploreSurfaceIconGeometry.scopeControl
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: ScopeControlIconGeometry.relativeTextStyle)
+    private var iconSize = ScopeControlIconGeometry.pointSize
 
     private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
         let presentation = control.presentation
+        let isAccessibilitySize = dynamicTypeSize.isAccessibilitySize
 
         Toggle(isOn: $isOn) {
-            HStack(spacing: 10) {
+            HStack(spacing: isAccessibilitySize ? 14 : 10) {
                 ExploreScopeControlGlyph(
                     icon: presentation.icon,
                     size: iconSize
@@ -596,7 +1085,7 @@ private struct ExploreScopeToggleRow: View {
                             ? tokens.accent.swiftUIColor
                             : tokens.muted.swiftUIColor
                     )
-                    .frame(width: 24)
+                    .frame(width: isAccessibilitySize ? 30 : 24)
                     .accessibilityHidden(true)
 
                 Text(verbatim: presentation.title)
@@ -607,8 +1096,12 @@ private struct ExploreScopeToggleRow: View {
         }
         .toggleStyle(.switch)
         .padding(.horizontal, 2)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, minHeight: minimumHeight, alignment: .leading)
+        .padding(.vertical, isAccessibilitySize ? 10 : 6)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: isAccessibilitySize ? 86 : 52,
+            alignment: .leading
+        )
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(tokens.hairline.swiftUIColor)
@@ -698,7 +1191,7 @@ private struct ExploreQuietDestinationRow: View {
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(verbatim: presentation.title)
-                            .font(Typography.font(for: .listRowTitle))
+                            .font(Typography.font(for: .button))
                             .foregroundStyle(
                                 prominent
                                     ? tokens.ink.swiftUIColor
@@ -1273,6 +1766,7 @@ struct MapDoorButtonIconGlyph: View {
 
 struct MapDoorButton: View {
     let door: MapDoor
+    var isScopeAdjusted = false
     let action: () -> Void
 
     private let theme = MaterialTheme.snow
@@ -1280,10 +1774,13 @@ struct MapDoorButton: View {
     var body: some View {
         let presentation = door.presentation
         let tokens = theme.tokens
+        let iconName = door == .explore && isScopeAdjusted
+            ? "line.3.horizontal.decrease.circle.fill"
+            : presentation.systemImage
 
         Button(action: action) {
             HStack(spacing: 8) {
-                MapDoorButtonIconGlyph(systemName: presentation.systemImage)
+                MapDoorButtonIconGlyph(systemName: iconName)
                     .accessibilityHidden(true)
 
                 Text(verbatim: presentation.title)
@@ -1309,6 +1806,13 @@ struct MapDoorButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(verbatim: presentation.title))
+        .accessibilityValue(
+            Text(
+                verbatim: door == .explore
+                    ? (isScopeAdjusted ? "Scope adjusted" : "Default scope")
+                    : ""
+            )
+        )
         .accessibilityIdentifier(presentation.accessibilityIdentifier)
     }
 }
