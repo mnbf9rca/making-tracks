@@ -4735,6 +4735,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openExploreDoor(in: app)
         app.buttons["explore.row.settings"].tap()
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
+        let appearance = app.buttons["settings.group.appearance"]
+        XCTAssertTrue(appearance.waitForExistence(timeout: 5))
+        appearance.tap()
+        XCTAssertTrue(app.staticTexts["Appearance"].waitForExistence(timeout: 5))
         let themeButton = app.buttons["settings.theme.\(themeID)"]
         XCTAssertTrue(scrollToHittable(themeButton, in: app))
         themeButton.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
