@@ -72,6 +72,17 @@ When the spec doesn't settle a judgment call:
 - Existing gates are unchanged: adversarial self-review, tests green with pasted counts, zero new warnings, Release build under fleet lock.
 - **XHIGH budget** (spec §5): codex-r gets **one spec attack + one acceptance pass per phase**. Any additional XHIGH run needs Rob's explicit per-run ok, requested inline with a cost rationale.
 
+## Evidence and review law (graduated from Phase 1)
+
+- **A render asserting a state or change carries its measurement beside the image** (ink counts, bounding boxes, contrast ratios). A render is not self-evidencing; the number is what makes it evidence.
+- **Enumerate the full constraint structure before adopting or validating any figure** — ink, wash composite, both states, sibling pairs. No numeric floors by fiat (designer ruling). A constraint set is checked for satisfiability before anything is built to it.
+- **A general bound states its qualifier.** A ceiling computed for a free pair does not apply to a pinned one; quoting a bound into a case it wasn't computed for is the misattribution class the metrics table exists to stop.
+- **A clearance is only as wide as what was examined, and says so.** "Cleared" without scope reads as broader than the review; state the boundary in the verdict.
+- **Silence is not a ruling.** Authority claims trace to explicit spoken rulings; provenance for everything else states what actually happened (measured / validated / awaiting ruling).
+- **A body's check claims are re-read against live checks immediately before handoff** (three stale-claim instances in one night; the check runs async, so the window is structural).
+- **At closeout, rows born from rulings sweep the backlog** for issues they satisfy (a delivered feature left its requesting issue open once).
+- **Builders choose their own execution mode** (inline vs subagent-driven) within the fixed rails; routing that choice upward is noise.
+
 ## Standing items
 
 Durable facts the fleet operates under (moved here from planner's session memory so a restart preserves them).
