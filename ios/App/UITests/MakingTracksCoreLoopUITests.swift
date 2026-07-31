@@ -3418,6 +3418,31 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
     }
 
+    func testSettingsRootImplementationEvidenceCapturesDefaultAndAX5() {
+        for evidenceCase in [
+            (accessibilityTextSize: false, screenshotName: "t2.9-settings-root"),
+            (accessibilityTextSize: true, screenshotName: "t2.9-settings-root-ax"),
+        ] {
+            let app = launch(
+                reset: true,
+                locationDenied: true,
+                accessibilityTextSize: evidenceCase.accessibilityTextSize,
+                resetTheme: true,
+                theme: "snow"
+            )
+            XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+            openExploreDoor(in: app)
+            app.buttons["explore.row.settings"].tap()
+            XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
+            attachScreenshot(named: evidenceCase.screenshotName, forceExport: true)
+            assertSettingsRootRenderContract(
+                in: app,
+                accessibilityTextSize: evidenceCase.accessibilityTextSize
+            )
+            app.terminate()
+        }
+    }
+
     func testSettingsStorageRowNavigatesToOfflineMaps() {
         let app = launch(reset: true)
 
@@ -6082,6 +6107,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "t2.10-about-ax": "t2.10-about-ax",
         "t2.10-software-licences-ax": "t2.10-software-licences-ax",
         "t2.10-data-licences-ax": "t2.10-data-licences-ax",
+        "t2.9-settings-root": "t2.9-settings-root",
+        "t2.9-settings-root-ax": "t2.9-settings-root-ax",
         "diagnostics-preprepare-exclusions-dark": "diagnostics-preprepare-exclusions-dark",
         "tracks-static-geometry": "tracks-static-geometry",
         "explore-door-default": "explore-door-default",
