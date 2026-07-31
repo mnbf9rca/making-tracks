@@ -18,8 +18,8 @@ Legacy handles `codex` (bare) and `claude` are **dead** — do not route to them
 ## AMQ conventions
 
 - **Root:** `.agent-mail`. **Fleet session: `collab`.** The base tree is *not* drained by agents, so every send must use `--session collab` (`amq send --to <handle> --session collab …`). The inline `<handle>@<project>:<session>` form is cross-**project** routing only — do not use it for same-project session sends.
-- **Handles:** `planner`, `reviewer`, `codex1`–`codex4`, `user` (Rob), `codex-r` (from the restart).
-- **Threads:** `p2p/<a>__<b>` for a pair (e.g. `p2p/planner__reviewer`); `gate/<topic>` addressed to `user` for human-action gates (a decision or promotion only Rob can make).
+- **Handles:** `planner`, `reviewer`, `codex1`–`codex4`, `codex-r` (from the restart). **Rob has no mailbox** — the `user` handle was removed from AMQ (Rob, 2026-07-31).
+- **Threads:** `p2p/<a>__<b>` for a pair (e.g. `p2p/planner__reviewer`). **Human-action gates go to Rob in planner's session chat, never AMQ** (Rob, 2026-07-31): planner asks inline, and because chat scrolls past him, carries every open ask in a standing recap re-stated whole whenever Rob checks in ("status"). Any other seat with a question for Rob routes it through planner.
 - **Kinds** (amq defaults): `review_request`, `question`, `todo`, `status`, `decision`, plus `answer`/`review_response`. Set `priority` (`urgent`/`normal`/`low`) to match.
 - **Drain-and-act:** drain with `amq drain --include-body`, act on the message, then reply on its thread.
 - **Seat rule** (spec §8): a fresh session boots on `AGENTS.md` + this file + the current `tasks.md`; nothing load-bearing lives only in a session.
