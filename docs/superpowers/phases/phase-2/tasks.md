@@ -424,7 +424,7 @@ Full gate plus renders of each Settings group at default and AX.
 - **Owner:** codex3
 - **Review tier:** `sourcery` + `reviewer`
 - **Status:** tests green — `wp-t2-10-impl`; independent review pending
-- **Evidence:** integrated head `6fecc6a`; `cd ios && swift test` — 501 tests, 0 failures; locked codex3 release gate — Release + debug builds green, 319 simulator tests, 0 failures (86 UI tests); six inspected default/AX implementation renders recorded in the design-system README.
+- **Evidence:** integrated code head `9234390`; `cd ios && swift test` — 514 tests, 0 failures; locked codex3 release gate — Release + debug builds green, 321 simulator tests, 0 failures (86 UI tests); the locked evidence rerun passed both focused About UI tests and regenerated six inspected default/AX implementation renders from `9234390` at 09:41, with dimensions, command, and SHA-256 values recorded in the design-system README.
 
 **Builder brief.** Rebuild `AboutView` (`MapScreen.swift:7566`–`:7900`) to W-2: the **story and the privacy promise up top**, then **Software licences** and **Data licences** as proper sub-areas rather than one flat run. DS-1 rows and sheets; no system `List` chrome.
 
