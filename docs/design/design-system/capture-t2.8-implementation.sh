@@ -8,6 +8,13 @@ DERIVED_DATA="${MT_RELEASE_GATE_DERIVED_DATA:-}"
 ARTIFACTS="/private/tmp/making-tracks-artifacts"
 OUTPUT="$ROOT/docs/design/design-system"
 
+cleanup_results() {
+  [ -d "$DERIVED_DATA/Logs/Test" ] || return 0
+  while IFS= read -r result_bundle; do
+    rm -rf "$result_bundle"
+  done < <(find "$DERIVED_DATA/Logs/Test" -type d -name '*.xcresult' -prune -print)
+}
+
 [ -n "$DESTINATION" ] || {
   echo "capture-t2.8-implementation: MT_RELEASE_GATE_DESTINATION is required" >&2
   exit 1
@@ -37,6 +44,8 @@ cd "$ROOT"
     -only-testing:MakingTracksUITests/MakingTracksCoreLoopUITests/testLovedTrackChipDrivesMapSource \
     -only-testing:MakingTracksUITests/MakingTracksCoreLoopUITests/testExploreOtherListsDrillInUpdatesLiveAndClearStaysOutsideCollection \
     -only-testing:MakingTracksUITests/MakingTracksCoreLoopUITests/testExploreOtherListsEmptyStateNamesExcludedLists
+
+trap cleanup_results EXIT
 
 declare -a captures=(
   explore-door-default
@@ -72,11 +81,5 @@ metadata="$OUTPUT/t2.8-implementation-captures.txt"
     sips -g pixelWidth -g pixelHeight "$target" | sed 's/^/  /'
   done
 } > "$metadata"
-
-if [ -d "$DERIVED_DATA/Logs/Test" ]; then
-  while IFS= read -r result_bundle; do
-    rm -rf "$result_bundle"
-  done < <(find "$DERIVED_DATA/Logs/Test" -type d -name '*.xcresult' -prune -print)
-fi
 
 cat "$metadata"
