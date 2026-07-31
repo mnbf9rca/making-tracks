@@ -8,9 +8,19 @@ browser_path=${MT_CHROMIUM_BIN:-}
 expected_browser_version=151.0.7922.34
 
 if [ -z "$browser_path" ]; then
-    playwright_cache=${PLAYWRIGHT_BROWSERS_PATH:-"$HOME/Library/Caches/ms-playwright"}
-    for candidate in "$playwright_cache"/chromium_headless_shell-*/chrome-headless-shell-mac-arm64/chrome-headless-shell; do
-        if [ -x "$candidate" ]; then
+    if [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ]; then
+        playwright_cache=$PLAYWRIGHT_BROWSERS_PATH
+    elif [ "$(uname -s)" = Darwin ]; then
+        playwright_cache="$HOME/Library/Caches/ms-playwright"
+    else
+        playwright_cache="$HOME/.cache/ms-playwright"
+    fi
+
+    for candidate in "$playwright_cache"/chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell; do
+        if [ -x "$candidate" ] &&
+            candidate_version=$("$candidate" --version 2>/dev/null) &&
+            case "$candidate_version" in *"$expected_browser_version") true ;; *) false ;; esac
+        then
             browser_path=$candidate
             break
         fi
@@ -35,6 +45,8 @@ render() {
     variant=$1
     output=$2
 
+    # 900×900 is the evidence canvas around the HTML's ruled 390×844 frame.
+    # Change the two sizes together only when the design-canvas ruling changes.
     "$browser_path" \
         --headless \
         --disable-gpu \

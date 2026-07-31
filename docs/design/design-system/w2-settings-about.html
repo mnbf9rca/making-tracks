@@ -6,6 +6,7 @@
 <title>W-2 · Settings + About wireframe record</title>
 <style>
   * { box-sizing: border-box; }
+  /* W-2 consumes the app's checked-in faces; keep these URLs in sync if the app font directory moves. */
   @font-face {
     font-family: "Newsreader Display";
     src: url("../../../ios/App/Resources/Fonts/Newsreader72pt-SemiBold.ttf") format("truetype");
@@ -33,6 +34,7 @@
     --evidence-line: #CBD2D9;
     --warning: #8B2E24;
   }
+  /* Ruled 390×844 device frame plus its adjacent evidence panel; the render script captures this 900² canvas. */
   html, body {
     width: 900px;
     height: 900px;
