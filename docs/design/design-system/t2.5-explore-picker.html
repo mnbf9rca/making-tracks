@@ -1,0 +1,1658 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=820, initial-scale=1">
+<title>T2.5 — W-1 Explore picker wireframes</title>
+<style>
+  @font-face {
+    font-family: "Newsreader";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader16pt-SemiBold.ttf");
+    font-weight: 600;
+  }
+
+  :root {
+    --packet: #e9e5db;
+    --ground: #f4f1ea;
+    --water: #c9dbe2;
+    --park: #dce5d4;
+    --road: #c9bfa8;
+    --road-minor: #ddd5c2;
+    --surface: #fbfaf2;
+    --surface-raised: #ffffff;
+    --ink: #2b2823;
+    --muted: #6b675f;
+    --accent: #0a6b5c;
+    --accent-contrast: #fbfaf2;
+    --eyebrow: #8a5a2b;
+    --hairline: rgba(43, 40, 35, 0.14);
+    --scrim: rgba(43, 40, 35, 0.35);
+    --pin: #e4572e;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    width: 820px;
+    height: 884px;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  body {
+    padding: 20px 10px;
+    background: var(--packet);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .variant {
+    display: none;
+    grid-template-columns: 390px 390px;
+    gap: 20px;
+  }
+
+  .variant.is-active {
+    display: grid;
+  }
+
+  .phone {
+    position: relative;
+    width: 390px;
+    height: 844px;
+    overflow: hidden;
+    border: 1px solid rgba(43, 40, 35, 0.62);
+    border-radius: 46px;
+    background: var(--ground);
+    box-shadow: 0 12px 28px rgba(43, 40, 35, 0.13), 0 2px 6px rgba(43, 40, 35, 0.08);
+  }
+
+  .map {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .status {
+    position: absolute;
+    z-index: 5;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 46px;
+    padding: 13px 25px 0;
+    display: flex;
+    justify-content: space-between;
+    color: var(--ink);
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .scrim {
+    position: absolute;
+    inset: 0;
+    background: var(--scrim);
+  }
+
+  .sheet {
+    position: absolute;
+    z-index: 3;
+    top: 62px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 6px 14px 14px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 22px 22px 0 0;
+    background: var(--surface);
+    box-shadow: 0 -6px 18px rgba(43, 40, 35, 0.16);
+  }
+
+  .grabber {
+    width: 36px;
+    height: 4px;
+    margin: 0 auto 12px;
+    flex: none;
+    border-radius: 999px;
+    background: rgba(43, 40, 35, 0.18);
+  }
+
+  .sheet-scroll {
+    min-height: 0;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    scrollbar-width: none;
+  }
+
+  .sheet-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sheet-title {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+  }
+
+  .sheet-subtitle {
+    margin: 3px 0 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.3;
+  }
+
+  .scope {
+    margin-top: 18px;
+    flex: none;
+  }
+
+  .section-heading {
+    min-height: 14px;
+    margin: 0 2px 11px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-heading.has-toggle {
+    position: relative;
+  }
+
+  .section-label {
+    margin: 0;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.11em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .toggle-all {
+    position: absolute;
+    right: -8px;
+    bottom: 0;
+    min-width: 72px;
+    min-height: 44px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .chip {
+    height: 22px;
+    padding: 0 9px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 999px;
+    background: rgba(10, 107, 92, 0.12);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .chip.is-on {
+    background: var(--accent);
+    color: var(--accent-contrast);
+  }
+
+  .chip-icon {
+    width: 11px;
+    height: 11px;
+    flex: 0 0 11px;
+    fill: currentColor;
+    stroke: none;
+  }
+
+  .chip:not(.is-on) .chip-icon.state-glyph {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linejoin: round;
+  }
+
+  .scope-rows {
+    margin-top: 14px;
+    border-top: 1px solid var(--hairline);
+  }
+
+  .scope-row {
+    min-height: 52px;
+    padding: 6px 2px;
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .scope-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--muted);
+  }
+
+  .scope-row.is-on .scope-icon {
+    color: var(--accent);
+  }
+
+  .scope-copy {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  .switch {
+    position: relative;
+    width: 44px;
+    height: 28px;
+    border-radius: 999px;
+    background: rgba(10, 107, 92, 0.12);
+    box-shadow: inset 0 0 0 1px var(--hairline);
+  }
+
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--surface-raised);
+    box-shadow: 0 1px 3px rgba(43, 40, 35, 0.24);
+  }
+
+  .switch.is-on {
+    background: var(--accent);
+    box-shadow: none;
+  }
+
+  .switch.is-on::after {
+    left: 19px;
+  }
+
+  .list-context {
+    margin-top: 14px;
+    padding-top: 11px;
+    border-top: 1px solid var(--hairline);
+  }
+
+  .list-context .section-heading {
+    margin-bottom: 8px;
+  }
+
+  .list-note {
+    margin: 0 2px 8px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .discovery-context {
+    margin-top: 14px;
+    padding-top: 11px;
+    border-top: 1px solid var(--hairline);
+  }
+
+  .discovery-context .section-heading {
+    margin-bottom: 4px;
+  }
+
+  .discovery-context .scope-rows {
+    margin-top: 9px;
+  }
+
+  .child-phone .sheet-scroll {
+    overflow: hidden;
+  }
+
+  .child-back {
+    width: max-content;
+    min-width: 88px;
+    min-height: 44px;
+    margin: -8px 0 2px -8px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--accent);
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .child-back svg {
+    width: 14px;
+    height: 14px;
+    transform: rotate(180deg);
+  }
+
+  .back-row .quiet-icon {
+    transform: rotate(180deg);
+  }
+
+  .child-intro {
+    flex: none;
+  }
+
+  .membership-scroll {
+    height: 360px;
+    margin-top: 14px;
+    flex: none;
+    overflow-y: auto;
+    border-top: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    scrollbar-width: none;
+  }
+
+  .membership-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .membership-item {
+    min-height: 52px;
+    padding: 7px 2px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .membership-item:last-child {
+    border-bottom: 0;
+  }
+
+  .membership-name {
+    min-width: 0;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.15;
+  }
+
+  .membership-state {
+    min-width: 78px;
+    height: 28px;
+    padding: 0 9px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    border-radius: 999px;
+    background: rgba(10, 107, 92, 0.12);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .membership-state.is-on {
+    background: var(--accent);
+    color: var(--accent-contrast);
+  }
+
+  .membership-state svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .child-footer {
+    margin-top: auto;
+    padding-top: 8px;
+    flex: none;
+  }
+
+  .empty-memberships {
+    height: 250px;
+    padding: 24px;
+    display: grid;
+    place-content: center;
+    text-align: center;
+  }
+
+  .empty-memberships svg {
+    width: 36px;
+    height: 36px;
+    margin: 0 auto 10px;
+    color: var(--muted);
+  }
+
+  .empty-memberships strong {
+    font-size: 17px;
+  }
+
+  .empty-memberships p {
+    max-width: 250px;
+    margin: 6px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.3;
+  }
+
+  .clear-scope {
+    min-height: 44px;
+    padding: 8px 2px;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--hairline);
+    color: var(--muted);
+  }
+
+  .clear-scope svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .clear-scope span {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .clear-scope.has-meta {
+    min-height: 58px;
+  }
+
+  .clear-copy {
+    min-width: 0;
+  }
+
+  .clear-copy .clear-title {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .clear-copy .clear-meta {
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.2;
+  }
+
+  .quiet-bottom {
+    margin-top: auto;
+    padding-top: 8px;
+    flex: none;
+  }
+
+  .quiet-row {
+    min-height: 44px;
+    padding: 9px 2px;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) 12px;
+    align-items: center;
+    gap: 10px;
+    border-top: 1px solid var(--hairline);
+    color: var(--muted);
+  }
+
+  .quiet-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .quiet-title {
+    color: var(--muted);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.15;
+  }
+
+  .quiet-meta {
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .quiet-chevron {
+    width: 12px;
+    height: 12px;
+  }
+
+  .quiet-row.settings .quiet-icon,
+  .quiet-row.settings .quiet-chevron {
+    color: var(--accent);
+  }
+
+  .quiet-row.settings .quiet-title {
+    color: var(--ink);
+  }
+
+  .phone.ax .sheet {
+    top: 48px;
+  }
+
+  .phone.ax .grabber {
+    margin-bottom: 10px;
+  }
+
+  .phone.ax .sheet-scroll {
+    overflow-y: auto;
+    padding-bottom: 70px;
+  }
+
+  .phone.ax .sheet-title {
+    font-size: 41px;
+    line-height: 1;
+  }
+
+  .phone.ax .sheet-subtitle {
+    margin-top: 6px;
+    font-size: 22px;
+    line-height: 1.08;
+  }
+
+  .phone.ax .scope {
+    margin-top: 14px;
+  }
+
+  .phone.ax .section-heading {
+    margin-bottom: 9px;
+  }
+
+  .phone.ax .section-label {
+    font-size: 17px;
+  }
+
+  .phone.ax .toggle-all {
+    font-size: 17px;
+  }
+
+  .phone.ax .chips {
+    gap: 8px;
+  }
+
+  .phone.ax .chip {
+    min-height: 38px;
+    height: auto;
+    padding: 5px 14px;
+    gap: 6px;
+    font-size: 19px;
+    line-height: 1.1;
+  }
+
+  .phone.ax .chip-icon {
+    width: 18px;
+    height: 18px;
+    flex-basis: 18px;
+  }
+
+  .phone.ax .scope-rows {
+    margin-top: 14px;
+  }
+
+  .phone.ax .scope-row {
+    min-height: 86px;
+    padding: 10px 2px;
+    grid-template-columns: 30px minmax(0, 1fr) 51px;
+    gap: 14px;
+  }
+
+  .phone.ax .scope-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .phone.ax .scope-copy {
+    font-size: 23px;
+    line-height: 1.08;
+  }
+
+  .phone.ax .switch {
+    width: 51px;
+    height: 31px;
+  }
+
+  .phone.ax .switch::after {
+    top: 3px;
+    width: 25px;
+    height: 25px;
+  }
+
+  .phone.ax .switch.is-on::after {
+    left: 23px;
+  }
+
+  .phone.ax .clear-scope {
+    min-height: 54px;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .phone.ax .clear-scope svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .phone.ax .clear-scope span {
+    font-size: 23px;
+  }
+
+  .phone.ax .clear-copy .clear-title {
+    font-size: 23px;
+  }
+
+  .phone.ax .clear-copy .clear-meta {
+    margin-top: 4px;
+    font-size: 17px;
+  }
+
+  .phone.ax-list .sheet-scroll {
+    padding-bottom: 90px;
+  }
+
+  .phone.ax-list .list-note {
+    font-size: 17px;
+    line-height: 1.18;
+  }
+
+  .phone.ax-list .discovery-context {
+    margin-top: 18px;
+    padding-top: 14px;
+  }
+
+  .phone.ax.child-phone .sheet-scroll {
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+
+  .phone.ax .child-back {
+    min-width: 118px;
+    min-height: 54px;
+    margin-top: -6px;
+    gap: 8px;
+    font-size: 23px;
+  }
+
+  .phone.ax .child-back svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .phone.ax .membership-scroll {
+    height: 350px;
+    margin-top: 14px;
+  }
+
+  .phone.ax .membership-item {
+    min-height: 86px;
+    padding: 10px 2px;
+    gap: 12px;
+  }
+
+  .phone.ax .membership-name {
+    font-size: 23px;
+    line-height: 1.08;
+  }
+
+  .phone.ax .membership-state {
+    min-width: 98px;
+    height: 44px;
+    padding: 0 11px;
+    gap: 6px;
+    font-size: 17px;
+  }
+
+  .phone.ax .membership-state svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .phone.ax .quiet-bottom {
+    padding-top: 4px;
+  }
+
+  .phone.ax .quiet-row {
+    min-height: 86px;
+    padding: 10px 2px;
+    grid-template-columns: 28px minmax(0, 1fr) 18px;
+    gap: 14px;
+  }
+
+  .phone.ax .quiet-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .phone.ax .quiet-title {
+    font-size: 24px;
+    line-height: 1.05;
+  }
+
+  .phone.ax .quiet-meta {
+    margin-top: 4px;
+    font-size: 18px;
+    line-height: 1.12;
+  }
+
+  .phone.ax .quiet-chevron {
+    width: 18px;
+    height: 18px;
+  }
+
+  .map-control {
+    position: absolute;
+    z-index: 2;
+    top: 66px;
+    right: 16px;
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--hairline);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--accent);
+    box-shadow: 0 4px 10px rgba(43, 40, 35, 0.14);
+  }
+
+  .map-control svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .attribution {
+    position: absolute;
+    z-index: 2;
+    left: 15px;
+    bottom: 78px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .door-bar {
+    position: absolute;
+    z-index: 2;
+    left: 0;
+    right: 0;
+    bottom: 20px;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .door {
+    min-height: 44px;
+    padding: 0 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: 0 4px 12px rgba(43, 40, 35, 0.16);
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .door > svg {
+    width: 19px;
+    height: 19px;
+    color: var(--accent);
+  }
+
+  .scope-badge {
+    width: 22px;
+    height: 22px;
+    margin-left: 1px;
+    padding: 0;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-contrast);
+  }
+
+  .scope-badge svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .phone.ax-door .door-bar {
+    left: 8px;
+    right: 8px;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .phone.ax-door .door {
+    min-height: 68px;
+    padding: 8px 12px;
+    gap: 8px;
+    font-size: 23px;
+  }
+
+  .phone.ax-door .door > svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  .phone.ax-door .scope-badge {
+    width: 28px;
+    height: 28px;
+    margin-left: 0;
+    padding: 0;
+  }
+
+  .phone.ax-door .scope-badge svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .phone.ax-door .attribution {
+    bottom: 108px;
+  }
+
+  .evidence {
+    width: 390px;
+    height: 844px;
+    padding: 15px 16px;
+    overflow: hidden;
+    border: 1px solid var(--hairline);
+    border-radius: 18px;
+    background: rgba(251, 250, 242, 0.92);
+  }
+
+  .kicker {
+    margin: 0 0 5px;
+    color: var(--eyebrow);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .evidence h1 {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.06;
+  }
+
+  .evidence .subtitle {
+    margin: 5px 0 0;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  .renderer {
+    margin: 5px 0 0;
+    color: var(--muted);
+    font: 9px/1.25 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+
+  .evidence h2 {
+    margin: 12px 0 4px;
+    color: var(--eyebrow);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .facts {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 11px;
+    line-height: 1.32;
+  }
+
+  .facts li {
+    position: relative;
+    padding: 2px 0 2px 15px;
+  }
+
+  .facts li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .metrics {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+    line-height: 1.25;
+  }
+
+  .metrics th,
+  .metrics td {
+    padding: 4px 0;
+    border-top: 1px solid var(--hairline);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .metrics th {
+    width: 42%;
+    padding-right: 8px;
+    font-weight: 700;
+  }
+
+  .metrics td {
+    color: var(--muted);
+  }
+
+  .source {
+    display: block;
+    margin-top: 1px;
+    color: var(--eyebrow);
+    font-size: 8.5px;
+    font-weight: 600;
+  }
+
+  .record-note {
+    margin: 9px 0 0;
+    padding-top: 8px;
+    border-top: 1px solid var(--hairline);
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.32;
+  }
+
+  .record-note strong {
+    color: var(--ink);
+  }
+
+  code {
+    font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+    font-size: 0.92em;
+  }
+</style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="map-snow" viewBox="0 0 390 844">
+      <rect width="390" height="844" fill="#f4f1ea"/>
+      <path d="M20 665C82 610 155 626 177 687C197 743 127 801 66 774C21 754-5 700 20 665Z" fill="#dce5d4"/>
+      <path d="M270 94C332 77 380 108 394 158C404 201 362 222 320 204C286 190 258 132 270 94Z" fill="#dce5d4"/>
+      <path d="M-10 98C60 140 116 72 187 122C251 168 312 263 322 351C330 427 278 517 329 621C361 688 389 759 372 865"
+            fill="none" stroke="#c9dbe2" stroke-width="28" stroke-linecap="round"/>
+      <g fill="none" stroke="#ddd5c2" stroke-width="5" stroke-linecap="round">
+        <path d="M266-10C274 122 307 219 296 347C288 458 246 538 267 665"/>
+        <path d="M-10 389C82 368 149 413 242 385C319 361 356 341 408 364"/>
+        <path d="M142 862C165 721 236 664 323 704C371 726 397 757 416 744"/>
+      </g>
+      <g fill="none" stroke="#c9bfa8" stroke-width="8" stroke-linecap="round">
+        <path d="M-10 239C74 213 144 270 217 252C287 235 331 196 408 227"/>
+        <path d="M50-10C75 158 38 286 91 440C138 579 151 704 125 865"/>
+        <path d="M-10 585C87 561 181 619 283 585C337 567 377 538 410 547"/>
+      </g>
+      <g fill="#e4572e" stroke="#fff" stroke-width="2">
+        <circle cx="116" cy="145" r="10"/><circle cx="248" cy="188" r="10"/>
+        <circle cx="85" cy="305" r="10"/><circle cx="224" cy="454" r="10"/>
+        <circle cx="318" cy="554" r="10"/><circle cx="146" cy="661" r="10"/>
+      </g>
+    </symbol>
+    <symbol id="icon-globe" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" stroke-width="1.8">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M3.4 9h17.2M3.4 15h17.2M12 3c2.5 2.4 3.8 5.4 3.8 9S14.5 18.6 12 21M12 3C9.5 5.4 8.2 8.4 8.2 12S9.5 18.6 12 21"/>
+      </g>
+    </symbol>
+    <symbol id="icon-shoeprints" viewBox="0 0 24 24">
+      <g fill="currentColor">
+        <ellipse cx="8" cy="7" rx="3.2" ry="5" transform="rotate(-20 8 7)"/>
+        <ellipse cx="16" cy="17" rx="3.2" ry="5" transform="rotate(-20 16 17)"/>
+        <circle cx="11.4" cy="13.2" r="1.5"/><circle cx="19.1" cy="22" r="1.5"/>
+      </g>
+    </symbol>
+    <symbol id="icon-filter" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+        <path d="M5 7h14M8 12h8M11 17h2"/>
+      </g>
+    </symbol>
+    <symbol id="icon-eye-off" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.4 6.2A8.7 8.7 0 0 1 12 6c5.2 0 8.8 6 8.8 6a17.6 17.6 0 0 1-3 3.6"/>
+        <path d="M6.6 6.8A16.6 16.6 0 0 0 3.2 12S6.8 18 12 18a8.6 8.6 0 0 0 3.6-.8"/>
+        <path d="M10.3 10.4a2.4 2.4 0 0 0 3.3 3.4M3.4 3.4 20.6 20.6"/>
+      </g>
+    </symbol>
+    <symbol id="icon-bookmark" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M6.2 3.5c0-1.1.9-2 2-2h7.6c1.1 0 2 .9 2 2v18.1c0 .7-.8 1.1-1.4.7L12 19l-4.4 3.3c-.6.4-1.4 0-1.4-.7V3.5Z"/>
+    </symbol>
+    <symbol id="icon-coverage" viewBox="0 0 24 24">
+      <path d="M5 9.6 9.4 4.6 16.2 5.8 19.6 12 16 18.8 8 18.2Z"
+            fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 2.6"/>
+    </symbol>
+    <symbol id="icon-reset" viewBox="0 0 24 24">
+      <path d="M5 8V3m0 0h5M5 3l3 3a8 8 0 1 1-2 8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-gear" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="6.4"/><circle cx="12" cy="12" r="2.5"/>
+        <path d="M12 5.6V2.9M12 18.4v2.7M18.4 12h2.7M5.6 12H2.9M16.5 7.5l1.9-1.9M5.6 18.4l1.9-1.9M16.5 16.5l1.9 1.9M5.6 5.6l1.9 1.9"/>
+      </g>
+    </symbol>
+    <symbol id="icon-book" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
+        <path d="M5 5.4A2.4 2.4 0 0 1 7.4 3H19v13.2H7.4A2.4 2.4 0 0 0 5 18.6Z"/>
+        <path d="M5 18.6A2.4 2.4 0 0 1 7.4 16.2H19V21H7.4A2.4 2.4 0 0 1 5 18.6Z"/>
+      </g>
+    </symbol>
+    <symbol id="icon-chevron" viewBox="0 0 24 24">
+      <path d="M9.5 5 16.5 12 9.5 19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-category" viewBox="0 0 24 24">
+      <path d="m12 2.2 3 6 6.7 1-4.8 4.7 1.1 6.7-6-3.2-6 3.2 1.1-6.7-4.8-4.7 6.7-1 3-6Z"/>
+    </symbol>
+    <symbol id="icon-heart" viewBox="0 0 24 24">
+      <path d="M12 21 3.7 13A5.7 5.7 0 0 1 12 5.3 5.7 5.7 0 0 1 20.3 13L12 21Z"/>
+    </symbol>
+    <symbol id="icon-list-on" viewBox="0 0 24 24">
+      <g fill="currentColor">
+        <rect x="8" y="4.5" width="12" height="3" rx="1.5"/>
+        <rect x="8" y="10.5" width="12" height="3" rx="1.5"/>
+        <rect x="8" y="16.5" width="12" height="3" rx="1.5"/>
+        <circle cx="4" cy="6" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="4" cy="18" r="2"/>
+      </g>
+    </symbol>
+    <symbol id="icon-list-off" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M8 6h12M8 12h12M8 18h12"/>
+        <circle cx="4" cy="6" r="1.5"/><circle cx="4" cy="12" r="1.5"/><circle cx="4" cy="18" r="1.5"/>
+      </g>
+    </symbol>
+    <symbol id="icon-locate" viewBox="0 0 24 24">
+      <path d="m20.5 3.5-7 17-2.2-7.1-7.8-2.1 17-7.8Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+    </symbol>
+  </svg>
+
+  <article class="variant" data-variant="picker-default">
+    <section class="phone" aria-label="Default Explore picker at exact 390 by 844">
+      <svg class="map" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="sheet-scroll">
+          <header><h1 class="sheet-title">Explore</h1><p class="sheet-subtitle">what the map shows right now</p></header>
+          <section class="scope">
+            <div class="section-heading has-toggle"><h2 class="section-label">Scope</h2><span class="toggle-all">Hide all</span></div>
+            <div class="chips">
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Archaeological</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Artwork</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Attraction</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Historic Building</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Memorial</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Museum</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Religious</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Other</span>
+            </div>
+            <div class="scope-rows">
+              <div class="scope-row"><svg class="scope-icon"><use href="#icon-eye-off"/></svg><span class="scope-copy">Include hidden places</span><span class="switch"></span></div>
+              <div class="scope-row is-on"><svg class="scope-icon"><use href="#icon-bookmark"/></svg><span class="scope-copy">Show saved places</span><span class="switch is-on"></span></div>
+              <div class="scope-row is-on"><svg class="scope-icon"><use href="#icon-coverage"/></svg><span class="scope-copy">Show coverage shading</span><span class="switch is-on"></span></div>
+            </div>
+          </section>
+          <nav class="quiet-bottom">
+            <div class="quiet-row settings"><svg class="quiet-icon"><use href="#icon-gear"/></svg><div><div class="quiet-title">Settings</div><div class="quiet-meta">appearance, data, location, storage</div></div><svg class="quiet-chevron"><use href="#icon-chevron"/></svg></div>
+            <div class="quiet-row"><svg class="quiet-icon"><use href="#icon-book"/></svg><div><div class="quiet-title">About</div><div class="quiet-meta">the story · privacy · licences</div></div><svg class="quiet-chevron"><use href="#icon-chevron"/></svg></div>
+          </nav>
+        </div>
+      </div>
+    </section>
+    <aside class="evidence">
+      <p class="kicker">Picker · default scope</p>
+      <h1>Ruled order and defaults</h1>
+      <p class="subtitle">Search reserves no visible row. Clear scope is absent because the effective scope is already default.</p>
+      <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
+      <h2>State proof</h2>
+      <ul class="facts">
+        <li>All category chips ON; hidden OFF; saved ON; coverage ON.</li>
+        <li>OF5 proposal keeps switches inside P2R-4's ratified geometry.</li>
+        <li>Settings and About remain separate navigational rows.</li>
+      </ul>
+      <h2>Measured beside the frame</h2>
+      <table class="metrics">
+        <tr><th>Phone</th><td data-box=".phone"></td></tr>
+        <tr><th>Sheet</th><td data-box=".sheet"></td></tr>
+        <tr><th>Scope rows</th><td data-box=".scope-row"></td></tr>
+        <tr><th>Switches</th><td data-box=".switch"></td></tr>
+        <tr><th>Hide-all target</th><td data-box=".toggle-all"></td></tr>
+        <tr><th>Visible chips</th><td data-box=".chip"></td></tr>
+        <tr><th>Chip flow</th><td>22pt capsule · 6pt gap · 28pt interior pitch<span class="source">Neighbour outset 3pt; free vertical 11pt, horizontal 0pt</span></td></tr>
+        <tr><th>Block rhythm</th><td>18 / 11 / 14pt<span class="source">MEASURED A8; OF2 default, not ratified system law</span></td></tr>
+        <tr><th>Contrast</th><td>ink/surface 14.02:1 · muted/surface 5.38:1 · accentContrast/accent 6.13:1</td></tr>
+      </table>
+      <p class="record-note"><strong>Target qualification:</strong> chip tiling applies only to these reversible, immediately-legible state controls. Navigational bottom rows retain full 44pt targets.</p>
+    </aside>
+  </article>
+
+  <article class="variant" data-variant="picker-adjusted">
+    <section class="phone" aria-label="Adjusted Explore picker at exact 390 by 844">
+      <svg class="map" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="sheet-scroll">
+          <header><h1 class="sheet-title">Explore</h1><p class="sheet-subtitle">what the map shows right now</p></header>
+          <section class="scope">
+            <div class="section-heading has-toggle"><h2 class="section-label">Scope</h2><span class="toggle-all">Show all</span></div>
+            <div class="chips">
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Archaeological</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Artwork</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Attraction</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Historic Building</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Memorial</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Museum</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Religious</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Other</span>
+            </div>
+            <div class="scope-rows">
+              <div class="scope-row is-on"><svg class="scope-icon"><use href="#icon-eye-off"/></svg><span class="scope-copy">Include hidden places</span><span class="switch is-on"></span></div>
+              <div class="scope-row"><svg class="scope-icon"><use href="#icon-bookmark"/></svg><span class="scope-copy">Show saved places</span><span class="switch"></span></div>
+              <div class="scope-row is-on"><svg class="scope-icon"><use href="#icon-coverage"/></svg><span class="scope-copy">Show coverage shading</span><span class="switch is-on"></span></div>
+            </div>
+            <div class="clear-scope"><svg><use href="#icon-reset"/></svg><span>Clear scope</span></div>
+          </section>
+          <nav class="quiet-bottom">
+            <div class="quiet-row settings"><svg class="quiet-icon"><use href="#icon-gear"/></svg><div><div class="quiet-title">Settings</div><div class="quiet-meta">appearance, data, location, storage</div></div><svg class="quiet-chevron"><use href="#icon-chevron"/></svg></div>
+            <div class="quiet-row"><svg class="quiet-icon"><use href="#icon-book"/></svg><div><div class="quiet-title">About</div><div class="quiet-meta">the story · privacy · licences</div></div><svg class="quiet-chevron"><use href="#icon-chevron"/></svg></div>
+          </nav>
+        </div>
+      </div>
+    </section>
+    <aside class="evidence">
+      <p class="kicker">Picker · adjusted scope</p>
+      <h1>One-tap visible exit</h1>
+      <p class="subtitle">A non-default category set plus hidden/saved changes makes Clear scope appear as a quiet momentary verb.</p>
+      <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
+      <h2>State proof</h2>
+      <ul class="facts">
+        <li>ON filled glyph/pill versus OFF outline glyph/tonal carries category state.</li>
+        <li>Switch position and track shape carry row state without colour alone.</li>
+        <li>Clear scope restores category-all, hidden OFF, saved ON, coverage ON.</li>
+      </ul>
+      <h2>Measured beside the frame</h2>
+      <table class="metrics">
+        <tr><th>Phone</th><td data-box=".phone"></td></tr>
+        <tr><th>Scope rows</th><td data-box=".scope-row"></td></tr>
+        <tr><th>Clear scope</th><td data-box=".clear-scope"></td></tr>
+        <tr><th>Quiet destinations</th><td data-box=".quiet-row"></td></tr>
+        <tr><th>Show-all target</th><td data-box=".toggle-all"></td></tr>
+        <tr><th>Visible chips</th><td data-box=".chip"></td></tr>
+        <tr><th>Chip target tiling</th><td>28pt pitch · 3pt neighbour outset<span class="source">Free vertical 11pt; free horizontal 0pt for chips already ≥44pt wide</span></td></tr>
+        <tr><th>Clear target</th><td>44pt full-width; no target reduction</td></tr>
+        <tr><th>Contrast</th><td>ink/surface 14.02:1 · muted/surface 5.38:1 · accentContrast/accent 6.13:1</td></tr>
+      </table>
+      <p class="record-note"><strong>P2R-5:</strong> persistence gets a visible one-tap exit. The row is absent at default so no dead control advertises an action that changes nothing.</p>
+    </aside>
+  </article>
+
+  <article class="variant" data-variant="picker-list">
+    <section class="phone" aria-label="List-context Explore picker at exact 390 by 844">
+      <svg class="map" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="sheet-scroll">
+          <header><h1 class="sheet-title">Explore</h1><p class="sheet-subtitle">scope for this list and your discovery map</p></header>
+          <section class="scope">
+            <div class="section-heading has-toggle"><h2 class="section-label">This list map</h2><span class="toggle-all">Show all</span></div>
+            <p class="list-note">Categories below narrow KL weekend visits.</p>
+            <div class="chips">
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Archaeological</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Artwork</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Attraction</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Historic Building</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Memorial</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Museum</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Religious</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Other</span>
+            </div>
+            <section class="list-context">
+              <div class="section-heading"><h2 class="section-label">Visits in this list</h2></div>
+              <div class="chips">
+                <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-heart"/></svg>Loved</span>
+              </div>
+              <div class="quiet-row membership-row"><svg class="quiet-icon"><use href="#icon-list-on"/></svg><div><div class="quiet-title">Other lists</div><div class="quiet-meta">Architecture · 2 selected</div></div><svg class="quiet-chevron"><use href="#icon-chevron"/></svg></div>
+            </section>
+            <section class="discovery-context">
+              <div class="section-heading"><h2 class="section-label">Discovery map defaults</h2></div>
+              <p class="list-note">Apply after leaving this list; never filter its story.</p>
+              <div class="scope-rows">
+                <div class="scope-row"><svg class="scope-icon"><use href="#icon-eye-off"/></svg><span class="scope-copy">Include hidden places</span><span class="switch"></span></div>
+                <div class="scope-row is-on"><svg class="scope-icon"><use href="#icon-bookmark"/></svg><span class="scope-copy">Show saved places</span><span class="switch is-on"></span></div>
+                <div class="scope-row is-on"><svg class="scope-icon"><use href="#icon-coverage"/></svg><span class="scope-copy">Show coverage shading</span><span class="switch is-on"></span></div>
+              </div>
+            </section>
+            <div class="clear-scope has-meta"><svg><use href="#icon-reset"/></svg><div class="clear-copy"><div class="clear-title">Clear scope</div><div class="clear-meta">Reset this list filter and discovery defaults</div></div></div>
+          </section>
+          <nav class="quiet-bottom">
+            <div class="quiet-row settings"><svg class="quiet-icon"><use href="#icon-gear"/></svg><div><div class="quiet-title">Settings</div><div class="quiet-meta">appearance, data, location, storage</div></div><svg class="quiet-chevron"><use href="#icon-chevron"/></svg></div>
+            <div class="quiet-row"><svg class="quiet-icon"><use href="#icon-book"/></svg><div><div class="quiet-title">About</div><div class="quiet-meta">the story · privacy · licences</div></div><svg class="quiet-chevron"><use href="#icon-chevron"/></svg></div>
+          </nav>
+        </div>
+      </div>
+    </section>
+    <aside class="evidence">
+      <p class="kicker">Picker · active list map</p>
+      <h1>OF4: contextual, not conflated</h1>
+      <p class="subtitle">Current-list filters and discovery defaults share one picker, but their ownership and reach are visibly separate.</p>
+      <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
+      <h2>Merge proof</h2>
+      <ul class="facts">
+        <li>No floating chip overlay and no second filter sheet remain.</li>
+        <li>Categories and Loved are visibly scoped to this list map.</li>
+        <li>Other-list membership uses a bounded, full-target in-picker drill-in.</li>
+        <li>Discovery rows explicitly do not filter the list story (P2R-8).</li>
+        <li>Clear says it resets both domains; no filled Apply action exists.</li>
+      </ul>
+      <h2>Measured beside the frame</h2>
+      <table class="metrics">
+        <tr><th>Phone</th><td data-box=".phone"></td></tr>
+        <tr><th>Scope rows</th><td data-box=".scope-row"></td></tr>
+        <tr><th>List group</th><td data-box=".list-context"></td></tr>
+        <tr><th>State chips</th><td data-box=".list-context .chip"></td></tr>
+        <tr><th>Lists target</th><td data-box=".membership-row"></td></tr>
+        <tr><th>Show-all target</th><td data-box=".toggle-all"></td></tr>
+        <tr><th>Clear scope</th><td data-box=".clear-scope"></td></tr>
+        <tr><th>Chip target tiling</th><td>28pt pitch · 3pt neighbour outset<span class="source">Free vertical 11pt; free horizontal 0pt where width is already ≥44pt</span></td></tr>
+        <tr><th>Navigation targets</th><td data-box=".quiet-row"></td></tr>
+        <tr><th>Contrast</th><td>ink/surface 14.02:1 · muted/surface 5.38:1 · accentContrast/accent 6.13:1</td></tr>
+      </table>
+      <p class="record-note"><strong>P2R-7:</strong> this surface does not pair a filled action with a state cluster; the R16 proof obligation travels to the first surface that does.</p>
+    </aside>
+  </article>
+
+  <article class="variant" data-variant="picker-lists">
+    <section class="phone child-phone" aria-label="Other lists child at exact 390 by 844">
+      <svg class="map" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="sheet-scroll">
+          <div class="child-back"><svg><use href="#icon-chevron"/></svg><span>Scope</span></div>
+          <header class="child-intro"><h1 class="sheet-title">Other lists</h1><p class="sheet-subtitle">narrow KL weekend visits by saved-list membership</p></header>
+          <div class="membership-scroll" data-scroll-top="52">
+            <div class="membership-item"><span class="membership-name">Architecture</span><span class="membership-state is-on"><svg><use href="#icon-list-on"/></svg>Included</span></div>
+            <div class="membership-item"><span class="membership-name">Cemeteries and memorials</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Family history places</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Museums for rainy days</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Penang weekend</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Public art across the Klang Valley</span><span class="membership-state is-on"><svg><use href="#icon-list-on"/></svg>Included</span></div>
+            <div class="membership-item"><span class="membership-name">Railway stations and old hotels</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Want to go</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+          </div>
+          <div class="child-footer">
+            <div class="clear-scope has-meta"><svg><use href="#icon-reset"/></svg><div class="clear-copy"><div class="clear-title">Clear scope</div><div class="clear-meta">Reset this list filter and discovery defaults</div></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <aside class="evidence">
+      <p class="kicker">Picker child · other lists</p>
+      <h1>Bounded membership state</h1>
+      <p class="subtitle">The parent Explore picker remains the only entry point. This in-picker child gives user-sized membership its own bounded scroll region.</p>
+      <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
+      <h2>Interaction proof</h2>
+      <ul class="facts">
+        <li>Back returns to Scope with a full target; there is no Apply or Close.</li>
+        <li>Eligible non-system lists exclude the active list; selected count feeds the parent summary.</li>
+        <li>Rows update live and use filled/outline state glyphs.</li>
+        <li>Clear remains outside the scrolling collection and resets both domains.</li>
+      </ul>
+      <h2>Measured beside the frame</h2>
+      <table class="metrics">
+        <tr><th>Phone</th><td data-box=".phone"></td></tr>
+        <tr><th>Back target</th><td data-box=".child-back"></td></tr>
+        <tr><th>List rows</th><td data-box=".membership-item"></td></tr>
+        <tr><th>State capsules</th><td data-box=".membership-state"></td></tr>
+        <tr><th>Scroll region</th><td data-scroll-box=".membership-scroll"></td></tr>
+        <tr><th>Clear scope</th><td data-box=".clear-scope"></td></tr>
+        <tr><th>Row order</th><td>case-insensitive title order<span class="source">Loved/system and active KL weekend excluded</span></td></tr>
+        <tr><th>Contrast</th><td>ink/surface 14.02:1 · muted/surface 5.38:1 · accentContrast/accent 6.13:1</td></tr>
+      </table>
+      <p class="record-note"><strong>Live edit:</strong> changing a list filter while Fresh is visible promotes the active list map to Tracks so the newly reported state is effective, reversible, and truthful.</p>
+    </aside>
+  </article>
+
+  <article class="variant" data-variant="picker-lists-empty">
+    <section class="phone child-phone" aria-label="Empty Other lists child at exact 390 by 844">
+      <svg class="map" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="sheet-scroll">
+          <div class="child-back"><svg><use href="#icon-chevron"/></svg><span>Scope</span></div>
+          <header class="child-intro"><h1 class="sheet-title">Other lists</h1><p class="sheet-subtitle">narrow KL weekend visits by saved-list membership</p></header>
+          <div class="membership-scroll">
+            <div class="empty-memberships"><svg><use href="#icon-list-off"/></svg><strong>No other saved lists</strong><p>The active list and system lists are not choices here. Create another list to use membership scope.</p></div>
+          </div>
+          <div class="child-footer">
+            <div class="quiet-row settings back-row"><svg class="quiet-icon"><use href="#icon-chevron"/></svg><div><div class="quiet-title">Back to Scope</div><div class="quiet-meta">nothing to choose yet</div></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <aside class="evidence">
+      <p class="kicker">Picker child · empty</p>
+      <h1>No dead state cluster</h1>
+      <p class="subtitle">When no eligible saved list exists, the child names why and presents no inert chips or Clear action.</p>
+      <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
+      <h2>Empty-state proof</h2>
+      <ul class="facts">
+        <li>The active list is context, never a self-filter choice.</li>
+        <li>Loved and system lists remain outside this membership collection.</li>
+        <li>Back remains reachable at top and bottom.</li>
+        <li>Clear is absent because this frame has default discovery and list scope.</li>
+      </ul>
+      <h2>Measured beside the frame</h2>
+      <table class="metrics">
+        <tr><th>Phone</th><td data-box=".phone"></td></tr>
+        <tr><th>Top back</th><td data-box=".child-back"></td></tr>
+        <tr><th>Empty region</th><td data-box=".membership-scroll"></td></tr>
+        <tr><th>Empty content</th><td data-box=".empty-memberships"></td></tr>
+        <tr><th>Bottom back</th><td data-box=".child-footer .quiet-row"></td></tr>
+        <tr><th>Clear controls</th><td data-count=".clear-scope"></td></tr>
+      </table>
+      <p class="record-note"><strong>State rule:</strong> if discovery or another list-filter dimension is already non-default, Clear remains outside this empty collection; only the membership choices are empty.</p>
+    </aside>
+  </article>
+
+  <article class="variant" data-variant="picker-lists-ax">
+    <section class="phone ax child-phone" aria-label="AX Other lists child at exact 390 by 844">
+      <svg class="map" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="sheet-scroll">
+          <div class="child-back"><svg><use href="#icon-chevron"/></svg><span>Scope</span></div>
+          <header class="child-intro"><h1 class="sheet-title">Other lists</h1><p class="sheet-subtitle">saved-list membership</p></header>
+          <div class="membership-scroll" data-scroll-top="86">
+            <div class="membership-item"><span class="membership-name">Architecture</span><span class="membership-state is-on"><svg><use href="#icon-list-on"/></svg>Included</span></div>
+            <div class="membership-item"><span class="membership-name">Cemeteries and memorials</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Family history places</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Museums for very rainy school-holiday days</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Public art across the Klang Valley</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Railway stations, signal boxes, and old hotels</span><span class="membership-state is-on"><svg><use href="#icon-list-on"/></svg>Included</span></div>
+          </div>
+          <div class="child-footer">
+            <div class="clear-scope has-meta"><svg><use href="#icon-reset"/></svg><div class="clear-copy"><div class="clear-title">Clear scope</div><div class="clear-meta">Reset list filter and discovery defaults</div></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <aside class="evidence">
+      <p class="kicker">Picker child · AX stress</p>
+      <h1>Long names stay bounded</h1>
+      <p class="subtitle">Only the membership collection scrolls. Long user-authored names wrap in 86pt-minimum rows while navigation and Clear remain fixed.</p>
+      <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
+      <h2>Accessibility proof</h2>
+      <ul class="facts">
+        <li>AX rows keep 86pt minimum targets and wrap without truncation.</li>
+        <li>State capsules retain 44pt height and filled/outline glyphs.</li>
+        <li>Back and Clear remain outside the advanced scroll offset.</li>
+        <li>The current value is also exposed through VoiceOver, not glyph alone.</li>
+      </ul>
+      <h2>Measured beside the frame</h2>
+      <table class="metrics">
+        <tr><th>Phone</th><td data-box=".phone"></td></tr>
+        <tr><th>Back target</th><td data-box=".child-back"></td></tr>
+        <tr><th>AX list rows</th><td data-box=".membership-item"></td></tr>
+        <tr><th>State capsules</th><td data-box=".membership-state"></td></tr>
+        <tr><th>Scroll region</th><td data-scroll-box=".membership-scroll"></td></tr>
+        <tr><th>Clear scope</th><td data-box=".clear-scope"></td></tr>
+      </table>
+      <p class="record-note"><strong>Bound:</strong> arbitrary eligible-list counts remain inside a 350pt collection viewport; the full-target exit does not move with them.</p>
+    </aside>
+  </article>
+
+  <article class="variant" data-variant="picker-ax">
+    <section class="phone ax" aria-label="AX Explore picker at exact 390 by 844">
+      <svg class="map" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="sheet-scroll" data-scroll-top="80">
+          <header><h1 class="sheet-title">Explore</h1><p class="sheet-subtitle">what the map shows right now</p></header>
+          <section class="scope">
+            <div class="section-heading has-toggle"><h2 class="section-label">Scope</h2><span class="toggle-all">Show all</span></div>
+            <div class="chips">
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Archaeological</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Artwork</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Attraction</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Historic Building</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Memorial</span>
+              <span class="chip is-on"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Museum</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Religious</span>
+              <span class="chip"><svg class="chip-icon state-glyph"><use href="#icon-category"/></svg>Other</span>
+            </div>
+            <div class="scope-rows">
+              <div class="scope-row is-on"><svg class="scope-icon"><use href="#icon-eye-off"/></svg><span class="scope-copy">Include hidden places</span><span class="switch is-on"></span></div>
+              <div class="scope-row"><svg class="scope-icon"><use href="#icon-bookmark"/></svg><span class="scope-copy">Show saved places</span><span class="switch"></span></div>
+              <div class="scope-row is-on"><svg class="scope-icon"><use href="#icon-coverage"/></svg><span class="scope-copy">Show coverage shading</span><span class="switch is-on"></span></div>
+            </div>
+            <div class="clear-scope"><svg><use href="#icon-reset"/></svg><span>Clear scope</span></div>
+          </section>
+          <nav class="quiet-bottom">
+            <div class="quiet-row settings"><svg class="quiet-icon"><use href="#icon-gear"/></svg><div><div class="quiet-title">Settings</div><div class="quiet-meta">appearance, data, location, storage</div></div><svg class="quiet-chevron"><use href="#icon-chevron"/></svg></div>
+            <div class="quiet-row"><svg class="quiet-icon"><use href="#icon-book"/></svg><div><div class="quiet-title">About</div><div class="quiet-meta">the story · privacy · licences</div></div><svg class="quiet-chevron"><use href="#icon-chevron"/></svg></div>
+          </nav>
+        </div>
+      </div>
+    </section>
+    <aside class="evidence">
+      <p class="kicker">Picker · accessibility size</p>
+      <h1>AX stress, scrolled</h1>
+      <p class="subtitle">The semantic sheet scroll is intentionally advanced to expose the 86pt rows, Clear scope, and both navigational destinations in one evidence frame.</p>
+      <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
+      <h2>Accessibility proof</h2>
+      <ul class="facts">
+        <li>AX chips wrap and grow; text remains untruncated.</li>
+        <li>All Scope rows preserve the ratified 86pt minimum.</li>
+        <li>Clear scope and navigational rows keep full targets.</li>
+        <li>Chip fill/outline, switch position, glyph, and VoiceOver value carry state—not colour alone.</li>
+      </ul>
+      <h2>Measured beside the frame</h2>
+      <table class="metrics">
+        <tr><th>Phone</th><td data-box=".phone"></td></tr>
+        <tr><th>Scope rows</th><td data-box=".scope-row"></td></tr>
+        <tr><th>Switches</th><td data-box=".switch"></td></tr>
+        <tr><th>Show-all target</th><td data-box=".toggle-all"></td></tr>
+        <tr><th>AX chips</th><td data-box=".chip"></td></tr>
+        <tr><th>AX chip flow</th><td>38pt minimum · 8pt gap · 46pt interior pitch<span class="source">Neighbour 4pt; free vertical 3pt, horizontal 0pt</span></td></tr>
+        <tr><th>Clear scope</th><td data-box=".clear-scope"></td></tr>
+        <tr><th>Destinations</th><td data-box=".quiet-row"></td></tr>
+        <tr><th>Scroll region</th><td data-scroll-box=".sheet-scroll"></td></tr>
+      </table>
+      <p class="record-note"><strong>AX qualifier:</strong> 41/22pt title treatment and 38pt chips are retained measured A8 stress geometry. The 86pt Scope row class is ratified by P2R-4.</p>
+    </aside>
+  </article>
+
+  <article class="variant" data-variant="door-default">
+    <section class="phone" aria-label="Map doors with default scope at exact 390 by 844">
+      <svg class="map" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="map-control"><svg><use href="#icon-locate"/></svg></div>
+      <div class="attribution">© OpenStreetMap</div>
+      <div class="door-bar">
+        <div class="door explore-door"><svg><use href="#icon-globe"/></svg><span>Explore</span></div>
+        <div class="door"><svg><use href="#icon-shoeprints"/></svg><span>Journal</span></div>
+      </div>
+    </section>
+    <aside class="evidence">
+      <p class="kicker">Explore door · default scope</p>
+      <h1>Quiet when nothing is hidden</h1>
+      <p class="subtitle">The door keeps the ratified pill pattern and its stable Explore identity. No indicator is rendered at the persisted and contextual defaults.</p>
+      <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
+      <h2>State proof</h2>
+      <ul class="facts">
+        <li>Accessibility value: <code>Default scope</code>.</li>
+        <li>Explore keeps the globe and stable <code>map.door.explore</code> contract.</li>
+        <li>No dot-only or colour-only latent indicator is present.</li>
+      </ul>
+      <h2>Measured beside the frame</h2>
+      <table class="metrics">
+        <tr><th>Phone</th><td data-box=".phone"></td></tr>
+        <tr><th>Door bar</th><td data-box=".door-bar"></td></tr>
+        <tr><th>Explore door</th><td data-box=".explore-door"></td></tr>
+        <tr><th>All door targets</th><td data-box=".door"></td></tr>
+        <tr><th>Door pattern</th><td>44pt height · 999px radius · 15pt/600 label · 7pt gap · 19×19 icon<span class="source">Ratified component-metrics row · ia-doors</span></td></tr>
+        <tr><th>Attribution</th><td>11pt bare muted text; never a pill</td></tr>
+        <tr><th>Contrast</th><td>ink/surface 14.02:1 · accent/surface 6.13:1</td></tr>
+      </table>
+      <p class="record-note"><strong>Activation rule:</strong> default when discovery scope is default and no effective Tracks-mode list filter (<code>showVisited &amp;&amp; visitFilter.isActive</code>) is active. A retained filter in Fresh mode may remain dormant.</p>
+    </aside>
+  </article>
+
+  <article class="variant" data-variant="door-active">
+    <section class="phone" aria-label="Map doors with adjusted scope at exact 390 by 844">
+      <svg class="map" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="map-control"><svg><use href="#icon-locate"/></svg></div>
+      <div class="attribution">© OpenStreetMap</div>
+      <div class="door-bar">
+        <div class="door explore-door">
+          <svg><use href="#icon-globe"/></svg><span>Explore</span>
+          <span class="scope-badge" aria-hidden="true"><svg><use href="#icon-filter"/></svg></span>
+        </div>
+        <div class="door"><svg><use href="#icon-shoeprints"/></svg><span>Journal</span></div>
+      </div>
+    </section>
+    <aside class="evidence">
+      <p class="kicker">Explore door · adjusted scope</p>
+      <h1>The reason stays on the map</h1>
+      <p class="subtitle">The filtered-state icon appears for non-default discovery scope or an active list filter while the list map is in Tracks mode.</p>
+      <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
+      <h2>State proof</h2>
+      <ul class="facts">
+        <li>Visible symbol: <code>line.3.horizontal.decrease.circle.fill</code>; accessibility value: <code>Scope adjusted</code>.</li>
+        <li>Presence and the filled-circle filter silhouette carry state—not colour alone.</li>
+        <li>The globe remains stable, so Explore recognition is not traded away.</li>
+        <li>The icon is evidence inside one 44pt door target, not a nested control.</li>
+      </ul>
+      <h2>Measured beside the frame</h2>
+      <table class="metrics">
+        <tr><th>Phone</th><td data-box=".phone"></td></tr>
+        <tr><th>Explore door</th><td data-box=".explore-door"></td></tr>
+        <tr><th>Scope indicator</th><td data-box=".scope-badge"></td></tr>
+        <tr><th>All door targets</th><td data-box=".door"></td></tr>
+        <tr><th>Indicator contrast</th><td>accent-contrast/accent 6.13:1</td></tr>
+        <tr><th>Door contrast</th><td>ink/surface 14.02:1 · accent/surface 6.13:1</td></tr>
+      </table>
+      <p class="record-note"><strong>P2R-5a:</strong> a thin map never leaves its reason hidden behind an unmarked door. A retained list filter is dormant in Fresh mode and does not activate this badge by itself.</p>
+    </aside>
+  </article>
+
+  <article class="variant" data-variant="door-active-ax">
+    <section class="phone ax-door" aria-label="AX map doors with adjusted scope at exact 390 by 844">
+      <svg class="map" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="map-control"><svg><use href="#icon-locate"/></svg></div>
+      <div class="attribution">© OpenStreetMap</div>
+      <div class="door-bar">
+        <div class="door explore-door">
+          <svg><use href="#icon-globe"/></svg><span>Explore</span>
+          <span class="scope-badge" aria-hidden="true"><svg><use href="#icon-filter"/></svg></span>
+        </div>
+        <div class="door"><svg><use href="#icon-shoeprints"/></svg><span>Journal</span></div>
+      </div>
+    </section>
+    <aside class="evidence">
+      <p class="kicker">Explore door · AX adjusted</p>
+      <h1>The filtered icon scales in line</h1>
+      <p class="subtitle">At accessibility size the icon grows with Explore, both door targets retain their stress-size floor, and the pair still fits the exact 390pt phone.</p>
+      <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
+      <h2>Responsive proof</h2>
+      <ul class="facts">
+        <li>Explore identity remains primary; the filtered-state icon is a trailing status mark.</li>
+        <li>Both doors share a 68pt minimum target at this stress size.</li>
+        <li>The filtered icon grows from 22pt to 28pt instead of retaining its default size.</li>
+        <li>Attribution clears the taller bar and remains bare text.</li>
+      </ul>
+      <h2>Measured beside the frame</h2>
+      <table class="metrics">
+        <tr><th>Phone</th><td data-box=".phone"></td></tr>
+        <tr><th>Door bar</th><td data-box=".door-bar"></td></tr>
+        <tr><th>Explore target</th><td data-box=".explore-door"></td></tr>
+        <tr><th>Journal target</th><td data-box=".door:not(.explore-door)"></td></tr>
+        <tr><th>Scope indicator</th><td data-box=".scope-badge"></td></tr>
+        <tr><th>Attribution</th><td data-box=".attribution"></td></tr>
+        <tr><th>Phone fit</th><td>8pt bar insets · 8pt inter-door gap<span class="source">No horizontal clipping at 390pt</span></td></tr>
+      </table>
+      <p class="record-note"><strong>AX contract:</strong> status presence and silhouette survive scaling; the target keeps its 68pt stress-size floor.</p>
+    </aside>
+  </article>
+
+<script>
+  const requested = new URLSearchParams(location.search).get("variant") || "picker-default";
+  const active = document.querySelector(`[data-variant="${requested}"]`)
+    || document.querySelector('[data-variant="picker-default"]');
+  active.classList.add("is-active");
+
+  const rounded = value => `${Math.round(value)}pt`;
+  const boxText = elements => {
+    const boxes = [...elements].map(element => {
+      const box = element.getBoundingClientRect();
+      return `${Math.round(box.width)}×${Math.round(box.height)}pt`;
+    });
+    return [...new Set(boxes)].join(" · ");
+  };
+
+  active.querySelectorAll("[data-box]").forEach(output => {
+    output.textContent = boxText(active.querySelectorAll(output.dataset.box));
+  });
+
+  active.querySelectorAll("[data-count]").forEach(output => {
+    output.textContent = `${active.querySelectorAll(output.dataset.count).length} rendered`;
+  });
+
+  requestAnimationFrame(() => {
+    active.querySelectorAll("[data-scroll-top]").forEach(element => {
+      element.scrollTop = Number(element.dataset.scrollTop);
+    });
+    active.querySelectorAll("[data-scroll-box]").forEach(output => {
+      const element = active.querySelector(output.dataset.scrollBox);
+      output.textContent = `${rounded(element.clientHeight)} viewport · ${rounded(element.scrollHeight)} content · ${rounded(element.scrollTop)} shown offset`;
+    });
+  });
+</script>
+</body>
+</html>

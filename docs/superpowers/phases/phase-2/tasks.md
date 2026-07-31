@@ -280,9 +280,9 @@ Host-only unless you touch `project.yml`.
 - **Serves:** W-1, gating #469 · **Spec section:** §2, §5, §7
 - **Acceptance criteria:** AC2.13 (drawn), AC2.17, AC2.18, and the drawn form of AC2.8, AC2.9, AC2.11, AC2.12
 - **Depends on:** none — claimable immediately
-- **Owner:** unclaimed · **Pipeline:** build agent authors → **reviewer validates** → **Rob rules**
+- **Owner:** codex1 · **Pipeline:** build agent authors → **reviewer validates** → **Rob rules**
 - **Review tier:** `sourcery` + `reviewer` (validation is the gate, not a courtesy)
-- **Status:** unclaimed
+- **Status:** ruled — filtered-icon amendment revalidated at exact head `0bb0e3b`; exactly two amended digests and eight unchanged digests matched; draft PR #570 is ready for merge
 - **Unblocks:** T2.8, **on Rob's ruling — not on merge**
 - **RULED (Rob, 2026-07-31, relayed in planner's chat):** verbatim — *"'scope set' is clunky. Can we add a 'filtered' icon instead? Switches fine."* then *"Doesn't need to come back to me, just implement."* Consequences: **switches are ratified** for the three scope rows (OF5 closes as the row-class exception to R15, in the drawn form); the scope-active door affordance **redraws as a filtered icon** (glyph is the builder's taste guess, flagged); the drawn list-map split ships as drawn; **no return trip** — the row completes at reviewer's revalidation of the amended frames.
 
@@ -366,7 +366,7 @@ Host tests for the store and the derivation reach (`cd ios && swift test`), then
 - **Depends on:** **T2.5 ruled by Rob** (not merged — ruled), and **T2.7**
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `reviewer` (second Greptile slot is planner's call — see *Review budget*)
-- **Status:** unclaimed — **blocked until W-1 is ruled**
+- **Status:** unclaimed — **W-1 gate satisfied; blocked only until T2.7 merges**
 - **Contracts consumed:** T2.7's persisted scope set and default predicate; T2.2's roles if the picker draws row glyphs; T2.1's distinct Scope-control 20/15 pairing and `.button` anchor.
 
 **Builder brief.** Build the picker W-1 draws. **The surface already exists** — `ExploreDoorRootView` (`MapDoorShell.swift:429`–`575`) with the three scope toggle rows (`ExploreScopeControl`, `:63`–`:90`), the category chip flow at the ratified 6pt gap, and `ExploreCategoryChipTopology`'s R10 neighbour-gap wiring (`:92`–`:124`). You are rebuilding it to the ruled wireframe, not starting it.
