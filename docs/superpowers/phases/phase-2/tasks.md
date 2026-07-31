@@ -202,7 +202,7 @@ Docs-only, so the iOS gate does not run — and a green PR is therefore not a te
 - **Branch:** `wp-t2-2-impl`
 - **Owner:** codex1
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** branch — implementation and full host gate GREEN (500 tests) at rebased base `4e6f09d`; review pending
+- **Status:** PR open — draft #574; implementation and full host gate GREEN (500 tests); Sourcery + reviewer pending
 - **Contracts produced:** two new `IconRole` cases and the scaled press inset. **T2.3 consumes the first**; name both in the PR body.
 
 **Builder brief.** Two changes in `ios/Sources/DesignSystem/`, both rename-level in spirit: no surface should look different except the one glyph T2.3 migrates afterwards.
