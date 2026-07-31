@@ -105,8 +105,8 @@ Decisions this graph cannot take. Each names the owner and what is blocked.
 - **OF2 — Does the Scope **block rhythm** travel with the ratified row class? (owner: Rob, via planner. Blocks: nothing — T2.1 has a stated default. Affects: T2.1's edit and T2.8's provenance.)** P2R-4 ratifies *"A8 Explore's measured Scope-row geometry"* — *"RATIFIED WHOLESALE as system law for this row class (52pt default / 86pt AX, full geometry as tabled)"*. That cleanly ratifies the two Scope-control rows (52pt default, 86pt AX) and cleanly leaves sheet placement, the quiet destination rows and the AX sheet/labels/chips row as MEASURED. **The one genuinely ambiguous row is *Explore default Scope block rhythm*** (18/11/14pt) — the rhythm *between* the Scope rows and their neighbours, not the rows themselves — and the ambiguity is not invented: the **AX** Scope-control row already carries its own `14/9/14pt block rhythm` **inside the ratified row**, so the default surface's rhythm sits outside a ratification its AX twin contains. **Reviewer's reading, and T2.1's default absent a ruling:** ratify the two control rows only, leave the rhythm MEASURED, and let T2.8 gate any use of it with the delta named — under-claiming a ratification is recoverable; over-claiming one puts a figure into system law that nobody ruled.
   - **Consequence, now real in the spec and recorded so W-1 does not read it as design.** T2.1 restamped exactly as this default instructed, and the AX Scope-control row it promoted **contains `14/9/14pt block rhythm` inside its own metric text**. So AX block rhythm is now system law while the default-size *Explore default Scope block rhythm* row stays MEASURED. **That split is an artefact of where the figures were tabled, not a statement that AX rhythm binds and default rhythm is free.** W-1 draws both to the measured figures and gates any deviation the same way; if the session later ratifies the default row, the asymmetry closes rather than being discovered as intent.
 - **OF3 — The door pill's 19×19.** The ratified table says 19; the code says 15; the closed set now has five roles and expresses neither 19 nor a rule for it. Nothing in this phase's rows touches that site, and #520 does not cover it (#529 removed that literal by adopting `inline`). **Not blocking anything** — recorded so the next session meets it as a fact rather than discovering it as a third instance. P2R-2(d)'s anti-creep restatement is the thing it presses against.
-- **OF4 — What exactly merges into the Scope surface from list mode?** `ListMapFilterChips` filters an **active list's** visits; the picker scopes **discovery**. Reading A: the picker gains a list-scoped section when a list map is active. Reading B: the floating chips stay, and #469's "merge" means the *category* chips only. **Reviewer's reading: A**, on #469's own words ("merge today's Layers sheet … and the floating filter chips into one Scope surface") — but the two filters are not the same kind of thing and W-1 is where that has to be drawn, so it is the wireframe's question to answer and Rob's to rule.
-- **OF5 — Do the scope rows keep switches under R15?** The ratified row-class geometry describes a **44×28 switch with a 22pt knob** per scope control row (AX: 51×31 with a 25pt knob). R15's state morphology is ON = filled pill + filled glyph. P2R-7 describes this surface's controls as *"states and quiet verbs"* — which confirms they are **states**, and still does not say what a state row looks like when it is a row rather than a pill in a cluster. **Reviewer's reading:** ratifying the row-class geometry ratifies the switch as the scope-row control, and R15 governs state clusters rather than switch rows — but ratifying geometry is not the same act as ratifying morphology. W-1 must state which it drew and on what grounds. Not blocking; it is a W-1 requirement, recorded here so the validation pass has something to check against.
+- **OF4 — RESOLVED by the W-1 ruling (Rob, 2026-07-31): the drawn split ships as drawn ("just implement").** Original flag follows as history. **What exactly merges into the Scope surface from list mode?** `ListMapFilterChips` filters an **active list's** visits; the picker scopes **discovery**. Reading A: the picker gains a list-scoped section when a list map is active. Reading B: the floating chips stay, and #469's "merge" means the *category* chips only. **Reviewer's reading: A**, on #469's own words ("merge today's Layers sheet … and the floating filter chips into one Scope surface") — but the two filters are not the same kind of thing and W-1 is where that has to be drawn, so it is the wireframe's question to answer and Rob's to rule.
+- **OF5 — RESOLVED by the W-1 ruling (Rob, 2026-07-31): switches ratified as the row-class exception, in the drawn form.** Original flag follows as history. **Do the scope rows keep switches under R15?** The ratified row-class geometry describes a **44×28 switch with a 22pt knob** per scope control row (AX: 51×31 with a 25pt knob). R15's state morphology is ON = filled pill + filled glyph. P2R-7 describes this surface's controls as *"states and quiet verbs"* — which confirms they are **states**, and still does not say what a state row looks like when it is a row rather than a pill in a cluster. **Reviewer's reading:** ratifying the row-class geometry ratifies the switch as the scope-row control, and R15 governs state clusters rather than switch rows — but ratifying geometry is not the same act as ratifying morphology. W-1 must state which it drew and on what grounds. Not blocking; it is a W-1 requirement, recorded here so the validation pass has something to check against.
 
 ---
 
@@ -261,9 +261,9 @@ Full gate — you changed an app-target surface.
 - **Serves:** P2R-9's second rider; spec §8 · **Spec section:** §3, §8
 - **Acceptance criteria:** AC2.6
 - **Depends on:** none
-- **Owner:** unclaimed
+- **Owner:** codex2
 - **Review tier:** `sourcery`
-- **Status:** unclaimed
+- **Status:** PR open — #572
 
 **Builder brief.** The smallest row in the phase, and it exists because the amendment landed the **sheet** side and not the **code** side. `PinLayers.pinColor` reads `PinTokenBlock.constant.pin.mapStyleString` (`ios/Sources/MakingTracksMapStyle/PinLayers.swift:5`); the line below it, `hiddenPinColor`, is still a raw `"#767B82"` string literal (`:6`) even though spec §3 now carries it as a constant-pin-block row and §8 says pin layer constants come from that block. Wire it the way `pinColor` is wired.
 
@@ -280,10 +280,11 @@ Host-only unless you touch `project.yml`.
 - **Serves:** W-1, gating #469 · **Spec section:** §2, §5, §7
 - **Acceptance criteria:** AC2.13 (drawn), AC2.17, AC2.18, and the drawn form of AC2.8, AC2.9, AC2.11, AC2.12
 - **Depends on:** none — claimable immediately
-- **Owner:** unclaimed · **Pipeline:** build agent authors → **reviewer validates** → **Rob rules**
+- **Owner:** codex1 · **Pipeline:** build agent authors → **reviewer validates** → **Rob rules**
 - **Review tier:** `sourcery` + `reviewer` (validation is the gate, not a courtesy)
-- **Status:** unclaimed
+- **Status:** ruled — filtered-icon amendment revalidated at exact head `0bb0e3b`; exactly two amended digests and eight unchanged digests matched; draft PR #570 is ready for merge
 - **Unblocks:** T2.8, **on Rob's ruling — not on merge**
+- **RULED (Rob, 2026-07-31, relayed in planner's chat):** verbatim — *"'scope set' is clunky. Can we add a 'filtered' icon instead? Switches fine."* then *"Doesn't need to come back to me, just implement."* Consequences: **switches are ratified** for the three scope rows (OF5 closes as the row-class exception to R15, in the drawn form); the scope-active door affordance **redraws as a filtered icon** (glyph is the builder's taste guess, flagged); the drawn list-map split ships as drawn; **no return trip** — the row completes at reviewer's revalidation of the amended frames.
 
 **Builder brief.** Draw the DS-3 Explore picker at **390×844 plus an AX variant**, HTML committed. This is a mockup-gate artifact under the authoring law: it is evidence, and evidence carries its numbers.
 
@@ -309,10 +310,11 @@ Host-only unless you touch `project.yml`.
 - **Serves:** W-2, gating #472 · **Spec section:** §2, §5
 - **Acceptance criteria:** AC2.14, AC2.16, AC2.17, AC2.18 (drawn)
 - **Depends on:** none — claimable immediately
-- **Owner:** unclaimed · **Pipeline:** build agent authors → **reviewer validates** → **Rob rules**
+- **Owner:** codex2 · **Pipeline:** build agent authors → **reviewer validates** → **Rob rules**
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** unclaimed
+- **Status:** ruled — Rob approved #568's Settings + About default/AX artifacts as drawn
 - **Unblocks:** T2.9 and T2.10, **on Rob's ruling**
+- **RULED (Rob, 2026-07-31, relayed in planner's chat):** verbatim — *"568 mockups look good."* Approved **as drawn**, both taste guesses included: Settings as hub-with-focused-subareas; licences as tap-through sub-areas. T2.6 completes at ruled; T2.9/T2.10 unblocked that moment. Assignment at unblock: T2.9 → codex2, T2.10 → codex3.
 
 **Builder brief.** Draw Settings and About at **390×844 plus AX variants**, HTML committed.
 
@@ -364,7 +366,7 @@ Host tests for the store and the derivation reach (`cd ios && swift test`), then
 - **Depends on:** **T2.5 ruled by Rob** (not merged — ruled), and **T2.7**
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `reviewer` (second Greptile slot is planner's call — see *Review budget*)
-- **Status:** unclaimed — **blocked until W-1 is ruled**
+- **Status:** unclaimed — **W-1 gate satisfied; blocked only until T2.7 merges**
 - **Contracts consumed:** T2.7's persisted scope set and default predicate; T2.2's roles if the picker draws row glyphs; T2.1's distinct Scope-control 20/15 pairing and `.button` anchor.
 
 **Builder brief.** Build the picker W-1 draws. **The surface already exists** — `ExploreDoorRootView` (`MapDoorShell.swift:429`–`575`) with the three scope toggle rows (`ExploreScopeControl`, `:63`–`:90`), the category chip flow at the ratified 6pt gap, and `ExploreCategoryChipTopology`'s R10 neighbour-gap wiring (`:92`–`:124`). You are rebuilding it to the ruled wireframe, not starting it.
@@ -390,7 +392,7 @@ Full gate plus renders of the picker at default and AX with measurements beside 
 - **Depends on:** **T2.6 ruled by Rob**
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** unclaimed — **blocked until W-2 is ruled**
+- **Status:** unclaimed — unblocked by Rob's W-2 ruling
 - **Contracts consumed:** T1.4's sheet/row patterns, T1.1 tokens, T1.2 font roles.
 
 **Builder brief.** Rebuild `SettingsView` (`MapScreen.swift:6744`–`:6900`) to W-2's grouping on **DS-1 rows and sheets — no system `List` chrome**. Today's sections are Map theme, Downloads, Pins, Location, Storage, Diagnostics, Onboarding; the ruled grouping is Appearance · Offline maps · Coverage · Map & data · Location · Diagnostics · Replay welcome. **The mapping between the two is W-2's to have drawn**; if a today-section has no ruled home, flag it rather than inventing one.
@@ -418,7 +420,7 @@ Full gate plus renders of each Settings group at default and AX.
 - **Depends on:** **T2.6 ruled by Rob**
 - **Owner:** unclaimed
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** unclaimed — **blocked until W-2 is ruled**
+- **Status:** unclaimed — unblocked by Rob's W-2 ruling
 
 **Builder brief.** Rebuild `AboutView` (`MapScreen.swift:7566`–`:7900`) to W-2: the **story and the privacy promise up top**, then **Software licences** and **Data licences** as proper sub-areas rather than one flat run. DS-1 rows and sheets; no system `List` chrome.
 
