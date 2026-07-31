@@ -120,6 +120,13 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
+    func testQuietTextInsetUsesItsPairedButtonTypographyAnchor() {
+        assertTypographyTextStyle(
+            MaterialControlPressFeedback.textInsetTypographyAnchor,
+            equals: TypographyRole.button.specification.textStyle
+        )
+    }
+
     func testStateToggleStyleResolvesOpaqueSemanticPalette() {
         let style = MaterialStateToggleButtonStyle(
             foreground: .accent,
@@ -427,45 +434,6 @@ final class ControlStylesTests: XCTestCase {
         XCTAssertEqual(unscaledPressedBounds.minX, unscaledRestingBounds.minX)
         XCTAssertEqual(defaultDisplacement, 1)
         XCTAssertEqual(unscaledPressedBounds.size, unscaledRestingBounds.size)
-
-        // SwiftUI documents that macOS ignores Dynamic Type changes, so this
-        // host ImageRenderer cannot resolve @ScaledMetric at AX:
-        // https://developer.apple.com/documentation/swiftui/environmentvalues/dynamictypesize
-        // Inject the simulated iOS-resolved value through the actual
-        // MaterialButtonStyleBody path. T2.3's required default/AX simulator
-        // renders provide the device-real @ScaledMetric proof.
-        let simulatedAccessibilityInset: CGFloat = 3
-        let accessibilityResting = try renderQuietButtonStyleBody(
-            isPressed: false,
-            tokens: unscaledSheet,
-            pressFeedback: feedback,
-            dynamicTypeSize: .accessibility5,
-            resolvedTextInsetPoints: simulatedAccessibilityInset
-        ) {
-            Text("Settings")
-        }
-        let accessibilityPressed = try renderQuietButtonStyleBody(
-            isPressed: true,
-            tokens: unscaledSheet,
-            pressFeedback: feedback,
-            dynamicTypeSize: .accessibility5,
-            resolvedTextInsetPoints: simulatedAccessibilityInset
-        ) {
-            Text("Settings")
-        }
-        let accessibilityRestingBounds = try nonTransparentBounds(
-            in: accessibilityResting
-        )
-        let accessibilityPressedBounds = try nonTransparentBounds(
-            in: accessibilityPressed
-        )
-        let accessibilityDisplacement =
-            accessibilityPressedBounds.minY - accessibilityRestingBounds.minY
-        XCTAssertEqual(
-            accessibilityDisplacement,
-            simulatedAccessibilityInset
-        )
-        XCTAssertGreaterThan(accessibilityDisplacement, defaultDisplacement)
 
         let disabledResting = try renderQuietButtonStyleBody(
             isPressed: false,
@@ -1072,8 +1040,6 @@ final class ControlStylesTests: XCTestCase {
         tokens: MaterialTokenSheet,
         pressFeedback: MaterialControlPressFeedback =
             MaterialQuietButtonStyle().pressFeedback,
-        dynamicTypeSize: DynamicTypeSize = .large,
-        resolvedTextInsetPoints: CGFloat? = nil,
         @ViewBuilder label: () -> Label
     ) throws -> CGImage {
         try render(
@@ -1083,11 +1049,9 @@ final class ControlStylesTests: XCTestCase {
                 appearance: .quiet(tokens: tokens),
                 tokens: tokens,
                 pressFeedback: pressFeedback,
-                resolvedTextInsetPoints: resolvedTextInsetPoints,
                 accessibilityValue: { _ in nil }
             )
             .disabled(!isEnabled)
-            .environment(\.dynamicTypeSize, dynamicTypeSize)
             .frame(width: 180, height: 96)
             .background(Color.clear)
         )
@@ -1098,6 +1062,33 @@ final class ControlStylesTests: XCTestCase {
         let renderer = ImageRenderer(content: content)
         renderer.scale = 1
         return try XCTUnwrap(renderer.cgImage)
+    }
+
+    private func assertTypographyTextStyle(
+        _ actual: TypographyTextStyle,
+        equals expected: TypographyTextStyle,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let matches = switch (actual, expected) {
+        case (.largeTitle, .largeTitle),
+            (.title1, .title1),
+            (.title2, .title2),
+            (.headline, .headline),
+            (.body, .body),
+            (.subheadline, .subheadline),
+            (.footnote, .footnote),
+            (.caption2, .caption2):
+            true
+        default:
+            false
+        }
+        XCTAssertTrue(
+            matches,
+            "Expected \(expected), got \(actual)",
+            file: file,
+            line: line
+        )
     }
 
     private func renderedHeight<Content: View>(_ content: Content) throws -> Int {

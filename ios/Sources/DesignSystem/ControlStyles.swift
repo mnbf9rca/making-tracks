@@ -71,6 +71,9 @@ enum MaterialControlPressFeedback: Equatable, Sendable {
     case symbolWeightPulse
     case textInset(points: CGFloat)
 
+    static let textInsetTypographyAnchor =
+        TypographyRole.button.specification.textStyle
+
     func scale(isPressed: Bool, tokens: MaterialTokenSheet) -> CGFloat {
         MaterialControlInteractionFeedback.semanticControlScale(
             isPressed: isPressed,
@@ -629,7 +632,6 @@ struct MaterialButtonStyleBody<Label: View>: View {
     let pressFeedback: MaterialControlPressFeedback
     var disabledAppearance: MaterialControlDisabledAppearance = .dim
     let accessibilityValue: (Bool) -> String?
-    private let resolvedTextInsetPoints: CGFloat?
 
     @ScaledMetric private var scaledTextInsetPoints: CGFloat
     @Environment(\.isEnabled) private var isEnabled
@@ -641,7 +643,6 @@ struct MaterialButtonStyleBody<Label: View>: View {
         tokens: MaterialTokenSheet,
         pressFeedback: MaterialControlPressFeedback,
         disabledAppearance: MaterialControlDisabledAppearance = .dim,
-        resolvedTextInsetPoints: CGFloat? = nil,
         accessibilityValue: @escaping (Bool) -> String?
     ) {
         self.label = label
@@ -650,11 +651,12 @@ struct MaterialButtonStyleBody<Label: View>: View {
         self.tokens = tokens
         self.pressFeedback = pressFeedback
         self.disabledAppearance = disabledAppearance
-        self.resolvedTextInsetPoints = resolvedTextInsetPoints
         self.accessibilityValue = accessibilityValue
         _scaledTextInsetPoints = ScaledMetric(
             wrappedValue: pressFeedback.textInsetBasePoints,
-            relativeTo: TypographyRole.button.specification.textStyle.swiftUI
+            relativeTo:
+                MaterialControlPressFeedback
+                    .textInsetTypographyAnchor.swiftUI
         )
     }
 
@@ -687,8 +689,7 @@ struct MaterialButtonStyleBody<Label: View>: View {
                 y: pressFeedback.verticalOffset(
                     isPressed: isPressed,
                     isEnabled: isEnabled,
-                    scaledTextInsetPoints:
-                        resolvedTextInsetPoints ?? scaledTextInsetPoints
+                    scaledTextInsetPoints: scaledTextInsetPoints
                 )
             )
             .contentShape(Capsule())
