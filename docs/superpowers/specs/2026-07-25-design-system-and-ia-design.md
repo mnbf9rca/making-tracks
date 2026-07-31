@@ -66,7 +66,7 @@ state — owning task: Phase 2 T2.8.** T2.8 rebuilds that surface in place, merg
 floating filter chips into it as W-1 rules, repoints the relocated rows to A1-convention
 identifiers and dismantles the vestigial Layers-sheet plumbing.
 
-**Scope-filter reach is general law (P2R-8).** *Scope filters govern discovery surfaces; story
+**P2R-8 general law:** *scope filters govern discovery surfaces; story
 surfaces (Journal: tracks, lists, loved, hidden management) are exhaustive over their own domain
 and NAME overlaps instead of filtering them.* The saved-visibility filter is therefore a
 discovery-map concern only: `Derivations.swift` stays untouched by it permanently, and future
@@ -282,7 +282,13 @@ provenance, not ratified metrics.
 **Target API state — owning task: Phase 2 T2.2.** The table fixes the contract before the API
 carries it. The current `IconRole` still has three cases and the current quiet text-only press
 inset is the fixed `1pt` way-station; T2.2 adds the two named roles, closes the API at five and
-replaces the fixed displacement with the scaled metric below.
+replaces the fixed displacement with the scaled metric below. T2.2 also retires
+`ExploreSurfaceIconGeometry.scopeControl` and `.quietDestination`, the current `20` and `18`
+migration inputs; leaving those constants beside the new roles would give each figure two homes.
+Their live consumers currently scale relative to `.body`, not to either target typography anchor.
+`ExploreQuietDestinationRow` also renders its title with `.listRowTitle`, diverging from the
+ratified 15pt/600 quiet-row title; T2.8 owns that reconciliation, and the divergence is not a new
+ratification.
 
 | Element | Metric | Source |
 |---|---|---|
@@ -293,8 +299,8 @@ replaces the fixed displacement with the scaled metric below.
 | Raised card row | 14pt radius, 12pt padding, 10pt gap | `ia-doors` |
 | Row title (list) / row title (hero) | **17pt** / **18pt** Newsreader 600 | `ia-doors` `.t-serif` / `.t-serif.lg` |
 | Row metadata | 13pt sans | `ia-doors` `.t-meta` |
-| `IconRole.rowRaised` | **20×20**, scales with Dynamic Type relative to `TypographyRole.listRowTitle` | Size, functional name and scaling law **RATIFIED** by P2R-2(a) from `ia-doors`' raised-row glyphs; the typography anchor is T2.1's contract choice, grounded in the live shared row-label consumer |
-| `IconRole.rowQuiet` | **18×18**, scales with Dynamic Type relative to `TypographyRole.listRowTitle` | Size, functional name and scaling law **RATIFIED** by P2R-2(a) from `ia-doors`' quiet-row glyphs; the typography anchor is T2.1's contract choice, grounded in the live shared row-label consumer |
+| `IconRole.rowRaised` | **20×20**, scales with Dynamic Type relative to `TypographyRole.listRowTitle` | Size, functional name and scaling law **RATIFIED** by P2R-2(a) from `ia-doors`' raised-row glyphs (sliders, download, coverage); the anchor is T2.1's contract choice matching the ratified 17pt row title |
+| `IconRole.rowQuiet` | **18×18**, scales with Dynamic Type relative to `TypographyRole.button` | Size, functional name and scaling law **RATIFIED** by P2R-2(a) from `ia-doors`' quiet-row glyphs (gear, book, heart, eye-off); the anchor is T2.1's contract choice matching the ratified 15pt/600 quiet-row title |
 | Quiet row title / metadata | 15pt/600 muted / 12pt | `ia-doors` `.row.quiet` |
 | Compass · locate | 34×34 · 36×36 control, **20×20 icon** | `ia-doors` |
 | Chip | 22pt height, 0/9 padding, 4pt gap, 12pt/600 label, **11×11 icon**; row gap 6pt | `ia-doors` `.chip` / `.chips` |
@@ -320,6 +326,10 @@ ratification against frozen-render evidence (P2R-2(d)); a numeric size is never 
 The two Scope-control rows are ratified defaults wherever this row class appears, not metrics
 owned by the Explore surface. If DS-3's drawn picker needs to deviate, it deviates through its
 own gate with the delta named — never silently (P2R-4).
+
+OF2 leaves an intentional provenance asymmetry, not a design direction: AX's 14/9/14pt block
+rhythm sits inside the ratified AX row, while the default surface's 18/11/14pt block-rhythm row
+remains MEASURED. W-1 and T2.8 name any delta rather than reading that asymmetry as a mandate.
 
 #### Measured A8 Explore frozen-render facts — not system law
 
