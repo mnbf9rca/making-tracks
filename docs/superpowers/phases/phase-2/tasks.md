@@ -312,7 +312,7 @@ Host-only unless you touch `project.yml`.
 - **Depends on:** none — claimable immediately
 - **Owner:** codex2 · **Pipeline:** build agent authors → **reviewer validates** → **Rob rules**
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** drawn — Settings + About default/AX artifacts on `wp-472-w2-impl`; reviewer validation pending
+- **Status:** PR open — #568 carries Settings + About default/AX artifacts; reviewer validation pending
 - **Unblocks:** T2.9 and T2.10, **on Rob's ruling**
 - **RULED (Rob, 2026-07-31, relayed in planner's chat):** verbatim — *"568 mockups look good."* Approved **as drawn**, both taste guesses included: Settings as hub-with-focused-subareas; licences as tap-through sub-areas. T2.6 completes at ruled; T2.9/T2.10 unblocked that moment. Assignment at unblock: T2.9 → codex2, T2.10 → codex3.
 
