@@ -17,8 +17,9 @@ the **refined literal carve-out** into §4; and R13/R14's door changes into §2.
 
 **Sections describing state that is not yet built are marked *target*, with the owning task named**
 — per the authoring law that a spec may describe intent but must never let a reader mistake intent
-for the tree. The door rename, the Explore collapse and the R15 place-card re-render are all
-target; their code lands in the amendment wave.
+for the tree. The amendment wave delivered the Explore and Journal door rename, the initial
+Explore collapse and the R15 place-card state morphology. Phase 2 T2.8 owns the remaining Scope
+rebuild; Phase 2 T2.2 owns the component-metric API additions ratified here.
 
 ---
 
@@ -54,15 +55,22 @@ toast/pill family that appears only when it has something to say.
 ### Door 1 — Explore (*what the map shows, right now*) — **R14**
 
 **The door opens Scope directly.** There is no intermediate row list: tapping Explore presents the
-scope surface itself — category chips, include-hidden, coverage shading — absorbing today's Layers
-sheet and the floating filter chips. Settings and About are **quiet bottom rows** on that surface,
-the gear given the more prominent of the two. The **Search slot sits at the top** of the surface
-when DS-11 lands; until then the position is reserved and renders nothing, per the standing rule
-that a visible row which does nothing is a defect rather than a promise.
+scope surface itself — category chips, include-hidden, show-saved and coverage shading. Settings
+and About are **quiet bottom rows** on that surface, the gear given the more prominent of the two.
+The **Search slot sits at the top** of the surface when DS-11 lands; until then the position is
+reserved and renders nothing, per the standing rule that a visible row which does nothing is a
+defect rather than a promise.
 
-**Target state — owning task: the R13/R14 door-rename + Explore-collapse row in the amendment
-wave.** The built door is still named *World* and still presents a row list; this section describes
-what that task delivers, not what ships today.
+**Built state.** The door is named *Explore* and presents the existing Scope surface. **Target
+state — owning task: Phase 2 T2.8.** T2.8 rebuilds that surface in place, merges the list-mode
+floating filter chips into it as W-1 rules, repoints the relocated rows to A1-convention
+identifiers and dismantles the vestigial Layers-sheet plumbing.
+
+**Scope-filter reach is general law (P2R-8).** *Scope filters govern discovery surfaces; story
+surfaces (Journal: tracks, lists, loved, hidden management) are exhaustive over their own domain
+and NAME overlaps instead of filtering them.* The saved-visibility filter is therefore a
+discovery-map concern only: `Derivations.swift` stays untouched by it permanently, and future
+reach questions answer from this law rather than case by case.
 
 ### Door 2 — Journal (*your story through the world*) — **R13**
 
@@ -78,8 +86,8 @@ cannot afford it.
 | **Loved places** | Virtual row — loving becomes visible and manageable. |
 | **Hidden places** | Quiet virtual row — hiding becomes reversible in the open, not a buried toggle. |
 
-**Target state — same owning task as R14.** The built door is still named *Tracks*; the accessibility
-identifiers and the rendered-order test naming migrate with the rename.
+**Built state.** The door is named *Journal*, the listed rows are live, and its accessibility
+identifiers and rendered-order tests use the Journal naming.
 
 ### Settings (cleaned)
 
@@ -266,10 +274,15 @@ render; a builder takes the number from here, and the code holds the vocabulary 
 The rule this table exists to enforce: **numbers belong in tables; renders certify feel;
 information that only exists as pixels gets under-read.**
 
-The first table contains **ratified** system law. The second preserves **MEASURED** facts from the
-A8 frozen Explore render; those rows are visually distinct provenance, not ratified metrics, and
-are carried as Open Flag 5 in Phase 1's next-design-session batch for wholesale ratification or
-amendment.
+The first table contains **ratified** system law. P2R-4 promotes the two Scope-control row classes
+from the A8 evidence into that table; the second table preserves the five remaining
+**MEASURED** facts from the frozen Explore render. Those five rows remain visually distinct
+provenance, not ratified metrics.
+
+**Target API state — owning task: Phase 2 T2.2.** The table fixes the contract before the API
+carries it. The current `IconRole` still has three cases and the current quiet text-only press
+inset is the fixed `1pt` way-station; T2.2 adds the two named roles, closes the API at five and
+replaces the fixed displacement with the scaled metric below.
 
 | Element | Metric | Source |
 |---|---|---|
@@ -280,14 +293,16 @@ amendment.
 | Raised card row | 14pt radius, 12pt padding, 10pt gap | `ia-doors` |
 | Row title (list) / row title (hero) | **17pt** / **18pt** Newsreader 600 | `ia-doors` `.t-serif` / `.t-serif.lg` |
 | Row metadata | 13pt sans | `ia-doors` `.t-meta` |
-| **Explore-surface row icon** | **20×20** | `ia-doors` (sliders, download, coverage) |
-| **Quiet bottom row icon** | **18×18** | `ia-doors` (gear, book, heart, eye-off) |
+| `IconRole.rowRaised` | **20×20**, scales with Dynamic Type relative to `TypographyRole.listRowTitle` | Size, functional name and scaling law **RATIFIED** by P2R-2(a) from `ia-doors`' raised-row glyphs; the typography anchor is T2.1's contract choice, grounded in the live shared row-label consumer |
+| `IconRole.rowQuiet` | **18×18**, scales with Dynamic Type relative to `TypographyRole.listRowTitle` | Size, functional name and scaling law **RATIFIED** by P2R-2(a) from `ia-doors`' quiet-row glyphs; the typography anchor is T2.1's contract choice, grounded in the live shared row-label consumer |
 | Quiet row title / metadata | 15pt/600 muted / 12pt | `ia-doors` `.row.quiet` |
 | Compass · locate | 34×34 · 36×36 control, **20×20 icon** | `ia-doors` |
 | Chip | 22pt height, 0/9 padding, 4pt gap, 12pt/600 label, **11×11 icon**; row gap 6pt | `ia-doors` `.chip` / `.chips` |
 | Action cue (*Retrace*) | 13pt/600, 3pt gap, **11×11 chevron** | `ia-doors` `.action` (**R12**) |
 | New-list affordance | **15×15 icon** | `ia-doors` |
 | Control-label icon beside a 15pt label | **17×17** | `coherence` `.coh .act` — ratified **pairing constant**, deliberately outside `IconRole`'s closed set |
+| Quiet text-only press inset | `@ScaledMetric` relative to the control's paired `TypographyRole.button`, wrapping the current **1pt** migration base so the displacement grows with Dynamic Type instead of staying fixed | Scaling law **RATIFIED** by P2R-1; `1pt` is the shipped builder-proposed way-station carried as migration input, not an independently ratified figure |
+| Interaction constants | See §3's `disabledAlpha` and `pressScale` rows; §3 is their single canonical home and this table does not duplicate their figures | P2R-9 |
 | Action-bar button | 15pt/600 label, 6pt icon gap, 8pt between buttons | `coherence` |
 | `accentContainer` *(retired from the Saved role)* | designed opaque **`#D4EDE9`**; hue **170.40°**, delta **−0.32°** from `accent`, saturation **40.98%**, **5.23:1** against ink **`#0A6B5C`** | Historical A8 frozen-packet value; ratified by Rob on 2026-07-30, then retired from the Saved role without prejudice by the amended R16 rider |
 | Saved `accentDeepContainer` | designed opaque **`#08483E`** with `accentContrast` ink **`#FBFAF2`**; ink **9.995:1**; **8.390:1** against Saved OFF's composited wash **`#DEE9E0`**; **1.630:1** against Seen ON **`#0A6B5C`**; **1.904:1** against Loved ON **`#C4312B`** | **RATIFIED** — designer pick 2026-07-30 via the v2 panel at SHA `442161239dacb3aab8df0392039de22ae39ba98d`; ratified by Rob on 2026-07-31 |
@@ -295,17 +310,25 @@ amendment.
 | Interaction target floor | 44pt, tiled per **R10** where the rider permits | R10 scope line |
 | Pin | 20px circle, white stroke glyph | `ia-doors` |
 | Place-card **More** control | 44×44 target, glyph at **`IconRole.hero` = 22** | ruled by this session — see the snap note below |
+| Scope-control row class — default | 52pt minimum each; 15pt/600 label; 20×20 icon; 10pt gap; 6/2 padding; 44×28 switch with 22pt knob at 3/19pt offsets; 1pt hairlines | **RATIFIED as system law for this row class** by P2R-4 on 2026-07-31, from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54` |
+| Scope-control row class — AX | 86pt row minimum each; 23pt/600 label; 30×30 icon; 14pt gap; 10/2 padding; 51×31 switch with 25pt knob at 3/23pt offsets; 14/9/14pt block rhythm; minimum yields to content | **RATIFIED as system law for this row class** by P2R-4 on 2026-07-31, from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54` |
+
+**Target — owning task: Phase 2 T2.2.** `IconRole` closes again at exactly five functional roles:
+`hero`, `inline`, `accessory`, `rowRaised` and `rowQuiet`. Additions are only by design-session
+ratification against frozen-render evidence (P2R-2(d)); a numeric size is never a role's identity.
+
+The two Scope-control rows are ratified defaults wherever this row class appears, not metrics
+owned by the Explore surface. If DS-3's drawn picker needs to deviate, it deviates through its
+own gate with the delta named — never silently (P2R-4).
 
 #### Measured A8 Explore frozen-render facts — not system law
 
 | Element | Metric | Source |
 |---|---|---|
 | Explore default sheet placement | 62pt large-detent top; 12pt grabber-to-title gap | **MEASURED — measured from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54`; not ratified** |
-| Explore default Scope control rows (3) | 52pt minimum each; 15pt/600 label; 20×20 icon; 10pt gap; 6/2 padding; 44×28 switch with 22pt knob at 3/19pt offsets; 1pt hairlines | **MEASURED — measured from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54`; not ratified** |
 | Explore default Scope block rhythm | 18pt header-to-label; 11pt label-to-chips; 14pt chips-to-controls; row minimum yields to wrapped content | **MEASURED — measured from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54`; not ratified** |
 | Explore default quiet destination row | 9/2 padding; 10pt gap; 12×12 chevron; 2pt title-to-metadata gap | **MEASURED — measured from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54`; not ratified** |
 | Explore AX sheet / labels / chips | 48pt large-detent top; 10pt grabber gap; 41/22pt title/subtitle with 6pt gap; 17pt section label; chips 38pt minimum with 19pt/600 label, 18×18 icon, 5/14 padding, 6pt label gap and 8pt row gap | **MEASURED — measured from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54`; not ratified** |
-| Explore AX Scope control rows (3) | 86pt row minimum each; 23pt/600 label; 30×30 icon; 14pt gap; 10/2 padding; 51×31 switch with 25pt knob at 3/23pt offsets; 14/9/14pt block rhythm; minimum yields to content | **MEASURED — measured from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54`; not ratified** |
 | Explore AX quiet rows | 4pt block inset; 28×28 icon; 24/18pt title/metadata; 18×18 chevron; 14pt content gap; 10/2 padding; 4pt title-to-metadata gap | **MEASURED — measured from the A8 frozen Explore render at artifact SHA `f492296e932d8f3225362875f466f6d40504fe54`; not ratified** |
 
 **The snapped 21.** T1.10's *implementation* render drew the More control's glyph at **21px**

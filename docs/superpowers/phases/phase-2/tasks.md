@@ -164,7 +164,7 @@ Suggested waves for a four-builder pool. **Wave 1 is where the phase's latency l
 - **Branch:** `wp-t2-1-impl`
 - **Owner:** codex3
 - **Review tier:** `sourcery` + `reviewer` (+ codex-r's spec attack, per *Review budget*)
-- **Status:** claimed
+- **Status:** tests green
 - **Contracts produced:** the ratified figures T2.2 and T2.8 build against. **Fix them here**; a figure that moves after a builder consumes it is the failure this table exists to prevent.
 
 **Builder brief.** This is the one-shot amendment P2R-9 commissions, and **it is smaller than the commission implies** — most of its riders landed with #524 and the amendment wave. **Verify each of the following is already true before you write anything, and record the verification in your PR body**; if one is not true, it is yours and you say so:
