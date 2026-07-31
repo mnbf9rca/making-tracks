@@ -185,19 +185,19 @@ enum ExploreScopeControl: CaseIterable {
             ExploreScopeControlPresentation(
                 title: "Include hidden places",
                 icon: .system("eye.slash"),
-                accessibilityIdentifier: "map.layers.show-hidden"
+                accessibilityIdentifier: "explore.scope.include-hidden"
             )
         case .showSaved:
             ExploreScopeControlPresentation(
                 title: "Show saved places",
                 icon: .system("bookmark"),
-                accessibilityIdentifier: "map.layers.show-saved"
+                accessibilityIdentifier: "explore.scope.show-saved"
             )
         case .coverageShading:
             ExploreScopeControlPresentation(
                 title: "Show coverage shading",
                 icon: .coverageShading,
-                accessibilityIdentifier: "map.layers.coverage-shading"
+                accessibilityIdentifier: "explore.scope.coverage-shading"
             )
         }
     }
@@ -637,6 +637,7 @@ struct ExploreDoorRootView: View {
                 .font(Typography.font(for: .metadata))
                 .foregroundStyle(tokens.accent.swiftUIColor)
                 .frame(minHeight: 44)
+                .accessibilityIdentifier("explore.scope.categories.toggle-all")
         }
         .padding(.horizontal, 2)
     }
@@ -674,6 +675,7 @@ struct ExploreDoorRootView: View {
                         ) {
                             setCategory(category.id, visible: !isVisible)
                         }
+                        .accessibilityIdentifier("explore.scope.category.\(category.id)")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -697,6 +699,7 @@ struct ExploreDoorRootView: View {
             filter.lovedOnly.toggle()
             context.filter.wrappedValue = filter
         }
+        .accessibilityIdentifier("explore.scope.list-visits.loved")
 
         ExploreOtherListsRow(
             summary: ExploreScopeListOptions.summary(
@@ -892,6 +895,7 @@ private struct ExploreOtherListsRow: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Other lists")
         .accessibilityValue(Text(verbatim: summary))
+        .accessibilityIdentifier("explore.scope.list-visits.lists")
     }
 }
 
@@ -932,6 +936,7 @@ private struct ExploreClearScopeRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Clear scope")
+        .accessibilityIdentifier("explore.scope.clear")
     }
 }
 
@@ -955,6 +960,7 @@ private struct ExploreOtherListsView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("explore.scope.list-visits.lists.back")
 
             Text("Other lists")
                 .font(Typography.font(for: .sheetTitle))
@@ -971,6 +977,7 @@ private struct ExploreOtherListsView: View {
                     .font(Typography.font(for: .body))
                     .foregroundStyle(tokens.muted.swiftUIColor)
                     .frame(maxWidth: .infinity, minHeight: 86)
+                    .accessibilityIdentifier("explore.scope.list-visits.lists.empty")
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -994,6 +1001,8 @@ private struct ExploreOtherListsView: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 24)
         .navigationBarBackButtonHidden()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("explore.scope.list-visits.lists.root")
     }
 
     private func listOptionRow(_ option: ExploreScopeListOption) -> some View {
@@ -1049,6 +1058,7 @@ private struct ExploreOtherListsView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(Text(verbatim: option.title))
         .accessibilityValue(isSelected ? "Included" : "Off")
+        .accessibilityIdentifier("explore.scope.list-visits.list.\(option.id)")
     }
 
     private var isScopeAdjusted: Bool {

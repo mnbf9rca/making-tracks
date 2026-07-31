@@ -390,7 +390,7 @@ final class AppShellTests: XCTestCase {
             ExploreScopeControlPresentation(
                 title: "Include hidden places",
                 icon: .system("eye.slash"),
-                accessibilityIdentifier: "map.layers.show-hidden"
+                accessibilityIdentifier: "explore.scope.include-hidden"
             )
         )
         XCTAssertEqual(
@@ -398,7 +398,7 @@ final class AppShellTests: XCTestCase {
             ExploreScopeControlPresentation(
                 title: "Show saved places",
                 icon: .system("bookmark"),
-                accessibilityIdentifier: "map.layers.show-saved"
+                accessibilityIdentifier: "explore.scope.show-saved"
             )
         )
         XCTAssertEqual(
@@ -406,7 +406,7 @@ final class AppShellTests: XCTestCase {
             ExploreScopeControlPresentation(
                 title: "Show coverage shading",
                 icon: .coverageShading,
-                accessibilityIdentifier: "map.layers.coverage-shading"
+                accessibilityIdentifier: "explore.scope.coverage-shading"
             )
         )
     }

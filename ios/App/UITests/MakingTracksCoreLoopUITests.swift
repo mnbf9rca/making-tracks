@@ -489,13 +489,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.buttons["map.door.explore"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["map.door.journal"].exists)
         XCTAssertFalse(app.buttons["map.menu"].exists)
-        XCTAssertFalse(app.buttons["map.layers"].exists)
+        XCTAssertFalse(app.buttons["Layers"].exists)
 
         app.buttons["map.door.explore"].tap()
         XCTAssertTrue(app.scrollViews["explore.root"].waitForExistence(timeout: 5))
-        let showHidden = app.switches["map.layers.show-hidden"]
-        let showSaved = app.switches["map.layers.show-saved"]
-        let coverageShading = app.switches["map.layers.coverage-shading"]
+        let showHidden = app.switches["explore.scope.include-hidden"]
+        let showSaved = app.switches["explore.scope.show-saved"]
+        let coverageShading = app.switches["explore.scope.coverage-shading"]
         XCTAssertTrue(showHidden.exists)
         XCTAssertTrue(showSaved.exists)
         XCTAssertTrue(coverageShading.exists)
@@ -526,7 +526,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             coverageShading.frame.height,
             accuracy: 0.5
         )
-        XCTAssertTrue(app.buttons["map.layers.category.historic_building"].exists)
+        XCTAssertTrue(app.buttons["explore.scope.category.historic_building"].exists)
         XCTAssertFalse(app.buttons["world.row.scope"].exists)
         let exploreRoot = app.scrollViews["explore.root"]
         let about = app.buttons["explore.row.about"]
@@ -567,7 +567,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         assertNoFrameIntersection(exploreDoor, journalDoor)
 
         exploreDoor.tap()
-        let historicBuildings = app.buttons["map.layers.category.historic_building"]
+        let historicBuildings = app.buttons["explore.scope.category.historic_building"]
         XCTAssertTrue(scrollToHittable(historicBuildings, in: app))
         XCTAssertGreaterThanOrEqual(
             historicBuildings.frame.height,
@@ -575,9 +575,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             "AX category chips must mount the frozen expanded visual geometry."
         )
         for identifier in [
-            "map.layers.show-hidden",
-            "map.layers.show-saved",
-            "map.layers.coverage-shading",
+            "explore.scope.include-hidden",
+            "explore.scope.show-saved",
+            "explore.scope.coverage-shading",
             "explore.row.settings",
             "explore.row.about",
         ] {
@@ -585,7 +585,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             XCTAssertTrue(scrollToHittable(control, in: app))
             XCTAssertTrue(control.isHittable)
             XCTAssertGreaterThanOrEqual(control.frame.height, 44)
-            if identifier.hasPrefix("map.layers.") {
+            if identifier.hasPrefix("explore.scope.") {
                 XCTAssertGreaterThanOrEqual(
                     control.frame.height,
                     86,
@@ -633,8 +633,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForSourceFeatureCount(2, in: app))
 
         openScope(in: app)
-        let showSaved = "map.layers.show-saved"
-        let attractionCategory = "map.layers.category.attraction"
+        let showSaved = "explore.scope.show-saved"
+        let attractionCategory = "explore.scope.category.attraction"
         XCTAssertTrue(app.switches[showSaved].waitForExistence(timeout: 5))
         XCTAssertEqual(app.switches[showSaved].value as? String, "1")
         XCTAssertEqual(app.buttons[attractionCategory].value as? String, "Selected")
@@ -658,6 +658,35 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             waitForSourceFeatureCount(2, in: app),
             "Show saved ON must restore the saved fixture discovery pin."
         )
+    }
+
+    func testExploreDoorIndicatorAndClearScopeRoundTrip() {
+        let app = launch(reset: true)
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+
+        let exploreDoor = app.buttons["map.door.explore"]
+        XCTAssertTrue(exploreDoor.waitForExistence(timeout: 5))
+        XCTAssertEqual(exploreDoor.value as? String, "Default scope")
+
+        exploreDoor.tap()
+        tapSwitch(
+            in: app,
+            identifier: "explore.scope.include-hidden",
+            expectedValue: "1"
+        )
+        let clear = app.buttons["explore.scope.clear"]
+        XCTAssertTrue(scrollToHittable(clear, in: app))
+        app.buttons["Close"].tap()
+        XCTAssertTrue(exploreDoor.waitForExistence(timeout: 5))
+        XCTAssertEqual(exploreDoor.value as? String, "Scope adjusted")
+
+        exploreDoor.tap()
+        XCTAssertTrue(scrollToHittable(clear, in: app))
+        clear.tap()
+        XCTAssertTrue(waitForNonExistence(of: clear, timeout: 5))
+        app.buttons["Close"].tap()
+        XCTAssertTrue(exploreDoor.waitForExistence(timeout: 5))
+        XCTAssertEqual(exploreDoor.value as? String, "Default scope")
     }
 
     func testJournalDoorPreservesLiteralLongContentAndProgressAtAX5() {
@@ -1818,16 +1847,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
 
-        let filter = element(identifier: "map.list-mode.filter.loved", in: app)
-        XCTAssertTrue(filter.waitForExistence(timeout: 5))
-        filter.tap()
-        XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
-        let category = app.buttons["track-filter-picker.category.historic_building"]
+        openScope(in: app)
+        let toggleAll = app.buttons["explore.scope.categories.toggle-all"]
+        XCTAssertTrue(scrollToHittable(toggleAll, in: app))
+        toggleAll.tap()
+        let category = app.buttons["explore.scope.category.historic_building"]
         XCTAssertTrue(scrollToHittable(category, in: app))
         category.tap()
-        let apply = app.buttons["track-filter-picker.apply"]
-        XCTAssertTrue(apply.waitForExistence(timeout: 5))
-        apply.tap()
+        app.buttons["Close"].tap()
 
         app.buttons["map.list-mode.back"].tap()
         XCTAssertTrue(trackSurface.waitForExistence(timeout: 5))
@@ -2161,7 +2188,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["door.destination.close"].tap()
 
         openScope(in: app)
-        let showHidden = "map.layers.show-hidden"
+        let showHidden = "explore.scope.include-hidden"
         XCTAssertTrue(app.switches[showHidden].waitForExistence(timeout: 5))
         XCTAssertEqual(
             app.switches[showHidden].value as? String,
@@ -2504,17 +2531,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
 
-        var lovedFilter = element(identifier: "map.list-mode.filter.loved", in: app)
+        openScope(in: app)
+        var lovedFilter = app.buttons["explore.scope.list-visits.loved"]
+        XCTAssertTrue(scrollToHittable(lovedFilter, in: app))
         XCTAssertTrue(lovedFilter.waitForExistence(timeout: 5))
         XCTAssertEqual(lovedFilter.value as? String, "Not selected")
         lovedFilter.tap()
-        XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
-        XCTAssertTrue(waitForElementValue("Not selected", identifier: "track-filter-picker.loved", in: app))
-        app.buttons["track-filter-picker.loved"].tap()
-        XCTAssertTrue(waitForElementValue("Selected", identifier: "track-filter-picker.loved", in: app))
-        XCTAssertTrue(waitForButtonLabel("Show 0 visits", identifier: "track-filter-picker.apply", in: app))
-        app.buttons["track-filter-picker.apply"].tap()
-        XCTAssertTrue(waitForElementValue("Selected", identifier: "map.list-mode.filter.loved", in: app))
+        XCTAssertTrue(waitForElementValue("Selected", identifier: "explore.scope.list-visits.loved", in: app))
+        app.buttons["Close"].tap()
         XCTAssertTrue(waitForSourceFeatureCount(0, in: app))
         XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
 
@@ -2537,20 +2561,91 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         lovedApp.buttons["lists.detail.show-map"].tap()
 
         XCTAssertTrue(lovedApp.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
-        lovedFilter = element(identifier: "map.list-mode.filter.loved", in: lovedApp)
+        openScope(in: lovedApp)
+        lovedFilter = lovedApp.buttons["explore.scope.list-visits.loved"]
+        XCTAssertTrue(scrollToHittable(lovedFilter, in: lovedApp))
         XCTAssertTrue(lovedFilter.waitForExistence(timeout: 5))
-        assertListMapFilterChromePlacement(lovedFilter, in: lovedApp)
+        attachScreenshot(named: "explore-scope-list-open")
+        XCTAssertEqual(lovedFilter.value as? String, "Not selected")
         lovedFilter.tap()
-        XCTAssertTrue(lovedApp.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
-        attachScreenshot(named: "track-filter-picker-open")
-        XCTAssertTrue(waitForElementValue("Not selected", identifier: "track-filter-picker.loved", in: lovedApp))
-        lovedApp.buttons["track-filter-picker.loved"].tap()
-        XCTAssertTrue(waitForElementValue("Selected", identifier: "track-filter-picker.loved", in: lovedApp))
-        XCTAssertTrue(waitForButtonLabel("Show 1 visit", identifier: "track-filter-picker.apply", in: lovedApp))
-        lovedApp.buttons["track-filter-picker.apply"].tap()
+        XCTAssertTrue(waitForElementValue("Selected", identifier: "explore.scope.list-visits.loved", in: lovedApp))
+        lovedApp.buttons["Close"].tap()
         XCTAssertTrue(waitForSourceFeatureCount(1, in: lovedApp))
         XCTAssertTrue(waitForTrackSegmentCount(0, in: lovedApp))
         attachScreenshot(named: "track-loved-filter-map-source")
+    }
+
+    func testExploreOtherListsDrillInUpdatesLiveAndClearStaysOutsideCollection() {
+        let app = launch(
+            reset: true,
+            seedUserList: true,
+            seedMultiDayTrackList: true
+        )
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openJournalDoor(in: app)
+        openListFromTracksRoot(named: "Replay week", in: app)
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+
+        openScope(in: app)
+        let otherLists = app.buttons["explore.scope.list-visits.lists"]
+        XCTAssertTrue(scrollToHittable(otherLists, in: app))
+        XCTAssertEqual(otherLists.value as? String, "None selected")
+        otherLists.tap()
+
+        XCTAssertTrue(
+            app.otherElements["explore.scope.list-visits.lists.root"]
+                .waitForExistence(timeout: 5)
+        )
+        let back = app.buttons["explore.scope.list-visits.lists.back"]
+        XCTAssertTrue(back.exists)
+        XCTAssertTrue(back.isHittable)
+        let option = app.buttons.matching(
+            identifierPrefix: "explore.scope.list-visits.list."
+        ).firstMatch
+        XCTAssertTrue(option.waitForExistence(timeout: 5))
+        XCTAssertEqual(option.label, "Date night")
+        XCTAssertEqual(option.value as? String, "Off")
+        XCTAssertGreaterThanOrEqual(option.frame.height, 52)
+        option.tap()
+        XCTAssertTrue(waitForElementValue(
+            "Included",
+            identifier: option.identifier,
+            in: app
+        ))
+        let clear = app.buttons["explore.scope.clear"]
+        XCTAssertTrue(clear.exists)
+        XCTAssertTrue(clear.isHittable)
+
+        back.tap()
+        XCTAssertTrue(otherLists.waitForExistence(timeout: 5))
+        XCTAssertEqual(otherLists.value as? String, "Date night")
+        XCTAssertTrue(scrollToHittable(clear, in: app))
+        clear.tap()
+        XCTAssertEqual(otherLists.value as? String, "None selected")
+    }
+
+    func testExploreOtherListsEmptyStateNamesExcludedLists() {
+        let app = launch(reset: true, seedMultiDayTrackList: true)
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+        openJournalDoor(in: app)
+        openListFromTracksRoot(named: "Replay week", in: app)
+        app.buttons["lists.detail.show-map"].tap()
+        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
+
+        openScope(in: app)
+        let otherLists = app.buttons["explore.scope.list-visits.lists"]
+        XCTAssertTrue(scrollToHittable(otherLists, in: app))
+        otherLists.tap()
+
+        let empty = app.staticTexts["explore.scope.list-visits.lists.empty"]
+        XCTAssertTrue(empty.waitForExistence(timeout: 5))
+        XCTAssertTrue(empty.label.contains("active and system lists are excluded"))
+        XCTAssertEqual(
+            app.buttons.matching(identifierPrefix: "explore.scope.list-visits.list.").count,
+            0
+        )
+        XCTAssertTrue(app.buttons["explore.scope.list-visits.lists.back"].isHittable)
     }
 
     func testTrackCategoryFilterScopesReplayDisplayAndCamera() {
@@ -2572,17 +2667,15 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
 
-        let filter = element(identifier: "map.list-mode.filter.loved", in: app)
-        XCTAssertTrue(filter.waitForExistence(timeout: 5))
-        assertListMapFilterChromePlacement(filter, in: app)
-        filter.tap()
-        XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
-        XCTAssertTrue(scrollToHittable(app.buttons["track-filter-picker.category.attraction"], in: app))
-        app.buttons["track-filter-picker.category.attraction"].tap()
-        XCTAssertTrue(waitForButtonLabel("Show 1 visit", identifier: "track-filter-picker.apply", in: app))
-        app.buttons["track-filter-picker.apply"].tap()
+        openScope(in: app)
+        let toggleAll = app.buttons["explore.scope.categories.toggle-all"]
+        XCTAssertTrue(scrollToHittable(toggleAll, in: app))
+        toggleAll.tap()
+        let attraction = app.buttons["explore.scope.category.attraction"]
+        XCTAssertTrue(scrollToHittable(attraction, in: app))
+        attraction.tap()
+        app.buttons["Close"].tap()
 
-        XCTAssertTrue(waitForElementValue("Selected", identifier: "map.list-mode.filter.category.attraction", in: app))
         XCTAssertTrue(waitForSourceFeatureCount(1, in: app))
         XCTAssertTrue(waitForTrackSegmentCount(0, in: app))
         XCTAssertTrue(waitForProjectedFixturePinCount(1, in: app))
@@ -2597,7 +2690,6 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertLessThan(normalized.x, 0.96, projectedPin.identifier)
         XCTAssertGreaterThan(normalized.y, 0.08, projectedPin.identifier)
         XCTAssertLessThan(normalized.y, 0.92, projectedPin.identifier)
-        assertListMapFilterChromePlacement(element(identifier: "map.list-mode.filter.category.attraction", in: app), in: app)
         attachScreenshot(named: "track-category-filter-map-source")
 
         app.buttons["map.list-mode.back"].tap()
@@ -2610,14 +2702,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
-        let activeFilter = element(identifier: "map.list-mode.filter.category.attraction", in: app)
-        XCTAssertTrue(activeFilter.waitForExistence(timeout: 5))
-        activeFilter.tap()
-        XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
-        XCTAssertTrue(scrollToHittable(app.buttons["track-filter-picker.category.attraction"], in: app))
-        app.buttons["track-filter-picker.category.attraction"].tap()
-        XCTAssertTrue(waitForButtonLabel("Show 6 visits", identifier: "track-filter-picker.apply", in: app))
-        app.buttons["track-filter-picker.apply"].tap()
+        openScope(in: app)
+        let showAll = app.buttons["explore.scope.categories.toggle-all"]
+        XCTAssertTrue(scrollToHittable(showAll, in: app))
+        showAll.tap()
+        app.buttons["Close"].tap()
 
         XCTAssertTrue(waitForSourceFeatureCount(6, in: app))
         app.buttons["map.list-mode.back"].tap()
@@ -2641,15 +2730,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["lists.detail.show-map"].tap()
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
 
-        let filter = element(identifier: "map.list-mode.filter.loved", in: app)
-        XCTAssertTrue(filter.waitForExistence(timeout: 5))
-        filter.tap()
-        XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
-        let attraction = app.buttons["track-filter-picker.category.attraction"]
+        openScope(in: app)
+        let toggleAll = app.buttons["explore.scope.categories.toggle-all"]
+        XCTAssertTrue(scrollToHittable(toggleAll, in: app))
+        toggleAll.tap()
+        let attraction = app.buttons["explore.scope.category.attraction"]
         XCTAssertTrue(scrollToHittable(attraction, in: app))
         attraction.tap()
-        XCTAssertTrue(waitForButtonLabel("Show 2 visits", identifier: "track-filter-picker.apply", in: app))
-        app.buttons["track-filter-picker.apply"].tap()
+        app.buttons["Close"].tap()
 
         XCTAssertTrue(waitForTrackReplayCounter("Visit 2 of 2", in: app))
         XCTAssertTrue(waitForTrackReplayArrival(
@@ -2668,7 +2756,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         play.tap()
     }
 
-    func testLayersCategoryFilterScopesReplayTimelineAndAutoplay() {
+    func testExploreCategoryScopeFiltersReplayTimelineAndAutoplay() {
         let app = launch(
             reset: true,
             seedVisitsEditorVisual: true,
@@ -2683,17 +2771,17 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
 
         openScope(in: app)
-        let toggleAll = app.buttons["map.layers.show-all-categories"]
+        let toggleAll = app.buttons["explore.scope.categories.toggle-all"]
         XCTAssertTrue(scrollToHittable(toggleAll, in: app))
-        XCTAssertEqual(toggleAll.label, "Hide all categories")
+        XCTAssertEqual(toggleAll.label, "Hide all")
         toggleAll.tap()
         XCTAssertTrue(waitForButtonLabel(
-            "Show all categories",
-            identifier: "map.layers.show-all-categories",
+            "Show all",
+            identifier: "explore.scope.categories.toggle-all",
             in: app
         ))
 
-        let attraction = "map.layers.category.attraction"
+        let attraction = "explore.scope.category.attraction"
         XCTAssertTrue(scrollToHittable(app.buttons[attraction], in: app))
         tapCategoryChip(in: app, identifier: attraction, expectedValue: "Selected")
         app.buttons["Close"].tap()
@@ -2715,7 +2803,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         play.tap()
     }
 
-    func testLayersOtherCategoryScopesReplayToFallbackVisits() {
+    func testExploreOtherCategoryScopesReplayToFallbackVisits() {
         let app = launch(
             reset: true,
             seedVisitsEditorVisual: true,
@@ -2730,11 +2818,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
 
         openScope(in: app)
-        let toggleAll = app.buttons["map.layers.show-all-categories"]
+        let toggleAll = app.buttons["explore.scope.categories.toggle-all"]
         XCTAssertTrue(scrollToHittable(toggleAll, in: app))
         toggleAll.tap()
 
-        let other = "map.layers.category.uncategorized"
+        let other = "explore.scope.category.uncategorized"
         XCTAssertTrue(scrollToHittable(app.buttons[other], in: app))
         tapCategoryChip(in: app, identifier: other, expectedValue: "Selected")
         app.buttons["Close"].tap()
@@ -2756,7 +2844,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         play.tap()
     }
 
-    func testFilterTracksExplicitlyReturnsFromNoCategoriesToAll() {
+    func testExploreScopeExplicitlyReturnsFromNoCategoriesToAll() {
         let app = launch(reset: true, seedVisitsEditorVisual: true)
 
         XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
@@ -2767,28 +2855,21 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
 
         openScope(in: app)
-        let toggleAll = app.buttons["map.layers.show-all-categories"]
+        let toggleAll = app.buttons["explore.scope.categories.toggle-all"]
         XCTAssertTrue(scrollToHittable(toggleAll, in: app))
         toggleAll.tap()
-        app.buttons["Close"].tap()
-
-        let filter = element(identifier: "map.list-mode.filter.loved", in: app)
-        XCTAssertTrue(filter.waitForExistence(timeout: 5))
-        filter.tap()
-        XCTAssertTrue(app.otherElements["track-filter-picker.sheet"].waitForExistence(timeout: 5))
-
-        let allTypes = app.buttons["track-filter-picker.category.all"]
-        XCTAssertTrue(scrollToHittable(allTypes, in: app))
-        XCTAssertEqual(allTypes.value as? String, "Not selected")
-        XCTAssertTrue(waitForButtonLabel("Show 0 visits", identifier: "track-filter-picker.apply", in: app))
-        allTypes.tap()
-        XCTAssertTrue(waitForElementValue(
-            "Selected",
-            identifier: "track-filter-picker.category.all",
+        XCTAssertTrue(waitForButtonLabel(
+            "Show all",
+            identifier: "explore.scope.categories.toggle-all",
             in: app
         ))
-        XCTAssertTrue(waitForButtonLabel("Show 8 visits", identifier: "track-filter-picker.apply", in: app))
-        app.buttons["track-filter-picker.apply"].tap()
+        toggleAll.tap()
+        XCTAssertTrue(waitForButtonLabel(
+            "Hide all",
+            identifier: "explore.scope.categories.toggle-all",
+            in: app
+        ))
+        app.buttons["Close"].tap()
 
         XCTAssertTrue(waitForTrackReplayCounter("Visit 8 of 8", in: app))
         XCTAssertTrue(waitForTrackReplayArrival(
@@ -2940,14 +3021,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openFixtureCard(in: map, app: app)
     }
 
-    func testLayersCanHideCategoryPins() {
+    func testExploreScopeCanHideCategoryPins() {
         let app = launch(reset: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
         openScope(in: app)
-        let historicBuildings = "map.layers.category.historic_building"
+        let historicBuildings = "explore.scope.category.historic_building"
         XCTAssertTrue(app.buttons[historicBuildings].waitForExistence(timeout: 5))
         tapCategoryChip(
             in: app,
@@ -2979,18 +3060,18 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openFixtureCard(in: map, app: app)
     }
 
-    func testLayersToggleAllCategoriesHidesAndRestoresPins() {
+    func testExploreScopeToggleAllCategoriesHidesAndRestoresPins() {
         let app = launch(reset: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
         openScope(in: app)
-        let toggleAll = app.buttons["map.layers.show-all-categories"]
+        let toggleAll = app.buttons["explore.scope.categories.toggle-all"]
         XCTAssertTrue(scrollToHittable(toggleAll, in: app))
-        XCTAssertEqual(toggleAll.label, "Hide all categories")
+        XCTAssertEqual(toggleAll.label, "Hide all")
         toggleAll.tap()
-        XCTAssertTrue(waitForButtonLabel("Show all categories", identifier: "map.layers.show-all-categories", in: app))
+        XCTAssertTrue(waitForButtonLabel("Show all", identifier: "explore.scope.categories.toggle-all", in: app))
         app.buttons["Close"].tap()
 
         tapFixturePin(in: map)
@@ -3000,9 +3081,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         openScope(in: app)
         XCTAssertTrue(scrollToHittable(toggleAll, in: app))
-        XCTAssertTrue(waitForButtonLabel("Show all categories", identifier: "map.layers.show-all-categories", in: app))
+        XCTAssertTrue(waitForButtonLabel("Show all", identifier: "explore.scope.categories.toggle-all", in: app))
         toggleAll.tap()
-        XCTAssertTrue(waitForButtonLabel("Hide all categories", identifier: "map.layers.show-all-categories", in: app))
+        XCTAssertTrue(waitForButtonLabel("Hide all", identifier: "explore.scope.categories.toggle-all", in: app))
         app.buttons["Close"].tap()
 
         openFixtureCard(in: map, app: app)
@@ -3022,7 +3103,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
 
         openScope(in: app)
-        let showHidden = "map.layers.show-hidden"
+        let showHidden = "explore.scope.include-hidden"
         XCTAssertTrue(app.switches[showHidden].waitForExistence(timeout: 5))
         tapSwitch(in: app, identifier: showHidden, expectedValue: "1")
         app.buttons["Close"].tap()
@@ -3050,8 +3131,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Explore"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.scrollViews["explore.root"].exists)
         XCTAssertFalse(app.buttons["world.row.scope"].exists)
-        XCTAssertTrue(app.switches["map.layers.show-hidden"].exists)
-        XCTAssertTrue(app.switches["map.layers.coverage-shading"].exists)
+        XCTAssertTrue(app.switches["explore.scope.include-hidden"].exists)
+        XCTAssertTrue(app.switches["explore.scope.coverage-shading"].exists)
         XCTAssertTrue(app.buttons["explore.row.settings"].exists)
         XCTAssertTrue(app.buttons["explore.row.about"].exists)
         XCTAssertFalse(app.buttons["journal.row.lists"].exists)
@@ -3112,8 +3193,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(activeMap.waitForExistence(timeout: 5))
         openExploreDoor(in: activeDownloadApp)
         XCTAssertTrue(activeDownloadApp.staticTexts["Explore"].waitForExistence(timeout: 5))
-        XCTAssertTrue(activeDownloadApp.switches["map.layers.show-hidden"].exists)
-        XCTAssertTrue(activeDownloadApp.switches["map.layers.coverage-shading"].exists)
+        XCTAssertTrue(activeDownloadApp.switches["explore.scope.include-hidden"].exists)
+        XCTAssertTrue(activeDownloadApp.switches["explore.scope.coverage-shading"].exists)
         XCTAssertTrue(activeDownloadApp.buttons["explore.row.settings"].exists)
         XCTAssertTrue(activeDownloadApp.buttons["explore.row.about"].exists)
         activeDownloadApp.buttons["Close"].tap()
@@ -3329,7 +3410,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
 
         openScope(in: app)
-        let historicBuildings = "map.layers.category.historic_building"
+        let historicBuildings = "explore.scope.category.historic_building"
         XCTAssertTrue(app.buttons[historicBuildings].waitForExistence(timeout: 5))
         tapCategoryChip(
             in: app,
@@ -3360,10 +3441,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
         openScope(in: app)
-        let showHidden = "map.layers.show-hidden"
-        let showSaved = "map.layers.show-saved"
-        let coverageShading = "map.layers.coverage-shading"
-        let historicBuildings = "map.layers.category.historic_building"
+        let showHidden = "explore.scope.include-hidden"
+        let showSaved = "explore.scope.show-saved"
+        let coverageShading = "explore.scope.coverage-shading"
+        let historicBuildings = "explore.scope.category.historic_building"
         tapSwitch(in: app, identifier: showHidden, expectedValue: "1")
         tapSwitch(in: app, identifier: showSaved, expectedValue: "0")
         tapSwitch(in: app, identifier: coverageShading, expectedValue: "0")
@@ -3615,7 +3696,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 app.buttons["debug.hide-fixture"].tap()
                 XCTAssertTrue(waitForFixtureHidden(true, in: app))
                 openScope(in: app)
-                let showHidden = "map.layers.show-hidden"
+                let showHidden = "explore.scope.include-hidden"
                 XCTAssertTrue(app.switches[showHidden].waitForExistence(timeout: 5))
                 tapSwitch(in: app, identifier: showHidden, expectedValue: "1")
                 app.buttons["Close"].tap()
@@ -4563,8 +4644,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     private func openScope(in app: XCUIApplication) {
         openExploreDoor(in: app)
         XCTAssertTrue(app.scrollViews["explore.root"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.switches["map.layers.show-hidden"].exists)
-        XCTAssertTrue(app.switches["map.layers.coverage-shading"].exists)
+        XCTAssertTrue(app.switches["explore.scope.include-hidden"].exists)
+        XCTAssertTrue(app.switches["explore.scope.coverage-shading"].exists)
     }
 
     private func closePlaceCard(in app: XCUIApplication) {
@@ -5098,32 +5179,6 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
     }
 
-    private func assertListMapFilterChromePlacement(
-        _ filter: XCUIElement,
-        in app: XCUIApplication,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        let map = app.otherElements["map.surface"]
-        let title = app.staticTexts["map.list-mode.title"]
-        let back = app.buttons["map.list-mode.back"]
-        let exploreDoor = app.buttons["map.door.explore"]
-        let journalDoor = app.buttons["map.door.journal"]
-        XCTAssertTrue(map.exists, "map.surface missing before list-map chrome placement assertion", file: file, line: line)
-        XCTAssertTrue(filter.exists, file: file, line: line)
-        XCTAssertTrue(title.exists, file: file, line: line)
-        XCTAssertTrue(back.exists, file: file, line: line)
-        XCTAssertTrue(exploreDoor.exists, file: file, line: line)
-        XCTAssertTrue(journalDoor.exists, file: file, line: line)
-        XCTAssertLessThan(filter.frame.midX, map.frame.midX, file: file, line: line)
-        XCTAssertGreaterThan(exploreDoor.frame.minY, filter.frame.maxY, file: file, line: line)
-        XCTAssertGreaterThan(journalDoor.frame.minY, filter.frame.maxY, file: file, line: line)
-        assertNoFrameIntersection(filter, title, file: file, line: line)
-        assertNoFrameIntersection(filter, back, file: file, line: line)
-        assertNoFrameIntersection(filter, exploreDoor, file: file, line: line)
-        assertNoFrameIntersection(filter, journalDoor, file: file, line: line)
-    }
-
     private func waitForProjectedFixturePinCount(_ count: Int, in app: XCUIApplication) -> Bool {
         let deadline = Date().addingTimeInterval(10)
         let pins = app.staticTexts.matching(identifierPrefix: "map.fixture-pin.")
@@ -5588,7 +5643,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "list-map-polished-chrome": "list-map-polished-chrome",
         "list-map-spread-fit": "list-map-spread-fit",
         "my-tracks-burst-readout": "my-tracks-burst-readout",
-        "track-filter-picker-open": "track-filter-picker-open",
+        "explore-scope-list-open": "explore-scope-list-open",
         "track-replay-pin-arrival": "track-replay-pin-arrival",
         "track-replay-scrub-frame-00": "track-replay-scrub-frame-00",
         "track-replay-scrub-frame-01": "track-replay-scrub-frame-01",
