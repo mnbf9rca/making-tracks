@@ -11,6 +11,76 @@ import MakingTracksMapStyle
 @testable import MakingTracks
 
 final class AppShellTests: XCTestCase {
+    func testAboutLicenceInventoryPreservesEverySoftwareEntry() throws {
+        let manifest = try XCTUnwrap(OSSCreditsManifest.load())
+        let inventory = AboutLicenceInventory(
+            softwareCredits: manifest.credits,
+            attribution: []
+        )
+
+        XCTAssertEqual(inventory.software.count, 4)
+        XCTAssertEqual(
+            inventory.software.map(\.name),
+            [
+                "GRDB.swift",
+                "MapLibre Native iOS / maplibre-gl-native-distribution",
+                "Newsreader",
+                "Noto Sans glyph PBF mirror",
+            ]
+        )
+        XCTAssertEqual(inventory.software.count, manifest.credits.count)
+
+        for (rendered, loaded) in zip(inventory.software, manifest.credits) {
+            XCTAssertEqual(rendered.name, loaded.name)
+            XCTAssertEqual(rendered.acknowledgement, loaded.acknowledgement)
+            XCTAssertEqual(rendered.category, loaded.category)
+            XCTAssertEqual(rendered.versionOrPin, loaded.versionOrPin)
+            XCTAssertEqual(rendered.licenseURL, loaded.licenseURL)
+            XCTAssertEqual(rendered.noticeText, loaded.noticeText)
+        }
+    }
+
+    func testAboutLicenceInventoryPreservesOSMAndEveryDataEntry() {
+        let attribution = [
+            Attribution(
+                source: "Wikipedia",
+                license: "CC BY-SA 4.0",
+                text: "Wikipedia sentinel attribution."
+            ),
+            Attribution(
+                source: "Regional heritage register",
+                license: "Open Government Licence",
+                text: "Regional sentinel attribution."
+            ),
+        ]
+        let inventory = AboutLicenceInventory(
+            softwareCredits: [],
+            attribution: attribution
+        )
+
+        XCTAssertEqual(inventory.data.count, attribution.count + 1)
+        XCTAssertEqual(
+            inventory.data.map(\.name),
+            ["OpenStreetMap", "Wikipedia", "Regional heritage register"]
+        )
+        XCTAssertEqual(inventory.data[0].license, "Open Database License")
+        XCTAssertEqual(
+            inventory.data[0].text,
+            "Map data © OpenStreetMap contributors."
+        )
+        XCTAssertEqual(
+            inventory.data[0].licenseURL?.absoluteString,
+            "https://www.openstreetmap.org/copyright"
+        )
+
+        for (rendered, loaded) in zip(inventory.data.dropFirst(), attribution) {
+            XCTAssertEqual(rendered.name, loaded.source)
+            XCTAssertEqual(rendered.license, loaded.license)
+            XCTAssertEqual(rendered.text, loaded.text)
+            XCTAssertNil(rendered.licenseURL)
+        }
+    }
+
     @MainActor
     func testAccentColorAssetIsTheGlobalAppAccent() {
         let accent = MaterialTheme.snow.tokens.accent

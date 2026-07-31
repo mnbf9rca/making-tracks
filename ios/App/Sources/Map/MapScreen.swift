@@ -7563,14 +7563,71 @@ private struct SettingsStorageSummary: View {
     }
 }
 
+struct AboutSoftwareLicenceEntry: Identifiable {
+    let acknowledgement: String
+    let category: String
+    let licenseURL: URL?
+    let name: String
+    let noticeText: String
+    let versionOrPin: String
+
+    var id: String { "\(name)|\(versionOrPin)" }
+
+    init(credit: OSSCreditEntry) {
+        acknowledgement = credit.acknowledgement
+        category = credit.category
+        licenseURL = credit.licenseURL
+        name = credit.name
+        noticeText = credit.noticeText
+        versionOrPin = credit.versionOrPin
+    }
+}
+
+struct AboutDataLicenceEntry {
+    let name: String
+    let license: String
+    let text: String
+    let licenseURL: URL?
+
+    static let openStreetMap = AboutDataLicenceEntry(
+        name: "OpenStreetMap",
+        license: "Open Database License",
+        text: "Map data © OpenStreetMap contributors.",
+        licenseURL: URL(string: "https://www.openstreetmap.org/copyright")!
+    )
+}
+
+struct AboutLicenceInventory {
+    let software: [AboutSoftwareLicenceEntry]
+    let data: [AboutDataLicenceEntry]
+
+    init(softwareCredits: [OSSCreditEntry], attribution: [Attribution]) {
+        software = softwareCredits.map(AboutSoftwareLicenceEntry.init)
+        data = [AboutDataLicenceEntry.openStreetMap] + attribution.map { item in
+            AboutDataLicenceEntry(
+                name: item.source,
+                license: item.license,
+                text: item.text,
+                licenseURL: nil
+            )
+        }
+    }
+}
+
 private struct AboutView: View {
     let attribution: [Attribution]
 
     private static let buildCommit = loadBuildCommit()
     private static let appVersion = loadAppVersion()
-    private static let ossCredits = OSSCreditsManifest.load()?.credits ?? []
-    private static let osmCopyrightURL = URL(string: "https://www.openstreetmap.org/copyright")!
+    private static let softwareCredits = OSSCreditsManifest.load()?.credits ?? []
     private static let privacyPolicyURL = URL(string: "https://making-tracks.app/privacy")!
+
+    private var licenceInventory: AboutLicenceInventory {
+        AboutLicenceInventory(
+            softwareCredits: Self.softwareCredits,
+            attribution: attribution
+        )
+    }
 
     private static func loadBuildCommit() -> String {
         guard let url = Bundle.main.url(forResource: "BuildInfo", withExtension: "plist"),
@@ -7637,23 +7694,23 @@ private struct AboutView: View {
                     Text("Map attribution")
                         .font(.headline)
                         .accessibilityAddTraits(.isHeader)
-                    Text("Map data © OpenStreetMap contributors.")
-                    Link(destination: Self.osmCopyrightURL) {
+                    Text(verbatim: licenceInventory.data[0].text)
+                    Link(destination: licenceInventory.data[0].licenseURL!) {
                         Text("OpenStreetMap copyright")
                     }
-                    .accessibilityValue(Self.osmCopyrightURL.absoluteString)
+                    .accessibilityValue(licenceInventory.data[0].licenseURL!.absoluteString)
                     .accessibilityIdentifier("about.openstreetmap-copyright")
                 }
 
-                if !attribution.isEmpty {
+                if licenceInventory.data.count > 1 {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Manifest attribution")
                             .font(.headline)
                             .accessibilityAddTraits(.isHeader)
                         VStack(alignment: .leading, spacing: 12) {
-                            ForEach(Array(attribution.enumerated()), id: \.offset) { _, item in
+                            ForEach(Array(licenceInventory.data.dropFirst().enumerated()), id: \.offset) { _, item in
                                 CreditEntryView(
-                                    title: item.source,
+                                    title: item.name,
                                     subtitle: item.license,
                                     text: item.text
                                 )
@@ -7662,13 +7719,13 @@ private struct AboutView: View {
                     }
                 }
 
-                if !Self.ossCredits.isEmpty {
+                if !licenceInventory.software.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Open source acknowledgements")
                             .font(.headline)
                             .accessibilityAddTraits(.isHeader)
                         VStack(alignment: .leading, spacing: 20) {
-                            ForEach(Self.ossCredits) { credit in
+                            ForEach(licenceInventory.software) { credit in
                                 OpenSourceCreditView(credit: credit)
                             }
                         }
@@ -7905,7 +7962,7 @@ struct ListPickerView: View {
 }
 
 private struct OpenSourceCreditView: View {
-    let credit: OSSCreditEntry
+    let credit: AboutSoftwareLicenceEntry
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
