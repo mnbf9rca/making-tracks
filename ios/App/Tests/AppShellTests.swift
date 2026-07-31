@@ -1108,6 +1108,93 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
+    func testDoorRowOwnersWireTheirRatifiedIconRolesAtPointOfUse() throws {
+        let presentation = MapDoorRowPresentation(
+            title: "Settings",
+            subtitle: "preferences",
+            systemImage: "gearshape",
+            accessibilityIdentifier: "explore.row.settings"
+        )
+
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: MapDoorRaisedRow(
+                        presentation: presentation,
+                        action: {}
+                    ).body
+                )
+            ),
+            .rowRaised
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(
+                firstDescendant(
+                    of: IconRole.self,
+                    in: MapDoorHairlineRow(
+                        presentation: presentation,
+                        action: {}
+                    ).body
+                )
+            ),
+            .rowQuiet
+        )
+    }
+
+    @MainActor
+    func testExploreQuietDestinationWiresRowQuietWithFixedMediumWeight() throws {
+        let presentation = ExploreDoorRow.settings.presentation
+        let row = ExploreQuietDestinationRow(
+            presentation: presentation,
+            prominent: true,
+            action: {}
+        )
+
+        XCTAssertEqual(
+            descendants(
+                of: ExploreQuietDestinationIconGlyph.self,
+                in: row.body
+            ).count,
+            1
+        )
+
+        let glyphBody = ExploreQuietDestinationIconGlyph(
+            systemName: presentation.systemImage
+        ).body
+        XCTAssertEqual(
+            try XCTUnwrap(firstDescendant(of: IconRole.self, in: glyphBody)),
+            .rowQuiet
+        )
+
+        for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
+            XCTAssertEqual(
+                try renderedAppGlyph(
+                    ExploreQuietDestinationIconGlyph(
+                        systemName: presentation.systemImage
+                    )
+                    .environment(
+                        \.materialControlSymbolWeight,
+                        .emphasized
+                    ),
+                    dynamicTypeSize: dynamicTypeSize
+                ),
+                try renderedAppGlyph(
+                    RatifiedExploreQuietDestinationIcon(
+                        systemName: presentation.systemImage
+                    )
+                    .environment(
+                        \.materialControlSymbolWeight,
+                        .emphasized
+                    ),
+                    dynamicTypeSize: dynamicTypeSize
+                ),
+                "Quiet destinations must stay medium under an emphasized control environment."
+            )
+        }
+    }
+
+    @MainActor
     func testAdoptedSurfaceIconsOwnFontRenderingAndTintAgainstHostileAmbientStyle() throws {
         let glyphs: [(name: String, glyph: AnyView)] = [
             (
@@ -1115,8 +1202,22 @@ final class AppShellTests: XCTestCase {
                 AnyView(MapDoorDestinationCloseIconGlyph())
             ),
             (
-                "door row",
-                AnyView(MapDoorRowIconGlyph(systemName: "cloud.sun.rain.fill"))
+                "raised door row",
+                AnyView(
+                    MapDoorRowIconGlyph(
+                        systemName: "cloud.sun.rain.fill",
+                        role: .rowRaised
+                    )
+                )
+            ),
+            (
+                "quiet door row",
+                AnyView(
+                    MapDoorRowIconGlyph(
+                        systemName: "cloud.sun.rain.fill",
+                        role: .rowQuiet
+                    )
+                )
             ),
             (
                 "door button",
@@ -1200,7 +1301,10 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(
             descendants(
                 of: MapDoorRowIconGlyph.self,
-                in: MapDoorRowLabel(presentation: rowPresentation).body
+                in: MapDoorRowLabel(
+                    presentation: rowPresentation,
+                    iconRole: .rowRaised
+                ).body
             ).count,
             1
         )
@@ -1268,19 +1372,7 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
-    func testAdoptedSurfaceLiteralIconsMatchFrozenRenderTypography() throws {
-        let rowRenderingMode = try XCTUnwrap(
-            firstDescendant(
-                of: SymbolRenderingMode.self,
-                in: MapDoorRowIconGlyph(systemName: "gearshape").body
-            )
-        )
-        XCTAssertEqual(
-            String(reflecting: rowRenderingMode),
-            String(reflecting: SymbolRenderingMode.monochrome),
-            "The cited row literal must explicitly own its symbol rendering mode."
-        )
-
+    func testAdoptedSurfaceRoleIconsMatchFrozenRenderTypography() throws {
         let glyphs: [
             (
                 name: String,
@@ -1289,9 +1381,34 @@ final class AppShellTests: XCTestCase {
             )
         ] = [
             (
-                "door row",
-                AnyView(MapDoorRowIconGlyph(systemName: "gearshape")),
-                AnyView(RatifiedMapDoorRowIcon(systemName: "gearshape"))
+                "raised door row",
+                AnyView(
+                    MapDoorRowIconGlyph(
+                        systemName: "gearshape",
+                        role: .rowRaised
+                    )
+                ),
+                AnyView(
+                    RatifiedMapDoorRowIcon(
+                        systemName: "gearshape",
+                        role: .rowRaised
+                    )
+                )
+            ),
+            (
+                "quiet door row",
+                AnyView(
+                    MapDoorRowIconGlyph(
+                        systemName: "gearshape",
+                        role: .rowQuiet
+                    )
+                ),
+                AnyView(
+                    RatifiedMapDoorRowIcon(
+                        systemName: "gearshape",
+                        role: .rowQuiet
+                    )
+                )
             ),
         ]
 
@@ -4720,14 +4837,24 @@ private struct RatifiedJournalDoorHeroIcon: View {
 
 private struct RatifiedMapDoorRowIcon: View {
     let systemName: String
+    let role: IconRole
 
     private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
         Image(systemName: systemName)
-            .font(.headline.weight(.medium))
-            .symbolRenderingMode(.monochrome)
+            .iconRole(role)
             .foregroundStyle(tokens.accent.swiftUIColor)
+    }
+}
+
+private struct RatifiedExploreQuietDestinationIcon: View {
+    let systemName: String
+
+    var body: some View {
+        Image(systemName: systemName)
+            .iconRole(.rowQuiet)
+            .fontWeight(.medium)
     }
 }
 
