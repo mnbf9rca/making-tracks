@@ -92,6 +92,7 @@
   }
   .close {
     position: absolute;
+    z-index: 2;
     top: 10px;
     right: 10px;
     width: 44px;
@@ -312,30 +313,38 @@
   body.ax .content {
     padding: 7px 14px 16px;
   }
+  body.ax .content::-webkit-scrollbar {
+    display: block;
+    width: 4px;
+  }
+  body.ax .content::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(43, 40, 35, 0.28);
+  }
   body.ax .eyebrow {
-    font-size: 16px;
+    font-size: 17px;
     letter-spacing: 0.07em;
   }
   body.ax h1 {
     margin-top: 5px;
-    font-size: 34px;
+    font-size: 41px;
     line-height: 1.02;
   }
   body.ax .subtitle {
     margin-bottom: 7px;
-    font-size: 18px;
+    font-size: 21px;
     line-height: 1.2;
   }
   body.ax .section-label {
     margin: 7px 0 4px;
-    font-size: 15px;
+    font-size: 17px;
     letter-spacing: 0.07em;
   }
   body.ax .group-row {
-    min-height: 92px;
-    grid-template-columns: 32px minmax(0, 1fr) 18px;
+    min-height: 120px;
+    grid-template-columns: 32px minmax(0, 1fr) 22px;
     gap: 10px;
-    padding: 8px 9px;
+    padding: 10px 9px;
   }
   body.ax .group-icon,
   body.ax .group-icon svg {
@@ -343,30 +352,30 @@
     height: 30px;
   }
   body.ax .row-title {
-    font-size: 22px;
+    font-size: 27px;
     line-height: 1.08;
   }
   body.ax .row-meta {
-    margin-top: 3px;
-    font-size: 16px;
+    margin-top: 4px;
+    font-size: 18px;
     line-height: 1.15;
   }
   body.ax .chevron {
-    font-size: 26px;
+    font-size: 30px;
   }
   body.ax .theme-chip {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
   }
   body.ax .story-card {
     padding: 12px;
   }
   body.ax .story-card h2 {
-    font-size: 28px;
+    font-size: 30px;
     line-height: 1.08;
   }
   body.ax .story-card p {
-    font-size: 19px;
+    font-size: 22px;
     line-height: 1.28;
   }
   body.ax .privacy-card {
@@ -374,16 +383,18 @@
     padding: 10px 12px;
   }
   body.ax .privacy-copy {
-    font-size: 18px;
+    font-size: 21px;
     line-height: 1.25;
   }
   body.ax .privacy-link {
-    font-size: 18px;
+    font-size: 21px;
   }
   body.ax .build {
+    grid-template-columns: 1fr;
+    gap: 2px;
     margin-top: 7px;
     padding-top: 7px;
-    font-size: 14px;
+    font-size: 17px;
   }
 
   .evidence {
@@ -588,7 +599,7 @@
       </div>
       <div class="build">
         <span>Version 1.0 (1)</span>
-        <code>Build a63abb4</code>
+        <code>Build &lt;commit&gt; · illustrative</code>
       </div>`;
   }
 
@@ -617,11 +628,11 @@
   document.getElementById("constraints").innerHTML = constraints.map(item => `<li>${item}</li>`).join("");
 
   const mapping = screen === "settings" ? [
-    "<strong>Current → T2.9 Appearance:</strong> retain the four theme IDs and selected/not-selected semantics.",
-    "<strong>Storage → Offline maps:</strong> retain all status states; separately test progress-pill and empty-region callers reach this destination.",
+    "<strong>Appearance:</strong> dots only summarize selection; the subarea names Snow, Defined Paper, Street Contrast and Verdant KL, retaining IDs and selection semantics.",
+    "<strong>Storage → Offline maps:</strong> retain all states and <code>settings.storage.manage</code>; separately test progress-pill and empty-region callers.",
     "<strong>Coverage:</strong> both published regions, source sets, extents; no shading switch (OF1 <code>a63abb4</code>).",
     "<strong>Downloads + Pins → Map & data:</strong> cellular toggle/Wi-Fi help; pin preview, spoken value, slider range/step.",
-    "<strong>Location/Diagnostics/Onboarding:</strong> retain dynamic/conditional actions and existing destinations.",
+    "<strong>Location/Diagnostics/Onboarding:</strong> retain dynamic actions plus <code>settings.diagnostics.export</code> and <code>settings.replay-onboarding</code>.",
     "<strong>Taste guess for Rob:</strong> root-as-hub with focused subareas; alternative considered was one long inline settings sheet."
   ] : [
     "<strong>Current → target T2.10:</strong> approved fresh-snow line joins the current open-data explanation; exact saved-activity privacy promise and privacy-policy link remain.",
@@ -659,13 +670,14 @@
     const smallestRow = rows.length ? Math.min(...rows.map(row => row.height)) : 0;
     const largestRow = rows.length ? Math.max(...rows.map(row => row.height)) : 0;
     const totalRows = rows.reduce((total, row) => total + row.height, 0);
+    const scrollState = content.scrollHeight > content.clientHeight ? "scroll required" : "fits";
     addMeasurement("frame", `${px(phone.width)} × ${px(phone.height)}`);
     addMeasurement("sheet", `${px(sheet.width)} × ${px(sheet.height)} · r22`);
-    addMeasurement("scroll budget", `${px(content.clientHeight)} viewport / ${px(content.scrollHeight)} content`);
+    addMeasurement("scroll budget", `${px(content.clientHeight)} viewport / ${px(content.scrollHeight)} content · ${scrollState}`);
     addMeasurement("row range", `${px(smallestRow)}–${px(largestRow)} · content-yielding`);
     addMeasurement("row system", `${px(totalRows)} total · ${px(rowCopy.width)} copy width`);
     addMeasurement("close target", `${px(close.width)} × ${px(close.height)} · fixed`);
-    const newsreaderLoaded = document.fonts.check(`600 ${ax ? 34 : 26}px "Newsreader Display"`);
+    const newsreaderLoaded = document.fonts.check(`600 ${ax ? 41 : 26}px "Newsreader Display"`);
     addMeasurement("title", `${px(title.height)} · Newsreader ${newsreaderLoaded ? "loaded" : "MISSING"}`);
   }
   document.fonts.ready.then(() => {
