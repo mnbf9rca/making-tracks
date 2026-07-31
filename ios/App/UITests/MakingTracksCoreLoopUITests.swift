@@ -463,8 +463,19 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        XCTAssertGreaterThanOrEqual(element.frame.width, 44, file: file, line: line)
-        XCTAssertGreaterThanOrEqual(element.frame.height, 44, file: file, line: line)
+        let calculationEpsilon: CGFloat = 0.001
+        XCTAssertGreaterThanOrEqual(
+            element.frame.width,
+            44 - calculationEpsilon,
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            element.frame.height,
+            44 - calculationEpsilon,
+            file: file,
+            line: line
+        )
     }
 
     private func assertContainedInAppFrame(
@@ -3609,8 +3620,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openExploreDoor(in: app)
         app.buttons["explore.row.settings"].tap()
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
+        let appearance = app.buttons["settings.group.appearance"]
+        XCTAssertTrue(appearance.waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["settings.theme.selected"].exists)
-        XCTAssertTrue(app.buttons["settings.theme.defined-paper"].exists)
+        XCTAssertFalse(app.buttons["settings.theme.defined-paper"].exists)
+        appearance.tap()
+        XCTAssertTrue(app.staticTexts["Appearance"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["settings.theme.defined-paper"].waitForExistence(timeout: 5))
         XCTAssertTrue(waitForElementValue("Selected", identifier: "settings.theme.defined-paper", in: app))
         XCTAssertTrue(waitForElementValue("Not selected", identifier: "settings.theme.snow", in: app))
 
@@ -3620,6 +3636,225 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForElementValue("Selected", identifier: "settings.theme.snow", in: app))
         XCTAssertTrue(waitForElementValue("Not selected", identifier: "settings.theme.defined-paper", in: app))
         app.buttons["Close"].tap()
+    }
+
+    func testSettingsHubRoutesEveryRuledGroupWithoutLosingExistingActions() {
+        let app = launch(reset: true, locationDenied: true)
+        XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+
+        openExploreDoor(in: app)
+        app.buttons["explore.row.settings"].tap()
+        XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
+
+        let rootIdentifiers = [
+            "settings.group.appearance",
+            "settings.storage.manage",
+            "settings.group.coverage",
+            "settings.group.map-data",
+            "settings.group.location",
+            "settings.diagnostics.export",
+            "settings.replay-onboarding",
+        ]
+        let rootIdentifierSet = Set(rootIdentifiers)
+        XCTAssertEqual(
+            app.buttons.allElementsBoundByIndex
+                .map(\.identifier)
+                .filter { rootIdentifierSet.contains($0) },
+            rootIdentifiers,
+            "Settings groups must remain in the ruled W-2 order."
+        )
+
+        let appearance = app.buttons[rootIdentifiers[0]]
+        assertSettingsRootRow(appearance, in: app)
+        appearance.tap()
+        XCTAssertTrue(app.staticTexts["Appearance"].waitForExistence(timeout: 5))
+        for themeID in ["defined-paper", "snow", "street-contrast", "verdant-kl"] {
+            XCTAssertTrue(app.buttons["settings.theme.\(themeID)"].exists, themeID)
+        }
+        app.buttons["Back"].tap()
+
+        let offlineMaps = app.buttons[rootIdentifiers[1]]
+        assertSettingsRootRow(offlineMaps, in: app)
+        offlineMaps.tap()
+        XCTAssertTrue(app.staticTexts["Offline maps"].waitForExistence(timeout: 5))
+        app.buttons["Back"].tap()
+
+        let coverage = app.buttons[rootIdentifiers[2]]
+        assertSettingsRootRow(coverage, in: app)
+        coverage.tap()
+        XCTAssertTrue(app.staticTexts["Coverage"].waitForExistence(timeout: 5))
+        for identifier in [
+            "settings.coverage.published-regions",
+            "settings.coverage.sources",
+            "settings.coverage.extents",
+        ] {
+            XCTAssertTrue(element(identifier: identifier, in: app).exists, identifier)
+        }
+        XCTAssertFalse(element(identifier: "map.layers.coverage-shading", in: app).exists)
+        app.buttons["Back"].tap()
+
+        let mapAndData = app.buttons[rootIdentifiers[3]]
+        assertSettingsRootRow(mapAndData, in: app)
+        mapAndData.tap()
+        XCTAssertTrue(app.staticTexts["Map & data"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.switches["settings.downloads.allow-cellular"].exists)
+        XCTAssertTrue(app.sliders["settings.pin-size"].exists)
+        app.buttons["Back"].tap()
+
+        let location = app.buttons[rootIdentifiers[4]]
+        assertSettingsRootRow(location, in: app)
+        location.tap()
+        XCTAssertTrue(app.staticTexts["Location off"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["settings.location.open-system"].exists)
+        app.buttons["Back"].tap()
+
+        let diagnostics = app.buttons[rootIdentifiers[5]]
+        assertSettingsRootRow(diagnostics, in: app)
+        diagnostics.tap()
+        XCTAssertTrue(
+            element(identifier: "settings.diagnostics.window-status", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        app.buttons["Back"].tap()
+
+        let replayWelcome = app.buttons[rootIdentifiers[6]]
+        assertSettingsRootRow(replayWelcome, in: app)
+        replayWelcome.tap()
+        XCTAssertTrue(app.staticTexts["Interesting places around you"].waitForExistence(timeout: 5))
+    }
+
+    func testSettingsHubRendersEveryDestinationAtDefaultAndAccessibilityTextSizes() {
+        for textSize in ["default", "ax"] {
+            let app = launch(
+                reset: true,
+                locationDenied: true,
+                accessibilityTextSize: textSize == "ax",
+                resetTheme: true,
+                theme: "snow"
+            )
+            XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10), textSize)
+            openExploreDoor(in: app)
+            app.buttons["explore.row.settings"].tap()
+            XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5), textSize)
+            XCTAssertEqual(
+                app.buttons["settings.group.appearance"].value as? String,
+                "Snow selected. Four existing presets.",
+                textSize
+            )
+            attachScreenshot(named: "settings-root-\(textSize)")
+            assertSettingsRootRenderContract(
+                in: app,
+                accessibilityTextSize: textSize == "ax"
+            )
+
+            captureSettingsDestination(
+                rowIdentifier: "settings.group.appearance",
+                title: "Appearance",
+                subtitle: "Choose how the map looks.",
+                screenshotName: "settings-appearance-\(textSize)",
+                accessibilityTextSize: textSize == "ax",
+                minimumAXSubtitleHeight: 87,
+                interactiveIdentifiers: [
+                    "settings.theme.defined-paper",
+                    "settings.theme.snow",
+                    "settings.theme.street-contrast",
+                    "settings.theme.verdant-kl",
+                ],
+                in: app
+            )
+            captureSettingsDestination(
+                rowIdentifier: "settings.storage.manage",
+                title: "Offline maps",
+                screenshotName: "settings-offline-maps-\(textSize)",
+                visibleIdentifiers: [
+                    "offline-maps.zone.united-kingdom",
+                ],
+                in: app
+            )
+            captureSettingsDestination(
+                rowIdentifier: "settings.group.coverage",
+                title: "Coverage",
+                subtitle: "Where published map data comes from and how far it reaches.",
+                screenshotName: "settings-coverage-\(textSize)",
+                accessibilityTextSize: textSize == "ax",
+                minimumAXSubtitleHeight: 130,
+                visibleIdentifiers: [
+                    "settings.coverage.published-regions",
+                    "settings.coverage.sources",
+                    "settings.coverage.extents",
+                ],
+                in: app
+            )
+            captureSettingsDestination(
+                rowIdentifier: "settings.group.map-data",
+                title: "Map & data",
+                subtitle: "Download policy and map pin sizing.",
+                screenshotName: "settings-map-data-\(textSize)",
+                accessibilityTextSize: textSize == "ax",
+                minimumAXSubtitleHeight: 87,
+                interactiveIdentifiers: [
+                    "settings.downloads.allow-cellular",
+                    "settings.pin-size",
+                ],
+                in: app
+            )
+            captureSettingsDestination(
+                rowIdentifier: "settings.group.location",
+                title: "Location",
+                subtitle: "Permission status and the existing system settings action.",
+                screenshotName: "settings-location-\(textSize)",
+                accessibilityTextSize: textSize == "ax",
+                minimumAXSubtitleHeight: 130,
+                interactiveIdentifiers: ["settings.location.open-system"],
+                in: app
+            )
+            captureSettingsDestination(
+                rowIdentifier: "settings.diagnostics.export",
+                title: "Diagnostics",
+                screenshotName: "settings-diagnostics-\(textSize)",
+                interactiveIdentifiers: ["settings.diagnostics.prepare"],
+                visibleIdentifiers: ["settings.diagnostics.window-status"],
+                in: app
+            )
+
+            let replayWelcome = app.buttons["settings.replay-onboarding"]
+            XCTAssertTrue(scrollToHittable(replayWelcome, in: app), textSize)
+            replayWelcome.tap()
+            XCTAssertTrue(
+                app.staticTexts["Interesting places around you"].waitForExistence(timeout: 5),
+                textSize
+            )
+            attachScreenshot(named: "settings-replay-welcome-\(textSize)")
+            let replayNext = app.buttons["onboarding.next"]
+            XCTAssertTrue(scrollToFullyContained(replayNext, in: app), textSize)
+            assertContainedInAppFrame(replayNext, in: app)
+            app.terminate()
+        }
+    }
+
+    func testSettingsRootImplementationEvidenceCapturesDefaultAndAX5() {
+        for evidenceCase in [
+            (accessibilityTextSize: false, screenshotName: "t2.9-settings-root"),
+            (accessibilityTextSize: true, screenshotName: "t2.9-settings-root-ax"),
+        ] {
+            let app = launch(
+                reset: true,
+                locationDenied: true,
+                accessibilityTextSize: evidenceCase.accessibilityTextSize,
+                resetTheme: true,
+                theme: "snow"
+            )
+            XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10))
+            openExploreDoor(in: app)
+            app.buttons["explore.row.settings"].tap()
+            XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
+            attachScreenshot(named: evidenceCase.screenshotName, forceExport: true)
+            assertSettingsRootRenderContract(
+                in: app,
+                accessibilityTextSize: evidenceCase.accessibilityTextSize
+            )
+            app.terminate()
+        }
     }
 
     func testSettingsStorageRowNavigatesToOfflineMaps() {
@@ -3993,6 +4228,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openExploreDoor(in: app)
         app.buttons["explore.row.settings"].tap()
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
+        let mapAndData = app.buttons["settings.group.map-data"]
+        XCTAssertTrue(scrollToHittable(mapAndData, in: app))
+        mapAndData.tap()
+        XCTAssertTrue(app.staticTexts["Map & data"].waitForExistence(timeout: 5))
         let slider = app.sliders["settings.pin-size"]
         XCTAssertTrue(scrollToHittable(slider, in: app))
         adjustSliderToTrueEdge(slider, in: app, identifier: "settings.pin-size", expectedValue: "160%")
@@ -4986,6 +5225,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openExploreDoor(in: app)
         app.buttons["explore.row.settings"].tap()
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
+        let appearance = app.buttons["settings.group.appearance"]
+        XCTAssertTrue(appearance.waitForExistence(timeout: 5))
+        appearance.tap()
+        XCTAssertTrue(app.staticTexts["Appearance"].waitForExistence(timeout: 5))
         let themeButton = app.buttons["settings.theme.\(themeID)"]
         XCTAssertTrue(scrollToHittable(themeButton, in: app))
         themeButton.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
@@ -5027,6 +5270,204 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let door = app.buttons["map.door.explore"]
         XCTAssertTrue(door.waitForExistence(timeout: 5))
         door.tap()
+    }
+
+    private func assertSettingsRootRow(
+        _ row: XCUIElement,
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(scrollToHittable(row, in: app), row.identifier, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(row.frame.width, 44, row.identifier, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(row.frame.height, 44, row.identifier, file: file, line: line)
+    }
+
+    private func captureSettingsDestination(
+        rowIdentifier: String,
+        title: String,
+        subtitle: String? = nil,
+        screenshotName: String,
+        accessibilityTextSize: Bool = false,
+        minimumAXSubtitleHeight: CGFloat? = nil,
+        interactiveIdentifiers: [String] = [],
+        visibleIdentifiers: [String] = [],
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let row = app.buttons[rowIdentifier]
+        XCTAssertTrue(
+            scrollSettingsRowToHittable(row, in: app),
+            rowIdentifier,
+            file: file,
+            line: line
+        )
+        row.tap()
+        XCTAssertTrue(
+            app.staticTexts[title].waitForExistence(timeout: 5),
+            title,
+            file: file,
+            line: line
+        )
+        if let subtitle {
+            let renderedSubtitle = app.staticTexts[subtitle]
+            XCTAssertTrue(
+                renderedSubtitle.waitForExistence(timeout: 5),
+                "\(title): rendered subtitle",
+                file: file,
+                line: line
+            )
+            XCTAssertEqual(renderedSubtitle.label, subtitle, file: file, line: line)
+            assertContainedInAppFrame(renderedSubtitle, in: app, file: file, line: line)
+            if accessibilityTextSize, let minimumAXSubtitleHeight {
+                XCTAssertGreaterThanOrEqual(
+                    renderedSubtitle.frame.height,
+                    minimumAXSubtitleHeight,
+                    "\(title): the AX-XXXL subtitle must occupy multiple rendered lines",
+                    file: file,
+                    line: line
+                )
+            }
+        }
+        attachScreenshot(named: screenshotName)
+        for identifier in visibleIdentifiers {
+            let visibleElement = element(identifier: identifier, in: app)
+            XCTAssertTrue(
+                scrollToFullyContained(
+                    visibleElement,
+                    in: app,
+                    requireHittable: false
+                ),
+                "\(title): \(identifier)",
+                file: file,
+                line: line
+            )
+            assertContainedInAppFrame(visibleElement, in: app, file: file, line: line)
+        }
+        for identifier in interactiveIdentifiers {
+            let control = element(identifier: identifier, in: app)
+            XCTAssertTrue(
+                scrollToFullyContained(control, in: app),
+                "\(title): \(identifier)",
+                file: file,
+                line: line
+            )
+            assertMinimumInteractiveTarget(control, file: file, line: line)
+            assertContainedInAppFrame(control, in: app, file: file, line: line)
+        }
+        let back = app.buttons["Back"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5), title, file: file, line: line)
+        back.tap()
+        XCTAssertTrue(
+            app.staticTexts["Settings"].waitForExistence(timeout: 5),
+            title,
+            file: file,
+            line: line
+        )
+    }
+
+    private func assertSettingsRootRenderContract(
+        in app: XCUIApplication,
+        accessibilityTextSize: Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let rows = [
+            (
+                identifier: "settings.group.appearance",
+                label: "Appearance",
+                value: "Snow selected. Four existing presets.",
+                minimumAXHeight: CGFloat(350)
+            ),
+            (
+                identifier: "settings.storage.manage",
+                label: "Offline maps",
+                value: "Packs · downloads · per-pack storage",
+                minimumAXHeight: CGFloat(270)
+            ),
+            (
+                identifier: "settings.group.coverage",
+                label: "Coverage",
+                value: "Published regions · sources · extents",
+                minimumAXHeight: CGFloat(240)
+            ),
+            (
+                identifier: "settings.group.map-data",
+                label: "Map & data",
+                value: "Cellular downloads · pin size",
+                minimumAXHeight: CGFloat(290)
+            ),
+            (
+                identifier: "settings.group.location",
+                label: "Location",
+                value: "Permission and system settings",
+                minimumAXHeight: CGFloat(240)
+            ),
+            (
+                identifier: "settings.diagnostics.export",
+                label: "Diagnostic log",
+                value: "Review, prepare, share, or delete local logs.",
+                minimumAXHeight: CGFloat(245)
+            ),
+            (
+                identifier: "settings.replay-onboarding",
+                label: "Replay welcome",
+                value: "Return to the existing welcome flow",
+                minimumAXHeight: CGFloat(290)
+            ),
+        ]
+
+        for expectation in rows {
+            let row = app.buttons[expectation.identifier]
+            XCTAssertTrue(
+                scrollToFullyContained(row, in: app),
+                expectation.identifier,
+                file: file,
+                line: line
+            )
+            XCTAssertEqual(row.label, expectation.label, file: file, line: line)
+            XCTAssertEqual(
+                row.value as? String,
+                expectation.value,
+                expectation.identifier,
+                file: file,
+                line: line
+            )
+            XCTAssertGreaterThanOrEqual(
+                row.frame.height,
+                (accessibilityTextSize ? expectation.minimumAXHeight : 75) - 0.5,
+                accessibilityTextSize
+                    ? "\(expectation.identifier): AX-XXXL copy must occupy its natural wrapped height"
+                    : expectation.identifier,
+                file: file,
+                line: line
+            )
+            assertMinimumInteractiveTarget(row, file: file, line: line)
+            assertContainedInAppFrame(row, in: app, file: file, line: line)
+        }
+    }
+
+    private func scrollSettingsRowToHittable(
+        _ row: XCUIElement,
+        in app: XCUIApplication
+    ) -> Bool {
+        if row.waitForExistence(timeout: 2), row.isHittable {
+            return true
+        }
+
+        for _ in 0..<5 {
+            if row.exists, row.frame.midY < app.frame.midY {
+                scrollTarget(in: app).swipeDown()
+            } else {
+                scrollTarget(in: app).swipeUp()
+            }
+            if row.waitForExistence(timeout: 1), row.isHittable {
+                return true
+            }
+        }
+
+        return row.exists && row.isHittable
     }
 
     private func openJournalDoor(in app: XCUIApplication) {
@@ -5918,10 +6359,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     private func scrollToFullyContained(
         _ element: XCUIElement,
         in app: XCUIApplication,
+        requireHittable: Bool = true,
         maxSwipes: Int = 5
     ) -> Bool {
         func isFullyContained() -> Bool {
-            element.exists && element.isHittable && app.frame.contains(element.frame)
+            element.exists
+                && (!requireHittable || element.isHittable)
+                && app.frame.contains(element.frame)
         }
 
         if element.waitForExistence(timeout: 2), isFullyContained() {
@@ -6078,6 +6522,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "t2.10-about-ax": "t2.10-about-ax",
         "t2.10-software-licences-ax": "t2.10-software-licences-ax",
         "t2.10-data-licences-ax": "t2.10-data-licences-ax",
+        "t2.9-settings-root": "t2.9-settings-root",
+        "t2.9-settings-root-ax": "t2.9-settings-root-ax",
         "diagnostics-preprepare-exclusions-dark": "diagnostics-preprepare-exclusions-dark",
         "tracks-static-geometry": "tracks-static-geometry",
         "explore-door-default": "explore-door-default",

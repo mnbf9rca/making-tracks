@@ -655,8 +655,102 @@ enum MapShellDestination: Hashable {
     case hiddenPlaces
     case offlineMaps
     case settings
+    case settingsAppearance
+    case settingsCoverage
+    case settingsMapAndData
+    case settingsLocation
     case diagnostics
     case about
+}
+
+struct SettingsGroupPresentation: Equatable {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    let accessibilityIdentifier: String
+}
+
+enum SettingsGroup: CaseIterable, Hashable {
+    case appearance
+    case offlineMaps
+    case coverage
+    case mapAndData
+    case location
+    case diagnostics
+    case replayWelcome
+
+    var presentation: SettingsGroupPresentation {
+        switch self {
+        case .appearance:
+            .init(
+                title: "Appearance",
+                subtitle: "Four existing presets",
+                systemImage: "circle.lefthalf.filled",
+                accessibilityIdentifier: "settings.group.appearance"
+            )
+        case .offlineMaps:
+            .init(
+                title: "Offline maps",
+                subtitle: "Packs · downloads · per-pack storage",
+                systemImage: "tray.and.arrow.down",
+                accessibilityIdentifier: "settings.storage.manage"
+            )
+        case .coverage:
+            .init(
+                title: "Coverage",
+                subtitle: "Published regions · sources · extents",
+                systemImage: "map",
+                accessibilityIdentifier: "settings.group.coverage"
+            )
+        case .mapAndData:
+            .init(
+                title: "Map & data",
+                subtitle: "Cellular downloads · pin size",
+                systemImage: "map.circle",
+                accessibilityIdentifier: "settings.group.map-data"
+            )
+        case .location:
+            .init(
+                title: "Location",
+                subtitle: "Permission and system settings",
+                systemImage: "location",
+                accessibilityIdentifier: "settings.group.location"
+            )
+        case .diagnostics:
+            .init(
+                title: "Diagnostics",
+                subtitle: "Review or export local logs",
+                systemImage: "arrow.up.doc",
+                accessibilityIdentifier: "settings.diagnostics.export"
+            )
+        case .replayWelcome:
+            .init(
+                title: "Replay welcome",
+                subtitle: "Return to the existing welcome flow",
+                systemImage: "arrow.counterclockwise.circle",
+                accessibilityIdentifier: "settings.replay-onboarding"
+            )
+        }
+    }
+
+    var destination: MapShellDestination? {
+        switch self {
+        case .appearance:
+            .settingsAppearance
+        case .offlineMaps:
+            SettingsStorageNavigation.destination
+        case .coverage:
+            .settingsCoverage
+        case .mapAndData:
+            .settingsMapAndData
+        case .location:
+            .settingsLocation
+        case .diagnostics:
+            .diagnostics
+        case .replayWelcome:
+            nil
+        }
+    }
 }
 
 enum MapDoor: Hashable, Identifiable {
@@ -4794,11 +4888,21 @@ private struct MapDoorSheetIntegration: View {
         case .settings:
             SettingsView(
                 selectedThemeID: $selectedThemeID,
-                pinSizeMultiplier: $pinSizeMultiplier,
-                locationStatus: locationStatus,
-                storageStatus: storageStatus,
-                openLocationSettings: openLocationSettings,
                 replayOnboarding: replayOnboardingAndDismiss
+            )
+        case .settingsAppearance:
+            SettingsAppearanceView(selectedThemeID: $selectedThemeID)
+        case .settingsCoverage:
+            SettingsCoverageView()
+        case .settingsMapAndData:
+            SettingsMapAndDataView(
+                selectedThemeID: $selectedThemeID,
+                pinSizeMultiplier: $pinSizeMultiplier
+            )
+        case .settingsLocation:
+            SettingsLocationView(
+                locationStatus: locationStatus,
+                openLocationSettings: openLocationSettings
             )
         case .diagnostics:
             DiagnosticsView(storageStatus: storageStatus)
@@ -6541,37 +6645,303 @@ private struct OfflineMapsView: View {
 
 private struct SettingsView: View {
     @Binding var selectedThemeID: String
-    @Binding var pinSizeMultiplier: Double
-    let locationStatus: LocationMenuStatus
-    let storageStatus: StorageMenuStatus
-    let openLocationSettings: () -> Void
     let replayOnboarding: @MainActor () -> Void
-    @AppStorage(OfflineDownloadSettings.allowsCellularDownloadsKey) private var allowsCellularDownloads = OfflineDownloadSettings.defaultAllowsCellularDownloads
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
-        List {
-            Section("Map theme") {
+        SettingsMaterialPage(
+            title: "Settings",
+            subtitle: "Things you set once, grouped into material subareas."
+        ) {
+            Text("Settings groups")
+                .font(Typography.font(for: .label))
+                .textCase(.uppercase)
+                .tracking(1.2)
+                .foregroundStyle(tokens.muted.swiftUIColor)
+
+            VStack(spacing: 0) {
+                ForEach(SettingsGroup.allCases, id: \.self) { group in
+                    settingsGroupRow(group)
+                }
+            }
+            .background(
+                tokens.surfaceRaised.swiftUIColor,
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    private func settingsGroupRow(_ group: SettingsGroup) -> some View {
+        let presentation = group.presentation
+
+        if let destination = group.destination {
+            NavigationLink(value: destination) {
+                SettingsGroupRow(presentation: presentation) {
+                    groupSummary(group)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(accessibilityLabel(for: group))
+            .accessibilityValue(Text(verbatim: accessibilityValue(for: group)))
+            .accessibilityIdentifier(presentation.accessibilityIdentifier)
+        } else {
+            Button(action: replayOnboarding) {
+                SettingsGroupRow(presentation: presentation) {
+                    groupSummary(group)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(accessibilityLabel(for: group))
+            .accessibilityValue(Text(verbatim: accessibilityValue(for: group)))
+            .accessibilityIdentifier(presentation.accessibilityIdentifier)
+        }
+    }
+
+    @ViewBuilder
+    private func groupSummary(_ group: SettingsGroup) -> some View {
+        if group == .appearance {
+            let selectedTheme = MapTheme.named(selectedThemeID)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(verbatim: "\(selectedTheme.displayName) selected")
+                        SettingsThemeDots(selectedThemeID: selectedTheme.id)
+                    }
+                    Text("Four existing presets")
+                }
+            } else {
+                HStack(spacing: 6) {
+                    Text(verbatim: "\(selectedTheme.displayName) selected")
+                    SettingsThemeDots(selectedThemeID: selectedTheme.id)
+                    Text("\u{00B7} four existing presets")
+                }
+            }
+        } else {
+            Text(verbatim: group.presentation.subtitle)
+        }
+    }
+
+    private func accessibilityLabel(for group: SettingsGroup) -> Text {
+        if group == .diagnostics {
+            return Text("Diagnostic log")
+        }
+        return Text(verbatim: group.presentation.title)
+    }
+
+    private func accessibilityValue(for group: SettingsGroup) -> String {
+        if group == .appearance {
+            return "\(MapTheme.named(selectedThemeID).displayName) selected. Four existing presets."
+        }
+        if group == .diagnostics {
+            return "Review, prepare, share, or delete local logs."
+        }
+        return group.presentation.subtitle
+    }
+}
+
+private struct SettingsMaterialPage<Content: View>: View {
+    let title: String
+    let subtitle: String
+    let content: Content
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    init(
+        title: String,
+        subtitle: String,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.content = content()
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(verbatim: title)
+                        .font(Typography.font(for: .sheetTitle))
+                        .foregroundStyle(tokens.ink.swiftUIColor)
+
+                    Text(verbatim: subtitle)
+                        .font(Typography.font(for: .evocativeSubline))
+                        .foregroundStyle(tokens.muted.swiftUIColor)
+                        .padding(.bottom, 8)
+
+                    content
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
+                .frame(
+                    minHeight: proxy.size.height,
+                    alignment: .top
+                )
+            }
+        }
+        .background(tokens.surface.swiftUIColor)
+    }
+}
+
+private struct SettingsGroupRow<Summary: View>: View {
+    let presentation: SettingsGroupPresentation
+    let summary: Summary
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .body) private var iconSize = 20
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    init(
+        presentation: SettingsGroupPresentation,
+        @ViewBuilder summary: () -> Summary
+    ) {
+        self.presentation = presentation
+        self.summary = summary()
+    }
+
+    var body: some View {
+        MaterialHairlineRow {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        groupIcon(width: 48)
+                        Spacer()
+                        disclosureIndicator
+                    }
+
+                    groupTitle
+                    groupSummary
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(spacing: 10) {
+                    groupIcon(width: 24)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        groupTitle
+                        groupSummary
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    disclosureIndicator
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(
+            minHeight: dynamicTypeSize.isAccessibilitySize ? 120 : 75,
+            alignment: .leading
+        )
+        .contentShape(Rectangle())
+    }
+
+    private func groupIcon(width: CGFloat) -> some View {
+        Image(systemName: presentation.systemImage)
+            .font(.system(size: iconSize, weight: .medium))
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(tokens.accent.swiftUIColor)
+            .frame(width: width)
+            .accessibilityHidden(true)
+    }
+
+    private var groupTitle: some View {
+        Text(verbatim: presentation.title)
+            .font(Typography.font(for: .listRowTitle))
+            .foregroundStyle(tokens.ink.swiftUIColor)
+    }
+
+    private var groupSummary: some View {
+        summary
+            .font(Typography.font(for: .metadata))
+            .foregroundStyle(tokens.muted.swiftUIColor)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var disclosureIndicator: some View {
+        Image(systemName: "chevron.right")
+            .iconRole(.accessory)
+            .foregroundStyle(tokens.muted.swiftUIColor)
+            .accessibilityHidden(true)
+    }
+}
+
+private struct SettingsThemeDots: View {
+    let selectedThemeID: String
+
+    @ScaledMetric(relativeTo: .body) private var dotSize = 9
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(MapTheme.allCandidates, id: \.id) { theme in
+                Circle()
+                    .fill(MapThemeColor.color(css: theme.background))
+                    .frame(width: dotSize, height: dotSize)
+                    .overlay {
+                        Circle()
+                            .stroke(tokens.hairline.swiftUIColor, lineWidth: 1)
+                    }
+                    .overlay {
+                        if theme.id == selectedThemeID {
+                            Circle()
+                                .stroke(tokens.accent.swiftUIColor, lineWidth: 2)
+                                .padding(-2)
+                        }
+                    }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+private struct SettingsAppearanceView: View {
+    @Binding var selectedThemeID: String
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        SettingsMaterialPage(
+            title: "Appearance",
+            subtitle: "Choose how the map looks."
+        ) {
+            Text("Map themes")
+                .font(Typography.font(for: .label))
+                .textCase(.uppercase)
+                .tracking(1.2)
+                .foregroundStyle(tokens.muted.swiftUIColor)
+
+            VStack(spacing: 0) {
                 ForEach(MapTheme.allCandidates, id: \.id) { theme in
                     let isSelected = MapTheme.named(selectedThemeID).id == theme.id
                     Button {
                         selectedThemeID = theme.id
                     } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(verbatim: theme.displayName)
-                                    .foregroundStyle(.primary)
-                                Text(verbatim: theme.id)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if isSelected {
-                                Image(systemName: "checkmark")
-                                    .font(.headline)
-                                    .foregroundStyle(Color.accentColor)
-                                    .accessibilityHidden(true)
+                        MaterialHairlineRow {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(verbatim: theme.displayName)
+                                        .foregroundStyle(.primary)
+                                    Text(verbatim: theme.id)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if isSelected {
+                                    Image(systemName: "checkmark")
+                                        .font(.headline)
+                                        .foregroundStyle(Color.accentColor)
+                                        .accessibilityHidden(true)
+                                }
                             }
                         }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -6580,9 +6950,120 @@ private struct SettingsView: View {
                     .accessibilityIdentifier("settings.theme.\(theme.id)")
                 }
             }
+            .background(
+                tokens.surfaceRaised.swiftUIColor,
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+}
 
-            Section("Downloads") {
-                Toggle(isOn: $allowsCellularDownloads) {
+private struct SettingsCoverageView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        SettingsMaterialPage(
+            title: "Coverage",
+            subtitle: "Where published map data comes from and how far it reaches."
+        ) {
+            Text("Coverage data")
+                .font(Typography.font(for: .label))
+                .textCase(.uppercase)
+                .tracking(1.2)
+                .foregroundStyle(tokens.muted.swiftUIColor)
+
+            VStack(spacing: 0) {
+                informationRow(
+                    title: "Published regions",
+                    summary: "Manage region downloads in Offline maps.",
+                    systemImage: "globe.europe.africa",
+                    identifier: "settings.coverage.published-regions"
+                )
+                informationRow(
+                    title: "Sources",
+                    summary: "Source licensing and attribution are listed in About.",
+                    systemImage: "books.vertical",
+                    identifier: "settings.coverage.sources"
+                )
+                informationRow(
+                    title: "Extents",
+                    summary: "Each published region defines the area its map data covers.",
+                    systemImage: "square.dashed",
+                    identifier: "settings.coverage.extents"
+                )
+            }
+            .background(
+                tokens.surfaceRaised.swiftUIColor,
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            Text("Manage published regions in Offline maps. Review source licensing and attribution in About.")
+                .font(Typography.font(for: .body))
+                .foregroundStyle(tokens.muted.swiftUIColor)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+        }
+    }
+
+    private func informationRow(
+        title: String,
+        summary: String,
+        systemImage: String,
+        identifier: String
+    ) -> some View {
+        MaterialHairlineRow {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.body)
+                    .foregroundStyle(tokens.accent.swiftUIColor)
+                    .frame(width: dynamicTypeSize.isAccessibilitySize ? 48 : 24)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(verbatim: title)
+                        .font(Typography.font(for: .listRowTitle))
+                        .foregroundStyle(tokens.ink.swiftUIColor)
+                    Text(verbatim: summary)
+                        .font(Typography.font(for: .metadata))
+                        .foregroundStyle(tokens.muted.swiftUIColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: title))
+        .accessibilityValue(Text(verbatim: summary))
+        .accessibilityIdentifier(identifier)
+    }
+}
+
+private struct SettingsMapAndDataView: View {
+    @Binding var selectedThemeID: String
+    @Binding var pinSizeMultiplier: Double
+
+    @AppStorage(OfflineDownloadSettings.allowsCellularDownloadsKey) private var allowsCellularDownloads = OfflineDownloadSettings.defaultAllowsCellularDownloads
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        SettingsMaterialPage(
+            title: "Map & data",
+            subtitle: "Download policy and map pin sizing."
+        ) {
+            Text("Downloads")
+                .font(Typography.font(for: .label))
+                .textCase(.uppercase)
+                .tracking(1.2)
+                .foregroundStyle(tokens.muted.swiftUIColor)
+
+            VStack(spacing: 0) {
+                MaterialToggleHairlineRow(isOn: $allowsCellularDownloads) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Allow cellular downloads")
                         Text("Off keeps offline maps waiting for Wi-Fi.")
@@ -6592,83 +7073,51 @@ private struct SettingsView: View {
                 }
                 .accessibilityIdentifier("settings.downloads.allow-cellular")
             }
+            .background(
+                tokens.surfaceRaised.swiftUIColor,
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-            Section("Pins") {
-                VStack(alignment: .leading, spacing: 8) {
-                    PinSizePreview(pinSize: pinSize, theme: MapTheme.named(selectedThemeID))
-                        .padding(.bottom, 2)
-                        .accessibilityHidden(true)
+            Text("Pins")
+                .font(Typography.font(for: .label))
+                .textCase(.uppercase)
+                .tracking(1.2)
+                .foregroundStyle(tokens.muted.swiftUIColor)
+                .padding(.top, 8)
 
-                    HStack {
-                        Text("Pin size")
-                        Spacer()
-                        Text(pinSize.accessibilityValue)
-                            .foregroundStyle(.secondary)
-                    }
-                    Slider(
-                        value: pinSizeBinding,
-                        in: PinSize.minimumMultiplier...PinSize.maximumMultiplier,
-                        step: 0.1
-                    )
-                    .accessibilityLabel("Pin size")
-                    .accessibilityValue(pinSize.accessibilityValue)
-                    .accessibilityIdentifier("settings.pin-size")
-                }
-            }
+            VStack(spacing: 0) {
+                MaterialHairlineRow {
+                    VStack(alignment: .leading, spacing: 8) {
+                        PinSizePreview(pinSize: pinSize, theme: MapTheme.named(selectedThemeID))
+                            .padding(.bottom, 2)
+                            .accessibilityHidden(true)
 
-            Section("Location") {
-                HStack {
-                    Label(locationStatus.label, systemImage: "location")
-                    Spacer()
-                    if locationStatus.canOpenSettings {
-                        Button("Settings", action: openLocationSettings)
-                            .accessibilityIdentifier("settings.location.open-system")
-                    }
-                }
-            }
-
-            Section("Storage") {
-                NavigationLink(value: SettingsStorageNavigation.destination) {
-                    SettingsStorageSummary(storageStatus: storageStatus)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("settings.storage.manage")
-            }
-
-            Section("Diagnostics") {
-                NavigationLink(value: MapShellDestination.diagnostics) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "arrow.up.doc")
-                            .foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Diagnostic log")
-                                .foregroundStyle(.primary)
-                            Text("Review, prepare, share, or delete local logs.")
-                                .font(.caption)
+                        HStack {
+                            Text("Pin size")
+                            Spacer()
+                            Text(pinSize.accessibilityValue)
                                 .foregroundStyle(.secondary)
                         }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("settings.diagnostics.export")
-            }
-
-            Section("Onboarding") {
-                Button(action: replayOnboarding) {
-                    Text("Replay onboarding")
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        Slider(
+                            value: pinSizeBinding,
+                            in: PinSize.minimumMultiplier...PinSize.maximumMultiplier,
+                            step: 0.1
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 44)
                         .contentShape(Rectangle())
+                        .accessibilityLabel("Pin size")
+                        .accessibilityValue(pinSize.accessibilityValue)
+                        .accessibilityIdentifier("settings.pin-size")
+                    }
                 }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("settings.replay-onboarding")
             }
+            .background(
+                tokens.surfaceRaised.swiftUIColor,
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
-        .navigationTitle("Settings")
     }
 
     private var pinSize: PinSize {
@@ -6681,7 +7130,64 @@ private struct SettingsView: View {
             set: { pinSizeMultiplier = PinSize(multiplier: $0).multiplier }
         )
     }
+}
 
+private struct SettingsLocationView: View {
+    let locationStatus: LocationMenuStatus
+    let openLocationSettings: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        SettingsMaterialPage(
+            title: "Location",
+            subtitle: "Permission status and the existing system settings action."
+        ) {
+            Text("Location access")
+                .font(Typography.font(for: .label))
+                .textCase(.uppercase)
+                .tracking(1.2)
+                .foregroundStyle(tokens.muted.swiftUIColor)
+
+            VStack(spacing: 0) {
+                MaterialHairlineRow {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label(locationStatus.label, systemImage: "location")
+                            openSystemSettingsButton
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    } else {
+                        HStack {
+                            Label(locationStatus.label, systemImage: "location")
+                            Spacer()
+                            openSystemSettingsButton
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                }
+            }
+            .background(
+                tokens.surfaceRaised.swiftUIColor,
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    private var openSystemSettingsButton: some View {
+        if locationStatus.canOpenSettings {
+            Button(action: openLocationSettings) {
+                Text("Settings")
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityIdentifier("settings.location.open-system")
+        }
+    }
 }
 
 private struct DiagnosticsView: View {
