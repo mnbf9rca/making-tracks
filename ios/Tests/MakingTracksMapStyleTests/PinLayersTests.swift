@@ -28,6 +28,7 @@ final class PinLayersTests: XCTestCase {
 
     func testPinAndTrackLayerValuesComeFromTheTokenSheet() throws {
         XCTAssertEqual(PinLayers.pinColor, PinTokenBlock.constant.pin.mapStyleString)
+        XCTAssertEqual(PinLayers.hiddenPinColor, PinTokenBlock.constant.hiddenPin.mapStyleString)
         XCTAssertEqual(FADED_OPACITY, PinTokenBlock.constant.pinFaded.opacity)
         XCTAssertEqual(TrackLayers.lineColor, MaterialTheme.snow.tokens.trail.mapStyleString.lowercased())
 

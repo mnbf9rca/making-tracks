@@ -3,7 +3,7 @@ import MakingTracksData
 
 public enum PinLayers {
     public static let pinColor = PinTokenBlock.constant.pin.mapStyleString
-    public static let hiddenPinColor = "#767B82"
+    public static let hiddenPinColor = PinTokenBlock.constant.hiddenPin.mapStyleString
     public static let sourceID = "pins"
     public static let baseBadgeOffset = 8.0
     public static let bookmarkOffset: JSONValue = .array([.double(baseBadgeOffset), .double(-baseBadgeOffset)])

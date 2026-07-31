@@ -101,18 +101,21 @@ public enum SemanticColorToken: String, CaseIterable, Hashable, Sendable {
 public struct PinTokenBlock: Hashable, Sendable {
     public static let constant = PinTokenBlock(
         pin: MaterialColor(red: 0xE4, green: 0x57, blue: 0x2E),
+        hiddenPin: MaterialColor(red: 0x76, green: 0x7B, blue: 0x82),
         fadedOpacity: 0.35
     )
 
     public let pin: MaterialColor
+    public let hiddenPin: MaterialColor
     private let fadedOpacity: Double
 
     public var pinFaded: MaterialColor {
         pin.withOpacity(fadedOpacity)
     }
 
-    private init(pin: MaterialColor, fadedOpacity: Double) {
+    private init(pin: MaterialColor, hiddenPin: MaterialColor, fadedOpacity: Double) {
         self.pin = pin
+        self.hiddenPin = hiddenPin
         self.fadedOpacity = fadedOpacity
     }
 }
