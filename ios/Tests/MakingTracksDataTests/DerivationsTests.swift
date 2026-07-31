@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 import GRDB
 @testable import MakingTracksData
@@ -463,6 +464,98 @@ final class DerivationsTests: XCTestCase {
 
         XCTAssertEqual(try db.listItems(listID: 42).map(\.placeID), ["stored"])
         XCTAssertEqual(try db.listProgress(listID: 42).total, 1)
+    }
+
+    func testRestrictiveDiscoveryScopeDoesNotFilterStoryDerivations() throws {
+        let suiteName = "DerivationsTests.discovery-scope.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = DiscoveryScopeStore(userDefaults: defaults)
+        let restrictiveScope = DiscoveryScope(
+            visibleCategoryIDs: [],
+            includeHidden: false,
+            showSaved: false,
+            showCoverageShading: false
+        )
+        store.save(restrictiveScope)
+        let persistedScope = store.load()
+        XCTAssertEqual(persistedScope, restrictiveScope)
+
+        let db = try AppDatabase.inMemory(
+            now: { Date(timeIntervalSince1970: 0) }
+        )
+        try db.dbQueue.write { d in
+            try d.execute(
+                sql: """
+                    INSERT INTO lists (id, name, is_system, created_at)
+                    VALUES (42, 'Weekend', 0, 0)
+                    """
+            )
+            try insertSnapshot(
+                d,
+                placeID: "visible",
+                name: "Visible",
+                category: "history",
+                lat: 51.50,
+                lon: -0.12,
+                tier: 2
+            )
+            try insertSnapshot(
+                d,
+                placeID: "hidden-loved",
+                name: "Hidden Loved",
+                category: "museum",
+                lat: 51.51,
+                lon: -0.13,
+                tier: 2
+            )
+            try d.execute(
+                sql: """
+                    INSERT INTO list_items (list_id, place_id, added_at)
+                    VALUES (42, 'visible', 20), (42, 'hidden-loved', 10)
+                    """
+            )
+            try insertVisit(
+                d,
+                placeID: "visible",
+                timestamp: Date(timeIntervalSince1970: 10)
+            )
+            try insertVisit(
+                d,
+                placeID: "hidden-loved",
+                timestamp: Date(timeIntervalSince1970: 20),
+                verdict: .loved
+            )
+            try d.execute(
+                sql: """
+                    INSERT INTO hidden_places (place_id, hidden_at)
+                    VALUES ('hidden-loved', 30)
+                    """
+            )
+        }
+
+        let discoveryFeatures = PinFeatureFilter.discoveryFeatures(
+            try db.listMapFeatures(listID: 42),
+            showHidden: persistedScope.includeHidden,
+            showSaved: persistedScope.showSaved
+        )
+
+        XCTAssertTrue(discoveryFeatures.isEmpty)
+        XCTAssertEqual(try db.trackVisits().map(\.placeID), ["visible"])
+        XCTAssertEqual(
+            try db.listItems(listID: 42).map(\.placeID),
+            ["visible", "hidden-loved"]
+        )
+        XCTAssertEqual(
+            try db.lovedPlaces().map(\.placeID),
+            ["hidden-loved"]
+        )
+        XCTAssertEqual(
+            try db.hiddenPlaces().map(\.placeID),
+            ["hidden-loved"]
+        )
     }
 
     func testLovedPlacesAreSnapshotBackedDeduplicatedAndIncludeHiddenOverlap() throws {
