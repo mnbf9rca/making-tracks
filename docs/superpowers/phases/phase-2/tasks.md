@@ -203,6 +203,7 @@ Docs-only, so the iOS gate does not run — and a green PR is therefore not a te
 - **Owner:** codex1
 - **Review tier:** `sourcery` + `reviewer`
 - **Status:** PR open — draft #574; review repair and full host gate GREEN (501 tests); Sourcery + reviewer re-review pending
+- **Evidence:** review-repair implementation head `a6ec194`; `cd ios && swift test` — 501 tests, 0 failures; paired suites — ControlStyles/PublicControlStyles 40/40 and IconRole 3/3; `.body` anchor mutation failed with `Expected subheadline, got body`.
 - **Contracts produced:** two new `IconRole` cases and the scaled press inset. **T2.3 consumes the first**; name both in the PR body.
 - **Owed device proof:** AC2.3 is explicitly partial: the spec-side and anchor-side contract is met here, while device-real default/AX perceptibility for the sole `MaterialQuietButtonStyle.textOnly` app consumer (`PlaceCardSheet.swift:172`) is tracked by #575 and carries to the first full-gate row that renders the place-card action bar — structurally Phase 3 DS-7 (#473), not T2.3.
 

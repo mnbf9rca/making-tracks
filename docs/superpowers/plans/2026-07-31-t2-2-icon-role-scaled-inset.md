@@ -70,7 +70,7 @@
 - [x] Confirm `ios/Package.resolved` is unchanged; restore only resolver-generated pin drift if necessary.
 - [x] Inspect the diff for T2.2 scope, warnings-as-errors hazards, and preservation of the T2.3/T2.8 geometry constants.
 - [x] Record the owed device-real proof in the T2.2 row and the Carried section; file dedicated issue #575 for the DS-7 claimant.
-- [ ] Update the T2.2 ledger row with final exact test evidence and head.
+- [x] Update the T2.2 ledger row with final exact test evidence and implementation head `a6ec194`.
 - [x] Commit and push the review candidate.
 - [ ] Request the ratified Sourcery plus reviewer review tier over AMQ.
 - [x] Open a draft PR into `ios` and verify `track-b-ios`, `wp`, and `sourcery-review` labels.
