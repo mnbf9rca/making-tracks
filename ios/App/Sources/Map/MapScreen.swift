@@ -738,7 +738,7 @@ enum SettingsGroup: CaseIterable, Hashable {
         case .appearance:
             .settingsAppearance
         case .offlineMaps:
-            .offlineMaps
+            SettingsStorageNavigation.destination
         case .coverage:
             .settingsCoverage
         case .mapAndData:
@@ -7272,21 +7272,13 @@ private struct SettingsMapAndDataView: View {
                 .foregroundStyle(tokens.muted.swiftUIColor)
 
             VStack(spacing: 0) {
-                Toggle(isOn: $allowsCellularDownloads) {
+                MaterialToggleHairlineRow(isOn: $allowsCellularDownloads) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Allow cellular downloads")
                         Text("Off keeps offline maps waiting for Wi-Fi.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .padding()
-                .contentShape(Rectangle())
-                .overlay(alignment: .bottom) {
-                    Divider()
-                        .overlay(tokens.hairline.swiftUIColor)
-                        .allowsHitTesting(false)
                 }
                 .accessibilityIdentifier("settings.downloads.allow-cellular")
             }
@@ -7321,6 +7313,8 @@ private struct SettingsMapAndDataView: View {
                             in: PinSize.minimumMultiplier...PinSize.maximumMultiplier,
                             step: 0.1
                         )
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
                         .accessibilityLabel("Pin size")
                         .accessibilityValue(pinSize.accessibilityValue)
                         .accessibilityIdentifier("settings.pin-size")

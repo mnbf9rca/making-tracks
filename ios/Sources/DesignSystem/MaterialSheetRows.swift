@@ -149,3 +149,42 @@ public struct MaterialHairlineRow<Content: View>: View {
         }
     }
 }
+
+public struct MaterialToggleHairlineRow<Label: View>: View {
+    @Binding private var isOn: Bool
+
+    private let label: Label
+    let appearance: MaterialRowAppearance
+    let minimumInteractiveHeight: CGFloat = 44
+
+    public init(
+        theme: MaterialTheme = .snow,
+        isOn: Binding<Bool>,
+        @ViewBuilder label: () -> Label
+    ) {
+        _isOn = isOn
+        self.label = label()
+        appearance = MaterialRowAppearance(
+            background: nil,
+            cornerRadius: nil,
+            divider: theme.tokens.hairline
+        )
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            Toggle(isOn: $isOn) {
+                label
+            }
+            .frame(
+                maxWidth: .infinity,
+                minHeight: minimumInteractiveHeight,
+                alignment: .leading
+            )
+            .padding()
+            .contentShape(Rectangle())
+
+            Divider().overlay(appearance.divider!.swiftUIColor)
+        }
+    }
+}

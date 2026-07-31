@@ -2972,8 +2972,32 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(metrics.badgeIconScale, pinSize.badgeIconScale)
     }
 
-    func testSettingsStorageNavigationTargetsOfflineMaps() {
+    func testSettingsStorageNavigationTargetsOfflineMapsAndOwnsProductionRoute() throws {
         XCTAssertEqual(SettingsStorageNavigation.destination, .offlineMaps)
+
+        let appRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let mapSource = try String(
+            contentsOf: appRoot.appendingPathComponent("Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+        let groupsStart = try XCTUnwrap(
+            mapSource.range(of: "enum SettingsGroup: CaseIterable")?.lowerBound
+        )
+        let groupsEnd = try XCTUnwrap(
+            mapSource.range(
+                of: "enum MapDoor:",
+                range: groupsStart..<mapSource.endIndex
+            )?.lowerBound
+        )
+        let groupsSource = String(mapSource[groupsStart..<groupsEnd])
+            .filter { !$0.isWhitespace }
+
+        XCTAssertTrue(
+            groupsSource.contains("case.offlineMaps:SettingsStorageNavigation.destination"),
+            "The Settings row must consume the retained Offline maps route helper."
+        )
     }
 
     func testSettingsGroupsMatchRuledW2OrderAndRoutes() {
@@ -3111,6 +3135,18 @@ final class AppShellTests: XCTestCase {
             renderSource.contains("resetTheme:true,theme:\"snow\""),
             "Every Settings render launch must reset and pin the Snow theme."
         )
+        XCTAssertTrue(
+            renderSource.contains("assertSettingsRootRenderContract(in:app,accessibilityTextSize:textSize==\"ax\")"),
+            "The render oracle must measure every Settings root row at both text sizes."
+        )
+        XCTAssertTrue(
+            renderSource.contains("interactiveIdentifiers:"),
+            "Focused pages must identify controls whose 44-point hit regions are measured."
+        )
+        XCTAssertTrue(
+            renderSource.contains("visibleIdentifiers:"),
+            "Focused pages must identify non-interactive content whose containment is measured."
+        )
     }
 
     func testFocusedSettingsControlsOwnMinimumHitRegionsAtInteractiveBoundary() throws {
@@ -3151,15 +3187,20 @@ final class AppShellTests: XCTestCase {
             to: "private struct SettingsLocationView"
         )
         let compactedMapAndDataSource = compacted(mapAndDataSource)
-        XCTAssertFalse(compactedMapAndDataSource.contains(
-            "MaterialHairlineRow{Toggle(isOn:$allowsCellularDownloads)"
+        XCTAssertTrue(compactedMapAndDataSource.contains(
+            "MaterialToggleHairlineRow(isOn:$allowsCellularDownloads){" +
+                "VStack(alignment:.leading,spacing:3){" +
+                "Text(\"Allowcellulardownloads\")" +
+                "Text(\"OffkeepsofflinemapswaitingforWi-Fi.\")" +
+                ".font(.caption).foregroundStyle(.secondary)}}" +
+                ".accessibilityIdentifier(\"settings.downloads.allow-cellular\")"
         ))
         XCTAssertTrue(compactedMapAndDataSource.contains(
-            "}.frame(maxWidth:.infinity,minHeight:44,alignment:.leading)" +
-                ".padding().contentShape(Rectangle())" +
-                ".overlay(alignment:.bottom){Divider()" +
-                ".overlay(tokens.hairline.swiftUIColor).allowsHitTesting(false)}" +
-                ".accessibilityIdentifier(\"settings.downloads.allow-cellular\")"
+            "Slider(value:pinSizeBinding," +
+                "in:PinSize.minimumMultiplier...PinSize.maximumMultiplier,step:0.1)" +
+                ".frame(maxWidth:.infinity,minHeight:44)" +
+                ".contentShape(Rectangle())" +
+                ".accessibilityLabel(\"Pinsize\")"
         ))
 
         let locationSource = try sourceSlice(

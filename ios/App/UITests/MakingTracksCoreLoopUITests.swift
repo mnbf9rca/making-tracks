@@ -463,8 +463,19 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        XCTAssertGreaterThanOrEqual(element.frame.width, 44, file: file, line: line)
-        XCTAssertGreaterThanOrEqual(element.frame.height, 44, file: file, line: line)
+        let calculationEpsilon: CGFloat = 0.001
+        XCTAssertGreaterThanOrEqual(
+            element.frame.width,
+            44 - calculationEpsilon,
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            element.frame.height,
+            44 - calculationEpsilon,
+            file: file,
+            line: line
+        )
     }
 
     private func assertContainedInAppFrame(
@@ -3317,41 +3328,66 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 textSize
             )
             attachScreenshot(named: "settings-root-\(textSize)")
+            assertSettingsRootRenderContract(
+                in: app,
+                accessibilityTextSize: textSize == "ax"
+            )
 
             captureSettingsDestination(
                 rowIdentifier: "settings.group.appearance",
                 title: "Appearance",
                 screenshotName: "settings-appearance-\(textSize)",
+                interactiveIdentifiers: [
+                    "settings.theme.defined-paper",
+                    "settings.theme.snow",
+                    "settings.theme.street-contrast",
+                    "settings.theme.verdant-kl",
+                ],
                 in: app
             )
             captureSettingsDestination(
                 rowIdentifier: "settings.storage.manage",
                 title: "Offline maps",
                 screenshotName: "settings-offline-maps-\(textSize)",
+                visibleIdentifiers: [
+                    "offline-maps.zone.united-kingdom",
+                ],
                 in: app
             )
             captureSettingsDestination(
                 rowIdentifier: "settings.group.coverage",
                 title: "Coverage",
                 screenshotName: "settings-coverage-\(textSize)",
+                visibleIdentifiers: [
+                    "settings.coverage.published-regions",
+                    "settings.coverage.sources",
+                    "settings.coverage.extents",
+                ],
                 in: app
             )
             captureSettingsDestination(
                 rowIdentifier: "settings.group.map-data",
                 title: "Map & data",
                 screenshotName: "settings-map-data-\(textSize)",
+                interactiveIdentifiers: [
+                    "settings.downloads.allow-cellular",
+                    "settings.pin-size",
+                ],
                 in: app
             )
             captureSettingsDestination(
                 rowIdentifier: "settings.group.location",
                 title: "Location",
                 screenshotName: "settings-location-\(textSize)",
+                interactiveIdentifiers: ["settings.location.open-system"],
                 in: app
             )
             captureSettingsDestination(
                 rowIdentifier: "settings.diagnostics.export",
                 title: "Diagnostics",
                 screenshotName: "settings-diagnostics-\(textSize)",
+                interactiveIdentifiers: ["settings.diagnostics.prepare"],
+                visibleIdentifiers: ["settings.diagnostics.window-status"],
                 in: app
             )
 
@@ -3363,6 +3399,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 textSize
             )
             attachScreenshot(named: "settings-replay-welcome-\(textSize)")
+            let replayNext = app.buttons["onboarding.next"]
+            XCTAssertTrue(scrollToFullyContained(replayNext, in: app), textSize)
+            assertContainedInAppFrame(replayNext, in: app)
             app.terminate()
         }
     }
@@ -4797,12 +4836,19 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         rowIdentifier: String,
         title: String,
         screenshotName: String,
+        interactiveIdentifiers: [String] = [],
+        visibleIdentifiers: [String] = [],
         in app: XCUIApplication,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
         let row = app.buttons[rowIdentifier]
-        XCTAssertTrue(scrollToHittable(row, in: app), rowIdentifier, file: file, line: line)
+        XCTAssertTrue(
+            scrollSettingsRowToHittable(row, in: app),
+            rowIdentifier,
+            file: file,
+            line: line
+        )
         row.tap()
         XCTAssertTrue(
             app.staticTexts[title].waitForExistence(timeout: 5),
@@ -4811,6 +4857,31 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             line: line
         )
         attachScreenshot(named: screenshotName)
+        for identifier in visibleIdentifiers {
+            let visibleElement = element(identifier: identifier, in: app)
+            XCTAssertTrue(
+                scrollToFullyContained(
+                    visibleElement,
+                    in: app,
+                    requireHittable: false
+                ),
+                "\(title): \(identifier)",
+                file: file,
+                line: line
+            )
+            assertContainedInAppFrame(visibleElement, in: app, file: file, line: line)
+        }
+        for identifier in interactiveIdentifiers {
+            let control = element(identifier: identifier, in: app)
+            XCTAssertTrue(
+                scrollToFullyContained(control, in: app),
+                "\(title): \(identifier)",
+                file: file,
+                line: line
+            )
+            assertMinimumInteractiveTarget(control, file: file, line: line)
+            assertContainedInAppFrame(control, in: app, file: file, line: line)
+        }
         let back = app.buttons["Back"]
         XCTAssertTrue(back.waitForExistence(timeout: 5), title, file: file, line: line)
         back.tap()
@@ -4820,6 +4891,101 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             file: file,
             line: line
         )
+    }
+
+    private func assertSettingsRootRenderContract(
+        in app: XCUIApplication,
+        accessibilityTextSize: Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let rows = [
+            (
+                identifier: "settings.group.appearance",
+                label: "Appearance",
+                value: "Snow selected. Four existing presets."
+            ),
+            (
+                identifier: "settings.storage.manage",
+                label: "Offline maps",
+                value: "Packs · downloads · per-pack storage"
+            ),
+            (
+                identifier: "settings.group.coverage",
+                label: "Coverage",
+                value: "Published regions · sources · extents"
+            ),
+            (
+                identifier: "settings.group.map-data",
+                label: "Map & data",
+                value: "Cellular downloads · pin size"
+            ),
+            (
+                identifier: "settings.group.location",
+                label: "Location",
+                value: "Permission and system settings"
+            ),
+            (
+                identifier: "settings.diagnostics.export",
+                label: "Diagnostic log",
+                value: "Review, prepare, share, or delete local logs."
+            ),
+            (
+                identifier: "settings.replay-onboarding",
+                label: "Replay welcome",
+                value: "Return to the existing welcome flow"
+            ),
+        ]
+        let minimumHeight: CGFloat = accessibilityTextSize ? 120 : 75
+
+        for expectation in rows {
+            let row = app.buttons[expectation.identifier]
+            XCTAssertTrue(
+                scrollToFullyContained(row, in: app),
+                expectation.identifier,
+                file: file,
+                line: line
+            )
+            XCTAssertEqual(row.label, expectation.label, file: file, line: line)
+            XCTAssertEqual(
+                row.value as? String,
+                expectation.value,
+                expectation.identifier,
+                file: file,
+                line: line
+            )
+            XCTAssertGreaterThanOrEqual(
+                row.frame.height,
+                minimumHeight - 0.5,
+                expectation.identifier,
+                file: file,
+                line: line
+            )
+            assertMinimumInteractiveTarget(row, file: file, line: line)
+            assertContainedInAppFrame(row, in: app, file: file, line: line)
+        }
+    }
+
+    private func scrollSettingsRowToHittable(
+        _ row: XCUIElement,
+        in app: XCUIApplication
+    ) -> Bool {
+        if row.waitForExistence(timeout: 2), row.isHittable {
+            return true
+        }
+
+        for _ in 0..<5 {
+            if row.exists, row.frame.midY < app.frame.midY {
+                scrollTarget(in: app).swipeDown()
+            } else {
+                scrollTarget(in: app).swipeUp()
+            }
+            if row.waitForExistence(timeout: 1), row.isHittable {
+                return true
+            }
+        }
+
+        return row.exists && row.isHittable
     }
 
     private func openJournalDoor(in app: XCUIApplication) {
@@ -5710,10 +5876,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     private func scrollToFullyContained(
         _ element: XCUIElement,
         in app: XCUIApplication,
+        requireHittable: Bool = true,
         maxSwipes: Int = 5
     ) -> Bool {
         func isFullyContained() -> Bool {
-            element.exists && element.isHittable && app.frame.contains(element.frame)
+            element.exists
+                && (!requireHittable || element.isHittable)
+                && app.frame.contains(element.frame)
         }
 
         if element.waitForExistence(timeout: 2), isFullyContained() {
