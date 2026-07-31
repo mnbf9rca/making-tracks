@@ -395,7 +395,7 @@ Full gate plus renders of the picker at default and AX with measurements beside 
 - **Depends on:** **T2.6 ruled by Rob**
 - **Owner:** codex2
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** branch — `wp-472-t2-9-impl`
+- **Status:** PR open — #580
 - **Contracts consumed:** T1.4's sheet/row patterns, T1.1 tokens, T1.2 font roles.
 
 **Builder brief.** Rebuild `SettingsView` (`MapScreen.swift:6744`–`:6900`) to W-2's grouping on **DS-1 rows and sheets — no system `List` chrome**. Today's sections are Map theme, Downloads, Pins, Location, Storage, Diagnostics, Onboarding; the ruled grouping is Appearance · Offline maps · Coverage · Map & data · Location · Diagnostics · Replay welcome. **The mapping between the two is W-2's to have drawn**; if a today-section has no ruled home, flag it rather than inventing one.
