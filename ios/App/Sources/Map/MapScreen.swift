@@ -655,8 +655,102 @@ enum MapShellDestination: Hashable {
     case hiddenPlaces
     case offlineMaps
     case settings
+    case settingsAppearance
+    case settingsCoverage
+    case settingsMapAndData
+    case settingsLocation
     case diagnostics
     case about
+}
+
+struct SettingsGroupPresentation: Equatable {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    let accessibilityIdentifier: String
+}
+
+enum SettingsGroup: CaseIterable {
+    case appearance
+    case offlineMaps
+    case coverage
+    case mapAndData
+    case location
+    case diagnostics
+    case replayWelcome
+
+    var presentation: SettingsGroupPresentation {
+        switch self {
+        case .appearance:
+            .init(
+                title: "Appearance",
+                subtitle: "Four existing presets",
+                systemImage: "circle.lefthalf.filled",
+                accessibilityIdentifier: "settings.group.appearance"
+            )
+        case .offlineMaps:
+            .init(
+                title: "Offline maps",
+                subtitle: "Packs · downloads · per-pack storage",
+                systemImage: "externaldrive.badge.arrow.down",
+                accessibilityIdentifier: "settings.storage.manage"
+            )
+        case .coverage:
+            .init(
+                title: "Coverage",
+                subtitle: "Published regions · sources · extents",
+                systemImage: "map",
+                accessibilityIdentifier: "settings.group.coverage"
+            )
+        case .mapAndData:
+            .init(
+                title: "Map & data",
+                subtitle: "Cellular downloads · pin size",
+                systemImage: "map.circle",
+                accessibilityIdentifier: "settings.group.map-data"
+            )
+        case .location:
+            .init(
+                title: "Location",
+                subtitle: "Permission and system settings",
+                systemImage: "location",
+                accessibilityIdentifier: "settings.group.location"
+            )
+        case .diagnostics:
+            .init(
+                title: "Diagnostics",
+                subtitle: "Review or export local logs",
+                systemImage: "arrow.up.doc",
+                accessibilityIdentifier: "settings.diagnostics.export"
+            )
+        case .replayWelcome:
+            .init(
+                title: "Replay welcome",
+                subtitle: "Return to the existing welcome flow",
+                systemImage: "arrow.counterclockwise.circle",
+                accessibilityIdentifier: "settings.replay-onboarding"
+            )
+        }
+    }
+
+    var destination: MapShellDestination? {
+        switch self {
+        case .appearance:
+            .settingsAppearance
+        case .offlineMaps:
+            .offlineMaps
+        case .coverage:
+            .settingsCoverage
+        case .mapAndData:
+            .settingsMapAndData
+        case .location:
+            .settingsLocation
+        case .diagnostics:
+            .diagnostics
+        case .replayWelcome:
+            nil
+        }
+    }
 }
 
 enum MapDoor: Hashable, Identifiable {
@@ -5000,7 +5094,7 @@ private struct MapDoorSheetIntegration: View {
 #else
             OfflineMapsReleaseGatedView()
 #endif
-        case .settings:
+        case .settings, .settingsAppearance, .settingsCoverage, .settingsMapAndData, .settingsLocation:
             SettingsView(
                 selectedThemeID: $selectedThemeID,
                 pinSizeMultiplier: $pinSizeMultiplier,

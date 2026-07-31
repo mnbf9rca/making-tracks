@@ -2976,6 +2976,35 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(SettingsStorageNavigation.destination, .offlineMaps)
     }
 
+    func testSettingsGroupsMatchRuledW2OrderAndRoutes() {
+        XCTAssertEqual(SettingsGroup.allCases, [
+            .appearance, .offlineMaps, .coverage, .mapAndData,
+            .location, .diagnostics, .replayWelcome,
+        ])
+        XCTAssertEqual(SettingsGroup.allCases.map(\.presentation), [
+            .init(title: "Appearance", subtitle: "Four existing presets", systemImage: "circle.lefthalf.filled", accessibilityIdentifier: "settings.group.appearance"),
+            .init(title: "Offline maps", subtitle: "Packs · downloads · per-pack storage", systemImage: "externaldrive.badge.arrow.down", accessibilityIdentifier: "settings.storage.manage"),
+            .init(title: "Coverage", subtitle: "Published regions · sources · extents", systemImage: "map", accessibilityIdentifier: "settings.group.coverage"),
+            .init(title: "Map & data", subtitle: "Cellular downloads · pin size", systemImage: "map.circle", accessibilityIdentifier: "settings.group.map-data"),
+            .init(title: "Location", subtitle: "Permission and system settings", systemImage: "location", accessibilityIdentifier: "settings.group.location"),
+            .init(title: "Diagnostics", subtitle: "Review or export local logs", systemImage: "arrow.up.doc", accessibilityIdentifier: "settings.diagnostics.export"),
+            .init(title: "Replay welcome", subtitle: "Return to the existing welcome flow", systemImage: "arrow.counterclockwise.circle", accessibilityIdentifier: "settings.replay-onboarding"),
+        ])
+        XCTAssertEqual(SettingsGroup.appearance.destination, .settingsAppearance)
+        XCTAssertEqual(SettingsGroup.offlineMaps.destination, .offlineMaps)
+        XCTAssertEqual(SettingsGroup.coverage.destination, .settingsCoverage)
+        XCTAssertEqual(SettingsGroup.mapAndData.destination, .settingsMapAndData)
+        XCTAssertEqual(SettingsGroup.location.destination, .settingsLocation)
+        XCTAssertEqual(SettingsGroup.diagnostics.destination, .diagnostics)
+        XCTAssertNil(SettingsGroup.replayWelcome.destination)
+    }
+
+    func testSettingsCoverageContractIsDataOnly() {
+        let coverage = SettingsGroup.coverage.presentation
+        XCTAssertEqual(coverage.subtitle, "Published regions · sources · extents")
+        XCTAssertFalse(coverage.subtitle.localizedCaseInsensitiveContains("shading"))
+    }
+
     func testOfflineDownloadProgressBoundsInvalidFractions() {
         XCTAssertEqual(OfflineDownloadProgress(fractionComplete: .nan).percentComplete, 0)
         XCTAssertEqual(OfflineDownloadProgress(fractionComplete: .infinity).percentComplete, 0)
