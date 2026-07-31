@@ -279,12 +279,14 @@ from the A8 evidence into that table; the second table preserves the five remain
 **MEASURED** facts from the frozen Explore render. Those five rows remain visually distinct
 provenance, not ratified metrics.
 
-**Target API state — owning task: Phase 2 T2.2.** The table fixes the contract before the API
-carries it. The current `IconRole` still has three cases and the current quiet text-only press
-inset is the fixed `1pt` way-station; T2.2 adds the two named roles, closes the API at five and
-replaces the fixed displacement with the scaled metric below. T2.2 also retires
+**Target API state — owning tasks: Phase 2 T2.2 and T2.3.** The table fixes the contract before
+the API carries it. The current `IconRole` still has three cases and the current quiet text-only
+press inset is the fixed `1pt` way-station; T2.2 adds the two named roles, closes the API at five,
+replaces the fixed displacement with the scaled metric below and may deprecate
 `ExploreSurfaceIconGeometry.scopeControl` and `.quietDestination`, the current `20` and `18`
-migration inputs; leaving those constants beside the new roles would give each figure two homes.
+migration inputs. T2.3 deletes that enum only after migrating its two app-target consumers to the
+new roles; deleting it in host-tested T2.2 would leave the app broken behind a green package gate.
+Leaving those constants beside the new roles after T2.3 would give each figure two homes.
 Their live consumers currently scale relative to `.body`, not to either target typography anchor.
 `ExploreQuietDestinationRow` also renders its title with `.listRowTitle`, diverging from the
 ratified 15pt/600 quiet-row title; T2.8 owns that reconciliation, and the divergence is not a new
