@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
-DESTINATION="${MT_RELEASE_GATE_DESTINATION:-}"
+DESTINATION="${MT_SIM_LOCK_DESTINATION:-}"
 DERIVED_DATA="${MT_RELEASE_GATE_DERIVED_DATA:-}"
 ARTIFACTS="/private/tmp/making-tracks-artifacts"
 OUTPUT="$ROOT/docs/design/design-system"
@@ -16,7 +16,7 @@ cleanup_results() {
 }
 
 [ -n "$DESTINATION" ] || {
-  echo "capture-t2.8-implementation: MT_RELEASE_GATE_DESTINATION is required" >&2
+  echo "capture-t2.8-implementation: MT_SIM_LOCK_DESTINATION is required" >&2
   exit 1
 }
 [ -n "$DERIVED_DATA" ] || {
@@ -30,10 +30,28 @@ case "$DERIVED_DATA" in
     exit 1
     ;;
 esac
+[ "${MT_SIM_LOCK:-}" = "1" ] || {
+  echo "capture-t2.8-implementation: invoke through scripts/sim-lock.sh --seat <seat>" >&2
+  exit 1
+}
+
+destination_fields=",$DESTINATION,"
+case "$destination_fields" in
+  *,id=*) destination_after_id="${destination_fields#*,id=}" ;;
+  *)
+    echo "capture-t2.8-implementation: destination must include id=<simulator-udid>" >&2
+    exit 1
+    ;;
+esac
+simulator_udid="${destination_after_id%%,*}"
+[ "${MT_SIM_LOCK_UDID:-}" = "$simulator_udid" ] || {
+  echo "capture-t2.8-implementation: simulator lock does not match destination" >&2
+  exit 1
+}
 
 cd "$ROOT"
 
-./scripts/sim-lock.sh xcodebuild test \
+xcodebuild test \
     -project ios/App/MakingTracks.xcodeproj \
     -scheme MakingTracks \
     -destination "$DESTINATION" \

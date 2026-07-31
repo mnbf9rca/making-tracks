@@ -1,5 +1,7 @@
 # Simulator Concurrency Implementation Plan
 
+> **Superseded interface:** The simulator-destination contract in this historical plan was replaced by [Simulator Seat CLI Design](../specs/2026-07-31-simulator-seat-cli-design.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give every builder seat its own simulator while serialising same-simulator work, limiting simultaneous gates to two, and permanently closing #497's lock-inode split.

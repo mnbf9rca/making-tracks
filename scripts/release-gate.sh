@@ -3,7 +3,7 @@
 #
 # MUST be invoked through scripts/sim-lock.sh, which owns the simulator lock:
 #
-#   ./scripts/sim-lock.sh ./scripts/release-gate.sh
+#   ./scripts/sim-lock.sh --seat codexN ./scripts/release-gate.sh
 #
 # This script does not take the lock itself. Two lock-takers is how the lock
 # path drifted apart in the first place, so there is exactly one.
@@ -15,16 +15,23 @@ set -euo pipefail
 PROJECT="ios/App/MakingTracks.xcodeproj"
 PBXPROJ="$PROJECT/project.pbxproj"
 SCHEME="MakingTracks"
-DESTINATION="${MT_RELEASE_GATE_DESTINATION:-}"
+if [ "${GITHUB_ACTIONS:-}" = "true" ] &&
+   [ "${MT_RELEASE_GATE_SKIP_LOCK:-}" = "1" ]; then
+  DESTINATION_VARIABLE="MT_RELEASE_GATE_CI_DESTINATION"
+  DESTINATION="${MT_RELEASE_GATE_CI_DESTINATION:-}"
+else
+  DESTINATION_VARIABLE="MT_SIM_LOCK_DESTINATION"
+  DESTINATION="${MT_SIM_LOCK_DESTINATION:-}"
+fi
 [ -n "$DESTINATION" ] || {
-  echo "release-gate: refused: MT_RELEASE_GATE_DESTINATION is required; export this seat's destination from wp-infra-sim-concurrency" >&2
+  echo "release-gate: refused: $DESTINATION_VARIABLE is missing; run through scripts/sim-lock.sh --seat <seat>" >&2
   exit 1
 }
 DESTINATION_FIELDS=",$DESTINATION,"
 case "$DESTINATION_FIELDS" in
   *,id=*) DESTINATION_AFTER_ID="${DESTINATION_FIELDS#*,id=}" ;;
   *)
-    echo "release-gate: refused: MT_RELEASE_GATE_DESTINATION must include id=<simulator-udid>" >&2
+    echo "release-gate: refused: $DESTINATION_VARIABLE must include id=<simulator-udid>" >&2
     exit 1
     ;;
 esac
@@ -32,16 +39,20 @@ GATE_UDID="${DESTINATION_AFTER_ID%%,*}"
 DESTINATION_REMAINDER="${DESTINATION_AFTER_ID#"$GATE_UDID"}"
 case "$DESTINATION_REMAINDER" in
   *,id=*)
-    echo "release-gate: refused: MT_RELEASE_GATE_DESTINATION must contain exactly one id=<simulator-udid>" >&2
+    echo "release-gate: refused: $DESTINATION_VARIABLE must contain exactly one id=<simulator-udid>" >&2
     exit 1
     ;;
 esac
 case "$GATE_UDID" in
   ""|*[!A-Za-z0-9-]*)
-    echo "release-gate: refused: MT_RELEASE_GATE_DESTINATION contains an invalid simulator UDID" >&2
+    echo "release-gate: refused: $DESTINATION_VARIABLE contains an invalid simulator UDID" >&2
     exit 1
     ;;
 esac
+if [[ ! "$GATE_UDID" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
+  echo "release-gate: refused: $DESTINATION_VARIABLE id must be a valid CoreSimulator UUID" >&2
+  exit 1
+fi
 RUN_DIR="${MT_RELEASE_GATE_RUN_DIR:-/private/tmp/release-gate-$GATE_UDID}"
 DERIVED_DATA="${MT_RELEASE_GATE_DERIVED_DATA:-$RUN_DIR/DerivedData}"
 RESULT_BUNDLE="$RUN_DIR/MakingTracksTests.xcresult"
@@ -184,7 +195,7 @@ git merge-base --is-ancestor origin/ios HEAD ||
   refuse "HEAD is not based on current origin/ios"
 
 lock_is_satisfied ||
-  refuse "must be run through scripts/sim-lock.sh (which holds the simulator lock)"
+  refuse "must be run through scripts/sim-lock.sh --seat <seat> (which holds the simulator lock)"
 
 mkdir -p "$RUN_DIR"
 prune_derived_data_if_stale

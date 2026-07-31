@@ -22,16 +22,27 @@ for pattern in [
         justification = "Use /Users/rob/.local/bin/making-tracks-vps",
     )
 
-# The designated simulator has one entry point. Routine operations run under
-# its lock; erase remains approval-bound because it is destructive.
+# The designated simulators have one entry point. The stable logical seat is
+# bounded here; sim-lock resolves its mutable destination from the gate ledger.
+# Erase remains approval-bound because it is destructive.
+gate_seats = ["codex1", "codex2", "codex3", "codex4"]
+
 prefix_rule(
-    pattern = ["./scripts/sim-lock.sh", "xcodebuild"],
+    pattern = ["./scripts/sim-lock.sh", "--seat", gate_seats, "xcodebuild"],
     decision = "allow",
     justification = "Run Making Tracks Xcode builds under the simulator lock",
+    match = [
+        "./scripts/sim-lock.sh --seat codex1 xcodebuild test -scheme MakingTracks",
+        "./scripts/sim-lock.sh --seat codex4 xcodebuild build -scheme MakingTracks",
+    ],
+    not_match = [
+        "./scripts/sim-lock.sh xcodebuild test -scheme MakingTracks",
+        "./scripts/sim-lock.sh --seat codex5 xcodebuild test -scheme MakingTracks",
+    ],
 )
 
 prefix_rule(
-    pattern = ["./scripts/sim-lock.sh", "./scripts/release-gate.sh"],
+    pattern = ["./scripts/sim-lock.sh", "--seat", gate_seats, "./scripts/release-gate.sh"],
     decision = "allow",
     justification = "Run the Making Tracks release gate under the simulator lock",
 )
@@ -48,14 +59,14 @@ for verb in [
     "spawn",
 ]:
     prefix_rule(
-        pattern = ["./scripts/sim-lock.sh", "xcrun", "simctl", verb],
+        pattern = ["./scripts/sim-lock.sh", "--seat", gate_seats, "xcrun", "simctl", verb],
         decision = "allow",
         justification = "Run routine simulator operations under the Making Tracks lock",
     )
 
 for operation in ["--status", "--boot", "--shutdown"]:
     prefix_rule(
-        pattern = ["./scripts/sim-lock.sh", operation],
+        pattern = ["./scripts/sim-lock.sh", "--seat", gate_seats, operation],
         decision = "allow",
         justification = "Use the guarded Making Tracks simulator operation",
     )

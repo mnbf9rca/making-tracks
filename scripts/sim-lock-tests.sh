@@ -14,16 +14,38 @@ SIM_LOCK="$HERE/sim-lock.sh"
 RELEASE_GATE="$HERE/release-gate.sh"
 TMP="$(mktemp -d)"
 LOCK_ROOT="$TMP/locks"
-LOCK="$LOCK_ROOT/making-tracks-sim-TEST-UDID-0000-1111-2222-333344445555.lock"
-FAKE_UDID="TEST-UDID-0000-1111-2222-333344445555"
+FAKE_UDID="11111111-1111-4111-8111-111111111111"
+LOCK="$LOCK_ROOT/making-tracks-sim-$FAKE_UDID.lock"
 FLOCK_BIN="/opt/homebrew/bin/flock"
 RELEASE_FIXTURE_SEAT="sim-lock-test-$$"
 RELEASE_LEGACY_RUN_DIR="/private/tmp/release-gate-$RELEASE_FIXTURE_SEAT"
-RELEASE_UDID_A="TEST-DERIVED-AAAA-$$"
-RELEASE_UDID_B="TEST-DERIVED-BBBB-$$"
+RELEASE_PID_HEX="$(printf '%012X' "$$")"
+RELEASE_UDID_A="AAAAAAAA-AAAA-4AAA-8AAA-$RELEASE_PID_HEX"
+RELEASE_UDID_B="BBBBBBBB-BBBB-4BBB-8BBB-$RELEASE_PID_HEX"
 RELEASE_RUN_DIR_A="/private/tmp/release-gate-$RELEASE_UDID_A"
 RELEASE_RUN_DIR_B="/private/tmp/release-gate-$RELEASE_UDID_B"
 RELEASE_MARKERS="$TMP/release-markers"
+TEST_LEDGER="$TMP/ios-gate-ledger.md"
+
+write_test_ledger() {
+  local path="$1"
+  local destination="$2"
+  shift 2
+
+  {
+    printf '%s\n' \
+      '# iOS Gate Ledger' \
+      '' \
+      '## Host Gate Seats' \
+      '' \
+      '| Seat | Simulator | Destination |' \
+      '|---|---|---|' \
+      "| \`codex1\` | \`mt-gate-codex1\` | \`$destination\` |"
+    [ "$#" -eq 0 ] || printf '%s\n' "$@"
+  } >"$path"
+}
+
+write_test_ledger "$TEST_LEDGER" "platform=iOS Simulator,id=$FAKE_UDID"
 
 pass=0; fail=0
 cleanup() {
@@ -54,24 +76,24 @@ run_status() {
   MT_SIM_LOCK_TEST_MODE=1 \
   MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
   MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
-  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
-  "$SIM_LOCK" --status 2>&1
+  MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+  "$SIM_LOCK" --seat codex1 --status 2>&1
 }
 
 run_locked() {
   MT_SIM_LOCK_TEST_MODE=1 \
   MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
   MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
-  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
-  "$SIM_LOCK" "$@" 2>&1
+  MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+  "$SIM_LOCK" --seat codex1 "$@" 2>&1
 }
 
 run_erase() {
   MT_SIM_LOCK_TEST_MODE=1 \
   MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
   MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
-  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
-  "$SIM_LOCK" --erase 2>&1
+  MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+  "$SIM_LOCK" --seat codex1 --erase 2>&1
 }
 
 run_gate_for() {
@@ -81,10 +103,10 @@ run_gate_for() {
   MT_SIM_LOCK_TEST_MODE=1 \
   MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
   MT_SIM_LOCK_TEST_UDID="$udid" \
-  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$udid" \
+  MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
   MT_GATE_MAX_CONCURRENT="${MT_GATE_MAX_CONCURRENT:-2}" \
   MT_SIM_LOCK_WAIT=5 \
-  "$SIM_LOCK" "$@"
+  "$SIM_LOCK" --seat codex1 "$@"
 }
 
 wait_for_path() {
@@ -150,9 +172,9 @@ start_default_cap_holder() {
     MT_SIM_LOCK_TEST_MODE=1 \
     MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
     MT_SIM_LOCK_TEST_UDID="$udid" \
-    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$udid" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
     MT_SIM_LOCK_WAIT=5 \
-    "$SIM_LOCK" sh -c '
+    "$SIM_LOCK" --seat codex1 sh -c '
       touch "$1.started"
       while [ ! -e "$1.release" ]; do sleep 0.02; done
       touch "$1.finished"
@@ -181,6 +203,563 @@ check() {
 }
 
 mkdir -p "$LOCK_ROOT"
+
+echo "sim-lock seat contract:"
+
+set +e
+legacy_destination_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+    "$SIM_LOCK" true 2>&1
+)"
+legacy_destination_rc=$?
+set -e
+if [ "$legacy_destination_rc" -ne 0 ] &&
+   echo "$legacy_destination_out" | grep -q -- "--seat <seat> is required"; then
+  record_ok "rejects the removed destination environment invocation"
+else
+  record_fail "rejects the removed destination environment invocation" \
+    "status=$legacy_destination_rc output='$(echo "$legacy_destination_out" | head -1)'"
+fi
+
+echo
+echo "live simulator consumer contract:"
+
+consumer_scripts=(
+  "$HERE/../docs/design/design-system/capture-t2.8-implementation.sh"
+  "$HERE/../docs/design/design-system/regenerate-t2.3-door-glyph.sh"
+  "$HERE/../docs/design/design-system/regenerate-t2.9-settings.sh"
+  "$HERE/../docs/design/design-system/regenerate-t2.10-about.sh"
+)
+
+for consumer in "${consumer_scripts[@]}"; do
+  consumer_name="$(basename "$consumer")"
+  set +e
+  consumer_out="$(
+    env -u MT_SIM_LOCK_DESTINATION -u MT_SIM_LOCK -u MT_SIM_LOCK_UDID \
+      MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+      "$consumer" 2>&1
+  )"
+  consumer_rc=$?
+  set -e
+  if [ "$consumer_rc" -ne 0 ] &&
+     echo "$consumer_out" | grep -q "MT_SIM_LOCK_DESTINATION is required"; then
+    record_ok "$consumer_name ignores the removed public destination"
+  else
+    record_fail "$consumer_name ignores the removed public destination" \
+      "status=$consumer_rc output='$(echo "$consumer_out" | head -1)'"
+  fi
+done
+
+for consumer in "${consumer_scripts[@]}"; do
+  consumer_name="$(basename "$consumer")"
+  set +e
+  consumer_out="$(
+    env -u MT_RELEASE_GATE_DESTINATION -u MT_SIM_LOCK -u MT_SIM_LOCK_UDID \
+      MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+      MT_RELEASE_GATE_DERIVED_DATA=/private/tmp/dd-consumer-contract \
+      "$consumer" 2>&1
+  )"
+  consumer_rc=$?
+  set -e
+  if [ "$consumer_rc" -ne 0 ] &&
+     echo "$consumer_out" | grep -q \
+       "invoke through scripts/sim-lock.sh --seat <seat>"; then
+    record_ok "$consumer_name rejects an unowned simulator destination"
+  else
+    record_fail "$consumer_name rejects an unowned simulator destination" \
+      "status=$consumer_rc output='$(echo "$consumer_out" | head -1)'"
+  fi
+done
+
+set +e
+unknown_seat_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex5 true 2>&1
+)"
+unknown_seat_rc=$?
+set -e
+if [ "$unknown_seat_rc" -ne 0 ] &&
+   echo "$unknown_seat_out" | grep -q "unknown seat: codex5"; then
+  record_ok "rejects a seat outside the bounded fleet"
+else
+  record_fail "rejects a seat outside the bounded fleet" \
+    "status=$unknown_seat_rc output='$(echo "$unknown_seat_out" | head -1)'"
+fi
+
+MISSING_SEAT_LEDGER="$TMP/missing-seat-ledger.md"
+# shellcheck disable=SC2016 # Backticks are literal Markdown code spans.
+printf '%s\n' \
+  '# iOS Gate Ledger' \
+  '' \
+  '## Host Gate Seats' \
+  '' \
+  '| Seat | Simulator | Destination |' \
+  '|---|---|---|' \
+  '| `codex2` | `mt-gate-codex2` | `platform=iOS Simulator,id=OTHER-UDID` |' \
+  >"$MISSING_SEAT_LEDGER"
+set +e
+missing_seat_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$MISSING_SEAT_LEDGER" \
+    "$SIM_LOCK" --seat codex1 true 2>&1
+)"
+missing_seat_rc=$?
+set -e
+if [ "$missing_seat_rc" -ne 0 ] &&
+   echo "$missing_seat_out" | grep -q "seat codex1 must appear exactly once"; then
+  record_ok "fails closed when the selected seat is missing from the ledger"
+else
+  record_fail "fails closed when the selected seat is missing from the ledger" \
+    "status=$missing_seat_rc output='$(echo "$missing_seat_out" | head -1)'"
+fi
+
+DUPLICATE_SEAT_LEDGER="$TMP/duplicate-seat-ledger.md"
+write_test_ledger "$DUPLICATE_SEAT_LEDGER" \
+  "platform=iOS Simulator,id=$FAKE_UDID" \
+  "| \`codex1\` | \`mt-gate-codex1-copy\` | \`platform=iOS Simulator,id=OTHER-UDID\` |"
+set +e
+duplicate_seat_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$DUPLICATE_SEAT_LEDGER" \
+    "$SIM_LOCK" --seat codex1 true 2>&1
+)"
+duplicate_seat_rc=$?
+set -e
+if [ "$duplicate_seat_rc" -ne 0 ] &&
+   echo "$duplicate_seat_out" | grep -q "seat codex1 must appear exactly once"; then
+  record_ok "fails closed when the selected seat is duplicated in the ledger"
+else
+  record_fail "fails closed when the selected seat is duplicated in the ledger" \
+    "status=$duplicate_seat_rc output='$(echo "$duplicate_seat_out" | head -1)'"
+fi
+
+SCOPED_SEAT_LEDGER="$TMP/scoped-seat-ledger.md"
+# shellcheck disable=SC2016 # Backticks are literal Markdown code spans.
+write_test_ledger "$SCOPED_SEAT_LEDGER" \
+  "platform=iOS Simulator,id=$FAKE_UDID" \
+  '' \
+  '## Classification Examples' \
+  '' \
+  '| Seat | Simulator | Destination |' \
+  '|---|---|---|' \
+  '| `codex1` | `decoy` | `platform=iOS Simulator,id=DECOY-UDID` |'
+set +e
+scoped_seat_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$SCOPED_SEAT_LEDGER" \
+    "$SIM_LOCK" --seat codex1 true 2>&1
+)"
+scoped_seat_rc=$?
+set -e
+if [ "$scoped_seat_rc" -eq 0 ]; then
+  record_ok "ignores seat-shaped rows outside the Host Gate Seats table"
+else
+  record_fail "ignores seat-shaped rows outside the Host Gate Seats table" \
+    "status=$scoped_seat_rc output='$(echo "$scoped_seat_out" | head -1)'"
+fi
+
+MALFORMED_ROW_LEDGER="$TMP/malformed-row-ledger.md"
+# shellcheck disable=SC2016 # Backticks are literal Markdown code spans.
+printf '%s\n' \
+  '# iOS Gate Ledger' \
+  '' \
+  '## Host Gate Seats' \
+  '' \
+  '| Seat | Simulator | Destination |' \
+  '|---|---|---|' \
+  "| \`codex1\` | \`mt-gate-codex1\` | \`platform=iOS Simulator,id=$FAKE_UDID\` | unexpected |" \
+  >"$MALFORMED_ROW_LEDGER"
+set +e
+malformed_row_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$MALFORMED_ROW_LEDGER" \
+    "$SIM_LOCK" --seat codex1 true 2>&1
+)"
+malformed_row_rc=$?
+set -e
+if [ "$malformed_row_rc" -ne 0 ] &&
+   echo "$malformed_row_out" | grep -q "malformed Host Gate Seats table"; then
+  record_ok "fails closed on malformed Host Gate Seats row geometry"
+else
+  record_fail "fails closed on malformed Host Gate Seats row geometry" \
+    "status=$malformed_row_rc output='$(echo "$malformed_row_out" | head -1)'"
+fi
+
+DECOY_ONLY_LEDGER="$TMP/decoy-only-ledger.md"
+# shellcheck disable=SC2016 # Backticks are literal Markdown code spans.
+printf '%s\n' \
+  '# iOS Gate Ledger' \
+  '' \
+  '## Classification Examples' \
+  '' \
+  '| Seat | Simulator | Destination |' \
+  '|---|---|---|' \
+  "| \`codex1\` | \`decoy\` | \`platform=iOS Simulator,id=$FAKE_UDID\` |" \
+  >"$DECOY_ONLY_LEDGER"
+set +e
+decoy_only_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$DECOY_ONLY_LEDGER" \
+    "$SIM_LOCK" --seat codex1 true 2>&1
+)"
+decoy_only_rc=$?
+set -e
+if [ "$decoy_only_rc" -ne 0 ] &&
+   echo "$decoy_only_out" | grep -q "malformed Host Gate Seats table"; then
+  record_ok "rejects a ledger with no Host Gate Seats table"
+else
+  record_fail "rejects a ledger with no Host Gate Seats table" \
+    "status=$decoy_only_rc output='$(echo "$decoy_only_out" | head -1)'"
+fi
+
+FLEET_SELECTOR_LEDGER="$TMP/fleet-selector-ledger.md"
+write_test_ledger "$FLEET_SELECTOR_LEDGER" "platform=iOS Simulator,id=all"
+set +e
+fleet_selector_out="$(
+  MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$FLEET_SELECTOR_LEDGER" \
+    "$SIM_LOCK" --seat codex1 true 2>&1
+)"
+fleet_selector_rc=$?
+set -e
+if [ "$fleet_selector_rc" -ne 0 ] &&
+   echo "$fleet_selector_out" | grep -q "valid CoreSimulator UUID"; then
+  record_ok "rejects fleet-wide selectors in a seat destination"
+else
+  record_fail "rejects fleet-wide selectors in a seat destination" \
+    "status=$fleet_selector_rc output='$(echo "$fleet_selector_out" | head -1)'"
+fi
+
+CLI_FAKE_BIN="$TMP/cli-fake-bin"
+CLI_XCODEBUILD_LOG="$TMP/cli-xcodebuild.log"
+CLI_SIMCTL_LOG="$TMP/cli-simctl.log"
+mkdir -p "$CLI_FAKE_BIN"
+# shellcheck disable=SC2016 # Expanded when the fake xcodebuild program runs.
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "%s\n" "$*" >"$MT_TEST_XCODEBUILD_LOG"' \
+  >"$CLI_FAKE_BIN/xcodebuild"
+# shellcheck disable=SC2016 # Expanded when the fake xcrun program runs.
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "%s\n" "$*" >"$MT_TEST_SIMCTL_LOG"' \
+  >"$CLI_FAKE_BIN/xcrun"
+chmod +x "$CLI_FAKE_BIN/xcodebuild" "$CLI_FAKE_BIN/xcrun"
+set +e
+injected_destination_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_XCODEBUILD_LOG="$CLI_XCODEBUILD_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcodebuild test 2>&1
+)"
+injected_destination_rc=$?
+set -e
+if [ "$injected_destination_rc" -eq 0 ] &&
+   [ "$(<"$CLI_XCODEBUILD_LOG")" = \
+     "test -destination platform=iOS Simulator,id=$FAKE_UDID" ]; then
+  record_ok "injects the selected seat destination into xcodebuild"
+else
+  record_fail "injects the selected seat destination into xcodebuild" \
+    "status=$injected_destination_rc output='$injected_destination_out' args='$(head -1 "$CLI_XCODEBUILD_LOG" 2>/dev/null)'"
+fi
+
+rm -f "$CLI_XCODEBUILD_LOG"
+set +e
+matching_destination_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_XCODEBUILD_LOG="$CLI_XCODEBUILD_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcodebuild test \
+      -destination "platform=iOS Simulator,id=$FAKE_UDID" 2>&1
+)"
+matching_destination_rc=$?
+set -e
+if [ "$matching_destination_rc" -eq 0 ] &&
+   [ "$(<"$CLI_XCODEBUILD_LOG")" = \
+     "test -destination platform=iOS Simulator,id=$FAKE_UDID" ]; then
+  record_ok "preserves an explicit matching xcodebuild destination"
+else
+  record_fail "preserves an explicit matching xcodebuild destination" \
+    "status=$matching_destination_rc output='$matching_destination_out' args='$(head -1 "$CLI_XCODEBUILD_LOG" 2>/dev/null)'"
+fi
+
+rm -f "$CLI_XCODEBUILD_LOG"
+set +e
+same_udid_different_destination_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_XCODEBUILD_LOG="$CLI_XCODEBUILD_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcodebuild test \
+      -destination "platform=iOS Simulator,name=retired,id=$FAKE_UDID" 2>&1
+)"
+same_udid_different_destination_rc=$?
+set -e
+if [ "$same_udid_different_destination_rc" -ne 0 ] &&
+   echo "$same_udid_different_destination_out" | grep -q \
+     "does not exactly match seat codex1 destination" &&
+   [ ! -e "$CLI_XCODEBUILD_LOG" ]; then
+  record_ok "rejects a same-UDID xcodebuild destination that differs from the seat"
+else
+  record_fail "rejects a same-UDID xcodebuild destination that differs from the seat" \
+    "status=$same_udid_different_destination_rc output='$(echo "$same_udid_different_destination_out" | head -1)'"
+fi
+
+set +e
+injected_simctl_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcrun simctl launch com.example.MakingTracks 2>&1
+)"
+injected_simctl_rc=$?
+set -e
+if [ "$injected_simctl_rc" -eq 0 ] &&
+   [ "$(<"$CLI_SIMCTL_LOG")" = \
+     "simctl launch $FAKE_UDID com.example.MakingTracks" ]; then
+  record_ok "injects the selected seat UUID into target-taking simctl verbs"
+else
+  record_fail "injects the selected seat UUID into target-taking simctl verbs" \
+    "status=$injected_simctl_rc output='$injected_simctl_out' args='$(head -1 "$CLI_SIMCTL_LOG" 2>/dev/null)'"
+fi
+
+rm -f "$CLI_SIMCTL_LOG"
+set +e
+injected_simctl_erase_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcrun simctl erase 2>&1
+)"
+injected_simctl_erase_rc=$?
+set -e
+if [ "$injected_simctl_erase_rc" -eq 0 ] &&
+   [ "$(<"$CLI_SIMCTL_LOG")" = "simctl erase $FAKE_UDID" ]; then
+  record_ok "injects the selected seat UUID into simctl erase"
+else
+  record_fail "injects the selected seat UUID into simctl erase" \
+    "status=$injected_simctl_erase_rc output='$injected_simctl_erase_out' args='$(head -1 "$CLI_SIMCTL_LOG" 2>/dev/null)'"
+fi
+
+OTHER_SEAT_UDID="22222222-2222-4222-8222-222222222222"
+rm -f "$CLI_SIMCTL_LOG"
+set +e
+explicit_simctl_target_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcrun simctl launch \
+      "$OTHER_SEAT_UDID" com.example.MakingTracks 2>&1
+)"
+explicit_simctl_target_rc=$?
+set -e
+if [ "$explicit_simctl_target_rc" -ne 0 ] &&
+   echo "$explicit_simctl_target_out" | grep -q \
+     "omit the simulator target after simctl launch" &&
+   [ ! -e "$CLI_SIMCTL_LOG" ]; then
+  record_ok "rejects an explicit positional simctl simulator target"
+else
+  record_fail "rejects an explicit positional simctl simulator target" \
+    "status=$explicit_simctl_target_rc output='$(echo "$explicit_simctl_target_out" | head -1)'"
+fi
+
+rm -f "$CLI_SIMCTL_LOG"
+set +e
+injected_simctl_boot_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcrun simctl boot 2>&1
+)"
+injected_simctl_boot_rc=$?
+set -e
+if [ "$injected_simctl_boot_rc" -eq 0 ] &&
+   [ "$(<"$CLI_SIMCTL_LOG")" = "simctl boot $FAKE_UDID" ]; then
+  record_ok "injects the selected seat UUID into simctl boot"
+else
+  record_fail "injects the selected seat UUID into simctl boot" \
+    "status=$injected_simctl_boot_rc output='$injected_simctl_boot_out' args='$(head -1 "$CLI_SIMCTL_LOG" 2>/dev/null)'"
+fi
+
+rm -f "$CLI_SIMCTL_LOG"
+set +e
+explicit_simctl_boot_target_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcrun simctl boot "$OTHER_SEAT_UDID" 2>&1
+)"
+explicit_simctl_boot_target_rc=$?
+set -e
+if [ "$explicit_simctl_boot_target_rc" -ne 0 ] &&
+   echo "$explicit_simctl_boot_target_out" | grep -q \
+     "omit the simulator target after simctl boot" &&
+   [ ! -e "$CLI_SIMCTL_LOG" ]; then
+  record_ok "rejects an explicit positional simctl boot target"
+else
+  record_fail "rejects an explicit positional simctl boot target" \
+    "status=$explicit_simctl_boot_target_rc output='$(echo "$explicit_simctl_boot_target_out" | head -1)'"
+fi
+
+rm -f "$CLI_SIMCTL_LOG"
+set +e
+explicit_simctl_erase_target_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcrun simctl erase "$OTHER_SEAT_UDID" 2>&1
+)"
+explicit_simctl_erase_target_rc=$?
+set -e
+if [ "$explicit_simctl_erase_target_rc" -ne 0 ] &&
+   echo "$explicit_simctl_erase_target_out" | grep -q \
+     "omit the simulator target after simctl erase" &&
+   [ ! -e "$CLI_SIMCTL_LOG" ]; then
+  record_ok "rejects an explicit positional simctl erase target"
+else
+  record_fail "rejects an explicit positional simctl erase target" \
+    "status=$explicit_simctl_erase_target_rc output='$(echo "$explicit_simctl_erase_target_out" | head -1)'"
+fi
+
+rm -f "$CLI_SIMCTL_LOG"
+set +e
+injected_simctl_delete_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcrun simctl delete 2>&1
+)"
+injected_simctl_delete_rc=$?
+set -e
+if [ "$injected_simctl_delete_rc" -eq 0 ] &&
+   [ "$(<"$CLI_SIMCTL_LOG")" = "simctl delete $FAKE_UDID" ]; then
+  record_ok "injects the selected seat UUID into simctl delete"
+else
+  record_fail "injects the selected seat UUID into simctl delete" \
+    "status=$injected_simctl_delete_rc output='$injected_simctl_delete_out' args='$(head -1 "$CLI_SIMCTL_LOG" 2>/dev/null)'"
+fi
+
+for explicit_delete_target in "$OTHER_SEAT_UDID" all; do
+  rm -f "$CLI_SIMCTL_LOG"
+  explicit_simctl_delete_target_rc=0
+  explicit_simctl_delete_target_out="$(
+    PATH="$CLI_FAKE_BIN:$PATH" \
+      MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+      MT_SIM_LOCK_TEST_MODE=1 \
+      MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+      MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+      "$SIM_LOCK" --seat codex1 xcrun simctl delete \
+        "$explicit_delete_target" 2>&1
+  )" || explicit_simctl_delete_target_rc=$?
+  if [ "$explicit_simctl_delete_target_rc" -ne 0 ] &&
+     echo "$explicit_simctl_delete_target_out" | grep -q \
+       "omit the simulator target after simctl delete" &&
+     [ ! -e "$CLI_SIMCTL_LOG" ]; then
+    record_ok "rejects the positional simctl delete target $explicit_delete_target"
+  else
+    record_fail "rejects the positional simctl delete target $explicit_delete_target" \
+      "status=$explicit_simctl_delete_target_rc output='$(echo "$explicit_simctl_delete_target_out" | head -1)'"
+  fi
+done
+
+rm -f "$CLI_SIMCTL_LOG"
+set +e
+testing_set_delete_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcrun simctl --set testing delete all 2>&1
+)"
+testing_set_delete_rc=$?
+set -e
+if [ "$testing_set_delete_rc" -eq 0 ] &&
+   [ "$(<"$CLI_SIMCTL_LOG")" = "simctl --set testing delete all" ]; then
+  record_ok "leaves an explicit non-gate simulator set target unchanged"
+else
+  record_fail "leaves an explicit non-gate simulator set target unchanged" \
+    "status=$testing_set_delete_rc output='$testing_set_delete_out' args='$(head -1 "$CLI_SIMCTL_LOG" 2>/dev/null)'"
+fi
+
+rm -f "$CLI_SIMCTL_LOG"
+set +e
+destructive_erase_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    MT_SIM_LOCK_FORCE_ERASE=1 \
+    "$SIM_LOCK" --seat codex1 --erase 2>&1
+)"
+destructive_erase_rc=$?
+set -e
+if [ "$destructive_erase_rc" -eq 0 ] &&
+   [ "$(<"$CLI_SIMCTL_LOG")" = "simctl erase $FAKE_UDID" ]; then
+  record_ok "keeps --erase targeted to the selected seat"
+else
+  record_fail "keeps --erase targeted to the selected seat" \
+    "status=$destructive_erase_rc output='$destructive_erase_out' args='$(head -1 "$CLI_SIMCTL_LOG" 2>/dev/null)'"
+fi
+
+for fleet_selector in all booted; do
+  rm -f "$CLI_SIMCTL_LOG"
+  fleet_simctl_target_rc=0
+  fleet_simctl_target_out="$(
+    PATH="$CLI_FAKE_BIN:$PATH" \
+      MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+      MT_SIM_LOCK_TEST_MODE=1 \
+      MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+      MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+      "$SIM_LOCK" --seat codex1 xcrun simctl launch \
+        "$fleet_selector" com.example.MakingTracks 2>&1
+  )" || fleet_simctl_target_rc=$?
+  if [ "$fleet_simctl_target_rc" -ne 0 ] &&
+     echo "$fleet_simctl_target_out" | grep -q \
+       "omit the simulator target after simctl launch" &&
+     [ ! -e "$CLI_SIMCTL_LOG" ]; then
+    record_ok "rejects the positional simctl $fleet_selector selector"
+  else
+    record_fail "rejects the positional simctl $fleet_selector selector" \
+      "status=$fleet_simctl_target_rc output='$(echo "$fleet_simctl_target_out" | head -1)'"
+  fi
+done
+
+# The harness intentionally starts without errexit; the focused rc assertions
+# above toggle it only while capturing failures.
+set +e
+echo
 
 echo "sim-lock --status:"
 
@@ -250,9 +829,9 @@ pgrep_error_out="$(
   MT_SIM_LOCK_TEST_MODE=1 \
   MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
   MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
-  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+  MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
   MT_SIM_LOCK_TEST_PGREP_BIN="$PGREP_ERROR" \
-  "$SIM_LOCK" --status 2>&1
+  "$SIM_LOCK" --seat codex1 --status 2>&1
 )"
 pgrep_error_rc=$?
 set -e
@@ -275,9 +854,9 @@ pgrep_success_out="$(
   MT_SIM_LOCK_TEST_MODE=1 \
   MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
   MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
-  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+  MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
   MT_SIM_LOCK_TEST_PGREP_BIN="$PGREP_SUCCESS" \
-  "$SIM_LOCK" --status 2>&1
+  "$SIM_LOCK" --seat codex1 --status 2>&1
 )"
 pgrep_success_rc=$?
 set -e
@@ -301,9 +880,9 @@ pgrep_warning_out="$(
   MT_SIM_LOCK_TEST_MODE=1 \
   MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
   MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
-  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+  MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
   MT_SIM_LOCK_TEST_PGREP_BIN="$PGREP_WARNING" \
-  "$SIM_LOCK" --status 2>&1
+  "$SIM_LOCK" --seat codex1 --status 2>&1
 )"
 pgrep_warning_rc=$?
 set -e
@@ -329,10 +908,10 @@ lsof_success_out="$(
   MT_SIM_LOCK_TEST_MODE=1 \
   MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
   MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
-  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+  MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
   MT_SIM_LOCK_TEST_LSOF_BIN="$LSOF_SUCCESS" \
   MT_SIM_LOCK_TEST_PGREP_BIN="$PGREP_NONE" \
-  "$SIM_LOCK" --status 2>&1
+  "$SIM_LOCK" --seat codex1 --status 2>&1
 )"
 lsof_success_rc=$?
 set -e
@@ -356,10 +935,10 @@ lsof_success_warning_out="$(
   MT_SIM_LOCK_TEST_MODE=1 \
   MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
   MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
-  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+  MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
   MT_SIM_LOCK_TEST_LSOF_BIN="$LSOF_SUCCESS_WARNING" \
   MT_SIM_LOCK_TEST_PGREP_BIN="$PGREP_NONE" \
-  "$SIM_LOCK" --status 2>&1
+  "$SIM_LOCK" --seat codex1 --status 2>&1
 )"
 lsof_success_warning_rc=$?
 set -e
@@ -379,9 +958,9 @@ lsof_error_out="$(
   MT_SIM_LOCK_TEST_MODE=1 \
   MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
   MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
-  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+  MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
   MT_SIM_LOCK_TEST_LSOF_BIN="$LSOF_ERROR" \
-  "$SIM_LOCK" --status 2>&1
+  "$SIM_LOCK" --seat codex1 --status 2>&1
 )"
 lsof_error_rc=$?
 set -e
@@ -401,9 +980,9 @@ lsof_rc1_error_out="$(
   MT_SIM_LOCK_TEST_MODE=1 \
   MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
   MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
-  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+  MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
   MT_SIM_LOCK_TEST_LSOF_BIN="$LSOF_RC1_ERROR" \
-  "$SIM_LOCK" --status 2>&1
+  "$SIM_LOCK" --seat codex1 --status 2>&1
 )"
 lsof_rc1_error_rc=$?
 set -e
@@ -438,8 +1017,8 @@ echo "sim-lock re-entrancy:"
 #     with no output.
 out="$(MT_SIM_LOCK_TEST_MODE=1 MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
        MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
-       MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
-       "$SIM_LOCK" "$SIM_LOCK" echo nested-ok 2>&1)" || true
+       MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+       "$SIM_LOCK" --seat codex1 "$SIM_LOCK" --seat codex1 echo nested-ok 2>&1)" || true
 if echo "$out" | grep -q "nested-ok"; then
   echo "  ok    nested invocation runs through instead of deadlocking"; pass=$((pass+1))
 else
@@ -456,8 +1035,8 @@ missing_reentry_out="$(
     MT_SIM_LOCK_TEST_MODE=1 \
     MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
     MT_SIM_LOCK_TEST_UDID="TEST-REENTRY-MISSING" \
-    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=TEST-REENTRY-MISSING" \
-    "$SIM_LOCK" true 2>&1
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 true 2>&1
 )"
 missing_reentry_rc=$?
 mismatched_reentry_out="$(
@@ -466,8 +1045,8 @@ mismatched_reentry_out="$(
     MT_SIM_LOCK_TEST_MODE=1 \
     MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
     MT_SIM_LOCK_TEST_UDID="TEST-REENTRY-INNER" \
-    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=TEST-REENTRY-INNER" \
-    "$SIM_LOCK" true 2>&1
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 true 2>&1
 )"
 mismatched_reentry_rc=$?
 set -e
@@ -486,12 +1065,14 @@ else
     "status=$mismatched_reentry_rc output='$mismatched_reentry_out'"
 fi
 
+write_test_ledger "$TMP/malformed-ledger.md" \
+  "platform=iOS Simulator,grid=NOT-AN-ID"
 set +e
 malformed_sim_out="$(
   MT_SIM_LOCK_TEST_MODE=1 \
     MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
-    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,grid=NOT-AN-ID" \
-    "$SIM_LOCK" true 2>&1
+    MT_SIM_LOCK_TEST_LEDGER="$TMP/malformed-ledger.md" \
+    "$SIM_LOCK" --seat codex1 true 2>&1
 )"
 malformed_sim_rc=$?
 set -e
@@ -503,12 +1084,14 @@ else
     "status=$malformed_sim_rc output='$malformed_sim_out'"
 fi
 
+write_test_ledger "$TMP/duplicate-id-ledger.md" \
+  "platform=iOS Simulator,id=FIRST,id=SECOND"
 set +e
 duplicate_id_out="$(
   MT_SIM_LOCK_TEST_MODE=1 \
     MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
-    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=FIRST,id=SECOND" \
-    "$SIM_LOCK" true 2>&1
+    MT_SIM_LOCK_TEST_LEDGER="$TMP/duplicate-id-ledger.md" \
+    "$SIM_LOCK" --seat codex1 true 2>&1
 )"
 duplicate_id_rc=$?
 set -e
@@ -524,10 +1107,10 @@ set +e
 mismatched_command_out="$(
   MT_SIM_LOCK_TEST_MODE=1 \
     MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
-    MT_SIM_LOCK_TEST_UDID="TEST-COMMAND-OUTER" \
-    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=TEST-COMMAND-OUTER" \
-    "$SIM_LOCK" xcodebuild \
-      -destination "platform=iOS Simulator,id=TEST-COMMAND-INNER" 2>&1
+    MT_SIM_LOCK_TEST_UDID="33333333-3333-4333-8333-333333333333" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcodebuild \
+      -destination "platform=iOS Simulator,id=44444444-4444-4444-8444-444444444444" 2>&1
 )"
 mismatched_command_rc=$?
 set -e
@@ -544,8 +1127,8 @@ bash32_out="$(
   MT_SIM_LOCK_TEST_MODE=1 \
     MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
     MT_SIM_LOCK_TEST_UDID="TEST-BASH32" \
-    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=TEST-BASH32" \
-    /bin/bash "$SIM_LOCK" true 2>&1
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    /bin/bash "$SIM_LOCK" --seat codex1 true 2>&1
 )"
 bash32_rc=$?
 set -e
@@ -565,8 +1148,8 @@ flock_error_out="$(
     MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
     MT_SIM_LOCK_TEST_UDID="TEST-FLOCK-ERROR" \
     MT_SIM_LOCK_TEST_FLOCK_BIN="$FLOCK_ERROR" \
-    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=TEST-FLOCK-ERROR" \
-    "$SIM_LOCK" true 2>&1
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 true 2>&1
 )"
 flock_error_rc=$?
 set -e
@@ -597,8 +1180,8 @@ flock_slot_error_out="$(
     MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
     MT_SIM_LOCK_TEST_UDID="TEST-FLOCK-SLOT-ERROR" \
     MT_SIM_LOCK_TEST_FLOCK_BIN="$FLOCK_SLOT_ERROR" \
-    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=TEST-FLOCK-SLOT-ERROR" \
-    "$SIM_LOCK" true 2>&1
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 true 2>&1
 )"
 flock_slot_error_rc=$?
 set -e
@@ -664,9 +1247,9 @@ if wait_for_path "$DIAGNOSTIC_HOLDER.started"; then
   MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
   MT_SIM_LOCK_TEST_UDID="$DIAGNOSTIC_UDID" \
   MT_SIM_LOCK_TEST_LSOF_BIN="$LSOF_NO_MATCH_WARNING" \
-  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$DIAGNOSTIC_UDID" \
+  MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
   MT_SIM_LOCK_WAIT=5 \
-    "$SIM_LOCK" sh -c 'touch "$1.started"' sh "$DIAGNOSTIC_WAITER" \
+    "$SIM_LOCK" --seat codex1 sh -c 'touch "$1.started"' sh "$DIAGNOSTIC_WAITER" \
     >"$DIAGNOSTIC_WAITER.log" 2>&1 &
   diagnostic_waiter_pid=$!
   wait_for_pattern "$DIAGNOSTIC_WAITER.log" "waiting for simulator $DIAGNOSTIC_UDID lock" || true
@@ -936,7 +1519,7 @@ mismatched_gate_out="$(
     MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
     MT_SIM_LOCK=1 \
     MT_SIM_LOCK_UDID="$RELEASE_UDID_A" \
-    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$RELEASE_UDID_B" \
+    MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$RELEASE_UDID_B" \
     MT_RELEASE_GATE_MODE=build \
     "$RELEASE_GATE" 2>&1
 )"
@@ -954,11 +1537,13 @@ fi
 rm -f "$XCODEBUILD_LOG"
 set +e
 missing_destination_out="$(
-  env -u MT_RELEASE_GATE_DESTINATION \
+  env -u MT_SIM_LOCK_DESTINATION \
     PATH="$FAKE_BIN:$PATH" \
     MT_TEST_REPO_ROOT="$HERE/.." \
     MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
     MT_SIM_LOCK=1 \
+    MT_SIM_LOCK_UDID="$RELEASE_UDID_A" \
+    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$RELEASE_UDID_A" \
     MT_RELEASE_GATE_MODE=build \
     AM_ME="$RELEASE_FIXTURE_SEAT" \
     "$RELEASE_GATE" 2>&1
@@ -966,11 +1551,11 @@ missing_destination_out="$(
 missing_destination_rc=$?
 set -e
 if [ "$missing_destination_rc" -ne 0 ] &&
-   echo "$missing_destination_out" | grep -q "wp-infra-sim-concurrency" &&
+   echo "$missing_destination_out" | grep -q "MT_SIM_LOCK_DESTINATION is missing" &&
    [ ! -e "$XCODEBUILD_LOG" ]; then
-  record_ok "refuses an unset destination with the simulator-row message"
+  record_ok "ignores the removed public destination at the release-gate boundary"
 else
-  record_fail "refuses an unset destination with the simulator-row message" \
+  record_fail "ignores the removed public destination at the release-gate boundary" \
     "status=$missing_destination_rc got: $(echo "$missing_destination_out" | head -1)"
 fi
 
@@ -982,7 +1567,7 @@ malformed_gate_out="$(
     MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
     MT_SIM_LOCK=1 \
     MT_SIM_LOCK_UDID="NOT-AN-ID" \
-    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,grid=NOT-AN-ID" \
+    MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,grid=NOT-AN-ID" \
     MT_RELEASE_GATE_MODE=build \
     "$RELEASE_GATE" 2>&1
 )"
@@ -1005,7 +1590,7 @@ duplicate_gate_out="$(
     MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
     MT_SIM_LOCK=1 \
     MT_SIM_LOCK_UDID="FIRST" \
-    MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=FIRST,id=SECOND" \
+    MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=FIRST,id=SECOND" \
     MT_RELEASE_GATE_MODE=build \
     "$RELEASE_GATE" 2>&1
 )"
@@ -1028,8 +1613,8 @@ run_release_fixture() {
   MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
   MT_SIM_LOCK=1 \
   MT_SIM_LOCK_UDID="$udid" \
+  MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$udid" \
   MT_RELEASE_GATE_MODE=build \
-  MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$udid" \
   AM_ME="$RELEASE_FIXTURE_SEAT" \
   "$RELEASE_GATE" >/dev/null 2>&1
   grep -o -- '-derivedDataPath [^ ]*' "$XCODEBUILD_LOG" | head -1

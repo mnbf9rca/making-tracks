@@ -2,17 +2,17 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
-destination="${MT_RELEASE_GATE_DESTINATION:-}"
+destination="${MT_SIM_LOCK_DESTINATION:-}"
 expected_xcode_version=$'Xcode 26.6\nBuild version 17F113'
 artifact_dir="/private/tmp/making-tracks-artifacts"
 output_dir="$repo_root/docs/design/design-system"
 
 [ -n "$destination" ] || {
-  echo "regenerate-t2.10-about: MT_RELEASE_GATE_DESTINATION is required" >&2
+  echo "regenerate-t2.10-about: MT_SIM_LOCK_DESTINATION is required" >&2
   exit 1
 }
 [ "${MT_SIM_LOCK:-}" = "1" ] || {
-  echo "regenerate-t2.10-about: invoke through scripts/sim-lock.sh" >&2
+  echo "regenerate-t2.10-about: invoke through scripts/sim-lock.sh --seat <seat>" >&2
   exit 1
 }
 

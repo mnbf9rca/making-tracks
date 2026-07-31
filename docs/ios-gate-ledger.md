@@ -4,13 +4,18 @@ This ledger records iOS gate count-watch decisions that affect whether a run cou
 
 ## Host Gate Seats
 
-Every builder seat has one gate simulator. The seat exports the literal destination below as
-`MT_RELEASE_GATE_DESTINATION` before any `scripts/sim-lock.sh` or `scripts/release-gate.sh` invocation.
-`sim-lock.sh` derives a stable per-simulator lock from its UDID. Different simulators may run concurrently,
-but the global counting semaphore admits at most `MT_GATE_MAX_CONCURRENT` gates at once. The default and
-host-wide ceiling are `2`; operators may lower the setting to `1`, but callers cannot enlarge it.
+Every builder seat has one gate simulator. Callers pass the stable logical seat to
+`scripts/sim-lock.sh --seat codexN`; the wrapper resolves the destination by reading this table. The
+planner updates only the affected row when a simulator is replaced. Callers never copy or export the
+destination UDID.
 
-| Seat | Simulator | `MT_RELEASE_GATE_DESTINATION` |
+`sim-lock.sh` derives a stable per-simulator lock from the resolved UDID. Different simulators may run
+concurrently, but the global counting semaphore admits at most `MT_GATE_MAX_CONCURRENT` gates at once.
+The default and host-wide ceiling are `2`; operators may lower the setting to `1`, but callers cannot
+enlarge it. GitHub Actions creates ephemeral simulators outside this seat table and supplies its
+destination through the Actions-only release-gate path.
+
+| Seat | Simulator | Destination |
 | --- | --- | --- |
 | `codex1` | `mt-gate-codex1` | `platform=iOS Simulator,id=8749271C-95FD-4270-A754-401F77E7AEB6` |
 | `codex2` | `mt-gate-codex2` | `platform=iOS Simulator,id=BACC2CF8-C1F8-4C92-B058-47B0AC0B128D` |
@@ -28,11 +33,11 @@ lock weekly-cleanup claim in `develop`'s simulator runbook.
 The admission lock does not promise fairness; run fleet-exclusive maintenance in a quiet window so a
 steady stream of ordinary shared admissions cannot starve it until the timeout.
 
-Export one seat destination from the table, then wrap each maintenance operation through the same entry
-point. Do not embed a different or retired UDID inside a nested shell command.
+Choose the operator's assigned seat, then wrap each maintenance operation through the same entry point.
+Do not embed a different or retired UDID inside a nested shell command.
 
 ```bash
-MT_GATE_MAX_CONCURRENT=1 ./scripts/sim-lock.sh xcrun simctl --set testing delete all
+MT_GATE_MAX_CONCURRENT=1 ./scripts/sim-lock.sh --seat codex1 xcrun simctl --set testing delete all
 ```
 
 ## Classification Rule

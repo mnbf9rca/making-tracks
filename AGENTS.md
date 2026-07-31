@@ -28,7 +28,8 @@ The app-specific facts an agent needs are stated in `develop`'s file, in these s
 - **Workflow** → *Ground in the current tree*: ground app-code citations against `ios`. `develop` carries a
   lagging copy of `ios/`, so a `file:line` grounded against `develop` points at code that is not here.
 - **Review gates**, point 3: run the Release build and simulator test gate as
-  `./scripts/sim-lock.sh ./scripts/release-gate.sh`. Warnings-as-errors is set on the app target in
+  `./scripts/sim-lock.sh --seat codexN ./scripts/release-gate.sh`, replacing `codexN` with the assigned
+  seat. Warnings-as-errors is set on the app target in
   `ios/App/project.yml`, which lives on this branch.
 - **iOS simulator** and `docs/process/ios-simulator.md`: their single `agent-ios-tests` identity, retired
   global lock, and commands containing its hardcoded UDID are superseded on this branch by *The simulators
@@ -47,14 +48,17 @@ the host gate.
 ## The simulators have one entry point
 
 `scripts/sim-lock.sh` is the only thing that touches a gate simulator. Build, test, boot, shutdown, erase,
-delete — all of it goes through the script. Each seat exports its assigned `MT_RELEASE_GATE_DESTINATION`
-from the table in [`docs/ios-gate-ledger.md`](docs/ios-gate-ledger.md) → *Host Gate Seats* before invoking
-it.
+delete — all of it goes through the script. Each builder passes its assigned logical seat from
+[`docs/ios-gate-ledger.md`](docs/ios-gate-ledger.md) → *Host Gate Seats*. The wrapper resolves the current
+destination; callers never copy or export its UDID.
+
+For target-taking `xcrun simctl` commands, omit the simulator argument as well: the wrapper inserts the
+assigned seat's UUID after the verb. `simctl list` remains targetless.
 
 ```bash
-./scripts/sim-lock.sh <command>    # run under the lock
-./scripts/sim-lock.sh --status     # HELD or FREE, checked two ways
-./scripts/sim-lock.sh --erase      # destructive ops, under the lock
+./scripts/sim-lock.sh --seat codexN <command> # run under the assigned lock
+./scripts/sim-lock.sh --seat codexN --status  # HELD or FREE, checked two ways
+./scripts/sim-lock.sh --seat codexN --erase   # destructive ops, under the lock
 ```
 
 The script takes a stable per-simulator lock derived from the destination UDID, so two gates aimed at the
@@ -73,8 +77,8 @@ while a build is mid-flight without it. This applies to coordinators as much as 
 `simctl erase` because the lock looked free is the incident this exists to prevent (incidents → *A
 hand-checked lock erased a running gate*).
 
-`scripts/release-gate.sh` no longer takes the lock and refuses to run outside it. Two lock-takers is how the
-paths drifted apart.
+`scripts/release-gate.sh` no longer takes the lock and refuses local runs outside
+`sim-lock.sh --seat codexN`. Two lock-takers is how the paths drifted apart.
 
 The wrapper's lock descriptors intentionally pass to every descendant. If `--status` still names a holder
 after the wrapper exits, a surviving background descendant owns the locks: stop that process before
