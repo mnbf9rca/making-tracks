@@ -1250,6 +1250,26 @@ struct MapDoorRowIconGlyph: View {
     }
 }
 
+struct MapDoorRowIconColumn: View {
+    let systemName: String
+    let role: IconRole
+
+    @ScaledMetric(relativeTo: .headline) private var raisedWidth = 32.0
+    @ScaledMetric(relativeTo: .subheadline) private var quietWidth = 28.0
+
+    private var width: Double {
+        role == .rowRaised ? raisedWidth : quietWidth
+    }
+
+    var body: some View {
+        MapDoorRowIconGlyph(
+            systemName: systemName,
+            role: role
+        )
+        .frame(width: width)
+    }
+}
+
 struct MapDoorRowLabel: View {
     let presentation: MapDoorRowPresentation
     let iconRole: IconRole
@@ -1258,11 +1278,10 @@ struct MapDoorRowLabel: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            MapDoorRowIconGlyph(
+            MapDoorRowIconColumn(
                 systemName: presentation.systemImage,
                 role: iconRole
             )
-                .frame(width: 28)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -1283,6 +1302,107 @@ struct MapDoorRowLabel: View {
         .accessibilityElement(children: .combine)
     }
 }
+
+#if DEBUG
+struct DoorGlyphEvidenceFixture: View {
+    let legacy: Bool
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Door glyph contract")
+                    .font(Typography.font(for: .heroTitle))
+                    .foregroundStyle(tokens.ink.swiftUIColor)
+
+                Text(legacy ? "Before — 17pt literal" : "After — semantic roles")
+                    .font(Typography.font(for: .metadata))
+                    .foregroundStyle(tokens.muted.swiftUIColor)
+                    .accessibilityIdentifier("door-glyph.fixture.state")
+
+                DoorGlyphEvidenceRow(
+                    title: "Raised row",
+                    subtitle: legacy ? "headline literal · 17pt" : "rowRaised · 20pt headline",
+                    role: .rowRaised,
+                    raised: true,
+                    legacy: legacy
+                )
+
+                DoorGlyphEvidenceRow(
+                    title: "Quiet row",
+                    subtitle: legacy ? "headline literal · 17pt" : "rowQuiet · 18pt subheadline",
+                    role: .rowQuiet,
+                    raised: false,
+                    legacy: legacy
+                )
+            }
+            .padding(24)
+        }
+        .background(tokens.background.swiftUIColor)
+    }
+}
+
+private struct DoorGlyphEvidenceRow: View {
+    let title: String
+    let subtitle: String
+    let role: IconRole
+    let raised: Bool
+    let legacy: Bool
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        Group {
+            if raised {
+                MaterialRaisedCardRow { label }
+            } else {
+                MaterialHairlineRow { label }
+            }
+        }
+    }
+
+    private var label: some View {
+        HStack(spacing: 12) {
+            Group {
+                if legacy {
+                    Image(systemName: "cloud.sun.rain.fill")
+                        .font(.headline.weight(.medium))
+                        .symbolRenderingMode(.monochrome)
+                        .frame(width: 28)
+                } else {
+                    MapDoorRowIconColumn(
+                        systemName: "cloud.sun.rain.fill",
+                        role: role
+                    )
+                }
+            }
+            .foregroundStyle(tokens.accent.swiftUIColor)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(title) icon")
+            .accessibilityIdentifier("door-glyph.fixture.\(roleName).icon")
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: title)
+                    .font(Typography.font(for: .listRowTitle))
+                    .foregroundStyle(tokens.ink.swiftUIColor)
+
+                Text(verbatim: subtitle)
+                    .font(Typography.font(for: .metadata))
+                    .foregroundStyle(tokens.muted.swiftUIColor)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("door-glyph.fixture.\(roleName).copy")
+        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+    }
+
+    private var roleName: String {
+        role == .rowRaised ? "raised" : "quiet"
+    }
+}
+#endif
 
 struct MapDoorButtonIconGlyph: View {
     let systemName: String
