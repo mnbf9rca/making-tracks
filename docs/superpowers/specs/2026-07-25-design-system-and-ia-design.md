@@ -284,7 +284,7 @@ from the A8 evidence into that table; the second table preserves the five remain
 **MEASURED** facts from the frozen Explore render. Those five rows remain visually distinct
 provenance, not ratified metrics.
 
-**Target API state — owning tasks: Phase 2 T2.2 and T2.3.** The table fixes the contract before
+**Target API state — owning tasks: Phase 2 T2.2, T2.3 and T2.8.** The table fixes the contract before
 the API carries it. The current `IconRole` still has three cases and the current quiet text-only
 press inset is the fixed `1pt` way-station; T2.2 adds the two named roles, closes the API at five,
 replaces the fixed displacement with the scaled metric below and may deprecate
@@ -295,9 +295,11 @@ T2.2 would leave the app broken behind a green package gate.
 `ExploreSurfaceIconGeometry.scopeControl` **remains a distinct metric**. Its `20` belongs to
 P2R-4's Scope-control row, not P2R-2's numerically equal `rowRaised` glyph. T2.1 chooses
 `.button` as its Dynamic Type anchor to match the same row's ratified 15pt/600 label; `rowRaised`
-instead anchors to the 17pt list-row title. T2.3 applies that contract to the live app consumer but
-does not migrate it to `rowRaised` or delete its canonical constant. Numeric equality does not
-collapse two semantic figures. `ExploreQuietDestinationRow` also
+instead anchors to the 17pt list-row title. The current Scope consumer remains on its shipped
+`.body` anchor through T2.3. T2.8 applies the `.button` contract while rebuilding its owned
+`ExploreDoorRootView` region, moves the 20 into a separately named Scope-control metric home and
+then retires the old enum member; it never migrates the figure to `rowRaised`. Numeric equality
+does not collapse two semantic figures. `ExploreQuietDestinationRow` also
 currently scales from `.body` and renders its title with `.listRowTitle`, diverging from the
 ratified 15pt/600 quiet-row title; T2.3 fixes the icon anchor through `rowQuiet`, while T2.8 owns
 the title reconciliation. The divergence is not a new ratification.
