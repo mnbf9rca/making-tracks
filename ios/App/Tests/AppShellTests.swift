@@ -3007,7 +3007,7 @@ final class AppShellTests: XCTestCase {
         ])
         XCTAssertEqual(SettingsGroup.allCases.map(\.presentation), [
             .init(title: "Appearance", subtitle: "Four existing presets", systemImage: "circle.lefthalf.filled", accessibilityIdentifier: "settings.group.appearance"),
-            .init(title: "Offline maps", subtitle: "Packs · downloads · per-pack storage", systemImage: "externaldrive.badge.arrow.down", accessibilityIdentifier: "settings.storage.manage"),
+            .init(title: "Offline maps", subtitle: "Packs · downloads · per-pack storage", systemImage: "tray.and.arrow.down", accessibilityIdentifier: "settings.storage.manage"),
             .init(title: "Coverage", subtitle: "Published regions · sources · extents", systemImage: "map", accessibilityIdentifier: "settings.group.coverage"),
             .init(title: "Map & data", subtitle: "Cellular downloads · pin size", systemImage: "map.circle", accessibilityIdentifier: "settings.group.map-data"),
             .init(title: "Location", subtitle: "Permission and system settings", systemImage: "location", accessibilityIdentifier: "settings.group.location"),
@@ -3021,6 +3021,16 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(SettingsGroup.location.destination, .settingsLocation)
         XCTAssertEqual(SettingsGroup.diagnostics.destination, .diagnostics)
         XCTAssertNil(SettingsGroup.replayWelcome.destination)
+    }
+
+    func testEverySettingsGroupSymbolResolvesToUIImage() {
+        for group in SettingsGroup.allCases {
+            let presentation = group.presentation
+            XCTAssertNotNil(
+                UIImage(systemName: presentation.systemImage),
+                "\(presentation.title) uses missing SF Symbol \(presentation.systemImage)"
+            )
+        }
     }
 
     func testSettingsCoverageContractIsDataOnly() {

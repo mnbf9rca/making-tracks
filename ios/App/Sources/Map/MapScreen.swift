@@ -692,7 +692,7 @@ enum SettingsGroup: CaseIterable, Hashable {
             .init(
                 title: "Offline maps",
                 subtitle: "Packs · downloads · per-pack storage",
-                systemImage: "externaldrive.badge.arrow.down",
+                systemImage: "tray.and.arrow.down",
                 accessibilityIdentifier: "settings.storage.manage"
             )
         case .coverage:
