@@ -3005,6 +3005,31 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(coverage.subtitle.localizedCaseInsensitiveContains("shading"))
     }
 
+    func testSettingsHubUsesMaterialRowsWithoutSystemListChrome() throws {
+        let appRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let mapSource = try String(
+            contentsOf: appRoot.appendingPathComponent("Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+        let settingsStart = try XCTUnwrap(
+            mapSource.range(of: "private struct SettingsView")?.lowerBound
+        )
+        let diagnosticsStart = try XCTUnwrap(
+            mapSource.range(
+                of: "private struct DiagnosticsView",
+                range: settingsStart..<mapSource.endIndex
+            )?.lowerBound
+        )
+        let settingsSource = String(mapSource[settingsStart..<diagnosticsStart])
+
+        XCTAssertFalse(settingsSource.contains("List {"))
+        XCTAssertTrue(settingsSource.contains("MaterialHairlineRow"))
+        XCTAssertTrue(settingsSource.contains("SettingsGroup.allCases"))
+        XCTAssertFalse(settingsSource.contains("map.layers.coverage-shading"))
+    }
+
     func testOfflineDownloadProgressBoundsInvalidFractions() {
         XCTAssertEqual(OfflineDownloadProgress(fractionComplete: .nan).percentComplete, 0)
         XCTAssertEqual(OfflineDownloadProgress(fractionComplete: .infinity).percentComplete, 0)
