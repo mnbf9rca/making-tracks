@@ -9,11 +9,13 @@ embedded in the epic.
 This document specifies; it does not implement. Each consuming issue carries its own mockup
 gate per the standing mockup law.
 
-**Amended once, by the 2026-07-26 design session** (designer + Rob), which is the immutability
-law's sanctioned channel for changing a ratified spec — a session ratification, not an edit.
-The amendment lands: R4's map rows, R7's tone quartet, `trail`, `hiddenPinColor`, `disabledAlpha`
-and `pressScale` into §3; the **component-metrics table** and **R15 state morphology** into §5;
-the **refined literal carve-out** into §4; and R13/R14's door changes into §2.
+**Amended twice through the immutability law's sanctioned design-session channel.** The
+2026-07-26 session (designer + Rob) landed R4's map rows, R7's tone quartet, `trail`,
+`hiddenPinColor`, `disabledAlpha` and `pressScale` into §3; the **component-metrics table** and
+**R15 state morphology** into §5; the **refined literal carve-out** into §4; and R13/R14's door
+changes into §2. The 2026-07-31 Phase 2 opening session landed P2R-1 … P2R-10, including the
+component-metric promotions and scaling laws recorded below. Each amendment is a session
+ratification, not an editorial change to settled law.
 
 **Sections describing state that is not yet built are marked *target*, with the owning task named**
 — per the authoring law that a spec may describe intent but must never let a reader mistake intent
@@ -262,17 +264,20 @@ to prevent CTA impersonation, not to replace the morphology.
 **Never-colour-alone applies to state**, not only to seen-state and progress. This is what makes a
 control's state legible without a legend: a filled pill with a filled glyph is on, a tonal pill with
 an outline glyph is off, and anything that is neither is a verb rather than a switch. **The place
-card is re-rendered under this rule** — target state, owning task in the amendment wave.
+card was re-rendered under this rule by the amendment wave**; the built R15 morphology is the
+evidence this rule now governs.
 
 *Why it is here rather than in a component's row:* it is the rule that decides which of the three
 button styles a control takes, so it governs the table above rather than sitting inside it.
 
 ### Component metrics — the ratified numbers, beside their elements
 
-**The table ratifies; the API carries.** Every figure below is load-bearing and read from a frozen
-render; a builder takes the number from here, and the code holds the vocabulary that consumes it.
-The rule this table exists to enforce: **numbers belong in tables; renders certify feel;
-information that only exists as pixels gets under-read.**
+**The table ratifies; the API carries.** Every ratified figure below is load-bearing. Frozen
+renders supply the measured figures they certify; the Source column separately identifies the
+sanctioned builder-proposed migration base and T2.1's contract-anchor choices where those did not
+come from render measurement. A builder takes the contract from here, and the code holds the
+vocabulary that consumes it. The rule this table exists to enforce: **numbers belong in tables;
+renders certify feel; information that only exists as pixels gets under-read.**
 
 The first table contains **ratified** system law. P2R-4 promotes the two Scope-control row classes
 from the A8 evidence into that table; the second table preserves the five remaining
@@ -283,14 +288,19 @@ provenance, not ratified metrics.
 the API carries it. The current `IconRole` still has three cases and the current quiet text-only
 press inset is the fixed `1pt` way-station; T2.2 adds the two named roles, closes the API at five,
 replaces the fixed displacement with the scaled metric below and may deprecate
-`ExploreSurfaceIconGeometry.scopeControl` and `.quietDestination`, the current `20` and `18`
-migration inputs. T2.3 deletes that enum only after migrating its two app-target consumers to the
-new roles; deleting it in host-tested T2.2 would leave the app broken behind a green package gate.
-Leaving those constants beside the new roles after T2.3 would give each figure two homes.
-Their live consumers currently scale relative to `.body`, not to either target typography anchor.
-`ExploreQuietDestinationRow` also renders its title with `.listRowTitle`, diverging from the
-ratified 15pt/600 quiet-row title; T2.8 owns that reconciliation, and the divergence is not a new
-ratification.
+`ExploreSurfaceIconGeometry.quietDestination`, the current `18` migration input. T2.3 migrates
+that app-target consumer to `rowQuiet` and removes only that member; deleting it in host-tested
+T2.2 would leave the app broken behind a green package gate.
+
+`ExploreSurfaceIconGeometry.scopeControl` **remains a distinct metric**. Its `20` belongs to
+P2R-4's Scope-control row, not P2R-2's numerically equal `rowRaised` glyph. T2.1 chooses
+`.button` as its Dynamic Type anchor to match the same row's ratified 15pt/600 label; `rowRaised`
+instead anchors to the 17pt list-row title. T2.3 applies that contract to the live app consumer but
+does not migrate it to `rowRaised` or delete its canonical constant. Numeric equality does not
+collapse two semantic figures. `ExploreQuietDestinationRow` also
+currently scales from `.body` and renders its title with `.listRowTitle`, diverging from the
+ratified 15pt/600 quiet-row title; T2.3 fixes the icon anchor through `rowQuiet`, while T2.8 owns
+the title reconciliation. The divergence is not a new ratification.
 
 | Element | Metric | Source |
 |---|---|---|
