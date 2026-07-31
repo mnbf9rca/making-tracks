@@ -491,6 +491,26 @@ else
     "status=$injected_simctl_rc output='$injected_simctl_out' args='$(head -1 "$CLI_SIMCTL_LOG" 2>/dev/null)'"
 fi
 
+rm -f "$CLI_SIMCTL_LOG"
+set +e
+injected_simctl_erase_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcrun simctl erase 2>&1
+)"
+injected_simctl_erase_rc=$?
+set -e
+if [ "$injected_simctl_erase_rc" -eq 0 ] &&
+   [ "$(<"$CLI_SIMCTL_LOG")" = "simctl erase $FAKE_UDID" ]; then
+  record_ok "injects the selected seat UUID into simctl erase"
+else
+  record_fail "injects the selected seat UUID into simctl erase" \
+    "status=$injected_simctl_erase_rc output='$injected_simctl_erase_out' args='$(head -1 "$CLI_SIMCTL_LOG" 2>/dev/null)'"
+fi
+
 OTHER_SEAT_UDID="22222222-2222-4222-8222-222222222222"
 rm -f "$CLI_SIMCTL_LOG"
 set +e
@@ -513,6 +533,49 @@ if [ "$explicit_simctl_target_rc" -ne 0 ] &&
 else
   record_fail "rejects an explicit positional simctl simulator target" \
     "status=$explicit_simctl_target_rc output='$(echo "$explicit_simctl_target_out" | head -1)'"
+fi
+
+rm -f "$CLI_SIMCTL_LOG"
+set +e
+explicit_simctl_erase_target_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcrun simctl erase "$OTHER_SEAT_UDID" 2>&1
+)"
+explicit_simctl_erase_target_rc=$?
+set -e
+if [ "$explicit_simctl_erase_target_rc" -ne 0 ] &&
+   echo "$explicit_simctl_erase_target_out" | grep -q \
+     "omit the simulator target after simctl erase" &&
+   [ ! -e "$CLI_SIMCTL_LOG" ]; then
+  record_ok "rejects an explicit positional simctl erase target"
+else
+  record_fail "rejects an explicit positional simctl erase target" \
+    "status=$explicit_simctl_erase_target_rc output='$(echo "$explicit_simctl_erase_target_out" | head -1)'"
+fi
+
+rm -f "$CLI_SIMCTL_LOG"
+set +e
+destructive_erase_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    MT_SIM_LOCK_FORCE_ERASE=1 \
+    "$SIM_LOCK" --seat codex1 --erase 2>&1
+)"
+destructive_erase_rc=$?
+set -e
+if [ "$destructive_erase_rc" -eq 0 ] &&
+   [ "$(<"$CLI_SIMCTL_LOG")" = "simctl erase $FAKE_UDID" ]; then
+  record_ok "keeps --erase targeted to the selected seat"
+else
+  record_fail "keeps --erase targeted to the selected seat" \
+    "status=$destructive_erase_rc output='$destructive_erase_out' args='$(head -1 "$CLI_SIMCTL_LOG" 2>/dev/null)'"
 fi
 
 for fleet_selector in all booted; do

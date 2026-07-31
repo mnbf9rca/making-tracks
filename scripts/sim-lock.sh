@@ -331,7 +331,7 @@ destructive() {
         echo "sim-lock: if you are certain, re-run with MT_SIM_LOCK_FORCE_ERASE=1" >&2
         exit 1
       fi
-      set -- xcrun simctl erase "$UDID"
+      set -- xcrun simctl erase
       ;;
     shutdown) set -- xcrun simctl shutdown ;;
     boot)     set -- xcrun simctl bootstatus -b ;;
@@ -456,7 +456,7 @@ run_locked() {
   if [ "$#" -ge 3 ] && [ "$1" = "xcrun" ] && [ "$2" = "simctl" ]; then
     simctl_verb="$3"
     case "$simctl_verb" in
-      bootstatus|shutdown|launch|terminate|install|uninstall|io|get_app_container|spawn)
+      bootstatus|shutdown|launch|terminate|install|uninstall|io|get_app_container|spawn|erase)
         shift 3
         if [ "$#" -gt 0 ]; then
           case "$1" in
