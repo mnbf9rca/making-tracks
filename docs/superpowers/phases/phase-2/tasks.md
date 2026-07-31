@@ -232,14 +232,15 @@ Host-only (`cd ios && swift test`) unless you touch `project.yml`. No render: no
 - **Serves:** P2R-2(b), #520 · **Spec section:** §4, §8
 - **Acceptance criteria:** AC2.4
 - **Depends on:** **T2.2**
-- **Owner:** unclaimed
+- **Branch:** `wp-t2-3-door-glyph`
+- **Owner:** codex1
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** unclaimed
+- **Status:** implementation, AX5 collision repair, adversarial review, and full release gate green
 - **Closes:** **#520** on merge, and with it Phase 1's parked acceptance remainder.
 
-**Builder brief.** Three sites and one enum, not one glyph. **The correction below replaces this row's original claim that the door row glyph was "the last font literal outside `DesignSystem`"** — that was true at Phase 1 closeout and at #520's regrade, and it stopped being true when the amendment wave's A1/A8 built the Explore surface. The stale claim was mine; the graph is corrected rather than the criterion quietly widened.
+**Builder brief.** The merged target-state spec supersedes this row's stale “three sites and one enum” phrase: T2.3 owns sites 1 and 3; T2.8 owns Scope/site 2. **The correction below replaces this row's original claim that the door row glyph was "the last font literal outside `DesignSystem`"** — that was true at Phase 1 closeout and at #520's regrade, and it stopped being true when the amendment wave's A1/A8 built the Explore surface. The stale claim was mine; the graph is corrected rather than the criterion quietly widened.
 
-**Site 1 — the #520 glyph.** `MapDoorRowIconGlyph` (`MapDoorShell.swift:1215`–`:1230`) holds `.font(.headline.weight(.medium))`, a **17pt literal declared non-compliant in its own comment**, retained as a way-station pending exactly this ruling. Migrate it to `rowRaised` or `rowQuiet` **as appropriate to the row it draws**, and say which and why: `ia-doors` ratifies 20px for **raised** row glyphs and 18px for **quiet** ones, and `MapDoorRowLabel` is consumed by both `MapDoorRaisedRow` (`:1185`) and `MapDoorHairlineRow` (`:1200`). If one glyph view serves both row kinds, that is the design question in this row — solve it by passing the role, not by picking one and living with the other. Delete the pending-ruling comment; the vocabulary now expresses the figure, so the citation belongs in the table.
+**Site 1 — the #520 glyph.** `MapDoorRowIconGlyph` (`MapDoorShell.swift:1240`–`:1251`) holds `.font(.headline.weight(.medium))`, a **17pt literal declared non-compliant in its own comment**, retained as a way-station pending exactly this ruling. Migrate it to `rowRaised` or `rowQuiet` **as appropriate to the row it draws**, and say which and why: `ia-doors` ratifies 20px for **raised** row glyphs and 18px for **quiet** ones, and `MapDoorRowLabel` is consumed by both `MapDoorRaisedRow` (`:1204`) and `MapDoorHairlineRow` (`:1222`). If one glyph view serves both row kinds, that is the design question in this row — solve it by passing the role, not by picking one and living with the other. Delete the pending-ruling comment; the vocabulary now expresses the figure, so the citation belongs in the table.
 
 **Sites 2 and 3 — the hand-rolled Explore glyphs.** `ExploreScopeControlGlyph` (`:621`–`:646`, via `:581`) and `ExploreQuietDestinationRow` (`:674`–`:700`, via `:680`) each render `.font(.system(size: iconSize, weight: .medium))` with `iconSize` an `@ScaledMetric(relativeTo: .body)` over `ExploreSurfaceIconGeometry.scopeControl` = 20 and `.quietDestination` = 18. **These are not AC15 violations** — the *figures* come from `DesignSystem`, and AC15 binds a view that **defines** a literal — which is why the Phase 1 acceptance record is unaffected and **35/35 still follows from site 1 alone**.
 
@@ -439,6 +440,7 @@ Full gate plus renders of About and both licence sub-areas at default and AX.
 ## Carried — not claimable this phase
 
 - **OF3's 19×19 door pill icon.** The ratified metrics table says 19; the shipped door pill renders `IconRole.inline` = 15. No row this phase touches it, and #520 does not cover it. It is a **third** figure pressing a set that P2R-2(d) has just re-closed at five — which is precisely the pattern the anti-creep restatement exists to meet, so it belongs in front of the next session with its evidence rather than being resolved by a builder.
+- **Should quiet destination rows join A5's symbol-weight press-pulse family?** T2.3 adopts `IconRole.rowQuiet` for semantic size and Dynamic Type anchoring but deliberately pins medium weight to preserve shipped behavior. Removing that override requires a designer family ruling and default/pressed render evidence; it is not an incidental cleanup.
 - **A9's press inset is ratified as a scaled metric but its perceptibility is unproven on a
   device.** T2.2 pinned the ruled ANCHOR with a test that fails if the metric is re-anchored;
   the macOS host cannot resolve @ScaledMetric at AX, so no render yet shows the inset growing
