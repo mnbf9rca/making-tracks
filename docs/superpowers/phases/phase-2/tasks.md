@@ -421,9 +421,10 @@ Full gate plus renders of each Settings group at default and AX.
 - **Issue:** #472 · **Serves:** W-2 · **Spec section:** §2, §5
 - **Acceptance criteria:** AC2.16, AC2.19
 - **Depends on:** **T2.6 ruled by Rob**
-- **Owner:** unclaimed
+- **Owner:** codex3
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** unclaimed — unblocked by Rob's W-2 ruling
+- **Status:** tests green — `wp-t2-10-impl`; independent review ready
+- **Evidence:** integrated code head `9234390`; `cd ios && swift test` — 514 tests, 0 failures; locked codex3 release gate — Release + debug builds green, 321 simulator tests, 0 failures (86 UI tests); the locked evidence rerun passed both focused About UI tests and regenerated six inspected default/AX implementation renders from `9234390` at 09:41, with dimensions, command, and SHA-256 values recorded in the design-system README; spec/compliance, accessibility/test-quality, and architecture/integration reviewers returned READY with no findings at final evidence head `71a6519`.
 
 **Builder brief.** Rebuild `AboutView` (`MapScreen.swift:7566`–`:7900`) to W-2: the **story and the privacy promise up top**, then **Software licences** and **Data licences** as proper sub-areas rather than one flat run. DS-1 rows and sheets; no system `List` chrome.
 
