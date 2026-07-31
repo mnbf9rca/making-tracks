@@ -823,26 +823,22 @@
   }
 
   .scope-badge {
-    width: 68px;
+    width: 22px;
     height: 22px;
-    margin-left: 2px;
-    padding: 0 6px;
+    margin-left: 1px;
+    padding: 0;
     display: inline-flex;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    gap: 3px;
     border-radius: 999px;
     background: var(--accent);
     color: var(--accent-contrast);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    white-space: nowrap;
   }
 
   .scope-badge svg {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
   }
 
   .phone.ax-door .door-bar {
@@ -864,22 +860,11 @@
     height: 30px;
   }
 
-  .phone.ax-door .explore-door {
-    display: grid;
-    grid-template-columns: 30px auto;
-    grid-template-rows: auto auto;
-    column-gap: 8px;
-    row-gap: 4px;
-  }
-
   .phone.ax-door .scope-badge {
-    grid-column: 1 / -1;
-    width: auto;
+    width: 28px;
     height: 28px;
     margin-left: 0;
-    padding: 0 9px;
-    gap: 5px;
-    font-size: 17px;
+    padding: 0;
   }
 
   .phone.ax-door .scope-badge svg {
@@ -1051,12 +1036,9 @@
       </g>
     </symbol>
     <symbol id="icon-filter" viewBox="0 0 24 24">
-      <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <path d="M4 7h16M7 12h10M10 17h4"/>
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+        <path d="M5 7h14M8 12h8M11 17h2"/>
       </g>
-      <circle cx="8" cy="7" r="2" fill="currentColor"/>
-      <circle cx="15" cy="12" r="2" fill="currentColor"/>
-      <circle cx="12" cy="17" r="2" fill="currentColor"/>
     </symbol>
     <symbol id="icon-eye-off" viewBox="0 0 24 24">
       <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -1569,7 +1551,7 @@
       <div class="door-bar">
         <div class="door explore-door">
           <svg><use href="#icon-globe"/></svg><span>Explore</span>
-          <span class="scope-badge"><svg><use href="#icon-filter"/></svg>Scope set</span>
+          <span class="scope-badge" aria-hidden="true"><svg><use href="#icon-filter"/></svg></span>
         </div>
         <div class="door"><svg><use href="#icon-shoeprints"/></svg><span>Journal</span></div>
       </div>
@@ -1577,14 +1559,14 @@
     <aside class="evidence">
       <p class="kicker">Explore door · adjusted scope</p>
       <h1>The reason stays on the map</h1>
-      <p class="subtitle">The textual badge appears for non-default discovery scope or an active list filter while the list map is in Tracks mode.</p>
+      <p class="subtitle">The filtered-state icon appears for non-default discovery scope or an active list filter while the list map is in Tracks mode.</p>
       <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
       <h2>State proof</h2>
       <ul class="facts">
-        <li>Visible text: <code>Scope set</code>; accessibility value: <code>Scope adjusted</code>.</li>
-        <li>Presence, text, and the filled filter glyph carry state—not colour alone.</li>
+        <li>Visible symbol: <code>line.3.horizontal.decrease.circle.fill</code>; accessibility value: <code>Scope adjusted</code>.</li>
+        <li>Presence and the filled-circle filter silhouette carry state—not colour alone.</li>
         <li>The globe remains stable, so Explore recognition is not traded away.</li>
-        <li>The badge is evidence inside one 44pt door target, not a nested control.</li>
+        <li>The icon is evidence inside one 44pt door target, not a nested control.</li>
       </ul>
       <h2>Measured beside the frame</h2>
       <table class="metrics">
@@ -1608,21 +1590,21 @@
       <div class="door-bar">
         <div class="door explore-door">
           <svg><use href="#icon-globe"/></svg><span>Explore</span>
-          <span class="scope-badge"><svg><use href="#icon-filter"/></svg>Scope set</span>
+          <span class="scope-badge" aria-hidden="true"><svg><use href="#icon-filter"/></svg></span>
         </div>
         <div class="door"><svg><use href="#icon-shoeprints"/></svg><span>Journal</span></div>
       </div>
     </section>
     <aside class="evidence">
       <p class="kicker">Explore door · AX adjusted</p>
-      <h1>The indicator scales and stacks</h1>
-      <p class="subtitle">At accessibility size the status moves beneath Explore, both door targets grow, and the pair still fits the exact 390pt phone.</p>
+      <h1>The filtered icon scales in line</h1>
+      <p class="subtitle">At accessibility size the icon grows with Explore, both door targets retain their stress-size floor, and the pair still fits the exact 390pt phone.</p>
       <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
       <h2>Responsive proof</h2>
       <ul class="facts">
-        <li>Explore identity remains primary; Scope set is a second line.</li>
+        <li>Explore identity remains primary; the filtered-state icon is a trailing status mark.</li>
         <li>Both doors share a 68pt minimum target at this stress size.</li>
-        <li>The badge uses 17pt text and an 18pt glyph, not the default fixed size.</li>
+        <li>The filtered icon grows from 22pt to 28pt instead of retaining its default size.</li>
         <li>Attribution clears the taller bar and remains bare text.</li>
       </ul>
       <h2>Measured beside the frame</h2>
@@ -1635,7 +1617,7 @@
         <tr><th>Attribution</th><td data-box=".attribution"></td></tr>
         <tr><th>Phone fit</th><td>8pt bar insets · 8pt inter-door gap<span class="source">No horizontal clipping at 390pt</span></td></tr>
       </table>
-      <p class="record-note"><strong>AX contract:</strong> status presence and text survive scaling; the responsive form grows the target instead of shrinking the badge.</p>
+      <p class="record-note"><strong>AX contract:</strong> status presence and silhouette survive scaling; the target keeps its 68pt stress-size floor.</p>
     </aside>
   </article>
 
