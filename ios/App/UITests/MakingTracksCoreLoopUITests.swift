@@ -538,7 +538,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             // content adds its deliberate 24pt bottom inset.
             "Quiet Explore destinations must remain bottom rows in the large detent."
         )
-        attachScreenshot(named: "explore-door-default")
+        attachScreenshot(named: "explore-door-default", forceExport: true)
 
         app.buttons["Close"].tap()
         XCTAssertTrue(app.buttons["map.door.journal"].waitForExistence(timeout: 5))
@@ -593,7 +593,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 )
             }
         }
-        attachScreenshot(named: "explore-door-ax")
+        attachScreenshot(named: "explore-door-ax", forceExport: true)
         app.buttons["Close"].tap()
 
         XCTAssertTrue(journalDoor.waitForExistence(timeout: 5))
@@ -667,6 +667,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let exploreDoor = app.buttons["map.door.explore"]
         XCTAssertTrue(exploreDoor.waitForExistence(timeout: 5))
         XCTAssertEqual(exploreDoor.value as? String, "Default scope")
+        attachScreenshot(named: "explore-door-scope-default", forceExport: true)
 
         exploreDoor.tap()
         tapSwitch(
@@ -679,6 +680,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["Close"].tap()
         XCTAssertTrue(exploreDoor.waitForExistence(timeout: 5))
         XCTAssertEqual(exploreDoor.value as? String, "Scope adjusted")
+        attachScreenshot(named: "explore-door-scope-adjusted", forceExport: true)
 
         exploreDoor.tap()
         XCTAssertTrue(scrollToHittable(clear, in: app))
@@ -2565,7 +2567,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         lovedFilter = lovedApp.buttons["explore.scope.list-visits.loved"]
         XCTAssertTrue(scrollToHittable(lovedFilter, in: lovedApp))
         XCTAssertTrue(lovedFilter.waitForExistence(timeout: 5))
-        attachScreenshot(named: "explore-scope-list-open")
+        attachScreenshot(named: "explore-scope-list-open", forceExport: true)
         XCTAssertEqual(lovedFilter.value as? String, "Not selected")
         lovedFilter.tap()
         XCTAssertTrue(waitForElementValue("Selected", identifier: "explore.scope.list-visits.loved", in: lovedApp))
@@ -2607,6 +2609,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(option.label, "Date night")
         XCTAssertEqual(option.value as? String, "Off")
         XCTAssertGreaterThanOrEqual(option.frame.height, 52)
+        attachScreenshot(named: "explore-scope-other-lists", forceExport: true)
         option.tap()
         XCTAssertTrue(waitForElementValue(
             "Included",
@@ -2646,6 +2649,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             0
         )
         XCTAssertTrue(app.buttons["explore.scope.list-visits.lists.back"].isHittable)
+        attachScreenshot(named: "explore-scope-other-lists-empty", forceExport: true)
     }
 
     func testTrackCategoryFilterScopesReplayDisplayAndCamera() {
@@ -5627,6 +5631,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "tracks-static-geometry": "tracks-static-geometry",
         "explore-door-default": "explore-door-default",
         "explore-door-ax": "explore-door-ax",
+        "explore-door-scope-default": "explore-door-scope-default",
+        "explore-door-scope-adjusted": "explore-door-scope-adjusted",
         "journal-door-default": "journal-door-default",
         "journal-door-ax": "journal-door-ax",
         "loved-hidden-door": "loved-hidden-door",
@@ -5644,6 +5650,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "list-map-spread-fit": "list-map-spread-fit",
         "my-tracks-burst-readout": "my-tracks-burst-readout",
         "explore-scope-list-open": "explore-scope-list-open",
+        "explore-scope-other-lists": "explore-scope-other-lists",
+        "explore-scope-other-lists-empty": "explore-scope-other-lists-empty",
         "track-replay-pin-arrival": "track-replay-pin-arrival",
         "track-replay-scrub-frame-00": "track-replay-scrub-frame-00",
         "track-replay-scrub-frame-01": "track-replay-scrub-frame-01",
