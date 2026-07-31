@@ -3079,6 +3079,40 @@ final class AppShellTests: XCTestCase {
         )
     }
 
+    func testSettingsRenderEvidencePinsThemeAcrossDefaultAndAccessibilityLaunches() throws {
+        let appRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let uiTestSource = try String(
+            contentsOf: appRoot.appendingPathComponent(
+                "UITests/MakingTracksCoreLoopUITests.swift"
+            ),
+            encoding: .utf8
+        )
+        let start = try XCTUnwrap(
+            uiTestSource.range(
+                of: "func testSettingsHubRendersEveryDestinationAtDefaultAndAccessibilityTextSizes()"
+            )?.lowerBound
+        )
+        let end = try XCTUnwrap(
+            uiTestSource.range(
+                of: "func testSettingsStorageRowNavigatesToOfflineMaps()",
+                range: start..<uiTestSource.endIndex
+            )?.lowerBound
+        )
+        let renderSource = String(uiTestSource[start..<end])
+            .filter { !$0.isWhitespace }
+
+        XCTAssertTrue(
+            renderSource.contains("fortextSizein[\"default\",\"ax\"]"),
+            "The render evidence must exercise the same deterministic launch for default and AX."
+        )
+        XCTAssertTrue(
+            renderSource.contains("resetTheme:true,theme:\"snow\""),
+            "Every Settings render launch must reset and pin the Snow theme."
+        )
+    }
+
     func testFocusedSettingsControlsOwnMinimumHitRegionsAtInteractiveBoundary() throws {
         let appRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

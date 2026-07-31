@@ -3303,12 +3303,19 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             let app = launch(
                 reset: true,
                 locationDenied: true,
-                accessibilityTextSize: textSize == "ax"
+                accessibilityTextSize: textSize == "ax",
+                resetTheme: true,
+                theme: "snow"
             )
             XCTAssertTrue(app.otherElements["map.surface"].waitForExistence(timeout: 10), textSize)
             openExploreDoor(in: app)
             app.buttons["explore.row.settings"].tap()
             XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5), textSize)
+            XCTAssertEqual(
+                app.buttons["settings.group.appearance"].value as? String,
+                "Snow selected. Four existing presets.",
+                textSize
+            )
             attachScreenshot(named: "settings-root-\(textSize)")
 
             captureSettingsDestination(
