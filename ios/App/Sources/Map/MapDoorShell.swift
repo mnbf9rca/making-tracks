@@ -671,13 +671,10 @@ private struct ExploreCoverageGlyphShape: Shape {
     }
 }
 
-private struct ExploreQuietDestinationRow: View {
+struct ExploreQuietDestinationRow: View {
     let presentation: MapDoorRowPresentation
     let prominent: Bool
     let action: () -> Void
-
-    @ScaledMetric(relativeTo: .body)
-    private var iconSize = ExploreSurfaceIconGeometry.quietDestination
 
     private let tokens = MaterialTheme.snow.tokens
 
@@ -685,9 +682,9 @@ private struct ExploreQuietDestinationRow: View {
         Button(action: action) {
             MaterialHairlineRow {
                 HStack(spacing: 10) {
-                    Image(systemName: presentation.systemImage)
-                        .font(.system(size: iconSize, weight: .medium))
-                        .symbolRenderingMode(.monochrome)
+                    ExploreQuietDestinationIconGlyph(
+                        systemName: presentation.systemImage
+                    )
                         .foregroundStyle(
                             prominent
                                 ? tokens.accent.swiftUIColor
@@ -728,6 +725,18 @@ private struct ExploreQuietDestinationRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(presentation.accessibilityIdentifier)
+    }
+}
+
+struct ExploreQuietDestinationIconGlyph: View {
+    let systemName: String
+
+    var body: some View {
+        Image(systemName: systemName)
+            .iconRole(.rowQuiet)
+            // T2.3 preserve ruling: destination rows adopt rowQuiet's
+            // size/anchor but do not join A5's weight-pulse family yet.
+            .fontWeight(.medium)
     }
 }
 
@@ -1182,14 +1191,17 @@ private struct MapDoorRootLayout<Content: View>: View {
     }
 }
 
-private struct MapDoorRaisedRow: View {
+struct MapDoorRaisedRow: View {
     let presentation: MapDoorRowPresentation
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             MaterialRaisedCardRow {
-                MapDoorRowLabel(presentation: presentation)
+                MapDoorRowLabel(
+                    presentation: presentation,
+                    iconRole: .rowRaised
+                )
             }
         }
         .buttonStyle(.plain)
@@ -1197,14 +1209,17 @@ private struct MapDoorRaisedRow: View {
     }
 }
 
-private struct MapDoorHairlineRow: View {
+struct MapDoorHairlineRow: View {
     let presentation: MapDoorRowPresentation
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             MaterialHairlineRow {
-                MapDoorRowLabel(presentation: presentation)
+                MapDoorRowLabel(
+                    presentation: presentation,
+                    iconRole: .rowQuiet
+                )
             }
         }
         .buttonStyle(.plain)
@@ -1214,29 +1229,29 @@ private struct MapDoorHairlineRow: View {
 
 struct MapDoorRowIconGlyph: View {
     let systemName: String
+    let role: IconRole
 
     private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
         Image(systemName: systemName)
-            // ia-doors.html:676,690,698 and :710,717 ratifies 20px
-            // raised and 18px quiet row glyphs. IconRole expresses neither;
-            // retain this pre-existing 17pt literal unchanged and non-compliant
-            // pending the metrics-table/fourth-row-role amendment ruling.
-            .font(.headline.weight(.medium))
-            .symbolRenderingMode(.monochrome)
+            .iconRole(role)
             .foregroundStyle(tokens.accent.swiftUIColor)
     }
 }
 
 struct MapDoorRowLabel: View {
     let presentation: MapDoorRowPresentation
+    let iconRole: IconRole
 
     private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
         HStack(spacing: 12) {
-            MapDoorRowIconGlyph(systemName: presentation.systemImage)
+            MapDoorRowIconGlyph(
+                systemName: presentation.systemImage,
+                role: iconRole
+            )
                 .frame(width: 28)
                 .accessibilityHidden(true)
 
