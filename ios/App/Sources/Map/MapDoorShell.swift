@@ -1874,6 +1874,8 @@ private struct DoorGlyphEvidenceRow: View {
             Group {
                 if legacy {
                     Image(systemName: "cloud.sun.rain.fill")
+                        // Deliberately the retired 17pt path, retained only to
+                        // regenerate before/after evidence. Do not migrate it.
                         .font(.headline.weight(.medium))
                         .symbolRenderingMode(.monochrome)
                         .frame(width: 28)
