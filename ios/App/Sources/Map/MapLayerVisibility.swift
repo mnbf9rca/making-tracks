@@ -16,7 +16,16 @@ struct MapLayerVisibility: Equatable, Sendable {
     private(set) var visibleCategories: Set<String>?
 
     var isDefault: Bool {
-        !showHiddenPlaces && showSavedPlaces && visibleCategories == nil
+        !discoveryScope.differsFromDefault
+    }
+
+    var discoveryScope: DiscoveryScope {
+        DiscoveryScope(
+            visibleCategoryIDs: visibleCategories,
+            includeHidden: showHiddenPlaces,
+            showSaved: showSavedPlaces,
+            showCoverageShading: showCoverageShading
+        )
     }
 
     var toggleAllCategoriesTitle: String {
@@ -40,6 +49,37 @@ struct MapLayerVisibility: Equatable, Sendable {
         self.showSavedPlaces = showSavedPlaces
         self.showCoverageShading = showCoverageShading
         self.visibleCategories = visibleCategories
+    }
+
+    init(
+        categories: [MapLayerCategory] = MapLayerVisibility.defaultCategories,
+        scope: DiscoveryScope
+    ) {
+        let liveCategoryIDs = Set(categories.map(\.id))
+        let visibleCategories: Set<String>?
+        if let storedCategoryIDs = scope.visibleCategoryIDs {
+            if storedCategoryIDs.isEmpty {
+                visibleCategories = []
+            } else {
+                let survivingCategoryIDs = storedCategoryIDs.intersection(
+                    liveCategoryIDs
+                )
+                visibleCategories = survivingCategoryIDs.isEmpty
+                    || survivingCategoryIDs == liveCategoryIDs
+                    ? nil
+                    : survivingCategoryIDs
+            }
+        } else {
+            visibleCategories = nil
+        }
+
+        self.init(
+            categories: categories,
+            showHiddenPlaces: scope.includeHidden,
+            showSavedPlaces: scope.showSaved,
+            showCoverageShading: scope.showCoverageShading,
+            visibleCategories: visibleCategories
+        )
     }
 
     func isCategoryVisible(_ categoryID: String) -> Bool {

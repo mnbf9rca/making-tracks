@@ -141,7 +141,7 @@ let scope = DiscoveryScope(
 )
 ```
 
-Assert the initialized visibility exposes only `"museum"`, all three booleans, and the same `discoveryScope`. Add a case where stored identifiers contain only `"removed-category"` and assert the adapter degrades to `.defaults`, never an empty scope.
+Assert the initialized visibility exposes only `"museum"`, all three booleans, and the same `discoveryScope`. Add a case where stored identifiers contain only `"removed-category"` and assert the category axis degrades to all live categories while the other valid scope choices survive, never to an empty scope.
 
 - [ ] **Step 2: Run the focused app test and verify RED**
 
@@ -158,7 +158,7 @@ Expected: the coverage predicate assertion fails and the adapter API is absent.
 
 Make `isDefault` delegate to `!discoveryScope.differsFromDefault`. Build `discoveryScope` from the current booleans and `visibleCategories`.
 
-In `init(categories:scope:)`, intersect stored category identifiers with the live category set. If the stored set was non-empty but the intersection is empty, use `.defaults`; if the stored set contains every live category, normalize it to `nil`; preserve a deliberately empty stored set.
+In `init(categories:scope:)`, intersect stored category identifiers with the live category set. If the stored set was non-empty but the intersection is empty, normalize the category axis to `nil` while preserving the other valid scope choices; if the stored set contains every live category, also normalize it to `nil`; preserve a deliberately empty stored set.
 
 - [ ] **Step 4: Run the focused app test and verify GREEN**
 
