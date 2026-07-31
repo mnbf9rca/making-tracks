@@ -97,6 +97,23 @@ Operator requirements:
   `export PATH="$HOME/.local/bin:$PATH"` in the same remote command before commands that need `uv`.
 - `/data` is the heavy-run volume. Keep at least 10 GB free.
 
+### The Mac: M5 Pro, per-seat simulators, two concurrent gates
+
+Rob's Mac is an M5 Pro (18 cores, 48 GB); the repo checkout lives at `~/git/making-tracks`.
+iOS-line gate topology is canonical on `ios` (`docs/ios-gate-ledger.md` "Host Gate Seats" and
+`scripts/sim-lock.sh`); the facts develop-side readers need:
+
+- Each builder seat owns a named simulator (`mt-gate-codex1`–`4`, iPhone 17 / iOS 26.5); the gate
+  scripts require an explicit `MT_RELEASE_GATE_DESTINATION` and refuse without one.
+- Locking is per-simulator plus a global cap of **two concurrent full gates**
+  (`MT_GATE_MAX_CONCURRENT`, default 2). There is no single shared gate simulator.
+- A full local gate lap measures ~27 min wall-clock on this machine (test phase dominates; it is
+  wait-bound, not CPU-bound).
+- Result bundles: failed-run `.xcresult`s are never auto-deleted (evidence law); success cleanup is
+  manual pending #546. That law supersedes any weekly-cleanup runbook claim on this branch.
+- HTML render evidence uses the Playwright-bundled Chromium only (`~/Library/Caches/ms-playwright`),
+  never the system browser.
+
 ---
 
 ## 3. Publish targets
