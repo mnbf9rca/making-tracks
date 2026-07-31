@@ -241,8 +241,11 @@ govern **actions only**. The reasoning, ratified verbatim:
 > CTAs.**
 
 **Rider — an ON pill fills with the state's own semantic token.** Within a state cluster, **seen**
-fills `accent`, **loved** fills the ratified `love` row, and **saved** fills `accent`'s
-tonal-strength companion. **Exact values are the re-render's job to prove against the AA gate.** The
+fills `accent`, **loved** fills the ratified `love` row, and **saved** fills an **accent-family dark
+fill carrying `accentContrast` ink** *(amended by designer ruling 2026-07-30; "tonal-strength
+companion" is retired from this rider — same-ink ON/OFF pairs cap at 1.43:1 separation by
+arithmetic for a free pair, lower still once either value is pinned, so saved adopts the two-ink inversion seen and loved already use)*. **Exact values are
+the re-render's job to prove against the AA gate.** The
 purpose is that three ON pills read as three differently-toned *facts* rather than three copies of
 the CTA colour, so a screen's single filled **action** stays unmistakable beside a fully-lit cluster.
 Morphology still carries the state signal — **fill plus glyph, never colour alone**; the tones exist
