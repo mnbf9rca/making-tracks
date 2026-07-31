@@ -6,6 +6,18 @@
 <title>W-2 · Settings + About wireframe record</title>
 <style>
   * { box-sizing: border-box; }
+  @font-face {
+    font-family: "Newsreader Display";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader72pt-SemiBold.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 600;
+  }
+  @font-face {
+    font-family: "Newsreader Text";
+    src: url("../../../ios/App/Resources/Fonts/Newsreader16pt-SemiBold.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 600;
+  }
   :root {
     --ground: #F4F1EA;
     --surface: #FBFAF2;
@@ -92,9 +104,12 @@
   }
   .content {
     height: calc(100% - 18px);
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: none;
     padding: 8px 18px 20px;
   }
+  .content::-webkit-scrollbar { display: none; }
   .eyebrow {
     margin-right: 48px;
     color: var(--eyebrow);
@@ -106,7 +121,7 @@
   }
   h1 {
     margin: 4px 48px 2px 0;
-    font-family: "Newsreader", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-family: "Newsreader Display", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     font-size: 26px;
     line-height: 1.1;
     font-weight: 600;
@@ -132,8 +147,7 @@
     border-radius: 14px;
     background: var(--surface-raised);
   }
-  .group-row,
-  .licence-row {
+  .group-row {
     position: relative;
     width: 100%;
     min-height: 75px;
@@ -149,8 +163,7 @@
     text-align: left;
     font: inherit;
   }
-  .group-row:last-child,
-  .licence-row:last-child {
+  .group-row:last-child {
     border-bottom: 0;
   }
   .group-icon {
@@ -161,8 +174,8 @@
     color: var(--accent);
   }
   .group-icon svg {
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
     display: block;
     fill: none;
     stroke: currentColor;
@@ -174,12 +187,14 @@
     min-width: 0;
   }
   .row-title {
-    font-family: "Newsreader", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    display: block;
+    font-family: "Newsreader Text", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     font-size: 17px;
     line-height: 1.15;
     font-weight: 600;
   }
   .row-meta {
+    display: block;
     margin-top: 3px;
     color: var(--muted);
     font-size: 12px;
@@ -215,7 +230,7 @@
   }
   .story-card h2 {
     margin: 0 0 5px;
-    font-family: "Newsreader", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-family: "Newsreader Display", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     font-size: 19px;
     line-height: 1.15;
     font-weight: 600;
@@ -363,11 +378,6 @@
   body.ax .privacy-link {
     font-size: 18px;
   }
-  body.ax .licence-row {
-    min-height: 108px;
-    grid-template-columns: 32px minmax(0, 1fr) 18px;
-    padding: 9px;
-  }
   body.ax .build {
     margin-top: 7px;
     padding-top: 7px;
@@ -412,8 +422,8 @@
   }
   .evidence p,
   .evidence li {
-    font-size: 11px;
-    line-height: 1.34;
+    font-size: 10px;
+    line-height: 1.27;
   }
   .evidence p {
     margin: 4px 0;
@@ -424,7 +434,7 @@
     padding-left: 18px;
   }
   .evidence li + li {
-    margin-top: 2px;
+    margin-top: 1px;
   }
   .measurements {
     display: grid;
@@ -468,7 +478,7 @@
       <path d="M270 0 C232 116 289 166 248 260 S283 399 356 468" stroke="#C9DBE2" stroke-width="36"/>
     </svg>
     <section class="sheet" id="sheet" aria-label="Snow material sheet">
-      <div class="grabber" aria-label="Sheet grabber"></div>
+      <div class="grabber" aria-hidden="true"></div>
       <button class="close" type="button" aria-label="Close">×</button>
       <div class="content" id="content"></div>
       <div class="fold"></div>
@@ -492,8 +502,8 @@
   <h3>Content mapping</h3>
   <ul id="mapping"></ul>
 
-  <h3>Coverage ruling</h3>
-  <p class="ruling">OF1 at <code>origin/ios@a63abb4</code>: the coverage-shading switch lives only in the map’s filter picker. Settings’ Coverage group is data only — published regions, sources, extents — with no shading switch.</p>
+  <h3 id="ruling-heading">Coverage ruling</h3>
+  <p class="ruling" id="ruling-record">OF1 at <code>origin/ios@a63abb4</code>: the coverage-shading switch lives only in the map’s filter picker. Settings’ Coverage group is data only — published regions, sources, extents — with no shading switch.</p>
 
   <h3>Accessibility scope</h3>
   <p>AX5 wraps instead of clipping. Rows expose a label, value/summary, and action. Selection is named as well as marked. The solid Snow surface is the Reduce Transparency fallback; there is no motion. No state relies on colour alone.</p>
@@ -525,7 +535,7 @@
 
   function groupRow(icon, title, meta, value) {
     return `
-      <button class="group-row" type="button" aria-label="${title}" aria-description="${value || meta}">
+      <button class="group-row" type="button" aria-label="${title}. ${value || meta}">
         <span class="group-icon">${icons[icon]}</span>
         <span class="row-copy">
           <span class="row-title">${title}</span>
@@ -543,9 +553,9 @@
       <div class="section-label">Settings groups</div>
       <div class="raised settings-groups">
         ${groupRow("appearance", "Appearance", `Snow selected ${themeDots} · four existing presets`, "Snow selected. Four existing presets.")}
-        ${groupRow("offline", "Offline maps", "Manage regions · cellular downloads", "Manage offline maps and cellular download policy.")}
+        ${groupRow("offline", "Offline maps", "Packs · downloads · per-pack storage", "Manage offline regions, downloads, and per-pack storage.")}
         ${groupRow("coverage", "Coverage", "Published regions · sources · extents", "Coverage data only. No shading control.")}
-        ${groupRow("map", "Map & data", "Pin size", "Pin size setting.")}
+        ${groupRow("map", "Map & data", "Cellular downloads · pin size", "Cellular download policy and pin size setting.")}
         ${groupRow("location", "Location", "Permission and system settings", "Location permission and system settings.")}
         ${groupRow("diagnostics", "Diagnostics", "Review or export local logs", "Review, prepare, share, or delete local logs.")}
         ${groupRow("replay", "Replay welcome", "Return to the existing welcome flow", "Replay the existing welcome flow.")}
@@ -592,31 +602,39 @@
   const constraints = screen === "settings" ? [
     "One Snow material sheet: 22pt top radius, solid surface, 36×4 grabber, one close convention.",
     "Seven ruled groups are first-class DS-1 hairline rows inside one raised card; each row opens a focused material subarea.",
-    "Appearance preserves the current four-theme picker unchanged behind its row; no DS-7 material picker is drawn.",
-    "Offline maps owns region management and cellular policy. Coverage is a separate data-only subarea. Map & data owns pin size.",
-    "AX5 increases type and icon roles; rows grow to wrapped content while the sheet remains vertically scrollable in implementation."
+    "Target T2.9: Appearance preserves the current four-theme picker; Offline maps owns packs/downloads/storage; Coverage is data-only; Map & data owns cellular policy + pin size.",
+    "Satisfiable vertical system: 832px sheet, 814px scroll viewport, fixed 44px close above scrolling content; full-width row targets abut on hairlines and never overlap.",
+    "AX5 increases type and icon roles; copy has a measured width and rows yield to wrapped content inside the reachable scroll region."
   ] : [
     "One Snow material sheet: story and privacy form the opening hierarchy before any attribution content.",
     "Software licences and Data licences are separate DS-1 destination rows, not headings in one flat text run.",
-    "Software consumes every OSSCredits manifest entry, including Newsreader OFL; Data consumes OSM, Wikipedia, and per-region attribution.",
-    "Build metadata remains in About; the OSM copyright link moves inside Data licences without changing behavior.",
-    "AX5 increases type and row geometry; copy wraps and licence destinations remain independent 44pt-or-larger actions."
+    "Target T2.10: Software consumes every OSSCredits entry; Data consumes OSM, Wikipedia, and per-region attribution; all content remains verbatim plain text.",
+    "Satisfiable vertical system: 832px sheet, 814px scroll viewport, fixed 44px close above scrolling content; licence destinations are independent targets.",
+    "AX5 increases type and row geometry; copy has a measured width and wraps inside the reachable scroll region."
   ];
   document.getElementById("constraints").innerHTML = constraints.map(item => `<li>${item}</li>`).join("");
 
   const mapping = screen === "settings" ? [
-    "<strong>Map theme → Appearance:</strong> Snow, Defined Paper, Street Contrast, Verdant KL remain the same four choices.",
-    "<strong>Storage + Downloads → Offline maps:</strong> Manage offline maps and Allow cellular downloads share one subarea; map deep links still resolve here.",
-    "<strong>Coverage:</strong> United Kingdom plus Malaysia/Singapore/Brunei, their source sets, and published extents; no shading switch.",
-    "<strong>Pins → Map & data:</strong> Pin size remains the current control.",
-    "<strong>Location, Diagnostics, Onboarding:</strong> regrouped as Location, Diagnostics, Replay welcome; destinations/flows stay unchanged."
+    "<strong>Current → T2.9 Appearance:</strong> retain the four theme IDs and selected/not-selected semantics.",
+    "<strong>Storage → Offline maps:</strong> retain all status states; separately test progress-pill and empty-region callers reach this destination.",
+    "<strong>Coverage:</strong> both published regions, source sets, extents; no shading switch (OF1 <code>a63abb4</code>).",
+    "<strong>Downloads + Pins → Map & data:</strong> cellular toggle/Wi-Fi help; pin preview, spoken value, slider range/step.",
+    "<strong>Location/Diagnostics/Onboarding:</strong> retain dynamic/conditional actions and existing destinations.",
+    "<strong>Taste guess for Rob:</strong> root-as-hub with focused subareas; alternative considered was one long inline settings sheet."
   ] : [
-    "<strong>Story + privacy:</strong> approved fresh-snow line, current open-data explanation, exact saved-activity privacy promise, privacy-policy link.",
-    "<strong>Software licences:</strong> every OSSCredits.json entry by count and name; Newsreader OFL remains present.",
-    "<strong>Data licences:</strong> OSM copyright link, Wikipedia, manifest-provided and per-region sources.",
-    "<strong>Build:</strong> version and commit stay in About."
+    "<strong>Current → target T2.10:</strong> approved fresh-snow line joins the current open-data explanation; exact saved-activity privacy promise and privacy-policy link remain.",
+    "<strong>Software:</strong> preserve every entry’s name, acknowledgement, category/version, HTTPS License action, and full <code>Text(verbatim:)</code> notice—including Newsreader OFL.",
+    "<strong>Data:</strong> preserve every attribution source, licence and verbatim text; OSM copyright link remains functional; Wikipedia and per-region sources stay present.",
+    "<strong>Target tests (T2.10):</strong> pin pre/post counts + names and rendered notice text; neutering <code>credit.noticeText</code> must turn the test red.",
+    "<strong>Build:</strong> version and commit remain in About.",
+    "<strong>Taste guess for Rob:</strong> licence areas are destination sub-sheets; alternative considered was expanded inline sections."
   ];
   document.getElementById("mapping").innerHTML = mapping.map(item => `<li>${item}</li>`).join("");
+  if (screen === "about") {
+    document.getElementById("ruling-heading").textContent = "Licence preservation";
+    document.getElementById("ruling-record").innerHTML =
+      "Target <strong>T2.10</strong> changes structure only. OSS and manifest-controlled strings remain bounded, plain, and verbatim; acknowledgements, versions, notices, licence actions, OSM copyright, and dynamic per-region attribution are not editable copy.";
+  }
 
   function px(value) {
     return `${Math.round(value)}px`;
@@ -627,20 +645,29 @@
     node.innerHTML = `<strong>${label}</strong>${value}`;
     document.getElementById("measurements").appendChild(node);
   }
-  requestAnimationFrame(() => {
+  function recordMeasurements() {
     window.scrollTo(0, 0);
     const phone = document.getElementById("phone").getBoundingClientRect();
     const sheet = document.getElementById("sheet").getBoundingClientRect();
+    const content = document.getElementById("content");
+    const close = document.querySelector(".close").getBoundingClientRect();
     const title = document.querySelector("h1").getBoundingClientRect();
     const rows = [...document.querySelectorAll(".group-row")].map(node => node.getBoundingClientRect());
+    const rowCopy = document.querySelector(".row-copy").getBoundingClientRect();
     const smallestRow = rows.length ? Math.min(...rows.map(row => row.height)) : 0;
     const largestRow = rows.length ? Math.max(...rows.map(row => row.height)) : 0;
+    const totalRows = rows.reduce((total, row) => total + row.height, 0);
     addMeasurement("frame", `${px(phone.width)} × ${px(phone.height)}`);
     addMeasurement("sheet", `${px(sheet.width)} × ${px(sheet.height)} · r22`);
-    addMeasurement("title", `${px(title.height)} high · ${ax ? "34pt" : "26pt"} role`);
+    addMeasurement("scroll budget", `${px(content.clientHeight)} viewport / ${px(content.scrollHeight)} content`);
     addMeasurement("row range", `${px(smallestRow)}–${px(largestRow)} · content-yielding`);
-    addMeasurement("action floor", "44pt · navigation/actions only");
-    addMeasurement("surface", "solid Snow · transparency-safe");
+    addMeasurement("row system", `${px(totalRows)} total · ${px(rowCopy.width)} copy width`);
+    addMeasurement("close target", `${px(close.width)} × ${px(close.height)} · fixed`);
+    const newsreaderLoaded = document.fonts.check(`600 ${ax ? 34 : 26}px "Newsreader Display"`);
+    addMeasurement("title", `${px(title.height)} · Newsreader ${newsreaderLoaded ? "loaded" : "MISSING"}`);
+  }
+  document.fonts.ready.then(() => {
+    requestAnimationFrame(() => requestAnimationFrame(recordMeasurements));
   });
 </script>
 </body>
