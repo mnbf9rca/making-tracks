@@ -56,6 +56,11 @@ the verb. Callers omit the positional simulator target; supplying a UUID, `boote
 rejected. Device-less `simctl list` keeps its existing arguments. This makes the positional target and the
 acquired lock one decision rather than two caller-controlled values.
 
+Unrecognized direct `simctl` verbs pass through unchanged, so the enumerated injection list must remain
+exhaustive for every verb whose first operand is a device target. Adding such a verb requires matching
+injection and explicit-target rejection tests. Commands using an explicit `simctl --set` select a separate
+simulator set and remain outside seat-target injection.
+
 Resolved destination identifiers must have CoreSimulator UUID shape. Fleet selectors such as `all` and
 `booted` can never become a seat lock identity, even if the ledger is malformed.
 

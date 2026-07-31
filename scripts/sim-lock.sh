@@ -457,8 +457,10 @@ run_locked() {
   fi
   if [ "$#" -ge 3 ] && [ "$1" = "xcrun" ] && [ "$2" = "simctl" ]; then
     simctl_verb="$3"
+    # Keep this exhaustive for direct verbs whose first operand is a device
+    # target; unlisted direct verbs deliberately pass through unchanged.
     case "$simctl_verb" in
-      bootstatus|shutdown|launch|terminate|install|uninstall|io|get_app_container|spawn|erase|delete)
+      boot|bootstatus|shutdown|launch|terminate|install|uninstall|io|get_app_container|spawn|erase|delete)
         shift 3
         if [ "$#" -gt 0 ]; then
           case "$1" in

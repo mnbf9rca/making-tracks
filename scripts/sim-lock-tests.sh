@@ -537,6 +537,48 @@ fi
 
 rm -f "$CLI_SIMCTL_LOG"
 set +e
+injected_simctl_boot_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcrun simctl boot 2>&1
+)"
+injected_simctl_boot_rc=$?
+set -e
+if [ "$injected_simctl_boot_rc" -eq 0 ] &&
+   [ "$(<"$CLI_SIMCTL_LOG")" = "simctl boot $FAKE_UDID" ]; then
+  record_ok "injects the selected seat UUID into simctl boot"
+else
+  record_fail "injects the selected seat UUID into simctl boot" \
+    "status=$injected_simctl_boot_rc output='$injected_simctl_boot_out' args='$(head -1 "$CLI_SIMCTL_LOG" 2>/dev/null)'"
+fi
+
+rm -f "$CLI_SIMCTL_LOG"
+set +e
+explicit_simctl_boot_target_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcrun simctl boot "$OTHER_SEAT_UDID" 2>&1
+)"
+explicit_simctl_boot_target_rc=$?
+set -e
+if [ "$explicit_simctl_boot_target_rc" -ne 0 ] &&
+   echo "$explicit_simctl_boot_target_out" | grep -q \
+     "omit the simulator target after simctl boot" &&
+   [ ! -e "$CLI_SIMCTL_LOG" ]; then
+  record_ok "rejects an explicit positional simctl boot target"
+else
+  record_fail "rejects an explicit positional simctl boot target" \
+    "status=$explicit_simctl_boot_target_rc output='$(echo "$explicit_simctl_boot_target_out" | head -1)'"
+fi
+
+rm -f "$CLI_SIMCTL_LOG"
+set +e
 explicit_simctl_erase_target_out="$(
   PATH="$CLI_FAKE_BIN:$PATH" \
     MT_TEST_SIMCTL_LOG="$CLI_SIMCTL_LOG" \
