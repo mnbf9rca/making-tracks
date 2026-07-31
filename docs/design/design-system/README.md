@@ -46,6 +46,15 @@ implementation evidence.
 |---|---|
 | `a8-saved-on-candidate-v2.html` + `a8-saved-on-candidate-v2-{default,ax}.png` | Saved ON candidate decision evidence at exact `1540×980` DSF1 captures. Each candidate shows Saved OFF/ON, simultaneous Saved/Seen/Loved ON, and all seven ruled checks at frozen A8 default or AX geometry. On 2026-07-31 Rob ratified Deep Companion `#08483E` as the accent-family dark Saved ON fill carrying `accentContrast` ink with the explicit pick “Deep is fine”; panel SHA `4421612` is the decision provenance. Accent reuse `#0A6B5C` is the rejected alternative. This evidence does not claim the ratified fill is wired into production code. Captured with Playwright-bundled Chromium/headless shell `151.0.7922.34`; byte-identical repeat SHA-256 values are `d7070aa1d97f769c57e6ad603d280d39b6a6c2a8947f787f7985f1bb48b67402` (default) and `0859dfd2532f3dca4d0182368e2df53b1393d1afb55f039b6c3d8fbba40c4eff` (AX). Frozen `a8-r15-place-card.png` remains unchanged at `7704a185ebb872ed61017db757a24c20be0a5c2870bde8b575007398972c733b`. |
 
+## Phase 2 wireframes awaiting ruling
+
+These are authored mockup-gate records. They become frozen design evidence only after reviewer
+validation and Rob's ruling.
+
+| Asset | What it shows |
+|---|---|
+| `w2-settings-about.html` + `w2-settings{,-ax}.png` + `w2-about{,-ax}.png` | W-2 Settings and About at exact 390×844 default and AX5 frames, each with its constraint structure and measurements beside it. The AX5 pass uses the house A8 scale (roughly 1.5–1.65× by role) and visibly records required scrolling instead of manufacturing a fit. Settings maps all seven ruled groups into DS-1 material subareas; OF1 at `origin/ios@a63abb4` is visible as a data-only Coverage row with no shading switch. About leads with story and privacy, then separates Software licences from Data licences. The record carries P2R-7's required sentence verbatim. Pre-ruling: reviewer validation and Rob's taste ruling are still required. Captured at DSF1 with Chromium headless shell `151.0.7922.34` after the bundled Newsreader faces load (`document.fonts.ready` + two animation frames); a repeated default Settings capture was byte-identical. Regenerate all four PNGs with `./scripts/render-w2-settings-about.sh`. SHA-256: `b7f86d87c17ec14165b68cd131b2c467fb64333b2f8e46b10aa9b1910a13af1a` (Settings), `03b97ce4e16a12f0a576277d8f09e9eaa15ef4e75817596d45f7baf5f764cb7b` (Settings AX5), `543a6b57135df07e632ac7102fb67ced688959149ca7f99dfb08217aac1ea6e2` (About), `c8d5f412a1ddfbff6c49599d2c441c002a74b88c50a1f3de418c1f98a3fb5110` (About AX5). |
+
 ## Implementation evidence
 
 These renders record shipped implementation changes; they are not frozen design-session rulings.
@@ -65,4 +74,6 @@ These renders record shipped implementation changes; they are not frozen design-
 | `t1.9-loved-hidden-surfaces.html` + `t1.9-loved-hidden-surfaces.png` | T1.9 default-size implementation packet with three exact 390×844 frames: counted Loved/Hidden rows in the unified Tracks door, populated Loved places with explicit remove-loved controls and visible hidden overlap, and populated Hidden places with explicit Unhide controls. |
 | `t1.9-loved-hidden-surfaces-ax.html` + `t1.9-loved-hidden-surfaces-ax.png` | T1.9 AX5 stress packet with three exact 390×844 frames: large-detent Tracks entry points plus Loved/Hidden collections whose independent, non-colour action controls remain at least 44pt and inside the Snow surface. |
 
-HTML files are self-contained (fonts load from Google Fonts when online; system fallbacks otherwise).
+HTML sources are repository-local. Legacy packets may load Google Fonts and fall back to system faces; W-2
+loads the checked-in Newsreader faces from `ios/App/Resources/Fonts` so its ruled typography reproduces
+offline.
