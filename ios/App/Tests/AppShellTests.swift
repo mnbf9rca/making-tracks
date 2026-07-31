@@ -3030,6 +3030,55 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(settingsSource.contains("map.layers.coverage-shading"))
     }
 
+    func testOfflineMapContextualCallersKeepTheirDeepLinkAtPointOfUse() throws {
+        let appRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let mapSource = try String(
+            contentsOf: appRoot.appendingPathComponent("Sources/Map/MapScreen.swift"),
+            encoding: .utf8
+        )
+
+        func sourceSlice(from startMarker: String, to endMarker: String) throws -> String {
+            let start = try XCTUnwrap(mapSource.range(of: startMarker)?.lowerBound)
+            let end = try XCTUnwrap(
+                mapSource.range(
+                    of: endMarker,
+                    range: start..<mapSource.endIndex
+                )?.lowerBound
+            )
+            return String(mapSource[start..<end])
+        }
+
+        func compacted(_ source: String) -> String {
+            source.filter { !$0.isWhitespace }
+        }
+
+        let emptyRegionSource = try sourceSlice(
+            from: "if let surface = emptyRegionSurface",
+            to: ".animation(.easeInOut(duration: 0.2), value: isMapLoading)"
+        )
+        XCTAssertTrue(
+            compacted(emptyRegionSource).contains(
+                "MapEmptyRegionSurfaceView(surface:surface){" +
+                    "appShell.openOfflineMapsDeepLink()}"
+            ),
+            "The empty-region card must retain its contextual Offline maps route."
+        )
+
+        let progressPillSource = try sourceSlice(
+            from: "private var shellChrome: some View",
+            to: "private func listMapNavigationChrome"
+        )
+        XCTAssertTrue(
+            compacted(progressPillSource).contains(
+                "MapDownloadProgressToast(progress:offlineDownloadProgress," +
+                    "onOpenOfflineMaps:appShell.openOfflineMapsDeepLink)"
+            ),
+            "The progress pill must retain its independent contextual Offline maps route."
+        )
+    }
+
     func testFocusedSettingsControlsOwnMinimumHitRegionsAtInteractiveBoundary() throws {
         let appRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

@@ -7016,38 +7016,67 @@ private struct SettingsGroupRow<Summary: View>: View {
 
     var body: some View {
         MaterialHairlineRow {
-            HStack(spacing: 10) {
-                Image(systemName: presentation.systemImage)
-                    .font(.system(size: iconSize, weight: .medium))
-                    .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(tokens.accent.swiftUIColor)
-                    .frame(width: dynamicTypeSize.isAccessibilitySize ? 30 : 24)
-                    .accessibilityHidden(true)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        groupIcon(width: 48)
+                        Spacer()
+                        disclosureIndicator
+                    }
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: presentation.title)
-                        .font(Typography.font(for: .listRowTitle))
-                        .foregroundStyle(tokens.ink.swiftUIColor)
-
-                    summary
-                        .font(Typography.font(for: .metadata))
-                        .foregroundStyle(tokens.muted.swiftUIColor)
-                        .fixedSize(horizontal: false, vertical: true)
+                    groupTitle
+                    groupSummary
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(spacing: 10) {
+                    groupIcon(width: 24)
 
-                Image(systemName: "chevron.right")
-                    .iconRole(.accessory)
-                    .foregroundStyle(tokens.muted.swiftUIColor)
-                    .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 3) {
+                        groupTitle
+                        groupSummary
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    disclosureIndicator
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(
             minHeight: dynamicTypeSize.isAccessibilitySize ? 120 : 75,
             alignment: .leading
         )
         .contentShape(Rectangle())
+    }
+
+    private func groupIcon(width: CGFloat) -> some View {
+        Image(systemName: presentation.systemImage)
+            .font(.system(size: iconSize, weight: .medium))
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(tokens.accent.swiftUIColor)
+            .frame(width: width)
+            .accessibilityHidden(true)
+    }
+
+    private var groupTitle: some View {
+        Text(verbatim: presentation.title)
+            .font(Typography.font(for: .listRowTitle))
+            .foregroundStyle(tokens.ink.swiftUIColor)
+    }
+
+    private var groupSummary: some View {
+        summary
+            .font(Typography.font(for: .metadata))
+            .foregroundStyle(tokens.muted.swiftUIColor)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var disclosureIndicator: some View {
+        Image(systemName: "chevron.right")
+            .iconRole(.accessory)
+            .foregroundStyle(tokens.muted.swiftUIColor)
+            .accessibilityHidden(true)
     }
 }
 
@@ -7140,6 +7169,8 @@ private struct SettingsAppearanceView: View {
 }
 
 private struct SettingsCoverageView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
@@ -7198,7 +7229,7 @@ private struct SettingsCoverageView: View {
                 Image(systemName: systemImage)
                     .font(.body)
                     .foregroundStyle(tokens.accent.swiftUIColor)
-                    .frame(width: 24)
+                    .frame(width: dynamicTypeSize.isAccessibilitySize ? 48 : 24)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -7320,6 +7351,8 @@ private struct SettingsLocationView: View {
     let locationStatus: LocationMenuStatus
     let openLocationSettings: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     private let tokens = MaterialTheme.snow.tokens
 
     var body: some View {
@@ -7335,19 +7368,20 @@ private struct SettingsLocationView: View {
 
             VStack(spacing: 0) {
                 MaterialHairlineRow {
-                    HStack {
-                        Label(locationStatus.label, systemImage: "location")
-                        Spacer()
-                        if locationStatus.canOpenSettings {
-                            Button(action: openLocationSettings) {
-                                Text("Settings")
-                                    .frame(minWidth: 44, minHeight: 44)
-                                    .contentShape(Rectangle())
-                            }
-                            .accessibilityIdentifier("settings.location.open-system")
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label(locationStatus.label, systemImage: "location")
+                            openSystemSettingsButton
                         }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    } else {
+                        HStack {
+                            Label(locationStatus.label, systemImage: "location")
+                            Spacer()
+                            openSystemSettingsButton
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
             }
             .background(
@@ -7355,6 +7389,18 @@ private struct SettingsLocationView: View {
                 in: RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    private var openSystemSettingsButton: some View {
+        if locationStatus.canOpenSettings {
+            Button(action: openLocationSettings) {
+                Text("Settings")
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityIdentifier("settings.location.open-system")
         }
     }
 }
