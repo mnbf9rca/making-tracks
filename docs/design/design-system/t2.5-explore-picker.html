@@ -332,6 +332,127 @@
     margin-top: 9px;
   }
 
+  .child-phone .sheet-scroll {
+    overflow: hidden;
+  }
+
+  .child-back {
+    width: max-content;
+    min-width: 88px;
+    min-height: 44px;
+    margin: -8px 0 2px -8px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--accent);
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .child-back svg {
+    width: 14px;
+    height: 14px;
+    transform: rotate(180deg);
+  }
+
+  .child-intro {
+    flex: none;
+  }
+
+  .membership-scroll {
+    height: 360px;
+    margin-top: 14px;
+    flex: none;
+    overflow-y: auto;
+    border-top: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    scrollbar-width: none;
+  }
+
+  .membership-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .membership-item {
+    min-height: 52px;
+    padding: 7px 2px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .membership-item:last-child {
+    border-bottom: 0;
+  }
+
+  .membership-name {
+    min-width: 0;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.15;
+  }
+
+  .membership-state {
+    min-width: 78px;
+    height: 28px;
+    padding: 0 9px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    border-radius: 999px;
+    background: rgba(10, 107, 92, 0.12);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .membership-state.is-on {
+    background: var(--accent);
+    color: var(--accent-contrast);
+  }
+
+  .membership-state svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .child-footer {
+    margin-top: auto;
+    padding-top: 8px;
+    flex: none;
+  }
+
+  .empty-memberships {
+    height: 250px;
+    padding: 24px;
+    display: grid;
+    place-content: center;
+    text-align: center;
+  }
+
+  .empty-memberships svg {
+    width: 36px;
+    height: 36px;
+    margin: 0 auto 10px;
+    color: var(--muted);
+  }
+
+  .empty-memberships strong {
+    font-size: 17px;
+  }
+
+  .empty-memberships p {
+    max-width: 250px;
+    margin: 6px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.3;
+  }
+
   .clear-scope {
     min-height: 44px;
     padding: 8px 2px;
@@ -531,11 +652,11 @@
   }
 
   .phone.ax .clear-scope span {
-    font-size: 22px;
+    font-size: 23px;
   }
 
   .phone.ax .clear-copy .clear-title {
-    font-size: 22px;
+    font-size: 23px;
   }
 
   .phone.ax .clear-copy .clear-meta {
@@ -555,6 +676,53 @@
   .phone.ax-list .discovery-context {
     margin-top: 18px;
     padding-top: 14px;
+  }
+
+  .phone.ax.child-phone .sheet-scroll {
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+
+  .phone.ax .child-back {
+    min-width: 118px;
+    min-height: 54px;
+    margin-top: -6px;
+    gap: 8px;
+    font-size: 23px;
+  }
+
+  .phone.ax .child-back svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .phone.ax .membership-scroll {
+    height: 350px;
+    margin-top: 14px;
+  }
+
+  .phone.ax .membership-item {
+    min-height: 86px;
+    padding: 10px 2px;
+    gap: 12px;
+  }
+
+  .phone.ax .membership-name {
+    font-size: 23px;
+    line-height: 1.08;
+  }
+
+  .phone.ax .membership-state {
+    min-width: 98px;
+    height: 44px;
+    padding: 0 11px;
+    gap: 6px;
+    font-size: 17px;
+  }
+
+  .phone.ax .membership-state svg {
+    width: 18px;
+    height: 18px;
   }
 
   .phone.ax .quiet-bottom {
@@ -684,17 +852,17 @@
     min-height: 68px;
     padding: 8px 12px;
     gap: 8px;
-    font-size: 21px;
+    font-size: 23px;
   }
 
   .phone.ax-door .door > svg {
-    width: 28px;
-    height: 28px;
+    width: 30px;
+    height: 30px;
   }
 
   .phone.ax-door .explore-door {
     display: grid;
-    grid-template-columns: 28px auto;
+    grid-template-columns: 30px auto;
     grid-template-rows: auto auto;
     column-gap: 8px;
     row-gap: 4px;
@@ -707,12 +875,12 @@
     margin-left: 0;
     padding: 0 9px;
     gap: 5px;
-    font-size: 15px;
+    font-size: 17px;
   }
 
   .phone.ax-door .scope-badge svg {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
   }
 
   .phone.ax-door .attribution {
@@ -1143,6 +1311,152 @@
     </aside>
   </article>
 
+  <article class="variant" data-variant="picker-lists">
+    <section class="phone child-phone" aria-label="Other lists child at exact 390 by 844">
+      <svg class="map" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="sheet-scroll">
+          <div class="child-back"><svg><use href="#icon-chevron"/></svg><span>Scope</span></div>
+          <header class="child-intro"><h1 class="sheet-title">Other lists</h1><p class="sheet-subtitle">narrow KL weekend visits by saved-list membership</p></header>
+          <div class="membership-scroll" data-scroll-top="52">
+            <div class="membership-item"><span class="membership-name">Architecture</span><span class="membership-state is-on"><svg><use href="#icon-list-on"/></svg>Included</span></div>
+            <div class="membership-item"><span class="membership-name">Cemeteries and memorials</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Family history places</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Museums for rainy days</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Penang weekend</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Public art across the Klang Valley</span><span class="membership-state is-on"><svg><use href="#icon-list-on"/></svg>Included</span></div>
+            <div class="membership-item"><span class="membership-name">Railway stations and old hotels</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Want to go</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+          </div>
+          <div class="child-footer">
+            <div class="clear-scope has-meta"><svg><use href="#icon-reset"/></svg><div class="clear-copy"><div class="clear-title">Clear scope</div><div class="clear-meta">Reset this list filter and discovery defaults</div></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <aside class="evidence">
+      <p class="kicker">Picker child · other lists</p>
+      <h1>Bounded membership state</h1>
+      <p class="subtitle">The parent Explore picker remains the only entry point. This in-picker child gives user-sized membership its own bounded scroll region.</p>
+      <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
+      <h2>Interaction proof</h2>
+      <ul class="facts">
+        <li>Back returns to Scope with a full target; there is no Apply or Close.</li>
+        <li>Eligible non-system lists exclude the active list; selected count feeds the parent summary.</li>
+        <li>Rows update live and use filled/outline state glyphs.</li>
+        <li>Clear remains outside the scrolling collection and resets both domains.</li>
+      </ul>
+      <h2>Measured beside the frame</h2>
+      <table class="metrics">
+        <tr><th>Phone</th><td data-box=".phone"></td></tr>
+        <tr><th>Back target</th><td data-box=".child-back"></td></tr>
+        <tr><th>List rows</th><td data-box=".membership-item"></td></tr>
+        <tr><th>State capsules</th><td data-box=".membership-state"></td></tr>
+        <tr><th>Scroll region</th><td data-scroll-box=".membership-scroll"></td></tr>
+        <tr><th>Clear scope</th><td data-box=".clear-scope"></td></tr>
+        <tr><th>Row order</th><td>case-insensitive title order<span class="source">Loved/system and active KL weekend excluded</span></td></tr>
+        <tr><th>Contrast</th><td>ink/surface 14.02:1 · muted/surface 5.38:1 · accentContrast/accent 6.13:1</td></tr>
+      </table>
+      <p class="record-note"><strong>Live edit:</strong> changing a list filter while Fresh is visible promotes the active list map to Tracks so the newly reported state is effective, reversible, and truthful.</p>
+    </aside>
+  </article>
+
+  <article class="variant" data-variant="picker-lists-empty">
+    <section class="phone child-phone" aria-label="Empty Other lists child at exact 390 by 844">
+      <svg class="map" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="sheet-scroll">
+          <div class="child-back"><svg><use href="#icon-chevron"/></svg><span>Scope</span></div>
+          <header class="child-intro"><h1 class="sheet-title">Other lists</h1><p class="sheet-subtitle">narrow KL weekend visits by saved-list membership</p></header>
+          <div class="membership-scroll">
+            <div class="empty-memberships"><svg><use href="#icon-list-off"/></svg><strong>No other saved lists</strong><p>The active list and system lists are not choices here. Create another list to use membership scope.</p></div>
+          </div>
+          <div class="child-footer">
+            <div class="quiet-row settings"><svg class="quiet-icon"><use href="#icon-chevron"/></svg><div><div class="quiet-title">Back to Scope</div><div class="quiet-meta">nothing to choose yet</div></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <aside class="evidence">
+      <p class="kicker">Picker child · empty</p>
+      <h1>No dead state cluster</h1>
+      <p class="subtitle">When no eligible saved list exists, the child names why and presents no inert chips or Clear action.</p>
+      <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
+      <h2>Empty-state proof</h2>
+      <ul class="facts">
+        <li>The active list is context, never a self-filter choice.</li>
+        <li>Loved and system lists remain outside this membership collection.</li>
+        <li>Back remains reachable at top and bottom.</li>
+        <li>Clear is absent because this frame has default discovery and list scope.</li>
+      </ul>
+      <h2>Measured beside the frame</h2>
+      <table class="metrics">
+        <tr><th>Phone</th><td data-box=".phone"></td></tr>
+        <tr><th>Top back</th><td data-box=".child-back"></td></tr>
+        <tr><th>Empty region</th><td data-box=".membership-scroll"></td></tr>
+        <tr><th>Empty content</th><td data-box=".empty-memberships"></td></tr>
+        <tr><th>Bottom back</th><td data-box=".child-footer .quiet-row"></td></tr>
+        <tr><th>Clear controls</th><td data-count=".clear-scope"></td></tr>
+      </table>
+      <p class="record-note"><strong>State rule:</strong> if discovery or another list-filter dimension is already non-default, Clear remains outside this empty collection; only the membership choices are empty.</p>
+    </aside>
+  </article>
+
+  <article class="variant" data-variant="picker-lists-ax">
+    <section class="phone ax child-phone" aria-label="AX Other lists child at exact 390 by 844">
+      <svg class="map" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="sheet-scroll">
+          <div class="child-back"><svg><use href="#icon-chevron"/></svg><span>Scope</span></div>
+          <header class="child-intro"><h1 class="sheet-title">Other lists</h1><p class="sheet-subtitle">saved-list membership</p></header>
+          <div class="membership-scroll" data-scroll-top="86">
+            <div class="membership-item"><span class="membership-name">Architecture</span><span class="membership-state is-on"><svg><use href="#icon-list-on"/></svg>Included</span></div>
+            <div class="membership-item"><span class="membership-name">Cemeteries and memorials</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Family history places</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Museums for very rainy school-holiday days</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Public art across the Klang Valley</span><span class="membership-state"><svg><use href="#icon-list-off"/></svg>Off</span></div>
+            <div class="membership-item"><span class="membership-name">Railway stations, signal boxes, and old hotels</span><span class="membership-state is-on"><svg><use href="#icon-list-on"/></svg>Included</span></div>
+          </div>
+          <div class="child-footer">
+            <div class="clear-scope has-meta"><svg><use href="#icon-reset"/></svg><div class="clear-copy"><div class="clear-title">Clear scope</div><div class="clear-meta">Reset list filter and discovery defaults</div></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <aside class="evidence">
+      <p class="kicker">Picker child · AX stress</p>
+      <h1>Long names stay bounded</h1>
+      <p class="subtitle">Only the membership collection scrolls. Long user-authored names wrap in 86pt-minimum rows while navigation and Clear remain fixed.</p>
+      <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
+      <h2>Accessibility proof</h2>
+      <ul class="facts">
+        <li>AX rows keep 86pt minimum targets and wrap without truncation.</li>
+        <li>State capsules retain 44pt height and filled/outline glyphs.</li>
+        <li>Back and Clear remain outside the advanced scroll offset.</li>
+        <li>The current value is also exposed through VoiceOver, not glyph alone.</li>
+      </ul>
+      <h2>Measured beside the frame</h2>
+      <table class="metrics">
+        <tr><th>Phone</th><td data-box=".phone"></td></tr>
+        <tr><th>Back target</th><td data-box=".child-back"></td></tr>
+        <tr><th>AX list rows</th><td data-box=".membership-item"></td></tr>
+        <tr><th>State capsules</th><td data-box=".membership-state"></td></tr>
+        <tr><th>Scroll region</th><td data-scroll-box=".membership-scroll"></td></tr>
+        <tr><th>Clear scope</th><td data-box=".clear-scope"></td></tr>
+      </table>
+      <p class="record-note"><strong>Bound:</strong> arbitrary eligible-list counts remain inside a 350pt collection viewport; the full-target exit does not move with them.</p>
+    </aside>
+  </article>
+
   <article class="variant" data-variant="picker-ax">
     <section class="phone ax" aria-label="AX Explore picker at exact 390 by 844">
       <svg class="map" aria-hidden="true"><use href="#map-snow"/></svg>
@@ -1238,7 +1552,7 @@
         <tr><th>Attribution</th><td>11pt bare muted text; never a pill</td></tr>
         <tr><th>Contrast</th><td>ink/surface 14.02:1 · accent/surface 6.13:1</td></tr>
       </table>
-      <p class="record-note"><strong>Activation rule:</strong> default only when the four persisted discovery choices are default and no contextual list visit filter is active.</p>
+      <p class="record-note"><strong>Activation rule:</strong> default when discovery scope is default and no effective Tracks-mode list filter (<code>showVisited &amp;&amp; visitFilter.isActive</code>) is active. A retained filter in Fresh mode may remain dormant.</p>
     </aside>
   </article>
 
@@ -1281,6 +1595,46 @@
     </aside>
   </article>
 
+  <article class="variant" data-variant="door-active-ax">
+    <section class="phone ax-door" aria-label="AX map doors with adjusted scope at exact 390 by 844">
+      <svg class="map" aria-hidden="true"><use href="#map-snow"/></svg>
+      <div class="status"><span>9:41</span><span>●●● &nbsp;◉&nbsp; ▰</span></div>
+      <div class="map-control"><svg><use href="#icon-locate"/></svg></div>
+      <div class="attribution">© OpenStreetMap</div>
+      <div class="door-bar">
+        <div class="door explore-door">
+          <svg><use href="#icon-globe"/></svg><span>Explore</span>
+          <span class="scope-badge"><svg><use href="#icon-filter"/></svg>Scope set</span>
+        </div>
+        <div class="door"><svg><use href="#icon-shoeprints"/></svg><span>Journal</span></div>
+      </div>
+    </section>
+    <aside class="evidence">
+      <p class="kicker">Explore door · AX adjusted</p>
+      <h1>The indicator scales and stacks</h1>
+      <p class="subtitle">At accessibility size the status moves beneath Explore, both door targets grow, and the pair still fits the exact 390pt phone.</p>
+      <p class="renderer">Exact live boxes from this DOM · 390×844 phone</p>
+      <h2>Responsive proof</h2>
+      <ul class="facts">
+        <li>Explore identity remains primary; Scope set is a second line.</li>
+        <li>Both doors share a 68pt minimum target at this stress size.</li>
+        <li>The badge uses 17pt text and an 18pt glyph, not the default fixed size.</li>
+        <li>Attribution clears the taller bar and remains bare text.</li>
+      </ul>
+      <h2>Measured beside the frame</h2>
+      <table class="metrics">
+        <tr><th>Phone</th><td data-box=".phone"></td></tr>
+        <tr><th>Door bar</th><td data-box=".door-bar"></td></tr>
+        <tr><th>Explore target</th><td data-box=".explore-door"></td></tr>
+        <tr><th>Journal target</th><td data-box=".door:not(.explore-door)"></td></tr>
+        <tr><th>Scope indicator</th><td data-box=".scope-badge"></td></tr>
+        <tr><th>Attribution</th><td data-box=".attribution"></td></tr>
+        <tr><th>Phone fit</th><td>8pt bar insets · 8pt inter-door gap<span class="source">No horizontal clipping at 390pt</span></td></tr>
+      </table>
+      <p class="record-note"><strong>AX contract:</strong> status presence and text survive scaling; the responsive form grows the target instead of shrinking the badge.</p>
+    </aside>
+  </article>
+
 <script>
   const requested = new URLSearchParams(location.search).get("variant") || "picker-default";
   const active = document.querySelector(`[data-variant="${requested}"]`)
@@ -1298,6 +1652,10 @@
 
   active.querySelectorAll("[data-box]").forEach(output => {
     output.textContent = boxText(active.querySelectorAll(output.dataset.box));
+  });
+
+  active.querySelectorAll("[data-count]").forEach(output => {
+    output.textContent = `${active.querySelectorAll(output.dataset.count).length} rendered`;
   });
 
   requestAnimationFrame(() => {

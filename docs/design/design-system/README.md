@@ -43,7 +43,7 @@ spec by existing.
 
 | Asset | What it shows |
 |---|---|
-| [`t2.5-explore-picker.html`](t2.5-explore-picker.html) + `t2.5-explore-picker-{default,adjusted,list,ax}.png` + `t2.5-explore-door-{default,active}.png` | W-1's DS-3 Explore picker proposal across six exact 390×844 phone frames, each paired with live DOM measurements in its 820×884 evidence capture. Default and adjusted discovery scope, the OF4 list-context merge, AX stress, and both Explore-door indicator states are shown. [`t2.5-explore-picker.md`](t2.5-explore-picker.md) is the constraint/provenance record and identifier annex. Captured with Playwright-bundled Chromium/headless shell `151.0.7922.34`. |
+| [`t2.5-explore-picker.html`](t2.5-explore-picker.html) + `t2.5-explore-picker-{default,adjusted,list,lists,lists-empty,lists-ax,ax}.png` + `t2.5-explore-door-{default,active,active-ax}.png` | W-1's DS-3 Explore picker proposal across ten exact 390×844 phone frames, each paired with live DOM measurements in its 820×884 evidence capture. Default and adjusted discovery scope, the OF4 list-context merge and bounded membership child, empty and AX stress, and default/active/active-AX Explore-door states are shown. [`t2.5-explore-picker.md`](t2.5-explore-picker.md) is the constraint/provenance record and identifier annex. Captured with Playwright-bundled Chromium/headless shell `151.0.7922.34`. |
 
 ## Candidate decision evidence
 
