@@ -71,6 +71,9 @@ enum MaterialControlPressFeedback: Equatable, Sendable {
     case symbolWeightPulse
     case textInset(points: CGFloat)
 
+    static let textInsetTypographyAnchor =
+        TypographyRole.button.specification.textStyle
+
     func scale(isPressed: Bool, tokens: MaterialTokenSheet) -> CGFloat {
         MaterialControlInteractionFeedback.semanticControlScale(
             isPressed: isPressed,
@@ -89,13 +92,26 @@ enum MaterialControlPressFeedback: Equatable, Sendable {
         }
     }
 
-    func verticalOffset(isPressed: Bool, isEnabled: Bool) -> CGFloat {
+    var textInsetBasePoints: CGFloat {
+        switch self {
+        case let .textInset(points):
+            points
+        case .scale, .symbolWeightPulse:
+            0
+        }
+    }
+
+    func verticalOffset(
+        isPressed: Bool,
+        isEnabled: Bool,
+        scaledTextInsetPoints: CGFloat
+    ) -> CGFloat {
         guard isPressed, isEnabled else {
             return 0
         }
         return switch self {
-        case let .textInset(points):
-            points
+        case .textInset:
+            scaledTextInsetPoints
         case .scale, .symbolWeightPulse:
             0
         }
@@ -189,9 +205,8 @@ public struct MaterialQuietButtonStyle: ButtonStyle {
 
     /// The text-only quiet variant ruled by `amendment-wave.md` A9.
     ///
-    /// The 1pt figure is builder-proposed pending component-metrics
-    /// ratification. It is three device pixels at @3x: perceptible beside the
-    /// existing 0.98 scale without making a quiet action read as a primary CTA.
+    /// The 1pt figure is the migration base input. `MaterialButtonStyleBody`
+    /// scales it with the paired button typography role before rendering.
     public static func textOnly(
         theme: MaterialTheme = .snow
     ) -> MaterialQuietButtonStyle {
@@ -618,7 +633,32 @@ struct MaterialButtonStyleBody<Label: View>: View {
     var disabledAppearance: MaterialControlDisabledAppearance = .dim
     let accessibilityValue: (Bool) -> String?
 
+    @ScaledMetric private var scaledTextInsetPoints: CGFloat
     @Environment(\.isEnabled) private var isEnabled
+
+    init(
+        label: Label,
+        isPressed: Bool,
+        appearance: MaterialControlAppearance,
+        tokens: MaterialTokenSheet,
+        pressFeedback: MaterialControlPressFeedback,
+        disabledAppearance: MaterialControlDisabledAppearance = .dim,
+        accessibilityValue: @escaping (Bool) -> String?
+    ) {
+        self.label = label
+        self.isPressed = isPressed
+        self.appearance = appearance
+        self.tokens = tokens
+        self.pressFeedback = pressFeedback
+        self.disabledAppearance = disabledAppearance
+        self.accessibilityValue = accessibilityValue
+        _scaledTextInsetPoints = ScaledMetric(
+            wrappedValue: pressFeedback.textInsetBasePoints,
+            relativeTo:
+                MaterialControlPressFeedback
+                    .textInsetTypographyAnchor.swiftUI
+        )
+    }
 
     var body: some View {
         label
@@ -648,7 +688,8 @@ struct MaterialButtonStyleBody<Label: View>: View {
             .offset(
                 y: pressFeedback.verticalOffset(
                     isPressed: isPressed,
-                    isEnabled: isEnabled
+                    isEnabled: isEnabled,
+                    scaledTextInsetPoints: scaledTextInsetPoints
                 )
             )
             .contentShape(Capsule())

@@ -199,10 +199,13 @@ Docs-only, so the iOS gate does not run — and a green PR is therefore not a te
 - **Serves:** P2R-1, P2R-2(a) · **Spec section:** §4, §5
 - **Acceptance criteria:** AC2.2, AC2.3
 - **Depends on:** **T2.1** — the table ratifies, the API carries
-- **Owner:** unclaimed
+- **Branch:** `wp-t2-2-impl`
+- **Owner:** codex1
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** unclaimed
+- **Status:** PR open — draft #574; review repair and full host gate GREEN (501 tests); Sourcery + reviewer re-review pending
+- **Evidence:** review-repair implementation head `a6ec194`; `cd ios && swift test` — 501 tests, 0 failures; paired suites — ControlStyles/PublicControlStyles 40/40 and IconRole 3/3; `.body` anchor mutation failed with `Expected subheadline, got body`.
 - **Contracts produced:** two new `IconRole` cases and the scaled press inset. **T2.3 consumes the first**; name both in the PR body.
+- **Owed device proof:** AC2.3 is explicitly partial: the spec-side and anchor-side contract is met here, while device-real default/AX perceptibility for the sole `MaterialQuietButtonStyle.textOnly` app consumer (`PlaceCardSheet.swift:172`) is tracked by #575 and carries to the first full-gate row that renders the place-card action bar — structurally Phase 3 DS-7 (#473), not T2.3.
 
 **Builder brief.** Two changes in `ios/Sources/DesignSystem/`, both rename-level in spirit: no surface should look different except the one glyph T2.3 migrates afterwards.
 
@@ -435,6 +438,14 @@ Full gate plus renders of About and both licence sub-areas at default and AX.
 ## Carried — not claimable this phase
 
 - **OF3's 19×19 door pill icon.** The ratified metrics table says 19; the shipped door pill renders `IconRole.inline` = 15. No row this phase touches it, and #520 does not cover it. It is a **third** figure pressing a set that P2R-2(d) has just re-closed at five — which is precisely the pattern the anti-creep restatement exists to meet, so it belongs in front of the next session with its evidence rather than being resolved by a builder.
-- **P2R-3 and P2R-10 close here as records.** P2R-3 requested no decision; the lesson is affirmed as existing law — *"a figure outside both the ratified set and the expected vocabulary is invisible to careful search, and every relay names its file."* P2R-10's R9 quiet-geometry remedy is fully ruled and shipped — symbol-weight pulse for glyphed quiet controls (A5), the ruled inset for text-only (A9), and the inset becomes a scaled metric in **T2.2**. Nothing further is owed; the packet item closes when T2.2 lands.
+- **A9's press inset is ratified as a scaled metric but its perceptibility is unproven on a
+  device.** T2.2 pinned the ruled ANCHOR with a test that fails if the metric is re-anchored;
+  the macOS host cannot resolve @ScaledMetric at AX, so no render yet shows the inset growing
+  with type. The inset's only consumer is PlaceCardSheet.swift:172 (A9's Hide/Unhide), which no
+  Phase 2 row renders. OWED, not waived: the first row that renders the place card action bar
+  under the full gate discharges it — structurally DS-7 (#473) in Phase 3. The evidence that
+  produced P2R-1 was that the pre-fix inset measured +3 device pixels at BOTH default and AX,
+  so the property still unproven is the one the ruling exists to fix.
+- **P2R-3 and P2R-10 close here as records.** P2R-3 requested no decision; the lesson is affirmed as existing law — *"a figure outside both the ratified set and the expected vocabulary is invisible to careful search, and every relay names its file."* P2R-10's R9 quiet-geometry code remedy is fully ruled and shipped — symbol-weight pulse for glyphed quiet controls (A5), the ruled inset for text-only (A9), and the inset becomes a scaled metric in **T2.2**. The packet item closes when T2.2 lands; the device-proof obligation remains carried above through #575.
 
 ---
