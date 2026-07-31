@@ -3339,7 +3339,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 subtitle: "Choose how the map looks.",
                 screenshotName: "settings-appearance-\(textSize)",
                 accessibilityTextSize: textSize == "ax",
-                minimumAXSubtitleHeight: 70,
+                minimumAXSubtitleHeight: 87,
                 interactiveIdentifiers: [
                     "settings.theme.defined-paper",
                     "settings.theme.snow",
@@ -3363,7 +3363,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 subtitle: "Where published map data comes from and how far it reaches.",
                 screenshotName: "settings-coverage-\(textSize)",
                 accessibilityTextSize: textSize == "ax",
-                minimumAXSubtitleHeight: 70,
+                minimumAXSubtitleHeight: 130,
                 visibleIdentifiers: [
                     "settings.coverage.published-regions",
                     "settings.coverage.sources",
@@ -3377,7 +3377,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 subtitle: "Download policy and map pin sizing.",
                 screenshotName: "settings-map-data-\(textSize)",
                 accessibilityTextSize: textSize == "ax",
-                minimumAXSubtitleHeight: 70,
+                minimumAXSubtitleHeight: 87,
                 interactiveIdentifiers: [
                     "settings.downloads.allow-cellular",
                     "settings.pin-size",
@@ -3390,7 +3390,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 subtitle: "Permission status and the existing system settings action.",
                 screenshotName: "settings-location-\(textSize)",
                 accessibilityTextSize: textSize == "ax",
-                minimumAXSubtitleHeight: 70,
+                minimumAXSubtitleHeight: 130,
                 interactiveIdentifiers: ["settings.location.open-system"],
                 in: app
             )
