@@ -439,7 +439,7 @@ struct MakingTracksApp: App {
 
     private static func resetUITestingCoverageShadingIfNeeded() {
         guard isFixtureMap, arguments.contains("--ui-testing-reset-coverage-shading") else { return }
-        UserDefaults.standard.removeObject(forKey: MapScreen.coverageShadingStorageKey)
+        DiscoveryScopeStore(userDefaults: .standard).reset()
     }
 
     private static func applyUITestingThemeIfNeeded() {
