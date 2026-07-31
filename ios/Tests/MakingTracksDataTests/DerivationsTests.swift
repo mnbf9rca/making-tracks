@@ -466,7 +466,7 @@ final class DerivationsTests: XCTestCase {
         XCTAssertEqual(try db.listProgress(listID: 42).total, 1)
     }
 
-    func testPersistedDiscoveryScopeDoesNotReachStoryDerivations() throws {
+    func testRestrictiveDiscoveryScopeDoesNotFilterStoryDerivations() throws {
         let suiteName = "DerivationsTests.discovery-scope.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)

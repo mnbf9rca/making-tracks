@@ -319,7 +319,6 @@ Review `origin/ios..HEAD` for:
 - legacy deletion before v1 write;
 - nondeterministic category ordering;
 - category IDs no longer present in the live taxonomy;
-- active-list category state overwriting discovery category state;
 - reset clearing only one of the two storage keys;
 - any scope reach into `Derivations.swift`;
 - hostile local record size or identifier bounds.

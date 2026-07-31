@@ -127,6 +127,38 @@ final class DiscoveryScopeStoreTests: XCTestCase {
         }
     }
 
+    func testCategoryIdentifierByteBoundaryRejectsOnlyOversizeValues() throws {
+        try withStore { defaults, store in
+            let validIdentifier = String(repeating: "a", count: 128)
+            defaults.set(
+                try recordData(visibleCategoryIDs: [validIdentifier]),
+                forKey: DiscoveryScopeStore.storageKey
+            )
+            XCTAssertEqual(
+                store.load().visibleCategoryIDs,
+                [validIdentifier]
+            )
+
+            let oversizeIdentifier = String(repeating: "a", count: 129)
+            defaults.set(
+                try recordData(visibleCategoryIDs: [oversizeIdentifier]),
+                forKey: DiscoveryScopeStore.storageKey
+            )
+            XCTAssertEqual(store.load(), .defaults)
+        }
+    }
+
+    func testNonDataStoredObjectDegradesToDefaults() throws {
+        try withStore { defaults, store in
+            defaults.set(
+                ["unexpected"],
+                forKey: DiscoveryScopeStore.storageKey
+            )
+
+            XCTAssertEqual(store.load(), .defaults)
+        }
+    }
+
     func testOversizeRecordDegradesToDefaultsBeforeDecoding() throws {
         try withStore { defaults, store in
             defaults.set(
@@ -202,6 +234,16 @@ final class DiscoveryScopeStoreTests: XCTestCase {
                 )
             )
         }
+    }
+
+    private func recordData(visibleCategoryIDs: [String]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: [
+            "version": 1,
+            "visibleCategoryIDs": visibleCategoryIDs,
+            "includeHidden": true,
+            "showSaved": false,
+            "showCoverageShading": false,
+        ])
     }
 
     private func withStore(

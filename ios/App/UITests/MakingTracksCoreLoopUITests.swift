@@ -3307,27 +3307,56 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachScreenshot(named: "map-home-chrome-snow-filtered")
     }
 
-    func testCoverageShadingToggleIsDisplayOnlyLayerState() {
-        let app = launch(reset: true, coverageBBoxes: ["101.640,3.090,101.690,3.190"])
+    func testAllScopeChoicesPersistAcrossRelaunch() {
+        let coverageBBoxes = ["101.640,3.090,101.690,3.190"]
+        let app = launch(reset: true, coverageBBoxes: coverageBBoxes)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
         openScope(in: app)
+        let showHidden = "map.layers.show-hidden"
+        let showSaved = "map.layers.show-saved"
         let coverageShading = "map.layers.coverage-shading"
-        XCTAssertTrue(app.switches[coverageShading].waitForExistence(timeout: 5))
+        let historicBuildings = "map.layers.category.historic_building"
+        tapSwitch(in: app, identifier: showHidden, expectedValue: "1")
+        tapSwitch(in: app, identifier: showSaved, expectedValue: "0")
         tapSwitch(in: app, identifier: coverageShading, expectedValue: "0")
+        tapCategoryChip(
+            in: app,
+            identifier: historicBuildings,
+            expectedValue: "Not selected"
+        )
         app.buttons["Close"].tap()
 
-        openScope(in: app)
-        XCTAssertTrue(app.switches[coverageShading].waitForExistence(timeout: 5))
-        XCTAssertTrue(waitForElementValue("0", identifier: coverageShading, in: app))
-        tapSwitch(in: app, identifier: coverageShading, expectedValue: "1")
-        app.buttons["Close"].tap()
+        app.terminate()
+        let relaunched = launch(reset: false, coverageBBoxes: coverageBBoxes)
+        XCTAssertTrue(
+            relaunched.otherElements["map.surface"].waitForExistence(timeout: 10)
+        )
+        openScope(in: relaunched)
 
-        openScope(in: app)
-        XCTAssertTrue(waitForElementValue("1", identifier: coverageShading, in: app))
-        app.buttons["Close"].tap()
+        XCTAssertTrue(waitForElementValue(
+            "1",
+            identifier: showHidden,
+            in: relaunched
+        ))
+        XCTAssertTrue(waitForElementValue(
+            "0",
+            identifier: showSaved,
+            in: relaunched
+        ))
+        XCTAssertTrue(waitForElementValue(
+            "0",
+            identifier: coverageShading,
+            in: relaunched
+        ))
+        XCTAssertTrue(waitForElementValue(
+            "Not selected",
+            identifier: historicBuildings,
+            in: relaunched
+        ))
+        relaunched.buttons["Close"].tap()
     }
 
     func testPinSizeScreenshotsAcrossThemes() {
@@ -4300,7 +4329,6 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
         app.launchArguments.append("--ui-testing-reset-pin-size")
-        app.launchArguments.append("--ui-testing-reset-coverage-shading")
         if hideFixtureChrome {
             app.launchArguments.append("--ui-testing-hide-fixture-chrome")
         }
@@ -4322,6 +4350,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             app.launchArguments.append("--ui-testing-pin-diagnostics")
         }
         if reset {
+            app.launchArguments.append("--ui-testing-reset-coverage-shading")
             app.launchArguments.append("--ui-testing-reset-database")
         }
         if locationNotDetermined {
