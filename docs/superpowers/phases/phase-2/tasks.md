@@ -282,7 +282,7 @@ Host-only unless you touch `project.yml`.
 - **Depends on:** none — claimable immediately
 - **Owner:** codex1 · **Pipeline:** build agent authors → **reviewer validates** → **Rob rules**
 - **Review tier:** `sourcery` + `reviewer` (validation is the gate, not a courtesy)
-- **Status:** validated — reviewer validated exact head `aa378b6` with all ten digests matched; PR routing and Rob's ruling remain
+- **Status:** awaiting ruling — reviewer validated exact head `aa378b6` with all ten digests matched; draft PR #570 is in front of Rob
 - **Unblocks:** T2.8, **on Rob's ruling — not on merge**
 - **RULED (Rob, 2026-07-31, relayed in planner's chat):** verbatim — *"'scope set' is clunky. Can we add a 'filtered' icon instead? Switches fine."* then *"Doesn't need to come back to me, just implement."* Consequences: **switches are ratified** for the three scope rows (OF5 closes as the row-class exception to R15, in the drawn form); the scope-active door affordance **redraws as a filtered icon** (glyph is the builder's taste guess, flagged); the drawn list-map split ships as drawn; **no return trip** — the row completes at reviewer's revalidation of the amended frames.
 
