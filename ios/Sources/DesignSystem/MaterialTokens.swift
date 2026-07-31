@@ -79,6 +79,9 @@ public enum SemanticColorToken: String, CaseIterable, Hashable, Sendable {
     case ink
     case muted
     case accent
+    case accentContainer
+    /// Saved ON Deep Companion, ratified `#08483E` by designer pick 2026-07-30.
+    case accentDeepContainer
     case accentContrast
     case love
     case loveContainer
@@ -125,6 +128,9 @@ public struct MaterialTokenSheet: Hashable, Sendable {
     public let ink: MaterialColor
     public let muted: MaterialColor
     public let accent: MaterialColor
+    public let accentContainer: MaterialColor
+    /// Saved ON Deep Companion, ratified `#08483E` by designer pick 2026-07-30.
+    public let accentDeepContainer: MaterialColor
     public let accentContrast: MaterialColor
     public let love: MaterialColor
     public let loveContainer: MaterialColor
@@ -139,6 +145,11 @@ public struct MaterialTokenSheet: Hashable, Sendable {
     public let labelHalo: MaterialColor
     public let boundaries: MaterialColor
     public let trail: MaterialColor
+    /// Alpha used to composite a semantic tonal-container color over `surface`.
+    ///
+    /// Contrast checks for neighboring opaque containers must compare against
+    /// this resulting wash, not against the bare surface color.
+    public let tonalContainerCompositeOpacity: Double
     public let disabledAlpha: Double
     public let pressScale: CGFloat
 
@@ -158,6 +169,8 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         case .ink: ink
         case .muted: muted
         case .accent: accent
+        case .accentContainer: accentContainer
+        case .accentDeepContainer: accentDeepContainer
         case .accentContrast: accentContrast
         case .love: love
         case .loveContainer: loveContainer
@@ -186,6 +199,8 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         ink: MaterialColor(red: 0x2B, green: 0x28, blue: 0x23),
         muted: MaterialColor(red: 0x6B, green: 0x67, blue: 0x5F),
         accent: MaterialColor(red: 0x0A, green: 0x6B, blue: 0x5C),
+        accentContainer: MaterialColor(red: 0xD4, green: 0xED, blue: 0xE9),
+        accentDeepContainer: MaterialColor(red: 0x08, green: 0x48, blue: 0x3E),
         accentContrast: MaterialColor(red: 0xFB, green: 0xFA, blue: 0xF2),
         love: MaterialColor(red: 0xC4, green: 0x31, blue: 0x2B),
         loveContainer: MaterialColor(red: 0xFC, green: 0xE3, blue: 0xE3),
@@ -200,6 +215,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         labelHalo: MaterialColor(red: 0xF4, green: 0xF1, blue: 0xEA),
         boundaries: MaterialColor(red: 0x2B, green: 0x28, blue: 0x23, opacity: 0.14),
         trail: MaterialColor(red: 0x2D, green: 0x8C, blue: 0x83),
+        tonalContainerCompositeOpacity: 0.12,
         disabledAlpha: 0.46,
         pressScale: 0.98
     )
@@ -215,6 +231,8 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         ink: MaterialColor,
         muted: MaterialColor,
         accent: MaterialColor,
+        accentContainer: MaterialColor,
+        accentDeepContainer: MaterialColor,
         accentContrast: MaterialColor,
         love: MaterialColor,
         loveContainer: MaterialColor,
@@ -229,6 +247,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         labelHalo: MaterialColor,
         boundaries: MaterialColor,
         trail: MaterialColor,
+        tonalContainerCompositeOpacity: Double,
         disabledAlpha: Double,
         pressScale: CGFloat
     ) {
@@ -242,6 +261,8 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         self.ink = ink
         self.muted = muted
         self.accent = accent
+        self.accentContainer = accentContainer
+        self.accentDeepContainer = accentDeepContainer
         self.accentContrast = accentContrast
         self.love = love
         self.loveContainer = loveContainer
@@ -256,6 +277,7 @@ public struct MaterialTokenSheet: Hashable, Sendable {
         self.labelHalo = labelHalo
         self.boundaries = boundaries
         self.trail = trail
+        self.tonalContainerCompositeOpacity = tonalContainerCompositeOpacity
         self.disabledAlpha = disabledAlpha
         self.pressScale = pressScale
     }

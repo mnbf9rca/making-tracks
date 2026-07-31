@@ -59,26 +59,109 @@ final class AppShellTests: XCTestCase {
         )
     }
 
-    func testPlaceCardActionsUseRuledDesignSystemStylesWithoutDestructiveHide() {
-        XCTAssertEqual(PlaceCardActionAppearance.style(for: .save), .tonal)
-        XCTAssertEqual(PlaceCardActionAppearance.style(for: .seen), .filled)
-        XCTAssertEqual(PlaceCardActionAppearance.style(for: .hide), .quiet)
-        let loveStyle = PlaceCardActionStyle.semantic(
-            foreground: .love,
-            background: .loveContainer
-        )
-        let warningStyle = PlaceCardActionStyle.semantic(
-            foreground: .warning,
-            background: .warningContainer
-        )
-        XCTAssertEqual(PlaceCardActionAppearance.style(for: .love), loveStyle)
-        XCTAssertEqual(PlaceCardActionAppearance.style(for: .unlove), loveStyle)
-        XCTAssertEqual(
-            PlaceCardActionAppearance.style(for: .unsee(isEnabled: true)),
-            warningStyle
-        )
-        XCTAssertEqual(PlaceCardActionAppearance.style(for: .unsee(isEnabled: false)), .quiet)
-        XCTAssertEqual(PlaceCardActionAppearance.style(for: .unhide), .quiet)
+    func testPlaceCardActionsUseStateMorphology() {
+        let cases: [(PlaceCardAction, Bool, PlaceCardActionPresentation)] = [
+            (.save, false, .init(title: "Save", systemImage: "bookmark", style: .tonal)),
+            (
+                .save,
+                true,
+                .init(
+                    title: "Saved",
+                    systemImage: "bookmark.fill",
+                    style: .state(
+                        foreground: .accentContrast,
+                        background: .accentDeepContainer
+                    )
+                )
+            ),
+            (.seen, false, .init(title: "Seen", systemImage: "eye", style: .tonal)),
+            (
+                .unsee(isEnabled: true),
+                false,
+                .init(
+                    title: "Seen",
+                    systemImage: "eye.fill",
+                    style: .state(
+                        foreground: .accentContrast,
+                        background: .accent
+                    )
+                )
+            ),
+            (
+                .unsee(isEnabled: false),
+                false,
+                .init(
+                    title: "Seen",
+                    systemImage: "eye.fill",
+                    style: .state(
+                        foreground: .accentContrast,
+                        background: .accent
+                    )
+                )
+            ),
+            (
+                .love,
+                false,
+                .init(
+                    title: "Love",
+                    systemImage: "heart",
+                    style: .state(
+                        foreground: .love,
+                        background: .loveContainer
+                    )
+                )
+            ),
+            (
+                .unlove,
+                false,
+                .init(
+                    title: "Loved",
+                    systemImage: "heart.fill",
+                    style: .state(
+                        foreground: .accentContrast,
+                        background: .love
+                    )
+                )
+            ),
+            (.hide, false, .init(title: "Hide", systemImage: nil, style: .quiet)),
+            (.unhide, false, .init(title: "Unhide", systemImage: nil, style: .quiet)),
+        ]
+
+        for (action, isSaved, expected) in cases {
+            XCTAssertEqual(
+                PlaceCardActionAppearance.presentation(
+                    for: action,
+                    isSaved: isSaved
+                ),
+                expected,
+                "\(action), isSaved: \(isSaved)"
+            )
+        }
+
+        let onPresentations = [
+            PlaceCardActionAppearance.presentation(for: .save, isSaved: true),
+            PlaceCardActionAppearance.presentation(
+                for: .unsee(isEnabled: true),
+                isSaved: false
+            ),
+            PlaceCardActionAppearance.presentation(for: .unlove, isSaved: false),
+        ]
+        let offPresentations = [
+            PlaceCardActionAppearance.presentation(for: .save, isSaved: false),
+            PlaceCardActionAppearance.presentation(for: .seen, isSaved: false),
+            PlaceCardActionAppearance.presentation(for: .love, isSaved: false),
+        ]
+        let momentaryPresentations = [
+            PlaceCardActionAppearance.presentation(for: .hide, isSaved: false),
+            PlaceCardActionAppearance.presentation(for: .unhide, isSaved: false),
+        ]
+
+        XCTAssertTrue(onPresentations.allSatisfy { $0.systemImage?.hasSuffix(".fill") == true })
+        XCTAssertTrue(offPresentations.allSatisfy {
+            guard let systemImage = $0.systemImage else { return false }
+            return !systemImage.hasSuffix(".fill")
+        })
+        XCTAssertTrue(momentaryPresentations.allSatisfy { $0.systemImage == nil })
         XCTAssertTrue(
             PlaceCardActionAppearance.usesQuietTextPressInset(for: .hide)
         )
@@ -90,50 +173,6 @@ final class AppShellTests: XCTestCase {
                 for: .unsee(isEnabled: false)
             )
         )
-        XCTAssertEqual(
-            PlaceCardActionAppearance.semanticControlOpacity(
-                isEnabled: false,
-                tokens: MaterialTheme.snow.tokens
-            ),
-            0.46
-        )
-        XCTAssertEqual(
-            PlaceCardActionAppearance.semanticControlOpacity(
-                isEnabled: true,
-                tokens: MaterialTheme.snow.tokens
-            ),
-            1
-        )
-        XCTAssertEqual(
-            PlaceCardActionAppearance.semanticControlScale(
-                isPressed: false,
-                tokens: MaterialTheme.snow.tokens
-            ),
-            1
-        )
-        XCTAssertEqual(
-            PlaceCardActionAppearance.semanticControlScale(
-                isPressed: true,
-                tokens: MaterialTheme.snow.tokens
-            ),
-            0.98
-        )
-
-        for saved in [false, true] {
-            for visit in [VisitState.none, .visited, .loved] {
-                for hidden in [false, true] {
-                    let state = PinState(saved: saved, visit: visit, hidden: hidden)
-                    let actions = PlaceCardActionSlots(pinState: state).actions
-                    XCTAssertLessThanOrEqual(
-                        actions.filter {
-                            PlaceCardActionAppearance.style(for: $0) == .filled
-                        }.count,
-                        1,
-                        "\(state)"
-                    )
-                }
-            }
-        }
     }
 
     @MainActor
@@ -146,13 +185,13 @@ final class AppShellTests: XCTestCase {
         ] = [
             (.hide, .textInset(points: 1)),
             (.unhide, .textInset(points: 1)),
-            (.unsee(isEnabled: false), .symbolWeightPulse),
         ]
 
         for testCase in cases {
             let body = PlaceCardActionStyledContent(
                 content: Text(verbatim: testCase.action.title),
                 action: testCase.action,
+                isSaved: false,
                 theme: .snow
             ).body
             let mountedStyles = descendants(

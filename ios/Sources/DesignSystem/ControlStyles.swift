@@ -17,7 +17,7 @@ struct MaterialControlAppearance: Equatable, Sendable {
         MaterialControlAppearance(
             foreground: tokens.accent,
             background: tokens.accent,
-            backgroundOpacity: 0.12
+            backgroundOpacity: tokens.tonalContainerCompositeOpacity
         )
     }
 
@@ -43,6 +43,26 @@ enum MaterialControlInteractionFeedback {
         tokens: MaterialTokenSheet
     ) -> CGFloat {
         isPressed ? tokens.pressScale : 1
+    }
+}
+
+enum MaterialControlDisabledAppearance {
+    case dim
+    case preserveSemanticState
+
+    func opacity(
+        isEnabled: Bool,
+        tokens: MaterialTokenSheet
+    ) -> Double {
+        switch self {
+        case .dim:
+            MaterialControlInteractionFeedback.semanticControlOpacity(
+                isEnabled: isEnabled,
+                tokens: tokens
+            )
+        case .preserveSemanticState:
+            1
+        }
     }
 }
 
@@ -197,6 +217,44 @@ public struct MaterialQuietButtonStyle: ButtonStyle {
             tokens: theme.tokens,
             pressFeedback: pressFeedback,
             accessibilityValue: accessibilityValue
+        )
+    }
+}
+
+public struct MaterialStateToggleButtonStyle: ButtonStyle {
+    private let foreground: SemanticColorToken
+    private let background: SemanticColorToken
+    private let theme: MaterialTheme
+
+    public init(
+        foreground: SemanticColorToken,
+        background: SemanticColorToken,
+        theme: MaterialTheme = .snow
+    ) {
+        self.foreground = foreground
+        self.background = background
+        self.theme = theme
+    }
+
+    var appearance: MaterialControlAppearance {
+        MaterialControlAppearance(
+            foreground: theme.tokens[foreground],
+            background: theme.tokens[background],
+            backgroundOpacity: 1
+        )
+    }
+
+    var pressFeedback: MaterialControlPressFeedback { .scale }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        MaterialButtonStyleBody(
+            label: configuration.label,
+            isPressed: configuration.isPressed,
+            appearance: appearance,
+            tokens: theme.tokens,
+            pressFeedback: pressFeedback,
+            disabledAppearance: .preserveSemanticState,
+            accessibilityValue: { $0 ? nil : "Unavailable" }
         )
     }
 }
@@ -557,6 +615,7 @@ struct MaterialButtonStyleBody<Label: View>: View {
     let appearance: MaterialControlAppearance
     let tokens: MaterialTokenSheet
     let pressFeedback: MaterialControlPressFeedback
+    var disabledAppearance: MaterialControlDisabledAppearance = .dim
     let accessibilityValue: (Bool) -> String?
 
     @Environment(\.isEnabled) private var isEnabled
@@ -575,7 +634,7 @@ struct MaterialButtonStyleBody<Label: View>: View {
             .frame(minHeight: 44)
             .background(backgroundStyle, in: Capsule())
             .opacity(
-                MaterialControlInteractionFeedback.semanticControlOpacity(
+                disabledAppearance.opacity(
                     isEnabled: isEnabled,
                     tokens: tokens
                 )

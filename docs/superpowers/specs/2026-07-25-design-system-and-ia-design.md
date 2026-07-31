@@ -289,7 +289,8 @@ amendment.
 | New-list affordance | **15×15 icon** | `ia-doors` |
 | Control-label icon beside a 15pt label | **17×17** | `coherence` `.coh .act` — ratified **pairing constant**, deliberately outside `IconRole`'s closed set |
 | Action-bar button | 15pt/600 label, 6pt icon gap, 8pt between buttons | `coherence` |
-| Saved `accentContainer` | designed opaque **`#D4EDE9`**; hue **170.40°**, delta **−0.32°** from `accent`, saturation **40.98%**, **5.23:1** against ink **`#0A6B5C`** | A8 frozen packet; ratified by Rob on 2026-07-30 |
+| `accentContainer` *(retired from the Saved role)* | designed opaque **`#D4EDE9`**; hue **170.40°**, delta **−0.32°** from `accent`, saturation **40.98%**, **5.23:1** against ink **`#0A6B5C`** | Historical A8 frozen-packet value; ratified by Rob on 2026-07-30, then retired from the Saved role without prejudice by the amended R16 rider |
+| Saved `accentDeepContainer` | designed opaque **`#08483E`** with `accentContrast` ink **`#FBFAF2`**; ink **9.995:1**; **8.390:1** against Saved OFF's composited wash **`#DEE9E0`**; **1.630:1** against Seen ON **`#0A6B5C`**; **1.904:1** against Loved ON **`#C4312B`** | **RATIFIED** — designer pick 2026-07-30 via the v2 panel at SHA `442161239dacb3aab8df0392039de22ae39ba98d`; ratified by Rob on 2026-07-31 |
 | Attribution | 11pt bare muted text, never a pill | `ia-doors` |
 | Interaction target floor | 44pt, tiled per **R10** where the rider permits | R10 scope line |
 | Pin | 20px circle, white stroke glyph | `ia-doors` |

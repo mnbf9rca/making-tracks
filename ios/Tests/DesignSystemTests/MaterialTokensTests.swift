@@ -14,6 +14,33 @@ final class MaterialTokensTests: XCTestCase {
         XCTAssertEqual(sheet.pressScale, 0.98)
     }
 
+    func testSnowExposesTonalContainerCompositeOverSurface() {
+        let sheet = MaterialTheme.snow.tokens
+
+        XCTAssertEqual(sheet.tonalContainerCompositeOpacity, 0.12)
+        XCTAssertEqual(
+            [
+                compositedByte(
+                    sheet.accent.red,
+                    over: sheet.surface.red,
+                    opacity: sheet.tonalContainerCompositeOpacity
+                ),
+                compositedByte(
+                    sheet.accent.green,
+                    over: sheet.surface.green,
+                    opacity: sheet.tonalContainerCompositeOpacity
+                ),
+                compositedByte(
+                    sheet.accent.blue,
+                    over: sheet.surface.blue,
+                    opacity: sheet.tonalContainerCompositeOpacity
+                ),
+            ],
+            [0xDE, 0xE9, 0xE0],
+            "Tonal-container candidates must be evaluated against the composited wash, not bare surface."
+        )
+    }
+
     func testSnowMatchesEveryRatifiedSemanticColor() {
         let expected: [SemanticColorToken: MaterialColor] = [
             .ground: color(0xF4, 0xF1, 0xEA),
@@ -26,6 +53,8 @@ final class MaterialTokensTests: XCTestCase {
             .ink: color(0x2B, 0x28, 0x23),
             .muted: color(0x6B, 0x67, 0x5F),
             .accent: color(0x0A, 0x6B, 0x5C),
+            .accentContainer: color(0xD4, 0xED, 0xE9),
+            .accentDeepContainer: color(0x08, 0x48, 0x3E),
             .accentContrast: color(0xFB, 0xFA, 0xF2),
             .love: color(0xC4, 0x31, 0x2B),
             .loveContainer: color(0xFC, 0xE3, 0xE3),
@@ -148,6 +177,24 @@ final class MaterialTokensTests: XCTestCase {
 
             assertContrast(
                 sheet.accentContrast,
+                sheet.accentDeepContainer,
+                minimum: 4.5,
+                label: "accentContrast/accentDeepContainer Saved state"
+            )
+            assertContrast(
+                sheet.accentContrast,
+                sheet.accent,
+                minimum: 4.5,
+                label: "accentContrast/accent Seen state"
+            )
+            assertContrast(
+                sheet.accentContrast,
+                sheet.love,
+                minimum: 4.5,
+                label: "accentContrast/love Loved state"
+            )
+            assertContrast(
+                sheet.accentContrast,
                 sheet.accent,
                 minimum: 3.0,
                 label: "accentContrast/accent large text or UI"
@@ -174,6 +221,48 @@ final class MaterialTokensTests: XCTestCase {
         }
     }
 
+    func testRatifiedSavedDeepContainerClearsEveryRuledPanelGate() throws {
+        let sheet = MaterialTheme.snow.tokens
+        let offWash = color(
+            compositedByte(
+                sheet.accent.red,
+                over: sheet.surface.red,
+                opacity: sheet.tonalContainerCompositeOpacity
+            ),
+            compositedByte(
+                sheet.accent.green,
+                over: sheet.surface.green,
+                opacity: sheet.tonalContainerCompositeOpacity
+            ),
+            compositedByte(
+                sheet.accent.blue,
+                over: sheet.surface.blue,
+                opacity: sheet.tonalContainerCompositeOpacity
+            )
+        )
+
+        XCTAssertEqual(
+            try XCTUnwrap(contrastRatio(sheet.accentContrast, sheet.accentDeepContainer)),
+            9.995,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(contrastRatio(sheet.accentDeepContainer, offWash)),
+            8.390,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(contrastRatio(sheet.accentDeepContainer, sheet.accent)),
+            1.630,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(contrastRatio(sheet.accentDeepContainer, sheet.love)),
+            1.904,
+            accuracy: 0.001
+        )
+    }
+
     private func color(
         _ red: UInt8,
         _ green: UInt8,
@@ -181,6 +270,14 @@ final class MaterialTokensTests: XCTestCase {
         opacity: Double = 1
     ) -> MaterialColor {
         MaterialColor(red: red, green: green, blue: blue, opacity: opacity)
+    }
+
+    private func compositedByte(
+        _ foreground: Double,
+        over background: Double,
+        opacity: Double
+    ) -> UInt8 {
+        UInt8((((foreground * opacity) + (background * (1 - opacity))) * 255).rounded())
     }
 
     private func makeSheet(
@@ -202,6 +299,8 @@ final class MaterialTokensTests: XCTestCase {
             ink: snow.ink,
             muted: snow.muted,
             accent: snow.accent,
+            accentContainer: snow.accentContainer,
+            accentDeepContainer: snow.accentDeepContainer,
             accentContrast: snow.accentContrast,
             love: snow.love,
             loveContainer: snow.loveContainer,
@@ -216,6 +315,7 @@ final class MaterialTokensTests: XCTestCase {
             labelHalo: labelHalo,
             boundaries: boundaries,
             trail: trail,
+            tonalContainerCompositeOpacity: snow.tonalContainerCompositeOpacity,
             disabledAlpha: snow.disabledAlpha,
             pressScale: snow.pressScale
         )
