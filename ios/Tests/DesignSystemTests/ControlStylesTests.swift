@@ -103,11 +103,19 @@ final class ControlStylesTests: XCTestCase {
         XCTAssertEqual(quietText.symbolWeight(isPressed: false), .standard)
         XCTAssertEqual(quietText.symbolWeight(isPressed: true), .standard)
         XCTAssertEqual(
-            quietText.verticalOffset(isPressed: true, isEnabled: true),
-            1
+            quietText.verticalOffset(
+                isPressed: true,
+                isEnabled: true,
+                scaledTextInsetPoints: 3
+            ),
+            3
         )
         XCTAssertEqual(
-            quietText.verticalOffset(isPressed: true, isEnabled: false),
+            quietText.verticalOffset(
+                isPressed: true,
+                isEnabled: false,
+                scaledTextInsetPoints: 3
+            ),
             0
         )
     }
@@ -420,6 +428,35 @@ final class ControlStylesTests: XCTestCase {
             unscaledRestingBounds.minY + 1
         )
         XCTAssertEqual(unscaledPressedBounds.size, unscaledRestingBounds.size)
+
+        let accessibilityResting = try renderQuietButtonStyleBody(
+            isPressed: false,
+            tokens: unscaledSheet,
+            pressFeedback: feedback,
+            dynamicTypeSize: .accessibility5,
+            renderScale: 3
+        ) {
+            Text("Settings")
+        }
+        let accessibilityPressed = try renderQuietButtonStyleBody(
+            isPressed: true,
+            tokens: unscaledSheet,
+            pressFeedback: feedback,
+            dynamicTypeSize: .accessibility5,
+            renderScale: 3
+        ) {
+            Text("Settings")
+        }
+        let accessibilityRestingBounds = try nonTransparentBounds(
+            in: accessibilityResting
+        )
+        let accessibilityPressedBounds = try nonTransparentBounds(
+            in: accessibilityPressed
+        )
+        XCTAssertGreaterThan(
+            accessibilityPressedBounds.minY - accessibilityRestingBounds.minY,
+            3
+        )
 
         let disabledResting = try renderQuietButtonStyleBody(
             isPressed: false,
@@ -1026,6 +1063,8 @@ final class ControlStylesTests: XCTestCase {
         tokens: MaterialTokenSheet,
         pressFeedback: MaterialControlPressFeedback =
             MaterialQuietButtonStyle().pressFeedback,
+        dynamicTypeSize: DynamicTypeSize = .large,
+        renderScale: CGFloat = 1,
         @ViewBuilder label: () -> Label
     ) throws -> CGImage {
         try render(
@@ -1038,15 +1077,20 @@ final class ControlStylesTests: XCTestCase {
                 accessibilityValue: { _ in nil }
             )
             .disabled(!isEnabled)
+            .environment(\.dynamicTypeSize, dynamicTypeSize)
             .frame(width: 180, height: 96)
-            .background(Color.clear)
+            .background(Color.clear),
+            scale: renderScale
         )
     }
 #endif
 
-    private func render<Content: View>(_ content: Content) throws -> CGImage {
+    private func render<Content: View>(
+        _ content: Content,
+        scale: CGFloat = 1
+    ) throws -> CGImage {
         let renderer = ImageRenderer(content: content)
-        renderer.scale = 1
+        renderer.scale = scale
         return try XCTUnwrap(renderer.cgImage)
     }
 

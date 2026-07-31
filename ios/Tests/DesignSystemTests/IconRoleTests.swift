@@ -8,11 +8,13 @@ import AppKit
 
 @MainActor
 final class IconRoleTests: XCTestCase {
-    func testContractIsClosedToTheThreeRatifiedSemanticRoles() {
+    func testContractIsClosedToTheFiveRatifiedSemanticRoles() {
         let expected: [IconRole: (pointSize: CGFloat, typographyRole: TypographyRole)] = [
             .hero: (22, .heroTitle),
             .inline: (15, .button),
             .accessory: (11, .label),
+            .rowRaised: (20, .listRowTitle),
+            .rowQuiet: (18, .button),
         ]
 
         XCTAssertEqual(Set(IconRole.allCases), Set(expected.keys))
@@ -29,6 +31,8 @@ final class IconRoleTests: XCTestCase {
             (.hero, 22, .headline),
             (.inline, 15, .subheadline),
             (.accessory, 11, .caption2),
+            (.rowRaised, 20, .headline),
+            (.rowQuiet, 18, .subheadline),
         ]
 
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
