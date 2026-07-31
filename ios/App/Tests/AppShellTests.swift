@@ -3067,9 +3067,15 @@ final class AppShellTests: XCTestCase {
             from: "private struct SettingsMapAndDataView",
             to: "private struct SettingsLocationView"
         )
-        XCTAssertTrue(compacted(mapAndDataSource).contains(
+        let compactedMapAndDataSource = compacted(mapAndDataSource)
+        XCTAssertFalse(compactedMapAndDataSource.contains(
+            "MaterialHairlineRow{Toggle(isOn:$allowsCellularDownloads)"
+        ))
+        XCTAssertTrue(compactedMapAndDataSource.contains(
             "}.frame(maxWidth:.infinity,minHeight:44,alignment:.leading)" +
-                ".contentShape(Rectangle())" +
+                ".padding().contentShape(Rectangle())" +
+                ".overlay(alignment:.bottom){Divider()" +
+                ".overlay(tokens.hairline.swiftUIColor).allowsHitTesting(false)}" +
                 ".accessibilityIdentifier(\"settings.downloads.allow-cellular\")"
         ))
 

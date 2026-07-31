@@ -7241,19 +7241,23 @@ private struct SettingsMapAndDataView: View {
                 .foregroundStyle(tokens.muted.swiftUIColor)
 
             VStack(spacing: 0) {
-                MaterialHairlineRow {
-                    Toggle(isOn: $allowsCellularDownloads) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Allow cellular downloads")
-                            Text("Off keeps offline maps waiting for Wi-Fi.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                Toggle(isOn: $allowsCellularDownloads) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Allow cellular downloads")
+                        Text("Off keeps offline maps waiting for Wi-Fi.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .accessibilityIdentifier("settings.downloads.allow-cellular")
                 }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .padding()
+                .contentShape(Rectangle())
+                .overlay(alignment: .bottom) {
+                    Divider()
+                        .overlay(tokens.hairline.swiftUIColor)
+                        .allowsHitTesting(false)
+                }
+                .accessibilityIdentifier("settings.downloads.allow-cellular")
             }
             .background(
                 tokens.surfaceRaised.swiftUIColor,
