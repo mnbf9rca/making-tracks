@@ -1497,7 +1497,7 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
-    func testAdoptedSurfaceConsumersWireOwnedGlyphsAtPointOfUse() {
+    func testAdoptedSurfaceConsumersWireOwnedGlyphsAtPointOfUse() throws {
         let destinationSheet = MapDoorSheet(
             door: .explore,
             deepLinkDestination: nil,
@@ -1538,13 +1538,20 @@ final class AppShellTests: XCTestCase {
             ).count,
             1
         )
+        let rowLabel = MapDoorRowLabel(
+            presentation: rowPresentation,
+            iconRole: .rowRaised
+        )
+        let rowIconColumns = descendants(
+            of: MapDoorRowIconColumn.self,
+            in: rowLabel.body
+        )
+        XCTAssertEqual(rowIconColumns.count, 1)
+        let rowIconColumn = try XCTUnwrap(rowIconColumns.first)
         XCTAssertEqual(
             descendants(
                 of: MapDoorRowIconGlyph.self,
-                in: MapDoorRowLabel(
-                    presentation: rowPresentation,
-                    iconRole: .rowRaised
-                ).body
+                in: rowIconColumn.body
             ).count,
             1
         )
