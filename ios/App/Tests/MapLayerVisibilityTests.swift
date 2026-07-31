@@ -249,32 +249,4 @@ final class MapLayerVisibilityTests: XCTestCase {
         XCTAssertEqual(visibility.toggleAllCategoriesTitle, "Show all categories")
     }
 
-    func testListMapDisplaysVisitFilterCategoriesWithoutChangingDiscoveryVisibility() {
-        let discovery = MapLayerVisibility(
-            showSavedPlaces: false,
-            visibleCategories: ["museum"]
-        )
-        let displayed = ListMapLayerVisibility.displayed(
-            discoveryVisibility: discovery,
-            visitFilter: TracksVisitFilter(categories: ["attraction"])
-        )
-
-        XCTAssertEqual(displayed.visibleCategories, ["attraction"])
-        XCTAssertFalse(displayed.showSavedPlaces)
-        XCTAssertEqual(discovery.visibleCategories, ["museum"])
-    }
-
-    func testListMapLayersCanWriteAnExplicitlyEmptyCategoryScope() {
-        var visibility = MapLayerVisibility()
-        visibility.toggleAllCategories()
-
-        let updated = ListMapLayerVisibility.updating(
-            visitFilter: .all,
-            from: visibility
-        )
-
-        XCTAssertNotNil(updated.categories)
-        XCTAssertEqual(updated.categories, [])
-        XCTAssertTrue(updated.isActive)
-    }
 }

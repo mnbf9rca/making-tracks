@@ -1,0 +1,9 @@
+capture: explore-scope-other-lists-ax
+dynamic-type: AX5
+long-list-unicode-scalars: 80
+long-list-value: Included
+root: x=16.00 y=62.00 width=370.00 height=754.00
+back: x=16.00 y=62.00 width=89.67 height=54.00
+collection: x=16.00 y=219.33 width=370.00 height=350.00
+long-list: x=16.00 y=219.33 width=370.00 height=212.33
+clear: x=16.00 y=748.00 width=370.00 height=68.00

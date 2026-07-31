@@ -462,7 +462,7 @@ final class AppShellTests: XCTestCase {
             ExploreScopeControlPresentation(
                 title: "Include hidden places",
                 icon: .system("eye.slash"),
-                accessibilityIdentifier: "map.layers.show-hidden"
+                accessibilityIdentifier: "explore.scope.include-hidden"
             )
         )
         XCTAssertEqual(
@@ -470,7 +470,7 @@ final class AppShellTests: XCTestCase {
             ExploreScopeControlPresentation(
                 title: "Show saved places",
                 icon: .system("bookmark"),
-                accessibilityIdentifier: "map.layers.show-saved"
+                accessibilityIdentifier: "explore.scope.show-saved"
             )
         )
         XCTAssertEqual(
@@ -478,7 +478,7 @@ final class AppShellTests: XCTestCase {
             ExploreScopeControlPresentation(
                 title: "Show coverage shading",
                 icon: .coverageShading,
-                accessibilityIdentifier: "map.layers.coverage-shading"
+                accessibilityIdentifier: "explore.scope.coverage-shading"
             )
         )
     }
@@ -2228,79 +2228,189 @@ final class AppShellTests: XCTestCase {
         )
     }
 
-    func testListMapFilterChipsExposeActiveLovedListsAndCategories() {
-        let chips = ListMapFilterChips.chips(
-            for: TracksVisitFilter(
-                lovedOnly: true,
-                listIDs: [88, 77],
-                categories: ["history", "architecture"]
+    func testExploreScopeIndicatorComposesDiscoveryAndOnlyEffectiveListFilters() {
+        XCTAssertFalse(
+            ExploreScopePolicy.isAdjusted(
+                discoveryScope: .defaults,
+                listFilter: nil,
+                showVisited: false
             )
         )
-
-        XCTAssertEqual(chips.map(\.title), ["Loved", "2 lists", "architecture", "history"])
-        XCTAssertEqual(chips.map(\.accessibilityIdentifier), [
-            "map.list-mode.filter.loved",
-            "map.list-mode.filter.lists",
-            "map.list-mode.filter.category.architecture",
-            "map.list-mode.filter.category.history",
-        ])
-        XCTAssertEqual(chips.map(\.isToggle), [false, false, false, false])
+        XCTAssertTrue(
+            ExploreScopePolicy.isAdjusted(
+                discoveryScope: DiscoveryScope(showCoverageShading: false),
+                listFilter: nil,
+                showVisited: false
+            )
+        )
+        XCTAssertTrue(
+            ExploreScopePolicy.isAdjusted(
+                discoveryScope: DiscoveryScope(visibleCategoryIDs: ["museum"]),
+                listFilter: .all,
+                showVisited: false
+            )
+        )
+        XCTAssertFalse(
+            ExploreScopePolicy.isAdjusted(
+                discoveryScope: .defaults,
+                listFilter: .loved,
+                showVisited: false
+            )
+        )
+        XCTAssertTrue(
+            ExploreScopePolicy.isAdjusted(
+                discoveryScope: .defaults,
+                listFilter: .loved,
+                showVisited: true
+            )
+        )
     }
 
-    func testTrackFilterPickerDraftComposesLovedListsAndTypesIntoVisitFilter() {
-        var draft = TrackFilterPickerDraft(
-            filter: TracksVisitFilter(lovedOnly: false, listIDs: [77], categories: ["history"])
-        )
-
-        draft.toggleLoved()
-        draft.toggleList(id: 88)
-        draft.toggleCategory("architecture")
-        draft.toggleCategory("history")
+    func testExploreListAllCategoriesDoesNotInheritDiscoveryCategories() {
+        let discovery = DiscoveryScope(visibleCategoryIDs: ["museum"])
 
         XCTAssertEqual(
-            draft.filter,
-            TracksVisitFilter(lovedOnly: true, listIDs: [77, 88], categories: ["architecture"])
+            ExploreScopePolicy.effectiveCategoryIDs(
+                discoveryScope: discovery,
+                listFilter: nil
+            ),
+            ["museum"]
+        )
+        XCTAssertNil(
+            ExploreScopePolicy.effectiveCategoryIDs(
+                discoveryScope: discovery,
+                listFilter: .all
+            )
         )
     }
 
-    func testTrackFilterPickerTreatsNoSelectedCategoryButtonsAsAllCategories() {
-        var draft = TrackFilterPickerDraft()
-
-        XCTAssertTrue(draft.includesAllCategories)
-        draft.toggleCategory("history")
-        XCTAssertEqual(draft.categories, ["history"])
-        XCTAssertFalse(draft.includesAllCategories)
-
-        draft.toggleCategory("history")
-        XCTAssertNil(draft.categories)
-        XCTAssertTrue(draft.includesAllCategories)
-        XCTAssertEqual(draft.filter, .all)
-    }
-
-    func testTrackFilterPickerCanExplicitlyReturnFromNoCategoriesToAll() {
-        var draft = TrackFilterPickerDraft(
-            filter: TracksVisitFilter(categories: Set<String>())
+    func testExploreClearResetsOnlyAnEffectiveListFilter() {
+        let adjustedDiscovery = DiscoveryScope(
+            visibleCategoryIDs: ["museum"],
+            includeHidden: true,
+            showSaved: false,
+            showCoverageShading: false
         )
 
-        XCTAssertFalse(draft.includesAllCategories)
-        draft.selectAllCategories()
-
-        XCTAssertTrue(draft.includesAllCategories)
-        XCTAssertEqual(draft.filter, .all)
-    }
-
-    func testTrackFilterPickerActionLabelReportsOnlyScopedVisitCount() {
-        XCTAssertEqual(TrackFilterPickerCopy.applyLabel(scopedVisitCount: 27), "Show 27 visits")
-        XCTAssertEqual(TrackFilterPickerCopy.applyLabel(scopedVisitCount: 1), "Show 1 visit")
-    }
-
-    func testTrackFilterPickerActiveChipsKeepLovedInOneFilterFamily() {
-        let chips = ListMapFilterChips.chips(
-            for: TracksVisitFilter(lovedOnly: true, listIDs: [77], categories: ["history"])
+        XCTAssertTrue(
+            ExploreScopePolicy.clearIncludesListFilter(
+                listFilter: .loved,
+                showVisited: true
+            )
         )
+        XCTAssertFalse(
+            ExploreScopePolicy.clearIncludesListFilter(
+                listFilter: .loved,
+                showVisited: false
+            )
+        )
+        XCTAssertFalse(
+            ExploreScopePolicy.clearIncludesListFilter(
+                listFilter: .all,
+                showVisited: true
+            )
+        )
+        XCTAssertEqual(
+            ExploreScopePolicy.cleared(
+                discoveryScope: adjustedDiscovery,
+                listFilter: .loved,
+                showVisited: true
+            ),
+            ExploreScopePolicy.State(
+                discoveryScope: .defaults,
+                listFilter: .all
+            )
+        )
+        XCTAssertEqual(
+            ExploreScopePolicy.cleared(
+                discoveryScope: adjustedDiscovery,
+                listFilter: .loved,
+                showVisited: false
+            ),
+            ExploreScopePolicy.State(
+                discoveryScope: .defaults,
+                listFilter: .loved
+            )
+        )
+    }
 
-        XCTAssertEqual(chips.map(\.title), ["Loved", "1 list", "history"])
-        XCTAssertEqual(chips.first?.isToggle, false)
+    @MainActor
+    func testExploreScopeToggleRowForwardsRatifiedGeometryToItsLiveGlyph() throws {
+        let cases: [(DynamicTypeSize, CGFloat)] = [
+            (.large, 20),
+            (.accessibility5, 30),
+        ]
+
+        for (dynamicTypeSize, expectedSize) in cases {
+            let row = ExploreScopeToggleRow(
+                control: .includeHidden,
+                isOn: .constant(false),
+                dynamicTypeSizeOverride: dynamicTypeSize
+            )
+            let glyphs = descendants(of: ExploreScopeControlGlyph.self, in: row.body)
+            XCTAssertEqual(glyphs.count, 1)
+            let glyph = try XCTUnwrap(glyphs.first)
+            XCTAssertEqual(glyph.icon, ExploreScopeControl.includeHidden.presentation.icon)
+            XCTAssertEqual(glyph.size, expectedSize)
+        }
+    }
+
+    func testExploreOtherListsExcludeSystemAndActiveThenSortStably() {
+        let instant = Date(timeIntervalSince1970: 0)
+        let lists = [
+            PlaceList(id: 8, name: "beta", isSystem: false, createdAt: instant),
+            PlaceList(id: 4, name: "Alpha", isSystem: false, createdAt: instant),
+            PlaceList(id: 3, name: "alpha", isSystem: false, createdAt: instant),
+            PlaceList(id: 1, name: "Want to go", isSystem: true, createdAt: instant),
+            PlaceList(id: 7, name: "Active", isSystem: false, createdAt: instant),
+            PlaceList(id: nil, name: "Unsaved", isSystem: false, createdAt: instant),
+        ]
+
+        XCTAssertEqual(
+            ExploreScopeListOptions.eligible(
+                from: lists,
+                excludingActiveListID: 7
+            ),
+            [
+                ExploreScopeListOption(id: 3, title: "alpha"),
+                ExploreScopeListOption(id: 4, title: "Alpha"),
+                ExploreScopeListOption(id: 8, title: "beta"),
+            ]
+        )
+    }
+
+    func testExploreOtherListsSummaryNamesSelectionWithoutUnboundedCopy() {
+        let options = [
+            ExploreScopeListOption(id: 3, title: "Alpha"),
+            ExploreScopeListOption(id: 8, title: "Beta"),
+            ExploreScopeListOption(id: 9, title: "Gamma"),
+        ]
+
+        XCTAssertEqual(
+            ExploreScopeListOptions.summary(selectedIDs: [], options: options),
+            "None selected"
+        )
+        XCTAssertEqual(
+            ExploreScopeListOptions.summary(selectedIDs: [8], options: options),
+            "Beta"
+        )
+        XCTAssertEqual(
+            ExploreScopeListOptions.summary(selectedIDs: [9, 3], options: options),
+            "Alpha · 2 selected"
+        )
+    }
+
+    func testExploreCategorySymbolsCarryExplicitResolvableStatePairs() {
+        let iconNames = Set(PinLayers.categoryIconNames.values).union([
+            PinLayers.fallbackCategoryIconName,
+        ])
+
+        for iconName in iconNames {
+            let pair = ExploreCategorySymbolPair.symbols(for: iconName)
+            XCTAssertNotEqual(pair.selected, pair.available)
+            XCTAssertNotNil(UIImage(systemName: pair.selected), pair.selected)
+            XCTAssertNotNil(UIImage(systemName: pair.available), pair.available)
+        }
     }
 
     func testTrackTimelineDateMarkersThinByAvailableWidth() {
@@ -3250,7 +3360,6 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(MapScreen.themeStorageKey, "map.theme.id")
         XCTAssertEqual(MapScreen.pinSizeMultiplierStorageKey, "map.pinSize.multiplier")
         XCTAssertEqual(MapScreen.scopeStorageKey, "map.scope.record")
-        XCTAssertEqual(MapScreen.coverageShadingStorageKey, "map.coverageShading.visible")
         XCTAssertEqual(MapTheme.named(nil).id, MapTheme.definedPaper.id)
         XCTAssertEqual(MapTheme.named("defined-paper").displayName, "Defined Paper")
     }

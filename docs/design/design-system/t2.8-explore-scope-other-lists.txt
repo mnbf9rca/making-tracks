@@ -1,0 +1,6 @@
+capture: explore-scope-other-lists
+selected-list-value: Included
+root: x=16.00 y=62.00 width=370.00 height=754.00
+back: x=16.00 y=62.00 width=60.67 height=44.00
+selected-list: x=16.00 y=175.00 width=370.00 height=52.00
+clear: x=16.00 y=758.00 width=370.00 height=58.00

@@ -1,0 +1,3 @@
+capture: explore-door-scope-default
+accessibility-value: Default scope
+explore-door: x=80.67 y=784.00 width=115.67 height=44.00

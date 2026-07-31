@@ -1,0 +1,5 @@
+capture: explore-scope-other-lists-empty
+option-count: 0
+root: x=16.00 y=62.00 width=366.83 height=177.17
+back: x=16.00 y=62.00 width=60.67 height=44.00
+empty: x=19.17 y=196.83 width=363.67 height=42.33

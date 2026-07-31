@@ -1389,119 +1389,6 @@ enum ListMapFilteredFeatures {
     }
 }
 
-struct ListMapFilterChip: Equatable, Identifiable {
-    let id: String
-    let title: String
-    let systemImage: String?
-    let accessibilityIdentifier: String
-    let isToggle: Bool
-    let isSelected: Bool
-}
-
-enum ListMapFilterChips {
-    static func chips(for filter: TracksVisitFilter) -> [ListMapFilterChip] {
-        var chips: [ListMapFilterChip] = [
-            ListMapFilterChip(
-                id: "loved",
-                title: "Loved",
-                systemImage: "heart.fill",
-                accessibilityIdentifier: "map.list-mode.filter.loved",
-                isToggle: false,
-                isSelected: filter.lovedOnly
-            )
-        ]
-        if !filter.listIDs.isEmpty {
-            let count = filter.listIDs.count
-            chips.append(ListMapFilterChip(
-                id: "lists",
-                title: count == 1 ? "1 list" : "\(count) lists",
-                systemImage: "list.bullet",
-                accessibilityIdentifier: "map.list-mode.filter.lists",
-                isToggle: false,
-                isSelected: true
-            ))
-        }
-        for category in (filter.categories ?? []).sorted() {
-            chips.append(ListMapFilterChip(
-                id: "category-\(identifierSuffix(for: category))",
-                title: category,
-                systemImage: "tag.fill",
-                accessibilityIdentifier: "map.list-mode.filter.category.\(identifierSuffix(for: category))",
-                isToggle: false,
-                isSelected: true
-            ))
-        }
-        return chips
-    }
-
-    private static func identifierSuffix(for value: String) -> String {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
-        let scalars = value.lowercased().unicodeScalars.map { scalar in
-            allowed.contains(scalar) ? Character(scalar) : "-"
-        }
-        return String(scalars)
-    }
-}
-
-struct TrackFilterPickerDraft: Equatable, Sendable {
-    var lovedOnly: Bool
-    var listIDs: Set<Int64>
-    var categories: Set<String>?
-
-    init(filter: TracksVisitFilter = .all) {
-        lovedOnly = filter.lovedOnly
-        listIDs = filter.listIDs
-        categories = filter.categories
-    }
-
-    var filter: TracksVisitFilter {
-        TracksVisitFilter(lovedOnly: lovedOnly, listIDs: listIDs, categories: categories)
-    }
-
-    var includesAllCategories: Bool {
-        categories == nil
-    }
-
-    mutating func selectAllCategories() {
-        categories = nil
-    }
-
-    mutating func toggleLoved() {
-        lovedOnly.toggle()
-    }
-
-    mutating func toggleList(id: Int64) {
-        if listIDs.contains(id) {
-            listIDs.remove(id)
-        } else {
-            listIDs.insert(id)
-        }
-    }
-
-    mutating func toggleCategory(_ category: String) {
-        var next = categories ?? []
-        if next.contains(category) {
-            next.remove(category)
-            categories = next.isEmpty ? nil : next
-        } else {
-            next.insert(category)
-            categories = next
-        }
-    }
-}
-
-enum TrackFilterPickerCopy {
-    static func applyLabel(scopedVisitCount: Int) -> String {
-        let count = max(0, scopedVisitCount)
-        return count == 1 ? "Show 1 visit" : "Show \(count) visits"
-    }
-}
-
-struct TrackFilterPickerListOption: Equatable, Identifiable {
-    let id: Int64
-    let title: String
-}
-
 struct TrackReplaySnapshotCache: Sendable {
     static let empty = TrackReplaySnapshotCache(context: .empty)
 
@@ -2552,7 +2439,6 @@ struct MapScreen: View {
     static let themeStorageKey = "map.theme.id"
     static let pinSizeMultiplierStorageKey = "map.pinSize.multiplier"
     static let scopeStorageKey = DiscoveryScopeStore.storageKey
-    static let coverageShadingStorageKey = DiscoveryScopeStore.legacyCoverageShadingKey
 
     let database: AppDatabase
     let startupViewport: ViewportSeed
@@ -2622,10 +2508,7 @@ struct MapScreen: View {
     @State private var activeListMap: ActiveListMap?
     @State private var listCameraRequest: ViewportCameraRequest?
     @State private var nextListCameraRequestID = 10_000
-    @State private var isTrackFilterPickerPresented = false
-    @State private var trackFilterPickerDraft = TrackFilterPickerDraft()
-    @State private var trackFilterPickerLists: [PlaceList] = []
-    @State private var trackFilterPickerScopedVisitCount = 0
+    @State private var exploreScopeLists: [PlaceList] = []
     private let viewportRefreshDebouncer = ViewportRefreshDebouncer()
     @State private var suppressedNearbyPromptPlaceIDs: Set<String> = []
     @State private var nearbyPromptFeatures: [(MapPlace, PinState)] = []
@@ -2955,7 +2838,12 @@ struct MapScreen: View {
             .overlay(alignment: .bottom) {
                 MapDoorBar(
                     openExplore: appShell.openExploreDoor,
-                    openJournal: appShell.openJournalDoor
+                    openJournal: appShell.openJournalDoor,
+                    isExploreScopeAdjusted: ExploreScopePolicy.isAdjusted(
+                        discoveryScope: layerVisibility.discoveryScope,
+                        listFilter: activeListMap?.visitFilter,
+                        showVisited: activeListMap?.showVisited ?? false
+                    )
                 )
                 .padding(.horizontal, MapOverlayChromeSpec.edgePadding)
                 .padding(
@@ -2986,7 +2874,8 @@ struct MapScreen: View {
                 locationStatus: locationMenuStatus,
                 storageStatus: storageMenuStatus,
                 openLocationSettings: openLocationSettings,
-                visibility: layersSheetVisibilityBinding,
+                visibility: $layerVisibility,
+                listScope: exploreListScope,
                 replayOnboarding: onReplayOnboarding,
                 onOfflineMapsChanged: refreshAfterOfflineMapsChanged,
                 onShowListOnMap: { list, filter in
@@ -3003,26 +2892,6 @@ struct MapScreen: View {
                     }
                 }
             )
-        }
-        .sheet(isPresented: $isTrackFilterPickerPresented) {
-            TrackFilterPickerSheet(
-                draft: $trackFilterPickerDraft,
-                listOptions: trackFilterPickerListOptions,
-                categoryOptions: layerVisibility.categories,
-                scopedVisitCount: trackFilterPickerScopedVisitCount,
-                onDraftChanged: {
-                    Task { @MainActor in
-                        await refreshTrackFilterPickerScopedVisitCount()
-                    }
-                },
-                onApply: {
-                    applyTrackFilterPickerDraft()
-                }
-            )
-            .presentationDetents([.medium, .large])
-            .onAppear {
-                logSheetOpened("track-filter-picker")
-            }
         }
         .fullScreenCover(isPresented: updateRequiredPresentationBinding) {
             if let surface = updateRequiredSurface {
@@ -3078,11 +2947,17 @@ struct MapScreen: View {
             guard presentedDoor != nil else { return }
             cardPresentation.dismiss()
             Task { await refreshStorageMenuStatus() }
+            if presentedDoor == .explore, activeListMap != nil {
+                Task { @MainActor in
+                    exploreScopeLists = await model?.lists() ?? []
+                }
+            }
         }
         .onChange(of: layerVisibility) { _, visibility in
-            DiscoveryScopeStore(userDefaults: .standard).save(
-                visibility.discoveryScope
-            )
+            let didSaveScope = DiscoveryScopeStore(
+                userDefaults: .standard
+            ).save(visibility.discoveryScope)
+            assert(didSaveScope, "Discovery scope validation failed")
             Task { @MainActor in
                 await applyLayerVisibility(visibility)
             }
@@ -3121,11 +2996,18 @@ struct MapScreen: View {
         return names
     }
 
-    private var trackFilterPickerListOptions: [TrackFilterPickerListOption] {
-        trackFilterPickerLists.compactMap { list in
-            guard !list.isSystem, let id = list.id else { return nil }
-            return TrackFilterPickerListOption(id: id, title: list.name)
-        }
+    private var exploreListScope: ExploreListScopeContext? {
+        guard let activeListMap else { return nil }
+        return ExploreListScopeContext(
+            activeListID: activeListMap.listID,
+            activeListName: activeListMap.name,
+            filter: activeListVisitFilterBinding,
+            showVisited: listMapShowVisitedBinding,
+            listOptions: ExploreScopeListOptions.eligible(
+                from: exploreScopeLists,
+                excludingActiveListID: activeListMap.listID
+            )
+        )
     }
 
     private var cardPresentationItemBinding: Binding<PlaceCardPresentation.Item?> {
@@ -3402,7 +3284,6 @@ struct MapScreen: View {
         VStack(alignment: .leading, spacing: 8) {
             if let activeListMap {
                 listMapNavigationChrome(activeListMap)
-                listMapFilterChips(activeListMap)
             } else if let offlineDownloadProgress = currentOfflineDownloadProgress {
                 MapDownloadProgressToast(
                     progress: offlineDownloadProgress,
@@ -3486,36 +3367,6 @@ struct MapScreen: View {
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .accessibilityIdentifier(showVisited ? "map.list-mode.tracks" : "map.list-mode.fresh")
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
-    }
-
-    private func listMapFilterChips(_ list: ActiveListMap) -> some View {
-        HStack(spacing: 6) {
-            ForEach(ListMapFilterChips.chips(for: list.visitFilter)) { chip in
-                Button {
-                    presentTrackFilterPicker(for: list)
-                } label: {
-                    HStack(spacing: 5) {
-                        if let systemImage = chip.systemImage {
-                            Image(systemName: systemImage)
-                        }
-                        Text(verbatim: chip.title)
-                    }
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .foregroundStyle(chip.isSelected ? Color(uiColor: .systemBackground) : Color(uiColor: .label))
-                    .background(chip.isSelected ? Color(uiColor: .label) : Color.clear, in: Capsule())
-                    .background(.regularMaterial, in: Capsule())
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(chip.title)
-                .accessibilityIdentifier(chip.accessibilityIdentifier)
-                .accessibilityValue(chip.isSelected ? "Selected" : "Not selected")
-            }
-        }
     }
 
     private func mapTrackReplayControls(_ timeline: TrackTimelineModel) -> some View {
@@ -3795,6 +3646,23 @@ struct MapScreen: View {
         )
     }
 
+    private var activeListVisitFilterBinding: Binding<TracksVisitFilter> {
+        Binding(
+            get: { activeListMap?.visitFilter ?? .all },
+            set: { filter in
+                guard var list = activeListMap else { return }
+                guard list.visitFilter != filter || !list.showVisited else { return }
+                list.visitFilter = filter
+                list.showVisited = true
+                activeListMap = list
+                stopMapTrackAutoplay()
+                Task { @MainActor in
+                    await refreshActiveListMap(updateCamera: true)
+                }
+            }
+        )
+    }
+
     private var visibleTrackSourceSnapshot: TrackSourceSnapshot {
         guard activeListMap?.showVisited == true else { return .empty }
         return trackSourceSnapshot
@@ -3971,49 +3839,6 @@ struct MapScreen: View {
         await refreshCurrentViewport()
         await refreshStorageMenuStatus()
         MakingTracksLog.startup.info("offline refresh finished")
-    }
-
-    private var layersSheetVisibility: MapLayerVisibility {
-        ListMapLayerVisibility.displayed(
-            discoveryVisibility: layerVisibility,
-            visitFilter: activeListMap?.visitFilter
-        )
-    }
-
-    private var layersSheetVisibilityBinding: Binding<MapLayerVisibility> {
-        Binding(
-            get: { layersSheetVisibility },
-            set: { updateLayersSheetVisibility($0) }
-        )
-    }
-
-    @MainActor
-    private func updateLayersSheetVisibility(_ visibility: MapLayerVisibility) {
-        guard var list = activeListMap else {
-            layerVisibility = visibility
-            return
-        }
-
-        layerVisibility = MapLayerVisibility(
-            categories: layerVisibility.categories,
-            showHiddenPlaces: visibility.showHiddenPlaces,
-            showSavedPlaces: visibility.showSavedPlaces,
-            showCoverageShading: visibility.showCoverageShading,
-            visibleCategories: layerVisibility.visibleCategories
-        )
-
-        let nextFilter = ListMapLayerVisibility.updating(
-            visitFilter: list.visitFilter,
-            from: visibility
-        )
-        guard nextFilter != list.visitFilter else { return }
-        list.visitFilter = nextFilter
-        list.showVisited = true
-        activeListMap = list
-        stopMapTrackAutoplay()
-        Task { @MainActor in
-            await refreshActiveListMap(updateCamera: true)
-        }
     }
 
     private var locationChrome: some View {
@@ -4455,42 +4280,6 @@ struct MapScreen: View {
             return
         }
         await refreshCurrentViewport()
-    }
-
-    @MainActor
-    private func presentTrackFilterPicker(for list: ActiveListMap) {
-        trackFilterPickerDraft = TrackFilterPickerDraft(filter: list.visitFilter)
-        trackFilterPickerScopedVisitCount = trackReplayContext.visits.count
-        isTrackFilterPickerPresented = true
-        Task { @MainActor in
-            trackFilterPickerLists = await model?.lists() ?? []
-            await refreshTrackFilterPickerScopedVisitCount()
-        }
-    }
-
-    @MainActor
-    private func refreshTrackFilterPickerScopedVisitCount() async {
-        guard isTrackFilterPickerPresented, let model, let list = activeListMap else { return }
-        let draft = trackFilterPickerDraft
-        let context = await model.trackGeometryContext(listID: list.listID, filter: draft.filter)
-        guard isTrackFilterPickerPresented,
-              activeListMap?.listID == list.listID,
-              trackFilterPickerDraft == draft
-        else { return }
-        trackFilterPickerScopedVisitCount = context.visits.count
-    }
-
-    @MainActor
-    private func applyTrackFilterPickerDraft() {
-        guard var list = activeListMap else { return }
-        list.showVisited = true
-        list.visitFilter = trackFilterPickerDraft.filter
-        activeListMap = list
-        isTrackFilterPickerPresented = false
-        stopMapTrackAutoplay()
-        Task { @MainActor in
-            await refreshActiveListMap(updateCamera: true)
-        }
     }
 
     @MainActor
@@ -5037,6 +4826,7 @@ private struct MapDoorSheetIntegration: View {
     let storageStatus: StorageMenuStatus
     let openLocationSettings: () -> Void
     let visibility: Binding<MapLayerVisibility>
+    let listScope: ExploreListScopeContext?
     let replayOnboarding: @MainActor () -> Void
     let onOfflineMapsChanged: @MainActor () async -> Void
     let onShowListOnMap: @MainActor (PlaceList, TracksVisitFilter) -> Void
@@ -5051,6 +4841,7 @@ private struct MapDoorSheetIntegration: View {
             deepLinkDestination: shell.deepLinkDestination,
             model: model,
             visibility: visibility,
+            listScope: listScope,
             prepareTracksHistory: shell.prepareTracksHistory,
             onListDeleted: onListDeleted
         ) { destination in
@@ -8781,135 +8572,6 @@ struct FlowLayout: Layout {
         width = max(width, rowWidth)
         height += rowHeight
         return CGSize(width: width, height: height)
-    }
-}
-
-private struct TrackFilterPickerSheet: View {
-    @Binding var draft: TrackFilterPickerDraft
-    let listOptions: [TrackFilterPickerListOption]
-    let categoryOptions: [MapLayerCategory]
-    let scopedVisitCount: Int
-    let onDraftChanged: @MainActor () -> Void
-    let onApply: @MainActor () -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        ZStack {
-            Color.clear
-                .accessibilityIdentifier("track-filter-picker.sheet")
-
-            NavigationStack {
-                List {
-                    Section {
-                        filterButton(
-                            title: "Loved",
-                            systemImage: "heart.fill",
-                            isSelected: draft.lovedOnly,
-                            accessibilityIdentifier: "track-filter-picker.loved"
-                        ) {
-                            draft.toggleLoved()
-                        }
-                    }
-
-                    Section("Lists") {
-                        if listOptions.isEmpty {
-                            Text("No saved lists")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(listOptions) { option in
-                                filterButton(
-                                    title: option.title,
-                                    systemImage: "list.bullet",
-                                    isSelected: draft.listIDs.contains(option.id),
-                                    accessibilityIdentifier: "track-filter-picker.list.\(option.id)"
-                                ) {
-                                    draft.toggleList(id: option.id)
-                                }
-                            }
-                        }
-                    }
-
-                    Section("Types") {
-                        filterButton(
-                            title: "All types",
-                            systemImage: "checkmark.circle",
-                            isSelected: draft.includesAllCategories,
-                            accessibilityIdentifier: "track-filter-picker.category.all"
-                        ) {
-                            draft.selectAllCategories()
-                        }
-
-                        ForEach(categoryOptions) { category in
-                            filterButton(
-                                title: category.title,
-                                systemImage: PinLayers.categorySymbolNames[category.iconName] ?? "mappin",
-                                isSelected: draft.categories?.contains(category.id) == true,
-                                accessibilityIdentifier: "track-filter-picker.category.\(category.id)"
-                            ) {
-                                draft.toggleCategory(category.id)
-                            }
-                        }
-                    }
-                }
-                .navigationTitle("Filter tracks")
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "xmark")
-                        }
-                        .accessibilityLabel("Close")
-                        .accessibilityIdentifier("track-filter-picker.close")
-                    }
-                }
-                .safeAreaInset(edge: .bottom) {
-                    Button {
-                        onApply()
-                    } label: {
-                        Text(verbatim: TrackFilterPickerCopy.applyLabel(scopedVisitCount: scopedVisitCount))
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.regularMaterial)
-                    .accessibilityIdentifier("track-filter-picker.apply")
-                }
-            }
-        }
-    }
-
-    private func filterButton(
-        title: String,
-        systemImage: String,
-        isSelected: Bool,
-        accessibilityIdentifier: String,
-        toggle: @escaping () -> Void
-    ) -> some View {
-        Button {
-            toggle()
-            onDraftChanged()
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: systemImage)
-                    .frame(width: 24)
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                    .accessibilityHidden(true)
-                Text(verbatim: title)
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(Color.accentColor)
-                        .accessibilityHidden(true)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(accessibilityIdentifier)
-        .accessibilityValue(isSelected ? "Selected" : "Not selected")
     }
 }
 

@@ -473,20 +473,39 @@ struct MakingTracksApp: App {
 
 #if DEBUG
 private struct ChipHitTargetFixture: View {
-    @State private var activationCount = 0
+    @State private var leftActivationCount = 0
+    @State private var rightActivationCount = 0
 
     var body: some View {
         VStack(spacing: 80) {
-            MaterialChip(
-                "Target chip",
-                state: .active
-            ) {
-                activationCount += 1
-            }
-            .accessibilityIdentifier("chip-target.fixture")
+            HStack(spacing: 6) {
+                MaterialChip(
+                    "Left chip",
+                    state: .active,
+                    neighborGaps: MaterialChipNeighborGaps(trailing: 6)
+                ) {
+                    leftActivationCount += 1
+                }
+                .accessibilityIdentifier("chip-target.left")
 
-            Text(verbatim: "\(activationCount)")
+                MaterialChip(
+                    "Right chip",
+                    state: .available,
+                    neighborGaps: MaterialChipNeighborGaps(leading: 6)
+                ) {
+                    rightActivationCount += 1
+                }
+                .accessibilityIdentifier("chip-target.right")
+            }
+
+            Text(verbatim: "\(leftActivationCount + rightActivationCount)")
                 .accessibilityIdentifier("chip-target.activation-count")
+
+            Text(verbatim: "\(leftActivationCount)")
+                .accessibilityIdentifier("chip-target.left-count")
+
+            Text(verbatim: "\(rightActivationCount)")
+                .accessibilityIdentifier("chip-target.right-count")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(MaterialTheme.snow.tokens.background.swiftUIColor)

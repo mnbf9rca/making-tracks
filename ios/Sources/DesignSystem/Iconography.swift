@@ -51,9 +51,20 @@ public enum IconRole: CaseIterable, Hashable, Sendable {
     }
 }
 
-/// Ratified pairing constants for the Explore surface; these are not new icon roles.
-public enum ExploreSurfaceIconGeometry {
-    public static let scopeControl: CGFloat = 20
+/// P2R-4's Scope-control icon is semantically distinct from `rowRaised`
+/// despite sharing its current point size.
+public enum ScopeControlIconGeometry {
+    public static let pointSize: CGFloat = 20
+    public static let accessibilityPointSize: CGFloat = 30
+    public static let typographyRole = TypographyRole.button
+    public static let relativeTextStyle = Font.TextStyle.subheadline
+
+    public static func resolvedPointSize(
+        scaledPointSize: CGFloat,
+        isAccessibilitySize: Bool
+    ) -> CGFloat {
+        isAccessibilitySize ? accessibilityPointSize : scaledPointSize
+    }
 }
 
 public extension View {
