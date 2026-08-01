@@ -121,11 +121,11 @@ The pre-production RED is the neutered-fix run: with no scene preference, the Ap
 - Consumes: the focused UI test and `/private/tmp/making-tracks-artifacts`
 - Produces: six reviewed captures, SHA-256 inventory, per-card ink/background counts, contrast ratios, and Light/Dark difference counts
 
-- [ ] **Step 1: Add the deterministic regeneration wrapper**
+- [x] **Step 1: Add the deterministic regeneration wrapper**
 
 The script must refuse runs outside `sim-lock.sh`, validate Xcode 26.6 / build 17F113, freeze the status bar, run only the focused test through `release-gate.sh`, copy the six captures, validate `1206×2622` dimensions, print SHA-256 values, and clear the status bar on exit. It must boot through the assigned wrapper path or state the locked-seat precondition.
 
-- [ ] **Step 2: Record the evidence class and measurements**
+- [x] **Step 2: Record the evidence class and measurements**
 
 The evidence record names the source head, simulator seat, SDK/runtime, capture test, dimensions, SHA-256 values, foreground/background pixel counts, observed contrast ratio for each affected card, and exact zero Light/Dark differing-pixel count within each opaque comparison frame. State that the surrounding live-map pixels are excluded from byte equality and that the images are implementation evidence, not a new design ruling.
 

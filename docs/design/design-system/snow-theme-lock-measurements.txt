@@ -1,0 +1,5 @@
+evidence_class: nondeterministic-content
+comparison_oracle: opaque card regions; exact Light/Dark pixel equality
+appearance: frame=12.00,214.33,378.00,288.00 diff_pixels=0 primary_aa_pixels=3580 primary_max_contrast=21.000 background_pixels=904429 secondary_aa_pixels=1292 secondary_max_contrast=3.439
+map-data: frame=12.00,214.33,378.00,589.33 diff_pixels=0 primary_aa_pixels=1707 primary_max_contrast=21.000 background_pixels=652274 secondary_aa_pixels=1077 secondary_max_contrast=3.439
+location: frame=29.00,230.33,345.00,52.00 diff_pixels=0 primary_aa_pixels=3186 primary_max_contrast=21.000 background_pixels=155660
