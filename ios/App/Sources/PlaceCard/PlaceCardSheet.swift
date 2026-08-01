@@ -186,6 +186,73 @@ struct PlaceCardActionStyledContent<Content: View>: View {
     }
 }
 
+#if DEBUG
+struct PlaceCardPressEvidenceStyle: ButtonStyle {
+    let action = PlaceCardAction.hide
+    let productionStyle: MaterialQuietButtonStyle
+
+    init(theme: MaterialTheme = .snow) {
+        productionStyle = .textOnly(theme: theme)
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        productionStyle.makeBody(configuration: configuration)
+            .overlay(alignment: .topLeading) {
+                PlaceCardPressEvidenceStateMarker(
+                    isPressed: configuration.isPressed
+                )
+                .offset(x: -16, y: -16)
+            }
+    }
+}
+
+private struct PlaceCardPressEvidenceStateMarker: View {
+    let isPressed: Bool
+
+    private var state: String {
+        isPressed ? "pressed" : "rest"
+    }
+
+    private var color: Color {
+        isPressed
+            ? Color(.sRGB, red: 1, green: 0, blue: 1, opacity: 1)
+            : Color(.sRGB, red: 0, green: 1, blue: 1, opacity: 1)
+    }
+
+    var body: some View {
+        Rectangle()
+            .fill(color)
+            .frame(width: 12, height: 12)
+            .accessibilityElement()
+            .accessibilityLabel("Place card press evidence state")
+            .accessibilityValue(state)
+            .accessibilityIdentifier("place-card.press-evidence.state")
+    }
+}
+
+// Fossil: this DEBUG-only fixture exists solely for device press evidence.
+// Its direct production-style coupling is deliberate: divergence must break
+// the proof rather than leave an evidence clone to drift.
+struct PlaceCardPressInsetEvidenceFixture: View {
+    private let theme = MaterialTheme.snow
+
+    var body: some View {
+        let presentation = PlaceCardActionAppearance.presentation(
+            for: .hide,
+            isSaved: false
+        )
+
+        Button(action: {}) {
+            Text(verbatim: presentation.title)
+        }
+        .buttonStyle(PlaceCardPressEvidenceStyle(theme: theme))
+        .accessibilityIdentifier("place-card.press-evidence.hide")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(theme.tokens.background.swiftUIColor)
+    }
+}
+#endif
+
 enum PlaceCardPhotoLayout {
     static let preferredMinimumHeight: CGFloat = 112
     static let maximumHeight: CGFloat = 260
