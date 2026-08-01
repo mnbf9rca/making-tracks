@@ -33,7 +33,7 @@ re-grounding on this file's merge. Do not write another seat's status.
 
 ---
 
-**WAVE COMPLETE (2026-07-31): all ten rows shipped.** Related merges outside the rows: infra sim-concurrency `51146cc4` (#547, closes #497/#545); R16 two-ink amendment `ecf98db7` (#555) + bound qualifier `1afcc3fe` (#556); session batch `a7df4ed7` (#539); handle renames `8b513946` (#542) + `bde9c0a2` (#543). Phase 1 acceptance: 34/35 final (designer-accepted; #520 parked on the session agenda).
+**WAVE COMPLETE (2026-07-31): all ten rows shipped.** Related merges outside the rows: infra sim-concurrency `51146cc4` (#547, closes #497/#545); R16 two-ink amendment `ecf98db7` (#555) + bound qualifier `1afcc3fe` (#556); session batch `a7df4ed7` (#539); handle renames `8b513946` (#542) + `bde9c0a2` (#543). Phase 1 acceptance: 34/35 at wave close (designer-accepted; #520 parked on the session agenda) — **completed to 35/35 on 2026-08-01** when the parked condition fired: P2R-2 ruled the row roles, T2.3 (#581 → `b96abba`) migrated the glyph, #520 closed.
 
 ## Dependency graph
 
