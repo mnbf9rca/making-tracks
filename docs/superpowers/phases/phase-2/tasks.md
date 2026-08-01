@@ -1,5 +1,7 @@
 # Phase 2 — Task Graph
 
+**BUILD COMPLETE (2026-08-01):** all ten rows merged; ledger finals below are the closed-loop record (planner sweep after two fresh boots flagged the lag). Residual: #583 (follow-ups), the acceptance pass, the closeout batch.
+
 Phase spec: [`docs/superpowers/specs/2026-07-25-design-system-and-ia-design.md`](../../specs/2026-07-25-design-system-and-ia-design.md) (ratified, merged as PR #465; amended by #524 and the amendment wave).
 Epic: #466. Scope: **DS-3 (#469) + DS-6 (#472)** per the epic's phased work-list. Nothing else from the epic this phase.
 Session rulings: **P2R-1 … P2R-10**, plus wireframe commissions **W-1** and **W-2**, from the Phase 2 opening design session (2026-07-31). **Canonical text: [`design-session-rulings.md`](design-session-rulings.md) at `9fa91d482f8de857f10e4b82693e55209dd2e0fb`** (PR #563, authored from Rob's in-session text). Every P2R/W quotation in this graph is from that file at that SHA; none of those opening-session rulings is quoted from a relay. The later **OF1** ruling is the explicit exception: designer text relayed by Rob and pinned to `a63abb4d` (PR #565). P2R-2 and P2R-5 were flagged to Rob individually and confirmed in his own words — **no ruling here rests on silence.** Session input packet: [`design-session-input.md`](design-session-input.md).
@@ -165,7 +167,7 @@ Suggested waves for a four-builder pool. **Wave 1 is where the phase's latency l
 - **Branch:** `wp-t2-1-impl`
 - **Owner:** codex3
 - **Review tier:** `sourcery` + `reviewer` (+ codex-r's spec attack, per *Review budget*)
-- **Status:** PR open — #566
+- **Status:** complete — merged as `f320da0` (#566)
 - **Contracts produced:** the ratified figures T2.2 and T2.8 build against. **Fix them here**; a figure that moves after a builder consumes it is the failure this table exists to prevent.
 
 **Builder brief.** This is the one-shot amendment P2R-9 commissions, and **it is smaller than the commission implies** — most of its riders landed with #524 and the amendment wave. **Verify each of the following is already true before you write anything, and record the verification in your PR body**; if one is not true, it is yours and you say so:
@@ -202,7 +204,7 @@ Docs-only, so the iOS gate does not run — and a green PR is therefore not a te
 - **Branch:** `wp-t2-2-impl`
 - **Owner:** codex1
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** PR open — draft #574; review repair and full host gate GREEN (501 tests); Sourcery + reviewer re-review pending
+- **Status:** complete — merged as `1f9d8a4` (#574)
 - **Evidence:** review-repair implementation head `a6ec194`; `cd ios && swift test` — 501 tests, 0 failures; paired suites — ControlStyles/PublicControlStyles 40/40 and IconRole 3/3; `.body` anchor mutation failed with `Expected subheadline, got body`.
 - **Contracts produced:** two new `IconRole` cases and the scaled press inset. **T2.3 consumes the first**; name both in the PR body.
 - **Owed device proof:** AC2.3 is explicitly partial: the spec-side and anchor-side contract is met here, while device-real default/AX perceptibility for the sole `MaterialQuietButtonStyle.textOnly` app consumer (`PlaceCardSheet.swift:172`) is tracked by #575 and carries to the first full-gate row that renders the place-card action bar — structurally Phase 3 DS-7 (#473), not T2.3.
@@ -235,7 +237,7 @@ Host-only (`cd ios && swift test`) unless you touch `project.yml`. No render: no
 - **Branch:** `wp-t2-3-door-glyph`
 - **Owner:** codex1
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** implementation, AX5 collision repair, adversarial review, and full release gate green
+- **Status:** complete — merged as `b96abba` (#581); closed #520, Phase 1 acceptance final at 35/35
 - **Closes:** **#520** on merge, and with it Phase 1's parked acceptance remainder.
 
 **Builder brief.** The merged target-state spec supersedes this row's stale “three sites and one enum” phrase: T2.3 owns sites 1 and 3; T2.8 owns Scope/site 2. **The correction below replaces this row's original claim that the door row glyph was "the last font literal outside `DesignSystem`"** — that was true at Phase 1 closeout and at #520's regrade, and it stopped being true when the amendment wave's A1/A8 built the Explore surface. The stale claim was mine; the graph is corrected rather than the criterion quietly widened.
@@ -267,7 +269,7 @@ Full gate — you changed an app-target surface.
 - **Depends on:** none
 - **Owner:** codex2
 - **Review tier:** `sourcery`
-- **Status:** PR open — #572
+- **Status:** complete — merged as `16473fd` (#572)
 
 **Builder brief.** The smallest row in the phase, and it exists because the amendment landed the **sheet** side and not the **code** side. `PinLayers.pinColor` reads `PinTokenBlock.constant.pin.mapStyleString` (`ios/Sources/MakingTracksMapStyle/PinLayers.swift:5`); the line below it, `hiddenPinColor`, is still a raw `"#767B82"` string literal (`:6`) even though spec §3 now carries it as a constant-pin-block row and §8 says pin layer constants come from that block. Wire it the way `pinColor` is wired.
 
@@ -286,7 +288,7 @@ Host-only unless you touch `project.yml`.
 - **Depends on:** none — claimable immediately
 - **Owner:** codex1 · **Pipeline:** build agent authors → **reviewer validates** → **Rob rules**
 - **Review tier:** `sourcery` + `reviewer` (validation is the gate, not a courtesy)
-- **Status:** ruled — filtered-icon amendment revalidated at exact head `0bb0e3b`; exactly two amended digests and eight unchanged digests matched; draft PR #570 is ready for merge
+- **Status:** complete — ruled (filtered-icon amendment) and merged as `9b4d792` (#570)
 - **Unblocks:** T2.8, **on Rob's ruling — not on merge**
 - **RULED (Rob, 2026-07-31, relayed in planner's chat):** verbatim — *"'scope set' is clunky. Can we add a 'filtered' icon instead? Switches fine."* then *"Doesn't need to come back to me, just implement."* Consequences: **switches are ratified** for the three scope rows (OF5 closes as the row-class exception to R15, in the drawn form); the scope-active door affordance **redraws as a filtered icon** (glyph is the builder's taste guess, flagged); the drawn list-map split ships as drawn; **no return trip** — the row completes at reviewer's revalidation of the amended frames.
 
@@ -316,7 +318,7 @@ Host-only unless you touch `project.yml`.
 - **Depends on:** none — claimable immediately
 - **Owner:** codex2 · **Pipeline:** build agent authors → **reviewer validates** → **Rob rules**
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** ruled — Rob approved #568's Settings + About default/AX artifacts as drawn
+- **Status:** complete — ruled (approved as drawn) and merged as `4e3dcb3` (#568)
 - **Unblocks:** T2.9 and T2.10, **on Rob's ruling**
 - **RULED (Rob, 2026-07-31, relayed in planner's chat):** verbatim — *"568 mockups look good."* Approved **as drawn**, both taste guesses included: Settings as hub-with-focused-subareas; licences as tap-through sub-areas. T2.6 completes at ruled; T2.9/T2.10 unblocked that moment. Assignment at unblock: T2.9 → codex2, T2.10 → codex3.
 
@@ -342,7 +344,7 @@ Evidence law as W-1: measurements beside every frame, constraint structure enume
 - **Depends on:** none — **no wireframe gate**: nothing visible changes, and the ruling is explicit
 - **Owner:** codex4
 - **Review tier:** `sourcery` + `greptile` + `reviewer` — **the phase's stored-state row**
-- **Status:** PR open — draft #576; review candidate at `f942a97`; host 514/514, locked Release/Debug/simulator gate 319/319 (233 app units), reviewer approved
+- **Status:** complete — merged as `2105250` (#576)
 - **Contracts produced:** the versioned persisted scope set and the effective-scope-differs-from-default predicate. **T2.8 consumes both** — fix their shape here and name them in the PR body.
 
 **Builder brief.** Make the user's scope choices survive relaunch, and pin the reach of the filters that read them. **No picker UI in this task** — that is T2.8, and it is gated on a wireframe this row is not.
@@ -371,7 +373,7 @@ Host tests for the store and the derivation reach (`cd ios && swift test`), then
 - **Branch:** `wp-t2-8-impl`
 - **Owner:** codex4
 - **Review tier:** `sourcery` + `reviewer` (second Greptile slot is planner's call — see *Review budget*)
-- **Status:** implementation complete — review findings closed and the merged-head host gate is green; ready for draft PR
+- **Status:** complete — merged as `42567dc` (#582); review follow-ups carried as #583
 - **Contracts consumed:** T2.7's persisted scope set and default predicate; T2.2's roles if the picker draws row glyphs; T2.1's distinct Scope-control 20/15 pairing and `.button` anchor.
 - **Closeout evidence (2026-08-01):** integrated T2.3 at `b96`, T2.7 at `2105250`, and the advanced `ios` base through T2.9 at `8449256`; the accessibility-contract rename is isolated in signed commit `e8f7fe1`, with zero old identifiers and zero retired enum references. P2R-4's `86pt` guard, the Fresh-list promotion path, and exhaustive category-symbol resolution each went red under a targeted mutation and green after restoration. Locked render capture at exact head `d2007cf` passed **7/7 in 174.752s**, producing eight inspected 1206×2622 PNGs with paired runtime measurements; the refreshed bounded AX-list evidence is at `2ffcf57`. Adversarial review reported **0 Critical / 4 Important / 0 Minor**; all four Important findings were fixed, with no security or privacy finding. At merged head `f338b60`, `swift test --package-path ios` passed **516/516** in 10.036s, and `./scripts/sim-lock.sh ./scripts/release-gate.sh` passed the Release build, **245/245 app tests**, and **96/96 UI tests** with zero failures (UI phase **2519s**). The exact task-created result bundle was deleted and the simulator's two-way status check returned `FREE`.
 
@@ -398,7 +400,7 @@ Full gate plus renders of the picker at default and AX with measurements beside 
 - **Depends on:** **T2.6 ruled by Rob**
 - **Owner:** codex2
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** PR open — #580
+- **Status:** complete — merged as `8449256` (#580)
 - **Contracts consumed:** T1.4's sheet/row patterns, T1.1 tokens, T1.2 font roles.
 
 **Builder brief.** Rebuild `SettingsView` (`MapScreen.swift:6744`–`:6900`) to W-2's grouping on **DS-1 rows and sheets — no system `List` chrome**. Today's sections are Map theme, Downloads, Pins, Location, Storage, Diagnostics, Onboarding; the ruled grouping is Appearance · Offline maps · Coverage · Map & data · Location · Diagnostics · Replay welcome. **The mapping between the two is W-2's to have drawn**; if a today-section has no ruled home, flag it rather than inventing one.
@@ -426,7 +428,7 @@ Full gate plus renders of each Settings group at default and AX.
 - **Depends on:** **T2.6 ruled by Rob**
 - **Owner:** codex3
 - **Review tier:** `sourcery` + `reviewer`
-- **Status:** tests green — `wp-t2-10-impl`; independent review ready
+- **Status:** complete — merged as `f1e2051` (#577)
 - **Evidence:** integrated code head `9234390`; `cd ios && swift test` — 514 tests, 0 failures; locked codex3 release gate — Release + debug builds green, 321 simulator tests, 0 failures (86 UI tests); the locked evidence rerun passed both focused About UI tests and regenerated six inspected default/AX implementation renders from `9234390` at 09:41, with dimensions, command, and SHA-256 values recorded in the design-system README; spec/compliance, accessibility/test-quality, and architecture/integration reviewers returned READY with no findings at final evidence head `71a6519`.
 
 **Builder brief.** Rebuild `AboutView` (`MapScreen.swift:7566`–`:7900`) to W-2: the **story and the privacy promise up top**, then **Software licences** and **Data licences** as proper sub-areas rather than one flat run. DS-1 rows and sheets; no system `List` chrome.
