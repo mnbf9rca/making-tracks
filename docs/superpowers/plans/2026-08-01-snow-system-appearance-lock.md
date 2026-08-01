@@ -129,7 +129,7 @@ The script must refuse runs outside `sim-lock.sh`, validate Xcode 26.6 / build 1
 
 The evidence record names the source head, simulator seat, SDK/runtime, capture test, dimensions, SHA-256 values, foreground/background pixel counts, observed contrast ratio for each affected card, and exact zero Light/Dark differing-pixel count within each opaque comparison frame. State that the surrounding live-map pixels are excluded from byte equality and that the images are implementation evidence, not a new design ruling.
 
-- [ ] **Step 3: Run all required gates**
+- [x] **Step 3: Run all required gates**
 
 Run `swift test` and record the exact host count. Then run:
 
@@ -138,6 +138,8 @@ Run `swift test` and record the exact host count. Then run:
 ```
 
 Record Release, unit, UI, warning, duration, and artifact-cleanup results. Verify no `.xcresult` remains and only the reusable seat DerivedData path was used.
+
+Observed on final head `f8e7df2`: `swift test` passed 516/516 in 9.901 seconds. The codex2 host gate passed its Release build and Debug build-for-testing with warnings-as-errors, then passed 245/245 app unit tests and 97/97 UI tests (342 total; zero failures or skips). The test phase took 2,686 seconds. There were zero compiler warnings; the result bundle carried five pre-existing XCTest runtime-warning attachments in unit source-probe cases and none in UI tests. Exact counts were extracted before the codex2 result bundle was deleted; no task `.xcresult` remains, `/private/tmp/dd-codex2` is the only retained gate cache, and `sim-lock.sh --status` reports FREE.
 
 - [ ] **Step 4: Review and publish**
 

@@ -23,6 +23,7 @@ Format: one line per transition, newest last:
 - 2026-08-01T05:09Z codex2 #589 focused gate green — rendered oracle failed pre-fix at 26,066 Appearance-card pixels, then passed 1/1 with exact zero Light/Dark differences across Appearance, Map & data, and Location after the scene-level Snow mode pin
 - 2026-08-01T05:15Z codex2 #589 evidence captured — focused Release gate passed 1/1; six 1206×2622 Light/Dark captures and measured card-region ledger recorded under `docs/design/design-system/snow-theme-lock-*`
 - 2026-08-01T05:51Z codex2 #589 adversarial proof fixes green — focused Release gate passed 1/1; legacy/fixed Light diff is 0 on all three surfaces, legacy/fixed Dark teeth are 26,066 / 36,157 / 4,242 pixels, every contrast sample contains local raised-surface pixels, and exports are simulator-scoped before validate-then-install
+- 2026-08-01T06:49Z codex2 #589 final host gate green — final head `f8e7df2`; `swift test` 516/516; Release and Debug build-for-testing passed; app unit 245/245 and UI 97/97 (342 total, 0 failed/skipped); test phase 2,686s; exact result counts extracted, task xcresults deleted, reusable `/private/tmp/dd-codex2` retained, seat FREE
 
 ## Done (pre-phase)
 
