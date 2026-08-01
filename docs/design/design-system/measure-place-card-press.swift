@@ -261,6 +261,10 @@ func displacement(rest: InkBounds, pressed: InkBounds) -> Int {
     pressed.y - rest.y
 }
 
+private func isValidDisplacementGrowth(default defaultDelta: Int, ax axDelta: Int) -> Bool {
+    defaultDelta > 0 && axDelta > defaultDelta
+}
+
 private func runSelfTest() throws {
     let productionQuietMuted: (UInt8, UInt8, UInt8) = (0x6B, 0x67, 0x5F)
     let snowBackground = RGB(red: 0xF4, green: 0xF1, blue: 0xEA)
@@ -398,6 +402,104 @@ private func runSelfTest() throws {
     } catch AnalyzerError.invalid {
         // Expected: two-decimal serialization may round to a pixel, not widen a fractional crop.
     }
+
+    let selectionFrameURL = frameDirectory.appendingPathComponent("selection-frame.txt")
+    try """
+    screen-scale: 1.00
+    hide: x=5.00 y=0.00 width=25.00 height=21.00
+    state: x=18.00 y=0.00 width=12.00 height=12.00
+
+    """.write(to: selectionFrameURL, atomically: true, encoding: .utf8)
+    let selectionFrame = try ExportedFrame(file: selectionFrameURL)
+    let defaultCandidates = frameDirectory.appendingPathComponent("default-candidates", isDirectory: true)
+    let axCandidates = frameDirectory.appendingPathComponent("ax-candidates", isDirectory: true)
+    let missingPressedCandidates = frameDirectory.appendingPathComponent("missing-pressed", isDirectory: true)
+    let invalidCandidates = frameDirectory.appendingPathComponent("invalid-candidate", isDirectory: true)
+    for directory in [defaultCandidates, axCandidates, missingPressedCandidates, invalidCandidates] {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    func writeCandidate(
+        directory: URL,
+        name: String,
+        inkY: Int,
+        marker: (UInt8, UInt8, UInt8),
+        includeInk: Bool = true
+    ) throws -> URL {
+        let url = directory.appendingPathComponent(name)
+        let fixture = FixtureRaster(
+            inkY: inkY,
+            marker: marker,
+            ink: productionQuietMuted,
+            includeInk: includeInk
+        )
+        try writeFixturePNG(width: fixture.width, height: fixture.height, pixels: fixture.pixels, to: url)
+        return url
+    }
+
+    let defaultRestA = try writeCandidate(directory: defaultCandidates, name: "rest-a.png", inkY: 8, marker: (0, 255, 255))
+    _ = try writeCandidate(directory: defaultCandidates, name: "rest-b.png", inkY: 8, marker: (0, 255, 255))
+    _ = try writeCandidate(directory: defaultCandidates, name: "rest-later.png", inkY: 9, marker: (0, 255, 255))
+    let defaultPressedA = try writeCandidate(directory: defaultCandidates, name: "pressed-a.png", inkY: 11, marker: (255, 0, 255))
+    _ = try writeCandidate(directory: defaultCandidates, name: "pressed-b.png", inkY: 11, marker: (255, 0, 255))
+
+    let axRestA = try writeCandidate(directory: axCandidates, name: "rest-a.png", inkY: 8, marker: (0, 255, 255))
+    _ = try writeCandidate(directory: axCandidates, name: "rest-later.png", inkY: 9, marker: (0, 255, 255))
+    _ = try writeCandidate(directory: axCandidates, name: "pressed-intermediate.png", inkY: 11, marker: (255, 0, 255))
+    let axPressedA = try writeCandidate(directory: axCandidates, name: "pressed-a.png", inkY: 14, marker: (255, 0, 255))
+    _ = try writeCandidate(directory: axCandidates, name: "pressed-b.png", inkY: 14, marker: (255, 0, 255))
+
+    let defaultSelection = try selectedCandidate(in: defaultCandidates, frame: selectionFrame)
+    let axSelection = try selectedCandidate(in: axCandidates, frame: selectionFrame)
+    precondition(defaultSelection.rest.url.lastPathComponent == defaultRestA.lastPathComponent, "rest selection chose \(defaultSelection.rest.url.lastPathComponent), expected the least-displaced filename tie winner")
+    precondition(defaultSelection.pressed.url.lastPathComponent == defaultPressedA.lastPathComponent, "default pressed selection chose \(defaultSelection.pressed.url.lastPathComponent), expected the filename tie winner")
+    precondition(axSelection.rest.url.lastPathComponent == axRestA.lastPathComponent, "AX rest selection chose \(axSelection.rest.url.lastPathComponent), expected the least-displaced candidate")
+    precondition(axSelection.pressed.url.lastPathComponent == axPressedA.lastPathComponent, "AX pressed selection chose \(axSelection.pressed.url.lastPathComponent), expected the fully displaced filename tie winner")
+
+    let selectedRestOutput = frameDirectory.appendingPathComponent("selected-rest.png")
+    let selectedPressedOutput = frameDirectory.appendingPathComponent("selected-pressed.png")
+    try writeSelectedCandidates(
+        axSelection,
+        restOutput: selectedRestOutput,
+        pressedOutput: selectedPressedOutput
+    )
+    let selectedRestBytes = try Data(contentsOf: selectedRestOutput)
+    let selectedPressedBytes = try Data(contentsOf: selectedPressedOutput)
+    let axRestSourceBytes = try Data(contentsOf: axRestA)
+    let axPressedSourceBytes = try Data(contentsOf: axPressedA)
+    precondition(selectedRestBytes == axRestSourceBytes, "selected rest output must copy source bytes")
+    precondition(selectedPressedBytes == axPressedSourceBytes, "selected pressed output must copy source bytes")
+
+    _ = try writeCandidate(directory: missingPressedCandidates, name: "rest-only.png", inkY: 8, marker: (0, 255, 255))
+    do {
+        _ = try selectedCandidate(in: missingPressedCandidates, frame: selectionFrame)
+        preconditionFailure("missing pressed state must be rejected")
+    } catch AnalyzerError.invalid(let message) {
+        precondition(message == "missing valid exact pressed marker; rejected 0 candidates")
+    }
+
+    _ = try writeCandidate(directory: invalidCandidates, name: "rest.png", inkY: 8, marker: (0, 255, 255))
+    _ = try writeCandidate(
+        directory: invalidCandidates,
+        name: "pressed-invalid.png",
+        inkY: 11,
+        marker: (255, 0, 255),
+        includeInk: false
+    )
+    do {
+        _ = try selectedCandidate(in: invalidCandidates, frame: selectionFrame)
+        preconditionFailure("an exact-marker candidate with invalid ink must fail closed")
+    } catch AnalyzerError.invalid(let message) {
+        precondition(message == "candidate pressed-invalid.png: ink crop has no dark samples")
+        precondition(!message.contains(frameDirectory.path), "candidate errors must not expose temporary paths")
+    }
+
+    let selectedDefaultDelta = displacement(rest: defaultSelection.rest.ink, pressed: defaultSelection.pressed.ink)
+    let selectedAXDelta = displacement(rest: axSelection.rest.ink, pressed: axSelection.pressed.ink)
+    precondition(isValidDisplacementGrowth(default: selectedDefaultDelta, ax: selectedAXDelta))
+    precondition(!isValidDisplacementGrowth(default: selectedDefaultDelta, ax: selectedDefaultDelta), "equal AX displacement must be rejected")
+    precondition(!isValidDisplacementGrowth(default: 0, ax: selectedAXDelta), "default displacement must be positive")
+
     let rest = try measureInk(restPixels, crop: fixtureInkCrop, excluding: fixtureMarkerCrop, luminanceThreshold: productionQuietInkLuminanceThreshold)
     let defaultPressed = try measureInk(defaultPressedPixels, crop: fixtureInkCrop, excluding: fixtureMarkerCrop, luminanceThreshold: productionQuietInkLuminanceThreshold)
     let axPressed = try measureInk(axPressedPixels, crop: fixtureInkCrop, excluding: fixtureMarkerCrop, luminanceThreshold: productionQuietInkLuminanceThreshold)
@@ -410,6 +512,36 @@ private func runSelfTest() throws {
     precondition(axDelta > defaultDelta, "AX displacement must exceed default")
     precondition(axDelta == 6, "AX displacement must be 6")
     print("PASS default=\(defaultDelta) ax=\(axDelta)")
+}
+
+private func writeFixturePNG(
+    width: Int,
+    height: Int,
+    pixels: [UInt8],
+    to url: URL
+) throws {
+    guard let provider = CGDataProvider(data: Data(pixels) as CFData),
+          let image = CGImage(
+              width: width,
+              height: height,
+              bitsPerComponent: 8,
+              bitsPerPixel: 32,
+              bytesPerRow: width * 4,
+              space: CGColorSpaceCreateDeviceRGB(),
+              bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
+              provider: provider,
+              decode: nil,
+              shouldInterpolate: false,
+              intent: .defaultIntent
+          ),
+          let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)
+    else {
+        throw AnalyzerError.invalid("could not create candidate PNG fixture")
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else {
+        throw AnalyzerError.invalid("could not write candidate PNG fixture")
+    }
 }
 
 private func writeOrientationFixturePNG(to url: URL) throws {
@@ -525,6 +657,15 @@ private struct Candidate {
     let dimensions: String
 }
 
+private func writeSelectedCandidates(
+    _ selection: (rest: Candidate, pressed: Candidate),
+    restOutput: URL,
+    pressedOutput: URL
+) throws {
+    try FileManager.default.copyItem(at: selection.rest.url, to: restOutput)
+    try FileManager.default.copyItem(at: selection.pressed.url, to: pressedOutput)
+}
+
 private func digest(of url: URL) throws -> String {
     let data = try Data(contentsOf: url, options: .mappedIfSafe)
     return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -556,18 +697,37 @@ private func selectedCandidate(
         } catch AnalyzerError.markerMismatch {
             exactMarkerFailureCount += 1
             continue
+        } catch {
+            throw AnalyzerError.invalid(
+                "candidate \(file.lastPathComponent): \(error.localizedDescription)"
+            )
         }
-        let ink = try measureInk(
-            raster,
-            crop: frame.inkCrop,
-            excluding: markerCrop,
-            luminanceThreshold: productionQuietInkLuminanceThreshold
-        )
+        let ink: InkBounds
+        do {
+            ink = try measureInk(
+                raster,
+                crop: frame.inkCrop,
+                excluding: markerCrop,
+                luminanceThreshold: productionQuietInkLuminanceThreshold
+            )
+        } catch {
+            throw AnalyzerError.invalid(
+                "candidate \(file.lastPathComponent): \(error.localizedDescription)"
+            )
+        }
+        let candidateDigest: String
+        do {
+            candidateDigest = try digest(of: file)
+        } catch {
+            throw AnalyzerError.invalid(
+                "candidate \(file.lastPathComponent): could not read bytes for SHA-256"
+            )
+        }
         candidates.append(Candidate(
             url: file,
             state: state,
             ink: ink,
-            sha256: try digest(of: file),
+            sha256: candidateDigest,
             dimensions: "\(raster.width)x\(raster.height)"
         ))
     }
@@ -618,8 +778,11 @@ private func runSelection(arguments: [String]) throws {
     guard topDelta > 0 else {
         throw AnalyzerError.invalid("pressed ink must be positively displaced from rest")
     }
-    try FileManager.default.copyItem(at: selection.rest.url, to: restOutput)
-    try FileManager.default.copyItem(at: selection.pressed.url, to: pressedOutput)
+    try writeSelectedCandidates(
+        selection,
+        restOutput: restOutput,
+        pressedOutput: pressedOutput
+    )
     print("\(label) rest \(format(selection.rest))")
     print("\(label) pressed \(format(selection.pressed))")
     let formattedCenterDelta = String(format: "%.1f", centerDelta)
