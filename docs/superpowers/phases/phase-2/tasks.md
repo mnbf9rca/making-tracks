@@ -454,6 +454,50 @@ Full gate plus renders of About and both licence sub-areas at default and AX.
   under the full gate discharges it — structurally DS-7 (#473) in Phase 3. The evidence that
   produced P2R-1 was that the pre-fix inset measured +3 device pixels at BOTH default and AX,
   so the property still unproven is the one the ruling exists to fix.
+- **#584 — the evidence pipeline's three findings**, from the seat-CLI's first four-script exercise: regeneration scripts assume a booted seat; frames rendering build metadata are head-anchored and cannot reproduce; live-map captures are measurement-reproducible, not byte-reproducible. The first is a script obligation now in the boot doc; the second and third narrowed the reproducibility clause itself. Phase 3 packet authors declare their evidence class per frame.
+- **The AX-scale direction has no ratified home.** *"AX frames scale at the A8 pass (~1.55–1.65×) unless a ratified figure governs, and any deviation states its qualifier beside the frame"* was issued to W-1 and W-2 as a fleet direction and worked — W-2's first packet failed it, its second met it, W-1 met it first time. It is a **wireframe-authoring convention**, so its durable home is the spec's component-metrics section beside the A8 figures, not the boot doc. It currently lives only in this phase's threads.
+- **The aggregate classified-count assertion** on T2.8's AX geometry test: `scopeRowsChecked + quietRowsChecked == identifiers.count`. #587 pinned the two known classes; a third prefix added later would match neither branch, receive only the 44pt assertion, and leave both counters correct. One line, deliberately deferred rather than expanding an already-gated issue — the general form is now boot-doc law.
+- **#579 — atomic-publish test/API skew on `ios`**, carried unresolved from the phase's infrastructure work.
 - **P2R-3 and P2R-10 close here as records.** P2R-3 requested no decision; the lesson is affirmed as existing law — *"a figure outside both the ratified set and the expected vocabulary is invisible to careful search, and every relay names its file."* P2R-10's R9 quiet-geometry code remedy is fully ruled and shipped — symbol-weight pulse for glyphed quiet controls (A5), the ruled inset for text-only (A9), and the inset becomes a scaled metric in **T2.2**. The packet item closes when T2.2 lands; the device-proof obligation remains carried above through #575.
 
 ---
+
+---
+
+## Closeout record
+
+**Acceptance: 18 met · 1 partial · 0 failed**, across AC2.1–AC2.19. The partial is **AC2.3** and it
+is partial *by design*: T2.2 pinned P2R-1's ruled **anchor** with a test that fails if the metric is
+re-anchored, but the macOS host cannot resolve `@ScaledMetric` at accessibility sizes, so no render
+yet shows the inset growing with type. A grader reading only the AC table would mark it complete —
+it is owed to **#575** and discharged by the first row that renders the place card action bar under
+the full gate.
+
+**Phase 1 completed inside this phase.** Its parked 34/35 remainder — the `MapDoorRowIconGlyph`
+17pt literal, held as declared non-compliance since 2026-07-27 because no vocabulary expressed
+`ia-doors`' 20/18 row figures — closed when P2R-2 minted `rowRaised`/`rowQuiet` and T2.3 migrated
+the site. **Phase 1 acceptance is final at 35/35** (#581, recorded by #586).
+
+**Both wireframes were drawn, validated and ruled inside the phase**, with W-1 amended once by Rob
+(the `Scope set` text treatment replaced by a filtered icon) and revalidated without a return trip.
+
+**Carried register** — every item also appears in *Carried* above, which is the inheritance path
+Phase 3's packet reads:
+
+| Carried | Owner | Discharged by |
+|---|---|---|
+| **#575** — device-real press-inset perceptibility | unclaimed | first row rendering the place card action bar under the full gate; structurally DS-7 (#473) |
+| **OF3** — the ratified 19×19 door pill vs shipped `IconRole.inline` = 15 | Rob | a design session; it is the third figure pressing a set P2R-2(d) re-closed at five |
+| **#584** — evidence-pipeline findings | planner | boot-on-demand script edits; the class narrowing has already landed as law |
+| **#579** — atomic-publish test/API skew | unclaimed | its own row |
+| **A5 pulse family for quiet destination rows** | Rob | a designer family ruling with default/pressed render evidence |
+| **AX-scale direction's spec home** | reviewer | folding it beside the A8 figures in the spec's component-metrics section |
+| **Aggregate classified-count assertion** | codex4 | one line, when that file is next touched |
+
+**What this phase put into law**, each from a failure or a practice rather than from principle:
+content-granular clearance anchors and the pre-merge head check; the render-packet reproducibility
+record and its evidence-class narrowing; verify-digests-against-images; absorb-notes-without-
+re-rendering; assert-every-input-was-classified; the retirement-criterion standard form; and the
+booted-seat precondition. The two that earned their place hardest are the last two lines of the
+reproducibility rules — a digest that cannot hold must not be presented as one that can, and the
+missing-icon instance that shows why digest-checking has to stay trustworthy.
