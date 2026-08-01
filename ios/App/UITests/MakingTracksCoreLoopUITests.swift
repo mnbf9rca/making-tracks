@@ -294,7 +294,7 @@ private struct MyTracksAppearanceCapture {
 private struct SettingsThemeLockRegionCapture {
     let raster: RenderedPixelRaster
     let comparisonFrame: CGRect
-    let primaryInkFrame: CGRect
+    let primaryInkFrame: CGRect?
     let secondaryInkFrame: CGRect?
 }
 
@@ -1538,7 +1538,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             appearanceName: "legacy-dark"
         ))
 
-        let regionNames = ["appearance", "map-data", "location"]
+        let regionNames = [
+            "appearance", "offline-maps", "coverage", "map-data",
+            "location", "diagnostics", "replay-welcome",
+        ]
+        let frozenEvidenceRegionNames = Set(["appearance", "map-data", "location"])
         XCTAssertEqual(Set(legacyLight.regions.keys), Set(regionNames))
         XCTAssertEqual(Set(light.regions.keys), Set(regionNames))
         XCTAssertEqual(Set(dark.regions.keys), Set(regionNames))
@@ -1588,26 +1592,6 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 ),
                 name
             )
-            let primaryInkPixels = darkRegion.raster.contrastPixelCount(
-                against: raisedSurface,
-                minimum: 4.5,
-                in: darkRegion.primaryInkFrame
-            )
-            let primaryContrast = darkRegion.raster.highestContrastRatio(
-                against: raisedSurface,
-                in: darkRegion.primaryInkFrame
-            ) ?? 0
-            let primaryBackgroundPixels = darkRegion.raster.tokenCount(
-                raisedSurface,
-                in: darkRegion.primaryInkFrame,
-                tolerance: 3
-            )
-            let backgroundPixels = darkRegion.raster.tokenCount(
-                raisedSurface,
-                in: darkRegion.comparisonFrame,
-                tolerance: 3
-            )
-
             XCTAssertEqual(
                 systemDifferenceCount,
                 0,
@@ -1618,6 +1602,29 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 0,
                 "\(name) fixed Light must remain byte-identical to the legacy Light rendering"
             )
+
+            guard frozenEvidenceRegionNames.contains(name) else { continue }
+            let primaryInkFrame = try XCTUnwrap(darkRegion.primaryInkFrame, name)
+            let primaryInkPixels = darkRegion.raster.contrastPixelCount(
+                against: raisedSurface,
+                minimum: 4.5,
+                in: primaryInkFrame
+            )
+            let primaryContrast = darkRegion.raster.highestContrastRatio(
+                against: raisedSurface,
+                in: primaryInkFrame
+            ) ?? 0
+            let primaryBackgroundPixels = darkRegion.raster.tokenCount(
+                raisedSurface,
+                in: primaryInkFrame,
+                tolerance: 3
+            )
+            let backgroundPixels = darkRegion.raster.tokenCount(
+                raisedSurface,
+                in: darkRegion.comparisonFrame,
+                tolerance: 3
+            )
+
             XCTAssertGreaterThan(
                 legacyDarkDifferenceCount,
                 100,
@@ -5033,6 +5040,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             theme: "snow",
             forceDarkAppearance: forceDarkAppearance,
             disableMaterialModeLock: disableMaterialModeLock,
+            forceTileNetworkOffline: true,
             hideFixtureChrome: true
         )
         guard app.otherElements["map.surface"].waitForExistence(timeout: 10) else {
@@ -5046,16 +5054,45 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             return nil
         }
 
+        let expectedGroupIdentifiers = [
+            "settings.group.appearance",
+            "settings.storage.manage",
+            "settings.group.coverage",
+            "settings.group.map-data",
+            "settings.group.location",
+            "settings.diagnostics.export",
+            "settings.replay-onboarding",
+        ]
+        let groupContainer = app.otherElements["settings.groups"]
+        guard groupContainer.waitForExistence(timeout: 5) else {
+            XCTFail(
+                "Snow theme-lock \(appearanceName): Settings group classification boundary is missing",
+                file: file,
+                line: line
+            )
+            return nil
+        }
+        XCTAssertEqual(
+            groupContainer.buttons.allElementsBoundByIndex.map(\.identifier),
+            expectedGroupIdentifiers,
+            "Every SettingsGroup.allCases row must be classified by the appearance oracle",
+            file: file,
+            line: line
+        )
+
         let appFrame = app.windows.firstMatch.exists ? app.windows.firstMatch.frame : app.frame
         var regions: [String: SettingsThemeLockRegionCapture] = [:]
 
         func capture(
             name: String,
             comparisonElements: [XCUIElement],
-            primaryInk: XCUIElement,
-            secondaryInk: XCUIElement? = nil
+            primaryInk: XCUIElement? = nil,
+            secondaryInk: XCUIElement? = nil,
+            exportsFrozenEvidence: Bool = false
         ) -> Bool {
-            let requiredElements = comparisonElements + [primaryInk] + (secondaryInk.map { [$0] } ?? [])
+            let requiredElements = comparisonElements
+                + (primaryInk.map { [$0] } ?? [])
+                + (secondaryInk.map { [$0] } ?? [])
             guard requiredElements.allSatisfy({ $0.waitForExistence(timeout: 5) }) else {
                 XCTFail(
                     "Snow theme-lock \(appearanceName) \(name): a rendered target is missing",
@@ -5081,10 +5118,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 return false
             }
 
-            let screenshot = attachScreenshot(
-                named: "snow-theme-lock-\(name)-\(appearanceName)",
-                forceExport: true
-            )
+            let screenshot = exportsFrozenEvidence
+                ? attachScreenshot(
+                    named: "snow-theme-lock-\(name)-\(appearanceName)",
+                    forceExport: true
+                )
+                : XCUIScreen.main.screenshot()
             guard let raster = RenderedPixelRaster(screenshot: screenshot, appFrame: appFrame) else {
                 XCTFail(
                     "Snow theme-lock \(appearanceName) \(name): screenshot could not be decoded",
@@ -5096,7 +5135,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             regions[name] = SettingsThemeLockRegionCapture(
                 raster: raster,
                 comparisonFrame: comparisonFrame,
-                primaryInkFrame: primaryInk.frame,
+                primaryInkFrame: primaryInk?.frame,
                 secondaryInkFrame: secondaryInk?.frame
             )
             return true
@@ -5115,7 +5154,40 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             name: "appearance",
             comparisonElements: themeRows,
             primaryInk: app.staticTexts["Street Contrast"],
-            secondaryInk: app.staticTexts["street-contrast"]
+            secondaryInk: app.staticTexts["street-contrast"],
+            exportsFrozenEvidence: true
+        ) else { return nil }
+        app.buttons["Back"].tap()
+        guard app.staticTexts["Settings"].waitForExistence(timeout: 5) else { return nil }
+
+        let offlineMapsRow = app.buttons["settings.storage.manage"]
+        guard scrollSettingsRowToHittable(offlineMapsRow, in: app) else {
+            XCTFail("Snow theme-lock \(appearanceName): Offline maps row is not hittable", file: file, line: line)
+            return nil
+        }
+        offlineMapsRow.tap()
+        let offlineMapsStorage = element(identifier: "offline-maps.storage.unavailable", in: app)
+        guard capture(
+            name: "offline-maps",
+            comparisonElements: [offlineMapsStorage]
+        ) else { return nil }
+        app.buttons["Back"].tap()
+        guard app.staticTexts["Settings"].waitForExistence(timeout: 5) else { return nil }
+
+        let coverageRow = app.buttons["settings.group.coverage"]
+        guard scrollSettingsRowToHittable(coverageRow, in: app) else {
+            XCTFail("Snow theme-lock \(appearanceName): Coverage row is not hittable", file: file, line: line)
+            return nil
+        }
+        coverageRow.tap()
+        let coverageElements = [
+            "settings.coverage.published-regions",
+            "settings.coverage.sources",
+            "settings.coverage.extents",
+        ].map { element(identifier: $0, in: app) }
+        guard capture(
+            name: "coverage",
+            comparisonElements: coverageElements
         ) else { return nil }
         app.buttons["Back"].tap()
         guard app.staticTexts["Settings"].waitForExistence(timeout: 5) else { return nil }
@@ -5134,7 +5206,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             name: "map-data",
             comparisonElements: [cellularToggle, pinSizeLabel, pinSizeValue, pinSizeSlider],
             primaryInk: pinSizeLabel,
-            secondaryInk: pinSizeValue
+            secondaryInk: pinSizeValue,
+            exportsFrozenEvidence: true
         ) else { return nil }
         app.buttons["Back"].tap()
         guard app.staticTexts["Settings"].waitForExistence(timeout: 5) else { return nil }
@@ -5150,7 +5223,37 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         guard capture(
             name: "location",
             comparisonElements: [locationStatus, locationSettings],
-            primaryInk: locationStatus
+            primaryInk: locationStatus,
+            exportsFrozenEvidence: true
+        ) else { return nil }
+        app.buttons["Back"].tap()
+        guard app.staticTexts["Settings"].waitForExistence(timeout: 5) else { return nil }
+
+        let diagnosticsRow = app.buttons["settings.diagnostics.export"]
+        guard scrollSettingsRowToHittable(diagnosticsRow, in: app) else {
+            XCTFail("Snow theme-lock \(appearanceName): Diagnostics row is not hittable", file: file, line: line)
+            return nil
+        }
+        diagnosticsRow.tap()
+        let diagnosticsStatus = element(identifier: "settings.diagnostics.window-status", in: app)
+        guard capture(
+            name: "diagnostics",
+            comparisonElements: [diagnosticsStatus]
+        ) else { return nil }
+        app.buttons["Back"].tap()
+        guard app.staticTexts["Settings"].waitForExistence(timeout: 5) else { return nil }
+
+        let replayWelcomeRow = app.buttons["settings.replay-onboarding"]
+        guard scrollSettingsRowToHittable(replayWelcomeRow, in: app) else {
+            XCTFail("Snow theme-lock \(appearanceName): Replay welcome row is not hittable", file: file, line: line)
+            return nil
+        }
+        replayWelcomeRow.tap()
+        let replayTitle = app.staticTexts["Interesting places around you"]
+        let replayNext = app.buttons["onboarding.next"]
+        guard capture(
+            name: "replay-welcome",
+            comparisonElements: [replayTitle, replayNext]
         ) else { return nil }
 
         app.terminate()
@@ -5481,6 +5584,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         resetOnboarding: Bool = false,
         forceDarkAppearance: Bool = false,
         disableMaterialModeLock: Bool = false,
+        forceTileNetworkOffline: Bool = false,
         densePins: Bool = false,
         startupViewport: String? = nil,
         trackReplayBeatDuration: Double? = nil,
@@ -5545,6 +5649,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         if disableMaterialModeLock {
             app.launchArguments.append("--ui-testing-disable-material-mode-lock")
+        }
+        if forceTileNetworkOffline {
+            app.launchArguments.append("--debug-force-tile-network-offline")
         }
         if seedUserList {
             app.launchArguments.append("--ui-testing-seed-user-list")
