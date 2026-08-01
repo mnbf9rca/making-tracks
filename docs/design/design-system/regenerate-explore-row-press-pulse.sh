@@ -4,7 +4,9 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 destination="${MT_SIM_LOCK_DESTINATION:-}"
 simulator_udid="${MT_SIM_LOCK_UDID:-}"
-derived_data="${MT_RELEASE_GATE_DERIVED_DATA:-/private/tmp/release-gate-$simulator_udid/DerivedData}"
+expected_run_dir="/private/tmp/release-gate-$simulator_udid"
+run_dir="${MT_RELEASE_GATE_RUN_DIR:-$expected_run_dir}"
+derived_data="${MT_RELEASE_GATE_DERIVED_DATA:-$run_dir/DerivedData}"
 artifact_root="/private/tmp/making-tracks-artifacts.$simulator_udid"
 output_dir="$repo_root/docs/design/design-system"
 expected_xcode_version=$'Xcode 26.6\nBuild version 17F113'
@@ -24,19 +26,15 @@ case ",$destination," in
     exit 1
     ;;
 esac
-case "$derived_data" in
-  /private/tmp/release-gate-*/DerivedData) ;;
-  *)
-    echo "regenerate-explore-row-press-pulse: derived data must be task-scoped under /private/tmp" >&2
-    exit 1
-    ;;
-esac
-run_dir="${derived_data%/DerivedData}"
-result_bundle="$run_dir/MakingTracksTests.xcresult"
-[ "${MT_RELEASE_GATE_RUN_DIR:-$run_dir}" = "$run_dir" ] || {
-  echo "regenerate-explore-row-press-pulse: run directory does not own derived data" >&2
+[ "$run_dir" = "$expected_run_dir" ] || {
+  echo "regenerate-explore-row-press-pulse: run directory must be the locked seat's exact default" >&2
   exit 1
 }
+[ "$derived_data" = "$run_dir/DerivedData" ] || {
+  echo "regenerate-explore-row-press-pulse: derived data must belong to the release-gate run directory" >&2
+  exit 1
+}
+result_bundle="$run_dir/MakingTracksTests.xcresult"
 [ "${MT_RELEASE_GATE_RESULT_BUNDLE:-$result_bundle}" = "$result_bundle" ] || {
   echo "regenerate-explore-row-press-pulse: custom result bundle must stay in the validated run directory" >&2
   exit 1
