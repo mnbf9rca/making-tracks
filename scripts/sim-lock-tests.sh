@@ -240,7 +240,7 @@ mkdir -p "$CONSUMER_FAKE_BIN"
 # shellcheck disable=SC2016 # Expanded when the fake xcrun program runs.
 printf '%s\n' \
   '#!/usr/bin/env bash' \
-  '{ printf "xcrun:"; printf "<%s>" "$@"; printf "\n"; } >>"$MT_TEST_CONSUMER_CALL_LOG"' \
+  '{ printf "xcrun:%s" "$#"; for arg in "$@"; do printf ":%s:%s" "${#arg}" "$arg"; done; printf "\n"; } >>"$MT_TEST_CONSUMER_CALL_LOG"' \
   'if [ "$#" -eq 4 ] && [ "$1" = simctl ] && [ "$2" = bootstatus ] &&' \
   '   [ "$3" = "$MT_SIM_LOCK_UDID" ] && [ "$4" = -b ]; then exit 0; fi' \
   'exit 97' \
@@ -320,7 +320,7 @@ for consumer in "${consumer_scripts[@]}"; do
   set -e
   first_simctl_call="$(grep '^xcrun:' "$CONSUMER_CALL_LOG" | head -1 || true)"
   if [ "$consumer_rc" -eq 97 ] &&
-     [ "$first_simctl_call" = "xcrun:<simctl><bootstatus><$FAKE_UDID><-b>" ]; then
+     [ "$first_simctl_call" = "xcrun:4:6:simctl:10:bootstatus:36:$FAKE_UDID:2:-b" ]; then
     record_ok "$consumer_name boots its locked seat before simulator use"
   else
     record_fail "$consumer_name boots its locked seat before simulator use" \
