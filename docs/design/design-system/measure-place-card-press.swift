@@ -9,8 +9,9 @@ private let pressedMarker = RGB(red: 255, green: 0, blue: 255)
 // and its background #F4F1EA to 241. 112 admits the production ink with a
 // narrow decode margin while remaining 129 levels below the background.
 private let productionQuietInkLuminanceThreshold: UInt8 = 112
+private let fixtureTextCrop = CGRect(x: 5, y: 5, width: 12, height: 16)
 private let fixtureMarkerCrop = CGRect(x: 18, y: 0, width: 12, height: 12)
-private let fixtureInkCrop = CGRect(x: 5, y: 5, width: 12, height: 16)
+private let fixtureInkCrop = fixtureTextCrop.union(fixtureMarkerCrop)
 
 struct RGB: Equatable {
     let red: UInt8
@@ -119,15 +120,18 @@ private struct FixtureRaster {
     init(
         inkY: Int,
         marker: (UInt8, UInt8, UInt8),
-        ink: (UInt8, UInt8, UInt8) = (0, 0, 0)
+        ink: (UInt8, UInt8, UInt8) = (0, 0, 0),
+        includeInk: Bool = true
     ) {
-        for y in inkY..<(inkY + 2) {
-            for x in 7..<13 {
-                let offset = ((y * width) + x) * 4
-                pixels[offset] = ink.0
-                pixels[offset + 1] = ink.1
-                pixels[offset + 2] = ink.2
-                pixels[offset + 3] = 255
+        if includeInk {
+            for y in inkY..<(inkY + 2) {
+                for x in 7..<13 {
+                    let offset = ((y * width) + x) * 4
+                    pixels[offset] = ink.0
+                    pixels[offset + 1] = ink.1
+                    pixels[offset + 2] = ink.2
+                    pixels[offset + 3] = 255
+                }
             }
         }
         for y in 0..<12 {
@@ -199,9 +203,24 @@ private func bt709IntegerLuminance(_ pixel: RGB) -> Int {
     (54 * Int(pixel.red) + 183 * Int(pixel.green) + 19 * Int(pixel.blue)) >> 8
 }
 
-// One production-quiet BT.709 integer threshold classifies ink in every frame.
-func measureInk(_ raster: Raster, crop: CGRect, luminanceThreshold: UInt8) throws -> InkBounds {
+// The accessibility button frame includes the state marker, but that marker is
+// evidence metadata rather than semantic label ink and must never affect bounds.
+// One production-quiet BT.709 integer threshold classifies text in every frame.
+func measureInk(
+    _ raster: Raster,
+    crop: CGRect,
+    excluding marker: CGRect,
+    luminanceThreshold: UInt8
+) throws -> InkBounds {
     let rect = try checkedPixelRect(crop, in: raster)
+    let markerRect = try checkedPixelRect(marker, in: raster)
+    guard markerRect.minX >= rect.minX,
+          markerRect.minY >= rect.minY,
+          markerRect.maxX <= rect.maxX,
+          markerRect.maxY <= rect.maxY
+    else {
+        throw AnalyzerError.invalid("marker crop is not contained in the ink crop")
+    }
     var darkPixelCount = 0
     var minimumX = Int.max
     var minimumY = Int.max
@@ -210,6 +229,10 @@ func measureInk(_ raster: Raster, crop: CGRect, luminanceThreshold: UInt8) throw
 
     for y in rect.minY..<rect.maxY {
         for x in rect.minX..<rect.maxX {
+            if x >= markerRect.minX, x < markerRect.maxX,
+               y >= markerRect.minY, y < markerRect.maxY {
+                continue
+            }
             let pixel = raster.rgb(x: x, y: y)
             let luminance = bt709IntegerLuminance(pixel)
             if luminance <= Int(luminanceThreshold) {
@@ -247,16 +270,29 @@ private func runSelfTest() throws {
         blue: productionQuietMuted.2
     ))
     let snowBackgroundLuminance = bt709IntegerLuminance(snowBackground)
+    let restMarkerLuminance = bt709IntegerLuminance(restMarker)
+    let pressedMarkerLuminance = bt709IntegerLuminance(pressedMarker)
     precondition(quietMutedLuminance == 103, "production quiet muted luminance must stay pinned")
     precondition(snowBackgroundLuminance == 241, "Snow background luminance must stay pinned")
+    precondition(restMarkerLuminance == 201, "exact rest marker luminance must stay pinned")
+    precondition(pressedMarkerLuminance == 72, "exact pressed marker luminance must stay pinned")
     precondition(
         snowBackgroundLuminance > Int(productionQuietInkLuminanceThreshold),
         "production quiet threshold must exclude the Snow background"
+    )
+    precondition(
+        pressedMarkerLuminance <= Int(productionQuietInkLuminanceThreshold),
+        "pressed marker must exercise semantic-ink exclusion"
     )
 
     let restPixels = try Raster(width: 30, height: 30, pixels: FixtureRaster(inkY: 8, marker: (0, 255, 255), ink: productionQuietMuted).pixels)
     let defaultPressedPixels = try Raster(width: 30, height: 30, pixels: FixtureRaster(inkY: 11, marker: (255, 0, 255), ink: productionQuietMuted).pixels)
     let axPressedPixels = try Raster(width: 30, height: 30, pixels: FixtureRaster(inkY: 14, marker: (255, 0, 255), ink: productionQuietMuted).pixels)
+    let markerOnlyPixels = try Raster(
+        width: 30,
+        height: 30,
+        pixels: FixtureRaster(inkY: 11, marker: (255, 0, 255), includeInk: false).pixels
+    )
 
     var mixedMarkerFixture = FixtureRaster(inkY: 8, marker: (0, 255, 255)).pixels
     mixedMarkerFixture[((6 * 30) + 24) * 4] = 255
@@ -266,8 +302,10 @@ private func runSelfTest() throws {
 
     let restState = try classify(restPixels, marker: fixtureMarkerCrop)
     let pressedState = try classify(defaultPressedPixels, marker: fixtureMarkerCrop)
+    let markerOnlyState = try classify(markerOnlyPixels, marker: fixtureMarkerCrop)
     precondition(restState == .rest)
     precondition(pressedState == .pressed)
+    precondition(markerOnlyState == .pressed)
     do {
         _ = try classify(mixedMarker, marker: fixtureMarkerCrop)
         preconditionFailure("mixed marker must be rejected")
@@ -275,10 +313,37 @@ private func runSelfTest() throws {
         // Expected: an exact state marker may not mix the fixture RGB values.
     }
     do {
-        _ = try measureInk(restPixels, crop: CGRect(x: -1, y: 5, width: 12, height: 16), luminanceThreshold: productionQuietInkLuminanceThreshold)
+        _ = try measureInk(
+            restPixels,
+            crop: CGRect(x: -1, y: 5, width: 12, height: 16),
+            excluding: fixtureMarkerCrop,
+            luminanceThreshold: productionQuietInkLuminanceThreshold
+        )
         preconditionFailure("out-of-frame crop must be rejected")
     } catch AnalyzerError.invalid {
         // Expected: evidence crops never clip silently.
+    }
+    do {
+        _ = try measureInk(
+            restPixels,
+            crop: fixtureInkCrop,
+            excluding: CGRect(x: 0, y: 0, width: 1, height: 1),
+            luminanceThreshold: productionQuietInkLuminanceThreshold
+        )
+        preconditionFailure("marker exclusion outside the accessibility crop must be rejected")
+    } catch AnalyzerError.invalid(let message) {
+        precondition(message == "marker crop is not contained in the ink crop")
+    }
+    do {
+        _ = try measureInk(
+            markerOnlyPixels,
+            crop: fixtureInkCrop,
+            excluding: fixtureMarkerCrop,
+            luminanceThreshold: productionQuietInkLuminanceThreshold
+        )
+        preconditionFailure("a valid state marker without text ink must be rejected")
+    } catch AnalyzerError.invalid(let message) {
+        precondition(message == "ink crop has no dark samples")
     }
     let orientationURL = FileManager.default.temporaryDirectory
         .appendingPathComponent("measure-place-card-orientation-\(UUID().uuidString).png")
@@ -333,9 +398,14 @@ private func runSelfTest() throws {
     } catch AnalyzerError.invalid {
         // Expected: two-decimal serialization may round to a pixel, not widen a fractional crop.
     }
-    let rest = try measureInk(restPixels, crop: fixtureInkCrop, luminanceThreshold: productionQuietInkLuminanceThreshold)
-    let defaultDelta = displacement(rest: rest, pressed: try measureInk(defaultPressedPixels, crop: fixtureInkCrop, luminanceThreshold: productionQuietInkLuminanceThreshold))
-    let axDelta = displacement(rest: rest, pressed: try measureInk(axPressedPixels, crop: fixtureInkCrop, luminanceThreshold: productionQuietInkLuminanceThreshold))
+    let rest = try measureInk(restPixels, crop: fixtureInkCrop, excluding: fixtureMarkerCrop, luminanceThreshold: productionQuietInkLuminanceThreshold)
+    let defaultPressed = try measureInk(defaultPressedPixels, crop: fixtureInkCrop, excluding: fixtureMarkerCrop, luminanceThreshold: productionQuietInkLuminanceThreshold)
+    let axPressed = try measureInk(axPressedPixels, crop: fixtureInkCrop, excluding: fixtureMarkerCrop, luminanceThreshold: productionQuietInkLuminanceThreshold)
+    precondition(rest == InkBounds(darkPixelCount: 12, x: 7, y: 8, width: 6, height: 2), "rest text bounds must exclude its state marker")
+    precondition(defaultPressed == InkBounds(darkPixelCount: 12, x: 7, y: 11, width: 6, height: 2), "default pressed text bounds must exclude its state marker")
+    precondition(axPressed == InkBounds(darkPixelCount: 12, x: 7, y: 14, width: 6, height: 2), "AX pressed text bounds must exclude its state marker")
+    let defaultDelta = displacement(rest: rest, pressed: defaultPressed)
+    let axDelta = displacement(rest: rest, pressed: axPressed)
     precondition(defaultDelta == 3, "default displacement must be 3")
     precondition(axDelta > defaultDelta, "AX displacement must exceed default")
     precondition(axDelta == 6, "AX displacement must be 6")
@@ -487,7 +557,12 @@ private func selectedCandidate(
             exactMarkerFailureCount += 1
             continue
         }
-        let ink = try measureInk(raster, crop: frame.inkCrop, luminanceThreshold: productionQuietInkLuminanceThreshold)
+        let ink = try measureInk(
+            raster,
+            crop: frame.inkCrop,
+            excluding: markerCrop,
+            luminanceThreshold: productionQuietInkLuminanceThreshold
+        )
         candidates.append(Candidate(
             url: file,
             state: state,
