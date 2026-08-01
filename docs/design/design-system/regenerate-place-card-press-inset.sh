@@ -21,6 +21,7 @@ status_bar_set=0
 max_capture_frames=120
 screenshot_timeout_seconds=15
 termination_grace_seconds=5
+screenshot_wait_outcome=""
 assets=()
 backup_dir=""
 install_started=0
@@ -124,18 +125,23 @@ wait_for_screenshot() {
   local now
   local wait_status=0
 
+  screenshot_wait_outcome=""
+
   while kill -0 "$pid" 2>/dev/null; do
     now="$(date +%s)"
     if [ "$now" -ge "$deadline" ]; then
       terminate_and_reap "$pid" 2>/dev/null || true
+      screenshot_wait_outcome="timeout"
       return 124
     fi
     sleep 1
   done
   if wait "$pid"; then
     wait_status=0
+    screenshot_wait_outcome="success"
   else
     wait_status=$?
+    screenshot_wait_outcome="child-exit"
   fi
   return "$wait_status"
 }
@@ -144,15 +150,38 @@ wait_for_screenshot_with_context() {
   local pid="$1"
   local frame_name="$2"
   local wait_status=0
-  local failure_kind="child-exit"
+  local failure_kind=""
 
   if wait_for_screenshot "$pid"; then
     return 0
   else
     wait_status=$?
   fi
-  [ "$wait_status" != "124" ] || failure_kind="timeout"
+  failure_kind="$screenshot_wait_outcome"
+  case "$failure_kind" in
+    timeout|child-exit) ;;
+    *) die "screenshot wait failed without a classified outcome" ;;
+  esac
   echo "regenerate-place-card-press-inset: screenshot $frame_name failed status=$wait_status kind=$failure_kind" >&2
+  return "$wait_status"
+}
+
+capture_failure_message() {
+  local label="$1"
+  local capture_status="$2"
+
+  echo "screenshot capture failed during focused $label test status=$capture_status"
+}
+
+stop_capture() {
+  local wait_status=0
+  [ -n "$capture_pid" ] || return 0
+  if terminate_and_reap "$capture_pid"; then
+    wait_status=0
+  else
+    wait_status=$?
+  fi
+  capture_pid=""
   return "$wait_status"
 }
 
@@ -252,6 +281,7 @@ run_timeout_self_test() (
   spawned_pid=""
   assert_errexit_state disabled
 
+  screenshot_timeout_seconds=5
   diagnostic_file="$selftest_dir/child-exit-diagnostic.txt"
   (exit 42) &
   spawned_pid=$!
@@ -266,6 +296,21 @@ run_timeout_self_test() (
     die "host self-test did not receive the contextual child-exit diagnostic"
   spawned_pid=""
 
+  diagnostic_file="$selftest_dir/child-exit-124-diagnostic.txt"
+  (exit 124) &
+  spawned_pid=$!
+  if wait_for_screenshot_with_context "$spawned_pid" "frame-124.png" 2> "$diagnostic_file"; then
+    die "host self-test accepted a screenshot child that exited 124"
+  else
+    status=$?
+  fi
+  [ "$status" = "124" ] ||
+    die "host self-test expected screenshot child exit 124, found $status"
+  [ "$(cat "$diagnostic_file")" = "regenerate-place-card-press-inset: screenshot frame-124.png failed status=124 kind=child-exit" ] ||
+    die "host self-test confused child exit 124 with a watchdog timeout"
+  spawned_pid=""
+
+  screenshot_timeout_seconds=0
   diagnostic_file="$selftest_dir/timeout-diagnostic.txt"
   spawn_term_ignoring_child "$selftest_dir/context-timeout.ready"
   if wait_for_screenshot_with_context "$spawned_pid" "frame-18.png" 2> "$diagnostic_file"; then
@@ -279,6 +324,23 @@ run_timeout_self_test() (
     die "host self-test did not receive the contextual timeout diagnostic"
   spawned_pid=""
   assert_errexit_state disabled
+
+  termination_grace_seconds=5
+  (trap 'exit 73' TERM; : > "$selftest_dir/capture-worker.ready"; while :; do sleep 1; done) &
+  capture_pid=$!
+  spawned_pid=$capture_pid
+  wait_for_ready "$selftest_dir/capture-worker.ready"
+  if stop_capture; then
+    die "host self-test accepted a failed capture worker"
+  else
+    status=$?
+  fi
+  [ "$status" = "73" ] ||
+    die "host self-test expected capture worker status 73, found $status"
+  final_diagnostic="regenerate-place-card-press-inset: $(capture_failure_message default "$status")"
+  [ "$final_diagnostic" = "regenerate-place-card-press-inset: screenshot capture failed during focused default test status=73" ] ||
+    die "host self-test did not receive the exact final capture-worker diagnostic"
+  spawned_pid=""
 
   screenshot_timeout_seconds="$saved_timeout"
   termination_grace_seconds="$saved_grace"
@@ -307,18 +369,6 @@ rollback_packet_install() {
       rm -f "$output_dir/$asset"
     fi
   done
-}
-
-stop_capture() {
-  local wait_status=0
-  [ -n "$capture_pid" ] || return 0
-  if terminate_and_reap "$capture_pid"; then
-    wait_status=0
-  else
-    wait_status=$?
-  fi
-  capture_pid=""
-  return "$wait_status"
 }
 
 cleanup() {
@@ -470,7 +520,7 @@ run_focused_capture() {
   capture_status=$?
   set -e
   [ "$gate_status" = "0" ] || die "focused $current_label test command failed"
-  [ "$capture_status" = "0" ] || die "screenshot capture failed during focused $current_label test status=$capture_status"
+  [ "$capture_status" = "0" ] || die "$(capture_failure_message "$current_label" "$capture_status")"
   [ -s "$artifact_dir/place-card-press-inset-$current_label-frame.txt" ] || die "missing $current_label button frame record"
   extract_counts
   case "$current_label" in
