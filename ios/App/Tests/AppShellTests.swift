@@ -1452,11 +1452,17 @@ final class AppShellTests: XCTestCase {
             prominent: true,
             action: {}
         )
+        let content = try XCTUnwrap(
+            descendants(
+                of: ExploreQuietDestinationRowContent.self,
+                in: row.body
+            ).first
+        )
 
         XCTAssertEqual(
             descendants(
                 of: ExploreQuietDestinationIconColumn.self,
-                in: row.body
+                in: content.body
             ).count,
             1,
             "Quiet destinations must reserve the scaled glyph width inside the row."
