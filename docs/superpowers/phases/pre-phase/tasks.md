@@ -43,3 +43,29 @@ Format: one line per transition, newest last:
 - 2026-07-24T15:22Z opus #372 closed — issue audit; Rob device sign-off "confirmed" (PRs #383/#422/#425/#438)
 - 2026-07-24T15:22Z opus #306 closed — issue audit; WP delivered by merged PR #313 (3ae2257)
 - 2026-07-24T15:22Z opus #317 closed — issue audit; AX agency clause restored (#397 dcbef0a4 / #355 214760a6)
+
+
+## Fix-now dispatch queue (2026-08-01 backlog sweep; law: coordination.md → fix-now beats carry)
+
+Source: reviewer's closure sweep (p2p/planner__reviewer, 2026-08-01 08:06). Open count 57 → 50 at
+sweep; this queue exists to keep it falling. Claim protocol: standard dual-channel, own worktree,
+seat CLI; claim the topmost unclaimed item your size-budget fits; status lines here.
+
+**In flight (pre-sweep dispatch):** #591 codex2 · #584 codex1 · #579 codex3 · #575 codex4.
+
+**XS (single-file):** #513 retire source-text assertion · #464 head-repository guard · #546
+success-only artifact cleanup.
+**S (focused session):** #523 gate honours committed resolution · #454 future-date validation ·
+#375 Copy ID action · #447 tile-coordinate redaction · #417 validate-ax-waits scope · #549 store
+xcarchive · #94 label-survival flag · #388 pipeline heartbeats · #435 visit-edit context.
+**M (full row):** #316+#322 pipeline audit pair · #489 tile-client flake (timeboxed) · #541
+autoplay flake (timeboxed) · #152 watchdog kill (device loop) · #460 pinch-over-clusters (device
+loop) · #361 same-day reorder block (requires-mockups label dropped as stale — ordering
+semantics, not a surface).
+
+**Parked-item owner convention:** a parked issue's owner is planner-at-trigger — when a parked
+issue's named trigger fires, planner dispatches it to the pool in that wave. Parked without a
+named trigger is not a state; reviewer's sweep wrote triggers into every bucket-3 body.
+
+**Needs Rob (relayed 2026-08-01):** #477 Search scope · #378 welcome-flow order · #448 privacy
+policy/diagnostics · #360 coverage-boundary affordance.
