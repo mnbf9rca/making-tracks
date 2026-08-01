@@ -140,6 +140,22 @@ wait_for_screenshot() {
   return "$wait_status"
 }
 
+wait_for_screenshot_with_context() {
+  local pid="$1"
+  local frame_name="$2"
+  local wait_status=0
+  local failure_kind="child-exit"
+
+  if wait_for_screenshot "$pid"; then
+    return 0
+  else
+    wait_status=$?
+  fi
+  [ "$wait_status" != "124" ] || failure_kind="timeout"
+  echo "regenerate-place-card-press-inset: screenshot $frame_name failed status=$wait_status kind=$failure_kind" >&2
+  return "$wait_status"
+}
+
 run_timeout_self_test() (
   local saved_timeout="$screenshot_timeout_seconds"
   local saved_grace="$termination_grace_seconds"
@@ -233,6 +249,34 @@ run_timeout_self_test() (
     die "host self-test expected screenshot timeout status 124, found $status"
   ! kill -0 "$spawned_pid" 2>/dev/null ||
     die "host self-test left timeout screenshot child alive"
+  spawned_pid=""
+  assert_errexit_state disabled
+
+  diagnostic_file="$selftest_dir/child-exit-diagnostic.txt"
+  (exit 42) &
+  spawned_pid=$!
+  if wait_for_screenshot_with_context "$spawned_pid" "frame-17.png" 2> "$diagnostic_file"; then
+    die "host self-test accepted a failed screenshot child"
+  else
+    status=$?
+  fi
+  [ "$status" = "42" ] ||
+    die "host self-test expected screenshot child status 42, found $status"
+  [ "$(cat "$diagnostic_file")" = "regenerate-place-card-press-inset: screenshot frame-17.png failed status=42 kind=child-exit" ] ||
+    die "host self-test did not receive the contextual child-exit diagnostic"
+  spawned_pid=""
+
+  diagnostic_file="$selftest_dir/timeout-diagnostic.txt"
+  spawn_term_ignoring_child "$selftest_dir/context-timeout.ready"
+  if wait_for_screenshot_with_context "$spawned_pid" "frame-18.png" 2> "$diagnostic_file"; then
+    die "host self-test accepted a timed-out screenshot child"
+  else
+    status=$?
+  fi
+  [ "$status" = "124" ] ||
+    die "host self-test expected contextual timeout status 124, found $status"
+  [ "$(cat "$diagnostic_file")" = "regenerate-place-card-press-inset: screenshot frame-18.png failed status=124 kind=timeout" ] ||
+    die "host self-test did not receive the contextual timeout diagnostic"
   spawned_pid=""
   assert_errexit_state disabled
 
@@ -362,6 +406,7 @@ done
 capture_loop() {
   local directory="$1"
   local frame=0
+  local screenshot_name=""
   local screenshot_pid=""
   local screenshot_status=0
 
@@ -374,10 +419,11 @@ capture_loop() {
   }
   trap stop_current_screenshot TERM INT
   while [ "$frame" -lt "$max_capture_frames" ]; do
-    xcrun simctl io "$lock_udid" screenshot --type=png "$directory/frame-$frame.png" &
+    screenshot_name="frame-$frame.png"
+    xcrun simctl io "$lock_udid" screenshot --type=png "$directory/$screenshot_name" &
     screenshot_pid=$!
     set +e
-    wait_for_screenshot "$screenshot_pid"
+    wait_for_screenshot_with_context "$screenshot_pid" "$screenshot_name"
     screenshot_status=$?
     set -e
     screenshot_pid=""
@@ -424,7 +470,7 @@ run_focused_capture() {
   capture_status=$?
   set -e
   [ "$gate_status" = "0" ] || die "focused $current_label test command failed"
-  [ "$capture_status" = "0" ] || die "screenshot capture failed during focused $current_label test"
+  [ "$capture_status" = "0" ] || die "screenshot capture failed during focused $current_label test status=$capture_status"
   [ -s "$artifact_dir/place-card-press-inset-$current_label-frame.txt" ] || die "missing $current_label button frame record"
   extract_counts
   case "$current_label" in
