@@ -98,9 +98,14 @@ Run `swift test`, `git diff --check`, and confirm the six tracked #590 PNG SHA-2
 
 Review spec fidelity, correctness, test teeth, evidence stability, and hostile-input/security posture; fix surviving findings and re-run focused verification.
 
-- [ ] **Step 3: Run the full iOS host gate**
+- [x] **Step 3: Run the full iOS host gate**
 
 Run `MT_RELEASE_GATE_DERIVED_DATA=/private/tmp/dd-codex2 ./scripts/sim-lock.sh --seat codex2 ./scripts/release-gate.sh`; record exact unit/UI counts and warnings.
+
+Gate-tested head `2b9d0c3` passed Release build, Debug build-for-testing,
+245 app unit tests, and 97 UI tests (342 total, 0 failed/skipped) without a
+retry or flake. Wrapper wall time was 2,809 seconds; the successful result
+bundle was removed after count extraction and reusable DerivedData retained.
 
 - [ ] **Step 4: Publish**
 
