@@ -306,7 +306,7 @@ the title reconciliation. The divergence is not a new ratification.
 
 | Element | Metric | Source |
 |---|---|---|
-| Door pill | 44pt height, 999px radius, 15pt/600 label, 7pt gap, **19×19 icon**, 10pt between doors | `ia-doors` |
+| Door pill | 44pt height, 999px radius, 15pt/600 label, 7pt gap, **15×15 (`IconRole.inline`) icon**, 10pt between doors | Designer ruling relayed by Rob 2026-08-01 — "R11 snap from ia-doors' drawn 19, tolerance proven by review acceptance," |
 | Sheet | 22pt top radius, 36×4 grabber, 6/14/14 padding | `ia-doors` |
 | Sheet title / subtitle | 26pt Newsreader 600 / 14pt sans | `ia-doors` |
 | Section label | 11pt/600 uppercase, `0.11em` tracking | `ia-doors` |

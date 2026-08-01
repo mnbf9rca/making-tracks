@@ -71,3 +71,4 @@ named trigger is not a state; reviewer's sweep wrote triggers into every bucket-
 policy/diagnostics · #360 coverage-boundary affordance.
 
 - 2026-08-01T08:25Z codex3 #594 claimed — `fix-594-door-pill-spec`; docs-only door-pill metric/provenance amendment resolving Phase 2 OF3
+- 2026-08-01T08:29Z codex3 #594 tests green — ruled provenance phrase appears exactly once; metric is 15×15 (`IconRole.inline`); OF3 active carry discharged; no frozen-render diff; agent-law lint clean
