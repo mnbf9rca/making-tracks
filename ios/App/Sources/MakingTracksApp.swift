@@ -45,6 +45,7 @@ struct MakingTracksApp: App {
     private static let debugUseReplayVisualFixture = arguments.contains("--ui-testing-replay-visual-seed")
     private static let debugShowChipTargetFixture = arguments.contains("--ui-testing-chip-target")
     private static let debugDoorGlyphFixtureVariant = argumentValue("--ui-testing-door-glyph-fixture")
+    private static let debugDisableMaterialModeLock = arguments.contains("--ui-testing-disable-material-mode-lock")
     private static let primaryFixturePlaceID = "mt1_00000000000000000000000000"
 #else
     private static let forceFirstRunOnboarding = false
@@ -71,6 +72,7 @@ struct MakingTracksApp: App {
     private static let debugUseDenseFixturePins = false
     private static let debugUseReplayVisualFixture = false
     private static let debugShowChipTargetFixture = false
+    private static let debugDisableMaterialModeLock = false
 #endif
 
     init() {
@@ -340,17 +342,22 @@ struct MakingTracksApp: App {
 
     var body: some Scene {
         WindowGroup {
+            Group {
 #if DEBUG
-            if let variant = Self.debugDoorGlyphFixtureVariant {
-                DoorGlyphEvidenceFixture(legacy: variant == "before")
-            } else if Self.debugShowChipTargetFixture {
-                ChipHitTargetFixture()
-            } else {
-                rootView
-            }
+                if let variant = Self.debugDoorGlyphFixtureVariant {
+                    DoorGlyphEvidenceFixture(legacy: variant == "before")
+                } else if Self.debugShowChipTargetFixture {
+                    ChipHitTargetFixture()
+                } else {
+                    rootView
+                }
 #else
-            rootView
+                rootView
 #endif
+            }
+            .preferredColorScheme(
+                Self.debugDisableMaterialModeLock ? nil : MaterialTheme.snow.colorScheme
+            )
         }
     }
 

@@ -18,6 +18,12 @@ Format: one line per transition, newest last:
 - 2026-07-29T15:54Z codex3 #497 PR open — draft PR #547 targets `ios` from `wp-infra-sim-concurrency`; required labels `sourcery-review`, `track-b-ios` and `wp` applied; planner retains merge ownership
 - 2026-07-29T16:27Z codex3 #497 review clean — Sourcery passed on `a21f2d6`; its typo finding was fixed, both inline threads were answered and resolved, and the remaining parser/harness notes were documented as non-blocking maintainability follow-ups
 - 2026-07-29T16:27Z codex3 #497 ready-to-merge — PR #547 host gate is green (220 unit + 81 UI, 0 failures), CI Release/build-for-testing and unit jobs plus `ios-release-gate` passed on `a21f2d6`, and all required labels are present; final ledger-only head pending planner handoff
+- 2026-08-01T04:44Z codex2 #589 claimed — urgent Rob-device dark-mode contrast defect; root-cause and spec-grounded scene-level Snow appearance pin under investigation
+- 2026-08-01T04:45Z codex2 #589 branch — `wp-589-dark-mode-fix` from `origin/ios` `04e4201`; worktree `.worktrees/wp-589-dark-mode-fix`; seat `codex2`
+- 2026-08-01T05:09Z codex2 #589 focused gate green — rendered oracle failed pre-fix at 26,066 Appearance-card pixels, then passed 1/1 with exact zero Light/Dark differences across Appearance, Map & data, and Location after the scene-level Snow mode pin
+- 2026-08-01T05:15Z codex2 #589 evidence captured — focused Release gate passed 1/1; six 1206×2622 Light/Dark captures and measured card-region ledger recorded under `docs/design/design-system/snow-theme-lock-*`
+- 2026-08-01T05:51Z codex2 #589 adversarial proof fixes green — focused Release gate passed 1/1; legacy/fixed Light diff is 0 on all three surfaces, legacy/fixed Dark teeth are 26,066 / 36,157 / 4,242 pixels, every contrast sample contains local raised-surface pixels, and exports are simulator-scoped before validate-then-install
+- 2026-08-01T06:49Z codex2 #589 final host gate green — final head `f8e7df2`; `swift test` 516/516; Release and Debug build-for-testing passed; app unit 245/245 and UI 97/97 (342 total, 0 failed/skipped); test phase 2,686s; exact result counts extracted, task xcresults deleted, reusable `/private/tmp/dd-codex2` retained, seat FREE
 
 ## Done (pre-phase)
 

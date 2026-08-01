@@ -224,6 +224,25 @@ private struct RenderedPixelRaster {
         }.count
     }
 
+    func contrastPixelCount(
+        against background: RenderedRGB,
+        minimum: Double,
+        in frame: CGRect
+    ) -> Int {
+        samples(in: frame).lazy.filter { pixel in
+            pixel.contrastRatio(with: background) >= minimum
+        }.count
+    }
+
+    func highestContrastRatio(
+        against background: RenderedRGB,
+        in frame: CGRect
+    ) -> Double? {
+        samples(in: frame).lazy.map { pixel in
+            pixel.contrastRatio(with: background)
+        }.max()
+    }
+
     func differingPixelCount(
         comparedTo other: RenderedPixelRaster,
         in frame: CGRect,
@@ -269,6 +288,19 @@ private struct MyTracksAppearanceCapture {
     let trackSurfaceFrame: CGRect
     let visitDateRaster: RenderedPixelRaster
     let visitDateSurfaceFrame: CGRect
+}
+
+@MainActor
+private struct SettingsThemeLockRegionCapture {
+    let raster: RenderedPixelRaster
+    let comparisonFrame: CGRect
+    let primaryInkFrame: CGRect
+    let secondaryInkFrame: CGRect?
+}
+
+@MainActor
+private struct SettingsThemeLockCapture {
+    let regions: [String: SettingsThemeLockRegionCapture]
 }
 
 private enum AXResampler {
@@ -1484,6 +1516,192 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         attachment.name = "place-card-snow-under-dark-system"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    func testSnowSettingsAdaptiveInkIsLegibleAndInvariantAcrossSystemAppearances() throws {
+        let legacyLight = try XCTUnwrap(captureSnowSettingsThemeLock(
+            forceDarkAppearance: false,
+            disableMaterialModeLock: true,
+            appearanceName: "legacy-light"
+        ))
+        let light = try XCTUnwrap(captureSnowSettingsThemeLock(
+            forceDarkAppearance: false,
+            appearanceName: "light"
+        ))
+        let dark = try XCTUnwrap(captureSnowSettingsThemeLock(
+            forceDarkAppearance: true,
+            appearanceName: "dark"
+        ))
+        let legacyDark = try XCTUnwrap(captureSnowSettingsThemeLock(
+            forceDarkAppearance: true,
+            disableMaterialModeLock: true,
+            appearanceName: "legacy-dark"
+        ))
+
+        let regionNames = ["appearance", "map-data", "location"]
+        XCTAssertEqual(Set(legacyLight.regions.keys), Set(regionNames))
+        XCTAssertEqual(Set(light.regions.keys), Set(regionNames))
+        XCTAssertEqual(Set(dark.regions.keys), Set(regionNames))
+        XCTAssertEqual(Set(legacyDark.regions.keys), Set(regionNames))
+
+        let raisedSurface = RenderedRGB(255, 255, 255)
+        var measurements = [
+            "evidence_class: nondeterministic-content",
+            "comparison_oracle: inclusive raster envelopes covering opaque card regions; exact fixed Light/Dark and legacy/fixed Light equality",
+        ]
+        for name in regionNames {
+            let legacyLightRegion = try XCTUnwrap(legacyLight.regions[name], name)
+            let lightRegion = try XCTUnwrap(light.regions[name], name)
+            let darkRegion = try XCTUnwrap(dark.regions[name], name)
+            let legacyDarkRegion = try XCTUnwrap(legacyDark.regions[name], name)
+            XCTAssertEqual(legacyLightRegion.comparisonFrame, lightRegion.comparisonFrame, name)
+            XCTAssertEqual(lightRegion.comparisonFrame, darkRegion.comparisonFrame, name)
+            XCTAssertEqual(darkRegion.comparisonFrame, legacyDarkRegion.comparisonFrame, name)
+            XCTAssertEqual(legacyLightRegion.primaryInkFrame, lightRegion.primaryInkFrame, name)
+            XCTAssertEqual(lightRegion.primaryInkFrame, darkRegion.primaryInkFrame, name)
+            XCTAssertEqual(darkRegion.primaryInkFrame, legacyDarkRegion.primaryInkFrame, name)
+            XCTAssertEqual(legacyLightRegion.secondaryInkFrame, lightRegion.secondaryInkFrame, name)
+            XCTAssertEqual(lightRegion.secondaryInkFrame, darkRegion.secondaryInkFrame, name)
+            XCTAssertEqual(darkRegion.secondaryInkFrame, legacyDarkRegion.secondaryInkFrame, name)
+
+            let systemDifferenceCount = try XCTUnwrap(
+                lightRegion.raster.differingPixelCount(
+                    comparedTo: darkRegion.raster,
+                    in: lightRegion.comparisonFrame,
+                    tolerance: 0
+                ),
+                name
+            )
+            let lightBaselineDifferenceCount = try XCTUnwrap(
+                legacyLightRegion.raster.differingPixelCount(
+                    comparedTo: lightRegion.raster,
+                    in: lightRegion.comparisonFrame,
+                    tolerance: 0
+                ),
+                name
+            )
+            let legacyDarkDifferenceCount = try XCTUnwrap(
+                legacyDarkRegion.raster.differingPixelCount(
+                    comparedTo: darkRegion.raster,
+                    in: darkRegion.comparisonFrame,
+                    tolerance: 0
+                ),
+                name
+            )
+            let primaryInkPixels = darkRegion.raster.contrastPixelCount(
+                against: raisedSurface,
+                minimum: 4.5,
+                in: darkRegion.primaryInkFrame
+            )
+            let primaryContrast = darkRegion.raster.highestContrastRatio(
+                against: raisedSurface,
+                in: darkRegion.primaryInkFrame
+            ) ?? 0
+            let primaryBackgroundPixels = darkRegion.raster.tokenCount(
+                raisedSurface,
+                in: darkRegion.primaryInkFrame,
+                tolerance: 3
+            )
+            let backgroundPixels = darkRegion.raster.tokenCount(
+                raisedSurface,
+                in: darkRegion.comparisonFrame,
+                tolerance: 3
+            )
+
+            XCTAssertEqual(
+                systemDifferenceCount,
+                0,
+                "\(name) must render identically in forced Light and Dark appearances"
+            )
+            XCTAssertEqual(
+                lightBaselineDifferenceCount,
+                0,
+                "\(name) fixed Light must remain byte-identical to the legacy Light rendering"
+            )
+            XCTAssertGreaterThan(
+                legacyDarkDifferenceCount,
+                100,
+                "\(name) oracle must detect the legacy Dark adaptive-colour regression"
+            )
+            XCTAssertGreaterThan(
+                primaryInkPixels,
+                8,
+                "\(name) must render primary adaptive ink at WCAG AA contrast on Snow"
+            )
+            XCTAssertGreaterThanOrEqual(
+                primaryContrast,
+                4.5,
+                "\(name) primary adaptive ink must clear WCAG AA on Snow"
+            )
+            XCTAssertGreaterThan(
+                primaryBackgroundPixels,
+                primaryInkPixels,
+                "\(name) primary contrast sample must be dominated by its local Snow background"
+            )
+            XCTAssertGreaterThan(
+                backgroundPixels,
+                100,
+                "\(name) must visibly render the Snow raised-surface token"
+            )
+
+            var line = String(
+                format: "%@: frame=%.2f,%.2f,%.2f,%.2f system_diff_pixels=%d light_baseline_diff_pixels=%d legacy_dark_diff_pixels=%d primary_aa_pixels=%d primary_max_contrast=%.3f primary_background_pixels=%d background_pixels=%d",
+                name,
+                darkRegion.comparisonFrame.minX,
+                darkRegion.comparisonFrame.minY,
+                darkRegion.comparisonFrame.width,
+                darkRegion.comparisonFrame.height,
+                systemDifferenceCount,
+                lightBaselineDifferenceCount,
+                legacyDarkDifferenceCount,
+                primaryInkPixels,
+                primaryContrast,
+                primaryBackgroundPixels,
+                backgroundPixels
+            )
+            if let secondaryInkFrame = darkRegion.secondaryInkFrame {
+                let secondaryInkPixels = darkRegion.raster.contrastPixelCount(
+                    against: raisedSurface,
+                    minimum: 3,
+                    in: secondaryInkFrame
+                )
+                let secondaryContrast = darkRegion.raster.highestContrastRatio(
+                    against: raisedSurface,
+                    in: secondaryInkFrame
+                ) ?? 0
+                let secondaryBackgroundPixels = darkRegion.raster.tokenCount(
+                    raisedSurface,
+                    in: secondaryInkFrame,
+                    tolerance: 3
+                )
+                XCTAssertGreaterThan(
+                    secondaryInkPixels,
+                    8,
+                    "\(name) must render secondary adaptive ink at legible contrast on Snow"
+                )
+                XCTAssertGreaterThanOrEqual(
+                    secondaryContrast,
+                    3,
+                    "\(name) secondary adaptive ink must preserve the legible Light rendering on Snow"
+                )
+                XCTAssertGreaterThan(
+                    secondaryBackgroundPixels,
+                    secondaryInkPixels,
+                    "\(name) secondary contrast sample must be dominated by its local Snow background"
+                )
+                line += String(
+                    format: " secondary_3_to_1_pixels=%d secondary_max_contrast=%.3f secondary_background_pixels=%d",
+                    secondaryInkPixels,
+                    secondaryContrast,
+                    secondaryBackgroundPixels
+                )
+            }
+            measurements.append(line)
+        }
+        exportTextArtifact(
+            named: "snow-theme-lock-measurements",
+            contents: measurements.joined(separator: "\n") + "\n"
+        )
     }
 
     func testSavedTapReopensListPickerForPerListRemoval() {
@@ -4788,6 +5006,149 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(runtimeAttribution.label.contains("ODbL-1.0"))
     }
 
+    private func captureSnowSettingsThemeLock(
+        forceDarkAppearance: Bool,
+        disableMaterialModeLock: Bool = false,
+        appearanceName: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> SettingsThemeLockCapture? {
+        let forcedAppearance: XCUIDevice.Appearance = forceDarkAppearance ? .dark : .light
+        XCUIDevice.shared.appearance = forcedAppearance
+        XCTAssertEqual(XCUIDevice.shared.appearance, forcedAppearance, file: file, line: line)
+        defer { XCUIDevice.shared.appearance = .light }
+
+        let app = launch(
+            reset: true,
+            locationDenied: true,
+            resetTheme: true,
+            theme: "snow",
+            forceDarkAppearance: forceDarkAppearance,
+            disableMaterialModeLock: disableMaterialModeLock,
+            hideFixtureChrome: true
+        )
+        guard app.otherElements["map.surface"].waitForExistence(timeout: 10) else {
+            XCTFail("Snow theme-lock \(appearanceName): map did not launch", file: file, line: line)
+            return nil
+        }
+        openExploreDoor(in: app)
+        app.buttons["explore.row.settings"].tap()
+        guard app.staticTexts["Settings"].waitForExistence(timeout: 5) else {
+            XCTFail("Snow theme-lock \(appearanceName): Settings did not open", file: file, line: line)
+            return nil
+        }
+
+        let appFrame = app.windows.firstMatch.exists ? app.windows.firstMatch.frame : app.frame
+        var regions: [String: SettingsThemeLockRegionCapture] = [:]
+
+        func capture(
+            name: String,
+            comparisonElements: [XCUIElement],
+            primaryInk: XCUIElement,
+            secondaryInk: XCUIElement? = nil
+        ) -> Bool {
+            let requiredElements = comparisonElements + [primaryInk] + (secondaryInk.map { [$0] } ?? [])
+            guard requiredElements.allSatisfy({ $0.waitForExistence(timeout: 5) }) else {
+                XCTFail(
+                    "Snow theme-lock \(appearanceName) \(name): a rendered target is missing",
+                    file: file,
+                    line: line
+                )
+                return false
+            }
+            let comparisonFrame = comparisonElements
+                .map(\.frame)
+                .reduce(CGRect.null) { $0.union($1) }
+                .insetBy(dx: -4, dy: -4)
+                .intersection(appFrame)
+            guard !comparisonFrame.isNull,
+                  comparisonFrame.width > 0,
+                  comparisonFrame.height > 0
+            else {
+                XCTFail(
+                    "Snow theme-lock \(appearanceName) \(name): comparison frame is empty",
+                    file: file,
+                    line: line
+                )
+                return false
+            }
+
+            let screenshot = attachScreenshot(
+                named: "snow-theme-lock-\(name)-\(appearanceName)",
+                forceExport: true
+            )
+            guard let raster = RenderedPixelRaster(screenshot: screenshot, appFrame: appFrame) else {
+                XCTFail(
+                    "Snow theme-lock \(appearanceName) \(name): screenshot could not be decoded",
+                    file: file,
+                    line: line
+                )
+                return false
+            }
+            regions[name] = SettingsThemeLockRegionCapture(
+                raster: raster,
+                comparisonFrame: comparisonFrame,
+                primaryInkFrame: primaryInk.frame,
+                secondaryInkFrame: secondaryInk?.frame
+            )
+            return true
+        }
+
+        let appearanceRow = app.buttons["settings.group.appearance"]
+        guard scrollSettingsRowToHittable(appearanceRow, in: app) else {
+            XCTFail("Snow theme-lock \(appearanceName): Appearance row is not hittable", file: file, line: line)
+            return nil
+        }
+        appearanceRow.tap()
+        let themeRows = ["snow", "defined-paper", "street-contrast", "verdant-kl"].map {
+            app.buttons["settings.theme.\($0)"]
+        }
+        guard capture(
+            name: "appearance",
+            comparisonElements: themeRows,
+            primaryInk: app.staticTexts["Street Contrast"],
+            secondaryInk: app.staticTexts["street-contrast"]
+        ) else { return nil }
+        app.buttons["Back"].tap()
+        guard app.staticTexts["Settings"].waitForExistence(timeout: 5) else { return nil }
+
+        let mapDataRow = app.buttons["settings.group.map-data"]
+        guard scrollSettingsRowToHittable(mapDataRow, in: app) else {
+            XCTFail("Snow theme-lock \(appearanceName): Map & data row is not hittable", file: file, line: line)
+            return nil
+        }
+        mapDataRow.tap()
+        let cellularToggle = app.switches["settings.downloads.allow-cellular"]
+        let pinSizeLabel = app.staticTexts["Pin size"]
+        let pinSizeValue = app.staticTexts["120%"]
+        let pinSizeSlider = app.sliders["settings.pin-size"]
+        guard capture(
+            name: "map-data",
+            comparisonElements: [cellularToggle, pinSizeLabel, pinSizeValue, pinSizeSlider],
+            primaryInk: pinSizeLabel,
+            secondaryInk: pinSizeValue
+        ) else { return nil }
+        app.buttons["Back"].tap()
+        guard app.staticTexts["Settings"].waitForExistence(timeout: 5) else { return nil }
+
+        let locationRow = app.buttons["settings.group.location"]
+        guard scrollSettingsRowToHittable(locationRow, in: app) else {
+            XCTFail("Snow theme-lock \(appearanceName): Location row is not hittable", file: file, line: line)
+            return nil
+        }
+        locationRow.tap()
+        let locationStatus = app.staticTexts["Location off"]
+        let locationSettings = app.buttons["settings.location.open-system"]
+        guard capture(
+            name: "location",
+            comparisonElements: [locationStatus, locationSettings],
+            primaryInk: locationStatus
+        ) else { return nil }
+
+        app.terminate()
+        return SettingsThemeLockCapture(regions: regions)
+    }
+
     private func assertMyTracksRenderedPixelOracle(
         forceDarkAppearance: Bool,
         appearanceName: String,
@@ -5111,6 +5472,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         coverageBBoxes: [String] = [],
         resetOnboarding: Bool = false,
         forceDarkAppearance: Bool = false,
+        disableMaterialModeLock: Bool = false,
         densePins: Bool = false,
         startupViewport: String? = nil,
         trackReplayBeatDuration: Double? = nil,
@@ -5168,6 +5530,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         if forceDarkAppearance {
             app.launchArguments.append("-AppleInterfaceStyle")
             app.launchArguments.append("Dark")
+        }
+        if disableMaterialModeLock {
+            app.launchArguments.append("--ui-testing-disable-material-mode-lock")
         }
         if seedUserList {
             app.launchArguments.append("--ui-testing-seed-user-list")
@@ -6297,7 +6662,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             XCTFail("No screenshot export name configured for \(name)")
             return
         }
-        let directory = URL(fileURLWithPath: "/private/tmp/making-tracks-artifacts", isDirectory: true)
+        let directory = uiTestArtifactDirectory(for: name)
         let fileURL = directory.appendingPathComponent(exportName).appendingPathExtension("png")
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -6315,7 +6680,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         elements: [(String, XCUIElement)],
         notes: [String] = []
     ) {
-        let directory = URL(fileURLWithPath: "/private/tmp/making-tracks-artifacts", isDirectory: true)
+        let directory = uiTestArtifactDirectory(for: name)
         let fileURL = directory.appendingPathComponent(name).appendingPathExtension("txt")
         let frames = elements.map { label, element in
             let frame = element.frame
@@ -6335,6 +6700,30 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         } catch {
             XCTFail("Failed to export measurements for \(name): \(error)")
         }
+    }
+
+    private func exportTextArtifact(named name: String, contents: String) {
+        let directory = uiTestArtifactDirectory(for: name)
+        let fileURL = directory.appendingPathComponent(name).appendingPathExtension("txt")
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try contents.write(to: fileURL, atomically: true, encoding: .utf8)
+            let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+            let byteCount = attributes[.size] as? UInt64 ?? 0
+            XCTAssertGreaterThan(byteCount, 0, "Exported text artifact should not be empty: \(fileURL.path)")
+        } catch {
+            XCTFail("Failed to export text artifact \(name): \(error)")
+        }
+    }
+
+    private func uiTestArtifactDirectory(for artifactName: String) -> URL {
+        let environment = ProcessInfo.processInfo.environment
+        let simulatorID = artifactName.hasPrefix("snow-theme-lock-")
+            ? environment["SIMULATOR_UDID"].flatMap { $0.isEmpty ? nil : $0 }
+            : nil
+        let path = simulatorID.map { "/private/tmp/making-tracks-artifacts.\($0)" }
+            ?? "/private/tmp/making-tracks-artifacts"
+        return URL(fileURLWithPath: path, isDirectory: true)
     }
 
     @discardableResult
@@ -6538,6 +6927,18 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "t2.10-data-licences-ax": "t2.10-data-licences-ax",
         "t2.9-settings-root": "t2.9-settings-root",
         "t2.9-settings-root-ax": "t2.9-settings-root-ax",
+        "snow-theme-lock-appearance-light": "snow-theme-lock-appearance-light",
+        "snow-theme-lock-appearance-dark": "snow-theme-lock-appearance-dark",
+        "snow-theme-lock-appearance-legacy-light": "snow-theme-lock-appearance-legacy-light",
+        "snow-theme-lock-appearance-legacy-dark": "snow-theme-lock-appearance-legacy-dark",
+        "snow-theme-lock-map-data-light": "snow-theme-lock-map-data-light",
+        "snow-theme-lock-map-data-dark": "snow-theme-lock-map-data-dark",
+        "snow-theme-lock-map-data-legacy-light": "snow-theme-lock-map-data-legacy-light",
+        "snow-theme-lock-map-data-legacy-dark": "snow-theme-lock-map-data-legacy-dark",
+        "snow-theme-lock-location-light": "snow-theme-lock-location-light",
+        "snow-theme-lock-location-dark": "snow-theme-lock-location-dark",
+        "snow-theme-lock-location-legacy-light": "snow-theme-lock-location-legacy-light",
+        "snow-theme-lock-location-legacy-dark": "snow-theme-lock-location-legacy-dark",
         "diagnostics-preprepare-exclusions-dark": "diagnostics-preprepare-exclusions-dark",
         "tracks-static-geometry": "tracks-static-geometry",
         "explore-door-default": "explore-door-default",

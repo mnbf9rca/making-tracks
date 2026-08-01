@@ -1,0 +1,5 @@
+evidence_class: nondeterministic-content
+comparison_oracle: inclusive raster envelopes covering opaque card regions; exact fixed Light/Dark and legacy/fixed Light equality
+appearance: frame=12.00,214.33,378.00,288.00 system_diff_pixels=0 light_baseline_diff_pixels=0 legacy_dark_diff_pixels=26066 primary_aa_pixels=3580 primary_max_contrast=21.000 primary_background_pixels=17075 background_pixels=904429 secondary_3_to_1_pixels=1292 secondary_max_contrast=3.439 secondary_background_pixels=9000
+map-data: frame=12.00,214.33,378.00,589.33 system_diff_pixels=0 light_baseline_diff_pixels=0 legacy_dark_diff_pixels=36157 primary_aa_pixels=1707 primary_max_contrast=21.000 primary_background_pixels=8698 background_pixels=652274 secondary_3_to_1_pixels=1077 secondary_max_contrast=3.439 secondary_background_pixels=6355
+location: frame=29.00,230.33,345.00,52.00 system_diff_pixels=0 light_baseline_diff_pixels=0 legacy_dark_diff_pixels=4242 primary_aa_pixels=3186 primary_max_contrast=21.000 primary_background_pixels=18119 background_pixels=155660
