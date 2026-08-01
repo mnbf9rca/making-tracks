@@ -5,7 +5,10 @@ import ImageIO
 
 private let restMarker = RGB(red: 0, green: 255, blue: 255)
 private let pressedMarker = RGB(red: 255, green: 0, blue: 255)
-private let luminanceThreshold: UInt8 = 96
+// The BT.709 integer formula below maps Snow's quiet muted #6B675F to 103
+// and its background #F4F1EA to 241. 112 admits the production ink with a
+// narrow decode margin while remaining 129 levels below the background.
+private let productionQuietInkLuminanceThreshold: UInt8 = 112
 private let fixtureMarkerCrop = CGRect(x: 18, y: 0, width: 12, height: 12)
 private let fixtureInkCrop = CGRect(x: 5, y: 5, width: 12, height: 16)
 
@@ -113,13 +116,17 @@ private struct FixtureRaster {
     let height = 30
     var pixels = [UInt8](repeating: 255, count: 30 * 30 * 4)
 
-    init(inkY: Int, marker: (UInt8, UInt8, UInt8)) {
+    init(
+        inkY: Int,
+        marker: (UInt8, UInt8, UInt8),
+        ink: (UInt8, UInt8, UInt8) = (0, 0, 0)
+    ) {
         for y in inkY..<(inkY + 2) {
             for x in 7..<13 {
                 let offset = ((y * width) + x) * 4
-                pixels[offset] = 0
-                pixels[offset + 1] = 0
-                pixels[offset + 2] = 0
+                pixels[offset] = ink.0
+                pixels[offset + 1] = ink.1
+                pixels[offset + 2] = ink.2
                 pixels[offset + 3] = 255
             }
         }
@@ -188,7 +195,11 @@ func classify(_ raster: Raster, marker: CGRect) throws -> LivePressState {
     throw AnalyzerError.markerMismatch
 }
 
-// A single BT.709 integer luminance threshold (96/255) classifies dark ink in every frame.
+private func bt709IntegerLuminance(_ pixel: RGB) -> Int {
+    (54 * Int(pixel.red) + 183 * Int(pixel.green) + 19 * Int(pixel.blue)) >> 8
+}
+
+// One production-quiet BT.709 integer threshold classifies ink in every frame.
 func measureInk(_ raster: Raster, crop: CGRect, luminanceThreshold: UInt8) throws -> InkBounds {
     let rect = try checkedPixelRect(crop, in: raster)
     var darkPixelCount = 0
@@ -200,7 +211,7 @@ func measureInk(_ raster: Raster, crop: CGRect, luminanceThreshold: UInt8) throw
     for y in rect.minY..<rect.maxY {
         for x in rect.minX..<rect.maxX {
             let pixel = raster.rgb(x: x, y: y)
-            let luminance = (54 * Int(pixel.red) + 183 * Int(pixel.green) + 19 * Int(pixel.blue)) >> 8
+            let luminance = bt709IntegerLuminance(pixel)
             if luminance <= Int(luminanceThreshold) {
                 darkPixelCount += 1
                 minimumX = min(minimumX, x)
@@ -228,9 +239,24 @@ func displacement(rest: InkBounds, pressed: InkBounds) -> Int {
 }
 
 private func runSelfTest() throws {
-    let restPixels = try Raster(width: 30, height: 30, pixels: FixtureRaster(inkY: 8, marker: (0, 255, 255)).pixels)
-    let defaultPressedPixels = try Raster(width: 30, height: 30, pixels: FixtureRaster(inkY: 11, marker: (255, 0, 255)).pixels)
-    let axPressedPixels = try Raster(width: 30, height: 30, pixels: FixtureRaster(inkY: 14, marker: (255, 0, 255)).pixels)
+    let productionQuietMuted: (UInt8, UInt8, UInt8) = (0x6B, 0x67, 0x5F)
+    let snowBackground = RGB(red: 0xF4, green: 0xF1, blue: 0xEA)
+    let quietMutedLuminance = bt709IntegerLuminance(RGB(
+        red: productionQuietMuted.0,
+        green: productionQuietMuted.1,
+        blue: productionQuietMuted.2
+    ))
+    let snowBackgroundLuminance = bt709IntegerLuminance(snowBackground)
+    precondition(quietMutedLuminance == 103, "production quiet muted luminance must stay pinned")
+    precondition(snowBackgroundLuminance == 241, "Snow background luminance must stay pinned")
+    precondition(
+        snowBackgroundLuminance > Int(productionQuietInkLuminanceThreshold),
+        "production quiet threshold must exclude the Snow background"
+    )
+
+    let restPixels = try Raster(width: 30, height: 30, pixels: FixtureRaster(inkY: 8, marker: (0, 255, 255), ink: productionQuietMuted).pixels)
+    let defaultPressedPixels = try Raster(width: 30, height: 30, pixels: FixtureRaster(inkY: 11, marker: (255, 0, 255), ink: productionQuietMuted).pixels)
+    let axPressedPixels = try Raster(width: 30, height: 30, pixels: FixtureRaster(inkY: 14, marker: (255, 0, 255), ink: productionQuietMuted).pixels)
 
     var mixedMarkerFixture = FixtureRaster(inkY: 8, marker: (0, 255, 255)).pixels
     mixedMarkerFixture[((6 * 30) + 24) * 4] = 255
@@ -249,7 +275,7 @@ private func runSelfTest() throws {
         // Expected: an exact state marker may not mix the fixture RGB values.
     }
     do {
-        _ = try measureInk(restPixels, crop: CGRect(x: -1, y: 5, width: 12, height: 16), luminanceThreshold: luminanceThreshold)
+        _ = try measureInk(restPixels, crop: CGRect(x: -1, y: 5, width: 12, height: 16), luminanceThreshold: productionQuietInkLuminanceThreshold)
         preconditionFailure("out-of-frame crop must be rejected")
     } catch AnalyzerError.invalid {
         // Expected: evidence crops never clip silently.
@@ -307,9 +333,9 @@ private func runSelfTest() throws {
     } catch AnalyzerError.invalid {
         // Expected: two-decimal serialization may round to a pixel, not widen a fractional crop.
     }
-    let rest = try measureInk(restPixels, crop: fixtureInkCrop, luminanceThreshold: luminanceThreshold)
-    let defaultDelta = displacement(rest: rest, pressed: try measureInk(defaultPressedPixels, crop: fixtureInkCrop, luminanceThreshold: luminanceThreshold))
-    let axDelta = displacement(rest: rest, pressed: try measureInk(axPressedPixels, crop: fixtureInkCrop, luminanceThreshold: luminanceThreshold))
+    let rest = try measureInk(restPixels, crop: fixtureInkCrop, luminanceThreshold: productionQuietInkLuminanceThreshold)
+    let defaultDelta = displacement(rest: rest, pressed: try measureInk(defaultPressedPixels, crop: fixtureInkCrop, luminanceThreshold: productionQuietInkLuminanceThreshold))
+    let axDelta = displacement(rest: rest, pressed: try measureInk(axPressedPixels, crop: fixtureInkCrop, luminanceThreshold: productionQuietInkLuminanceThreshold))
     precondition(defaultDelta == 3, "default displacement must be 3")
     precondition(axDelta > defaultDelta, "AX displacement must exceed default")
     precondition(axDelta == 6, "AX displacement must be 6")
@@ -461,7 +487,7 @@ private func selectedCandidate(
             exactMarkerFailureCount += 1
             continue
         }
-        let ink = try measureInk(raster, crop: frame.inkCrop, luminanceThreshold: luminanceThreshold)
+        let ink = try measureInk(raster, crop: frame.inkCrop, luminanceThreshold: productionQuietInkLuminanceThreshold)
         candidates.append(Candidate(
             url: file,
             state: state,
