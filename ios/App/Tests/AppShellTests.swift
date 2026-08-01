@@ -1404,7 +1404,6 @@ final class AppShellTests: XCTestCase {
                 ),
                 dynamicTypeSize: dynamicTypeSize
             )
-
             XCTAssertEqual(
                 rest,
                 fixedMedium,
@@ -1427,19 +1426,18 @@ final class AppShellTests: XCTestCase {
             )
             XCTAssertEqual(
                 try renderedAppView(
-                    content,
+                    Button(action: {}) { content }
+                        .buttonStyle(.plain),
                     dynamicTypeSize: dynamicTypeSize,
                     frame: frame
                 ),
                 try renderedAppView(
-                    style.body(
-                        label: content,
-                        isPressed: false
-                    ),
+                    Button(action: {}) { content }
+                        .buttonStyle(MaterialQuietRowButtonStyle()),
                     dynamicTypeSize: dynamicTypeSize,
                     frame: frame
                 ),
-                "The label-preserving adapter must be a byte identity at rest."
+                "The mounted label-preserving adapter must be a byte identity at rest."
             )
         }
     }

@@ -238,6 +238,19 @@ private struct CaseSpec {
 private let restColor = RGB(red: 13, green: 217, blue: 242)
 private let pressedColor = RGB(red: 242, green: 13, blue: 204)
 private let markerMinimum = 300
+private let evidenceClassLine = "evidence-class: Nondeterministic content"
+private let provenanceLine = "pressed-state provenance: latched from live press edge"
+
+private func requireUniqueExactLine(_ expected: String, in text: String) throws {
+    let count = text.split(separator: "\n", omittingEmptySubsequences: false)
+        .lazy
+        .map(String.init)
+        .filter { $0 == expected }
+        .count
+    guard count == 1 else {
+        throw EvidenceError("expected exactly one '\(expected)' line, found \(count)")
+    }
+}
 
 private func parseFrame(label: String, from text: String) throws -> CGRect {
     let escaped = NSRegularExpression.escapedPattern(for: label)
@@ -292,6 +305,8 @@ private func analyzeCase(_ spec: CaseSpec, input: URL, output: URL) throws {
     let caseDirectory = input.appendingPathComponent(spec.name, isDirectory: true)
     let measurementURL = caseDirectory.appendingPathComponent("measurement.txt")
     let measurementText = try String(contentsOf: measurementURL, encoding: .utf8)
+    try requireUniqueExactLine(evidenceClassLine, in: measurementText)
+    try requireUniqueExactLine(provenanceLine, in: measurementText)
     let observedLivePressEdges = try parsePositiveInteger(
         label: "observed-live-press-edges",
         from: measurementText
@@ -417,6 +432,9 @@ private func analyzeCase(_ spec: CaseSpec, input: URL, output: URL) throws {
 private enum SyntheticAnalysisOutcome: Equatable {
     case success
     case missingLiveEdge
+    case missingEvidenceClass
+    case mergedClassification
+    case alteredProvenance
     case ambiguousPressedMarker
     case identicalGlyphs
     case nonIncreasingInk
@@ -437,7 +455,25 @@ private func exerciseSyntheticAnalysis(
     try fileManager.createDirectory(at: output, withIntermediateDirectories: true)
     defer { try? fileManager.removeItem(at: root) }
 
+    let syntheticEvidenceClassLine: String
+    let syntheticProvenanceLine: String
+    switch outcome {
+    case .missingEvidenceClass:
+        syntheticEvidenceClassLine = ""
+        syntheticProvenanceLine = provenanceLine
+    case .mergedClassification:
+        syntheticEvidenceClassLine = "\(evidenceClassLine); \(provenanceLine)"
+        syntheticProvenanceLine = ""
+    case .alteredProvenance:
+        syntheticEvidenceClassLine = evidenceClassLine
+        syntheticProvenanceLine = "pressed-state provenance: inferred from tap count"
+    default:
+        syntheticEvidenceClassLine = evidenceClassLine
+        syntheticProvenanceLine = provenanceLine
+    }
     let measurement = """
+    \(syntheticEvidenceClassLine)
+    \(syntheticProvenanceLine)
     app-frame: x=0 y=0 width=300 height=600
     row-derived: x=0 y=80 width=300 height=80
     icon: x=20 y=100 width=30 height=30
@@ -481,7 +517,12 @@ private func exerciseSyntheticAnalysis(
         let restingExtent = 8
         let pressedExtent: Int
         switch outcome {
-        case .success, .missingLiveEdge, .ambiguousPressedMarker:
+        case .success,
+             .missingLiveEdge,
+             .missingEvidenceClass,
+             .mergedClassification,
+             .alteredProvenance,
+             .ambiguousPressedMarker:
             pressedExtent = 12
         case .identicalGlyphs:
             pressedExtent = restingExtent
@@ -572,6 +613,18 @@ private func runSelfTests() throws {
         containing: "missing or non-positive observed-live-press-edges"
     )
     try expectSyntheticAnalysisFailure(
+        .missingEvidenceClass,
+        containing: evidenceClassLine
+    )
+    try expectSyntheticAnalysisFailure(
+        .mergedClassification,
+        containing: evidenceClassLine
+    )
+    try expectSyntheticAnalysisFailure(
+        .alteredProvenance,
+        containing: provenanceLine
+    )
+    try expectSyntheticAnalysisFailure(
         .ambiguousPressedMarker,
         containing: "missing exact rest or live-edge-latched pressed marker candidate"
     )
@@ -583,7 +636,7 @@ private func runSelfTests() throws {
         .nonIncreasingInk,
         containing: "expected pressed glyph ink > rest"
     )
-    print("measure-explore-row-press: 9 self-tests passed")
+    print("measure-explore-row-press: 12 self-tests passed")
 }
 
 do {

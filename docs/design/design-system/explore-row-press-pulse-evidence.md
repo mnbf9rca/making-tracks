@@ -22,9 +22,11 @@ live-edge evidence latch used to prove that enrollment.
 
 The canonical evidence class is **Nondeterministic content**. The phrase
 `latched from live press edge` is provenance for the pressed frame, not another evidence class.
-The latch is test-only SPI consumed inside the production row style. Only a rising live pressed edge
-can set it or increment the edge count; removing the mounted style or severing its live
-configuration path leaves the count at zero and fails the UI test.
+The latch is DEBUG-only SPI consumed inside the production row style's DEBUG build. Release builds
+compile only the direct live-press feedback path and contain neither the evidence environment nor
+its edge observer. Only a rising live pressed edge can set the DEBUG latch or increment the edge
+count; removing the mounted style or severing its live configuration path leaves the count at zero
+and fails the UI test.
 
 Each PNG is paired with a same-case `.txt` record containing the exact app, row, and icon frames,
 selected candidate names, marker counts, glyph ink counts and bounds, pressed-minus-rest ink, and
@@ -56,7 +58,10 @@ Run from a clean committed worktree through the assigned simulator seat:
 ./scripts/sim-lock.sh --seat codex1 ./docs/design/design-system/regenerate-explore-row-press-pulse.sh
 ```
 
-The script builds through `release-gate.sh`, runs exactly four focused UI tests, captures candidates
-while each test performs 100 real taps, analyzes the four cases into eight selected frames, stages a
-complete packet, and installs it atomically. It verifies the source head and clean worktree again
-before installation and removes its result bundle and task directory on exit.
+The script builds through `release-gate.sh`, announces each private log and emits progress while it
+runs exactly four focused UI tests, captures candidates while each test performs 100 real taps, and
+analyzes the four cases into eight selected frames. It stages and validates the complete packet,
+then replaces each file atomically with the capture manifest installed last as the completeness
+marker; trapped failures attempt every rollback and cleanup step while preserving the original exit
+status. It verifies the source head and clean worktree again before installation and removes its
+result bundle and task directory on exit.

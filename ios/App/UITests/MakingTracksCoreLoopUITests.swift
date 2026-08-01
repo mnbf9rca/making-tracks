@@ -4367,13 +4367,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.launchArguments = [
             "--ui-testing-explore-row-press-fixture",
             kind,
+            "-UIPreferredContentSizeCategoryName",
+            accessibility5
+                ? "UICTContentSizeCategoryAccessibilityXXXL"
+                : "UICTContentSizeCategoryL",
         ]
         if accessibility5 {
-            app.launchArguments += [
-                "--ui-testing-explore-row-press-ax",
-                "-UIPreferredContentSizeCategoryName",
-                "UICTContentSizeCategoryAccessibilityXXXL",
-            ]
+            app.launchArguments.append("--ui-testing-explore-row-press-ax")
         }
         app.launch()
 

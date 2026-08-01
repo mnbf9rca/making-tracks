@@ -1,4 +1,8 @@
+#if DEBUG
 @_spi(PressEvidence) import DesignSystem
+#else
+import DesignSystem
+#endif
 import MakingTracksData
 import MakingTracksMapStyle
 import SwiftUI
@@ -1993,6 +1997,7 @@ struct ExploreQuietDestinationPressEvidenceFixture: View {
     @State private var tapCount = 0
     @State private var livePressEdgeCount = 0
     @State private var latchedFromLivePressEdge = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let tokens = MaterialTheme.snow.tokens
 
@@ -2007,10 +2012,8 @@ struct ExploreQuietDestinationPressEvidenceFixture: View {
                     identifier: "explore-row-press.fixture.kind"
                 )
                 evidenceMarker(
-                    color: accessibilitySize
-                        ? ExploreRowPressEvidenceColor.accessibilitySize
-                        : ExploreRowPressEvidenceColor.defaultSize,
-                    label: accessibilitySize ? "ax" : "default",
+                    color: observedSizeColor,
+                    label: observedSizeLabel,
                     identifier: "explore-row-press.fixture.size"
                 )
                 evidenceMarker(
@@ -2059,6 +2062,22 @@ struct ExploreQuietDestinationPressEvidenceFixture: View {
         }
         .padding(.horizontal, 16)
         .background(tokens.background.swiftUIColor)
+    }
+
+    private var observedSizeLabel: String {
+        switch (accessibilitySize, dynamicTypeSize) {
+        case (false, .large): "default"
+        case (true, .accessibility5): "ax"
+        default: "unexpected"
+        }
+    }
+
+    private var observedSizeColor: Color {
+        switch (accessibilitySize, dynamicTypeSize) {
+        case (false, .large): ExploreRowPressEvidenceColor.defaultSize
+        case (true, .accessibility5): ExploreRowPressEvidenceColor.accessibilitySize
+        default: .black
+        }
     }
 
     private func evidenceMarker(

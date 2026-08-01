@@ -100,6 +100,8 @@ final class ControlStylesTests: XCTestCase {
         }
         XCTAssertEqual(quiet.symbolWeight(isPressed: false), .standard)
         XCTAssertEqual(quiet.symbolWeight(isPressed: true), .emphasized)
+        XCTAssertEqual(MaterialControlSymbolWeight.standard.swiftUI, .medium)
+        XCTAssertEqual(MaterialControlSymbolWeight.emphasized.swiftUI, .semibold)
         XCTAssertEqual(quietText.symbolWeight(isPressed: false), .standard)
         XCTAssertEqual(quietText.symbolWeight(isPressed: true), .standard)
         XCTAssertEqual(

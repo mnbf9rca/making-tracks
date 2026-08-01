@@ -59,6 +59,7 @@ mkdir -p "$candidate_root" "$staging"
 test_pid=""
 install_backup="$task_root/install-backup"
 install_in_progress=0
+cleanup_ran=0
 packet_files=(
   explore-row-press-settings-default-rest.png
   explore-row-press-settings-default-pressed.png
@@ -76,6 +77,13 @@ packet_files=(
 )
 
 cleanup() {
+  local cleanup_status=$?
+  trap - EXIT
+  set +e
+  if [ "$cleanup_ran" -ne 0 ]; then
+    exit "$cleanup_status"
+  fi
+  cleanup_ran=1
   if [ -n "$test_pid" ] && kill -0 "$test_pid" 2>/dev/null; then
     pkill -TERM -P "$test_pid" 2>/dev/null || true
     kill -TERM "$test_pid" 2>/dev/null || true
@@ -103,8 +111,11 @@ cleanup() {
   done
   rm -rf "$result_bundle"
   rm -rf "$task_root"
+  exit "$cleanup_status"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 xcrun simctl bootstatus "$simulator_udid" -b
 xcrun simctl status_bar "$simulator_udid" override \
@@ -118,8 +129,40 @@ xcrun simctl status_bar "$simulator_udid" override \
 cd "$repo_root"
 swift docs/design/design-system/measure-explore-row-press.swift --self-test
 
+run_logged_with_heartbeat() {
+  local label="$1"
+  local log_path="$2"
+  local started_at
+  local elapsed
+  local status
+  shift 2
+
+  started_at="$(date +%s)"
+  echo "regenerate-explore-row-press-pulse: START $label; log=$log_path"
+  "$@" >"$log_path" 2>&1 &
+  test_pid=$!
+  while kill -0 "$test_pid" 2>/dev/null; do
+    sleep 10
+    if kill -0 "$test_pid" 2>/dev/null; then
+      elapsed=$(($(date +%s) - started_at))
+      echo "regenerate-explore-row-press-pulse: PROGRESS $label; elapsed=${elapsed}s; log=$log_path"
+    fi
+  done
+  set +e
+  wait "$test_pid"
+  status=$?
+  set -e
+  test_pid=""
+  elapsed=$(($(date +%s) - started_at))
+  echo "regenerate-explore-row-press-pulse: DONE $label; status=$status; elapsed=${elapsed}s; log=$log_path"
+  return "$status"
+}
+
 build_log="$task_root/build.log"
-MT_RELEASE_GATE_MODE=build ./scripts/release-gate.sh >"$build_log" 2>&1
+run_logged_with_heartbeat \
+  "Release and Debug build-for-testing" \
+  "$build_log" \
+  env MT_RELEASE_GATE_MODE=build ./scripts/release-gate.sh
 grep -q '\*\* BUILD SUCCEEDED \*\*' "$build_log"
 grep -q '\*\* TEST BUILD SUCCEEDED \*\*' "$build_log"
 
@@ -146,11 +189,16 @@ for index in "${!cases[@]}"; do
   measurement_source="$artifact_root/explore-row-press-$case_name.txt"
   coordination_request="$artifact_root/explore-row-press-$case_name-sampler-coordinate"
   sampler_ready="$artifact_root/explore-row-press-$case_name-sampler-ready"
+  case_number=$((index + 1))
+  case_started_at="$(date +%s)"
+  next_heartbeat=$((case_started_at + 10))
   mkdir -p "$case_dir" "$artifact_root"
   printf '%s\n' "MakingTracksUITests/MakingTracksCoreLoopUITests/$test_name" >"$only_testing"
   rm -f "$measurement_source" "$coordination_request" "$sampler_ready"
   rm -rf "$result_bundle"
   touch "$coordination_request"
+
+  echo "regenerate-explore-row-press-pulse: START case $case_number/${#cases[@]} $case_name; log=$test_log"
 
   MT_RELEASE_GATE_MODE=test \
   MT_RELEASE_GATE_ONLY_TESTING_FILE="$only_testing" \
@@ -161,6 +209,11 @@ for index in "${!cases[@]}"; do
   # then acknowledge it so real XCUIElement.tap() calls may produce the only
   # edge that can latch the evidence style's pressed rendering.
   while kill -0 "$test_pid" 2>/dev/null && [ ! -s "$measurement_source" ]; do
+    now="$(date +%s)"
+    if [ "$now" -ge "$next_heartbeat" ]; then
+      echo "regenerate-explore-row-press-pulse: PROGRESS case $case_number/${#cases[@]} $case_name; waiting-for=rest-geometry; elapsed=$((now - case_started_at))s; log=$test_log"
+      next_heartbeat=$((now + 10))
+    fi
     sleep 0.05
   done
   [ -s "$measurement_source" ] || {
@@ -178,7 +231,25 @@ for index in "${!cases[@]}"; do
     if xcrun simctl io "$simulator_udid" screenshot \
       --type=png "$case_dir/$capture_name" >/dev/null 2>&1; then
       capture_index=$((capture_index + 1))
+      if [ $((capture_index % 10)) -eq 0 ]; then
+        now="$(date +%s)"
+        elapsed=$((now - case_started_at))
+        [ "$elapsed" -gt 0 ] || elapsed=1
+        rate="$(awk -v count="$capture_index" -v seconds="$elapsed" 'BEGIN { printf "%.2f", count / seconds }')"
+        eta="$(awk -v count="$capture_index" -v seconds="$elapsed" 'BEGIN { printf "%.0f", (80 - count) / (count / seconds) }')"
+        echo "regenerate-explore-row-press-pulse: PROGRESS case $case_number/${#cases[@]} $case_name; candidates=$capture_index/80; elapsed=${elapsed}s; rate=${rate}/s; eta=${eta}s; log=$test_log"
+        next_heartbeat=$((now + 10))
+      fi
     fi
+  done
+
+  while kill -0 "$test_pid" 2>/dev/null; do
+    now="$(date +%s)"
+    if [ "$now" -ge "$next_heartbeat" ]; then
+      echo "regenerate-explore-row-press-pulse: PROGRESS case $case_number/${#cases[@]} $case_name; candidates=$capture_index/80; waiting-for=100-live-taps; elapsed=$((now - case_started_at))s; log=$test_log"
+      next_heartbeat=$((now + 10))
+    fi
+    sleep 0.1
   done
 
   set +e
@@ -202,7 +273,8 @@ for index in "${!cases[@]}"; do
   }
   cp "$measurement_source" "$case_dir/measurement.txt"
   rm -rf "$result_bundle"
-  echo "regenerate-explore-row-press-pulse: $case_name passed; captured $capture_index candidates"
+  case_elapsed=$(($(date +%s) - case_started_at))
+  echo "regenerate-explore-row-press-pulse: DONE case $case_number/${#cases[@]} $case_name; status=0; elapsed=${case_elapsed}s; candidates=$capture_index; log=$test_log"
 done
 capture_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -256,6 +328,10 @@ for packet_file in "${packet_files[@]}"; do
   fi
 done
 
+# The capture manifest is the packet completeness marker and is installed last.
+# Removing the old marker first makes an untrappable interruption fail closed
+# instead of presenting a mixed packet as complete.
+rm -f "$output_dir/explore-row-press-pulse-captures.txt"
 install_in_progress=1
 for packet_file in "${packet_files[@]}"; do
   staged_file="$staging/$packet_file"
