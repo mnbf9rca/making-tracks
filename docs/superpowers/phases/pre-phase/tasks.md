@@ -35,6 +35,7 @@ Format: one line per transition, newest last:
 - 2026-08-01T08:37Z codex1 #584 review clean — Sourcery reviewed code head `c4a4429`; all three high-level maintainability suggestions were dispositioned with contract evidence, its complete thread fetch reports zero inline threads, and all four required CI checks pass
 - 2026-08-01T08:37Z codex1 #584 ready-to-merge — PR #598 has 78/78 host harness evidence, mutation teeth, clean ShellCheck/agent-law/ancestry checks, three independent adversarial READY verdicts, and all required labels; final ledger-only head pending planner handoff
 - 2026-08-01T09:34Z codex2 #591 final host gate green — gate-tested code head `2b9d0c3`; Release and Debug build-for-testing passed; app unit 245/245 and UI 97/97 (342 total, 0 failed/skipped); wrapper elapsed 2,809s with no retry or flake; exact counts relayed for #600, successful xcresult removed, reusable `/private/tmp/dd-codex2` retained, seat FREE
+- 2026-08-01T09:37Z codex2 #591 PR open — draft PR #601 targets `ios` from `wp-591-settings-oracle`; published head `b228a7b`; required `sourcery-review`, `track-b-ios`, and `wp` labels applied; issue body updated first with implementation and verification evidence and issue typed `enhancement`; planner retains merge ownership
 
 ## Done (pre-phase)
 
