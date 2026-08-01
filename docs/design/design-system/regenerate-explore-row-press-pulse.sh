@@ -210,6 +210,15 @@ swift docs/design/design-system/measure-explore-row-press.swift \
   --input "$candidate_root" \
   --output "$staging"
 
+[ "$(git rev-parse HEAD)" = "$source_head" ] || {
+  echo "regenerate-explore-row-press-pulse: HEAD changed during capture" >&2
+  exit 1
+}
+[ -z "$(git status --porcelain --untracked-files=all)" ] || {
+  echo "regenerate-explore-row-press-pulse: worktree changed during capture" >&2
+  exit 1
+}
+
 metadata="$task_root/explore-row-press-pulse-captures.txt"
 {
   echo "Making Tracks Explore destination-row press pulse"
