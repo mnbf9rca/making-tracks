@@ -340,17 +340,20 @@ struct MakingTracksApp: App {
 
     var body: some Scene {
         WindowGroup {
+            Group {
 #if DEBUG
-            if let variant = Self.debugDoorGlyphFixtureVariant {
-                DoorGlyphEvidenceFixture(legacy: variant == "before")
-            } else if Self.debugShowChipTargetFixture {
-                ChipHitTargetFixture()
-            } else {
-                rootView
-            }
+                if let variant = Self.debugDoorGlyphFixtureVariant {
+                    DoorGlyphEvidenceFixture(legacy: variant == "before")
+                } else if Self.debugShowChipTargetFixture {
+                    ChipHitTargetFixture()
+                } else {
+                    rootView
+                }
 #else
-            rootView
+                rootView
 #endif
+            }
+            .preferredColorScheme(MaterialTheme.snow.colorScheme)
         }
     }
 
