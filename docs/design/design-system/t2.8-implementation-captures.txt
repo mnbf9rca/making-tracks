@@ -4,6 +4,7 @@ destination: platform=iOS Simulator,id=42D1482C-DE04-49AA-990D-1884ED9B855D
 capture: XCUIScreen.main.screenshot via Xcode UI testing
 capture-tool: Xcode 26.6
 capture-tool: Build version 17F113
+The BUILT picker contains zero filled controls, confirming as fact the drawn statement "this surface does not pair a filled action with a state cluster"; the R16 proof obligation continues to travel to the first surface that does.
 
 3f139fa7386822d12980dd4071af6a86fce89321cbd35845cd07f48aeabf78b5  /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-door-default.png
   /Users/rob/git/making-tracks/.worktrees/wp-t2-8-impl/docs/design/design-system/t2.8-explore-door-default.png
