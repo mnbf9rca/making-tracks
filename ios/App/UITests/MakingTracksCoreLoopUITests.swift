@@ -4343,6 +4343,107 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         exercisePlaceCardPressInsetEvidence(accessibilityTextSize: true)
     }
 
+    func testExploreRowPressSettingsDefaultEvidence() {
+        exerciseExploreRowPressEvidence(kind: "settings", accessibility5: false)
+    }
+
+    func testExploreRowPressAboutDefaultEvidence() {
+        exerciseExploreRowPressEvidence(kind: "about", accessibility5: false)
+    }
+
+    func testExploreRowPressSettingsAXEvidence() {
+        exerciseExploreRowPressEvidence(kind: "settings", accessibility5: true)
+    }
+
+    func testExploreRowPressAboutAXEvidence() {
+        exerciseExploreRowPressEvidence(kind: "about", accessibility5: true)
+    }
+
+    private func exerciseExploreRowPressEvidence(
+        kind: String,
+        accessibility5: Bool
+    ) {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-testing-explore-row-press-fixture",
+            kind,
+        ]
+        if accessibility5 {
+            app.launchArguments += [
+                "--ui-testing-explore-row-press-ax",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+            ]
+        }
+        app.launch()
+
+        let button = app.buttons["explore-row-press.fixture.button"]
+        let kindMarker = element(identifier: "explore-row-press.fixture.kind", in: app)
+        let sizeMarker = element(identifier: "explore-row-press.fixture.size", in: app)
+        let stateMarker = element(identifier: "explore-row-press.fixture.state", in: app)
+        let icon = element(identifier: "explore-row-press.fixture.icon", in: app)
+        let tapCount = app.staticTexts["explore-row-press.fixture.tap-count"]
+        for target in [button, kindMarker, sizeMarker, stateMarker, icon, tapCount] {
+            XCTAssertTrue(target.waitForExistence(timeout: 5))
+            assertContainedInAppFrame(target, in: app)
+        }
+        XCTAssertTrue(button.isHittable)
+        XCTAssertEqual(kindMarker.label, kind)
+        XCTAssertEqual(sizeMarker.label, accessibility5 ? "ax" : "default")
+        XCTAssertEqual(stateMarker.label, "rest")
+
+        let rowTop = stateMarker.frame.maxY + 24
+        let rowFrame = CGRect(
+            x: button.frame.minX,
+            y: rowTop,
+            width: button.frame.width,
+            height: button.frame.maxY - rowTop
+        )
+        XCTAssertGreaterThanOrEqual(rowFrame.height, 44)
+        XCTAssertTrue(app.frame.contains(rowFrame))
+
+        let size = accessibility5 ? "ax" : "default"
+        exportMeasurements(
+            named: "explore-row-press-\(kind)-\(size)",
+            elements: [
+                ("button", button),
+                ("kind-marker", kindMarker),
+                ("size-marker", sizeMarker),
+                ("state-marker", stateMarker),
+                ("icon", icon),
+            ],
+            notes: [
+                String(
+                    format: "app-frame: x=%.2f y=%.2f width=%.2f height=%.2f",
+                    app.frame.minX,
+                    app.frame.minY,
+                    app.frame.width,
+                    app.frame.height
+                ),
+                String(
+                    format: "row-derived: x=%.2f y=%.2f width=%.2f height=%.2f",
+                    rowFrame.minX,
+                    rowFrame.minY,
+                    rowFrame.width,
+                    rowFrame.height
+                ),
+                "interaction: 100 XCUIElement.tap() calls; press(forDuration:) intentionally excluded",
+            ]
+        )
+
+        for _ in 0..<100 {
+            button.tap()
+        }
+
+        let completed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND label == %@", "taps:100"),
+            object: tapCount
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [completed], timeout: 5), .completed)
+        XCTAssertEqual(stateMarker.label, "rest")
+        app.terminate()
+    }
+
     func testSettingsRootImplementationEvidenceCapturesDefaultAndAX5() {
         for evidenceCase in [
             (accessibilityTextSize: false, screenshotName: "t2.9-settings-root"),

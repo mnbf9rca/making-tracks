@@ -120,6 +120,13 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
+    func testQuietRowStyleDelegatesToRatifiedPressFeedback() {
+        XCTAssertEqual(
+            MaterialQuietRowButtonStyle().pressFeedback,
+            .symbolWeightPulse
+        )
+    }
+
     func testQuietTextInsetUsesItsPairedButtonTypographyAnchor() {
         assertTypographyTextStyle(
             MaterialControlPressFeedback.textInsetTypographyAnchor,

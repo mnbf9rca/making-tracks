@@ -1282,54 +1282,82 @@ struct ExploreQuietDestinationRow: View {
     let prominent: Bool
     let action: () -> Void
 
-    private let tokens = MaterialTheme.snow.tokens
-
     var body: some View {
         Button(action: action) {
-            MaterialHairlineRow {
-                HStack(spacing: 10) {
-                    ExploreQuietDestinationIconColumn(
-                        systemName: presentation.systemImage
-                    )
-                        .foregroundStyle(
-                            prominent
-                                ? tokens.accent.swiftUIColor
-                                : tokens.muted.swiftUIColor
-                        )
-                        .accessibilityHidden(true)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(verbatim: presentation.title)
-                            .font(Typography.font(for: .button))
-                            .foregroundStyle(
-                                prominent
-                                    ? tokens.ink.swiftUIColor
-                                    : tokens.muted.swiftUIColor
-                            )
-                        Text(verbatim: presentation.subtitle)
-                            .font(Typography.font(for: .metadata))
-                            .foregroundStyle(tokens.muted.swiftUIColor)
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-
-                    Spacer(minLength: 8)
-
-                    Image(systemName: "chevron.right")
-                        .iconRole(.accessory)
-                        .foregroundStyle(
-                            prominent
-                                ? tokens.accent.swiftUIColor
-                                : tokens.muted.swiftUIColor
-                        )
-                        .accessibilityHidden(true)
-                }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
-                .accessibilityElement(children: .combine)
-            }
+            ExploreQuietDestinationRowContent(
+                presentation: presentation,
+                prominent: prominent
+            )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MaterialQuietRowButtonStyle())
         .accessibilityIdentifier(presentation.accessibilityIdentifier)
+    }
+}
+
+struct ExploreQuietDestinationRowContent: View {
+    let presentation: MapDoorRowPresentation
+    let prominent: Bool
+    let evidenceIconIdentifier: String?
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    init(
+        presentation: MapDoorRowPresentation,
+        prominent: Bool,
+        evidenceIconIdentifier: String? = nil
+    ) {
+        self.presentation = presentation
+        self.prominent = prominent
+        self.evidenceIconIdentifier = evidenceIconIdentifier
+    }
+
+    var body: some View {
+        MaterialHairlineRow {
+            HStack(spacing: 10) {
+                ExploreQuietDestinationIconColumn(
+                    systemName: presentation.systemImage
+                )
+                    .foregroundStyle(
+                        prominent
+                            ? tokens.accent.swiftUIColor
+                            : tokens.muted.swiftUIColor
+                    )
+                    .accessibilityHidden(evidenceIconIdentifier == nil)
+                    .accessibilityIdentifier(
+                        evidenceIconIdentifier ?? "explore.row.hidden-icon"
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: presentation.title)
+                        .font(Typography.font(for: .button))
+                        .foregroundStyle(
+                            prominent
+                                ? tokens.ink.swiftUIColor
+                                : tokens.muted.swiftUIColor
+                        )
+                    Text(verbatim: presentation.subtitle)
+                        .font(Typography.font(for: .metadata))
+                        .foregroundStyle(tokens.muted.swiftUIColor)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .iconRole(.accessory)
+                    .foregroundStyle(
+                        prominent
+                            ? tokens.accent.swiftUIColor
+                            : tokens.muted.swiftUIColor
+                    )
+                    .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+            .accessibilityElement(
+                children: evidenceIconIdentifier == nil ? .combine : .contain
+            )
+        }
     }
 }
 
@@ -1350,9 +1378,6 @@ struct ExploreQuietDestinationIconGlyph: View {
     var body: some View {
         Image(systemName: systemName)
             .iconRole(.rowQuiet)
-            // T2.3 preserve ruling: destination rows adopt rowQuiet's
-            // size/anchor but do not join A5's weight-pulse family yet.
-            .fontWeight(.medium)
     }
 }
 
@@ -1910,6 +1935,124 @@ struct MapDoorRowLabel: View {
 }
 
 #if DEBUG
+enum ExploreQuietDestinationPressEvidenceKind: String {
+    case settings
+    case about
+
+    var row: ExploreDoorRow {
+        switch self {
+        case .settings: .settings
+        case .about: .about
+        }
+    }
+
+    var markerColor: Color {
+        switch self {
+        case .settings: ExploreRowPressEvidenceColor.settings
+        case .about: ExploreRowPressEvidenceColor.about
+        }
+    }
+}
+
+private enum ExploreRowPressEvidenceColor {
+    static let settings = Color(red: 0.10, green: 0.80, blue: 0.20)
+    static let about = Color(red: 0.95, green: 0.80, blue: 0.05)
+    static let defaultSize = Color(red: 0.10, green: 0.20, blue: 0.95)
+    static let accessibilitySize = Color(red: 0.95, green: 0.35, blue: 0.05)
+    static let rest = Color(red: 0.05, green: 0.85, blue: 0.95)
+    static let pressed = Color(red: 0.95, green: 0.05, blue: 0.80)
+}
+
+struct ExploreQuietDestinationPressEvidenceFixture: View {
+    let kind: ExploreQuietDestinationPressEvidenceKind
+    let accessibilitySize: Bool
+
+    @State private var tapCount = 0
+
+    private let tokens = MaterialTheme.snow.tokens
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer(minLength: 48)
+
+            Button {
+                tapCount += 1
+            } label: {
+                ExploreQuietDestinationRowContent(
+                    presentation: kind.row.presentation,
+                    prominent: true,
+                    evidenceIconIdentifier: "explore-row-press.fixture.icon"
+                )
+            }
+            .buttonStyle(
+                ExploreQuietDestinationPressEvidenceButtonStyle(
+                    kind: kind,
+                    accessibilitySize: accessibilitySize
+                )
+            )
+            .accessibilityIdentifier("explore-row-press.fixture.button")
+
+            Text(verbatim: "taps:\(tapCount)")
+                .font(Typography.font(for: .metadata))
+                .foregroundStyle(tokens.muted.swiftUIColor)
+                .accessibilityIdentifier("explore-row-press.fixture.tap-count")
+
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .background(tokens.background.swiftUIColor)
+    }
+}
+
+struct ExploreQuietDestinationPressEvidenceButtonStyle: ButtonStyle {
+    let kind: ExploreQuietDestinationPressEvidenceKind
+    let accessibilitySize: Bool
+
+    private let rowStyle = MaterialQuietRowButtonStyle()
+
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(spacing: 24) {
+            HStack(spacing: 8) {
+                evidenceMarker(
+                    color: kind.markerColor,
+                    label: kind.rawValue,
+                    identifier: "explore-row-press.fixture.kind"
+                )
+                evidenceMarker(
+                    color: accessibilitySize
+                        ? ExploreRowPressEvidenceColor.accessibilitySize
+                        : ExploreRowPressEvidenceColor.defaultSize,
+                    label: accessibilitySize ? "ax" : "default",
+                    identifier: "explore-row-press.fixture.size"
+                )
+                evidenceMarker(
+                    color: configuration.isPressed
+                        ? ExploreRowPressEvidenceColor.pressed
+                        : ExploreRowPressEvidenceColor.rest,
+                    label: configuration.isPressed ? "pressed" : "rest",
+                    identifier: "explore-row-press.fixture.state"
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            rowStyle.makeBody(configuration: configuration)
+        }
+    }
+
+    private func evidenceMarker(
+        color: Color,
+        label: String,
+        identifier: String
+    ) -> some View {
+        Rectangle()
+            .fill(color)
+            .frame(width: 24, height: 24)
+            .accessibilityElement()
+            .accessibilityLabel(label)
+            .accessibilityIdentifier(identifier)
+    }
+}
+
 struct DoorGlyphEvidenceFixture: View {
     let legacy: Bool
 

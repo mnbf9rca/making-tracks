@@ -78,6 +78,12 @@ struct MakingTracksApp: App {
     private static let debugShowChipTargetFixture = arguments.contains("--ui-testing-chip-target")
     private static let debugShowPlaceCardPressEvidenceFixture = isFixtureMap && arguments.contains("--ui-testing-place-card-press-evidence")
     private static let debugDoorGlyphFixtureVariant = argumentValue("--ui-testing-door-glyph-fixture")
+    private static let debugExploreRowPressFixture = argumentValue(
+        "--ui-testing-explore-row-press-fixture"
+    ).flatMap(ExploreQuietDestinationPressEvidenceKind.init(rawValue:))
+    private static let debugExploreRowPressAccessibility = arguments.contains(
+        "--ui-testing-explore-row-press-ax"
+    )
     private static let preferredColorScheme = UITestingColorSchemeInjection.resolve(
         arguments: rawArguments,
         materialModeLock: MaterialTheme.snow.colorScheme
@@ -381,7 +387,12 @@ struct MakingTracksApp: App {
         WindowGroup {
             Group {
 #if DEBUG
-                if Self.debugShowPlaceCardPressEvidenceFixture {
+                if let kind = Self.debugExploreRowPressFixture {
+                    ExploreQuietDestinationPressEvidenceFixture(
+                        kind: kind,
+                        accessibilitySize: Self.debugExploreRowPressAccessibility
+                    )
+                } else if Self.debugShowPlaceCardPressEvidenceFixture {
                     PlaceCardPressInsetEvidenceFixture()
                 } else if let variant = Self.debugDoorGlyphFixtureVariant {
                     DoorGlyphEvidenceFixture(legacy: variant == "before")

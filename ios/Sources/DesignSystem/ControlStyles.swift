@@ -236,6 +236,35 @@ public struct MaterialQuietButtonStyle: ButtonStyle {
     }
 }
 
+/// The quiet press treatment for rows that already own their resting chrome.
+///
+/// This adapter deliberately delegates to the same feedback modifier as
+/// `MaterialQuietButtonStyle`; it adds no capsule, padding, foreground, or
+/// content shape of its own.
+public struct MaterialQuietRowButtonStyle: ButtonStyle {
+    private let tokens: MaterialTokenSheet
+    let pressFeedback: MaterialControlPressFeedback
+
+    public init(theme: MaterialTheme = .snow) {
+        tokens = theme.tokens
+        pressFeedback = .symbolWeightPulse
+    }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        body(label: configuration.label, isPressed: configuration.isPressed)
+    }
+
+    func body<Label: View>(label: Label, isPressed: Bool) -> some View {
+        label.modifier(
+            MaterialControlPressFeedbackModifier(
+                isPressed: isPressed,
+                tokens: tokens,
+                pressFeedback: pressFeedback
+            )
+        )
+    }
+}
+
 public struct MaterialStateToggleButtonStyle: ButtonStyle {
     private let foreground: SemanticColorToken
     private let background: SemanticColorToken
@@ -624,6 +653,52 @@ struct MaterialChipStyleBody<Label: View>: View {
 
 }
 
+struct MaterialControlPressFeedbackModifier: ViewModifier {
+    let isPressed: Bool
+    let tokens: MaterialTokenSheet
+    let pressFeedback: MaterialControlPressFeedback
+
+    @ScaledMetric private var scaledTextInsetPoints: CGFloat
+    @Environment(\.isEnabled) private var isEnabled
+
+    init(
+        isPressed: Bool,
+        tokens: MaterialTokenSheet,
+        pressFeedback: MaterialControlPressFeedback
+    ) {
+        self.isPressed = isPressed
+        self.tokens = tokens
+        self.pressFeedback = pressFeedback
+        _scaledTextInsetPoints = ScaledMetric(
+            wrappedValue: pressFeedback.textInsetBasePoints,
+            relativeTo:
+                MaterialControlPressFeedback
+                    .textInsetTypographyAnchor.swiftUI
+        )
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .environment(
+                \.materialControlSymbolWeight,
+                pressFeedback.symbolWeight(isPressed: isPressed)
+            )
+            .scaleEffect(
+                pressFeedback.scale(
+                    isPressed: isPressed,
+                    tokens: tokens
+                )
+            )
+            .offset(
+                y: pressFeedback.verticalOffset(
+                    isPressed: isPressed,
+                    isEnabled: isEnabled,
+                    scaledTextInsetPoints: scaledTextInsetPoints
+                )
+            )
+    }
+}
+
 struct MaterialButtonStyleBody<Label: View>: View {
     let label: Label
     let isPressed: Bool
@@ -633,7 +708,6 @@ struct MaterialButtonStyleBody<Label: View>: View {
     var disabledAppearance: MaterialControlDisabledAppearance = .dim
     let accessibilityValue: (Bool) -> String?
 
-    @ScaledMetric private var scaledTextInsetPoints: CGFloat
     @Environment(\.isEnabled) private var isEnabled
 
     init(
@@ -652,20 +726,10 @@ struct MaterialButtonStyleBody<Label: View>: View {
         self.pressFeedback = pressFeedback
         self.disabledAppearance = disabledAppearance
         self.accessibilityValue = accessibilityValue
-        _scaledTextInsetPoints = ScaledMetric(
-            wrappedValue: pressFeedback.textInsetBasePoints,
-            relativeTo:
-                MaterialControlPressFeedback
-                    .textInsetTypographyAnchor.swiftUI
-        )
     }
 
     var body: some View {
         label
-            .environment(
-                \.materialControlSymbolWeight,
-                pressFeedback.symbolWeight(isPressed: isPressed)
-            )
             .labelStyle(MaterialControlLabelStyle())
             .font(Typography.font(for: .button))
             .foregroundStyle(appearance.foreground.swiftUIColor)
@@ -679,17 +743,11 @@ struct MaterialButtonStyleBody<Label: View>: View {
                     tokens: tokens
                 )
             )
-            .scaleEffect(
-                pressFeedback.scale(
+            .modifier(
+                MaterialControlPressFeedbackModifier(
                     isPressed: isPressed,
-                    tokens: tokens
-                )
-            )
-            .offset(
-                y: pressFeedback.verticalOffset(
-                    isPressed: isPressed,
-                    isEnabled: isEnabled,
-                    scaledTextInsetPoints: scaledTextInsetPoints
+                    tokens: tokens,
+                    pressFeedback: pressFeedback
                 )
             )
             .contentShape(Capsule())

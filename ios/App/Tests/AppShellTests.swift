@@ -1336,7 +1336,7 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
-    func testExploreQuietDestinationWiresRowQuietWithFixedMediumWeight() throws {
+    func testExploreQuietDestinationWiresRowQuietWithPulseWeight() throws {
         let presentation = ExploreDoorRow.settings.presentation
         let row = ExploreQuietDestinationRow(
             presentation: presentation,
@@ -1344,9 +1344,23 @@ final class AppShellTests: XCTestCase {
             action: {}
         )
 
+        let mountedStyles = descendants(
+            of: MaterialQuietRowButtonStyle.self,
+            in: row.body
+        )
+        XCTAssertEqual(mountedStyles.count, 1)
+        XCTAssertEqual(mountedStyles.first?.pressFeedback, .symbolWeightPulse)
+
+        let contents = descendants(
+            of: ExploreQuietDestinationRowContent.self,
+            in: row.body
+        )
+        XCTAssertEqual(contents.count, 1)
+        let content = try XCTUnwrap(contents.first)
+
         let columns = descendants(
             of: ExploreQuietDestinationIconColumn.self,
-            in: row.body
+            in: content.body
         )
         XCTAssertEqual(columns.count, 1)
         let column = try XCTUnwrap(columns.first)
@@ -1365,28 +1379,67 @@ final class AppShellTests: XCTestCase {
         )
 
         for dynamicTypeSize in [DynamicTypeSize.large, .accessibility5] {
+            let style = MaterialQuietRowButtonStyle()
+            let rest = try renderedAppGlyph(
+                style.body(
+                    label: ExploreQuietDestinationIconGlyph(
+                        systemName: presentation.systemImage
+                    ),
+                    isPressed: false
+                ),
+                dynamicTypeSize: dynamicTypeSize
+            )
+            let pressed = try renderedAppGlyph(
+                style.body(
+                    label: ExploreQuietDestinationIconGlyph(
+                        systemName: presentation.systemImage
+                    ),
+                    isPressed: true
+                ),
+                dynamicTypeSize: dynamicTypeSize
+            )
+            let fixedMedium = try renderedAppGlyph(
+                RatifiedExploreQuietDestinationIcon(
+                    systemName: presentation.systemImage
+                ),
+                dynamicTypeSize: dynamicTypeSize
+            )
+
             XCTAssertEqual(
-                try renderedAppGlyph(
-                    ExploreQuietDestinationIconGlyph(
-                        systemName: presentation.systemImage
-                    )
-                    .environment(
-                        \.materialControlSymbolWeight,
-                        .emphasized
-                    ),
-                    dynamicTypeSize: dynamicTypeSize
+                rest,
+                fixedMedium,
+                "Enrollment must preserve the former fixed-medium resting glyph."
+            )
+            XCTAssertNotEqual(
+                pressed,
+                rest,
+                "The old deadness assertion flips here: emphasized quiet-row glyphs must pulse."
+            )
+            XCTAssertGreaterThan(
+                pressed.alphaCoverage,
+                rest.alphaCoverage,
+                "Semibold must add measurable glyph ink at \(dynamicTypeSize)."
+            )
+
+            let frame = CGSize(
+                width: 358,
+                height: dynamicTypeSize.isAccessibilitySize ? 180 : 96
+            )
+            XCTAssertEqual(
+                try renderedAppView(
+                    content,
+                    dynamicTypeSize: dynamicTypeSize,
+                    frame: frame
                 ),
-                try renderedAppGlyph(
-                    RatifiedExploreQuietDestinationIcon(
-                        systemName: presentation.systemImage
-                    )
-                    .environment(
-                        \.materialControlSymbolWeight,
-                        .emphasized
+                try renderedAppView(
+                    style.body(
+                        label: content,
+                        isPressed: false
                     ),
-                    dynamicTypeSize: dynamicTypeSize
+                    dynamicTypeSize: dynamicTypeSize,
+                    frame: frame
                 ),
-                "Quiet destinations must stay medium under an emphasized control environment."
+                "The label-preserving adapter must be a byte identity at rest."
             )
         }
     }
@@ -5624,6 +5677,12 @@ private struct RenderedAppGlyph: Equatable {
     let width: Int
     let height: Int
     let rgba: Data
+
+    var alphaCoverage: Int {
+        stride(from: 3, to: rgba.count, by: 4).reduce(into: 0) { total, index in
+            total += Int(rgba[index])
+        }
+    }
 }
 
 @MainActor
@@ -5631,20 +5690,50 @@ private func renderedAppGlyph<Content: View>(
     _ content: Content,
     dynamicTypeSize: DynamicTypeSize
 ) throws -> RenderedAppGlyph {
+    try renderedAppView(
+        content,
+        dynamicTypeSize: dynamicTypeSize,
+        frame: CGSize(width: 96, height: 96)
+    )
+}
+
+@MainActor
+private func renderedAppView<Content: View>(
+    _ content: Content,
+    dynamicTypeSize: DynamicTypeSize,
+    frame: CGSize
+) throws -> RenderedAppGlyph {
     let renderer = ImageRenderer(
         content: content
             .environment(\.dynamicTypeSize, dynamicTypeSize)
-            .frame(width: 96, height: 96)
+            .frame(width: frame.width, height: frame.height)
     )
     renderer.scale = 1
     let image = try XCTUnwrap(renderer.uiImage)
     let cgImage = try XCTUnwrap(image.cgImage)
-    let data = try XCTUnwrap(cgImage.dataProvider?.data)
+    var pixels = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
+    let context = try XCTUnwrap(
+        CGContext(
+            data: &pixels,
+            width: cgImage.width,
+            height: cgImage.height,
+            bitsPerComponent: 8,
+            bytesPerRow: cgImage.width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo:
+                CGImageAlphaInfo.premultipliedLast.rawValue
+                    | CGBitmapInfo.byteOrder32Big.rawValue
+        )
+    )
+    context.draw(
+        cgImage,
+        in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height)
+    )
 
     return RenderedAppGlyph(
         width: cgImage.width,
         height: cgImage.height,
-        rgba: data as Data
+        rgba: Data(pixels)
     )
 }
 
