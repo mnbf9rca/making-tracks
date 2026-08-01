@@ -107,6 +107,6 @@ Gate-tested head `2b9d0c3` passed Release build, Debug build-for-testing,
 retry or flake. Wrapper wall time was 2,809 seconds; the successful result
 bundle was removed after count extraction and reusable DerivedData retained.
 
-- [ ] **Step 4: Publish**
+- [x] **Step 4: Publish**
 
 Fresh-fetch `origin/ios`, verify the two-dot diff contains only #591 work, commit, push, open a draft PR into `ios` with `sourcery-review`, `track-b-ios`, and `wp`, process every review thread, and report to planner/reviewer over AMQ.
