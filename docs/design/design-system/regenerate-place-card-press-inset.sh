@@ -140,37 +140,111 @@ wait_for_screenshot() {
   return "$wait_status"
 }
 
-run_timeout_self_test() {
-  local success_pid
-  local timeout_pid
-  local timeout_status=0
+run_timeout_self_test() (
   local saved_timeout="$screenshot_timeout_seconds"
   local saved_grace="$termination_grace_seconds"
+  local saved_errexit=disabled
+  local selftest_dir=""
+  local spawned_pid=""
+  local status=0
 
+  case "$-" in *e*) saved_errexit=enabled ;; esac
+  selftest_dir="$(mktemp -d /private/tmp/making-tracks-press-self-test.XXXXXX)"
+  case "$selftest_dir" in
+    /private/tmp/making-tracks-press-self-test.*) ;;
+    *) die "host self-test refused unsafe temporary directory" ;;
+  esac
+
+  # shellcheck disable=SC2329 # Invoked by the EXIT/INT/TERM trap below.
+  cleanup_timeout_self_test() {
+    if [ -n "$spawned_pid" ]; then
+      terminate_and_reap "$spawned_pid" >/dev/null 2>&1 || true
+    fi
+    [ -d "$selftest_dir" ] && rm -rf "$selftest_dir"
+  }
+  trap cleanup_timeout_self_test EXIT INT TERM
+
+  assert_errexit_state() {
+    local expected="$1"
+    local actual=disabled
+    case "$-" in *e*) actual=enabled ;; esac
+    [ "$actual" = "$expected" ] ||
+      die "host self-test expected errexit $expected, found $actual"
+  }
+
+  wait_for_ready() {
+    local ready_file="$1"
+    local deadline=$(( $(date +%s) + 5 ))
+    local now
+
+    while [ ! -e "$ready_file" ]; do
+      now="$(date +%s)"
+      [ "$now" -lt "$deadline" ] ||
+        die "host self-test timed out waiting for TERM-ignore readiness"
+      sleep 1
+    done
+  }
+
+  spawn_term_ignoring_child() {
+    local ready_file="$1"
+
+    (trap '' TERM; : > "$ready_file"; while :; do :; done) &
+    spawned_pid=$!
+    wait_for_ready "$ready_file"
+  }
+
+  assert_errexit_state "$saved_errexit"
+  spawn_term_ignoring_child "$selftest_dir/enabled-direct.ready"
+  termination_grace_seconds=0
+  if terminate_and_reap "$spawned_pid" 2>/dev/null; then
+    die "host self-test accepted a TERM-ignoring child during direct termination"
+  else
+    status=$?
+  fi
+  [ "$status" = "137" ] ||
+    die "host self-test expected KILL termination status 137, found $status"
+  ! kill -0 "$spawned_pid" 2>/dev/null ||
+    die "host self-test left direct-termination child alive"
+  spawned_pid=""
+  assert_errexit_state "$saved_errexit"
+
+  set +e
+  assert_errexit_state disabled
   (exit 0) &
-  success_pid=$!
-  if wait_for_screenshot "$success_pid"; then
+  spawned_pid=$!
+  if wait_for_screenshot "$spawned_pid"; then
     :
   else
     die "host self-test could not reap a successful screenshot child"
   fi
-  ! kill -0 "$success_pid" 2>/dev/null || die "host self-test left a successful screenshot child"
+  ! kill -0 "$spawned_pid" 2>/dev/null ||
+    die "host self-test left successful screenshot child alive"
+  spawned_pid=""
+  assert_errexit_state disabled
 
   screenshot_timeout_seconds=0
-  termination_grace_seconds=0
-  (trap '' TERM; while :; do :; done) &
-  timeout_pid=$!
-  if wait_for_screenshot "$timeout_pid"; then
+  spawn_term_ignoring_child "$selftest_dir/disabled-timeout.ready"
+  if wait_for_screenshot "$spawned_pid"; then
     die "host self-test accepted a TERM-ignoring screenshot child"
   else
-    timeout_status=$?
+    status=$?
   fi
+  [ "$status" = "124" ] ||
+    die "host self-test expected screenshot timeout status 124, found $status"
+  ! kill -0 "$spawned_pid" 2>/dev/null ||
+    die "host self-test left timeout screenshot child alive"
+  spawned_pid=""
+  assert_errexit_state disabled
+
   screenshot_timeout_seconds="$saved_timeout"
   termination_grace_seconds="$saved_grace"
-  [ "$timeout_status" = "124" ] || die "host self-test did not report screenshot timeout"
-  ! kill -0 "$timeout_pid" 2>/dev/null || die "host self-test left a TERM-ignoring screenshot child"
+  case "$saved_errexit" in
+    enabled) set -e ;;
+    disabled) set +e ;;
+  esac
+  assert_errexit_state "$saved_errexit"
   echo "PASS screenshot-timeout-reap"
-}
+)
 
 if [ "$host_self_test_requested" = "1" ]; then
   run_host_self_test
