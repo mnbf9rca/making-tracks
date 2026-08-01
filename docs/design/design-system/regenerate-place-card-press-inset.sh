@@ -687,6 +687,7 @@ run_focused_capture() {
   require_safe_result_bundle "$result_bundle"
   if [ "$current_label" = "default" ]; then
     printf '%s\n' \
+      MakingTracksTests/AppShellTests/testPlaceCardActionStyleMountsQuietTextInsetOnlyWhereRuled \
       MakingTracksTests/AppShellTests/testPlaceCardPressEvidenceStyleDelegatesToRuledProductionStyle \
       "$current_test" > "$only_testing_file"
   else
