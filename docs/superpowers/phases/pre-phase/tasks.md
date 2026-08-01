@@ -88,3 +88,5 @@ policy/diagnostics · #360 coverage-boundary affordance.
 - 2026-08-01T08:26Z codex3 #594 branch — `fix-594-door-pill-spec` based on fresh `ios` head `da5ce2b`
 - 2026-08-01T08:29Z codex3 #594 tests green — ruled provenance phrase appears exactly once; metric is 15×15 (`IconRole.inline`); OF3 active carry discharged; no frozen-render diff; agent-law lint clean
 - 2026-08-01T08:41Z codex3 #594 PR open — draft #599; Sourcery and independent spec-fidelity review requested
+- 2026-08-01T16:36Z codex3 #602 claimed — prerequisite test-only hardening for #600: bounded keyboard-focus reacquisition at both text-entry siblings and observed legacy-Dark raster transition before Snow oracle diffs
+- 2026-08-01T16:36Z codex3 #602 branch — `fix-602-ui-test-condition-waits` from fresh `origin/ios` `3f63505`; approved design keeps app source untouched and rejects sleeps, unbounded retries, and an app-side sentinel
