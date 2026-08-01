@@ -30,11 +30,14 @@ enum LivePressState: String {
 
 private enum AnalyzerError: LocalizedError {
     case invalid(String)
+    case markerMismatch
 
     var errorDescription: String? {
         switch self {
         case .invalid(let message):
             return message
+        case .markerMismatch:
+            return "marker crop is not one exact live state"
         }
     }
 }
@@ -95,9 +98,6 @@ struct Raster {
             throw AnalyzerError.invalid("could not normalize PNG to 8-bit RGBA: \(url.path)")
         }
         context.interpolationQuality = .none
-        // XCUITest frames use a top-left origin; preserve that row order in the RGBA raster.
-        context.translateBy(x: 0, y: CGFloat(imageHeight))
-        context.scaleBy(x: 1, y: -1)
         context.draw(image, in: CGRect(x: 0, y: 0, width: imageWidth, height: imageHeight))
         try self.init(width: imageWidth, height: imageHeight, pixels: normalized)
     }
@@ -176,7 +176,7 @@ func classify(_ raster: Raster, marker: CGRect) throws -> LivePressState {
             } else if sample == pressedMarker {
                 pressedSamples += 1
             } else {
-                throw AnalyzerError.invalid("marker crop is not an exact full-state marker")
+                throw AnalyzerError.markerMismatch
             }
         }
     }
@@ -185,7 +185,7 @@ func classify(_ raster: Raster, marker: CGRect) throws -> LivePressState {
     }
     if restSamples == sampleCount { return .rest }
     if pressedSamples == sampleCount { return .pressed }
-    throw AnalyzerError.invalid("marker crop mixes rest and pressed states")
+    throw AnalyzerError.markerMismatch
 }
 
 // A single BT.709 integer luminance threshold (96/255) classifies dark ink in every frame.
@@ -245,7 +245,7 @@ private func runSelfTest() throws {
     do {
         _ = try classify(mixedMarker, marker: fixtureMarkerCrop)
         preconditionFailure("mixed marker must be rejected")
-    } catch AnalyzerError.invalid {
+    } catch AnalyzerError.markerMismatch {
         // Expected: an exact state marker may not mix the fixture RGB values.
     }
     do {
@@ -254,6 +254,13 @@ private func runSelfTest() throws {
     } catch AnalyzerError.invalid {
         // Expected: evidence crops never clip silently.
     }
+    let orientationURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("measure-place-card-orientation-\(UUID().uuidString).png")
+    defer { try? FileManager.default.removeItem(at: orientationURL) }
+    try writeOrientationFixturePNG(to: orientationURL)
+    let decodedOrientation = try Raster(pngAt: orientationURL)
+    precondition(decodedOrientation.rgb(x: 0, y: 0) == RGB(red: 255, green: 0, blue: 0), "decoded PNG top row must stay row 0")
+    precondition(decodedOrientation.rgb(x: 0, y: 1) == RGB(red: 0, green: 0, blue: 255), "decoded PNG bottom row must stay row 1")
     let rest = try measureInk(restPixels, crop: fixtureInkCrop, luminanceThreshold: luminanceThreshold)
     let defaultDelta = displacement(rest: rest, pressed: try measureInk(defaultPressedPixels, crop: fixtureInkCrop, luminanceThreshold: luminanceThreshold))
     let axDelta = displacement(rest: rest, pressed: try measureInk(axPressedPixels, crop: fixtureInkCrop, luminanceThreshold: luminanceThreshold))
@@ -261,6 +268,36 @@ private func runSelfTest() throws {
     precondition(axDelta > defaultDelta, "AX displacement must exceed default")
     precondition(axDelta == 6, "AX displacement must be 6")
     print("PASS default=\(defaultDelta) ax=\(axDelta)")
+}
+
+private func writeOrientationFixturePNG(to url: URL) throws {
+    // PNG scanlines are top-to-bottom: red/green first, blue/black second.
+    let pixels: [UInt8] = [
+        255, 0, 0, 255, 0, 255, 0, 255,
+        0, 0, 255, 255, 0, 0, 0, 255,
+    ]
+    guard let provider = CGDataProvider(data: Data(pixels) as CFData),
+          let image = CGImage(
+              width: 2,
+              height: 2,
+              bitsPerComponent: 8,
+              bitsPerPixel: 32,
+              bytesPerRow: 8,
+              space: CGColorSpaceCreateDeviceRGB(),
+              bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
+              provider: provider,
+              decode: nil,
+              shouldInterpolate: false,
+              intent: .defaultIntent
+          ),
+          let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)
+    else {
+        throw AnalyzerError.invalid("could not create PNG orientation fixture")
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else {
+        throw AnalyzerError.invalid("could not write PNG orientation fixture")
+    }
 }
 
 private struct ExportedFrame {
@@ -320,6 +357,7 @@ private struct Candidate {
     let state: LivePressState
     let ink: InkBounds
     let sha256: String
+    let dimensions: String
 }
 
 private func digest(of url: URL) throws -> String {
@@ -346,13 +384,21 @@ private func selectedCandidate(
     var exactMarkerFailureCount = 0
     for file in files {
         let raster = try Raster(pngAt: file)
+        let state: LivePressState
         do {
-            let state = try classify(raster, marker: frame.markerCrop)
-            let ink = try measureInk(raster, crop: frame.inkCrop, luminanceThreshold: luminanceThreshold)
-            candidates.append(Candidate(url: file, state: state, ink: ink, sha256: try digest(of: file)))
-        } catch AnalyzerError.invalid {
+            state = try classify(raster, marker: frame.markerCrop)
+        } catch AnalyzerError.markerMismatch {
             exactMarkerFailureCount += 1
+            continue
         }
+        let ink = try measureInk(raster, crop: frame.inkCrop, luminanceThreshold: luminanceThreshold)
+        candidates.append(Candidate(
+            url: file,
+            state: state,
+            ink: ink,
+            sha256: try digest(of: file),
+            dimensions: "\(raster.width)x\(raster.height)"
+        ))
     }
     guard let rest = candidates.filter({ $0.state == .rest }).min(by: {
         $0.ink.y == $1.ink.y
@@ -372,7 +418,7 @@ private func selectedCandidate(
 }
 
 private func format(_ candidate: Candidate) -> String {
-    "path=\(candidate.url.path) sha256=\(candidate.sha256) ink=\(candidate.ink.darkPixelCount) bounds=\(candidate.ink.x),\(candidate.ink.y),\(candidate.ink.width),\(candidate.ink.height)"
+    "file=\(candidate.url.lastPathComponent) dimensions=\(candidate.dimensions) sha256=\(candidate.sha256) ink=\(candidate.ink.darkPixelCount) bounds=\(candidate.ink.x),\(candidate.ink.y),\(candidate.ink.width),\(candidate.ink.height)"
 }
 
 private func argumentValue(_ arguments: [String], named name: String) throws -> String {

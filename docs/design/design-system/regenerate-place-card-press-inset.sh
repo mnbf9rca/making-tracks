@@ -16,8 +16,11 @@ summary_file=""
 capture_pid=""
 capture_dir=""
 result_bundle=""
+build_result_bundle=""
 status_bar_set=0
 max_capture_frames=120
+screenshot_timeout_seconds=15
+termination_grace_seconds=5
 assets=()
 backup_dir=""
 install_started=0
@@ -27,6 +30,34 @@ die() {
   echo "regenerate-place-card-press-inset: $*" >&2
   exit 1
 }
+
+is_core_simulator_uuid() {
+  [[ "$1" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]
+}
+
+run_host_self_test() {
+  local ledger_destination
+  local ledger_after_id
+  local ledger_uuid
+
+  ledger_destination="$(awk -F '|' '$2 ~ /`codex4`/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $4); gsub(/`/, "", $4); print $4; exit }' "$repo_root/docs/ios-gate-ledger.md")"
+  [ -n "$ledger_destination" ] || die "host self-test could not read the codex4 ledger destination"
+  case ",$ledger_destination," in
+    *,id=*) ledger_after_id="${ledger_destination#*,id=}" ;;
+    *) die "host self-test found no simulator id in the codex4 ledger destination" ;;
+  esac
+  ledger_uuid="${ledger_after_id%%,*}"
+  is_core_simulator_uuid "$ledger_uuid" || die "host self-test rejected the valid codex4 ledger UUID"
+  ! is_core_simulator_uuid "00000000-0000-0000-0000-00000000000" ||
+    die "host self-test accepted an 8-4-4-4-11 UUID"
+  echo "PASS valid-ledger-uuid"
+}
+
+if [ "${1:-}" = "--self-test" ]; then
+  [ "$#" = "1" ] || die "--self-test takes no other arguments"
+  run_host_self_test
+  exit 0
+fi
 
 require_safe_directory() {
   case "$1" in
@@ -54,6 +85,59 @@ remove_exact_result_bundle() {
   rm -rf "$result_bundle"
 }
 
+remove_exact_build_result_bundle() {
+  [ -n "$build_result_bundle" ] || return 0
+  require_safe_result_bundle "$build_result_bundle"
+  [ -e "$build_result_bundle" ] || return 0
+  rm -rf "$build_result_bundle"
+}
+
+terminate_and_reap() {
+  local pid="$1"
+  local deadline
+  local now
+  local wait_status=0
+
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -TERM "$pid" 2>/dev/null || true
+    deadline=$(( $(date +%s) + termination_grace_seconds ))
+    while kill -0 "$pid" 2>/dev/null; do
+      now="$(date +%s)"
+      [ "$now" -lt "$deadline" ] || break
+      sleep 1
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+  fi
+  set +e
+  wait "$pid"
+  wait_status=$?
+  set -e
+  return "$wait_status"
+}
+
+wait_for_screenshot() {
+  local pid="$1"
+  local deadline=$(( $(date +%s) + screenshot_timeout_seconds ))
+  local now
+  local wait_status=0
+
+  while kill -0 "$pid" 2>/dev/null; do
+    now="$(date +%s)"
+    if [ "$now" -ge "$deadline" ]; then
+      terminate_and_reap "$pid" || true
+      return 124
+    fi
+    sleep 1
+  done
+  set +e
+  wait "$pid"
+  wait_status=$?
+  set -e
+  return "$wait_status"
+}
+
 rollback_packet_install() {
   [ "$install_started" = "1" ] || return 0
   [ "$install_completed" = "0" ] || return 0
@@ -70,11 +154,8 @@ rollback_packet_install() {
 stop_capture() {
   local wait_status=0
   [ -n "$capture_pid" ] || return 0
-  if kill -0 "$capture_pid" 2>/dev/null; then
-    kill -TERM "$capture_pid" 2>/dev/null || true
-  fi
   set +e
-  wait "$capture_pid"
+  terminate_and_reap "$capture_pid"
   wait_status=$?
   set -e
   capture_pid=""
@@ -90,6 +171,7 @@ cleanup() {
   [ -n "$only_testing_file" ] && rm -f "$only_testing_file"
   [ -n "$summary_file" ] && rm -f "$summary_file"
   remove_exact_result_bundle
+  remove_exact_build_result_bundle
   rollback_packet_install
   if [ -n "$artifact_dir" ]; then
     require_safe_artifact_directory "$artifact_dir"
@@ -128,7 +210,7 @@ esac
 case "$simulator_udid" in
   ""|*[!A-Za-z0-9-]*) die "MT_SIM_LOCK_DESTINATION has an invalid simulator UDID" ;;
 esac
-[[ "$simulator_udid" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] || die "MT_SIM_LOCK_DESTINATION must carry a CoreSimulator UUID"
+is_core_simulator_uuid "$simulator_udid" || die "MT_SIM_LOCK_DESTINATION must carry an 8-4-4-4-12 CoreSimulator UUID"
 [ "$lock_udid" = "$simulator_udid" ] || die "MT_SIM_LOCK_UDID does not match MT_SIM_LOCK_DESTINATION"
 
 artifact_dir="/private/tmp/making-tracks-artifacts.$lock_udid"
@@ -138,9 +220,15 @@ run_dir="$(mktemp -d "/private/tmp/making-tracks-place-card-press.$lock_udid.XXX
 require_safe_directory "$run_dir"
 only_testing_file="$run_dir/only-testing.txt"
 summary_file="$run_dir/summary.plist"
+build_run_dir="$run_dir/build-gate"
+build_result_bundle="$build_run_dir/MakingTracksBuild.xcresult"
+require_safe_directory "$build_run_dir"
+require_safe_result_bundle "$build_result_bundle"
+mkdir -p "$build_run_dir"
 
 # A fixed status bar is part of the deterministic-fixture contract. This script
 # already runs under the wrapper-owned simulator lock; it never owns a lock itself.
+xcrun simctl bootstatus "$lock_udid" -b
 xcrun simctl status_bar "$lock_udid" override \
   --time 09:41 \
   --dataNetwork wifi \
@@ -164,12 +252,9 @@ capture_loop() {
 
   # shellcheck disable=SC2329 # Invoked asynchronously by the TERM/INT trap below.
   stop_current_screenshot() {
-    if [ -n "$screenshot_pid" ] && kill -0 "$screenshot_pid" 2>/dev/null; then
-      kill -TERM "$screenshot_pid" 2>/dev/null || true
-    fi
     if [ -n "$screenshot_pid" ]; then
       set +e
-      wait "$screenshot_pid"
+      terminate_and_reap "$screenshot_pid"
       set -e
     fi
     exit 0
@@ -179,7 +264,7 @@ capture_loop() {
     xcrun simctl io "$lock_udid" screenshot --type=png "$directory/frame-$frame.png" &
     screenshot_pid=$!
     set +e
-    wait "$screenshot_pid"
+    wait_for_screenshot "$screenshot_pid"
     screenshot_status=$?
     set -e
     screenshot_pid=""
@@ -239,7 +324,11 @@ run_focused_capture() {
 cd "$repo_root"
 MT_RELEASE_GATE_DERIVED_DATA="$derived_data" \
 MT_RELEASE_GATE_MODE=build \
+MT_RELEASE_GATE_RUN_DIR="$build_run_dir" \
+MT_RELEASE_GATE_RESULT_BUNDLE="$build_result_bundle" \
   "$repo_root/scripts/release-gate.sh"
+remove_exact_build_result_bundle
+build_result_bundle=""
 
 run_focused_capture \
   default \
