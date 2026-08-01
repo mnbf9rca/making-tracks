@@ -6667,6 +6667,8 @@ private struct SettingsView: View {
                     settingsGroupRow(group)
                 }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("settings.groups")
             .background(
                 tokens.surfaceRaised.swiftUIColor,
                 in: RoundedRectangle(cornerRadius: 14, style: .continuous)
