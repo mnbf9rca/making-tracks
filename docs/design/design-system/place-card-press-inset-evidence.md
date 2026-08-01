@@ -3,7 +3,7 @@
 **Evidence class: Deterministic fixture.** This packet records the production
 quiet text-only Hide action at default and accessibility text sizes. It was
 captured from exact source head
-`11e28f83842b9a3ad2733ca473abb61a7c0fc0e6` through simulator seat `codex4`,
+`500b36a57b105609f369a7b8f82c5f4406490aba` through simulator seat `codex4`,
 destination
 `platform=iOS Simulator,id=42D1482C-DE04-49AA-990D-1884ED9B855D`.
 
@@ -34,42 +34,49 @@ accessibility displacement is strictly larger (`10` device pixels).
 
 ## Capture method and environment
 
-The runner built the app in Release, built the focused UI tests in Debug, and
-ran exactly one default-size test and one accessibility-size test; both runs
-reported `1 passed, 0 failed`. Each test first required the live marker to say
-`rest`, exported the real Hide button and state-marker frames plus screen
-scale, then issued 80 real `XCUIElement.tap()` events. While the taps ran, the
-wrapper-owned capture worker sampled the simulator display. Selection required
-an exact cyan rest marker and exact magenta pressed marker before measuring the
-production quiet text.
+The runner built the app in Release and built the focused tests in Debug. The
+default invocation ran the production quiet-action mounting test, the evidence
+wrapper delegation test, and the default-size UI capture test; it reported
+`3 passed, 0 failed`. The accessibility invocation ran the accessibility-size
+UI capture test and reported `1 passed, 0 failed`. Each UI test first required
+the live marker to say `rest`, exported the real Hide button and state-marker
+frames plus screen scale, then issued 80 real `XCUIElement.tap()` events. While
+the taps ran, the wrapper-owned capture worker sampled the simulator display.
+Selection required an exact cyan rest marker and exact magenta pressed marker
+before measuring the production quiet text.
 
 - Xcode: `26.6` (`17F113`)
 - Swift: `Apple Swift 6.3.3 (swiftlang-6.3.3.1.3 clang-2100.1.1.101)`
 - Swift driver: `1.148.6`
 - Swift target: `arm64-apple-macosx26.0`
-- Focused tests: default `1 passed, 0 failed`; AX `1 passed, 0 failed`
+- Focused tests: default `3 passed, 0 failed`; AX `1 passed, 0 failed`
 
 ## Reproduction oracle
 
 The four PNG SHA-256 digests above are byte-reproduction oracles. A clean
 baseline regeneration and the unchanged final regeneration at the same source
-head produced the same four digests byte-for-byte. The mandatory normal run
-between mutation rounds produced the same digests as well. The final unchanged
-packet is the packet installed here.
+head produced the same four digests byte-for-byte. All three mutation runs
+failed before packet installation, and the installed packet retained the same
+digests after every cleanup. The final unchanged packet is the packet installed
+here.
 
 ## Mutation teeth
 
-Two temporary production-adjacent mutations proved the live oracle fails for
+Three temporary production-adjacent mutations proved the live oracle fails for
 the intended reasons. Each mutation was applied with `apply_patch`, run through
 the locked `codex4` regeneration command, restored exactly, checked with
-`git diff --exit-code`, and followed by a green normal regeneration.
+`git diff --exit-code`, and followed by the final green normal regeneration.
 
-1. Replacing the scaled text inset with the unscaled one-point base made the
+1. Bypassing the shared resolver only in the production quiet mount made the
+   Hide and Unhide production-mount assertions fail while the evidence-wrapper
+   delegation test remained green. The runner exited nonzero with
+   `regenerate-place-card-press-inset: focused default test command failed gate_status=65`.
+2. Replacing the scaled text inset with the unscaled one-point base made the
    runner exit nonzero with
    `regenerate-place-card-press-inset: AX displacement must exceed default`.
-2. Forcing the DEBUG live state marker to report rest regardless of
+3. Forcing the DEBUG live state marker to report rest regardless of
    `configuration.isPressed` made selection exit nonzero with
-   `measure-place-card-press: missing valid exact pressed marker; rejected 10 candidates`.
+   `measure-place-card-press: missing valid exact pressed marker; rejected 11 candidates`.
 
 The Task 4 full host gate was deliberately not run during this capture task.
 Its reserved exact command is:
