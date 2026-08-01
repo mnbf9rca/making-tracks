@@ -53,10 +53,10 @@ run_host_self_test() {
   echo "PASS valid-ledger-uuid"
 }
 
+host_self_test_requested=0
 if [ "${1:-}" = "--self-test" ]; then
   [ "$#" = "1" ] || die "--self-test takes no other arguments"
-  run_host_self_test
-  exit 0
+  host_self_test_requested=1
 fi
 
 require_safe_directory() {
@@ -110,10 +110,11 @@ terminate_and_reap() {
       kill -KILL "$pid" 2>/dev/null || true
     fi
   fi
-  set +e
-  wait "$pid"
-  wait_status=$?
-  set -e
+  if wait "$pid"; then
+    wait_status=0
+  else
+    wait_status=$?
+  fi
   return "$wait_status"
 }
 
@@ -126,17 +127,56 @@ wait_for_screenshot() {
   while kill -0 "$pid" 2>/dev/null; do
     now="$(date +%s)"
     if [ "$now" -ge "$deadline" ]; then
-      terminate_and_reap "$pid" || true
+      terminate_and_reap "$pid" 2>/dev/null || true
       return 124
     fi
     sleep 1
   done
-  set +e
-  wait "$pid"
-  wait_status=$?
-  set -e
+  if wait "$pid"; then
+    wait_status=0
+  else
+    wait_status=$?
+  fi
   return "$wait_status"
 }
+
+run_timeout_self_test() {
+  local success_pid
+  local timeout_pid
+  local timeout_status=0
+  local saved_timeout="$screenshot_timeout_seconds"
+  local saved_grace="$termination_grace_seconds"
+
+  (exit 0) &
+  success_pid=$!
+  if wait_for_screenshot "$success_pid"; then
+    :
+  else
+    die "host self-test could not reap a successful screenshot child"
+  fi
+  ! kill -0 "$success_pid" 2>/dev/null || die "host self-test left a successful screenshot child"
+
+  screenshot_timeout_seconds=0
+  termination_grace_seconds=0
+  (trap '' TERM; while :; do :; done) &
+  timeout_pid=$!
+  if wait_for_screenshot "$timeout_pid"; then
+    die "host self-test accepted a TERM-ignoring screenshot child"
+  else
+    timeout_status=$?
+  fi
+  screenshot_timeout_seconds="$saved_timeout"
+  termination_grace_seconds="$saved_grace"
+  [ "$timeout_status" = "124" ] || die "host self-test did not report screenshot timeout"
+  ! kill -0 "$timeout_pid" 2>/dev/null || die "host self-test left a TERM-ignoring screenshot child"
+  echo "PASS screenshot-timeout-reap"
+}
+
+if [ "$host_self_test_requested" = "1" ]; then
+  run_host_self_test
+  run_timeout_self_test
+  exit 0
+fi
 
 rollback_packet_install() {
   [ "$install_started" = "1" ] || return 0
@@ -154,10 +194,11 @@ rollback_packet_install() {
 stop_capture() {
   local wait_status=0
   [ -n "$capture_pid" ] || return 0
-  set +e
-  terminate_and_reap "$capture_pid"
-  wait_status=$?
-  set -e
+  if terminate_and_reap "$capture_pid"; then
+    wait_status=0
+  else
+    wait_status=$?
+  fi
   capture_pid=""
   return "$wait_status"
 }
@@ -253,9 +294,7 @@ capture_loop() {
   # shellcheck disable=SC2329 # Invoked asynchronously by the TERM/INT trap below.
   stop_current_screenshot() {
     if [ -n "$screenshot_pid" ]; then
-      set +e
-      terminate_and_reap "$screenshot_pid"
-      set -e
+      terminate_and_reap "$screenshot_pid" || true
     fi
     exit 0
   }
