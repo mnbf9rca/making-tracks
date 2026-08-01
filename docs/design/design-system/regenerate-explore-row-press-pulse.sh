@@ -99,6 +99,13 @@ for index in "${!cases[@]}"; do
     ./scripts/release-gate.sh >"$test_log" 2>&1 &
   test_pid=$!
 
+  # The test exports geometry immediately before it starts the tap loop. Wait
+  # for that readiness signal so the finite screenshot budget samples the live
+  # interaction instead of being exhausted while XCTest is still launching.
+  while kill -0 "$test_pid" 2>/dev/null && [ ! -s "$measurement_source" ]; do
+    sleep 0.05
+  done
+
   capture_index=0
   while kill -0 "$test_pid" 2>/dev/null && [ "$capture_index" -lt 80 ]; do
     printf -v capture_name 'candidate-%04d.png' "$capture_index"
