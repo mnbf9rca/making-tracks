@@ -4,7 +4,7 @@
 
 **Goal:** Keep every Snow-material surface legible when the phone uses Dark appearance, without changing Snow's Light rendering.
 
-**Architecture:** Apply the selected material's existing `MaterialTheme.colorScheme` at the app scene boundary so SwiftUI adaptive ink and system controls resolve in the same intrinsic mode as the material token sheet. Prove the behavior with a rendered UI oracle that captures the affected Appearance, Map & data, and Location cards under forced Light and Dark system appearances, requires AA foreground/background contrast, and requires byte-identical pixels inside the opaque card regions.
+**Architecture:** Apply the selected material's existing `MaterialTheme.colorScheme` at the app scene boundary so SwiftUI adaptive ink and system controls resolve in the same intrinsic mode as the material token sheet. Prove the behavior with a rendered UI oracle that captures the affected Appearance, Map & data, and Location cards under forced Light and Dark system appearances, requires 4.5:1 primary and 3:1 preserved-secondary contrast against a locally present raised surface, requires byte-identical pixels inside opaque card envelopes, and reproduces legacy Light and Dark through a DEBUG-only bypass.
 
 **Tech Stack:** Swift 6, SwiftUI, XCTest/XCUITest rendered-pixel helpers, Xcode 26.6, the `codex2` simulator seat.
 
@@ -118,7 +118,7 @@ The pre-production RED is the neutered-fix run: with no scene preference, the Ap
 - Modify: `docs/superpowers/phases/pre-phase/tasks.md`
 
 **Interfaces:**
-- Consumes: the focused UI test and `/private/tmp/making-tracks-artifacts`
+- Consumes: the focused UI test and simulator-scoped `/private/tmp/making-tracks-artifacts.<simulator>` exports
 - Produces: six reviewed captures, SHA-256 inventory, per-card ink/background counts, contrast ratios, and Light/Dark difference counts
 
 - [x] **Step 1: Add the deterministic regeneration wrapper**

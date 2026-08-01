@@ -1519,6 +1519,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     func testSnowSettingsAdaptiveInkIsLegibleAndInvariantAcrossSystemAppearances() throws {
+        let legacyLight = try XCTUnwrap(captureSnowSettingsThemeLock(
+            forceDarkAppearance: false,
+            disableMaterialModeLock: true,
+            appearanceName: "legacy-light"
+        ))
         let light = try XCTUnwrap(captureSnowSettingsThemeLock(
             forceDarkAppearance: false,
             appearanceName: "light"
@@ -1527,27 +1532,58 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             forceDarkAppearance: true,
             appearanceName: "dark"
         ))
+        let legacyDark = try XCTUnwrap(captureSnowSettingsThemeLock(
+            forceDarkAppearance: true,
+            disableMaterialModeLock: true,
+            appearanceName: "legacy-dark"
+        ))
 
         let regionNames = ["appearance", "map-data", "location"]
+        XCTAssertEqual(Set(legacyLight.regions.keys), Set(regionNames))
         XCTAssertEqual(Set(light.regions.keys), Set(regionNames))
         XCTAssertEqual(Set(dark.regions.keys), Set(regionNames))
+        XCTAssertEqual(Set(legacyDark.regions.keys), Set(regionNames))
 
         let raisedSurface = RenderedRGB(255, 255, 255)
         var measurements = [
             "evidence_class: nondeterministic-content",
-            "comparison_oracle: opaque card regions; exact Light/Dark pixel equality",
+            "comparison_oracle: inclusive raster envelopes covering opaque card regions; exact fixed Light/Dark and legacy/fixed Light equality",
         ]
         for name in regionNames {
+            let legacyLightRegion = try XCTUnwrap(legacyLight.regions[name], name)
             let lightRegion = try XCTUnwrap(light.regions[name], name)
             let darkRegion = try XCTUnwrap(dark.regions[name], name)
+            let legacyDarkRegion = try XCTUnwrap(legacyDark.regions[name], name)
+            XCTAssertEqual(legacyLightRegion.comparisonFrame, lightRegion.comparisonFrame, name)
             XCTAssertEqual(lightRegion.comparisonFrame, darkRegion.comparisonFrame, name)
+            XCTAssertEqual(darkRegion.comparisonFrame, legacyDarkRegion.comparisonFrame, name)
+            XCTAssertEqual(legacyLightRegion.primaryInkFrame, lightRegion.primaryInkFrame, name)
             XCTAssertEqual(lightRegion.primaryInkFrame, darkRegion.primaryInkFrame, name)
+            XCTAssertEqual(darkRegion.primaryInkFrame, legacyDarkRegion.primaryInkFrame, name)
+            XCTAssertEqual(legacyLightRegion.secondaryInkFrame, lightRegion.secondaryInkFrame, name)
             XCTAssertEqual(lightRegion.secondaryInkFrame, darkRegion.secondaryInkFrame, name)
+            XCTAssertEqual(darkRegion.secondaryInkFrame, legacyDarkRegion.secondaryInkFrame, name)
 
-            let differenceCount = try XCTUnwrap(
+            let systemDifferenceCount = try XCTUnwrap(
                 lightRegion.raster.differingPixelCount(
                     comparedTo: darkRegion.raster,
                     in: lightRegion.comparisonFrame,
+                    tolerance: 0
+                ),
+                name
+            )
+            let lightBaselineDifferenceCount = try XCTUnwrap(
+                legacyLightRegion.raster.differingPixelCount(
+                    comparedTo: lightRegion.raster,
+                    in: lightRegion.comparisonFrame,
+                    tolerance: 0
+                ),
+                name
+            )
+            let legacyDarkDifferenceCount = try XCTUnwrap(
+                legacyDarkRegion.raster.differingPixelCount(
+                    comparedTo: darkRegion.raster,
+                    in: darkRegion.comparisonFrame,
                     tolerance: 0
                 ),
                 name
@@ -1561,6 +1597,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 against: raisedSurface,
                 in: darkRegion.primaryInkFrame
             ) ?? 0
+            let primaryBackgroundPixels = darkRegion.raster.tokenCount(
+                raisedSurface,
+                in: darkRegion.primaryInkFrame,
+                tolerance: 3
+            )
             let backgroundPixels = darkRegion.raster.tokenCount(
                 raisedSurface,
                 in: darkRegion.comparisonFrame,
@@ -1568,9 +1609,19 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             )
 
             XCTAssertEqual(
-                differenceCount,
+                systemDifferenceCount,
                 0,
                 "\(name) must render identically in forced Light and Dark appearances"
+            )
+            XCTAssertEqual(
+                lightBaselineDifferenceCount,
+                0,
+                "\(name) fixed Light must remain byte-identical to the legacy Light rendering"
+            )
+            XCTAssertGreaterThan(
+                legacyDarkDifferenceCount,
+                100,
+                "\(name) oracle must detect the legacy Dark adaptive-colour regression"
             )
             XCTAssertGreaterThan(
                 primaryInkPixels,
@@ -1583,21 +1634,29 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 "\(name) primary adaptive ink must clear WCAG AA on Snow"
             )
             XCTAssertGreaterThan(
+                primaryBackgroundPixels,
+                primaryInkPixels,
+                "\(name) primary contrast sample must be dominated by its local Snow background"
+            )
+            XCTAssertGreaterThan(
                 backgroundPixels,
                 100,
                 "\(name) must visibly render the Snow raised-surface token"
             )
 
             var line = String(
-                format: "%@: frame=%.2f,%.2f,%.2f,%.2f diff_pixels=%d primary_aa_pixels=%d primary_max_contrast=%.3f background_pixels=%d",
+                format: "%@: frame=%.2f,%.2f,%.2f,%.2f system_diff_pixels=%d light_baseline_diff_pixels=%d legacy_dark_diff_pixels=%d primary_aa_pixels=%d primary_max_contrast=%.3f primary_background_pixels=%d background_pixels=%d",
                 name,
                 darkRegion.comparisonFrame.minX,
                 darkRegion.comparisonFrame.minY,
                 darkRegion.comparisonFrame.width,
                 darkRegion.comparisonFrame.height,
-                differenceCount,
+                systemDifferenceCount,
+                lightBaselineDifferenceCount,
+                legacyDarkDifferenceCount,
                 primaryInkPixels,
                 primaryContrast,
+                primaryBackgroundPixels,
                 backgroundPixels
             )
             if let secondaryInkFrame = darkRegion.secondaryInkFrame {
@@ -1610,6 +1669,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                     against: raisedSurface,
                     in: secondaryInkFrame
                 ) ?? 0
+                let secondaryBackgroundPixels = darkRegion.raster.tokenCount(
+                    raisedSurface,
+                    in: secondaryInkFrame,
+                    tolerance: 3
+                )
                 XCTAssertGreaterThan(
                     secondaryInkPixels,
                     8,
@@ -1620,10 +1684,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                     3,
                     "\(name) secondary adaptive ink must preserve the legible Light rendering on Snow"
                 )
-                line += String(
-                    format: " secondary_aa_pixels=%d secondary_max_contrast=%.3f",
+                XCTAssertGreaterThan(
+                    secondaryBackgroundPixels,
                     secondaryInkPixels,
-                    secondaryContrast
+                    "\(name) secondary contrast sample must be dominated by its local Snow background"
+                )
+                line += String(
+                    format: " secondary_3_to_1_pixels=%d secondary_max_contrast=%.3f secondary_background_pixels=%d",
+                    secondaryInkPixels,
+                    secondaryContrast,
+                    secondaryBackgroundPixels
                 )
             }
             measurements.append(line)
@@ -4938,6 +5008,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     private func captureSnowSettingsThemeLock(
         forceDarkAppearance: Bool,
+        disableMaterialModeLock: Bool = false,
         appearanceName: String,
         file: StaticString = #filePath,
         line: UInt = #line
@@ -4953,6 +5024,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             resetTheme: true,
             theme: "snow",
             forceDarkAppearance: forceDarkAppearance,
+            disableMaterialModeLock: disableMaterialModeLock,
             hideFixtureChrome: true
         )
         guard app.otherElements["map.surface"].waitForExistence(timeout: 10) else {
@@ -5400,6 +5472,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         coverageBBoxes: [String] = [],
         resetOnboarding: Bool = false,
         forceDarkAppearance: Bool = false,
+        disableMaterialModeLock: Bool = false,
         densePins: Bool = false,
         startupViewport: String? = nil,
         trackReplayBeatDuration: Double? = nil,
@@ -5457,6 +5530,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         if forceDarkAppearance {
             app.launchArguments.append("-AppleInterfaceStyle")
             app.launchArguments.append("Dark")
+        }
+        if disableMaterialModeLock {
+            app.launchArguments.append("--ui-testing-disable-material-mode-lock")
         }
         if seedUserList {
             app.launchArguments.append("--ui-testing-seed-user-list")
@@ -6586,7 +6662,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             XCTFail("No screenshot export name configured for \(name)")
             return
         }
-        let directory = URL(fileURLWithPath: "/private/tmp/making-tracks-artifacts", isDirectory: true)
+        let directory = uiTestArtifactDirectory(for: name)
         let fileURL = directory.appendingPathComponent(exportName).appendingPathExtension("png")
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -6604,7 +6680,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         elements: [(String, XCUIElement)],
         notes: [String] = []
     ) {
-        let directory = URL(fileURLWithPath: "/private/tmp/making-tracks-artifacts", isDirectory: true)
+        let directory = uiTestArtifactDirectory(for: name)
         let fileURL = directory.appendingPathComponent(name).appendingPathExtension("txt")
         let frames = elements.map { label, element in
             let frame = element.frame
@@ -6627,7 +6703,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     private func exportTextArtifact(named name: String, contents: String) {
-        let directory = URL(fileURLWithPath: "/private/tmp/making-tracks-artifacts", isDirectory: true)
+        let directory = uiTestArtifactDirectory(for: name)
         let fileURL = directory.appendingPathComponent(name).appendingPathExtension("txt")
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -6638,6 +6714,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         } catch {
             XCTFail("Failed to export text artifact \(name): \(error)")
         }
+    }
+
+    private func uiTestArtifactDirectory(for artifactName: String) -> URL {
+        let environment = ProcessInfo.processInfo.environment
+        let simulatorID = artifactName.hasPrefix("snow-theme-lock-")
+            ? environment["SIMULATOR_UDID"].flatMap { $0.isEmpty ? nil : $0 }
+            : nil
+        let path = simulatorID.map { "/private/tmp/making-tracks-artifacts.\($0)" }
+            ?? "/private/tmp/making-tracks-artifacts"
+        return URL(fileURLWithPath: path, isDirectory: true)
     }
 
     @discardableResult
@@ -6843,10 +6929,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         "t2.9-settings-root-ax": "t2.9-settings-root-ax",
         "snow-theme-lock-appearance-light": "snow-theme-lock-appearance-light",
         "snow-theme-lock-appearance-dark": "snow-theme-lock-appearance-dark",
+        "snow-theme-lock-appearance-legacy-light": "snow-theme-lock-appearance-legacy-light",
+        "snow-theme-lock-appearance-legacy-dark": "snow-theme-lock-appearance-legacy-dark",
         "snow-theme-lock-map-data-light": "snow-theme-lock-map-data-light",
         "snow-theme-lock-map-data-dark": "snow-theme-lock-map-data-dark",
+        "snow-theme-lock-map-data-legacy-light": "snow-theme-lock-map-data-legacy-light",
+        "snow-theme-lock-map-data-legacy-dark": "snow-theme-lock-map-data-legacy-dark",
         "snow-theme-lock-location-light": "snow-theme-lock-location-light",
         "snow-theme-lock-location-dark": "snow-theme-lock-location-dark",
+        "snow-theme-lock-location-legacy-light": "snow-theme-lock-location-legacy-light",
+        "snow-theme-lock-location-legacy-dark": "snow-theme-lock-location-legacy-dark",
         "diagnostics-preprepare-exclusions-dark": "diagnostics-preprepare-exclusions-dark",
         "tracks-static-geometry": "tracks-static-geometry",
         "explore-door-default": "explore-door-default",
