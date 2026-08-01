@@ -261,6 +261,52 @@ private func runSelfTest() throws {
     let decodedOrientation = try Raster(pngAt: orientationURL)
     precondition(decodedOrientation.rgb(x: 0, y: 0) == RGB(red: 255, green: 0, blue: 0), "decoded PNG top row must stay row 0")
     precondition(decodedOrientation.rgb(x: 0, y: 1) == RGB(red: 0, green: 0, blue: 255), "decoded PNG bottom row must stay row 1")
+
+    let frameDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("measure-place-card-frame-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: frameDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: frameDirectory) }
+    let realisticFrameURL = frameDirectory.appendingPathComponent("realistic.txt")
+    try """
+    capture: realistic
+    screen-scale: 3.00
+    hide: x=152.33 y=413.00 width=81.33 height=60.00
+    state: x=152.33 y=413.00 width=12.00 height=12.00
+
+    """.write(to: realisticFrameURL, atomically: true, encoding: .utf8)
+    let realisticFrame = try ExportedFrame(file: realisticFrameURL)
+    let realisticMarkerCrop = try realisticFrame.markerCrop()
+    precondition(
+        realisticMarkerCrop == CGRect(x: 457, y: 1239, width: 36, height: 36),
+        "marker crop must use the exported state frame with rounded device-pixel edges"
+    )
+
+    let missingStateURL = frameDirectory.appendingPathComponent("missing-state.txt")
+    try """
+    screen-scale: 3.00
+    hide: x=152.33 y=413.00 width=81.33 height=60.00
+
+    """.write(to: missingStateURL, atomically: true, encoding: .utf8)
+    do {
+        _ = try ExportedFrame(file: missingStateURL)
+        preconditionFailure("missing state frame must be rejected")
+    } catch AnalyzerError.invalid {
+        // Expected: marker geometry is mandatory evidence input.
+    }
+
+    let fractionalStateURL = frameDirectory.appendingPathComponent("fractional-state.txt")
+    try """
+    screen-scale: 3.00
+    hide: x=152.33 y=413.00 width=81.33 height=60.00
+    state: x=152.20 y=413.00 width=12.00 height=12.00
+
+    """.write(to: fractionalStateURL, atomically: true, encoding: .utf8)
+    do {
+        _ = try ExportedFrame(file: fractionalStateURL).markerCrop()
+        preconditionFailure("state edges far from device pixels must be rejected")
+    } catch AnalyzerError.invalid {
+        // Expected: two-decimal serialization may round to a pixel, not widen a fractional crop.
+    }
     let rest = try measureInk(restPixels, crop: fixtureInkCrop, luminanceThreshold: luminanceThreshold)
     let defaultDelta = displacement(rest: rest, pressed: try measureInk(defaultPressedPixels, crop: fixtureInkCrop, luminanceThreshold: luminanceThreshold))
     let axDelta = displacement(rest: rest, pressed: try measureInk(axPressedPixels, crop: fixtureInkCrop, luminanceThreshold: luminanceThreshold))
@@ -302,34 +348,47 @@ private func writeOrientationFixturePNG(to url: URL) throws {
 
 private struct ExportedFrame {
     let button: CGRect
+    let state: CGRect
     let screenScale: CGFloat
 
     init(file: URL) throws {
         let text = try String(contentsOf: file, encoding: .utf8)
         var scale: Double?
-        var values: [String: Double] = [:]
+        var buttonValues: [String: Double] = [:]
+        var stateValues: [String: Double] = [:]
         for rawLine in text.split(whereSeparator: \.isNewline) {
             let line = String(rawLine)
             if line.hasPrefix("screen-scale:") {
                 scale = Double(line.dropFirst("screen-scale:".count).trimmingCharacters(in: .whitespaces))
-            } else if line.hasPrefix("hide:") {
+            } else if line.hasPrefix("hide:") || line.hasPrefix("state:") {
+                let isState = line.hasPrefix("state:")
                 for field in line.split(separator: " ").dropFirst() {
                     let pair = field.split(separator: "=", maxSplits: 1)
                     guard pair.count == 2, let number = Double(pair[1]) else {
-                        throw AnalyzerError.invalid("malformed hide frame record: \(file.path)")
+                        throw AnalyzerError.invalid("malformed frame record: \(file.path)")
                     }
-                    values[String(pair[0])] = number
+                    if isState {
+                        stateValues[String(pair[0])] = number
+                    } else {
+                        buttonValues[String(pair[0])] = number
+                    }
                 }
             }
         }
-        guard let x = values["x"], let y = values["y"],
-              let width = values["width"], let height = values["height"],
-              let scale, x.isFinite, y.isFinite, width.isFinite, height.isFinite,
-              scale.isFinite, width > 0, height > 0, scale > 0
+        guard let buttonX = buttonValues["x"], let buttonY = buttonValues["y"],
+              let buttonWidth = buttonValues["width"], let buttonHeight = buttonValues["height"],
+              let stateX = stateValues["x"], let stateY = stateValues["y"],
+              let stateWidth = stateValues["width"], let stateHeight = stateValues["height"],
+              let scale,
+              buttonX.isFinite, buttonY.isFinite, buttonWidth.isFinite, buttonHeight.isFinite,
+              stateX.isFinite, stateY.isFinite, stateWidth.isFinite, stateHeight.isFinite,
+              scale.isFinite, buttonWidth > 0, buttonHeight > 0,
+              stateWidth > 0, stateHeight > 0, scale > 0
         else {
-            throw AnalyzerError.invalid("missing or invalid Hide frame record: \(file.path)")
+            throw AnalyzerError.invalid("missing or invalid Hide/state frame record: \(file.path)")
         }
-        button = CGRect(x: x, y: y, width: width, height: height)
+        button = CGRect(x: buttonX, y: buttonY, width: buttonWidth, height: buttonHeight)
+        state = CGRect(x: stateX, y: stateY, width: stateWidth, height: stateHeight)
         screenScale = CGFloat(scale)
     }
 
@@ -342,13 +401,23 @@ private struct ExportedFrame {
         )
     }
 
-    var markerCrop: CGRect {
-        CGRect(
-            x: (button.minX - 16) * screenScale,
-            y: (button.minY - 16) * screenScale,
-            width: 12 * screenScale,
-            height: 12 * screenScale
-        )
+    func markerCrop() throws -> CGRect {
+        func roundedPixelEdge(_ pointEdge: CGFloat) throws -> CGFloat {
+            let scaled = pointEdge * screenScale
+            let rounded = scaled.rounded()
+            guard abs(scaled - rounded) <= 0.02 else {
+                throw AnalyzerError.invalid("state frame edge does not resolve to a device pixel")
+            }
+            return rounded
+        }
+        let minX = try roundedPixelEdge(state.minX)
+        let minY = try roundedPixelEdge(state.minY)
+        let maxX = try roundedPixelEdge(state.maxX)
+        let maxY = try roundedPixelEdge(state.maxY)
+        guard maxX > minX, maxY > minY else {
+            throw AnalyzerError.invalid("state frame has no device-pixel area")
+        }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 }
 
@@ -369,6 +438,7 @@ private func selectedCandidate(
     in directory: URL,
     frame: ExportedFrame
 ) throws -> (rest: Candidate, pressed: Candidate) {
+    let markerCrop = try frame.markerCrop()
     let files = try FileManager.default.contentsOfDirectory(
         at: directory,
         includingPropertiesForKeys: [.isRegularFileKey],
@@ -386,7 +456,7 @@ private func selectedCandidate(
         let raster = try Raster(pngAt: file)
         let state: LivePressState
         do {
-            state = try classify(raster, marker: frame.markerCrop)
+            state = try classify(raster, marker: markerCrop)
         } catch AnalyzerError.markerMismatch {
             exactMarkerFailureCount += 1
             continue

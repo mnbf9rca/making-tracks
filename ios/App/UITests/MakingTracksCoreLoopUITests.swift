@@ -5630,7 +5630,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         exportMeasurements(
             named: "place-card-press-inset-\(accessibilityTextSize ? "ax" : "default")-frame",
-            elements: [("hide", hide)],
+            elements: [("hide", hide), ("state", state)],
             notes: [String(format: "screen-scale: %.2f", UIScreen.main.scale)]
         )
 
