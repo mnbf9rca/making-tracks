@@ -86,8 +86,11 @@ loop and fail-closed analyzer produce measured rest/pressed evidence.
 - [ ] Run `./scripts/sim-lock.sh --seat codex1 ./scripts/release-gate.sh`; record Release/Debug,
       app-unit, and UI counts with zero warnings/failures; delete task xcresults and leave the seat
       FREE.
-- [ ] Run the required independent script/evidence, test-quality, and integration reviews; count
-      all raised/survived/fixed findings and cross-examine false positives.
+- [x] Run the required independent script/evidence, test-quality, and integration reviews. The
+      three lenses raised 7 unique findings (4 Important, 3 Minor); all 7 were fixed, 0 survived,
+      and all three re-reviews found 0 new Critical or Important issues. Cross-examination rejected
+      only an attempted whole-raster semibold oracle because the ratified press family also scales;
+      the exact medium-to-semibold mapping remains pinned directly.
 - [ ] Rebase on the latest `origin/ios`; manually reconcile unique #575 fixture changes if present;
       rerun affected gates.
 
