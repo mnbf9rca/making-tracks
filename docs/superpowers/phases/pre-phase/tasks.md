@@ -26,6 +26,13 @@ Format: one line per transition, newest last:
 - 2026-08-01T06:49Z codex2 #589 final host gate green — final head `f8e7df2`; `swift test` 516/516; Release and Debug build-for-testing passed; app unit 245/245 and UI 97/97 (342 total, 0 failed/skipped); test phase 2,686s; exact result counts extracted, task xcresults deleted, reusable `/private/tmp/dd-codex2` retained, seat FREE
 - 2026-08-01T08:09Z codex4 #575 claimed — approved focused device-real place-card press-inset fixture; baseline host suite 516/516 green; seat `codex4`
 - 2026-08-01T08:09Z codex4 #575 branch — `wp-575-press-inset-proof` from `origin/ios` `f667615`; worktree `.worktrees/wp-575-press-inset-proof`
+- 2026-08-01T08:11Z codex1 #584 claimed — urgent fix-now assignment from planner: boot all four Phase 2 evidence scripts on demand and classify their committed README packets under the narrowed evidence law
+- 2026-08-01T08:11Z codex1 #584 branch — `wp-584-evidence-pipeline` from `origin/ios` `9559ca2`; isolated worktree `.worktrees/wp-584-evidence-pipeline`
+- 2026-08-01T08:11Z codex1 #584 tests green — behavioral RED proved all four cold-seat failures; minimal boot waits pass 74/74 host simulator-lock tests; ShellCheck across scripts and evidence scripts, agent-law lint, and diff check are clean
+- 2026-08-01T08:28Z codex1 #584 tests green — exact re-grounded code head `73ebd86`: review fixes pass 78/78 host simulator-lock tests; neutering all four lock-identity guards produced exactly four RED mismatch failures; full ShellCheck, agent-law lint, ancestry, stale-base diff, and diff check are clean
+- 2026-08-01T08:33Z codex1 #584 PR open — draft PR #598 targets `ios` from `wp-584-evidence-pipeline`; exact reviewed head `c4a4429`; required `sourcery-review`, `track-b-ios`, and `wp` labels verified live; planner retains merge ownership
+- 2026-08-01T08:37Z codex1 #584 review clean — Sourcery reviewed code head `c4a4429`; all three high-level maintainability suggestions were dispositioned with contract evidence, its complete thread fetch reports zero inline threads, and all four required CI checks pass
+- 2026-08-01T08:37Z codex1 #584 ready-to-merge — PR #598 has 78/78 host harness evidence, mutation teeth, clean ShellCheck/agent-law/ancestry checks, three independent adversarial READY verdicts, and all required labels; final ledger-only head pending planner handoff
 
 ## Done (pre-phase)
 
@@ -71,3 +78,8 @@ named trigger is not a state; reviewer's sweep wrote triggers into every bucket-
 
 **Needs Rob (relayed 2026-08-01):** #477 Search scope · #378 welcome-flow order · #448 privacy
 policy/diagnostics · #360 coverage-boundary affordance.
+
+- 2026-08-01T08:25Z codex3 #594 claimed — `fix-594-door-pill-spec`; docs-only door-pill metric/provenance amendment resolving Phase 2 OF3
+- 2026-08-01T08:26Z codex3 #594 branch — `fix-594-door-pill-spec` based on fresh `ios` head `da5ce2b`
+- 2026-08-01T08:29Z codex3 #594 tests green — ruled provenance phrase appears exactly once; metric is 15×15 (`IconRole.inline`); OF3 active carry discharged; no frozen-render diff; agent-law lint clean
+- 2026-08-01T08:41Z codex3 #594 PR open — draft #599; Sourcery and independent spec-fidelity review requested
