@@ -69,3 +69,5 @@ named trigger is not a state; reviewer's sweep wrote triggers into every bucket-
 
 **Needs Rob (relayed 2026-08-01):** #477 Search scope · #378 welcome-flow order · #448 privacy
 policy/diagnostics · #360 coverage-boundary affordance.
+
+- 2026-08-01T08:25Z codex3 #594 claimed — `fix-594-door-pill-spec`; docs-only door-pill metric/provenance amendment resolving Phase 2 OF3
