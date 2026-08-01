@@ -44,6 +44,7 @@ struct MakingTracksApp: App {
     private static let debugUseDenseFixturePins = arguments.contains("--ui-testing-dense-pins")
     private static let debugUseReplayVisualFixture = arguments.contains("--ui-testing-replay-visual-seed")
     private static let debugShowChipTargetFixture = arguments.contains("--ui-testing-chip-target")
+    private static let debugShowPlaceCardPressEvidenceFixture = isFixtureMap && arguments.contains("--ui-testing-place-card-press-evidence")
     private static let debugDoorGlyphFixtureVariant = argumentValue("--ui-testing-door-glyph-fixture")
     private static let debugDisableMaterialModeLock = arguments.contains("--ui-testing-disable-material-mode-lock")
     private static let primaryFixturePlaceID = "mt1_00000000000000000000000000"
@@ -72,6 +73,7 @@ struct MakingTracksApp: App {
     private static let debugUseDenseFixturePins = false
     private static let debugUseReplayVisualFixture = false
     private static let debugShowChipTargetFixture = false
+    private static let debugShowPlaceCardPressEvidenceFixture = false
     private static let debugDisableMaterialModeLock = false
 #endif
 
@@ -344,7 +346,9 @@ struct MakingTracksApp: App {
         WindowGroup {
             Group {
 #if DEBUG
-                if let variant = Self.debugDoorGlyphFixtureVariant {
+                if Self.debugShowPlaceCardPressEvidenceFixture {
+                    PlaceCardPressInsetEvidenceFixture()
+                } else if let variant = Self.debugDoorGlyphFixtureVariant {
                     DoorGlyphEvidenceFixture(legacy: variant == "before")
                 } else if Self.debugShowChipTargetFixture {
                     ChipHitTargetFixture()

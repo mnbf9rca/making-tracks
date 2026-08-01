@@ -4071,6 +4071,14 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
     }
 
+    func testPlaceCardPressInsetEvidenceDefault() {
+        exercisePlaceCardPressInsetEvidence(accessibilityTextSize: false)
+    }
+
+    func testPlaceCardPressInsetEvidenceAX() {
+        exercisePlaceCardPressInsetEvidence(accessibilityTextSize: true)
+    }
+
     func testSettingsRootImplementationEvidenceCapturesDefaultAndAX5() {
         for evidenceCase in [
             (accessibilityTextSize: false, screenshotName: "t2.9-settings-root"),
@@ -5581,13 +5589,17 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         startupViewport: String? = nil,
         trackReplayBeatDuration: Double? = nil,
         replayVisualSeed: Bool = false,
-        hideFixtureChrome: Bool = false
+        hideFixtureChrome: Bool = false,
+        placeCardPressEvidence: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-fixture-map"]
         app.launchArguments.append("--ui-testing-reset-pin-size")
         if hideFixtureChrome {
             app.launchArguments.append("--ui-testing-hide-fixture-chrome")
+        }
+        if placeCardPressEvidence {
+            app.launchArguments.append("--ui-testing-place-card-press-evidence")
         }
         if densePins {
             app.launchArguments.append("--ui-testing-dense-pins")
@@ -5705,6 +5717,33 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         app.launch()
         return app
+    }
+
+    private func exercisePlaceCardPressInsetEvidence(
+        accessibilityTextSize: Bool
+    ) {
+        let app = launch(
+            reset: false,
+            accessibilityTextSize: accessibilityTextSize,
+            placeCardPressEvidence: true
+        )
+        let hide = app.buttons["place-card.press-evidence.hide"]
+        let state = app.otherElements["place-card.press-evidence.state"]
+
+        XCTAssertTrue(hide.waitForExistence(timeout: 5))
+        XCTAssertTrue(hide.isHittable)
+        XCTAssertTrue(state.waitForExistence(timeout: 5))
+        XCTAssertEqual(state.value as? String, "rest")
+
+        exportMeasurements(
+            named: "place-card-press-inset-\(accessibilityTextSize ? "ax" : "default")-frame",
+            elements: [("hide", hide), ("state", state)],
+            notes: [String(format: "screen-scale: %.2f", UIScreen.main.scale)]
+        )
+
+        for _ in 0..<80 {
+            hide.tap()
+        }
     }
 
     private func selectMapTheme(_ themeID: String, in app: XCUIApplication) {
@@ -6825,7 +6864,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     private func uiTestArtifactDirectory(for artifactName: String) -> URL {
         let environment = ProcessInfo.processInfo.environment
-        let simulatorID = artifactName.hasPrefix("snow-theme-lock-")
+        let simulatorID = (
+            artifactName.hasPrefix("snow-theme-lock-")
+                || artifactName.hasPrefix("place-card-press-inset-")
+        )
             ? environment["SIMULATOR_UDID"].flatMap { $0.isEmpty ? nil : $0 }
             : nil
         let path = simulatorID.map { "/private/tmp/making-tracks-artifacts.\($0)" }
