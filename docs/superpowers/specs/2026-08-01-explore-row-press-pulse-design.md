@@ -1,7 +1,9 @@
 # Explore destination-row press pulse design
 
-**Issue:** #595  
-**Designer ruling:** Settings and About are enabled glyphed quiet controls, so they join A5's ratified symbol-weight pulse family.  
+**Issue:** #595
+
+**Designer ruling:** Settings and About are enabled glyphed quiet controls, so they join A5's ratified symbol-weight pulse family.
+
 **Scope:** pressed interaction only; resting row geometry, colour, typography, routing, and accessibility remain unchanged.
 
 ## Grounded defect
@@ -62,18 +64,28 @@ Mutation checks must kill the tests when the row style returns to plain, when th
 
 ## Live evidence
 
-A DEBUG-only Explore-row fixture uses the exact production row content and wraps the exact
-production row style only to overlay an out-of-crop cyan/rest or magenta/pressed state marker.
-Unique launch arguments select Settings or About. UI tests export the live button frame and issue
-repeated real taps while a lock-owned capture loop records lossless simulator screenshots; the
-marker, not a method name, proves `ButtonStyle.Configuration.isPressed` was live.
+A DEBUG-only Explore-row fixture renders the actual production `ExploreQuietDestinationRow`,
+including Settings' prominent treatment and About's non-prominent treatment. An SPI-scoped evidence
+environment is consumed inside `MaterialQuietRowButtonStyle.makeBody(configuration:)`: only a
+genuine `configuration.isPressed == true` edge from a real tap may increment the edge counter and
+latch the production style's pressed rendering. No other setter exists. If the production row
+stops mounting that style, or the style stops consuming the live configuration, the edge count
+remains zero and the UI test fails.
+
+The lock-owned sampler handshakes with the UI test: it captures the known resting frame after
+geometry export, then releases repeated real taps. Every report uses the canonical evidence class
+`Nondeterministic content` and separately records `pressed-state provenance: latched from live
+press edge`; the UI test independently requires at least one real edge in each case. Planner ruled
+this mechanism on 2026-08-01 because the designer ruled pulse enrollment rather than capture
+mechanics, and holding a real observed edge preserves A5's no-synthetic-state requirement across
+`simctl`'s slower screenshot interval.
 
 A fail-closed analyzer selects one rest and one pressed candidate for each row at default and AX,
 measures glyph-region ink count and bounds beside the frames, and refuses identical crops. The
 packet therefore contains eight frames: Settings and About × rest and pressed × default and AX,
 plus paired measurements, digests, exact head, toolchain, destination, and regeneration command.
-`XCUIElement.press(forDuration:)` is not used because A5 proved it does not hold the configuration's
-pressed state.
+`XCUIElement.press(forDuration:)` is not used because A5 proved it does not raise the
+configuration's pressed state.
 
 The fixture is self-contained and uses #595-specific flags/helpers. It does not import or depend on
 #575's unpublished place-card fixture; any overlap after #575 lands is resolved manually during

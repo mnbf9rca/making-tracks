@@ -4,9 +4,9 @@
 changing their resting rows, and publish live default/AX pressed evidence.
 
 **Architecture:** A label-preserving `MaterialQuietRowButtonStyle` delegates to the same extracted
-feedback modifier as `MaterialButtonStyleBody`. The production row and DEBUG evidence fixture share
-the exact row content. A state-marked real-tap capture loop and fail-closed analyzer produce measured
-rest/pressed evidence.
+feedback modifier as `MaterialButtonStyleBody`. The DEBUG fixture renders the actual production row;
+its production style body latches only from a real configuration press edge. A handshaken capture
+loop and fail-closed analyzer produce measured rest/pressed evidence.
 
 **Tech stack:** Swift 6, SwiftUI, XCTest/XCUITest, Bash, CoreGraphics/ImageIO, iOS Simulator seat CLI.
 
@@ -21,7 +21,7 @@ rest/pressed evidence.
 - [x] Ground the fixed-weight glyph, plain button style, A5 mechanism, T2.3 carried question, and
       A5 false-pressed evidence lesson.
 - [x] Record the planner ruling for a label-preserving delegating adapter.
-- [ ] Run the unchanged focused AppShell test as the baseline and record its count.
+- [x] Run the unchanged focused AppShell test as the baseline and record its count.
 
 ## Task 2 — invert the deadness contract (RED)
 
@@ -29,12 +29,12 @@ rest/pressed evidence.
 - Modify `ios/App/Tests/AppShellTests.swift`
 - Modify `ios/Tests/DesignSystemTests/ControlStylesTests.swift`
 
-- [ ] Rename/invert the fixed-medium test to require one mounted quiet-row pulse style.
-- [ ] Require standard/rest rendering to equal the fixed-medium reference at default and AX5.
-- [ ] Require emphasized rendering to differ from rest and increase measured glyph ink.
-- [ ] Require the complete row content with resting feedback to equal the unmodified content.
-- [ ] Add a DesignSystem assertion that the row adapter resolves `.symbolWeightPulse`.
-- [ ] Run focused tests and record the expected compile/assertion RED before production changes.
+- [x] Rename/invert the fixed-medium test to require one mounted quiet-row pulse style.
+- [x] Require standard/rest rendering to equal the fixed-medium reference at default and AX5.
+- [x] Require emphasized rendering to differ from rest and increase measured glyph ink.
+- [x] Require the complete row content with resting feedback to equal the unmodified content.
+- [x] Add a DesignSystem assertion that the row adapter resolves `.symbolWeightPulse`.
+- [x] Run focused tests and record the expected compile/assertion RED before production changes.
 
 ## Task 3 — delegate the production press path (GREEN)
 
@@ -42,16 +42,16 @@ rest/pressed evidence.
 - Modify `ios/Sources/DesignSystem/ControlStyles.swift`
 - Modify `ios/App/Sources/Map/MapDoorShell.swift`
 
-- [ ] Extract the existing environment/scale/offset application into one internal modifier without
+- [x] Extract the existing environment/scale/offset application into one internal modifier without
       changing `MaterialButtonStyleBody` ordering or output.
-- [ ] Add `MaterialQuietRowButtonStyle` as a label-preserving adapter over
+- [x] Add `MaterialQuietRowButtonStyle` as a label-preserving adapter over
       `.symbolWeightPulse`.
-- [ ] Extract `ExploreQuietDestinationRowContent`, mount the row adapter, and remove the expired
+- [x] Extract `ExploreQuietDestinationRowContent`, mount the row adapter, and remove the expired
       fixed-medium override/comment.
-- [ ] Run focused DesignSystem and AppShell tests to GREEN.
-- [ ] Prove mutation teeth for plain style, wrong strategy, medium emphasized weight, and resting
+- [x] Run focused DesignSystem and AppShell tests to GREEN.
+- [x] Prove mutation teeth for plain style, wrong strategy, medium emphasized weight, and resting
       geometry; restore production after each RED.
-- [ ] Run `swift test --package-path ios` before evidence work.
+- [x] Run `swift test --package-path ios` before evidence work.
 
 ## Task 4 — add reproducible live-configuration evidence
 
@@ -65,12 +65,13 @@ rest/pressed evidence.
 - Add `docs/design/design-system/explore-row-press-pulse-evidence.md`
 - Modify `docs/design/design-system/README.md`
 
-- [ ] Add unique DEBUG fixture flags for Settings/About and a state marker outside the measured
-      glyph crop; the fixture delegates to the production row style and shares production content.
-- [ ] Add default/AX UI tests that export exact row frames and issue repeated real taps.
-- [ ] Add an analyzer with hermetic self-tests, exact state-marker classification, bounded input
-      validation, glyph ink/bounds measurements, and identical-crop rejection.
-- [ ] Add a seat-only regeneration script with lock/destination validation, boot-on-demand,
+- [x] Add unique DEBUG fixture flags for Settings/About and markers outside the measured glyph
+      crop; the fixture renders the actual production row and its real prominence.
+- [x] Add default/AX UI tests that export exact row frames, handshake a resting capture, issue
+      repeated real taps, and require at least one real configuration press edge.
+- [x] Add an analyzer with hermetic end-to-end self-tests, exact state-marker classification,
+      bounded input validation, glyph ink/bounds measurements, and identical-crop rejection.
+- [x] Add a seat-only regeneration script with lock/destination validation, boot-on-demand,
       deterministic status bar, scoped task directories, focused test count extraction, atomic
       staged installation, and cleanup.
 - [ ] Capture Settings/About rest/pressed frames at default and AX through seat `codex1`.
@@ -80,8 +81,8 @@ rest/pressed evidence.
 
 ## Task 5 — full gate and adversarial review
 
-- [ ] Run Bash syntax, ShellCheck, agent-law lint, `git diff --check`, and analyzer self-tests.
-- [ ] Run `swift test --package-path ios` and record exact counts.
+- [x] Run Bash syntax, ShellCheck, `git diff --check`, and analyzer self-tests.
+- [x] Run `swift test --package-path ios` and record exact counts.
 - [ ] Run `./scripts/sim-lock.sh --seat codex1 ./scripts/release-gate.sh`; record Release/Debug,
       app-unit, and UI counts with zero warnings/failures; delete task xcresults and leave the seat
       FREE.

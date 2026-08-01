@@ -251,7 +251,12 @@ public struct MaterialQuietRowButtonStyle: ButtonStyle {
     }
 
     public func makeBody(configuration: Configuration) -> some View {
-        body(label: configuration.label, isPressed: configuration.isPressed)
+        MaterialQuietRowButtonStyleBody(
+            label: configuration.label,
+            liveIsPressed: configuration.isPressed,
+            tokens: tokens,
+            pressFeedback: pressFeedback
+        )
     }
 
     func body<Label: View>(label: Label, isPressed: Bool) -> some View {
@@ -262,6 +267,77 @@ public struct MaterialQuietRowButtonStyle: ButtonStyle {
                 pressFeedback: pressFeedback
             )
         )
+    }
+
+    static func effectiveIsPressed(
+        liveIsPressed: Bool,
+        evidenceIsLatched: Bool?
+    ) -> Bool {
+        liveIsPressed || (evidenceIsLatched ?? false)
+    }
+}
+
+private struct MaterialQuietRowPressEvidenceLatch {
+    let isLatched: Binding<Bool>
+    let edgeCount: Binding<Int>
+}
+
+private struct MaterialQuietRowPressEvidenceLatchKey: EnvironmentKey {
+    static let defaultValue: MaterialQuietRowPressEvidenceLatch? = nil
+}
+
+private extension EnvironmentValues {
+    var materialQuietRowPressEvidenceLatch: MaterialQuietRowPressEvidenceLatch? {
+        get { self[MaterialQuietRowPressEvidenceLatchKey.self] }
+        set { self[MaterialQuietRowPressEvidenceLatchKey.self] = newValue }
+    }
+}
+
+@_spi(PressEvidence)
+public extension View {
+    func materialQuietRowPressEvidenceLatch(
+        isLatched: Binding<Bool>,
+        edgeCount: Binding<Int>
+    ) -> some View {
+        environment(
+            \.materialQuietRowPressEvidenceLatch,
+            MaterialQuietRowPressEvidenceLatch(
+                isLatched: isLatched,
+                edgeCount: edgeCount
+            )
+        )
+    }
+}
+
+private struct MaterialQuietRowButtonStyleBody<Label: View>: View {
+    let label: Label
+    let liveIsPressed: Bool
+    let tokens: MaterialTokenSheet
+    let pressFeedback: MaterialControlPressFeedback
+
+    @Environment(\.materialQuietRowPressEvidenceLatch) private var evidenceLatch
+
+    private var effectiveIsPressed: Bool {
+        MaterialQuietRowButtonStyle.effectiveIsPressed(
+            liveIsPressed: liveIsPressed,
+            evidenceIsLatched: evidenceLatch?.isLatched.wrappedValue
+        )
+    }
+
+    var body: some View {
+        label
+            .modifier(
+                MaterialControlPressFeedbackModifier(
+                    isPressed: effectiveIsPressed,
+                    tokens: tokens,
+                    pressFeedback: pressFeedback
+                )
+            )
+            .onChange(of: liveIsPressed) { previous, current in
+                guard current, !previous, let evidenceLatch else { return }
+                evidenceLatch.edgeCount.wrappedValue += 1
+                evidenceLatch.isLatched.wrappedValue = true
+            }
     }
 }
 

@@ -1,4 +1,4 @@
-import DesignSystem
+@_spi(PressEvidence) import DesignSystem
 import MakingTracksData
 import MakingTracksMapStyle
 import SwiftUI
@@ -1280,13 +1280,27 @@ private struct ExploreCoverageGlyphShape: Shape {
 struct ExploreQuietDestinationRow: View {
     let presentation: MapDoorRowPresentation
     let prominent: Bool
+    let evidenceIconIdentifier: String?
     let action: () -> Void
+
+    init(
+        presentation: MapDoorRowPresentation,
+        prominent: Bool,
+        evidenceIconIdentifier: String? = nil,
+        action: @escaping () -> Void
+    ) {
+        self.presentation = presentation
+        self.prominent = prominent
+        self.evidenceIconIdentifier = evidenceIconIdentifier
+        self.action = action
+    }
 
     var body: some View {
         Button(action: action) {
             ExploreQuietDestinationRowContent(
                 presentation: presentation,
-                prominent: prominent
+                prominent: prominent,
+                evidenceIconIdentifier: evidenceIconIdentifier
             )
         }
         .buttonStyle(MaterialQuietRowButtonStyle())
@@ -1952,6 +1966,13 @@ enum ExploreQuietDestinationPressEvidenceKind: String {
         case .about: ExploreRowPressEvidenceColor.about
         }
     }
+
+    var prominent: Bool {
+        switch self {
+        case .settings: true
+        case .about: false
+        }
+    }
 }
 
 private enum ExploreRowPressEvidenceColor {
@@ -1959,6 +1980,8 @@ private enum ExploreRowPressEvidenceColor {
     static let about = Color(red: 0.95, green: 0.80, blue: 0.05)
     static let defaultSize = Color(red: 0.10, green: 0.20, blue: 0.95)
     static let accessibilitySize = Color(red: 0.95, green: 0.35, blue: 0.05)
+    static let prominent = Color(red: 0.55, green: 0.10, blue: 0.95)
+    static let nonProminent = Color(red: 0.45, green: 0.45, blue: 0.45)
     static let rest = Color(red: 0.05, green: 0.85, blue: 0.95)
     static let pressed = Color(red: 0.95, green: 0.05, blue: 0.80)
 }
@@ -1968,6 +1991,8 @@ struct ExploreQuietDestinationPressEvidenceFixture: View {
     let accessibilitySize: Bool
 
     @State private var tapCount = 0
+    @State private var livePressEdgeCount = 0
+    @State private var latchedFromLivePressEdge = false
 
     private let tokens = MaterialTheme.snow.tokens
 
@@ -1975,43 +2000,6 @@ struct ExploreQuietDestinationPressEvidenceFixture: View {
         VStack(spacing: 24) {
             Spacer(minLength: 48)
 
-            Button {
-                tapCount += 1
-            } label: {
-                ExploreQuietDestinationRowContent(
-                    presentation: kind.row.presentation,
-                    prominent: true,
-                    evidenceIconIdentifier: "explore-row-press.fixture.icon"
-                )
-            }
-            .buttonStyle(
-                ExploreQuietDestinationPressEvidenceButtonStyle(
-                    kind: kind,
-                    accessibilitySize: accessibilitySize
-                )
-            )
-            .accessibilityIdentifier("explore-row-press.fixture.button")
-
-            Text(verbatim: "taps:\(tapCount)")
-                .font(Typography.font(for: .metadata))
-                .foregroundStyle(tokens.muted.swiftUIColor)
-                .accessibilityIdentifier("explore-row-press.fixture.tap-count")
-
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .background(tokens.background.swiftUIColor)
-    }
-}
-
-struct ExploreQuietDestinationPressEvidenceButtonStyle: ButtonStyle {
-    let kind: ExploreQuietDestinationPressEvidenceKind
-    let accessibilitySize: Bool
-
-    private let rowStyle = MaterialQuietRowButtonStyle()
-
-    func makeBody(configuration: Configuration) -> some View {
-        VStack(spacing: 24) {
             HStack(spacing: 8) {
                 evidenceMarker(
                     color: kind.markerColor,
@@ -2026,17 +2014,51 @@ struct ExploreQuietDestinationPressEvidenceButtonStyle: ButtonStyle {
                     identifier: "explore-row-press.fixture.size"
                 )
                 evidenceMarker(
-                    color: configuration.isPressed
+                    color: kind.prominent
+                        ? ExploreRowPressEvidenceColor.prominent
+                        : ExploreRowPressEvidenceColor.nonProminent,
+                    label: kind.prominent ? "prominent" : "non-prominent",
+                    identifier: "explore-row-press.fixture.prominence"
+                )
+                evidenceMarker(
+                    color: latchedFromLivePressEdge
                         ? ExploreRowPressEvidenceColor.pressed
                         : ExploreRowPressEvidenceColor.rest,
-                    label: configuration.isPressed ? "pressed" : "rest",
+                    label: latchedFromLivePressEdge
+                        ? "latched from live press edge"
+                        : "rest",
                     identifier: "explore-row-press.fixture.state"
                 )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            rowStyle.makeBody(configuration: configuration)
+            ExploreQuietDestinationRow(
+                presentation: kind.row.presentation,
+                prominent: kind.prominent,
+                evidenceIconIdentifier: "explore-row-press.fixture.icon"
+            ) {
+                tapCount += 1
+            }
+            .materialQuietRowPressEvidenceLatch(
+                isLatched: $latchedFromLivePressEdge,
+                edgeCount: $livePressEdgeCount
+            )
+            .accessibilityIdentifier("explore-row-press.fixture.button")
+
+            Text(verbatim: "taps:\(tapCount)")
+                .font(Typography.font(for: .metadata))
+                .foregroundStyle(tokens.muted.swiftUIColor)
+                .accessibilityIdentifier("explore-row-press.fixture.tap-count")
+
+            Text(verbatim: "press-edges:\(livePressEdgeCount)")
+                .font(Typography.font(for: .metadata))
+                .foregroundStyle(tokens.muted.swiftUIColor)
+                .accessibilityIdentifier("explore-row-press.fixture.edge-count")
+
+            Spacer()
         }
+        .padding(.horizontal, 16)
+        .background(tokens.background.swiftUIColor)
     }
 
     private func evidenceMarker(

@@ -127,6 +127,39 @@ final class ControlStylesTests: XCTestCase {
         )
     }
 
+    func testQuietRowStyleUsesLivePressUnlessEvidenceHasLatched() {
+        XCTAssertFalse(
+            MaterialQuietRowButtonStyle.effectiveIsPressed(
+                liveIsPressed: false,
+                evidenceIsLatched: nil
+            )
+        )
+        XCTAssertTrue(
+            MaterialQuietRowButtonStyle.effectiveIsPressed(
+                liveIsPressed: true,
+                evidenceIsLatched: nil
+            )
+        )
+        XCTAssertFalse(
+            MaterialQuietRowButtonStyle.effectiveIsPressed(
+                liveIsPressed: false,
+                evidenceIsLatched: false
+            )
+        )
+        XCTAssertTrue(
+            MaterialQuietRowButtonStyle.effectiveIsPressed(
+                liveIsPressed: true,
+                evidenceIsLatched: false
+            )
+        )
+        XCTAssertTrue(
+            MaterialQuietRowButtonStyle.effectiveIsPressed(
+                liveIsPressed: false,
+                evidenceIsLatched: true
+            )
+        )
+    }
+
     func testQuietTextInsetUsesItsPairedButtonTypographyAnchor() {
         assertTypographyTextStyle(
             MaterialControlPressFeedback.textInsetTypographyAnchor,

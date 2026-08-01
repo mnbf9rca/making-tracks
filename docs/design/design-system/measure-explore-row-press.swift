@@ -62,6 +62,39 @@ private struct Raster {
         rgba = storage
     }
 
+    init(width: Int, height: Int, rgba: [UInt8]) {
+        self.width = width
+        self.height = height
+        self.rgba = rgba
+    }
+
+    func writePNG(to url: URL) throws {
+        var pixels = rgba
+        guard let context = CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo:
+                CGImageAlphaInfo.premultipliedLast.rawValue
+                    | CGBitmapInfo.byteOrder32Big.rawValue
+        ), let image = context.makeImage(),
+        let destination = CGImageDestinationCreateWithURL(
+            url as CFURL,
+            "public.png" as CFString,
+            1,
+            nil
+        ) else {
+            throw EvidenceError("cannot allocate synthetic PNG writer")
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            throw EvidenceError("cannot write synthetic PNG: \(url.path)")
+        }
+    }
+
     func count(color: RGB, tolerance: Int = 24) -> Int {
         stride(from: 0, to: rgba.count, by: 4).reduce(into: 0) { total, offset in
             let sample = RGB(
@@ -195,6 +228,11 @@ private struct CaseSpec {
             ? RGB(red: 26, green: 51, blue: 242)
             : RGB(red: 242, green: 89, blue: 13)
     }
+    var prominenceColor: RGB {
+        kind == "settings"
+            ? RGB(red: 140, green: 26, blue: 242)
+            : RGB(red: 115, green: 115, blue: 115)
+    }
 }
 
 private let restColor = RGB(red: 13, green: 217, blue: 242)
@@ -223,6 +261,22 @@ private func parseFrame(label: String, from text: String) throws -> CGRect {
     return CGRect(x: x, y: y, width: width, height: height)
 }
 
+private func parsePositiveInteger(label: String, from text: String) throws -> Int {
+    let escaped = NSRegularExpression.escapedPattern(for: label)
+    let pattern = "(?m)^\(escaped): ([0-9]+)$"
+    let regex = try NSRegularExpression(pattern: pattern)
+    let range = NSRange(text.startIndex..<text.endIndex, in: text)
+    guard let match = regex.firstMatch(in: text, range: range),
+          match.numberOfRanges == 2,
+          let valueRange = Range(match.range(at: 1), in: text),
+          let value = Int(text[valueRange]),
+          value >= 1
+    else {
+        throw EvidenceError("missing or non-positive \(label)")
+    }
+    return value
+}
+
 private func format(_ rect: CGRect?) -> String {
     guard let rect else { return "none" }
     return String(
@@ -238,11 +292,19 @@ private func analyzeCase(_ spec: CaseSpec, input: URL, output: URL) throws {
     let caseDirectory = input.appendingPathComponent(spec.name, isDirectory: true)
     let measurementURL = caseDirectory.appendingPathComponent("measurement.txt")
     let measurementText = try String(contentsOf: measurementURL, encoding: .utf8)
+    let observedLivePressEdges = try parsePositiveInteger(
+        label: "observed-live-press-edges",
+        from: measurementText
+    )
     let appFrame = try parseFrame(label: "app-frame", from: measurementText)
     let rowFrame = try parseFrame(label: "row-derived", from: measurementText)
     let iconFrame = try parseFrame(label: "icon", from: measurementText)
     let kindMarkerFrame = try parseFrame(label: "kind-marker", from: measurementText)
     let sizeMarkerFrame = try parseFrame(label: "size-marker", from: measurementText)
+    let prominenceMarkerFrame = try parseFrame(
+        label: "prominence-marker",
+        from: measurementText
+    )
     let stateMarkerFrame = try parseFrame(label: "state-marker", from: measurementText)
     guard rowFrame.contains(iconFrame), iconFrame.width >= 8, iconFrame.height >= 8 else {
         throw EvidenceError("\(spec.name): icon frame is not contained in row frame")
@@ -259,6 +321,8 @@ private func analyzeCase(_ spec: CaseSpec, input: URL, output: URL) throws {
     var rest: (URL, Raster, Int)?
     var pressed: (URL, Raster, Int)?
     var expectedDimensions: (Int, Int)?
+    var maximumRestMarkerPixels = 0
+    var maximumPressedMarkerPixels = 0
     for candidate in candidates {
         let raster = try Raster(url: candidate)
         if let expectedDimensions,
@@ -275,11 +339,19 @@ private func analyzeCase(_ spec: CaseSpec, input: URL, output: URL) throws {
             frame: sizeMarkerFrame,
             appFrame: appFrame
         ).count(color: spec.sizeColor)
-        guard kindCount >= markerMinimum, sizeCount >= markerMinimum
+        let prominenceCount = try raster.crop(
+            frame: prominenceMarkerFrame,
+            appFrame: appFrame
+        ).count(color: spec.prominenceColor)
+        guard kindCount >= markerMinimum,
+              sizeCount >= markerMinimum,
+              prominenceCount >= markerMinimum
         else { continue }
         let stateCrop = try raster.crop(frame: stateMarkerFrame, appFrame: appFrame)
         let restCount = stateCrop.count(color: restColor)
         let pressedCount = stateCrop.count(color: pressedColor)
+        maximumRestMarkerPixels = max(maximumRestMarkerPixels, restCount)
+        maximumPressedMarkerPixels = max(maximumPressedMarkerPixels, pressedCount)
         if restCount >= markerMinimum, pressedCount < markerMinimum {
             if rest == nil || restCount > rest!.2 { rest = (candidate, raster, restCount) }
         } else if pressedCount >= markerMinimum, restCount < markerMinimum {
@@ -290,7 +362,11 @@ private func analyzeCase(_ spec: CaseSpec, input: URL, output: URL) throws {
     }
 
     guard let rest, let pressed else {
-        throw EvidenceError("\(spec.name): missing exact rest or live-pressed marker candidate")
+        throw EvidenceError(
+            "\(spec.name): missing exact rest or live-edge-latched pressed marker candidate "
+                + "(max rest pixels: \(maximumRestMarkerPixels), "
+                + "max pressed pixels: \(maximumPressedMarkerPixels))"
+        )
     }
     let restCrop = try rest.1.crop(frame: iconFrame, appFrame: appFrame)
     let pressedCrop = try pressed.1.crop(frame: iconFrame, appFrame: appFrame)
@@ -314,7 +390,9 @@ private func analyzeCase(_ spec: CaseSpec, input: URL, output: URL) throws {
     }
     let report = """
     case: \(spec.name)
-    evidence-class: live ButtonStyle.Configuration.isPressed marker
+    evidence-class: Nondeterministic content
+    pressed-state provenance: latched from live press edge
+    observed-live-press-edges: \(observedLivePressEdges)
     app-frame: \(format(appFrame))
     row-frame: \(format(rowFrame))
     icon-frame: \(format(iconFrame))
@@ -334,6 +412,133 @@ private func analyzeCase(_ spec: CaseSpec, input: URL, output: URL) throws {
         atomically: true,
         encoding: .utf8
     )
+}
+
+private enum SyntheticAnalysisOutcome: Equatable {
+    case success
+    case missingLiveEdge
+    case ambiguousPressedMarker
+    case identicalGlyphs
+    case nonIncreasingInk
+}
+
+private func exerciseSyntheticAnalysis(
+    _ outcome: SyntheticAnalysisOutcome
+) throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(
+        "explore-row-press-self-test-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    let input = root.appendingPathComponent("input", isDirectory: true)
+    let caseDirectory = input.appendingPathComponent("settings-default", isDirectory: true)
+    let output = root.appendingPathComponent("output", isDirectory: true)
+    try fileManager.createDirectory(at: caseDirectory, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: output, withIntermediateDirectories: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let measurement = """
+    app-frame: x=0 y=0 width=300 height=600
+    row-derived: x=0 y=80 width=300 height=80
+    icon: x=20 y=100 width=30 height=30
+    kind-marker: x=10 y=20 width=30 height=30
+    size-marker: x=50 y=20 width=30 height=30
+    prominence-marker: x=90 y=20 width=30 height=30
+    state-marker: x=130 y=20 width=30 height=30
+    observed-live-press-edges: \(outcome == .missingLiveEdge ? 0 : 1)
+    """ + "\n"
+    try measurement.write(
+        to: caseDirectory.appendingPathComponent("measurement.txt"),
+        atomically: true,
+        encoding: .utf8
+    )
+
+    let background = RGB(red: 255, green: 252, blue: 245)
+    let ink = RGB(red: 30, green: 35, blue: 40)
+    func candidate(state: RGB, pressed: Bool, ambiguous: Bool = false) -> Raster {
+        let width = 300
+        let height = 600
+        var pixels = Raster(width: width, height: height, fill: background).rgba
+        func paint(x: Range<Int>, y: Range<Int>, color: RGB) {
+            for row in y {
+                for column in x {
+                    let offset = (row * width + column) * 4
+                    pixels[offset] = UInt8(color.red)
+                    pixels[offset + 1] = UInt8(color.green)
+                    pixels[offset + 2] = UInt8(color.blue)
+                    pixels[offset + 3] = 255
+                }
+            }
+        }
+        paint(x: 10..<40, y: 20..<50, color: RGB(red: 26, green: 204, blue: 51))
+        paint(x: 50..<80, y: 20..<50, color: RGB(red: 26, green: 51, blue: 242))
+        paint(x: 90..<120, y: 20..<50, color: RGB(red: 140, green: 26, blue: 242))
+        paint(x: 130..<160, y: 20..<50, color: state)
+        if ambiguous {
+            paint(x: 145..<160, y: 20..<50, color: pressedColor)
+        }
+
+        let restingExtent = 8
+        let pressedExtent: Int
+        switch outcome {
+        case .success, .missingLiveEdge, .ambiguousPressedMarker:
+            pressedExtent = 12
+        case .identicalGlyphs:
+            pressedExtent = restingExtent
+        case .nonIncreasingInk:
+            pressedExtent = 6
+        }
+        let extent = pressed ? pressedExtent : restingExtent
+        let origin = 20 + (30 - extent) / 2
+        paint(x: origin..<(origin + extent), y: (100 + (30 - extent) / 2)..<(100 + (30 + extent) / 2), color: ink)
+        return Raster(width: width, height: height, rgba: pixels)
+    }
+
+    try candidate(state: restColor, pressed: false).writePNG(
+        to: caseDirectory.appendingPathComponent("candidate-0000.png")
+    )
+    try candidate(
+        state: outcome == .ambiguousPressedMarker ? restColor : pressedColor,
+        pressed: true,
+        ambiguous: outcome == .ambiguousPressedMarker
+    ).writePNG(to: caseDirectory.appendingPathComponent("candidate-0001.png"))
+
+    try analyzeCase(
+        CaseSpec(kind: "settings", size: "default"),
+        input: input,
+        output: output
+    )
+    guard outcome == .success,
+          fileManager.fileExists(
+            atPath: output.appendingPathComponent(
+                "explore-row-press-settings-default-rest.png"
+            ).path
+          ),
+          fileManager.fileExists(
+            atPath: output.appendingPathComponent(
+                "explore-row-press-settings-default-pressed.png"
+            ).path
+          )
+    else {
+        throw EvidenceError("synthetic success case did not emit both selected frames")
+    }
+}
+
+private func expectSyntheticAnalysisFailure(
+    _ outcome: SyntheticAnalysisOutcome,
+    containing expectedText: String
+) throws {
+    do {
+        try exerciseSyntheticAnalysis(outcome)
+    } catch let error as EvidenceError {
+        guard error.description.contains(expectedText) else {
+            throw EvidenceError(
+                "synthetic rejection mismatch: expected \(expectedText), got \(error)"
+            )
+        }
+        return
+    }
+    throw EvidenceError("synthetic \(outcome) case unexpectedly passed")
 }
 
 private func runSelfTests() throws {
@@ -361,7 +566,24 @@ private func runSelfTests() throws {
     guard crop.ink().count == 1,
           crop != RasterCrop(width: 2, height: 2, rgba: Array(repeating: 255, count: 16))
     else { throw EvidenceError("self-test ink or identical-crop rejection failed") }
-    print("measure-explore-row-press: 4 self-tests passed")
+    try exerciseSyntheticAnalysis(.success)
+    try expectSyntheticAnalysisFailure(
+        .missingLiveEdge,
+        containing: "missing or non-positive observed-live-press-edges"
+    )
+    try expectSyntheticAnalysisFailure(
+        .ambiguousPressedMarker,
+        containing: "missing exact rest or live-edge-latched pressed marker candidate"
+    )
+    try expectSyntheticAnalysisFailure(
+        .identicalGlyphs,
+        containing: "rest and pressed glyph crops are identical"
+    )
+    try expectSyntheticAnalysisFailure(
+        .nonIncreasingInk,
+        containing: "expected pressed glyph ink > rest"
+    )
+    print("measure-explore-row-press: 9 self-tests passed")
 }
 
 do {

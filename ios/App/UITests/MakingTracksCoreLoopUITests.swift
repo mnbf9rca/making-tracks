@@ -4380,17 +4380,33 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let button = app.buttons["explore-row-press.fixture.button"]
         let kindMarker = element(identifier: "explore-row-press.fixture.kind", in: app)
         let sizeMarker = element(identifier: "explore-row-press.fixture.size", in: app)
+        let prominenceMarker = element(identifier: "explore-row-press.fixture.prominence", in: app)
         let stateMarker = element(identifier: "explore-row-press.fixture.state", in: app)
         let icon = element(identifier: "explore-row-press.fixture.icon", in: app)
         let tapCount = app.staticTexts["explore-row-press.fixture.tap-count"]
-        for target in [button, kindMarker, sizeMarker, stateMarker, icon, tapCount] {
+        let edgeCount = app.staticTexts["explore-row-press.fixture.edge-count"]
+        for target in [
+            button,
+            kindMarker,
+            sizeMarker,
+            prominenceMarker,
+            stateMarker,
+            icon,
+            tapCount,
+            edgeCount,
+        ] {
             XCTAssertTrue(target.waitForExistence(timeout: 5))
             assertContainedInAppFrame(target, in: app)
         }
         XCTAssertTrue(button.isHittable)
         XCTAssertEqual(kindMarker.label, kind)
         XCTAssertEqual(sizeMarker.label, accessibility5 ? "ax" : "default")
+        XCTAssertEqual(
+            prominenceMarker.label,
+            kind == "settings" ? "prominent" : "non-prominent"
+        )
         XCTAssertEqual(stateMarker.label, "rest")
+        XCTAssertEqual(edgeCount.label, "press-edges:0")
 
         let rowTop = stateMarker.frame.maxY + 24
         let rowFrame = CGRect(
@@ -4403,33 +4419,54 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.frame.contains(rowFrame))
 
         let size = accessibility5 ? "ax" : "default"
-        exportMeasurements(
-            named: "explore-row-press-\(kind)-\(size)",
-            elements: [
-                ("button", button),
-                ("kind-marker", kindMarker),
-                ("size-marker", sizeMarker),
-                ("state-marker", stateMarker),
-                ("icon", icon),
-            ],
-            notes: [
-                String(
-                    format: "app-frame: x=%.2f y=%.2f width=%.2f height=%.2f",
-                    app.frame.minX,
-                    app.frame.minY,
-                    app.frame.width,
-                    app.frame.height
-                ),
-                String(
-                    format: "row-derived: x=%.2f y=%.2f width=%.2f height=%.2f",
-                    rowFrame.minX,
-                    rowFrame.minY,
-                    rowFrame.width,
-                    rowFrame.height
-                ),
-                "interaction: 100 XCUIElement.tap() calls; press(forDuration:) intentionally excluded",
-            ]
+        let artifactName = "explore-row-press-\(kind)-\(size)"
+        let artifactDirectory = uiTestArtifactDirectory(for: artifactName)
+        let coordinationRequest = artifactDirectory.appendingPathComponent(
+            "\(artifactName)-sampler-coordinate"
         )
+        let samplerReady = artifactDirectory.appendingPathComponent(
+            "\(artifactName)-sampler-ready"
+        )
+        let measurementElements = [
+            ("button", button),
+            ("kind-marker", kindMarker),
+            ("size-marker", sizeMarker),
+            ("prominence-marker", prominenceMarker),
+            ("state-marker", stateMarker),
+            ("icon", icon),
+            ("edge-count", edgeCount),
+        ]
+        let measurementNotes = [
+            String(
+                format: "app-frame: x=%.2f y=%.2f width=%.2f height=%.2f",
+                app.frame.minX,
+                app.frame.minY,
+                app.frame.width,
+                app.frame.height
+            ),
+            String(
+                format: "row-derived: x=%.2f y=%.2f width=%.2f height=%.2f",
+                rowFrame.minX,
+                rowFrame.minY,
+                rowFrame.width,
+                rowFrame.height
+            ),
+            "evidence-class: Nondeterministic content",
+            "pressed-state provenance: latched from live press edge",
+            "interaction: 100 XCUIElement.tap() calls; press(forDuration:) intentionally excluded",
+        ]
+        exportMeasurements(
+            named: artifactName,
+            elements: measurementElements,
+            notes: measurementNotes
+        )
+
+        if FileManager.default.fileExists(atPath: coordinationRequest.path) {
+            XCTAssertTrue(
+                waitForFile(at: samplerReady, timeout: 10),
+                "Capture sampler did not acknowledge the exported resting frame."
+            )
+        }
 
         for _ in 0..<100 {
             button.tap()
@@ -4440,7 +4477,25 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             object: tapCount
         )
         XCTAssertEqual(XCTWaiter.wait(for: [completed], timeout: 5), .completed)
-        XCTAssertEqual(stateMarker.label, "rest")
+        let latched = XCTNSPredicateExpectation(
+            predicate: NSPredicate(
+                format: "exists == true AND label == %@",
+                "latched from live press edge"
+            ),
+            object: stateMarker
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [latched], timeout: 5), .completed)
+        let edgeComponents = edgeCount.label.split(separator: ":", maxSplits: 1)
+        XCTAssertEqual(edgeComponents.first, "press-edges")
+        let observedLivePressEdges = Int(edgeComponents.last ?? "") ?? 0
+        XCTAssertGreaterThanOrEqual(observedLivePressEdges, 1)
+        exportMeasurements(
+            named: artifactName,
+            elements: measurementElements,
+            notes: measurementNotes + [
+                "observed-live-press-edges: \(observedLivePressEdges)"
+            ]
+        )
         app.terminate()
     }
 
@@ -7359,6 +7414,17 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
     }
 
+    private func waitForFile(at url: URL, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if FileManager.default.fileExists(atPath: url.path) {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
     private func exportTextArtifact(named name: String, contents: String) {
         let directory = uiTestArtifactDirectory(for: name)
         let fileURL = directory.appendingPathComponent(name).appendingPathExtension("txt")
@@ -7375,11 +7441,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     private func uiTestArtifactDirectory(for artifactName: String) -> URL {
         let environment = ProcessInfo.processInfo.environment
-        let simulatorID = (
+        let usesSimulatorScopedDirectory =
             artifactName.hasPrefix("snow-theme-lock-")
                 || artifactName.hasPrefix("place-card-press-inset-")
-        )
-            ? environment["SIMULATOR_UDID"].flatMap { $0.isEmpty ? nil : $0 }
+                || artifactName.hasPrefix("explore-row-press-")
+        let simulatorID = usesSimulatorScopedDirectory
+            ? (environment["SIMULATOR_UDID"] ?? environment["MT_SIM_LOCK_UDID"])
+                .flatMap { $0.isEmpty ? nil : $0 }
             : nil
         let path = simulatorID.map { "/private/tmp/making-tracks-artifacts.\($0)" }
             ?? "/private/tmp/making-tracks-artifacts"
