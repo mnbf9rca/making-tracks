@@ -74,10 +74,10 @@ loop and fail-closed analyzer produce measured rest/pressed evidence.
 - [x] Add a seat-only regeneration script with lock/destination validation, boot-on-demand,
       deterministic status bar, scoped task directories, focused test count extraction, atomic
       staged installation, and cleanup.
-- [ ] Capture Settings/About rest/pressed frames at default and AX through seat `codex1`.
-- [ ] Record measurements beside frames, SHA-256 values, exact head/toolchain/destination, evidence
+- [x] Capture Settings/About rest/pressed frames at default and AX through seat `codex1`.
+- [x] Record measurements beside frames, SHA-256 values, exact head/toolchain/destination, evidence
       class, and one-command regeneration.
-- [ ] Re-run regeneration and require identical outputs or explain the evidence class honestly.
+- [x] Re-run regeneration and require identical outputs or explain the evidence class honestly.
 
 ## Task 5 — full gate and adversarial review
 

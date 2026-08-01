@@ -1,46 +1,46 @@
 Making Tracks Explore destination-row press pulse
 evidence-class: Nondeterministic content
 pressed-state provenance: latched from live press edge
-git: 31deac0ab2ea2351aaf76375b93e4cd1761e6b27
+git: bcf9ba4ba3b4b328e3e9bca9bfac2597d5046aa4
 git-dirty: false
 destination: platform=iOS Simulator,id=8749271C-95FD-4270-A754-401F77E7AEB6
-capture-start: 2026-08-01T16:19:35Z
-capture-end: 2026-08-01T16:23:41Z
+capture-start: 2026-08-01T16:28:22Z
+capture-end: 2026-08-01T16:32:01Z
 focused-ui-tests: 4 passed, 0 failed
 interaction: 100 XCUIElement.tap() calls per case; press(forDuration:) excluded
 capture-tool: Xcode 26.6
 capture-tool: Build version 17F113
 
 2ef4f261c30e7ddb869222b23f6d9f3a73a684c7d37438ee0e3ccbe83751653a  explore-row-press-about-ax-pressed.png
-  /private/tmp/explore-row-press.rWSIUe/staging/explore-row-press-about-ax-pressed.png
+  /private/tmp/explore-row-press.js1Goo/staging/explore-row-press-about-ax-pressed.png
     pixelWidth: 1206
     pixelHeight: 2622
 0556a9db3294f19d5763bb713e3d25048450607f203ff0f90bb7934e290d5456  explore-row-press-about-ax-rest.png
-  /private/tmp/explore-row-press.rWSIUe/staging/explore-row-press-about-ax-rest.png
+  /private/tmp/explore-row-press.js1Goo/staging/explore-row-press-about-ax-rest.png
     pixelWidth: 1206
     pixelHeight: 2622
 d88b7c3c4917cacaccac6e99f3e15780557c42a509f83277b055811481a6bec9  explore-row-press-about-default-pressed.png
-  /private/tmp/explore-row-press.rWSIUe/staging/explore-row-press-about-default-pressed.png
+  /private/tmp/explore-row-press.js1Goo/staging/explore-row-press-about-default-pressed.png
     pixelWidth: 1206
     pixelHeight: 2622
 84a879dff6d1c2c05f0a71558b07f141282700dcf29f522016a54e0d2ec99444  explore-row-press-about-default-rest.png
-  /private/tmp/explore-row-press.rWSIUe/staging/explore-row-press-about-default-rest.png
+  /private/tmp/explore-row-press.js1Goo/staging/explore-row-press-about-default-rest.png
     pixelWidth: 1206
     pixelHeight: 2622
 353661d461f7d1031d1e094510edefd6a773bcbdda28957686969ad8d35d1a6a  explore-row-press-settings-ax-pressed.png
-  /private/tmp/explore-row-press.rWSIUe/staging/explore-row-press-settings-ax-pressed.png
+  /private/tmp/explore-row-press.js1Goo/staging/explore-row-press-settings-ax-pressed.png
     pixelWidth: 1206
     pixelHeight: 2622
 6235b6eaca5cbf98fb0b1614f5a99a9685b41c275fd17b0119436796b76bf21c  explore-row-press-settings-ax-rest.png
-  /private/tmp/explore-row-press.rWSIUe/staging/explore-row-press-settings-ax-rest.png
+  /private/tmp/explore-row-press.js1Goo/staging/explore-row-press-settings-ax-rest.png
     pixelWidth: 1206
     pixelHeight: 2622
 679d196bf3d97c0b02610d9b1a13d938c18c5edf63ee5bf1c47b7ce886eda3f0  explore-row-press-settings-default-pressed.png
-  /private/tmp/explore-row-press.rWSIUe/staging/explore-row-press-settings-default-pressed.png
+  /private/tmp/explore-row-press.js1Goo/staging/explore-row-press-settings-default-pressed.png
     pixelWidth: 1206
     pixelHeight: 2622
 11eb9f2d1f9f8b44a368afe8965f4446f46cb29fb9b31fbac2a0ce562feefa6e  explore-row-press-settings-default-rest.png
-  /private/tmp/explore-row-press.rWSIUe/staging/explore-row-press-settings-default-rest.png
+  /private/tmp/explore-row-press.js1Goo/staging/explore-row-press-settings-default-rest.png
     pixelWidth: 1206
     pixelHeight: 2622
 715d6e8e22e985fd4771c86722873d0ac08e555e529e322ecd8d38c108903453  explore-row-press-about-ax.txt

@@ -32,6 +32,10 @@ the observed live-edge count. [`explore-row-press-pulse-captures.txt`](explore-r
 records the source head, clean-tree assertion, destination, capture interval, toolchain, hashes, and
 all four measurement records.
 
+A clean-worktree repeat capture from `bcf9ba4ba3b4b328e3e9bca9bfac2597d5046aa4` reproduced all
+eight PNGs and all four measurement records byte-for-byte. Only the capture metadata's source head,
+interval, and ephemeral staging paths changed between runs.
+
 ## Frames
 
 | Row | Default | Accessibility size |
