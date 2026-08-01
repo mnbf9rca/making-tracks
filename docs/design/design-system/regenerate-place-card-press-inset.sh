@@ -26,6 +26,9 @@ assets=()
 backup_dir=""
 install_started=0
 install_completed=0
+cleanup_ran=0
+cleanup_count_file=""
+signal_self_test_dir=""
 
 die() {
   echo "regenerate-place-card-press-inset: $*" >&2
@@ -36,12 +39,43 @@ is_core_simulator_uuid() {
   [[ "$1" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]
 }
 
+ledger_destination_for_seat() {
+  local seat="$1"
+
+  awk -F '|' -v seat="$seat" '$2 ~ ("`" seat "`") { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $4); gsub(/`/, "", $4); print $4; exit }' \
+    "$repo_root/docs/ios-gate-ledger.md"
+}
+
+ledger_uuid_for_seat() {
+  local seat="$1"
+  local seat_after_id
+  local seat_destination
+  local seat_uuid
+
+  seat_destination="$(ledger_destination_for_seat "$seat")"
+  [ -n "$seat_destination" ] || die "could not read the $seat ledger destination"
+  case ",$seat_destination," in
+    *,id=*) seat_after_id="${seat_destination#*,id=}" ;;
+    *) die "found no simulator id in the $seat ledger destination" ;;
+  esac
+  seat_uuid="${seat_after_id%%,*}"
+  is_core_simulator_uuid "$seat_uuid" || die "rejected the valid $seat ledger UUID"
+  printf '%s\n' "$seat_uuid"
+}
+
 run_host_self_test() {
+  local alternate_destination
+  local alternate_uuid
+  local diagnostic_file
+  local external_call_log
   local ledger_destination
   local ledger_after_id
   local ledger_uuid
+  local mock_bin
+  local provenance_status=0
+  local provenance_test_dir
 
-  ledger_destination="$(awk -F '|' '$2 ~ /`codex4`/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $4); gsub(/`/, "", $4); print $4; exit }' "$repo_root/docs/ios-gate-ledger.md")"
+  ledger_destination="$(ledger_destination_for_seat codex4)"
   [ -n "$ledger_destination" ] || die "host self-test could not read the codex4 ledger destination"
   case ",$ledger_destination," in
     *,id=*) ledger_after_id="${ledger_destination#*,id=}" ;;
@@ -51,6 +85,39 @@ run_host_self_test() {
   is_core_simulator_uuid "$ledger_uuid" || die "host self-test rejected the valid codex4 ledger UUID"
   ! is_core_simulator_uuid "00000000-0000-0000-0000-00000000000" ||
     die "host self-test accepted an 8-4-4-4-11 UUID"
+
+  alternate_destination="$(ledger_destination_for_seat codex1)"
+  alternate_uuid="${alternate_destination#*,id=}"
+  alternate_uuid="${alternate_uuid%%,*}"
+  is_core_simulator_uuid "$alternate_uuid" || die "host self-test could not read a valid alternate ledger UUID"
+  provenance_test_dir="$(mktemp -d /private/tmp/making-tracks-press-provenance.XXXXXX)"
+  mock_bin="$provenance_test_dir/bin"
+  diagnostic_file="$provenance_test_dir/diagnostic.txt"
+  external_call_log="$provenance_test_dir/external-calls.txt"
+  mkdir -p "$mock_bin"
+  # shellcheck disable=SC2016 # The generated shim expands this in its child process.
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'echo xcrun >> "$MT_PRESS_EXTERNAL_CALL_LOG"' \
+    'exit 97' > "$mock_bin/xcrun"
+  chmod +x "$mock_bin/xcrun"
+  if MT_SIM_LOCK=1 \
+    MT_SIM_LOCK_UDID="$alternate_uuid" \
+    MT_SIM_LOCK_DESTINATION="$alternate_destination" \
+    MT_RELEASE_GATE_DERIVED_DATA=/private/tmp/dd-codex4 \
+    MT_PRESS_EXTERNAL_CALL_LOG="$external_call_log" \
+    PATH="$mock_bin:$PATH" \
+      /bin/bash "$repo_root/docs/design/design-system/regenerate-place-card-press-inset.sh" \
+        > /dev/null 2> "$diagnostic_file"; then
+    die "host self-test accepted the valid non-codex4 seat"
+  else
+    provenance_status=$?
+  fi
+  [ "$provenance_status" = "1" ] || die "host self-test wrong-seat status was $provenance_status, expected 1"
+  [ "$(cat "$diagnostic_file")" = "regenerate-place-card-press-inset: runtime seat must match codex4 ledger UUID $ledger_uuid" ] ||
+    die "host self-test did not receive the codex4 provenance diagnostic"
+  [ ! -e "$external_call_log" ] || die "host self-test made an external simulator call before rejecting the wrong seat"
+  rm -rf "$provenance_test_dir"
   echo "PASS valid-ledger-uuid"
 }
 
@@ -58,6 +125,9 @@ host_self_test_requested=0
 if [ "${1:-}" = "--self-test" ]; then
   [ "$#" = "1" ] || die "--self-test takes no other arguments"
   host_self_test_requested=1
+elif [ "${1:-}" = "--self-test-signal-child" ]; then
+  [ "$#" = "2" ] || die "--self-test-signal-child requires one directory"
+  signal_self_test_dir="$2"
 fi
 
 require_safe_directory() {
@@ -173,6 +243,13 @@ capture_failure_message() {
   echo "screenshot capture failed during focused $label test status=$capture_status"
 }
 
+focused_gate_failure_message() {
+  local label="$1"
+  local gate_status="$2"
+
+  echo "focused $label test command failed gate_status=$gate_status"
+}
+
 stop_capture() {
   local wait_status=0
   [ -n "$capture_pid" ] || return 0
@@ -200,14 +277,14 @@ run_timeout_self_test() (
     *) die "host self-test refused unsafe temporary directory" ;;
   esac
 
-  # shellcheck disable=SC2329 # Invoked by the EXIT/INT/TERM trap below.
+  # shellcheck disable=SC2329 # Invoked by the EXIT trap below.
   cleanup_timeout_self_test() {
     if [ -n "$spawned_pid" ]; then
       terminate_and_reap "$spawned_pid" >/dev/null 2>&1 || true
     fi
     [ -d "$selftest_dir" ] && rm -rf "$selftest_dir"
   }
-  trap cleanup_timeout_self_test EXIT INT TERM
+  trap cleanup_timeout_self_test EXIT
 
   assert_errexit_state() {
     local expected="$1"
@@ -342,6 +419,10 @@ run_timeout_self_test() (
     die "host self-test did not receive the exact final capture-worker diagnostic"
   spawned_pid=""
 
+  final_diagnostic="regenerate-place-card-press-inset: $(focused_gate_failure_message default 65)"
+  [ "$final_diagnostic" = "regenerate-place-card-press-inset: focused default test command failed gate_status=65" ] ||
+    die "host self-test did not receive the focused gate status diagnostic"
+
   screenshot_timeout_seconds="$saved_timeout"
   termination_grace_seconds="$saved_grace"
   case "$saved_errexit" in
@@ -352,11 +433,57 @@ run_timeout_self_test() (
   echo "PASS screenshot-timeout-reap"
 )
 
-if [ "$host_self_test_requested" = "1" ]; then
-  run_host_self_test
-  run_timeout_self_test
-  exit 0
-fi
+run_signal_cleanup_self_test() (
+  local asset
+  local child_pid
+  local child_status=0
+  local deadline
+  local now
+  local selftest_dir
+  local test_assets=(one.png two.png three.png four.png)
+
+  selftest_dir="$(mktemp -d /private/tmp/making-tracks-press-signal.XXXXXX)"
+  mkdir -p "$selftest_dir/expected" "$selftest_dir/output"
+  for asset in "${test_assets[@]}"; do
+    printf 'prior-%s\n' "$asset" > "$selftest_dir/expected/$asset"
+    cp "$selftest_dir/expected/$asset" "$selftest_dir/output/$asset"
+  done
+
+  /bin/bash "$repo_root/docs/design/design-system/regenerate-place-card-press-inset.sh" \
+    --self-test-signal-child "$selftest_dir" &
+  child_pid=$!
+  deadline=$(( $(date +%s) + 5 ))
+  while [ ! -e "$selftest_dir/partial-install.ready" ]; do
+    if ! kill -0 "$child_pid" 2>/dev/null; then
+      wait "$child_pid" 2>/dev/null || true
+      rm -rf "$selftest_dir"
+      die "host self-test signal child exited before the partial install"
+    fi
+    now="$(date +%s)"
+    if [ "$now" -ge "$deadline" ]; then
+      kill -KILL "$child_pid" 2>/dev/null || true
+      wait "$child_pid" 2>/dev/null || true
+      rm -rf "$selftest_dir"
+      die "host self-test timed out waiting for the partial install"
+    fi
+    sleep 1
+  done
+  kill -TERM "$child_pid"
+  if wait "$child_pid"; then
+    child_status=0
+  else
+    child_status=$?
+  fi
+  [ "$(awk 'END { print NR }' "$selftest_dir/cleanup-count.txt")" = "1" ] ||
+    die "host self-test cleanup did not run exactly once"
+  for asset in "${test_assets[@]}"; do
+    cmp -s "$selftest_dir/expected/$asset" "$selftest_dir/output/$asset" ||
+      die "host self-test did not restore $asset byte-identically"
+  done
+  [ "$child_status" = "143" ] || die "host self-test signal child status was $child_status, expected 143"
+  rm -rf "$selftest_dir"
+  echo "PASS signal-cleanup-rollback"
+)
 
 rollback_packet_install() {
   [ "$install_started" = "1" ] || return 0
@@ -371,8 +498,13 @@ rollback_packet_install() {
   done
 }
 
-cleanup() {
-  local exit_status=$?
+cleanup_once() {
+  [ "$cleanup_ran" = "0" ] || return 0
+  cleanup_ran=1
+  trap - EXIT INT TERM
+  if [ -n "$cleanup_count_file" ]; then
+    printf 'cleanup\n' >> "$cleanup_count_file"
+  fi
   stop_capture || true
   if [ "$status_bar_set" = "1" ]; then
     xcrun simctl status_bar "$lock_udid" clear >/dev/null 2>&1 || true
@@ -396,9 +528,56 @@ cleanup() {
     require_safe_directory "$run_dir"
     [ -d "$run_dir" ] && rm -rf "$run_dir"
   fi
+}
+
+handle_exit() {
+  local exit_status=$?
+  cleanup_once
   exit "$exit_status"
 }
-trap cleanup EXIT INT TERM
+
+handle_signal() {
+  local signal_status="$1"
+  cleanup_once
+  exit "$signal_status"
+}
+
+install_cleanup_traps() {
+  trap handle_exit EXIT
+  trap 'handle_signal 130' INT
+  trap 'handle_signal 143' TERM
+}
+
+if [ "$host_self_test_requested" = "1" ]; then
+  run_host_self_test
+  run_timeout_self_test
+  run_signal_cleanup_self_test
+  exit 0
+fi
+
+if [ -n "$signal_self_test_dir" ]; then
+  case "$signal_self_test_dir" in
+    /private/tmp/making-tracks-press-signal.*) ;;
+    *) die "host self-test signal child refused an unsafe directory" ;;
+  esac
+  output_dir="$signal_self_test_dir/output"
+  backup_dir="$signal_self_test_dir/backup"
+  cleanup_count_file="$signal_self_test_dir/cleanup-count.txt"
+  assets=(one.png two.png three.png four.png)
+  mkdir -p "$backup_dir"
+  for asset in "${assets[@]}"; do
+    cp -p "$output_dir/$asset" "$backup_dir/$asset"
+  done
+  install_started=1
+  install_completed=0
+  install_cleanup_traps
+  printf 'replacement-one\n' > "$output_dir/one.png"
+  printf 'replacement-two\n' > "$output_dir/two.png"
+  : > "$signal_self_test_dir/partial-install.ready"
+  while :; do sleep 1; done
+fi
+
+install_cleanup_traps
 
 [ "${MT_SIM_LOCK:-}" = "1" ] || die "must run inside scripts/sim-lock.sh --seat codex4"
 [ -n "$destination" ] || die "MT_SIM_LOCK_DESTINATION is required"
@@ -421,6 +600,9 @@ case "$simulator_udid" in
 esac
 is_core_simulator_uuid "$simulator_udid" || die "MT_SIM_LOCK_DESTINATION must carry an 8-4-4-4-12 CoreSimulator UUID"
 [ "$lock_udid" = "$simulator_udid" ] || die "MT_SIM_LOCK_UDID does not match MT_SIM_LOCK_DESTINATION"
+codex4_ledger_uuid="$(ledger_uuid_for_seat codex4)"
+[ "$lock_udid" = "$codex4_ledger_uuid" ] ||
+  die "runtime seat must match codex4 ledger UUID $codex4_ledger_uuid"
 
 artifact_dir="/private/tmp/making-tracks-artifacts.$lock_udid"
 require_safe_artifact_directory "$artifact_dir"
@@ -525,7 +707,7 @@ run_focused_capture() {
   stop_capture
   capture_status=$?
   set -e
-  [ "$gate_status" = "0" ] || die "focused $current_label test command failed"
+  [ "$gate_status" = "0" ] || die "$(focused_gate_failure_message "$current_label" "$gate_status")"
   [ "$capture_status" = "0" ] || die "$(capture_failure_message "$current_label" "$capture_status")"
   [ -s "$artifact_dir/place-card-press-inset-$current_label-frame.txt" ] || die "missing $current_label button frame record"
   extract_counts
